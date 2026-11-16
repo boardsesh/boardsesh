@@ -149,6 +149,12 @@
     "emailNotVerified": "Bestätige deine E-Mail-Adresse, bevor du eine App registrierst.",
     "generic": "Etwas ist schiefgelaufen. Versuch es noch mal."
   },
+  "signInAgain": {
+    "title": "Melde dich erneut an, um das zu ändern",
+    "body": "Um Redirect-URIs zu ändern, ein neues Secret zu erstellen oder eine App zu löschen, brauchst du eine Anmeldung aus den letzten {{minutes}} Minuten. So kann niemand, der deine Anmeldung nutzt, deine App übernehmen.",
+    "next": "Du meldest dich ab, meldest dich wieder an und landest direkt wieder hier. Nimm die Änderung dann noch mal vor.",
+    "button": "Erneut anmelden"
+  },
   "terms": {
     "metadata": {
       "title": "Developer terms | Boardsesh for developers",

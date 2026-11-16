@@ -1408,6 +1408,54 @@ client secret: encrypted with `PARTNER_OAUTH_SECRETS` (`storeClientSecret:
 'encrypted'`). Rotation replaces it in one write, so the old secret stops at
 commit.
 
+**A recent sign-in for changes that decide where codes and tokens go** (#7598).
+Adding, replacing or removing a redirect URI, rotating the secret and deleting the
+app each need a www sign-in from the last
+`PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` (5 minutes, in
+`@boardsesh/auth-protocol/auth-time`): the window the owner set on 2026-11-13 for
+linking or unlinking Google and Apple. Without it, anyone holding a developer's
+session (a shared laptop, a copied cookie) could point the app at their own
+redirect and take its new secret. Editing the name, publisher, homepage or
+privacy policy is not gated: none of them changes where a code or token goes,
+and the name rules apply to them whoever edits. Registering a new app is not
+gated either: it touches no existing app, consent or connection, and starts with
+no climbers. The app type and client authentication method cannot change at all
+(no field takes them), so there is nothing to gate there. An edit that sends the
+same redirect URIs, reordered or not, is not a redirect change.
+
+The sign-in is the one partner consent already trusts: the www session cookie's
+`auth_time` and `link_guarded` claims, read by `legacyWebSignIn` in
+`auth/legacy-web-credentials.ts` (the same function `verifyLegacyNextAuthJwe`
+uses), or a browser lease's recorded sign-in (`auth_session.original_authenticated_at`).
+GraphQL HTTP authentication puts it on `ConnectionContext.webSignIn`; nothing a
+request sends can set it. `requireRecentSignIn` in `auth/partner/registration.ts`
+applies `isSignInGoodForPartnerAppChange`: the consent rule (a known time, a
+guarded sign-in, clearly after the last password write) with the 5-minute
+window. It runs inside the change's transaction, after the developer's advisory
+lock and before any write, and takes the developer's `users` row FOR SHARE before
+reading the password write time, so a change queued behind a password reset reads
+the reset's time. A sign-in of unknown age is refused: a cookie without
+`auth_time`, an unguarded sign-in, an app token (no `webSignIn`), and any
+WebSocket call.
+
+A refusal is `FORBIDDEN` with `reason: RECENT_SIGN_IN_REQUIRED`
+(`PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED` in `@boardsesh/auth-protocol/partner-oauth`)
+and `maxAgeSeconds: 300`, never `UNAUTHENTICATED`: the session is valid, and a 401
+would sign the app out. Nothing is written. The check comes after input
+validation, ownership and suspension, so the developer fixes the form first and
+is never asked to sign in for an app that is gone or suspended.
+
+**The change email** (#7598). Once a redirect URI change, a rotation or a deletion
+commits, the developer's `users.email` gets one email
+(`email/partner-app-emails.ts`, the SMTP transport in
+[backend-email.md](./backend-email.md)): the app's name and client ID, what changed
+and when, and what to do if it was not them. A redirect change is told as counts
+("1 redirect URI added and 1 removed"), so the email carries no link someone else
+chose; no secret, old or new, is ever in it. It is sent after commit and never
+awaited, so a slow or failing mailer neither holds nor fails the change; a failure
+logs only the error's name. A retired `.invalid` address gets nothing. The
+registration takes the sender as `notifyDeveloper`, which the tests replace.
+
 **Changing a suspended app.** Refused, delete included: the record stays for ops
 and still counts toward the developer's 10.
 
@@ -1444,6 +1492,14 @@ climbers connected now, counted the way the caps count (`connected_at` set,
 `revoked_at` empty); the delete confirmation states it. A new or rotated secret
 is shown once in a dialog that closes only from its own button. It lives in
 component state only: never in the React Query cache, a URL or a log.
+When the backend answers `RECENT_SIGN_IN_REQUIRED`, the console closes the form
+or confirmation and says the change needs a sign-in from the last 5 minutes. Its
+"Sign in again" link (`signInAgainPath` in `app/lib/developer-apps/sign-in-again.ts`)
+goes through `/auth/signout`, then `/auth/login`, back to `/developers/apps` in
+the developer's language; the sign-in page sends a signed-in visitor straight on,
+which is why sign-out comes first. Both hops keep only a same-origin path
+(`safeCallbackUrl`), and every path in the link is a constant. The developer then
+makes the change again.
 Registering needs the developer terms box ticked; the form links to
 `/developers/terms` (same flag) and sends `acceptedTermsVersion`, the shared
 `PARTNER_DEVELOPER_TERMS_VERSION` from `@boardsesh/auth-protocol/partner-oauth`.

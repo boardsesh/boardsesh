@@ -13,8 +13,10 @@ import {
   oauthGrants,
   oauthRefreshToken,
   oauthVerification,
+  userCredentials,
   users,
 } from '@boardsesh/db/schema/auth';
+import type { WebSignInProof } from '@boardsesh/shared-schema';
 import { getWorkerDatabaseUrl } from '../../../__tests__/worker-db';
 import { db } from '../../../db/client';
 import { getPostgresErrorCode } from '../../../utils/postgres-errors';
@@ -22,7 +24,7 @@ import { listConnectedApps } from '../connected-apps';
 import { disconnectPartnerConnection } from '../connection';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { PARTNER_SCOPES } from '../configuration';
-import { managedClientProblem } from '../registration';
+import { managedClientProblem, type PartnerAppChangeNotice } from '../registration';
 import {
   PARTNER_APPS_PER_DEVELOPER,
   PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS,
@@ -69,6 +71,11 @@ const NATIVE_PUBLIC_INPUT = {
   acceptedTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
 
+/** A sign-in made just now while links were guarded: a developer who has just signed in again. */
+function freshSignIn(): WebSignInProof {
+  return { authenticatedAtMs: Date.now(), linkGuarded: true };
+}
+
 async function refusal(promise: Promise<unknown>): Promise<PartnerRegistrationError> {
   const error = await promise.then(
     () => undefined,
@@ -83,6 +90,8 @@ describe('partner app registration', () => {
   let environment: PartnerTestEnvironment;
   let runtime: PartnerAuthorityRuntime;
   let closeRuntimeDatabase: () => Promise<void>;
+  /** Every change notice the registration sent, in order, instead of an email. */
+  const notices: PartnerAppChangeNotice[] = [];
 
   beforeAll(async () => {
     environment = await createPartnerTestEnvironment();
@@ -91,8 +100,15 @@ describe('partner app registration', () => {
     runtime = await createPartnerAuthorityRuntime(runtimeDatabase.database, TEST_CONFIGURATION, {
       logbook: { feed: db, snapshots: db },
       close: () => runtimeDatabase.close(),
+      notifyDeveloper: async (notice) => {
+        notices.push(notice);
+      },
     });
   });
+
+  function noticesFor(clientId: string): PartnerAppChangeNotice[] {
+    return notices.filter((notice) => notice.clientId === clientId);
+  }
 
   afterAll(async () => {
     await environment?.close();
@@ -355,7 +371,12 @@ describe('partner app registration', () => {
       const issued = await connect(testClient(created, climber));
       expect(issued.response.status).toBe(200);
 
-      const rotated = await runtime.registration.rotateSecret(consoleDatabase, developerId, created.app.clientId);
+      const rotated = await runtime.registration.rotateSecret(
+        consoleDatabase,
+        developerId,
+        created.app.clientId,
+        freshSignIn(),
+      );
       expect(rotated.clientSecret).toMatch(/^[A-Za-z]{32}$/);
       expect(rotated.clientSecret).not.toBe(created.clientSecret);
       // The same app, now with the climber who connected since it was registered.
@@ -381,7 +402,11 @@ describe('partner app registration', () => {
       const [row] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, created.app.clientId));
       expect(row.clientSecret).toBeNull();
       expect(
-        (await refusal(runtime.registration.rotateSecret(consoleDatabase, developerId, created.app.clientId))).reason,
+        (
+          await refusal(
+            runtime.registration.rotateSecret(consoleDatabase, developerId, created.app.clientId, freshSignIn()),
+          )
+        ).reason,
       ).toBe('no_secret');
     });
   });
@@ -484,13 +509,22 @@ describe('partner app registration', () => {
 
       expect(await runtime.registration.listApps(consoleDatabase, strangerId)).toEqual([]);
       expect(
-        (await refusal(runtime.registration.updateApp(consoleDatabase, strangerId, clientId, { name: 'Taken over' })))
-          .reason,
+        (
+          await refusal(
+            runtime.registration.updateApp(
+              consoleDatabase,
+              strangerId,
+              clientId,
+              { name: 'Taken over' },
+              freshSignIn(),
+            ),
+          )
+        ).reason,
       ).toBe('not_found');
-      expect((await refusal(runtime.registration.rotateSecret(consoleDatabase, strangerId, clientId))).reason).toBe(
-        'not_found',
-      );
-      expect(await runtime.registration.deleteApp(consoleDatabase, strangerId, clientId)).toBe(false);
+      expect(
+        (await refusal(runtime.registration.rotateSecret(consoleDatabase, strangerId, clientId, freshSignIn()))).reason,
+      ).toBe('not_found');
+      expect(await runtime.registration.deleteApp(consoleDatabase, strangerId, clientId, freshSignIn())).toBe(false);
 
       const [row] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, clientId));
       expect(row.name).toBe(APP_INPUT.name);
@@ -504,23 +538,30 @@ describe('partner app registration', () => {
       const developerId = await createDeveloper();
       const created = await register(developerId);
       const { clientId } = created.app;
-      const renamed = await runtime.registration.updateApp(consoleDatabase, developerId, clientId, {
-        publisherName: '  Planner   Labs Ltd ',
-      });
+      const renamed = await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        clientId,
+        { publisherName: '  Planner   Labs Ltd ' },
+        undefined,
+      );
       expect(renamed).toMatchObject({ publisherName: 'Planner Labs Ltd', name: APP_INPUT.name });
       const [policy] = await db.select().from(oauthAppPolicy).where(eq(oauthAppPolicy.clientId, clientId));
       expect(policy.publisherName).toBe('Planner Labs Ltd');
 
       for (const publisherName of ['Boardsesh', '', 'x']) {
         const refused = await refusal(
-          runtime.registration.updateApp(consoleDatabase, developerId, clientId, { publisherName }),
+          runtime.registration.updateApp(consoleDatabase, developerId, clientId, { publisherName }, undefined),
         );
         expect(refused.reason).toBe('invalid_input');
       }
       // A null publisher means "keep it": with nothing else, there is nothing to change.
       expect(
-        (await refusal(runtime.registration.updateApp(consoleDatabase, developerId, clientId, { publisherName: null })))
-          .reason,
+        (
+          await refusal(
+            runtime.registration.updateApp(consoleDatabase, developerId, clientId, { publisherName: null }, undefined),
+          )
+        ).reason,
       ).toBe('invalid_input');
       const [listed] = await runtime.registration.listApps(consoleDatabase, developerId);
       expect(listed.publisherName).toBe('Planner Labs Ltd');
@@ -529,11 +570,13 @@ describe('partner app registration', () => {
     it('changes the developer fields and nothing the policy fixes', async () => {
       const developerId = await createDeveloper();
       const created = await register(developerId);
-      const updated = await runtime.registration.updateApp(consoleDatabase, developerId, created.app.clientId, {
-        name: 'Hangboard Planner 2',
-        homepageUrl: null,
-        redirectUris: ['https://planner.example.test/oauth/v2'],
-      });
+      const updated = await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        created.app.clientId,
+        { name: 'Hangboard Planner 2', homepageUrl: null, redirectUris: ['https://planner.example.test/oauth/v2'] },
+        freshSignIn(),
+      );
       expect(updated).toMatchObject({
         name: 'Hangboard Planner 2',
         homepageUrl: null,
@@ -561,9 +604,13 @@ describe('partner app registration', () => {
       expect((await environment.authorize(client)).location).toContain('code=');
 
       const added = 'https://planner.example.test/oauth/added';
-      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, {
-        redirectUris: [...created.app.redirectUris, added],
-      });
+      await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        client.clientId,
+        { redirectUris: [...created.app.redirectUris, added] },
+        freshSignIn(),
+      );
       expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(0);
       for (const redirectUri of [client.redirectUri, added]) {
         const asked = await environment.authorize({ ...client, redirectUri });
@@ -584,15 +631,25 @@ describe('partner app registration', () => {
 
       // Approved again, a removal alone keeps consent: it opens nowhere new.
       expect((await connect(client)).response.status).toBe(200);
-      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, { redirectUris: [added] });
+      await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        client.clientId,
+        { redirectUris: [added] },
+        freshSignIn(),
+      );
       expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(1);
       expect((await environment.authorize({ ...client, redirectUri: added })).location).toContain('code=');
 
       // One edit that drops a URI and adds another clears consent like an addition.
       const replacement = 'https://planner.example.test/oauth/replacement';
-      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, {
-        redirectUris: [replacement],
-      });
+      await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        client.clientId,
+        { redirectUris: [replacement] },
+        freshSignIn(),
+      );
       expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(0);
       expect((await environment.authorize({ ...client, redirectUri: replacement })).location).toContain(
         TEST_OAUTH_OPTIONS.consentPage,
@@ -604,12 +661,18 @@ describe('partner app registration', () => {
       const climber = await environment.createClimber();
       const client = testClient(await register(developerId), climber);
       expect((await connect(client)).response.status).toBe(200);
-      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, {
-        name: 'Hangboard Planner Pro',
-        publisherName: 'Planner Labs Ltd',
-        homepageUrl: 'https://planner.example.test/pro',
-        privacyPolicyUrl: 'https://planner.example.test/privacy-2',
-      });
+      await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        client.clientId,
+        {
+          name: 'Hangboard Planner Pro',
+          publisherName: 'Planner Labs Ltd',
+          homepageUrl: 'https://planner.example.test/pro',
+          privacyPolicyUrl: 'https://planner.example.test/privacy-2',
+        },
+        undefined,
+      );
       expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(1);
       expect((await environment.authorize(client)).location).toContain('code=');
     });
@@ -623,12 +686,22 @@ describe('partner app registration', () => {
         ['https://www.boardsesh.com/cb'],
       ]) {
         const refused = await refusal(
-          runtime.registration.updateApp(consoleDatabase, developerId, created.app.clientId, { redirectUris }),
+          runtime.registration.updateApp(
+            consoleDatabase,
+            developerId,
+            created.app.clientId,
+            { redirectUris },
+            freshSignIn(),
+          ),
         );
         expect(refused.reason).toBe('invalid_input');
       }
       expect(
-        (await refusal(runtime.registration.updateApp(consoleDatabase, developerId, created.app.clientId, {}))).reason,
+        (
+          await refusal(
+            runtime.registration.updateApp(consoleDatabase, developerId, created.app.clientId, {}, freshSignIn()),
+          )
+        ).reason,
       ).toBe('invalid_input');
     });
   });
@@ -645,15 +718,19 @@ describe('partner app registration', () => {
         .where(eq(oauthAppPolicy.clientId, clientId));
 
       expect(
-        (await refusal(runtime.registration.updateApp(consoleDatabase, developerId, clientId, { name: 'Clean' })))
+        (
+          await refusal(
+            runtime.registration.updateApp(consoleDatabase, developerId, clientId, { name: 'Clean' }, freshSignIn()),
+          )
+        ).reason,
+      ).toBe('suspended');
+      expect(
+        (await refusal(runtime.registration.rotateSecret(consoleDatabase, developerId, clientId, freshSignIn())))
           .reason,
       ).toBe('suspended');
-      expect((await refusal(runtime.registration.rotateSecret(consoleDatabase, developerId, clientId))).reason).toBe(
-        'suspended',
-      );
-      expect((await refusal(runtime.registration.deleteApp(consoleDatabase, developerId, clientId))).reason).toBe(
-        'suspended',
-      );
+      expect(
+        (await refusal(runtime.registration.deleteApp(consoleDatabase, developerId, clientId, freshSignIn()))).reason,
+      ).toBe('suspended');
       const [listed] = await runtime.registration.listApps(consoleDatabase, developerId);
       expect(listed).toMatchObject({ clientId, suspensionReason: 'Phishing reports' });
       expect(listed.suspendedAt).toBeInstanceOf(Date);
@@ -682,7 +759,9 @@ describe('partner app registration', () => {
       );
       expect(await db.$count(oauthVerification, eq(oauthVerification.identifier, grantIds.at(-1)!))).toBe(1);
 
-      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, doomed.clientId)).toBe(true);
+      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, doomed.clientId, freshSignIn())).toBe(
+        true,
+      );
 
       expect(await db.$count(oauthClient, eq(oauthClient.clientId, doomed.clientId))).toBe(0);
       expect(await db.$count(oauthAppPolicy, eq(oauthAppPolicy.clientId, doomed.clientId))).toBe(0);
@@ -695,7 +774,9 @@ describe('partner app registration', () => {
       expect(pendingCode).toBeTruthy();
 
       expect((await environment.refresh(kept, keptTokens.body.refresh_token!)).response.status).toBe(200);
-      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, doomed.clientId)).toBe(false);
+      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, doomed.clientId, freshSignIn())).toBe(
+        false,
+      );
     });
   });
 
@@ -712,8 +793,15 @@ describe('partner app registration', () => {
       const [listed] = await runtime.registration.listApps(consoleDatabase, developerId);
       expect(listed.activeConnections).toBe(1);
       expect(
-        (await runtime.registration.updateApp(consoleDatabase, developerId, created.app.clientId, { name: 'Renamed' }))
-          .activeConnections,
+        (
+          await runtime.registration.updateApp(
+            consoleDatabase,
+            developerId,
+            created.app.clientId,
+            { name: 'Renamed' },
+            undefined,
+          )
+        ).activeConnections,
       ).toBe(1);
 
       await disconnectPartnerConnection(consoleDatabase, {
@@ -779,7 +867,7 @@ describe('partner app registration', () => {
       try {
         await issuer`BEGIN`;
         await issuer`SELECT 1 FROM oauth_connections WHERE id = ${held.id} FOR UPDATE`;
-        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId);
+        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId, freshSignIn());
         await waitForLockWaiters(1);
         await reset`BEGIN`;
         const resetting = reset`
@@ -819,7 +907,7 @@ describe('partner app registration', () => {
         // screen locks, then queues on the connection.
         await issuer`BEGIN`;
         await issuer`SELECT 1 FROM oauth_connections WHERE id = ${connection.id} FOR UPDATE`;
-        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId).then(
+        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId, freshSignIn()).then(
           (deleted) => deleted,
           (error: unknown) => error,
         );
@@ -862,8 +950,252 @@ describe('partner app registration', () => {
 
       expect(await db.$count(oauthClient, eq(oauthClient.clientId, clientId))).toBe(1);
       // The developer's retry goes through, and takes the screen with the app.
-      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, clientId)).toBe(true);
+      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, clientId, freshSignIn())).toBe(true);
       expect(await db.$count(oauthConsentInteractions, eq(oauthConsentInteractions.clientId, clientId))).toBe(0);
+    });
+  });
+
+  describe('a change to where codes and tokens go needs a sign-in from the last five minutes (#7598)', () => {
+    const SIX_MINUTES_MS = 6 * 60 * 1000;
+    const oldSignIn = (): WebSignInProof => ({ authenticatedAtMs: Date.now() - SIX_MINUTES_MS, linkGuarded: true });
+    /** Sign-ins whose age nobody can prove: none at all (an app token, WebSocket), no time, or an unguarded one. */
+    const unknownSignIns: Array<[string, WebSignInProof | undefined]> = [
+      ['no sign-in at all', undefined],
+      ['no sign-in time', { authenticatedAtMs: null, linkGuarded: true }],
+      ['a sign-in made while links were unguarded', { authenticatedAtMs: Date.now(), linkGuarded: false }],
+    ];
+
+    /** A developer with one connected confidential app, so a refused change has consent and a secret to keep. */
+    async function connectedApp() {
+      const developerId = await createDeveloper();
+      const climber = await environment.createClimber();
+      const created = await register(developerId);
+      const client = testClient(created, climber);
+      expect((await connect(client)).response.status).toBe(200);
+      return { developerId, created, client };
+    }
+
+    async function appState(clientId: string) {
+      const [row] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, clientId));
+      return {
+        row,
+        consents: await db.$count(oauthConsent, eq(oauthConsent.clientId, clientId)),
+        notices: noticesFor(clientId).length,
+      };
+    }
+
+    it('refuses every sensitive change from a session signed in six minutes ago, and changes nothing', async () => {
+      const { developerId, created, client } = await connectedApp();
+      const { clientId } = created.app;
+      const before = await appState(clientId);
+      const attempts: Array<[string, () => Promise<unknown>]> = [
+        [
+          'adding a redirect URI',
+          () =>
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              clientId,
+              { redirectUris: [...created.app.redirectUris, 'https://attacker.example.test/cb'] },
+              oldSignIn(),
+            ),
+        ],
+        [
+          'replacing a redirect URI',
+          () =>
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              clientId,
+              { redirectUris: ['https://attacker.example.test/cb'] },
+              oldSignIn(),
+            ),
+        ],
+        [
+          'a rename carried with a redirect change',
+          () =>
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              clientId,
+              { name: 'Renamed', redirectUris: ['https://attacker.example.test/cb'] },
+              oldSignIn(),
+            ),
+        ],
+        [
+          'rotating the secret',
+          () => runtime.registration.rotateSecret(consoleDatabase, developerId, clientId, oldSignIn()),
+        ],
+        ['deleting the app', () => runtime.registration.deleteApp(consoleDatabase, developerId, clientId, oldSignIn())],
+      ];
+      for (const [label, attempt] of attempts) {
+        const refused = await refusal(attempt());
+        expect({ label, reason: refused.reason }).toEqual({ label, reason: 'recent_sign_in_required' });
+      }
+      expect(await appState(clientId)).toEqual(before);
+      // The secret the app holds still works: nothing was rotated.
+      expect(await clientAuthenticates(client)).toBe(true);
+    });
+
+    it('refuses a removal too: it can break the app for every climber', async () => {
+      const developerId = await createDeveloper();
+      const created = await register(developerId, {
+        ...APP_INPUT,
+        redirectUris: ['https://planner.example.test/a', 'https://planner.example.test/b'],
+      });
+      const refused = await refusal(
+        runtime.registration.updateApp(
+          consoleDatabase,
+          developerId,
+          created.app.clientId,
+          { redirectUris: ['https://planner.example.test/a'] },
+          oldSignIn(),
+        ),
+      );
+      expect(refused.reason).toBe('recent_sign_in_required');
+      const [row] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, created.app.clientId));
+      expect(row.redirectUris).toEqual(['https://planner.example.test/a', 'https://planner.example.test/b']);
+    });
+
+    it.each(unknownSignIns)('refuses every sensitive change with %s', async (_label, signIn) => {
+      const { developerId, created } = await connectedApp();
+      const { clientId } = created.app;
+      const before = await appState(clientId);
+      const reasons = [
+        (
+          await refusal(
+            runtime.registration.updateApp(
+              consoleDatabase,
+              developerId,
+              clientId,
+              { redirectUris: ['https://attacker.example.test/cb'] },
+              signIn,
+            ),
+          )
+        ).reason,
+        (await refusal(runtime.registration.rotateSecret(consoleDatabase, developerId, clientId, signIn))).reason,
+        (await refusal(runtime.registration.deleteApp(consoleDatabase, developerId, clientId, signIn))).reason,
+      ];
+      expect(reasons).toEqual(['recent_sign_in_required', 'recent_sign_in_required', 'recent_sign_in_required']);
+      expect(await appState(clientId)).toEqual(before);
+    });
+
+    it('refuses a sign-in from before the last password change, however recent', async () => {
+      const { developerId, created } = await connectedApp();
+      // Signed in three minutes ago; the password changed 90 seconds ago, more
+      // than the 60-second clock tolerance before a sign-in made now.
+      await db.insert(userCredentials).values({
+        userId: developerId,
+        passwordHash: 'hash',
+        updatedAt: new Date(Date.now() - 90_000),
+      });
+      const signedInBeforeTheChange = { authenticatedAtMs: Date.now() - 180_000, linkGuarded: true };
+      expect(
+        (
+          await refusal(
+            runtime.registration.rotateSecret(
+              consoleDatabase,
+              developerId,
+              created.app.clientId,
+              signedInBeforeTheChange,
+            ),
+          )
+        ).reason,
+      ).toBe('recent_sign_in_required');
+      // Signing in again after the change is enough.
+      const rotated = await runtime.registration.rotateSecret(
+        consoleDatabase,
+        developerId,
+        created.app.clientId,
+        freshSignIn(),
+      );
+      expect(rotated.clientSecret).toMatch(/^[A-Za-z]{32}$/);
+    });
+
+    it('lets edits that send nothing anywhere new through on an old session, and sends no email', async () => {
+      const { developerId, created, client } = await connectedApp();
+      const { clientId } = created.app;
+      const edited = await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        clientId,
+        {
+          name: 'Hangboard Planner Pro',
+          publisherName: 'Planner Labs Ltd',
+          homepageUrl: 'https://planner.example.test/pro',
+          privacyPolicyUrl: 'https://planner.example.test/privacy-2',
+          // The same list: not a redirect change.
+          redirectUris: created.app.redirectUris,
+        },
+        oldSignIn(),
+      );
+      expect(edited).toMatchObject({
+        name: 'Hangboard Planner Pro',
+        publisherName: 'Planner Labs Ltd',
+        redirectUris: created.app.redirectUris,
+      });
+      expect(
+        await runtime.registration.updateApp(consoleDatabase, developerId, clientId, { name: 'No sign-in' }, undefined),
+      ).toMatchObject({ name: 'No sign-in' });
+      expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, clientId))).toBe(1);
+      expect(noticesFor(clientId)).toEqual([]);
+      expect(await clientAuthenticates(client)).toBe(true);
+    });
+
+    it('lets a developer who has just signed in make each change, and tells them by email after commit', async () => {
+      const developerId = await createDeveloper();
+      const [developer] = await db.select({ email: users.email }).from(users).where(eq(users.id, developerId));
+      const created = await register(developerId, {
+        ...APP_INPUT,
+        redirectUris: ['https://planner.example.test/a', 'https://planner.example.test/b'],
+      });
+      const { clientId } = created.app;
+
+      await runtime.registration.updateApp(
+        consoleDatabase,
+        developerId,
+        clientId,
+        { redirectUris: ['https://planner.example.test/a', 'https://planner.example.test/c'] },
+        freshSignIn(),
+      );
+      const rotated = await runtime.registration.rotateSecret(consoleDatabase, developerId, clientId, freshSignIn());
+      expect(await runtime.registration.deleteApp(consoleDatabase, developerId, clientId, freshSignIn())).toBe(true);
+      expect(await db.$count(oauthClient, eq(oauthClient.clientId, clientId))).toBe(0);
+
+      const sent = noticesFor(clientId);
+      const common = { developerEmail: developer.email, appName: APP_INPUT.name, clientId };
+      expect(sent).toEqual([
+        { ...common, change: 'redirect_uris_changed', added: 1, removed: 1, changedAt: expect.any(Date) },
+        { ...common, change: 'secret_rotated', changedAt: expect.any(Date) },
+        { ...common, change: 'app_deleted', changedAt: expect.any(Date) },
+      ]);
+      // No secret, old or new, and no redirect URI anyone chose.
+      const serialized = JSON.stringify(sent);
+      for (const value of [created.clientSecret, rotated.clientSecret, 'planner.example.test']) {
+        expect(serialized).not.toContain(value);
+      }
+    });
+
+    it('keeps the change when the email fails', async () => {
+      const failing = await createPartnerAuthorityRuntime(runtime.database, TEST_CONFIGURATION, {
+        logbook: { feed: db, snapshots: db },
+        close: async () => undefined,
+        notifyDeveloper: async () => {
+          throw new Error('SMTP is down');
+        },
+      });
+      const developerId = await createDeveloper();
+      const created = await failing.registration.createApp(consoleDatabase, developerId, APP_INPUT);
+      const rotated = await failing.registration.rotateSecret(
+        consoleDatabase,
+        developerId,
+        created.app.clientId,
+        freshSignIn(),
+      );
+      expect(rotated.clientSecret).not.toBe(created.clientSecret);
+      expect(
+        await failing.registration.deleteApp(consoleDatabase, developerId, created.app.clientId, freshSignIn()),
+      ).toBe(true);
     });
   });
 

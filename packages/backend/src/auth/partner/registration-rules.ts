@@ -86,6 +86,11 @@ export type PartnerRegistrationRefusal =
   | 'suspended'
   | 'no_secret'
   | 'terms_unpublished'
+  /**
+   * The developer's sign-in is older than the five minutes a change to where
+   * the app's codes and tokens go needs, or its age is unknown (#7598).
+   */
+  | 'recent_sign_in_required'
   | 'busy';
 
 /** A refusal the developer can act on. The message is safe to show them. */

@@ -149,6 +149,12 @@
     "emailNotVerified": "Vérifie ton adresse e-mail avant d'enregistrer une app.",
     "generic": "Une erreur est survenue. Réessaie."
   },
+  "signInAgain": {
+    "title": "Reconnecte-toi pour faire cette modification",
+    "body": "Pour modifier les redirect URIs, créer un nouveau secret ou supprimer une app, il faut une connexion de moins de {{minutes}} minutes. Ainsi, personne d'autre ayant accès à ta session ne peut prendre le contrôle de ton app.",
+    "next": "Tu vas te déconnecter, te reconnecter, puis revenir directement ici. Refais ensuite la modification.",
+    "button": "Se reconnecter"
+  },
   "terms": {
     "metadata": {
       "title": "Developer terms | Boardsesh for developers",

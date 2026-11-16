@@ -1,4 +1,6 @@
 import { GraphQLError } from 'graphql';
+import { PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS } from '@boardsesh/auth-protocol/auth-time';
+import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protocol/partner-oauth';
 import type {
   ConnectionContext,
   CreateOAuthClientInput,
@@ -106,11 +108,22 @@ const REFUSAL_CODES: Record<PartnerRegistrationRefusal, string> = {
   terms_unpublished: 'BAD_USER_INPUT',
   email_not_verified: 'FORBIDDEN',
   suspended: 'FORBIDDEN',
+  // Not UNAUTHENTICATED: the session is valid, and a 401 would sign the app out.
+  recent_sign_in_required: 'FORBIDDEN',
   not_found: 'NOT_FOUND',
   busy: 'SERVICE_UNAVAILABLE',
 };
 
 function refusalError(error: PartnerRegistrationError): GraphQLError {
+  if (error.reason === 'recent_sign_in_required') {
+    return new GraphQLError(error.message, {
+      extensions: {
+        code: REFUSAL_CODES[error.reason],
+        reason: PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED,
+        maxAgeSeconds: PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS,
+      },
+    });
+  }
   return new GraphQLError(error.message, {
     extensions: { code: REFUSAL_CODES[error.reason], reason: error.reason.toUpperCase() },
   });
@@ -260,27 +273,35 @@ export const oauthClientMutations = {
     withRegistration(ctx, 'write', async (registration, developerId, database) => {
       const { clientId, ...patch } = input;
       return toOAuthClient(
-        await registration.updateApp(database, developerId, clientIdArgument(clientId), {
-          ...('name' in patch ? { name: patch.name } : {}),
-          ...('publisherName' in patch ? { publisherName: patch.publisherName } : {}),
-          ...('homepageUrl' in patch ? { homepageUrl: patch.homepageUrl } : {}),
-          ...('privacyPolicyUrl' in patch ? { privacyPolicyUrl: patch.privacyPolicyUrl } : {}),
-          ...('redirectUris' in patch ? { redirectUris: patch.redirectUris } : {}),
-        }),
+        await registration.updateApp(
+          database,
+          developerId,
+          clientIdArgument(clientId),
+          {
+            ...('name' in patch ? { name: patch.name } : {}),
+            ...('publisherName' in patch ? { publisherName: patch.publisherName } : {}),
+            ...('homepageUrl' in patch ? { homepageUrl: patch.homepageUrl } : {}),
+            ...('privacyPolicyUrl' in patch ? { privacyPolicyUrl: patch.privacyPolicyUrl } : {}),
+            ...('redirectUris' in patch ? { redirectUris: patch.redirectUris } : {}),
+          },
+          ctx.webSignIn,
+        ),
       );
     }),
 
+  // Rotate and delete, and an edit that changes the redirect URIs, need a sign-in
+  // from the last five minutes: `ctx.webSignIn`, which only HTTP authentication sets.
   rotateOAuthClientSecret: (
     _: unknown,
     { clientId }: { clientId: string },
     ctx: ConnectionContext,
   ): Promise<OAuthClientCredentials> =>
     withRegistration(ctx, 'write', async (registration, developerId, database) =>
-      toCredentials(await registration.rotateSecret(database, developerId, clientIdArgument(clientId))),
+      toCredentials(await registration.rotateSecret(database, developerId, clientIdArgument(clientId), ctx.webSignIn)),
     ),
 
   deleteOAuthClient: (_: unknown, { clientId }: { clientId: string }, ctx: ConnectionContext): Promise<boolean> =>
     withRegistration(ctx, 'write', (registration, developerId, database) =>
-      registration.deleteApp(database, developerId, clientIdArgument(clientId)),
+      registration.deleteApp(database, developerId, clientIdArgument(clientId), ctx.webSignIn),
     ),
 };

@@ -5,12 +5,14 @@ import type { AddressInfo } from 'node:net';
 import { eq } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protocol/partner-oauth';
 import type { ConnectionContext, CreateOAuthClientInput } from '@boardsesh/shared-schema';
 import { oauthClient, users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { API_HOSTNAME } from '../handlers/api-host';
 import { redisClientManager } from '../redis/client';
 import { createPartnerTestEnvironment } from '../auth/partner/__tests__/partner-fixture';
+import { webSessionBearer } from './helpers/partner-launch-harness';
 import {
   __resetPartnerRegistrationDeploymentForTests,
   oauthClientMutations,
@@ -45,6 +47,22 @@ const LIST_QUERY = /* GraphQL */ `
     myOAuthClients {
       clientId
       name
+    }
+  }
+`;
+const ROTATE_MUTATION = /* GraphQL */ `
+  mutation Rotate($clientId: ID!) {
+    rotateOAuthClientSecret(clientId: $clientId) {
+      clientSecret
+    }
+  }
+`;
+const UPDATE_MUTATION = /* GraphQL */ `
+  mutation Update($input: UpdateOAuthClientInput!) {
+    updateOAuthClient(input: $input) {
+      clientId
+      name
+      redirectUris
     }
   }
 `;
@@ -269,14 +287,17 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
   let secondDeveloperId: string;
   /** A third, for the address-limit tests, which each spend one write. */
   let addressDeveloperId: string;
+  /** A fourth, for the recent sign-in test, which spends nine writes. */
+  let signInDeveloperId: string;
 
   beforeAll(async () => {
     developerId = await createDeveloper();
     secondDeveloperId = await createDeveloper();
     addressDeveloperId = await createDeveloper();
+    signInDeveloperId = await createDeveloper();
     server = await startRealServer({
       PARTNER_OAUTH_MODE: 'allowlist',
-      PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId},${addressDeveloperId}`,
+      PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId},${addressDeveloperId},${signInDeveloperId}`,
       PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
       PARTNER_DEVELOPER_TERMS_VERSION: TERMS_VERSION,
     });
@@ -542,6 +563,78 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
         name: APP_INPUT.name,
         publisherName: 'Planner Labs Ltd',
       });
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'needs a www sign-in from the last five minutes to rotate, delete or repoint an app (#7598)',
+    async () => {
+      await enoughWindowLeft(30_000);
+      const appToken = await firstPartyToken(signInDeveloperId);
+      const oldSession = await webSessionBearer(signInDeveloperId, {
+        webMode: 'allowlist',
+        authTime: Math.floor(Date.now() / 1000) - 6 * 60,
+      });
+      const ageUnknown = await webSessionBearer(signInDeveloperId, {
+        webMode: 'allowlist',
+        migrated: { withoutAuthTime: true },
+      });
+      const freshSession = await webSessionBearer(signInDeveloperId, { webMode: 'allowlist' });
+
+      const created = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: APP_INPUT } },
+        { bearer: oldSession },
+      );
+      expect(created.body.errors).toBeUndefined();
+      const { clientId } = (created.body.data as { createOAuthClient: { client: { clientId: string } } })
+        .createOAuthClient.client;
+      const rotate = { query: ROTATE_MUTATION, variables: { clientId } };
+      const repoint = {
+        query: UPDATE_MUTATION,
+        variables: { input: { clientId, redirectUris: ['https://attacker.example.test/cb'] } },
+      };
+
+      // An app token, an old www session and one with no sign-in time are all refused.
+      for (const [operation, bearer] of [
+        [rotate, appToken],
+        [rotate, oldSession],
+        [repoint, ageUnknown],
+      ] as const) {
+        const reply = await server.graphql(operation, { bearer });
+        expect(reply.status).toBe(200);
+        expect(errorOf(reply)?.extensions).toEqual({
+          code: 'FORBIDDEN',
+          reason: PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED,
+          maxAgeSeconds: 300,
+        });
+      }
+      const [unchanged] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, clientId));
+      expect(unchanged.redirectUris).toEqual(APP_INPUT.redirectUris);
+
+      // A rename is not a change to where codes go: an old session may make it.
+      const renamed = await server.graphql(
+        { query: UPDATE_MUTATION, variables: { input: { clientId, name: 'Hangboard Planner 2' } } },
+        { bearer: oldSession },
+      );
+      expect(renamed.body.errors).toBeUndefined();
+
+      // Signed in again: each change goes through.
+      const repointed = await server.graphql(repoint, { bearer: freshSession });
+      expect(repointed.body.errors).toBeUndefined();
+      expect(repointed.body.data?.updateOAuthClient).toMatchObject({
+        redirectUris: ['https://attacker.example.test/cb'],
+      });
+      const rotated = await server.graphql(rotate, { bearer: freshSession });
+      expect(rotated.body.errors).toBeUndefined();
+      const deleted = await server.graphql(
+        {
+          query: `mutation Delete($clientId: ID!) { deleteOAuthClient(clientId: $clientId) }`,
+          variables: { clientId },
+        },
+        { bearer: freshSession },
+      );
+      expect(deleted.body).toEqual({ data: { deleteOAuthClient: true } });
     },
     TEST_DEADLINE_MS,
   );

@@ -67,6 +67,26 @@ function signedInAt(claim: unknown, issuedAtSeconds: number, currentTime: Date):
 }
 
 /**
+ * The sign-in a decrypted www session cookie proves, read one way for every
+ * reader: here, and the GraphQL transport for operations that need a recent
+ * sign-in. The time comes from `auth_time` (unknown when the cookie has no
+ * whole issue time either), and `linkGuarded` from `link_guarded`.
+ */
+export function legacyWebSignIn(
+  claims: Record<string, unknown>,
+  currentTime: Date,
+): { readonly authenticatedAt: Date | null; readonly linkGuarded: boolean } {
+  const issuedAt = claims.iat;
+  return {
+    authenticatedAt:
+      typeof issuedAt === 'number' && Number.isInteger(issuedAt)
+        ? signedInAt(claims.auth_time, issuedAt, currentTime)
+        : null,
+    linkGuarded: isLinkGuardedSignIn(claims),
+  };
+}
+
+/**
  * Exact installed NextAuth 4.24.15 encoding, using only its legacy verification
  * key. There is intentionally no framework dependency or successful-token cache.
  */
@@ -137,6 +157,7 @@ export async function verifyLegacyNextAuthJwe(
     if (payload.legacy_no_sid !== undefined && payload.legacy_no_sid !== true) return null;
     const requiresAccountCutoff = authSessionId === null || payload.legacy_no_sid === true;
     const credentialFingerprint = fingerprint(credential);
+    const signIn = legacyWebSignIn(payload, currentTime);
     return {
       kind: 'nextauth-v4-jwe',
       userId,
@@ -150,8 +171,8 @@ export async function verifyLegacyNextAuthJwe(
       clockToleranceSeconds: LEGACY_WEB_CLOCK_TOLERANCE_SECONDS,
       // Only a cookie written by a sign-in carries auth_time (#6981, F5). The
       // attribution timestamp in nativeOAuthCreationProof is not one.
-      originalAuthenticatedAt: signedInAt(payload.auth_time, issuedAt, currentTime),
-      linkGuarded: isLinkGuardedSignIn(payload),
+      originalAuthenticatedAt: signIn.authenticatedAt,
+      linkGuarded: signIn.linkGuarded,
       authSessionId,
       lineageId: `${requiresAccountCutoff ? 'credential' : 'session'}:${fingerprint(
         JSON.stringify(['nextauth-v4', userId, authSessionId ?? credentialFingerprint]),

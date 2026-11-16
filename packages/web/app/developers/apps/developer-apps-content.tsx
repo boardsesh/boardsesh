@@ -41,6 +41,7 @@ import AppCard from './app-card';
 import AppFormDialog from './app-form-dialog';
 import ConfirmActionDialog from './confirm-action-dialog';
 import SecretDialog, { type RevealedCredentials } from './secret-dialog';
+import SignInAgainDialog from './sign-in-again-dialog';
 
 /** Decision 22's launch caps and the per-developer cap, as the backend applies them. */
 const APPS_PER_DEVELOPER = 10;
@@ -76,6 +77,8 @@ export default function DeveloperAppsContent() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [working, setWorking] = useState(false);
   const [revealed, setRevealed] = useState<RevealedCredentials | null>(null);
+  /** The backend wants a sign-in from the last five minutes before this change. */
+  const [signInAgain, setSignInAgain] = useState(false);
 
   const appsQuery = useQuery({
     queryKey,
@@ -109,6 +112,8 @@ export default function DeveloperAppsContent() {
           return t('errors.suspended');
         case 'email-not-verified':
           return t('errors.emailNotVerified');
+        case 'sign-in-again':
+          return t('signInAgain.title');
         case 'not-available':
           return t('states.notAvailable.title');
         case 'not-allowlisted':
@@ -152,6 +157,11 @@ export default function DeveloperAppsContent() {
       return null;
     } catch (error) {
       const problem = classifyConsoleError(error);
+      if (problem.kind === 'sign-in-again') {
+        setFormTarget(null);
+        setSignInAgain(true);
+        return null;
+      }
       if (problem.kind === 'gone' || problem.kind === 'suspended') {
         setFormTarget(null);
         showMessage(problemMessage(problem), 'error');
@@ -187,6 +197,11 @@ export default function DeveloperAppsContent() {
       setPending(null);
     } catch (error) {
       const problem = classifyConsoleError(error);
+      if (problem.kind === 'sign-in-again') {
+        setPending(null);
+        setSignInAgain(true);
+        return;
+      }
       showMessage(problemMessage(problem), 'error');
       if (problem.kind === 'gone' || problem.kind === 'suspended') {
         setPending(null);
@@ -371,6 +386,8 @@ export default function DeveloperAppsContent() {
       {revealed ? (
         <SecretDialog revealed={revealed} onClose={() => setRevealed(null)} onCopyFailed={onCopyFailed} />
       ) : null}
+
+      {signInAgain ? <SignInAgainDialog onClose={() => setSignInAgain(false)} /> : null}
     </Box>
   );
 }
