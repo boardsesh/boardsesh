@@ -4,7 +4,7 @@ import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import type { IconName } from './icon-map';
-import { withAlpha } from '../theme/colors';
+import { withAlpha } from '@boardsesh/velvet-tokens';
 import type { StatusColors } from '../theme/variants/variant-tokens';
 import { borderRadius, spacing } from '../theme/tokens';
 

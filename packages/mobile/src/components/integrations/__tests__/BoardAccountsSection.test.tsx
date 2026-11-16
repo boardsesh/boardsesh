@@ -215,6 +215,9 @@ vi.mock('../../../theme/tokens', () => ({
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 
 type TextProps = { children?: ReactNode; variant?: string };
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label }: { label: string }) => createElement('span', null, label),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children, variant }: TextProps) => createElement('span', { 'data-text-variant': variant }, children),
 }));

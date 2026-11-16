@@ -25,6 +25,9 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/profile-stats', () => ({ getLayoutDisplayName: () => 'Layout' }));
 vi.mock('@boardsesh/community-roles', () => ({ rolesGrantAdmin: () => false, rolesGrantAdminOrLeader: () => false }));
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label }: { label: string }) => createElement('span', null, label),
+}));
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../../Card', () => ({ Card: ({ children }: Children) => createElement('div', null, children) }));

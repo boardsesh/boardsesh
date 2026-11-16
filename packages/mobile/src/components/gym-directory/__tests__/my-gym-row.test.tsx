@@ -12,6 +12,9 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label }: { label: string }) => createElement('span', null, label),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
