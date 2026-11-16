@@ -305,8 +305,9 @@ async function heldRateLimitedIntent() {
 }
 
 describe('actual Expo operation intent through a held rate-limit wait', () => {
-  // The legacy page latch (#7596) retires a page whose login changes, so the
-  // retry finds no socket to send on. No per-operation pin is needed for it.
+  // A page that had an account is retired when its login changes (#7596), so
+  // the retry finds no socket to send on. A page that had none is not retired
+  // by a sign-in; the confirmed-anonymous case below pins what its retry does.
   it.each([
     ['another account', { userId: 'owned-B', authSessionId: 'owned-login-B' }],
     ['a new login of the same account', { userId: 'owned-A', authSessionId: 'new-owned-login-A' }],
@@ -326,6 +327,29 @@ describe('actual Expo operation intent through a held rate-limit wait', () => {
     expect(
       OwnedSocket.instances.flatMap((socket) => socket.sent).filter((message) => message.type === 'subscribe'),
     ).toHaveLength(1);
+  });
+  // Accepted gap (#7596 D4): signing in on a page that had no account keeps the
+  // page, and the page carries on as the new login (session realtime rejoins on
+  // the new credential generation). A retry held across that sign-in goes out
+  // as the new login too. #7504's per-operation pin refused it; keeping that
+  // needs a hook in the shared execute(), which ships to phones.
+  it('a mutation held on a confirmed-anonymous page is retried as the login that follows', async () => {
+    currentSession = {};
+    expect(await store.synchronizeWebSession()).toMatchObject({ status: 'anonymous' });
+    const pending = await heldRateLimitedIntent();
+    expect(
+      OwnedSocket.instances[0].sent.find((message) => message.type === 'connection_init')?.payload,
+    ).not.toHaveProperty('authToken');
+    await legacySession();
+    pending.release();
+    const second = await open(1);
+    expect(second.sent.find((message) => message.type === 'connection_init')?.payload).toMatchObject({
+      authToken: 'owned-legacy-JWE',
+    });
+    const retry = second.sent.find((message) => message.type === 'subscribe')!;
+    second.receive({ id: retry.id, type: 'next', payload: { data: { private: 'answered as A' } } });
+    second.receive({ id: retry.id, type: 'complete' });
+    await expect(pending.result).resolves.toEqual({ private: 'answered as A' });
   });
   it('a confirmed retry may use a replacement transport for the exact same accepted view', async () => {
     await store.synchronizeWebSession();

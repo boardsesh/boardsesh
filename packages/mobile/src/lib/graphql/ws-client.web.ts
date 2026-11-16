@@ -184,9 +184,11 @@ subscribeAuthCredentialGenerationChanges((generation) => {
 subscribeBrowserPageRetired(disposeLegacyClient);
 
 function getLegacyWsClient(): Client {
-  // A retired page opens no socket. This is also what keeps a rate-limit retry
-  // inside execute(getWsClient, ...) from going out as the account that
-  // replaced the one that sent it.
+  // A retired page opens no socket, so a rate-limit retry inside
+  // execute(getWsClient, ...) cannot go out as the account that replaced the
+  // page's own. A sign-in on a page that had no account retires nothing
+  // (#7596 D4): a retry held across it goes out as the new login, like
+  // everything else the page sends after it.
   if (isBrowserPageRetired()) {
     disposeLegacyClient();
     return retiredPageClient;
