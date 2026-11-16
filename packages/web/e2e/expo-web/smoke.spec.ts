@@ -43,9 +43,6 @@ const TAB_NAMES = ['Home', 'Climbs', 'Session', 'Discover', 'Profile'] as const;
 /** The seeded shared board the suite binds through the board sheet (see e2e/SEED_CONTRACT.md). */
 const SEEDED_BOARD_NAME = 'Dyno Den';
 
-/** Android-tablet destinations: the wall view is promoted into the rail. */
-const DESKTOP_TAB_NAMES = ['Home', 'Climbs', 'Session', 'On the Wall', 'Discover', 'Profile'] as const;
-
 /**
  * Console/page-error budget: the smoke fails on error classes that historically
  * meant a broken surface rather than noise.
@@ -398,9 +395,12 @@ test.describe('expo-web smoke', () => {
           .toBe('dark');
         await expect
           .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor))
-          .toBe('rgb(21, 16, 30)');
+          // Material uses the canonical Graphite page background (#0E0E0E).
+          .toBe('rgb(14, 14, 14)');
 
-        for (const tabName of DESKTOP_TAB_NAMES) {
+        // Desktop uses the same destinations in a rail; Wall display is a
+        // separate full-screen route, not a sixth tab.
+        for (const tabName of TAB_NAMES) {
           await expect(page.getByRole('tab', { name: tabName, exact: true })).toBeVisible();
         }
 
@@ -594,7 +594,9 @@ test.describe('expo-web smoke', () => {
       // preview:true — a deep link must not take over the queue's current climb,
       // which in a party session is everyone's climb.
       await expect(page.getByRole('button', { name: 'Log ascent' })).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
-      await expect(page.getByRole('button', { name: 'Set active' })).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+      await expect(page.getByRole('button', { name: 'Put on board', exact: true })).toBeVisible({
+        timeout: WARM_TIMEOUT_MS,
+      });
 
       // Second cold load of the same URL — a `reload()` would not do it, since
       // handing off rewrites the address bar to the drawer's own route. This is
