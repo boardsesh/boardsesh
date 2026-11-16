@@ -2940,7 +2940,7 @@ describe('ClimbList row keys across a new search', () => {
     mocks.listMounts = 0;
   });
 
-  it('gives the new search\'s rows keys the previous first row cannot match', () => {
+  it("gives the new search's rows keys the previous first row cannot match", () => {
     mocks.searchClimbs = climbsBefore();
     const { rerender } = render(<ClimbList />);
     const firstRowKey = rowKey(mocks.climb);
