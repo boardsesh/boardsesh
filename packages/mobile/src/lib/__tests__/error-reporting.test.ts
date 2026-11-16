@@ -17,7 +17,11 @@ vi.mock('../sentry', () => ({
 }));
 
 /** The refusal shape the deleted Expo web selected mode threw. error-reporting
- * still matches it by name and status, so the filter keeps its test. */
+ * still matches it by name and status, so the filter keeps its test.
+ * TODO(#7596): nothing in packages/mobile throws it any more. error-reporting.ts
+ * ships to phones by OTA, so the selected-mode deletion left its branch alone;
+ * the #7596 follow-up that removes the `BrowserBackendConsumerError` branch
+ * deletes this class and the test below with it. */
 class BrowserBackendConsumerError extends Error {
   constructor(readonly status: 'superseded' | 'denied') {
     super('Selected browser credential is unavailable');

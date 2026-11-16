@@ -260,7 +260,7 @@ calls `location.replace` with `EXPO_BASE_URL` (`/app` on www, `/` on
 cannot bring the old one back. Signing out on Expo web therefore reloads the
 page.
 
-Every legacy request goes through `browser-session-guard.web.ts`. A request is
+Every authenticated request goes through `browser-session-guard.web.ts`. A request is
 refused if the credential generation moves while it waits for its token, and
 checked once more for a retired page right before it is sent. An answer is
 delivered only while the page is live and still has the login the request was

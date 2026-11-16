@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The real auth store, ws-client facade, shared WebSocket core and installed
-// graphql-ws run here. Only the network is faked: www's session endpoints and
-// the browser WebSocket.
+// graphql-ws run here, and www's session endpoints are a real local HTTP
+// server reached with real fetch. Only the browser WebSocket is faked.
 vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { version: 'owned' } } }));
 // Metro picks the .web fork on its own; Vitest needs to be told.
@@ -55,9 +57,10 @@ const loginB: Login = { userId: 'owned-B', authSessionId: 'owned-login-B' };
 let store: typeof import('../../auth-store.web');
 let facade: typeof import('../ws-client.web');
 let lifecycle: typeof import('../ws-client-lifecycle');
-let currentSession: Record<string, unknown>;
-let currentLogin: Login;
-let webFetch: ReturnType<typeof vi.fn<(...parameters: unknown[]) => Promise<Response>>>;
+/** What www's cookie says: the signed-in login, signed out (null), or a 503. */
+const site = { cookie: loginA as Login | null, unavailable: false };
+let server: Server;
+let origin = '';
 const sink = () => ({ next: vi.fn(), error: vi.fn(), complete: vi.fn() });
 const superseded = () => expect.objectContaining({ name: 'AbortError', code: 'superseded' });
 
@@ -65,17 +68,37 @@ function tokenFor(login: Login): string {
   return `${login.authSessionId}-JWE`;
 }
 
+beforeAll(async () => {
+  server = createServer((request, response) => {
+    const send = (status: number, body: unknown) => {
+      response.writeHead(status, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify(body));
+    };
+    request.resume();
+    if (site.unavailable) return send(503, { error: 'unavailable' });
+    const { cookie } = site;
+    if (request.url === '/api/auth/session')
+      return send(200, cookie ? { user: { id: cookie.userId }, authSessionId: cookie.authSessionId } : {});
+    if (request.url === '/api/internal/ws-auth')
+      return send(
+        200,
+        cookie ? { authenticated: true, token: tokenFor(cookie), ...cookie } : { authenticated: false, token: null },
+      );
+    send(404, {});
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
 beforeEach(async () => {
   vi.resetModules();
-  currentLogin = loginA;
-  currentSession = { user: { id: loginA.userId }, authSessionId: loginA.authSessionId };
-  webFetch = vi.fn<(...parameters: unknown[]) => Promise<Response>>(async (input) => {
-    const url = typeof input === 'string' ? input : String(input);
-    if (url.endsWith('/api/internal/ws-auth'))
-      return Response.json({ authenticated: true, token: tokenFor(currentLogin), ...currentLogin });
-    return Response.json(currentSession);
-  });
-  vi.stubGlobal('fetch', webFetch);
+  site.cookie = loginA;
+  site.unavailable = false;
+  vi.stubEnv('EXPO_PUBLIC_WEB_URL', origin);
   vi.stubGlobal('WebSocket', BrowserSocket);
   // Cross-tab behavior has its own tests. Module resets here must not retain
   // BroadcastChannels that carry an earlier test's logout into a later one.
@@ -106,14 +129,13 @@ async function open(index = 0) {
 }
 
 async function signIn(login: Login) {
-  currentLogin = login;
-  currentSession = { user: { id: login.userId }, authSessionId: login.authSessionId };
+  site.cookie = login;
   expect(await store.synchronizeWebSession()).toMatchObject({ status: 'authenticated', token: tokenFor(login) });
 }
 
 describe('Expo web WebSocket on a real browser session', () => {
   it('opens no socket handshake while the page cannot read its session', async () => {
-    webFetch.mockImplementation(async () => Response.json({ error: 'unavailable' }, { status: 503 }));
+    site.unavailable = true;
     const observer = sink();
     const unsubscribe = facade.getWsClient().subscribe({ query: 'subscription NeedsSession { viewer }' }, observer);
     await vi.waitFor(() => expect(BrowserSocket.instances).toHaveLength(1));
@@ -241,7 +263,7 @@ describe('a rate-limited operation held across a session change', () => {
   // page, and the page carries on as the new login. A retry held across that
   // sign-in goes out as the new login too.
   it('is retried as the login that follows on a page that was signed out', async () => {
-    currentSession = {};
+    site.cookie = null;
     expect(await store.synchronizeWebSession()).toMatchObject({ status: 'anonymous' });
     const pending = await heldRateLimitedIntent();
     expect(
