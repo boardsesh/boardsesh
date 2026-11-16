@@ -13,9 +13,9 @@ import { createEnvironment } from '../../backend/src/auth/authority/__tests__/en
 vi.mock('server-only', () => ({}));
 import {
   BROWSER_CORRELATION_COOKIE,
+  BROWSER_CORRELATION_LEASE_SECONDS,
   browserProofCookieName,
   buildBrowserProofCookieCandidate,
-  buildCanonicalCoordinatorCorrelationCookie,
   readBrowserProofCookie,
   type BrowserCookieSourceProof,
 } from '../app/lib/auth/browser-proof-cookies.server';
@@ -272,14 +272,11 @@ beforeAll(async () => {
           return;
         }
         if (path === '/fixture/bootstrap') {
+          // The coordinator that published this cookie is gone (#7596); the
+          // fixture writes the same host-only header itself.
           response.setHeader(
             'Set-Cookie',
-            buildCanonicalCoordinatorCorrelationCookie({
-              servingOrigin: www,
-              canonicalOrigin: www,
-              token: current.correlation,
-              bindingId: current.bindingId,
-            }),
+            `${BROWSER_CORRELATION_COOKIE}=${current.correlation}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${BROWSER_CORRELATION_LEASE_SECONDS}`,
           );
           response.end();
           return;

@@ -9,10 +9,11 @@ never chooses the highest cookie version or falls back to a legacy cookie.
 Rollout remains tracked in #7430 and public bootstrap remains unqualified.
 
 The stable `__Host-boardsesh.browser-binding` correlation cookie has a constant
-relative 30-day Max-Age. Only a future qualified canonical-www coordinator may
-publish it. Ordinary proof candidates cannot emit or clear it. The dedicated
-builder validates an exact HTTPS serving/canonical origin and the digest of its
-32-byte opaque token. The pointer alone cannot authenticate or retrieve a proof.
+relative 30-day Max-Age. Only the canonical-www coordinator was meant to
+publish it; #7596 deleted that coordinator and its builder, so no code writes
+it now. Ordinary proof candidates cannot emit or clear it. The reader accepts
+one exact 32-byte opaque token and derives the binding digest from it. The
+pointer alone cannot authenticate or retrieve a proof.
 
 An actual source proof uses the name
 `__Host-boardsesh.browser-proof.<bindingId>.<selectionVersion>`, with numbered
