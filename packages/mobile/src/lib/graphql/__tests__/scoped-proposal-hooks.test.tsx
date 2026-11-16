@@ -73,7 +73,7 @@ function proposal(overrides: Partial<Proposal> = {}): Proposal {
   } as Proposal;
 }
 const browseKey = browseProposalsKey({ boardType: null, status: null });
-const pinnedKey = climbProposalsKey('c1');
+const pinnedKey = climbProposalsKey('c1', 'kilter');
 function seed(cache: QueryClient, scope: HttpQueryScope, row = proposal()) {
   cache.setQueryData(scope.key(browseKey), { pages: [{ browseProposals: connection(row) }], pageParams: [0] });
   cache.setQueryData(scope.key(pinnedKey), { climbProposals: connection(row) });
