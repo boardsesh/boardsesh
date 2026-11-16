@@ -1707,7 +1707,7 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:first-password-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-first-password-credential-writer.xml
           test -s packages/backend/test-results/junit-first-password-credential-writer.xml
-      - name: Run native handoff and compatible handler proofs serially
+      - name: Run compatible handler proofs under the native handoff contract serially
         run: |
           mkdir -p packages/backend/test-results
           vp run test:native-handoff-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-native-handoff-credential-writer.xml

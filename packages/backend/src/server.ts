@@ -4,10 +4,8 @@ import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signo
 import { handleBrowserBinding } from './handlers/browser-binding';
 import { handleBrowserPassword } from './handlers/browser-password';
 import { handleExpiredBrowserBinding } from './handlers/expired-browser-binding';
-import { handleBrowserDelegation } from './handlers/browser-delegation';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
-import { handleNativeBrowserHandoffIssue } from './handlers/native-browser-handoff';
 import { handleFirstPassword } from './handlers/first-password';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
@@ -800,14 +798,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // Default-off service commands. Browser cookies do not authorize them.
       if (pathname.startsWith('/api/internal/auth/current-store/location-sync/v1/')) {
         await handleCurrentStoreLocationSync(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/native-browser-handoff/v1/')) {
-        await handleNativeBrowserHandoffIssue(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-delegation/v1/')) {
-        await handleBrowserDelegation(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {
