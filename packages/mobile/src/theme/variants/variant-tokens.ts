@@ -1,13 +1,15 @@
 import { type OpaqueColorValue } from 'react-native';
 import type { UiVariant } from '../resolve-ui-variant';
-import { materialSurfaces, androidFallbackColors, type SystemColorKey } from '../colors';
+import { materialSurfaces, androidFallbackColors, withAlpha, type SystemColorKey } from '../colors';
 
 /**
  * Variant-resolved design tokens. These live in ONE place so the provider and
  * the test theme mock (`src/test/theme-mock.ts`) resolve them identically and
  * can't drift. The provider exposes each as `theme.actionColors` /
- * `theme.chartColors` / `theme.sectionCaption`; components read the resolved
- * value and never branch on `variant`. See ./README.md for the decision tree.
+ * `theme.chartColors` / `theme.sectionCaption`, and the Velvet Send v2 roles as
+ * `theme.surfaces` / `theme.selection` / `theme.status`; components read the
+ * resolved value and never branch on `variant`. See ./README.md for the decision
+ * tree.
  */
 
 type ColorValue = string | OpaqueColorValue;
@@ -72,6 +74,117 @@ export function resolveActionColors(variant: UiVariant, inputs: ActionColorInput
     accent: inputs.accent,
     pin: inputs.brandPrimary,
   };
+}
+
+/**
+ * The system colours the Velvet Send v2 roles below are built from, passed in
+ * already resolved for the current variant and scheme (iOS PlatformColors on
+ * Liquid Glass, the violet fallback ladder on Liquid Glass off iOS, the Graphite
+ * ladder on Material). Structural, so the provider hands in its `systemColors`
+ * without this file importing the provider's `Theme` type (avoids a cycle).
+ */
+export type RoleColorInputs = Record<
+  | 'background'
+  | 'secondaryBackground'
+  | 'tertiaryBackground'
+  | 'groupedBackground'
+  | 'secondaryGroupedBackground'
+  | 'tertiaryGroupedBackground'
+  | 'label'
+  | 'secondaryLabel'
+  | 'accent'
+  | 'tertiaryFill',
+  ColorValue
+>;
+
+/** One page style's three grounds, bottom to top. */
+export type SurfaceLadder = {
+  /** The screen itself. */
+  page: ColorValue;
+  /** A card, shelf or grouped section on the page. */
+  card: ColorValue;
+  /** A block inside a card: an art tile, a summary, a warning. */
+  tile: ColorValue;
+};
+
+/**
+ * Page grounds, one ladder per page style (HIG Color, "Background"):
+ *
+ * - `plain` is a page of content: a feed, a shelf, a list of climbs. iOS
+ *   `systemBackground` → `secondarySystemBackground` → `tertiarySystemBackground`.
+ * - `grouped` is a page of inset-grouped rows, like Settings. iOS
+ *   `systemGroupedBackground` → `secondarySystemGroupedBackground` →
+ *   `tertiarySystemGroupedBackground`.
+ *
+ * The iOS colours resolve base vs elevated on their own, so a page drawn in a sheet
+ * steps up without asking. Material and Liquid Glass off iOS take the same steps
+ * from their own ladders.
+ */
+export type Surfaces = { plain: SurfaceLadder; grouped: SurfaceLadder };
+
+/** Same mapping on both variants: the variant arrives through the resolved inputs. */
+export function resolveSurfaces(inputs: RoleColorInputs): Surfaces {
+  return {
+    plain: { page: inputs.background, card: inputs.secondaryBackground, tile: inputs.tertiaryBackground },
+    grouped: {
+      page: inputs.groupedBackground,
+      card: inputs.secondaryGroupedBackground,
+      tile: inputs.tertiaryGroupedBackground,
+    },
+  };
+}
+
+/**
+ * The selected or current item in a list: the board you're on, the picked option,
+ * the active filter. Selection is a state, not a link, so the text stays the label
+ * colour (set it semibold with `<Text emphasized>` at the call site), a checkmark
+ * in the accent marks it, and a violet wash sits behind the row. Violet text and
+ * icons are only for things you can tap (HIG Color: "if you use your brand color to
+ * indicate that a borderless button is interactive, using the same or similar color
+ * to stylize noninteractive text is confusing"); a wash behind the row is a
+ * surface, not text, so it may carry the brand.
+ */
+export type SelectionColors = {
+  /** The selected item's title: `label`. */
+  text: ColorValue;
+  /** The checkmark beside it: `accent`. */
+  checkmark: ColorValue;
+  /**
+   * The row or cell wash: the scheme's brand primary at 18% (#6D28D9 in light,
+   * the lifted #A78BFA in dark), the same wash the current climb in the Climbs
+   * list draws (`selectedRowColors`). Every variant takes it: Material's climb
+   * list already draws this wash rather than an M3 tonal container, so one look
+   * holds everywhere.
+   */
+  fill: string;
+};
+
+/** The selection wash's strength. Must stay equal to `selectedRowColors`' wash. */
+export const SELECTION_WASH_ALPHA = 0.18;
+
+/**
+ * Same mapping on both variants: the variant arrives through the resolved inputs.
+ * `brandPrimary` is the scheme's `brandColors.primary`, a hex string.
+ */
+export function resolveSelectionColors(inputs: RoleColorInputs, brandPrimary: string): SelectionColors {
+  return { text: inputs.label, checkmark: inputs.accent, fill: withAlpha(brandPrimary, SELECTION_WASH_ALPHA) };
+}
+
+/**
+ * A status that can't be tapped: "Closest", "Ready to review", "On it". A quiet
+ * pill (`tertiarySystemFill`) with `secondaryLabel` text, so it never competes with
+ * the tappable accent beside it.
+ */
+export type StatusColors = {
+  /** The pill ground: `tertiaryFill`. */
+  fill: ColorValue;
+  /** The pill text and glyph: `secondaryLabel`. */
+  label: ColorValue;
+};
+
+/** Same mapping on both variants: the variant arrives through the resolved inputs. */
+export function resolveStatusColors(inputs: RoleColorInputs): StatusColors {
+  return { fill: inputs.tertiaryFill, label: inputs.secondaryLabel };
 }
 
 /**

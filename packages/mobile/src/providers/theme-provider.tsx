@@ -41,11 +41,17 @@ import {
   resolveActionColors,
   resolveChartColors,
   resolveHeatRamp,
+  resolveSelectionColors,
+  resolveStatusColors,
+  resolveSurfaces,
   sectionCaptionByVariant,
   type ActionColors,
   type ChartColors,
   type HeatRamp,
   type SectionCaption,
+  type SelectionColors,
+  type StatusColors,
+  type Surfaces,
 } from '../theme/variants/variant-tokens';
 import { variantFeatures, type VariantFeatures } from '../theme/variants/variant-features';
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
@@ -176,6 +182,24 @@ type Theme = {
    * monochrome (`systemColors.label`) on Liquid Glass, tinted by role on Material.
    */
   actionColors: ActionColors;
+  /**
+   * Page grounds (Velvet Send v2): `plain` for a page of content, `grouped` for a
+   * page of inset-grouped rows, each `{ page, card, tile }`. iOS system
+   * backgrounds on Liquid Glass (they step up in a sheet on their own), the
+   * fallback or Graphite ladder elsewhere. See `Surfaces` in variant-tokens.ts.
+   */
+  surfaces: Surfaces;
+  /**
+   * The selected or current item (Velvet Send v2): `label` text, an `accent`
+   * checkmark, and the brand primary at 18% as the row wash (the Climbs list's
+   * current-climb look). Selection is never violet text.
+   */
+  selection: SelectionColors;
+  /**
+   * A status that can't be tapped (Velvet Send v2): a `tertiaryFill` pill with
+   * `secondaryLabel` text.
+   */
+  status: StatusColors;
   /**
    * Plain-string colour palette for chart libraries (gifted-charts) that reject
    * PlatformColor. Mirrors `systemColors` but is always hex/rgba.
@@ -440,6 +464,9 @@ export function ThemeProvider({
         brandPrimary: resolvedBrandColors.primary,
         error: resolvedSystemColors.error,
       }),
+      surfaces: resolveSurfaces(resolvedSystemColors),
+      selection: resolveSelectionColors(resolvedSystemColors, resolvedBrandColors.primary),
+      status: resolveStatusColors(resolvedSystemColors),
       chartColors: resolvedChartColors,
       heatRamp: resolveHeatRamp(colorScheme),
       sheetSurface: resolvedChartColors.secondaryBackground,

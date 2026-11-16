@@ -66,9 +66,15 @@ axis-D `Platform.OS` sites.
 ## Navigation headers
 
 `useStackScreenOptions()` (`src/hooks/`) is the single source of truth for the **native stack
-header** on pushed/secondary screens: a transparent blur header on Liquid Glass (iOS), an opaque
+header** on pushed/secondary screens: a transparent header on Liquid Glass (iOS), an opaque
 Material 3 small app bar on Material (solid surface, `onSurface` tint, flat at rest, no blur). Spread
 it as a stack's `screenOptions` in a `_layout`, or into a per-screen `<Stack.Screen options>`.
+
+- **Blur is axis C, not axis A.** `useHeaderBlurEffect()` (`src/hooks/use-header-blur-effect.ts`)
+  gives the transparent glass header the legacy `systemMaterial` blur only on iOS without Liquid
+  Glass. iOS 26 draws its own scroll edge effect under the bar, and the old blur on top of it read
+  as a grey band. `useStackScreenOptions`, `RootNavigationStack` and `NativeRootHeader` all use it;
+  never set `headerBlurEffect: 'systemMaterial'` by hand.
 
 - **Header XOR in-body `Appbar`.** A screen renders **either** the native stack header **or** its own
   in-body top chrome (a Material `Appbar` / glass collapsing header) — never both. The five main tab
@@ -79,9 +85,10 @@ it as a stack's `screenOptions` in a `_layout`, or into a per-screen `<Stack.Scr
   as content scrolls under it. Native-stack can't drive `headerStyle` from a scroll position, so the
   Material header stays flat at the `surface` tone. Revisit with a scroll-driven `headerStyle` if the
   flat look reads wrong.
-- **Genuinely-per-screen header intents stay local** (not in the hook): `climbs/index`'s
-  `headerBlurEffect:'none'` is the iOS-26 Liquid-Glass native-search header (Material hides it), and
-  `discover/all`'s `headerTransparent:false` is an intentional opaque list header on both variants.
+- **Genuinely-per-screen header intents stay local** (not in the hook): the playlist detail's
+  `headerBlurEffect:'none'` with `scrollEdgeEffects: { top: 'hidden' }` lets its hero run under the
+  bar, and `discover/all`'s `headerTransparent:false` is an intentional opaque list header on both
+  variants.
 
 ## Scope
 

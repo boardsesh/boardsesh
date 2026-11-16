@@ -347,6 +347,78 @@ while the photo waits on the detector.
 
 ---
 
+## Velvet Send v2 roles
+
+Colour roles that say what a colour is for, so a screen never reaches for violet to mean "selected"
+or "status". Read them from `useTheme()`. Each resolves once per variant and scheme in
+`packages/mobile/src/theme/variants/variant-tokens.ts`; components never branch on `variant` to
+pick them.
+
+**Violet text and icons only on things you can tap.** A link, a text button, a bar glyph that does
+something: `systemColors.accent`. The board you're on, a selected row, a status: never violet. HIG
+Color: _"if you use your brand color to indicate that a borderless button is interactive, using the
+same or similar color to stylize noninteractive text is confusing."_
+
+### Surfaces (`theme.surfaces`)
+
+Two page styles, each a `{ page, card, tile }` ladder. `plain` is a page of content (a feed, a shelf,
+a climb list); `grouped` is a page of inset-grouped rows, like Settings.
+
+| Role   | `plain` on iOS Liquid Glass | `grouped` on iOS Liquid Glass      |
+| ------ | --------------------------- | ---------------------------------- |
+| `page` | `systemBackground`          | `systemGroupedBackground`          |
+| `card` | `secondarySystemBackground` | `secondarySystemGroupedBackground` |
+| `tile` | `tertiarySystemBackground`  | `tertiarySystemGroupedBackground`  |
+
+The iOS colours resolve base vs elevated by themselves, so a page drawn in a sheet steps up without
+asking. Material and Liquid Glass off iOS take the same steps from their own ladders
+(`background` → `secondaryBackground` → `tertiaryBackground`, and the grouped trio). The React
+Navigation page ground in dark on iOS Liquid Glass is `surfaces.plain.page`, so a sheet's scenes sit
+on the elevated #1C1C1E rather than a static #000.
+
+### Selection (`theme.selection`)
+
+`{ text: label, checkmark: accent, fill: brand primary at 18% }`. The selected item's title stays
+the label colour, set semibold with `<Text emphasized>` at the call site; an accent checkmark marks
+it; and a violet wash sits behind the row. The wash is the current climb's look in the Climbs list
+(#6D28D9 at 18% in light, the lifted #A78BFA at 18% in dark) on every variant, Material included,
+since its climb list already draws it. It is a surface behind the row, not violet text, so the rule
+above holds. Selection is a state, not a link. `ClimbListRow` still builds the same wash itself
+(`selectedRowColors`) and moves onto the role in wave W1 with no visible change.
+
+### Status (`theme.status`)
+
+`{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap
+("Closest", "Ready to review", "On it"), so it never competes with the accent beside it.
+
+### Text: tone and emphasized
+
+- **`tone`**: `primary` (default), `secondary`, `tertiary` resolve to `label`, `secondaryLabel`,
+  `tertiaryLabel`. Step text down with a tone, never with `opacity`: an opacity dim mixes the text
+  into its ground and ignores Increase Contrast. An explicit `color` still wins.
+- **`emphasized`**: the style's emphasized weight, from `emphasizedWeights` in `typography.ts`. On
+  Liquid Glass it is the HIG Typography "Emphasized weight" column: Bold for `largeTitle`, `title1`
+  and `title2`, Semibold for every other style. On Material it is the M3 Expressive emphasized
+  weight: Medium for display, headline, title large and body roles, Bold for title medium and the
+  labels. Use it instead of a `fontWeight` override. Bold Text steps it up once more.
+
+### Guards
+
+Two source scanners keep the old patterns from spreading. Their allowlists hold today's files and
+only shrink:
+
+- `src/__tests__/no-violet-selection.test.ts`: a selection flag (`isActive`, `active`,
+  `isSelected`, `selected`) choosing `brandColors.primary`. Use `theme.selection`.
+- `src/__tests__/no-text-opacity-dim.test.ts`: a `StyleSheet` key that sets `opacity`, applied to a
+  `<Text>`. Use `tone`.
+
+The chrome side of the same pass: the Liquid Glass stack header no longer forces the pre-iOS 26
+`systemMaterial` blur on devices with Liquid Glass (`useHeaderBlurEffect`), so iOS 26 draws its own
+scroll edge effect under the bar. HIG Layout: _"Instead of applying a solid or semi-opaque background
+color beneath controls, use a scroll edge effect to visually elevate controls above content."_
+
+---
+
 ## Typography
 
 Source: `packages/mobile/src/theme/typography.ts`. Two scales, same keys, resolved per variant via
