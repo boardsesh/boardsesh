@@ -215,6 +215,66 @@ describe('ArtRow', () => {
     expect(eyebrow.getAttribute('data-tone')).toBe('secondary');
   });
 
+  // Home's rows: the shelf look, unchanged by the list look below.
+  it('keeps a shelf row at 12pt above and below, 4pt to the subtitle, by default', () => {
+    render(<ArtRow art={null} artSize="regular" title="Garage Board" subtitle="Kilter · 40°" testID="row" />);
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(12);
+    expect(styleOf(screen.getByText('Garage Board').parentElement).gap).toBe(4);
+  });
+
+  // The board picker's rows: a list to choose from.
+  it('sets a list row in body, regular until selected, 10pt above and below and 2pt to the subtitle', () => {
+    const { rerender } = render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Crux Homewall"
+        titleVariant="body"
+        subtitle="Crux · 10 x 10"
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    const title = () => screen.getByText('Crux Homewall');
+    expect(title().getAttribute('data-variant')).toBe('body');
+    expect(title().getAttribute('data-emphasized')).toBe('false');
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(10);
+    expect(styleOf(title().parentElement).gap).toBe(2);
+
+    rerender(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Crux Homewall"
+        titleVariant="body"
+        subtitle="Crux · 10 x 10"
+        selected
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    expect(title().getAttribute('data-variant')).toBe('body');
+    expect(title().getAttribute('data-emphasized')).toBe('true');
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(10);
+    expect(styleOf(screen.getByTestId('row')).backgroundColor).toBe('#SELECTION_FILL');
+  });
+
+  it('puts the list padding on the target when a control sits beside it', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Crux Homewall"
+        titleVariant="body"
+        accessory={<u data-testid="menu" />}
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(10);
+    expect(styleOf(screen.getByTestId('row').parentElement).paddingVertical).toBeUndefined();
+  });
+
   it('holds the art in a slot as wide as its size, hidden from VoiceOver', () => {
     const { rerender } = render(<ArtRow art={<b data-testid="art" />} artSize="regular" title="Board" />);
     const slot = screen.getByTestId('art').parentElement;

@@ -89,6 +89,7 @@ vi.mock('../../AppMenu', () => ({
 vi.mock('../../ArtRow', () => ({
   ArtRow: (props: {
     title: string;
+    titleVariant?: string;
     subtitle?: ReactNode;
     accessory?: ReactElement | string;
     selected?: boolean;
@@ -113,7 +114,7 @@ vi.mock('../../ArtRow', () => ({
         onContextMenu: props.onLongPress,
       },
       props.art,
-      createElement('span', null, props.title),
+      createElement('span', { 'data-title-variant': props.titleVariant ?? 'headline' }, props.title),
       createElement('span', { 'data-testid': 'subtitle' }, props.subtitle),
       props.accessory === 'checkmark' ? createElement('i', { 'data-icon': 'check.small' }) : null,
     );
@@ -208,6 +209,12 @@ describe('BoardRow', () => {
   it('draws the art in the regular slot', () => {
     const { container } = renderRow(GARAGE);
     expect(container.querySelector('[data-art="garage"]')).not.toBeNull();
+  });
+
+  // A list to choose from: body titles, not a shelf's headline.
+  it('sets its title as a list row does', () => {
+    renderRow(GARAGE);
+    expect(screen.getByText('Garage Board').getAttribute('data-title-variant')).toBe('body');
   });
 
   it('picks the board on a tap', () => {

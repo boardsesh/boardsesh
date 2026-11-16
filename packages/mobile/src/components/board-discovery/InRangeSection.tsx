@@ -348,6 +348,7 @@ function LookingRow() {
         <ArtRow
           art={LOOKING_ART}
           artSize="regular"
+          titleVariant="body"
           title={t('mobile.inRange.lookingTitle')}
           subtitle={t('mobile.inRange.lookingBody')}
         />

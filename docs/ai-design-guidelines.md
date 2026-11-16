@@ -506,12 +506,13 @@ showing its states. Reach for these before hand-rolling a heading, a row, a pill
   inset-grouped `Card`. Rows run to its edges and own the 16pt gutter; it draws a hairline between
   rows, inset to where their text starts, and clips them to its corners. A row that isn't an `ArtRow`
   builds from `insetGroupedRowStyles` (`row`, a 44pt `leading` column, `text`).
-- **`ArtRow`** `{ art, artSize: 'compact' | 'regular', title, subtitle?, eyebrow?, status?, accessory?:
+- **`ArtRow`** `{ art, artSize: 'compact' | 'regular', title, titleVariant?: 'headline' | 'body', subtitle?, eyebrow?, status?, accessory?:
   'checkmark' | 'chevron' | element, selected?, onPress?, onLongPress?, delayLongPress?,
   longPressAccessibilityLabel?, accessibilityLabel?, wrapTarget?, testID? }`: a row of an `InsetGroupedList` that
   leads with art (a board, a playlist, an icon). The slot is 36 or 44pt wide and the art sets the
-  height; memoise `art` in the caller. Headline title, secondary subheadline subtitle, footnote
-  eyebrow; a `status` pill wraps under the title when the two don't fit on one line. `selected` takes
+  height; memoise `art` in the caller. Headline title (12pt above and below, 4pt to the subtitle: Home's
+  rows), or with `titleVariant="body"` a list to choose from: a body title, regular until selected, 10pt above
+  and below and 2pt to the subtitle (the board picker). Secondary subheadline subtitle, footnote eyebrow; a `status` pill wraps under the title when the two don't fit on one line. `selected` takes
   `theme.selection` (the selection wash behind the row, the title emphasized in label, an accent
   checkmark) and reports `selected` to assistive tech. An element accessory (a ⋯ button) is drawn
   beside the row's target, not inside it, so screen readers focus it and its tap is its own. The long

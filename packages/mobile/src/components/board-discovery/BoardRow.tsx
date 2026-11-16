@@ -166,6 +166,8 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
       art={art}
       artSize="regular"
       title={item.title}
+      // A list to choose from: body titles, the one you're on in semibold.
+      titleVariant="body"
       subtitle={<BoardRowSubtitle item={item} copy={copy} />}
       accessory={accessory}
       selected={selected}
