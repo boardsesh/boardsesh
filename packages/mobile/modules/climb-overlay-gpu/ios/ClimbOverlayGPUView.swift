@@ -116,8 +116,12 @@ private struct GPUScenes {
   let next: GPUScene?
 }
 
-private enum OverlayFailure: Error {
+private enum OverlayFailure: LocalizedError {
   case reason(String)
+
+  var errorDescription: String? {
+    switch self { case .reason(let message): return message }
+  }
 }
 
 /// All compilation, atlas preparation and cache access are on this serial
@@ -234,8 +238,10 @@ private enum OverlayRenderer {
         extraOffsets: .zero,fillCrop1: .zero,fillCrop2: .zero,fillCrop3: .zero,glyphCrop1: .zero))
     }
     let holdLength = active.count * MemoryLayout<GPUHold>.stride
-    let holdAllocation = max(holdLength,device.heapBufferSizeAndAlign(length: holdLength,options: .storageModeShared).size)
-    guard let reservation = budget.reserve(holdAllocation),
+    let holdEstimate = device.heapBufferSizeAndAlign(length: holdLength,options: .storageModeShared)
+    guard let holdAllocation = ClimbOverlayBudget.allocationSize(requested: holdLength,
+      heapSize: holdEstimate.size,heapAlignment: holdEstimate.align),
+      let reservation = budget.reserve(holdAllocation),
       let holds = device.makeBuffer(bytes: active, length: holdLength,options: .storageModeShared),
       holds.allocatedSize <= holdAllocation else {
       throw OverlayFailure.reason("Active hold allocation failed")
@@ -251,8 +257,10 @@ private enum OverlayRenderer {
           extraOffsets: .zero,fillCrop1: .zero,fillCrop2: .zero,fillCrop3: .zero,glyphCrop1: .zero)]
       : descriptors
     let holdLength = buffer.count*MemoryLayout<GPUHold>.stride
-    let holdAllocation = max(holdLength,device.heapBufferSizeAndAlign(length: holdLength,options: .storageModeShared).size)
-    guard let reservation = budget.reserve(holdAllocation),
+    let holdEstimate = device.heapBufferSizeAndAlign(length: holdLength,options: .storageModeShared)
+    guard let holdAllocation = ClimbOverlayBudget.allocationSize(requested: holdLength,
+      heapSize: holdEstimate.size,heapAlignment: holdEstimate.align),
+      let reservation = budget.reserve(holdAllocation),
       let holds = device.makeBuffer(bytes: buffer,length: holdLength,options: .storageModeShared),
       holds.allocatedSize <= holdAllocation else {
       throw OverlayFailure.reason("Motion hold allocation failed")
@@ -377,9 +385,13 @@ private enum OverlayRenderer {
     }
     let uploadStart = CACurrentMediaTime()
     let lutLength = manifest.lut.count * MemoryLayout<Float>.size
-    let pixelAllocation = max(payloadLength,device.heapBufferSizeAndAlign(length: payloadLength,options: .storageModeShared).size)
-    let lutAllocation = max(lutLength,device.heapBufferSizeAndAlign(length: lutLength,options: .storageModeShared).size)
-    guard let reservation = budget.reserve(pixelAllocation+lutAllocation),
+    let pixelEstimate = device.heapBufferSizeAndAlign(length: payloadLength,options: .storageModeShared)
+    let lutEstimate = device.heapBufferSizeAndAlign(length: lutLength,options: .storageModeShared)
+    guard let pixelAllocation = ClimbOverlayBudget.allocationSize(requested: payloadLength,
+      heapSize: pixelEstimate.size,heapAlignment: pixelEstimate.align),
+      let lutAllocation = ClimbOverlayBudget.allocationSize(requested: lutLength,
+        heapSize: lutEstimate.size,heapAlignment: lutEstimate.align),
+      let reservation = budget.reserve(pixelAllocation+lutAllocation),
       let pixels = device.makeBuffer(bytes: pixelsPointer, length: payloadLength,options: .storageModeShared),
       let lut = device.makeBuffer(bytes: manifest.lut, length: lutLength,options: .storageModeShared),
       pixels.allocatedSize <= pixelAllocation,lut.allocatedSize <= lutAllocation

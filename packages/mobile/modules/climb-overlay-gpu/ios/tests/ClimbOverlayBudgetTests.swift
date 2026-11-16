@@ -2,6 +2,35 @@ import Foundation
 
 @main enum ClimbOverlayBudgetTests {
   static func main() {
+    // Actual iPhone 13 Pro: the heap estimate omits the final 13,176 bytes.
+    precondition(ClimbOverlayBudget.allocationSize(requested: 56_822_920,heapSize: 56_822_920,
+      heapAlignment: 256,pageSize: 16_384) == 56_836_096,"Reserve the device allocation, including its final page")
+    precondition(ClimbOverlayBudget.allocationSize(requested: 1028,heapSize: 1028,
+      heapAlignment: 256,pageSize: 16_384) == 16_384,"Small buffers conservatively reserve one page")
+    precondition(ClimbOverlayBudget.allocationSize(requested: 16_384,heapSize: 16_384,
+      heapAlignment: 256,pageSize: 16_384) == 16_384)
+    precondition(ClimbOverlayBudget.allocationSize(requested: 1028,heapSize: 32_769,
+      heapAlignment: 32_768,pageSize: 16_384) == 65_536,"Cover the heap estimate and both alignments")
+    precondition(ClimbOverlayBudget.allocationSize(requested: 17,heapSize: 17,
+      heapAlignment: 12,pageSize: 16) == 48,"Use a common multiple without assuming power-of-two alignment")
+    precondition(ClimbOverlayBudget.allocationSize(requested: ClimbOverlayBudget.limit,
+      heapSize: ClimbOverlayBudget.limit,heapAlignment: 256,pageSize: 16_384) == ClimbOverlayBudget.limit)
+    for invalid in [0,-1,Int.max] {
+      precondition(ClimbOverlayBudget.allocationSize(requested: invalid,heapSize: 1028,
+        heapAlignment: 256,pageSize: 16_384) == nil)
+      precondition(ClimbOverlayBudget.allocationSize(requested: 1028,heapSize: 1028,
+        heapAlignment: invalid,pageSize: 16_384) == nil)
+      precondition(ClimbOverlayBudget.allocationSize(requested: 1028,heapSize: 1028,
+        heapAlignment: 256,pageSize: invalid) == nil)
+    }
+    precondition(ClimbOverlayBudget.allocationSize(requested: 1028,heapSize: -1,
+      heapAlignment: 256,pageSize: 16_384) == nil)
+    precondition(ClimbOverlayBudget.allocationSize(requested: 1028,heapSize: Int.max,
+      heapAlignment: 256,pageSize: 16_384) == nil)
+    precondition(ClimbOverlayBudget.allocationSize(requested: ClimbOverlayBudget.limit,
+      heapSize: ClimbOverlayBudget.limit,heapAlignment: 3,pageSize: 16_384) == nil,"Rounding cannot exceed the budget")
+    precondition(ClimbOverlayBudget.allocationSize(requested: 1,heapSize: 1,
+      heapAlignment: ClimbOverlayBudget.limit-1,pageSize: ClimbOverlayBudget.limit) == nil,"Reject an excessive common multiple")
     let budget = ClimbOverlayBudget()
     var cached: ClimbOverlayBudget.Reservation? = budget.reserve(60 * 1024 * 1024)
     var mountedView = cached
@@ -19,6 +48,17 @@ import Foundation
     precondition(budget.reserve(0) == nil && budget.reserve(-1) == nil)
     withExtendedLifetime(all) {}
     all = nil
+    precondition(budget.bytes == 0)
+    let observedAllocation = ClimbOverlayBudget.allocationSize(requested: 56_822_920,
+      heapSize: 56_822_920,heapAlignment: 256,pageSize: 16_384)!
+    var atlasPages = budget.reserve(observedAllocation)
+    var retainedPages = atlasPages
+    atlasPages = nil
+    precondition(budget.bytes == 56_836_096,"A mounted atlas retains its rounded reservation")
+    precondition(budget.reserve(ClimbOverlayBudget.limit-observedAllocation+1) == nil,
+      "Page padding participates in the aggregate limit")
+    withExtendedLifetime(retainedPages) {}
+    retainedPages = nil
     precondition(budget.bytes == 0)
     let preparation = ClimbOverlayPreparation()
     precondition(!preparation.isCancelled)
