@@ -300,6 +300,7 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
         ListEmptyComponent={
           <EmptyState
             size="section"
+            style={{ paddingTop: 120 }}
             icon="history"
             title={t('mobile.sessions.emptyTitle')}
             body={t('mobile.sessions.emptyBody')}

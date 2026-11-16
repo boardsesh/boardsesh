@@ -88,8 +88,14 @@ function WallEmptyStateComponent() {
       icon="lightbulb"
       title={t('mobile.boardPresence.wallEmptyTitle')}
       body={body}
+      titleVariant="title2"
+      maxContentWidth={420}
       actions={action}
-      style={{ paddingTop: insets.top + spacing[10], paddingBottom: insets.bottom + spacing[8] }}
+      style={{
+        paddingTop: insets.top + spacing[10],
+        paddingBottom: insets.bottom + spacing[8],
+        paddingHorizontal: spacing[8],
+      }}
     />
   );
 }

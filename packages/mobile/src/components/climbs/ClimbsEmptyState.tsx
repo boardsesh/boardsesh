@@ -1,4 +1,5 @@
 import { type ComponentProps, type ReactNode } from 'react';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { EmptyState } from '../EmptyState';
 import { Button } from '../Button';
@@ -55,6 +56,7 @@ export function ClimbsEmptyState({
   ) : status === 'authors-sync' ? (
     <EmptyState
       size="screen"
+      style={styles.listTop}
       title={t('authors.syncNeeded')}
       actions={<Button title={t('authors.retry')} onPress={onRetry} />}
     />
@@ -67,6 +69,7 @@ export function ClimbsEmptyState({
     // chose Offline mode. Literal keys: the i18n linter rejects a computed one.
     <EmptyState
       size="screen"
+      style={styles.listTop}
       icon={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
       title={
         offlineFilterReason === 'backend_unreachable'
@@ -81,6 +84,7 @@ export function ClimbsEmptyState({
   ) : status === 'offline-missing' ? (
     <EmptyState
       size="screen"
+      style={styles.listTop}
       icon="offline.download"
       title={t('mobile.emptyState.offlineNoCatalog.title')}
       body={t('mobile.emptyState.offlineNoCatalog.subtitle')}
@@ -89,6 +93,7 @@ export function ClimbsEmptyState({
   ) : status === 'offline-queued' ? (
     <EmptyState
       size="screen"
+      style={styles.listTop}
       icon="offline.download"
       title={t('mobile.emptyState.offlineCatalogQueued.title')}
       body={t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: boardName })}
@@ -96,6 +101,7 @@ export function ClimbsEmptyState({
   ) : status === 'unset-wall' ? (
     <EmptyState
       size="screen"
+      style={styles.listTop}
       icon="add"
       title={t('mobile.emptyState.unsetWall.title')}
       body={t('mobile.emptyState.unsetWall.subtitle')}
@@ -116,3 +122,8 @@ export function ClimbsEmptyState({
     />
   ) : null;
 }
+
+const styles = StyleSheet.create({
+  // The 120pt the list's empty placards always sat below the header.
+  listTop: { paddingTop: 120 },
+});

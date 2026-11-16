@@ -121,6 +121,7 @@ export function DiscoverLibraryView({
           {emptyState === 'error' ? (
             <EmptyState
               size="section"
+              style={{ paddingTop: spacing[10] * 2 }}
               icon="error"
               title={t('library.errors.loadTitle')}
               body={t('library.errors.loadDescription')}
@@ -133,6 +134,7 @@ export function DiscoverLibraryView({
           {emptyState === 'empty' ? (
             <EmptyState
               size="section"
+              style={{ paddingTop: spacing[10] * 2 }}
               icon="playlist"
               title={t('library.empty.title')}
               body={t('library.empty.description')}
@@ -207,28 +209,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   signInCta: {
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing[10] * 2,
-    paddingHorizontal: 32,
-    gap: 8,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    opacity: 0.6,
-  },
-  emptySubtitle: {
-    opacity: 0.4,
-    textAlign: 'center',
-  },
-  emptyCta: {
-    marginTop: spacing[4],
-  },
-  retryCta: {
-    marginTop: spacing[3],
     fontWeight: '600',
   },
   loadingContainer: {

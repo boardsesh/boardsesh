@@ -164,6 +164,7 @@ export function LogbookView({
                 ListEmptyComponent={
                   <EmptyState
                     size="section"
+                    style={{ paddingTop: 120 }}
                     icon="tick.outline"
                     title={
                       isFiltered

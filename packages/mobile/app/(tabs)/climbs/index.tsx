@@ -1853,6 +1853,7 @@ function ClimbListInner() {
         {nativeRootHeader ? <NativeRootHeader titleHidden onHeightChange={handleChromeHeightChange} /> : null}
         <EmptyState
           size="screen"
+          style={{ paddingTop: 120 }}
           icon="boards"
           title={t('mobile.emptyState.boardRestoreFailed.title')}
           body={t('mobile.emptyState.boardRestoreFailed.description')}
@@ -1877,6 +1878,7 @@ function ClimbListInner() {
         {nativeRootHeader ? <NativeRootHeader titleHidden onHeightChange={handleChromeHeightChange} /> : null}
         <EmptyState
           size="screen"
+          style={{ paddingTop: 120 }}
           icon="boards"
           title={t('mobile.emptyState.noBoard.title')}
           body={t('mobile.emptyState.noBoard.subtitle')}
