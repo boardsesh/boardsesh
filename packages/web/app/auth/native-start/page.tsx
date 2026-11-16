@@ -1,6 +1,5 @@
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import NativeStartClient from './native-start-client';
-import { resolvePublicAuthOrigin } from '@/app/lib/auth/canonical-auth-url';
 
 export const metadata = createNoIndexMetadata({
   title: 'Sign In',
@@ -9,5 +8,5 @@ export const metadata = createNoIndexMetadata({
 });
 
 export default function NativeStartPage() {
-  return <NativeStartClient canonicalAuthOrigin={resolvePublicAuthOrigin()} />;
+  return <NativeStartClient />;
 }
