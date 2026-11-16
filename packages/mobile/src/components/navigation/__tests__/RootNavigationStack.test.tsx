@@ -7,6 +7,8 @@ const route = vi.hoisted(() => ({
   pathname: '/boards',
   listeners: new Set<() => void>(),
   orientation: undefined as string | undefined,
+  headerBlurEffect: undefined as string | undefined,
+  glassCapable: false,
   platformOS: 'android',
   isPad: false,
   width: 400,
@@ -35,12 +37,20 @@ vi.mock('expo-router', () => ({
       },
       () => route.pathname,
     ),
-  Stack: ({ screenOptions, children }: { screenOptions: { orientation?: string }; children: ReactNode }) => {
+  Stack: ({
+    screenOptions,
+    children,
+  }: {
+    screenOptions: { orientation?: string; headerBlurEffect?: string };
+    children: ReactNode;
+  }) => {
     route.orientation = screenOptions.orientation;
+    route.headerBlurEffect = screenOptions.headerBlurEffect;
     return createElement('div', null, children);
   },
 }));
 vi.mock('../../../theme/navigation', () => ({ glassStackScreenOptions: {} }));
+vi.mock('../../../hooks/use-glass-capability', () => ({ useGlassCapability: () => route.glassCapable }));
 import { RootNavigationStack } from '../RootNavigationStack';
 const FrozenProvider = memo(
   ({ children }: { children: ReactNode }) => children,
@@ -59,6 +69,21 @@ afterEach(() => {
   route.isPad = false;
   route.width = 400;
   route.height = 800;
+  route.glassCapable = false;
+});
+describe('root header blur', () => {
+  it('gives root-level pushed screens no legacy blur on iOS 26 glass', () => {
+    route.platformOS = 'ios';
+    route.glassCapable = true;
+    render(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.headerBlurEffect).toBeUndefined();
+  });
+  it('keeps the systemMaterial blur on iOS without glass', () => {
+    route.platformOS = 'ios';
+    route.glassCapable = false;
+    render(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.headerBlurEffect).toBe('systemMaterial');
+  });
 });
 describe('fullscreen native orientation', () => {
   it('unlocks attached screens below a frozen provider and restores portrait on exit', () => {
