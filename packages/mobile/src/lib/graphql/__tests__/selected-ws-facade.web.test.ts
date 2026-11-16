@@ -305,25 +305,28 @@ async function heldRateLimitedIntent() {
 }
 
 describe('actual Expo operation intent through a held rate-limit wait', () => {
-  it.each(['A -> B', 'A -> B -> A'] as const)(
-    '%s cannot choose a later client for the original mutation',
-    async (transition) => {
-      await store.synchronizeWebSession();
-      const pending = await heldRateLimitedIntent();
-      currentSession = session({ ...owner(), userId: 'owned-B', cursor: { ...owner().cursor, version: 2 } });
-      await store.synchronizeWebSession();
-      if (transition === 'A -> B -> A') {
-        currentSession = session();
-        await store.synchronizeWebSession();
-      }
-      pending.release();
-      await expect(pending.result).rejects.toMatchObject({ status: 'superseded' });
-      expect(OwnedSocket.instances).toHaveLength(1);
-      expect(
-        OwnedSocket.instances.flatMap((socket) => socket.sent).filter((message) => message.type === 'subscribe'),
-      ).toHaveLength(1);
-    },
-  );
+  // The legacy page latch (#7596) retires a page whose login changes, so the
+  // retry finds no socket to send on. No per-operation pin is needed for it.
+  it.each([
+    ['another account', { userId: 'owned-B', authSessionId: 'owned-login-B' }],
+    ['a new login of the same account', { userId: 'owned-A', authSessionId: 'new-owned-login-A' }],
+  ] as const)('a legacy mutation is not retried as %s', async (_replacement, next) => {
+    await legacySession();
+    const pending = await heldRateLimitedIntent();
+    currentSession = { user: { id: next.userId }, authSessionId: next.authSessionId };
+    webFetch.mockImplementation(async (input) =>
+      typeof input === 'string' && input.endsWith('/api/internal/ws-auth')
+        ? Response.json({ authenticated: true, token: `${next.authSessionId}-JWE`, ...next })
+        : Response.json(currentSession),
+    );
+    await store.synchronizeWebSession();
+    pending.release();
+    await expect(pending.result).rejects.toMatchObject({ name: 'AbortError', code: 'superseded' });
+    expect(OwnedSocket.instances).toHaveLength(1);
+    expect(
+      OwnedSocket.instances.flatMap((socket) => socket.sent).filter((message) => message.type === 'subscribe'),
+    ).toHaveLength(1);
+  });
   it('a confirmed retry may use a replacement transport for the exact same accepted view', async () => {
     await store.synchronizeWebSession();
     const generation = store.captureAuthCredentialGeneration();
@@ -337,36 +340,5 @@ describe('actual Expo operation intent through a held rate-limit wait', () => {
     await expect(pending.result).resolves.toEqual({ private: 'original A intent' });
     expect(store.captureAuthCredentialGeneration()).toBe(generation);
     expect(leaseFetch).toHaveBeenCalledTimes(1);
-  });
-  it('first selected observation cannot resume an earlier legacy operation even for the same UID/SID', async () => {
-    await legacySession();
-    const pending = await heldRateLimitedIntent();
-    const issuedBeforeTransition = leaseFetch.mock.calls.length;
-    currentSession = session();
-    await store.synchronizeWebSession();
-    pending.release();
-    await expect(pending.result).rejects.toMatchObject({ status: 'superseded' });
-    expect(OwnedSocket.instances).toHaveLength(1);
-    // Central observation may acquire B's own lease; the old intent may not.
-    expect(leaseFetch).toHaveBeenCalledTimes(issuedBeforeTransition + 1);
-  });
-  it('a legacy store generation change cannot silently renew an earlier intent under a new SID', async () => {
-    await legacySession();
-    const pending = await heldRateLimitedIntent();
-    currentSession = { user: { id: owner().userId }, authSessionId: 'new-owned-login-A' };
-    webFetch.mockImplementation(async (input) =>
-      typeof input === 'string' && input.endsWith('/api/internal/ws-auth')
-        ? Response.json({
-            authenticated: true,
-            token: 'new-legacy-JWE',
-            userId: owner().userId,
-            authSessionId: 'new-owned-login-A',
-          })
-        : Response.json(currentSession),
-    );
-    await store.synchronizeWebSession();
-    pending.release();
-    await expect(pending.result).rejects.toMatchObject({ status: 'superseded' });
-    expect(OwnedSocket.instances).toHaveLength(1);
   });
 });
