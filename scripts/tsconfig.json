@@ -307,6 +307,8 @@
     "__tests__/ios-capture-diagnostics.test.ts",
     "__tests__/ios-capture-ready.test.ts",
     "lib/ios-capture-ready.ts",
+    "lib/capture-metro-runtime.ts",
+    "__tests__/capture-metro-runtime.test.ts",
     "lib/ios-capture-boot.ts",
     "lib/capture-readiness-logs.ts",
     "__tests__/capture-readiness-logs.test.ts",
