@@ -20,18 +20,7 @@ import type { Proposal } from '@boardsesh/shared-schema';
 
 const requestMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../client', () => ({
-  getHttpClient: () => ({
-    request: (documentOrOptions: unknown, variables?: unknown) =>
-      documentOrOptions !== null && typeof documentOrOptions === 'object' && 'document' in documentOrOptions
-        ? requestMock(
-            documentOrOptions.document,
-            'variables' in documentOrOptions ? documentOrOptions.variables : undefined,
-          )
-        : requestMock(documentOrOptions, variables),
-  }),
-  getOfflineSyncHttpClient: vi.fn(),
-}));
+vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 
 import { browseProposalsKey, climbProposalsKey } from '../use-browse-proposals';
 import { CLIMB_EFFECT_QUERY_KEYS } from '../proposal-cache';

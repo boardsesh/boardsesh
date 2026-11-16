@@ -15,7 +15,7 @@ const io = vi.hoisted(() => ({
   pendingTick: vi.fn<(climbUuid: string) => Promise<boolean>>(),
   confirm: vi.fn<(options: unknown) => Promise<boolean>>(),
   showToast: vi.fn(),
-  request: vi.fn<(options: { variables: unknown; signal: AbortSignal }) => Promise<unknown>>(),
+  request: vi.fn<(document: unknown, variables?: unknown) => Promise<unknown>>(),
   removeFromDevice: vi.fn(async () => {}),
   executorMounts: 0,
 }));
@@ -176,9 +176,11 @@ describe('Delete from a row menu, after the menu has closed', () => {
 
     expect(io.confirm).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ destructive: true }));
     expect(io.request).toHaveBeenCalledOnce();
-    const [{ variables, signal }] = io.request.mock.calls[0];
+    // The plain mutation hands the transport no signal, so nothing can abort it.
+    const [document, variables, ...rest] = io.request.mock.calls[0];
+    expect(document).toBeDefined();
     expect(variables).toEqual({ uuid: 'own-climb', boardType: 'spray' });
-    expect(signal.aborted).toBe(false);
+    expect(rest).toEqual([]);
     expect(io.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.success', 'success');
     expect(dismissPlayerAndWait).toHaveBeenCalledOnce();
     client.clear();
@@ -241,7 +243,7 @@ describe('Delete from a row menu, after the menu has closed', () => {
 
     await act(async () => answers.forEach((answer) => answer(true)));
     await waitFor(() => expect(io.request).toHaveBeenCalledTimes(2));
-    expect(io.request.mock.calls.map(([{ variables }]) => variables)).toEqual([
+    expect(io.request.mock.calls.map(([, variables]) => variables)).toEqual([
       { uuid: 'own-climb', boardType: 'spray' },
       { uuid: 'own-climb-2', boardType: 'spray' },
     ]);
