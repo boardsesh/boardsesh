@@ -1,4 +1,3 @@
-import { holdSyncRequest } from '../network/request-context';
 import type { PendingMutation } from './queue';
 import { graphqlErrorRejectsUnknownInputField } from './error-classification';
 
@@ -91,17 +90,6 @@ function withoutRejectedInputFields(
   return { ...variables, input: trimmedInput };
 }
 
-const localValidationFailures = new WeakMap<object, PendingMutation>();
-function invalidMutation(mutation: PendingMutation, message: string): Error {
-  const error = new Error(message);
-  localValidationFailures.set(error, mutation);
-  return error;
-}
-/** Only this exact row's synchronous dispatch validation can supply the verdict. */
-export function isLocalMutationValidationError(error: unknown, mutation: PendingMutation): boolean {
-  return error !== null && typeof error === 'object' && localValidationFailures.get(error) === mutation;
-}
-
 function buildDispatch(mutation: PendingMutation): MutationDispatch {
   let payload: Record<string, unknown>;
   try {
@@ -110,8 +98,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
     // A corrupt payload dead-letters (no status → non-retryable), so this
     // message IS the dead-letter row's last_error — carry enough context to
     // debug it without the row in hand.
-    throw invalidMutation(
-      mutation,
+    throw new Error(
       `Corrupt queued payload for ${mutation.table_name}/${mutation.operation} (id=${mutation.id}, key=${mutation.idempotency_key}): not valid JSON`,
     );
   }
@@ -129,10 +116,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
     case 'boardsesh_ticks':
       switch (mutation.operation) {
@@ -164,10 +148,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { uuid: payload.uuid },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'user_favorites':
@@ -183,10 +164,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: payload },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'playlists':
@@ -207,10 +185,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { playlistId: payload.uuid },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'playlist_climbs':
@@ -226,10 +201,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: payload },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'user_follows':
@@ -245,10 +217,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: { userId: payload.followingId } },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'setter_follows':
@@ -264,10 +233,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: { setterUsername: payload.setterUsername } },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'playlist_follows':
@@ -283,10 +249,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: { playlistUuid: payload.playlistUuid } },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     case 'user_playlist_pins':
@@ -302,10 +265,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: { playlistUuid: payload.playlistUuid } },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     // The workout a climber followed in a session (#6903). The payload is the
@@ -329,53 +289,19 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
             variables: { input: payload },
           };
         default:
-          throw invalidMutation(
-            mutation,
-            `Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`,
-          );
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }
 
     default:
-      throw invalidMutation(mutation, `Unknown table "${mutation.table_name}"`);
+      throw new Error(`Unknown table "${mutation.table_name}"`);
   }
 }
 
-function isPreExecutionValidation(error: unknown): boolean {
-  if (error === null || typeof error !== 'object' || !('response' in error)) return false;
-  const response = error.response;
-  if (
-    response === null ||
-    typeof response !== 'object' ||
-    ('data' in response && response.data !== undefined) ||
-    !('errors' in response)
-  )
-    return false;
-  const errors = response.errors;
-  return (
-    Array.isArray(errors) &&
-    errors.length > 0 &&
-    errors.every((failure: unknown) => {
-      if (failure === null || typeof failure !== 'object' || !('extensions' in failure)) return false;
-      const extensions = failure.extensions;
-      return (
-        extensions !== null &&
-        typeof extensions === 'object' &&
-        'code' in extensions &&
-        extensions.code === 'GRAPHQL_VALIDATION_FAILED'
-      );
-    })
-  );
-}
-
-export async function processMutation(
-  mutation: PendingMutation,
-  graphqlFetch: GraphQLFetch,
-  options?: { requirePreExecutionValidation: boolean },
-): Promise<void> {
+export async function processMutation(mutation: PendingMutation, graphqlFetch: GraphQLFetch): Promise<void> {
   const { mutationName, variables } = buildDispatch(mutation);
   const query = MUTATIONS[mutationName];
   if (!query) {
-    throw invalidMutation(mutation, `No GraphQL mutation defined for "${mutationName}"`);
+    throw new Error(`No GraphQL mutation defined for "${mutationName}"`);
   }
   try {
     await graphqlFetch(query, variables);
@@ -385,7 +311,6 @@ export async function processMutation(
     // the drainer classifies it the way it always has.
     const trimmedVariables = withoutRejectedInputFields(mutationName, variables, error);
     if (!trimmedVariables) throw error;
-    if (options?.requirePreExecutionValidation && !isPreExecutionValidation(error)) throw holdSyncRequest();
     await graphqlFetch(query, trimmedVariables);
   }
 }

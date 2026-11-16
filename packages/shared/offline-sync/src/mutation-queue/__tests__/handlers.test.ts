@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { UpdateTickInput } from '@boardsesh/shared-schema/generated';
 
-import { processMutation, isLocalMutationValidationError, UPDATE_TICK_INPUT_FIELDS } from '../handlers';
+import { processMutation, UPDATE_TICK_INPUT_FIELDS } from '../handlers';
 import { graphqlErrorRejectsUnknownInputField, isPermanentRejection } from '../error-classification';
 import type { PendingMutation } from '../queue';
 
@@ -398,29 +398,5 @@ describe('session_workouts dispatch (#6903)', () => {
       ),
     ).rejects.toThrow('Unknown operation "delete" for table "session_workouts"');
     expect(graphqlFetch).not.toHaveBeenCalled();
-  });
-});
-
-describe('owned local dispatch validation provenance', () => {
-  it('binds a genuine corrupt-row error to that exact dispatch, never a copied error or row', async () => {
-    const mutation = pendingMutation({ payload: '{broken' });
-    const fetch = vi.fn();
-    let original: unknown;
-    try {
-      await processMutation(mutation, fetch);
-    } catch (error) {
-      original = error;
-    }
-    expect(isLocalMutationValidationError(original, mutation)).toBe(true);
-    expect(isLocalMutationValidationError(original, { ...mutation })).toBe(false);
-    expect(isLocalMutationValidationError(new Error((original as Error).message), mutation)).toBe(false);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-  it('does not brand a network error even when its text copies local validation', async () => {
-    const mutation = pendingMutation({});
-    const failure = new Error('Corrupt queued payload');
-    const fetch = vi.fn().mockRejectedValue(failure);
-    await expect(processMutation(mutation, fetch)).rejects.toBe(failure);
-    expect(isLocalMutationValidationError(failure, mutation)).toBe(false);
   });
 });

@@ -23,7 +23,6 @@ export async function mirrorSavedClimb(
   result: { viewerId: string; climb: unknown; stats: unknown[] },
   canWrite: () => boolean,
   acknowledgedMutationKey?: string,
-  assertCurrent?: () => void,
 ): Promise<boolean> {
   const climb = documentRow(result.climb);
   const stats = result.stats.map(documentRow);
@@ -77,7 +76,7 @@ export async function mirrorSavedClimb(
         }
         committed = true;
       },
-      { site: 'saved-climb-mirror', ...(assertCurrent ? { assertCurrent } : {}) },
+      { site: 'saved-climb-mirror' },
     );
   } catch (error) {
     if (!(error instanceof StaleMirrorError)) throw error;
