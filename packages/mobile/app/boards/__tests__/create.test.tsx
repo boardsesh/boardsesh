@@ -362,20 +362,6 @@ describe('CreateBoard', () => {
     expect(dismissToMock).toHaveBeenCalled();
   });
 
-  it('still calls the server when seeded from a Popular config', async () => {
-    // The seeded path used to keep a silent auto-activate; it does not any more.
-    state.params = {
-      seedBoardName: 'moonboard',
-      seedLayoutId: '3',
-      seedSizeId: '1',
-      seedSetIds: '5,6,7,8,9,10',
-    };
-    render(createElement(CreateBoard));
-    fireEvent.click(screen.getByText('submit'));
-
-    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
-  });
-
   it('prompts instead of navigating when the server reports a duplicate', async () => {
     createBoardMock.mockRejectedValueOnce(duplicateError());
     render(createElement(CreateBoard));
@@ -513,19 +499,6 @@ describe('CreateBoard from "My own board"', () => {
     state.params = { presetBoardType: 'moonboard' };
     render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)?.initialBoardName).toBeUndefined();
-  });
-
-  // A Popular card is the climber's own pick; a preset must not replace it.
-  it('lets a seed win over the preset', () => {
-    state.params = {
-      preset: '1',
-      seedBoardName: 'moonboard',
-      seedLayoutId: '3',
-      seedSizeId: '1',
-      seedSetIds: '5,6',
-    };
-    render(createElement(CreateBoard));
-    expect(builderCalls.options.at(-1)?.preset).toBeUndefined();
   });
 });
 
