@@ -24,22 +24,22 @@ A request for an account whose deletion already committed reports success and wr
 
 A deleted account keeps only a keyed digest of each address it held (decision 1 on epic #6975). Every key it alone held, including aliases, is replaced by a `blocked_deleted` reservation whose key is `deleted-v1:` plus the HMAC-SHA256 of the normalized address under `CURRENT_STORE_DELETED_EMAIL_KEY`; the plaintext reservation and the account's memberships are deleted. Registration, provider sign-in and system identities look up that digest when the address has no reservation of its own, so the address stays blocked and still answers as taken. A collision group the account shared keeps its other members and stays `blocked_ambiguous`: deleting one member never elects a surviving owner, and the last member's deletion turns the key into a digest. The empty key holds no address and is left alone. The account's password-recovery and email-verification receipts are deleted; their purpose generations stay, so no old receipt snapshot can come back. The backend maintenance job removes digests 90 days after deletion, far past the one-hour and 24-hour lives of any link sent to the address. Legacy `verificationTokens` rows keyed by the address are not touched, as legacy deletion leaves them.
 
-### Deletion during cutover
+`CURRENT_STORE_DELETED_EMAIL_KEY` is required by every staged mode, checked when the mode's configuration is read: at least 32 bytes, no surrounding whitespace, and different from `NEXTAUTH_SECRET`, `CRON_SECRET` and the RPC secrets. Without it every staged command fails the same way at configuration, logging a line that names the variable, so a missing key cannot tell a known address from an unknown one; the staged deletion fails before any content runs. Changing it frees every address deleted in the last 90 days early, so it stays fixed once set.
+
+A server-generated operation ID is captured once for the logical deletion request. The existing three-attempt retry remains limited to PostgreSQL deadlocks, whose transactions rolled back. A retry reuses the operation ID and re-reads generation. Unknown outcomes, configuration errors, permission failures and duplicate committed operation IDs must not become cached success or automatic retries. Every staged failure logs one fixed line carrying only its failure code: our own error code or a PostgreSQL SQLSTATE, never a driver message, SQL text or anything identifying the account.
+
+PostHog erasure still uses the existing queue savepoint. Kiosk tombstone publication and spray-photo purge remain after the deletion commits; an aborted transaction must never start those effects. No provider network request is added inside the transaction.
+
+## Deletion during cutover
 
 Climbers can delete their account at every step except one short window ([#7591](https://github.com/boardsesh/boardsesh/issues/7591)):
 
 1. Before `auth-authority prepare`: legacy deletion, unchanged.
 2. Between `prepare` and `activate`, however long that is: legacy deletion keeps working. A prepared projection is a snapshot that `activate` rebuilds from the current `users` table, so the deletion only has to take the account's own reservations and memberships with it. A key the account alone held is removed with no digest, so the address is released, as a legacy deletion before `prepare` released it and as the rebuild would. A collision group the account shared keeps its other members, still blocked, and elects nobody. No digest key is needed. Keep `CURRENT_STORE_ACCOUNT_DELETION_MODE=legacy` here: the staged mode refuses until the projection is enforced.
 3. From `activate`'s commit until every backend serves `CURRENT_STORE_ACCOUNT_DELETION_MODE=reserved-staging`: **deletion is unavailable**. Legacy deletion refuses an enforced projection, and the staged mode is not on yet. The window lasts one backend variable change and redeploy (not measured), so switch the mode straight after `activate` succeeds. A deletion already running when `activate` starts holds the shared gate, so `activate` waits its 2 s and fails rather than land inside it; retry it.
-4. After the redeploy: staged deletion, with the address digest and cutoff described here.
+4. After the redeploy: staged deletion, with the address digest and cutoff described above.
 
 Turning the staged mode on before `activate` does not shorten the window: it moves it to before `activate` instead, because the staged writer refuses a merely prepared projection.
-
-`CURRENT_STORE_DELETED_EMAIL_KEY` is required by every staged mode, checked when the mode's configuration is read: at least 32 bytes, no surrounding whitespace, and different from `NEXTAUTH_SECRET`, `CRON_SECRET` and the RPC secrets. Without it every staged command fails the same way at configuration, logging a line that names the variable, so a missing key cannot tell a known address from an unknown one; the staged deletion fails before any content runs. Changing it frees every address deleted in the last 90 days early, so it stays fixed once set.
-
-A server-generated operation ID is captured once for the logical deletion request. The existing three-attempt retry remains limited to PostgreSQL deadlocks, whose transactions rolled back. A retry reuses the operation ID and re-reads generation. Unknown outcomes, configuration errors, permission failures and duplicate committed operation IDs must not become cached success or automatic retries. Every staged failure logs one fixed line carrying only its failure code: our own error code or a PostgreSQL SQLSTATE, never a driver message, SQL text or anything identifying the account.
-
-PostHog erasure still uses the existing queue savepoint. Kiosk tombstone publication and spray-photo purge remain after the deletion commits; an aborted transaction must never start those effects. No provider network request is added inside the transaction.
 
 ## Limits and decisions
 
