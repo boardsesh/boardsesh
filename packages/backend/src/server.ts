@@ -2,7 +2,6 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
-import { handleBrowserRenewal } from './handlers/browser-renewal';
 import { handleBrowserPassword } from './handlers/browser-password';
 import { handleExpiredBrowserBinding } from './handlers/expired-browser-binding';
 import { handleBrowserDelegation } from './handlers/browser-delegation';
@@ -817,10 +816,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/browser-password/v1/')) {
         await handleBrowserPassword(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-renewal/v1/')) {
-        await handleBrowserRenewal(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/expired-browser-binding/v1/')) {

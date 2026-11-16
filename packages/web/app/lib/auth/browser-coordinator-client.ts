@@ -9,26 +9,17 @@ let current: {
 export async function readCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
   await coordinate(origin, signal, 'read');
 }
-/** Session refresh only. Explicit account-change preflight remains read-only;
- * ordinary provider sign-in uses its dedicated signIn method below. */
-export async function renewCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
-  await coordinate(origin, signal, 'renew');
-}
 /** Explicit ordinary sign-in only. The returned cursor is control metadata to
  * pin across the caller's next lock, never an authenticated Session. */
 export async function signInCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
   return coordinate(origin, signal, 'signin');
 }
-async function coordinate(origin: string, signal: AbortSignal, operation: 'read' | 'renew' | 'signin') {
+async function coordinate(origin: string, signal: AbortSignal, operation: 'read' | 'signin') {
   if (typeof window === 'undefined') throw new Error('COORDINATOR_UNAVAILABLE');
   if (current && current.origin !== origin) throw new Error('COORDINATOR_UNAVAILABLE');
   if (!current || current.frame.isClosed())
     current = { origin, frame: createCanonicalBrowserCoordinatorFrame({ window, canonicalOrigin: origin }) };
-  const observed = await (operation === 'renew'
-    ? current.frame.renew(signal)
-    : operation === 'signin'
-      ? current.frame.signIn(signal)
-      : current.frame.read(signal));
+  const observed = await (operation === 'signin' ? current.frame.signIn(signal) : current.frame.read(signal));
   if (observed.status !== 'ready' || signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
   return Object.freeze({ ...observed.cursor });
 }

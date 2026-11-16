@@ -70,6 +70,10 @@ current presented proof, selected-authority receipt, operation-bound intent and
 same-transaction mutation/publication checks. Future same-selection renewal
 must preserve original age, UID/SID, generation, credential kind and provenance.
 
+#7596 deleted renewal custody: the www `renew/{prepare,commit}` routes and the
+backend renewal authority are gone. The frame's `renew` operation stays, dark,
+until this coordinator is deleted; it would now get a 404.
+
 ## Evidence and remaining composition
 
 The local shared regression suite covers strict metadata, exact origin/source,

@@ -85,6 +85,15 @@ Receipt cleanup and first-password scrubbing keep using compatible qualified
 profiles after browser features switch off. See
 [selected browser to native sign-in](./better-auth-native-browser-handoff.md).
 
+The explicit `private-browser-renewal-v1` profile extends the native-handoff
+profile with `SELECT` and `INSERT` on `auth_browser_renewals` and column
+updates on its four completion fields (`candidate_hash`, `result_version`,
+`completed_at`, `acknowledge_until`). It has no relation-wide update or delete
+grant on that table. No backend command has needed these extra grants since
+#7596 deleted browser renewal custody. Operators can still select the profile,
+and CI still runs the compatible HTTP handler proofs serially under that LOGIN
+(`test:browser-renewal-credential-writer`). B5 removes the profile.
+
 Bootstrap chooses its 30-day correlation deadline from the database clock; the
 caller cannot select it. Describe returns only the authoritative binding cursor,
 selection state and credential kind. It cannot retrieve identity or raw proof.

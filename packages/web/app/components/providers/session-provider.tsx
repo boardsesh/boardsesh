@@ -7,11 +7,7 @@ import { getSession, SessionContext, type SessionContextValue } from 'next-auth/
 import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
 import { BROWSER_COORDINATOR_FRAME_PATH } from '@boardsesh/auth-protocol/browser-coordinator';
 import { publicBrowserCoordinatorReady } from '../../lib/auth/browser-coordinator-readiness';
-import {
-  readCanonicalBrowserCoordinator,
-  renewCanonicalBrowserCoordinator,
-} from '../../lib/auth/browser-coordinator-client';
-import { publicBrowserRenewalReady } from '../../lib/auth/browser-renewal-readiness';
+import { readCanonicalBrowserCoordinator } from '../../lib/auth/browser-coordinator-client';
 import { registerCanonicalBrowserOrigin } from '../../lib/auth/canonical-browser-origin';
 import { browserBackendClient } from '../../lib/auth/browser-backend-client';
 import { PRIVACY_REVOKED_EVENT } from '../../lib/privacy-client';
@@ -154,12 +150,9 @@ export default function SessionProviderWrapper({
         scheduleInitialRetry();
       }, 15_000);
       try {
-        if (publicBrowserCoordinatorReady() || publicBrowserRenewalReady()) {
-          if (!publicBrowserCoordinatorReady()) throw new Error('Session authority is unavailable');
+        if (publicBrowserCoordinatorReady()) {
           if (!canonicalBrowserOrigin) throw new Error('Session authority is unavailable');
-          if (publicBrowserRenewalReady())
-            await renewCanonicalBrowserCoordinator(canonicalBrowserOrigin, controller.signal);
-          else await readCanonicalBrowserCoordinator(canonicalBrowserOrigin, controller.signal);
+          await readCanonicalBrowserCoordinator(canonicalBrowserOrigin, controller.signal);
           if (!ownsResult() || controller.signal.aborted) return sessionRef.current;
         }
         let requestInit: RequestInit = { cache: 'no-store', signal: controller.signal };
