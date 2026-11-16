@@ -916,19 +916,26 @@ describe('PlaylistDetailView', () => {
     expect(ctrl.openAddToPlaylist).not.toHaveBeenCalled();
   });
 
-  it.each([1, 1.5])('gives supported and unavailable edit rows one drag height at font scale %s', (fontScale) => {
-    ctrl.fontScale = fontScale;
-    applyClimbRowPreset('namesOnly');
-    const { container } = render(
-      <PlaylistDetailView
-        {...makeProps({ climbs: [KILTER_CLIMB, UNKNOWN_BOARD_CLIMB, TENSION_CLIMB], editMode: true })}
-      />,
-    );
-    // At 1.5 the footnote warning lines grow on their iOS ramp, a little past 1.5.
-    const expectedHeight = fontScale === 1 ? 76 : 107;
-    expect(capturedEditRows.map((row) => row.minimumHeight)).toEqual([expectedHeight, expectedHeight]);
-    expect(container.querySelector(`[data-min-height="${expectedHeight}"]`)).not.toBeNull();
-  });
+  // 1.353 is React Native's iOS fontScale at xxxLarge. The unavailable row is the
+  // tallest: a body name, two footnote warning lines, a 2pt gap and 16pt of padding,
+  // each line on its ramp (body 23/17, footnote 19/13).
+  it.each([
+    { fontScale: 1, expectedHeight: 76 },
+    { fontScale: 1.353, expectedHeight: Math.ceil(22 * (23 / 17) + 2 * 18 * (19 / 13) + 2 + 16) },
+  ])(
+    'gives supported and unavailable edit rows one drag height at font scale $fontScale',
+    ({ fontScale, expectedHeight }) => {
+      ctrl.fontScale = fontScale;
+      applyClimbRowPreset('namesOnly');
+      const { container } = render(
+        <PlaylistDetailView
+          {...makeProps({ climbs: [KILTER_CLIMB, UNKNOWN_BOARD_CLIMB, TENSION_CLIMB], editMode: true })}
+        />,
+      );
+      expect(capturedEditRows.map((row) => row.minimumHeight)).toEqual([expectedHeight, expectedHeight]);
+      expect(container.querySelector(`[data-min-height="${expectedHeight}"]`)).not.toBeNull();
+    },
+  );
 
   it('shows an indicator for climbs whose render board cannot be resolved', () => {
     const onActivateClimb = vi.fn();

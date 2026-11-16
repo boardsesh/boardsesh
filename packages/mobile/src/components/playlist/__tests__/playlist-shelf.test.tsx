@@ -31,6 +31,8 @@ vi.mock('@shopify/flash-list', () => ({
   },
 }));
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   useWindowDimensions: () => ({ fontScale: list.fontScale, width: 390, height: 844 }),
@@ -215,7 +217,8 @@ describe('playlist shelf pagination', () => {
     expect(callbacks().extraData).toBe(extraData);
     expect(callbacks().keyExtractor(items[count - 1])).toBe(String(count - 1));
   });
-  it.each([1, 1.5, 3])('sets the native list viewport height at font scale %s', (fontScale) => {
+  // React Native's iOS fontScale at the default size, xxxLarge and AX3.
+  it.each([1, 1.353, 2.643])('sets the native list viewport height at font scale %s', (fontScale) => {
     list.fontScale = fontScale;
     render(
       <PlaylistShelf
@@ -230,9 +233,11 @@ describe('playlist shelf pagination', () => {
     expect(callbacks().style.height).toBe(playlistShelfHeight(fontScale, 20, 16));
     expect(callbacks().style.height).toBeGreaterThan(120);
   });
-  it('reserves room for card text up to the shared Text scaling cap', () => {
+  it('reserves each card line on its own ramp, up to the shelf’s 1.5× stop', () => {
     expect(playlistShelfHeight(1, 20, 16)).toBe(172);
-    expect(playlistShelfHeight(1.5, 20, 16)).toBe(190);
-    expect(playlistShelfHeight(3, 20, 16)).toBe(190);
+    // xxxLarge: the subheadline name at 21/15, the caption1 meta line at 18/12.
+    expect(playlistShelfHeight(1.353, 20, 16)).toBe(120 + 16 + Math.ceil(20 * (21 / 15) + 16 * (18 / 12)));
+    // AX3: both lines held at 1.5×.
+    expect(playlistShelfHeight(2.643, 20, 16)).toBe(120 + 16 + 36 * 1.5);
   });
 });

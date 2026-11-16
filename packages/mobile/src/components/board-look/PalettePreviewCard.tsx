@@ -172,7 +172,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
           variant={style.descriptionVariant}
           color={systemColors.secondaryLabel}
           numberOfLines={2}
-          style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale) }}
+          style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale, style.descriptionVariant) }}
         >
           {description}
         </Text>

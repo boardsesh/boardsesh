@@ -1,4 +1,7 @@
-import { Platform, type TextProps } from 'react-native';
+// No runtime import from react-native: pure layout modules (charts, the live
+// rail) use this too, and their tests load without a react-native mock. Callers
+// pass `Platform.OS` in.
+import type { TextProps } from 'react-native';
 import type { TextVariant } from './typography';
 
 /** The Dynamic Type text styles React Native's iOS `Text` can scale by. */
@@ -60,9 +63,9 @@ const DEFAULT_CATEGORY = 3;
  * Each ramp's point size per content size category, xSmall → AX5, from the HIG
  * Typography "iOS, iPadOS Dynamic Type sizes" tables. A ramped `Text` scales by
  * `UIFontMetrics.scaledValue(forValue: base) / base`, which is these sizes over
- * the Large one.
+ * the Large one. SwiftUI's own text (native buttons) uses the same table.
  */
-const RAMP_SIZES = {
+export const DYNAMIC_TYPE_POINT_SIZES = {
   largeTitle: [31, 32, 33, 34, 36, 38, 40, 44, 48, 52, 56, 60],
   title1: [25, 26, 27, 28, 30, 32, 34, 38, 43, 48, 53, 58],
   title2: [19, 20, 21, 22, 24, 26, 28, 34, 39, 44, 50, 56],
@@ -83,7 +86,7 @@ const RAMP_SIZES = {
  * end it scales on proportionally.
  */
 export function rampFontScale(ramp: DynamicTypeRamp, fontScale: number): number {
-  const sizes = RAMP_SIZES[ramp];
+  const sizes = DYNAMIC_TYPE_POINT_SIZES[ramp];
   const base = sizes[DEFAULT_CATEGORY];
   const last = REACT_NATIVE_FONT_SCALES.length - 1;
   if (fontScale <= REACT_NATIVE_FONT_SCALES[0]) {
@@ -106,7 +109,16 @@ export function rampFontScale(ramp: DynamicTypeRamp, fontScale: number): number 
  * the text). On iOS that is the variant's ramp; elsewhere `Text` has no ramp and
  * grows by `fontScale` itself. Apply a `maxFontSizeMultiplier` cap after this,
  * as React Native does.
+ *
+ * The ramp follows the `Text`'s `variant`, not its final font size: a body
+ * `Text` restyled to 34pt still scales on the body curve, so ask for `'body'`.
+ * Pass `Platform.OS` as `platform`.
+ *
+ * The rule for layout: anything that sizes itself around non-body text, or
+ * around body text above xxxLarge, reads this instead of `fontScale`. A cap of
+ * 1.5 does not make `fontScale` safe: it never engages below AX1, and
+ * footnote and the captions grow up to 14% past `fontScale` at xLarge–xxxLarge.
  */
-export function textFontScale(variant: TextVariant, fontScale: number, platform: string = Platform.OS): number {
+export function textFontScale(variant: TextVariant, fontScale: number, platform: string): number {
   return platform === 'ios' ? rampFontScale(dynamicTypeRamps[variant], fontScale) : fontScale;
 }

@@ -5,7 +5,7 @@ import { PressableSurface } from '../PressableSurface';
 // invite callback; everything that changes on a poll stays in here.
 
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { FlatList, StyleSheet, useWindowDimensions, View, type ListRenderItemInfo } from 'react-native';
+import { FlatList, Platform, StyleSheet, useWindowDimensions, View, type ListRenderItemInfo } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
@@ -89,7 +89,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
   const backgrounded = useIsAppBackgrounded();
   const colors = useLiveSessionColors();
   const { fontScale } = useWindowDimensions();
-  const layout = useMemo(() => liveTileLayout(fontScale), [fontScale]);
+  const layout = useMemo(() => liveTileLayout(fontScale, Platform.OS), [fontScale]);
   const { formatGrade } = useGradeFormat();
 
   const { expanded, toggle, loaded } = useLiveSessionsCollapse();

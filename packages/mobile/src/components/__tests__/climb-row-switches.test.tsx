@@ -260,7 +260,6 @@ vi.mock('../PressableSurface', () => {
 
 import { favoritesStore, playlistMembershipStore } from '@boardsesh/climb-actions';
 import { ClimbListItemContent } from '../ClimbListItemContent';
-import { textFontScale } from '../../theme/dynamic-type';
 import { ClimbListRow } from '../ClimbListRow';
 import {
   CLIMB_ROW_FIELD_IDS,
@@ -763,20 +762,22 @@ describe('the detail line: sends, rating, setter and the community grade', () =>
 describe('accessible names and drag-row geometry', () => {
   const textOnly = { ...DEFAULT_CLIMB_ROW_DISPLAY, thumbnail: false };
 
+  // This suite runs as iOS, so fontScale takes React Native's category values:
+  // 1.235 = xxLarge, 1.353 = xxxLarge, 2.643 = AX3. Two reserved name lines grow
+  // on the body ramp: 23/17 at xxxLarge, 40/17 at AX3.
   it.each([
-    { fontScale: 1, expectedLines: '1' },
-    { fontScale: 1.29, expectedLines: '1' },
-    { fontScale: 1.3, expectedLines: '2' },
-    { fontScale: 1.5, expectedLines: '2' },
-  ])('allows $expectedLines name lines at font scale $fontScale', ({ fontScale, expectedLines }) => {
+    { fontScale: 1, expectedLines: '1', minHeight: undefined },
+    { fontScale: 1.235, expectedLines: '1', minHeight: undefined },
+    { fontScale: 1.353, expectedLines: '2', minHeight: 22 * (23 / 17) * 2 },
+    { fontScale: 2.643, expectedLines: '2', minHeight: 22 * (40 / 17) * 2 },
+  ])('allows $expectedLines name lines at font scale $fontScale', ({ fontScale, expectedLines, minHeight }) => {
     live.fontScale = fontScale;
     const { container } = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
 
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe(expectedLines);
-    // Two body lines on the body Dynamic Type ramp (this suite runs as iOS).
-    expect(styleOf(container.querySelector(NAME)).minHeight).toBe(
-      expectedLines === '2' ? 22 * textFontScale('body', fontScale) * 2 : undefined,
-    );
+    const reserved = styleOf(container.querySelector(NAME)).minHeight;
+    if (minHeight === undefined) expect(reserved).toBeUndefined();
+    else expect(reserved).toBeCloseTo(minHeight, 6);
   });
 
   it('changes the wrapping limit when system text size changes on a mounted row', () => {
@@ -784,14 +785,14 @@ describe('accessible names and drag-row geometry', () => {
     const { container, rerender } = render(row);
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('1');
 
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     rerender(<ClimbListItemContent climb={{ ...climb }} {...kilter} display={textOnly} />);
 
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('2');
   });
 
   it('keeps drag-host names on one line at large text sizes', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const { container } = render(
       <ClimbListItemContent climb={climb} {...kilter} display={textOnly} allowNameWrapping={false} />,
     );
@@ -801,18 +802,18 @@ describe('accessible names and drag-row geometry', () => {
   });
 
   it('reserves the same two name lines before an unresolved climb loads', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const unresolved = render(<ClimbListItemContent climb={null} {...kilter} display={textOnly} />);
     const resolved = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
 
     for (const { container } of [unresolved, resolved]) {
       expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('2');
-      expect(styleOf(container.querySelector(NAME)).minHeight).toBe(22 * textFontScale('body', 1.5) * 2);
+      expect(styleOf(container.querySelector(NAME)).minHeight).toBeCloseTo(22 * (23 / 17) * 2, 6);
     }
   });
 
   it('keeps fixed warning badges on the name line in drag hosts', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const warningClimb = { ...climb, missingHoldCount: 2, is_draft: true, is_hidden: true };
     const { container } = render(
       <ClimbListItemContent climb={warningClimb} {...kilter} display={textOnly} allowNameWrapping={false} />,
@@ -894,7 +895,7 @@ describe('a row without a thumbnail', () => {
   });
 
   it('reserves a silent grade line before a compact large-text climb resolves', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const namesOnly = { ...CLIMB_ROW_PRESETS.namesOnly, quickActions: true };
     const { container, rerender } = render(
       <ClimbListItemContent climb={null} {...kilter} display={namesOnly} allowNameWrapping={false} />,
@@ -909,7 +910,7 @@ describe('a row without a thumbnail', () => {
 
   it('keeps drag-host direction labels on one line even with pictures', () => {
     loadTheRow();
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const { container } = render(<ClimbListItemContent climb={climb} {...tension} allowNameWrapping={false} />);
     for (const label of container.querySelectorAll('[data-variant="caption2"]')) {
       expect(label.getAttribute('data-lines')).toBe('1');

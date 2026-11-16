@@ -1142,7 +1142,7 @@ export function ClimbFilterSheet({
               contentInsetRight={spacing[5]}
             />
           ),
-          height: gradeRailRowHeight(fontScale),
+          height: gradeRailRowHeight(fontScale, Platform.OS),
           ...(Platform.OS === 'android'
             ? {
                 native: {

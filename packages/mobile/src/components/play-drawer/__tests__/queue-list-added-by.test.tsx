@@ -435,7 +435,14 @@ describe('mixed-board compact queue reorder', () => {
     rowGeometry.fontScale = 1;
     resetClimbRowDisplayForTests();
   });
-  it.each([1, 1.5])('gives every future row the mirror budget at font scale %s', (fontScale) => {
+  // 1.353 is React Native's iOS fontScale at xxxLarge. A text-only row with the
+  // mirror budget: a body name, a footnote detail line, one caption2 direction
+  // line, two 2pt gaps and 16pt of padding, each line on its ramp (body 23/17,
+  // footnote 19/13, caption2 17/11).
+  it.each([
+    { fontScale: 1, expectedHeight: 73 },
+    { fontScale: 1.353, expectedHeight: Math.ceil(22 * (23 / 17) + 18 * (19 / 13) + 13 * (17 / 11) + 4 + 16) },
+  ])('gives every future row the mirror budget at font scale $fontScale', ({ fontScale, expectedHeight }) => {
     rowGeometry.fontScale = fontScale;
     applyClimbRowPreset('textOnly');
     capturedRows.props = [];
@@ -446,11 +453,7 @@ describe('mixed-board compact queue reorder', () => {
     renderList([...queue, tensionItem]);
     const futureRows = capturedRows.props.filter((row) => row.isDraggable);
     expect(futureRows).toHaveLength(2);
-    // At 1.5 the footnote and caption lines grow on their iOS ramps, a little past 1.5.
-    expect(futureRows.map((row) => row.minimumHeight)).toEqual([
-      fontScale === 1 ? 73 : 102,
-      fontScale === 1 ? 73 : 102,
-    ]);
+    expect(futureRows.map((row) => row.minimumHeight)).toEqual([expectedHeight, expectedHeight]);
     expect(
       capturedRows.props
         .filter((row) => row.isCurrentClimb || row.isHistoryItem)

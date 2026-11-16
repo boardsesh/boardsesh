@@ -157,6 +157,15 @@ describe('Icon text-size scaling', () => {
     expect(sizeOf(render(<Icon name="check.small" size={17} />))).toBeCloseTo(23, 1);
   });
 
+  it('follows the ramp of the text it sits beside', () => {
+    // xxxLarge (1.353): footnote is 19pt, 19/13; body is 23/17.
+    ctrl.fontScale = 1.353;
+    const footnote = render(<Icon name="check.small" size={13} textVariant="footnote" />);
+    expect(sizeOf(footnote)).toBeCloseTo(19, 5);
+    footnote.unmount();
+    expect(sizeOf(render(<Icon name="check.small" size={17} />))).toBeCloseTo(23, 5);
+  });
+
   it('grows by fontScale itself on Android, where Text has no ramp', () => {
     ctrl.os = 'android';
     ctrl.fontScale = AX3;

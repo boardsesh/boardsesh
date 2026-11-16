@@ -1,6 +1,6 @@
 import React, { useMemo, type MutableRefObject } from 'react';
 import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -991,7 +991,10 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
   const { textStyles: rowTextStyles } = useTheme();
   const nameStyle =
     nameLines === 2
-      ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale) * 2 }]
+      ? [
+          styles.climbName,
+          { minHeight: (rowTextStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale, Platform.OS) * 2 },
+        ]
       : styles.climbName;
   const Thumbnail = leaves.Thumbnail;
   // 88×112 in a two-column Climbs list, 76×96 in every other host.

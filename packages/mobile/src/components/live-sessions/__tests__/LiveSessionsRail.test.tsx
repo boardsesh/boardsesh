@@ -54,6 +54,8 @@ const spies = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', { 'data-testid': testID }, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>

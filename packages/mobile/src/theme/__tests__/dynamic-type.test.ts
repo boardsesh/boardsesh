@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
-
+// No react-native mock: the module must load without one (the chart and
+// live-rail layout modules import it from tests that have none).
 import { dynamicTypeRamps, rampFontScale, textFontScale } from '../dynamic-type';
 
 // React Native's fontScale per content size category (RCTAccessibilityManager.mm).
@@ -49,8 +49,8 @@ describe('rampFontScale', () => {
 
 describe('textFontScale', () => {
   it("follows the variant's ramp on iOS; a bar label follows body", () => {
-    expect(textFontScale('title1', AX3)).toBeCloseTo(48 / 28, 5);
-    expect(textFontScale('label', AX3)).toBe(rampFontScale('body', AX3));
+    expect(textFontScale('title1', AX3, 'ios')).toBeCloseTo(48 / 28, 5);
+    expect(textFontScale('label', AX3, 'ios')).toBeCloseTo(40 / 17, 5);
   });
 
   it('is fontScale itself off iOS, where Text has no ramp', () => {

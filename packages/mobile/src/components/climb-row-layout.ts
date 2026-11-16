@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { climbListThumbnailSize, type ClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { spacing } from '../theme/tokens';
 import { textStyles } from '../theme/typography';
@@ -199,7 +200,7 @@ function estimateClimbRowHeight(
   // `Text` it estimates does; a cap applies after the ramp, as in React Native.
   const lineHeight = (variant: ClimbRowTextVariant, maxFontScale = Infinity): number =>
     (typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) *
-    Math.min(textFontScale(variant, fontScale), maxFontScale);
+    Math.min(textFontScale(variant, fontScale, Platform.OS), maxFontScale);
 
   const lines = [lineHeight('body') * climbRowNameLines(fontScale, allowNameWrapping)];
   if (layout.hasDetailLine) lines.push(lineHeight('footnote'));
@@ -298,7 +299,8 @@ export function climbRowReorderHeight({
   rows: readonly ClimbRowReorderRow[];
 }): number {
   const lineHeight = (variant: ClimbRowTextVariant) =>
-    (input.typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) * textFontScale(variant, fontScale);
+    (input.typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) *
+    textFontScale(variant, fontScale, Platform.OS);
   let minimumHeight = climbRowLayout({
     ...input,
     fontScale,

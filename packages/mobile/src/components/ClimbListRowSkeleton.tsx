@@ -1,4 +1,12 @@
-import { View, StyleSheet, useWindowDimensions, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Platform,
+  View,
+  StyleSheet,
+  useWindowDimensions,
+  type ColorValue,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { ClimbRowReservedLine } from './ClimbRowReservedLine';
 import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
@@ -116,7 +124,7 @@ export function ClimbListRowSkeletonView({
               color={blockColor}
               minHeight={
                 climbRowNameLines(fontScale) === 2
-                  ? (textStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale) * 2
+                  ? (textStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale, Platform.OS) * 2
                   : undefined
               }
             />

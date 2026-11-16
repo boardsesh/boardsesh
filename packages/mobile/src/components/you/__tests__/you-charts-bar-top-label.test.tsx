@@ -32,6 +32,8 @@ const CHART_HEIGHT = 150;
 const X_AXIS_RESERVE = 28;
 
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => {
     useEffect(() => {
       onLayout?.({ nativeEvent: { layout: { width: CARD_WIDTH, height: CHART_HEIGHT, x: 0, y: 0 } } });

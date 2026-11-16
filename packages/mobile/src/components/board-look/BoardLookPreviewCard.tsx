@@ -303,7 +303,11 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             // lineHeight by the font multiplier — a reservation computed from the
             // unscaled value silently goes inert above fontScale 1.
             style={{
-              minHeight: descriptionMinHeight(resolvedTextStyles[style.descriptionVariant].lineHeight ?? 16, fontScale),
+              minHeight: descriptionMinHeight(
+                resolvedTextStyles[style.descriptionVariant].lineHeight ?? 16,
+                fontScale,
+                style.descriptionVariant,
+              ),
             }}
           >
             {t(option.descriptionI18nKey)}
