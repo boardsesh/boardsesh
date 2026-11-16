@@ -296,6 +296,8 @@ describe('generation preflight', () => {
     expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'kilter');
     finishProbe?.({ pendingCount: 0, deadLetterCount: 0 });
     await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+    // No action signal: leaving the screen does not abort the request on phones.
+    expect(mocks.request).toHaveBeenCalledWith();
     expect(mocks.outbox).toHaveBeenCalledTimes(1);
     expect(mocks.confirm).not.toHaveBeenCalled();
   });

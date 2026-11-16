@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import type { GraphQLClient } from 'graphql-request';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
+import {
+  createHeldGraphQLServer,
+  createScreenHost,
+  settleAfterUnmount,
+} from '../../../lib/graphql/__tests__/helpers/held-graphql-server';
 
 // How many times NotificationRow's body actually runs. The body renders exactly
 // one PressableSurface, so a counter in that mock is a faithful proxy: if
@@ -80,7 +87,23 @@ vi.mock('../../PressableSurface', () => ({
   },
 }));
 
+// The follow-request lifetime case sends through the real hook to a local
+// node:http server; the module that builds the app's client points it there.
+const transport = vi.hoisted(() => ({ client: null as GraphQLClient | null }));
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => {
+    if (!transport.client) throw new Error('The local GraphQL server has not started');
+    return transport.client;
+  },
+}));
+vi.mock('../../../lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: 'token' }) }));
+
 import { NotificationRow } from '../NotificationRow';
+import {
+  GROUPED_NOTIFICATIONS_QUERY_KEY,
+  NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+  useAnswerFollowRequest,
+} from '../../../lib/graphql/hooks/use-notifications';
 
 function makeNotification(overrides: Partial<GroupedNotification> = {}): GroupedNotification {
   return {
@@ -312,5 +335,63 @@ describe('NotificationRow follow request', () => {
 
     expect(getByText('items.followRequest')).not.toBeNull();
     expect(container.querySelector('[data-button="followRequest.approve"]')).toBeNull();
+  });
+});
+
+describe('NotificationRow follow request on phones (#7596 A4, revert of #7534)', () => {
+  const server = createHeldGraphQLServer();
+  beforeAll(async () => {
+    transport.client = await server.start();
+  });
+  afterEach(() => server.releaseAll());
+  afterAll(async () => {
+    transport.client = null;
+    await server.stop();
+  });
+
+  const request = makeNotification({
+    uuid: 'request-1',
+    type: 'follow_request',
+    entityId: 'requester-1',
+    actors: [{ id: 'requester-1', displayName: 'Jo', avatarUrl: null }],
+  });
+
+  /** The screen's part: the real answer hook handed to the row, as NotificationsScreen does. */
+  function FollowRequestScreen({ notification }: { notification: GroupedNotification }) {
+    const answerFollowRequest = useAnswerFollowRequest();
+    return (
+      <NotificationRow notification={notification} onPress={onPress} onAnswerFollowRequest={answerFollowRequest} />
+    );
+  }
+
+  it('an approval tapped just before the screen closes still reaches the server and leaves the feed', async () => {
+    const { queryClient } = createScreenHost();
+    queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+      pages: [{ groups: [request], totalCount: 1, unreadCount: 1, hasMore: false }],
+      pageParams: [0],
+    });
+    queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 1);
+    const { container, unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <FollowRequestScreen notification={request} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(container.querySelector('[data-button="followRequest.approve"]')!);
+    const held = await server.nextHeldRequest('ApproveFollowRequest');
+    expect(held.variables).toEqual({ userId: 'requester-1' });
+
+    unmount();
+    await settleAfterUnmount();
+    expect(held.aborted).toBe(false);
+
+    held.answer({ approveFollowRequest: true });
+    await waitFor(() => expect(queryClient.getMutationCache().getAll()[0]?.state.status).toBe('success'));
+    expect(queryClient.getQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY)).toEqual({
+      pages: [{ groups: [], totalCount: 1, unreadCount: 1, hasMore: false }],
+      pageParams: [0],
+    });
+    expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(0);
+    expect(server.countOf('ApproveFollowRequest')).toBe(1);
   });
 });
