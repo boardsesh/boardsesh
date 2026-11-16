@@ -25,6 +25,8 @@ export type HeldRequest = {
   aborted: boolean;
   answered: boolean;
   answer: (data: unknown) => void;
+  /** Answer with a GraphQL error, which graphql-request raises as a ClientError. */
+  fail: (message: string) => void;
 };
 
 function readBody(request: IncomingMessage): Promise<string> {
@@ -59,6 +61,11 @@ export function createHeldGraphQLServer() {
         held.answered = true;
         response.writeHead(200, { 'Content-Type': 'application/json' });
         response.end(JSON.stringify({ data }));
+      },
+      fail: (message) => {
+        held.answered = true;
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ data: null, errors: [{ message }] }));
       },
     };
     response.on('close', () => {
