@@ -69,7 +69,11 @@ import {
 import { useClimbListLayout } from '../../../src/hooks/use-climb-list-layout';
 import { useClimbRowDisplay, useClimbRowField } from '../../../src/lib/climb-row-display-preference';
 import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/climb-list-pagination';
-import { createClimberScrollTracker, type ForwardedScrollHandlers } from '../../../src/lib/climber-scroll-tracker';
+import {
+  createClimberScrollTracker,
+  type ClimberScrollTracker,
+  type ForwardedScrollHandlers,
+} from '../../../src/lib/climber-scroll-tracker';
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
 import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
 import { ClimbListThumbnailPrewarmWindow, createVisibleRowsStore } from '../../../src/components/ClimbListScrollAhead';
@@ -224,6 +228,19 @@ function queryLengthBucket(query: string): 'none' | 'short' | 'medium' | 'long' 
   if (queryLength <= 8) return 'short';
   if (queryLength <= 24) return 'medium';
   return 'long';
+}
+
+/**
+ * Mounted beside the list, keyed the same way, so it runs when the list mounts
+ * and unmounts (a column change, or a no-board branch). A list that goes away
+ * mid-fling never sends that fling's end event.
+ */
+function ClimberScrollListReset({ tracker }: { tracker: ClimberScrollTracker }) {
+  useLayoutEffect(() => {
+    tracker.forgetGesture();
+    return tracker.forgetGesture;
+  }, [tracker]);
+  return null;
 }
 
 export default function ClimbList() {
@@ -809,9 +826,6 @@ function ClimbListInner() {
     // and the new search's first ask needs no drag anyway.
     climberScroll.forgetGesture();
   }, [searchScrollKey, visibleRowsStore, resetScrollToTop, climberScroll]);
-  // A remounted list (the column count changed) never sends the old one's
-  // gesture-end events.
-  useEffect(() => climberScroll.forgetGesture(), [listColumns, climberScroll]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
@@ -2061,7 +2075,12 @@ function ClimbListInner() {
                 />
               ),
             }}
-            listReset={<ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />}
+            listReset={
+              <>
+                <ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />
+                <ClimberScrollListReset key={`climber-scroll-${listColumns}-columns`} tracker={climberScroll} />
+              </>
+            }
             listEffects={
               <>
                 <PlayBoardPrewarmHost />

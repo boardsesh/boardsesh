@@ -27,6 +27,10 @@
  * next-page ask, each further ask needs the climber to have dragged or flung
  * the list since the previous one (`climberScrolledSinceLastFetch`). A fling
  * keeps scrolling after an ask goes out, so it still loads page after page.
+ *
+ * The cost: on Android a list shorter than the screen cannot be dragged, so it
+ * stops after one extra page. Two pages of real rows always overflow a phone or
+ * tablet, so in practice only zero-height rows, the case being fenced, stop.
  */
 
 /**

@@ -1480,12 +1480,19 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
   // and each landed page asked for the next. After a search's first page ask,
   // the next one waits for the climber to move the list.
   describe('paging past the first extra page', () => {
-    const sixtyClimbs = () =>
-      Array.from({ length: 60 }, (_climb, index) => ({
+    const pagedClimbs = (from: number, count: number) =>
+      Array.from({ length: count }, (_climb, offset) => ({
         ...mocks.climb,
-        uuid: `paged-climb-${index}`,
-        name: `Paged ${index}`,
+        uuid: `paged-climb-${from + offset}`,
+        name: `Paged ${from + offset}`,
       })) as unknown as Climb[];
+    const sixtyClimbs = () => pagedClimbs(0, 60);
+    /** Each ask lands a page of 30 more climbs on the next render. */
+    const landPagesOnAsk = () =>
+      mocks.fetchNextPage.mockImplementation(async () => {
+        mocks.searchClimbs = [...mocks.searchClimbs, ...pagedClimbs(mocks.searchClimbs.length, 30)];
+        return { isFetchNextPageError: false };
+      });
     const everyRowOnScreen = () =>
       act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 1 }, { index: 59 }] }));
     const drag = () =>
@@ -1517,6 +1524,28 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
 
       drag();
       everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+
+    // The loop that crashed: a page lands, every row still reads as on screen,
+    // and the screen's own settle check asks for the next one.
+    it('does not ask again when a page lands unless the climber moved the list', async () => {
+      landPagesOnAsk();
+      const { findByText, rerender } = render(<ClimbList />);
+      await findByText('Paged 0');
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // The page lands: 90 climbs, 30 below row 59, inside the look-ahead.
+      rerender(<ClimbList />);
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // A drag, then the next page landing, is a reason to keep going.
+      drag();
+      rerender(<ClimbList />);
       await settle();
       expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
     });
