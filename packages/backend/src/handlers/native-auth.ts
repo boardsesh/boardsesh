@@ -1049,6 +1049,10 @@ export async function handleNativeAuthRegister(
   }
 
   try {
+    // Fail fast before bcrypt only. The write transaction below takes the shared
+    // gate and checks the manifest again before its first lock or write, inside
+    // insertCurrentStorePasswordIdentity, and holds the gate until it commits: a
+    // switch landing during bcrypt is seen there and nothing is written.
     await database.transaction(assertLegacyIdentityWriterAllowed);
     const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
     if (!prepared) {

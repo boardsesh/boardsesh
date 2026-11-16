@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { explicitReadOnlyConnectionOptions } from '../auth/email-audit/connection';
 import { writePrivateFileExclusively } from '../auth/email-audit/private-file';
 import { resolveWorksheetPath } from './account-email-evidence';
+import { CurrentStoreFoundationError } from '../auth/current-store/foundation-context';
 import {
   applyResolutionPlan,
   buildResolutionPlan,
@@ -238,11 +239,17 @@ export async function runResolutionCli(
     return 0;
   } catch (error) {
     await client?.end({ timeout: 1 }).catch(() => {});
-    write(
-      `${JSON.stringify({ status: 'refused', code: error instanceof EmailResolutionError ? error.code : 'DATABASE' })}\n`,
-    );
+    write(`${JSON.stringify({ status: 'refused', code: refusalCode(error) })}\n`);
     return 1;
   }
+}
+
+/** Fixed codes only; a driver message never reaches the output. */
+function refusalCode(error: unknown): string {
+  if (error instanceof EmailResolutionError) return error.code;
+  // Another authority owns identity writes: groups applied before it stay applied.
+  if (error instanceof CurrentStoreFoundationError && error.code === 'STALE_AUTHORITY') return 'STALE_AUTHORITY';
+  return 'DATABASE';
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
