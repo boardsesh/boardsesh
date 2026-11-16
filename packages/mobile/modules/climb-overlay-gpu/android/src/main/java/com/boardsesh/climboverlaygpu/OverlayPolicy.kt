@@ -15,6 +15,21 @@ internal object OverlayPolicy {
     const val MAX_ACTIVE = 128
     const val MAX_PENDING = 2
 
+    /** Bits follow fill, plate, glyph and annotation shader-layer order. */
+    fun stampLayers(annotation: Boolean, offsets: IntArray, extraOffsets: IntArray): Int {
+        require(offsets.size == 3 && extraOffsets.size == 4)
+        val glyph = offsets[2] != -1 || extraOffsets[3] != -1
+        if (annotation) return if (glyph) 8 else 0
+        val fill = offsets[0] != -1 || (0..2).any { extraOffsets[it] != -1 }
+        return (if (fill) 1 else 0) or (if (offsets[1] != -1) 2 else 0) or (if (glyph) 4 else 0)
+    }
+
+    fun selectStampLayers(lower: Int, upper: Int, progress: Float): Int {
+        if (progress <= 0f) return lower
+        if (progress >= 1f) return upper
+        return lower or upper
+    }
+
     fun canSubmit(ledgerCount: Int, fenceCount: Int) =
         ledgerCount < MAX_PENDING && fenceCount < MAX_PENDING
 

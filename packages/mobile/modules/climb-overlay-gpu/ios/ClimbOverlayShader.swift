@@ -25,7 +25,7 @@ enum ClimbOverlayShader {
     float4 veil;
     float4 tuning; // merge, seam, max mix, sharpness
     float4 tuning2; // fringe, core share, active max reach
-    uint4 offsets; // LED covers
+    uint4 offsets; // LED covers, active stamp-layer mask
     float4 viewport;
     float4 motion; // progress, reveal band width, reserved, editor reach scale
     float4 other; // second count, second max reach, empty production source, display mirror
@@ -164,6 +164,7 @@ enum ClimbOverlayShader {
     // Preserve CPU layer order across holds: all fills, then all plates,
     // then all glyphs. Combining each hold's layers would change overlaps.
     for(uint layer=1;layer<5;layer++) {
+      if((uniforms.offsets.y & (1u << (layer-1u)))==0) continue;
       for(uint index=0;index<count;index++) {
         Hold hold=source_hold(index,lowerCount,lower,upper);
         bool annotation=hold.identity.z>0;

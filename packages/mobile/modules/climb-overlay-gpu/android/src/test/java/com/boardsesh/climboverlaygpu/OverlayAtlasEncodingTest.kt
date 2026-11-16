@@ -5,6 +5,48 @@ import org.junit.Test
 
 class OverlayAtlasEncodingTest {
     @Test
+    fun immutableSceneMasksKeepLaterPassesAndAnnotationLayersThroughMirroringAndEndpoints() {
+        fun stamp(offset: Int) = AtlasStamp(offset, intArrayOf(1, 2, 3, 4))
+        fun role(stamps: List<AtlasStamp?>, extra: List<AtlasStamp?>, annotation: Boolean = false) =
+            AtlasRole(42, floatArrayOf(0f, 255f, 0f), stamps, extra, annotation)
+        fun active(role: AtlasRole, id: Long = 123, mirror: Long? = null) =
+            ActiveHold(AtlasHold(id, mirror, floatArrayOf(1f, 2f, 3f, 4f), intArrayOf(0, 0, 20, 30), 4, 12f, mapOf(42L to role)), role)
+        val missing = listOf<AtlasStamp?>(null, null, null)
+        val extraMissing = listOf<AtlasStamp?>(null, null, null, null)
+        val empty = ActiveScene(emptyList(), 1)
+        assertEquals(0, empty.stampLayers)
+        for (pass in 0..3) {
+            val first = missing.toMutableList()
+            val extra = extraMissing.toMutableList()
+            if (pass == 0) first[0] = stamp(0) else extra[pass - 1] = stamp(0)
+            assertEquals(1, ActiveScene(listOf(active(role(first, extra))), 1).stampLayers)
+            assertEquals(0, ActiveScene(listOf(active(role(first, extra, true))), 1).stampLayers)
+        }
+        for (pass in 0..1) {
+            val first = missing.toMutableList()
+            val extra = extraMissing.toMutableList()
+            if (pass == 0) first[2] = stamp(0) else extra[3] = stamp(0)
+            assertEquals(4, ActiveScene(listOf(active(role(first, extra))), 1).stampLayers)
+            assertEquals(8, ActiveScene(listOf(active(role(first, extra, true))), 1).stampLayers)
+        }
+        val plate = role(listOf(null, stamp(0), null), extraMissing)
+        val annotation = role(missing, listOf(null, null, null, stamp(12)), true)
+        val lower = ActiveScene(listOf(active(plate)), 1)
+        val upper = ActiveScene(listOf(active(annotation)), 1)
+        assertEquals(2, lower.stampLayers)
+        assertEquals(8, upper.stampLayers)
+        assertEquals(10, ActiveScene(listOf(active(plate), active(annotation)), 1).stampLayers)
+        assertEquals(lower.stampLayers, ActiveScene(listOf(active(plate, 456, 123)), 1).stampLayers)
+        assertEquals(2, OverlayPolicy.selectStampLayers(lower.stampLayers, upper.stampLayers, 0f))
+        assertEquals(8, OverlayPolicy.selectStampLayers(lower.stampLayers, upper.stampLayers, 1f))
+        assertEquals(10, OverlayPolicy.selectStampLayers(lower.stampLayers, upper.stampLayers, .5f))
+        assertEquals(0, OverlayPolicy.selectStampLayers(empty.stampLayers, upper.stampLayers, 0f))
+        assertEquals(8, OverlayPolicy.selectStampLayers(empty.stampLayers, upper.stampLayers, .5f))
+        assertEquals(2, OverlayPolicy.selectStampLayers(lower.stampLayers, empty.stampLayers, .5f))
+        assertEquals(0, OverlayPolicy.selectStampLayers(lower.stampLayers, empty.stampLayers, 1f))
+    }
+
+    @Test
     fun malformedOffsetsCannotWrapIntoAnAdmittedNativeSlice() {
         assertEquals(4, checkedAtlasOffset(4, 12, 16))
         assertThrows(IllegalArgumentException::class.java) { checkedAtlasOffset(Long.MAX_VALUE - 3, 16, 16) }

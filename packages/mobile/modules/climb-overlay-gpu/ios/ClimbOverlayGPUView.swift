@@ -75,6 +75,10 @@ private struct GPUHold {
   var fillCrop2: SIMD4<UInt32>
   var fillCrop3: SIMD4<UInt32>
   var glyphCrop1: SIMD4<UInt32>
+
+  var stampLayers: UInt32 {
+    ClimbOverlayMotion.stampLayers(offsets: offsets,extraOffsets: extraOffsets,annotation: identity.z > 0)
+  }
 }
 
 private struct GPUUniforms {
@@ -107,6 +111,7 @@ private struct GPUScene {
   let prepareMs: Double
   let cacheHit: Bool
   let descriptors: [GPUHold]
+  let stampLayers: UInt32
   let reservation: ClimbOverlayBudget.Reservation
 }
 
@@ -247,7 +252,8 @@ private enum OverlayRenderer {
       throw OverlayFailure.reason("Active hold allocation failed")
     }
     return GPUScene(atlas: atlas, holds: holds, count: count, maxReach: maxReach,
-                    prepareMs: (CACurrentMediaTime()-start)*1000, cacheHit: hit, descriptors: descriptors, reservation: reservation)
+                    prepareMs: (CACurrentMediaTime()-start)*1000, cacheHit: hit, descriptors: descriptors,
+                    stampLayers: descriptors.reduce(0) { $0 | $1.stampLayers },reservation: reservation)
   }
 
   static func replacingDescriptors(_ scene: GPUScene, with descriptors: [GPUHold]) throws -> GPUScene {
@@ -266,7 +272,8 @@ private enum OverlayRenderer {
       throw OverlayFailure.reason("Motion hold allocation failed")
     }
     return GPUScene(atlas: scene.atlas,holds: holds,count: descriptors.count,maxReach: scene.maxReach,
-      prepareMs: scene.prepareMs,cacheHit: scene.cacheHit,descriptors: descriptors,reservation: reservation)
+      prepareMs: scene.prepareMs,cacheHit: scene.cacheHit,descriptors: descriptors,
+      stampLayers: descriptors.reduce(0) { $0 | $1.stampLayers },reservation: reservation)
   }
 
   static func prepareSources(configJson: String, frames: String?, previous: String?, next: String?,
@@ -307,7 +314,8 @@ private enum OverlayRenderer {
     let timedCurrent = GPUScene(atlas: annotatedCurrent.atlas,holds: annotatedCurrent.holds,
       count: annotatedCurrent.count,maxReach: annotatedCurrent.maxReach,
       prepareMs: (CACurrentMediaTime()-started)*1000,cacheHit: annotatedCurrent.cacheHit,
-      descriptors: annotatedCurrent.descriptors,reservation: annotatedCurrent.reservation)
+      descriptors: annotatedCurrent.descriptors,stampLayers: annotatedCurrent.stampLayers,
+      reservation: annotatedCurrent.reservation)
     return GPUScenes(current: timedCurrent,previous: annotatedPrevious,next: annotatedNext)
   }
 
@@ -436,7 +444,7 @@ func compareClimbOverlayGPU(_ configJson: String) throws -> [String: Any] {
     veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
     tuning: SIMD4(manifest.merge,manifest.seam,manifest.seamMix,manifest.seamSharpness),
     tuning2: SIMD4(manifest.fringe,manifest.coreShare,scene.maxReach,0),
-    offsets: SIMD4(manifest.covers?.offset ?? .max,0,0,0),viewport: SIMD4(Float(width),Float(height),0,0),
+    offsets: SIMD4(manifest.covers?.offset ?? .max,scene.stampLayers,0,0),viewport: SIMD4(Float(width),Float(height),0,0),
     motion: SIMD4(0,1,1,1),other: .zero,coverCrop: manifest.covers?.crop ?? .zero)
   encoder.setRenderPipelineState(pipeline)
   encoder.setFragmentBuffer(scene.atlas.pixels, offset: 0, index: 0)
@@ -830,7 +838,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
       tuning: SIMD4(manifest.merge,manifest.seam,manifest.seamMix,manifest.seamSharpness),
       tuning2: SIMD4(manifest.fringe,manifest.coreShare,lower.maxReach,0),
-      offsets: SIMD4(manifest.covers?.offset ?? .max,0,0,0),
+      offsets: SIMD4(manifest.covers?.offset ?? .max,
+        ClimbOverlayMotion.selectStampLayers(lower: lower.stampLayers,upper: upper.stampLayers,progress: progress),0,0),
       viewport: SIMD4(Float(view.drawableSize.width),Float(view.drawableSize.height),0,0),
       motion: SIMD4(progress,ClimbOverlayMotion.revealBand,0,reachScale),
       other: SIMD4(Float(upper.count),upper.maxReach,
