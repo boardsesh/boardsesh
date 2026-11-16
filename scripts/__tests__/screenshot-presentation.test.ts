@@ -619,10 +619,11 @@ describe('store screenshot presentation', () => {
   );
 
   it('enlarges only the captured wall rail and preserves the complete local selection screen', async () => {
+    // Match the current-climb content below the header in the 1080×1920 story capture.
     const raw = await sharp(
       Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
       <rect width="1080" height="1920" fill="#164c39"/>
-      <rect y="270" width="1080" height="148" fill="#e69a32"/>
+      <rect y="420" width="1080" height="170" fill="#e69a32"/>
       <rect y="1525" width="1080" height="125" fill="#ac3478"/>
       <rect y="1856" width="1080" height="64" fill="#3269e6"/>
     </svg>`),
