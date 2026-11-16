@@ -108,7 +108,7 @@ export function LogbookView({
               <Text variant="headline" style={styles.errorTitle}>
                 {t('mobile.logbook.errorTitle')}
               </Text>
-              <Text variant="subheadline" style={styles.errorBody}>
+              <Text tone="secondary" variant="subheadline" style={styles.errorBody}>
                 {t('mobile.logbook.errorBody')}
               </Text>
               <PressableSurface
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   errorTitle: { marginTop: spacing[3], textAlign: 'center' },
-  errorBody: { opacity: 0.6, textAlign: 'center' },
+  errorBody: { textAlign: 'center' },
   retryButton: {
     marginTop: spacing[3],
     paddingHorizontal: spacing[4],

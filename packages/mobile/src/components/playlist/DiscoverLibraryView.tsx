@@ -100,7 +100,7 @@ export function DiscoverLibraryView({
                 <Text variant="subheadline" style={styles.signInTitle}>
                   {t('library.signInBanner.title')}
                 </Text>
-                <Text variant="caption1" style={styles.signInDescription}>
+                <Text tone="secondary" variant="caption1">
                   {t('library.signInBanner.description')}
                 </Text>
               </View>
@@ -204,9 +204,6 @@ const styles = StyleSheet.create({
   },
   signInTitle: {
     fontWeight: '600',
-  },
-  signInDescription: {
-    opacity: 0.6,
   },
   signInCta: {
     fontWeight: '600',
