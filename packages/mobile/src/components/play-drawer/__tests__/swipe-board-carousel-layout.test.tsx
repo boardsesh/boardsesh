@@ -412,6 +412,45 @@ it('keeps one photograph and feeds reversible absolute progress without a JS ren
   expect(recorded.boardProps.mock.calls).toHaveLength(renderCount);
 });
 
+it.each([1, -1] as const)('keeps the incoming holds during the outgoing animation tail (%s)', (direction) => {
+  recorded.motionNative = true;
+  const pager = restingPager();
+  const props = {
+    ...baseProps,
+    layoutId: 8,
+    pager,
+    currentFrames: 'outgoing',
+    prevFrames: 'previous',
+    nextFrames: 'next',
+    containerSize: { width: 390, height: 500 },
+  };
+  const { rerender } = render(createElement(SwipeBoardCarousel, props));
+  pager.slideWidth.value = 250;
+  pager.isAnimating.value = true;
+  pager.flingDirection.value = direction;
+  // The header keeps travelling past the contained board to clear its margins.
+  pager.translateX.value = -direction * 414;
+  // Navigation publishes the new trio once the incoming board reaches center,
+  // before the UI thread lands the outgoing header and advances its anchor.
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: direction,
+      currentFrames: 'incoming',
+      prevFrames: direction === 1 ? 'outgoing' : 'unrelated-previous',
+      nextFrames: direction === 1 ? 'unrelated-next' : 'outgoing',
+    }),
+  );
+  const transition = latestStationaryBoard().gpuTransition!;
+  expect(transition.centerPage).toBe(direction);
+  expect(transition.pagePosition.value).toBe(direction);
+  expect(transition.pagePosition.value - transition.centerPage).toBe(0);
+  pager.anchorPage.value = direction;
+  pager.translateX.value = 0;
+  pager.flingDirection.value = 0;
+  expect(transition.pagePosition.value).toBe(direction);
+});
+
 it('waits for the photograph and prepared native neighbors before releasing a swipe', () => {
   recorded.motionNative = true;
   render(
