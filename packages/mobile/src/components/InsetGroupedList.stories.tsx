@@ -9,6 +9,7 @@ import { spacing } from '../theme/tokens';
 import { ArtRow } from './ArtRow';
 import { Icon } from './Icon';
 import { InsetGroupedList, insetGroupedRowStyles } from './InsetGroupedList';
+import { PressableSurface } from './PressableSurface';
 import { StatusPill } from './StatusPill';
 import { Text } from './Text';
 import { BoardThumbnail, BoardThumbnailView } from './boards/BoardThumbnail';
@@ -110,6 +111,39 @@ function RowStates() {
             onPress={noop}
           />
           <ArtRow art={boardGlyph} artSize="regular" title="A static row" subtitle="No press handler" />
+        </InsetGroupedList>
+      </View>
+
+      <StoryPageLabel>A control at the end, selected and not</StoryPageLabel>
+      <View style={styles.inset}>
+        <InsetGroupedList>
+          <ArtRow
+            art={boardGlyph}
+            artSize="regular"
+            title="Garage Board"
+            subtitle="Kilter · 40°"
+            accessory={
+              <PressableSurface onPress={noop} feedback="opacity" hitSlop={12} accessibilityLabel="Board actions">
+                <Icon name="more" size={20} color={systemColors.accent} />
+              </PressableSurface>
+            }
+            selected
+            onPress={noop}
+            onLongPress={noop}
+            longPressAccessibilityLabel="Board actions"
+          />
+          <ArtRow
+            art={boardGlyph}
+            artSize="regular"
+            title="Club wall"
+            subtitle="Tension · 7 x 10"
+            accessory={
+              <PressableSurface onPress={noop} feedback="opacity" hitSlop={12} accessibilityLabel="Board actions">
+                <Icon name="more" size={20} color={systemColors.accent} />
+              </PressableSurface>
+            }
+            onPress={noop}
+          />
         </InsetGroupedList>
       </View>
 

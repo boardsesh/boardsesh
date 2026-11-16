@@ -5,10 +5,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
+type AccessibilityActionHandler = (event: { nativeEvent: { actionName: string } }) => void;
+const ctrl = vi.hoisted(() => ({
+  os: 'ios' as 'ios' | 'android',
+  actionHandlers: new Map<string, AccessibilityActionHandler>(),
+}));
+
 vi.mock('react-native', async () => {
   const { flattenStyle } = await import('../../../test/flatten-style');
   return {
-    Platform: { OS: 'ios' },
+    Platform: {
+      get OS() {
+        return ctrl.os;
+      },
+    },
     PlatformColor: (name: string) => name,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     StyleSheet: { create: <T,>(styles: T): T => styles, hairlineWidth: 0.5 },
@@ -78,6 +88,8 @@ vi.mock('../PressableSurface', async () => {
       onLongPress,
       accessibilityLabel,
       accessibilityState,
+      accessibilityActions,
+      onAccessibilityAction,
       feedback,
       style,
       testID,
@@ -87,13 +99,17 @@ vi.mock('../PressableSurface', async () => {
       onLongPress?: () => void;
       accessibilityLabel?: string;
       accessibilityState?: unknown;
+      accessibilityActions?: unknown;
+      onAccessibilityAction?: AccessibilityActionHandler;
       feedback?: string;
       style?: unknown;
       testID?: string;
-    }) =>
-      createElement(
+    }) => {
+      if (testID && onAccessibilityAction) ctrl.actionHandlers.set(testID, onAccessibilityAction);
+      return createElement(
         'button',
         {
+          'data-actions': accessibilityActions ? JSON.stringify(accessibilityActions) : undefined,
           onClick: onPress,
           onContextMenu: onLongPress,
           'aria-label': accessibilityLabel,
@@ -103,7 +119,8 @@ vi.mock('../PressableSurface', async () => {
           'data-testid': testID,
         },
         children,
-      ),
+      );
+    },
   };
 });
 vi.mock('../../providers/theme-provider', () => ({
@@ -126,7 +143,11 @@ function separators(container: HTMLElement): Element[] {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  ctrl.os = 'ios';
+  ctrl.actionHandlers.clear();
+});
 
 describe('InsetGroupedList', () => {
   it('draws a hairline between rows, never above the first or below the last', () => {
@@ -282,11 +303,110 @@ describe('ArtRow', () => {
     );
     const title = screen.getByText('Bergen Klatresenter Danmarksplass');
     expect(title.parentElement).toBe(screen.getByTestId('status').parentElement);
-    expect(styleOf(title.parentElement).flexDirection).toBe('row');
+    const titleLine = styleOf(title.parentElement);
+    expect(titleLine.flexDirection).toBe('row');
+    // At an accessibility text size the pill drops under the title instead of
+    // squeezing it to a few characters.
+    expect(titleLine.flexWrap).toBe('wrap');
+    expect(titleLine.rowGap).toBeGreaterThan(0);
   });
 
-  it('renders a custom accessory node as given', () => {
-    render(<ArtRow art={null} artSize="regular" title="Board" accessory={<u data-testid="menu" />} />);
-    expect(screen.getByTestId('menu')).toBeTruthy();
+  it('draws a control accessory beside the row target, so it is focusable and its tap is its own', () => {
+    const onPress = vi.fn();
+    const onMenu = vi.fn();
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        accessory={
+          <button type="button" aria-label="Board actions" onClick={onMenu}>
+            ⋯
+          </button>
+        }
+        onPress={onPress}
+        accessibilityLabel="Garage Board"
+        testID="row"
+      />,
+    );
+    const row = screen.getByTestId('row');
+    const menu = screen.getByRole('button', { name: 'Board actions' });
+    expect(row.contains(menu)).toBe(false);
+    expect(row.parentElement?.contains(menu)).toBe(true);
+    fireEvent.click(menu);
+    expect(onMenu).toHaveBeenCalledOnce();
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('keeps the plain row box when a control sits beside the target', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        accessory={<u data-testid="menu" />}
+        selected
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    const target = styleOf(screen.getByTestId('row'));
+    const outer = styleOf(screen.getByTestId('row').parentElement);
+    const plain = insetGroupedRowStyles.row;
+    // Leading gutter and vertical padding on the target, trailing gutter on the row.
+    expect(target.paddingStart).toBe(plain.paddingHorizontal);
+    expect(target.paddingEnd).toBeUndefined();
+    expect(target.paddingVertical).toBe(plain.paddingVertical);
+    expect(target.minHeight).toBe(plain.minHeight);
+    expect(target.gap).toBe(plain.gap);
+    expect(outer.paddingEnd).toBe(plain.paddingHorizontal);
+    expect(outer.gap).toBe(plain.gap);
+    // The wash spans the control too.
+    expect(outer.backgroundColor).toBe('#SELECTION_FILL');
+    expect(target.backgroundColor).toBeUndefined();
+  });
+
+  it('keeps chevron and checkmark inside the row target', () => {
+    render(<ArtRow art={null} artSize="regular" title="Board" accessory="chevron" onPress={vi.fn()} testID="row" />);
+    expect(screen.getByTestId('row').querySelector('[data-icon="chevron.right"]')).not.toBeNull();
+    expect(styleOf(screen.getByTestId('row')).paddingHorizontal).toBe(16);
+  });
+
+  it('publishes the long press as a labelled accessibility action that runs it', () => {
+    const onLongPress = vi.fn();
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        onPress={vi.fn()}
+        onLongPress={onLongPress}
+        longPressAccessibilityLabel="Board actions"
+        testID="row"
+      />,
+    );
+    expect(JSON.parse(screen.getByTestId('row').getAttribute('data-actions') ?? 'null')).toEqual([
+      { name: 'longpress', label: 'Board actions' },
+    ]);
+    ctrl.actionHandlers.get('row')?.({ nativeEvent: { actionName: 'longpress' } });
+    expect(onLongPress).toHaveBeenCalledOnce();
+    ctrl.actionHandlers.get('row')?.({ nativeEvent: { actionName: 'activate' } });
+    expect(onLongPress).toHaveBeenCalledOnce();
+  });
+
+  it('leaves an unlabelled long press out on iOS, where VoiceOver would read its raw name', () => {
+    render(<ArtRow art={null} artSize="regular" title="Board" onLongPress={vi.fn()} testID="row" />);
+    expect(screen.getByTestId('row').getAttribute('data-actions')).toBeNull();
+    cleanup();
+    ctrl.os = 'android';
+    render(<ArtRow art={null} artSize="regular" title="Board" onLongPress={vi.fn()} testID="row" />);
+    expect(JSON.parse(screen.getByTestId('row').getAttribute('data-actions') ?? 'null')).toEqual([
+      { name: 'longpress' },
+    ]);
+  });
+
+  it('publishes no actions on a row without a long press', () => {
+    render(<ArtRow art={null} artSize="regular" title="Board" onPress={vi.fn()} testID="row" />);
+    expect(screen.getByTestId('row').getAttribute('data-actions')).toBeNull();
   });
 });

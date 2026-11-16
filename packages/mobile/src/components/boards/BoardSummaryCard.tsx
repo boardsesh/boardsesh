@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
@@ -41,12 +41,10 @@ type BoardSummaryCardProps = {
  * row and long board names can wrap without shrinking either touch target.
  */
 export function BoardSummaryCard(props: BoardSummaryCardProps) {
-  return (
-    <BoardSummaryCardView
-      {...props}
-      thumbnail={props.board ? <BoardThumbnail board={props.board} size="regular" /> : null}
-    />
-  );
+  const { board } = props;
+  // One element per board, so the Browse row's memo holds across re-renders.
+  const thumbnail = useMemo(() => (board ? <BoardThumbnail board={board} size="regular" /> : null), [board]);
+  return <BoardSummaryCardView {...props} thumbnail={thumbnail} />;
 }
 export function BoardSummaryCardView({
   thumbnail,
