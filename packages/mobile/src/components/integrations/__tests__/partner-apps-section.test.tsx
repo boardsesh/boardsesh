@@ -25,6 +25,20 @@ vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({
   useMyConnectedApps: () => ({ data: mocks.data, isError: mocks.isError, refetch: mocks.refetch }),
   useDisconnectApp: () => ({ mutate: mocks.mutate }),
 }));
+// These native UI fixtures supply connected apps above. New scope imports may
+// reach the client module, but the section/detail never send fixture HTTP I/O.
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => {
+    throw new Error('Unexpected native HTTP in connected apps UI fixture');
+  },
+  getOfflineSyncHttpClient: () => {
+    throw new Error('Unexpected native offline HTTP in connected apps UI fixture');
+  },
+}));
+vi.mock('../../../lib/graphql/use-auth-token', () => ({
+  // Native has no operation-scope notifications or credential work.
+  subscribeHttpOperationScope: (_listener: () => void) => () => {},
+}));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: mocks.isAuthenticated }),
 }));

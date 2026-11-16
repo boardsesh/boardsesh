@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { withoutConnectedApp } from '@boardsesh/connected-apps';
 import {
   DISCONNECT_APP,
@@ -11,6 +12,8 @@ import {
 } from '@boardsesh/graphql/operations/connected-apps';
 import { useAuth } from '../../../providers/auth-provider';
 import { getHttpClient } from '../client';
+import { useHttpFiniteQuery } from '../use-http-finite-query';
+import { useHttpMutation } from '../use-http-mutation';
 
 export const CONNECTED_APPS_QUERY_KEY = ['myConnectedApps'] as const;
 export const PARTNER_APPS_ENABLED_QUERY_KEY = ['partnerAppsEnabled'] as const;
@@ -50,13 +53,13 @@ export function usePartnerAppsEnabled(): boolean {
  * The apps the signed-in climber connected through partner OAuth (#6981 F16).
  * Per climber, so nothing is fetched while signed out.
  */
-export function useMyConnectedApps() {
+export function useMyConnectedApps(enabled = true) {
   const { isAuthenticated } = useAuth();
-  return useQuery({
+  return useHttpFiniteQuery({
     queryKey: CONNECTED_APPS_QUERY_KEY,
-    queryFn: () => getHttpClient().request<GetMyConnectedAppsResponse>(GET_MY_CONNECTED_APPS),
+    queryFn: (operation) => operation.request<GetMyConnectedAppsResponse>(GET_MY_CONNECTED_APPS),
     select: (data) => data.myConnectedApps,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && enabled,
     staleTime: 30_000,
   });
 }
@@ -67,14 +70,34 @@ export function useMyConnectedApps() {
  */
 export function useDisconnectApp() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (variables: DisconnectAppVariables) =>
-      getHttpClient().request<DisconnectAppResponse>(DISCONNECT_APP, variables),
-    onSuccess: (_data, { connectionId }) => {
-      queryClient.setQueryData<GetMyConnectedAppsResponse>(CONNECTED_APPS_QUERY_KEY, (current) =>
+  const mutation = useHttpMutation({
+    mutationFn: (variables: DisconnectAppVariables, operation) =>
+      operation.request<DisconnectAppResponse>(DISCONNECT_APP, Object.freeze({ ...variables })),
+    onSuccess: (_data, { connectionId }, _context, operation) => {
+      const cache = operation.cache(queryClient);
+      cache.setQueryData<GetMyConnectedAppsResponse>(CONNECTED_APPS_QUERY_KEY, (current) =>
         current ? { myConnectedApps: withoutConnectedApp(current.myConnectedApps, connectionId) } : current,
       );
-      void queryClient.invalidateQueries({ queryKey: CONNECTED_APPS_QUERY_KEY });
+      void cache.invalidateQueries({ queryKey: CONNECTED_APPS_QUERY_KEY }).catch(() => {});
     },
   });
+  const { mutate: submit, mutateAsync: submitAsync, mutateWithReceipt: submitWithReceipt } = mutation;
+  // Snapshot at each PUBLIC entry, before generic onMutate can await. Neither
+  // the packet nor success-cache identity may follow caller object mutation.
+  const mutate = useCallback(
+    (variables: DisconnectAppVariables, callbacks?: Parameters<typeof submit>[1]) =>
+      submit(Object.freeze({ ...variables }), callbacks),
+    [submit],
+  );
+  const mutateAsync = useCallback(
+    (variables: DisconnectAppVariables, callbacks?: Parameters<typeof submitAsync>[1]) =>
+      submitAsync(Object.freeze({ ...variables }), callbacks),
+    [submitAsync],
+  );
+  const mutateWithReceipt = useCallback(
+    (variables: DisconnectAppVariables, callbacks?: Parameters<typeof submitWithReceipt>[1]) =>
+      submitWithReceipt(Object.freeze({ ...variables }), callbacks),
+    [submitWithReceipt],
+  );
+  return { ...mutation, mutate, mutateAsync, mutateWithReceipt };
 }

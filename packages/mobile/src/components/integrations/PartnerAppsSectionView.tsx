@@ -9,12 +9,13 @@ import { SectionHeader } from '../SectionHeader';
 import { Text } from '../Text';
 type PartnerAppsSectionViewProps = {
   section: ConnectedAppsSectionView;
+  originalOwner?: Readonly<{ assertCurrent(): void }>;
   onOpen: (row: ConnectedAppRowView) => void;
 };
 
-export function PartnerAppsSectionView({ section, onOpen }: PartnerAppsSectionViewProps) {
+export function PartnerAppsSectionView({ section, onOpen, originalOwner }: PartnerAppsSectionViewProps) {
   const { systemColors } = useTheme();
-  if (section.kind === 'hidden') return null;
+  if (!ownerCurrent(originalOwner) || section.kind === 'hidden') return null;
   const cardBackground = { backgroundColor: systemColors.secondaryGroupedBackground };
 
   return (
@@ -34,6 +35,7 @@ export function PartnerAppsSectionView({ section, onOpen }: PartnerAppsSectionVi
               row={row}
               showSeparator={index < section.rows.length - 1}
               onOpen={onOpen}
+              originalOwner={originalOwner}
             />
           ))}
         </View>
@@ -44,13 +46,17 @@ export function PartnerAppsSectionView({ section, onOpen }: PartnerAppsSectionVi
 
 type PartnerAppRowProps = {
   row: ConnectedAppRowView;
+  originalOwner?: Readonly<{ assertCurrent(): void }>;
   showSeparator: boolean;
   onOpen: (row: ConnectedAppRowView) => void;
 };
 
-const PartnerAppRow = memo(function PartnerAppRow({ row, showSeparator, onOpen }: PartnerAppRowProps) {
+const PartnerAppRow = memo(function PartnerAppRow({ row, showSeparator, onOpen, originalOwner }: PartnerAppRowProps) {
   const { systemColors, brandColors } = useTheme();
-  const handlePress = useCallback(() => onOpen(row), [onOpen, row]);
+  const handlePress = useCallback(() => {
+    if (ownerCurrent(originalOwner)) onOpen(row);
+  }, [onOpen, row, originalOwner]);
+  if (!ownerCurrent(originalOwner)) return null;
   const suspended = row.suspendedNotice !== null;
   return (
     <ListRow
@@ -86,3 +92,12 @@ const styles = StyleSheet.create({
     padding: spacing[4],
   },
 });
+
+function ownerCurrent(owner: Readonly<{ assertCurrent(): void }> | undefined): boolean {
+  try {
+    owner?.assertCurrent();
+    return true;
+  } catch {
+    return false;
+  }
+}
