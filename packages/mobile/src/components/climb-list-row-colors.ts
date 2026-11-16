@@ -1,4 +1,5 @@
 import { withAlpha } from '../theme/colors';
+import { SELECTION_WASH_ALPHA } from '../theme/variants/variant-tokens';
 
 /**
  * Highlight colours for the active (selected) climb row, derived from the
@@ -11,7 +12,7 @@ import { withAlpha } from '../theme/colors';
 export function selectedRowColors(brandPrimary: string): { fill: string; accent: string } {
   return {
     // Subtle wash behind the row content.
-    fill: withAlpha(brandPrimary, 0.18),
+    fill: withAlpha(brandPrimary, SELECTION_WASH_ALPHA),
     // Solid left accent bar.
     accent: brandPrimary,
   };

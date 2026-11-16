@@ -51,28 +51,11 @@ function countSelectionTernaries(source: string): number {
  * The allowlist's size, pinned so no one can add an entry or raise a count.
  * When you migrate a file, lower its entry AND these two numbers.
  */
-const ALLOWLIST_FILES = 16;
-const ALLOWLIST_TOTAL = 22;
+const ALLOWLIST_FILES = 0;
+const ALLOWLIST_TOTAL = 0;
 
 /** File → count today. Shrink-only. */
-const ALLOWLIST: Record<string, number> = {
-  'src/components/QueueItemRowView.tsx': 1,
-  'src/components/board-discovery/BoardConfigChips.tsx': 1,
-  'src/components/board-discovery/BoardManageRow.tsx': 1,
-  'src/components/board-look/BoardLookPreviewCard.tsx': 1,
-  'src/components/board-look/PalettePreviewCard.tsx': 1,
-  'src/components/gym-directory/GymListPanel.tsx': 4,
-  'src/components/gym-directory/WallFinderFilterChips.tsx': 1,
-  'src/components/moderation/ModerationProposalCard.tsx': 2,
-  'src/components/outline-editor/OutlineEditorPickerScreen.tsx': 2,
-  'src/components/play-drawer/AngleSelectorSheet.tsx': 1,
-  'src/components/playback/PlaybackControls.tsx': 1,
-  'src/components/privacy/AudiencePicker.tsx': 1,
-  'src/components/spray-wall/SprayPointToolbar.tsx': 1,
-  'src/components/spray-wall/SprayWallBackgroundCarousel.tsx': 1,
-  'src/components/spray-wall/SprayWallLedSetupScreen.tsx': 1,
-  'src/components/you/SocialTab.tsx': 2,
-};
+const ALLOWLIST: Record<string, number> = {};
 
 function walk(dir: string, files: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

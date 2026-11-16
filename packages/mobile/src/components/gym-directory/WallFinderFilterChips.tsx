@@ -30,7 +30,7 @@ function Chip({
   onPress: () => void;
   accessibilityLabel?: string;
 }) {
-  const { brandColors, systemColors } = useTheme();
+  const { selection, systemColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -55,11 +55,11 @@ function Chip({
         animatedStyle,
         styles.chip,
         active
-          ? { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` }
+          ? { borderColor: selection.checkmark, backgroundColor: selection.fill }
           : { borderColor: systemColors.separator },
       ]}
     >
-      <Text variant="caption1" color={active ? brandColors.primary : undefined} style={styles.chipLabel}>
+      <Text variant="caption1" color={selection.text} emphasized={active}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -157,7 +157,7 @@ export function WallFinderFilterChips({
 
       {hasActive ? (
         <PressableSurface onPress={onClear} hitSlop={8} accessibilityRole="button" style={styles.clear}>
-          <Text variant="caption1" color={brandColors.primary} style={styles.chipLabel}>
+          <Text variant="caption1" color={brandColors.primary}>
             {t('actions.clear')}
           </Text>
         </PressableSurface>
@@ -176,9 +176,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: 20,
     borderWidth: 1,
-  },
-  chipLabel: {
-    fontWeight: '500',
   },
   clear: {
     paddingHorizontal: spacing[2],

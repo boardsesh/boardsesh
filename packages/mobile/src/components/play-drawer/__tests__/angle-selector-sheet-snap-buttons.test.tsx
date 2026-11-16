@@ -136,7 +136,10 @@ vi.mock('../../../theme/tokens', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
-  useTheme: () => ({ systemColors: {} }),
+  useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
+    systemColors: {},
+  }),
 }));
 
 import { AngleSelectorSheet } from '../AngleSelectorSheet';

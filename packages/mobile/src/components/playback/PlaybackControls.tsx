@@ -29,7 +29,6 @@ import { ValueSlider } from '../ValueSlider';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight, hapticSelection } from '../../lib/haptics';
-import { withAlpha } from '../../theme/colors';
 import { glassSize } from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { springs, timing } from '../../theme/animations';
@@ -189,7 +188,7 @@ const FrameChip = memo(function FrameChip({
   label: string;
   onSeek: (index: number) => void;
 }) {
-  const { systemColors, brandColors, radii } = useTheme();
+  const { systemColors, selection, radii } = useTheme();
   const handlePress = useCallback(() => {
     hapticSelection();
     onSeek(index);
@@ -207,13 +206,13 @@ const FrameChip = memo(function FrameChip({
         styles.frameChip,
         {
           borderRadius: radii.button,
-          backgroundColor: selected ? withAlpha(brandColors.primary, 0.32) : systemColors.fill,
+          backgroundColor: selected ? selection.fill : systemColors.fill,
         },
       ]}
     >
       <Text
         variant="footnote"
-        color={selected ? brandColors.primary : systemColors.secondaryLabel}
+        color={selected ? selection.text : systemColors.secondaryLabel}
         style={[styles.frameChipDigit, selected && styles.frameChipDigitSelected]}
       >
         {index + 1}

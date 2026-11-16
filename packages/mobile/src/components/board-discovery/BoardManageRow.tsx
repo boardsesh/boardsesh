@@ -100,7 +100,7 @@ function BoardManageRowComponent({
 }: BoardManageRowProps) {
   const { t, i18n } = useTranslation('boards');
   const importCopy = board.sprayImport ? sprayImportCopy(board.sprayImport, importStatusStale) : null;
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, selection } = useTheme();
 
   const boardName = toBoardName(board.boardType);
   // Every wall in Manage Boards, not just the active one. A non-active spray wall
@@ -239,7 +239,7 @@ function BoardManageRowComponent({
           styles.thumb,
           {
             backgroundColor: systemColors.tertiaryBackground,
-            borderColor: isActive ? brandColors.primary : systemColors.separator,
+            borderColor: isActive ? selection.checkmark : systemColors.separator,
             borderWidth: isActive ? 2 : StyleSheet.hairlineWidth,
           },
         ]}
@@ -341,8 +341,8 @@ function BoardManageRowComponent({
 
       {isActive ? (
         <View style={styles.activeBadge}>
-          <Icon name="tick.fill" size={14} color={brandColors.primary} />
-          <Text variant="caption1" color={brandColors.primary}>
+          <Icon name="tick.fill" size={14} color={selection.checkmark} />
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('mobile.boardDetail.alreadyActive')}
           </Text>
         </View>

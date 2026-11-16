@@ -3,8 +3,6 @@ import { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import { opacity, spacing, borderRadius } from '../../theme/tokens';
-import { brandColors } from '../../theme/colors';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { Text } from '../Text';
 
 export type ChipOption<T> = {
@@ -36,7 +34,7 @@ type BoardConfigChipsProps<T> = {
  * fix the climb filter sheet's chip rows use.
  */
 function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = false }: BoardConfigChipsProps<T>) {
-  const { systemColors, brandColors: themeBrandColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   return (
     <View style={styles.row}>
       {options.map((option) => (
@@ -52,14 +50,14 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
             styles.chip,
             disabled && styles.chipDisabled,
             {
-              // Border is a foreground accent → scheme-aware. Fill stays static:
-              // the selected label turns white and must sit on the brand fill.
-              borderColor: option.selected ? themeBrandColors.primary : systemColors.separator,
-              backgroundColor: option.selected ? brandColors.primary : 'transparent',
+              borderWidth: option.selected ? 2 : undefined,
+              // Selected is a state: the brand wash behind a label-colour title.
+              borderColor: option.selected ? selection.checkmark : systemColors.separator,
+              backgroundColor: option.selected ? selection.fill : 'transparent',
             },
           ]}
         >
-          <Text variant="footnote" color={option.selected ? iosSystemColors.white : systemColors.label}>
+          <Text variant="footnote" color={selection.text} emphasized={option.selected}>
             {option.label}
           </Text>
         </PressableSurface>

@@ -242,6 +242,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
     variant: themeState.variant,
     systemColors: {
       secondaryBackground: '#fff',

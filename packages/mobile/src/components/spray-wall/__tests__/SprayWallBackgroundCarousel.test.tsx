@@ -21,6 +21,7 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
     systemColors: { secondaryBackground: '#fff', separator: '#eee' },
     brandColors: { primary: '#639' },
   }),

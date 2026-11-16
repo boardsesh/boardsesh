@@ -264,8 +264,8 @@ function SocialStatCard({
   active: boolean;
   onPress: () => void;
 }) {
-  const { systemColors, brandColors } = useTheme();
-  const color = active ? brandColors.primary : systemColors.secondaryLabel;
+  const { systemColors, selection } = useTheme();
+  const color = active ? selection.text : systemColors.secondaryLabel;
 
   return (
     <PressableSurface
@@ -276,8 +276,8 @@ function SocialStatCard({
       style={({ pressed }) => [
         styles.statCard,
         {
-          backgroundColor: systemColors.secondaryBackground,
-          borderColor: active ? brandColors.primary : systemColors.separator,
+          backgroundColor: active ? selection.fill : systemColors.secondaryBackground,
+          borderColor: active ? selection.checkmark : systemColors.separator,
         },
         pressed && { opacity: 0.75 },
       ]}
@@ -286,7 +286,7 @@ function SocialStatCard({
       {/* Not colour alone (HIG Color and Contrast / WCAG 1.4.1): the active card also carries a glyph. */}
       {active ? (
         <View style={styles.activeCheck} pointerEvents="none">
-          <Icon name="check.small" size={16} color={color} />
+          <Icon name="check.small" size={16} color={selection.checkmark} />
         </View>
       ) : null}
       <Text variant="title3" style={styles.statValue}>

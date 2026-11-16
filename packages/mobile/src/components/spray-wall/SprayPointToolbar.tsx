@@ -37,7 +37,7 @@ export function SprayPointToolbar({
   icons?: boolean;
 }) {
   const { t } = useTranslation('boards');
-  const { systemColors, brandColors, spacing } = useTheme();
+  const { systemColors, selection, spacing } = useTheme();
   const actions = [
     { mode: 'add', label: t('sprayLedSetup.add'), icon: 'plus' },
     { mode: 'move', label: t('sprayLedSetup.movePoint'), icon: 'move' },
@@ -47,7 +47,7 @@ export function SprayPointToolbar({
     <View style={{ flexDirection: icons ? 'column' : 'row', alignItems: 'center', gap: spacing[2] }}>
       {actions.map((action) => {
         const selected = mode === action.mode;
-        const color = selected ? brandColors.onPrimary : systemColors.label;
+        const color = selection.text;
         return (
           <PressableSurface
             key={action.mode}
@@ -57,13 +57,30 @@ export function SprayPointToolbar({
             onPress={() => onModeChange(selected ? null : action.mode)}
             style={[
               icons ? styles.icon : styles.label,
-              { backgroundColor: selected ? brandColors.primary : systemColors.secondaryGroupedBackground },
+              // A solid ground under the wash, plus a 2pt accent ring, so the selected tool
+              // reads on the wall photo as well as on the toolbar.
+              {
+                backgroundColor: systemColors.secondaryGroupedBackground,
+                borderWidth: 2,
+                borderColor: selected ? selection.checkmark : 'transparent',
+                overflow: 'hidden',
+              },
             ]}
           >
+            {selected ? (
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: selection.fill }]} />
+            ) : null}
             {icons ? (
               <Icon name={action.icon} size={20} color={color} />
             ) : (
-              <Text variant="footnote" color={color} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
+              <Text
+                variant="footnote"
+                color={color}
+                emphasized={selected}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.65}
+              >
                 {action.label}
               </Text>
             )}

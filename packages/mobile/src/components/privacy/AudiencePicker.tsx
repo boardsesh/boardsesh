@@ -34,7 +34,7 @@ export function AudiencePicker<TAudience extends PrivacyResourceAudience>({
   label?: string;
 }) {
   const { t } = useTranslation('settings');
-  const { spacing, radii, systemColors, brandColors } = useTheme();
+  const { spacing, radii, systemColors, selection } = useTheme();
   const confirm = useConfirm();
   const [expanded, setExpanded] = useState(false);
   const labels: Record<PrivacyResourceAudience, string> = {
@@ -85,12 +85,12 @@ export function AudiencePicker<TAudience extends PrivacyResourceAudience>({
                   },
                 ]}
               >
-                <Text color={selected ? brandColors.primary : systemColors.label} style={styles.optionLabel}>
+                <Text color={selection.text} emphasized={selected} style={styles.optionLabel}>
                   {labels[option]}
                 </Text>
                 {/* The checkmark carries the selection too, so it never rests on
                     colour alone (WCAG 1.4.1). */}
-                {selected ? <Icon name="check.small" size={20} color={systemColors.accent} /> : null}
+                {selected ? <Icon name="check.small" size={20} color={selection.checkmark} /> : null}
               </PressableSurface>
             );
           })

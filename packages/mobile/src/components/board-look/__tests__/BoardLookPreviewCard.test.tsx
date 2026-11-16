@@ -122,6 +122,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
     systemColors: {
       label: '#000',
       secondaryLabel: '#888',
@@ -248,7 +249,7 @@ describe('BoardLookPreviewCard', () => {
     const { container, queryByTestId } = renderCard({ selected: true });
 
     expect(queryByTestId('board-look-active-badge')).not.toBeNull();
-    expect(thumbStyle(container)).toMatchObject({ borderWidth: 2, borderColor: BRAND_PRIMARY });
+    expect(thumbStyle(container)).toMatchObject({ borderWidth: 2, borderColor: '#00AA55' });
   });
 
   it('offers the full-size view on every card, not only the picked one', () => {
