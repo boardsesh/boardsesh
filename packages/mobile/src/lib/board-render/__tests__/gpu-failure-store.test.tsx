@@ -9,6 +9,7 @@ const identity = vi.hoisted(() => ({
   nativeApplicationVersion: '2.6.0',
   nativeBuildVersion: '200',
   apiVersion: 5,
+  updateId: '0f3c2a4e-6b1d-4c8e-9a7f-2d5e8b1c4a90' as string | null,
 }));
 const storage = vi.hoisted(() => ({ record: null as unknown }));
 const getPreference = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
@@ -24,6 +25,11 @@ vi.mock('expo-application', () => ({
   },
   get nativeBuildVersion() {
     return identity.nativeBuildVersion;
+  },
+}));
+vi.mock('expo-updates', () => ({
+  get updateId() {
+    return identity.updateId;
   },
 }));
 vi.mock('expo-crypto', () => ({ CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, digestStringAsync: digest }));
@@ -46,6 +52,7 @@ const binaryIdentity = () =>
     identity.nativeApplicationVersion,
     identity.nativeBuildVersion,
     identity.apiVersion,
+    identity.updateId ?? 'embedded',
   ]);
 const persisted = (hashes: string[], binary = binaryIdentity()): GpuFailureRecord => ({
   version: 1,
@@ -91,6 +98,7 @@ describe('GPU failure wrapper integration', () => {
       nativeApplicationVersion: '2.6.0',
       nativeBuildVersion: '200',
       apiVersion: 5,
+      updateId: '0f3c2a4e-6b1d-4c8e-9a7f-2d5e8b1c4a90',
     });
     storage.record = null;
     getPreference.mockReset().mockImplementation(async () => storage.record);
@@ -181,7 +189,9 @@ describe('GPU failure wrapper integration', () => {
     ['nativeApplicationVersion', '2.7.0'],
     ['nativeBuildVersion', '201'],
     ['apiVersion', 6],
-  ] as const)('isolates saved failures when native binary identity changes: %s', async (part, replacement) => {
+    ['updateId', '7d1e9b3a-2c4f-4e6a-8b0d-5f9c1a3e7b24'],
+    ['updateId', null],
+  ] as const)('isolates saved failures when the native binary or OTA update changes: %s', async (part, replacement) => {
     storage.record = persisted([firstHash]);
     Object.assign(identity, { [part]: replacement });
     const { Gate, attempted, recordGpuConfigFailure } = await loadGate();
@@ -191,6 +201,25 @@ describe('GPU failure wrapper integration', () => {
     act(() => recordGpuConfigFailure(firstConfig, identity.apiVersion));
     await waitFor(() => expect(storage.record).toEqual(persisted([firstHash])));
     expect(setPreference).toHaveBeenCalledExactlyOnceWith('auraGpuFailedConfigs.v1', persisted([firstHash]));
+  });
+
+  it('retries a config blocked under an earlier OTA update after a new update launches', async () => {
+    const first = await loadGate();
+    const view = render(<first.Gate configJson={firstConfig} />);
+    await waitFor(() => expect(first.attempted).toHaveBeenCalledTimes(1));
+    act(() => first.recordGpuConfigFailure(firstConfig, identity.apiVersion));
+    await waitFor(() => expect(storage.record).toEqual(persisted([firstHash])));
+    view.unmount();
+    // The same native binary relaunches into an OTA that fixed the failure.
+    vi.resetModules();
+    identity.updateId = '7d1e9b3a-2c4f-4e6a-8b0d-5f9c1a3e7b24';
+    const updated = await loadGate();
+    render(<updated.Gate configJson={firstConfig} />);
+    await waitFor(() => expect(screen.getByTestId('gpu-status').textContent).toBe('allowed'));
+    expect(updated.attempted).toHaveBeenCalledExactlyOnceWith(firstConfig);
+    // A failure under the new update replaces the stale set rather than adding to it.
+    act(() => updated.recordGpuConfigFailure(secondConfig, identity.apiVersion));
+    await waitFor(() => expect(storage.record).toEqual(persisted([secondHash])));
   });
 
   it('keeps GPU unavailable when saved latches cannot be read, including on remount', async () => {

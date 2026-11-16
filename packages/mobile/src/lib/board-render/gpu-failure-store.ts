@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import * as Application from 'expo-application';
 import { CryptoDigestAlgorithm, digestStringAsync } from 'expo-crypto';
+import * as Updates from 'expo-updates';
 import { getPreference, setPreference } from '../preference-store';
 import { createGpuFailureStore } from './gpu-failure-store-core';
 
@@ -9,12 +10,15 @@ const stores = new Map<number, ReturnType<typeof createGpuFailureStore>>();
 function failureStore(apiVersion: number) {
   const cached = stores.get(apiVersion);
   if (cached) return cached;
+  // The running JS bundle is part of the identity: an OTA can fix what made a
+  // config fail, so a new update starts with no remembered failures.
   const binaryParts = [
     process.env.EXPO_OS ?? 'native',
     Application.applicationId,
     Application.nativeApplicationVersion,
     Application.nativeBuildVersion,
     apiVersion,
+    Updates.updateId ?? 'embedded',
   ];
   // Read the API from the visible board. Importing its native view manager
   // here would initialize it for every thumbnail that imports the render hook.
