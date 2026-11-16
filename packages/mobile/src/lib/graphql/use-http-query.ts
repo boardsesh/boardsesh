@@ -77,6 +77,8 @@ export type HttpInfiniteQueryOptions<QueryResult, Error, SelectedResult, Key ext
   Scheduling & {
     queryKey: Key;
     queryFn: (context: HttpQueryContext<Key, Page>, operation: HttpQueryOperation) => Promise<QueryResult>;
+    /** Explicit original native policy; receives the actual untouched context. */
+    nativeQueryFn?: (context: QueryFunctionContext<QueryKey, Page>) => Promise<QueryResult>;
   };
 
 /** A page handle owns references, while its pure assertions remain repeatable
@@ -115,14 +117,18 @@ export type HttpInfiniteQueryWithPages<Result, Error, Param> = UseInfiniteQueryR
 > & { capturePageSource: () => HttpInfinitePageSource<Result, Param> };
 
 type PageProof = Readonly<{
+  page: object;
   group: object;
   parameter: unknown;
   operation: HttpQueryOperation;
 }>;
 type PageGroup = {
+  query: Query;
   identity: object;
   promise: Promise<unknown>;
   proofs: Set<PageProof>;
+  retired: boolean;
+  failure?: Readonly<{ error: unknown; assertCurrent?: () => void; dispose: () => void }>;
 };
 type PageLedger = {
   pages: WeakMap<object, PageProof>;
@@ -164,11 +170,13 @@ function pageGroup(ledger: PageLedger, query: Query, signal: AbortSignal): PageG
     if (previous.promise !== promise) throw pageHeld();
     return previous;
   }
-  const group: PageGroup = { identity: Object.freeze({}), promise, proofs: new Set() };
+  const group: PageGroup = { query, identity: Object.freeze({}), promise, proofs: new Set(), retired: false };
   ledger.pending.set(signal, group);
   const settled = (failed: boolean) => {
     if (ledger.pending.get(signal) === group) ledger.pending.delete(signal);
     if (failed) for (const proof of group.proofs) proof.operation.dispose();
+    group.failure?.dispose();
+    group.failure = undefined;
     group.proofs.clear();
   };
   void promise.then(
@@ -176,6 +184,14 @@ function pageGroup(ledger: PageLedger, query: Query, signal: AbortSignal): PageG
     () => settled(true),
   );
   return group;
+}
+
+function readPageFailure(group: PageGroup): PageGroup['failure'] {
+  return group.failure;
+}
+function clearPageFailure(group: PageGroup): void {
+  group.failure?.dispose();
+  group.failure = undefined;
 }
 
 /** Diagnostics expose counts only, never page objects, guards or credentials. */
@@ -406,29 +422,132 @@ export function useHttpInfiniteQuery<
 ): UseInfiniteQueryResult<Selected, Error> | HttpInfiniteQueryWithPages<Result, Error, Param> {
   const scope = useHttpQueryScope();
   const client = useQueryClient();
-  const { queryFn, queryKey, enabled = true, pageDelivery = false, ...behavior } = options;
+  const { queryFn, nativeQueryFn, queryKey, enabled = true, pageDelivery = false, ...behavior } = options;
   const actualKey = scope.key(queryKey);
+  const strictBatch = pageDelivery && scope.scoped;
+  const activeBatches = new WeakMap<AbortSignal, Readonly<{ group: PageGroup; ledger: PageLedger }>>();
+  const assertBatch = (group: PageGroup, retained: Iterable<PageProof> = group.proofs) => {
+    if (group.retired) throw pageHeld();
+    try {
+      scope.assertView();
+      if (client.getQueryCache().find({ queryKey: actualKey, exact: true }) !== group.query) throw pageHeld();
+      for (const proof of retained) proof.operation.assertDeliveries();
+      scope.assertView();
+    } catch {
+      group.retired = true;
+      throw pageHeld();
+    }
+  };
   const wrappedQuery = async (context: QueryFunctionContext<QueryKey, Param>) => {
-    const operation = scope.create({ signal: context.signal });
+    // Do not read or spread the getter here. These four future native callers
+    // deliberately finish and populate their raw cache after observer deletion.
+    if (!scope.scoped && nativeQueryFn) {
+      scope.assertView();
+      try {
+        return await nativeQueryFn(context);
+      } finally {
+        scope.assertView();
+      }
+    }
+    const batch = strictBatch ? activeBatches.get(context.signal) : undefined;
+    if (strictBatch && !batch) throw pageHeld();
+    const { ledger, group } = batch ?? {};
+    if (group) assertBatch(group);
+    const operation = scope.create({
+      signal: context.signal,
+      ...(group
+        ? {
+            assertDispatch: () => {
+              try {
+                assertBatch(group);
+              } catch {
+                throw new BrowserBackendConsumerError('superseded');
+              }
+            },
+          }
+        : {}),
+    });
     operation.assertView();
-    const query = client.getQueryCache().find({ queryKey: actualKey, exact: true });
-    const ledger = pageDelivery && scope.scoped && query ? ledgerFor(client, query) : undefined;
-    const group = ledger && query ? pageGroup(ledger, query, context.signal) : undefined;
     try {
       const result = await queryFn({ ...context, queryKey }, operation);
       operation.assertDeliveries();
       if (ledger && group) {
         const page = objectPage(result);
         if (!page) throw pageHeld();
-        const proof = Object.freeze({ operation, parameter: context.pageParam, group: group.identity });
+        const proof = Object.freeze({ page, operation, parameter: context.pageParam, group: group.identity });
         ledger.pages.set(page, proof);
         group.proofs.add(proof);
       }
       return result;
     } catch (error) {
+      if (group) {
+        group.failure?.dispose();
+        let originalError: (() => void) | undefined;
+        try {
+          if ('assertErrorDeliveries' in operation && typeof operation.assertErrorDeliveries === 'function') {
+            const originalAssertion = operation.assertErrorDeliveries;
+            originalError = () => {
+              originalAssertion(error);
+            };
+            originalError();
+          }
+        } catch (causeFailure) {
+          if (causeFailure instanceof BrowserBackendConsumerError && causeFailure.status === 'superseded')
+            group.retired = true;
+          originalError = undefined;
+        }
+        // The original failed attempt is checked when consumed. It is NOT a
+        // permanent success dependency if an ordinary live retry replaces it.
+        const observed = originalError ? error : pageHeld();
+        group.failure = { error: observed, assertCurrent: originalError, dispose: operation.dispose };
+        throw observed;
+      }
       if (pageDelivery) operation.dispose();
-      if (pageDelivery && scope.scoped && error instanceof BrowserBackendConsumerError) throw pageHeld();
       throw error;
+    }
+  };
+  type BatchPersister = NonNullable<UseInfiniteQueryOptions<Result, Error, Selected, QueryKey, Param>['persister']>;
+  const persistBatch = async (...batchArguments: Parameters<BatchPersister>): Promise<Result> => {
+    const [fetchInfinite, context, query] = batchArguments;
+    const actualQuery = client.getQueryCache().find({ queryKey: actualKey, exact: true });
+    if (!actualQuery || actualQuery !== query) throw pageHeld();
+    const ledger = ledgerFor(client, actualQuery);
+    const group = pageGroup(ledger, actualQuery, context.signal);
+    activeBatches.set(context.signal, { group, ledger });
+    assertBatch(group);
+    clearPageFailure(group);
+    try {
+      // Installed infiniteQueryBehavior supplies its real whole-batch fetchFn
+      // through the per-page persister type. It ignores the argument; pass the
+      // exact core context unchanged, with only this erased type restoration.
+      const aggregate = (await Reflect.apply(fetchInfinite, undefined, [context])) as unknown as Result;
+      if (
+        aggregate === null ||
+        typeof aggregate !== 'object' ||
+        !('pages' in aggregate) ||
+        !Array.isArray(aggregate.pages)
+      )
+        throw pageHeld();
+      const retainedPages = new Set(aggregate.pages);
+      const retained = [...group.proofs].filter((proof) => retainedPages.has(proof.page));
+      // Cached prefix pages were already admitted input. Only NEW successful
+      // pages actually retained by the real engine authorize this publication.
+      assertBatch(group, retained);
+      return aggregate;
+    } catch (error) {
+      assertBatch(group);
+      const failure = readPageFailure(group);
+      if (!failure || failure.error !== error) throw pageHeld();
+      try {
+        failure.assertCurrent?.();
+      } catch (causeFailure) {
+        if (causeFailure instanceof BrowserBackendConsumerError && causeFailure.status === 'superseded')
+          group.retired = true;
+        throw pageHeld();
+      }
+      throw error;
+    } finally {
+      clearPageFailure(group);
     }
   };
   const configured = {
@@ -436,7 +555,7 @@ export function useHttpInfiniteQuery<
     queryKey: actualKey,
     enabled: enabled && scope.isReady(),
     queryFn: wrappedQuery,
-    ...(pageDelivery && scope.scoped ? { structuralSharing: false as const } : {}),
+    ...(strictBatch ? { structuralSharing: false as const, persister: persistBatch as BatchPersister } : {}),
   };
   const result = useInfiniteQuery<Result, Error, Selected, QueryKey, Param>(configured);
   const capturePageSource = useCallback(() => {
