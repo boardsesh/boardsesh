@@ -9,7 +9,8 @@
     "sessions": "Session",
     "logbook": "Diario",
     "social": "Social",
-    "climbs": "Blocchi"
+    "climbs": "Blocchi",
+    "created": "Creati"
   },
   "mobile": {
     "unknownName": "Climber",

@@ -49,6 +49,15 @@ Three fixes have already shipped against this, and the model below builds on the
 What is left is that each list still decides on its own what a tap means, and the queue
 still collects climbs nobody chose to queue.
 
+## Find climbs you created
+
+In the Climbs tab, open the options menu and choose **My climbs**. This opens
+**You → Created**, the same published-climbs list across your boards and linked
+setter accounts. It does not inherit the active board's search filters. Saving,
+editing, or publishing refreshes that list so a recently opened empty list does
+not hide a new climb. Drafts remain in the create editor's draft picker; other
+climbers' public profiles keep the **Climbs** label.
+
 ## Words we use
 
 The current player uses the wall button and a back chip; the older pill names

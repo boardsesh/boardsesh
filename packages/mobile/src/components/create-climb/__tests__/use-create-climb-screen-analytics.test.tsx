@@ -9,6 +9,7 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 // per-render mock would give the closure a different identity than the one the
 // test holds.
 const reactQuery = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
+const requestScope = vi.hoisted(() => ({ scope: undefined as string | undefined, current: true, scoped: false }));
 
 const board = vi.hoisted(() => ({
   isAuthenticated: true,
@@ -69,6 +70,15 @@ vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => reactQuery,
+}));
+vi.mock('../../../lib/graphql/request-scope', () => ({
+  captureHttpRequestScope: () => requestScope.scope,
+  httpScopeQueryKey: (queryKey: readonly unknown[], scope: string | undefined) =>
+    scope ? [...queryKey, 'browser-view', scope] : queryKey,
+  isCurrentHttpView: () => requestScope.current,
+}));
+vi.mock('../../../lib/graphql/use-http-operation-scope', () => ({
+  isHttpCacheScoped: () => requestScope.scoped,
 }));
 
 // Partial: the controller now reads @boardsesh/board-config too, which imports
@@ -173,7 +183,10 @@ beforeEach(() => {
   toast.showToast.mockClear();
   queue.setCurrentClimb.mockClear();
   router.push.mockClear();
-  reactQuery.invalidateQueries.mockClear();
+  reactQuery.invalidateQueries.mockReset();
+  requestScope.scope = undefined;
+  requestScope.current = true;
+  requestScope.scoped = false;
   board.isAuthenticated = true;
   board.isDuplicateClimbError.mockReturnValue(false);
   board.saveClimb.mockReset();
@@ -213,6 +226,65 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
+  });
+
+  it.each([
+    { scope: undefined, scoped: false },
+    { scope: 'original-view', scoped: true },
+    { scope: 'legacy-view', scoped: false },
+  ])('refreshes created climbs after publishing in $scope, scoped=$scoped', async ({ scope, scoped }) => {
+    requestScope.scope = scope;
+    requestScope.scoped = scoped;
+    board.saveClimb.mockResolvedValue({ uuid: 'published-climb', isDraft: false });
+    const { result } = renderScreen();
+    act(() => result.current.setIsDraft(false));
+    await nameAndSave(result);
+
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: scoped ? ['browser-view', scope, 'userClimbs'] : ['userClimbs'],
+    });
+  });
+
+  it('does not refresh a replacement view when an earlier save finishes', async () => {
+    requestScope.scope = 'original-view';
+    requestScope.scoped = true;
+    let finishSave!: (saved: { uuid: string; isDraft: boolean }) => void;
+    board.saveClimb.mockImplementation(
+      () => new Promise<{ uuid: string; isDraft: boolean }>((resolve) => (finishSave = resolve)),
+    );
+    const { result } = renderScreen();
+    act(() => result.current.setName('My Problem'));
+    let saving!: Promise<void>;
+    act(() => {
+      saving = result.current.handleSave();
+    });
+    await waitFor(() => expect(board.saveClimb).toHaveBeenCalledTimes(1));
+    requestScope.scope = 'replacement-view';
+    requestScope.current = false;
+    await act(async () => {
+      finishSave({ uuid: 'published-climb', isDraft: false });
+      await saving;
+    });
+
+    expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ['browser-view', 'original-view', 'userClimbs'],
+    });
+    expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ['browser-view', 'replacement-view', 'userClimbs'],
+    });
+  });
+
+  it('keeps a successful save successful when refreshing created climbs fails', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'published-climb', isDraft: false });
+    reactQuery.invalidateQueries.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
+      queryKey[0] === 'userClimbs' ? Promise.reject(new Error('refresh failed')) : undefined,
+    );
+    const { result } = renderScreen();
+    await nameAndSave(result);
+
+    expect(result.current.saveState).toBe('justSaved');
+    expect(analytics.track).not.toHaveBeenCalledWith('Climb Create Failed', expect.anything());
   });
 
   it("seeds noKickboard/campus from an existing climb's characteristics in edit mode", async () => {
@@ -269,6 +341,7 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
   });
 
   it('fires "Climb Create Failed" with error_reason "duplicate" on a duplicate rejection', async () => {
@@ -303,5 +376,6 @@ describe('useCreateClimbScreen analytics', () => {
     );
     // The generic-error branch surfaces a fallback toast (duplicate does not).
     expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+    expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
   });
 });

@@ -33,6 +33,8 @@ import { track } from '../../lib/analytics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
+import { captureHttpRequestScope, httpScopeQueryKey, isCurrentHttpView } from '../../lib/graphql/request-scope';
+import { isHttpCacheScoped } from '../../lib/graphql/use-http-operation-scope';
 import { resolveProvisionalSetter } from './provisional-setter';
 import { climbEditRefusal, climbEditRefusalMessage } from './climb-edit-refusal';
 import { useQueueActions } from '../../providers/queue-provider';
@@ -1614,6 +1616,10 @@ export function useCreateClimbScreen({
     }
 
     saveInFlightRef.current = true;
+    const saveRequestScope = captureHttpRequestScope();
+    const authoredClimbsQueryKey = isHttpCacheScoped()
+      ? [...httpScopeQueryKey([], saveRequestScope), 'userClimbs']
+      : ['userClimbs'];
     // Stop the transport before the save pushes the climb into the queue — a
     // running clock would race the auto-sender for the wall.
     playbackPause();
@@ -1758,6 +1764,13 @@ export function useCreateClimbScreen({
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
+      // The You tab has its own authored-climbs feed, separate from board
+      // search. Refresh it after creating, editing, or publishing a draft so a
+      // recently viewed empty list cannot hide the climb for five minutes.
+      // Browser keys belong to the original account/backend view of this save.
+      if (isCurrentHttpView(saveRequestScope)) {
+        void Promise.resolve(queryClient.invalidateQueries({ queryKey: authoredClimbsQueryKey })).catch(() => {});
+      }
       // An admin's live heatmap counts the new climb at once; a downloaded board
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });

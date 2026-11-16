@@ -49,7 +49,7 @@ function useSegmentOptions() {
       { key: 'progress' as const, label: t('tabs.progress') },
       { key: 'sessions' as const, label: t('tabs.sessions') },
       { key: 'logbook' as const, label: t('tabs.logbook') },
-      { key: 'climbs' as const, label: t('tabs.climbs') },
+      { key: 'climbs' as const, label: t('tabs.created') },
       { key: 'social' as const, label: t('tabs.social') },
     ],
     [t],

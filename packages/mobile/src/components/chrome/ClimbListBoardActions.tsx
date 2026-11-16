@@ -31,7 +31,7 @@ type ClimbListBoardActionsProps = {
   createRow?: { label: string; onPress: () => void };
 };
 
-type ListMenuRow = AppMenuAction & { id: 'create' | 'viewOptions' | 'wallDisplay' | 'switchBoard' };
+type ListMenuRow = AppMenuAction & { id: 'create' | 'myClimbs' | 'viewOptions' | 'wallDisplay' | 'switchBoard' };
 
 type CountedBoard = NonNullable<Parameters<typeof formatActiveBoardLabel>[0]> & BoardAngleFields;
 
@@ -83,6 +83,7 @@ export function ClimbListBoardActions({
   const rows = useMemo<ListMenuRow[]>(
     () => [
       ...(createRow ? [{ id: 'create' as const, label: createRow.label, systemIcon: iconMap.plus.ios }] : []),
+      { id: 'myClimbs', label: t('mobile.listOptions.myClimbs'), systemIcon: 'person.crop.rectangle' },
       { id: 'viewOptions', label: t('mobile.listOptions.viewOptions'), systemIcon: iconMap['view.options'].ios },
       ...(wallDisplayInMenu
         ? [
@@ -159,6 +160,9 @@ export function ClimbListBoardActions({
             switch (rows[index]?.id) {
               case 'create':
                 createRow?.onPress();
+                break;
+              case 'myClimbs':
+                router.navigate({ pathname: '/(tabs)/profile', params: { tab: 'climbs' } });
                 break;
               case 'viewOptions':
                 router.push('/(tabs)/climbs/settings/climb-list');

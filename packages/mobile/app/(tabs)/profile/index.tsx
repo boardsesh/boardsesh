@@ -1,3 +1,4 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -25,7 +26,9 @@ export default function YouScreen() {
   const youData = useYouProfileData(userId);
 
   const filterSheetRef = useRef<BottomSheet | null>(null);
-  const [activeTab, setActiveTab] = useState<ProfileTabKey>('progress');
+  const { tab } = useLocalSearchParams<{ tab?: string | string[] }>();
+  const activeTab: ProfileTabKey =
+    tab === 'sessions' || tab === 'logbook' || tab === 'climbs' || tab === 'social' ? tab : 'progress';
 
   // The measured chrome height insets each sub-tab's scroll content; seed it to
   // the safe-area top plus the islands row + segmented control so the first paint
@@ -33,7 +36,7 @@ export default function YouScreen() {
   const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + 96));
 
   const handleSelectTab = useCallback((key: ProfileTabKey) => {
-    setActiveTab(key);
+    router.setParams({ tab: key });
   }, []);
 
   // Whether the visible sub-tab's list is under the floating segmented control:
