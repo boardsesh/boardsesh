@@ -2,7 +2,8 @@ import { readFlashListViewport } from '../../../dev/stories/use-visible-art-read
 import { useVariantValue } from '../../../theme/variants';
 import type { FlashListRef, FlashListProps } from '@shopify/flash-list';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../../hooks/use-horizontal-safe-area';
 import { useTranslation } from 'react-i18next';
 import { useStorySessionFooterBottom } from '../../../dev/stories/use-story-bottom-inset';
 import { formatGradeByDifficultyId } from '@boardsesh/play-view';
@@ -42,6 +43,7 @@ const presentation: WorkoutPresentation = {
 const rowAssetId = (row: PreviewListRow) => (row.kind === 'climb' ? (row.preview.item.climb?.uuid ?? null) : null);
 function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
   const fixture = useStoryBoardFixture();
+  const { left, right } = useHorizontalSafeArea();
   const STORY_BOARD = fixture.board;
   const workout = useMemo(() => buildStoryWorkout(fixture), [fixture]);
   const previews = useMemo(
@@ -218,44 +220,48 @@ function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
   );
   return (
     <StoryClimbArtObserverProvider onDisplayed={onDisplayed} onError={onError}>
-      <PreSessionPresentation
-        listRef={listRef}
-        rows={rows}
-        renderItem={renderRow}
-        header={header}
-        listProps={{
-          onLoad,
-          onViewableItemsChanged,
-          viewabilityConfig: VIEWABILITY,
-        }}
-        automaticInsets={nativeRootHeader}
-        paddingTop={nativeRootHeader ? 0 : chromeHeight}
-        paddingBottom={footerHeight + footerBottom}
-        indicatorTop={chromeHeight}
-        chrome={
-          <RecordTopChromeView
-            title={chromeTitle}
-            nativeRootHeader={nativeRootHeader}
-            glassCapability={glassCapability}
-            onHeightChange={setChromeHeight}
-            materialAvatar={<UserAvatarToolbarActionView variant="material" avatarName="Alex" onPress={noop} />}
-            glassAvatar={<UserAvatarToolbarActionView variant="glass" avatarName="Alex" onPress={noop} />}
+      <HorizontalSafeAreaApplied>
+        <View style={[styles.fill, { paddingLeft: left, paddingRight: right }]}>
+          <PreSessionPresentation
+            listRef={listRef}
+            rows={rows}
+            renderItem={renderRow}
+            header={header}
+            listProps={{
+              onLoad,
+              onViewableItemsChanged,
+              viewabilityConfig: VIEWABILITY,
+            }}
+            automaticInsets={nativeRootHeader}
+            paddingTop={nativeRootHeader ? 0 : chromeHeight}
+            paddingBottom={footerHeight + footerBottom}
+            indicatorTop={chromeHeight}
+            chrome={
+              <RecordTopChromeView
+                title={chromeTitle}
+                nativeRootHeader={nativeRootHeader}
+                glassCapability={glassCapability}
+                onHeightChange={setChromeHeight}
+                materialAvatar={<UserAvatarToolbarActionView variant="material" avatarName="Alex" onPress={noop} />}
+                glassAvatar={<UserAvatarToolbarActionView variant="glass" avatarName="Alex" onPress={noop} />}
+              />
+            }
+            footer={
+              <SessionStartFab
+                testID="pre-session-footer"
+                actionTestID="session-start"
+                bottomOffset={footerBottom}
+                onHeightChange={setFooterHeight}
+                label={t('mobile.session.preStart')}
+                icon="play.fill"
+                onPress={noop}
+                disabled={false}
+                loading={false}
+              />
+            }
           />
-        }
-        footer={
-          <SessionStartFab
-            testID="pre-session-footer"
-            actionTestID="session-start"
-            bottomOffset={footerBottom}
-            onHeightChange={setFooterHeight}
-            label={t('mobile.session.preStart')}
-            icon="play.fill"
-            onPress={noop}
-            disabled={false}
-            loading={false}
-          />
-        }
-      />
+        </View>
+      </HorizontalSafeAreaApplied>
     </StoryClimbArtObserverProvider>
   );
 }
@@ -271,3 +277,5 @@ export default {
     },
   },
 } satisfies StoryModule;
+
+const styles = StyleSheet.create({ fill: { flex: 1 } });

@@ -937,6 +937,17 @@ describe('TabLayout', () => {
     });
   });
 
+  it.each(['regular', 'compact'] as const)('lets UIKit resolve iPad selection contrast at %s width', (widthClass) => {
+    cfg.isTablet = true;
+    cfg.widthClass = widthClass;
+    const { container } = render(<TabLayout />);
+    const tabs = container.querySelector('[data-tabs="true"]');
+    expect(tabs).not.toBeNull();
+    expect(tabs?.hasAttribute('data-icon-color')).toBe(false);
+    expect(tabs?.hasAttribute('data-label-style')).toBe(false);
+    expect(tabs?.getAttribute('data-tint-color')).toBe('');
+  });
+
   it('uses adaptive neutral colors for native Liquid Glass tab icons and labels', () => {
     const { container } = render(<TabLayout />);
     const tabs = container.querySelector('[data-tabs="true"]');
