@@ -32,6 +32,16 @@ import {
 } from '../auth/current-store/web-password';
 import { consumeEmailVerification, resendEmailVerification } from '../auth/current-store/email-verification';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../auth/current-store/password-recovery';
+import {
+  passwordCompareGate,
+  PasswordComparesSaturatedError,
+  PASSWORD_COMPARES_RETRY_AFTER_SECONDS,
+} from '../auth/current-store/password-compare-gate';
+import {
+  passwordLoginLimiter,
+  type PasswordLoginAttempt,
+  type PasswordLoginLimiter,
+} from '../auth/current-store/password-login-limits';
 import { checkRateLimit, RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 import { sendJson } from './http-utils';
@@ -55,11 +65,15 @@ export function currentStoreWebAuthConfiguration(
   };
 }
 
-/** Default-off private service transport. No CORS/cookie/public-token authority. */
+/**
+ * Default-off private service transport. No CORS/cookie/public-token authority.
+ * `passwordLimits` is the shared sign-in limiter; tests pass their own.
+ */
 export async function handleCurrentStoreWebAuth(
   request: IncomingMessage,
   response: ServerResponse,
   database?: DbInstance,
+  passwordLimits: PasswordLoginLimiter = passwordLoginLimiter,
 ): Promise<void> {
   let configuration: ReturnType<typeof currentStoreWebAuthConfiguration>;
   try {
@@ -143,17 +157,34 @@ export async function handleCurrentStoreWebAuth(
     sendJson(response, 400, { error: 'expired_request' });
     return;
   }
+  let passwordAttempt: PasswordLoginAttempt | undefined;
   try {
-    // Process-wide backstop behind the web route's per-client limits, which do
-    // the real work: the backend only ever sees the web server as its peer.
-    // This is not claimed as distributed production abuse protection.
-    checkRateLimit(`current-store-web-auth:${operation}`, operation === 'register' ? 60 : 180, 60_000);
+    if (command.operation === 'password') {
+      // Sign-in has no process-wide budget a client could spend for everyone:
+      // per-client and per-address limits shared through Redis, then the
+      // compare gate, which sheds load only when this process is out of CPU.
+      passwordAttempt = await passwordLimits.admit({
+        email: command.payload.email,
+        clientAddress: command.clientAddress,
+        keySecret: configuration.rpcSecret,
+      });
+      // Refuse before any database work when the compare would be refused anyway.
+      if (passwordCompareGate.isFull(passwordAttempt.lane)) throw new PasswordComparesSaturatedError();
+    } else {
+      // Process-wide backstop behind the web route's per-client limits, which do
+      // the real work: the backend only ever sees the web server as its peer.
+      // This is not claimed as distributed production abuse protection.
+      checkRateLimit(`current-store-web-auth:${operation}`, operation === 'register' ? 60 : 180, 60_000);
+    }
+    const compareLane = passwordAttempt?.lane ?? 'repeat';
     const commandDatabase = database ?? (await getCredentialDatabase());
     const result = authCommandReplySchema.parse(
       command.operation === 'register'
         ? await registerWebPassword(commandDatabase, configuration.authority, command)
         : command.operation === 'password'
-          ? await authenticateWebPassword(commandDatabase, configuration.authority, command)
+          ? await authenticateWebPassword(commandDatabase, configuration.authority, command, (compare) =>
+              passwordCompareGate.run(compareLane, compare),
+            )
           : command.operation === 'verify-email'
             ? await consumeEmailVerification(commandDatabase, configuration.authority, command)
             : command.operation === 'resend-verification'
@@ -164,8 +195,29 @@ export async function handleCurrentStoreWebAuth(
                   ? await setWebPassword(commandDatabase, configuration.authority, command)
                   : await consumePasswordRecovery(commandDatabase, configuration.authority, command),
     );
+    // Only a rejected password stays counted; a right one never uses up a limit.
+    if (!(result.operation === 'password' && result.outcome === 'invalid_credentials')) {
+      await passwordAttempt?.giveBack();
+    }
     sendJson(response, authCommandReplyStatus(result), result);
   } catch (error) {
+    // No verdict was reached, so the attempt is not counted.
+    await passwordAttempt?.giveBack();
+    if (error instanceof PasswordComparesSaturatedError) {
+      sendJson(
+        response,
+        503,
+        {
+          protocolVersion: AUTH_PROTOCOL_VERSION,
+          operation,
+          requestId: command.requestId,
+          outcome: 'error',
+          code: 'unavailable',
+        },
+        { 'Retry-After': String(PASSWORD_COMPARES_RETRY_AFTER_SECONDS) },
+      );
+      return;
+    }
     if (error instanceof WebPasswordCommandError) {
       sendJson(response, 400, { error: 'expired_request' });
       return;

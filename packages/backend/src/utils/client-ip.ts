@@ -1,7 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import { normalizeIpAddress } from '@boardsesh/consent/edge-country';
-import { isPrivatePeerAddress, resolveEdgeVisitorIp } from './flag-country';
+import { isPrivatePeerAddress, isPublicAddress, resolveEdgeVisitorIp } from './flag-country';
 
 /**
  * Stable client identity behind Cloudflare and Railway.
@@ -91,6 +91,17 @@ export function getTrustedClientIp(req: IncomingMessage): string {
   const edgeVisitor = resolveEdgeVisitorIp(req);
   if (edgeVisitor) return limitIdentity(edgeVisitor);
   return trustedNonEdgeIdentity(req);
+}
+
+/**
+ * The limit key for a visitor address another service of ours vouches for, or
+ * null when it is missing or not a public address. A private, loopback or
+ * carrier-NAT value there is an ingress or a test harness, never a visitor, and
+ * keying on it would put every visitor in one bucket.
+ */
+export function reportedClientLimitKey(reportedAddress: string | undefined): string | null {
+  const address = normalizeIpAddress(reportedAddress);
+  return address && isPublicAddress(address) ? limitIdentity(address) : null;
 }
 
 function trustedNonEdgeIdentity(req: IncomingMessage): string {

@@ -83,6 +83,20 @@ describe('versioned four-command private contract', () => {
       }).success,
     ).toBe(false);
   });
+  it('carries an optional client address only as a bare IPv4 or IPv6 address', () => {
+    const command = { requestId, issuedAt: 0, protocolVersion: 2, operation: 'password' as const };
+    const payload = { email: 'x', password: 'x' };
+    for (const clientAddress of ['203.0.113.7', '2001:db8::1', '::ffff:203.0.113.7']) {
+      expect(authCommandSchema.parse({ ...command, clientAddress, payload })).toMatchObject({ clientAddress });
+    }
+    for (const clientAddress of ['unknown', '2001:db8::/64', ' 203.0.113.7', 'fe80::1%en0', 7]) {
+      expect(authCommandSchema.safeParse({ ...command, clientAddress, payload }).success).toBe(false);
+    }
+    // Only sign-in carries it.
+    expect(
+      authCommandSchema.safeParse({ ...command, operation: 'register', clientAddress: '203.0.113.7', payload }).success,
+    ).toBe(false);
+  });
   it('binds verification to the selected user ID and rejects extra token metadata', () => {
     const reply = {
       protocolVersion: 2,
