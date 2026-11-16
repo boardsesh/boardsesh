@@ -19,7 +19,7 @@ The complete 51-row report is [aura-atlas-census.json](aura-atlas-census.json). 
 | MoonBoard | 7 | 18.08 | 3.63 |
 | Woods | 2 | 18.26 | 2.84 |
 
-The largest requested static allocation is **62,130,596 bytes / 59.25 MiB**, on Grasshopper layout 1, size 5. The largest manifest is **3,299,653 bytes**, on Kilter layout 1, size 28, below the explicit **4 MiB CPU-manifest limit**. This manifest allowance does not increase the GPU budget. The tallest native output is **2093 pixels**, on Tension layout 9, size 5; the checked height limit is 2304. No configuration is reduced in resolution.
+The largest requested static allocation is **62,130,596 bytes / 59.25 MiB**, on Grasshopper layout 1, size 5. The original expanded default manifest peaks at **3,299,653 bytes**, on Kilter layout 1, size 28, below the explicit **4 MiB CPU-manifest limit**. The later [role-alias census](aura-role-alias-census.md) records current compact metadata sizes, including larger optional glyph appearances, with unchanged pixel storage and limits. The tallest native output is **2093 pixels**, on Tension layout 9, size 5; the checked height limit is 2304. No configuration is reduced in resolution.
 
 ## What the byte counts include
 
@@ -29,13 +29,13 @@ The independently compressed geometry artifacts total **447,141,340 bytes / 426.
 
 ## Preparation and correctness evidence
 
-The final atlas run used macOS 27.0.1 arm64, Rust 1.99.1, release profile, one observation per configuration. Host `prepare_owned` times range from **28.38 to 127.29 ms**, median **80.17 ms**. The separate artifact-generator run, which also deflates chunks, writes the container and computes its metadata/hash report, ranges from **147.34 to 1861.40 ms**, median **984.29 ms**. A local persistent-cache miss also pays this encoding cost before its artifact is retained. The atlas measurement excludes input parsing and disk writes. The artifact-generator measurement includes its file write and reporting. Neither includes GPU upload, rendering or visible presentation. They are single observations from separate host runs, not an alternating device comparison.
+The original expanded-metadata atlas run used macOS 27.0.1 arm64, Rust 1.99.1, release profile, one observation per configuration. Host `prepare_owned` times range from **28.38 to 127.29 ms**, median **80.17 ms**. The separate artifact-generator run, which also deflates chunks, writes the container and computes its metadata/hash report, ranges from **147.34 to 1861.40 ms**, median **984.29 ms**. A local persistent-cache miss also pays this encoding cost before its artifact is retained. The atlas measurement excludes input parsing and disk writes. The artifact-generator measurement includes its file write and reporting. Neither includes GPU upload, rendering or visible presentation. They are single observations from separate host runs, not an alternating device comparison.
 
 For every configuration, an independent host check retained every third hold and reconstructed each selected field from the full-set prebuild. Both the default treatment and Outline treatment matched local preparation exactly after crop and outline-cap recalculation: **51 configurations, 5,733 fields per treatment, zero differing fields**. This proves selected-set field equivalence for those sampled subsets. It does not prove native GPU pixel parity across all themes, mirrored views, auxiliary roles or animation frames.
 
 The host Metal matrix also covers all 51 configurations with a raw Rust oracle. Filled treatments remain on PNG: after coordinate, pass-order and integer-blending fixes, a handful of dense filled pixels still differed by two channel bytes. No tolerance was silently widened. Default glow remains eligible; the final supported-mode matrix and its limits are recorded separately.
 
-A physical baseline was not collected: the iPhone 17 Pro was locked, and the supplied Android phone was unavailable. Alternating physical-device baseline/candidate measurements, Android hardware pixel comparisons and visual sign-off remain required. Atlas byte savings do not establish peak process-memory savings or a visible speedup.
+Historical physical baseline/candidate runs have since been collected on the user-selected USB iPhone 13 Pro and Pixel 8 Pro. Those application sources precede role-alias compaction and newer photo-readiness changes on the main branch. Compact-metadata native artifacts and the integrated application need fresh alternating phone measurements, hardware pixel comparisons and visual checks. Atlas byte savings alone do not establish final process-memory savings or a visible speedup.
 
 ## Reproduce
 

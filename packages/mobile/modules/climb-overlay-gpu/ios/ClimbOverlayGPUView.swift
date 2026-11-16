@@ -5,82 +5,6 @@ import BoardRendererModule
 
 let climbOverlayGPUWorkQueue = DispatchQueue(label: "com.boardsesh.climb-overlay-gpu", qos: .userInitiated)
 
-private struct AtlasStamp: Decodable {
-  let offset: UInt32
-  let x: UInt32
-  let y: UInt32
-  let width: UInt32
-  let height: UInt32
-  var crop: SIMD4<UInt32> { SIMD4(x,y,width,height) }
-}
-
-private struct AtlasRole: Decodable {
-  let state: UInt32
-  let identity: UInt32
-  let color: [Float]
-  let fillPasses: [AtlasStamp?]
-  let plate: AtlasStamp?
-  let glyphPasses: [AtlasStamp?]
-  let annotation: Bool?
-  var fill: AtlasStamp? { fillPasses.first ?? nil }
-  var glyph: AtlasStamp? { glyphPasses.first ?? nil }
-  func fillPass(_ index: Int) -> AtlasStamp? { fillPasses.indices.contains(index) ? fillPasses[index] : nil }
-  func glyphPass(_ index: Int) -> AtlasStamp? { glyphPasses.indices.contains(index) ? glyphPasses[index] : nil }
-}
-
-private struct AtlasHold: Decodable {
-  let id: UInt32
-  let mirror: UInt32?
-  let x: UInt32
-  let y: UInt32
-  let width: UInt32
-  let height: UInt32
-  let bounds: [Float]
-  let field: UInt32
-  let reach: Float
-  let roles: [AtlasRole]
-}
-
-private struct AtlasManifest: Decodable {
-  let version: Int
-  let width: UInt32
-  let height: UInt32
-  let covers: AtlasStamp?
-  let veil: [Float]
-  let mirrored: Bool
-  let glow: Bool
-  let merge: Float
-  let seam: Float
-  let seamMix: Float
-  let seamSharpness: Float
-  let fringe: Float
-  let coreShare: Float
-  let lut: [Float]
-  let holds: [AtlasHold]
-}
-
-// Fourteen 16-byte vectors, matching Metal's Hold exactly.
-private struct GPUHold {
-  var color: SIMD4<Float>
-  var bounds: SIMD4<Float>
-  var crop: SIMD4<UInt32>
-  var offsets: SIMD4<UInt32>
-  var numbers: SIMD4<Float>
-  var identity: SIMD4<UInt32>
-  var fillCrop: SIMD4<UInt32>
-  var plateCrop: SIMD4<UInt32>
-  var glyphCrop: SIMD4<UInt32>
-  var extraOffsets: SIMD4<UInt32>
-  var fillCrop1: SIMD4<UInt32>
-  var fillCrop2: SIMD4<UInt32>
-  var fillCrop3: SIMD4<UInt32>
-  var glyphCrop1: SIMD4<UInt32>
-
-  var stampLayers: UInt32 {
-    ClimbOverlayMotion.stampLayers(offsets: offsets,extraOffsets: extraOffsets,annotation: identity.z > 0)
-  }
-}
-
 private struct GPUUniforms {
   var size: SIMD4<Float>
   var veil: SIMD4<Float>
@@ -219,17 +143,7 @@ private enum OverlayRenderer {
         continue
       }
       guard active.count < 128 else { throw OverlayFailure.reason("Prototype supports at most 128 active holds") }
-      active.append(GPUHold(
-        color: SIMD4(role.color[0]/255, role.color[1]/255, role.color[2]/255, 1),
-        bounds: SIMD4(hold.bounds[0],hold.bounds[1],hold.bounds[2],hold.bounds[3]),
-        crop: SIMD4(hold.x,hold.y,hold.width,hold.height),
-        offsets: SIMD4(hold.field,role.fill?.offset ?? .max,role.plate?.offset ?? .max,role.glyph?.offset ?? .max),
-        numbers: SIMD4(hold.reach,0,0,0),identity: SIMD4(hold.id,role.identity,role.annotation == true ? 1 : 0,0),
-        fillCrop: role.fill?.crop ?? .zero,plateCrop: role.plate?.crop ?? .zero,glyphCrop: role.glyph?.crop ?? .zero,
-        extraOffsets: SIMD4(role.fillPass(1)?.offset ?? .max,role.fillPass(2)?.offset ?? .max,
-          role.fillPass(3)?.offset ?? .max,role.glyphPass(1)?.offset ?? .max),
-        fillCrop1: role.fillPass(1)?.crop ?? .zero,fillCrop2: role.fillPass(2)?.crop ?? .zero,
-        fillCrop3: role.fillPass(3)?.crop ?? .zero,glyphCrop1: role.glyphPass(1)?.crop ?? .zero))
+      active.append(makeClimbOverlayGPUHold(hold: hold,role: role))
     }
     let count = active.count
     if strictRoles && !frames.isEmpty && count == 0 {
@@ -359,7 +273,7 @@ private enum OverlayRenderer {
       manifestLength > 0, manifestLength <= 4 * 1024 * 1024 else {
       throw OverlayFailure.reason("Atlas preparation rejected config (\(status))")
     }
-    let manifest = try JSONDecoder().decode(AtlasManifest.self, from: Data(bytes: manifestPointer, count: Int(manifestLength)))
+    let manifest = try decodeClimbOverlayAtlasManifest(Data(bytes: manifestPointer, count: Int(manifestLength)))
     let payloadLength = Int(pixelsLength)
     guard manifest.version == 2, manifest.lut.count == 257, manifest.veil.count == 4,
       manifest.lut.allSatisfy({ $0.isFinite }),manifest.veil.allSatisfy({ $0.isFinite }),

@@ -244,7 +244,7 @@ pub(super) fn prepare_internal(
             append(&mut storage, &field)?;
         }
         let mut role_entries = Vec::new();
-        let mut role_stamps: HashMap<String, Value> = HashMap::new();
+        let mut role_stamps: HashMap<String, u32> = HashMap::new();
         for (code, state) in &states {
             let Some(color) = Color::from_hex(&state.color) else {
                 continue;
@@ -253,10 +253,10 @@ pub(super) fn prepare_internal(
                 "{:?}:{:?}:{}:{}:{}",
                 state.role, state.render_style, color.r, color.g, color.b
             );
-            if let Some(cached) = role_stamps.get(&stamp_key) {
-                let mut entry = cached.clone();
-                entry["state"] = json!(code);
-                role_entries.push(entry);
+            if let Some(canonical) = role_stamps.get(&stamp_key) {
+                // The pixels and visual identity already belong to an earlier
+                // full row. Keep only this state's lookup alias in the manifest.
+                role_entries.push(json!({"state":code,"alias":canonical}));
                 continue;
             }
             let annotation = state.render_style == HoldRenderStyle::AboveMarker;
@@ -347,7 +347,7 @@ pub(super) fn prepare_internal(
                 glyph_offset = glyph_passes[0].clone();
             }
             let entry = json!({"state":code,"identity":code,"color":[color.r,color.g,color.b],"fill":fill_offset,"plate":plate_offset,"glyph":glyph_offset,"annotation":annotation,"fillPasses":fill_passes,"glyphPasses":glyph_passes});
-            role_stamps.insert(stamp_key, entry.clone());
+            role_stamps.insert(stamp_key, **code);
             role_entries.push(entry);
         }
         entries.push(
@@ -866,13 +866,53 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![13, 42, 43, 44]
         );
-        assert_eq!(
-            roles
+        assert_eq!(roles[0]["identity"], 13);
+        assert_eq!(roles[1], json!({"state":42,"alias":13}));
+        assert_eq!(roles[2], json!({"state":43,"alias":13}));
+        assert_eq!(roles[3]["identity"], 44);
+        assert!(roles[0].get("alias").is_none());
+        assert!(roles[3].get("alias").is_none());
+        // Removing equivalent lookup codes must not change any pixel or stamp.
+        config.hold_state_map.remove(&42);
+        config.hold_state_map.remove(&43);
+        let canonical_only = prepare_owned(&config).unwrap();
+        assert_eq!(atlas.pixels, canonical_only.pixels);
+        let canonical_manifest: Value = serde_json::from_slice(&canonical_only.manifest).unwrap();
+        let canonical_roles = canonical_manifest["holds"][0]["roles"].as_array().unwrap();
+        assert_eq!(roles[0], canonical_roles[0]);
+        assert_eq!(roles[3], canonical_roles[1]);
+    }
+    #[test]
+    fn role_aliases_keep_color_and_auxiliary_style_boundaries() {
+        let mut config = config();
+        let hand = config.hold_state_map[&42].clone();
+        config.hold_state_map.insert(13, hand.clone());
+        let mut blue = hand.clone();
+        blue.color = "#0000FF".into();
+        config.hold_state_map.insert(44, blue);
+        let mut auxiliary = hand;
+        auxiliary.render_style = HoldRenderStyle::AboveMarker;
+        config.hold_state_map.insert(46, auxiliary.clone());
+        config.hold_state_map.insert(47, auxiliary);
+        let atlas = prepare_owned(&config).unwrap();
+        let manifest: Value = serde_json::from_slice(&atlas.manifest).unwrap();
+        let roles = manifest["holds"][0]["roles"].as_array().unwrap();
+        assert_eq!(roles[1], json!({"state":42,"alias":13}));
+        assert_eq!(roles[2]["identity"], 44);
+        assert_eq!(roles[2]["color"], json!([0, 0, 255]));
+        assert_eq!(roles[3]["identity"], 46);
+        assert_eq!(roles[3]["annotation"], true);
+        assert!(
+            roles[3]["glyphPasses"]
+                .as_array()
+                .unwrap()
                 .iter()
-                .map(|role| role["identity"].as_u64().unwrap())
-                .collect::<Vec<_>>(),
-            vec![13, 13, 13, 44]
+                .any(|stamp| !stamp.is_null())
         );
+        assert_eq!(roles[4], json!({"state":47,"alias":46}));
+        config.hold_state_map.remove(&42);
+        config.hold_state_map.remove(&47);
+        assert_eq!(atlas.pixels, prepare_owned(&config).unwrap().pixels);
     }
     #[test]
     fn dimensions_and_unsupported_treatments_are_bounded() {
