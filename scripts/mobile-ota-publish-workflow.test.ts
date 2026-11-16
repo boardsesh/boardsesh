@@ -390,11 +390,49 @@ describe('production OTA workflow reliability', () => {
     const assertion = stepBlock(production, 'Assert only the changelog is uncommitted');
 
     expect(assertion).toContain('git status --porcelain --untracked-files=all');
-    expect(assertion).toContain('CHANGELOG.md packages/mobile/src/data/changelog.generated.json');
+    expect(assertion).toContain("'CHANGELOG.md' | 'packages/mobile/src/data/changelog.generated.json'");
     expect(assertion).toContain('exit 1');
     expect(production.indexOf('      - name: Assert only the changelog is uncommitted\n')).toBeLessThan(
       production.indexOf('      - name: Publish iOS OTA\n'),
     );
+  });
+
+  it.each([
+    ['empty', '', true],
+    ['markdown only', ' M CHANGELOG.md\n', true],
+    ['JSON only', ' M packages/mobile/src/data/changelog.generated.json\n', true],
+    ['both', ' M packages/mobile/src/data/changelog.generated.json\n M CHANGELOG.md\n', true],
+    ['unrelated tracked file', ' M packages/mobile/app/index.tsx\n', false],
+    ['unrelated untracked file', '?? unexpected.txt\n', false],
+    ['markdown plus foreign file', ' M CHANGELOG.md\n?? unexpected.txt\n', false],
+    ['JSON plus foreign file', ' M packages/mobile/src/data/changelog.generated.json\n?? unexpected.txt\n', false],
+    [
+      'both plus foreign file',
+      ' M CHANGELOG.md\n M packages/mobile/src/data/changelog.generated.json\n?? unexpected.txt\n',
+      false,
+    ],
+    ['foreign path ending in permitted filename', '?? unexpected CHANGELOG.md\n', false],
+    [
+      'foreign path resembling the old joined pair',
+      '?? CHANGELOG.md packages/mobile/src/data/changelog.generated.json\n',
+      false,
+    ],
+    ['rename from foreign path', 'R  unexpected.txt -> CHANGELOG.md\n', false],
+  ])('runs the changelog-only guard for %s', (_description, porcelainStatus, permitted) => {
+    const workflow = parse(production) as {
+      jobs: { publish: { steps: { name?: string; run?: string }[] } };
+    };
+    const assertion = workflow.jobs.publish.steps.find(
+      (step) => step.name === 'Assert only the changelog is uncommitted',
+    );
+    expect(assertion?.run).toBeDefined();
+    const outcome = spawnSync('bash', ['-c', `git() { printf '%s' "$GUARD_STATUS"; }\n${assertion!.run}`], {
+      encoding: 'utf8',
+      env: { ...process.env, GUARD_STATUS: porcelainStatus },
+    });
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.status).toBe(permitted ? 0 : 1);
+    expect(outcome.stdout.includes('Unexpected working-tree changes')).toBe(!permitted);
   });
 
   // A native build dispatches a republish under the fingerprint it just shipped.
