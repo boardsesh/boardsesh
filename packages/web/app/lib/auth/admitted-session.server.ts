@@ -6,8 +6,6 @@ import { getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import { admitPresentedWebCredential, CredentialAuthorityUnavailable } from './credential-admission.server';
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
-import { browserConsumerFacade, publicBrowserLeaseOwner } from './browser-consumers.server';
-import type { BrowserBackendLeaseOwner } from '@boardsesh/auth-protocol/browser-backend-lease';
 
 export type PresentedWebCredential = Readonly<{ credential: string; cookieName: string }>;
 
@@ -42,29 +40,6 @@ const serverCookieHeaderForRender = cache(async (): Promise<string> => {
     .map((cookie) => `${cookie.name}=${encodeURIComponent(cookie.value)}`)
     .join('; ');
 });
-const selectedBrowserForRender = cache(async () => browserConsumerFacade.observe(await serverCookieHeaderForRender()));
-
-export type ServerRenderViewer =
-  | { readonly kind: 'legacy' }
-  | { readonly kind: 'selected'; readonly owner: Readonly<BrowserBackendLeaseOwner> }
-  | { readonly kind: 'anonymous' }
-  | { readonly kind: 'refused' };
-
-/** Metadata only. Selected routes must fetch their server props independently
- * of the viewer: a client boundary cannot remove private bytes from Flight. */
-export const getServerRenderViewer = cache(async (): Promise<ServerRenderViewer> => {
-  const selected = await selectedBrowserForRender();
-  if (selected.status === 'legacy') return Object.freeze({ kind: 'legacy' });
-  if (selected.status === 'unavailable' || selected.status === 'conflict') throw new CredentialAuthorityUnavailable();
-  if (selected.status === 'anonymous') return Object.freeze({ kind: 'anonymous' });
-  if (selected.status !== 'admitted') return Object.freeze({ kind: 'refused' });
-  return Object.freeze({ kind: 'selected', owner: publicBrowserLeaseOwner(selected) });
-});
-
-const selectedBackendLeaseForRender = cache(async () => {
-  const observed = await selectedBrowserForRender();
-  return observed.status === 'admitted' ? browserConsumerFacade.lease(observed) : null;
-});
 
 async function captureServerCredential(): Promise<PresentedWebCredential | null> {
   const cookieHeader = await serverCookieHeaderForRender();
@@ -86,29 +61,11 @@ const admitServerCredentialForRender = cache(async () => {
 });
 
 export async function getAdmittedRawServerToken(): Promise<string | undefined> {
-  const selected = await selectedBrowserForRender();
-  if (selected.status !== 'legacy') {
-    if (selected.status === 'unavailable' || selected.status === 'conflict') throw new CredentialAuthorityUnavailable();
-    if (selected.status !== 'admitted') return undefined;
-    const lease = await selectedBackendLeaseForRender();
-    if (lease?.status === 'unavailable' || lease?.status === 'conflict') throw new CredentialAuthorityUnavailable();
-    return lease?.status === 'admitted' ? lease.token : undefined;
-  }
   return (await admitServerCredentialForRender())?.presented.credential;
 }
 
 /** Never mint a session or silently turn an authority outage into anonymity. */
 export async function getAdmittedServerSession() {
-  const selected = await selectedBrowserForRender();
-  if (selected.status !== 'legacy') {
-    if (selected.status === 'unavailable' || selected.status === 'conflict') throw new CredentialAuthorityUnavailable();
-    if (selected.status !== 'admitted') return null;
-    try {
-      return browserConsumerFacade.session(selected);
-    } catch {
-      throw new CredentialAuthorityUnavailable();
-    }
-  }
   const admitted = await admitServerCredentialForRender();
   if (!admitted) return null;
   const { presented, userId } = admitted;

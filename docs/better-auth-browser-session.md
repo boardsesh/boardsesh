@@ -412,25 +412,30 @@ Kept, per #7596: BA-04 cutoffs, SID denials and the legacy bridge; BA-06
 native and Garmin work; the backend provider and first-password cores. Some
 web files mix live and dead parts, and A5 splits them instead of deleting them:
 
-1. `withAuthResponseAdmission` (`[...nextauth]/route.ts:344`) checks the BA-04
+1. `withAuthResponseAdmission` (`[...nextauth]/route.ts:316`) checks the BA-04
    SID denial on session reads and sign-out today
-   (`auth-response-admission.server.ts:234,263`). That check stays.
+   (`auth-response-admission.server.ts:81,110`). That check stays.
 2. The same-origin cookie fetch lock (`nextauth-cookie-fetch-lock.ts:255`)
    stays until Phase B.
 3. The CNC mount and version fence (`app/build-plans/use-cnc-request-scope.ts:11-34`)
    is not binding code and stays.
-4. `getServerRenderViewer` (`admitted-session.server.ts:55-62`) returns
-   `legacy` today. A5 removes its selected branch and keeps the legacy path.
+4. Private server renders read the session through `getAdmittedServerSession`
+   and `getAdmittedRawServerToken` (`admitted-session.server.ts`). A5 removed
+   their selected branch and deleted `getServerRenderViewer`, which had no
+   caller left after #7621; the legacy path is unchanged.
 
 Deletions must not change live behaviour. One known live effect: in legacy
 mode, Google and Apple sign-in answer 503 when the Cookie header is malformed
 or too large (over 32,768 bytes, over 128 pairs, control characters, or a pair
-without a name; `public-auth-request.server.ts:33-49`, reached through
-`provider-oauth-outer.server.ts:100-104` and answered at
-`[...nextauth]/route.ts:373-377`). A5 keeps an equivalent check and says so in
-its PR. That code, ws-auth and the native callback also refuse any
-`__Host-boardsesh.*` cookie, which only the binding design sets; that part
-goes, as #7594 asks.
+without a name). #7646 kept that check as
+`provider-oauth-cookie-header.server.ts`, answered at
+`[...nextauth]/route.ts:325-336`. The binding code also refused any
+`__Host-boardsesh.*` cookie on Google and Apple sign-in, and any
+`__Host-boardsesh.browser-binding*` cookie on every `/api/auth/*` call, on
+ws-auth, on the native callback and on private server renders. Only the
+binding design sets those cookies. #7646 and the PR that closed #7594 removed
+those refusals: a browser that still holds one now signs in through the legacy
+cookie, and nothing reads or clears the old cookie.
 
 ## Tests
 
