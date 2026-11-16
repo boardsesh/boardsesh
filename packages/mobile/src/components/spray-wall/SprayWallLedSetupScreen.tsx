@@ -829,6 +829,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                 photoUri,
                 mode: mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
                 onTap: tapHole,
+                ignoreTapsOutsidePhoto: mode === 'add',
                 onMove: moveHole,
                 dragPoints: layout.holes,
                 draftColor: brandColors.warning,

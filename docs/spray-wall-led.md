@@ -151,21 +151,19 @@ by hand leaves the hold the geometry gave it. Holes keep their geometric LEDs.
 drops LED ids that no longer exist and repeated holds, and rejects malformed
 links. Links to holds the wall no longer has are ignored.
 
-An app from before these links saves a layout with no `holdLeds` at all, which
-would erase a newer phone's links. `saveSprayWallLedSetup` therefore keeps the
-stored links when the incoming layout has no `holdLeds` field
-(`keepHoldLedLinksFromOlderApp`), minus LEDs it no longer has; a link whose LEDs
-are all gone returns that hold to the automatic mapping. A current app always
-sends the list, and an explicit `[]` (after the last link is cleared or the LEDs
-are rebuilt) clears them.
+`saveSprayWallLedSetup` stores `holdLeds` as the app sends it. Every installed
+app knows about these links, and one leaves the key out once its last link is
+cleared (this app sends `[]`), so a layout without `holdLeds` clears the stored
+links.
 
-LED pairs (`ledGroups`) follow the same rule (`keepLedPairsFromOlderApp`), checked
-on its own because some released apps know about links but not pairs. A layout
-with no `ledGroups` key keeps the stored list, an empty one too, minus pairs
-whose LEDs are gone; if its LED placement differs from the stored one, the older
-app rebuilt the LEDs and the new placement's default pairs apply. A current app
-always names the key when it uploads, `null` for the default pairs, which the
-reader treats like no list.
+LED pairs (`ledGroups`) are newer than any installed app, so an app from before
+them saves a layout with no `ledGroups` key, which would erase a newer phone's
+pairs. `saveSprayWallLedSetup` therefore keeps the stored list
+(`keepLedPairsFromOlderApp`), an empty one too, minus pairs whose LEDs are gone.
+If the older app rebuilt the LEDs (the placement, holes, corners, rows or
+columns changed, and so did the LEDs), the stored pairs would name the wrong
+LEDs, so the new layout's default pairs apply. A current app always sends
+`ledGroups`, `null` for the default pairs, which the reader treats like no list.
 
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and

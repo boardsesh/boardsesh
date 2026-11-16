@@ -159,20 +159,29 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   function move(start: TnutPoint, end: TnutPoint, renderWidth: number, renderHeight: number) {
     if (mode !== 'move') return;
     const index = nearestPhotoPointIndex(leds, start, renderWidth, renderHeight, 22);
-    const occupied = nearestPhotoPointIndex(leds, end, renderWidth, renderHeight, 6);
-    const partner = index >= 0 ? ledPartner(pairs, leds[index].id) : null;
-    if (index < 0 || (occupied >= 0 && occupied !== index && leds[occupied].id !== partner)) return;
-    // A pair moves as one unit: its partner keeps the same offset.
-    const dx = end.x - leds[index].x,
-      dy = end.y - leds[index].y;
+    if (index < 0) return;
+    const dragged = leds[index];
+    const partner = ledPartner(pairs, dragged.id);
+    const moving = leds.filter((led, entry) => entry === index || led.id === partner);
+    // A pair moves as one unit: one translation, held back so both LEDs stay on the
+    // photo, and the offset between them never changes.
+    const shift = (delta: number, axis: 'x' | 'y') =>
+      Math.max(
+        Math.max(...moving.map((led) => -led[axis])),
+        Math.min(Math.min(...moving.map((led) => 1 - led[axis])), delta),
+      );
+    const dx = shift(end.x - dragged.x, 'x'),
+      dy = shift(end.y - dragged.y, 'y');
+    // The clamp only absorbs rounding: the shift already keeps both LEDs on the photo.
+    const moved = (led: TnutPoint) => ({
+      x: Math.max(0, Math.min(1, led.x + dx)),
+      y: Math.max(0, Math.min(1, led.y + dy)),
+    });
+    const target = moved(dragged);
+    const occupied = nearestPhotoPointIndex(leds, target, renderWidth, renderHeight, 6);
+    if (occupied >= 0 && occupied !== index && leds[occupied].id !== partner) return;
     change({
-      ledPositions: leds.map((led, entry) =>
-        entry === index
-          ? { ...led, ...end }
-          : led.id === partner
-            ? { ...led, x: Math.max(0, Math.min(1, led.x + dx)), y: Math.max(0, Math.min(1, led.y + dy)) }
-            : led,
-      ),
+      ledPositions: leds.map((led, entry) => (entry === index || led.id === partner ? { ...led, ...moved(led) } : led)),
     });
   }
 
@@ -212,6 +221,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
           onInteractionChange,
           mode: pairing ? 'tap' : mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
           onTap: tap,
+          ignoreTapsOutsidePhoto: !pairing && mode === 'add',
           onMove: move,
           dragPoints: leds,
           draftColor: brandColors.primary,

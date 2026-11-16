@@ -177,6 +177,25 @@ describe('LED pairs across an older app save', () => {
     const rebuilt = olderAppSave(layout('center'));
     expect(keepLedPairsFromOlderApp(rebuilt, false, separated)).not.toHaveProperty('ledGroups');
   });
+
+  it('starts from the default pairs when the older app rebuilt the LEDs after a rows change', () => {
+    const sides = layout('sides');
+    const custom = groupLedPair(sides, ...(ledPairs(sides).flat().slice(1, 3) as [string, string]));
+    const taller = { ...custom, rows: 3 };
+    const holes = generateTnutGrid({ ...taller, pattern: 'grid' });
+    const rebuilt = olderAppSave({ ...taller, holes, ledPositions: generateLedPositions({ ...taller, holes }) });
+    const merged = keepLedPairsFromOlderApp(rebuilt, false, custom);
+    expect(merged).not.toHaveProperty('ledGroups');
+    expect(ledPairs(merged)).toHaveLength(6);
+  });
+
+  it('keeps the stored pairs when the older app changed the holes but left the LEDs', () => {
+    const sides = layout('sides');
+    const separated = separateLedPair(sides, ledPairs(sides)[0][0]);
+    const holes = separated.holes.map((hole) => ({ x: hole.x, y: hole.y + 0.01 }));
+    const merged = keepLedPairsFromOlderApp(olderAppSave({ ...separated, holes }), false, separated);
+    expect(merged.ledGroups).toEqual(separated.ledGroups);
+  });
 });
 
 describe('skipped LEDs on a connection', () => {

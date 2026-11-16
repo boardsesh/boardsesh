@@ -73,7 +73,9 @@ export function separateLedPair(layout: TnutLayout, id: string): TnutLayout {
 /** Make two LEDs one unit, taking each out of any pair it was in. */
 export function groupLedPair(layout: TnutLayout, first: string, second: string): TnutLayout {
   if (first === second) return layout;
-  const others = ledPairs(layout).filter(([a, b]) => ![first, second].includes(a) && ![first, second].includes(b));
+  const others = ledPairs(layout).filter(
+    ([pairFirst, pairSecond]) => ![first, second].includes(pairFirst) && ![first, second].includes(pairSecond),
+  );
   return { ...layout, ledGroups: [...others, [first, second]] };
 }
 
@@ -95,9 +97,9 @@ export function withLedPartners(ids: readonly string[], pairs: readonly SprayLed
  * whose LEDs the older app removed. A newer app always sends the key, `null` when
  * it wants the default pairs, so this only runs for older apps.
  *
- * A different LED placement means the older app rebuilt the LEDs, and the rebuilt
- * ones reuse ids, so the stored pairs would name the wrong LEDs: start from the
- * new placement's default pairs instead.
+ * An older app rebuilds the LEDs when the placement, holes, corners, rows or
+ * columns change, and the rebuilt ones reuse ids, so the stored pairs would name
+ * the wrong LEDs: start from the new layout's default pairs instead.
  */
 export function keepLedPairsFromOlderApp(
   incoming: TnutLayout,
@@ -105,6 +107,31 @@ export function keepLedPairsFromOlderApp(
   stored: TnutLayout | null,
 ): TnutLayout {
   if (incomingHadPairs || stored?.ledGroups === undefined) return incoming;
-  if (stored.ledPlacement !== incoming.ledPlacement) return incoming;
+  if (olderAppRebuiltLeds(incoming, stored)) return incoming;
   return { ...incoming, ledGroups: readLedPairs(stored.ledGroups, incoming.ledPositions ?? []) ?? [] };
+}
+
+/** What the older app's LED step compares before it rebuilds the LEDs. */
+function ledGeometry(layout: TnutLayout) {
+  return JSON.stringify([
+    layout.holes,
+    layout.ledPlacement ?? null,
+    layout.corners,
+    layout.rows,
+    layout.columns,
+    layout.columnConvention ?? null,
+    layout.firstRowOffset,
+  ]);
+}
+
+const ledSpots = (layout: TnutLayout) =>
+  JSON.stringify((layout.ledPositions ?? []).map((led) => [led.id, led.x, led.y]));
+
+/**
+ * The geometry the LEDs come from changed and so did the LEDs. A geometry change
+ * alone (holes edited, LEDs left as they were) and an LED edit alone (moved or
+ * removed by hand) both keep the stored pairs.
+ */
+function olderAppRebuiltLeds(incoming: TnutLayout, stored: TnutLayout) {
+  return ledGeometry(incoming) !== ledGeometry(stored) && ledSpots(incoming) !== ledSpots(stored);
 }

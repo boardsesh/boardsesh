@@ -6,6 +6,9 @@ import type { LedPosition, SprayLedPair, TnutPoint, TnutWiring } from '@boardses
 import { useTheme } from '../../providers/theme-provider';
 import type { SprayLiveDrag } from './SprayPhotoCanvas';
 import { cableEndpoints } from './spray-cable-endpoints';
+
+/** One empty list for every render without pairs, so `pairPoints` stays memoised. */
+const NO_LED_PAIRS: readonly SprayLedPair[] = [];
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 // Cable colour is separate from the orange holes and violet LEDs. Skipped LEDs are
 // small dots in the cable colour, so red stays for loose ends that need fixing.
@@ -128,7 +131,7 @@ export function SpraySetupOverlay({
   subtleLeds = false,
   unmappedHoles = [],
   unmappedHoldIds = [],
-  ledPairs = [],
+  ledPairs = NO_LED_PAIRS,
   width,
   height,
   zoom,
@@ -250,9 +253,9 @@ export function SpraySetupOverlay({
   const pairPoints = useMemo(() => {
     const byId = new Map(leds.map((led) => [led.id, led]));
     return ledPairs.flatMap(([first, second]) => {
-      const a = byId.get(first),
-        b = byId.get(second);
-      return a && b ? [[a, b] as const] : [];
+      const firstLed = byId.get(first),
+        secondLed = byId.get(second);
+      return firstLed && secondLed ? [[firstLed, secondLed] as const] : [];
     });
   }, [leds, ledPairs]);
   const pairProps = useAnimatedProps(() => ({

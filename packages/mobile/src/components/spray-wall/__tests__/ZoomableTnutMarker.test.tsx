@@ -308,6 +308,28 @@ describe('SprayPhotoCanvas', () => {
     });
   });
 
+  it('drops a tap in the blank margin beside the photo when asked, instead of moving it to the edge', () => {
+    const onTap = vi.fn();
+    const { rerender } = render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    const twoFinger = runtime.gestures.find((gesture) => gesture.options.minPointers?.[0] === 2)!;
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 60, translationY: 0 });
+    fire(twoFinger, 'onFinalize');
+    // The photo now starts 60 points in: x = 30 is blank margin.
+    end(
+      runtime.gestures.find((gesture) => gesture.kind === 'tap')!,
+      { x: 30, y: 225 },
+    );
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0, y: 0.5 }, 300, 450);
+    onTap.mockClear();
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap, ignoreTapsOutsidePhoto: true })));
+    const tap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 30, y: 225 });
+    expect(onTap).not.toHaveBeenCalled();
+    end(tap, { x: 90, y: 225 });
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.1, y: 0.5 }, 300, 450);
+  });
+
   it('collects a normalized trace on the UI thread and commits only once at release', () => {
     const onTrace = vi.fn();
     const lock = vi.fn();

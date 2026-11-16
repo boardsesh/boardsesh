@@ -206,6 +206,30 @@ describe('LED pairs behind a hold', () => {
     expect(latest().ledPositions?.map((led) => led.id)).toEqual(['c']);
   });
 
+  it('stops a pair at the photo edge without changing the space between its LEDs', () => {
+    const nearEdge: TnutLayout = {
+      ...paired,
+      ledPositions: [
+        { id: 'a', x: 0.9, y: 0.5 },
+        { id: 'b', x: 0.98, y: 0.5 },
+        { id: 'c', x: 0.2, y: 0.2 },
+      ],
+    };
+    render(<Editor initial={nearEdge} />);
+    fireEvent.click(screen.getByText('move'));
+    act(() => controls.canvas?.onMove?.({ x: 0.9, y: 0.5 }, { x: 0.95, y: 0.5 }, 1000, 1000));
+    const [first, second] = latest().ledPositions!;
+    expect(first.x).toBeCloseTo(0.92);
+    expect(second.x).toBeCloseTo(1);
+    expect(second.x - first.x).toBeCloseTo(0.08);
+    // Dragging back restores the original spacing too.
+    act(() => controls.canvas?.onMove?.({ x: first.x, y: 0.5 }, { x: 0.9, y: 0.5 }, 1000, 1000));
+    expect(latest().ledPositions?.slice(0, 2)).toEqual([
+      { id: 'a', x: expect.closeTo(0.9), y: 0.5 },
+      { id: 'b', x: expect.closeTo(0.98), y: 0.5 },
+    ]);
+  });
+
   it('separates a pair with one tap and groups two single LEDs with two', () => {
     render(<Editor initial={paired} />);
     fireEvent.click(screen.getByText('sprayLedSetup.pairLeds'));

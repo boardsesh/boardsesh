@@ -177,7 +177,7 @@ describe('saving a wall’s LED setup', () => {
     expect(setup?.layout).toMatchObject({ photoKey: layout().photoKey, holes: layout().holes });
   });
 
-  it('keeps hand-made hold links when an app that predates them saves, and clears them on request', async () => {
+  it('saves hand-made hold links as the app sends them, and a layout without them clears them', async () => {
     const uuid = await createWall();
     const leds = [
       { id: 'led-a', x: 0.25, y: 0.5, hole: { x: 0.25, y: 0.5 } },
@@ -185,10 +185,14 @@ describe('saving a wall’s LED setup', () => {
     ];
     const linked = layout({ ledPositions: leds, holdLeds: [{ holdId: 7, ledIds: ['led-a', 'led-b'] }] });
     await save(uuid, OWNER, { layout: linked });
-    // An older app sends no holdLeds: the links stay, minus an LED its layout dropped.
-    await save(uuid, OWNER, { layout: layout({ ledPositions: [leds[0]] }) });
-    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({ holdLeds: [{ holdId: 7, ledIds: ['led-a'] }] });
-    // A current app sends an explicit empty list to clear them.
+    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({
+      holdLeds: [{ holdId: 7, ledIds: ['led-a', 'led-b'] }],
+    });
+    // "Back to automatic" on the last link: an installed app leaves the key out.
+    await save(uuid, OWNER, { layout: layout({ ledPositions: leds }) });
+    expect((await read(uuid, OWNER))?.setup?.layout).not.toHaveProperty('holdLeds');
+    // An explicit empty list clears them too.
+    await save(uuid, OWNER, { layout: linked });
     await save(uuid, OWNER, { layout: layout({ ledPositions: leds, holdLeds: [] }) });
     expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({ holdLeds: [] });
   });
@@ -204,37 +208,40 @@ describe('saving a wall’s LED setup', () => {
     const sides = (overrides: Partial<TnutLayout> = {}) =>
       layout({ ledPlacement: 'sides', ledPositions: sideLeds, ...overrides });
     /** What an app from before pairs sends back: the layout without the keys it does not know. */
-    function olderApp(saved: unknown, knowsHoldLinks: boolean) {
-      const { ledGroups: _pairs, holdLeds, ...rest } = saved as TnutLayout;
-      return knowsHoldLinks && holdLeds !== undefined ? { ...rest, holdLeds } : rest;
+    function olderApp(saved: unknown) {
+      const { ledGroups: _pairs, ...rest } = saved as TnutLayout;
+      return rest;
     }
     const storedLayout = async (uuid: string) => (await read(uuid, OWNER))?.setup?.layout as TnutLayout;
 
-    it.each([false, true])('keeps a hand-made pair (older app knows hold links: %s)', async (knowsHoldLinks) => {
+    it('keeps a hand-made pair, while the hold links follow what the app sent', async () => {
       const uuid = await createWall();
       await save(uuid, OWNER, {
         layout: sides({ ledGroups: [['a1', 'b1']], holdLeds: [{ holdId: 7, ledIds: ['a1'] }] }),
       });
-      await save(uuid, OWNER, { layout: olderApp(await storedLayout(uuid), knowsHoldLinks) });
+      await save(uuid, OWNER, { layout: olderApp(await storedLayout(uuid)) });
       expect(await storedLayout(uuid)).toMatchObject({
         ledGroups: [['a1', 'b1']],
         holdLeds: [{ holdId: 7, ledIds: ['a1'] }],
       });
+      // The older app cleared its last hold link: the links go, the pair stays.
+      const { holdLeds: _links, ...cleared } = olderApp(await storedLayout(uuid));
+      await save(uuid, OWNER, { layout: cleared });
+      const saved = await storedLayout(uuid);
+      expect(saved.ledGroups).toEqual([['a1', 'b1']]);
+      expect(saved).not.toHaveProperty('holdLeds');
     });
 
-    it.each([false, true])(
-      'keeps a separated default pair separated (older app knows hold links: %s)',
-      async (knowsHoldLinks) => {
-        const uuid = await createWall();
-        await save(uuid, OWNER, { layout: sides({ ledGroups: [['b1', 'b2']], holdLeds: [] }) });
-        await save(uuid, OWNER, { layout: olderApp(await storedLayout(uuid), knowsHoldLinks) });
-        expect((await storedLayout(uuid)).ledGroups).toEqual([['b1', 'b2']]);
-        // Every pair separated is an empty list, and it stays empty.
-        await save(uuid, OWNER, { layout: sides({ ledGroups: [], holdLeds: [] }) });
-        await save(uuid, OWNER, { layout: olderApp(await storedLayout(uuid), knowsHoldLinks) });
-        expect((await storedLayout(uuid)).ledGroups).toEqual([]);
-      },
-    );
+    it('keeps a separated default pair separated', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: sides({ ledGroups: [['b1', 'b2']], holdLeds: [] }) });
+      await save(uuid, OWNER, { layout: olderApp(await storedLayout(uuid)) });
+      expect((await storedLayout(uuid)).ledGroups).toEqual([['b1', 'b2']]);
+      // Every pair separated is an empty list, and it stays empty.
+      await save(uuid, OWNER, { layout: sides({ ledGroups: [], holdLeds: [] }) });
+      await save(uuid, OWNER, { layout: olderApp(await storedLayout(uuid)) });
+      expect((await storedLayout(uuid)).ledGroups).toEqual([]);
+    });
 
     it('drops pairs whose LEDs an older app removed', async () => {
       const uuid = await createWall();
@@ -246,7 +253,7 @@ describe('saving a wall’s LED setup', () => {
           ],
         }),
       });
-      await save(uuid, OWNER, { layout: olderApp(sides({ ledPositions: sideLeds.slice(2) }), false) });
+      await save(uuid, OWNER, { layout: olderApp(sides({ ledPositions: sideLeds.slice(2) })) });
       expect((await storedLayout(uuid)).ledGroups).toEqual([['b1', 'b2']]);
     });
 
