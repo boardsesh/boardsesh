@@ -417,6 +417,45 @@ The chrome side of the same pass: the Liquid Glass stack header no longer forces
 scroll edge effect under the bar. HIG Layout: _"Instead of applying a solid or semi-opaque background
 color beneath controls, use a scroll edge effect to visually elevate controls above content."_
 
+### Components
+
+Built on the roles above, in `packages/mobile/src/components/`. Each has a story (`dev/stories/<id>`)
+showing its states. Reach for these before hand-rolling a heading, a row, a pill or a placard.
+
+- **`ShelfHeader`** `{ title, caption?, action?: { label, onPress, accessibilityLabel? }, trailing?, testID? }`:
+  the heading of a shelf of content (Home's sections, the picker's groups). Title 3 emphasized, a
+  VoiceOver heading, at the 16pt gutter with no minimum height; "See all" is accent text and a chevron
+  that reaches 44pt through `hitSlop`. **`ShelfSection`** takes the same props plus `children` and
+  owns the spacing: 8pt from the header to the content, 28pt to the next shelf.
+- **`TextAction`** `{ label, onPress, accessibilityLabel?, chevron?, testID? }`: a borderless accent
+  text button that adds no height to its row. ShelfHeader's action, and the Retry after a quiet
+  `EmptyState`.
+- **`InsetGroupedList`** `{ children, separatorInset?: 'regular' | 'compact' | 'gutter', testID? }`: the
+  inset-grouped `Card`. Rows run to its edges and own the 16pt gutter; it draws a hairline between
+  rows, inset to where their text starts, and clips them to its corners. A row that isn't an `ArtRow`
+  builds from `insetGroupedRowStyles` (`row`, a 44pt `leading` column, `text`).
+- **`ArtRow`** `{ art, artSize: 'compact' | 'regular', title, subtitle?, eyebrow?, status?, accessory?:
+  'checkmark' | 'chevron' | element, selected?, onPress?, onLongPress?, delayLongPress?,
+  accessibilityLabel?, testID? }`: a row of an `InsetGroupedList` that leads with art (a board, a
+  playlist, an icon). The slot is 36 or 44pt wide and the art sets the height. Headline title,
+  secondary subheadline subtitle, footnote eyebrow. `selected` takes `theme.selection` (the
+  selection wash behind the row, the title emphasized in label, an accent checkmark) and reports `selected` to
+  assistive tech. Presses dip in opacity, never scale.
+- **`StatusPill`** `{ label, tone?: 'neutral', testID? }`: something you can't tap ("Closest", "Ready to
+  review"). `theme.status` fill and label, caption 1 emphasized; it never shrinks or truncates, so put
+  it beside text that can (`ArtRow`'s `status`).
+- **`EmptyState`** `{ title, body?, actions?, size: 'screen' | 'section' | 'quiet', icon?, testID? }`:
+  "nothing here". `screen` fills and centres (an empty tab or pane), `section` centres inside a longer
+  page with 32pt above and below, `quiet` is one secondary footnote line at the gutter with a trailing
+  `TextAction` and no body or icon, for a shelf that came back empty.
+- **`BoardThumbnail`** (`components/boards/`) `{ board: { boardType, layoutId, sizeId, setIds }, size:
+  'compact' | 'regular' | number, accessibilityHidden? }`: a board's bare art in a 36×44 or 44×56 slot
+  (or a square of `size` points). The art keeps its own aspect ratio with a `separator` hairline on it
+  and no tile behind it; an unknown config shows the boards glyph and a spray wall shows its cached
+  photo, or a camera glyph until the photo is on disk. It renders at 400px so it shares the raster
+  cache with board discovery. `BoardThumbnailView` is the same slot with the art passed in, for
+  stories.
+
 ---
 
 ## Typography
