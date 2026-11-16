@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import Yoga, { Align, Direction, Edge, FlexDirection, Gutter, Wrap, type Node as YogaNode } from 'yoga-layout';
 
 const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
@@ -97,6 +98,101 @@ function styleOf(element: Element | null): Record<string, unknown> {
   return JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
 }
 
+const ALIGN: Record<string, Align> = {
+  center: Align.Center,
+  'flex-start': Align.FlexStart,
+  'flex-end': Align.FlexEnd,
+  stretch: Align.Stretch,
+};
+const EDGES: Record<string, Edge> = {
+  Top: Edge.Top,
+  Bottom: Edge.Bottom,
+  Horizontal: Edge.Horizontal,
+  Vertical: Edge.Vertical,
+  Start: Edge.Start,
+  End: Edge.End,
+};
+const LAYOUT_KEY = /^(flex|align|justify|gap|rowGap|columnGap|padding|margin|width|height|min|max|position|top|left)/;
+
+function applyLayout(node: YogaNode, style: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(style)) {
+    const edge = /^(padding|margin)(Top|Bottom|Horizontal|Vertical|Start|End)$/.exec(key);
+    if (edge?.[1] && edge[2]) {
+      const target = EDGES[edge[2]] as Edge;
+      if (edge[1] === 'padding') node.setPadding(target, Number(value));
+      else node.setMargin(target, Number(value));
+    } else if (key === 'flexDirection') {
+      node.setFlexDirection(value === 'row' ? FlexDirection.Row : FlexDirection.Column);
+    } else if (key === 'flexWrap') {
+      node.setFlexWrap(value === 'wrap' ? Wrap.Wrap : Wrap.NoWrap);
+    } else if (key === 'alignItems') {
+      node.setAlignItems(ALIGN[String(value)] as Align);
+    } else if (key === 'gap') {
+      node.setGap(Gutter.All, Number(value));
+    } else if (key === 'columnGap') {
+      node.setGap(Gutter.Column, Number(value));
+    } else if (key === 'rowGap') {
+      node.setGap(Gutter.Row, Number(value));
+    } else if (key === 'flexGrow') {
+      node.setFlexGrow(Number(value));
+    } else if (key === 'flexShrink') {
+      node.setFlexShrink(Number(value));
+    } else if (key === 'flexBasis') {
+      node.setFlexBasis(Number(value));
+    } else if (key === 'minWidth') {
+      node.setMinWidth(value as `${number}%`);
+    } else if (LAYOUT_KEY.test(key)) {
+      throw new Error(`The layout test does not lay out "${key}"`);
+    }
+  }
+}
+
+/**
+ * Lays the rendered tree out with Yoga, React Native's layout engine: views by
+ * their styles, each line of text as tall as its variant's line (8pt a
+ * character wide), the chevron 12pt. Answers each element's box on the screen.
+ */
+function layOut(root: Element, width: number) {
+  const nodes = new Map<Element, YogaNode>();
+  const build = (element: Element): YogaNode => {
+    const node = Yoga.Node.create();
+    nodes.set(element, node);
+    applyLayout(node, styleOf(element));
+    if (element.tagName === 'SPAN') {
+      const textVariant = element.getAttribute('data-variant') as TextVariant;
+      node.setHeight(textStylesByVariant[ctrl.variant][textVariant].lineHeight);
+      node.setWidth((element.textContent ?? '').length * 8);
+    } else if (element.tagName === 'I') {
+      node.setWidth(12);
+      node.setHeight(12);
+    } else {
+      Array.from(element.children).forEach((child, index) => node.insertChild(build(child), index));
+    }
+    return node;
+  };
+  const rootNode = build(root);
+  rootNode.setWidth(width);
+  rootNode.calculateLayout(undefined, undefined, Direction.LTR);
+  const boxOf = (element: Element) => {
+    let top = 0;
+    let left = 0;
+    for (
+      let current: Element | null = element;
+      current && current !== root.parentElement;
+      current = current.parentElement
+    ) {
+      const node = nodes.get(current);
+      if (node) {
+        top += node.getComputedTop();
+        left += node.getComputedLeft();
+      }
+    }
+    const node = nodes.get(element) as YogaNode;
+    return { top, left, bottom: top + node.getComputedHeight(), height: node.getComputedHeight() };
+  };
+  return { boxOf, free: () => rootNode.freeRecursive() };
+}
+
 beforeEach(() => {
   ctrl.variant = 'liquidGlass';
 });
@@ -163,23 +259,49 @@ describe('ShelfHeader', () => {
 });
 
 describe('ShelfSection', () => {
-  // Near you's Map over its "Show boards near you" (NearbyQuietStatus): the
-  // header's target ends where the content's begins, with Map wrapped under
-  // the title, its lowest place.
-  it("keeps the header action's target off an action leading its content", () => {
-    render(
-      <ShelfSection title="Near you" action={{ label: 'Map', onPress: vi.fn() }} testID="section">
-        <TextAction reach="down" label="Show boards near you" onPress={vi.fn()} />
-      </ShelfSection>,
-    );
-    const headerAction = styleOf(screen.getByRole('button', { name: 'Map' }));
-    const contentAction = screen.getByRole('button', { name: 'Show boards near you' });
-    const gap = Number(styleOf(contentAction.parentElement).paddingTop);
-    expect(gap).toBe(SHELF_HEADER_CONTENT_GAP);
-    const headerReachDown = Number(headerAction.paddingBottom);
-    const contentReachUp = Number(styleOf(contentAction).paddingTop);
-    expect(headerReachDown + contentReachUp).toBeLessThanOrEqual(gap);
-  });
+  // Near you's Map over its "Show boards near you" (NearbyQuietStatus), laid
+  // out by Yoga: beside the title at a phone's width, and wrapped under it (an
+  // accessibility text size), its lowest place.
+  it.each([
+    ['liquidGlass', 370],
+    ['liquidGlass', 120],
+    ['material', 370],
+    ['material', 120],
+  ] as const)(
+    "keeps Map on the title's line and its %s target off the action under it (%ipt wide)",
+    (variant, width) => {
+      ctrl.variant = variant;
+      render(
+        <ShelfSection title="Near you" action={{ label: 'Map', onPress: vi.fn() }} testID="section">
+          <TextAction reach="down" label="Show boards near you" onPress={vi.fn()} />
+        </ShelfSection>,
+      );
+      const layout = layOut(screen.getByTestId('section'), width);
+      try {
+        const title = layout.boxOf(screen.getByRole('heading', { name: 'Near you' }));
+        const mapTarget = layout.boxOf(screen.getByRole('button', { name: 'Map' }));
+        const mapLabel = layout.boxOf(screen.getByText('Map'));
+        const contentTarget = layout.boxOf(screen.getByRole('button', { name: 'Show boards near you' }));
+        const contentLabel = layout.boxOf(screen.getByText('Show boards near you'));
+        const wrapped = mapLabel.top >= title.bottom;
+        expect(wrapped).toBe(width < 200);
+        // The tap box leans; the label stays where an unpadded label would be.
+        if (wrapped) expect(mapLabel.top).toBe(title.bottom + 4);
+        // Yoga rounds to whole points, so centred is within half a point.
+        else
+          expect(Math.abs(mapLabel.top + mapLabel.height / 2 - (title.top + title.height / 2))).toBeLessThanOrEqual(
+            0.5,
+          );
+        expect(contentLabel.top).toBe(Math.max(title.bottom, mapLabel.bottom) + SHELF_HEADER_CONTENT_GAP);
+        // Both targets are full size, and the lower one never reaches into the upper one.
+        expect(mapTarget.height).toBeGreaterThanOrEqual(TEXT_ACTION_MIN_TARGET[variant]);
+        expect(contentTarget.height).toBeGreaterThanOrEqual(TEXT_ACTION_MIN_TARGET[variant]);
+        expect(mapTarget.bottom).toBeLessThanOrEqual(contentTarget.top);
+      } finally {
+        layout.free();
+      }
+    },
+  );
 
   it('puts 8pt between the header and its content and 28pt before the next shelf', () => {
     render(

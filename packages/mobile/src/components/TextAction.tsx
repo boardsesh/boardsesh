@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text, type TextVariant } from './Text';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
@@ -69,6 +69,10 @@ const HORIZONTAL_REACH = 8;
  * only inside its own bounds, unless a child's layout overflows them. A shelf
  * header's row is one line tall, so slop past it was dead; an overflowing box
  * is not.
+ *
+ * The padded box sits in a slot as tall as the label (`TextAction`): Yoga
+ * centres an item of a wrapping row (ShelfHeader's title row) by its border
+ * box, ignoring its margins, so a box leaning up would push its label down.
  */
 function hitAreaFor(variant: UiVariant, textVariant: TextVariant, reach: TextActionReach): HitArea {
   const extra = Math.max(0, TEXT_ACTION_MIN_TARGET[variant] - textStylesByVariant[variant][textVariant].lineHeight);
@@ -125,28 +129,34 @@ export function TextAction({
 }: TextActionProps) {
   const { systemColors, variant } = useTheme();
   const look = selectByVariant(variant, ACTION_LOOK);
+  // The slot is the label's own size, with no margins, so whatever row holds
+  // it lines the label up; only the pressable inside leans (`hitAreaFor`).
   return (
-    <PressableSurface
-      onPress={onPress}
-      feedback="opacity"
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      style={[styles.action, look.hitAreas[reach]]}
-      testID={testID}
-    >
-      <Text variant={look.textVariant} emphasized={look.emphasized} color={systemColors.accent} numberOfLines={1}>
-        {label}
-      </Text>
-      {chevron ? <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={systemColors.accent} /> : null}
-    </PressableSurface>
+    <View style={styles.slot}>
+      <PressableSurface
+        onPress={onPress}
+        feedback="opacity"
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        style={[styles.action, look.hitAreas[reach]]}
+        testID={testID}
+      >
+        <Text variant={look.textVariant} emphasized={look.emphasized} color={systemColors.accent} numberOfLines={1}>
+          {label}
+        </Text>
+        {chevron ? <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={systemColors.accent} /> : null}
+      </PressableSurface>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  slot: {
+    flexShrink: 0,
+  },
   action: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    flexShrink: 0,
   },
 });
