@@ -141,7 +141,15 @@
         "title": "Playlist intelligente introuvable",
         "description": "Cette playlist intelligente n'existe pas."
       },
-      "empty": "Aucune voie dans cette playlist intelligente pour l'instant."
+      "empty": "Aucune voie dans cette playlist intelligente pour l'instant.",
+      "createdClimbs": {
+        "title": "Mes blocs",
+        "description": "Tes blocs publiés, sur toutes tes boards.",
+        "empty": {
+          "title": "Aucun bloc publié pour le moment",
+          "supporting": "Publie un bloc pour le retrouver ici. Tes brouillons restent dans l’éditeur."
+        }
+      }
     },
     "empty": {
       "title": "Aucune playlist pour l'instant",

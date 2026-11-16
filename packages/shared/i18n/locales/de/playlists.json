@@ -141,7 +141,15 @@
         "title": "Smart-Playlist nicht gefunden",
         "description": "Diese Smart-Playlist gibt es nicht."
       },
-      "empty": "Noch keine Boulder in dieser Smart-Playlist."
+      "empty": "Noch keine Boulder in dieser Smart-Playlist.",
+      "createdClimbs": {
+        "title": "Meine Boulder",
+        "description": "Deine veröffentlichten Boulder auf allen Boards.",
+        "empty": {
+          "title": "Noch keine veröffentlichten Boulder",
+          "supporting": "Veröffentliche einen Boulder, um ihn hier zu finden. Deine Entwürfe bleiben im Editor."
+        }
+      }
     },
     "empty": {
       "title": "Noch keine Playlists",

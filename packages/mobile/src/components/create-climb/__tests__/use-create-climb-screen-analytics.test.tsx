@@ -227,6 +227,8 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['mySmartPlaylistCounts'] });
   });
 
   it.each([
@@ -273,6 +275,8 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({
       queryKey: ['browser-view', 'replacement-view', 'userClimbs'],
     });
+    expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] });
+    expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['mySmartPlaylistCounts'] });
   });
 
   it('keeps a successful save successful when refreshing created climbs fails', async () => {
@@ -342,6 +346,8 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['mySmartPlaylistCounts'] });
   });
 
   it('fires "Climb Create Failed" with error_reason "duplicate" on a duplicate rejection', async () => {

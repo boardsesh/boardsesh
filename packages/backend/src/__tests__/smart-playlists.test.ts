@@ -140,6 +140,7 @@ function makeChain(resolveValue: unknown = []) {
       return chain;
     });
   }
+  // oxlint-disable-next-line unicorn/no-thenable -- Drizzle query builders are intentionally awaitable.
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
   return { chain, calls };
 }
@@ -616,6 +617,7 @@ function countsSqlArg() {
 describe('mySmartPlaylistCounts resolver', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockDb.select.mockReturnValue(makeChain([]).chain);
   });
 
   it('requires authentication', async () => {
@@ -642,6 +644,7 @@ describe('mySmartPlaylistCounts resolver', () => {
       { type: 'MOST_REPEATED', count: 3 },
       { type: 'PROJECTS', count: 5 },
       { type: 'LIKED_CLIMBS', count: 0 },
+      { type: 'CREATED_CLIMBS', count: 0 },
     ]);
     // The guard plus the CTE — still one roundtrip for all four counts.
     expect(mockDb.execute).toHaveBeenCalledTimes(2);
@@ -664,6 +667,7 @@ describe('mySmartPlaylistCounts resolver', () => {
       { type: 'MOST_REPEATED', count: 2 },
       { type: 'PROJECTS', count: 3 },
       { type: 'LIKED_CLIMBS', count: 0 },
+      { type: 'CREATED_CLIMBS', count: 0 },
     ]);
   });
 
@@ -678,6 +682,7 @@ describe('mySmartPlaylistCounts resolver', () => {
       { type: 'MOST_REPEATED', count: 0 },
       { type: 'PROJECTS', count: 0 },
       { type: 'LIKED_CLIMBS', count: 0 },
+      { type: 'CREATED_CLIMBS', count: 0 },
     ]);
   });
 
@@ -752,6 +757,6 @@ describe('mySmartPlaylistCounts resolver', () => {
 
     const result = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
     expect(result.some((entry) => entry.type.startsWith('RECOMMENDED_'))).toBe(false);
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(5);
   });
 });

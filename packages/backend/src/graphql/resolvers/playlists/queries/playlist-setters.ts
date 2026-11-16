@@ -34,7 +34,10 @@ export const playlistSetters = async (
   ctx: ConnectionContext,
 ): Promise<Array<{ username: string; climbCount: number }>> => {
   const parsedInput = validateInput(PlaylistSettersInputSchema, input, 'input');
-  if (parsedInput.smartType && isRecommendationType(parsedInput.smartType)) {
+  if (
+    parsedInput.smartType &&
+    (isRecommendationType(parsedInput.smartType) || parsedInput.smartType === 'CREATED_CLIMBS')
+  ) {
     throw new GraphQLError('Setters are only listed for Liked, Five Stars, Projects and Most repeated', {
       extensions: { code: 'BAD_USER_INPUT' },
     });

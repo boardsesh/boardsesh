@@ -10,6 +10,7 @@ import { useUnreadNotificationCount } from '../../lib/graphql/hooks/use-notifica
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
+import { smartPlaylistHref } from '../../lib/smart-playlists';
 import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { hapticLight } from '../../lib/haptics';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
@@ -219,7 +220,7 @@ export function useClimbListBarItems({
     onOpenHistory();
   }, [onOpenHistory]);
   const openMyClimbs = useCallback(
-    () => router.navigate({ pathname: '/(tabs)/profile', params: { tab: 'climbs' } }),
+    () => router.push(smartPlaylistHref('CREATED_CLIMBS', 'other'), { withAnchor: true }),
     [router],
   );
   const openViewOptions = useCallback(() => router.push('/(tabs)/climbs/settings/climb-list'), [router]);

@@ -4,6 +4,8 @@ import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
 import type { PlaylistClimbViewInput } from '@boardsesh/shared-schema';
+import type { PlaylistRenderBoard } from '../../../../../src/lib/playlists/use-playlist-render-board';
+import type { PlaylistClimbRenderBoardResult } from '../../../../../src/lib/playlists/playlist-climb-render-board';
 import type { SmartListSelection } from '../../../../../src/lib/playlists/smart-list-view';
 
 // Parity guard for the smart-playlist detail screen: it must mark itself as a
@@ -13,12 +15,14 @@ import type { SmartListSelection } from '../../../../../src/lib/playlists/smart-
 // we only assert the wiring.
 type CapturedOptions = {
   sourceId: string;
+  label?: string;
   honorPlaylistLoadSetting?: boolean;
   previewOnly?: boolean;
+  viewOnlyBoard?: (climb: Climb) => PlaylistRenderBoard | null;
   fetchPage: (args: {
     page: number;
     pageSize: number;
-    board: { boardName: string };
+    board: { boardName: string; layoutId?: number; sizeId?: number; setIds?: string; angle?: number };
     signal: AbortSignal;
   }) => Promise<{ climbs: Climb[]; hasMore: boolean }>;
 };
@@ -49,11 +53,18 @@ const smartMocks = vi.hoisted(() => ({
   allClimbs: [{ uuid: 'c-1', name: 'Boulder' }] as unknown as Climb[],
 }));
 
+const renderBoardMock = vi.hoisted(() => ({
+  preferred: null as PlaylistRenderBoard | null,
+  resolve: vi.fn<(...args: unknown[]) => PlaylistClimbRenderBoardResult | null>(() => null),
+}));
+
 const routeMock = vi.hoisted(() => ({ params: { type: 'liked' } as { type: string; source?: string } }));
 const trackMock = vi.hoisted(() => vi.fn());
+const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
+const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
 const presetMock = vi.hoisted(() => ({ known: true, type: 'LIKED_CLIMBS' as string }));
 
-vi.mock('expo-router', () => ({ useLocalSearchParams: () => routeMock.params }));
+vi.mock('expo-router', () => ({ useLocalSearchParams: () => routeMock.params, router: routerMock }));
 vi.mock('../../../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -153,13 +164,13 @@ vi.mock('../../../../../src/lib/last-search-store', () => ({
   boardConfigKey: (board: { boardName: string }) => board.boardName,
 }));
 vi.mock('../../../../../src/lib/playlists/playlist-climb-render-board', () => ({
-  resolvePlaylistClimbRenderBoard: () => null,
+  resolvePlaylistClimbRenderBoard: renderBoardMock.resolve,
 }));
 vi.mock('../../../../../src/hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => false }));
 vi.mock('../../../../../src/lib/graphql/hooks/search-grade-source', () => ({
   useSearchGradeSourceActive: () => false,
 }));
-vi.mock('../../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../../../src/providers/auth-provider', () => ({ useAuth: () => authMock }));
 
 vi.mock('@boardsesh/graphql/operations/playlists', () => ({ GET_SMART_PLAYLIST: 'GET_SMART_PLAYLIST' }));
 
@@ -170,6 +181,10 @@ vi.mock('react-native', () => ({
 
 vi.mock('../../../../../src/components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
+vi.mock('../../../../../src/components/Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
 }));
 vi.mock('../../../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../../../src/components/ClimbListRowSkeleton', () => ({ ClimbListRowSkeleton: () => null }));
@@ -185,7 +200,7 @@ type DetailViewProps = {
   emptyAction?: { label: string; onPress: () => void };
   addToQueueCount?: number;
   scrollResetKey?: string | null;
-  hero?: { climbCount: number };
+  hero?: { name: string; climbCount: number; description?: string };
 };
 const detailViewProps = vi.hoisted(() => ({ current: null as DetailViewProps | null }));
 vi.mock('../../../../../src/components/playlist', () => ({
@@ -219,7 +234,7 @@ vi.mock('../../../../../src/lib/playlists/use-playlist-activation', () => ({
   },
 }));
 vi.mock('../../../../../src/lib/playlists/use-playlist-render-board', () => ({
-  usePlaylistRenderBoard: () => ({ renderBoard: null }),
+  usePlaylistRenderBoard: () => ({ renderBoard: renderBoardMock.preferred }),
 }));
 vi.mock('../../../../../src/lib/climb-types', () => ({ toQueueClimbs: (climbs: unknown) => climbs }));
 vi.mock('../../../../../src/lib/smart-playlists', async (importOriginal) => {
@@ -229,12 +244,14 @@ vi.mock('../../../../../src/lib/smart-playlists', async (importOriginal) => {
     // The real parser: the screen must not send a made-up source to PostHog.
     smartPlaylistByType: () =>
       presetMock.known
-        ? {
-            type: presetMock.type,
-            titleI18nKey: 'library.smart.likedClimbs.title',
-            color: '#f00',
-            icon: 'favorite',
-          }
+        ? presetMock.type === 'CREATED_CLIMBS'
+          ? actual.smartPlaylistByType('CREATED_CLIMBS')
+          : {
+              type: presetMock.type,
+              titleI18nKey: 'library.smart.likedClimbs.title',
+              color: '#f00',
+              icon: 'favorite',
+            }
         : null,
   };
 });
@@ -594,5 +611,151 @@ describe('SmartPlaylistDetail sort and filters (#6651)', () => {
     render(<SmartPlaylistDetail />);
     act(() => filterSession.setSelection?.(selectionWith({ sort: HARDEST_FIRST })));
     expect(smartMocks.activationOptions?.sourceId).toBe(`smart:LIKED_CLIMBS:u-1|${HARDEST_FIRST_ON_KILTER}`);
+  });
+});
+
+describe('SmartPlaylistDetail generated authored climbs', () => {
+  beforeEach(() => {
+    presetMock.known = true;
+    presetMock.type = 'CREATED_CLIMBS';
+    authMock.isAuthenticated = true;
+    renderBoardMock.preferred = null;
+    renderBoardMock.resolve.mockReset();
+    renderBoardMock.resolve.mockReturnValue(null);
+    routerMock.push.mockClear();
+    routeMock.params = { type: 'CREATED_CLIMBS', source: 'discover' };
+    smartMocks.pageFor = null;
+    smartMocks.activeBoard = { uuid: 'kb', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+    smartMocks.request.mockReset();
+    smartMocks.request.mockResolvedValue({ smartPlaylist: { climbs: [], hasMore: false } });
+    smartMocks.activate.mockClear();
+    smartMocks.appendToQueue.mockClear();
+    smartMocks.refetch.mockClear();
+    trackMock.mockClear();
+    filterSession.initialSelection = null;
+    sessionMock.isShared = false;
+    detailViewProps.current = null;
+  });
+
+  afterEach(() => {
+    presetMock.type = 'LIKED_CLIMBS';
+    authMock.isAuthenticated = true;
+    renderBoardMock.preferred = null;
+    renderBoardMock.resolve.mockReset();
+    renderBoardMock.resolve.mockReturnValue(null);
+    smartMocks.pageFor = null;
+    filterSession.initialSelection = null;
+  });
+
+  it('uses the generated list playback, queue controls and its own name', () => {
+    const { container } = render(<SmartPlaylistDetail />);
+    expect(smartMocks.queryOptions).toMatchObject({ smartPlaylistType: 'CREATED_CLIMBS', userId: 'u-1' });
+    expect(smartMocks.queryOptions).not.toHaveProperty('boardName');
+    expect(smartMocks.activationOptions).toMatchObject({
+      sourceId: 'smart:CREATED_CLIMBS:u-1',
+      label: 'library.smart.createdClimbs.title',
+      honorPlaylistLoadSetting: true,
+    });
+    expect(detailViewProps.current?.hero).toMatchObject({
+      name: 'library.smart.createdClimbs.title',
+      description: 'library.smart.createdClimbs.description',
+    });
+    fireEvent.click(container.querySelector('[data-activate]')!);
+    expect(smartMocks.activate).toHaveBeenCalledExactlyOnceWith({ uuid: 'c-1' });
+    detailViewProps.current?.onQueueAll?.('next');
+    detailViewProps.current?.onQueueAll?.('end');
+    expect(smartMocks.appendToQueue.mock.calls).toEqual([['next'], ['end']]);
+    expect(trackMock).toHaveBeenCalledWith('Smart Playlist Opened', { type: 'CREATED_CLIMBS', source: 'discover' });
+  });
+
+  it.each([
+    ['another board', true, true],
+    ['no active board', false, false],
+    ['the active board', true, false],
+  ] as const)('opens created climbs on the right render board: %s', (_case, hasActiveBoard, incompatible) => {
+    const ownBoard = { boardName: 'tension', layoutId: 9, sizeId: 6, setIds: '16', angle: 30 };
+    const activeBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+    renderBoardMock.preferred = hasActiveBoard ? activeBoard : null;
+    renderBoardMock.resolve.mockReturnValue({
+      renderBoard: ownBoard,
+      incompatible,
+      fit: incompatible ? 'incompatible' : 'exact',
+    });
+    render(<SmartPlaylistDetail />);
+
+    const tapped = smartMocks.allClimbs[0];
+    expect(smartMocks.activationOptions?.viewOnlyBoard?.(tapped)).toEqual(
+      incompatible || !hasActiveBoard ? ownBoard : null,
+    );
+    expect(renderBoardMock.resolve).toHaveBeenCalledExactlyOnceWith(tapped, renderBoardMock.preferred);
+  });
+
+  it('preserves the existing recommendation playback board behavior', () => {
+    presetMock.type = 'RECOMMENDED_CROWD_FAVORITES';
+    render(<SmartPlaylistDetail />);
+    expect(smartMocks.activationOptions?.viewOnlyBoard).toBeUndefined();
+  });
+
+  it('scopes queue paging to the activated board without narrowing the visible collection', async () => {
+    render(<SmartPlaylistDetail />);
+    await smartMocks.activationOptions?.fetchPage({
+      page: 2,
+      pageSize: 100,
+      board: { boardName: 'tension', layoutId: 9, sizeId: 6, setIds: '16', angle: 30 },
+      signal: new AbortController().signal,
+    });
+    expect(smartMocks.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variables: {
+          input: {
+            type: 'CREATED_CLIMBS',
+            userId: 'u-1',
+            boardName: 'tension',
+            page: 2,
+            pageSize: 100,
+            activeBoardName: 'tension',
+            activeLayoutId: 9,
+            activeSizeId: 6,
+            activeSetIds: '16',
+            activeAngle: 30,
+          },
+        },
+      }),
+    );
+    expect(smartMocks.queryOptions).not.toHaveProperty('boardName');
+  });
+
+  it('asks signed-out climbers to sign in without showing a cached authored list', () => {
+    // A just-signed-out account can still have a profile and list in memory.
+    authMock.isAuthenticated = false;
+    const { getByText, container } = render(<SmartPlaylistDetail />);
+    expect(getByText('library.signInBanner.title')).toBeTruthy();
+    expect(detailViewProps.current).toBeNull();
+    expect(smartMocks.queryOptions?.tokenLoading).toBe(true);
+    expect(container.querySelector('[data-activate]')).toBeNull();
+    fireEvent.click(getByText('library.signInBanner.cta'));
+    expect(routerMock.push).toHaveBeenCalledExactlyOnceWith('/auth/login');
+    expect(smartMocks.activate).not.toHaveBeenCalled();
+    expect(smartMocks.appendToQueue).not.toHaveBeenCalled();
+  });
+
+  it('explains where unpublished drafts live when the generated collection is empty', () => {
+    smartMocks.pageFor = () => ({ climbs: [], totalCount: 0, unfilteredCount: null });
+    render(<SmartPlaylistDetail />);
+    expect(detailViewProps.current?.emptyMessage).toBe('library.smart.createdClimbs.empty.title');
+    expect(detailViewProps.current?.emptyState).toMatchObject({
+      title: 'library.smart.createdClimbs.empty.title',
+      supporting: 'library.smart.createdClimbs.empty.supporting',
+    });
+    expect(detailViewProps.current?.emptyAction).toBeUndefined();
+  });
+
+  it('offers retry instead of claiming there are no authored climbs after a failed read', () => {
+    smartMocks.pageFor = () => ({ climbs: [], totalCount: 0, unfilteredCount: null, error: true });
+    render(<SmartPlaylistDetail />);
+    expect(detailViewProps.current?.emptyMessage).toBe('detail.errors.loadTitle');
+    expect(detailViewProps.current?.emptyAction?.label).toBe('detail.errors.tryAgain');
+    detailViewProps.current?.emptyAction?.onPress();
+    expect(smartMocks.refetch).toHaveBeenCalledExactlyOnceWith();
   });
 });

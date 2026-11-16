@@ -7,6 +7,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
+import { smartPlaylistHref } from '../../lib/smart-playlists';
 import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle, type BoardAngleFields } from '../../lib/boards/can-adjust-board-angle';
@@ -162,7 +163,7 @@ export function ClimbListBoardActions({
                 createRow?.onPress();
                 break;
               case 'myClimbs':
-                router.navigate({ pathname: '/(tabs)/profile', params: { tab: 'climbs' } });
+                router.push(smartPlaylistHref('CREATED_CLIMBS', 'other'), { withAnchor: true });
                 break;
               case 'viewOptions':
                 router.push('/(tabs)/climbs/settings/climb-list');

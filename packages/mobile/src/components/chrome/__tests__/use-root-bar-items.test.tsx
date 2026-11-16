@@ -22,7 +22,7 @@ const ctrl = vi.hoisted(() => ({
     handlePress: vi.fn(),
     accessibilityLabel: 'ble.connectBoard',
   } as ToolbarLightbulb,
-  router: { push: vi.fn(), navigate: vi.fn() },
+  router: { push: vi.fn() },
   haptic: vi.fn(),
   onRail: false,
   isTablet: false,
@@ -75,7 +75,6 @@ beforeEach(() => {
   ctrl.openAngle.mockReset();
   ctrl.lightbulb = { available: false, lit: false, handlePress: vi.fn(), accessibilityLabel: 'ble.connectBoard' };
   ctrl.router.push.mockReset();
-  ctrl.router.navigate.mockReset();
   ctrl.haptic.mockReset();
   ctrl.onRail = false;
   ctrl.isTablet = false;
@@ -210,13 +209,13 @@ describe('useClimbListBarItems', () => {
     ]);
     const [myClimbs, viewOptions, switchBoard] = menu.menu.items;
     if (myClimbs?.type === 'action') myClimbs.onPress();
-    expect(ctrl.router.navigate).toHaveBeenCalledExactlyOnceWith({
-      pathname: '/(tabs)/profile',
-      params: { tab: 'climbs' },
-    });
+    expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith(
+      { pathname: '/(tabs)/discover/smart/[type]', params: { type: 'CREATED_CLIMBS', source: 'other' } },
+      { withAnchor: true },
+    );
     if (viewOptions?.type === 'action') viewOptions.onPress();
     if (switchBoard?.type === 'action') switchBoard.onPress();
-    expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
+    expect(ctrl.router.push.mock.calls.slice(1)).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
   });
 
   it('leaves Wall display out on a tablet', () => {

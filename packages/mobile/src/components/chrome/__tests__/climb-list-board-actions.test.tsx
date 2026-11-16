@@ -18,7 +18,6 @@ const state = vi.hoisted(() => ({
   widthClass: 'compact',
   os: 'ios',
   push: vi.fn(),
-  navigate: vi.fn(),
   change: vi.fn(),
   haptic: vi.fn(),
   picker: null as PickerProps | null,
@@ -37,7 +36,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: state.push, navigate: state.navigate }) }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ push: state.push }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { board?: string; angle?: number }) => {
@@ -210,7 +209,6 @@ beforeEach(() => {
   state.widthClass = 'compact';
   state.os = 'ios';
   state.push.mockReset();
-  state.navigate.mockReset();
   state.change.mockReset();
   state.haptic.mockReset();
   state.picker = null;
@@ -253,14 +251,13 @@ describe('Climb list angle, history and options', () => {
     expect(state.haptic).toHaveBeenCalledOnce();
   });
 
-  it.each([false, true])('opens My climbs in the existing profile tab (material=%s)', (material) => {
+  it.each([false, true])('opens the My climbs generated playlist (material=%s)', (material) => {
     const { getByRole } = render(<ClimbListBoardActions material={material} onOpenHistory={vi.fn()} />);
     fireEvent.click(getByRole('button', { name: 'mobile.listOptions.myClimbs' }));
-    expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
-      pathname: '/(tabs)/profile',
-      params: { tab: 'climbs' },
-    });
-    expect(state.push).not.toHaveBeenCalled();
+    expect(state.push).toHaveBeenCalledExactlyOnceWith(
+      { pathname: '/(tabs)/discover/smart/[type]', params: { type: 'CREATED_CLIMBS', source: 'other' } },
+      { withAnchor: true },
+    );
   });
 
   it('shows the angle in the Large Content Viewer under its spoken label, and opens the picker from there', () => {

@@ -1769,6 +1769,10 @@ export function useCreateClimbScreen({
       // recently viewed empty list cannot hide the climb for five minutes.
       // Browser keys belong to the original account/backend view of this save.
       if (isCurrentHttpView(saveRequestScope)) {
+        void Promise.resolve(queryClient.invalidateQueries({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] })).catch(
+          () => {},
+        );
+        void Promise.resolve(queryClient.invalidateQueries({ queryKey: ['mySmartPlaylistCounts'] })).catch(() => {});
         void Promise.resolve(queryClient.invalidateQueries({ queryKey: authoredClimbsQueryKey })).catch(() => {});
       }
       // An admin's live heatmap counts the new climb at once; a downloaded board
