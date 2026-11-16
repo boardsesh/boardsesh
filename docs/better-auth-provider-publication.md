@@ -79,7 +79,8 @@ buffered responses and header limits.
 
 Those tests replace the primary admission and provider command boundary with
 controlled synthetic receipts; they do not prove production ACLs, real backend
-finalization or a mounted broker. The cookie plan is explicitly fixture-owned. Real provider verification, selected-authority transactions,
-private-role qualification, canonical-www cookie publication, supported browser
-ordering and Settings integration must be joined and reviewed before activation.
-No raw credential or durable capability belongs in MessageChannel or IndexedDB.
+finalization or a mounted broker. The cookie plan is explicitly fixture-owned.
+Real provider verification, selected-authority transactions, private-role
+qualification, canonical-www cookie publication, supported browser ordering and
+Settings integration must be joined and reviewed before activation. No raw
+credential or durable capability belongs in MessageChannel or IndexedDB.
