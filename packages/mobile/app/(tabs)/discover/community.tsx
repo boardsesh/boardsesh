@@ -296,7 +296,7 @@ export default function CommunityPlaylistsScreen() {
           accessibilityLabel={t('library.errors.tryAgain')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
+          <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
             {t('library.errors.tryAgain')}
           </Text>
         </PressableSurface>
@@ -330,7 +330,7 @@ export default function CommunityPlaylistsScreen() {
           accessibilityLabel={t('library.community.noMatches.clearFilters')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
+          <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
             {t('library.community.noMatches.clearFilters')}
           </Text>
         </PressableSurface>
@@ -392,7 +392,7 @@ export default function CommunityPlaylistsScreen() {
                 accessibilityState={{ expanded: gradeRailOpen }}
                 style={[styles.gradeChip, { backgroundColor: systemColors.tertiaryFill }]}
               >
-                <Text variant="subheadline" style={styles.gradeChipLabel}>
+                <Text emphasized variant="subheadline">
                   {t('library.community.gradeLabel')}
                 </Text>
                 <Text
@@ -457,7 +457,7 @@ export default function CommunityPlaylistsScreen() {
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                   {t('library.community.errors.loadTitle')}
                 </Text>
-                <Text variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
+                <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
               </PressableSurface>
@@ -471,7 +471,7 @@ export default function CommunityPlaylistsScreen() {
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                   {t('library.community.loadMoreError')}
                 </Text>
-                <Text variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
+                <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
               </PressableSurface>
@@ -518,9 +518,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: spacing[2],
   },
-  gradeChipLabel: {
-    fontWeight: '600',
-  },
   gradeChipValue: {
     flex: 1,
   },
@@ -538,7 +535,6 @@ const styles = StyleSheet.create({
   },
   stateCta: {
     marginTop: spacing[3],
-    fontWeight: '600',
   },
   footer: {
     paddingVertical: spacing[4],
@@ -549,6 +545,5 @@ const styles = StyleSheet.create({
   },
   footerRetry: {
     marginTop: spacing[1],
-    fontWeight: '600',
   },
 });

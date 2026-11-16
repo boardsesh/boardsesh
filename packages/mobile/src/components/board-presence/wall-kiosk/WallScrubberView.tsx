@@ -76,7 +76,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
   const navRow = isPreviewing ? (
     <View style={styles.navGroup}>
       {historyCount > 0 ? (
-        <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.rangeReadout}>
+        <Text emphasized variant="caption2" color={systemColors.secondaryLabel} style={styles.rangeReadout}>
           {t('mobile.boardPresence.kiosk.rangeLabel', { count: stepsBack, total: historyCount })}
         </Text>
       ) : null}
@@ -90,6 +90,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
             accessibilityLabel={t('mobile.boardPresence.kiosk.scrubOldestAria')}
           />
           <Text
+            emphasized
             variant="caption2"
             color={systemColors.secondaryLabel}
             style={[styles.navLabel, !canStepOlder && disabledLabelStyle]}
@@ -106,6 +107,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
             accessibilityLabel={t('mobile.boardPresence.kiosk.scrubOlderAria')}
           />
           <Text
+            emphasized
             variant="caption2"
             color={systemColors.secondaryLabel}
             style={[styles.navLabel, !canStepOlder && disabledLabelStyle]}
@@ -122,6 +124,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
             accessibilityLabel={t('mobile.boardPresence.kiosk.scrubNewerAria')}
           />
           <Text
+            emphasized
             variant="caption2"
             color={systemColors.secondaryLabel}
             style={[styles.navLabel, !canStepNewer && disabledLabelStyle]}
@@ -300,7 +303,6 @@ const styles = StyleSheet.create({
   },
   rangeReadout: {
     textAlign: 'center',
-    fontWeight: '600',
   },
   navRow: {
     flexDirection: 'row',
@@ -316,7 +318,6 @@ const styles = StyleSheet.create({
   navLabel: {
     textTransform: 'uppercase',
     letterSpacing: 0.3,
-    fontWeight: '600',
   },
   browseHistory: {
     flexDirection: 'row',

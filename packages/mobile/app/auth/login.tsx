@@ -144,7 +144,7 @@ export default function LoginScreen() {
             accessible={false}
           />
           <Text style={[styles.title, { color: theme.brandColors.primary }]}>Boardsesh</Text>
-          <Text style={[styles.tagline, { color: theme.systemColors.label }]} accessibilityRole="header">
+          <Text emphasized style={[styles.tagline, { color: theme.systemColors.label }]} accessibilityRole="header">
             {t('nativeStart.tagline')}
           </Text>
           <Text style={[styles.subtitle, { color: theme.systemColors.secondaryLabel }]}>
@@ -267,7 +267,9 @@ export default function LoginScreen() {
             style={styles.footerLinkHit}
             accessibilityRole="link"
           >
-            <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.submit.signUp')}</Text>
+            <Text emphasized style={[styles.footerLink, { color: theme.systemColors.accent }]}>
+              {t('login.submit.signUp')}
+            </Text>
           </PressableSurface>
         </View>
 
@@ -286,7 +288,9 @@ export default function LoginScreen() {
             style={styles.footerLinkHit}
             accessibilityRole="link"
           >
-            <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.discord')}</Text>
+            <Text emphasized style={[styles.footerLink, { color: theme.systemColors.accent }]}>
+              {t('login.links.discord')}
+            </Text>
           </PressableSurface>
         </View>
 
@@ -311,7 +315,7 @@ const createStyles = (textStyles: TypographyScale) =>
     header: { alignItems: 'center', marginBottom: 32 },
     logo: { width: 96, height: 96, marginBottom: 16 },
     title: { fontSize: textStyles.largeTitle.fontSize, fontWeight: '700', marginBottom: 8 },
-    tagline: { fontSize: textStyles.title3.fontSize, fontWeight: '600', textAlign: 'center' },
+    tagline: { fontSize: textStyles.title3.fontSize, textAlign: 'center' },
     subtitle: {
       fontSize: textStyles.subheadline.fontSize,
       lineHeight: textStyles.subheadline.lineHeight,
@@ -371,7 +375,7 @@ const createStyles = (textStyles: TypographyScale) =>
       marginTop: 8,
     },
     footerText: { fontSize: textStyles.subheadline.fontSize, textAlign: 'center' },
-    footerLink: { fontSize: textStyles.subheadline.fontSize, fontWeight: '600' },
+    footerLink: { fontSize: textStyles.subheadline.fontSize },
     // Keeps the tappable area at the 44pt/48dp minimum.
     footerLinkHit: { minHeight: 44, justifyContent: 'center' },
   });

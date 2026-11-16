@@ -103,10 +103,14 @@ function FreezeDebugOverlayInner() {
         <Text style={styles.metrics}>{metrics}</Text>
         <View style={styles.buttonRow}>
           <PressableSurface onPress={snap} style={styles.button} hitSlop={8}>
-            <Text style={styles.buttonText}>Snap</Text>
+            <Text emphasized style={styles.buttonText}>
+              Snap
+            </Text>
           </PressableSurface>
           <PressableSurface onPress={nudge} style={styles.button} hitSlop={8}>
-            <Text style={styles.buttonText}>Nudge relayout</Text>
+            <Text emphasized style={styles.buttonText}>
+              Nudge relayout
+            </Text>
           </PressableSurface>
         </View>
         {snapshots.map((snapshot) => (
@@ -163,7 +167,6 @@ const createStyles = (textStyles: TypographyScale) =>
     buttonText: {
       color: '#ffffff',
       fontSize: textStyles.caption1.fontSize,
-      fontWeight: '600',
     },
     snapshot: {
       color: '#9fe7ff',

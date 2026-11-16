@@ -69,7 +69,13 @@ function BadgeGlass({ count, visible = true, color, size = 'medium' }: BadgeProp
       ]}
     >
       {!isDot && (
-        <Text maxFontSizeMultiplier={1.2} variant="caption2" color={iosSystemColors.white} style={styles.text}>
+        <Text
+          emphasized
+          maxFontSizeMultiplier={1.2}
+          variant="caption2"
+          color={iosSystemColors.white}
+          style={styles.text}
+        >
           {displayCount}
         </Text>
       )}
@@ -86,7 +92,6 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     text: {
       fontSize: textStyles.caption2.fontSize,
-      fontWeight: '600',
       lineHeight: textStyles.caption2.lineHeight,
     },
   });

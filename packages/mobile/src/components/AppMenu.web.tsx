@@ -186,14 +186,16 @@ export function AppMenu(props: AppMenuProps) {
             </Text>
           </>
         ) : props.iconName != null ? (
-          <Text style={[styles.anchorLabel, { color: labelColor }]}>{anchorGlyphForIcon(props.iconName)}</Text>
+          <Text emphasized style={[styles.anchorLabel, { color: labelColor }]}>
+            {anchorGlyphForIcon(props.iconName)}
+          </Text>
         ) : (
-          <Text numberOfLines={1} style={[styles.anchorLabel, { color: labelColor }]}>
+          <Text emphasized numberOfLines={1} style={[styles.anchorLabel, { color: labelColor }]}>
             {props.label}
           </Text>
         )}
         {props.iconName == null && headline == null && props.showCaret !== false ? (
-          <Text style={[styles.caret, { color: caretColor }]}>{` ${CARET}`}</Text>
+          <Text emphasized style={[styles.caret, { color: caretColor }]}>{` ${CARET}`}</Text>
         ) : null}
       </PressableSurface>
     );
@@ -253,11 +255,9 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     anchorLabel: {
       fontSize: textStyles.body.fontSize,
-      fontWeight: '600',
       flexShrink: 1,
     },
     caret: {
       fontSize: textStyles.body.fontSize,
-      fontWeight: '600',
     },
   });

@@ -105,7 +105,7 @@ const ChangelogEntryRow = memo(function ChangelogEntryRow({ entry, onPress }: Ch
         </Text>
         {pressable ? <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} /> : null}
       </View>
-      <Text variant="body" style={styles.cardTitle}>
+      <Text emphasized variant="body" style={styles.cardTitle}>
         {entry.title}
       </Text>
       {entry.body ? (
@@ -299,7 +299,7 @@ export default function ChangelogScreen() {
                   <CheckForUpdatesButton disabled={disabled} onBusyChange={onBusyChange} />
                 )}
               />
-              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.intro}>
+              <Text emphasized variant="footnote" color={systemColors.secondaryLabel} style={styles.intro}>
                 {t('mobile.changelog.intro')}
               </Text>
               {/* 2.7: climbs open as a preview. Pinned for the same reason,
@@ -343,7 +343,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   intro: {
-    fontWeight: '600',
     lineHeight: 20,
   },
   separator: {
@@ -363,7 +362,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontWeight: '600',
     lineHeight: 22,
   },
   cardBody: {

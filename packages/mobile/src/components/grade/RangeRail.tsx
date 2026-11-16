@@ -266,7 +266,7 @@ export function RangeRail<Stop extends RangeRailStop>({
     <View style={style}>
       {title ? (
         <View style={[styles.topRow, { paddingStart: contentInsetLeft, paddingEnd: contentInsetRight }]}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.title}>
+          <Text emphasized variant="footnote" color={systemColors.secondaryLabel}>
             {title}
           </Text>
         </View>
@@ -343,9 +343,6 @@ const styles = StyleSheet.create({
     minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  title: {
-    fontWeight: '600',
   },
   // flexGrow 0 + the min height below keep the strip from collapsing inside a
   // native bottom sheet, where a horizontal gesture-handler ScrollView can be

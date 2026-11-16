@@ -105,11 +105,11 @@ export const SprayModeSwitcher = React.memo(function SprayModeSwitcher({
               pointerEvents="none"
             />
             <Text
+              emphasized
               variant="footnote"
               color={systemColors.label}
               numberOfLines={1}
               maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              style={styles.peekLabel}
             >
               {peekLabel}
             </Text>
@@ -249,8 +249,5 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
     paddingHorizontal: spacing[3],
-  },
-  peekLabel: {
-    fontWeight: '600',
   },
 });

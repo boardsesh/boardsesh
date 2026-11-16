@@ -194,7 +194,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
 
             <View style={styles.climbDetails}>
               <View style={styles.nameRow}>
-                <Text variant="subheadline" numberOfLines={2} style={styles.climbName}>
+                <Text emphasized variant="subheadline" numberOfLines={2} style={styles.climbName}>
                   {proposal.climbName ?? t('mobile.moderation.unknownClimb')}
                 </Text>
                 {displayGrade ? (
@@ -221,7 +221,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
           </View>
         </ClimbActionsPressable>
 
-        <Text variant="body" style={styles.typeLine}>
+        <Text emphasized variant="body" style={styles.typeLine}>
           {t(typeLine.textI18nKey, typeLine.params)}
         </Text>
 
@@ -378,10 +378,10 @@ const styles = StyleSheet.create({
   },
   climbDetails: { flex: 1, gap: spacing[1], justifyContent: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[2] },
-  climbName: { flex: 1, fontWeight: '600' },
+  climbName: { flex: 1 },
   gradeText: { fontWeight: '700' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[1], marginTop: 2 },
-  typeLine: { marginTop: spacing[3], fontWeight: '600' },
+  typeLine: { marginTop: spacing[3] },
   proposerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginTop: spacing[2] },
   reason: { marginTop: spacing[2], fontStyle: 'italic' },
   expander: { flexDirection: 'row', alignItems: 'center', gap: spacing[1], marginTop: spacing[2] },

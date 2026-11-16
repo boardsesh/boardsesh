@@ -196,7 +196,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
               ]}
             >
               <View style={[styles.swatch, { backgroundColor: color }]} />
-              <Text variant="caption1" style={styles.chipLabel} numberOfLines={1}>
+              <Text emphasized variant="caption1" numberOfLines={1}>
                 {label}
               </Text>
             </PressableSurface>
@@ -214,7 +214,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           ]}
         >
           <Icon maxFontSizeMultiplier={1} name="eraser" size={18} color={systemColors.label} />
-          <Text variant="caption1" style={styles.chipLabel} numberOfLines={1}>
+          <Text emphasized variant="caption1" numberOfLines={1}>
             {t('mobile.create.brush.erase')}
           </Text>
         </PressableSurface>
@@ -383,9 +383,6 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
   // Up to six tools spread across the width. `gap: 0` overrides rowSecondary's
   // 8dp: with it, six tools need 336dp and the last one clips at 320pt.

@@ -44,7 +44,7 @@ export function InlineConfirmBanner({
   return (
     <View style={[styles.banner, { backgroundColor: systemColors.fill }]} accessibilityRole="alert">
       <View style={styles.text}>
-        <Text variant="footnote" style={styles.title}>
+        <Text emphasized variant="footnote">
           {title}
         </Text>
         <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -77,9 +77,6 @@ const styles = StyleSheet.create({
   },
   text: {
     gap: spacing[1],
-  },
-  title: {
-    fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
