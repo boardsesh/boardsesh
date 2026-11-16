@@ -52,6 +52,20 @@ export function readBluetoothAuthorization(): BluetoothAuthorization | null {
   }
 }
 
+/**
+ * Whether this binary has the native authorization read at all. A null from
+ * `readBluetoothAuthorization` means two things: nothing to read (Android, web,
+ * an iOS binary older than the read, which asks at launch instead) or a read
+ * that failed (the native call threw, or answered something unknown). Only the
+ * first is safe to treat as "already asked": after a failed read the question
+ * may still be open, and a Bluetooth manager created then shows the alert. The
+ * board picker's in-range slot, which scans by itself, tells them apart here.
+ */
+export function hasBluetoothAuthorizationRead(): boolean {
+  const native = boardBleNative;
+  return !!native && typeof native.getBluetoothAuthorization === 'function';
+}
+
 /** True when iOS says the climber (or a device policy) said no to Bluetooth. */
 export function isBluetoothAuthorizationRefused(authorization: BluetoothAuthorization | null): boolean {
   return authorization === 'denied' || authorization === 'restricted';

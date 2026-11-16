@@ -20,7 +20,7 @@ import { advertisedBoardTypesBySerial, type AdvertisedBoardTypes } from './adver
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 import { getBleManager } from './ble-manager';
-import { noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
+import { claimBleScan, noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
 import { waitForBlePoweredOn } from './availability';
 import {
   classifyQuickstartDevice,
@@ -44,7 +44,32 @@ const SCAN_TIMEOUT_MS = 15_000;
 const EMPTY_ADVERTISED_TYPES: AdvertisedBoardTypes = new Map();
 const EMPTY_DEVICES: readonly QuickstartScanDevice[] = [];
 
-export type BoardScanStatus = 'idle' | 'scanning' | 'done' | 'unavailable';
+/**
+ * 'busy': a scan with the 'claim' slot policy found ble-plx's one scan held by
+ * someone else (the rest timer, an Android connect) and never started the radio.
+ */
+export type BoardScanStatus = 'idle' | 'scanning' | 'done' | 'unavailable' | 'busy';
+
+/**
+ * Who started a scan, sent as Board Quickstart Scan Finished's `trigger`. The
+ * board picker's in-range slot scans on most picker opens, so without it that
+ * event's series would stop meaning "a climber opened the Bluetooth sheet".
+ * 'sheet' is the Bluetooth quickstart sheet, 'picker_auto' the in-range slot
+ * scanning by itself, 'picker_tap' its scan button.
+ */
+export type BoardScanTrigger = 'sheet' | 'picker_auto' | 'picker_tap';
+
+/**
+ * How a scan gets ble-plx's one scan (ble-scan-slot.ts).
+ * - 'take': whatever holds it loses it, as the quickstart sheet always has. The
+ *   climber opened the sheet to scan.
+ * - 'claim': only while nobody holds it, else the scan ends at 'busy', and any
+ *   other scan may take it over (it then ends at 'done', keeping what it heard).
+ *   The picker's in-range slot scans without being asked, so it must never stop
+ *   the rest timer's scan (rogue-timer-ble.ts) or an Android connect's
+ *   (adapter.ts), nor make one of them fail as busy.
+ */
+export type BoardScanSlotPolicy = 'take' | 'claim';
 
 /**
  * Why a scan is 'unavailable', so the sheet can say something the climber can
@@ -55,7 +80,8 @@ export type BoardScanStatus = 'idle' | 'scanning' | 'done' | 'unavailable';
  */
 export type BoardScanUnavailableReason = 'permission_denied' | BluetoothUnavailableReason;
 
-type BoardScanOutcome = 'completed' | 'stopped' | 'error';
+/** 'preempted': a 'claim' scan gave the radio to a scan someone asked for. */
+type BoardScanOutcome = 'completed' | 'stopped' | 'error' | 'preempted';
 
 export type BoardScan = {
   status: BoardScanStatus;
@@ -70,12 +96,33 @@ export type BoardScan = {
    * serial and one per serial-less device (a MoonBoard, a Kilter-built box).
    */
   devices: readonly QuickstartScanDevice[];
-  start: () => Promise<void>;
+  /** Start a scan. `trigger` defaults to the sheet, whose scans came first. */
+  start: (trigger?: BoardScanTrigger) => Promise<void>;
   /** Stop any in-flight scan and return to idle (e.g. when the sheet closes). */
   reset: () => void;
+  /**
+   * End a running scan now and keep what it heard: 'done', reported as
+   * 'stopped'. Also drops a start still waiting on a permission or the radio,
+   * which leaves the status where it was. For the picker's in-range slot, whose
+   * rows outlive the scan (it leaves the screen, the app goes to the
+   * background, a board is picked).
+   */
+  finish: () => void;
 };
 
-export function useBoardScan(): BoardScan {
+export function useBoardScan({
+  slotPolicy = 'take',
+  mayStartRadio,
+}: {
+  slotPolicy?: BoardScanSlotPolicy;
+  /**
+   * Asked once more right before the radio starts, after the permission and
+   * power checks have awaited: false drops the start, leaving the status as it
+   * was. The picker's in-range slot uses it to not start a scan in the
+   * background.
+   */
+  mayStartRadio?: () => boolean;
+} = {}): BoardScan {
   const [status, setStatus] = useState<BoardScanStatus>('idle');
   const [unavailableReason, setUnavailableReason] = useState<BoardScanUnavailableReason | null>(null);
   const [serials, setSerials] = useState<string[]>([]);
@@ -91,6 +138,12 @@ export function useBoardScan(): BoardScan {
   const seriallessCountRef = useRef(0);
   const moonboardCountRef = useRef(0);
   const scanAttemptRef = useRef(0);
+  // Who started the running scan, for its Board Quickstart Scan Finished, and
+  // who asked for the start in progress (`start` sets it, the scan reads it).
+  const triggerRef = useRef<BoardScanTrigger>('sheet');
+  const requestedTriggerRef = useRef<BoardScanTrigger>('sheet');
+  const mayStartRadioRef = useRef(mayStartRadio);
+  mayStartRadioRef.current = mayStartRadio;
   // A device event can land in the BLE callback just after unmount; gate the
   // state writes so we don't setState on an unmounted component.
   const mountedRef = useRef(true);
@@ -110,6 +163,7 @@ export function useBoardScan(): BoardScan {
         found_count: foundCountRef.current,
         serialless_count: seriallessCountRef.current,
         moonboard_count: moonboardCountRef.current,
+        trigger: triggerRef.current,
       });
     }
   }, []);
@@ -119,8 +173,9 @@ export function useBoardScan(): BoardScan {
     setStatus('unavailable');
   }, []);
 
-  const start = useCallback(async () => {
+  const startScan = useCallback(async () => {
     if (scanningRef.current) return;
+    const trigger = requestedTriggerRef.current;
     if (bluetoothTransport()?.discovery === 'external') {
       setStatus('done');
       return;
@@ -170,6 +225,24 @@ export function useBoardScan(): BoardScan {
       return;
     }
 
+    if (mayStartRadioRef.current && !mayStartRadioRef.current()) return;
+
+    // The one scan ble-plx runs. A 'claim' scan skips rather than stop another
+    // owner's; nothing has been reset yet, so a skipped scan changes nothing
+    // but its status. Once running, it gives way to any other scan: it stops
+    // its radio before that scan starts and ends keeping what it heard.
+    const giveWay = () => {
+      if (!isCurrentScanAttempt() || !scanningRef.current) return;
+      scanAttemptRef.current += 1;
+      void getBleManager().stopDeviceScan();
+      stop('preempted');
+      setStatus('done');
+    };
+    if (slotPolicy === 'claim' && !claimBleScan(scanToken.current, { preemptible: true, onPreempted: giveWay })) {
+      setStatus('busy');
+      return;
+    }
+
     // Keyed by `QuickstartScanDevice.key`: a serial box once per serial, as the
     // lookup has always counted them, a serial-less board once per device id.
     const found = new Map<string, QuickstartScanDevice>();
@@ -186,7 +259,8 @@ export function useBoardScan(): BoardScan {
     setUnavailableReason(null);
     setStatus('scanning');
     scanningRef.current = true;
-    noteBleScanStarted(scanToken.current);
+    triggerRef.current = trigger;
+    if (slotPolicy === 'take') noteBleScanStarted(scanToken.current);
 
     // Scan UNFILTERED, then keep only what classifyQuickstartDevice recognises.
     // A hardware service-UUID ScanFilter drops boards on Android when the UUID
@@ -263,7 +337,15 @@ export function useBoardScan(): BoardScan {
       stop('completed');
       setStatus('done');
     }, SCAN_TIMEOUT_MS);
-  }, [stop, showUnavailable]);
+  }, [slotPolicy, stop, showUnavailable]);
+
+  const start = useCallback(
+    (trigger: BoardScanTrigger = 'sheet') => {
+      requestedTriggerRef.current = trigger;
+      return startScan();
+    },
+    [startScan],
+  );
 
   // Also the sheet's "Scan again": back to idle, and the sheet's open effect
   // starts a fresh scan.
@@ -277,6 +359,13 @@ export function useBoardScan(): BoardScan {
     setStatus('idle');
   }, [stop]);
 
+  const finish = useCallback(() => {
+    scanAttemptRef.current += 1;
+    if (!scanningRef.current) return;
+    stop('stopped');
+    setStatus('done');
+  }, [stop]);
+
   // Always stop scanning if the component unmounts mid-scan, and block any
   // late device callback from writing state afterwards.
   useEffect(() => {
@@ -287,5 +376,5 @@ export function useBoardScan(): BoardScan {
     };
   }, [stop]);
 
-  return { status, unavailableReason, serials, advertisedTypes, devices, start, reset };
+  return { status, unavailableReason, serials, advertisedTypes, devices, start, reset, finish };
 }

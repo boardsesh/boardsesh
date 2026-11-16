@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
-import { buildQuickstartRows, quickstartLookupState } from '../quickstart-scan-rows';
+import type { RecognizedBoardDevice } from '../../../lib/ble/recognized-board-devices-store';
+import { buildQuickstartRows, quickstartLookupState, type QuickstartLookupState } from '../quickstart-scan-rows';
 
 function serialDevice(
   serial: string,
@@ -136,6 +137,172 @@ describe('buildQuickstartRows', () => {
 
   it('lists nothing when nothing was heard', () => {
     expect(buildQuickstartRows({ devices: [], boards: [], lookup: 'none' })).toEqual([]);
+  });
+
+  it('says a serial row is known by its serial', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50)],
+      boards: [savedBoard('crux', '1')],
+      lookup: 'resolved',
+    });
+    expect(rows[0]).toMatchObject({ kind: 'board', recognizedBy: 'serial' });
+  });
+});
+
+// A serial-less box this phone has bound to one of the climber's boards is
+// named by its Bluetooth id (recognized-board-devices-store.ts).
+describe('buildQuickstartRows with recognised Bluetooth ids', () => {
+  function ownBoard(uuid: string, boardType: string): UserBoard {
+    return { uuid, name: uuid, boardType, serialNumber: null } as unknown as UserBoard;
+  }
+
+  function recognized(deviceId: string, boardUuid: string, boardType: 'moonboard' | 'kilter'): RecognizedBoardDevice {
+    return { deviceId: deviceId.toUpperCase(), boardUuid, boardType, savedAt: 1 };
+  }
+
+  const homeMoon = ownBoard('home-moon', 'moonboard');
+  const gymKilter = ownBoard('gym-kilter', 'kilter');
+
+  type RecognitionCase = {
+    name: string;
+    devices: QuickstartScanDevice[];
+    recognizedDevices: RecognizedBoardDevice[];
+    knownBoards: UserBoard[];
+    boards?: UserBoard[];
+    lookup?: QuickstartLookupState;
+    expected: string[];
+    expectedRecognizedBy?: Array<'serial' | 'device_id' | null>;
+  };
+
+  const cases: RecognitionCase[] = [
+    {
+      name: 'names a recognised MoonBoard as the board it was bound to',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['board:home-moon'],
+      expectedRecognizedBy: ['device_id'],
+    },
+    {
+      name: 'names a recognised bare Kilter box',
+      devices: [bareBox('kb-1', 'kilter', -60)],
+      recognizedDevices: [recognized('kb-1', 'gym-kilter', 'kilter')],
+      knownBoards: [gymKilter],
+      expected: ['board:gym-kilter'],
+      expectedRecognizedBy: ['device_id'],
+    },
+    {
+      name: 'keeps the grouped row for the boxes it does not recognise, and not for the one it does',
+      devices: [moonboard('mb-1', -60), moonboard('mb-2', -50)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['moonboard:moonboard', 'board:home-moon'],
+      expectedRecognizedBy: [null, 'device_id'],
+    },
+    {
+      name: 'leaves a box unnamed when its board is no longer one of the known boards',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [gymKilter],
+      expected: ['moonboard:moonboard'],
+    },
+    {
+      name: 'leaves a box unnamed when its id was recognised as another type',
+      devices: [bareBox('mb-1', 'kilter', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['bare_name:kilter'],
+    },
+    {
+      name: 'leaves a box unnamed when the known board is of another type than the box',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'gym-kilter', 'moonboard')],
+      knownBoards: [gymKilter],
+      expected: ['moonboard:moonboard'],
+    },
+    {
+      name: 'matches the id whatever its case',
+      devices: [moonboard('aa:bb:cc', -60)],
+      recognizedDevices: [recognized('AA:BB:CC', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['board:home-moon'],
+    },
+    {
+      name: 'lists one row for two boxes recognised as one board, at the stronger signal',
+      devices: [moonboard('mb-1', -80), moonboard('mb-2', -40)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard'), recognized('mb-2', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['board:home-moon'],
+    },
+    {
+      name: 'does not wait for the serial lookup',
+      devices: [moonboard('mb-1', -60), serialDevice('1', 'kilter', -50)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      lookup: 'pending',
+      expected: ['board:home-moon'],
+    },
+    {
+      name: 'lists a board heard both ways once, by serial',
+      devices: [bareBox('kb-1', 'kilter', -40), serialDevice('7', 'kilter', -70)],
+      recognizedDevices: [recognized('kb-1', 'gym-kilter', 'kilter')],
+      knownBoards: [gymKilter],
+      boards: [{ ...gymKilter, serialNumber: '7' } as UserBoard],
+      lookup: 'resolved',
+      expected: ['board:gym-kilter'],
+      expectedRecognizedBy: ['serial'],
+    },
+    {
+      name: 'names nothing without known boards',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [],
+      expected: ['moonboard:moonboard'],
+    },
+  ];
+
+  it.each(cases)(
+    '$name',
+    ({ devices, recognizedDevices, knownBoards, boards, lookup, expected, expectedRecognizedBy }) => {
+      const rows = buildQuickstartRows({
+        devices,
+        boards: boards ?? [],
+        lookup: lookup ?? 'none',
+        recognition: { devices: recognizedDevices, knownBoards },
+      });
+      expect(kinds(rows)).toEqual(expected);
+      if (expectedRecognizedBy) {
+        expect(rows.map((row) => (row.kind === 'board' ? row.recognizedBy : null))).toEqual(expectedRecognizedBy);
+      }
+    },
+  );
+
+  it('keeps the stronger signal when a board is heard both ways', () => {
+    const rows = buildQuickstartRows({
+      devices: [bareBox('kb-1', 'kilter', -40), serialDevice('7', 'kilter', -70)],
+      boards: [{ ...gymKilter, serialNumber: '7' } as UserBoard],
+      lookup: 'resolved',
+      recognition: { devices: [recognized('kb-1', 'gym-kilter', 'kilter')], knownBoards: [gymKilter] },
+    });
+    expect(rows[0].rssi).toBe(-40);
+  });
+
+  it('keys a recognised row like the serial row it may turn into', () => {
+    const recognition = { devices: [recognized('kb-1', 'gym-kilter', 'kilter')], knownBoards: [gymKilter] };
+    const devices = [bareBox('kb-1', 'kilter', -40), serialDevice('7', 'kilter', -70)];
+    const before = buildQuickstartRows({ devices, boards: [], lookup: 'pending', recognition });
+    const after = buildQuickstartRows({
+      devices,
+      boards: [{ ...gymKilter, serialNumber: '7' } as UserBoard],
+      lookup: 'resolved',
+      recognition,
+    });
+    expect(before[0].key).toBe(after[0].key);
+  });
+
+  it('recognises nothing when the caller passes no recognition, as the quickstart sheet does', () => {
+    const rows = buildQuickstartRows({ devices: [moonboard('mb-1', -60)], boards: [], lookup: 'none' });
+    expect(kinds(rows)).toEqual(['moonboard:moonboard']);
   });
 });
 

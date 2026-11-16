@@ -1,19 +1,15 @@
 import { PressableSurface } from '../PressableSurface';
-import { forwardRef, memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useRef } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
 import { boardRowSubtitle, formatBoardDisplayName, type BoardLabelOptions } from '@boardsesh/board-config';
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
-import { useBoardScan } from '../../lib/ble/use-board-scan';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { useScanTipsDue } from '../../lib/ble/scan-tips';
 import { bluetoothBlockedBody } from '../../lib/ble/bluetooth-unavailable-alert';
 import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
-import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
-import { selectBleBoardCandidates } from '../../lib/ble/select-board-candidates';
-import { useMyBoardSerialConfigs } from '../../lib/ble/use-my-board-serial-configs';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { Sheet, dismissSheetAndWait } from '../Sheet';
@@ -23,9 +19,8 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ScanTips } from '../ble/ScanTips';
 import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
-import { buildQuickstartRows, quickstartLookupState, type QuickstartRow } from './quickstart-scan-rows';
-
-const EMPTY_BOARDS: UserBoard[] = [];
+import type { QuickstartRow } from './quickstart-scan-rows';
+import { useQuickstartScan } from './use-quickstart-scan';
 
 type BluetoothQuickstartSheetProps = {
   /** True while the sheet is open — drives when the scan kicks off. */
@@ -62,30 +57,10 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     const { t } = useTranslation(['boards', 'settings']);
     const { t: tSettings } = useTranslation('settings');
     const labelOptions = useSprayLabelOptions();
-    const { status, unavailableReason, serials, advertisedTypes, devices, start, reset } = useBoardScan();
-    // Scoped to what each controller announced. Aurora reuses a serial across
-    // board apps, so unscoped this sheet would offer a stranger's Kilter board
-    // for an in-range Tension controller and let the user make it active.
-    const boardLookup = useBoardsBySerialNumbers(serials, advertisedTypes);
-    const { data: boards, isLoading: isResolvingBoards, refetch: refetchBoards } = boardLookup;
-    const { data: serialConfigs, isResolving: isResolvingPreferences } = useMyBoardSerialConfigs(serials);
-    const visibleBoards = useMemo(
-      () => selectBleBoardCandidates(boards ?? EMPTY_BOARDS, serialConfigs, advertisedTypes),
-      [advertisedTypes, boards, serialConfigs],
-    );
-    // With no signal the lookup pauses instead of failing (`networkMode:
-    // 'offlineFirst'`), so a paused lookup counts as failed: it used to read as
-    // "No boards in range" while a board stood in front of the climber.
-    const lookup = quickstartLookupState({
-      serialCount: serials.length,
-      hasResult: boards !== undefined,
-      failed: boardLookup.isError || boardLookup.fetchStatus === 'paused',
-      resolving: isResolvingBoards || isResolvingPreferences,
-    });
-    const rows = useMemo(
-      () => buildQuickstartRows({ devices, boards: visibleBoards, lookup }),
-      [devices, visibleBoards, lookup],
-    );
+    // The scan, the serial lookup and the rows they make (use-quickstart-scan.ts),
+    // shared with the board picker's in-range slot. The sheet names boards by
+    // serial only: it passes no `knownBoards`.
+    const { status, unavailableReason, devices, start, reset, rows, lookup, retryLookup } = useQuickstartScan();
 
     // `lookup !== 'pending'` matters: the scan reports 'done' the moment the
     // radio work finishes, while serial rows wait until GraphQL has turned the
@@ -127,9 +102,6 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     const handleOpenSettings = useCallback(() => {
       void openAppSettings();
     }, []);
-    const handleRetryLookup = useCallback(() => {
-      void refetchBoards();
-    }, [refetchBoards]);
 
     // The sheet's own handle, beside the one forwarded to the screen, so the
     // next-step actions can close it and wait.
@@ -167,7 +139,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     // the next open re-scans from scratch.
     useEffect(() => {
       if (active && status === 'idle') {
-        void start();
+        void start('sheet');
       } else if (!active && status !== 'idle') {
         reset();
       }
@@ -298,7 +270,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                   boardType={row.kind === 'lookup_failed' ? null : row.boardType}
                   onFindAtGym={handleFindAtGym}
                   onOwnBoard={handleOwnBoard}
-                  onRetryLookup={handleRetryLookup}
+                  onRetryLookup={retryLookup}
                 />
               ),
             )}
