@@ -80,6 +80,52 @@ class OverlayLifecycleTest {
     }
 
     @Test
+    fun aMemoryTrimKeepsTheArenaAPresentingBoardDrawsFrom() {
+        var released = 0
+        assertFalse(OverlayLifecycle.trim(presenting = true, release = { released++ }, recover = { fail("$it") }))
+        assertEquals(0, released)
+        assertTrue(OverlayLifecycle.trim(presenting = false, release = { released++ }, recover = { fail("$it") }))
+        assertEquals(1, released)
+    }
+
+    @Test
+    fun aFailedMemoryTrimRecoversAsALostContextAndNeverThrows() {
+        val lost = IllegalStateException("EGL context unavailable")
+        val recovered = ArrayList<Exception>()
+        assertFalse(OverlayLifecycle.trim(presenting = false, release = { throw lost }, recover = { recovered.add(it) }))
+        assertEquals(listOf<Exception>(lost), recovered)
+        // A recovery that fails too must still stay off the render thread's looper.
+        assertFalse(
+            OverlayLifecycle.trim(
+                presenting = false,
+                release = { throw IllegalStateException("GPU resource retirement failed") },
+                recover = { throw IllegalStateException("reset failed") },
+            ),
+        )
+    }
+
+    @Test
+    fun onlyFailuresThatRepeatForThisPhoneAndConfigAreStatic() {
+        fun event(failure: Exception, resourceExhausted: Boolean = false) =
+            OverlayLifecycle.failureEvent(failure, resourceExhausted)
+        assertEquals("gpu-config-unsupported" to "static", event(PacketFailure("gpu-config-unsupported", "static")))
+        assertEquals("gpu-device-unsupported" to "static", event(OverlayUnsupportedFailure("gpu-device-unsupported")))
+        assertEquals("gpu-pipeline-unsupported" to "static", event(OverlayUnsupportedFailure("gpu-pipeline-unsupported")))
+        assertEquals("gpu-internal-failure" to "context", event(PacketFailure("gpu-internal-failure", "context")))
+        assertEquals("frame-role-unsupported" to "frame", event(AtlasFrameFailure("frame-role-unsupported")))
+        assertEquals("gpu-resource-limit" to "context", event(OverlayResourceFailure()))
+        assertEquals("gpu-resource-limit" to "context", event(IllegalStateException("EGL surface"), resourceExhausted = true))
+        for (transient in listOf(
+            IllegalStateException("GPU packet allocation/upload failed (GL 1282)"),
+            IllegalStateException("GPU completion failed"),
+            IllegalStateException("GPU atlas-sized surface unavailable"),
+            IllegalStateException("GPU texture consumption timestamp unavailable"),
+            IllegalStateException("GLES3 unavailable"),
+            IllegalArgumentException("Failed requirement."),
+        )) assertEquals("gpu-preparation-failed" to "context", event(transient))
+    }
+
+    @Test
     fun frameFailureAndSameGeometryCancellationRetainStaticResources() {
         assertTrue(OverlayLifecycle.retainGeometry(frameFailure = true, cancelled = false, sameGeometry = true))
         assertTrue(OverlayLifecycle.retainGeometry(frameFailure = false, cancelled = true, sameGeometry = true))

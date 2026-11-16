@@ -406,7 +406,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         }
     }
 
-    internal fun failed(request: OverlayRequest?, reason: String, scope: String = "static") {
+    internal fun failed(request: OverlayRequest?, reason: String, scope: String) {
         main.post {
             val accepted = request ?: latest ?: return@post
             if (!matches(accepted) || lastErrorRevision == accepted.revision) return@post

@@ -9,6 +9,9 @@ internal class AtlasFrameFailure(val reasonCode: String) : IllegalArgumentExcept
 
 internal class OverlayResourceFailure : IllegalArgumentException("gpu-resource-limit")
 
+/** A GPU feature or pipeline this phone lacks: it fails the same way every time. */
+internal class OverlayUnsupportedFailure(val reasonCode: String) : IllegalStateException(reasonCode)
+
 internal object OverlayLifecycle {
     fun beginPreparation(current: () -> Boolean, initialize: () -> Unit, surface: () -> Unit): Boolean {
         if (!current()) return false
@@ -19,6 +22,39 @@ internal object OverlayLifecycle {
 
     fun retainGeometry(frameFailure: Boolean, cancelled: Boolean, sameGeometry: Boolean): Boolean =
         frameFailure || (cancelled && sameGeometry)
+
+    /**
+     * Reason and scope for the JS fallback. Only "static" is remembered across
+     * launches, so it is reserved for failures that repeat for this binary, phone
+     * and config. GL errors, fence waits and surface loss retry on the next frames.
+     */
+    fun failureEvent(failure: Exception, resourceExhausted: Boolean): Pair<String, String> = when {
+        failure is PacketFailure -> failure.reason to failure.scope
+        failure is AtlasFrameFailure -> failure.reasonCode to "frame"
+        failure is OverlayUnsupportedFailure -> failure.reasonCode to "static"
+        failure is OverlayResourceFailure || resourceExhausted -> "gpu-resource-limit" to "context"
+        else -> "gpu-preparation-failed" to "context"
+    }
+
+    /**
+     * Memory callbacks arrive while a climb is on screen. Shared GPU residency is
+     * released only when no overlay presents from it, and nothing escapes onto
+     * the render thread: a failed release is handled as a lost context.
+     */
+    fun trim(presenting: Boolean, release: () -> Unit, recover: (Exception) -> Unit): Boolean {
+        if (presenting) return false
+        try {
+            release()
+            return true
+        } catch (failure: Exception) {
+            try {
+                recover(failure)
+            } catch (_: Exception) {
+                // The next preparation initializes a fresh context.
+            }
+            return false
+        }
+    }
 }
 
 /** Coalesces recovery with queued work without losing a reset during preparation. */

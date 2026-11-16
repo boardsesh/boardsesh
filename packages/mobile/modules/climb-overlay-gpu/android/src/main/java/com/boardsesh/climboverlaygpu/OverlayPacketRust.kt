@@ -49,14 +49,14 @@ internal class PacketCancellation: Closeable {
 }
 internal object PacketContract {
     val valid: Boolean by lazy {
-        check(GpuPacketBridge.packetApiVersion() == OverlayPacketLayout.PACKET_VERSION)
+        if (GpuPacketBridge.packetApiVersion() != OverlayPacketLayout.PACKET_VERSION) throw PacketFailure("gpu-contract-unsupported","static")
         GpuPacketBridge.contract().use { output ->
             packetStatus(output.status,true)
             val digest = output.useBuffer(0) {
                 require(it.remaining() in 1..65536)
                 MessageDigest.getInstance("SHA-256").apply { update(it) }.digest().joinToString("") { byte -> "%02x".format(byte) }
             }
-            check(digest == OverlayPacketLayout.CONTRACT_SHA256)
+            if (digest != OverlayPacketLayout.CONTRACT_SHA256) throw PacketFailure("gpu-contract-unsupported","static")
         }
         true
     }

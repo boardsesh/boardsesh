@@ -13,6 +13,7 @@ import android.opengl.EGLSurface
 import android.opengl.GLES31
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Log
 import android.view.Surface
 import com.boardsesh.boardrenderer.BoardRendererBridge
 import java.io.File
@@ -126,9 +127,18 @@ internal object OverlayRenderer {
             val glError = GLES31.glGetError()
             GLES31.glDeleteShader(shader)
             if(glError==GLES31.GL_OUT_OF_MEMORY)throw OverlayResourceFailure()
-            error("GPU shader compilation failed: $reason")
+            // A clean rejection of the shipped source repeats on this driver.
+            if(glError==GLES31.GL_NO_ERROR)throw OverlayUnsupportedFailure("gpu-pipeline-unsupported")
+            error("GPU shader compilation failed: $reason (GL $glError)")
         }
         return shader
+    }
+
+    /** A capability the phone reports missing. A query that raised a GL error proves nothing. */
+    private fun requireCapability(supported: Boolean) {
+        if (supported) return
+        checked("GPU capability query")
+        throw OverlayUnsupportedFailure("gpu-device-unsupported")
     }
 
     private fun initialize() {
@@ -168,11 +178,11 @@ internal object OverlayRenderer {
                 8,
                 EGL14.EGL_NONE,
             )
-        check(
-            EGL14.eglChooseConfig(display, attributes, 0, choices, 0, 1, count, 0) && count[0] > 0,
-        ) {
-            "RGBA GLES3 surface unavailable"
+        check(EGL14.eglChooseConfig(display, attributes, 0, choices, 0, 1, count, 0)) {
+            "EGL config query failed"
         }
+        // RGBA GLES3 window and pbuffer surfaces are not offered by this phone.
+        if (count[0] <= 0) throw OverlayUnsupportedFailure("gpu-device-unsupported")
         config = choices[0]
         context =
             EGL14.eglCreateContext(
@@ -195,22 +205,20 @@ internal object OverlayRenderer {
         val minor = IntArray(1)
         GLES31.glGetIntegerv(GLES31.GL_MAJOR_VERSION, major, 0)
         GLES31.glGetIntegerv(GLES31.GL_MINOR_VERSION, minor, 0)
-        check(major[0] > 3 || major[0] == 3 && minor[0] >= 1) { "GLES3.1 required" }
+        requireCapability(major[0] > 3 || major[0] == 3 && minor[0] >= 1)
         val blocks = IntArray(1)
         GLES31.glGetIntegerv(GLES31.GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS, blocks, 0)
-        check(blocks[0] >= 4) { "Fragment storage buffers unavailable" }
+        requireCapability(blocks[0] >= 4)
         GLES31.glGetIntegerv(GLES31.GL_MAX_SHADER_STORAGE_BLOCK_SIZE, blocks, 0)
         maxBlockSize = blocks[0]
         GLES31.glGetIntegerv(GLES31.GL_MAX_VIEWPORT_DIMS, maxViewport, 0)
         GLES31.glGetIntegerv(GLES31.GL_MAX_TEXTURE_SIZE, blocks, 0)
         maxTextureSize = blocks[0]
-        check(
+        if (
             EGL14.eglQueryString(display, EGL14.EGL_EXTENSIONS)
                 ?.split(' ')
-                ?.contains("EGL_ANDROID_presentation_time") == true,
-        ) {
-            "Frame timestamp extension unavailable"
-        }
+                ?.contains("EGL_ANDROID_presentation_time") != true
+        ) throw OverlayUnsupportedFailure("gpu-device-unsupported")
         val vertex = shader(GLES31.GL_VERTEX_SHADER, OverlayShader.vertex)
         val fragment =
             try {
@@ -227,7 +235,12 @@ internal object OverlayRenderer {
         GLES31.glDeleteShader(fragment)
         val linked = IntArray(1)
         GLES31.glGetProgramiv(program, GLES31.GL_LINK_STATUS, linked, 0)
-        check(linked[0] != 0) { "GPU shader link failed: ${GLES31.glGetProgramInfoLog(program)}" }
+        if (linked[0] == 0) {
+            val glError = GLES31.glGetError()
+            if (glError == GLES31.GL_OUT_OF_MEMORY) throw OverlayResourceFailure()
+            if (glError == GLES31.GL_NO_ERROR) throw OverlayUnsupportedFailure("gpu-pipeline-unsupported")
+            error("GPU shader link failed (GL $glError)")
+        }
         uniformBuffer = buffer(directBytes(OverlayPacketLayout.UNIFORM_BYTES), GLES31.GL_UNIFORM_BUFFER)
         checked("GPU initialization")
     }
@@ -577,7 +590,7 @@ internal object OverlayRenderer {
             if (running) session.view.requestAnimationFrame()
             return true
         } catch (failure: Exception) {
-            fail(session, failure, request, scope = "context")
+            fail(session, failure, request)
             return false
         }
     }
@@ -604,7 +617,7 @@ internal object OverlayRenderer {
             requestConsumptionObservation(session)
             session.view.resumeDraw()
         } catch (failure: Exception) {
-            fail(session, failure, scope = "context")
+            fail(session, failure)
         }
     }
 
@@ -665,7 +678,6 @@ internal object OverlayRenderer {
         session: OverlaySession,
         failure: Exception,
         request: OverlayRequest? = session.request,
-        scope: String = "static",
     ) {
         session.editPending = false
         session.editStart = null
@@ -677,8 +689,6 @@ internal object OverlayRenderer {
             return
         }
         val cancelled = failure is OverlayWorkCancelled || request?.let { !canPrepare(session, it) } == true
-        val frameFailure = failure as? AtlasFrameFailure
-        val packetFailure = failure as? PacketFailure
         if (context != EGL14.EGL_NO_CONTEXT) {
             try {
                 park()
@@ -695,9 +705,8 @@ internal object OverlayRenderer {
             }
         }
         if (cancelled) return
-        session.view.failed(request,
-            packetFailure?.reason ?: frameFailure?.reasonCode ?: if (failure is OverlayResourceFailure || eglFailure==EGL14.EGL_BAD_ALLOC) "gpu-resource-limit" else "gpu-preparation-failed",
-            packetFailure?.scope ?: if (frameFailure != null) "frame" else if (failure is OverlayResourceFailure || eglFailure==EGL14.EGL_BAD_ALLOC) "context" else scope)
+        val (reason, scope) = OverlayLifecycle.failureEvent(failure, resourceExhausted = eglFailure == EGL14.EGL_BAD_ALLOC)
+        session.view.failed(request, reason, scope)
     }
 
     private fun resetContext(recover: Boolean = true) {
@@ -886,7 +895,19 @@ internal object OverlayRenderer {
     fun resourceStats(): Map<String,Any?> = packetResourceStats()+mapOf("gpuReservedBytes" to budget.bytes)
 
     fun trim() {
-        handler.post { if(context!=EGL14.EGL_NO_CONTEXT) { park();OverlayPacketArena.releaseGPU() } }
+        handler.post {
+            if (context == EGL14.EGL_NO_CONTEXT) return@post
+            // A visible board keeps its arena; dropping it would make the next
+            // swipe re-upload every chunk beside the copy still on screen.
+            OverlayLifecycle.trim(
+                presenting = sessions.any { it.packet != null },
+                release = { park();OverlayPacketArena.releaseGPU() },
+                recover = { failure ->
+                    Log.w("BoardseshClimbGPU", "GPU memory trim failed; resetting the context", failure)
+                    resetContext()
+                },
+            )
+        }
     }
     fun prefetch(app: Context,request: OverlayRequest,frames: List<String>,cancel: PacketCancellation,valid: ()->Boolean) {
         if(!foreground || !valid() || !initialized)return
