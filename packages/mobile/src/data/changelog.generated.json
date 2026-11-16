@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-16T14:44:21.099Z",
+  "generatedAt": "2026-11-16T16:07:25.050Z",
   "entries": [
+    {
+      "prNumber": 7570,
+      "category": "fixed",
+      "title": "The Climbs list no longer goes blank after you pick a grade",
+      "mergedAt": "2026-11-16T15:48:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7570"
+    },
     {
       "prNumber": 7573,
       "category": "fixed",

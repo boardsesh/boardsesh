@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The Climbs list no longer goes blank after you pick a grade ([#7570](https://github.com/boardsesh/boardsesh/pull/7570))
 - Your wall's hold photos appear when Android opens the bundled app offline. ([#7573](https://github.com/boardsesh/boardsesh/pull/7573))
 - Board previews load more reliably, and browser climb lists support vertical touch scrolling. ([#7571](https://github.com/boardsesh/boardsesh/pull/7571))
 
