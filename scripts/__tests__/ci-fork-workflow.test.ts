@@ -24,6 +24,11 @@ type Workflow = {
 };
 const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
 const publisher = parse(readFileSync('.github/workflows/publish-test-reports.yml', 'utf8')) as Workflow;
+const { parseStringPromise } = require('xml2js') as {
+  parseStringPromise: (xml: string) => Promise<{
+    testsuites: { $: { tests: string; failures: string; errors: string }; testsuite?: unknown[] };
+  }>;
+};
 
 function publisherStep(idOrName: string): WorkflowStep {
   const step = publisher.jobs.publish.steps.find((entry) => entry.id === idOrName || entry.name === idOrName);
@@ -260,9 +265,55 @@ describe('completed test report publication', () => {
     },
   );
 
-  it('rejects empty reports rather than publishing a zero-test success', async () => {
+  it('reports the actual empty Vitest XML as neutral without inventing passing tests', async () => {
+    // Exact XML from both changed-file shards in CI run 43947606632.
+    const xml = readFileSync('scripts/__tests__/fixtures/ci-report-zero-tests.xml', 'utf8');
+    const { testsuites } = await parseStringPromise(xml);
+    expect(testsuites.$).toMatchObject({ tests: '0', failures: '0', errors: '0' });
+    expect(testsuites.testsuite).toBeUndefined();
     const inputs = reports('0', '0', '0');
-    await expect(executeScript('publish', inputs)).rejects.toThrow('no tests');
+    await executeScript('publish', inputs);
+    expect(inputs.github.rest.checks.create).toHaveBeenCalledExactlyOnceWith({
+      owner: 'boardsesh',
+      repo: 'boardsesh',
+      name: 'CI Tests Report',
+      head_sha: 'tested-head',
+      status: 'completed',
+      conclusion: 'neutral',
+      details_url: 'https://github.com/boardsesh/boardsesh/actions/runs/456',
+      output: {
+        title: 'No tests ran. 0 passed, 0 failed, 0 skipped.',
+        summary:
+          'No tests ran. 0 passed, 0 failed, 0 skipped.\n\n[Full test report](https://github.com/boardsesh/boardsesh/actions/runs/456).',
+      },
+    });
+    expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.get('message')).toContain('No tests ran. 0 passed, 0 failed, 0 skipped.');
+  });
+
+  it.each(['failure', 'timed_out', 'cancelled', 'skipped', 'neutral', ''])(
+    'rejects zero tests from %s source CI',
+    async (conclusion) => {
+      const inputs = reports('0', '0', '0');
+      inputs.run.conclusion = conclusion;
+      await expect(executeScript('publish', inputs)).rejects.toThrow('requires successful source CI');
+      expect(inputs.github.rest.pulls.get).not.toHaveBeenCalled();
+      expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['failure', 'neutral', ''])('rejects a zero-test parser conclusion of %s', async (conclusion) => {
+    const inputs = reports('0', '0', '0');
+    vi.stubEnv('REPORT_CONCLUSION', conclusion);
+    await expect(executeScript('publish', inputs)).rejects.toThrow('conclusion/count mismatch');
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+  });
+
+  it('does not turn malformed XML into a neutral report', async () => {
+    const inputs = reports('0', '0', '0');
+    await expect(parseStringPromise('<testsuites><broken></testsuites>')).rejects.toThrow();
+    vi.stubEnv('REPORT_OUTCOME', 'failure');
+    await expect(executeScript('publish', inputs)).rejects.toThrow('parsing did not succeed');
     expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
   });
 
@@ -301,6 +352,24 @@ describe('completed test report publication', () => {
     await expect(executeScript('publish', inputs)).rejects.toThrow('Not Found');
     expect(inputs.github.rest.checks.create).toHaveBeenCalledTimes(1);
     expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.size).toBe(0);
+  });
+
+  it('keeps zero-test GitHub errors as failures instead of inventing a passing check', async () => {
+    const inputs = reports('0', '0', '0');
+    inputs.github.rest.checks.create.mockRejectedValueOnce(new Error('Forbidden'));
+    await expect(executeScript('publish', inputs)).rejects.toThrow('Forbidden');
+    expect(inputs.github.rest.checks.create).toHaveBeenCalledTimes(1);
+    expect(inputs.github.rest.checks.create.mock.calls[0][0].conclusion).toBe('neutral');
+    expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.size).toBe(0);
+  });
+
+  it('skips a superseded zero-test report before creating a neutral check', async () => {
+    const inputs = reports('0', '0', '0');
+    inputs.pullRequest.head.sha = 'new-head';
+    await executeScript('publish', inputs);
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
     expect(inputs.outputs.size).toBe(0);
   });
 
