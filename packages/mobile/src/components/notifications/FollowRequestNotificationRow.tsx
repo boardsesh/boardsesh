@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
@@ -10,16 +10,15 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import type { FollowRequestAnswer } from '../../lib/graphql/hooks/use-notifications';
-import type { HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { notificationCopy } from './notification-copy';
 
 const AVATAR_SIZE = 40;
 const UNREAD_DOT_SIZE = 8;
 
-export type AnswerFollowRequest = (
-  input: { notification: GroupedNotification; answer: FollowRequestAnswer },
-  options: { readonly signal: AbortSignal },
-) => Promise<{ readonly assertCurrent: () => void }>;
+export type AnswerFollowRequest = (input: {
+  notification: GroupedNotification;
+  answer: FollowRequestAnswer;
+}) => Promise<unknown>;
 
 type FollowRequestNotificationRowProps = {
   notification: GroupedNotification;
@@ -27,7 +26,6 @@ type FollowRequestNotificationRowProps = {
   onPress: (notification: GroupedNotification) => void;
   /** Stable handler from the screen: approves or declines the request. */
   onAnswer: AnswerFollowRequest;
-  captureAction: HttpActionScope['capture'];
 };
 
 /**
@@ -41,35 +39,13 @@ type FollowRequestNotificationRowProps = {
  * The row only tracks which answer is in flight. On success the screen's cache
  * drops the row; on failure the buttons come back with a line saying why.
  */
-export function FollowRequestNotificationRow({
-  notification,
-  onPress,
-  onAnswer,
-  captureAction,
-}: FollowRequestNotificationRowProps) {
+export function FollowRequestNotificationRow({ notification, onPress, onAnswer }: FollowRequestNotificationRowProps) {
   const { t } = useTranslation('notifications');
   const { systemColors, brandColors } = useTheme();
   // Keyed by the row's uuid: FlashList hands a recycled cell, state and all, to
   // a different notification, and an answer in flight belongs to one request.
   const [inFlight, setInFlight] = useState<{ uuid: string; answer: FollowRequestAnswer } | null>(null);
   const [failedUuid, setFailedUuid] = useState<string | null>(null);
-  const mounted = useRef(true);
-  const currentUuid = useRef(notification.uuid);
-  useLayoutEffect(() => {
-    currentUuid.current = notification.uuid;
-  }, [notification.uuid]);
-  type Pending = { uuid: string };
-  const currentAttempt = useRef<Pending | null>(null);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      // A successful cache write removes this row before its mutation promise
-      // necessarily settles. Retire local effects without cancelling that
-      // authorized cache publication; the screen still owns pending actions.
-      currentAttempt.current = null;
-    };
-  }, []);
   const pending = inFlight?.uuid === notification.uuid ? inFlight.answer : null;
   const failed = failedUuid === notification.uuid;
 
@@ -81,47 +57,16 @@ export function FollowRequestNotificationRow({
   const handlePress = useCallback(() => onPress(notification), [onPress, notification]);
   const answer = useCallback(
     async (next: FollowRequestAnswer) => {
-      const previous = currentAttempt.current;
-      if (previous?.uuid === notification.uuid) return;
-      let action: ReturnType<HttpActionScope['capture']>;
-      try {
-        action = captureAction();
-      } catch {
-        return;
-      }
-      const attempt: Pending = { uuid: notification.uuid };
-      const isCurrent = () =>
-        mounted.current &&
-        currentAttempt.current === attempt &&
-        currentUuid.current === attempt.uuid &&
-        action.isCurrent();
-      currentAttempt.current = attempt;
-      if (!isCurrent()) {
-        action.finish();
-        return;
-      }
       setInFlight({ uuid: notification.uuid, answer: next });
       setFailedUuid(null);
       try {
-        const result = await onAnswer(
-          { notification, answer: next },
-          {
-            signal: action.signal,
-          },
-        );
-        if (!isCurrent()) return;
-        action.assertView();
-        result.assertCurrent();
+        await onAnswer({ notification, answer: next });
       } catch {
-        if (!isCurrent()) return;
         setFailedUuid(notification.uuid);
         setInFlight(null);
-        currentAttempt.current = null;
-      } finally {
-        action.finish();
       }
     },
-    [notification, onAnswer, captureAction],
+    [notification, onAnswer],
   );
   const approve = useCallback(() => void answer('approve'), [answer]);
   const decline = useCallback(() => void answer('decline'), [answer]);
