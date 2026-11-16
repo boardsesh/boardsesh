@@ -1,5 +1,7 @@
 # Selected browser access to GraphQL and WebSocket
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 The private browser delegation command exchanges the browser's actual current
 source credential for a short backend bearer. It does not issue a browser
 session or qualify reauthentication. Public browser activation remains gated by
