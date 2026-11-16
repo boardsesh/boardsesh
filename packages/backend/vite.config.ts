@@ -18,13 +18,12 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     // These run one at a time in the backend-serial project (vite.serial.config.ts).
-    // The auth-prototype project (vite.auth-prototype.config.ts) owns the prototype
-    // folder and the identity audit files that use its disposable databases.
+    // The auth-identities project (vite.auth-identities.config.ts) owns the identity
+    // audit files that use disposable databases.
     // Authority mapping proofs likewise own disposable databases in their config.
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
-      'src/auth/prototype/**',
       'src/auth/authority/**',
       'src/auth/__tests__/identity-audit*.test.ts',
       ...SERIAL_TEST_FILES,

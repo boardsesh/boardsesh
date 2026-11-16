@@ -900,11 +900,6 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/web run typecheck',
         dependsOn: ['build:web'],
       },
-      'typecheck:auth-prototype-browser': {
-        command: 'tsc -p packages/web/auth-prototype/tsconfig.json --noEmit',
-        // The proof imports both packages; always verify its explicit TS project.
-        cache: false,
-      },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
         dependsOn: ['codegen'],
@@ -1127,7 +1122,6 @@ export default defineConfig({
           'build:db',
           'build:backend',
           'typecheck:web',
-          'typecheck:auth-prototype-browser',
           'typecheck:ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
@@ -1243,27 +1237,6 @@ export default defineConfig({
       },
       'test:auth-authority': {
         command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
-        cache: false,
-      },
-      'test:auth-prototype': {
-        command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
-        cache: false,
-      },
-      'test:auth-web-credential-proof': {
-        command:
-          'vp test run --config packages/web/auth-prototype/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
-        dependsOn: ['typecheck:auth-prototype-browser'],
-        cache: false,
-      },
-      'test:auth-prototype:browser': {
-        command: 'cd packages/web && vp exec playwright test --config=playwright.auth-prototype.config.ts',
-        dependsOn: ['typecheck:auth-prototype-browser'],
-        cache: false,
-      },
-      'test:auth-browser-proof-cookies': {
-        command:
-          'vp test run --config packages/web/auth-prototype/browser-proof-cookies.vite.config.ts --maxWorkers=1 --reporter=agent',
-        dependsOn: ['typecheck:auth-prototype-browser'],
         cache: false,
       },
       // The offline-sync engine suites live in their own Vitest project

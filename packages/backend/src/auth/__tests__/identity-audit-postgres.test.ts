@@ -3,15 +3,15 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { users, userCredentials, accounts } from '@boardsesh/db/schema/auth';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { createPrototypeEnvironment } from '../prototype/environment';
+import { createDisposableDatabase } from './disposable-database';
 import { runIdentityAudit } from '../../scripts/audit-auth-identities';
 
 describe('read-only audit against a disposable legacy identity database', () => {
-  let environment: Awaited<ReturnType<typeof createPrototypeEnvironment>>;
+  let environment: Awaited<ReturnType<typeof createDisposableDatabase>>;
   let fixtureClient: ReturnType<typeof postgres>;
 
   beforeAll(async () => {
-    environment = await createPrototypeEnvironment();
+    environment = await createDisposableDatabase();
     fixtureClient = postgres(environment.databaseUrl, { max: 1, onnotice: () => {} });
     // Reuse real generated legacy migrations in this newly created database.
     // No ad-hoc production migration or application's DATABASE_URL is involved.

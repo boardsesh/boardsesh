@@ -11,8 +11,7 @@ const repoRoot = resolve(import.meta.dirname, '../..');
 const BACKEND_RUNTIME_PACKAGES = ['@better-auth/drizzle-adapter', '@better-auth/oauth-provider', 'better-auth'];
 const PINNED_VERSION = '1.7.17';
 const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
-/** Better Auth stays inside the three backend-owned authority implementations. */
-const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
+/** Better Auth stays inside the two backend-owned authority implementations. */
 const PARTNER_ROOT = 'packages/backend/src/auth/partner/';
 const FIRST_PARTY_AUTHORITY_ROOT = 'packages/backend/src/auth/authority/';
 /** Partner modules that load Better Auth at runtime. Everything else must stay importable with the mode off. */
@@ -107,10 +106,6 @@ function runtimeImportSpecifiers(source: string): string[] {
   return importSpecifiers(source.replace(/import\s+type\s[^;]*;/g, ''));
 }
 
-function isPrototypeSpecifier(specifier: string): boolean {
-  return specifier.includes('/prototype/') || specifier.endsWith('/prototype') || specifier.includes('auth-prototype');
-}
-
 function filesImporting(paths: string[], matches: (specifier: string) => boolean): string[] {
   return paths.filter((path) => importSpecifiers(readRepoFile(path)).some(matches));
 }
@@ -121,7 +116,7 @@ function resolvesIntoPartnerFolder(importerPath: string, specifier: string): boo
 }
 
 function isAllowedBetterAuthImporter(path: string): boolean {
-  return [PROTOTYPE_ROOT, PARTNER_ROOT, FIRST_PARTY_AUTHORITY_ROOT].some((root) => path.startsWith(root));
+  return [PARTNER_ROOT, FIRST_PARTY_AUTHORITY_ROOT].some((root) => path.startsWith(root));
 }
 
 function isProductionSource(path: string): boolean {
@@ -149,7 +144,7 @@ describe('import scanner', () => {
 
 describe('first-party authority boundary', () => {
   it.each([
-    ['packages/backend/src/auth/prototype/authority.ts', true],
+    ['packages/backend/src/auth/prototype/authority.ts', false],
     ['packages/backend/src/auth/partner/authority.ts', true],
     ['packages/backend/src/auth/authority/authority.ts', true],
     ['packages/backend/src/auth/authority/adapter.ts', true],
@@ -185,7 +180,6 @@ describe('partner folder resolution', () => {
 
   it.each([
     [importer, './partners'],
-    [importer, './prototype/authority'],
     ['packages/backend/src/handlers/oauth.ts', '../utils/partner'],
   ])('%s importing %s is not', (path, specifier) => {
     expect(resolvesIntoPartnerFolder(path, specifier)).toBe(false);
@@ -222,15 +216,6 @@ describe('Better Auth dependency boundary', () => {
     expect(importers.filter((path) => !isAllowedBetterAuthImporter(path))).toEqual([]);
   });
 
-  it('keeps the prototype out of every production backend module', () => {
-    const productionModules = trackedSourceFiles.filter(
-      (path) =>
-        path.startsWith('packages/backend/src/') && !path.startsWith(PROTOTYPE_ROOT) && isProductionSource(path),
-    );
-    expect(productionModules.length).toBeGreaterThan(0);
-    expect(filesImporting(productionModules, isPrototypeSpecifier)).toEqual([]);
-  });
-
   it('confines runtime Better Auth imports inside the partner folder to the listed modules', () => {
     const partnerModules = trackedSourceFiles.filter(
       (path) => path.startsWith(PARTNER_ROOT) && isProductionSource(path),
@@ -244,11 +229,7 @@ describe('Better Auth dependency boundary', () => {
 
   it('lets only the listed production modules outside the partner folder reach into it', () => {
     const productionModules = trackedSourceFiles.filter(
-      (path) =>
-        path.startsWith('packages/backend/src/') &&
-        !path.startsWith(PROTOTYPE_ROOT) &&
-        !path.startsWith(PARTNER_ROOT) &&
-        isProductionSource(path),
+      (path) => path.startsWith('packages/backend/src/') && !path.startsWith(PARTNER_ROOT) && isProductionSource(path),
     );
     expect(productionModules.length).toBeGreaterThan(0);
     const importers = productionModules.filter((path) =>

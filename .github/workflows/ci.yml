@@ -136,14 +136,9 @@ jobs:
               - 'packages/web/**'
             backend:
               - 'packages/backend/**'
-              # The HTTPS auth proof runs with the backend's disposable Postgres.
-              - 'packages/web/auth-prototype/**'
-              - 'packages/web/playwright.auth-prototype.config.ts'
             # Web-only auth changes need the owned auth/browser proofs without
             # selecting the full baseline backend suite for unrelated pages.
             authCompatibility:
-              - 'packages/web/auth-prototype/**'
-              - 'packages/web/playwright.auth-prototype.config.ts'
               - 'packages/web/app/lib/auth/**'
               - 'packages/web/app/lib/partner-oauth/**'
               - 'packages/web/app/api/auth/**'
@@ -200,7 +195,7 @@ jobs:
             locationSync:
               - 'packages/backend/src/auth/current-store/**'
               - 'packages/backend/src/auth/authority/**'
-              - 'packages/backend/src/auth/prototype/location-sync.integration.proof.ts'
+              - 'packages/backend/src/auth/location-sync.integration.proof.ts'
               - 'packages/backend/src/handlers/current-store-*'
               - 'packages/backend/src/workers/**'
               - 'packages/backend/scripts/bootstrap-location-proof-database.sh'
@@ -972,7 +967,7 @@ jobs:
       - name: better-auth-boundary (Better Auth stays out of web, mobile and production backend code)
         id: better-auth-boundary
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts scripts/__tests__/ci-credential-writer-workflow.test.ts --maxWorkers=2 --reporter=agent
+        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts scripts/__tests__/ci-credential-writer-workflow.test.ts --maxWorkers=2 --reporter=agent
 
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
@@ -1559,12 +1554,6 @@ jobs:
           NATIVE_CONTRACT_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
           NATIVE_CONTRACT_REDIS_URL: redis://localhost:6380
         run: vp run test:native-contract
-      - name: Run Better Auth compatibility prototype
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
-        run: vp run test:auth-prototype
       - name: Run unmounted production authority mapping proof
         if: ${{ !cancelled() }}
         env:
@@ -1575,26 +1564,6 @@ jobs:
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
         run: vp run test:auth-identities
-      - name: Run backend and web credential proof
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-web-credential-proof
-      - name: Install Chromium for auth compatibility proof
-        if: ${{ !cancelled() }}
-        working-directory: packages/web
-        run: vp exec playwright install --with-deps chromium
-      - name: Run HTTPS auth browser proof
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-prototype:browser
-      - name: Run versioned proof cookies and result recovery
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
-        run: vp run test:auth-browser-proof-cookies
 
   # Mirror-on qualification repeats the complete current-store suite. It owns
   # service containers so its budget is independent of baseline tests and HTTPS.

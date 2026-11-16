@@ -7,7 +7,7 @@ export default defineConfig({
     clearMocks: false,
     name: 'auth-identities',
     environment: 'node',
-    include: ['src/scripts/auth-identities/__tests__/*.test.ts'],
+    include: ['src/scripts/auth-identities/__tests__/*.test.ts', 'src/auth/__tests__/identity-audit*.test.ts'],
     testTimeout: 30000,
     hookTimeout: 60000,
     maxWorkers: 2,
