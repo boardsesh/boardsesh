@@ -1,3 +1,4 @@
+import { EmptyState } from '../../../src/components/EmptyState';
 import { ClimbsEmptyState } from '../../../src/components/climbs/ClimbsEmptyState';
 import { ClimbsView } from '../../../src/components/climbs/ClimbsView';
 import { scheduleIdleTask } from '../../../src/lib/schedule-idle-task';
@@ -73,8 +74,6 @@ import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/clim
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
 import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
 import { ClimbListThumbnailPrewarmWindow, createVisibleRowsStore } from '../../../src/components/ClimbListScrollAhead';
-import { Text } from '../../../src/components/Text';
-import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
 import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../src/components/ClimbFilterSheet';
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
@@ -278,7 +277,7 @@ function ClimbListInner() {
     openBoardSheet();
     setRevealTipVisible(false);
   }, [openBoardSheet]);
-  const { systemColors, variant, brandColors, features } = useTheme();
+  const { variant, brandColors, features } = useTheme();
   const colorScheme = useAppColorScheme();
   const { playNext } = useQueueActions();
   const { filters, boardFilters, name, setGrade, setName, replaceSearch, patchFilters, patchBoardFilters } =
@@ -1852,23 +1851,22 @@ function ClimbListInner() {
         <Stack.Screen options={stackOptions} />
         {/* The empty state replaces action chrome; clear its native center slot. */}
         {nativeRootHeader ? <NativeRootHeader titleHidden onHeightChange={handleChromeHeightChange} /> : null}
-        <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-          <Text variant="headline" style={styles.emptyTitle}>
-            {t('mobile.emptyState.boardRestoreFailed.title')}
-          </Text>
-          <Text variant="subheadline" style={styles.emptySubtitle}>
-            {t('mobile.emptyState.boardRestoreFailed.description')}
-          </Text>
-          <Button
-            title={tCommon('actions.retry')}
-            onPress={() => void refetchActiveBoard()}
-            loading={isBoardFetching}
-            disabled={isBoardFetching}
-            variant="filled"
-            style={styles.emptyCta}
-          />
-        </View>
+        <EmptyState
+          size="screen"
+          style={{ paddingTop: 120 }}
+          icon="boards"
+          title={t('mobile.emptyState.boardRestoreFailed.title')}
+          body={t('mobile.emptyState.boardRestoreFailed.description')}
+          actions={
+            <Button
+              title={tCommon('actions.retry')}
+              onPress={() => void refetchActiveBoard()}
+              loading={isBoardFetching}
+              disabled={isBoardFetching}
+              variant="filled"
+            />
+          }
+        />
       </>
     );
   }
@@ -1878,30 +1876,29 @@ function ClimbListInner() {
       <>
         <Stack.Screen options={stackOptions} />
         {nativeRootHeader ? <NativeRootHeader titleHidden onHeightChange={handleChromeHeightChange} /> : null}
-        <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-          <Text variant="headline" style={styles.emptyTitle}>
-            {t('mobile.emptyState.noBoard.title')}
-          </Text>
-          <Text variant="subheadline" style={styles.emptySubtitle}>
-            {t('mobile.emptyState.noBoard.subtitle')}
-          </Text>
-          {/* Board selection is a modal now. When BLE serial auto-detect lands it
-              calls useSetActiveBoard(); useActiveBoard() then flips this screen to
-              the climb list with no extra wiring here. */}
-          <Button
-            title={t('mobile.emptyState.noBoard.cta')}
-            // The picker's no-board entry (#5654): a climber with no boards at all
-            // gets "Where do you climb?" there, with the gym search, the builder
-            // and the Bluetooth scan; one whose active board was only cleared gets
-            // their list. Deliberately NOT tagged as onboarding: this empty state
-            // shows any time no board is bound, not just first-run, so a bind from
-            // it must not fire the activation event or arm the reveal banner.
-            onPress={() => router.push(NO_BOARD_PICKER_HREF)}
-            variant="filled"
-            style={styles.emptyCta}
-          />
-        </View>
+        <EmptyState
+          size="screen"
+          style={{ paddingTop: 120 }}
+          icon="boards"
+          title={t('mobile.emptyState.noBoard.title')}
+          body={t('mobile.emptyState.noBoard.subtitle')}
+          // Board selection is a modal now. When BLE serial auto-detect lands it
+          // calls useSetActiveBoard(); useActiveBoard() then flips this screen to
+          // the climb list with no extra wiring here.
+          actions={
+            <Button
+              title={t('mobile.emptyState.noBoard.cta')}
+              // The picker's no-board entry (#5654): a climber with no boards at all
+              // gets "Where do you climb?" there, with the gym search, the builder
+              // and the Bluetooth scan; one whose active board was only cleared gets
+              // their list. Deliberately NOT tagged as onboarding: this empty state
+              // shows any time no board is bound, not just first-run, so a bind from
+              // it must not fire the activation event or arm the reveal banner.
+              onPress={() => router.push(NO_BOARD_PICKER_HREF)}
+              variant="filled"
+            />
+          }
+        />
       </>
     );
   }
@@ -2048,7 +2045,7 @@ function ClimbListInner() {
                   onClearFilters={handleClearNonGradeFilters}
                   onCreate={handleCreateClimb}
                   onOpenFilters={handleOpenFiltersFromEmpty}
-                  downloadAction={<OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />}
+                  downloadAction={<OfflineCatalogCta board={activeBoard} />}
                 />
               ),
             }}
@@ -2212,25 +2209,6 @@ const styles = StyleSheet.create({
   // Background colour is themed at the call site; 0.4 of it dims the stale rows.
   placeholderTint: {
     opacity: 0.4,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 120,
-    paddingHorizontal: 32,
-    gap: 8,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    opacity: 0.6,
-  },
-  emptySubtitle: {
-    opacity: 0.4,
-    textAlign: 'center',
-  },
-  emptyCta: {
-    marginTop: spacing[4],
   },
   revealBanner: {
     marginHorizontal: spacing[4],

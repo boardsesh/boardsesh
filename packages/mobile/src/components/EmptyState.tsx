@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon } from './Icon';
-import { Text } from './Text';
+import { Text, type TextVariant } from './Text';
 import type { IconName } from './icon-map';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -28,6 +28,15 @@ export type EmptyStateProps =
       body?: string;
       /** A glyph above the title, in tertiary label. */
       icon?: IconName;
+      /**
+       * Extra layout on the placard's root: the safe-area padding a top-of-shell
+       * pane owns, or the extra top inset of a list's `ListEmptyComponent`.
+       */
+      style?: StyleProp<ViewStyle>;
+      /** Caps the width of the title and body, so a wide pane keeps a readable line. */
+      maxContentWidth?: number;
+      /** Title type size; defaults to `headline`. */
+      titleVariant?: TextVariant;
     })
   | (EmptyStateCommonProps & {
       /**
@@ -38,6 +47,9 @@ export type EmptyStateProps =
       size: 'quiet';
       body?: never;
       icon?: never;
+      style?: never;
+      maxContentWidth?: never;
+      titleVariant?: never;
     });
 
 /**
@@ -60,15 +72,25 @@ export function EmptyState(props: EmptyStateProps) {
     );
   }
 
-  const { size, body, icon } = props;
+  const { size, body, icon, style, maxContentWidth, titleVariant = 'headline' } = props;
+  const widthCap = maxContentWidth == null ? undefined : { maxWidth: maxContentWidth };
   return (
-    <View style={size === 'screen' ? styles.screen : styles.section} testID={testID}>
+    <View style={[size === 'screen' ? styles.screen : styles.section, style]} testID={testID}>
       {icon ? <Icon name={icon} size={size === 'screen' ? 40 : 32} color={systemColors.tertiaryLabel} /> : null}
-      <Text variant="headline" style={icon ? styles.titleAfterIcon : styles.centred}>
+      <Text
+        variant={titleVariant}
+        style={
+          widthCap
+            ? [icon ? styles.titleAfterIcon : styles.centred, widthCap]
+            : icon
+              ? styles.titleAfterIcon
+              : styles.centred
+        }
+      >
         {title}
       </Text>
       {body ? (
-        <Text variant="subheadline" tone="secondary" style={styles.centred}>
+        <Text variant="subheadline" tone="secondary" style={widthCap ? [styles.centred, widthCap] : styles.centred}>
           {body}
         </Text>
       ) : null}
