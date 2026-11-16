@@ -1,4 +1,15 @@
 // @vitest-environment jsdom
+// Native view notifications are a no-op; credential storage is outside this host.
+vi.mock('../../../lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
+// This presentation host must fail if an unrelated native transport runs.
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => {
+    throw new Error('Unexpected native GraphQL I/O');
+  },
+  getOfflineSyncHttpClient: () => {
+    throw new Error('Unexpected native offline I/O');
+  },
+}));
 // A selection from a row's menu, through the real command host: the provider,
 // `useClimbActions` and the player presenters. Only the platform I/O is stubbed.
 import { createElement, useState, type ReactNode } from 'react';
