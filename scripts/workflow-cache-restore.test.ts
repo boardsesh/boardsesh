@@ -115,6 +115,11 @@ const REVIEWED_CACHE_FREE_ACTIONS = new Set([
   'turing85/publish-report',
 ]);
 
+// Reviewed action.yml, runtime dependencies and shipped dist/index.js at this
+// immutable revision: node20 entry only, no pre/post hooks or Actions-cache use.
+// https://github.com/phoenix-actions/test-reporting/tree/f957cd93fc2d848d556fa0d03c57bc79127b6b5e
+const REVIEWED_CACHE_FREE_REFS = new Set(['phoenix-actions/test-reporting@f957cd93fc2d848d556fa0d03c57bc79127b6b5e']);
+
 // `null` = top level of a workflow job: nothing is resolved, so any expression
 // (including a workflow_dispatch `inputs.*`) counts as "may restore". Inside a
 // composite action, `${{ inputs.NAME }}` and `${{ inputs.NAME == 'x' }}` are
@@ -182,7 +187,9 @@ function stepMechanism(step: Step, inputs: Inputs): string | null {
       );
       if (cacheKeys.length > 0) return `${action} ${cacheKeys.join(', ')}`;
       if (action.startsWith('docker://')) return null;
-      return REVIEWED_CACHE_FREE_ACTIONS.has(action) ? null : `unreviewed remote action ${action}`;
+      return REVIEWED_CACHE_FREE_ACTIONS.has(action) || REVIEWED_CACHE_FREE_REFS.has(step.uses)
+        ? null
+        : `unreviewed remote action ${action}`;
     }
   }
 }
@@ -308,6 +315,34 @@ describe('shared cache restores in sensitive jobs', () => {
 });
 
 describe('cache restore detection', () => {
+  it('recognizes the actual publisher parser only at its audited immutable revision', () => {
+    const workflow = parse(readFileSync(join(WORKFLOW_DIR, 'publish-test-reports.yml'), 'utf8')) as Workflow;
+    const job = workflow.jobs?.publish;
+    if (!job) throw new Error('Missing publisher job');
+    expect(sensitivityReasons(workflow, job)).toContain('write permissions');
+    const parser = job.steps?.find((step) => step.name === 'Parse CI test results');
+    if (!parser) throw new Error('Missing publisher parser');
+    expect(parser.uses).toBe('phoenix-actions/test-reporting@f957cd93fc2d848d556fa0d03c57bc79127b6b5e');
+    expect(restoringSteps([parser], () => null)).toEqual([]);
+  });
+
+  it.each(['v15', 'v16', 'main', 'f957cd93fc2d848d556fa0d03c57bc79127b6b5f'])(
+    'keeps unaudited reporter revision %s fail-closed',
+    (revision) => {
+      const uses = `phoenix-actions/test-reporting@${revision}`;
+      expect(restoringSteps([{ uses }], () => null)).toEqual([
+        { label: uses, mechanism: 'unreviewed remote action phoenix-actions/test-reporting' },
+      ]);
+    },
+  );
+
+  it('still rejects cache-looking inputs on the audited reporter revision', () => {
+    const uses = 'phoenix-actions/test-reporting@f957cd93fc2d848d556fa0d03c57bc79127b6b5e';
+    expect(restoringSteps([{ uses, with: { cache: true } }], () => null)).toEqual([
+      { label: uses, mechanism: 'phoenix-actions/test-reporting cache' },
+    ]);
+  });
+
   it('still expands the immutable tooling checkout actions', () => {
     const found = restoringSteps(
       [{ uses: './.boardsesh/cache-tooling/.github/actions/ios-store-video-tools' }],

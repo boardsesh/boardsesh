@@ -149,10 +149,14 @@ jobs:
             const passed = count('REPORT_PASSED');
             const failed = count('REPORT_FAILED');
             const skipped = count('REPORT_SKIPPED');
-            if (passed + failed + skipped === 0) throw new Error('JUnit reports contained no tests');
-            const conclusion = failed > 0 ? 'failure' : 'success';
-            if (process.env.REPORT_CONCLUSION !== conclusion) throw new Error('JUnit conclusion/count mismatch');
+            const parserConclusion = failed > 0 ? 'failure' : 'success';
+            if (process.env.REPORT_CONCLUSION !== parserConclusion) throw new Error('JUnit conclusion/count mismatch');
             const run = context.payload.workflow_run;
+            const noTests = passed + failed + skipped === 0;
+            if (noTests && run.conclusion !== 'success') throw new Error('Zero-test report requires successful source CI');
+            // Changed-file CI can upload valid, empty JUnit suites. Report that
+            // absence explicitly without claiming any tests passed.
+            const conclusion = noTests ? 'neutral' : parserConclusion;
             const { data: pullRequest } = await github.rest.pulls.get({
               ...context.repo, pull_number: Number(process.env.PR_NUMBER),
             });
@@ -166,7 +170,8 @@ jobs:
               return;
             }
             const reportUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const summary = `${passed} passed, ${failed} failed, ${skipped} skipped.`;
+            const counts = `${passed} passed, ${failed} failed, ${skipped} skipped.`;
+            const summary = noTests ? `No tests ran. ${counts}` : counts;
             const { data: check } = await github.rest.checks.create({
               ...context.repo,
               name: 'CI Tests Report',
