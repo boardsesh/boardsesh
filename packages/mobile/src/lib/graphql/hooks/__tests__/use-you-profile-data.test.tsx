@@ -8,12 +8,29 @@ import { renderHook, act } from '@testing-library/react';
 // data hooks are stubbed to a settled, empty shape and the view model runs on
 // no ticks. Mock at the module boundary so no real query / network / grade
 // preference is touched.
-const settledQuery = { data: undefined, isPending: false, isRefetching: false, refetch: vi.fn() };
+const settledQuery = {
+  data: undefined,
+  isPending: false,
+  isRefetching: false,
+  refetch: vi.fn(),
+  refetchOriginal: vi.fn(async () => undefined),
+};
 
 vi.mock('../use-you-data', () => ({
   useAllBoardsTicks: vi.fn(() => ({ ...settledQuery, data: {} })),
   useUserProfileStats: vi.fn(() => ({ ...settledQuery, data: null })),
   useUserClimbPercentile: vi.fn(() => ({ ...settledQuery, data: null })),
+}));
+
+// This filter-only host never sends network work; keep native platform modules
+// out of its mocked data-hook graph. Actual SDK behavior lives in the web host.
+vi.mock('../../client', () => ({
+  getHttpClient: () => {
+    throw new Error('Unexpected filter-only SDK request');
+  },
+  getOfflineSyncHttpClient: () => {
+    throw new Error('Unexpected filter-only offline request');
+  },
 }));
 
 vi.mock('expo-router', () => ({ useIsFocused: () => true }));
@@ -75,6 +92,32 @@ describe('useYouProfileData filter state', () => {
 
     act(() => result.current.setComparisonMode('yearOverYear'));
     expect(result.current.comparisonMode).toBe('yearOverYear');
+  });
+
+  it('refuses retained target A/B/A and unmounted filter/retry callbacks while the current target remains live', () => {
+    const screen = renderHook(({ userId }) => useYouProfileData(userId), { initialProps: { userId: 'A' } });
+    const old = screen.result.current;
+    screen.rerender({ userId: 'B' });
+    screen.rerender({ userId: 'A' });
+    const before = settledQuery.refetchOriginal.mock.calls.length;
+    act(() => {
+      old.setSelectedBoard('kilter');
+      old.setTimeframe('lastWeek');
+      old.retryTotals();
+      old.refetch();
+    });
+    expect(screen.result.current.selectedBoard).toBe('all');
+    expect(screen.result.current.timeframe).toBe('all');
+    expect(settledQuery.refetchOriginal).toHaveBeenCalledTimes(before);
+    act(() => screen.result.current.setTimeframe('lastMonth'));
+    expect(screen.result.current.timeframe).toBe('lastMonth');
+    const current = screen.result.current;
+    screen.unmount();
+    act(() => {
+      current.setSelectedBoard('tension');
+      current.refetch();
+    });
+    expect(settledQuery.refetchOriginal).toHaveBeenCalledTimes(before);
   });
 
   it('reports loading until a userId is available', () => {

@@ -1,4 +1,11 @@
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import {
+  useQuery,
+  useInfiniteQuery,
+  useQueryClient,
+  QueryObserver,
+  type QueryKey,
+  type QueryFunctionContext,
+} from '@tanstack/react-query';
 import {
   GET_USER_TICKS,
   GET_USER_TICK_COUNTS_BY_BOARD,
@@ -24,6 +31,103 @@ import {
 import { BOARD_TYPES, type LogbookEntry } from '@boardsesh/profile-stats';
 import type { ActivityFeedInput } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
+import { createHttpOperation, type HttpOperation } from '../http-operation';
+import { useHttpQueryScope } from '../use-http-query-scope';
+
+type FiniteYouQuery<Result> = {
+  queryKey: QueryKey;
+  queryFn: (operation: HttpOperation) => Promise<Result>;
+  enabled: boolean;
+  staleTime: number;
+  refetchOnWindowFocus?: false;
+};
+
+/** This finite family needs the full operation's exact-error assertion after
+ * its fanout settles. Its data is HTTP-only; no local result can mint a cause. */
+function useFiniteYouQuery<Result>({ queryKey, queryFn, enabled, ...behavior }: FiniteYouQuery<Result>) {
+  const scope = useHttpQueryScope();
+  const client = useQueryClient();
+  const execute = async (context: QueryFunctionContext<QueryKey>, assertIntent?: () => void) => {
+    assertIntent?.();
+    scope.assertView();
+    // Do not even read the signal getter in native/wholly legacy mode: the
+    // original finite reads kept completing after their observer unmounted.
+    const operation = createHttpOperation(scope.scope, scope.scoped ? { signal: context.signal } : undefined);
+    try {
+      assertIntent?.();
+      operation.assertView();
+      const result = await queryFn(operation);
+      operation.assertDeliveries();
+      return result;
+    } catch (error: unknown) {
+      // Only this same invocation's exact authentic error can survive the
+      // physical settlement barrier. Unknown/stale selected errors refuse.
+      if (scope.scoped) operation.assertErrorDeliveries(error);
+      throw error;
+    } finally {
+      // All finite physical work has settled. No retained page/updater receipt
+      // is issued by this helper, unlike the separate paginated source API.
+      operation.dispose();
+    }
+  };
+  const original = {
+    ...behavior,
+    queryKey: scope.key(queryKey),
+    queryFn: execute,
+    enabled: enabled && scope.isReady(),
+  };
+  const result = useQuery<Result>(original);
+  const refetchOriginal = async (assertIntent?: () => void) => {
+    assertIntent?.();
+    scope.assertView();
+    const fixed = new QueryObserver<Result>(client, {
+      ...original,
+      queryFn: (context) => execute(context, assertIntent),
+      // Query.fetch snapshots this behavior before cache fetch events. A
+      // reentrant render can replace shared Query.options.queryFn, but cannot
+      // erase this invocation's original intent from the retryer's fetchFn.
+      behavior: {
+        onFetch(context) {
+          const fetchOriginal = context.fetchFn;
+          context.fetchFn = () => {
+            assertIntent?.();
+            scope.assertView();
+            return fetchOriginal();
+          };
+        },
+      },
+      enabled: false,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchInterval: false,
+    });
+    // Never subscribe this temporary observer. Destroying it must not remove
+    // the last shared observer and cancel somebody else's request.
+    try {
+      assertIntent?.();
+      scope.assertView();
+      const pending = fixed.refetch({ throwOnError: false });
+      let held = false;
+      let refusal: unknown;
+      try {
+        assertIntent?.();
+        scope.assertView();
+      } catch (error) {
+        held = true;
+        refusal = error;
+      }
+      const observed = await pending;
+      if (held) throw refusal;
+      assertIntent?.();
+      scope.assertView();
+      return observed;
+    } finally {
+      fixed.destroy();
+    }
+  };
+  return { ...result, refetchOriginal };
+}
 
 const PROFILE_STALE_TIME_MS = 30 * 1000;
 const FEED_PAGE_SIZE = 20;
@@ -77,17 +181,29 @@ function toLogbookEntry(tick: GetUserTicksQueryResponse['userTicks'][number], bo
  * key prefix that `useSaveTick`/`useUpdateTick`/`useDeleteTick` invalidate.
  */
 export function useAllBoardsTicks(userId: string | undefined, options?: YouPageQueryOptions) {
-  return useQuery({
+  return useFiniteYouQuery({
     queryKey: ['userTicks', userId],
-    queryFn: async () => {
-      const client = getHttpClient();
+    queryFn: async (operation) => {
       const collected: Record<string, LogbookEntry[]> = {};
-      await Promise.all(
+      let hasFailure = false;
+      let firstError: unknown;
+      await Promise.allSettled(
         BOARD_TYPES.map(async (boardType) => {
-          const response = await client.request<GetUserTicksQueryResponse>(GET_USER_TICKS, { userId, boardType });
-          collected[boardType] = response.userTicks.map((tick) => toLogbookEntry(tick, boardType));
+          try {
+            const response = await operation.request<GetUserTicksQueryResponse>(GET_USER_TICKS, { userId, boardType });
+            collected[boardType] = response.userTicks.map((tick) => toLogbookEntry(tick, boardType));
+          } catch (error: unknown) {
+            if (!hasFailure) {
+              hasFailure = true;
+              firstError = error;
+            }
+            throw error;
+          }
         }),
       );
+      // This is chronological first failure, including rejection(undefined),
+      // not the first rejected board in array order. No partial map escapes.
+      if (hasFailure) throw firstError;
       return collected;
     },
     enabled: !!userId && options?.onScreen !== false,
@@ -103,13 +219,12 @@ export function useAllBoardsTicks(userId: string | undefined, options?: YouPageQ
  * 6-7. Returns a `Record<boardType, count>` for O(1) lookups.
  */
 export function useUserTickCountsByBoard(userId: string | undefined) {
-  return useQuery({
+  return useFiniteYouQuery({
     queryKey: ['userTickCountsByBoard', userId],
-    queryFn: async () => {
-      const response = await getHttpClient().request<GetUserTickCountsByBoardQueryResponse>(
-        GET_USER_TICK_COUNTS_BY_BOARD,
-        { userId },
-      );
+    queryFn: async (operation) => {
+      const response = await operation.request<GetUserTickCountsByBoardQueryResponse>(GET_USER_TICK_COUNTS_BY_BOARD, {
+        userId,
+      });
       const counts: Record<string, number> = {};
       for (const row of response.userTickCountsByBoard) {
         counts[row.boardType] = row.count;
@@ -122,10 +237,10 @@ export function useUserTickCountsByBoard(userId: string | undefined) {
 }
 
 export function useUserProfileStats(userId: string | undefined, options?: YouPageQueryOptions) {
-  return useQuery({
+  return useFiniteYouQuery({
     queryKey: ['userProfileStats', userId],
-    queryFn: async () => {
-      const response = await getHttpClient().request<GetUserProfileStatsQueryResponse>(GET_USER_PROFILE_STATS, {
+    queryFn: async (operation) => {
+      const response = await operation.request<GetUserProfileStatsQueryResponse>(GET_USER_PROFILE_STATS, {
         userId,
       });
       return response.userProfileStats;
@@ -137,10 +252,10 @@ export function useUserProfileStats(userId: string | undefined, options?: YouPag
 }
 
 export function useUserClimbPercentile(userId: string | undefined, options?: YouPageQueryOptions) {
-  return useQuery({
+  return useFiniteYouQuery({
     queryKey: ['userClimbPercentile', userId],
-    queryFn: async () => {
-      const response = await getHttpClient().request<GetUserClimbPercentileQueryResponse>(GET_USER_CLIMB_PERCENTILE, {
+    queryFn: async (operation) => {
+      const response = await operation.request<GetUserClimbPercentileQueryResponse>(GET_USER_CLIMB_PERCENTILE, {
         userId,
       });
       return response.userClimbPercentile;

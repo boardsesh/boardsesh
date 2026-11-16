@@ -3,6 +3,8 @@ import { invalidateTickDependents } from '@boardsesh/board-react';
 import { subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import type { AuroraCredentialStatus } from '../aurora-credentials';
 import { AURORA_CREDENTIALS_QUERY_KEY } from './board-account-query-keys';
+import { captureRestReadView } from '../rest-operation';
+import { subscribeToAcceptedBoardAccountReads } from './use-board-account-reads';
 
 export type BoardImportState = Pick<AuroraCredentialStatus, 'boardType' | 'pendingRunId' | 'lastSyncAt'>;
 
@@ -41,7 +43,7 @@ const IMPORT_EXTRA_KEYS = [['userTickCountsByBoard'], ['userPlaylists'], ['playl
  * key, so calling this can never re-trigger the watcher. Also used by the
  * manual Aurora export and MoonBoard CSV imports, which touch no sync fields.
  */
-export function invalidateOwnDataAfterImport(queryClient: QueryClient): void {
+export function invalidateOwnDataAfterImport(queryClient: Pick<QueryClient, 'invalidateQueries'>): void {
   invalidateTickDependents(queryClient);
   for (const queryKey of IMPORT_EXTRA_KEYS) {
     void queryClient.invalidateQueries({ queryKey });
@@ -58,9 +60,48 @@ export function invalidateOwnDataAfterImport(queryClient: QueryClient): void {
  */
 export function watchBoardImportCompletion(queryClient: QueryClient): () => void {
   let previous: BoardImportState[] | undefined;
+  let selectedPrevious: { scope: string; snapshot: readonly Readonly<BoardImportState>[] } | undefined;
+  let lifetime = 0;
+  let active = true;
+  const retiredLifetime = Object.freeze({});
+  const unsubscribeSelected = subscribeToAcceptedBoardAccountReads(queryClient, (observation) => {
+    const originalLifetime = lifetime;
+    const assertCurrent = () => {
+      if (!active || lifetime !== originalLifetime) throw retiredLifetime;
+      observation.assertCurrent();
+    };
+    try {
+      assertCurrent();
+      const prior = selectedPrevious?.scope === observation.scope ? selectedPrevious.snapshot : undefined;
+      const finished = boardsWithFinishedImport(prior, observation.snapshot);
+      if (finished.length) {
+        const port: Pick<QueryClient, 'invalidateQueries'> = {
+          invalidateQueries(filters, options) {
+            assertCurrent();
+            const pending = queryClient.invalidateQueries(
+              { ...filters, queryKey: observation.key(filters?.queryKey ?? []) },
+              options,
+            );
+            // Observe immediately, before the post-call guard can refuse.
+            void pending.catch(() => {});
+            assertCurrent();
+            return pending;
+          },
+        };
+        invalidateOwnDataAfterImport(port);
+      }
+      assertCurrent();
+      // A partial/refused enqueue leaves prior history for an idempotent retry.
+      selectedPrevious = { scope: observation.scope, snapshot: observation.snapshot };
+    } catch (error) {
+      if (error !== retiredLifetime) throw error;
+    }
+  });
   const unsubscribeCache = queryClient.getQueryCache().subscribe((event) => {
     const { query } = event;
     if (query.queryKey.length !== 1 || query.queryKey[0] !== AURORA_CREDENTIALS_QUERY_KEY[0]) return;
+    const view = captureRestReadView();
+    if (!view.ready || !view.isCurrent() || (view.mode !== 'native' && view.mode !== 'legacy')) return;
     const data = query.state.data as { credentials?: BoardImportState[] } | undefined;
     if (!data?.credentials) return;
     const next = data.credentials.map(({ boardType, pendingRunId, lastSyncAt }) => ({
@@ -75,9 +116,15 @@ export function watchBoardImportCompletion(queryClient: QueryClient): () => void
   });
   const unsubscribePrivacy = subscribeToCredentialChanges(() => {
     previous = undefined;
+    selectedPrevious = undefined;
+    lifetime += 1;
   });
   return () => {
+    active = false;
+    lifetime += 1;
+    selectedPrevious = undefined;
     unsubscribeCache();
     unsubscribePrivacy();
+    unsubscribeSelected();
   };
 }

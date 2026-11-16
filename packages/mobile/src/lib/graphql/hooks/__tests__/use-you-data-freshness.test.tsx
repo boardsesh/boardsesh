@@ -12,7 +12,17 @@ import { BOARD_TYPES } from '@boardsesh/profile-stats';
 // a tick logged elsewhere is on the You page when the climber opens it.
 
 const requestMock = vi.hoisted(() => vi.fn());
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../../client', async () => {
+  const { GraphQLClient } = await import('graphql-request');
+  const client = new GraphQLClient('https://owned-native.test/graphql', {
+    fetch: async (_url, options) => {
+      const packet = JSON.parse((options as RequestInit).body as string) as { query: string; variables: unknown };
+      const reply = await requestMock(packet.query, packet.variables, (options as RequestInit).signal);
+      return Response.json({ data: reply });
+    },
+  });
+  return { getHttpClient: () => client, getOfflineSyncHttpClient: () => client };
+});
 
 import { useAllBoardsTicks, useUserProfileStats, useUserClimbPercentile } from '../use-you-data';
 
@@ -128,4 +138,50 @@ describe('You page read freshness', () => {
     });
     expect(callsFor(GET_USER_PROFILE_STATS)).toBe(2);
   });
+  it('keeps an actual native SDK response completing into raw cache after observer unmount', async () => {
+    let release!: (reply: unknown) => void;
+    const body = new Promise((resolve) => {
+      release = resolve;
+    });
+    requestMock.mockImplementationOnce(() => body);
+    const { queryClient, wrapper } = makeWrapper();
+    const screen = renderHook(() => useUserProfileStats('native-owner'), { wrapper });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledOnce());
+    const signal = requestMock.mock.calls[0][2] as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    screen.unmount();
+    expect(signal.aborted).toBe(false);
+    release({ userProfileStats: { ownedMarker: 'native-completed' } });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(['userProfileStats', 'native-owner'])).toEqual({
+        ownedMarker: 'native-completed',
+      }),
+    );
+    expect(
+      queryClient
+        .getQueryCache()
+        .findAll()
+        .map((query) => query.queryKey),
+    ).toEqual([['userProfileStats', 'native-owner']]);
+    queryClient.clear();
+  });
+  it.each([new Error('owned native error'), undefined])(
+    'retains the exact native first rejection after the fanout barrier (%s)',
+    async (failure) => {
+      let release!: (reply: unknown) => void;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+      requestMock.mockRejectedValueOnce(failure).mockImplementationOnce(() => held);
+      const { queryClient, wrapper } = makeWrapper();
+      const screen = renderHook(() => useAllBoardsTicks('native-owner'), { wrapper });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(BOARD_TYPES.length));
+      expect(screen.result.current.isError).toBe(false);
+      release({ userTicks: [] });
+      await waitFor(() => expect(screen.result.current.isError).toBe(true));
+      expect(screen.result.current.error).toBe(failure);
+      expect(screen.result.current.data).toBeUndefined();
+      queryClient.clear();
+    },
+  );
 });

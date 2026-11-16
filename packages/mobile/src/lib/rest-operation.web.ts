@@ -33,6 +33,7 @@ export type {
   RestOperation,
   RestOperationOptions,
   RestReadOutcome,
+  RestReadMode,
   RestReadView,
 } from './rest-operation';
 
@@ -246,31 +247,35 @@ function snapshot(): string {
   ]);
 }
 
+/** Mode/key capture is a no-I/O veto descriptor, never response authority. */
+export function captureRestReadView(): RestReadView {
+  const scope = browserHttpClients.captureRequestView();
+  let actual: ReturnType<typeof captureView> | undefined;
+  try {
+    actual = captureView();
+  } catch {
+    /* Unknown remains unavailable. */
+  }
+  const isCurrent = () =>
+    typeof scope === 'string' &&
+    browserHttpClients.isCurrentView(scope) &&
+    Boolean(actual?.isCurrent()) &&
+    (actual?.kind !== 'legacy' || !isRequiredBrowserDispatch());
+  const scoped = isRequiredBrowserDispatch() || actual?.kind !== 'legacy';
+  const namespace = browserHttpClients.queryKey([], scope);
+  const prefix = scoped ? (namespace.length ? namespace : ['browser-view', 'unavailable']) : [];
+  return Object.freeze({
+    mode: actual?.kind ?? 'unavailable',
+    scope,
+    scoped,
+    ready: isCurrent(),
+    isCurrent,
+    key: (logical: readonly unknown[]) => (scoped ? [...prefix, ...logical] : logical),
+  });
+}
+
 /** A cache observer does not acquire a token or a lease. */
 export function useRestView(): RestReadView {
   const revision = useSyncExternalStore(subscribe, snapshot, () => 'server-unavailable');
-  return useMemo(() => {
-    const scope = browserHttpClients.captureRequestView();
-    let actual: ReturnType<typeof captureView> | undefined;
-    try {
-      actual = captureView();
-    } catch {
-      /* Unknown remains unavailable. */
-    }
-    const isCurrent = () =>
-      typeof scope === 'string' &&
-      browserHttpClients.isCurrentView(scope) &&
-      Boolean(actual?.isCurrent()) &&
-      (actual?.kind !== 'legacy' || !isRequiredBrowserDispatch());
-    const scoped = isRequiredBrowserDispatch() || actual?.kind !== 'legacy';
-    const namespace = browserHttpClients.queryKey([], scope);
-    const prefix = scoped ? (namespace.length ? namespace : ['browser-view', 'unavailable']) : [];
-    return Object.freeze({
-      scope,
-      scoped,
-      ready: isCurrent(),
-      isCurrent,
-      key: (logical: readonly unknown[]) => (scoped ? [...prefix, ...logical] : logical),
-    });
-  }, [revision]);
+  return useMemo(() => captureRestReadView(), [revision]);
 }
