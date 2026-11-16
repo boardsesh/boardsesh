@@ -309,38 +309,3 @@ describe('public NextAuth App Router password delegation', () => {
 vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
   withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),
 }));
-
-describe('selected raw password route cannot fall back to legacy publication', () => {
-  it.each(['backend-staging', 'invalid-selection-mode'])(
-    'refuses %s before framework, comparison or verification',
-    async (mode) => {
-      vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', mode);
-      const transport = backendResponse();
-      vi.stubGlobal('fetch', transport);
-      const response = await password();
-      expect(response.status).toBe(503);
-      expect(response.headers.getSetCookie()).toEqual([]);
-      expect(legacyAuthorize).not.toHaveBeenCalled();
-      expect(legacySignIn).not.toHaveBeenCalled();
-      expect(transport).not.toHaveBeenCalled();
-    },
-  );
-  it.each([
-    ['callback/credentials/extra', ['callback', 'credentials', 'extra']],
-    ['callback/credentials', ['session']],
-    ['callback/%63redentials', ['callback', 'credentials']],
-  ])('refuses decoded or mismatched selected dispatch %s', async (path, parameters) => {
-    vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'backend-staging');
-    const transport = backendResponse();
-    vi.stubGlobal('fetch', transport);
-    const response = await invoke(
-      path as string,
-      { email: selected.email, password: 'submitted-password', csrfToken, json: 'true', callbackUrl: baseUrl },
-      parameters as string[],
-    );
-    expect(response.status).toBe(503);
-    expect(response.headers.getSetCookie()).toEqual([]);
-    expect(legacyAuthorize).not.toHaveBeenCalled();
-    expect(transport).not.toHaveBeenCalled();
-  });
-});

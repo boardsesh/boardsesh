@@ -28,8 +28,7 @@ export function requireProviderCookieCapacity(observed: string | null, headers: 
     // observed pair; the Cookie header does not describe its stored scope.
     const replacesObserved =
       (cookie.name.startsWith(BROWSER_PROOF_COOKIE_PREFIX) ||
-        cookie.name.startsWith('__Host-boardsesh.provider-signin.') ||
-        cookie.name.startsWith('__Host-boardsesh.password-signin.')) &&
+        cookie.name.startsWith('__Host-boardsesh.provider-signin.')) &&
       cookie.path === '/' &&
       cookie.secure === true &&
       cookie.httpOnly === true &&
