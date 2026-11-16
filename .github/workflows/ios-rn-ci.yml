@@ -351,6 +351,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Test Aura atlas decoding and descriptor bytes
+        run: |
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayAtlas.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift \
+            -o "$RUNNER_TEMP/aura-atlas-tests"
+          vp exec "$RUNNER_TEMP/aura-atlas-tests"
+
       - name: Add RN Swift test target
         run: node scripts/prepare-rn-ios-tests.mjs
 

@@ -95,29 +95,20 @@ internal data class AtlasManifest(
                         crop[1].toLong() + crop[3] <= height,
                 )
                 val pixels = crop[2].toLong() * crop[3]
-                val roles = LinkedHashMap<Long, AtlasRole>()
-                val roleList = hold.getJSONArray("roles")
-                require(roleList.length() <= 32)
-                for (roleIndex in 0 until roleList.length()) {
-                    val role = roleList.getJSONObject(roleIndex)
-                    val state = role.getLong("state")
-                    require(state in 0..0xffffffffL && !roles.containsKey(state))
+                val roles = decodeAtlasRoles(hold.getJSONArray("roles")) { role, state, identity ->
                     val color = role.getJSONArray("color").floats(3)
                     require(color.all { it in 0f..255f })
-                    val identity = role.getLong("identity")
-                    require(identity in 0..0xffffffffL)
                     val fillPasses = role.getJSONArray("fillPasses")
                     val glyphPasses = role.getJSONArray("glyphPasses")
                     require(fillPasses.length() <= 4 && glyphPasses.length() <= 2)
-                    roles[state] =
-                        AtlasRole(
-                            state,
-                            color,
-                            listOf(pass(fillPasses, 0), stamp(role, "plate"), pass(glyphPasses, 0)),
-                            listOf(pass(fillPasses, 1), pass(fillPasses, 2), pass(fillPasses, 3), pass(glyphPasses, 1)),
-                            role.optBoolean("annotation", false),
-                            identity,
-                        )
+                    AtlasRole(
+                        state,
+                        color,
+                        listOf(pass(fillPasses, 0), stamp(role, "plate"), pass(glyphPasses, 0)),
+                        listOf(pass(fillPasses, 1), pass(fillPasses, 2), pass(fillPasses, 3), pass(glyphPasses, 1)),
+                        role.optBoolean("annotation", false),
+                        identity,
+                    )
                 }
                 val id = hold.getLong("id")
                 require(id in 0..0xffffffffL && !holds.containsKey(id))

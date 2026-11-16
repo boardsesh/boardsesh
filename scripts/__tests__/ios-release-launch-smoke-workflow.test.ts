@@ -99,6 +99,73 @@ exit "$CI_BUILD_RETRY_STATUS"
 }
 
 describe('iOS Release launch workflow', () => {
+  it.each([
+    { compilerExit: 0, testExit: 0, expectedExit: 0 },
+    { compilerExit: 13, testExit: 0, expectedExit: 13 },
+    { compilerExit: 0, testExit: 17, expectedExit: 17 },
+  ])('compiles and executes the real atlas descriptor guard without hiding failures: %j', (scenario) => {
+    const directory = mkdtempSync(join(tmpdir(), 'ios-atlas-ci-'));
+    temporaryDirectories.push(directory);
+    const argumentsPath = join(directory, 'compile-arguments');
+    const executedPath = join(directory, 'test-executed');
+    const vpPath = join(directory, 'vp');
+    writeFileSync(
+      vpPath,
+      `#!/bin/bash
+set -e
+[ "$1" = exec ] || exit 91
+shift
+if [ "$1" = swiftc ]; then
+  shift
+  printf '%s\\n' "$@" > "$AURA_CI_ARGUMENTS"
+  if [ "$AURA_CI_COMPILER_EXIT" -ne 0 ]; then exit "$AURA_CI_COMPILER_EXIT"; fi
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = -o ]; then
+      output="$2"
+      break
+    fi
+    shift
+  done
+  cat > "$output" <<'ATLAS_TEST'
+#!/bin/bash
+printf '%s\\n' executed > "$AURA_CI_EXECUTED"
+exit "$AURA_CI_TEST_EXIT"
+ATLAS_TEST
+  chmod +x "$output"
+  exit 0
+fi
+exec "$@"
+`,
+    );
+    chmodSync(vpPath, 0o755);
+    const result = spawnSync('bash', ['-e', '-c', requiredStep('Test Aura atlas decoding and descriptor bytes').run!], {
+      cwd: directory,
+      encoding: 'utf8',
+      timeout: 5_000,
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        RUNNER_TEMP: directory,
+        AURA_CI_ARGUMENTS: argumentsPath,
+        AURA_CI_EXECUTED: executedPath,
+        AURA_CI_COMPILER_EXIT: String(scenario.compilerExit),
+        AURA_CI_TEST_EXIT: String(scenario.testExit),
+      },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(scenario.expectedExit);
+    expect(
+      readFileSync(argumentsPath, 'utf8')
+        .split('\n')
+        .filter((argument) => argument.endsWith('.swift')),
+    ).toEqual([
+      'packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift',
+      'packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayAtlas.swift',
+      'packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift',
+    ]);
+    expect(existsSync(executedPath)).toBe(scenario.compilerExit === 0);
+  });
+
   it('launches the existing Release output immediately after its ABI check, before Swift tests', () => {
     const abiIndex = steps.findIndex((step) => step.name === 'Check embedded framework ABI');
     const smoke = requiredStep('Launch the Release app and watch for crashes');
