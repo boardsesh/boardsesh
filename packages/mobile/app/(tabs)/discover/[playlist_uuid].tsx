@@ -1047,7 +1047,7 @@ export default function PlaylistDetail() {
           accessibilityLabel={t('detail.errors.tryAgain')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateRetry}>
+          <Text variant="subheadline" color={systemColors.accent} style={styles.stateRetry}>
             {t('detail.errors.tryAgain')}
           </Text>
         </PressableSurface>

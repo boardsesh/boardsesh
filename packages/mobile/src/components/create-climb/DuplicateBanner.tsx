@@ -32,7 +32,7 @@ export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProp
         </Text>
         {onView ? (
           <PressableSurface onPress={onView} accessibilityRole="button">
-            <Text variant="footnote" color={brandColors.primary}>
+            <Text variant="footnote" color={systemColors.accent}>
               {t('createClimbForm.alerts.viewMatchingClimb')}
             </Text>
           </PressableSurface>

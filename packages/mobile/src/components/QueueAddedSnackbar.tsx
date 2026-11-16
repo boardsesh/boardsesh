@@ -137,7 +137,7 @@ function QueueAddedSnackbarGlass({
               accessibilityRole="button"
               accessibilityLabel={t('mobile.queueSnackbar.openAria')}
             >
-              <Text variant="subheadline" color={brandColors.primary} style={styles.open}>
+              <Text variant="subheadline" color={systemColors.accent} style={styles.open}>
                 {t('mobile.queueSnackbar.open')}
               </Text>
             </PressableSurface>

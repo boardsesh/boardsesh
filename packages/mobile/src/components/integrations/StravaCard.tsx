@@ -91,7 +91,7 @@ export function StravaCard() {
   if (isLoading && !strava) {
     return (
       <View style={[styles.card, styles.loadingCard, cardBackground]}>
-        <ActivityIndicator color={brandColors.primary} />
+        <ActivityIndicator color={systemColors.accent} />
       </View>
     );
   }

@@ -110,7 +110,7 @@ export function WallFinderFilterChips({
   onClear,
 }: WallFinderFilterChipsProps) {
   const { t } = useTranslation('common');
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   const hasActive =
     multiBoardTypeOnly || selected.length > 0 || selectedLayoutIds.length > 0 || selectedSizeIds.length > 0;
@@ -157,7 +157,7 @@ export function WallFinderFilterChips({
 
       {hasActive ? (
         <PressableSurface onPress={onClear} hitSlop={8} accessibilityRole="button" style={styles.clear}>
-          <Text variant="caption1" color={brandColors.primary}>
+          <Text variant="caption1" color={systemColors.accent}>
             {t('actions.clear')}
           </Text>
         </PressableSurface>

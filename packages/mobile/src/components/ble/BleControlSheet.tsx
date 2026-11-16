@@ -154,7 +154,7 @@ function BleControlSheet({
           <ListRow
             testID="ble-control-drive"
             title={tSession('playView.wallControl.lightEveryClimb')}
-            leading={<Icon name="chevron.left.2" size={22} color={brandColors.primary} />}
+            leading={<Icon name="chevron.left.2" size={22} color={systemColors.accent} />}
             onPress={handleDrive}
             showSeparator={linked}
           />

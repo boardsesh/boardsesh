@@ -227,7 +227,7 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
 
       {showScanning && (
         <View style={styles.centerState}>
-          <ActivityIndicator size="small" color={brandColors.primary} />
+          <ActivityIndicator size="small" color={systemColors.accent} />
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('mobile.timerPair.scanning')}
           </Text>

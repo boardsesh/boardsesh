@@ -351,8 +351,8 @@ const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => voi
       accessibilityLabel={label}
       style={[styles.claimRow, { borderTopColor: systemColors.separator }]}
     >
-      <Icon name="person.badge.plus" size={18} color={brandColors.primary} />
-      <Text variant="subheadline" color={brandColors.primary}>
+      <Icon name="person.badge.plus" size={18} color={systemColors.accent} />
+      <Text variant="subheadline" color={systemColors.accent}>
         {label}
       </Text>
     </PressableSurface>

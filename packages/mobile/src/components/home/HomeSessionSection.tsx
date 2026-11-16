@@ -49,7 +49,7 @@ export const HomeSessionSection = memo(function HomeSessionSection() {
     openSessionTab();
   }, [openSessionTab]);
 
-  const recordIcon = useMemo(() => <Icon name="record" size={24} color={brandColors.primary} />, [brandColors.primary]);
+  const recordIcon = useMemo(() => <Icon name="record" size={24} color={systemColors.accent} />, [systemColors.accent]);
   const startTitle = t('mobile.home.sections.session.startTitle');
   const startBody = t('mobile.home.sections.session.startBody');
 

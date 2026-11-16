@@ -92,10 +92,10 @@ export function SectionHeader({ title, actionLabel, onActionPress, disclosure }:
           accessibilityLabel={actionLabel}
           style={styles.action}
         >
-          <Text variant="footnote" color={brandColors.primary} style={styles.actionText}>
+          <Text variant="footnote" color={systemColors.accent} style={styles.actionText}>
             {actionLabel}
           </Text>
-          <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={brandColors.primary} />
+          <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={systemColors.accent} />
         </PressableSurface>
       ) : null}
     </View>

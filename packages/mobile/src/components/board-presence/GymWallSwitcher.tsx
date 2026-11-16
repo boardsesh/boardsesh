@@ -50,7 +50,7 @@ export type GymWallSwitcherProps = {
  */
 function GymWallSwitcherComponent({ activeBoard, onSelectBoard, style }: GymWallSwitcherProps) {
   const { t } = useTranslation('session');
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const { data: gymBoards } = useGymBoards(activeBoard?.gymUuid ?? null);
 
@@ -96,7 +96,7 @@ function GymWallSwitcherComponent({ activeBoard, onSelectBoard, style }: GymWall
 
       {hiddenCount > 0 ? (
         <PressableSurface onPress={handleExpand} accessibilityRole="button" style={styles.showAll}>
-          <Text variant="subheadline" color={brandColors.primary}>
+          <Text variant="subheadline" color={systemColors.accent}>
             {t('mobile.boardPresence.gymWalls.showAll', { count: siblings.length })}
           </Text>
         </PressableSurface>

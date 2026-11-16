@@ -993,7 +993,7 @@ function NowOnTheWallPanelComponent(
           accessibilityLabel={loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
           style={styles.historyFooter}
         >
-          <Text variant="subheadline" color={brandColors.primary}>
+          <Text variant="subheadline" color={systemColors.accent}>
             {loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
           </Text>
         </PressableSurface>

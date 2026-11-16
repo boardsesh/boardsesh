@@ -67,7 +67,7 @@ export const LiveRailErrorRow = memo(function LiveRailErrorRow({ onRetry }: { on
           pressed && { backgroundColor: `${brandColors.primary}1A` },
         ]}
       >
-        <Text variant="subheadline" color={brandColors.primary}>
+        <Text variant="subheadline" color={systemColors.accent}>
           {tCommon('actions.retry')}
         </Text>
       </PressableSurface>

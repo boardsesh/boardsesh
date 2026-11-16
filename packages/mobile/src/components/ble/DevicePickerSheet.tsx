@@ -311,7 +311,7 @@ export function DevicePickerSheet({
       <View style={targetNotListed ? styles.scanningContainer : styles.searchAnyBoardRow}>
         {targetNotListed && (
           <>
-            {isScanning && <ActivityIndicator size="small" color={theme.brandColors.primary} />}
+            {isScanning && <ActivityIndicator size="small" color={theme.systemColors.accent} />}
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {isScanning ? t('ble.searchingForSavedBoard') : t('ble.selectedBoardNotFound')}
             </Text>
@@ -457,7 +457,7 @@ export function DevicePickerSheet({
         >
           {searching && (
             <View style={styles.scanningContainer}>
-              <ActivityIndicator size="small" color={theme.brandColors.primary} />
+              <ActivityIndicator size="small" color={theme.systemColors.accent} />
               <Text variant="subheadline" color={systemColors.secondaryLabel}>
                 {currentBoardConfig
                   ? t('ble.searchingForBoard', {
@@ -473,7 +473,7 @@ export function DevicePickerSheet({
 
           {showScanningState && (
             <View style={styles.scanningContainer}>
-              <ActivityIndicator size="small" color={theme.brandColors.primary} />
+              <ActivityIndicator size="small" color={theme.systemColors.accent} />
               <Text variant="subheadline" color={systemColors.secondaryLabel}>
                 {t('ble.scanning')}
               </Text>
