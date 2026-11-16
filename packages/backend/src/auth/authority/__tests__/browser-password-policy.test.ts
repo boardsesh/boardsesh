@@ -48,13 +48,7 @@ const preparation = { authority, credentialProof: proof, expiresAt } as unknown 
 describe('browser password durable evidence policy', () => {
   it('keeps the receipt outside existing link, command and handoff namespaces', () => {
     expect(BROWSER_PASSWORD_RECEIPT_PREFIX).toBe('ba03-browser-password-v1:');
-    for (const prefix of [
-      'password-reset:',
-      'email-verification:',
-      'ba03-web-auth:',
-      'ba03-native-handoff-v1:',
-      'ba03-expired-browser-binding-v1:',
-    ])
+    for (const prefix of ['password-reset:', 'email-verification:', 'ba03-web-auth:', 'ba03-native-handoff-v1:'])
       expect(BROWSER_PASSWORD_RECEIPT_PREFIX.startsWith(prefix)).toBe(false);
   });
   it.each(['userId', 'email', 'passwordHash', 'generation', 'deleted', 'emailVerified'] as const)(

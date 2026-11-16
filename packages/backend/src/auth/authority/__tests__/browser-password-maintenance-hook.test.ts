@@ -4,7 +4,6 @@ const dependencies = vi.hoisted(() => ({ passwordReceipts: vi.fn(), warn: vi.fn(
 vi.mock('../browser-password-maintenance', () => ({
   runBrowserPasswordReceiptMaintenance: dependencies.passwordReceipts,
 }));
-vi.mock('../expired-browser-binding-maintenance', () => ({ runExpiredBrowserBindingRetirementMaintenance: vi.fn() }));
 vi.mock('../first-password-maintenance', () => ({ runFirstPasswordPreparationMaintenance: vi.fn() }));
 vi.mock('../../current-store/command-context', () => ({ deleteExpiredCommandClaims: vi.fn() }));
 vi.mock('../../current-store/email-reservations', () => ({ purgeRetiredEmailKeys: vi.fn() }));
