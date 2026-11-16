@@ -147,6 +147,16 @@ describe('pickerTopBoardsToItems', () => {
     expect(withinGym?.subtitle).toBe('Original');
   });
 
+  // Only At {gym} drops the gym: Your boards has no heading that names it.
+  it('keeps the gym and the full name for the same wall in Your boards', () => {
+    const [atGym] = pickerTopBoardsToItems([{ key: 'b-1', board: gymBoard, title: 'Cave', selected: false }], {
+      labelOptions: { scope: 'within-gym' },
+    });
+    const [yours] = userBoardsToItems([gymBoard]);
+    expect([atGym?.title, atGym?.subtitle]).toEqual(['Cave', 'Original']);
+    expect([yours?.title, yours?.subtitle]).toEqual(['Crux - Cave', 'Crux']);
+  });
+
   it('leaves out a board the card cannot draw', () => {
     const unknownType = { ...board, boardType: 'not-a-board' } as unknown as UserBoard;
     expect(pickerTopBoardsToItems([{ key: 'b-1', board: unknownType, title: 'X', selected: true }])).toEqual([]);

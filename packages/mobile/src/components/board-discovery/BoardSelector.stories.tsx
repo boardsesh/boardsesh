@@ -67,6 +67,8 @@ const CRUX_MOON: DiscoveryBoardItem = {
   title: 'Crux MoonBoard',
   subtitle: 'MoonBoard 2024 · 40°',
 };
+// The same wall in Your boards, where no heading names the gym: the subtitle leads with it.
+const CRUX_HOMEWALL_YOURS: DiscoveryBoardItem = { ...CRUX_HOMEWALL, subtitle: 'Crux · 10 x 10' };
 const CRUX_TRAINING: DiscoveryBoardItem = {
   ...CONFIG.homewall7,
   key: 'crux-training',
@@ -170,13 +172,13 @@ const STATES = {
       ...QUIET_TOP,
       content: { kind: 'hero', board: { ...CRUX_ORIGINAL, subtitle: 'Crux · 12 x 12' }, strongestSignal: true },
     },
-    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
   // At home on the garage board, nothing heard: Your boards leads.
   home: {
     top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
-    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
   noActiveBoard: {
@@ -196,7 +198,7 @@ const STATES = {
   },
   unnamed: {
     top: { ...QUIET_TOP, unnamed: MOONBOARD_ROW, content: { kind: 'none' } },
-    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
   // On Crux Homewall, a MoonBoard heard that the gym's list doesn't name: its card above At Crux.
@@ -218,12 +220,12 @@ const STATES = {
   },
   permission: {
     top: { ...QUIET_TOP, notice: { kind: 'permission_card' }, content: { kind: 'none' } },
-    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
   nearbyEmpty: {
     top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
-    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'empty',
   },
   firstRun: {
@@ -277,15 +279,21 @@ function StoryBoardArt({ item, size }: DiscoveryBoardArtProps) {
   return <BoardThumbnail board={board} size={size} onArtReadinessChange={onArtReadinessChange} />;
 }
 
+/** A Near you card with its own board's art: Bergen's Tension, not a Kilter. */
 function StoryCard(props: Omit<BoardDiscoveryCardViewProps, 'boardImage'>) {
   const { onDisplayed, onError } = useContext(ReadyContext);
-  const onReady = useCallback(() => onDisplayed(`card:${props.item.key}`), [props.item.key, onDisplayed]);
+  const { item } = props;
+  const onReady = useCallback(() => onDisplayed(`card:${item.key}`), [item.key, onDisplayed]);
+  const board = useMemo(
+    () => ({ boardName: item.boardName, layoutId: item.layoutId, sizeId: item.sizeId, setIds: item.setIds, angle: 40 }),
+    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+  );
   return (
     <BoardDiscoveryCardView
       {...props}
       boardImage={
         <View style={{ width: '100%', height: '100%' }}>
-          <StoryBoard climb={EMPTY_BOARD} onReady={onReady} onError={onError} />
+          <StoryBoard climb={EMPTY_BOARD} board={board} onReady={onReady} onError={onError} />
         </View>
       }
     />
@@ -395,7 +403,8 @@ function selectorStory(name: string, stateName: StateName) {
   return {
     name,
     layout: 'fullscreen' as const,
-    readiness: 'explicit' as const,
+    // A state with no board art (first run) has nothing to report: it is ready once laid out.
+    readiness: artKeys(STATES[stateName]).length > 0 ? ('explicit' as const) : ('layout' as const),
     render: (controls: StoryRenderControls) => <SelectorStory {...controls} stateName={stateName} />,
   };
 }
