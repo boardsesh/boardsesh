@@ -33,6 +33,9 @@ internal data class OverlayRequest(
     val generation: Long,
     val animateEdits: Boolean,
     val observedEmpty: Boolean,
+    val geometryAssetPath: String? = null,
+    val geometryAssetSha256: String? = null,
+    val generatedGeometryDirectory: String? = null,
 )
 
 internal data class OverlayControls(
@@ -54,6 +57,7 @@ internal data class RenderMetrics(
 internal class UploadedAtlas(
     val source: String,
     val key: String,
+    val assetKey: List<String?>,
     val manifest: AtlasManifest,
     val pixels: Int,
     val lut: Int,
@@ -74,6 +78,7 @@ internal class OverlaySession(
     var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     var atlas: UploadedAtlas? = null
     var preparedConfig: String? = null
+    var preparedAssetKey: List<String?>? = null
     var current: ActiveScene? = null
     var previous: ActiveScene? = null
     var next: ActiveScene? = null
@@ -103,6 +108,8 @@ internal object OverlayRenderer {
     private var uniformBuffer = 0
     private var cache: UploadedAtlas? = null
     private val budget = AtlasBudget()
+    private val bufferBytes = HashMap<Int, Int>()
+    private val retiredBuffers = ArrayList<Pair<Long, Int>>()
     private val sessions = LinkedHashSet<OverlaySession>()
     private var maxBlockSize = 0
     private var maxTextureSize = 0
@@ -227,7 +234,7 @@ internal object OverlayRenderer {
         val linked = IntArray(1)
         GLES31.glGetProgramiv(program, GLES31.GL_LINK_STATUS, linked, 0)
         check(linked[0] != 0) { "GPU shader link failed: ${GLES31.glGetProgramInfoLog(program)}" }
-        uniformBuffer = buffer(directBytes(128), GLES31.GL_UNIFORM_BUFFER)
+        uniformBuffer = buffer(directBytes(144), GLES31.GL_UNIFORM_BUFFER)
         checked("GPU initialization")
     }
 
@@ -240,22 +247,58 @@ internal object OverlayRenderer {
         }
     }
 
+    private fun collectRetiredBuffers() {
+        val iterator = retiredBuffers.iterator()
+        while (iterator.hasNext()) {
+            val (fence, amount) = iterator.next()
+            val status = GLES31.glClientWaitSync(fence, 0, 0)
+            if (status == GLES31.GL_ALREADY_SIGNALED || status == GLES31.GL_CONDITION_SATISFIED) {
+                GLES31.glDeleteSync(fence)
+                budget.release(amount)
+                iterator.remove()
+            } else check(status == GLES31.GL_TIMEOUT_EXPIRED) { "GPU resource retirement failed" }
+        }
+    }
+
+    private fun reserveBytes(amount: Int) {
+        collectRetiredBuffers()
+        if (budget.bytes + amount > OverlayPolicy.ATLAS_LIMIT && retiredBuffers.isNotEmpty()) {
+            GLES31.glFinish()
+            collectRetiredBuffers()
+        }
+        budget.reserve(amount)
+    }
+
     private fun buffer(bytes: ByteBuffer, target: Int = GLES31.GL_SHADER_STORAGE_BUFFER): Int {
+        val amount = bytes.remaining()
+        reserveBytes(amount)
         val ids = IntArray(1)
         GLES31.glGenBuffers(1, ids, 0)
         try {
             GLES31.glBindBuffer(target, ids[0])
             GLES31.glBufferData(target, bytes.remaining(), bytes, GLES31.GL_STATIC_DRAW)
             checked("GPU buffer allocation")
+            bufferBytes[ids[0]] = amount
             return ids[0]
         } catch (failure: Exception) {
             GLES31.glDeleteBuffers(1, ids, 0)
+            budget.release(amount)
             throw failure
         }
     }
 
     private fun deleteBuffer(id: Int) {
-        if (id != 0) GLES31.glDeleteBuffers(1, intArrayOf(id), 0)
+        if (id == 0) return
+        val amount = bufferBytes.remove(id)
+        GLES31.glDeleteBuffers(1, intArrayOf(id), 0)
+        if (amount != null) {
+            // glDeleteBuffers can leave storage retained by an in-flight draw.
+            val fence = GLES31.glFenceSync(GLES31.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+            if (fence == 0L) {
+                GLES31.glFinish()
+                budget.release(amount)
+            } else retiredBuffers.add(fence to amount)
+        }
     }
 
     private fun releaseScene(scene: ActiveScene?) {
@@ -280,7 +323,7 @@ internal object OverlayRenderer {
             GLES31.glFinish() // Old commands must release residency before replacement.
             deleteBuffer(it.pixels)
             deleteBuffer(it.lut)
-            budget.release(it.bytes)
+            collectRetiredBuffers()
         }
         cache = null
     }
@@ -292,15 +335,20 @@ internal object OverlayRenderer {
         }
         session.atlas = null
         session.preparedConfig = null
+        session.preparedAssetKey = null
     }
 
     private fun acquireAtlas(
         app: Context,
         source: String,
+        geometryAssetPath: String? = null,
+        geometryAssetSha256: String? = null,
+        generatedGeometryDirectory: String? = null,
         canUpload: () -> Boolean = { foreground },
     ): Pair<UploadedAtlas, Boolean> {
+        val assetKey = listOf(geometryAssetPath, geometryAssetSha256, generatedGeometryDirectory)
         cache
-            ?.takeIf { it.source == source }
+            ?.takeIf { it.source == source && it.assetKey == assetKey }
             ?.let {
                 it.users++
                 return it to true
@@ -308,7 +356,7 @@ internal object OverlayRenderer {
         require(source.length <= 8 * 1024 * 1024) { "GPU config too large" }
         val canonical = JSONObject(source).apply { put("frames", "") }.toString()
         cache
-            ?.takeIf { it.key == canonical }
+            ?.takeIf { it.key == canonical && it.assetKey == assetKey }
             ?.let {
                 it.users++
                 return it to true
@@ -329,15 +377,12 @@ internal object OverlayRenderer {
         }
         // Serial executor permits only one Rust prepare/upload allocation at a time.
         val atlas =
-            BoardRendererBridge.prepareAtlas(canonical).use { owner ->
-                owner.useBuffer { raw ->
-                    raw.order(ByteOrder.LITTLE_ENDIAN)
-                    require(raw.remaining() >= 4)
-                    val headerLength = raw.int
-                    require(headerLength in 1..2 * 1024 * 1024 && headerLength < raw.remaining())
-                    val header = ByteArray(headerLength)
-                    raw.get(header)
-                    val payload = raw.slice().order(ByteOrder.LITTLE_ENDIAN)
+            BoardRendererBridge.prepareOwnedAtlas(canonical, geometryAssetPath, geometryAssetSha256, generatedGeometryDirectory).use { owner ->
+                owner.useBuffers { manifestBytes, rawPixels ->
+                    require(manifestBytes.remaining() in 1..4 * 1024 * 1024)
+                    val header = ByteArray(manifestBytes.remaining())
+                    manifestBytes.get(header)
+                    val payload = rawPixels.slice().order(ByteOrder.LITTLE_ENDIAN)
                     val manifest =
                         AtlasManifest.parse(String(header, Charsets.UTF_8), payload.remaining())
                     require(
@@ -350,7 +395,6 @@ internal object OverlayRenderer {
                         "GPU storage or viewport limit exceeded"
                     }
                     check(canUpload()) { "GPU atlas upload cancelled" }
-                    budget.reserve(payload.remaining())
                     var pixels = 0
                     var lut = 0
                     try {
@@ -363,6 +407,7 @@ internal object OverlayRenderer {
                         UploadedAtlas(
                             source,
                             canonical,
+                            assetKey,
                             manifest,
                             pixels,
                             lut,
@@ -372,11 +417,15 @@ internal object OverlayRenderer {
                     } catch (failure: Exception) {
                         deleteBuffer(pixels)
                         deleteBuffer(lut)
-                        budget.release(payload.remaining())
                         throw failure
                     }
                 }
             }
+        if (!canUpload()) {
+            deleteBuffer(atlas.pixels)
+            deleteBuffer(atlas.lut)
+            error("GPU atlas preparation cancelled")
+        }
         atlas.users = 1
         cache = atlas
         return atlas to false
@@ -464,27 +513,32 @@ internal object OverlayRenderer {
             val started = System.nanoTime()
             val atlas: UploadedAtlas
             val hit: Boolean
-            if (session.atlas != null && session.preparedConfig == request.config) {
+            if (session.atlas != null && session.preparedConfig == request.config && session.preparedAssetKey == listOf(request.geometryAssetPath, request.geometryAssetSha256, request.generatedGeometryDirectory)) {
                 atlas = session.atlas!!
                 hit = true
             } else {
                 releaseAtlas(session)
                 val acquired =
-                    acquireAtlas(session.view.context, request.config) {
+                    acquireAtlas(session.view.context, request.config, request.geometryAssetPath, request.geometryAssetSha256, request.generatedGeometryDirectory) {
                         eligible(session, request)
                     }
                 atlas = acquired.first
                 hit = acquired.second
                 session.atlas = atlas
                 session.preparedConfig = request.config
+                session.preparedAssetKey = listOf(request.geometryAssetPath, request.geometryAssetSha256, request.generatedGeometryDirectory)
             }
-            if (!eligible(session, request)) return
+            if (!eligible(session, request)) {
+                releaseAtlas(session)
+                trim()
+                return
+            }
             val frames = request.frames ?: JSONObject(request.config).getString("frames")
             val current = selectHolds(atlas.manifest, frames)
             val previous = request.previous?.let { selectHolds(atlas.manifest, it) }
             val next = request.next?.let { selectHolds(atlas.manifest, it) }
             fun roles(holds: List<ActiveHold>?) =
-                holds.orEmpty().associate { it.hold.id to it.role.state }
+                holds.orEmpty().associate { it.hold.id to it.role.identity }
             val currentRoles = roles(current)
             val previousRoles = roles(previous)
             val nextRoles = roles(next)
@@ -500,11 +554,11 @@ internal object OverlayRenderer {
             ): ActiveScene {
                 for (active in holds) {
                     active.previous =
-                        lower[active.hold.id]?.let { if (it == active.role.state) 1 else 2 } ?: 0
+                        lower[active.hold.id]?.let { if (it == active.role.identity) 1 else 2 } ?: 0
                     active.next =
-                        upper[active.hold.id]?.let { if (it == active.role.state) 1 else 2 } ?: 0
+                        upper[active.hold.id]?.let { if (it == active.role.identity) 1 else 2 } ?: 0
                     active.changed =
-                        baseline != null && baseline[active.hold.id] != active.role.state
+                        baseline != null && baseline[active.hold.id] != active.role.identity
                 }
                 return ActiveScene(holds, buffer(encodeHolds(holds)))
             }
@@ -513,6 +567,8 @@ internal object OverlayRenderer {
             session.next = next?.let { annotate(it, currentRoles, emptyMap(), null) }
             if (!eligible(session, request)) {
                 releaseScenes(session)
+                releaseAtlas(session)
+                trim()
                 return
             }
             session.request = request
@@ -613,7 +669,7 @@ internal object OverlayRenderer {
         mirrored: Boolean,
     ): ByteBuffer {
         val manifest = atlas.manifest
-        val bytes = directBytes(128)
+        val bytes = directBytes(144)
         fun vector(vararg values: Float) {
             values.forEach { bytes.putFloat(it) }
         }
@@ -626,8 +682,9 @@ internal object OverlayRenderer {
         manifest.veil.forEach { bytes.putFloat(it / 255) }
         manifest.tuning.forEach { bytes.putFloat(it) }
         vector(manifest.tuning2[0], manifest.tuning2[1], lower.maxReach, 0f)
-        bytes.putInt(manifest.covers)
-        repeat(3) { bytes.putInt(0) }
+        bytes.putInt(manifest.covers?.offset ?: -1)
+        bytes.putInt(OverlayPolicy.selectStampLayers(lower.stampLayers, upper.stampLayers, progress))
+        repeat(2) { bytes.putInt(0) }
         vector(manifest.width.toFloat(), manifest.height.toFloat(), 0f, 0f)
         vector(progress, OverlayPolicy.REVEAL_BAND, 0f, reach)
         vector(
@@ -636,6 +693,7 @@ internal object OverlayRenderer {
             if (productionEmpty) 1f else 0f,
             if (mirrored) 1f else 0f,
         )
+        (manifest.covers?.crop ?: intArrayOf(0, 0, 0, 0)).forEach { bytes.putInt(it) }
         bytes.flip()
         return bytes
     }
@@ -656,7 +714,7 @@ internal object OverlayRenderer {
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 2, upper.buffer)
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 3, atlas.lut)
         GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER, uniformBuffer)
-        GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER, 0, 128, params)
+        GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER, 0, 144, params)
         GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER, 0, uniformBuffer)
         GLES31.glDrawArrays(GLES31.GL_TRIANGLES, 0, 3)
         checked("GPU draw")
@@ -812,8 +870,21 @@ internal object OverlayRenderer {
         session.editPending = false
         session.editStart = null
         session.view.failed(request, failure.message ?: "GPU renderer unavailable")
-        // A lost context invalidates every handle, including cached atlases.
+        // Release rejected/cancelled work instead of pinning a failed layout.
         if (EGL14.eglGetError() == EGL14.EGL_CONTEXT_LOST) resetContext()
+        else if (context != EGL14.EGL_NO_CONTEXT) {
+            try {
+                park()
+                clearFences(session)
+                releaseScenes(session)
+                releaseAtlas(session)
+                if (cache?.users == 0) dropCache()
+            } catch (_: Exception) {
+                // An invalid context can report BAD_CONTEXT rather than LOST.
+                // Cleanup failure must still restore PNG, not kill the worker.
+                resetContext()
+            }
+        }
     }
 
     private fun resetContext() {
@@ -822,6 +893,7 @@ internal object OverlayRenderer {
             session.ledger.clear()
             session.atlas = null
             session.preparedConfig = null
+            session.preparedAssetKey = null
             session.current = null
             session.previous = null
             session.next = null
@@ -833,6 +905,8 @@ internal object OverlayRenderer {
             session.eglSurface = EGL14.EGL_NO_SURFACE
         }
         cache = null
+        bufferBytes.clear()
+        retiredBuffers.clear()
         if (budget.bytes > 0) budget.release(budget.bytes.toInt())
         EGL14.eglMakeCurrent(
             display,
@@ -859,6 +933,7 @@ internal object OverlayRenderer {
         var scene: ActiveScene? = null
         var texture = 0
         var framebuffer = 0
+        var comparisonBytes = 0
         try {
             val descriptors = selectHolds(atlas.manifest, JSONObject(source).getString("frames"))
             scene = ActiveScene(descriptors, buffer(encodeHolds(descriptors)))
@@ -875,6 +950,8 @@ internal object OverlayRenderer {
             ) {
                 "Insufficient memory headroom for GPU comparison"
             }
+            reserveBytes(width * height * 4)
+            comparisonBytes = width * height * 4
             val ids = IntArray(1)
             GLES31.glGenTextures(1, ids, 0)
             texture = ids[0]
@@ -975,6 +1052,10 @@ internal object OverlayRenderer {
             releaseScene(scene)
             if (framebuffer != 0) GLES31.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
             if (texture != 0) GLES31.glDeleteTextures(1, intArrayOf(texture), 0)
+            if (comparisonBytes > 0) {
+                GLES31.glFinish()
+                budget.release(comparisonBytes)
+            }
             atlas.users--
         }
     }

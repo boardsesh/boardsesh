@@ -5,15 +5,30 @@ import kotlin.math.max
 /** Platform-independent contracts, mirrored by the iOS motion tests. */
 internal object OverlayPolicy {
     const val ATLAS_LIMIT = 128 * 1024 * 1024
-    // Rust final packing temporarily holds storage+packed bytes, plus growth,
-    // EDT/masks and the GPU upload. This is admission, not a peak-RSS claim.
-    const val PREPARE_HEADROOM = 4L * ATLAS_LIMIT + 64L * 1024 * 1024
+    // Separate owned pixels avoid the payload-sized final packing copy.
+    // Allow atlas growth, EDT/masks and GPU upload; not a peak-RSS claim.
+    const val PREPARE_HEADROOM = 3L * ATLAS_LIMIT + 64L * 1024 * 1024
     const val EDIT_DURATION_NS = 350_000_000L
     const val EDIT_PEAK_NS = 100_000_000L
     const val EDIT_PEAK_REACH = 1.35f
     const val REVEAL_BAND = .22f
     const val MAX_ACTIVE = 128
     const val MAX_PENDING = 2
+
+    /** Bits follow fill, plate, glyph and annotation shader-layer order. */
+    fun stampLayers(annotation: Boolean, offsets: IntArray, extraOffsets: IntArray): Int {
+        require(offsets.size == 3 && extraOffsets.size == 4)
+        val glyph = offsets[2] != -1 || extraOffsets[3] != -1
+        if (annotation) return if (glyph) 8 else 0
+        val fill = offsets[0] != -1 || (0..2).any { extraOffsets[it] != -1 }
+        return (if (fill) 1 else 0) or (if (offsets[1] != -1) 2 else 0) or (if (glyph) 4 else 0)
+    }
+
+    fun selectStampLayers(lower: Int, upper: Int, progress: Float): Int {
+        if (progress <= 0f) return lower
+        if (progress >= 1f) return upper
+        return lower or upper
+    }
 
     fun canSubmit(ledgerCount: Int, fenceCount: Int) =
         ledgerCount < MAX_PENDING && fenceCount < MAX_PENDING
@@ -22,7 +37,7 @@ internal object OverlayPolicy {
         previous == 0L || current - previous >= 15_666_667L
 
     fun comparisonHeadroom(width: Int, height: Int): Long {
-        require(width in 1..1536 && height in 1..2048)
+        require(width in 1..1536 && height in 1..2304)
         // FBO, readback, row-flipped bytes, JNI/reference copies and PNG bitmap.
         return width.toLong() * height * 4 * 8 + 64L * 1024 * 1024
     }

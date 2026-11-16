@@ -178,6 +178,7 @@ jobs:
       - name: Build the Release app (compiles startup + Pods + patched native modules)
         run: |
           set -o pipefail
+          : > build.log
           build() {
             xcodebuild build \
               -workspace "$WORKSPACE_PATH" \
@@ -189,13 +190,15 @@ jobs:
               CODE_SIGN_IDENTITY=- \
               CODE_SIGNING_ALLOWED=YES \
               CODE_SIGN_ENTITLEMENTS="$PWD/scripts/screenshot-sim.entitlements" \
-              2>&1 | tee "$1"
+              2>&1 | tee -a "$1"
           }
           # New Architecture codegen ("Generate Specs") races the compile on a cold
           # build — "Build input file cannot be found: .../ReactCodegen/*-generated.mm".
           # Every run of this job is that scenario: a fresh runner with empty
           # DerivedData. scripts/mobile-build-sim-app.ts retries once for exactly
           # this reason; a real compile error still fails the retry.
+          # Preserve first-attempt source compilation: the retry reuses those
+          # products, and the assertions below need proof from both attempts.
           build build.log || { echo "::warning::retrying after probable codegen race"; build build.log; }
 
       # A green build is not proof the patch compiled. Expo's precompiled modules
@@ -347,6 +350,16 @@ jobs:
           path: ${{ runner.temp }}/ios-release-launch-smoke
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Test Aura atlas decoding and descriptor bytes
+        run: |
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayAtlas.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift \
+            -o "$RUNNER_TEMP/aura-atlas-tests"
+          vp exec "$RUNNER_TEMP/aura-atlas-tests"
 
       - name: Add RN Swift test target
         run: node scripts/prepare-rn-ios-tests.mjs

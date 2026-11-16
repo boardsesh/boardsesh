@@ -383,6 +383,26 @@ fn glyph_path(
 /// glyph — casing, then core — so the X's crossing never cuts a dark stripe
 /// through its other diagonal. `line_scale` is the user's brush multiplier.
 pub fn paint_glyphs(pixmap: &mut Pixmap, lit: &[LitHold], glyph: &GlyphTuning, line_scale: f32) {
+    paint_glyphs_impl(pixmap, lit, glyph, line_scale, None);
+}
+
+pub fn paint_glyph_pass(
+    pixmap: &mut Pixmap,
+    lit: &[LitHold],
+    glyph: &GlyphTuning,
+    line_scale: f32,
+    pass: usize,
+) {
+    paint_glyphs_impl(pixmap, lit, glyph, line_scale, Some(pass));
+}
+
+fn paint_glyphs_impl(
+    pixmap: &mut Pixmap,
+    lit: &[LitHold],
+    glyph: &GlyphTuning,
+    line_scale: f32,
+    pass: Option<usize>,
+) {
     let (Some(core), Some(casing)) = (
         Color::from_hex(&glyph.core_color),
         Color::from_hex(&glyph.casing_color),
@@ -425,10 +445,16 @@ pub fn paint_glyphs(pixmap: &mut Pixmap, lit: &[LitHold], glyph: &GlyphTuning, l
         // fallback, so a bar's end never pokes past the mark it labels.
         silhouette_mask(&mut inside, hold);
         let mask = Some(&inside);
-        for (color, width_factor, opacity) in [
+        for (index, (color, width_factor, opacity)) in [
             (casing, glyph.casing_width_factor, glyph.casing_opacity),
             (core, 1.0, glyph.opacity),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if pass.is_some_and(|pass| pass != index) {
+                continue;
+            }
             if !(positive(opacity) && positive(width_factor)) {
                 continue;
             }

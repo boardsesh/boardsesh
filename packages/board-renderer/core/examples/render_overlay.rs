@@ -24,6 +24,9 @@ fn main() {
     let (rgba, width, height) =
         render_overlay(&config).unwrap_or_else(|error| panic!("render: {error}"));
     let render_elapsed = started.elapsed();
+    if let Some(raw_output_path) = arguments.next() {
+        std::fs::write(raw_output_path, &rgba).expect("write raw premultiplied RGBA");
+    }
 
     let pixmap = tiny_skia::Pixmap::from_vec(
         rgba,

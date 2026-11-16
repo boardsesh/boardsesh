@@ -11,16 +11,25 @@ enum ClimbOverlayShader {
     uint4 offsets;
     float4 numbers;
     uint4 identity;
+    uint4 fillCrop;
+    uint4 plateCrop;
+    uint4 glyphCrop;
+    uint4 extraOffsets;
+    uint4 fillCrop1;
+    uint4 fillCrop2;
+    uint4 fillCrop3;
+    uint4 glyphCrop1;
   };
   struct Uniforms {
     float4 size; // output width, height, active count, draw glow
     float4 veil;
     float4 tuning; // merge, seam, max mix, sharpness
     float4 tuning2; // fringe, core share, active max reach
-    uint4 offsets; // LED covers
+    uint4 offsets; // LED covers, active stamp-layer mask
     float4 viewport;
     float4 motion; // progress, reveal band width, reserved, editor reach scale
     float4 other; // second count, second max reach, empty production source, display mirror
+    uint4 coverCrop;
   };
   vertex float4 overlay_vertex(uint index [[vertex_id]]) {
     const float2 points[] = {float2(-1,-1),float2(3,-1),float2(-1,3)};
@@ -30,14 +39,23 @@ enum ClimbOverlayShader {
   float4 over(float4 under, float4 above) {
     return quantize(above + under * (1.0-above.a));
   }
+  // Match tiny-skia's lowp source-over for rasterized byte stamps. Glow uses
+  // the float compositor above; flattening or re-rounding stamp subpasses
+  // changes overlapping antialias coverage by several channel bytes.
+  float4 stamp_over(float4 under, float4 above) {
+    uint4 source=uint4(round(clamp(above,0.0,1.0)*255.0));
+    uint4 destination=uint4(round(clamp(under,0.0,1.0)*255.0));
+    return float4(min(source+((destination*(255u-source.a)+255u)>>8u),uint4(255u)))/255.0;
+  }
   float4 read_rgba(device const uchar* atlas, uint offset) {
     return float4(atlas[offset],atlas[offset+1],atlas[offset+2],atlas[offset+3])/255.0;
   }
-  int index_at(uint2 point, Hold hold) {
-    if (point.x < hold.crop.x || point.y < hold.crop.y ||
-        point.x >= hold.crop.x+hold.crop.z || point.y >= hold.crop.y+hold.crop.w) return -1;
-    return int((point.y-hold.crop.y)*hold.crop.z+point.x-hold.crop.x);
+  int crop_index(uint2 point, uint4 crop) {
+    if (point.x < crop.x || point.y < crop.y ||
+        point.x >= crop.x+crop.z || point.y >= crop.y+crop.w) return -1;
+    return int((point.y-crop.y)*crop.z+point.x-crop.x);
   }
+  int index_at(uint2 point, Hold hold) { return crop_index(point,hold.crop); }
   Hold source_hold(uint index, uint lowerCount, device const Hold* lower, device const Hold* upper) {
     return index<lowerCount ? lower[index] : upper[index-lowerCount];
   }
@@ -71,13 +89,16 @@ enum ClimbOverlayShader {
     int nearest = -1, runner = -1;
     for (uint index=0;index<count;index++) {
       Hold hold = source_hold(index,lowerCount,lower,upper);
+      if(hold.identity.z>0) continue; // Annotation: no silhouette coverage or glow.
       int local = index_at(point,hold);
       if(local < 0) continue;
       float weight=transitioning ? reveal_weight(hold,index>=lowerCount,uniforms) : 1;
       if(weight<=0) continue;
-      device const float* fields = reinterpret_cast<device const float*>(atlas+hold.offsets.x);
-      float dist2 = fields[local*2];
-      float alpha = fields[local*2+1]*weight;
+      device const uint* fields = reinterpret_cast<device const uint*>(atlas+hold.offsets.x);
+      uint field = fields[local];
+      uint squared = field & 0x00ffffffu;
+      float dist2 = squared==0x00ffffffu ? 1e20 : float(squared);
+      float alpha = float(field >> 24)/255.0*weight;
       coverage = max(coverage,alpha);
       pixel = quantize(pixel*(1.0-alpha));
       float dilation = ceil(maxReach*(hold.numbers.y>0 ? reachScale : 1))+2;
@@ -99,7 +120,9 @@ enum ClimbOverlayShader {
         second=dist2;secondScore=score;runner=int(index);
       }
     }
-    pixel=over(pixel,read_rgba(atlas,uniforms.offsets.x+(point.y*uint(uniforms.size.x)+point.x)*4)*ambient);
+    int coverLocal=crop_index(point,uniforms.coverCrop);
+    if(uniforms.offsets.x!=0xffffffffu && coverLocal>=0)
+      pixel=stamp_over(pixel,read_rgba(atlas,uniforms.offsets.x+uint(coverLocal)*4)*ambient);
     if(uniforms.size.w > 0 && nearest>=0) {
       Hold hold=source_hold(uint(nearest),lowerCount,lower,upper);
       float weight=transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount,uniforms) : 1;
@@ -140,15 +163,32 @@ enum ClimbOverlayShader {
     }
     // Preserve CPU layer order across holds: all fills, then all plates,
     // then all glyphs. Combining each hold's layers would change overlaps.
-    for(uint layer=1;layer<4;layer++) {
+    for(uint layer=1;layer<5;layer++) {
+      if((uniforms.offsets.y & (1u << (layer-1u)))==0) continue;
       for(uint index=0;index<count;index++) {
         Hold hold=source_hold(index,lowerCount,lower,upper);
-        if(hold.offsets[layer]==0xffffffffu) continue;
-        int local=index_at(point,hold);
-        if(local<0) continue;
+        bool annotation=hold.identity.z>0;
+        if((layer==4)!=annotation) continue;
         float weight=transitioning ? reveal_weight(hold,index>=lowerCount,uniforms) : 1;
-        if(weight>0)
-          pixel=over(pixel,read_rgba(atlas,hold.offsets[layer]+uint(local)*4)*weight);
+        if(weight<=0) continue;
+        uint passes=layer==1 ? 4u : (layer>=3 ? 2u : 1u);
+        for(uint pass=0;pass<passes;pass++) {
+          uint offset;
+          uint4 crop;
+          if(layer==1) {
+            offset=pass==0 ? hold.offsets.y : hold.extraOffsets[pass-1];
+            crop=pass==0 ? hold.fillCrop : (pass==1 ? hold.fillCrop1 : (pass==2 ? hold.fillCrop2 : hold.fillCrop3));
+          } else if(layer==2) {
+            offset=hold.offsets.z;
+            crop=hold.plateCrop;
+          } else {
+            offset=pass==0 ? hold.offsets.w : hold.extraOffsets.w;
+            crop=pass==0 ? hold.glyphCrop : hold.glyphCrop1;
+          }
+          if(offset==0xffffffffu) continue;
+          int local=crop_index(point,crop);
+          if(local>=0) pixel=stamp_over(pixel,read_rgba(atlas,offset+uint(local)*4)*weight);
+        }
       }
     }
     return pixel;

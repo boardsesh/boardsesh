@@ -5,55 +5,6 @@ import BoardRendererModule
 
 let climbOverlayGPUWorkQueue = DispatchQueue(label: "com.boardsesh.climb-overlay-gpu", qos: .userInitiated)
 
-private struct AtlasRole: Decodable {
-  let state: UInt32
-  let color: [Float]
-  let fill: UInt32
-  let plate: UInt32
-  let glyph: UInt32
-}
-
-private struct AtlasHold: Decodable {
-  let id: UInt32
-  let mirror: UInt32?
-  let x: UInt32
-  let y: UInt32
-  let width: UInt32
-  let height: UInt32
-  let bounds: [Float]
-  let field: UInt32
-  let reach: Float
-  let roles: [AtlasRole]
-}
-
-private struct AtlasManifest: Decodable {
-  let version: Int
-  let width: UInt32
-  let height: UInt32
-  let covers: UInt32
-  let veil: [Float]
-  let mirrored: Bool
-  let glow: Bool
-  let merge: Float
-  let seam: Float
-  let seamMix: Float
-  let seamSharpness: Float
-  let fringe: Float
-  let coreShare: Float
-  let lut: [Float]
-  let holds: [AtlasHold]
-}
-
-// Six 16-byte vectors, matching Metal's Hold exactly.
-private struct GPUHold {
-  var color: SIMD4<Float>
-  var bounds: SIMD4<Float>
-  var crop: SIMD4<UInt32>
-  var offsets: SIMD4<UInt32>
-  var numbers: SIMD4<Float>
-  var identity: SIMD4<UInt32>
-}
-
 private struct GPUUniforms {
   var size: SIMD4<Float>
   var veil: SIMD4<Float>
@@ -63,6 +14,7 @@ private struct GPUUniforms {
   var viewport: SIMD4<Float>
   var motion: SIMD4<Float>
   var other: SIMD4<Float>
+  var coverCrop: SIMD4<UInt32>
 }
 
 private struct GPUAtlas {
@@ -72,6 +24,7 @@ private struct GPUAtlas {
   let holds: [UInt32: AtlasHold]
   let supportedStates: Set<UInt32>
   let uploadMs: Double
+  let reservation: ClimbOverlayBudget.Reservation
 }
 
 private struct GPUScene {
@@ -82,6 +35,8 @@ private struct GPUScene {
   let prepareMs: Double
   let cacheHit: Bool
   let descriptors: [GPUHold]
+  let stampLayers: UInt32
+  let reservation: ClimbOverlayBudget.Reservation
 }
 
 private struct GPUScenes {
@@ -90,8 +45,12 @@ private struct GPUScenes {
   let next: GPUScene?
 }
 
-private enum OverlayFailure: Error {
+private enum OverlayFailure: LocalizedError {
   case reason(String)
+
+  var errorDescription: String? {
+    switch self { case .reason(let message): return message }
+  }
 }
 
 /// All compilation, atlas preparation and cache access are on this serial
@@ -101,14 +60,25 @@ private enum OverlayRenderer {
   static let device = MTLCreateSystemDefaultDevice()
   static var pipeline: MTLRenderPipelineState?
   static var commands: MTLCommandQueue?
-  static var cache: (source: String, key: Data, atlas: GPUAtlas)?
+  static var cache: (source: String, key: Data, assets: [String?], atlas: GPUAtlas)?
+  static let budget = ClimbOverlayBudget()
   static let memoryWarningObserver = NotificationCenter.default.addObserver(
     forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: nil
   ) { _ in OverlayRenderer.work.async { OverlayRenderer.cache = nil } }
 
+  static func discardCancelledAtlas(_ atlas: GPUAtlas) {
+    // Mounted views and commands keep their own counted reservations. This
+    // removes only the optional cache reference from a cancelled preparation.
+    if let cached = cache, cached.atlas.pixels === atlas.pixels { cache = nil }
+  }
+
   static func prepare(configJson: String, frames overrideFrames: String? = nil,
-                      preparedAtlas: GPUAtlas? = nil, strictRoles: Bool = false) throws -> GPUScene {
+                      preparedAtlas: GPUAtlas? = nil, strictRoles: Bool = false,
+                      geometryAssetPath: String? = nil, geometryAssetSha256: String? = nil,
+                      generatedGeometryDirectory: String? = nil, preparation: ClimbOverlayPreparation? = nil) throws -> GPUScene {
+    guard preparation?.isCancelled != true else { throw OverlayFailure.reason("GPU preparation cancelled") }
     guard let device else { throw OverlayFailure.reason("Metal unavailable") }
+    let assets = [geometryAssetPath,geometryAssetSha256,generatedGeometryDirectory]
     _ = memoryWarningObserver
     if pipeline == nil {
       let library = try device.makeLibrary(source: ClimbOverlayShader.source, options: nil)
@@ -129,7 +99,7 @@ private enum OverlayRenderer {
       atlas = preparedAtlas
       frames = overrideFrames
       hit = true
-    } else if let overrideFrames, let cached = cache, cached.source == configJson {
+    } else if let overrideFrames, let cached = cache, cached.source == configJson, cached.assets == assets {
       // A carousel can mount a new view for the same static config. Comparing
       // that source avoids rebuilding a canonical JSON key on every swipe.
       atlas = cached.atlas
@@ -143,17 +113,19 @@ private enum OverlayRenderer {
       frames = overrideFrames ?? configFrames
       config["frames"] = ""
       let key = try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
-      hit = cache?.key == key
+      hit = cache?.key == key && cache?.assets == assets
       if hit, let cached = cache {
         atlas = cached.atlas
-        cache = (configJson, key, atlas)
+        cache = (configJson, key, assets, atlas)
       }
       else {
         // One bounded global entry survives carousel view replacement, so
         // moving to a neighbouring climb does not rebuild the same layout.
         cache = nil
-        atlas = try makeAtlas(config: key, device: device)
-        cache = (configJson, key, atlas)
+        atlas = try makeAtlas(config: key, device: device, geometryAssetPath: geometryAssetPath,
+          geometryAssetSha256: geometryAssetSha256,generatedGeometryDirectory: generatedGeometryDirectory)
+        guard preparation?.isCancelled != true else { throw OverlayFailure.reason("GPU preparation cancelled") }
+        cache = (configJson, key, assets, atlas)
       }
     }
     guard frames.utf8.count <= 32 * 1024 else { throw OverlayFailure.reason("Invalid frames") }
@@ -171,51 +143,68 @@ private enum OverlayRenderer {
         continue
       }
       guard active.count < 128 else { throw OverlayFailure.reason("Prototype supports at most 128 active holds") }
-      active.append(GPUHold(
-        color: SIMD4(role.color[0]/255, role.color[1]/255, role.color[2]/255, 1),
-        bounds: SIMD4(hold.bounds[0],hold.bounds[1],hold.bounds[2],hold.bounds[3]),
-        crop: SIMD4(hold.x,hold.y,hold.width,hold.height),
-        offsets: SIMD4(hold.field,role.fill,role.plate,role.glyph),
-        numbers: SIMD4(hold.reach,0,0,0),identity: SIMD4(hold.id,state,0,0)))
+      active.append(makeClimbOverlayGPUHold(hold: hold,role: role))
     }
     let count = active.count
     if strictRoles && !frames.isEmpty && count == 0 {
       throw OverlayFailure.reason("GPU source contains no matching holds")
     }
-    let maxReach = active.map { $0.numbers.x }.max() ?? 0
+    let maxReach = active.filter { $0.identity.z == 0 }.map { $0.numbers.x }.max() ?? 0
     // Metal requires a nonempty buffer even when the shader loop runs zero times.
     let descriptors = active
     if active.isEmpty {
-      active.append(GPUHold(color: .zero, bounds: .zero, crop: .zero, offsets: .zero, numbers: .zero, identity: .zero))
+      active.append(GPUHold(color: .zero, bounds: .zero, crop: .zero, offsets: .zero, numbers: .zero, identity: .zero,fillCrop: .zero,plateCrop: .zero,glyphCrop: .zero,
+        extraOffsets: .zero,fillCrop1: .zero,fillCrop2: .zero,fillCrop3: .zero,glyphCrop1: .zero))
     }
-    guard let holds = device.makeBuffer(bytes: active, length: active.count * MemoryLayout<GPUHold>.stride) else {
+    let holdLength = active.count * MemoryLayout<GPUHold>.stride
+    let holdEstimate = device.heapBufferSizeAndAlign(length: holdLength,options: .storageModeShared)
+    guard let holdAllocation = ClimbOverlayBudget.allocationSize(requested: holdLength,
+      heapSize: holdEstimate.size,heapAlignment: holdEstimate.align),
+      let reservation = budget.reserve(holdAllocation),
+      let holds = device.makeBuffer(bytes: active, length: holdLength,options: .storageModeShared),
+      holds.allocatedSize <= holdAllocation else {
       throw OverlayFailure.reason("Active hold allocation failed")
     }
     return GPUScene(atlas: atlas, holds: holds, count: count, maxReach: maxReach,
-                    prepareMs: (CACurrentMediaTime()-start)*1000, cacheHit: hit, descriptors: descriptors)
+                    prepareMs: (CACurrentMediaTime()-start)*1000, cacheHit: hit, descriptors: descriptors,
+                    stampLayers: descriptors.reduce(0) { $0 | $1.stampLayers },reservation: reservation)
   }
 
   static func replacingDescriptors(_ scene: GPUScene, with descriptors: [GPUHold]) throws -> GPUScene {
     guard let device else { throw OverlayFailure.reason("Metal unavailable") }
     let buffer = descriptors.isEmpty
-      ? [GPUHold(color: .zero,bounds: .zero,crop: .zero,offsets: .zero,numbers: .zero,identity: .zero)]
+      ? [GPUHold(color: .zero,bounds: .zero,crop: .zero,offsets: .zero,numbers: .zero,identity: .zero,fillCrop: .zero,plateCrop: .zero,glyphCrop: .zero,
+          extraOffsets: .zero,fillCrop1: .zero,fillCrop2: .zero,fillCrop3: .zero,glyphCrop1: .zero)]
       : descriptors
-    guard let holds = device.makeBuffer(bytes: buffer,length: buffer.count*MemoryLayout<GPUHold>.stride) else {
+    let holdLength = buffer.count*MemoryLayout<GPUHold>.stride
+    let holdEstimate = device.heapBufferSizeAndAlign(length: holdLength,options: .storageModeShared)
+    guard let holdAllocation = ClimbOverlayBudget.allocationSize(requested: holdLength,
+      heapSize: holdEstimate.size,heapAlignment: holdEstimate.align),
+      let reservation = budget.reserve(holdAllocation),
+      let holds = device.makeBuffer(bytes: buffer,length: holdLength,options: .storageModeShared),
+      holds.allocatedSize <= holdAllocation else {
       throw OverlayFailure.reason("Motion hold allocation failed")
     }
     return GPUScene(atlas: scene.atlas,holds: holds,count: descriptors.count,maxReach: scene.maxReach,
-      prepareMs: scene.prepareMs,cacheHit: scene.cacheHit,descriptors: descriptors)
+      prepareMs: scene.prepareMs,cacheHit: scene.cacheHit,descriptors: descriptors,
+      stampLayers: descriptors.reduce(0) { $0 | $1.stampLayers },reservation: reservation)
   }
 
   static func prepareSources(configJson: String, frames: String?, previous: String?, next: String?,
-                             preparedAtlas: GPUAtlas?, editBaseline: [UInt32: UInt32]?) throws -> GPUScenes {
+                             preparedAtlas: GPUAtlas?, editBaseline: [UInt32: UInt32]?,
+                             geometryAssetPath: String?, geometryAssetSha256: String?,
+                             generatedGeometryDirectory: String?, preparation: ClimbOverlayPreparation) throws -> GPUScenes {
     let started = CACurrentMediaTime()
     let current = try prepare(configJson: configJson,frames: frames,preparedAtlas: preparedAtlas,
-                              strictRoles: previous != nil || next != nil)
+                              strictRoles: previous != nil || next != nil,
+                              geometryAssetPath: geometryAssetPath,geometryAssetSha256: geometryAssetSha256,
+                              generatedGeometryDirectory: generatedGeometryDirectory,preparation: preparation)
     let previousScene = try previous.map { try prepare(configJson: configJson,frames: $0,
-      preparedAtlas: current.atlas,strictRoles: true) }
+      preparedAtlas: current.atlas,strictRoles: true,geometryAssetPath: geometryAssetPath,geometryAssetSha256: geometryAssetSha256,
+                              generatedGeometryDirectory: generatedGeometryDirectory,preparation: preparation) }
     let nextScene = try next.map { try prepare(configJson: configJson,frames: $0,
-      preparedAtlas: current.atlas,strictRoles: true) }
+      preparedAtlas: current.atlas,strictRoles: true,geometryAssetPath: geometryAssetPath,geometryAssetSha256: geometryAssetSha256,
+                              generatedGeometryDirectory: generatedGeometryDirectory,preparation: preparation) }
     func roles(_ scene: GPUScene?) -> [UInt32: UInt32] {
       var roles: [UInt32: UInt32] = [:]
       for hold in scene?.descriptors ?? [] { roles[hold.identity.x] = hold.identity.y }
@@ -239,48 +228,99 @@ private enum OverlayRenderer {
     let timedCurrent = GPUScene(atlas: annotatedCurrent.atlas,holds: annotatedCurrent.holds,
       count: annotatedCurrent.count,maxReach: annotatedCurrent.maxReach,
       prepareMs: (CACurrentMediaTime()-started)*1000,cacheHit: annotatedCurrent.cacheHit,
-      descriptors: annotatedCurrent.descriptors)
+      descriptors: annotatedCurrent.descriptors,stampLayers: annotatedCurrent.stampLayers,
+      reservation: annotatedCurrent.reservation)
     return GPUScenes(current: timedCurrent,previous: annotatedPrevious,next: annotatedNext)
   }
 
-  private static func makeAtlas(config: Data, device: MTLDevice) throws -> GPUAtlas {
-    var pointer: UnsafeMutablePointer<UInt8>?
-    var length: UInt32 = 0
+  private static func makeAtlas(config: Data, device: MTLDevice, geometryAssetPath: String?,
+                                geometryAssetSha256: String?,generatedGeometryDirectory: String?) throws -> GPUAtlas {
+    var manifestPointer: UnsafeMutablePointer<UInt8>?
+    var manifestLength: UInt32 = 0
+    var pixelsPointer: UnsafeMutablePointer<UInt8>?
+    var pixelsLength: UInt32 = 0
+    func pathBytes(_ path: String?) throws -> Data {
+      guard let path else { return Data() }
+      guard path.utf8.count <= 4096 else { throw OverlayFailure.reason("GPU asset path too large") }
+      let url = URL(string: path)
+      guard url?.scheme == nil || url?.isFileURL == true else { throw OverlayFailure.reason("GPU asset must be local") }
+      let bytes = Data((url?.isFileURL == true ? url!.path : path).utf8)
+      guard bytes.count <= 4096 else { throw OverlayFailure.reason("GPU asset path too large") }
+      return bytes
+    }
+    let path = try pathBytes(geometryAssetPath)
+    let directory = try pathBytes(generatedGeometryDirectory)
+    let expected = Data((geometryAssetSha256 ?? "").utf8)
+    guard expected.count <= 64 else { throw OverlayFailure.reason("Invalid GPU asset checksum") }
     let status = config.withUnsafeBytes { bytes in
-      board_renderer_prepare_gpu_atlas(bytes.bindMemory(to: UInt8.self).baseAddress, UInt32(bytes.count), &pointer, &length)
+      path.withUnsafeBytes { pathBytes in
+        expected.withUnsafeBytes { shaBytes in
+          directory.withUnsafeBytes { directoryBytes in
+            board_renderer_prepare_gpu_atlas_owned(bytes.bindMemory(to: UInt8.self).baseAddress, UInt32(bytes.count),
+              pathBytes.bindMemory(to: UInt8.self).baseAddress,UInt32(pathBytes.count),
+              shaBytes.bindMemory(to: UInt8.self).baseAddress,UInt32(shaBytes.count),
+              directoryBytes.bindMemory(to: UInt8.self).baseAddress,UInt32(directoryBytes.count),
+              &manifestPointer,&manifestLength,&pixelsPointer,&pixelsLength)
+          }
+        }
+      }
     }
-    guard status == 0, let pointer else { throw OverlayFailure.reason("Atlas preparation rejected config (\(status))") }
-    defer { board_renderer_free(pointer, length) }
-    guard length >= 4 else { throw OverlayFailure.reason("Invalid atlas header") }
-    let headerLength = Int(UInt32(pointer[0]) | UInt32(pointer[1]) << 8 | UInt32(pointer[2]) << 16 | UInt32(pointer[3]) << 24)
-    guard headerLength > 0, headerLength <= 2 * 1024 * 1024, headerLength + 4 < Int(length) else {
-      throw OverlayFailure.reason("Invalid atlas manifest size")
+    defer {
+      board_renderer_free(manifestPointer,manifestLength)
+      board_renderer_free(pixelsPointer,pixelsLength)
     }
-    let manifest = try JSONDecoder().decode(AtlasManifest.self, from: Data(bytes: pointer+4, count: headerLength))
-    let payloadLength = Int(length)-headerLength-4
-    guard manifest.version == 1, manifest.lut.count == 257, manifest.veil.count == 4,
-      manifest.width > 0, manifest.width <= 1536, manifest.height > 0, manifest.height <= 2048,
-      payloadLength <= 128 * 1024 * 1024,
-      Int(manifest.covers) + Int(manifest.width)*Int(manifest.height)*4 <= payloadLength
+    guard status == 0, let manifestPointer, let pixelsPointer,
+      manifestLength > 0, manifestLength <= 4 * 1024 * 1024 else {
+      throw OverlayFailure.reason("Atlas preparation rejected config (\(status))")
+    }
+    let manifest = try decodeClimbOverlayAtlasManifest(Data(bytes: manifestPointer, count: Int(manifestLength)))
+    let payloadLength = Int(pixelsLength)
+    guard manifest.version == 2, manifest.lut.count == 257, manifest.veil.count == 4,
+      manifest.lut.allSatisfy({ $0.isFinite }),manifest.veil.allSatisfy({ $0.isFinite }),
+      manifest.width > 0, manifest.width <= 1536, manifest.height > 0, manifest.height <= 2304,
+      payloadLength > 0, payloadLength <= ClimbOverlayBudget.limit,manifest.holds.count <= 1024
     else { throw OverlayFailure.reason("Invalid atlas layout") }
+    func validStamp(_ stamp: AtlasStamp?) -> Bool {
+      guard let stamp else { return true }
+      return stamp.width > 0 && stamp.height > 0 && stamp.offset % 4 == 0
+        && UInt64(stamp.x)+UInt64(stamp.width) <= UInt64(manifest.width)
+        && UInt64(stamp.y)+UInt64(stamp.height) <= UInt64(manifest.height)
+        && UInt64(stamp.offset)+UInt64(stamp.width)*UInt64(stamp.height)*4 <= UInt64(payloadLength)
+    }
+    guard validStamp(manifest.covers) else { throw OverlayFailure.reason("Invalid atlas cover") }
     var holdIndex: [UInt32: AtlasHold] = [:]
     for hold in manifest.holds {
-      let pixels = Int(hold.width)*Int(hold.height)
-      guard hold.bounds.count == 4, Int(hold.field)+pixels*8 <= payloadLength,
+      let pixels = UInt64(hold.width)*UInt64(hold.height)
+      guard hold.width > 0,hold.height > 0,hold.field % 4 == 0,
+        UInt64(hold.x)+UInt64(hold.width) <= UInt64(manifest.width),
+        UInt64(hold.y)+UInt64(hold.height) <= UInt64(manifest.height),
+        hold.bounds.count == 4,hold.bounds.allSatisfy({ $0.isFinite }),holdIndex[hold.id] == nil,
+        hold.reach.isFinite,hold.reach >= 0,hold.reach <= 512,
+        UInt64(hold.field)+pixels*4 <= UInt64(payloadLength),hold.roles.count <= 32,
+        Set(hold.roles.map(\.state)).count == hold.roles.count,
         hold.roles.allSatisfy({ role in
-          role.color.count == 3 && [role.fill,role.plate,role.glyph].allSatisfy { offset in
-            offset == UInt32.max || Int(offset)+pixels*4 <= payloadLength
-          }
+          role.color.count == 3 && role.color.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 255 })
+            && role.fillPasses.count <= 4 && role.glyphPasses.count <= 2
+            && role.fillPasses.allSatisfy(validStamp) && validStamp(role.plate) && role.glyphPasses.allSatisfy(validStamp)
         }) else { throw OverlayFailure.reason("Invalid atlas hold") }
       holdIndex[hold.id] = hold
     }
     let uploadStart = CACurrentMediaTime()
-    guard let pixels = device.makeBuffer(bytes: pointer+4+headerLength, length: payloadLength),
-      let lut = device.makeBuffer(bytes: manifest.lut, length: manifest.lut.count * MemoryLayout<Float>.size)
-    else { throw OverlayFailure.reason("GPU atlas allocation failed") }
+    let lutLength = manifest.lut.count * MemoryLayout<Float>.size
+    let pixelEstimate = device.heapBufferSizeAndAlign(length: payloadLength,options: .storageModeShared)
+    let lutEstimate = device.heapBufferSizeAndAlign(length: lutLength,options: .storageModeShared)
+    guard let pixelAllocation = ClimbOverlayBudget.allocationSize(requested: payloadLength,
+      heapSize: pixelEstimate.size,heapAlignment: pixelEstimate.align),
+      let lutAllocation = ClimbOverlayBudget.allocationSize(requested: lutLength,
+        heapSize: lutEstimate.size,heapAlignment: lutEstimate.align),
+      let reservation = budget.reserve(pixelAllocation+lutAllocation),
+      let pixels = device.makeBuffer(bytes: pixelsPointer, length: payloadLength,options: .storageModeShared),
+      let lut = device.makeBuffer(bytes: manifest.lut, length: lutLength,options: .storageModeShared),
+      pixels.allocatedSize <= pixelAllocation,lut.allocatedSize <= lutAllocation
+    else { throw OverlayFailure.reason("GPU atlas allocation exceeds aggregate budget") }
     return GPUAtlas(manifest: manifest, pixels: pixels, lut: lut, holds: holdIndex,
                     supportedStates: Set(manifest.holds.flatMap { $0.roles.map(\.state) }),
-                    uploadMs: (CACurrentMediaTime()-uploadStart)*1000)
+                    uploadMs: (CACurrentMediaTime()-uploadStart)*1000,reservation: reservation)
   }
 }
 
@@ -299,9 +339,12 @@ func compareClimbOverlayGPU(_ configJson: String) throws -> [String: Any] {
     width: width, height: height, mipmapped: false)
   textureDescriptor.usage = [.renderTarget]
   textureDescriptor.storageMode = .shared
-  guard let texture = device.makeTexture(descriptor: textureDescriptor) else {
+  let textureAllocation = max(width*height*4,device.heapTextureSizeAndAlign(descriptor: textureDescriptor).size)
+  guard let comparisonReservation = OverlayRenderer.budget.reserve(textureAllocation),
+    let texture = device.makeTexture(descriptor: textureDescriptor),texture.allocatedSize <= textureAllocation else {
     throw OverlayFailure.reason("Comparison texture allocation failed")
   }
+  defer { withExtendedLifetime(comparisonReservation) {} }
   let pass = MTLRenderPassDescriptor()
   pass.colorAttachments[0].texture = texture
   pass.colorAttachments[0].loadAction = .clear
@@ -315,8 +358,8 @@ func compareClimbOverlayGPU(_ configJson: String) throws -> [String: Any] {
     veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
     tuning: SIMD4(manifest.merge,manifest.seam,manifest.seamMix,manifest.seamSharpness),
     tuning2: SIMD4(manifest.fringe,manifest.coreShare,scene.maxReach,0),
-    offsets: SIMD4(manifest.covers,0,0,0),viewport: SIMD4(Float(width),Float(height),0,0),
-    motion: SIMD4(0,1,1,1),other: .zero)
+    offsets: SIMD4(manifest.covers?.offset ?? .max,scene.stampLayers,0,0),viewport: SIMD4(Float(width),Float(height),0,0),
+    motion: SIMD4(0,1,1,1),other: .zero,coverCrop: manifest.covers?.crop ?? .zero)
   encoder.setRenderPipelineState(pipeline)
   encoder.setFragmentBuffer(scene.atlas.pixels, offset: 0, index: 0)
   encoder.setFragmentBuffer(scene.holds, offset: 0, index: 1)
@@ -396,7 +439,16 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   let onRenderReady = EventDispatcher()
   let onRenderError = EventDispatcher()
   var configJson = "" {
-    didSet { if configJson != oldValue { configRevision &+= 1 } }
+    didSet { if configJson != oldValue { configRevision &+= 1; preparation?.cancel() } }
+  }
+  var geometryAssetPath: String? {
+    didSet { if geometryAssetPath != oldValue { configRevision &+= 1; preparation?.cancel() } }
+  }
+  var geometryAssetSha256: String? {
+    didSet { if geometryAssetSha256 != oldValue { configRevision &+= 1; preparation?.cancel() } }
+  }
+  var generatedGeometryDirectory: String? {
+    didSet { if generatedGeometryDirectory != oldValue { configRevision &+= 1; preparation?.cancel() } }
   }
   var frames: String?
   var previousFrames: String?
@@ -428,6 +480,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var background = UIApplication.shared.applicationState != .active
   private var needsFrame = false
   private var preparing = false
+  private var preparation: ClimbOverlayPreparation?
   private var editorBaseline: [UInt32: UInt32]?
   private var editorBaselineRevision: UInt64?
   private var editorPulse = ClimbOverlayMotion.EditorPulse()
@@ -435,6 +488,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var editChangedHoldCount = 0
   private var scheduledEditDurationMs: Double = 0
   private var suppressMotion: Bool { reduceMotion || UIAccessibility.isReduceMotionEnabled }
+
+  deinit { preparation?.cancel() }
 
   required init(appContext: AppContext? = nil) {
     metal = MTKView(frame: .zero, device: OverlayRenderer.device)
@@ -466,6 +521,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil {
+      preparation?.cancel()
       stopEditorMotion()
       scene = nil
       previousScene = nil
@@ -535,6 +591,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
 
   func applyProps() {
     if !active {
+      preparation?.cancel()
       stopEditorMotion()
       scene = nil
       previousScene = nil
@@ -575,6 +632,11 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     revision &+= 1
     let generation = revision
     let config = configJson
+    let assetPath = geometryAssetPath
+    let assetSha = geometryAssetSha256
+    let generatedDirectory = generatedGeometryDirectory
+    let preparation = ClimbOverlayPreparation()
+    self.preparation = preparation
     let layoutRevision = configRevision
     let frame = frames
     let previous = previousFrames
@@ -582,6 +644,10 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     let page = centerPage.isFinite ? centerPage : 0
     let baseline = animateEdits && editorBaselineRevision == layoutRevision ? editorBaseline : nil
     let request = requestId
+    if preparedConfigRevision != layoutRevision {
+      preparedAtlas = nil
+      preparedConfigRevision = nil
+    }
     let reusableAtlas = preparedConfigRevision == layoutRevision ? preparedAtlas : nil
     submittedConfigRevision = layoutRevision
     submittedFrames = frame
@@ -591,10 +657,16 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     submittedRequest = request
     OverlayRenderer.work.async { [weak self] in
       let result = Result { try OverlayRenderer.prepareSources(configJson: config,frames: frame,
-        previous: previous,next: next,preparedAtlas: reusableAtlas,editBaseline: baseline) }
+        previous: previous,next: next,preparedAtlas: reusableAtlas,editBaseline: baseline,
+        geometryAssetPath: assetPath,geometryAssetSha256: assetSha,
+        generatedGeometryDirectory: generatedDirectory,preparation: preparation) }
       DispatchQueue.main.async { [weak self] in
+        if preparation.isCancelled, case .success(let scenes) = result {
+          OverlayRenderer.work.async { OverlayRenderer.discardCancelledAtlas(scenes.current.atlas) }
+        }
         guard let self else { return }
         self.preparing = false
+        self.preparation = nil
         // A rapid swipe can invalidate the active frame while its layout is
         // still useful. Keep that atlas, then prepare only the latest frame.
         if self.configRevision == layoutRevision, self.window != nil, self.active,
@@ -680,11 +752,13 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
       tuning: SIMD4(manifest.merge,manifest.seam,manifest.seamMix,manifest.seamSharpness),
       tuning2: SIMD4(manifest.fringe,manifest.coreShare,lower.maxReach,0),
-      offsets: SIMD4(manifest.covers,0,0,0),
+      offsets: SIMD4(manifest.covers?.offset ?? .max,
+        ClimbOverlayMotion.selectStampLayers(lower: lower.stampLayers,upper: upper.stampLayers,progress: progress),0,0),
       viewport: SIMD4(Float(view.drawableSize.width),Float(view.drawableSize.height),0,0),
       motion: SIMD4(progress,ClimbOverlayMotion.revealBand,0,reachScale),
       other: SIMD4(Float(upper.count),upper.maxReach,
-        previousFrames != nil || nextFrames != nil || animateEdits ? 1 : 0,displayMirrored ? 1 : 0))
+        previousFrames != nil || nextFrames != nil || animateEdits ? 1 : 0,displayMirrored ? 1 : 0),
+      coverCrop: manifest.covers?.crop ?? .zero)
     encoder.setRenderPipelineState(pipeline)
     encoder.setFragmentBuffer(scene.atlas.pixels, offset: 0, index: 0)
     encoder.setFragmentBuffer(lower.holds, offset: 0, index: 1)
@@ -732,7 +806,10 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       }
     }
     #endif
-    command.addCompletedHandler { [weak self] completed in
+    command.addCompletedHandler { [weak self, lower, upper] completed in
+      // Metal retains MTLBuffer objects itself. Keep their budget reservations
+      // alive until completion, including upper/previous buffers and atlases.
+      defer { withExtendedLifetime((lower,upper)) {} }
       let gpuMs = max(0, completed.gpuEndTime-completed.gpuStartTime)*1000
       DispatchQueue.main.async { [weak self] in
         guard let self, self.revision == generation, self.requestId == request,
