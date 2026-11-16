@@ -2,11 +2,11 @@ import Foundation
 
 /// Pure motion policy, shared by the native view and its standalone tests.
 enum ClimbOverlayMotion {
-  static let editDuration: Double = 0.350
-  static let editPeakTime: Double = 0.100
+  static let editDuration = ClimbOverlayPacketLayout.editDurationSeconds
+  static let editPeakTime = ClimbOverlayPacketLayout.editPeakTimeSeconds
   // Must match the immutable Rust GPU atlas padding reserve.
-  static let editPeakReach: Float = 1.35
-  static let revealBand: Float = 0.22
+  static let editPeakReach = ClimbOverlayPacketLayout.editPeakReach
+  static let revealBand = ClimbOverlayPacketLayout.revealBand
 
   /// Bits follow the shader's fill, plate, glyph and annotation layer order.
   /// Missing first passes do not imply that later paint passes are absent.

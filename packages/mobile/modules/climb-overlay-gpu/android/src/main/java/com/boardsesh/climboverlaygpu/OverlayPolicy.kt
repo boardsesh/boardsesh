@@ -49,14 +49,14 @@ internal class ContextRecoveryGate {
 
 /** Platform-independent contracts, mirrored by the iOS motion tests. */
 internal object OverlayPolicy {
-    const val ATLAS_LIMIT = 128 * 1024 * 1024
+    const val ATLAS_LIMIT = OverlayPacketLayout.MAX_GPU_BYTES
     // Separate owned pixels avoid the payload-sized final packing copy.
     // Allow atlas growth, EDT/masks and GPU upload; not a peak-RSS claim.
     const val PREPARE_HEADROOM = 3L * ATLAS_LIMIT + 64L * 1024 * 1024
-    const val EDIT_DURATION_NS = 350_000_000L
-    const val EDIT_PEAK_NS = 100_000_000L
-    const val EDIT_PEAK_REACH = 1.35f
-    const val REVEAL_BAND = .22f
+    const val EDIT_DURATION_NS = OverlayPacketLayout.EDIT_DURATION_NS
+    const val EDIT_PEAK_NS = OverlayPacketLayout.EDIT_PEAK_NS
+    val EDIT_PEAK_REACH = OverlayPacketLayout.EDIT_PEAK_REACH
+    val REVEAL_BAND = OverlayPacketLayout.REVEAL_BAND
     const val MAX_ACTIVE = 128
     const val MAX_PENDING = 2
 

@@ -44,6 +44,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+    swift.push_str(concat!(
+        "  static let editDurationSeconds: Double = Double(editDurationMs) / 1000.0\n",
+        "  static let editPeakTimeSeconds: Double = Double(editPeakTimeMs) / 1000.0\n",
+        "  static let editPeakReach = Float(bitPattern: UInt32(editPeakReachBits))\n",
+        "  static let revealBand = Float(bitPattern: UInt32(revealBandBits))\n",
+    ));
+    kotlin.push_str(concat!(
+        "  const val EDIT_DURATION_NS: Long = EDIT_DURATION_MS * 1_000_000L\n",
+        "  const val EDIT_PEAK_NS: Long = EDIT_PEAK_TIME_MS * 1_000_000L\n",
+        "  val EDIT_PEAK_REACH: Float = Float.fromBits(EDIT_PEAK_REACH_BITS)\n",
+        "  val REVEAL_BAND: Float = Float.fromBits(REVEAL_BAND_BITS)\n",
+    ));
     swift.push_str(&format!(
         "  static let contractSha256 = \"{}\"\n}}\n",
         contract_sha256()

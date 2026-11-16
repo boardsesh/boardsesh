@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::gpu_atlas::{PreparedAtlas, prepare_owned};
+use super::gpu_constants::{EDIT_PEAK_REACH, MAX_GPU_BYTES as MAX_PIXELS};
 use crate::types::{HoldData, RenderConfig};
 
 const MAGIC: &[u8; 8] = b"AURAGEO1";
 const MAX_FILE: u64 = 256 * 1024 * 1024;
 const MAX_HEADER: usize = 2 * 1024 * 1024;
-const MAX_PIXELS: usize = 128 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct Chunk {
@@ -125,7 +125,7 @@ pub fn encode(config: &RenderConfig, atlas: &PreparedAtlas) -> Result<Vec<u8>, S
         version: 2,
         width: manifest["width"].as_u64().ok_or("Missing width")? as u32,
         height: manifest["height"].as_u64().ok_or("Missing height")? as u32,
-        pulse_reach: 1.35,
+        pulse_reach: EDIT_PEAK_REACH,
         geometry_id,
         max_reach,
         scope: config.geometry_cache_scope.clone(),
@@ -211,7 +211,7 @@ impl GeometryReader {
         let header: Header =
             serde_json::from_slice(&header_bytes).map_err(|error| error.to_string())?;
         if header.version != 2
-            || header.pulse_reach != 1.35
+            || header.pulse_reach != EDIT_PEAK_REACH
             || header.width == 0
             || header.width > 1536
             || header.height == 0

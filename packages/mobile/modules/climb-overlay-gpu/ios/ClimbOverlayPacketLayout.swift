@@ -16,6 +16,9 @@ enum ClimbOverlayPacketLayout {
   static let descriptorOffsetsNumbers: Int = 64
   static let descriptorOffsetsOffsets: Int = 48
   static let descriptorOffsetsPlateCrop: Int = 112
+  static let editDurationMs: Int = 350
+  static let editPeakReachBits: Int = 1068289229
+  static let editPeakTimeMs: Int = 100
   static let glesStorageBindingsLower: Int = 1
   static let glesStorageBindingsPixels: Int = 0
   static let glesStorageBindingsResources: Int = 3
@@ -31,6 +34,7 @@ enum ClimbOverlayPacketLayout {
   static let metalBindingsUpper: Int = 4
   static let nativeApiVersion: Int = 5
   static let packetVersion: Int = 1
+  static let revealBandBits: Int = 1046562734
   static let statsVersion: Int = 1
   static let statusesCancelled: Int = -3
   static let statusesClosed: Int = -4
@@ -50,5 +54,9 @@ enum ClimbOverlayPacketLayout {
   static let uniformOffsetsTuning2: Int = 48
   static let uniformOffsetsVeil: Int = 16
   static let uniformOffsetsViewport: Int = 80
-  static let contractSha256 = "d87cba306e3092af094cb494f3c9d64b95adcdbb3e84b7f7a149351fa1a5914e"
+  static let editDurationSeconds: Double = Double(editDurationMs) / 1000.0
+  static let editPeakTimeSeconds: Double = Double(editPeakTimeMs) / 1000.0
+  static let editPeakReach = Float(bitPattern: UInt32(editPeakReachBits))
+  static let revealBand = Float(bitPattern: UInt32(revealBandBits))
+  static let contractSha256 = "ede51706c63cf2d0b543e5316c7e418e79e0f73c7f21a835f9c28fa8d4b0075f"
 }

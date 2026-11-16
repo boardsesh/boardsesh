@@ -5,7 +5,7 @@ let climbOverlayAggregateBudget = ClimbOverlayBudget()
 /// Reservations follow retained resources, rather than the cache entry. A
 /// view and its outstanding command buffers can outlive cache eviction.
 final class ClimbOverlayBudget {
-  static let limit = 128 * 1024 * 1024
+  static let limit = ClimbOverlayPacketLayout.maxGpuBytes
   private let lock = NSLock()
   private var resident = 0
 

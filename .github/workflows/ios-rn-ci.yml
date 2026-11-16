@@ -355,6 +355,7 @@ jobs:
         run: |
           vp exec swiftc \
             -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \
             packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift \
             packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayAtlas.swift \
             packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift \
@@ -362,6 +363,7 @@ jobs:
           vp exec "$RUNNER_TEMP/aura-atlas-tests"
           vp exec swiftc \
             -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \
             packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayBudget.swift \
             packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayBudgetTests.swift \
             -o "$RUNNER_TEMP/aura-budget-tests"

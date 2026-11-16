@@ -19,6 +19,7 @@
 mod geometry;
 mod glow;
 pub mod gpu_atlas;
+pub mod gpu_constants;
 pub mod gpu_geometry;
 pub mod gpu_packet;
 mod gpu_packet_cache;

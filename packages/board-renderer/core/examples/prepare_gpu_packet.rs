@@ -1,4 +1,5 @@
 //! Host export of the exact production packet encoder for native pixel goldens.
+use board_renderer_core::aura::gpu_constants::EDIT_PEAK_REACH;
 use board_renderer_core::aura::gpu_packet::{
     Cancellation, Packet, Placement, Placements, Plan, Session, SourceRequest, UNIFORM_BYTES,
 };
@@ -45,7 +46,7 @@ fn validate_controls(controls: &Controls) -> Result<(), String> {
             || !sample.progress.is_finite()
             || !(0.0..=1.0).contains(&sample.progress)
             || !sample.pulse.is_finite()
-            || !(1.0..=1.35).contains(&sample.pulse)
+            || !(1.0..=EDIT_PEAK_REACH).contains(&sample.pulse)
             || (sample.editor_all_changed
                 && (sample.lower != 0 || sample.upper != 0 || sample.progress != 0.0))
         {

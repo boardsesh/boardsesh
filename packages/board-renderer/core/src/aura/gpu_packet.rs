@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::gpu_atlas::{AtlasSelection, prepare_subset, prepare_subset_checked};
+use super::gpu_constants::{EDIT_DURATION_MS, EDIT_PEAK_REACH, EDIT_PEAK_TIME_MS, REVEAL_BAND};
 use crate::types::{Color, HoldRenderStyle, RenderConfig};
 
 pub const PACKET_VERSION: u32 = 1;
@@ -16,7 +17,7 @@ pub const DESCRIPTOR_BYTES: usize = 224;
 pub const UNIFORM_BYTES: usize = 144;
 pub const TILE_EDGE: u32 = 32;
 pub const LUT_WORDS: usize = 257;
-pub const MAX_GPU_BYTES: usize = 128 * 1024 * 1024;
+pub use super::gpu_constants::MAX_GPU_BYTES;
 pub const MAX_HEADER_BYTES: usize = 256 * 1024;
 pub const MAX_FRAME_BYTES: usize = 32 * 1024;
 const MAX_CPU_BYTES: usize = 32 * 1024 * 1024;
@@ -1236,7 +1237,7 @@ impl Packet {
             || !progress.is_finite()
             || !(0.0..=1.0).contains(&progress)
             || !pulse.is_finite()
-            || !(1.0..=1.35).contains(&pulse)
+            || !(1.0..=EDIT_PEAK_REACH).contains(&pulse)
             || viewport
                 .iter()
                 .any(|number| !number.is_finite() || *number <= 0.0 || *number > 16384.0)
@@ -1305,7 +1306,7 @@ impl Packet {
         words[20] = viewport[0].to_bits();
         words[21] = viewport[1].to_bits();
         words[24] = progress.to_bits();
-        words[25] = 0.22_f32.to_bits();
+        words[25] = REVEAL_BAND.to_bits();
         words[27] = pulse.to_bits();
         words[28] = (upper.count as f32).to_bits();
         words[29] = upper.max_reach.to_bits();
@@ -1330,6 +1331,7 @@ impl Packet {
 
 pub fn contract_manifest() -> Value {
     json!({"packetVersion":PACKET_VERSION,"nativeApiVersion":5,"statsVersion":1,"descriptorBytes":DESCRIPTOR_BYTES,"uniformBytes":UNIFORM_BYTES,
+        "editDurationMs":EDIT_DURATION_MS,"editPeakTimeMs":EDIT_PEAK_TIME_MS,"editPeakReachBits":EDIT_PEAK_REACH.to_bits(),"revealBandBits":REVEAL_BAND.to_bits(),
         "tileEdge":TILE_EDGE,"lutWords":LUT_WORDS,"maxGpuBytes":MAX_GPU_BYTES,"maxActivePerSource":128,
         "metalBindings":{"pixels":0,"lower":1,"uniforms":2,"resources":3,"upper":4},
         "glesStorageBindings":{"pixels":0,"lower":1,"upper":2,"resources":3},"glesUniformBindings":{"uniforms":0},

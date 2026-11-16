@@ -16,6 +16,9 @@
     "offsets": 48,
     "plateCrop": 112
   },
+  "editDurationMs": 350,
+  "editPeakReachBits": 1068289229,
+  "editPeakTimeMs": 100,
   "glesStorageBindings": {
     "lower": 1,
     "pixels": 0,
@@ -37,6 +40,7 @@
   },
   "nativeApiVersion": 5,
   "packetVersion": 1,
+  "revealBandBits": 1046562734,
   "statsVersion": 1,
   "statuses": {
     "cancelled": -3,

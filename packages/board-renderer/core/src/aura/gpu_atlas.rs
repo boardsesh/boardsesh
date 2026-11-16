@@ -15,10 +15,8 @@ use crate::types::{
     BoardRenderMode, Color, GlyphMode, HoldRenderStyle, HoldRole, MarkStyle, RenderConfig,
 };
 
-const MAX_BYTES: usize = 128 * 1024 * 1024;
-// Match ClimbOverlayMotion.editPeakReach: editing expands only the sampled
-// falloff, so all immutable EDT fields must already cover its maximum reach.
-const EDIT_PEAK_REACH: f32 = 1.35;
+// Editing expands the sampled falloff; immutable fields reserve its full reach.
+use super::gpu_constants::{EDIT_PEAK_REACH, MAX_GPU_BYTES as MAX_BYTES};
 
 fn append(storage: &mut Vec<u8>, bytes: &[u8]) -> Result<usize, String> {
     if storage.len().saturating_add(bytes.len()) > MAX_BYTES {

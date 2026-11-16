@@ -100,8 +100,14 @@ exit "$CI_BUILD_RETRY_STATUS"
 
 describe('iOS Release launch workflow', () => {
   const nativeSuites = [
-    ['atlas', 'ClimbOverlayMotion.swift', 'ClimbOverlayAtlas.swift', 'tests/ClimbOverlayAtlasTests.swift'],
-    ['budget', 'ClimbOverlayBudget.swift', 'tests/ClimbOverlayBudgetTests.swift'],
+    [
+      'atlas',
+      'ClimbOverlayPacketLayout.swift',
+      'ClimbOverlayMotion.swift',
+      'ClimbOverlayAtlas.swift',
+      'tests/ClimbOverlayAtlasTests.swift',
+    ],
+    ['budget', 'ClimbOverlayPacketLayout.swift', 'ClimbOverlayBudget.swift', 'tests/ClimbOverlayBudgetTests.swift'],
     ['arena', 'ClimbOverlayPacketLayout.swift', 'ClimbOverlayArenaIndex.swift', 'tests/ClimbOverlayArenaTests.swift'],
     ['job', 'ClimbOverlayPacketJob.swift', 'tests/ClimbOverlayPacketJobTests.swift'],
     [

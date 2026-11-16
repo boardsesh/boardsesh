@@ -16,6 +16,9 @@ internal object OverlayPacketLayout {
   const val DESCRIPTOR_OFFSETS_NUMBERS: Int = 64
   const val DESCRIPTOR_OFFSETS_OFFSETS: Int = 48
   const val DESCRIPTOR_OFFSETS_PLATE_CROP: Int = 112
+  const val EDIT_DURATION_MS: Int = 350
+  const val EDIT_PEAK_REACH_BITS: Int = 1068289229
+  const val EDIT_PEAK_TIME_MS: Int = 100
   const val GLES_STORAGE_BINDINGS_LOWER: Int = 1
   const val GLES_STORAGE_BINDINGS_PIXELS: Int = 0
   const val GLES_STORAGE_BINDINGS_RESOURCES: Int = 3
@@ -31,6 +34,7 @@ internal object OverlayPacketLayout {
   const val METAL_BINDINGS_UPPER: Int = 4
   const val NATIVE_API_VERSION: Int = 5
   const val PACKET_VERSION: Int = 1
+  const val REVEAL_BAND_BITS: Int = 1046562734
   const val STATS_VERSION: Int = 1
   const val STATUSES_CANCELLED: Int = -3
   const val STATUSES_CLOSED: Int = -4
@@ -50,5 +54,9 @@ internal object OverlayPacketLayout {
   const val UNIFORM_OFFSETS_TUNING2: Int = 48
   const val UNIFORM_OFFSETS_VEIL: Int = 16
   const val UNIFORM_OFFSETS_VIEWPORT: Int = 80
-  const val CONTRACT_SHA256 = "d87cba306e3092af094cb494f3c9d64b95adcdbb3e84b7f7a149351fa1a5914e"
+  const val EDIT_DURATION_NS: Long = EDIT_DURATION_MS * 1_000_000L
+  const val EDIT_PEAK_NS: Long = EDIT_PEAK_TIME_MS * 1_000_000L
+  val EDIT_PEAK_REACH: Float = Float.fromBits(EDIT_PEAK_REACH_BITS)
+  val REVEAL_BAND: Float = Float.fromBits(REVEAL_BAND_BITS)
+  const val CONTRACT_SHA256 = "ede51706c63cf2d0b543e5316c7e418e79e0f73c7f21a835f9c28fa8d4b0075f"
 }
