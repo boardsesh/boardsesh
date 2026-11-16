@@ -1035,6 +1035,11 @@ function simulatorLaunchEnv(): NodeJS.ProcessEnv {
   return { ...process.env, SIMCTL_CHILD_TZ: 'UTC' };
 }
 
+/** Expo's explicit process URL avoids its default-launcher fallback resetting the React host. */
+export function iosSimulatorLaunchArgs(udid: string, metroPort = METRO_PORT): string[] {
+  return ['simctl', 'launch', udid, APP_ID, '--initialUrl', `http://localhost:${metroPort}`];
+}
+
 function readPlistString(plistPath: string, key: string): string | null {
   const result = spawnSync('plutil', ['-extract', key, 'raw', '-o', '-', plistPath], {
     encoding: 'utf8',
@@ -2979,17 +2984,12 @@ function captureIosDevice(
     // only this device's traffic (one backend serves the whole run).
     const backendLogBaseline = screenshotBackendLogLineCount();
 
-    // First try a plain launch — no `simctl openurl`. The screenshots build bakes
-    // DEV_CLIENT_DEFAULT_LAUNCHER_URL=http://localhost:${METRO_PORT} into
-    // Info.plist (see ./plugins/with-screenshot-dev-menu), so the dev-client
-    // auto-connects to Metro on a plain launch and — auto-signed-in (see auth-provider's
-    // SCREENSHOT_MODE branch) — lands straight on home, without ever opening the
-    // custom-scheme URL or showing a login screen. That matters because a fresh CI
-    // sim raises an "Open in Boardsesh?" confirmation for ANY openurl of the
-    // scheme, and Maestro can't dismiss it reliably. Dev-menu chrome is suppressed
-    // via the same plugin.
-    console.log(`${LOG} Launching the app (auto-loads Metro via DEV_CLIENT_DEFAULT_LAUNCHER_URL)...`);
-    runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
+    // Pass Expo's native process argument, rather than a custom-scheme openurl:
+    // no OS confirmation dialog. SDK 58's default-launcher fallback starts loading
+    // then navigates back to its launcher, resetting the React host. Its explicit
+    // initial URL branch returns after loading and preserves the app host.
+    console.log(`${LOG} Launching the app with Metro as its explicit initial URL...`);
+    runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv());
 
     // The app auto-signs-in and boots straight to home, so wait for it to get
     // there before Maestro runs — this is what login.yaml's readiness wait used to
@@ -3001,13 +3001,8 @@ function captureIosDevice(
     // again; each fresh launch re-attempts the connect, and a shard that never recovers
     // fails hard (rather than capturing the launcher) so it can be re-run.
     //
-    // Re-launch PLAINLY on BOTH devices — never `openurl`. A plain `simctl launch`
-    // re-triggers the dev-client's DEV_CLIENT_DEFAULT_LAUNCHER_URL auto-connect with no
-    // dialog. An openurl raises the "Open in 'Boardsesh'?" confirm which, undismissed
-    // here (this is BEFORE the flow's prime block), blocks the app from ever loading —
-    // that's exactly why the iPhone shards hung through every retry in CI while the iPad
-    // (already plain-relaunch) passed. The readiness ping + `$screen /home` marker then
-    // both register once the app actually reaches home.
+    // Keep the same explicit initial URL on every retry; never open a scheme URL.
+    // Readiness still requires a fresh app marker or ping after this launch.
     //
     // Generous per-wait budget: a CI cold bundle build alone is ~35-60s, on top of a
     // slow simulator boot + auto-sign-in, so 45s (the old iPhone value) timed out before
@@ -3016,7 +3011,7 @@ function captureIosDevice(
     for (let attempt = 1; attempt <= 3 && !reachedHome && !giveUpOnCrash?.(); attempt += 1) {
       console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
       runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-      runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
+      runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv());
       reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
     }
     if (!reachedHome && options.flow === 'smoke') {
@@ -3149,7 +3144,7 @@ function captureIosDevice(
           const markerBaseline = homeReadyMarkerCount();
           const readyBaseline = screenshotReadinessCount();
           runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-          runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
+          runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv());
           if (!waitForHomeReady(markerBaseline, readyBaseline, 120)) {
             console.error(`${LOG} FAILED: the app did not return home before Duo shot ${shot.name}.`);
             dumpMetroLogTail();
@@ -4644,7 +4639,7 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
         }
         const rootOffset = metroLogOffset(METRO_LOG_PATH);
         if (descriptor) {
-          if (runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0)
+          if (runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv()).status !== 0)
             throw new Error('Story app launch failed');
         } else launchDevClient('adb', device.udid);
         if (!waitForMetroLogLine(isStoryRootReadyLine, rootOffset, 120, METRO_LOG_PATH))
@@ -4699,7 +4694,7 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
                 clearNativeCaptureThumbnails(container.stdout.trim());
                 const restartOffset = metroLogOffset(METRO_LOG_PATH);
                 if (
-                  runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0 ||
+                  runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv()).status !== 0 ||
                   !waitForMetroLogLine(isStoryRootReadyLine, restartOffset, 120, METRO_LOG_PATH)
                 )
                   throw new Error('Story root did not restart for a fresh native capture');

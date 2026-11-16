@@ -13,6 +13,8 @@ These commands boot Metro with `EXPO_PUBLIC_STORY_MODE=1`. The root chooses the 
 
 The route `dev/stories/<id>` also selects that isolated root in a dev bundle. For a fresh capture, use the commands above so the production root cannot initialize before the router resolves the link. A production bundle does not load story modules.
 
+Native deep links to `dev/stories` and its internal `dev/story-tabs` routes bypass application consent deferral in dev bundles. The isolated root has no application consent flow to settle; ordinary app links and production bundles retain that gate.
+
 Visual capture runners preserve `--render-mode aura|classic|default` in the story deep link. Ad hoc links can use `?renderMode=classic`; the default is Aura. Requested Aura captures wait for renderer capability and fail if the installed binary would fall back to classic.
 
 Story IDs are `<filename>--<key>`, kebab-cased: `Climbs.stories.tsx` with `populated` becomes `climbs--populated`. A bare filename ID selects its first declared story. The index at `dev/stories` lists all stories. Only the requested module is evaluated for a direct story link.

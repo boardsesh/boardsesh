@@ -13,6 +13,11 @@ import { isLegacyWallTabLink, WALL_DISPLAY_HREF } from '../src/lib/routing/wall-
 // unchanged and the provider handles it the same way.
 
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string {
+  // The isolated story navigator never mounts the application's consent flow.
+  // Let its dev-only routes reach that navigator without deferring them forever.
+  if (__DEV__ && /^(?:com\.boardsesh\.app:\/\/)?\/*dev\/(?:stories|story-tabs)(?:[/?#]|$)/.test(path)) {
+    return path;
+  }
   // The browser-OAuth fallback's Linking listener owns this deep link (see
   // src/lib/auth.ts raceBrowserSignIn); return '' so Expo Router doesn't flash
   // +not-found on the non-existent /auth/callback route under the browser. Safe:

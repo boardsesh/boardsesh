@@ -284,12 +284,12 @@ test.describe('expo-web smoke', () => {
     const queueButton = page.getByRole('button', { name: /queue/i }).first();
     await expect(queueButton).toBeVisible({ timeout: WARM_TIMEOUT_MS });
     await tapThroughGestureLayer(queueButton);
-    // The queue sheet hosts its list in a BottomSheetFlatList; its "Edit queue"
-    // header action is unique to the presented sheet and proves the gorhom web
-    // shim mounted it. Backdrop dismissal proves it closes.
-    const editQueueButton = page.getByRole('button', { name: 'Edit queue' });
-    await expect(editQueueButton).toBeVisible({ timeout: 15_000 });
-    await dismissSheet(page, editQueueButton);
+    // The history toggle belongs to the presented queue sheet, including when
+    // the queue is empty and correctly has no editing actions. Its visibility
+    // and dismissal prove the gorhom web shim opened and closed the sheet.
+    const historyToggle = page.getByRole('button', { name: 'Toggle history', exact: true });
+    await expect(historyToggle).toBeVisible({ timeout: 15_000 });
+    await dismissSheet(page, historyToggle);
     expect(fatalErrors).toEqual([]);
   });
 

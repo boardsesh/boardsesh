@@ -669,6 +669,22 @@ describe('the recorded screenshot fixtures', () => {
   });
 });
 
+describe('native smoke request coverage', () => {
+  it.each([
+    ['ResolveBoardForUuid', { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' }],
+    ['RecordBoardOpened', { input: { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' } }],
+    ['GetSprayWallByLayout', { layoutId: 62 }],
+    ['GetFollowingClimbAscents', { input: { boardType: 'kilter', climbUuid: 'A6E04278AE294E03AD9DD2A8E0CDE31F' } }],
+  ])('records the exact %s request made by the default navigation flow', (operationName, variables) => {
+    expect(
+      manifest.graphql.some((entry) => {
+        if (entry.operationName !== operationName) return false;
+        return canonicalJson(readFixture(entry.file).variables) === canonicalJson(variables);
+      }),
+    ).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // (d) The batched-replay table still describes the committed fixtures
 // ---------------------------------------------------------------------------

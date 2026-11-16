@@ -1441,3 +1441,9 @@ America/Los_Angeles and America/New_York. Each genuine response contains 20 feed
 items; this does not provide arbitrary timezone, pagination or mutation coverage.
 View-story captures use no replay backend; actual native ActivityKit capture is
 a separate dev setup that uses replay only for native thumbnail assets.
+
+The November 16, 2026 smoke overlay also records the exact default board's
+`ResolveBoardForUuid` and `RecordBoardOpened`, layout 62's `GetSprayWallByLayout`,
+and the first Kilter climb's `GetFollowingClimbAscents`. These are authenticated
+responses from the existing recorder, with other climbers pseudonymized. They
+add only the requests exercised by the native smoke; other variables still miss.
