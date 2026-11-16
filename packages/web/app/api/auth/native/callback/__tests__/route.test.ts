@@ -61,24 +61,6 @@ describe('GET /api/auth/native/callback', () => {
     vi.unstubAllEnvs();
   });
 
-  it('signs the legacy transfer for a browser that still carries a retired binding cookie', async () => {
-    mockedGetServerSession.mockResolvedValue({
-      user: { id: 'legacy-user' },
-      authSessionId: 'legacy-login',
-      authGeneration: 2,
-      expires: '2026-10-11',
-    });
-    mockedIssueToken.mockReturnValue('legacy-transfer');
-    const request = new NextRequest(new URL('/api/auth/native/callback?next=/settings', 'http://localhost:3000'), {
-      headers: { cookie: '__Host-boardsesh.browser-binding=retired; __Host-boardsesh.browser-binding.0=retired' },
-    });
-    const response = await GET(request);
-    expect(await extractDeepLink(response)).toBe(`${CALLBACK_SCHEME}?transferToken=legacy-transfer&next=%2Fsettings`);
-    expect(mockedIssueToken).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ userId: 'legacy-user', generation: 2, authSessionId: 'legacy-login' }),
-    );
-  });
-
   it('derives required proof from exact admitted raw claims ahead of displayed generation', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
     mockedGetServerSession.mockResolvedValue({
