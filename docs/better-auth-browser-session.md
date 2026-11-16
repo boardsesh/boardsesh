@@ -1,0 +1,462 @@
+# Browser sign-in for www and the browser app
+
+This is the design for BA-05 as re-scoped by
+[#7596](https://github.com/boardsesh/boardsesh/issues/7596). The acceptance
+criteria are in [#6979](https://github.com/boardsesh/boardsesh/issues/6979), the
+epic is [#6975](https://github.com/boardsesh/boardsesh/issues/6975), and the
+owner's rollout steps live in runbook
+[#7430](https://github.com/boardsesh/boardsesh/issues/7430). Where this doc and
+an older `docs/better-auth-browser-*.md` disagree, #7596 and this doc win. The
+older docs carry a "Superseded by #7596" banner and are deleted with their code.
+
+The design in one sentence: one session cookie on the shared parent domain,
+written only by login and sign-out, plus one guard in each browser client's
+transport, with no per-call-site wrapping.
+
+Everything here was read on main `ac54f83751` (2026-11-16): the #7596 spec, the
+code, and the installed Better Auth 1.7.17 and NextAuth 4.24.15 sources. File
+and line references point at that checkout. Nothing was run for this doc.
+
+## Status
+
+Phase A is in progress. It works against today's NextAuth sessions:
+
+| PR | Work |
+| --- | --- |
+| A1 | This doc. Banners on the superseded docs, notes on the partly superseded ones. No code. |
+| A2, A3 | The central guard on www (A2) and on Expo web at app.boardsesh.com (A3). |
+| A4 | Remove the per-site wrappers and scopes from `packages/mobile` and `packages/shared` and restore the plain hooks. Remove the selected outbox drain ([#7592](https://github.com/boardsesh/boardsesh/issues/7592)) and restore the #6302 comments in `invalidation-batch.ts`. |
+| A5 (several PRs) | Delete the browser binding design (listed under "What is removed"). The last A5 PR replaces the eight readiness gates with the one switch. |
+
+Phase B is blocked. #7596 says to stop after Phase A if the BA-04 authority
+cannot issue sessions yet, and on main it cannot:
+
+1. Nothing at runtime calls `createAuthority`
+   (`packages/backend/src/auth/authority/authority.ts:34`). The bridge is not
+   mounted ("No route is mounted", `authority/bridge.ts:21`). `issuerFor`
+   always returns `'legacy'` (`authority/router.ts:139-143`). Only tests call
+   any of the three.
+2. The operator script refuses `activate` while three code gates are listed
+   (`packages/backend/src/scripts/auth-authority.ts:23-30`).
+3. BA-04 ([#6978](https://github.com/boardsesh/boardsesh/issues/6978)) is
+   paused in #7430, and the BA-02 email PR (#7436) is a draft. Until it lands,
+   the authority adapter throws on any user whose email is not trimmed
+   lowercase (`authority/adapter.ts:30-34`), and Better Auth joins the user on
+   every session read.
+
+The only production `betterAuth()` instance is the partner OAuth server
+(`auth/partner/authority.ts:167-219`). It reads the NextAuth cookie and never
+sets a first-party cookie.
+
+## What a climber notices
+
+After Phase A, an open www tab clears its cached data and reloads at the home
+page in the climber's language when another tab or the browser app signs in as
+someone else or signs out. On app.boardsesh.com any account change after the
+page first showed an account reloads the app, including signing out in that
+tab. A response for the old account shows nothing, so no stale toast or
+redirect appears. After Phase B, sign-in looks the same, and a climber signed
+in before the switch stays signed in on www and app.boardsesh.com. Native iOS
+and Android apps and Garmin do not change in either phase.
+
+## The session cookie
+
+| | Today (NextAuth 4.24.15) | This design (Phase B) |
+| --- | --- | --- |
+| Name | `__Secure-next-auth.session-token`, or `next-auth.session-token` outside a secure context (`packages/web/app/lib/auth/secure-cookies.ts:16-17`) | A Better Auth signed cookie with its own prefix (below) |
+| Domain | `.boardsesh.com` when serving www or the apex in production; host-only on previews and local (`secure-cookies.ts:57-77`) | The same, through Better Auth `crossSubDomainCookies`, enabled only where `sessionCookieDomain()` returns `.boardsesh.com` |
+| Attributes | HttpOnly, SameSite=Lax, Path=/, Secure in a secure context (`auth-options.ts:263-279`) | The same |
+| Lifetime | 30 days, rolling (`next-auth/core/init.js:45`) | Open question 1 |
+| Written by | Login, sign-out, and every session read: each GET re-encodes the JWE and sets the cookie again (`next-auth/core/routes/session.js`) | Login and sign-out responses only |
+
+Sessions roll on the server. Session reads, renewal, set-password and provider
+link emit no `Set-Cookie` for the session. Set-password and provider link keep
+the session and its token.
+
+How Better Auth is kept from writing the cookie on reads (read in
+`better-auth/dist`, not run):
+
+1. `session.disableSessionRefresh: true` turns off the refresh on a session
+   GET (`api/routes/session.mjs:181`). `deferSessionRefresh` is the wrong
+   option, because its POST path still writes the cookie.
+2. `cookieCache` stays off, as `createAuthority` already sets it
+   (`authority.ts:48`). `setCookieCache` then returns at once
+   (`cookies/index.mjs:77`), so no `session_data` cookie is written.
+3. Better Auth still clears the cookie when the session is missing or expired
+   (`session.mjs:156`), when a refresh update fails (`:207`), and when a stale
+   `session_data` cookie arrives (`:43-46`). No option turns that off. An
+   after-hook removes those `Set-Cookie` lines. After-hooks run after the
+   handler, including when it throws, and the dispatcher returns the
+   hook-edited headers (`api/dispatch.mjs:247-248`). Better Auth uses the same
+   technique internally in `removeSetCookieEntries` (`cookies/index.mjs:204`).
+   Routes behind the session middleware copy the inner read's `Set-Cookie`
+   into their own response (`session.mjs:268-271`), so the hook covers every
+   route, not only `/get-session`.
+4. The www forwarder strips the same lines again, and the browser tests in B7
+   assert that no `Set-Cookie` arrives.
+
+The cookie needs its own prefix. The partner OAuth instance on
+api.boardsesh.com sets no `cookiePrefix` (`partner/authority.ts:174-218`), so
+it uses Better Auth's default `better-auth` (`cookies/index.mjs:28`). A
+first-party cookie on `Domain=.boardsesh.com` also reaches api.boardsesh.com,
+so the two must not share a name. The first-party name must also differ from
+both NextAuth names, because the legacy cookie stays for 30 days after cutover.
+B1 picks the prefix.
+
+The scope does not change. Per #7596 the cookie reaches www, the apex, app,
+ws, api, the R2 buckets, updates, `{N}.preview` and `{N}.ws.preview` (live DNS
+not checked). Preview hosts are the only ones that can run unreviewed code, so
+they stay on manual dispatch or move to a separate domain.
+
+The backend (`packages/backend`) owns sessions, the legacy bridge, the browser
+token and revocation. www keeps `/api/auth/session`, `/api/auth/csrf`, the
+credentials callback and guarded sign-out at their URLs and JSON shapes, and in
+`better-auth` mode forwards them to the backend (B4). Server renders never set
+a cookie. Expo web learns everything from www responses, as it does today.
+
+## The browser token
+
+Browser JavaScript holds the raw 30-day NextAuth JWE today:
+`/api/internal/ws-auth` returns it in JSON (`ws-auth/route.ts:84-89`), and www
+and Expo web send it to the backend as a bearer. B3 replaces it with a token
+that lives 15 minutes (owner decision 14, which is not written down anywhere on
+main; #7596 is the record). It is not the session token, so Better Auth's
+`bearer` plugin, which copies the session token into a `set-auth-token` header
+(`plugins/bearer/index.mjs:64-65`), is not used.
+
+Every request made with the token checks that its session is still live. The
+BA-04 admission read runs per request and joins `auth_session_denials`
+(`packages/backend/src/auth/human-admission.ts:89-116`). It only sees sessions
+ended through `denyFirstPartySession*` (`authority/lineage.ts:50-69`). A row
+removed by Better Auth's own `deleteSession` leaves no denial, so B3 must also
+confirm the `auth_session` row exists and has not expired, or every revocation
+must go through `lineage.ts`.
+
+## Signed-in browsers from before the switch
+
+A browser with a valid legacy JWE and no new cookie is bridged once by
+`bridgeLegacyCredential` (`bridge.ts:22`), which keeps the legacy
+`authSessionId` as the new session's id (`bridge.ts:37,78`). The www session
+read sets the new cookie on that response (B2).
+
+Every legacy cookie shape must bridge: the normal `__Secure-` cookie, chunked
+cookies (`<name>.0`, `<name>.1`, ...), a host-only cookie left from before the
+shared domain, and the plain-named `next-auth.session-token`
+(`secure-cookies.ts:80-101,133-151`). When a browser sends a host-only and a
+domain cookie with the same name and different values, the backend's strict
+reader returns nothing (`legacy-web-credentials.ts:186`), so the www forwarder
+has to choose which copy to bridge. B2 needs a test for that case.
+
+The legacy cookie is kept for 30 days after cutover (owner decision 23,
+recorded in #7596), so a rollback needs no cookie clearing.
+
+A bridged session never counts as a fresh sign-in: set-password and provider
+link or unlink on it require real reauthentication. This conflicts with the
+bridge on main, which sets `createdAt` to the legacy `auth_time` when the
+cookie is link-guarded and to epoch 0 otherwise (`bridge.ts:82`). With `freshAge` at 300 seconds (`authority.ts:47`) and Better
+Auth comparing `now - createdAt` (`session.mjs:337-340`), a bridged cookie
+from a sign-in less than five minutes old counts as fresh. The bridge follows
+[the accepted migration](./better-auth-migration.md) at lines 207-213, which
+asks to "preserve trustworthy age". #7596 says never fresh. The owner decides
+before B2 (open question 2).
+
+## Login revokes the session it arrived with
+
+When a login request carries a session cookie, legacy or new, the login
+revokes that session in the transaction that creates the new one. B1 reuses
+`denyFirstPartySessionInTransaction` (`lineage.ts:61`), which deletes the row
+and writes the `auth_session_denials` row the admission read checks. A request
+still carrying the old account's browser token then gets a 401. That makes the
+other tab re-read the session and reload as the new account (acceptance item 2).
+
+Stock Better Auth sign-in returns the raw session token in its JSON body
+(`api/routes/sign-in.mjs:364`). Stock sign-out clears the cookie even when the
+database delete failed (`api/routes/sign-out.mjs:49-54`), checks no expected
+identity and writes no denial row. Neither is used as is. B4 keeps today's
+guarded sign-out, which answers 409 when the cookie no longer belongs to the
+identity the tab expected (`[...nextauth]/route.ts:243`).
+
+## One guard in each browser client
+
+Each browser surface gets one guard in its transport, keyed by who a request
+was sent as. No call site is wrapped by hand. The guard works against NextAuth
+today and keeps working after the switch, because both kinds of session expose
+the same user id and auth session id.
+
+### www (A2)
+
+The guard keys on `(userId, authSessionId)`, both already on the client
+session (`packages/web/app/lib/auth/types.ts:21-22`). It is the `fetch` option
+of the GraphQL HTTP client (`app/lib/graphql/client.ts:25`, about 222 call
+sites in 76 files), and it reads the whole body before deciding, because
+graphql-request reads the body after `fetch` resolves. About 16 raw `fetch()`
+calls to user-scoped endpoints switch to one exported guarded fetch. The shared
+WebSocket client (`app/lib/realtime/graphql-client.ts`) is disposed and
+reconnected on a generation change. The session provider
+(`app/components/providers/session-provider.tsx`), the one place that accepts
+a new session read, reports every accepted identity to the guard.
+
+| Change seen by a tab | Generation bumps (in-flight responses dropped) | Caches cleared | Reload |
+| --- | --- | --- | --- |
+| First read on page load | no | no | no |
+| Same user, same `authSessionId` | no | no | no |
+| Signed out to A | yes | no | no |
+| A to A with a new `authSessionId` | yes | no | no |
+| A to B, or A to signed out, started in this tab (sign-in, guarded sign-out) | yes | yes | no, the flow navigates itself |
+| A to B, or A to signed out, started in another tab or the app | yes | yes | yes, to the locale root (`/`, `/es/`, ...) |
+
+"Caches cleared" means the React Query cache, its persisted copy in IndexedDB
+(`app/lib/react-query-idb-persister.ts`) and user-scoped IndexedDB.
+`SessionCacheBuster` (`query-client-provider.tsx:98-128`) does most of this
+today, keyed by user id only; A2 drives it from the guard. An outage never
+changes identity, because the provider accepts only a 2xx with a valid body
+and keeps the current session on any failure
+(`session-provider.tsx:187-191,244-249`). So an outage never reloads or clears
+anything (#6979 criterion 4).
+
+### Expo web on app.boardsesh.com (A3)
+
+The guard keys on `(userId, authSessionId, credential generation)`, the
+generation being `sessionGeneration` (`packages/mobile/src/lib/auth-store.web.ts:67`).
+Every authenticated HTTP request already passes through `authenticatedFetch`,
+but when the generation changed during a request it returns the response
+anyway (`auth-interceptor.web.ts:218-222`). Today only the call sites the
+earlier BA-05 PRs wrapped are protected. A3 adds the check there, plus a page
+latch.
+
+The first identity a page confirms is that page's identity. Any later
+confirmed change to a different identity, including signed out, retires the
+page. A retired page refuses new sends, drops every response and body read,
+disposes its WebSocket, runs the existing old-owner cleanup in
+`auth-provider.tsx` (which clears the `user:<id>:auth-session:<sid>` IndexedDB
+keys, `user-storage-owner.web.ts:97-98`), then calls `location.replace` with
+the app root. A login on a signed-out page sets the latch without retiring it.
+
+A3 changes only `.web` files and code already inside `Platform.OS === 'web'`
+branches, because any file without a `.web` suffix under `packages/mobile` or
+`packages/shared` ships to phones by OTA on every push to main. A3's tests run
+the same flows as `ios` and `android` and expect today's behaviour.
+
+### Re-reading the session
+
+Both clients re-read the session on `pageshow` from the back/forward cache, on
+`focus` and `visibilitychange` at most once every 30 seconds, and on a 401
+(parallel 401s cause one read). Today www lacks the focus and 401 re-reads,
+and Expo web lacks `pageshow` and focus.
+
+In Phase A every NextAuth session GET rewrites the cookie, which is the race
+in [the cookie-order doc](./better-auth-browser-cookie-order.md). The extra
+re-reads should use a probe that sets no cookie. The candidate is
+`/api/internal/ws-auth`, which reads the cookie with `getToken` and answers
+JSON (`ws-auth/route.ts:19-92`). A2 confirms in the installed NextAuth that
+this path never sets a cookie. If it does, the re-read falls back to a session
+GET at the same 30-second throttle. In Phase B no read sets a cookie.
+
+### Superseded responses
+
+A response the guard drops reaches the caller as a `SessionSupersededError`,
+and the caller shows nothing: no toast, no navigation, no cache write. Toasts
+and navigation each pass one generation check, so a late error handler from
+the old account shows nothing under the new one.
+
+The guard reuses what exists. On www: `SessionCacheBuster`, the guarded
+sign-out (`nextauth-cookie-fetch-lock.ts:293`) and the same-origin cookie fetch
+lock (`nextauth-cookie-fetch-lock.ts:255`), which stays until Phase B. On Expo
+web: `sessionGeneration`, the `boardsesh-expo-web-auth-v1` BroadcastChannel
+(`auth-store.web.ts:77,157`) and the storage owner key.
+
+## How each race is handled
+
+| Race | What happens | Where |
+| --- | --- | --- |
+| A mutation started as A lands after a switch to B | The server commits it to A, which is correct. The caller gets `SessionSupersededError` and shows nothing. | A2, A3 |
+| A query response for A arrives after the switch | Dropped after the full body is read (www), or on delivery and on every body read (Expo web). | A2, A3 |
+| Cached queries and optimistic updates | Query cache, persisted cache and user-scoped IndexedDB are cleared on a user change. A change made elsewhere also reloads. | A2, A3 |
+| WebSockets | The client is disposed on a generation change and reconnects. The server cutoff sweep closes revoked sockets every 1,000 ms ([enforcement windows](./better-auth-enforcement-windows.md)). | A2, A3 |
+| Offline outbox | Expo web has none. Native is out of scope and does not change. | none |
+| Back/forward cache and the Next Router Cache | `pageshow` re-reads the session. A changed identity reloads. | A2, A3 |
+| Login on www while an app tab is open | Phase A: the app tab notices on focus, visibility or `pageshow`, because BroadcastChannel and `storage` events do not cross origins. Phase B: the login revokes A's session, so A's next request gets a 401 and the tab reloads as B. | A3, B1 |
+| A delayed session read or set-password response overwrites a later login's cookie | Remains in Phase A, because NextAuth writes on every read. Gone in Phase B, because neither response writes a cookie. | B1, B4 |
+| A bridged legacy session | Never fresh. Sensitive actions need reauthentication (open question 2). | B2 |
+| Two logins in two tabs at nearly the same moment | Accepted, see below. | none |
+| Backend or auth outage | No identity change, so no reload and no cleanup. | A2, A3 |
+
+## What this design accepts
+
+1. Two logins in two tabs at nearly the same moment. If A's login response
+   arrives after B's, the browser ends up signed in as A and B has to sign in
+   again. No data crosses accounts.
+2. A reload on account switch. In-flight work in other tabs does not survive
+   it. On app.boardsesh.com, signing out also reloads.
+3. The cookie scope stays as it is today, including the preview hosts.
+4. In Phase A, a www tab can send a cookie-authenticated `/api/internal/*`
+   request after the shared cookie changed to B on another origin but before
+   the tab noticed. The generation has not moved, so B's data can reach A's
+   screen until the next re-read reloads the page. This gap exists today.
+   Closing it for cookie routes would need the server to echo the viewer; not
+   decided.
+
+## The switch
+
+`AUTH_BROWSER_SESSION_MODE` takes two values: `legacy`, the default when unset
+or empty, and `better-auth`. The parser lives in `@boardsesh/auth-protocol`,
+shaped like `partner-oauth-mode.ts`. The backend refuses an unknown value at
+startup. www reads it on the server at request time and passes resolved values
+to client components as props, as `app/layout.tsx:128` already does with
+`canonicalBrowserOrigin`. It is never `NEXT_PUBLIC_*`, which is baked in at
+build time, so a rollback would need a rebuild. Expo web has no flag.
+
+It replaces the eight code-owned gates, each a literal `return false`: the
+seven `packages/web/app/lib/auth/*-readiness.ts` files and
+`packages/mobile/src/lib/browser-consumer-readiness.web.ts`.
+(`scripts/lib/expo-web-readiness.ts` is the dev server's Metro prewarm helper,
+not a gate.) The last A5 PR adds the switch and deletes those gates. Until B1
+lands, `better-auth` has nothing to turn on.
+
+Turn it on in the backend first, then web. Roll back web first, then backend.
+The legacy cookie is kept for 30 days, so a rollback needs no cookie clearing.
+The owner sets the variable from paste-ready steps in #7430. It stays `legacy`
+in production until every acceptance item has a passing test in CI.
+
+Proposed startup preconditions for `better-auth`, for B1 to settle: cutoff
+enforcement on, `AUTH_LEGACY_BRIDGE_MODE=on`, the web sign-out mode at
+`backend-staging` (the bridge already requires it,
+`packages/shared/auth-protocol/src/web-credential-proof.ts:54-58`), and the
+BA-04 authority switch done.
+
+## Provider and first-password flows
+
+The backend cores stay. Google and Apple link and unlink require real
+reauthentication within five minutes (owner decision, 2026-11-13). For Google,
+only a verified ID token with a signed `auth_time` within five minutes
+qualifies; callback time, token `iat`, transfer or code issue time,
+`prompt=login` and `max_age` never supply freshness
+([provider security adoption](./better-auth-provider-security-adoption.md)).
+Apple-only accounts set a first password after email confirmation, which is
+not provider reauthentication. Facebook sign-in and linking stay removed;
+stored Facebook identities stay. The backend `authority/browser-binding.ts` and
+the binding-table readers those cores use stay until B5. Drizzle schema exports
+and merged migrations stay, and this work writes no migrations.
+
+The web publication layer for these flows is deleted in A5 and rebuilt on the
+new session in B5. That covers the provider Settings UI and its server code,
+the first-password web layer, the web half of Google reauthentication,
+anonymous and owned provider sign-in, and the ACK step. It imports the binding
+today (`provider-security-settings.server.ts:9-12`). With every gate `false` it
+shows nothing in production, so deleting it changes nothing live. The dark
+`/auth/browser-coordinator` and `/auth/confirm-first-password` pages may become
+404s.
+
+The provider-security, Google auth-time and first-password `CURRENT_STORE_*`
+selectors stay backend-only. `CURRENT_STORE_PROVIDER_SECURITY_MODE=backend-staging`
+already changes legacy behaviour (`current-store/set-password.ts:43`,
+`current-store/web-oauth-identity.ts:181`).
+
+## What is removed, and why
+
+Behind the eight gates sits a second design: host-only `__Host-boardsesh.*`
+cookies, a server row per browser (the "binding"), 120-second `bsbd1_` leases
+for app.boardsesh.com, per-request receipts and exact-ACK cookie publication.
+Its own doc calls its founding rules "agent engineering decisions"
+(`docs/better-auth-session-publication.md:16`); no owner decision covers them.
+It needs every HTTP and GraphQL call site wrapped by hand (57 of 202 GraphQL
+sites are done), and it already caused a live native regression (climb delete,
+from #7547). #7596 estimates 50 to 80 agent-days to finish it, against 15 to 25
+for this design.
+
+A4 deletes the per-site wrappers and scopes in `packages/mobile` and
+`packages/shared` (about 4,600 source and 26,000 test lines in `packages/mobile`
+alone, counted from the BA-05 commits) and the selected outbox drain from
+#7555, which no platform can reach (#7592). A5 deletes the browser binding,
+proof cookies, the www iframe coordinator, renewal custody, expired-binding
+recovery, `bsbd1_` leases, receipts, the web provider-flow publication layer,
+and the binding-based browser-to-native handoff (`bsnh1_`, #7510 and #7529).
+The legacy native callback (`app/api/auth/native/callback/route.ts`) and its
+HMAC transfer (`app/lib/auth/native-oauth-transfer.ts`) stay byte-for-byte.
+Each doc marked "Superseded by #7596" goes in the PR that deletes its code.
+
+#7596 estimates about 22,000 source and 45,000 test lines in total. The binding
+was never on in production, so deleting it carries no rollback risk. The PRs
+that delete it close [#7588](https://github.com/boardsesh/boardsesh/issues/7588)
+and [#7594](https://github.com/boardsesh/boardsesh/issues/7594).
+
+Deletions must not change live behaviour. Where deleted code has a live side
+effect today, A5 keeps a small equivalent check and says so in the PR. One
+known case: in legacy mode, Google and Apple sign-in answer 503 when the Cookie
+header is malformed or too large (over 32,768 bytes, over 128 pairs, control
+characters, or a pair without a name; `public-auth-request.server.ts:33-49`,
+reached through `provider-oauth-outer.server.ts:100-104` and answered at
+`[...nextauth]/route.ts:373-377`). That check stays. The same code also refuses
+any `__Host-boardsesh.*` cookie, which only the binding design sets; that part
+goes, as #7594 asks.
+
+## Tests
+
+Failing test first for new behaviour; real HTTP (a local `node:http` server),
+real `fetch` and real Postgres where possible; no test forces a readiness gate
+on while it scripts the backend's replies; no test file over about 600 lines.
+
+| #7596 acceptance item | Test |
+| --- | --- |
+| 1. Chromium and WebKit on real HTTPS subdomains: renewal, sign-out, set-password and session reads emit no `Set-Cookie` | B1 backend tests over real HTTP for the after-hook. B7 Playwright on both engines. Rerun the fixture in [the cookie-order doc](./better-auth-browser-cookie-order.md). |
+| 2. www and app open as A, log in as B on www: A's token gets a 401 and the app tab reloads as B | A3 latch and reload tests. B1 revocation test. B7 Playwright. |
+| 3. A response held across an account switch, then back/forward: no toast, navigation or cache write under B | A2 and A3 tests that hold a real server's response body across a switch. B7 Playwright for the Router Cache and back/forward cache. |
+| 4. Set-password on a bridged session requires reauthentication | B2 backend test with real Postgres. |
+| 5. A browser signed in before cutover stays signed in, with every legacy cookie shape | B2 and B4 tests per shape, including the conflicting host-only and domain pair. B7 Playwright. |
+| 6. Rollback leaves every browser signed in through the legacy cookie, with no clearing step | B7 Playwright that switches the mode back. |
+| 7. Native iOS and Android unchanged; no abort on unmount; no new identity per render | A3 and A4 tests that run each flow with the platform set to `ios` and `android`. `src/__tests__/web-fork-export-parity.test.ts`. The mobile suite in CI. |
+| 8. One mode switch gates the whole web cutover | A5 parser tests in `@boardsesh/auth-protocol`, backend startup refusal of unknown values, and a check that no `*-readiness.ts` gate is left. |
+
+The five criteria of #6979 map onto these: criterion 1 is item 5, criterion 2
+is B4 and B5, criterion 3 is items 2 and 3, criterion 4 is the guard's outage
+rule, and criterion 5 is B4. Unit tests cannot show real cookie order across
+www and app, the back/forward cache or the Router Cache; only B7 can. There is
+no account-switching browser test in `packages/web/e2e/` today.
+
+## Open questions for Phase B
+
+1. Session lifetime. With no cookie writes on reads, Max-Age is fixed at login
+   (`cookies/index.mjs:169-178`). Today NextAuth extends the cookie to 30 days
+   on every read, so an active climber is never signed out. Keeping that means
+   a long Max-Age at login and the server rolling `auth_session.expires_at`
+   itself. A 30-day absolute lifetime changes account behaviour. Better Auth
+   defaults to 7 days (`context/create-context.mjs:148`), and `createAuthority`
+   sets no `expiresIn`.
+2. Bridged freshness. Never fresh (#7596) or keep trustworthy age
+   (`better-auth-migration.md:207-213`, `bridge.ts:82`)?
+3. Mount `betterAuth()` or write rows, and the BA-02 email gate. Mounting a
+   per-request instance from `createAuthority` needs a transaction wrapper (the
+   partner runtime has one) and BA-02's email stored form (#7436). Writing
+   Better-Auth-compatible `auth_session` rows and a signed cookie from our own
+   login code, read through `readFirstPartySession` with a `canonical-token`
+   (`authority/session-reader.ts:26-29`), avoids the Better Auth adapter and so
+   the email gate.
+4. Under `better-auth`, what do the `CURRENT_STORE_WEB_AUTH_MODE`,
+   `_WEB_OAUTH_MODE`, `_SET_PASSWORD_MODE`, `_WEB_SIGNOUT_MODE` and
+   `_WEB_CREDENTIAL_PROOF_MODE` selectors mean?
+5. Should provider Settings and first password switch on separately from the
+   session cutover, or always follow `AUTH_BROWSER_SESSION_MODE`?
+
+## Not verified
+
+Nothing in this doc was run. The Better Auth mechanisms (the after-hook scrub,
+`disableSessionRefresh`) were read in the installed 1.7.17 source, not
+executed. Also unchecked: Safari and WebKit handling of the shared-domain
+cookie between www and app; live DNS and which hosts receive the cookie;
+whether preview deployments are still manual dispatch only; the production
+values of `AUTH_LEGACY_BRIDGE_MODE`, `CURRENT_STORE_BROWSER_BINDING_MODE` and
+the sign-out mode ("off" comes from code defaults); whether
+`/api/internal/ws-auth` sets a cookie on any path (A2 checks); and whether the
+#7439 denial reader is deployed on every backend. Owner decisions 14 and 23
+have no written source other than #7596.
+
+## Related docs
+
+[Accepted migration](./better-auth-migration.md),
+[cookie response order](./better-auth-browser-cookie-order.md),
+[BA-01 HTTPS browser proof](./better-auth-browser-proof.md),
+[legacy web credential proof](./better-auth-legacy-web-proof.md),
+[provider security adoption](./better-auth-provider-security-adoption.md),
+[first password](./better-auth-first-password-email.md),
+[Expo web deployment](./expo-web-deployment.md) ("Browser authentication") and
+[canonical web origin](./web-canonical-origin.md) (cookie domain rules).

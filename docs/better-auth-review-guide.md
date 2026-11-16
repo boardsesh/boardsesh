@@ -2,6 +2,8 @@
 
 This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-06. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and its child issues remain open.**
 
+BA-05 was re-scoped on 2026-11-16 by [#7596](https://github.com/boardsesh/boardsesh/issues/7596). Its design is in [better-auth-browser-session.md](./better-auth-browser-session.md). Docs carrying a "Superseded by #7596" banner describe browser binding code that is being removed. Row #7299 below is where the publication decisions behind that design started.
+
 ## Review order
 
 | PR | Review scope | Dependency |

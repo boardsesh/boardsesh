@@ -461,6 +461,12 @@ Never move browser tokens into AsyncStorage, localStorage, or IndexedDB. Test
 cross-origin requests and cookies rather than assuming the native Expo plugin
 implements the browser deployment contract.
 
+BA-05 is re-scoped by [#7596](https://github.com/boardsesh/boardsesh/issues/7596):
+one session cookie on the shared parent domain, written only by login and
+sign-out responses, and one guard in each browser client's transport. The
+design, its open questions and its rollout switch are in
+[better-auth-browser-session.md](./better-auth-browser-session.md).
+
 ## Proof gates before rollout
 
 Use a pinned, mutually compatible Better Auth/core/provider/Drizzle/Expo package
@@ -524,7 +530,7 @@ Epic: [#6975: Epic: migrate to one self-hosted Better Auth authority without use
 | BA-03: auth: centralize existing credential writes and recovery before migration | [#6977](https://github.com/boardsesh/boardsesh/issues/6977) | [#6976](https://github.com/boardsesh/boardsesh/issues/6976) |
 | BA-02: Normalize account emails and add a case-insensitive unique index | [#4847](https://github.com/boardsesh/boardsesh/issues/4847) | [#6976](https://github.com/boardsesh/boardsesh/issues/6976), [#6977](https://github.com/boardsesh/boardsesh/issues/6977) |
 | BA-04: auth: migrate identity authority and bridge legacy session lineage | [#6978](https://github.com/boardsesh/boardsesh/issues/6978) | [#6976](https://github.com/boardsesh/boardsesh/issues/6976), [#4847](https://github.com/boardsesh/boardsesh/issues/4847), [#6977](https://github.com/boardsesh/boardsesh/issues/6977) |
-| BA-05: auth: migrate web and Expo web without changing account behavior | [#6979](https://github.com/boardsesh/boardsesh/issues/6979) | [#6977](https://github.com/boardsesh/boardsesh/issues/6977), [#6978](https://github.com/boardsesh/boardsesh/issues/6978) |
+| BA-05: auth: migrate web and Expo web without changing account behavior | [#6979](https://github.com/boardsesh/boardsesh/issues/6979), re-scoped by [#7596](https://github.com/boardsesh/boardsesh/issues/7596) ([design](./better-auth-browser-session.md)) | [#6977](https://github.com/boardsesh/boardsesh/issues/6977), [#6978](https://github.com/boardsesh/boardsesh/issues/6978) |
 | BA-06: auth: preserve native and Garmin clients through the compatibility facade | [#6980](https://github.com/boardsesh/boardsesh/issues/6980) | [#6977](https://github.com/boardsesh/boardsesh/issues/6977), [#6978](https://github.com/boardsesh/boardsesh/issues/6978) |
 | BA-07: auth: add isolated partner OAuth with explicit token lifecycles | [#6981](https://github.com/boardsesh/boardsesh/issues/6981) | [#6976](https://github.com/boardsesh/boardsesh/issues/6976), [#6977](https://github.com/boardsesh/boardsesh/issues/6977), [#6978](https://github.com/boardsesh/boardsesh/issues/6978) |
 | BA-08: integrations: connect developer registration, consent, and Disconnect to OAuth | [#6982](https://github.com/boardsesh/boardsesh/issues/6982) | [#6979](https://github.com/boardsesh/boardsesh/issues/6979), [#6981](https://github.com/boardsesh/boardsesh/issues/6981) |
