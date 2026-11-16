@@ -100,8 +100,11 @@ describe('owned canonical frame lifetime', () => {
       });
       const pending = readCanonicalBrowserCoordinator('https://www.boardsesh.test', new AbortController().signal);
       current.created[0].dispatchEvent(new Event('load'));
-      if (status === 'ready') expect(await pending).toEqual(cursor);
-      else await expect(pending).rejects.toThrow('COORDINATOR_UNAVAILABLE');
+      if (status === 'ready') {
+        const returned = await pending;
+        expect(returned).toEqual(cursor);
+        expect(Object.isFrozen(returned)).toBe(true);
+      } else await expect(pending).rejects.toThrow('COORDINATOR_UNAVAILABLE');
       expect(operations).toEqual(['read']);
     },
   );
