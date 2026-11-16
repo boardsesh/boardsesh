@@ -111,6 +111,9 @@ required-mode tests. The public readiness function still returns literal false.
 
 ## Historical producer evidence
 
+The 24 WWW SDK cases cited in this section and the next were deleted with the
+www client by #7596. The shared and mobile cases remain.
+
 Independent extraction review passed 12 shared cases and the unchanged 24
 actual WWW SDK cases. The separate cold-view 401 change passed independent
 20 HTTP plus 11 request-authority cases and the same 24 WWW cases. Scoped
