@@ -361,7 +361,7 @@ vi.mock('../WallStatePill', () => ({ WallStatePill: () => null }));
 vi.mock('../TrackEndCard', () => ({ TrackEndCard: () => null }));
 vi.mock('../../onboarding/PlayerPreviewTip', () => ({ PlayerPreviewTip: () => null }));
 vi.mock('../WorkoutRunnerOverlay', () => ({ WorkoutRunnerOverlay: () => null }));
-vi.mock('../PanePlaceholder', () => ({ PanePlaceholder: () => null }));
+vi.mock('../../EmptyState', () => ({ EmptyState: () => null }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
 vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));

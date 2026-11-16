@@ -235,7 +235,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { primary: '#6D28D9' },
-    variant: chromeState.variant,
+    variant: chromeState.variant ?? 'liquidGlass',
     features: variantFeatures[chromeState.variant ?? 'liquidGlass'],
     systemColors: {
       separator: 'theme-separator',

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon } from './Icon';
 import { Text } from './Text';
 import type { IconName } from './icon-map';
@@ -28,6 +28,11 @@ export type EmptyStateProps =
       body?: string;
       /** A glyph above the title, in tertiary label. */
       icon?: IconName;
+      /**
+       * Extra layout on the placard's root: the safe-area padding a top-of-shell
+       * pane owns, or the extra top inset of a list's `ListEmptyComponent`.
+       */
+      style?: StyleProp<ViewStyle>;
     })
   | (EmptyStateCommonProps & {
       /**
@@ -38,6 +43,7 @@ export type EmptyStateProps =
       size: 'quiet';
       body?: never;
       icon?: never;
+      style?: never;
     });
 
 /**
@@ -60,9 +66,9 @@ export function EmptyState(props: EmptyStateProps) {
     );
   }
 
-  const { size, body, icon } = props;
+  const { size, body, icon, style } = props;
   return (
-    <View style={size === 'screen' ? styles.screen : styles.section} testID={testID}>
+    <View style={[size === 'screen' ? styles.screen : styles.section, style]} testID={testID}>
       {icon ? <Icon name={icon} size={size === 'screen' ? 40 : 32} color={systemColors.tertiaryLabel} /> : null}
       <Text variant="headline" style={icon ? styles.titleAfterIcon : styles.centred}>
         {title}

@@ -8,7 +8,7 @@ import { TabLayoutView } from '../../components/navigation/TabLayoutView';
 import { MaterialTabBarView } from '../../components/navigation/MaterialTabBarView';
 import { MaterialNavigationRailView } from '../../components/navigation/MaterialNavigationRailView';
 import { NativeTabletContentView, PhoneSplitPaneView } from '../../components/navigation/NativeTabletContentView';
-import { PanePlaceholder } from '../../components/play-drawer/PanePlaceholder';
+import { EmptyState } from '../../components/EmptyState';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
@@ -31,11 +31,12 @@ export function StoryPanePlaceholder() {
   const { t } = useTranslation('session');
   const insets = useSafeAreaInsets();
   return (
-    <PanePlaceholder
+    <EmptyState
+      size="screen"
+      icon="search"
       title={t('playView.paneEmpty.title')}
-      subtitle={t('playView.paneEmpty.subtitle')}
-      paddingTop={insets.top}
-      paddingBottom={insets.bottom}
+      body={t('playView.paneEmpty.subtitle')}
+      style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
     />
   );
 }

@@ -19,11 +19,10 @@ import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Button } from '../Button';
+import { EmptyState } from '../EmptyState';
 import { Card } from '../Card';
-import { Icon } from '../Icon';
 import { OfflineState } from '../OfflineState';
 import { useSessionWorkoutHeadlines } from '../session/workout/use-session-workout-view';
-import { Text } from '../Text';
 import { CommentSheet } from './CommentSheet';
 import { FeedSectionLabel } from './FeedSectionLabel';
 import { SessionFeedCard } from './SessionFeedCard';
@@ -105,7 +104,7 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
   const handleScroll = useHideOnScroll(scrollEdge?.listProps.onScroll);
   const { t } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { brandColors } = useTheme();
   const router = useRouter();
   // A session card's hardest send opens like a row of any list (issue #6665),
   // playing from a one-climb list of its own.
@@ -299,20 +298,17 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
           ) : null
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Icon name="history" size={48} color={systemColors.tertiaryLabel} />
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('mobile.sessions.emptyTitle')}
-            </Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-              {t('mobile.sessions.emptyBody')}
-            </Text>
-            <View style={styles.emptyCta}>
-              {/* The Record tab hosts the session screen inline, so the CTA just
-                  navigates there. */}
+          <EmptyState
+            size="section"
+            icon="history"
+            title={t('mobile.sessions.emptyTitle')}
+            body={t('mobile.sessions.emptyBody')}
+            actions={
+              // The Record tab hosts the session screen inline, so the CTA just
+              // navigates there.
               <Button title={t('mobile.sessions.emptyCta')} onPress={() => router.navigate('/(tabs)/record')} />
-            </View>
-          </View>
+            }
+          />
         }
       />
       <CommentSheet
@@ -409,14 +405,4 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     opacity: 0.32,
   },
-  empty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 120,
-    paddingHorizontal: spacing[8],
-    gap: spacing[2],
-  },
-  emptyTitle: { marginTop: spacing[3], textAlign: 'center' },
-  emptyBody: { textAlign: 'center' },
-  emptyCta: { marginTop: spacing[4] },
 });

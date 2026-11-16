@@ -51,8 +51,8 @@ vi.mock('../PlayDrawer', () => ({
   },
 }));
 
-vi.mock('../PanePlaceholder', () => ({
-  PanePlaceholder: (props: Record<string, unknown>) => {
+vi.mock('../../EmptyState', () => ({
+  EmptyState: (props: Record<string, unknown>) => {
     captured.placeholderProps = props;
     return createElement('div', { 'data-pane-placeholder': 'true' });
   },
@@ -153,7 +153,7 @@ describe('IpadPlayPane wall surface', () => {
     expect(captured.playDrawerProps?.paneEmptyState).toBeUndefined();
     cfg.paneProps = null;
     render(<IpadPlayPane />);
-    expect(captured.placeholderProps?.actionTitle).toBeUndefined();
+    expect(captured.placeholderProps?.actions).toBeUndefined();
   });
 });
 
@@ -184,7 +184,7 @@ describe('IpadPlayPane in the phone split', () => {
     expect(captured.placeholderProps).toMatchObject({
       icon: 'boards',
       title: 'mobile.emptyState.noBoard.title',
-      actionTitle: 'mobile.emptyState.noBoard.cta',
     });
+    expect(captured.placeholderProps?.actions).toBeDefined();
   });
 });

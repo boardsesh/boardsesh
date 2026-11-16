@@ -380,8 +380,8 @@ vi.mock('../DeferredSections', () => ({
     return createElement('div', { 'data-testid': 'deferred-sections' });
   },
 }));
-vi.mock('../PanePlaceholder', () => ({
-  PanePlaceholder: () => {
+vi.mock('../../EmptyState', () => ({
+  EmptyState: () => {
     recorded.panePlaceholder += 1;
     return createElement('div', { 'data-testid': 'pane-placeholder' });
   },

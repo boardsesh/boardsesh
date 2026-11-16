@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlayDrawer } from './PlayDrawer';
-import { PanePlaceholder } from './PanePlaceholder';
+import { EmptyState } from '../EmptyState';
+import { Button } from '../Button';
 import { UnlitBoardPane } from './UnlitBoardPane';
 import { WallStrip } from '../board-presence/WallStrip';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -80,21 +81,21 @@ function IpadPlayPaneComponent({
   // No board resolved yet — the pane has no selection to show.
   if (!playDrawerPaneProps) {
     return phoneSplit ? (
-      <PanePlaceholder
+      <EmptyState
+        size="screen"
         icon="boards"
         title={tClimbs('mobile.emptyState.noBoard.title')}
-        subtitle={tClimbs('mobile.emptyState.noBoard.subtitle')}
-        actionTitle={tClimbs('mobile.emptyState.noBoard.cta')}
-        onAction={openBoardPicker}
-        paddingTop={insets.top + spacing[8]}
-        paddingBottom={insets.bottom}
+        body={tClimbs('mobile.emptyState.noBoard.subtitle')}
+        actions={<Button title={tClimbs('mobile.emptyState.noBoard.cta')} onPress={openBoardPicker} variant="filled" />}
+        style={{ paddingTop: insets.top + spacing[8], paddingBottom: insets.bottom }}
       />
     ) : (
-      <PanePlaceholder
+      <EmptyState
+        size="screen"
+        icon="search"
         title={t('playView.paneEmpty.title')}
-        subtitle={t('playView.paneEmpty.subtitle')}
-        paddingTop={insets.top + spacing[8]}
-        paddingBottom={insets.bottom}
+        body={t('playView.paneEmpty.subtitle')}
+        style={{ paddingTop: insets.top + spacing[8], paddingBottom: insets.bottom }}
       />
     );
   }

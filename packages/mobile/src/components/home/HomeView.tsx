@@ -15,6 +15,7 @@ import { Icon } from '../Icon';
 import { OfflineStateView } from '../OfflineStateView';
 import { ReadableColumn } from '../ReadableColumn';
 import { Text } from '../Text';
+import { EmptyState } from '../EmptyState';
 import { HomeEmptyState } from './HomeEmptyState';
 
 const INITIAL_FEED_SKELETON_KEYS = ['home-feed-skeleton-1', 'home-feed-skeleton-2', 'home-feed-skeleton-3'];
@@ -101,16 +102,13 @@ export function HomeView({
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {emptyMarker}
-        <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.emptyTitle}>
-          {t('mobile.home.signInTitle')}
-        </Text>
-        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-          {t('mobile.home.signInBody')}
-        </Text>
-        <View style={styles.emptyCta}>
-          <Button title={tCommon('userDrawer.signIn')} onPress={onSignIn} />
-        </View>
+        <EmptyState
+          size="screen"
+          icon="people"
+          title={t('mobile.home.signInTitle')}
+          body={t('mobile.home.signInBody')}
+          actions={<Button title={tCommon('userDrawer.signIn')} onPress={onSignIn} />}
+        />
       </View>
     );
   }
@@ -177,35 +175,22 @@ export function HomeView({
                     </View>
                   </View>
                 ) : requiresManualPage ? null : mode === 'gym' && selectedBoard != null ? (
-                  <View style={styles.feedState}>
-                    <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
-                    </Text>
-                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                      {t('mobile.home.boardEmptyBody')}
-                    </Text>
-                    <View style={styles.emptyCta}>
-                      <Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />
-                    </View>
-                  </View>
+                  <EmptyState
+                    size="section"
+                    icon="boards"
+                    title={t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
+                    body={t('mobile.home.boardEmptyBody')}
+                    actions={<Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />}
+                  />
                 ) : mode === 'crew' ? (
-                  <View style={styles.feedState}>
-                    <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('mobile.home.emptyTitle')}
-                    </Text>
-                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                      {t('mobile.home.emptyBody')}
-                    </Text>
-                  </View>
+                  <EmptyState
+                    size="section"
+                    icon="people"
+                    title={t('mobile.home.emptyTitle')}
+                    body={t('mobile.home.emptyBody')}
+                  />
                 ) : (
-                  <View style={styles.feedState}>
-                    <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('emptyStates.noRecentActivity')}
-                    </Text>
-                  </View>
+                  <EmptyState size="section" icon="people" title={t('emptyStates.noRecentActivity')} />
                 )}
               </>
             )
@@ -384,9 +369,6 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: spacing[3],
-    textAlign: 'center',
-  },
-  emptyBody: {
     textAlign: 'center',
   },
   emptyCta: {
