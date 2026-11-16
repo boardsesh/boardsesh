@@ -805,8 +805,13 @@ function ClimbListInner() {
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;
     lastNextPageFailureAtRef.current = null;
-    climberScroll.reset();
+    // The scroll to the top can cut a fling short with no end event to follow,
+    // and the new search's first ask needs no drag anyway.
+    climberScroll.forgetGesture();
   }, [searchScrollKey, visibleRowsStore, resetScrollToTop, climberScroll]);
+  // A remounted list (the column count changed) never sends the old one's
+  // gesture-end events.
+  useEffect(() => climberScroll.forgetGesture(), [listColumns, climberScroll]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.

@@ -30,6 +30,26 @@ describe('createClimberScrollTracker', () => {
     expect(tracker.hasScrolled()).toBe(true);
   });
 
+  // A slow, steady drag keeps paging because of this.
+  it('keeps counting a drag that is still under way after a reset', () => {
+    const tracker = createClimberScrollTracker(() => undefined);
+    tracker.handlers.onScrollBeginDrag(scrollEvent);
+    tracker.reset();
+    expect(tracker.hasScrolled()).toBe(false);
+    tracker.handlers.onScroll(scrollEvent);
+    expect(tracker.hasScrolled()).toBe(true);
+  });
+
+  it('forgets a drag or fling whose end event will never come', () => {
+    const tracker = createClimberScrollTracker(() => undefined);
+    tracker.handlers.onScrollBeginDrag(scrollEvent);
+    tracker.handlers.onMomentumScrollBegin();
+    tracker.forgetGesture();
+    expect(tracker.hasScrolled()).toBe(false);
+    tracker.handlers.onScroll(scrollEvent);
+    expect(tracker.hasScrolled()).toBe(false);
+  });
+
   it('stops counting once the fling has stopped', () => {
     const tracker = createClimberScrollTracker(() => undefined);
     tracker.handlers.onMomentumScrollBegin();

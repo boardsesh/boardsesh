@@ -16,17 +16,27 @@ export type ClimberScrollTracker = {
   handlers: Required<ForwardedScrollHandlers>;
   /** The climber dragged or flung the list since the last `reset`. */
   hasScrolled: () => boolean;
-  /** Start a new window: the next `hasScrolled` needs a new drag or fling. */
+  /**
+   * Start a new window: the next `hasScrolled` needs a new drag or fling. A
+   * gesture still under way counts again with its next scroll event.
+   */
   reset: () => void;
+  /**
+   * `reset`, and forget any gesture under way. For when its end event will
+   * never arrive: a new search scrolled the list to the top mid-fling, or the
+   * list was remounted.
+   */
+  forgetGesture: () => void;
 };
 
 /**
  * Tells a list moved by the climber from one moved by code or by layout.
  *
  * A drag or the momentum after it counts, and so does every scroll event while
- * either is under way, so a fling still counts after `reset` until it stops. A
- * scroll event with no gesture behind it (`scrollToOffset`, a content-size
- * change, a remount) does not.
+ * either is under way, so a drag or fling still counts after `reset` until it
+ * stops. A scroll event with no gesture behind it (`scrollToOffset`, a
+ * content-size change) does not. When code cuts a gesture short its end event
+ * may never come, so the owner calls `forgetGesture` then.
  *
  * `getForward` is read on every event, so the handlers it returns can change
  * without the tracker being rebuilt.
@@ -68,6 +78,11 @@ export function createClimberScrollTracker(
     hasScrolled: () => scrolled,
     reset: () => {
       scrolled = false;
+    },
+    forgetGesture: () => {
+      scrolled = false;
+      dragging = false;
+      coasting = false;
     },
   };
 }
