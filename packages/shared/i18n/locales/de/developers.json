@@ -202,5 +202,115 @@
       "body": "You can delete your app in the console at any time, and every climber’s connection to it ends at once. Then delete the Boardsesh data you hold, unless a climber asked you to keep theirs."
     },
     "contact": "Questions about these terms: legal@boardsesh.com"
+  },
+  "docs": {
+    "metadata": {
+      "title": "Das Routenbuch einer Kletterer*in mit der Boardsesh-API lesen",
+      "description": "Registriere eine App, schick die Kletterer*in zur Freigabe und lies dann ihr Routenbuch: erst ein kompletter Download, danach nur noch Änderungen. Scopes, Limits und Fehler auf einer Seite."
+    },
+    "title": "Verbinde eine App mit dem Routenbuch einer Kletterer*in",
+    "lead": "Lass einen Trainingsplaner, ein Routenbuch oder dein eigenes Skript die Boardsesh-Einträge einer Kletterer*in lesen, sobald sie zugestimmt hat. Sie kann die Verbindung jederzeit trennen.",
+    "access": {
+      "invitation": {
+        "title": "Die Registrierung läuft per Einladung",
+        "body": "Der frühe Zugang steht nur Entwickler-Konten offen, die das Boardsesh-Team hinzugefügt hat. Jede App kann {{live}} Kletterer*innen gleichzeitig verbunden haben und {{perDay}} neue in 24 Stunden. Um Zugang anzufragen, schreib an {{email}} und sag, was deine App macht."
+      },
+      "open": {
+        "title": "Registriere deine App",
+        "body": "Melde dich an, akzeptiere die Entwicklerbedingungen und leg in der Konsole eine App an. Die Client-ID bekommst du sofort, ein Client-Secret, wenn dein Server den Code eintauscht. Ist dein Konto noch nicht freigeschaltet, sagt dir das die Konsole.",
+        "action": "Entwickler-Konsole öffnen"
+      }
+    },
+    "can": {
+      "title": "Was eine App kann",
+      "items": {
+        "read": "Jeden Eintrag lesen, den die Kletterer*in eingetragen hat, an jedem Board, auch die, die sie in Boardsesh privat hält.",
+        "sync": "Das ganze Routenbuch einmal herunterladen und danach nur noch Änderungen abrufen. Eine Änderung erscheint meist innerhalb einer Sekunde.",
+        "profile": "Ihren Anzeigenamen und ihr Avatar lesen, wenn du diesen Scope anfragst.",
+        "disconnect": "Die Kletterer*in kann deine App jederzeit unter Einstellungen, Verbundene Apps trennen. Dein nächster Aufruf schlägt dann fehl, und du löschst, was du gespeichert hast.",
+        "notYet": "Heute ist nur das Lesen des Routenbuchs live. Workouts und Webhooks gibt es noch nicht."
+      }
+    },
+    "steps": {
+      "title": "So läuft es ab",
+      "items": {
+        "register": "Registriere in der Entwickler-Konsole eine App und behalte die Client-ID.",
+        "approve": "Schick die Kletterer*in im Systembrowser zur Autorisierungs-URL. Sie meldet sich an und tippt auf Erlauben.",
+        "exchange": "Tausche den Code, den deine Redirect-URI bekommt, gegen ein Access-Token und ein Refresh-Token.",
+        "snapshot": "Ruf den Changes-Endpunkt ohne Cursor auf und folge jeder Seite, bis hasMore false ist. Das ist das komplette Routenbuch.",
+        "feed": "Danach rufst du ihn mit deinem letzten Cursor auf und bekommst neue, geänderte und gelöschte Einträge."
+      }
+    },
+    "scopes": {
+      "title": "Scopes",
+      "lead": "Frag nur das Nötigste an. Der Zustimmungsbildschirm listet jeden Scope in einfachen Worten.",
+      "items": {
+        "logbook": "Jeder Eintrag an jedem Board, auch die, die die Kletterer*in privat hält.",
+        "profile": "Anzeigename und Avatar.",
+        "offline": "Ein Refresh-Token, damit du weiterlesen kannst, während die Kletterer*in nicht da ist. Für sich öffnet es keine Daten."
+      }
+    },
+    "rules": {
+      "title": "Regeln, über die Entwickler*innen stolpern",
+      "items": {
+        "consent": "Eine App ohne Client-Secret und jede native App zeigt bei jeder Autorisierung den Zustimmungsbildschirm. prompt=none liefert nie einen Code, sondern error=consent_required. Behalte das Refresh-Token, statt neu zu autorisieren. Gemerkt wird nur eine vertrauliche Web-App mit https-Weiterleitung.",
+        "redirect": "Redirect-URIs werden als exakte Zeichenketten verglichen, höchstens 10 pro App. Nimm https, eine Loopback-Adresse (http://127.0.0.1 oder http://[::1], der Port wird ignoriert) oder ein privates Schema mit einem Punkt. http://localhost und Platzhalter werden abgelehnt.",
+        "redirectChange": "Wenn du eine Redirect-URI hinzufügst oder ersetzt, müssen alle Kletterer*innen, die deine App freigegeben haben, erneut zustimmen. Beim Entfernen einer URI oder beim Ändern von Name und Links nicht.",
+        "pkce": "PKCE mit S256 ist für jede App Pflicht. Sende resource=https://api.boardsesh.com/v1 beim Autorisieren, beim Eintauschen eines Codes und beim Erneuern. Tokens, die ohne es ausgestellt wurden, lehnt die API ab.",
+        "code": "Ein Code gilt 60 Sekunden und nur einmal. Wird er zweimal gesendet, enden auch die Tokens, die er ausgestellt hat. Starte die Autorisierung also neu, statt es nochmal zu versuchen.",
+        "tokens": "Ein Access-Token gilt 1 Stunde. Ein Refresh-Token gilt 90 Tage und ändert sich bei jeder Nutzung: Speichere das neue, bevor du das neue Access-Token benutzt, und erneuere für eine Kletterer*in nie parallel.",
+        "signin": "Eine Kletterer*in, die sich zuletzt vor mehr als 30 Tagen oder vor der letzten Passwortänderung angemeldet hat, meldet sich vor dem Zustimmungsbildschirm erneut an.",
+        "disconnect": "Trennt eine Kletterer*in die Verbindung, setzt ihr Passwort zurück oder löscht ihr Konto, antwortet die API mit 401 invalid_token und eine Erneuerung mit invalid_grant. Zeig den Zustand Boardsesh neu verbinden, hör auf, für sie anzufragen, und lösch, was du gespeichert hast."
+      }
+    },
+    "requests": {
+      "title": "Die erste Verbindung",
+      "lead": "Öffne die Autorisierungs-URL im Systembrowser, nie in einer eingebetteten Webview. Setz deine eigene Client-ID, Redirect-URI, deinen state und Code ein.",
+      "authorize": "Schick die Kletterer*in hierhin:",
+      "authorizeLabel": "Autorisierungsanfrage",
+      "exchange": "Deine Redirect-URI bekommt einen Code. Tausche ihn ein:",
+      "exchangeLabel": "Token-Anfrage",
+      "exchangeResponseLabel": "Token-Antwort",
+      "sync": "Dann liest du das Routenbuch. Beim ersten Mal lässt du cursor weg und folgst dem Cursor jeder Antwort. Synchronisiere, wenn die Kletterer*in deine App öffnet, und im Hintergrund höchstens alle 15 Minuten pro Kletterer*in.",
+      "syncLabel": "Anfrage und Antwort für Routenbuch-Änderungen"
+    },
+    "limits": {
+      "title": "Limits",
+      "items": {
+        "api": "API: 120 Anfragen pro Minute pro Kletterer*in und 6.000 pro Minute pro App.",
+        "token": "Token-Endpunkt: 10 Erneuerungen pro Minute pro Kletterer*in und 60 Code-Tausche oder Widerrufe pro Minute pro App und Client-IP.",
+        "fullSync": "Einen kompletten Download starten: 2 pro Minute pro Kletterer*in. Ein 503 mit Retry-After bei einem Download heißt: mindestens so lange warten.",
+        "page": "limit reicht von 1 bis 200 und ist standardmäßig 100. Eine Seite kann leer sein und trotzdem hasMore: true haben.",
+        "history": "Änderungen werden 90 Tage aufbewahrt. Ein älterer Cursor antwortet mit 410 cursor_expired; starte einen kompletten Download ohne Cursor.",
+        "body": "Ein Anfrage-Body über 64 KB antwortet mit 413.",
+        "caps": "Früher Zugang: 10 Apps pro Entwickler-Konto und pro App {{live}} gleichzeitig verbundene Kletterer*innen und {{perDay}} neue in 24 Stunden.",
+        "headers": "Jede Antwort trägt Boardsesh-Request-Id und RateLimit-Header. Ein 429 trägt Retry-After in Sekunden."
+      }
+    },
+    "errors": {
+      "title": "Fehler",
+      "lead": "Fehler sind JSON mit error, message und requestId. Entscheide zuerst nach dem HTTP-Status; neue Codes können dazukommen.",
+      "items": {
+        "invalidToken": "Das Access-Token ist abgelaufen oder widerrufen. Erneuere einmal und versuch es nochmal. Schlägt die Erneuerung fehl, bitte die Kletterer*in, sich neu zu verbinden.",
+        "insufficientScope": "Dem Token fehlt der Scope, den dieser Aufruf braucht.",
+        "cursorExpired": "Der Cursor ist zu alt oder nicht mehr gültig. Starte einen kompletten Download ohne Cursor.",
+        "rateLimited": "Ein Limit ist überschritten. Warte die Sekunden aus Retry-After ab.",
+        "busy": "Boardsesh ist ausgelastet oder hat den App-Zugang kurz pausiert. Warte Retry-After ab und versuch es erneut. Das heißt nie, dass die Kletterer*in die Verbindung getrennt hat."
+      }
+    },
+    "versioning": {
+      "title": "Versionen",
+      "body": "Die Version steht im Pfad, /v1. Neue Felder, Routen, Scopes und Enum-Werte kommen ohne Ankündigung in v1; lies also, was du kennst, und ignorier den Rest. Wird ein Feld entfernt oder umbenannt, entsteht v2, und v1 läuft mindestens sechs Monate weiter, mit einem Sunset-Header in jeder Antwort.",
+      "openapi": "Die OpenAPI-3.1-Beschreibung jeder Route:"
+    },
+    "related": {
+      "title": "Weiterlesen",
+      "items": {
+        "docs": "Die öffentliche Lese-API für Boulder und Grade",
+        "privacy": "Wie Boardsesh mit deinen Daten umgeht",
+        "legal": "Bedingungen und Markennutzung",
+        "support": "Frag das Boardsesh-Team"
+      }
+    }
   }
 }

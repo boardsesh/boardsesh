@@ -202,5 +202,115 @@
       "body": "You can delete your app in the console at any time, and every climber’s connection to it ends at once. Then delete the Boardsesh data you hold, unless a climber asked you to keep theirs."
     },
     "contact": "Questions about these terms: legal@boardsesh.com"
+  },
+  "docs": {
+    "metadata": {
+      "title": "Lee el logbook de un escalador con la API de Boardsesh",
+      "description": "Registra una app, envía al escalador a aprobarla y lee su logbook: primero una descarga completa y después solo lo que cambió. Permisos, límites y errores en una página."
+    },
+    "title": "Conecta una app al logbook de un escalador",
+    "lead": "Deja que un planificador de entrenamiento, un logbook o tu propio script lea las entradas del logbook de Boardsesh de un escalador cuando este lo apruebe. Puede desconectarlo en cualquier momento.",
+    "access": {
+      "invitation": {
+        "title": "El registro es por invitación",
+        "body": "El acceso anticipado está abierto solo a las cuentas de desarrollador que el equipo de Boardsesh ha añadido. Cada app puede tener {{live}} escaladores conectados a la vez y {{perDay}} nuevos en cualquier periodo de 24 horas. Para pedir acceso, escribe a {{email}} y cuéntanos qué hace tu app."
+      },
+      "open": {
+        "title": "Registra tu app",
+        "body": "Inicia sesión, acepta los términos de desarrollador y crea una app en la consola. Recibes un client ID al instante, y un client secret si tu servidor intercambia el código. Si tu cuenta aún no está habilitada, la consola te lo dice.",
+        "action": "Abre la consola de desarrolladores"
+      }
+    },
+    "can": {
+      "title": "Qué puede hacer una app",
+      "items": {
+        "read": "Leer cada entrada que el escalador ha registrado, en todos los plafones, incluidas las que mantiene privadas en Boardsesh.",
+        "sync": "Descargar el logbook entero una vez y después pedir solo lo que cambió. Un cambio suele aparecer en menos de un segundo.",
+        "profile": "Leer su nombre visible y su avatar, si pides ese permiso.",
+        "disconnect": "El escalador puede desconectar tu app en cualquier momento en Ajustes, Apps conectadas. Tu siguiente llamada falla y borras lo que guardaste.",
+        "notYet": "Hoy solo está activa la lectura del logbook. Los entrenamientos y los webhooks aún no están disponibles."
+      }
+    },
+    "steps": {
+      "title": "Cómo funciona",
+      "items": {
+        "register": "Registra una app en la consola de desarrolladores y guarda el client ID.",
+        "approve": "Envía al escalador a la URL de autorización en el navegador del sistema. Inicia sesión y toca Permitir.",
+        "exchange": "Cambia el código que recibe tu redirect URI por un access token y un refresh token.",
+        "snapshot": "Llama al endpoint de cambios sin cursor y sigue todas las páginas hasta que hasMore sea false. Ese es el logbook completo.",
+        "feed": "A partir de ahí, llámalo con tu último cursor para recibir entradas nuevas, editadas y borradas."
+      }
+    },
+    "scopes": {
+      "title": "Permisos (scopes)",
+      "lead": "Pide el conjunto más pequeño que necesites. La pantalla de consentimiento muestra cada uno con palabras claras.",
+      "items": {
+        "logbook": "Cada entrada en todos los plafones, incluidas las que el escalador mantiene privadas.",
+        "profile": "Nombre visible y avatar.",
+        "offline": "Un refresh token, para que puedas seguir leyendo mientras el escalador no está. Por sí solo no da acceso a ningún dato."
+      }
+    },
+    "rules": {
+      "title": "Reglas que sorprenden a los desarrolladores",
+      "items": {
+        "consent": "Una app sin client secret, y toda app nativa, muestra la pantalla de consentimiento en cada autorización. prompt=none nunca devuelve un código; devuelve error=consent_required. Guarda el refresh token en lugar de autorizar de nuevo. Solo se recuerda una app web confidencial con redirección https.",
+        "redirect": "Los redirect URI se comparan como cadenas exactas, hasta 10 por app. Usa https, una dirección loopback (http://127.0.0.1 o http://[::1], se ignora el puerto) o un esquema privado que contenga un punto. http://localhost y los comodines se rechazan.",
+        "redirectChange": "Añadir o reemplazar un redirect URI hace que todos los escaladores que aprobaron tu app tengan que aprobarla otra vez. Quitar uno, o editar el nombre o los enlaces, no.",
+        "pkce": "PKCE con S256 es obligatorio para toda app. Envía resource=https://api.boardsesh.com/v1 al autorizar, al intercambiar un código y al renovar. La API rechaza los tokens emitidos sin él.",
+        "code": "Un código dura 60 segundos y sirve una sola vez. Enviarlo dos veces también termina los tokens que emitió, así que reinicia la autorización en vez de reintentar.",
+        "tokens": "Un access token dura 1 hora. Un refresh token dura 90 días y cambia en cada uso: guarda el nuevo antes de usar el nuevo access token y nunca renueves en paralelo para un mismo escalador.",
+        "signin": "Un escalador que inició sesión por última vez hace más de 30 días, o antes de su último cambio de contraseña, vuelve a iniciar sesión antes de ver la pantalla de consentimiento.",
+        "disconnect": "Si un escalador desconecta tu app, restablece su contraseña o borra su cuenta, la API responde 401 invalid_token y una renovación responde invalid_grant. Muestra un estado Reconectar Boardsesh, deja de llamar por ese escalador y borra lo que guardaste."
+      }
+    },
+    "requests": {
+      "title": "Una primera conexión",
+      "lead": "Abre la URL de autorización en el navegador del sistema, nunca en un webview incrustado. Sustituye tu propio client ID, redirect URI, state y código.",
+      "authorize": "Envía al escalador aquí:",
+      "authorizeLabel": "Solicitud de autorización",
+      "exchange": "Tu redirect URI recibe un código. Intercámbialo:",
+      "exchangeLabel": "Solicitud de token",
+      "exchangeResponseLabel": "Respuesta de token",
+      "sync": "Después lee el logbook. La primera vez omite cursor y sigue el cursor de cada respuesta. Sincroniza cuando el escalador abra tu app y, en segundo plano, como máximo cada 15 minutos por escalador.",
+      "syncLabel": "Solicitud y respuesta de cambios del logbook"
+    },
+    "limits": {
+      "title": "Límites",
+      "items": {
+        "api": "API: 120 solicitudes por minuto por escalador y 6.000 por minuto por app.",
+        "token": "Endpoint de tokens: 10 renovaciones por minuto por escalador, y 60 intercambios de código o revocaciones por minuto por app y por IP de cliente.",
+        "fullSync": "Iniciar una descarga completa: 2 por minuto por escalador. Un 503 con Retry-After en una descarga significa que esperes al menos ese tiempo.",
+        "page": "limit va de 1 a 200 y por defecto es 100. Una página puede venir vacía y aun así tener hasMore: true.",
+        "history": "Los cambios se guardan 90 días. Un cursor más antiguo responde 410 cursor_expired; empieza una descarga completa sin cursor.",
+        "body": "Un cuerpo de solicitud de más de 64 KB responde 413.",
+        "caps": "Acceso anticipado: 10 apps por cuenta de desarrollador y, por app, {{live}} escaladores conectados a la vez y {{perDay}} nuevos en 24 horas.",
+        "headers": "Cada respuesta lleva Boardsesh-Request-Id y las cabeceras RateLimit. Un 429 lleva Retry-After en segundos."
+      }
+    },
+    "errors": {
+      "title": "Errores",
+      "lead": "Los errores son JSON con error, message y requestId. Decide primero por el estado HTTP; pueden aparecer códigos nuevos.",
+      "items": {
+        "invalidToken": "El access token caducó o fue revocado. Renueva una vez y reintenta. Si la renovación falla, pide al escalador que reconecte.",
+        "insufficientScope": "El token no incluye el permiso que necesita esta llamada.",
+        "cursorExpired": "El cursor es demasiado antiguo o ya no es válido. Empieza una descarga completa sin cursor.",
+        "rateLimited": "Superaste un límite. Espera los segundos que indica Retry-After.",
+        "busy": "Boardsesh está ocupado o pausó el acceso de apps un momento. Espera Retry-After y reintenta. Nunca significa que el escalador se desconectó."
+      }
+    },
+    "versioning": {
+      "title": "Versiones",
+      "body": "La versión va en la ruta, /v1. Los campos, rutas, permisos y valores de enumeración nuevos llegan a v1 sin aviso, así que lee lo que conoces e ignora el resto. Quitar o renombrar un campo pasa a ser v2, y v1 sigue funcionando al menos seis meses con una cabecera Sunset en cada respuesta.",
+      "openapi": "La descripción OpenAPI 3.1 de cada ruta:"
+    },
+    "related": {
+      "title": "Sigue leyendo",
+      "items": {
+        "docs": "La API pública de lectura de problemas y grados",
+        "privacy": "Cómo trata Boardsesh tus datos",
+        "legal": "Términos y uso de marcas",
+        "support": "Pregunta al equipo de Boardsesh"
+      }
+    }
   }
 }

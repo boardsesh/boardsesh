@@ -1,3 +1,4 @@
+import { developerDocsIndexable } from '@/app/lib/developer-apps/docs-access';
 import type { SitemapItem } from './entries';
 
 /**
@@ -41,7 +42,21 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
   { path: '/playlists', changeFrequency: 'weekly', priority: 0.6, lastModified: new Date('2026-04-30') },
 ];
 
+/**
+ * The developer docs (docs/partner-api.md made public). Listed only while
+ * PARTNER_OAUTH_MODE is `open`, the one state the page itself is indexable in;
+ * `off`, `hold` and `allowlist` serve a 404 or a noindex page, and a sitemap
+ * must never advertise either. The shard is `force-dynamic`, so the mode is
+ * read per request.
+ */
+export const DEVELOPER_DOCS_ENTRY: SitemapItem = {
+  path: '/developers',
+  changeFrequency: 'monthly',
+  priority: 0.5,
+  lastModified: new Date('2026-11-16'),
+};
+
 /** A copy: a caller that sorts or splices the result must not rewrite the constant. */
 export function buildStaticEntries(): SitemapItem[] {
-  return [...STATIC_ENTRIES];
+  return developerDocsIndexable() ? [...STATIC_ENTRIES, DEVELOPER_DOCS_ENTRY] : [...STATIC_ENTRIES];
 }
