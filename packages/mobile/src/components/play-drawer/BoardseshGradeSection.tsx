@@ -105,7 +105,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
   boardName: string;
 }) {
   const { t } = useTranslation('climbs');
-  const { brandColors, systemColors } = useTheme();
+  const { systemColors } = useTheme();
   // Falls back to the device's own ticks table while the logbook is unresolved,
   // so the drawer shows the climber's grade offline too — the same grade the
   // on-device search placed this climb by.

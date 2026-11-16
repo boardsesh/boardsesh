@@ -54,7 +54,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
 }: SimilarClimbsSectionProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
-  const { brandColors, systemColors } = useTheme();
+  const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
   const {

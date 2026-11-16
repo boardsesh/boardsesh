@@ -64,7 +64,7 @@ const keyExtractor = (row: QaPickRow) => row.branch;
 export function QaPickScreen({ presentation = 'prompt' }: { presentation?: 'prompt' | 'page' }) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { showToast } = useToast();
   const { data: profile } = useProfile();
   const params = useLocalSearchParams<{ prNumbers?: string; origin?: string }>();

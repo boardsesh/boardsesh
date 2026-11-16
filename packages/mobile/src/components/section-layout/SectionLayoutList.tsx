@@ -110,7 +110,7 @@ function SectionLayoutRowBase<Id extends string>({
   onMove,
 }: RowProps<Id>) {
   const { t } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const handleVisibleChange = useCallback((next: boolean) => onVisibleChange(id, next), [id, onVisibleChange]);
   const move = useCallback(
     (direction: SectionMoveDirection) => {

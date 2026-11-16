@@ -54,7 +54,7 @@ export function WorkoutPreviewSummary({
   startQueue,
 }: WorkoutPreviewSummaryProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors, opacity, textStyles } = useTheme();
+  const { systemColors, opacity, textStyles } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
   const footnoteLineHeight = textStyles.footnote.lineHeight;
   const noteLineStyle = useMemo(

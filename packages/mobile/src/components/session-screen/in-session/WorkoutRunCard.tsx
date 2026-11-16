@@ -67,7 +67,7 @@ export const WorkoutRunCard = memo(function WorkoutRunCard({ onAddBlock }: Worko
 /** One quiet row for a session with no workout: tap it to add the first block. */
 function AddWorkoutPrompt({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   // Card gives the tap its own haptic.
   return (
     <Card
@@ -228,7 +228,7 @@ function WorkoutRunCardContent({
 /** Available on every shell, including iPad where there is no floating pill. */
 function StartWorkoutRow({ item, onPress }: { item: ClimbQueueItem; onPress: () => void }) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -350,7 +350,7 @@ function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; ite
  */
 function ResumeWorkoutRow({ readout, item }: { readout: WorkoutRunnerReadout; item: ClimbQueueItem }) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { setCurrentClimb } = useQueueActions();
   const started = readout.totals.sent + readout.totals.tried > 0;
   const title = started ? t('mobile.workoutRunner.backToWorkout') : t('mobile.workoutRunner.startWorkout');

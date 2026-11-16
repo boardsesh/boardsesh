@@ -278,7 +278,7 @@ export function InSessionView({
 }: InSessionViewProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('session');
-  const { systemColors, brandColors, features } = useTheme();
+  const { systemColors, features } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();

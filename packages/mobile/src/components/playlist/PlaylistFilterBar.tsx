@@ -43,7 +43,7 @@ export const PlaylistFilterBar = memo(function PlaylistFilterBar({
   editing,
 }: PlaylistFilterBarProps) {
   const { t } = useTranslation('playlists');
-  const { systemColors, brandColors, opacity } = useTheme();
+  const { systemColors, opacity } = useTheme();
 
   return (
     <View style={styles.container}>
