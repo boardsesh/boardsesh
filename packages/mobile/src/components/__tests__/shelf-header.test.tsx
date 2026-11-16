@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ShelfHeader, ShelfSection and the TextAction they share: the type each part is
 // set in, the spacing a shelf owns, and an action that gets its 44pt target from
-// hitSlop instead of a 44pt row.
+// its own padded box (handed back by a negative margin) instead of a 44pt row.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -61,6 +61,7 @@ vi.mock('../PressableSurface', () => ({
     accessibilityLabel,
     hitSlop,
     feedback,
+    style,
     testID,
   }: {
     children?: ReactNode;
@@ -68,6 +69,7 @@ vi.mock('../PressableSurface', () => ({
     accessibilityLabel?: string;
     hitSlop?: unknown;
     feedback?: string;
+    style?: unknown;
     testID?: string;
   }) =>
     createElement(
@@ -75,7 +77,8 @@ vi.mock('../PressableSurface', () => ({
       {
         onClick: onPress,
         'aria-label': accessibilityLabel,
-        'data-hitslop': JSON.stringify(hitSlop),
+        'data-hitslop': JSON.stringify(hitSlop ?? null),
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-feedback': feedback,
         'data-testid': testID,
       },
@@ -179,17 +182,27 @@ describe('TextAction', () => {
   it.each([
     ['liquidGlass', 44],
     ['material', 48],
-  ] as const)('reaches the %s minimum target (%ipt) through hitSlop on its own line height', (variant, target) => {
-    ctrl.variant = variant;
-    expect(TEXT_ACTION_MIN_TARGET[variant]).toBe(target);
-    render(<TextAction label="Retry" onPress={vi.fn()} />);
-    const action = screen.getByRole('button', { name: 'Retry' });
-    const hitSlop = JSON.parse(action.getAttribute('data-hitslop') ?? '{}') as { top: number; bottom: number };
-    const textVariant = screen.getByText('Retry').getAttribute('data-variant') as TextVariant;
-    const lineHeight = textStylesByVariant[variant][textVariant].lineHeight;
-    expect(lineHeight + hitSlop.top + hitSlop.bottom).toBeGreaterThanOrEqual(target);
-    expect(action.getAttribute('data-feedback')).toBe('opacity');
-  });
+  ] as const)(
+    'reaches the %s minimum target (%ipt) with its own padded box, and takes no room in the row',
+    (variant, target) => {
+      ctrl.variant = variant;
+      expect(TEXT_ACTION_MIN_TARGET[variant]).toBe(target);
+      render(<TextAction label="Retry" onPress={vi.fn()} />);
+      const action = screen.getByRole('button', { name: 'Retry' });
+      // Not hitSlop: on Fabric a parent hit-tests children only inside its own
+      // bounds unless their layout overflows it, so slop past a one-line row is dead.
+      expect(JSON.parse(action.getAttribute('data-hitslop') ?? 'null')).toBeNull();
+      const box = JSON.parse(action.getAttribute('data-style') ?? '{}') as Record<string, number>;
+      const textVariant = screen.getByText('Retry').getAttribute('data-variant') as TextVariant;
+      const lineHeight = textStylesByVariant[variant][textVariant].lineHeight;
+      expect(lineHeight + 2 * box.paddingVertical).toBeGreaterThanOrEqual(target);
+      // The same room handed back, so the label doesn't move and the row doesn't grow.
+      expect(box.marginVertical).toBe(-box.paddingVertical);
+      expect(box.marginHorizontal).toBe(-box.paddingHorizontal);
+      expect(box.paddingHorizontal).toBeGreaterThan(0);
+      expect(action.getAttribute('data-feedback')).toBe('opacity');
+    },
+  );
 
   it('has no chevron unless asked', () => {
     render(<TextAction label="Retry" onPress={vi.fn()} />);

@@ -17,24 +17,46 @@ export type TextActionProps = {
   testID?: string;
 };
 
+type HitArea = {
+  paddingVertical: number;
+  marginVertical: number;
+  paddingHorizontal: number;
+  marginHorizontal: number;
+};
+
 type ActionLook = {
   textVariant: TextVariant;
   emphasized: boolean;
-  hitSlop: { top: number; bottom: number; left: number; right: number };
+  hitArea: HitArea;
 };
 
 /** The smallest tap target each design language asks for: 44pt (HIG), 48dp (M3). */
 export const TEXT_ACTION_MIN_TARGET = { liquidGlass: 44, material: 48 } as const satisfies Record<UiVariant, number>;
 
+/** How far the target reaches past the label on each side, left and right. */
+const HORIZONTAL_REACH = 8;
+
 /**
- * Enough slop above and below a one-line label to reach the variant's minimum
- * target, without the action adding height to the row it sits in.
+ * The target around a one-line label, big enough for the variant's minimum
+ * (44pt, 48dp) and taking no room in the row it sits in: padding grows the
+ * pressable's own box, and the same negative margin hands that room back, so
+ * the label stays where it was.
+ *
+ * Real layout rather than `hitSlop`: on Fabric a view hit-tests its children
+ * only inside its own bounds, unless a child's layout overflows them. A shelf
+ * header's row is one line tall, so slop past it was dead; an overflowing box
+ * is not.
  */
-function hitSlopFor(variant: UiVariant, textVariant: TextVariant): ActionLook['hitSlop'] {
+function hitAreaFor(variant: UiVariant, textVariant: TextVariant): HitArea {
   const vertical = Math.ceil(
     (TEXT_ACTION_MIN_TARGET[variant] - textStylesByVariant[variant][textVariant].lineHeight) / 2,
   );
-  return { top: vertical, bottom: vertical, left: 8, right: 8 };
+  return {
+    paddingVertical: vertical,
+    marginVertical: -vertical,
+    paddingHorizontal: HORIZONTAL_REACH,
+    marginHorizontal: -HORIZONTAL_REACH,
+  };
 }
 
 /**
@@ -44,15 +66,15 @@ function hitSlopFor(variant: UiVariant, textVariant: TextVariant): ActionLook['h
  * uses labelLarge (14/500), the M3 text-button type, unemphasized.
  */
 const ACTION_LOOK: Record<UiVariant, ActionLook> = {
-  liquidGlass: { textVariant: 'subheadline', emphasized: true, hitSlop: hitSlopFor('liquidGlass', 'subheadline') },
-  material: { textVariant: 'label', emphasized: false, hitSlop: hitSlopFor('material', 'label') },
+  liquidGlass: { textVariant: 'subheadline', emphasized: true, hitArea: hitAreaFor('liquidGlass', 'subheadline') },
+  material: { textVariant: 'label', emphasized: false, hitArea: hitAreaFor('material', 'label') },
 };
 
 /**
  * A borderless text button in the accent colour: a shelf's "See all", the Retry
  * after a quiet empty state. Violet here is right, because it can be tapped.
  * It takes no layout space beyond its label; the 44pt (48dp on Material) target
- * comes from `hitSlop`.
+ * is its own padded box, handed back by a negative margin (`hitAreaFor`).
  */
 export function TextAction({ label, onPress, accessibilityLabel, chevron = false, testID }: TextActionProps) {
   const { systemColors, variant } = useTheme();
@@ -61,10 +83,9 @@ export function TextAction({ label, onPress, accessibilityLabel, chevron = false
     <PressableSurface
       onPress={onPress}
       feedback="opacity"
-      hitSlop={look.hitSlop}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      style={styles.action}
+      style={[styles.action, look.hitArea]}
       testID={testID}
     >
       <Text variant={look.textVariant} emphasized={look.emphasized} color={systemColors.accent} numberOfLines={1}>
