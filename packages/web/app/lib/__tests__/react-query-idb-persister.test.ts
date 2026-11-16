@@ -10,7 +10,7 @@ const accountA = { userId: 'user-a', authSessionId: 'login-a' };
 const accountB = { userId: 'user-b', authSessionId: 'login-b' };
 
 function newGuard(): SessionGuard {
-  return createSessionGuard({ reloadToRoot: vi.fn(), requestSessionCheck: vi.fn(), cleanupTimeoutMs: 10 });
+  return createSessionGuard({ reloadPage: vi.fn(), requestSessionCheck: vi.fn(), cleanupTimeoutMs: 10 });
 }
 
 function ownProfileCache(): PersistedClient {
@@ -37,7 +37,7 @@ beforeEach(async () => {
 describe('persisted query cache owner', () => {
   it('writes nothing until the account is known, then tags the blob with it', async () => {
     const guard = newGuard();
-    const persister = createIdbPersister(() => guard);
+    const persister = createIdbPersister({ sessionGuard: () => guard });
     const client = ownProfileCache();
 
     await persister.persistClient(client);
@@ -52,43 +52,62 @@ describe('persisted query cache owner', () => {
     const writer = newGuard();
     writer.accept(accountA);
     const client = ownProfileCache();
-    await createIdbPersister(() => writer).persistClient(client);
+    await createIdbPersister({ sessionGuard: () => writer }).persistClient(client);
 
     // A switch made on another origin: this page's first read names B.
     const otherAccount = newGuard();
     otherAccount.accept(accountB);
-    await expect(createIdbPersister(() => otherAccount).restoreClient()).resolves.toBeUndefined();
+    await expect(createIdbPersister({ sessionGuard: () => otherAccount }).restoreClient()).resolves.toBeUndefined();
 
     const sameAccount = newGuard();
     sameAccount.accept(accountA);
-    await expect(createIdbPersister(() => sameAccount).restoreClient()).resolves.toEqual(client);
+    await expect(createIdbPersister({ sessionGuard: () => sameAccount }).restoreClient()).resolves.toEqual(client);
   });
 
-  it('waits for the first session read before restoring, and restores nothing if it never comes', async () => {
+  it('never holds restore for the session read: the blob is hydrated once its owner is named', async () => {
     const writer = newGuard();
     writer.accept(accountA);
     const client = ownProfileCache();
-    await createIdbPersister(() => writer).persistClient(client);
+    await createIdbPersister({ sessionGuard: () => writer }).persistClient(client);
 
     const pending = newGuard();
-    const restored = createIdbPersister(() => pending).restoreClient();
-    setTimeout(() => pending.accept(accountA), 20);
-    await expect(restored).resolves.toEqual(client);
+    const restoreLate = vi.fn<(restored: PersistedClient) => void>();
+    // Restore settles while the session read is still out, so queries are not held.
+    await expect(
+      createIdbPersister({ sessionGuard: () => pending, restoreLate }).restoreClient(),
+    ).resolves.toBeUndefined();
+    expect(restoreLate).not.toHaveBeenCalled();
 
-    vi.useFakeTimers();
-    try {
-      const silent = createIdbPersister(() => newGuard()).restoreClient();
-      await vi.advanceTimersByTimeAsync(1500);
-      await expect(silent).resolves.toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
+    pending.accept(accountA);
+    await vi.waitFor(() => expect(restoreLate).toHaveBeenCalledWith(client));
+  });
+
+  it('never hydrates a late blob into another account or after the cache was cleared', async () => {
+    const writer = newGuard();
+    writer.accept(accountA);
+    await createIdbPersister({ sessionGuard: () => writer }).persistClient(ownProfileCache());
+
+    const otherAccount = newGuard();
+    const restoredForOther = vi.fn<(restored: PersistedClient) => void>();
+    await createIdbPersister({ sessionGuard: () => otherAccount, restoreLate: restoredForOther }).restoreClient();
+    otherAccount.accept(accountB);
+
+    const cleared = newGuard();
+    const restoredAfterClear = vi.fn<(restored: PersistedClient) => void>();
+    const clearedPersister = createIdbPersister({ sessionGuard: () => cleared, restoreLate: restoredAfterClear });
+    await clearedPersister.restoreClient();
+    await clearedPersister.removeClient();
+    cleared.accept(accountA);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(restoredForOther).not.toHaveBeenCalled();
+    expect(restoredAfterClear).not.toHaveBeenCalled();
   });
 
   it('refuses writes while the page retires', async () => {
     const guard = newGuard();
     guard.accept(accountA);
-    const persister = createIdbPersister(() => guard);
+    const persister = createIdbPersister({ sessionGuard: () => guard });
 
     guard.accept(accountB);
     await persister.persistClient(ownProfileCache());
@@ -104,6 +123,6 @@ describe('persisted query cache owner', () => {
     const guard = newGuard();
     guard.accept(accountA);
 
-    await expect(createIdbPersister(() => guard).restoreClient()).resolves.toBeUndefined();
+    await expect(createIdbPersister({ sessionGuard: () => guard }).restoreClient()).resolves.toBeUndefined();
   });
 });

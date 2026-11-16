@@ -1,5 +1,5 @@
 import type { Session } from 'next-auth';
-import { reloadToLocaleRoot } from './reload-to-locale-root';
+import { reloadAfterAccountChange } from './reload-after-account-change';
 
 /**
  * The one client guard for www (#7596). The session provider tells it every
@@ -7,12 +7,15 @@ import { reloadToLocaleRoot } from './reload-to-locale-root';
  * A response that lands after the account changed is never handed to its
  * caller: the caller gets a SessionSupersededError instead. A change made in
  * another tab or app retires the page: caches are cleared and it reloads.
- * Design: issue #7596 and docs/better-auth-browser-session.md.
+ * Design: issue #7596.
  */
 export const WEB_SESSION_CHECK_EVENT = 'boardsesh-web-session-check';
 const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 const REMEMBERED_TOKEN_LIMIT = 32;
+// A login whose session has no authSessionId yet. Same placeholder as the Expo auth bridge.
+const PENDING_LOGIN_IDENTITY = 'pending-login-identity';
+const QUERY_RETRY_LIMIT = 3;
 
 export type SessionViewer = { readonly userId: string; readonly authSessionId: string } | null;
 
@@ -27,8 +30,17 @@ export function isSessionSuperseded(error: unknown): error is SessionSupersededE
   return error instanceof Error && error.name === 'SessionSupersededError';
 }
 
+/** React Query retry: a superseded request is tried once more, under the account that replaced it. */
+export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
+  return failureCount < (isSessionSuperseded(error) ? 1 : QUERY_RETRY_LIMIT);
+}
+
+export function signedInViewer(userId: string, authSessionId?: string | null): NonNullable<SessionViewer> {
+  return { userId, authSessionId: authSessionId || PENDING_LOGIN_IDENTITY };
+}
+
 export function sessionViewerOf(session: Session | null): SessionViewer {
-  return session ? { userId: session.user.id, authSessionId: session.authSessionId ?? '' } : null;
+  return session ? signedInViewer(session.user.id, session.authSessionId) : null;
 }
 
 export function sessionViewerKey(viewer: SessionViewer): string {
@@ -40,8 +52,15 @@ function bearerToken(input: RequestInfo | URL, init?: RequestInit): string | und
   return /^Bearer\s+(\S+)$/i.exec(headers.get('authorization') ?? '')?.[1];
 }
 
+/** This tab's own sign-in or sign-out. Cancel it when the flow changed nothing. */
+export type LocalChange = {
+  /** Keeps the claim open for the refresh read that follows the flow. */
+  readonly extend: () => void;
+  readonly cancel: () => void;
+};
+
 export type SessionGuardDependencies = {
-  readonly reloadToRoot: () => void;
+  readonly reloadPage: () => void;
   readonly requestSessionCheck: () => void;
   readonly send?: typeof fetch;
   readonly now?: () => number;
@@ -60,7 +79,9 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
   let viewer: SessionViewer | undefined;
   let generation = 0;
   let retiring = false;
-  let localChangeUntil = 0;
+  // The open claim of this tab's own sign-in or sign-out, if any.
+  let localChange: { until: number } | null = null;
+  const localChangeWindowMs = dependencies.localChangeWindowMs ?? 20_000;
   let unauthorizedTimer: ReturnType<typeof setTimeout> | undefined;
 
   const notify = () => {
@@ -89,7 +110,7 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     );
     await Promise.race([cleanupsDone, timeout]);
     clearTimeout(timer);
-    dependencies.reloadToRoot();
+    dependencies.reloadPage();
   }
 
   function noteUnauthorized(): void {
@@ -135,8 +156,17 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     capture: () => generation,
     isRetiring: () => retiring,
     /** Marks the next account change as started by this tab (sign-in, guarded sign-out). */
-    expectLocalChange(): void {
-      localChangeUntil = now() + (dependencies.localChangeWindowMs ?? 20_000);
+    expectLocalChange(): LocalChange {
+      const claim = { until: now() + localChangeWindowMs };
+      localChange = claim;
+      return {
+        extend: () => {
+          if (localChange === claim) claim.until = now() + localChangeWindowMs;
+        },
+        cancel: () => {
+          if (localChange === claim) localChange = null;
+        },
+      };
     },
     registerCleanup(cleanup: () => unknown): () => void {
       cleanups.add(cleanup);
@@ -174,8 +204,9 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       }
       if (sessionViewerKey(previous) === sessionViewerKey(next)) return 'publish';
       generation += 1;
-      const local = localChangeUntil > now();
-      if (local) localChangeUntil = 0;
+      // A claim covers one change.
+      const local = localChange !== null && localChange.until > now();
+      localChange = null;
       // Anonymous to signed-in, a new login of the same account, and this tab's
       // own sign-in or sign-out keep the page. Its own flow navigates.
       if (previous === null || previous.userId === next?.userId || local) {
@@ -198,7 +229,7 @@ type GuardGlobal = typeof globalThis & { [key: symbol]: SessionGuard | undefined
 export function browserSessionGuard(): SessionGuard {
   const shared = globalThis as GuardGlobal;
   return (shared[GUARD_KEY] ??= createSessionGuard({
-    reloadToRoot: reloadToLocaleRoot,
+    reloadPage: () => reloadAfterAccountChange(),
     requestSessionCheck: () => window.dispatchEvent(new Event(WEB_SESSION_CHECK_EVENT)),
   }));
 }

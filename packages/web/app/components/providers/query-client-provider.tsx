@@ -2,6 +2,7 @@
 
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  hydrate,
   QueryClient,
   QueryClientProvider as MemoryQueryClientProvider,
   type Query,
@@ -19,7 +20,7 @@ import {
 } from '@boardsesh/auth-protocol/browser-backend-session';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
 import { publicBrowserConsumersReady } from '@/app/lib/auth/browser-consumer-readiness';
-import { browserSessionGuard } from '@/app/lib/auth/session-guard';
+import { browserSessionGuard, shouldRetryQuery } from '@/app/lib/auth/session-guard';
 
 type QueryClientProviderProps = {
   children: ReactNode;
@@ -33,12 +34,24 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
           queries: {
             staleTime: 60 * 1000,
             refetchOnWindowFocus: false,
+            // A request superseded by an account change is tried once more, not three times.
+            retry: shouldRetryQuery,
           },
         },
       }),
   );
 
-  const [persister] = useState(() => createIdbPersister());
+  const persistedBusterRef = useRef('');
+  const [persister] = useState(() =>
+    createIdbPersister({
+      // The checks persistQueryClientRestore makes before it hydrates.
+      restoreLate: (persisted) => {
+        if (!persisted.timestamp || Date.now() - persisted.timestamp > PERSIST_MAX_AGE_MS) return;
+        if (persisted.buster !== persistedBusterRef.current) return;
+        hydrate(queryClient, persisted.clientState);
+      },
+    }),
+  );
   // A page retiring after another tab's account change wipes before it reloads.
   useEffect(
     () => browserSessionGuard().registerCleanup(() => clearViewerState(queryClient, persister)),
@@ -72,6 +85,9 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
     }),
     [persister, persistenceScope],
   );
+  useEffect(() => {
+    persistedBusterRef.current = persistenceScope;
+  }, [persistenceScope]);
 
   // Once selected consumers are qualified, an unconfirmed initial owner cannot
   // restore or erase another scope's persisted cache during its session read.

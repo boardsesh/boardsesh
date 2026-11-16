@@ -43,7 +43,7 @@ import {
   buildStatisticsSummary,
   buildVPointsTimeline,
 } from '../utils/chart-data-builders';
-import { guardedFetch } from '@/app/lib/auth/session-guard';
+import { guardedFetch, isSessionSuperseded, shouldRetryQuery } from '@/app/lib/auth/session-guard';
 
 type InitialData = {
   /** This server response contains only independently public fallback data. */
@@ -177,7 +177,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
     retry: (failureCount, error) =>
       !(error instanceof ProfileNotFoundError) &&
       !(error instanceof BrowserProfileAuthorityError && error.code === 'superseded') &&
-      failureCount < 3,
+      shouldRetryQuery(failureCount, error),
     initialData: profileInitial,
     initialDataUpdatedAt: profileInitial ? (selectedRequired ? 0 : Date.now()) : undefined,
     meta: { persist: isOwnProfile },
@@ -198,11 +198,14 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const profileError = profileQuery.error;
   const notFound = (initialData?.initialNotFound ?? false) || profileError instanceof ProfileNotFoundError;
 
+  // showMessage changes when the account does, so remember which error was already shown.
+  const shownProfileErrorRef = useRef<unknown>(null);
   useEffect(() => {
-    if (!profileError) return;
+    if (!profileError || shownProfileErrorRef.current === profileError) return;
     if (profileError instanceof ProfileNotFoundError) return;
     if (profileError instanceof BrowserProfileAuthorityError && profileError.code === 'superseded') return;
-    if (isAbortError(profileError)) return;
+    if (isAbortError(profileError) || isSessionSuperseded(profileError)) return;
+    shownProfileErrorRef.current = profileError;
     console.error('Failed to fetch profile:', profileError);
     showMessage('Failed to load profile data', 'error');
   }, [profileError, showMessage]);

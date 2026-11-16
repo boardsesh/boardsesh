@@ -22,7 +22,7 @@ import ConnectedAppsSection from '@/app/components/account/connected-apps-sectio
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
-import { guardedFetch } from '@/app/lib/auth/session-guard';
+import { guardedFetch, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
@@ -72,6 +72,7 @@ export default function SettingsPageContent() {
       const data = await response.json();
       setProfile(data);
     } catch (error) {
+      if (isSessionSuperseded(error)) return;
       console.error('Failed to fetch profile:', error);
       showMessage(t('loading.profileError'), 'error');
     } finally {

@@ -21,6 +21,10 @@ type SnackbarMessage = {
 };
 
 type SnackbarContextValue = {
+  /**
+   * A new function after every account change. An effect that lists it must
+   * remember what it already showed, or it shows the toast a second time.
+   */
   showMessage: (text: string, severity: AlertColor, action?: SnackbarAction, duration?: number) => void;
 };
 

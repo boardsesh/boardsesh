@@ -42,7 +42,7 @@ vi.mock('@/app/lib/auth/nextauth-cookie-fetch-lock', () => ({ installNextAuthCoo
 // change is covered by session-provider-guard.test.tsx.
 vi.mock('@/app/lib/auth/session-guard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/app/lib/auth/session-guard')>();
-  const guard = actual.createSessionGuard({ reloadToRoot: () => {}, requestSessionCheck: () => {} });
+  const guard = actual.createSessionGuard({ reloadPage: () => {}, requestSessionCheck: () => {} });
   return { ...actual, browserSessionGuard: () => ({ ...guard, accept: () => 'publish' as const }) };
 });
 vi.mock('@/app/lib/react-query-idb-persister', () => ({

@@ -6,8 +6,8 @@ import { browserSessionGuard, type SessionGuard } from './auth/session-guard';
 const DB_NAME = 'boardsesh-react-query';
 const STORE_NAME = 'cache';
 const CLIENT_KEY = 'client';
-// Restore waits this long for the page's first session read to name its account.
-const RESTORE_VIEWER_WAIT_MS = 1500;
+// A blob read before the first session read is hydrated once that read names its owner.
+const LATE_RESTORE_WAIT_MS = 30_000;
 
 // 24h: bound IDB blob age and align query gcTime to the same horizon.
 // Shared with anywhere that needs to size cache lifetimes around the
@@ -26,7 +26,16 @@ function isOwnedClient(candidate: unknown): candidate is OwnedClient {
   return typeof stored.owner === 'string' && Array.isArray(stored.client?.clientState?.queries);
 }
 
-export function createIdbPersister(sessionGuard: () => PersistGuard = browserSessionGuard): Persister {
+export type IdbPersisterOptions = {
+  readonly sessionGuard?: () => PersistGuard;
+  /** Hydrates a blob whose owner was confirmed only after restore returned. */
+  readonly restoreLate?: (client: PersistedClient) => void;
+};
+
+export function createIdbPersister({
+  sessionGuard = browserSessionGuard,
+  restoreLate,
+}: IdbPersisterOptions = {}): Persister {
   let privacyGeneration = 0;
   return {
     persistClient: async (client: PersistedClient) => {
@@ -55,9 +64,20 @@ export function createIdbPersister(sessionGuard: () => PersistGuard = browserSes
       }
       // An untagged blob from before the guard, or an empty one, is never restored.
       if (!isOwnedClient(stored) || stored.client.clientState.queries.length === 0) return undefined;
+      const owned = stored;
+      const guard = sessionGuard();
       // Another account (say, after a switch made on app.boardsesh.com) never sees it.
-      const viewer = await sessionGuard().whenViewerKnown(RESTORE_VIEWER_WAIT_MS);
-      return viewer === stored.owner ? stored.client : undefined;
+      const viewer = guard.viewerKey();
+      if (viewer !== undefined) return viewer === owned.owner ? owned.client : undefined;
+      // React Query holds every query while it restores, so restore never waits
+      // for the session read: the blob is hydrated when that read names its owner.
+      const restoreGeneration = privacyGeneration;
+      if (restoreLate)
+        void guard.whenViewerKnown(LATE_RESTORE_WAIT_MS).then(() => {
+          if (guard.viewerKey() === owned.owner && restoreGeneration === privacyGeneration && !guard.isRetiring())
+            restoreLate(owned.client);
+        });
+      return undefined;
     },
     removeClient: async () => {
       privacyGeneration += 1;

@@ -1,15 +1,25 @@
 import 'fake-indexeddb/auto';
+import type { ReactNode } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  dehydrate,
+  QueryClient as DehydratingClient,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
+import { openDB } from 'idb';
 import type { Session } from 'next-auth';
 import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionProviderWrapper from '../session-provider';
 import QueryClientProvider from '../query-client-provider';
 import { WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
+import { guardedNextAuthSignOut } from '@/app/lib/auth/nextauth-cookie-fetch-lock';
+import { signInWithSessionIntent } from '@/app/lib/auth/web-session-events';
 
 const reload = vi.hoisted(() => vi.fn<() => void>());
-vi.mock('@/app/lib/auth/reload-to-locale-root', () => ({ reloadToLocaleRoot: reload }));
+vi.mock('@/app/lib/auth/reload-after-account-change', () => ({ reloadAfterAccountChange: reload }));
 
 const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
@@ -32,11 +42,15 @@ function Recorder() {
 let serverSession: Session | null;
 let sessionStatus: number;
 let probeStatus: number;
+/** Set by a test to answer NextAuth's sign-in and sign-out endpoints. */
+let authRoute: ((endpoint: string) => Response | undefined) | undefined;
+/** Set by a test to hold the session read open. */
+let sessionRead: Promise<void> | undefined;
 let fetchMock: ReturnType<typeof vi.fn>;
 const calls = (path: string) =>
   fetchMock.mock.calls.filter(([input]) => String(input instanceof Request ? input.url : input).endsWith(path)).length;
 
-beforeEach(() => {
+beforeEach(async () => {
   for (const key of [GUARD_KEY, LOCK_INSTALLATION_KEY])
     delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[key];
   reload.mockReset();
@@ -45,8 +59,20 @@ beforeEach(() => {
   serverSession = null;
   sessionStatus = 200;
   probeStatus = 200;
+  authRoute = undefined;
+  sessionRead = undefined;
+  const persistedCache = await openDB('boardsesh-react-query', 1, {
+    upgrade(upgradeDb) {
+      if (!upgradeDb.objectStoreNames.contains('cache')) upgradeDb.createObjectStore('cache');
+    },
+  });
+  await persistedCache.clear('cache');
+  persistedCache.close();
+  vi.stubGlobal('BroadcastChannel', undefined);
   fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const endpoint = String(input instanceof Request ? input.url : input);
+    const authReply = authRoute?.(endpoint);
+    if (authReply) return authReply;
     if (endpoint.endsWith('/api/internal/ws-auth')) {
       const probe = serverSession
         ? {
@@ -58,6 +84,7 @@ beforeEach(() => {
         : { token: null, authenticated: false };
       return Response.json(probe, { status: probeStatus });
     }
+    await sessionRead;
     return Response.json(serverSession ?? {}, { status: sessionStatus });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -69,11 +96,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderProviders() {
+function renderProviders(extra?: ReactNode) {
   return render(
     <SessionProviderWrapper>
       <QueryClientProvider>
         <Recorder />
+        {extra}
       </QueryClientProvider>
     </SessionProviderWrapper>,
   );
@@ -140,7 +168,7 @@ describe('account change seen from another tab or app', () => {
 });
 
 describe('re-reading the session', () => {
-  it('checks on focus through the cookie-free probe, at most once per 30 seconds', async () => {
+  it('checks on the first focus, then at most once per 30 seconds, through the cookie-free probe', async () => {
     vi.useFakeTimers();
     serverSession = session('user-a', 'login-a');
     renderProviders();
@@ -156,11 +184,6 @@ describe('re-reading the session', () => {
     };
 
     await focus();
-    expect(calls('/api/internal/ws-auth')).toBe(0);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
-    await focus();
     await focus();
     expect(calls('/api/internal/ws-auth')).toBe(1);
     expect(calls('/api/auth/session')).toBe(1);
@@ -168,7 +191,12 @@ describe('re-reading the session', () => {
     // Same account, new login elsewhere: the probe differs, so the session is read once.
     serverSession = session('user-a', 'login-a2');
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(29_000);
+    });
+    await focus();
+    expect(calls('/api/internal/ws-auth')).toBe(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
     });
     await focus();
     await act(async () => {
@@ -207,5 +235,168 @@ describe('re-reading the session', () => {
     await waitFor(() => expect(calls('/api/internal/ws-auth')).toBe(1));
     await act(async () => {});
     expect(calls('/api/auth/session')).toBe(1);
+  });
+});
+
+const origin = () => window.location.origin;
+
+/** NextAuth's sign-out endpoints. The POST clears the cookie. */
+function signOutRoutes(endpoint: string): Response | undefined {
+  if (endpoint.endsWith('/api/auth/csrf')) return Response.json({ csrfToken: 'fixture-csrf' });
+  if (endpoint.endsWith('/api/auth/signout')) {
+    serverSession = null;
+    return Response.json({ url: `${origin()}/` });
+  }
+  return undefined;
+}
+
+/** NextAuth's credentials sign-in endpoints. A good password signs in `next`. */
+function signInRoutes(next: Session, accepted: boolean) {
+  return (endpoint: string): Response | undefined => {
+    if (endpoint.endsWith('/api/auth/providers'))
+      return Response.json({
+        credentials: { id: 'credentials', type: 'credentials', name: 'Credentials', signinUrl: '', callbackUrl: '' },
+      });
+    if (endpoint.endsWith('/api/auth/csrf')) return Response.json({ csrfToken: 'fixture-csrf' });
+    if (!endpoint.endsWith('/api/auth/callback/credentials')) return undefined;
+    if (!accepted) return Response.json({ url: `${origin()}/api/auth/error?error=CredentialsSignin` }, { status: 401 });
+    serverSession = next;
+    return Response.json({ url: `${origin()}/` });
+  };
+}
+
+const signIn = () =>
+  signInWithSessionIntent('credentials', {
+    redirect: false,
+    email: 'fixture@example.invalid',
+    password: 'fixture-only',
+  });
+
+describe('this tab’s own sign-in and sign-out', () => {
+  it('publishes its own sign-out without a reload', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    authRoute = signOutRoutes;
+
+    await act(async () => {
+      await guardedNextAuthSignOut(
+        { userId: 'user-a', authSessionId: 'login-a' },
+        { callbackUrl: `${origin()}/`, redirect: false },
+      );
+    });
+
+    await screen.findByText('unauthenticated:none:none');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('retires the page when its sign-out finds the cookie already names another account', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    serverSession = session('user-b', 'login-b');
+    authRoute = signOutRoutes;
+
+    let outcome: Awaited<ReturnType<typeof guardedNextAuthSignOut>> | undefined;
+    await act(async () => {
+      outcome = await guardedNextAuthSignOut(
+        { userId: 'user-a', authSessionId: 'login-a' },
+        { callbackUrl: `${origin()}/`, redirect: false },
+      );
+    });
+
+    expect(outcome?.status).toBe('identity-changed');
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(published.some((state) => state.includes('user-b'))).toBe(false);
+  });
+
+  it('claims nothing when its sign-out fails before sending, so a switch elsewhere still retires', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    sessionStatus = 500;
+
+    await act(async () => {
+      await expect(
+        guardedNextAuthSignOut({ userId: 'user-a', authSessionId: 'login-a' }, { redirect: false }),
+      ).rejects.toThrow('Unable to verify the session before signing out');
+    });
+    sessionStatus = 200;
+    await anotherTabWrites(session('user-b', 'login-b'));
+
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(published.some((state) => state.includes('user-b'))).toBe(false);
+  });
+
+  it.each([
+    ['signed out', null],
+    ['signed in as A', session('user-a', 'login-a')],
+  ] as const)('publishes its own sign-in from %s without a reload', async (_label, start) => {
+    serverSession = start;
+    renderProviders();
+    await screen.findByText(start ? 'authenticated:user-a:login-a' : 'unauthenticated:none:none');
+    authRoute = signInRoutes(session('user-b', 'login-b'), true);
+
+    await act(async () => {
+      await signIn();
+    });
+
+    await screen.findByText('authenticated:user-b:login-b');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a failed sign-in claims nothing, so a switch elsewhere still retires', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    authRoute = signInRoutes(session('user-b', 'login-b'), false);
+
+    let outcome: Awaited<ReturnType<typeof signIn>>;
+    await act(async () => {
+      outcome = await signIn();
+    });
+    expect(outcome?.error).toBe('CredentialsSignin');
+    await act(async () => {});
+    await anotherTabWrites(session('user-b', 'login-b'));
+
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(published.some((state) => state.includes('user-b'))).toBe(false);
+  });
+});
+
+describe('persisted cache restore', () => {
+  it('starts queries before the first session read, then hydrates the owner’s cache', async () => {
+    const writer = new DehydratingClient();
+    writer.setQueryData(['profile', 'user-a'], { email: 'a@example.invalid' });
+    const persistedCache = await openDB('boardsesh-react-query', 1);
+    await persistedCache.put(
+      'cache',
+      { owner: 'user-a:login-a', client: { timestamp: Date.now(), buster: '', clientState: dehydrate(writer) } },
+      'client',
+    );
+    persistedCache.close();
+    let releaseSession!: () => void;
+    sessionRead = new Promise<void>((resolve) => {
+      releaseSession = resolve;
+    });
+    serverSession = session('user-a', 'login-a');
+    const publicQuery = vi.fn(async () => ['gym']);
+    function PublicGyms() {
+      useQuery({ queryKey: ['public-gyms'], queryFn: publicQuery });
+      return null;
+    }
+
+    renderProviders(<PublicGyms />);
+
+    await waitFor(() => expect(publicQuery).toHaveBeenCalledOnce());
+    expect(screen.getByText('loading:none:none')).toBeTruthy();
+    expect(queryClient?.getQueryData(['profile', 'user-a'])).toBeUndefined();
+
+    act(() => releaseSession());
+
+    await screen.findByText('authenticated:user-a:login-a');
+    await waitFor(() =>
+      expect(queryClient?.getQueryData(['profile', 'user-a'])).toEqual({ email: 'a@example.invalid' }),
+    );
   });
 });

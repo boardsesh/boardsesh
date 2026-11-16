@@ -8,7 +8,7 @@ import {
   browserBackendSessionKey,
 } from '@boardsesh/auth-protocol/browser-backend-session';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
-import { browserSessionGuard } from '@/app/lib/auth/session-guard';
+import { browserSessionGuard, signedInViewer } from '@/app/lib/auth/session-guard';
 import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
 
 type WsAuthResponse = {
@@ -93,10 +93,7 @@ export function useWsAuthToken(enabled = true) {
       }
       // A closure that keeps this token after the account changes is refused by the guard.
       if (result.token && result.userId)
-        browserSessionGuard().rememberToken(result.token, {
-          userId: result.userId,
-          authSessionId: result.authSessionId ?? '',
-        });
+        browserSessionGuard().rememberToken(result.token, signedInViewer(result.userId, result.authSessionId));
       return result;
     },
     // The NextAuth JWT is long-lived, but revalidate periodically and on

@@ -27,6 +27,7 @@ import {
   browserSessionGuard,
   sessionViewerKey,
   sessionViewerOf,
+  signedInViewer,
   WEB_SESSION_CHECK_EVENT,
   type SessionViewer,
 } from '../../lib/auth/session-guard';
@@ -62,7 +63,7 @@ function readProbedViewer(candidate: unknown): SessionViewer | undefined {
   const probe = candidate as Record<string, unknown>;
   if (probe.authenticated === false) return null;
   if (probe.authenticated !== true || typeof probe.userId !== 'string') return undefined;
-  return { userId: probe.userId, authSessionId: typeof probe.authSessionId === 'string' ? probe.authSessionId : '' };
+  return signedInViewer(probe.userId, typeof probe.authSessionId === 'string' ? probe.authSessionId : null);
 }
 
 async function readSessionJson(response: Response, signal: AbortSignal): Promise<unknown> {
@@ -325,8 +326,9 @@ export default function SessionProviderWrapper({
       externalRefresh();
     };
     // Focus and a 401 compare the cookie's account with the published one, and
-    // read the session (which rewrites the cookie) only when they differ.
-    let lastIdentityCheck = Date.now();
+    // read the session (which rewrites the cookie) only when they differ. The
+    // first focus after the page settles always checks.
+    let lastIdentityCheck = 0;
     let identityProbe: AbortController | null = null;
     const checkIdentity = async (throttled: boolean) => {
       if (suspendedRef.current || !settledRef.current || identityProbe) return;
@@ -402,7 +404,7 @@ export default function SessionProviderWrapper({
 
   useEffect(() => {
     if (!enableExpoAuthBridge || !settled) return;
-    const identity = session ? `${session.user.id}:${session.authSessionId ?? 'pending-login-identity'}` : 'anonymous';
+    const identity = sessionViewerKey(sessionViewerOf(session));
     if (broadcastIdentityRef.current === identity) return;
     broadcastIdentityRef.current = identity;
     // Public NextAuth notification reaches already-open Expo/legacy pages.

@@ -1,7 +1,15 @@
 // @vitest-environment node
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { createSessionGuard, isSessionSuperseded, SessionSupersededError, type SessionGuard } from '../session-guard';
+import {
+  createSessionGuard,
+  isSessionSuperseded,
+  sessionViewerKey,
+  sessionViewerOf,
+  SessionSupersededError,
+  shouldRetryQuery,
+  type SessionGuard,
+} from '../session-guard';
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => void | Promise<void>;
 let handle: Handler;
@@ -31,13 +39,13 @@ function json(response: ServerResponse, status: number, body: unknown) {
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-let reloadToRoot: ReturnType<typeof vi.fn<() => void>>;
+let reloadPage: ReturnType<typeof vi.fn<() => void>>;
 let requestSessionCheck: ReturnType<typeof vi.fn<() => void>>;
 let clock: number;
 
 function guardWith(options: { cleanupTimeoutMs?: number; send?: typeof fetch } = {}): SessionGuard {
   return createSessionGuard({
-    reloadToRoot,
+    reloadPage,
     requestSessionCheck,
     now: () => clock,
     cleanupTimeoutMs: options.cleanupTimeoutMs ?? 1000,
@@ -62,7 +70,7 @@ afterAll(async () => {
 beforeEach(() => {
   received.length = 0;
   clock = 1_000_000;
-  reloadToRoot = vi.fn<() => void>();
+  reloadPage = vi.fn<() => void>();
   requestSessionCheck = vi.fn<() => void>();
   handle = (_request, response) => json(response, 200, { ok: true });
 });
@@ -196,7 +204,7 @@ describe('account transitions', () => {
 
     expect(guard.capture()).toBe(generation);
     expect(guard.viewerKey()).toBe('user-a:login-a');
-    expect(reloadToRoot).not.toHaveBeenCalled();
+    expect(reloadPage).not.toHaveBeenCalled();
   });
 
   it('drops anonymous responses on sign-in without reloading', async () => {
@@ -209,7 +217,7 @@ describe('account transitions', () => {
     expect(guard.isCurrent(generation)).toBe(false);
     expect(guard.isRetiring()).toBe(false);
     await sleep(5);
-    expect(reloadToRoot).not.toHaveBeenCalled();
+    expect(reloadPage).not.toHaveBeenCalled();
   });
 
   it('drops responses from an earlier login of the same account without reloading', async () => {
@@ -221,7 +229,7 @@ describe('account transitions', () => {
 
     expect(guard.isCurrent(generation)).toBe(false);
     await sleep(5);
-    expect(reloadToRoot).not.toHaveBeenCalled();
+    expect(reloadPage).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -236,7 +244,7 @@ describe('account transitions', () => {
         await sleep(5);
         order.push('cleanup');
       });
-      reloadToRoot.mockImplementation(() => order.push('reload'));
+      reloadPage.mockImplementation(() => order.push('reload'));
       guard.accept(accountA);
       const generation = guard.capture();
 
@@ -247,11 +255,11 @@ describe('account transitions', () => {
       expect(guard.isCurrent(guard.capture())).toBe(false);
       await expect(guard.fetch(`${origin}/profile`)).rejects.toBeInstanceOf(SessionSupersededError);
       expect(received).toHaveLength(0);
-      await vi.waitFor(() => expect(reloadToRoot).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(reloadPage).toHaveBeenCalledOnce());
       expect(order).toEqual(['cleanup', 'reload']);
       expect(guard.accept(accountA)).toBe('retire');
       await sleep(5);
-      expect(reloadToRoot).toHaveBeenCalledOnce();
+      expect(reloadPage).toHaveBeenCalledOnce();
     },
   );
 
@@ -266,8 +274,8 @@ describe('account transitions', () => {
     guard.accept(accountB);
 
     await sleep(5);
-    expect(reloadToRoot).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(reloadToRoot).toHaveBeenCalledOnce());
+    expect(reloadPage).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(reloadPage).toHaveBeenCalledOnce());
   });
 
   it('does not reload for this tab’s own sign-in or sign-out, and the intent covers one change', async () => {
@@ -281,7 +289,7 @@ describe('account transitions', () => {
     expect(guard.accept(accountB)).toBe('publish');
 
     expect(guard.accept(null)).toBe('retire');
-    await vi.waitFor(() => expect(reloadToRoot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(reloadPage).toHaveBeenCalledOnce());
   });
 
   it('treats a change after the local intent window as coming from elsewhere', () => {
@@ -293,6 +301,41 @@ describe('account transitions', () => {
     expect(guard.accept(accountB)).toBe('retire');
   });
 
+  it('retires on a change from elsewhere once a failed local flow cancels its claim', () => {
+    const guard = guardWith();
+    guard.accept(accountA);
+    const failedSignIn = guard.expectLocalChange();
+
+    failedSignIn.cancel();
+
+    expect(guard.accept(accountB)).toBe('retire');
+  });
+
+  it('extends an open claim for the refresh read, but never reopens one a change used', () => {
+    const guard = guardWith();
+    guard.accept(accountA);
+    const signOut = guard.expectLocalChange();
+    clock += 15_000;
+    signOut.extend();
+    clock += 15_000;
+
+    expect(guard.accept(null)).toBe('publish');
+    signOut.extend();
+    expect(guard.accept(accountB)).toBe('publish');
+    expect(guard.accept(null)).toBe('retire');
+  });
+
+  it('lets an earlier claim cancel nothing once a newer flow has claimed', () => {
+    const guard = guardWith();
+    guard.accept(accountA);
+    const earlier = guard.expectLocalChange();
+    guard.expectLocalChange();
+
+    earlier.cancel();
+
+    expect(guard.accept(null)).toBe('publish');
+  });
+
   it('stops running an unregistered cleanup', async () => {
     const guard = guardWith();
     const cleanup = vi.fn();
@@ -302,7 +345,7 @@ describe('account transitions', () => {
 
     guard.accept(accountB);
 
-    await vi.waitFor(() => expect(reloadToRoot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(reloadPage).toHaveBeenCalledOnce());
     expect(cleanup).not.toHaveBeenCalled();
   });
 
@@ -320,5 +363,22 @@ describe('account transitions', () => {
     await expect(timedOut).resolves.toBeUndefined();
     await expect(guard.whenViewerKnown(10)).resolves.toBe('user-a:login-a');
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('identity helpers', () => {
+  it('names a login without an authSessionId with the shared placeholder', () => {
+    const pending = sessionViewerOf({ user: { id: 'user-a' }, expires: '2099-01-01T00:00:00.000Z' });
+
+    expect(sessionViewerKey(pending)).toBe('user-a:pending-login-identity');
+    expect(sessionViewerKey(sessionViewerOf(null))).toBe('anonymous');
+  });
+
+  it('retries a superseded query once, and any other failure three times', () => {
+    const superseded = new SessionSupersededError();
+    const failure = new Error('network');
+
+    expect([0, 1].map((failureCount) => shouldRetryQuery(failureCount, superseded))).toEqual([true, false]);
+    expect([0, 2, 3].map((failureCount) => shouldRetryQuery(failureCount, failure))).toEqual([true, true, false]);
   });
 });

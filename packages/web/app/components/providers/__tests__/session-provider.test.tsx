@@ -12,7 +12,7 @@ import {
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
 const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
 const reload = vi.hoisted(() => vi.fn<() => void>());
-vi.mock('@/app/lib/auth/reload-to-locale-root', () => ({ reloadToLocaleRoot: reload }));
+vi.mock('@/app/lib/auth/reload-after-account-change', () => ({ reloadAfterAccountChange: reload }));
 const coordinator = vi.hoisted(() => ({
   ready: false,
   renewReady: false,
