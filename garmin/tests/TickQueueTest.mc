@@ -43,18 +43,34 @@ function testQueueCorruptStorageRefusesWithoutReplacement(logger as Test.Logger)
     return true;
 }
 
+(:debug)
+function savedReply(uuid) {
+    return { "data" => { "saveTick" => { "uuid" => uuid } } };
+}
+
 (:test)
 function testQueueAcceptsOnlyExactTypedUuidAcknowledgement(logger as Test.Logger) as Lang.Boolean {
-    Test.assertEqual(TickQueue.exactAck(200, { "uuid" => "tick" }, "tick"), true);
-    Test.assertEqual(TickQueue.exactAck(200, { "uuid" => "other" }, "tick"), false);
-    Test.assertEqual(TickQueue.exactAck(200, { "uuid" => 3 }, "tick"), false);
+    Test.assertEqual(TickQueue.exactAck(200, savedReply("tick"), "tick"), true);
+    Test.assertEqual(TickQueue.exactAck(200, savedReply("other"), "tick"), false);
+    Test.assertEqual(TickQueue.exactAck(200, savedReply(3), "tick"), false);
+    Test.assertEqual(TickQueue.exactAck(200, { "uuid" => "tick" }, "tick"), false);
     Test.assertEqual(TickQueue.exactAck(200, null, "tick"), false);
-    Test.assertEqual(TickQueue.exactAck(400, { "uuid" => "tick" }, "tick"), false);
-    var codes = [-104, 200, 400, 401, 404, 422, 429, 500, 503];
+    Test.assertEqual(TickQueue.exactAck(400, savedReply("tick"), "tick"), false);
+    Test.assertEqual(TickQueue.exactAck(200, { "errors" => [], "data" => { "saveTick" => { "uuid" => "tick" } } }, "tick"), false);
+    // A status alone is never a verdict on the tick, not even 400.
+    var codes = [-104, -400, -2, 200, 400, 401, 403, 404, 409, 422, 429, 500, 502, 503];
     for (var index = 0; index < codes.size(); index += 1) {
-        Test.assertEqual(TickQueue.classifyFlushResult(codes[index], false), :retry);
+        Test.assertEqual(TickQueue.classifyFlushResult(codes[index], null, "tick"), :retry);
     }
+    Test.assertEqual(TickQueue.classifyFlushResult(400, nullStateFieldReply("boardType", "String!"), "tick"), :rejected);
     return true;
+}
+
+// yoga's HTTP 400 when a variable field is null; see the native contract replay.
+(:debug)
+function nullStateFieldReply(field, type) {
+    return { "errors" => [{ "message" => "Variable \"$input\" got invalid value null at \"input." + field +
+        "\"; Expected non-nullable type \"" + type + "\" not to be null." }] };
 }
 
 (:test)
@@ -79,9 +95,9 @@ class FlushCompletionObserver {
 }
 
 (:test)
-function testFlusherPermanentFailureRetainsFrontAndStops(logger as Test.Logger) as Lang.Boolean {
+function testFlusherNullStateFieldDeadLettersFrontAndSendsNext(logger as Test.Logger) as Lang.Boolean {
     var context = installAuthFixture("owner-a", 270);
-    Application.Storage.setValue(TickQueue.KEY, OwnedTickOutbox.load(null));
+    resetTickStores();
     TickQueue.enqueue({ "uuid" => "front" }, context);
     TickQueue.enqueue({ "uuid" => "next" }, context);
     var client = new CapturedBsClient();
@@ -89,11 +105,12 @@ function testFlusherPermanentFailureRetainsFrontAndStops(logger as Test.Logger) 
     var flusher = new TickFlusher(client);
     flusher.start(observer.method(:done));
     Test.assertEqual(client.sent.size(), 1);
-    client.sent[0]["callback"].invoke(400, null);
-    Test.assertEqual(TickQueue.size(), 2);
-    Test.assertEqual(TickQueue.all()[0]["uuid"], "front");
-    Test.assertEqual(client.sent.size(), 1);
-    Test.assertEqual(observer.calls, 1);
+    client.sent[0]["callback"].invoke(400, nullStateFieldReply("angle", "Int!"));
+    Test.assertEqual(TickQueue.size(), 1);
+    Test.assertEqual(TickQueue.all()[0]["uuid"], "next");
+    Test.assertEqual(rejectedEntries()[0]["reason"], "NULL_STATE_FIELD");
+    Test.assertEqual(client.sent.size(), 2);
+    Test.assertEqual(observer.calls, 0);
     return true;
 }
 

@@ -109,6 +109,7 @@ mocked backend reachable from your machine.
 ## 5. Run the unit tests
 
 The pure logic (`BsEndpoints`, UUID formatting, exact tick-queue removal,
+saveTick reply classification, the dead-letter store, pre-G2 tick adoption,
 navigation generations/wraparound, and poll reconciliation) has `(:test)`
 functions under `garmin/tests/`. Build a **test** binary (`-t`) and run it with
 `-t`:
@@ -124,6 +125,12 @@ vp exec monkeydo garmin/bin/boardsesh-test.prg fenix7 -t
 
 `monkeydo ... -t` (equivalently `--unit-test`) runs every `(:test)` function and
 prints a PASS/FAIL table. No network or account required.
+
+The reply table is also checked from the backend side: `vp run
+test:native-contract` replays the current `TickQueue` classifier and
+`BsEndpoints` body builders (`garmin-tick-replies.contract.ts`) against replies
+from the real graphql-yoga transport, `SaveTickInput` type, input schema and
+production error mask.
 
 ## 6. Pairing flow (get a code, type it on the watch)
 
@@ -167,39 +174,144 @@ Re-pairing advances a persisted monotonic scope; clearing credentials preserves
 that tombstone. Counter exhaustion refuses further changes rather than wrapping.
 The V2 auth value remains authoritative even after sign-out or corruption; old
 credential keys are never consulted once it exists. A verified legacy-credential
-refresh may bind only those credentials into a new scope, never old queued ticks.
+refresh binds only those credentials into a new scope; it never adopts old
+queued ticks by itself (see the adoption rule below).
 
 `TickQueue` persists the complete owner-partitioned `OwnedTickOutbox` envelope
 before the first request and before FIT laps, counters or success feedback.
 Logical capacity and storage failures refuse new logs without evicting saved
-efforts. Each request owns an owner/scope/UUID lease. Only a typed successful
-response acknowledging the exact UUID under the current scope removes a tick.
-Every other result, including permanent HTTP errors and GraphQL errors, retains
-the tick and stops the drain. Recovery from a permanently rejected tick is
-intentionally deferred; there is no automatic discard path.
+efforts. Each request owns an owner/scope/UUID lease. Nothing is ever deleted
+without either the server's acknowledgement or a copy in the dead-letter store.
 
-Legacy arrays remain unowned forever. Historical pairing wrote new credentials
-before clearing the queue, so neither current credentials, a verified refresh,
-nor same-account re-pairing proves those ticks' owner. They remain quarantined.
+#### Where a tick can be
+
+| State | Storage value | Sent? | Leaves when |
+| --- | --- | --- | --- |
+| Queued under its owner | `bs.pendingTicks` `owners[<userId>]` | Only while that verified owner is signed in | The server acknowledges its exact UUID, or refuses it for good |
+| Refused (dead letter) | `bs.rejectedTicks` | Never again | Never; the watch has no way to list or clear it yet |
+| On hold (pre-G2, owner unproven) | `bs.pendingTicks` `unowned` | Never, until adopted | The adoption rule below proves its owner |
+
+#### Server replies
+
+A drain (Save or Discard at the end of an activity) sends the signed-in
+owner's ticks oldest first. The verdict on each reply comes from the
+`saveTick` resolver (`packages/backend/src/graphql/resolvers/ticks/mutations.ts`)
+behind graphql-yoga's `/graphql` transport. `saveTick` hands its callback the
+raw GraphQL body so the error codes survive. Only verdicts about one tick's
+own data dead-letter it; anything that would refuse every tick alike retries.
+
+| Reply | Verdict | What the drain does |
+| --- | --- | --- |
+| 2xx, no `errors`, `data.saveTick.uuid` equals the sent UUID (a UUID the account already saved answers the stored tick) | Acknowledged | Removes it, sends the next |
+| 2xx whose every error is `CLIMB_NOT_FOUND` (spray climb deleted or hidden), `TICK_UUID_CONFLICT` (another account owns the UUID), or the code-less `Invalid input: …` from `SaveTickInputSchema` | Refused | Moves it to the dead-letter store, sends the next |
+| HTTP 400 whose every error is yoga's `got invalid value null at "input.<field>"` for a field the watch copies from session state (`boardType`, `climbUuid`, `angle`, `isMirror`, `isBenchmark`) | Refused | Same |
+| Every other 400 (no body, unparseable body, unknown or missing input field, a constant field refused), `GRAPHQL_VALIDATION_FAILED` on the fixed query, SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets, an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
+
+Auth failures and transport errors never dead-letter a tick: an unknown reply
+costs a stuck queue until the next drain, never a refused effort. Whether the
+SDK hands the watch a body with a 400 is not verified on hardware; without one
+a 400 retries, as before this change.
+
+Two guards bound a misread verdict. A second refusal with the same reason in
+one drain stops the drain and keeps that tick queued, so a server fault that
+refuses everything costs at most one tick per reason per drain (two ticks on
+one deleted climb take two drains). The live log path never dead-letters: a
+refused effort shows "Not saved to logbook" and stays queued for the exit
+drain. A refusal is also kept queued when the dead-letter write fails or the
+store is full. The dead-letter write comes before
+the outbox removal, so a crash between the two leaves a copy in both stores and
+the next drain's identical refusal adds no second entry.
+
+The phone outbox (`packages/shared/offline-sync`) dead-letters any 400, 403,
+409 or 422 and the codes `CLIMB_NOT_FOUND`, `GRAPHQL_VALIDATION_FAILED`,
+`BAD_REQUEST`, `BAD_USER_INPUT` and `FORBIDDEN` on the first attempt, and
+retries the rest ten times. Without a retry budget, the watch
+instead dead-letters only per-tick verdicts, including the code-less
+`Invalid input` and `TICK_UUID_CONFLICT`, and retries the schema-wide ones.
+
+Known gap: the watch sends no `boardUuid`, so a tick on a spray wall the
+climber reaches only through a share link, or a wall an admin hid, gets
+`CLIMB_NOT_FOUND` and is dead-lettered although the climb exists. Before this
+change it blocked the queue instead. Sending `boardUuid` needs the session
+state endpoint to carry it and is a follow-up. This gap is why a dead-lettered
+entry may be a real send, and why the store never drops one.
+
+`bs.rejectedTicks` is `{ version: 1, entries: [{ owner, tick, reason }] }`,
+oldest first, capped at 25 entries (`BuildConfig.REJECTED_TICK_MAX`). A tick is
+about 500 bytes, so a full store is roughly 15KB of its own 32KB value. Nothing
+is ever evicted. When the store is full, the next refusal is treated as "retry
+later": the tick stays at the head of the queue and the drain stops there, as
+every refusal did before this change. The summary then says the store is full.
+Clearing or retrying refused ticks needs an on-watch list, which is a
+follow-up.
+
+#### On-hold ticks from before G2 (#7445)
+
+Builds before the owner-scoped queue stored a bare array with no owner. Their
+pairing wrote new credentials before clearing that array, so an interrupted
+pairing could leave the previous account's ticks beside new credentials.
+Neither the current credentials, a verified refresh, nor a same-account
+re-pairing proves whose those ticks are, and the watch never recorded how many
+accounts an old build was paired to.
+
+One thing is provable. Old builds wrote the access token (`bs.jwt`) first on
+every pairing and refresh and signed every tick request with it, and no newer
+build writes that key. So every tick the old app logged after the final
+`bs.jwt` was issued was logged while it was signed in as that token's subject.
+A drain adopts an on-hold tick into the signed-in owner's queue only when all
+of these hold:
+
+1. The signed-in owner was verified by the server (pairing or refresh).
+2. The final pre-G2 token's `sub` claim is exactly that owner.
+3. The tick has a UUID, fits the queue's depth bound, and its `climbedAt` is
+   exactly the `YYYY-MM-DDTHH:MM:SSZ` form the app writes.
+4. That `climbedAt` is at least 24 hours (`BuildConfig.LEGACY_ADOPT_SKEW_SEC`)
+   after the token's `iat`. The margin covers a watch clock set fast by a
+   wrong time zone (at most 14 hours). The proof assumes the watch clock was
+   never more than a day fast while those ticks were logged.
+5. The owner has no queued tick with the same UUID and the shared queue has
+   room.
+
+Adoption happens one tick at a time, only once the owner's own queue is empty,
+so an offline drain leaves at most one adopted tick in the queue. The token's
+signature is not checked: the value is the app's own storage, and its subject
+must also match an owner the server verified. Everything else stays on hold,
+including every tick logged before the final token or within a day of it, and
+is never sent under any account.
+
+The session summary (End activity) shows `N refused  M on hold` in orange when
+either count is above zero, and `N refused, full` once the refused store is
+full (any account's entries count toward it). Refused counts belong to the
+signed-in owner. Reading the counts writes nothing.
+
 Known-owner partitions survive re-pairing and become eligible only when that
 verified owner signs in again. Stale requests may settle their own flight or
 lease; they cannot acknowledge ticks, overwrite state, route, or exit a newer
 login. Pairing saves any outgoing FIT activity before resetting session state.
 
-Auth and outbox use separate SDK storage values to avoid combining credentials
-with potentially large quarantine data. Garmin documents a 32KB per-value limit
-and exceptions when storage is full; adapters catch failures and publish only
-after a successful write. This is one write per envelope, with no claim of
-power-loss atomicity across keys. See the official
+Auth, outbox and dead-letter store use separate SDK storage values, so
+credentials never share a value with potentially large queue data. Garmin
+documents a 32KB per-value limit and exceptions when storage is full; adapters
+catch failures and publish only after a successful write. This is one write per
+value, with no claim of power-loss atomicity across keys. See the official
 [Storage contract](https://developer.garmin.com/connect-iq/api-docs/Toybox/Application/Storage.html).
+
+#### Older builds reading this storage
+
+The outbox format is unchanged at version 2, and the dead-letter store is a new
+key. A G2 build installed over this one reads the outbox as before, sends
+adopted ticks under the owner they were adopted for, and never sees refused
+ticks; it leaves `bs.rejectedTicks` untouched, so a later upgrade finds them
+again. A G2 build retries a refused tick that is still queued and stops its
+drain there, as it always did. Array-only builds from before G2 still cannot
+read the version 2 envelope.
 
 The application currently exists only on the owner's test watch; public
 publication is planned for December. Existing queued test data, original-key
 update safety, and real-watch queue/FIT QA remain activation/release gates in
 owner runbook [#7430](https://github.com/boardsesh/boardsesh/issues/7430).
-SDK simulation and ephemeral-key compiles do not close those gates. Older
-array-only builds cannot consume the V2 envelope; safe downgrade/recovery is
-also unqualified, rather than an implicit rollback promise.
+SDK simulation and ephemeral-key compiles do not close those gates. Safe
+downgrade/recovery is unqualified, rather than an implicit rollback promise.
 
 SDK validation must use the complete test report rather than its launcher exit
 status: the local launcher can exit 1 even when every SDK test passes. Mutation
@@ -266,7 +378,11 @@ garmin/
     auth/TokenStore.mc    JWT/refresh/exp persistence in Application.Storage
     state/AppState.mc     Session state singleton + PURE nav reconciliation
     state/PollController.mc  3s foreground poll w/ backoff + optimistic reconcile
-    state/TickQueue.mc    Owner-partitioned durable outbox + scoped flusher
+    state/TickQueue.mc    Reply classification, storage adapters, scoped flusher
+    state/OwnedTickOutbox.mc  PURE owner-partitioned outbox + on-hold adoption
+    state/RejectedTicks.mc    PURE dead-letter store for refused ticks
+    state/LegacyTickProof.mc  PURE pre-G2 token subject/issue-time reader
+    state/TickLogger.mc   Live log: persist, send once, settle the reply
     recording/ActivityController.mc  FIT recording (start/lap/save/discard)
     util/TimeUtil.mc      UTC ISO-8601 climbedAt helper
     util/Toast.mc         Transient feedback (showToast w/ vibrate fallback)
@@ -286,6 +402,16 @@ repair compiled the app and test sources with the official Connect IQ 9.2.0
 compiler using its generic target. Fresh device-specific builds and simulator
 test execution still require installed device profiles. Generic compilation is
 separate from executing the tests or checking a watch's memory/API limits.
+
+On 2026-11-16 the dead-letter change compiled as a `fenix7` test build with SDK
+9.2.0 and an ephemeral key, and the simulator ran 92 tests: 92 passed, 0 failed,
+0 errors. Two SDK calls were replaced after the simulator showed they raise
+uncatchable VM errors on bad input: `Gregorian.moment` for 31 February and
+`StringUtil.convertEncodedString` for malformed base64. The SDK test runner
+does not enforce the bytecode watchdog (a 50-million-iteration probe passed),
+so whether the heaviest drain callback (refuse, then adopt, beside full queues)
+fits on a real watch is a hardware check. Real-watch behaviour is not covered
+by that run.
 
 The backend pairing alphabet matches `PairingView.CHARSET`. SDK 9.2.0 documents
 `Activity.SPORT_ROCK_CLIMBING`, `Gregorian.utcInfo` with numeric `FORMAT_SHORT`

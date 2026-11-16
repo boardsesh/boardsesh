@@ -32,6 +32,7 @@
     <string id="FlashBang">Flash!</string>
     <string id="QueuedOffline">Saved offline</string>
     <string id="LogFailed">Couldn't log</string>
+    <string id="TickRejected">Not saved to logbook</string>
 
     <!-- Session actions -->
     <string id="ActionsTitle">Session</string>
@@ -75,4 +76,9 @@
     <string id="SummaryAttempts">Attempts</string>
     <string id="SummaryProblems">Problems</string>
     <string id="SummaryHint">START to end</string>
+    <!-- Kept on the watch: ticks the server refused, and ticks from an older
+         app version waiting for proof of whose they are. -->
+    <string id="SummaryRefused">refused</string>
+    <string id="SummaryRefusedFull">refused, full</string>
+    <string id="SummaryHeld">on hold</string>
 </strings>
