@@ -338,6 +338,36 @@ describe('ArtRow', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
+  // A ⋯ menu's rows, reachable from the row itself by VoiceOver.
+  it('publishes its own actions after the long press and routes them back', () => {
+    const onLongPress = vi.fn();
+    const onAccessibilityAction = vi.fn();
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        onPress={vi.fn()}
+        onLongPress={onLongPress}
+        longPressAccessibilityLabel="Board actions"
+        accessibilityActions={[{ name: 'details', label: 'Details' }]}
+        onAccessibilityAction={onAccessibilityAction}
+        testID="row"
+      />,
+    );
+    expect(JSON.parse(screen.getByTestId('row').getAttribute('data-actions') ?? '[]')).toEqual([
+      { name: 'longpress', label: 'Board actions' },
+      { name: 'details', label: 'Details' },
+    ]);
+    const handle = ctrl.actionHandlers.get('row');
+    handle?.({ nativeEvent: { actionName: 'details' } });
+    expect(onAccessibilityAction).toHaveBeenCalledOnce();
+    expect(onLongPress).not.toHaveBeenCalled();
+    handle?.({ nativeEvent: { actionName: 'longpress' } });
+    expect(onLongPress).toHaveBeenCalledOnce();
+    expect(onAccessibilityAction).toHaveBeenCalledOnce();
+  });
+
   // A hold menu's anchor wraps the row's own target, never the ⋯ beside it.
   it('wraps only the row target, leaving the control outside the wrapper', () => {
     render(

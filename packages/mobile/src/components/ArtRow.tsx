@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, type ReactElement, type ReactNode } from 'react';
-import { Platform, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { Platform, StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
@@ -54,6 +54,13 @@ export type ArtRowProps = {
   /** Without it, VoiceOver reads the row's text in order. */
   accessibilityLabel?: string;
   /**
+   * More actions for screen readers, published after the long press: a ⋯
+   * menu's rows, so VoiceOver reaches them from the row itself. Memoise it.
+   */
+  accessibilityActions?: readonly AccessibilityActionInfo[];
+  /** Runs one of `accessibilityActions`; the long press is handled here already. */
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
+  /**
    * Wraps the row's own target (art, text and a built-in accessory), never an
    * element accessory: a hold menu's anchor goes here, so the ⋯ beside it keeps
    * its own tap and isn't lifted with the row. Give the wrapper `flex: 1` when
@@ -98,6 +105,8 @@ export const ArtRow = memo(function ArtRow({
   delayLongPress,
   longPressAccessibilityLabel,
   accessibilityLabel,
+  accessibilityActions: extraAccessibilityActions,
+  onAccessibilityAction,
   wrapTarget,
   testID,
 }: ArtRowProps) {
@@ -113,18 +122,20 @@ export const ArtRow = memo(function ArtRow({
   // A row in a choice says "not selected" too; any other row says nothing.
   const accessibilityState = selected ? SELECTED_STATE : accessory === 'checkmark' ? UNSELECTED_STATE : undefined;
   const hasLongPress = onLongPress !== undefined;
-  const accessibilityActions = useMemo(
-    () =>
+  const accessibilityActions = useMemo(() => {
+    const longPress: AccessibilityActionInfo[] =
       hasLongPress && (Platform.OS === 'android' || longPressAccessibilityLabel)
-        ? [{ name: 'longpress' as const, label: longPressAccessibilityLabel }]
-        : undefined,
-    [hasLongPress, longPressAccessibilityLabel],
-  );
+        ? [{ name: 'longpress', label: longPressAccessibilityLabel }]
+        : [];
+    const actions = [...longPress, ...(extraAccessibilityActions ?? [])];
+    return actions.length > 0 ? actions : undefined;
+  }, [hasLongPress, longPressAccessibilityLabel, extraAccessibilityActions]);
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'longpress') onLongPress?.();
+      else onAccessibilityAction?.(event);
     },
-    [onLongPress],
+    [onLongPress, onAccessibilityAction],
   );
 
   const titleText = (
