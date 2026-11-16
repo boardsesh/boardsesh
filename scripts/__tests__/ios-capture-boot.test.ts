@@ -35,7 +35,7 @@ describe('capture simulator boot', () => {
     const evidence = bootIosCaptureDevice({ device, debugDir: directory(), run });
     expect(run.mock.calls).toEqual([
       [['simctl', 'boot', device.udid], 120_000],
-      [['simctl', 'bootstatus', device.udid, '-b'], 180_000],
+      [['simctl', 'bootstatus', device.udid, '-b'], 600_000],
     ]);
     expect(JSON.parse(readFileSync(join(evidence, 'bootstatus.json'), 'utf8'))).toMatchObject(success);
   });
@@ -61,7 +61,7 @@ describe('capture simulator boot', () => {
   it('checks readiness even for an already booted device', () => {
     const run = vi.fn(() => success);
     bootIosCaptureDevice({ device: { ...device, state: 'Booted' }, debugDir: directory(), run });
-    expect(run.mock.calls).toEqual([[['simctl', 'bootstatus', device.udid, '-b'], 180_000]]);
+    expect(run.mock.calls).toEqual([[['simctl', 'bootstatus', device.udid, '-b'], 600_000]]);
   });
   it('writes command intent before execution and preserves thrown errors', () => {
     const debugDir = directory();

@@ -25,19 +25,26 @@ export function bootIosCaptureDevice({
     const evidencePath = join(evidenceDir, `${operation}.json`);
     const command = { args, timeoutMs, startedAt };
     writeFileSync(evidencePath, JSON.stringify(command, null, 2));
+    console.log(`[ios-boot] Starting ${operation} for ${device.udid} (timeout ${timeoutMs / 1000}s).`);
     let result: BootCommandResult;
     try {
       result = run(args, timeoutMs);
     } catch (error) {
       result = { status: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) };
     }
-    writeFileSync(evidencePath, JSON.stringify({ ...command, durationMs: Date.now() - startedAt, ...result }, null, 2));
+    const durationMs = Date.now() - startedAt;
+    writeFileSync(evidencePath, JSON.stringify({ ...command, durationMs, ...result }, null, 2));
+    console.log(
+      `[ios-boot] ${operation} completed in ${durationMs}ms with status ${result.status}; evidence: ${evidencePath}`,
+    );
     if (result.status !== 0)
       throw new Error(
         `Simulator ${operation} failed: ${result.stderr || result.stdout || result.status}; evidence: ${evidenceDir}`,
       );
   };
   if (device.state !== 'Booted') checked('boot', ['simctl', 'boot', device.udid], 120_000);
-  checked('bootstatus', ['simctl', 'bootstatus', device.udid, '-b'], 180_000);
+  // Fresh capture simulators perform first-boot setup; the release smoke's 180s
+  // budget timed out on both iPad and iPhone CI hosts before app installation.
+  checked('bootstatus', ['simctl', 'bootstatus', device.udid, '-b'], 600_000);
   return evidenceDir;
 }
