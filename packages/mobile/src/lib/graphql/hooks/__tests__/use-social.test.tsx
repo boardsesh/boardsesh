@@ -2,7 +2,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  type InfiniteData,
+  type QueryFunctionContext,
+  type QueryKey,
+} from '@tanstack/react-query';
 import {
   FOLLOW_USER,
   GET_BULK_VOTE_SUMMARIES,
@@ -35,6 +41,8 @@ vi.mock('../../client', () => ({
 }));
 
 import { useBulkVoteSummaries, useFollowers, useSearchUsers, useToggleUserFollow } from '../use-social';
+import { getHttpClient } from '../../client';
+import { useHttpInfiniteQuery } from '../../use-http-query';
 
 function makeWrapper() {
   const queryClient = new QueryClient({
@@ -288,4 +296,146 @@ describe('useBulkVoteSummaries', () => {
     expect(result.current.data).toBe(settledData);
     expect(result.current).toBe(settledResult);
   });
+});
+
+describe('opt-in original native infinite query executor', () => {
+  type NativePage = { followers: FollowConnection };
+  type NativeContext = QueryFunctionContext<QueryKey, number>;
+
+  it.each([false, true] as const)(
+    'keeps the actual context unread and completes held first/next raw pages after unmount (pageDelivery=%s)',
+    async (pageDelivery) => {
+      const { queryClient, Wrapper } = makeWrapper();
+      const key = ['native-original-infinite', pageDelivery] as const;
+      const observations: { context: object; signalReads: number }[] = [];
+      const nativeContexts: NativeContext[] = [];
+      const defineProperty = Object.defineProperty;
+      // A persister is unsuitable here: installed infiniteQueryBehavior reads
+      // context.signal before calling it. Observe only the real page-context
+      // getter at its creation, preserving its object, getter, and flags.
+      function observeProperty<T>(target: T, property: PropertyKey, descriptor: PropertyDescriptor): T {
+        if (
+          property === 'signal' &&
+          descriptor.get &&
+          target !== null &&
+          typeof target === 'object' &&
+          'client' in target &&
+          target.client === queryClient &&
+          'queryKey' in target &&
+          target.queryKey === key &&
+          'pageParam' in target &&
+          'direction' in target &&
+          target.direction === 'forward'
+        ) {
+          const observation = { context: target, signalReads: 0 };
+          observations.push(observation);
+          return defineProperty(target, property, {
+            ...descriptor,
+            get() {
+              observation.signalReads += 1;
+              return descriptor.get!.call(this);
+            },
+          });
+        }
+        return defineProperty(target, property, descriptor);
+      }
+      const propertySpy = vi.spyOn(Object, 'defineProperty').mockImplementation(observeProperty);
+      let firstComplete!: (response: NativePage) => void;
+      let nextComplete!: (response: NativePage) => void;
+      const first = new Promise<NativePage>((resolve) => {
+        firstComplete = resolve;
+      });
+      const next = new Promise<NativePage>((resolve) => {
+        nextComplete = resolve;
+      });
+      requestMock.mockReturnValueOnce(first).mockReturnValueOnce(next);
+      const firstResponse = { followers: makeFollowConnection(0) };
+      const nextResponse = { followers: makeFollowConnection(30) };
+      const options = {
+        queryKey: key,
+        initialPageParam: 0,
+        staleTime: Infinity,
+        queryFn: async () => {
+          throw new Error('Native opt-in reached the default HTTP operation executor');
+        },
+        nativeQueryFn: (context: NativeContext) => {
+          nativeContexts.push(context);
+          return getHttpClient().request<NativePage>(GET_FOLLOWERS, {
+            input: { userId: 'native-target', offset: context.pageParam, limit: 30 },
+          });
+        },
+        getNextPageParam: (lastPage: NativePage, pages: NativePage[]) =>
+          lastPage.followers.hasMore
+            ? pages.reduce((count, page) => count + page.followers.users.length, 0)
+            : undefined,
+      };
+      const useNative = pageDelivery
+        ? function useWithPageSource() {
+            return useHttpInfiniteQuery<NativePage, Error, QueryKey, number>({ ...options, pageDelivery: true });
+          }
+        : function useWithoutPageSource() {
+            return useHttpInfiniteQuery<NativePage, Error, InfiniteData<NativePage, number>, QueryKey, number>({
+              ...options,
+              pageDelivery: false,
+            });
+          };
+      let view = renderHook(useNative, { wrapper: Wrapper });
+      try {
+        await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+        expect(observations).toHaveLength(1);
+        expect(nativeContexts[0]).toBe(observations[0].context);
+        expect(nativeContexts[0].client).toBe(queryClient);
+        expect(nativeContexts[0].queryKey).toBe(key);
+        expect(nativeContexts[0].pageParam).toBe(0);
+        expect(observations[0].signalReads).toBe(0);
+        const firstQuery = queryClient.getQueryCache().find({ queryKey: key, exact: true });
+        const firstSettled = firstQuery!.promise!.then(
+          () => 'resolved',
+          () => 'rejected',
+        );
+        view.unmount();
+        expect(observations[0].signalReads).toBe(0);
+        await act(async () => {
+          firstComplete(firstResponse);
+          await firstSettled;
+        });
+        expect(await firstSettled).toBe('resolved');
+        expect(queryClient.getQueryData(key)).toEqual({ pages: [firstResponse], pageParams: [0] });
+        view = renderHook(useNative, { wrapper: Wrapper });
+        await waitFor(() => expect(view.result.current.isSuccess).toBe(true));
+        expect(requestMock).toHaveBeenCalledTimes(1);
+        let nextSettled!: Promise<string>;
+        act(() => {
+          nextSettled = view.result.current.fetchNextPage().then((result) => result.status);
+        });
+        await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+        expect(observations).toHaveLength(2);
+        expect(nativeContexts[1]).toBe(observations[1].context);
+        expect(nativeContexts[1].pageParam).toBe(30);
+        view.unmount();
+        expect(observations.map((observation) => observation.signalReads)).toEqual([0, 0]);
+        await act(async () => {
+          nextComplete(nextResponse);
+          await nextSettled;
+        });
+        expect(await nextSettled).toBe('success');
+        expect(queryClient.getQueryData(key)).toEqual({
+          pages: [firstResponse, nextResponse],
+          pageParams: [0, 30],
+        });
+        expect(observations.map((observation) => observation.signalReads)).toEqual([0, 0]);
+        expect(requestSignals).toEqual([]);
+        expect(requestMock.mock.calls).toEqual([
+          [GET_FOLLOWERS, { input: { userId: 'native-target', offset: 0, limit: 30 } }],
+          [GET_FOLLOWERS, { input: { userId: 'native-target', offset: 30, limit: 30 } }],
+        ]);
+      } finally {
+        firstComplete(firstResponse);
+        nextComplete(nextResponse);
+        view.unmount();
+        queryClient.clear();
+        propertySpy.mockRestore();
+      }
+    },
+  );
 });
