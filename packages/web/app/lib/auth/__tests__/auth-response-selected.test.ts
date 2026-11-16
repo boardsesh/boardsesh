@@ -53,29 +53,22 @@ beforeEach(() => {
 });
 describe('exclusive actual selected-source response admission', () => {
   it.each(['canonical-token', 'legacy-jwe'] as const)(
-    'ACKs the exact %s response only after both central source reads',
+    'returns the exact %s response only after both central source reads',
     async (kind) => {
       control.observe.mockImplementation(async () => selected(kind));
       const response = new Response(null, {
         status: 302,
         headers: { Location: '/settings', 'Set-Cookie': 'owned-flow-state=; Max-Age=0' },
       });
-      const acknowledgment = vi.fn((completed) => {
-        expect(control.observe).toHaveBeenCalledTimes(2);
-        expect(completed).toBe(response);
-      });
-      expect(await withAuthResponseAdmission(request(), context(), async () => response, acknowledgment)).toBe(
-        response,
-      );
-      expect(acknowledgment).toHaveBeenCalledTimes(1);
+      expect(await withAuthResponseAdmission(request(), context(), async () => response)).toBe(response);
+      expect(control.observe).toHaveBeenCalledTimes(2);
       expect(control.legacyAdmission).not.toHaveBeenCalled();
       expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     },
   );
   it('renders the canonical profile directly instead of an unrelated old NextAuth session', async () => {
     const legacySession = vi.fn(async () => Response.json({ user: { id: 'foreign-old-owner' } }));
-    const acknowledgment = vi.fn();
-    const response = await withAuthResponseAdmission(request(), context('session'), legacySession, acknowledgment);
+    const response = await withAuthResponseAdmission(request(), context('session'), legacySession);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       user: { id: 'current-owner' },
@@ -84,19 +77,16 @@ describe('exclusive actual selected-source response admission', () => {
     });
     expect(legacySession).not.toHaveBeenCalled();
     expect(control.legacyAdmission).not.toHaveBeenCalled();
-    expect(acknowledgment).toHaveBeenCalledWith(response);
     expect(response.headers.getSetCookie()).toEqual([]);
   });
   it.each(['missing-binding', 'proof-required', 'denied', 'conflict', 'unavailable'] as const)(
-    'refuses %s before invoking a legacy delegate or creating an ACK',
+    'refuses %s before invoking a legacy delegate',
     async (status) => {
       control.observe.mockResolvedValue({ status });
       const invoke = vi.fn(async () => new Response(null));
-      const acknowledgment = vi.fn();
-      const response = await withAuthResponseAdmission(request(), context(), invoke, acknowledgment);
+      const response = await withAuthResponseAdmission(request(), context(), invoke);
       expect(response.status).toBe(status === 'unavailable' ? 503 : status === 'conflict' ? 409 : 401);
       expect(invoke).not.toHaveBeenCalled();
-      expect(acknowledgment).not.toHaveBeenCalled();
       expect(control.legacyAdmission).not.toHaveBeenCalled();
       expect(response.headers.getSetCookie()).toEqual([]);
     },
@@ -124,16 +114,11 @@ describe('exclusive actual selected-source response admission', () => {
       if (change === 'binding') changed.cursor.bindingId = 'c'.repeat(64);
       if (change === 'kind') changed.actor.credential = { kind: 'legacy-jwe', credential: 'changed-source-kind' };
       control.observe.mockResolvedValueOnce(before).mockResolvedValueOnce(changed);
-      const acknowledgment = vi.fn();
-      const response = await withAuthResponseAdmission(
-        request(),
-        context(),
-        async () => Response.json({ privateA: 'must-not-publish' }),
-        acknowledgment,
+      const response = await withAuthResponseAdmission(request(), context(), async () =>
+        Response.json({ privateA: 'must-not-publish' }),
       );
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({ error: 'conflict' });
-      expect(acknowledgment).not.toHaveBeenCalled();
     },
   );
   it.each([
@@ -144,7 +129,6 @@ describe('exclusive actual selected-source response admission', () => {
     '__Host-boardsesh.browser-proof.' + 'b'.repeat(64) + '.3=unqualified',
     '__Host-boardsesh.browser-proof.' + 'b'.repeat(64) + '.2=; Max-Age=0',
   ])('refuses every unqualified auth-cookie write or clear: %s', async (header) => {
-    const acknowledgment = vi.fn();
     const response = await withAuthResponseAdmission(
       request(),
       context(),
@@ -153,58 +137,39 @@ describe('exclusive actual selected-source response admission', () => {
           status: 302,
           headers: { Location: '/settings', 'Set-Cookie': header },
         }),
-      acknowledgment,
     );
     expect(response.status).toBe(503);
     expect(response.headers.getSetCookie()).toEqual([]);
-    expect(acknowledgment).not.toHaveBeenCalled();
   });
-  it('preserves primary uncertainty after the inner delegate without acknowledging its response', async () => {
+  it('preserves primary uncertainty after the inner delegate', async () => {
     control.observe.mockResolvedValueOnce(selected()).mockResolvedValueOnce({ status: 'unavailable' });
-    const acknowledgment = vi.fn();
-    const response = await withAuthResponseAdmission(
-      request(),
-      context(),
-      async () => Response.json({ privateA: 'must-not-publish' }),
-      acknowledgment,
+    const response = await withAuthResponseAdmission(request(), context(), async () =>
+      Response.json({ privateA: 'must-not-publish' }),
     );
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'unavailable' });
-    expect(acknowledgment).not.toHaveBeenCalled();
   });
   it('never uses an HTTP marker or the legacy sign-out callback as selected authorization', async () => {
-    const acknowledgment = vi.fn();
-    const response = await withAuthResponseAdmission(
-      request(),
-      context(),
-      async (legacySignOut) => {
-        const candidate = new Response(null, { headers: { 'x-provider-security-admitted': 'true' } });
-        legacySignOut(candidate, 'owned-opaque-source');
-        return candidate;
-      },
-      acknowledgment,
-    );
+    const response = await withAuthResponseAdmission(request(), context(), async (legacySignOut) => {
+      const candidate = new Response(null, { headers: { 'x-provider-security-admitted': 'true' } });
+      legacySignOut(candidate, 'owned-opaque-source');
+      return candidate;
+    });
     expect(response.status).toBe(503);
-    expect(acknowledgment).not.toHaveBeenCalled();
     expect(
       (await withAuthResponseAdmission(request(), context('signout'), async () => new Response(null))).status,
     ).toBe(503);
   });
-  it('does not turn an anonymous observation into an authenticated actor ACK', async () => {
+  it('answers an anonymous observation with an empty session and refuses its OAuth callback', async () => {
     const anonymous: PresentedBrowserSelection = { status: 'anonymous', cursor: selected().cursor };
     control.observe.mockResolvedValue(anonymous);
-    const acknowledgment = vi.fn();
-    const response = await withAuthResponseAdmission(
-      request(),
-      context('session'),
-      async () => Response.json({ user: { id: 'legacy-owner' } }),
-      acknowledgment,
+    const response = await withAuthResponseAdmission(request(), context('session'), async () =>
+      Response.json({ user: { id: 'legacy-owner' } }),
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({});
-    expect(acknowledgment).not.toHaveBeenCalled();
     const invoke = vi.fn(async () => new Response(null));
-    expect((await withAuthResponseAdmission(request(), context(), invoke, acknowledgment)).status).toBe(503);
+    expect((await withAuthResponseAdmission(request(), context(), invoke)).status).toBe(503);
     expect(invoke).not.toHaveBeenCalled();
   });
 });

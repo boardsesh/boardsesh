@@ -16,12 +16,7 @@ interface Job {
 }
 const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as { jobs: Record<string, Job> };
 const proofFile = 'web-credential-proof.integration.proof.ts';
-const providerProofFiles = [
-  'provider-security-auth.proof.ts',
-  'provider-security-publication.proof.ts',
-  'provider-security-google-reauth.proof.ts',
-  'provider-owned-signin-auth.proof.ts',
-];
+const providerProofFiles = ['provider-security-publication.proof.ts'];
 const cookieProofFile = 'browser-proof-cookies.proof.ts';
 const task = 'vp run test:auth-web-credential-proof';
 

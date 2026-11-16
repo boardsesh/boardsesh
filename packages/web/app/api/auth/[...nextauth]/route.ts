@@ -8,13 +8,11 @@ import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
-import {
-  captureProviderOAuthRequest,
-  createProviderOAuthOuter,
-  type ProviderOAuthOuter,
-} from '@/app/lib/auth/provider-oauth-outer.server';
 import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
-import { normalizeProviderSecurityAppleCallback } from '@/app/lib/auth/provider-security-apple-transport.server';
+import {
+  isAcceptableProviderOAuthCookieHeader,
+  isProviderOAuthRequest,
+} from '@/app/lib/auth/provider-oauth-cookie-header.server';
 import {
   readSignInStartCallbackUrl,
   withPartnerSignInFailureReturn,
@@ -296,11 +294,7 @@ async function getAuth(
   return clearLegacyCookieIfSessionWritten(await handler(request, context));
 }
 
-async function routeAuth(
-  request: NextRequest,
-  context: NextAuthRouteContext,
-  provider: ProviderOAuthOuter | null,
-): Promise<Response> {
+async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
   // Check both route authorities before a delegate can exchange a code or write a cookie.
   // The stored Facebook identity and an existing session remain readable.
   const { nextauth } = await context.params;
@@ -319,26 +313,12 @@ async function routeAuth(
       { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
     );
   }
-  return withAuthResponseAdmission(
-    request,
-    context,
-    async (completeSignOut) => {
-      const response = await withWebOAuthIdentity(
-        request,
-        context,
-        provider?.options ?? authOptions,
-        (current, options) =>
-          current.method === 'POST'
-            ? postAuth(current, context, options, completeSignOut)
-            : getAuth(current, context, options),
-        provider?.delegate,
-      );
-      // Apple continuation clearing can clone the framework response. Quarantine
-      // the finished flow response before acknowledging its exact admission.
-      return provider ? provider.quarantine(response) : response;
-    },
-    provider?.completeAdmission,
-    provider?.anonymousAdmission,
+  return withAuthResponseAdmission(request, context, (completeSignOut) =>
+    withWebOAuthIdentity(request, context, authOptions, (current, options) =>
+      current.method === 'POST'
+        ? postAuth(current, context, options, completeSignOut)
+        : getAuth(current, context, options),
+    ),
   );
 }
 
@@ -347,20 +327,14 @@ async function composedAuth(
   context: NextAuthRouteContext,
   startCallbackUrl?: string | null,
 ): Promise<Response> {
-  let captured: NextRequest;
-  try {
-    captured = captureProviderOAuthRequest(request);
-  } catch {
+  // Google and Apple have refused an oversized or malformed Cookie header with
+  // a 503 since #7526. Keep that answer, before any handler or admission work.
+  if (
+    isProviderOAuthRequest(new URL(request.url).pathname, (await context.params).nextauth) &&
+    !isAcceptableProviderOAuthCookieHeader(request.headers.get('cookie'))
+  )
     return unavailableCredentialResponse();
-  }
-  const normalized = await normalizeProviderSecurityAppleCallback(captured, context, authOptions);
-  if (normalized) return normalized;
-  const provider = await createProviderOAuthOuter(captured, context, authOptions);
-  const invoke = async () =>
-    withPartnerSignInFailureReturn(captured, await routeAuth(captured, context, provider), startCallbackUrl);
-  // Every actual framework hook, admission, scoped-cookie clear and partner/
-  // Expo decorator settles before the publisher builds its final SQL command.
-  return provider ? provider.run(invoke) : invoke();
+  return withPartnerSignInFailureReturn(request, await routeAuth(request, context), startCallbackUrl);
 }
 
 // A failed social sign-in that started on the partner sign-in page goes back
