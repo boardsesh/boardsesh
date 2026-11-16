@@ -339,7 +339,7 @@ const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>
   'packages/backend/src/handlers/native-auth.ts': { writes: 6, gate: 'assertLegacyIdentityWriterAllowed(' },
   'packages/backend/src/graphql/resolvers/users/mutations.ts': {
     writes: 1,
-    gate: 'assertLegacyAccountDeletionAllowed(',
+    gate: 'beginLegacyAccountDeletion(',
   },
   'packages/backend/src/graphql/resolvers/board-presence/shared.ts': {
     writes: 1,
@@ -376,7 +376,8 @@ describe('identity writer catalog', () => {
           isProductionSource(path) &&
           !path.startsWith('packages/web/') &&
           !path.startsWith('packages/mobile/') &&
-          !path.startsWith(PROTOTYPE_ROOT),
+          // Integration proofs seed fixtures directly; they are tests, not writers.
+          !/\.proof\.[cm]?[jt]sx?$/.test(path),
       )
       .map((path) => [path, countIdentityWrites(readRepoFile(path))] as const)
       .filter(([, writes]) => writes > 0),
