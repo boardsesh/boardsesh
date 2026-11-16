@@ -177,11 +177,38 @@ plan digest is never accepted as current fence evidence. The initial prepare
 manifest reserves epoch 1, which the first enforced transition retains. Later
 authority switches raise the epoch; clients must use the reported epoch.
 
-Activation currently **always refuses** while any of these fixed code gates
-remain: Garmin must preserve queued offline ticks across refresh rejection;
-web cookies must carry the generation from the authentication proof; and native
-revoke/reset must share a safe lock order. No CLI switch or environment variable
-can assert those fixes exist. Later reviewed code must close each gate.
+Activation currently **always refuses** while either of these fixed code gates
+remains: Garmin must preserve queued offline ticks across refresh rejection, and
+web cookies must carry the generation from the authentication proof. No CLI
+switch or environment variable can assert those fixes exist. Later reviewed code
+must close each gate.
+
+A third gate, `NATIVE_REVOKE_RESET_LOCK_ORDER`, is closed. Native sign-out and a
+staged password reset for the same climber take their locks in one order:
+
+- Sign-out (`revokeNativeCredentials`): an unlocked lookup of the refresh row's
+  owner, then in one transaction the shared (6975, 2) gate, `users` FOR UPDATE,
+  unlocked reads of the refresh row and cutoff, the cutoff upsert, security event
+  and native session delete (generation mode only), the presented refresh row,
+  every other refresh row of the climber, the native lineage rows (generation
+  mode only), then push devices.
+- Reset (`consumePasswordRecovery`, final transaction): the shared (6975, 2) gate,
+  its command-replay row, `users` FOR UPDATE, the email reservation and its
+  members FOR UPDATE, the credential read, the cutoff FOR UPDATE, the recovery
+  state and receipt FOR UPDATE, the receipt and state updates, the credential
+  update (its partner trigger re-locks `users` FOR NO KEY UPDATE, already held),
+  the cutoff advance and security event, then every refresh row of the climber.
+
+Neither takes a row of that climber before its `users` row, so the second to
+arrive queues on that row and no cycle can form. The gate is shared by both, so
+it never makes one wait for the other.
+`native-revoke-reset-lock-order.test.ts` runs both on separate PostgreSQL
+connections in both start orders and both revocation modes. The first is parked
+before COMMIT holding every lock it took; the second is shown waiting on exactly
+that `users` row, and once released both finish: new password set, every refresh
+row revoked, the cutoff generation advanced so older web and app credentials are
+refused. A control that locks a refresh row before the `users` row gets a real
+`40P01` deadlock against the same reset, so the harness can see the failure.
 `CURRENT_STORE_DELETED_EMAIL_KEY` must separately be provisioned before any
 staged writer and must never rotate. Neither command enables a writer mode,
 partner mode, mirror or Better Auth module. The owner-only production sequence
