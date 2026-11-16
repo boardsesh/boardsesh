@@ -39,7 +39,27 @@ describe('useFirstBoardPickerTracking', () => {
     unmount();
 
     await waitFor(() => expect(skipEvents()).toHaveLength(1));
-    expect(skipEvents()[0][1]).toEqual({ method: 'dismissed', secondsOpen: 0, lastPath: 'own', entry: 'launch_gate' });
+    expect(skipEvents()[0][1]).toEqual({
+      method: 'dismissed',
+      secondsOpen: 0,
+      lastPath: 'own',
+      entry: 'launch_gate',
+      nearbyResultCount: null,
+    });
+  });
+
+  // What Near you had found when the picker went, as it stood then.
+  it('reports the Near you count as it stood when the picker closed', async () => {
+    const { rerender, unmount } = renderHook(
+      ({ nearbyResultCount }: { nearbyResultCount: number | null }) =>
+        useFirstBoardPickerTracking('launch_gate', nearbyResultCount),
+      { initialProps: { nearbyResultCount: null as number | null } },
+    );
+    rerender({ nearbyResultCount: 4 });
+    unmount();
+
+    await waitFor(() => expect(skipEvents()).toHaveLength(1));
+    expect(skipEvents()[0][1]).toMatchObject({ nearbyResultCount: 4 });
   });
 
   it('names the header X when that is how it closed', async () => {

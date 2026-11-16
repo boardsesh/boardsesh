@@ -135,6 +135,37 @@ export function boardRowsToItems(
   return items.map((item, index) => ({ ...item, key: drawable[index]?.key ?? item.key }));
 }
 
+/**
+ * The top of the picker's boards (At {gym}'s rows, the hero) as card items.
+ * Each keeps the top's key, the name the top shows and the top's own say on
+ * which is the board you're on. Subtitles are pulled apart across the whole
+ * list as `userBoardsToItems` does; At {gym} passes the `within-gym` scope, so
+ * they lead with what each wall is rather than the gym its title names.
+ */
+export function pickerTopBoardsToItems(
+  boards: readonly { key: string; board: UserBoard; title: string; selected: boolean }[],
+  {
+    climbersBoardKeys,
+    ...options
+  }: Omit<UserBoardItemsOptions, 'activeUuid'> & {
+    /**
+     * The keys of the climber's own and followed boards. The rest of a gym's
+     * roster is someone else's: no ownership, pin or download state, so its
+     * accessibility label never says "Following" and its row draws no menu.
+     */
+    climbersBoardKeys?: ReadonlySet<string>;
+  } = {},
+): DiscoveryBoardItem[] {
+  const topBoardsByKey = new Map(boards.map((topBoard) => [topBoard.key, topBoard]));
+  return boardRowsToItems(boards, options).flatMap((item) => {
+    const topBoard = topBoardsByKey.get(item.key);
+    if (!topBoard) return [];
+    const placed = { ...item, title: topBoard.title, isActive: topBoard.selected };
+    if (climbersBoardKeys === undefined || climbersBoardKeys.has(item.key)) return [placed];
+    return [{ ...placed, isViewerOwner: undefined, isPinned: false, offlineState: undefined }];
+  });
+}
+
 /** A board config (the create/popular tuple), used to find an owned match. */
 export type BoardConfigKey = {
   boardType: string;

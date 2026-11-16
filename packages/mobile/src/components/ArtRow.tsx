@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, type ReactElement, type ReactNode } from 'react';
-import { Platform, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { Platform, StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
@@ -15,6 +15,15 @@ import { spacing } from '../theme/tokens';
  */
 export type ArtRowAccessory = 'checkmark' | 'chevron' | ReactElement;
 
+/**
+ * The title's type, and the spacing that goes with it. `headline` (the
+ * default) is a shelf's row on Home: the name in headline, 12pt above and below,
+ * 4pt to the subtitle. `body` is a list to choose from, the board picker's: the
+ * name in body, regular until the row is selected (then its emphasized weight),
+ * 10pt above and below and 2pt to the subtitle, a system list's spacing.
+ */
+export type ArtRowTitleVariant = 'headline' | 'body';
+
 export type ArtRowProps = {
   /**
    * The leading art: a `BoardThumbnail`, a playlist tile, an icon. Hidden from
@@ -25,6 +34,8 @@ export type ArtRowProps = {
   /** The slot's width (36 or 44pt) and the matching separator inset. The art sets the row's height. */
   artSize: ArtSize;
   title: string;
+  /** See `ArtRowTitleVariant`. Defaults to `headline`. */
+  titleVariant?: ArtRowTitleVariant;
   /** A string is set in subheadline, secondary label. Pass a node to compose your own line. */
   subtitle?: ReactNode;
   /** A footnote line above the title, in secondary label. */
@@ -53,6 +64,20 @@ export type ArtRowProps = {
   longPressAccessibilityLabel?: string;
   /** Without it, VoiceOver reads the row's text in order. */
   accessibilityLabel?: string;
+  /**
+   * More actions for screen readers, published after the long press: a ⋯
+   * menu's rows, so VoiceOver reaches them from the row itself. Memoise it.
+   */
+  accessibilityActions?: readonly AccessibilityActionInfo[];
+  /** Runs one of `accessibilityActions`; the long press is handled here already. */
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
+  /**
+   * Wraps the row's own target (art, text and a built-in accessory), never an
+   * element accessory: a hold menu's anchor goes here, so the ⋯ beside it keeps
+   * its own tap and isn't lifted with the row. Give the wrapper `flex: 1` when
+   * there is an element accessory. Memoise it (`useCallback`).
+   */
+  wrapTarget?: (target: ReactElement) => ReactElement;
   testID?: string;
 };
 
@@ -66,10 +91,18 @@ const artSlotStyles = StyleSheet.create({
   regular: { width: ART_SLOTS.regular.width, flexShrink: 0, alignItems: 'center' },
 });
 
+/** `titleVariant="body"`: a list's spacing, tighter than a shelf's (`insetGroupedRowStyles`). */
+const listStyles = StyleSheet.create({
+  padding: { paddingVertical: 10 },
+  text: { gap: 2 },
+});
+const LIST_TEXT = [insetGroupedRowStyles.text, listStyles.text];
+
 /**
  * A row of an `InsetGroupedList` that leads with art: a board, a playlist, a
- * session. Title in headline, an optional eyebrow above it and subtitle below,
- * a status pill beside it, and a chevron, a checkmark or a control at the end.
+ * session. Title in headline (or body, `titleVariant`), an optional eyebrow
+ * above it and subtitle below, a status pill beside it, and a chevron, a
+ * checkmark or a control at the end.
  *
  * Selection is a state, not a link, so a selected row's text is never violet: it
  * takes `theme.selection` (the brand wash behind the row, the label-coloured
@@ -81,6 +114,7 @@ export const ArtRow = memo(function ArtRow({
   art,
   artSize,
   title,
+  titleVariant = 'headline',
   subtitle,
   eyebrow,
   status,
@@ -91,6 +125,9 @@ export const ArtRow = memo(function ArtRow({
   delayLongPress,
   longPressAccessibilityLabel,
   accessibilityLabel,
+  accessibilityActions: extraAccessibilityActions,
+  onAccessibilityAction,
+  wrapTarget,
   testID,
 }: ArtRowProps) {
   const { systemColors, selection } = useTheme();
@@ -98,30 +135,37 @@ export const ArtRow = memo(function ArtRow({
   // A built-in accessory is decoration inside the row's target. An element (a ⋯
   // button) is a control of its own, so it is drawn beside the target.
   const elementAccessory = accessory !== undefined && accessory !== 'chevron' && accessory !== 'checkmark';
-  const rowStyle = useMemo(() => {
-    const base = elementAccessory ? styles.rowWithControl : insetGroupedRowStyles.row;
-    return selected ? [base, { backgroundColor: selectedFill }] : base;
-  }, [elementAccessory, selected, selectedFill]);
+  const listSpacing = titleVariant === 'body';
+  const { rowStyle, targetStyle } = useMemo(() => {
+    // Beside a control the target holds the vertical padding, not the row.
+    const paddedTarget = listSpacing ? [styles.targetBesideControl, listStyles.padding] : styles.targetBesideControl;
+    const plainRow = listSpacing ? [insetGroupedRowStyles.row, listStyles.padding] : insetGroupedRowStyles.row;
+    const base = elementAccessory ? styles.rowWithControl : plainRow;
+    const row = selected ? [base, { backgroundColor: selectedFill }] : base;
+    return { rowStyle: row, targetStyle: elementAccessory ? paddedTarget : row };
+  }, [elementAccessory, listSpacing, selected, selectedFill]);
   // A row in a choice says "not selected" too; any other row says nothing.
   const accessibilityState = selected ? SELECTED_STATE : accessory === 'checkmark' ? UNSELECTED_STATE : undefined;
   const hasLongPress = onLongPress !== undefined;
-  const accessibilityActions = useMemo(
-    () =>
+  const accessibilityActions = useMemo(() => {
+    const longPress: AccessibilityActionInfo[] =
       hasLongPress && (Platform.OS === 'android' || longPressAccessibilityLabel)
-        ? [{ name: 'longpress' as const, label: longPressAccessibilityLabel }]
-        : undefined,
-    [hasLongPress, longPressAccessibilityLabel],
-  );
+        ? [{ name: 'longpress', label: longPressAccessibilityLabel }]
+        : [];
+    const actions = [...longPress, ...(extraAccessibilityActions ?? [])];
+    return actions.length > 0 ? actions : undefined;
+  }, [hasLongPress, longPressAccessibilityLabel, extraAccessibilityActions]);
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'longpress') onLongPress?.();
+      else onAccessibilityAction?.(event);
     },
-    [onLongPress],
+    [onLongPress, onAccessibilityAction],
   );
 
   const titleText = (
     <Text
-      variant="headline"
+      variant={titleVariant}
       emphasized={selected}
       color={selected ? selection.text : undefined}
       numberOfLines={status ? 2 : undefined}
@@ -136,7 +180,7 @@ export const ArtRow = memo(function ArtRow({
       <View style={artSlotStyles[artSize]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {art}
       </View>
-      <View style={insetGroupedRowStyles.text}>
+      <View style={listSpacing ? LIST_TEXT : insetGroupedRowStyles.text}>
         {eyebrow ? (
           <Text variant="footnote" tone="secondary">
             {eyebrow}
@@ -168,7 +212,6 @@ export const ArtRow = memo(function ArtRow({
     </>
   );
 
-  const targetStyle = elementAccessory ? styles.targetBesideControl : rowStyle;
   const target =
     onPress || onLongPress ? (
       <PressableSurface
@@ -199,13 +242,14 @@ export const ArtRow = memo(function ArtRow({
       </View>
     );
 
-  if (!elementAccessory) return target;
+  const wrappedTarget = wrapTarget ? wrapTarget(target) : target;
+  if (!elementAccessory) return wrappedTarget;
   // The same box as a plain row: the target keeps the leading gutter and the
   // vertical padding, the control takes the gap before it and the trailing
   // gutter after it, and the selection wash spans both.
   return (
     <View style={rowStyle}>
-      {target}
+      {wrappedTarget}
       <View style={styles.control}>{accessory}</View>
     </View>
   );

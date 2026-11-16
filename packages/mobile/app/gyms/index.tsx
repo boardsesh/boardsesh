@@ -321,7 +321,8 @@ export default function GymDiscovery() {
 
   const activate = useCallback(
     (board: UserBoard) => {
-      void activateBoard(board, { pickSource: 'gym_finder' });
+      // The map's section; a wall on it has no place in a list to report.
+      void activateBoard(board, { pickSource: 'gym_finder', section: 'map' });
     },
     [activateBoard],
   );

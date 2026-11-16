@@ -25,7 +25,7 @@ function toneColors(status: StatusColors, tone: StatusPillTone): StatusColors {
 }
 
 /**
- * A status you can't tap ("Closest", "Ready to review"): `theme.status`, a quiet
+ * A status you can't tap ("Ready to review", "Following"): `theme.status`, a quiet
  * `tertiaryFill` capsule with `secondaryLabel` text in caption 1 at its
  * emphasized weight. Never violet, so it doesn't read as a button beside one.
  *

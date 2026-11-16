@@ -231,7 +231,10 @@
         "editWall": "Modifica la Spraywall"
       },
       "nearbyMap": "Mappa",
-      "showNearby": "Mostra i pannelli vicino a te"
+      "showNearby": "Mostra i pannelli vicino a te",
+      "manage": "Gestisci",
+      "nearbyAllAbove": "Nessun altro pannello entro 20 km",
+      "yourBoardsAllAbove": "Tutti i tuoi pannelli sono più in alto"
     },
     "create": {
       "screenTitle": "Configura il tuo pannello",
@@ -290,7 +293,6 @@
       "name": "Nome del pannello"
     },
     "bluetooth": {
-      "noResults": "Nessun pannello nel raggio d'azione",
       "unavailable": "Attiva il Bluetooth per cercare",
       "needSignalTitle": "Trovato un pannello, serve segnale",
       "needSignalBody": "L'abbiamo rilevato, ma offline non possiamo identificarlo.",
@@ -298,7 +300,9 @@
     },
     "inRange": {
       "title": "A portata",
+      "atGym": "A {{gym}}",
       "inFrontOfYou": "Davanti a te",
+      "nearby": "Qui vicino",
       "permissionTitle": "Trova il pannello dove sei",
       "permissionBody": "Boardsesh cerca i pannelli via Bluetooth, così il primo che vedi è quello davanti a te.",
       "continue": "Continua",
@@ -310,20 +314,15 @@
       "scanAgain": "Cerca di nuovo",
       "lookingTitle": "Ricerca dei pannelli…",
       "lookingBody": "Avvicinati al pannello. I pannelli accesi compaiono qui.",
-      "gymWalls": "{{gym}} · {{count}} pannelli",
-      "closest": "Il più vicino",
       "showAll": "Mostra tutti e {{count}} i pannelli",
       "moonboardTitle": "C'è una MoonBoard a portata",
       "moonboardBody": "Le MoonBoard non trasmettono un numero di serie, quindi dicci dove sei e la troveremo.",
       "typeTitle": "C'è un pannello {{board}} a portata",
       "bareNameBody": "Il suo controller non dice quale pannello sia, quindi dicci dove sei e lo troveremo.",
       "unknownSetupBody": "Non ne conosciamo ancora la configurazione, quindi dicci dove sei e lo troveremo.",
-      "alsoMoonboard": "C'è anche una MoonBoard a portata",
-      "alsoType": "C'è anche un pannello {{board}} a portata",
       "alsoNeedSignal": "C'è un altro pannello a portata. Serve segnale per identificarlo.",
       "useMyLocation": "Usa la mia posizione",
-      "searchGyms": "Cerca palestre",
-      "alsoAt": "Anche a {{gym}}"
+      "searchGyms": "Cerca palestre"
     },
     "addBoard": {
       "aria": "Aggiungi un pannello",

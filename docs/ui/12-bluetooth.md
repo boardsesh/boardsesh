@@ -99,13 +99,26 @@ medium detent, so the hints never sit pinned under the rest: with boards listed
 they are the list's footer, and with none the state above them ("No boards
 found", "not found", the spinner) scrolls with them. The `/boards` Bluetooth
 quickstart sheet showed the same tips until the picker's In range slot replaced
-it in 2026-11. The slot shows no tips: its nothing-heard state is "No boards in
-range" and Scan again, except where Android is plausibly withholding the
-results (`useAndroidScanLocationHint`): a binary built before the manifest
+it in 2026-11. The picker shows no tips: a scan that heard nothing draws nothing
+at the top (no "No boards in range" line and no Scan again; Your boards leads),
+except where Android is plausibly withholding the results
+(`useAndroidScanLocationHint`): a binary built before the manifest
 change gets the location grant, and Android 6 to 11 with Location off gets the
 switch, each rescanning once it works. A radio the scan could not read
 (`unknown`) says "Couldn't reach Bluetooth" with Scan again, never "Turn on
 Bluetooth".
+
+What the scan hears leads the picker's top only 3 s after it first hears
+anything (or once it ends; the permission prompt and a start waiting on the
+radio don't count), and only once the serial lookup has named everything heard
+so far. What it led with then stays until its results leave the screen (a new
+scan, or a phone that links to a board): one gym never gives way to another,
+At {gym} never turns back into a hero, and walls heard or listed later join the
+end of At {gym} instead of moving the rows above them. A hero has one way out:
+At {its own gym}, once a second wall there is named, however many walls another
+gym has (`use-steady-picker-top.ts`, `decisionAtDrawnTop`). The hero says "In
+front of you" while no box is heard louder, "Nearby" otherwise, from what the
+scan hears now.
 
 **Remembered boards.** A connect remembers the box for the board in view: by
 serial for Aurora boxes, by BLE device id for a MoonBoard or a serial-less

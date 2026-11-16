@@ -36,7 +36,7 @@ export type ShelfHeaderProps = {
  *
  * It owns the 16pt gutter and no vertical space: there is no 44pt minimum height,
  * so the title sits 8pt above its content instead of floating in a tall bar. The
- * action reaches its tap target (44pt, 48dp on Material) through `hitSlop`, and
+ * action reaches its tap target (44pt, 48dp on Material) with its own padded box, and
  * drops under the title at large text sizes. Use `ShelfSection` for the spacing
  * between shelves.
  */
@@ -53,6 +53,8 @@ export function ShelfHeader({ title, caption, action, trailing, testID }: ShelfH
             onPress={action.onPress}
             accessibilityLabel={action.accessibilityLabel}
             chevron
+            // Its content is 8pt below: the target leans up, away from it.
+            reach="up"
           />
         ) : null}
         {trailing}

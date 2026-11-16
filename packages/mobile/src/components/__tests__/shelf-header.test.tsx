@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // ShelfHeader, ShelfSection and the TextAction they share: the type each part is
 // set in, the spacing a shelf owns, and an action that gets its 44pt target from
-// hitSlop instead of a 44pt row.
+// its own padded box (handed back by a negative margin) instead of a 44pt row.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import Yoga, { Align, Direction, Edge, FlexDirection, Gutter, Wrap, type Node as YogaNode } from 'yoga-layout';
 
 const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
@@ -61,6 +62,7 @@ vi.mock('../PressableSurface', () => ({
     accessibilityLabel,
     hitSlop,
     feedback,
+    style,
     testID,
   }: {
     children?: ReactNode;
@@ -68,6 +70,7 @@ vi.mock('../PressableSurface', () => ({
     accessibilityLabel?: string;
     hitSlop?: unknown;
     feedback?: string;
+    style?: unknown;
     testID?: string;
   }) =>
     createElement(
@@ -75,7 +78,8 @@ vi.mock('../PressableSurface', () => ({
       {
         onClick: onPress,
         'aria-label': accessibilityLabel,
-        'data-hitslop': JSON.stringify(hitSlop),
+        'data-hitslop': JSON.stringify(hitSlop ?? null),
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-feedback': feedback,
         'data-testid': testID,
       },
@@ -87,11 +91,106 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 
 import { SHELF_HEADER_CONTENT_GAP, SHELF_SECTION_GAP, ShelfHeader, ShelfSection } from '../ShelfHeader';
-import { TEXT_ACTION_MIN_TARGET, TextAction } from '../TextAction';
+import { TEXT_ACTION_MIN_TARGET, TEXT_ACTION_NEIGHBOUR_REACH, TextAction, type TextActionReach } from '../TextAction';
 import { textStylesByVariant, type TextVariant } from '../../theme/typography';
 
 function styleOf(element: Element | null): Record<string, unknown> {
   return JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+}
+
+const ALIGN: Record<string, Align> = {
+  center: Align.Center,
+  'flex-start': Align.FlexStart,
+  'flex-end': Align.FlexEnd,
+  stretch: Align.Stretch,
+};
+const EDGES: Record<string, Edge> = {
+  Top: Edge.Top,
+  Bottom: Edge.Bottom,
+  Horizontal: Edge.Horizontal,
+  Vertical: Edge.Vertical,
+  Start: Edge.Start,
+  End: Edge.End,
+};
+const LAYOUT_KEY = /^(flex|align|justify|gap|rowGap|columnGap|padding|margin|width|height|min|max|position|top|left)/;
+
+function applyLayout(node: YogaNode, style: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(style)) {
+    const edge = /^(padding|margin)(Top|Bottom|Horizontal|Vertical|Start|End)$/.exec(key);
+    if (edge?.[1] && edge[2]) {
+      const target = EDGES[edge[2]] as Edge;
+      if (edge[1] === 'padding') node.setPadding(target, Number(value));
+      else node.setMargin(target, Number(value));
+    } else if (key === 'flexDirection') {
+      node.setFlexDirection(value === 'row' ? FlexDirection.Row : FlexDirection.Column);
+    } else if (key === 'flexWrap') {
+      node.setFlexWrap(value === 'wrap' ? Wrap.Wrap : Wrap.NoWrap);
+    } else if (key === 'alignItems') {
+      node.setAlignItems(ALIGN[String(value)] as Align);
+    } else if (key === 'gap') {
+      node.setGap(Gutter.All, Number(value));
+    } else if (key === 'columnGap') {
+      node.setGap(Gutter.Column, Number(value));
+    } else if (key === 'rowGap') {
+      node.setGap(Gutter.Row, Number(value));
+    } else if (key === 'flexGrow') {
+      node.setFlexGrow(Number(value));
+    } else if (key === 'flexShrink') {
+      node.setFlexShrink(Number(value));
+    } else if (key === 'flexBasis') {
+      node.setFlexBasis(Number(value));
+    } else if (key === 'minWidth') {
+      node.setMinWidth(value as `${number}%`);
+    } else if (LAYOUT_KEY.test(key)) {
+      throw new Error(`The layout test does not lay out "${key}"`);
+    }
+  }
+}
+
+/**
+ * Lays the rendered tree out with Yoga, React Native's layout engine: views by
+ * their styles, each line of text as tall as its variant's line (8pt a
+ * character wide), the chevron 12pt. Answers each element's box on the screen.
+ */
+function layOut(root: Element, width: number) {
+  const nodes = new Map<Element, YogaNode>();
+  const build = (element: Element): YogaNode => {
+    const node = Yoga.Node.create();
+    nodes.set(element, node);
+    applyLayout(node, styleOf(element));
+    if (element.tagName === 'SPAN') {
+      const textVariant = element.getAttribute('data-variant') as TextVariant;
+      node.setHeight(textStylesByVariant[ctrl.variant][textVariant].lineHeight);
+      node.setWidth((element.textContent ?? '').length * 8);
+    } else if (element.tagName === 'I') {
+      node.setWidth(12);
+      node.setHeight(12);
+    } else {
+      Array.from(element.children).forEach((child, index) => node.insertChild(build(child), index));
+    }
+    return node;
+  };
+  const rootNode = build(root);
+  rootNode.setWidth(width);
+  rootNode.calculateLayout(undefined, undefined, Direction.LTR);
+  const boxOf = (element: Element) => {
+    let top = 0;
+    let left = 0;
+    for (
+      let current: Element | null = element;
+      current && current !== root.parentElement;
+      current = current.parentElement
+    ) {
+      const node = nodes.get(current);
+      if (node) {
+        top += node.getComputedTop();
+        left += node.getComputedLeft();
+      }
+    }
+    const node = nodes.get(element) as YogaNode;
+    return { top, left, bottom: top + node.getComputedHeight(), height: node.getComputedHeight() };
+  };
+  return { boxOf, free: () => rootNode.freeRecursive() };
 }
 
 beforeEach(() => {
@@ -160,6 +259,50 @@ describe('ShelfHeader', () => {
 });
 
 describe('ShelfSection', () => {
+  // Near you's Map over its "Show boards near you" (NearbyQuietStatus), laid
+  // out by Yoga: beside the title at a phone's width, and wrapped under it (an
+  // accessibility text size), its lowest place.
+  it.each([
+    ['liquidGlass', 370],
+    ['liquidGlass', 120],
+    ['material', 370],
+    ['material', 120],
+  ] as const)(
+    "keeps Map on the title's line and its %s target off the action under it (%ipt wide)",
+    (variant, width) => {
+      ctrl.variant = variant;
+      render(
+        <ShelfSection title="Near you" action={{ label: 'Map', onPress: vi.fn() }} testID="section">
+          <TextAction reach="down" label="Show boards near you" onPress={vi.fn()} />
+        </ShelfSection>,
+      );
+      const layout = layOut(screen.getByTestId('section'), width);
+      try {
+        const title = layout.boxOf(screen.getByRole('heading', { name: 'Near you' }));
+        const mapTarget = layout.boxOf(screen.getByRole('button', { name: 'Map' }));
+        const mapLabel = layout.boxOf(screen.getByText('Map'));
+        const contentTarget = layout.boxOf(screen.getByRole('button', { name: 'Show boards near you' }));
+        const contentLabel = layout.boxOf(screen.getByText('Show boards near you'));
+        const wrapped = mapLabel.top >= title.bottom;
+        expect(wrapped).toBe(width < 200);
+        // The tap box leans; the label stays where an unpadded label would be.
+        if (wrapped) expect(mapLabel.top).toBe(title.bottom + 4);
+        // Yoga rounds to whole points, so centred is within half a point.
+        else
+          expect(Math.abs(mapLabel.top + mapLabel.height / 2 - (title.top + title.height / 2))).toBeLessThanOrEqual(
+            0.5,
+          );
+        expect(contentLabel.top).toBe(Math.max(title.bottom, mapLabel.bottom) + SHELF_HEADER_CONTENT_GAP);
+        // Both targets are full size, and the lower one never reaches into the upper one.
+        expect(mapTarget.height).toBeGreaterThanOrEqual(TEXT_ACTION_MIN_TARGET[variant]);
+        expect(contentTarget.height).toBeGreaterThanOrEqual(TEXT_ACTION_MIN_TARGET[variant]);
+        expect(mapTarget.bottom).toBeLessThanOrEqual(contentTarget.top);
+      } finally {
+        layout.free();
+      }
+    },
+  );
+
   it('puts 8pt between the header and its content and 28pt before the next shelf', () => {
     render(
       <ShelfSection title="Your boards" testID="section">
@@ -179,17 +322,60 @@ describe('TextAction', () => {
   it.each([
     ['liquidGlass', 44],
     ['material', 48],
-  ] as const)('reaches the %s minimum target (%ipt) through hitSlop on its own line height', (variant, target) => {
-    ctrl.variant = variant;
-    expect(TEXT_ACTION_MIN_TARGET[variant]).toBe(target);
-    render(<TextAction label="Retry" onPress={vi.fn()} />);
-    const action = screen.getByRole('button', { name: 'Retry' });
-    const hitSlop = JSON.parse(action.getAttribute('data-hitslop') ?? '{}') as { top: number; bottom: number };
-    const textVariant = screen.getByText('Retry').getAttribute('data-variant') as TextVariant;
-    const lineHeight = textStylesByVariant[variant][textVariant].lineHeight;
-    expect(lineHeight + hitSlop.top + hitSlop.bottom).toBeGreaterThanOrEqual(target);
-    expect(action.getAttribute('data-feedback')).toBe('opacity');
-  });
+  ] as const)(
+    'reaches the %s minimum target (%ipt) with its own padded box, and takes no room in the row',
+    (variant, target) => {
+      ctrl.variant = variant;
+      expect(TEXT_ACTION_MIN_TARGET[variant]).toBe(target);
+      render(<TextAction label="Retry" onPress={vi.fn()} />);
+      const action = screen.getByRole('button', { name: 'Retry' });
+      // Not hitSlop: on Fabric a parent hit-tests children only inside its own
+      // bounds unless their layout overflows it, so slop past a one-line row is dead.
+      expect(JSON.parse(action.getAttribute('data-hitslop') ?? 'null')).toBeNull();
+      const box = JSON.parse(action.getAttribute('data-style') ?? '{}') as Record<string, number>;
+      const textVariant = screen.getByText('Retry').getAttribute('data-variant') as TextVariant;
+      const lineHeight = textStylesByVariant[variant][textVariant].lineHeight;
+      expect(lineHeight + box.paddingTop + box.paddingBottom).toBeGreaterThanOrEqual(target);
+      expect(box.paddingTop).toBe(box.paddingBottom);
+      // The same room handed back, so the label doesn't move and the row doesn't grow.
+      expect(box.marginTop).toBe(-box.paddingTop);
+      expect(box.marginBottom).toBe(-box.paddingBottom);
+      expect(box.marginHorizontal).toBe(-box.paddingHorizontal);
+      expect(box.paddingHorizontal).toBeGreaterThan(0);
+      expect(action.getAttribute('data-feedback')).toBe('opacity');
+    },
+  );
+
+  // Stacked actions: a shelf header's (its action can wrap under the title at
+  // large text sizes) 8pt above an action leading the shelf's content, or an
+  // action closing one shelf 28pt above the next shelf header's. A target that
+  // reached into its neighbour's would be drawn over it and take its taps.
+  it.each(['liquidGlass', 'material'] as const)(
+    'leans its %s target away from the action stacked against it, so the two never overlap',
+    (variant) => {
+      ctrl.variant = variant;
+      const boxFor = (reach: TextActionReach) => {
+        render(<TextAction label="Map" reach={reach} onPress={vi.fn()} />);
+        const box = JSON.parse(screen.getByRole('button').getAttribute('data-style') ?? '{}') as Record<string, number>;
+        const textVariant = screen.getByText('Map').getAttribute('data-variant') as TextVariant;
+        cleanup();
+        return { box, lineHeight: textStylesByVariant[variant][textVariant].lineHeight };
+      };
+      const up = boxFor('up');
+      const down = boxFor('down');
+      for (const { box, lineHeight } of [up, down]) {
+        expect(lineHeight + box.paddingTop + box.paddingBottom).toBeGreaterThanOrEqual(TEXT_ACTION_MIN_TARGET[variant]);
+        expect(box.marginTop).toBe(-box.paddingTop);
+        expect(box.marginBottom).toBe(-box.paddingBottom);
+      }
+      expect(up.box.paddingBottom).toBe(TEXT_ACTION_NEIGHBOUR_REACH);
+      expect(down.box.paddingTop).toBe(TEXT_ACTION_NEIGHBOUR_REACH);
+      // A header's action over the first action under it.
+      expect(up.box.paddingBottom + down.box.paddingTop).toBeLessThanOrEqual(SHELF_HEADER_CONTENT_GAP);
+      // An action closing a shelf (leaning up) over the next header's (leaning up).
+      expect(up.box.paddingBottom + up.box.paddingTop).toBeLessThanOrEqual(SHELF_SECTION_GAP);
+    },
+  );
 
   it('has no chevron unless asked', () => {
     render(<TextAction label="Retry" onPress={vi.fn()} />);

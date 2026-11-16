@@ -898,7 +898,9 @@ export const SHARED_EVENTS = {
   // the skip rate the launch reads against. Props: { method: 'close_button' |
   // 'dismissed' ('close_button' is the header X, "Not now" from the launch
   // gate and Close from Climbs; 'dismissed' is a swipe down or Android back),
-  // secondsOpen, lastPath (the last choice tapped, or null), entry }. A bind
+  // secondsOpen, lastPath (the last choice tapped, or null), entry,
+  // nearbyResultCount (from 2026-11: boards "At a gym" had found when the picker
+  // closed, null when it had not searched or answered) }. A bind
   // from ANY path the picker leads to (the list, the builder, the gym map, the
   // Bluetooth scan) counts as not skipped.
   FirstBoardPathChosen: 'First Board Path Chosen',
@@ -1105,15 +1107,24 @@ export const SHARED_EVENTS = {
   // gym map opened on its own, from Home or My gyms; the map pushed from the
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
+  // locationStatus (from 2026-11): idle | loading | granted | denied |
+  // unavailable, as known at the opening (mostly idle: the "already allowed?"
+  // read is still out). The gym finder's own opening carries none.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
   // source matches the opening that led here: a pick on the gym map pushed from
   // the picker carries the picker's source, a pick on a map opened on its own
   // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth
-  // (the In range slot; the Bluetooth sheet before 2026-11) | gym_walls (the
-  // "Also at {gym}" rows under it, from 2026-11) | gym_finder | null (the list
-  // the board was tapped in). followed: the pick
+  // (a board the picker's scan put at the top; the Bluetooth sheet before
+  // 2026-11) | gym_walls (a wall At {gym} because of the board you're on; the
+  // "Also at {gym}" rows before that) | gym_finder | null (the list the board
+  // was tapped in). section (from 2026-11): at_gym | hero | your_boards |
+  // near_you | offline | map | null (where it was drawn), with position, its
+  // 0-based place there (null when it has none). nearbyResultCount (from
+  // 2026-11): boards the Near you search had returned by the pick, 0 for
+  // nothing within 20 km, null when it did not search, was still searching or
+  // failed; absent on the gym finder. followed: the pick
   // added the board to Your boards (#5654); false when it was already theirs,
   // was someone else's private board, the viewer was signed out, or it came
   // from the on-device rows shown with no connection.
@@ -1122,8 +1133,9 @@ export const SHARED_EVENTS = {
   // Mobile only. A row picked from a board card's menu in the picker. Props:
   // { action: climb_here | pin | unpin | download | details | edit | unfollow
   // | delete, via: menu_button (the ⋯ beside the title) | long_press (a hold
-  // on the card) | accessibility (a VoiceOver or TalkBack action), section:
-  // your_boards | nearby }. Fires when the row is picked, before any confirm,
+  // on the card or row) | accessibility (a VoiceOver or TalkBack action),
+  // section: your_boards | nearby | at_gym (from 2026-11: the climber's own and
+  // followed walls in the At {gym} list) }. Fires when the row is picked, before any confirm,
   // so a delete counts even when the climber backs out of the dialog. A
   // climb_here pick still sends its own Board Picker Selection Completed.
   // Expected under 200 a week.

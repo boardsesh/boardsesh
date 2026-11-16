@@ -4,17 +4,22 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { Button } from '../Button';
+import { EmptyState } from '../EmptyState';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
+import { SHELF_SECTION_GAP } from '../ShelfHeader';
 import { Text } from '../Text';
 
 /**
  * The board picker's body (#5654 and the 2026-11 redesign), top to bottom:
- * In range, Also at {gym}, Your boards (or the empty state), Near you. First
- * run swaps Your boards and Near you for "Where do you climb?" under In range.
+ * the top (At {gym}, the board heard somewhere else, or what the scan needs;
+ * see picker-top-view.ts), Your boards (or the empty state), Near you. First
+ * run swaps Your boards and Near you for "Where do you climb?" under the top.
  * The ways to add a board live in the screen's top bar.
  *
- * Presentational: the screen hands in each section ready-made.
+ * Presentational: the screen hands in each section ready-made. Sections are
+ * `ShelfSection`s and own their spacing (8pt under a title, 28pt to the next);
+ * anything here that isn't a shelf keeps the same 28pt under it.
  */
 export function BoardSelectorView({
   scrollBottomPadding,
@@ -24,7 +29,6 @@ export function BoardSelectorView({
   firstBoardChoice,
   fromOnboarding,
   inRangeSection,
-  alsoAtGymSection,
   myBoardsSection,
   nearbySection,
   hasBoards,
@@ -38,10 +42,8 @@ export function BoardSelectorView({
   showFirstBoardChoice: boolean;
   firstBoardChoice?: ReactNode;
   fromOnboarding: boolean;
-  /** What the phone hears over Bluetooth; see InRangeSection. */
+  /** The top of the picker: At {gym}, the hero, or the scan's card; see InRangeSection. */
   inRangeSection?: ReactNode;
-  /** The other walls at the in-range (or active) board's gym. */
-  alsoAtGymSection?: ReactNode;
   myBoardsSection?: ReactNode;
   nearbySection?: ReactNode;
   hasBoards: boolean;
@@ -51,7 +53,7 @@ export function BoardSelectorView({
   overlays?: ReactNode;
 }) {
   const { t } = useTranslation('boards');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <>
       <ScrollView
@@ -61,8 +63,12 @@ export function BoardSelectorView({
         showsVerticalScrollIndicator={false}
       >
         {activeSprayName != null ? (
-          <PressableSurface onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
-            <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
+          <PressableSurface
+            onPress={onActiveBoardDetails}
+            accessibilityRole="button"
+            style={[styles.detailsRow, styles.block]}
+          >
+            <Text variant="body" color={systemColors.accent} style={styles.detailsLabel}>
               {t('mobile.boardDetail.activeSprayDetails', { name: activeSprayName })}
             </Text>
             <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
@@ -71,8 +77,7 @@ export function BoardSelectorView({
         {showFirstBoardChoice ? (
           <>
             {inRangeSection}
-            {alsoAtGymSection}
-            {firstBoardChoice}
+            <View style={styles.block}>{firstBoardChoice}</View>
             {/* A new account can already have boards: one it built on the web,
                 or one it followed before a sign-out cleared the active board. */}
             {myBoardsSection}
@@ -80,34 +85,32 @@ export function BoardSelectorView({
         ) : (
           <>
             {fromOnboarding ? (
-              <Text variant="subheadline" style={styles.onboardingHeader}>
+              <Text variant="subheadline" tone="secondary" style={[styles.onboardingHeader, styles.block]}>
                 {t('mobile.onboardingPrompt')}
               </Text>
             ) : null}
 
             {inRangeSection}
-            {alsoAtGymSection}
 
             {hasBoards ? (
               myBoardsSection
             ) : (
-              <View style={styles.emptyState}>
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.emptyTitle')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('mobile.emptySubtitle')}
-                </Text>
-                <View style={styles.emptyActions}>
-                  <Button title={t('mobile.addBoard.setUp')} icon="plus" onPress={onEmptySetUpBoard} />
-                  <Button
-                    title={t('mobile.addBoard.sprayWall')}
-                    variant="tonal"
-                    icon="camera"
-                    onPress={onEmptyAddSprayWall}
-                  />
-                </View>
-              </View>
+              <EmptyState
+                size="section"
+                title={t('mobile.emptyTitle')}
+                body={t('mobile.emptySubtitle')}
+                actions={
+                  <>
+                    <Button title={t('mobile.addBoard.setUp')} icon="plus" onPress={onEmptySetUpBoard} />
+                    <Button
+                      title={t('mobile.addBoard.sprayWall')}
+                      variant="tonal"
+                      icon="camera"
+                      onPress={onEmptyAddSprayWall}
+                    />
+                  </>
+                }
+              />
             )}
 
             {nearbySection}
@@ -120,91 +123,27 @@ export function BoardSelectorView({
   );
 }
 
-export function BoardSelectorSection({
-  title,
-  caption,
-  trailing,
-  children,
-}: {
-  title: string;
-  /** A line under the title (In range's "{gym} · 3 walls"). */
-  caption?: string;
-  /** Right-aligned section control or status (Near you's Map, In range's spinner). */
-  trailing?: ReactNode;
-  children: ReactNode;
-}) {
-  const { systemColors } = useTheme();
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitle}>
-          <Text variant="title3" accessibilityRole="header">
-            {title}
-          </Text>
-          {caption ? (
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {caption}
-            </Text>
-          ) : null}
-        </View>
-        {trailing}
-      </View>
-      {children}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
   container: {
-    paddingVertical: spacing[4],
-    gap: spacing[5],
+    paddingTop: spacing[4],
+  },
+  // What isn't a shelf keeps the shelves' rhythm below it.
+  block: {
+    marginBottom: SHELF_SECTION_GAP,
   },
   onboardingHeader: {
     paddingHorizontal: spacing[4],
-    opacity: 0.7,
   },
-  section: {
-    gap: spacing[3],
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    // Unconditional, so every section keeps one baseline whether or not it
-    // has a trailing control.
-    minHeight: 44,
-  },
-  sectionTitle: {
-    flex: 1,
-  },
-  manageRow: {
+  detailsRow: {
     minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing[4],
   },
-  manageRowLabel: {
+  detailsLabel: {
     flex: 1,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[8],
-  },
-  emptyTitle: {
-    opacity: 0.6,
-  },
-  emptySubtitle: {
-    marginTop: spacing[2],
-    opacity: 0.4,
-    textAlign: 'center',
-  },
-  emptyActions: {
-    marginTop: spacing[5],
-    gap: spacing[2],
-    alignItems: 'center',
   },
 });

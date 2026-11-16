@@ -5,7 +5,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
-import { alsoAtGymAnchor, inRangeView, type InRangeContent, type InRangeBoardRow } from '../in-range-view';
+import { decidePickerTop, type PickerTopLead } from '../picker-top-view';
 
 // The In range slot through a whole scan at a gym with more than one box. The
 // serial lookup is keyed on every serial heard, so each new serial starts it
@@ -83,21 +83,21 @@ function wrapper({ children }: { children: ReactNode }) {
   return createElement(QueryClientProvider, { client: queryClient }, children);
 }
 
-/** The slot as the picker draws it mid-scan, and the board "Also at {gym}" hangs off. */
+/** The top of the picker mid-scan, for a climber on no board. */
 function useInRangeSlot() {
   const scan = useQuickstartScan({ knownBoards: [] });
-  const content: InRangeContent<InRangeBoardRow> = inRangeView('scanning', scan.rows, { lookup: scan.lookup }).content;
-  return { lookup: scan.lookup, content, alsoAt: alsoAtGymAnchor(content, null)?.uuid ?? null };
+  const { lead } = decidePickerTop({ phase: 'scanning', rows: scan.rows, lookup: scan.lookup, activeBoard: null });
+  return { lookup: scan.lookup, lead };
 }
 
-function summarize(content: InRangeContent<InRangeBoardRow>): string {
-  switch (content.kind) {
+function summarize(lead: PickerTopLead): string {
+  switch (lead.kind) {
     case 'hero':
-      return `hero:${content.board.board.uuid}`;
-    case 'board_rows':
-      return `board_rows:${content.boards.map((row) => row.board.uuid).join(',')}`;
+      return `hero:${lead.board.uuid}`;
+    case 'at_gym':
+      return `at_gym:${lead.gymName}[${lead.heardBoards.map((board) => board.uuid).join(',')}]`;
     default:
-      return content.kind;
+      return lead.kind;
   }
 }
 
@@ -166,30 +166,28 @@ afterEach(() => {
 });
 
 describe('useQuickstartScan through a scan that hears a second box', () => {
-  it('keeps the hero while a new serial is looked up, then adds its row', async () => {
+  it('keeps the hero while a new serial is looked up, then lists the gym both are at', async () => {
     const { result, rerender } = renderHook(useInRangeSlot, { wrapper });
 
     // The first serial: nothing drawn yet, so the slot holds its place.
     await hear({ serial: 'K1', boardType: 'kilter', rssi: -45 }, rerender);
     expect(result.current.lookup).toBe('pending');
-    expect(summarize(result.current.content)).toBe('looking');
+    expect(summarize(result.current.lead)).toBe('looking');
 
     await land(['K1'], [HOME_KILTER]);
     expect(result.current.lookup).toBe('resolved');
-    expect(summarize(result.current.content)).toBe('hero:crux-kilter');
-    expect(result.current.alsoAt).toBe('crux-kilter');
+    expect(summarize(result.current.lead)).toBe('hero:crux-kilter');
 
     // A Tension across the gym: the lookup starts over for both serials. The
-    // hero, and the "Also at Crux" anchor under it, stay where they are.
+    // hero stays where it is.
     await hear({ serial: 'T2', boardType: 'tension', rssi: -70 }, rerender);
     expect(result.current.lookup).toBe('updating');
-    expect(summarize(result.current.content)).toBe('hero:crux-kilter');
-    expect(result.current.alsoAt).toBe('crux-kilter');
+    expect(summarize(result.current.lead)).toBe('hero:crux-kilter');
 
-    // Its answer lands: the Tension joins as a row behind the closer Kilter.
+    // Its answer lands: two walls at Crux, so the top is At Crux.
     await land(['K1', 'T2'], [HOME_KILTER, CRUX_TENSION]);
     expect(result.current.lookup).toBe('resolved');
-    expect(summarize(result.current.content)).toBe('board_rows:crux-kilter,crux-tension');
+    expect(summarize(result.current.lead)).toBe('at_gym:Crux[crux-kilter,crux-tension]');
   });
 
   it('never says a serial heard since is unknown before its own answer lands', async () => {
@@ -200,35 +198,35 @@ describe('useQuickstartScan through a scan that hears a second box', () => {
     // A closer Tension: still being looked up, so no "We don't know its setup"
     // row may take the lead from the hero.
     await hear({ serial: 'T2', boardType: 'tension', rssi: -30 }, rerender);
-    expect(summarize(result.current.content)).toBe('hero:crux-kilter');
+    expect(summarize(result.current.lead)).toBe('hero:crux-kilter');
 
     await land(['K1', 'T2'], [HOME_KILTER, CRUX_TENSION]);
-    expect(summarize(result.current.content)).toBe('board_rows:crux-tension,crux-kilter');
+    expect(summarize(result.current.lead)).toBe('at_gym:Crux[crux-tension,crux-kilter]');
   });
 
   // The last scan's Kilter must not lead the next scan before its own first
-  // answer lands: the closer Tension that answer names would take the lead
-  // from under the climber's thumb.
+  // answer lands: the Tension that answer names changes what leads, and the
+  // hero would go from under the climber's thumb.
   it.each([{ rendersEmptyStart: true }, { rendersEmptyStart: false }])(
     'waits for the first answer of a new scan that hears another box and then the last one (empty start rendered: $rendersEmptyStart)',
     async ({ rendersEmptyStart }) => {
       const { result, rerender } = renderHook(useInRangeSlot, { wrapper });
       await hear({ serial: 'K1', boardType: 'kilter', rssi: -45 }, rerender);
       await land(['K1'], [HOME_KILTER]);
-      expect(summarize(result.current.content)).toBe('hero:crux-kilter');
+      expect(summarize(result.current.lead)).toBe('hero:crux-kilter');
 
       await scanAgain({ rendersEmptyStart }, rerender);
       await hear({ serial: 'T2', boardType: 'tension', rssi: -30 }, rerender);
       expect(result.current.lookup).toBe('pending');
-      expect(summarize(result.current.content)).toBe('looking');
+      expect(summarize(result.current.lead)).toBe('looking');
 
       await hear({ serial: 'K1', boardType: 'kilter', rssi: -45 }, rerender);
       expect(result.current.lookup).toBe('pending');
-      expect(summarize(result.current.content)).toBe('looking');
+      expect(summarize(result.current.lead)).toBe('looking');
 
       await land(['T2', 'K1'], [CRUX_TENSION, HOME_KILTER]);
       expect(result.current.lookup).toBe('resolved');
-      expect(summarize(result.current.content)).toBe('board_rows:crux-tension,crux-kilter');
+      expect(summarize(result.current.lead)).toBe('at_gym:Crux[crux-tension,crux-kilter]');
     },
   );
 });

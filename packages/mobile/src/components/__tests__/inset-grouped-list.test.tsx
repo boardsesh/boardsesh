@@ -215,6 +215,66 @@ describe('ArtRow', () => {
     expect(eyebrow.getAttribute('data-tone')).toBe('secondary');
   });
 
+  // Home's rows: the shelf look, unchanged by the list look below.
+  it('keeps a shelf row at 12pt above and below, 4pt to the subtitle, by default', () => {
+    render(<ArtRow art={null} artSize="regular" title="Garage Board" subtitle="Kilter · 40°" testID="row" />);
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(12);
+    expect(styleOf(screen.getByText('Garage Board').parentElement).gap).toBe(4);
+  });
+
+  // The board picker's rows: a list to choose from.
+  it('sets a list row in body, regular until selected, 10pt above and below and 2pt to the subtitle', () => {
+    const { rerender } = render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Crux Homewall"
+        titleVariant="body"
+        subtitle="Crux · 10 x 10"
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    const title = () => screen.getByText('Crux Homewall');
+    expect(title().getAttribute('data-variant')).toBe('body');
+    expect(title().getAttribute('data-emphasized')).toBe('false');
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(10);
+    expect(styleOf(title().parentElement).gap).toBe(2);
+
+    rerender(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Crux Homewall"
+        titleVariant="body"
+        subtitle="Crux · 10 x 10"
+        selected
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    expect(title().getAttribute('data-variant')).toBe('body');
+    expect(title().getAttribute('data-emphasized')).toBe('true');
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(10);
+    expect(styleOf(screen.getByTestId('row')).backgroundColor).toBe('#SELECTION_FILL');
+  });
+
+  it('puts the list padding on the target when a control sits beside it', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Crux Homewall"
+        titleVariant="body"
+        accessory={<u data-testid="menu" />}
+        onPress={vi.fn()}
+        testID="row"
+      />,
+    );
+    expect(styleOf(screen.getByTestId('row')).paddingVertical).toBe(10);
+    expect(styleOf(screen.getByTestId('row').parentElement).paddingVertical).toBeUndefined();
+  });
+
   it('holds the art in a slot as wide as its size, hidden from VoiceOver', () => {
     const { rerender } = render(<ArtRow art={<b data-testid="art" />} artSize="regular" title="Board" />);
     const slot = screen.getByTestId('art').parentElement;
@@ -336,6 +396,73 @@ describe('ArtRow', () => {
     fireEvent.click(menu);
     expect(onMenu).toHaveBeenCalledOnce();
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  // A ⋯ menu's rows, reachable from the row itself by VoiceOver.
+  it('publishes its own actions after the long press and routes them back', () => {
+    const onLongPress = vi.fn();
+    const onAccessibilityAction = vi.fn();
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        onPress={vi.fn()}
+        onLongPress={onLongPress}
+        longPressAccessibilityLabel="Board actions"
+        accessibilityActions={[{ name: 'details', label: 'Details' }]}
+        onAccessibilityAction={onAccessibilityAction}
+        testID="row"
+      />,
+    );
+    expect(JSON.parse(screen.getByTestId('row').getAttribute('data-actions') ?? '[]')).toEqual([
+      { name: 'longpress', label: 'Board actions' },
+      { name: 'details', label: 'Details' },
+    ]);
+    const handle = ctrl.actionHandlers.get('row');
+    handle?.({ nativeEvent: { actionName: 'details' } });
+    expect(onAccessibilityAction).toHaveBeenCalledOnce();
+    expect(onLongPress).not.toHaveBeenCalled();
+    handle?.({ nativeEvent: { actionName: 'longpress' } });
+    expect(onLongPress).toHaveBeenCalledOnce();
+    expect(onAccessibilityAction).toHaveBeenCalledOnce();
+  });
+
+  // A hold menu's anchor wraps the row's own target, never the ⋯ beside it.
+  it('wraps only the row target, leaving the control outside the wrapper', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        accessory={
+          <button type="button" aria-label="Board actions">
+            ⋯
+          </button>
+        }
+        onPress={vi.fn()}
+        wrapTarget={(target) => <div data-testid="hold-anchor">{target}</div>}
+        testID="row"
+      />,
+    );
+    const anchor = screen.getByTestId('hold-anchor');
+    expect(anchor.contains(screen.getByTestId('row'))).toBe(true);
+    expect(anchor.contains(screen.getByRole('button', { name: 'Board actions' }))).toBe(false);
+  });
+
+  it('wraps the whole row when there is no control', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        accessory="chevron"
+        onPress={vi.fn()}
+        wrapTarget={(target) => <div data-testid="hold-anchor">{target}</div>}
+        testID="row"
+      />,
+    );
+    expect(screen.getByTestId('hold-anchor').contains(screen.getByTestId('row'))).toBe(true);
   });
 
   it('keeps the plain row box when a control sits beside the target', () => {

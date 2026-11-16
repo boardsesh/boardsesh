@@ -286,12 +286,16 @@ describe('BoardDiscoveryCard board art', () => {
     expect(thumb.querySelector('[data-testid="board-image"]')).not.toBeNull();
   });
 
-  it('keeps the brand border on the active board and turns its title brand-coloured', () => {
+  // Selection is a state, not a link: no violet border, no violet title. "On it"
+  // in the subtitle says it, in secondary label.
+  it('draws the board you are on like any other card, with no violet', () => {
     const { getByTestId, getByText } = render(
       createElement(BoardDiscoveryCard, { item: { ...item, isActive: true }, onPress: vi.fn() }),
     );
-    expect(styleOf(getByTestId('board-card'))).toMatchObject({ borderColor: '#6D28D9', borderWidth: 2 });
-    expect(getByText('Tension 8x10').getAttribute('data-color')).toBe('#6D28D9');
+    expect(styleOf(getByTestId('board-card'))).toMatchObject({ borderColor: '#ccc' });
+    expect(styleOf(getByTestId('board-card')).borderWidth).not.toBe(2);
+    expect(getByText('Tension 8x10').getAttribute('data-color')).toBeNull();
+    expect(getByText('On it ·').getAttribute('data-color')).not.toBe('#6D28D9');
   });
 
   it('leaves an inactive title in the default colour', () => {

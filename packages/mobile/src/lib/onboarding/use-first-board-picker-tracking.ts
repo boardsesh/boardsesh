@@ -24,9 +24,20 @@ import {
  * awaits the write), so a pick from the list, the builder, the gym map or the
  * Bluetooth scan all read as bound, and only a real skip reports. A read that
  * fails says nothing rather than guess.
+ *
+ * `nearbyResultCount` is what the Near you search had returned when the picker
+ * went (`pickerNearbyResultCount`), reported on the skip as it stood then.
  */
-export function useFirstBoardPickerTracking(entry: FirstBoardEntry | null): (path: FirstBoardPath) => void {
+export function useFirstBoardPickerTracking(
+  entry: FirstBoardEntry | null,
+  nearbyResultCount: number | null = null,
+): (path: FirstBoardPath) => void {
   const lastPathRef = useRef<FirstBoardPath | null>(null);
+  // Read on unmount, through a ref, so the skip says what was on screen last.
+  const nearbyResultCountRef = useRef(nearbyResultCount);
+  useEffect(() => {
+    nearbyResultCountRef.current = nearbyResultCount;
+  });
 
   useEffect(() => {
     if (!entry) return;
@@ -37,10 +48,17 @@ export function useFirstBoardPickerTracking(entry: FirstBoardEntry | null): (pat
       const method = consumeFirstBoardCloseTapped() ? 'close_button' : 'dismissed';
       const secondsOpen = Math.round((Date.now() - openedAtMs) / 1000);
       const lastPath = lastPathRef.current;
+      const nearbyResultCountAtClose = nearbyResultCountRef.current;
       void getStoredActiveBoard()
         .then((board) => {
           if (board) return;
-          trackFirstBoardPickerSkipped({ method, secondsOpen, lastPath, entry });
+          trackFirstBoardPickerSkipped({
+            method,
+            secondsOpen,
+            lastPath,
+            entry,
+            nearbyResultCount: nearbyResultCountAtClose,
+          });
         })
         .catch(() => undefined);
     };

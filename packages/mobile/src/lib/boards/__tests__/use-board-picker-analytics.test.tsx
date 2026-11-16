@@ -6,7 +6,8 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 const track = vi.hoisted(() => vi.fn());
 vi.mock('../../analytics', () => ({ track }));
 
-import { useBoardPickerAnalytics } from '../use-board-picker-analytics';
+import { pickerNearbyResultCount, useBoardPickerAnalytics } from '../use-board-picker-analytics';
+import type { LocationStatus } from '../../use-device-location';
 import type { BoundBoard } from '../use-activate-board';
 
 const picked: BoundBoard = { pickSource: 'your_boards', followed: false };
@@ -203,6 +204,95 @@ describe('board picker analytics', () => {
     expect(track).toHaveBeenLastCalledWith(
       'Board Picker Selection Completed',
       expect.objectContaining({ source: 'gym_finder', pickSource: 'gym_finder' }),
+    );
+  });
+});
+
+// Near you empty vs results (2026-11): the opening says where location stood,
+// and each pick says what Near you had found by then.
+describe('Near you on the picker events', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function renderPicker(initial: { locationStatus: LocationStatus; nearbyResultCount: number | null }) {
+    return renderHook(
+      ({ locationStatus, nearbyResultCount }: { locationStatus: LocationStatus; nearbyResultCount: number | null }) =>
+        useBoardPickerAnalytics({
+          activeBoard: null,
+          restoreFailed: false,
+          returnTo: '/(tabs)/climbs',
+          fromOnboarding: false,
+          locationStatus,
+          nearbyResultCount,
+        }),
+      { initialProps: initial },
+    );
+  }
+
+  it('sends the opening at once, with location as known then', () => {
+    const { rerender } = renderPicker({ locationStatus: 'idle', nearbyResultCount: null });
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Opened',
+      expect.objectContaining({ locationStatus: 'idle', hadActiveBoard: false }),
+    );
+    rerender({ locationStatus: 'granted', nearbyResultCount: 3 });
+    expect(track).toHaveBeenCalledOnce();
+  });
+
+  it('reports what Near you had found at each pick', async () => {
+    const { result, rerender } = renderPicker({ locationStatus: 'loading', nearbyResultCount: null });
+    const pickBeforeTheAnswer = result.current;
+    await pickBeforeTheAnswer(board, picked);
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ nearbyResultCount: null }),
+    );
+
+    rerender({ locationStatus: 'granted', nearbyResultCount: 3 });
+    // The bind callback keeps its identity while the search answers.
+    expect(result.current).toBe(pickBeforeTheAnswer);
+    await result.current(board, picked);
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ nearbyResultCount: 3 }),
+    );
+  });
+});
+
+describe('pickerNearbyResultCount', () => {
+  it.each<{ outcome: Parameters<typeof pickerNearbyResultCount>[0]['outcome']; expected: number | null }>([
+    { outcome: 'found', expected: 4 },
+    // "Nothing within 20 km" is an answer: none.
+    { outcome: 'none_nearby', expected: 0 },
+    { outcome: 'searching', expected: null },
+    { outcome: 'nearby_error', expected: null },
+    { outcome: 'location_off', expected: null },
+    { outcome: 'idle', expected: null },
+  ])('$outcome: $expected', ({ outcome, expected }) => {
+    expect(pickerNearbyResultCount({ outcome, resultCount: 4 })).toBe(expected);
+  });
+});
+
+describe('where on the picker a board was picked', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('reports the section and the 0-based position, null when the caller did not say', async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+      }),
+    );
+    await result.current(board, { pickSource: 'gym_walls', followed: false, section: 'at_gym', position: 2 });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ pickSource: 'gym_walls', section: 'at_gym', position: 2 }),
+    );
+    await result.current(board, { pickSource: 'gym_finder', followed: false });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ section: null, position: null }),
     );
   });
 });

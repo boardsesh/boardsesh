@@ -12,26 +12,29 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { hapticLight } from '../../lib/haptics';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
-import { sprayImportCopy } from '../../lib/spray/spray-import-progress';
 import { useTheme } from '../../providers/theme-provider';
 import { springs } from '../../theme/animations';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE, textStyles } from '../../theme/typography';
 import { AppMenu } from '../AppMenu';
-import type { AppMenuAction, AppMenuHandle } from '../AppMenu.types';
+import type { AppMenuHandle } from '../AppMenu.types';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
-import {
-  BOARD_CARD_MENU_SYSTEM_ICONS,
-  boardCardMenuEntries,
-  boardCardMenuLabel,
-  type BoardCardMenuAction,
-  type BoardCardMenuCapabilities,
-  type BoardCardMenuEntry,
-  type BoardCardMenuLabels,
-  type BoardCardMenuVia,
+import type {
+  BoardCardMenuAction,
+  BoardCardMenuCapabilities,
+  BoardCardMenuLabels,
+  BoardCardMenuVia,
 } from './board-card-menu';
 import type { BoardDownloadState } from './board-offline-state';
+import {
+  BOARD_MENU_BUTTON_FOOTPRINT,
+  BOARD_MENU_BUTTON_SIZE,
+  BOARD_MENU_LONG_PRESS_DELAY_MS,
+  BOARD_SUBTITLE_GLYPH_SIZE,
+} from './board-menu-metrics';
+import { useBoardCardMenuRows } from './use-board-card-menu-rows';
+import { boardItemAccessibilityLabel, useBoardItemCopy } from './use-board-item-copy';
 
 /** The minimal board shape the card renders. Saved boards and BLE-resolved
  *  boards both map onto this so one card serves every section. */
@@ -95,29 +98,6 @@ const TITLE_LINES = 2;
 // one read covers both UI variants — see textStylesByVariant.
 const TITLE_BOX_HEIGHT = TITLE_LINES * textStyles.subheadline.lineHeight;
 
-/**
- * The ⋯ beside the title. iOS draws the glyph in a 44pt square, the HIG's tap
- * floor; Android's M3 IconButton keeps its own 48dp target whatever size it is
- * asked for. The title stops short of this width so the two never overlap.
- */
-const MENU_BUTTON_SIZE = 44;
-const MENU_BUTTON_FOOTPRINT = Platform.OS === 'android' ? 48 : MENU_BUTTON_SIZE;
-
-const SUBTITLE_GLYPH_SIZE = 12;
-
-/** Matches `delayLongPress` in AppMenu.android and the browser AppMenu's timer. */
-const LONG_PRESS_DELAY_MS = 400;
-
-const NO_ROWS: readonly BoardCardMenuRow[] = [];
-
-type BoardCardMenuRow = BoardCardMenuEntry & { label: string };
-
-/** Distance copy: whole metres under 1 km, one-decimal kilometres above. */
-function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)} m`;
-  return `${(meters / 1000).toFixed(1)} km`;
-}
-
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export type BoardDiscoveryCardViewProps = {
@@ -126,20 +106,20 @@ export type BoardDiscoveryCardViewProps = {
   onPress: (item: DiscoveryBoardItem) => void;
   /**
    * The ⋯ menu, the hold on the card and the screen-reader actions, all from the
-   * same rows. Absent on the offline list (every row behind it needs a
-   * connection), which draws a plain card.
+   * same rows. Absent on a surface with no actions, which draws a plain card.
    */
   menu?: BoardCardMenu;
 };
 
 /**
- * One board in a carousel. Memoized: three carousels stacked on the Boards tab
- * re-render together whenever any of their queries settle, and each card resolves
- * board art. The menu object is shared by the whole rail, so a card re-renders
- * only when its own item changes.
+ * One board in Near you's carousel. Memoized: the picker re-renders whenever
+ * any of its queries settle, and each card resolves board art. The menu object
+ * is shared by the whole rail, so a card re-renders only when its own item
+ * changes.
  *
  * Nothing sits on the board art. State reads as small glyphs at the head of the
- * subtitle line, and every action lives in the menu.
+ * subtitle line, in secondary label: none of it can be tapped, so none of it is
+ * violet, and every action lives in the menu.
  */
 export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
   boardImage,
@@ -148,61 +128,21 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
   menu,
 }: BoardDiscoveryCardViewProps) {
   const { t } = useTranslation('boards');
-  const importCopy = item.sprayImport ? sprayImportCopy(item.sprayImport, item.importStatusStale) : null;
-  const importLabel = importCopy ? t(importCopy.textI18nKey, importCopy.params) : null;
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
+  const copy = useBoardItemCopy(item);
+  const { rows, menuActions, runMenuRow, selectFromMenuButton, selectFromHold } = useBoardCardMenuRows(item, menu);
   const scale = useSharedValue(1);
   const menuRef = useRef<AppMenuHandle | null>(null);
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-  const thumbStyle = {
-    backgroundColor: systemColors.tertiaryBackground,
-    borderColor: item.isActive ? brandColors.primary : systemColors.separator,
-    borderWidth: item.isActive ? 2 : StyleSheet.hairlineWidth,
-  };
-
-  // Scalars, so a fresh item object with the same state keeps the same rows —
-  // and with them the same accessibility actions and menu actions.
-  const isPinned = item.isPinned === true;
-  const isImport = item.sprayImport != null;
-  const isSprayWall = item.boardName === 'spray';
-  const { offlineState, isViewerOwner } = item;
-  const capabilities = menu?.capabilities;
-  const labels = menu?.labels;
-  const onMenuAction = menu?.onAction;
-  const rows = useMemo<readonly BoardCardMenuRow[]>(() => {
-    if (capabilities === undefined || labels === undefined) return NO_ROWS;
-    const entries = boardCardMenuEntries({ isPinned, offlineState, isViewerOwner, isImport }, capabilities);
-    if (entries.length === 0) return NO_ROWS;
-    return entries.map((entry) => ({ ...entry, label: boardCardMenuLabel(entry.action, labels, isSprayWall) }));
-  }, [capabilities, labels, isPinned, offlineState, isViewerOwner, isImport, isSprayWall]);
+  const thumbStyle = { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator };
   const hasMenuRows = rows.length > 0;
-  const menuActions = useMemo<AppMenuAction[]>(
-    () =>
-      rows.map((row) => ({
-        label: row.label,
-        systemIcon: BOARD_CARD_MENU_SYSTEM_ICONS[row.action],
-        destructive: row.destructive,
-        dividerBefore: row.dividerBefore,
-      })),
-    [rows],
-  );
 
   const handlePress = useCallback(() => {
     hapticLight();
     onPress(item);
   }, [onPress, item]);
-
-  const runMenuRow = useCallback(
-    (index: number, via: BoardCardMenuVia) => {
-      const row = rows[index];
-      if (row !== undefined) onMenuAction?.(item, row.action, via);
-    },
-    [rows, onMenuAction, item],
-  );
-  const selectFromMenuButton = useCallback((index: number) => runMenuRow(index, 'menu_button'), [runMenuRow]);
-  const selectFromHold = useCallback((index: number) => runMenuRow(index, 'long_press'), [runMenuRow]);
 
   // iOS: the SwiftUI context menu owns the hold, and `open()` does nothing.
   // Android: the card's own Pressable wins the touch, so the menu's wrapper never
@@ -239,52 +179,15 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
     [rows, handlePress, runMenuRow],
   );
 
-  const onItLabel = t('mobile.discovery.onIt');
-  const offlineGlyph =
-    offlineState === 'downloaded'
-      ? 'offline.downloaded'
-      : offlineState === 'downloading' || offlineState === 'finalizing' || offlineState === 'pending'
-        ? 'offline.pending'
-        : null;
-  const offlineLabel =
-    offlineState === 'downloaded'
-      ? t('mobile.offline.available')
-      : offlineState === 'downloading'
-        ? t('mobile.offline.bootstrapping')
-        : offlineState === 'finalizing'
-          ? t('mobile.offline.finalizing')
-          : offlineState === 'pending'
-            ? t('mobile.offline.pending')
-            : null;
-  const distanceLabel = item.distanceMeters != null ? formatDistance(item.distanceMeters) : null;
-  const detailText = [distanceLabel, item.subtitle]
+  const isPinned = item.isPinned === true;
+  const { offlineGlyph, importLabel } = copy;
+  const detailText = [copy.distanceLabel, item.subtitle]
     .filter((part): part is string => typeof part === 'string' && part.length > 0)
     .join(' · ');
   // The separator after "On it" only when something follows it on the line.
-  const onItText = isPinned || offlineGlyph !== null || detailText.length > 0 ? `${onItLabel} ·` : onItLabel;
+  const onItText = isPinned || offlineGlyph !== null || detailText.length > 0 ? `${copy.onItLabel} ·` : copy.onItLabel;
   const showSubtitleLine = item.isActive === true || isPinned || offlineGlyph !== null || detailText.length > 0;
-
-  // No glyph says owned or followed any more, so the composed label has to:
-  // otherwise a screen-reader user cannot tell which board Unfollow removes.
-  const ownershipLabel =
-    item.isViewerOwner === undefined
-      ? null
-      : item.isViewerOwner
-        ? t('mobile.discovery.ownedBadgeAria')
-        : t('mobile.discovery.followingBadgeAria');
-  const pinnedLabel = isPinned ? t('mobile.discovery.pinnedBadgeAria') : null;
-  const accessibilityLabel = [
-    item.title,
-    item.isActive ? onItLabel : null,
-    distanceLabel,
-    item.subtitle,
-    ownershipLabel,
-    pinnedLabel,
-    offlineLabel,
-    importLabel,
-  ]
-    .filter((part): part is string => typeof part === 'string' && part.length > 0)
-    .join(', ');
+  const accessibilityLabel = boardItemAccessibilityLabel(item, copy);
 
   const card = (
     <AnimatedPressable
@@ -292,7 +195,7 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
       onLongPress={onLongPress}
       // The hold AppMenu.android and the browser menu use, so the card opens
       // its menu as fast as every other hold menu.
-      delayLongPress={LONG_PRESS_DELAY_MS}
+      delayLongPress={BOARD_MENU_LONG_PRESS_DELAY_MS}
       onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
       onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
       accessibilityRole="button"
@@ -311,8 +214,8 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
 
       <Text
         variant="subheadline"
+        emphasized
         numberOfLines={TITLE_LINES}
-        color={item.isActive ? brandColors.primary : undefined}
         style={[styles.title, hasMenuRows ? styles.titleBesideMenuButton : null]}
       >
         {item.title}
@@ -321,28 +224,26 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
         <View testID="board-card-subtitle" style={styles.subtitleLine}>
           {item.isActive ? (
             <>
-              <Icon name="tick.fill" size={SUBTITLE_GLYPH_SIZE} color={brandColors.primary} />
+              <Icon name="tick.fill" size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
               <Text
                 variant="caption1"
-                color={brandColors.primary}
+                tone="secondary"
+                emphasized
                 numberOfLines={1}
                 maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.onIt}
               >
                 {onItText}
               </Text>
             </>
           ) : null}
-          {isPinned ? <Icon name="pin.fill" size={SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} /> : null}
+          {isPinned ? (
+            <Icon name="pin.fill" size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
+          ) : null}
           {offlineGlyph !== null ? (
-            <Icon
-              name={offlineGlyph}
-              size={SUBTITLE_GLYPH_SIZE}
-              color={offlineGlyph === 'offline.downloaded' ? brandColors.primaryFill : systemColors.secondaryLabel}
-            />
+            <Icon name={offlineGlyph} size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
           ) : null}
           {detailText.length > 0 ? (
-            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.subtitleText}>
+            <Text variant="caption1" tone="secondary" numberOfLines={1} style={styles.subtitleText}>
               {detailText}
             </Text>
           ) : null}
@@ -350,9 +251,12 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
       ) : null}
 
       {importLabel ? (
-        <Text variant="caption1" color={brandColors.primary} accessibilityLiveRegion="polite">
-          {importLabel}
-        </Text>
+        <View style={styles.importLine}>
+          <View style={[styles.importDot, { backgroundColor: systemColors.secondaryLabel }]} />
+          <Text variant="caption1" tone="secondary" accessibilityLiveRegion="polite">
+            {importLabel}
+          </Text>
+        </View>
       ) : null}
     </AnimatedPressable>
   );
@@ -386,7 +290,7 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
             key={item.key}
             iconName="more"
             iconAppearance="plain"
-            anchorSize={MENU_BUTTON_SIZE}
+            anchorSize={BOARD_MENU_BUTTON_SIZE}
             accessibilityLabel={t('mobile.discovery.cardActionsAria', { name: item.title })}
             actions={menuActions}
             onSelectIndex={selectFromMenuButton}
@@ -408,6 +312,7 @@ const styles = StyleSheet.create({
     width: DISCOVERY_CARD_WIDTH,
     height: DISCOVERY_CARD_WIDTH,
     borderRadius: borderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -419,12 +324,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontWeight: '600',
     minHeight: TITLE_BOX_HEIGHT,
   },
   // The ⋯ sits in this gap, level with the title, never over the art.
   titleBesideMenuButton: {
-    marginRight: MENU_BUTTON_FOOTPRINT,
+    marginRight: BOARD_MENU_BUTTON_FOOTPRINT,
   },
   menuButtonSlot: {
     position: 'absolute',
@@ -432,8 +336,8 @@ const styles = StyleSheet.create({
     // Starts where the art ends, so the tap target never reaches over it, and
     // puts the glyph level with the title's first line.
     top: DISCOVERY_CARD_WIDTH,
-    width: MENU_BUTTON_FOOTPRINT,
-    height: MENU_BUTTON_FOOTPRINT,
+    width: BOARD_MENU_BUTTON_FOOTPRINT,
+    height: BOARD_MENU_BUTTON_FOOTPRINT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -442,12 +346,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[1],
   },
-  onIt: {
-    fontWeight: '600',
-  },
   subtitleText: {
     // RN row children default to flexShrink: 0, so without this a long subtitle
     // pushes past the card instead of ellipsising.
     flexShrink: 1,
+  },
+  importLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+  },
+  importDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });
