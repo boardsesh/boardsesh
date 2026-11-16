@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import * as oauth from 'oauth4webapi';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
@@ -989,8 +989,8 @@ describe('partner OAuth on, in the real server', () => {
           ),
         ).rejects.toMatchObject({ error: 'invalid_grant' });
 
-        // A confidential app on https: consent is remembered now, so this goes
-        // straight back to the app. A public app is asked every time ("remembered consent").
+        // A confidential web app on https: consent is remembered now, so this goes
+        // straight back to the app. Every other app is asked every time ("remembered consent").
         const authorization = await startAuthorization(app);
         const callback = await callbackFor(authorization, climber);
         expect(callback.startsWith(`${app.redirectUri}?`)).toBe(true);
@@ -1090,8 +1090,8 @@ describe('partner OAuth on, in the real server', () => {
         const app = await registerApp();
         const climber = await newClimber();
         const phone = await connect(app, climber);
-        // A second device connects the same climber: a confidential app on https
-        // keeps the remembered consent, so no screen, and a new family.
+        // A second device connects the same climber: a confidential web app on
+        // https keeps the remembered consent, so no screen, and a new family.
         const tabletAuthorization = await startAuthorization(app);
         const tabletCallback = (await openAuthorize(tabletAuthorization.url, climber)).location;
         expect(tabletCallback.startsWith(`${app.redirectUri}?`)).toBe(true);
@@ -1644,18 +1644,42 @@ describe('partner OAuth on, in the real server', () => {
     );
   });
 
-  // RFC 8252 section 8.6. Another app on the climber's phone can claim a public
-  // app's custom scheme or loopback port and start authorize with the real
-  // app's client_id and its own PKCE verifier, in a browser that carries the
-  // climber's Boardsesh sign-in. A remembered consent must not answer for them.
+  // Only a confidential web app on https is remembered (fence.ts,
+  // `requiresConsentEveryTime`). A public app's client_id proves nothing (RFC
+  // 6749 section 10.2), and another app on the climber's phone can claim a
+  // native app's scheme, port or link and pull out a secret it ships (RFC 8252
+  // section 8.6), then start authorize with the real app's client_id and its own
+  // PKCE verifier, in a browser that carries the climber's Boardsesh sign-in.
   describe('remembered consent', () => {
     /** Codes issued on this connection: every issued code gets a grant row. */
     const grantCount = async (app: PartnerApp, climber: Climber) => {
       const row = await connectionRow({ app, climber });
       return row ? db.$count(oauthGrants, eq(oauthGrants.connectionId, row.id)) : 0;
     };
+    /** The provider's own code rows for this climber: a refused code leaves none. */
+    const codeRows = (climber: Climber) =>
+      db.$count(
+        oauthVerification,
+        and(
+          like(oauthVerification.value, '%"type":"authorization_code"%'),
+          like(oauthVerification.value, `%"userId":"${climber.userId}"%`),
+        ),
+      );
     const rememberedConsents = (app: PartnerApp, climber: Climber) =>
       db.$count(oauthConsent, and(eq(oauthConsent.userId, climber.userId), eq(oauthConsent.clientId, app.clientId)));
+
+    /** prompt=none gets consent_required at the app, and neither a grant nor a code row survives. */
+    async function expectSilentRefused(app: PartnerApp, climber: Climber, redirectUri: string) {
+      const grantsBefore = await grantCount(app, climber);
+      const codesBefore = await codeRows(climber);
+      const silent = await startAuthorization(app, { redirectUri, extra: { prompt: 'none' } });
+      expectErrorAtApp(await openAuthorize(silent.url, climber), app, silent, 'consent_required');
+      expect({ redirectUri, grants: await grantCount(app, climber), codes: await codeRows(climber) }).toEqual({
+        redirectUri,
+        grants: grantsBefore,
+        codes: codesBefore,
+      });
+    }
 
     it(
       'shows a public app the consent screen on every authorization, and issues no code without an answer',
@@ -1671,6 +1695,7 @@ describe('partner OAuth on, in the real server', () => {
           await connect(app, climber, { redirectUri });
           expect(await rememberedConsents(app, climber)).toBe(1);
           const grantsBefore = await grantCount(app, climber);
+          const codesBefore = await codeRows(climber);
 
           const again = await startAuthorization(app, { redirectUri });
           const { location } = await openAuthorize(again.url, climber);
@@ -1678,7 +1703,7 @@ describe('partner OAuth on, in the real server', () => {
             redirectUri,
             screen: true,
           });
-          expect(await grantCount(app, climber)).toBe(grantsBefore);
+          expect([await grantCount(app, climber), await codeRows(climber)]).toEqual([grantsBefore, codesBefore]);
 
           // The climber's answer on the screen is what sends the code.
           const approved = await approve(location, climber);
@@ -1691,17 +1716,14 @@ describe('partner OAuth on, in the real server', () => {
     );
 
     it(
-      'answers prompt=none from a public app with consent_required and no code, and leaves the connection alone',
+      'answers prompt=none from a public app with consent_required, keeps no code row, and leaves the connection alone',
       async () => {
         const app = await registerApp('public-native');
         const climber = await newClimber();
         const connection = await connect(app, climber);
-        const grantsBefore = await grantCount(app, climber);
         for (const redirectUri of [app.redirectUri, 'http://127.0.0.1:49153/callback']) {
-          const silent = await startAuthorization(app, { redirectUri, extra: { prompt: 'none' } });
-          expectErrorAtApp(await openAuthorize(silent.url, climber), app, silent, 'consent_required');
+          await expectSilentRefused(app, climber, redirectUri);
         }
-        expect(await grantCount(app, climber)).toBe(grantsBefore);
         expect(await rememberedConsents(app, climber)).toBe(1);
         await expectAlive(connection);
       },
@@ -1709,19 +1731,22 @@ describe('partner OAuth on, in the real server', () => {
     );
 
     it(
-      'keeps remembered consent for a confidential app on https: no screen, and prompt=none gets a code',
+      'keeps remembered consent for a confidential web app on https: no screen, and prompt=none gets a code',
       async () => {
         const app = await registerApp('confidential-basic');
         const climber = await newClimber();
         await connect(app, climber);
         const requests: Array<Record<string, string>> = [{}, { prompt: 'none' }];
         for (const extra of requests) {
+          const codesBefore = await codeRows(climber);
           const again = await startAuthorization(app, { extra });
           const { location } = await openAuthorize(again.url, climber);
           expect({ extra, straightBack: location.startsWith(`${app.redirectUri}?`) }).toEqual({
             extra,
             straightBack: true,
           });
+          // What the refusals are measured against: an issued code leaves its row.
+          expect(await codeRows(climber)).toBe(codesBefore + 1);
           expect((await callMe(app, (await redeem(app, again, location)).access_token)).status).toBe(200);
         }
       },
@@ -1729,25 +1754,22 @@ describe('partner OAuth on, in the real server', () => {
     );
 
     it(
-      "asks every time when a confidential native app's code goes to its custom scheme or loopback, and not on https",
+      'asks a confidential native app every time, on its https redirect as on its custom scheme and loopback',
       async () => {
         const app = await registerApp('confidential-native');
         const httpsRedirect = app.redirectUris.find((uri) => uri.startsWith('https://')) ?? '';
         const climber = await newClimber();
         await connect(app, climber, { redirectUri: httpsRedirect });
+        expect(await rememberedConsents(app, climber)).toBe(1);
 
-        const viaHttps = await startAuthorization(app, { redirectUri: httpsRedirect });
-        expect((await openAuthorize(viaHttps.url, climber)).location.startsWith(`${httpsRedirect}?`)).toBe(true);
-
-        for (const redirectUri of [app.redirectUri, 'http://127.0.0.1:49154/callback']) {
+        for (const redirectUri of [httpsRedirect, app.redirectUri, 'http://127.0.0.1:49154/callback']) {
           const asked = await startAuthorization(app, { redirectUri });
           const { location } = await openAuthorize(asked.url, climber);
           expect({ redirectUri, screen: location.startsWith(`${CONSENT_PAGE}?`) }).toEqual({
             redirectUri,
             screen: true,
           });
-          const silent = await startAuthorization(app, { redirectUri, extra: { prompt: 'none' } });
-          expectErrorAtApp(await openAuthorize(silent.url, climber), app, silent, 'consent_required');
+          await expectSilentRefused(app, climber, redirectUri);
         }
       },
       SUITE_DEADLINE_MS,

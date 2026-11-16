@@ -719,28 +719,39 @@ https://www.boardsesh.com`, exactly, whatever the cookies say. SameSite=Lax lets
 every `*.boardsesh.com` subdomain send the session cookie, so a cookie is no proof
 of where a request came from.
 
-**Public apps are asked every time** (RFC 8252 section 8.6). A remembered consent
-never answers an authorization from a public app (`token_endpoint_auth_method`
-`none`), nor one whose redirect URI is a private-use scheme or a loopback address,
-whatever the app's method. Nothing proves which app on a phone opened the
-authorize URL: another app can claim the scheme or listen on the port, send the
-real app's `client_id` with its own PKCE verifier, and the browser (an
-`ASWebAuthenticationSession` shares Safari's cookies) carries the climber's
-Boardsesh sign-in. Registration lets a native app choose a secret method, and that
-secret ships inside the binary, so a custom-scheme or loopback redirect counts as
-public whatever the method says. Only a confidential app redirecting to
-`https://` keeps remembered consent.
+**Only a confidential web app is remembered.** A remembered consent answers an
+authorization only from a web app (`application_type` `web`) that authenticates
+with a secret (`client_secret_basic` or `client_secret_post`) and redirects to
+`https://`. Every other app sees the consent screen on every authorization:
 
-The fence (`auth/partner/fence.ts`) decides this from the stored app and the
-requested redirect URI, never from the request's own `prompt`. Before authorize
-it adds `prompt=consent`, so the provider shows the screen. After authorize, a
-code guard refuses any code for such a request that the climber did not approve
-in that same request: the code rolls back and the browser goes to the redirect
-URI with `error=consent_required`, the `state` and `iss`. Every redeemable code
-passes that guard, because the token endpoint only redeems a code the fence has
-bound to a connection, and the binding happens there. So `prompt=none` from such
-an app gets `consent_required`, never a code. `skip_consent` apps still skip the
-screen, as the provider does; registration never creates one.
+- An app without a secret (`none`). Its `client_id` is public, and a browser app
+  cannot keep a secret (RFC 6749 section 10.2), so nothing shows who sent the
+  request.
+- Every native app, whatever its method or redirect (RFC 8252 section 8.6).
+  Registration lets a native app register a secret and an `https://` redirect,
+  but the secret ships in the binary, and another app on the device can claim
+  its private-use scheme, listen on its loopback port, or catch an https link the
+  system does not verify (Android 11 and older offer a chooser). An https page
+  that bounces to a custom scheme is common too. `application_type` is set at
+  registration and never changes.
+- Any redirect that is not `https://`, should one ever reach a web app.
+
+In each case another app can start authorize with the real `client_id` and its
+own PKCE verifier, and the browser (an `ASWebAuthenticationSession` shares
+Safari's cookies) carries the climber's Boardsesh sign-in.
+
+The fence (`auth/partner/fence.ts`, `requiresConsentEveryTime`) decides this from
+the stored app and the requested redirect URI, never from the request's own
+`prompt`. Before authorize it adds `prompt=consent`, so the provider shows the
+screen. After authorize, a code guard refuses any code for such a request that
+the climber did not approve in that same request: the code rolls back, its
+verification row with it, and the browser goes to the redirect URI with
+`error=consent_required`, the `state` and `iss`. Every redeemable code passes that
+guard, because the token endpoint only redeems a code the fence has bound to a
+connection, and the binding happens there. So `prompt=none` from such an app gets
+`consent_required`, never a code. An unknown app, type or auth method fails
+closed and is asked. `skip_consent` changes none of this: it can only spare a
+confidential web app on `https://` the screen, and registration never sets it.
 
 **Caps** (decision 22). An app holds at most `max_active_connections` (25)
 live, unrevoked connections and gains at most `max_new_connections_per_day` (20)
@@ -1018,7 +1029,7 @@ which asks first. First-party GraphQL operations serve both, from
 
 | Operation | What it does |
 | --- | --- |
-| `myConnectedApps` | Every live connection of the signed-in climber (`connected_at` set, not revoked), most recently connected first: the app's name, the scopes from its remembered consent (or, while none is remembered because the app gained a redirect URI, the scopes on its live tokens), `connectedAt`, `lastUsedAt`, and `suspended` (`oauth_client.disabled` or a policy suspension). `publisherName` is in the shape and null until apps carry one. `partnerAppsEnabled` is false while the mode is `off` |
+| `myConnectedApps` | Every live connection of the signed-in climber (`connected_at` set, not revoked), most recently connected first: the app's name, the scopes it can read (its remembered consent's together with those on its live tokens, so a narrower re-approval or a consent cleared by a redirect edit never hides a token's wider scopes), `connectedAt`, `lastUsedAt`, and `suspended` (`oauth_client.disabled` or a policy suspension). `publisherName` is in the shape and null until apps carry one. `partnerAppsEnabled` is false while the mode is `off` |
 | `disconnectApp(connectionId)` | Ends the connection through `endPartnerConnection`, the same path as `DELETE /v1/connection`, with reason `climber_disconnect`. `true` once ended, also when it already was |
 | `partnerAppsEnabled` | The same flag on its own, signed in or not, for screens that only need to know whether to mention connected apps. The app caches it for an hour, so the editor never asks per open |
 
@@ -1376,8 +1387,9 @@ provider's update, which can also reach consent and PKCE. An edit that adds a
 redirect URI the app did not have (a replacement counts) deletes every
 remembered consent for the app in the same transaction, so each climber sees the
 consent screen again before the next code goes anywhere. Tokens already issued
-keep working, and Connected apps lists the scopes on the app's live tokens until
-the climber approves again. Removing a URI keeps consent. Each developer's
+keep working, and Connected apps still lists the scopes on the app's live tokens.
+Removing a URI, or editing the name, publisher, homepage or privacy policy, keeps
+consent. Each developer's
 writes take an advisory lock, so the 10-app cap holds under a race. Every new
 app gets an `oauth_app_policy` row with decision 22's launch caps: 25 active
 connections and 20 new a day. Consent enforces them (F13).

@@ -587,6 +587,31 @@ describe('partner app registration', () => {
       await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, { redirectUris: [added] });
       expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(1);
       expect((await environment.authorize({ ...client, redirectUri: added })).location).toContain('code=');
+
+      // One edit that drops a URI and adds another clears consent like an addition.
+      const replacement = 'https://planner.example.test/oauth/replacement';
+      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, {
+        redirectUris: [replacement],
+      });
+      expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(0);
+      expect((await environment.authorize({ ...client, redirectUri: replacement })).location).toContain(
+        TEST_OAUTH_OPTIONS.consentPage,
+      );
+    });
+
+    it('keeps remembered consent through edits to the name, publisher, homepage and privacy policy', async () => {
+      const developerId = await createDeveloper();
+      const climber = await environment.createClimber();
+      const client = testClient(await register(developerId), climber);
+      expect((await connect(client)).response.status).toBe(200);
+      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, {
+        name: 'Hangboard Planner Pro',
+        publisherName: 'Planner Labs Ltd',
+        homepageUrl: 'https://planner.example.test/pro',
+        privacyPolicyUrl: 'https://planner.example.test/privacy-2',
+      });
+      expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(1);
+      expect((await environment.authorize(client)).location).toContain('code=');
     });
 
     it('holds an edit to the same redirect rules, for the app type it was registered with', async () => {

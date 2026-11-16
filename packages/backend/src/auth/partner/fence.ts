@@ -53,23 +53,27 @@ const SECRET_AUTH_METHODS: ReadonlySet<string> = new Set(['client_secret_basic',
 
 /**
  * Whether a code may go out only after the climber answers the consent screen
- * in this request, however recently they approved the app before.
+ * in this request, however recently they approved the app before. True for
+ * every app but a confidential web app redirecting to https.
  *
- * RFC 8252 section 8.6: nothing proves who a public app is. Another app on the
- * climber's phone can claim the real app's custom scheme or listen on a
- * loopback port, start authorize with the real app's client_id and its own
- * PKCE verifier, and the browser carries the climber's Boardsesh sign-in. A
- * remembered consent would hand it a code with no screen at all.
+ * - No secret (`none`): the client_id is public, so anyone can send it. A
+ *   browser app cannot keep a secret (RFC 6749 section 10.2), and nothing
+ *   proves which app on a device opened authorize (RFC 8252 section 8.6).
+ * - Native, whatever its method or redirect: a secret it registered ships in
+ *   the binary and can be pulled out, and another app can claim its custom
+ *   scheme, listen on its loopback port, or catch an https link the system
+ *   does not verify. Registration lets a native app register a secret and an
+ *   https redirect, so neither proves anything. `application_type` is stored
+ *   at registration and never changes.
+ * - A redirect that is not https, should one ever reach a web app.
  *
- * A confidential app sending its code to a custom scheme or a loopback address
- * is asked the same way: registration lets a native app pick any method, its
- * secret then ships inside the binary, and the code lands where any app on the
- * device can catch it. Only a confidential app redirecting to https keeps
- * remembered consent.
+ * In each case another app can start authorize with the real client_id and
+ * its own PKCE verifier, in a browser that carries the climber's Boardsesh
+ * sign-in. A remembered consent would hand it a code with no screen at all.
  *
- * `skip_consent` apps follow the provider and never see a screen. Registration
- * never sets it (`managedClientProblem` refuses it), so no registered app has it.
- * Fails closed: an unknown app, an unknown method or an unreadable redirect asks.
+ * `skip_consent` changes none of this: it can only spare a confidential web app
+ * on https the screen, and registration never sets it (`managedClientProblem`).
+ * Fails closed: an unknown app, type or method, or an unreadable redirect, asks.
  */
 async function requiresConsentEveryTime(
   transaction: PartnerDatabase,
@@ -77,11 +81,13 @@ async function requiresConsentEveryTime(
   redirectUri: string | null | undefined,
 ): Promise<boolean> {
   const [client] = await transaction
-    .select({ tokenEndpointAuthMethod: oauthClient.tokenEndpointAuthMethod, skipConsent: oauthClient.skipConsent })
+    .select({
+      applicationType: oauthClient.applicationType,
+      tokenEndpointAuthMethod: oauthClient.tokenEndpointAuthMethod,
+    })
     .from(oauthClient)
     .where(eq(oauthClient.clientId, clientId));
-  if (!client) return true;
-  if (client.skipConsent === true) return false;
+  if (!client || client.applicationType !== 'web') return true;
   if (!client.tokenEndpointAuthMethod || !SECRET_AUTH_METHODS.has(client.tokenEndpointAuthMethod)) return true;
   return !redirectUri || !URL.canParse(redirectUri) || new URL(redirectUri).protocol !== 'https:';
 }
@@ -314,9 +320,9 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (isConsent || state.consentApproved) return;
             // A reconnect always shows a new consent screen, even if the app would
             // otherwise skip it. So does every request a remembered consent must
-            // not answer: a public app, or a code bound for a custom scheme or a
-            // loopback address. Decided here from the stored app, never from what
-            // the request asks for, and backed by the code guard after authorize.
+            // not answer: any app but a confidential web app on https. Decided
+            // here from the stored app, never from what the request asks for,
+            // and backed by the code guard after authorize.
             const mustAsk =
               Boolean(connection?.revokedAt) ||
               (await requiresConsentEveryTime(transaction, clientId, stringParameter(parameters.redirect_uri)));

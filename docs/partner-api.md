@@ -72,7 +72,8 @@ team has invited; anyone else sees "App registration is invite-only for now".
 
 Adding a redirect URI, or replacing one, makes every climber who approved your
 app see the consent screen again at their next authorization. The tokens you
-already hold keep working. Removing a redirect URI changes nothing for climbers.
+already hold keep working. Removing a redirect URI, or editing the name,
+publisher, homepage or privacy policy, keeps every climber's approval.
 
 You get an opaque `client_id`, and for a confidential app a client secret,
 shown once. Never ship a client secret inside a mobile or desktop binary:
@@ -174,21 +175,24 @@ it stops a mix-up if your app talks to several OAuth servers).
 
 If they decline: `?error=access_denied&state=...`.
 
-When the consent screen appears again depends on your app:
+Whether the consent screen appears again depends on your app:
 
-- A confidential app whose redirect URI is `https://` is remembered. Once a
-  climber approves, the next authorization goes straight back to you with a
-  code, unless you ask for more scopes, the climber disconnected your app, or
-  you added a redirect URI since. `prompt=none` gets a code when the approval is
-  remembered, and `consent_required` when it is not.
-- A public app (`none`), and any authorization whose redirect URI is a
-  private-use scheme or a loopback address, shows the consent screen every time,
-  even if the climber approved a minute ago. On a phone or a laptop, any app can
-  claim a scheme or a port and send your `client_id`; nothing proves the request
-  came from you (RFC 8252 section 8.6), so the climber's tap is the check.
-  `prompt=none` never gets a code here: the browser comes back to your redirect
-  URI with `error=consent_required` and your `state`. Keep the refresh token
-  instead of authorizing again.
+- An app without a client secret, and every native app, can never
+  re-authorize silently. Every authorization shows the consent screen, even if
+  the climber approved a minute ago, and `prompt=none` never gets a code: the
+  browser comes back to your redirect URI with `error=consent_required` and
+  your `state`. Keep the refresh token instead of authorizing again.
+  A browser app cannot keep a secret, so its `client_id` alone proves nothing
+  about who sent the request (RFC 6749 section 10.2). A native app's secret
+  ships in the binary, and on a phone or a computer another app can claim its
+  scheme, its loopback port or an unverified link (RFC 8252 section 8.6). In
+  both cases the climber's tap is the check.
+- A confidential web app, which keeps its secret on a server and redirects to
+  `https://`, is remembered. Once a climber approves, the next authorization
+  goes straight back to you with a code, unless you ask for more scopes, the
+  climber disconnected your app, or you added a redirect URI since. `prompt=none`
+  gets a code when the approval is remembered, and `consent_required` when it is
+  not.
 
 The code lives for 60 seconds and works exactly once. Reusing it is rejected.
 Reuse also ends the tokens that code issued, including when a confidential

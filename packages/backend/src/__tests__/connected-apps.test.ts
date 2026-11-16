@@ -9,7 +9,15 @@ import {
   GET_PARTNER_APPS_ENABLED,
 } from '@boardsesh/graphql/operations/connected-apps';
 import type { ConnectedApps, ConnectionContext } from '@boardsesh/shared-schema';
-import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsent, users } from '@boardsesh/db/schema/auth';
+import {
+  oauthAccessToken,
+  oauthAppPolicy,
+  oauthClient,
+  oauthConnections,
+  oauthConsent,
+  oauthRefreshToken,
+  users,
+} from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { schema } from '../graphql';
 import { __resetConnectedAppsModeForTests } from '../graphql/resolvers/connected-apps/connected-apps';
@@ -135,7 +143,8 @@ describe('myConnectedApps', () => {
         connectionId: newer.connectionId,
         name: 'DivePeaks',
         publisherName: 'DivePeaks Labs',
-        scopes: ['offline_access'],
+        // Its consent says offline_access; its seeded access token also reads the profile.
+        scopes: ['offline_access', 'profile:read'],
         connectedAt: expect.any(String),
         lastUsedAt: null,
         suspended: false,
@@ -150,6 +159,25 @@ describe('myConnectedApps', () => {
         suspended: false,
       },
     ]);
+  });
+
+  it('adds every live token scope to the consent, so a narrower approval or a cleared one hides nothing', async () => {
+    // The seeded connection holds a refresh token for offline_access and an access token for profile:read.
+    const rows = await seedConnectedClimber('climber');
+    await grantScopes(rows, ['offline_access']);
+    expect((await appsOf(rows.climberId)).apps[0].scopes).toEqual(['offline_access', 'profile:read']);
+
+    // No consent remembered, as after the app gains a redirect URI: the tokens alone.
+    await db.delete(oauthConsent).where(eq(oauthConsent.userId, rows.climberId));
+    expect((await appsOf(rows.climberId)).apps[0].scopes).toEqual(['offline_access', 'profile:read']);
+
+    // A revoked or expired token reads nothing, so it adds nothing.
+    await db
+      .update(oauthAccessToken)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(oauthAccessToken.userId, rows.climberId));
+    await db.update(oauthRefreshToken).set({ revoked: new Date() }).where(eq(oauthRefreshToken.userId, rows.climberId));
+    expect((await appsOf(rows.climberId)).apps[0].scopes).toEqual([]);
   });
 
   it('reads an app with no name as null', async () => {

@@ -26,8 +26,8 @@ export interface ConnectedAppRecord {
   /** Who makes the app, from its registration; null for an app registered before it was required. */
   publisherName: string | null;
   /**
-   * What the climber approved, from the remembered consent. With none remembered
-   * (the app gained a redirect URI since), what its live tokens can read.
+   * What the app can read: the scopes of the remembered consent and of every
+   * live token it holds, together. Consent scopes come first, in their order.
    */
   scopes: string[];
   connectedAt: Date;
@@ -71,60 +71,55 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
     .orderBy(desc(oauthConnections.connectedAt), oauthConnections.id);
   if (connections.length === 0) return [];
 
-  // The provider writes one consent row per climber and app and widens it in
+  const clientIds = connections.map((connection) => connection.clientId);
+  const scopesByClient = new Map<string, Set<string>>();
+  const addScopes = (clientId: string, scopes: readonly string[]) => {
+    const known = scopesByClient.get(clientId) ?? new Set<string>();
+    for (const scope of scopes) known.add(scope);
+    scopesByClient.set(clientId, known);
+  };
+
+  // The provider writes one consent row per climber and app and rewrites it in
   // place; the newest wins should there ever be two.
   const consents = await database
     .select({ clientId: oauthConsent.clientId, scopes: oauthConsent.scopes })
     .from(oauthConsent)
-    .where(
-      and(
-        eq(oauthConsent.userId, userId),
-        inArray(
-          oauthConsent.clientId,
-          connections.map((connection) => connection.clientId),
-        ),
-      ),
-    )
+    .where(and(eq(oauthConsent.userId, userId), inArray(oauthConsent.clientId, clientIds)))
     .orderBy(desc(oauthConsent.updatedAt));
-  const scopesByClient = new Map<string, string[]>();
+  const consentRead = new Set<string>();
   for (const consent of consents) {
-    if (!scopesByClient.has(consent.clientId)) scopesByClient.set(consent.clientId, consent.scopes);
+    if (consentRead.has(consent.clientId)) continue;
+    consentRead.add(consent.clientId);
+    addScopes(consent.clientId, consent.scopes);
   }
 
-  // An app whose developer added a redirect URI has no remembered consent until
-  // the climber approves it again (registration.ts), but it keeps the tokens it
-  // holds. Until then the list shows what those tokens can read.
-  const withoutConsent = connections
-    .map((connection) => connection.clientId)
-    .filter((clientId) => !scopesByClient.has(clientId));
-  if (withoutConsent.length > 0) {
-    const now = new Date();
-    const liveTokens = (table: typeof oauthRefreshToken | typeof oauthAccessToken) =>
-      database
-        .select({ clientId: table.clientId, scopes: table.scopes })
-        .from(table)
-        .where(
-          and(
-            eq(table.userId, userId),
-            inArray(table.clientId, withoutConsent),
-            isNull(table.revoked),
-            gt(table.expiresAt, now),
-          ),
-        );
-    const tokenScopes = new Map<string, Set<string>>();
-    for (const token of [...(await liveTokens(oauthRefreshToken)), ...(await liveTokens(oauthAccessToken))]) {
-      const scopes = tokenScopes.get(token.clientId) ?? new Set<string>();
-      for (const scope of token.scopes) scopes.add(scope);
-      tokenScopes.set(token.clientId, scopes);
-    }
-    for (const [clientId, scopes] of tokenScopes) scopesByClient.set(clientId, [...scopes]);
+  // What the app can read is also whatever its live tokens carry. That can be
+  // wider than the consent, after the climber approved fewer scopes on a second
+  // device, and it is all there is while no consent is remembered (the app
+  // gained a redirect URI since, registration.ts). An app with neither holds no
+  // credential that reads anything, and the list says so.
+  const now = new Date();
+  const liveTokenScopes = (table: typeof oauthRefreshToken | typeof oauthAccessToken) =>
+    database
+      .select({ clientId: table.clientId, scopes: table.scopes })
+      .from(table)
+      .where(
+        and(
+          eq(table.userId, userId),
+          inArray(table.clientId, clientIds),
+          isNull(table.revoked),
+          gt(table.expiresAt, now),
+        ),
+      );
+  for (const token of [...(await liveTokenScopes(oauthRefreshToken)), ...(await liveTokenScopes(oauthAccessToken))]) {
+    addScopes(token.clientId, token.scopes);
   }
 
   return connections.map((connection) => ({
     connectionId: connection.connectionId,
     name: connection.name?.trim() || null,
     publisherName: connection.publisherName?.trim() || null,
-    scopes: [...new Set(scopesByClient.get(connection.clientId) ?? connection.connectionScopes)],
+    scopes: [...new Set([...(scopesByClient.get(connection.clientId) ?? []), ...connection.connectionScopes])],
     // Filtered on above; the column is nullable only for approvals not yet redeemed.
     connectedAt: connection.connectedAt as Date,
     lastUsedAt: connection.lastUsedAt,
