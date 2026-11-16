@@ -1,9 +1,7 @@
-// The Bluetooth quickstart's scan, its serial lookup and the rows they make, as
-// one hook for the two places that list in-range boards: the quickstart sheet
-// (BluetoothQuickstartSheet.tsx) and the board picker's in-range slot
-// (use-picker-board-scan.ts). The rules live in the pure builders
-// (quickstart-scan-rows.ts); this only wires the scan and the queries to them,
-// and the views only render `rows`.
+// The in-range scan, its serial lookup and the rows they make, for the board
+// picker's in-range slot (use-picker-board-scan.ts). The rules live in the pure
+// builders (quickstart-scan-rows.ts); this only wires the scan and the queries
+// to them, and the slot only renders `rows`.
 
 import { useCallback, useMemo } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -46,7 +44,7 @@ export function useQuickstartScan({
   /**
    * The climber's own and followed boards, which a serial-less box this phone
    * recognises by its Bluetooth id may be named as. Absent: no box is
-   * recognised, the sheet's behaviour.
+   * recognised.
    */
   knownBoards?: readonly UserBoard[];
 } = {}): QuickstartScan {

@@ -23,14 +23,16 @@ import { useOnboardingLinkOffer } from '../onboarding/use-onboarding-link-offer'
 import { reportError } from '../error-reporting';
 import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
+import { consumePendingBoardRecognition } from './pending-board-recognition';
 
 /**
  * Which list the climber tapped the board in. Analytics only: it rides the
  * `Board Picker Selection Completed` event so a pick from Near you, the
- * Bluetooth scan or the gym finder can be told apart from a switch between
- * boards they already have.
+ * picker's In range slot ('bluetooth'), its "Also at {gym}" rows ('gym_walls')
+ * or the gym finder can be told apart from a switch between boards they
+ * already have.
  */
-export type BoardPickSource = 'your_boards' | 'nearby' | 'offline' | 'bluetooth' | 'gym_finder';
+export type BoardPickSource = 'your_boards' | 'nearby' | 'offline' | 'bluetooth' | 'gym_walls' | 'gym_finder';
 
 /** What the caller knows about the tap, passed per bind. */
 export type ActivateBoardPick = {
@@ -159,6 +161,11 @@ export function useActivateBoard({
         showToast(t('mobile.boardSwitchError'), 'error');
         return;
       }
+
+      // A box the picker's In range slot heard but could not name, which the
+      // climber set off to find: a bound board of its type is that box, here or
+      // on whichever route got them here. Never rejects.
+      void consumePendingBoardRecognition(board);
 
       if (onBound) {
         try {

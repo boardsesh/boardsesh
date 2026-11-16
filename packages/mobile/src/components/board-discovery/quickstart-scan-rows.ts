@@ -73,13 +73,25 @@ export type QuickstartRow =
   /** A serial nobody has saved a board for. */
   | { kind: 'unknown_setup'; key: string; boardType: BoardName; rssi: number | null }
   /** A MoonBoard. Its controller never says which layout it drives. */
-  | { kind: 'moonboard'; key: string; boardType: BoardName; rssi: number | null }
+  | { kind: 'moonboard'; key: string; boardType: BoardName; rssi: number | null; deviceId: string | null }
   /** An Aurora box that advertises only its type, no serial. */
-  | { kind: 'bare_name'; key: string; boardType: BoardName; rssi: number | null }
+  | { kind: 'bare_name'; key: string; boardType: BoardName; rssi: number | null; deviceId: string | null }
   /** Serials heard, but the lookup couldn't run or failed. */
   | { kind: 'lookup_failed'; key: string; rssi: number | null };
 
 type GroupedRowKind = 'unknown_setup' | 'moonboard' | 'bare_name';
+
+/**
+ * The Bluetooth ids behind one serial-less row, kept so the picker can bind the
+ * box to the board the climber goes on to pick (pending-board-recognition.ts).
+ * Only a row with exactly one box carries an id: with two MoonBoards in range
+ * the signal cannot say which one the climber is standing at.
+ */
+function soleDeviceId(deviceIds: ReadonlySet<string> | undefined): string | null {
+  if (!deviceIds || deviceIds.size !== 1) return null;
+  const [deviceId] = deviceIds;
+  return deviceId ?? null;
+}
 
 function strongest(current: number | null | undefined, next: number | null): number | null {
   if (current === undefined || current === null) return next;
@@ -126,8 +138,10 @@ function recognizedBoardFor(
  *   the same two buttons, so one says it all;
  * - one "need signal" row in place of all serial rows while the lookup is down.
  *
- * Each grouped row takes the strongest signal in its group. Serial rows wait
- * for the lookup: while it is `pending` only the serial-less rows show.
+ * Each grouped row takes the strongest signal in its group. A MoonBoard or
+ * bare-name row also carries its box's Bluetooth id when it stands for exactly
+ * one box (`soleDeviceId`). Serial rows wait for the lookup: while it is
+ * `pending` only the serial-less rows show.
  */
 export function buildQuickstartRows({
   devices,
@@ -139,12 +153,13 @@ export function buildQuickstartRows({
   /** The saved boards the lookup resolved, after `selectBleBoardCandidates`. */
   boards: readonly UserBoard[];
   lookup: QuickstartLookupState;
-  /** Absent: no serial-less box is named (the Bluetooth quickstart sheet). */
+  /** Absent: no serial-less box is named. */
   recognition?: QuickstartRecognition;
 }): QuickstartRow[] {
   const rows: QuickstartRow[] = [];
   const signalBySerial = new Map<string, number | null>();
   const groupSignal = new Map<string, { kind: GroupedRowKind; boardType: BoardName; rssi: number | null }>();
+  const groupDeviceIds = new Map<string, Set<string>>();
   let strongestSerialSignal: number | null | undefined;
   const recognizedById = indexRecognizedBoardDevices(recognition?.devices ?? []);
   const knownBoardsByUuid = new Map<string, UserBoard>();
@@ -155,10 +170,14 @@ export function buildQuickstartRows({
   // Keyed by board uuid: two boxes recognised as one board make one row.
   const recognizedBoards = new Map<string, { board: UserBoard; rssi: number | null }>();
 
-  const addToGroup = (kind: GroupedRowKind, boardType: BoardName, rssi: number | null) => {
+  const addToGroup = (kind: GroupedRowKind, boardType: BoardName, rssi: number | null, deviceId?: string) => {
     const groupKey = `${kind}:${boardType}`;
     const group = groupSignal.get(groupKey);
     groupSignal.set(groupKey, { kind, boardType, rssi: strongest(group?.rssi, rssi) });
+    if (deviceId === undefined) return;
+    const deviceIds = groupDeviceIds.get(groupKey) ?? new Set<string>();
+    deviceIds.add(deviceId);
+    groupDeviceIds.set(groupKey, deviceIds);
   };
 
   for (const device of devices) {
@@ -174,7 +193,7 @@ export function buildQuickstartRows({
           rssi: strongest(earlier?.rssi, device.rssi),
         });
       } else {
-        addToGroup(device.kind, device.boardType, device.rssi);
+        addToGroup(device.kind, device.boardType, device.rssi, device.deviceId);
       }
     }
   }
@@ -220,7 +239,17 @@ export function buildQuickstartRows({
   }
 
   for (const [groupKey, group] of groupSignal) {
-    rows.push({ kind: group.kind, key: groupKey, boardType: group.boardType, rssi: group.rssi });
+    if (group.kind === 'unknown_setup') {
+      rows.push({ kind: group.kind, key: groupKey, boardType: group.boardType, rssi: group.rssi });
+    } else {
+      rows.push({
+        kind: group.kind,
+        key: groupKey,
+        boardType: group.boardType,
+        rssi: group.rssi,
+        deviceId: soleDeviceId(groupDeviceIds.get(groupKey)),
+      });
+    }
   }
 
   return rows.sort(compareBySignal);

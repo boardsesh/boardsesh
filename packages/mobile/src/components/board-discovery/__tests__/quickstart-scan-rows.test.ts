@@ -98,6 +98,31 @@ describe('buildQuickstartRows', () => {
     expect(rows.map((row) => row.rssi)).toEqual([-40, -45, -65, -90]);
   });
 
+  // The picker binds the box to the board picked next, so it needs the box's
+  // id, and only when one box stands behind the row.
+  it.each([
+    { name: 'one MoonBoard', devices: [moonboard('mb-1', -60)], expected: 'mb-1' },
+    { name: 'two MoonBoards', devices: [moonboard('mb-1', -60), moonboard('mb-2', -50)], expected: null },
+    { name: 'one bare Kilter box', devices: [bareBox('kb-1', 'kilter', -60)], expected: 'kb-1' },
+    {
+      name: 'two bare Kilter boxes',
+      devices: [bareBox('kb-1', 'kilter', -60), bareBox('kb-2', 'kilter', -70)],
+      expected: null,
+    },
+  ])('carries the box id for $name: $expected', ({ devices, expected }) => {
+    const [row] = buildQuickstartRows({ devices, boards: [], lookup: 'none' });
+    expect(row.kind === 'moonboard' || row.kind === 'bare_name' ? row.deviceId : 'no id field').toBe(expected);
+  });
+
+  it('keeps the box ids of two board types apart', () => {
+    const rows = buildQuickstartRows({
+      devices: [bareBox('kb-1', 'kilter', -60), bareBox('tb-1', 'tension', -70)],
+      boards: [],
+      lookup: 'none',
+    });
+    expect(rows.map((row) => (row.kind === 'bare_name' ? row.deviceId : null))).toEqual(['kb-1', 'tb-1']);
+  });
+
   it('holds serial rows back while the lookup is pending, but not the boards with no serial', () => {
     const rows = buildQuickstartRows({
       devices: [serialDevice('1', 'kilter', -50), moonboard('mb-1', -70)],

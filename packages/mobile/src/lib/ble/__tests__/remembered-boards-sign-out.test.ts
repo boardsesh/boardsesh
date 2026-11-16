@@ -17,10 +17,15 @@ vi.mock('../known-board-devices-store', () => ({
 vi.mock('../recognized-board-devices-store', () => ({
   clearRecognizedBoardDevices: mockStores.clearRecognizedBoardDevices,
 }));
+const pendingRecognition = vi.hoisted(() => ({ clear: vi.fn() }));
+vi.mock('../../boards/pending-board-recognition', () => ({
+  clearPendingBoardRecognition: pendingRecognition.clear,
+}));
 
 import { forgetRememberedBoardsOnSignOut, subscribeRememberedBoardsSignOut } from '../remembered-boards-sign-out';
 
 beforeEach(() => {
+  pendingRecognition.clear.mockClear();
   mockStores.clearStoredLastConnectedBoard.mockReset().mockResolvedValue(undefined);
   mockStores.setStoredKnownBoardDevices.mockReset().mockResolvedValue(undefined);
   mockStores.clearRecognizedBoardDevices.mockReset().mockResolvedValue(undefined);
@@ -33,6 +38,8 @@ describe('forgetRememberedBoardsOnSignOut', () => {
     expect(mockStores.setStoredKnownBoardDevices).toHaveBeenCalledExactlyOnceWith([]);
     // The boxes this phone names by Bluetooth id were bound by the same account.
     expect(mockStores.clearRecognizedBoardDevices).toHaveBeenCalledOnce();
+    // A box still waiting for its board must not be named by the next account.
+    expect(pendingRecognition.clear).toHaveBeenCalledOnce();
   });
 
   it('tells every listener, even after one throws, and stops telling one that left', async () => {

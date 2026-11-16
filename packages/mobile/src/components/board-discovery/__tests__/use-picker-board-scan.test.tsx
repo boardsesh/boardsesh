@@ -69,7 +69,11 @@ const scan = vi.hoisted(() => ({
   reset: vi.fn(),
   finish: vi.fn(),
   retryLookup: vi.fn(),
-  options: null as { slotPolicy?: string; mayStartRadio?: () => boolean; knownBoards?: unknown } | null,
+  options: null as {
+    slotPolicy?: string;
+    mayStartRadio?: () => boolean;
+    knownBoards?: unknown;
+  } | null,
 }));
 vi.mock('../use-quickstart-scan', () => ({
   useQuickstartScan: (options: { slotPolicy?: string; mayStartRadio?: () => boolean; knownBoards?: unknown }) => {
@@ -149,7 +153,11 @@ describe('usePickerBoardScan on open', () => {
 
     await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
     expect(result.current.phase).toBe('scanning');
-    expect(scan.options).toEqual({ slotPolicy: 'claim', mayStartRadio: expect.any(Function), knownBoards: MY_BOARDS });
+    expect(scan.options).toEqual({
+      slotPolicy: 'claim',
+      mayStartRadio: expect.any(Function),
+      knownBoards: MY_BOARDS,
+    });
     rerender({ focused: true, autoStart: true });
     expect(scan.start).toHaveBeenCalledOnce();
     expect(result.current.phase).toBe('scanning');
@@ -495,7 +503,11 @@ describe('usePickerBoardScan never starts the radio in the background', () => {
     expect(result.current.phase).toBe('scanning');
   });
 
-  it('lets a start that asked for permission through: Android reports its dialog as the background', async () => {
+  // The Codex finding on #7576: Android's permission dialog reads as the
+  // background, and its grant can land before AppState says 'active' again. A
+  // start let through then would claim the radio and be finished at once by the
+  // background rule, and the first scan after a grant would end empty.
+  it('holds a start whose grant lands in the background, and scans once the app is active', async () => {
     platform.OS = 'android';
     bluetooth.androidGranted = false;
     const { reachRadio } = startThatWaitsForRadio();
@@ -504,12 +516,125 @@ describe('usePickerBoardScan never starts the radio in the background', () => {
 
     act(() => result.current.start());
     fireAppState('background');
+    bluetooth.androidGranted = true;
     await act(async () => {
       reachRadio();
       await Promise.resolve();
     });
 
-    expect(scan.status).toBe('scanning');
+    // Held: the radio is untouched and the slot still reads as on its way.
+    expect(scan.status).toBe('idle');
+    expect(result.current.phase).toBe('scanning');
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    fireAppState('active');
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_tap', 'picker_tap']));
+    expect(result.current.phase).toBe('scanning');
+    expect(scan.finish).not.toHaveBeenCalled();
+  });
+
+  it('holds a start that reaches the radio while iOS is inactive (the Bluetooth alert)', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+
+    fireAppState('inactive');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+    expect(scan.status).toBe('idle');
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    fireAppState('active');
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto', 'picker_auto']));
+    expect(scan.finish).not.toHaveBeenCalled();
+  });
+
+  it('drops a held start when the picker loses focus, and runs nothing when the app comes back', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    const { rerender } = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+
+    fireAppState('background');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+    rerender({ focused: false, autoStart: true });
+    fireAppState('active');
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scan.start).toHaveBeenCalledOnce();
+    expect(scan.status).toBe('idle');
+  });
+
+  it('runs a held start by itself exactly once when the app comes back', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+
+    fireAppState('background');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    fireAppState('active');
+    fireAppState('active');
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto', 'picker_auto']));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(startTriggers()).toEqual(['picker_auto', 'picker_auto']);
+  });
+
+  it('drops a held start on a pick', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    const { result } = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+
+    fireAppState('background');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+    act(() => result.current.stop());
+    fireAppState('active');
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scan.start).toHaveBeenCalledOnce();
+  });
+
+  // A held start never reached the radio, so the next picker open within 30 s
+  // still scans by itself.
+  it('stamps no cooldown for a start that was held and dropped', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    const first = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+    fireAppState('background');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+    first.unmount();
+    fireAppState('active');
+
+    scan.start.mockReset().mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
   });
 
   it('lets a start through while the app is in the foreground', async () => {

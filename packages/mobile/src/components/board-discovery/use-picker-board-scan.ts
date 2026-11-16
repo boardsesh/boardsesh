@@ -4,10 +4,9 @@
 // (what each board heard becomes); this hook reads the platform into them and
 // runs the scan's lifecycle.
 //
-// Lives beside the quickstart sheet rather than in lib/ble because it is the
-// sheet's scan composition (use-quickstart-scan.ts) plus picker rules. The
-// Bluetooth parts it needs (the scan, the slot claim, the permission reads)
-// stay in lib/ble.
+// Lives in board-discovery rather than lib/ble because it is the in-range scan
+// composition (use-quickstart-scan.ts) plus picker rules. The Bluetooth parts
+// it needs (the scan, the slot claim, the permission reads) stay in lib/ble.
 //
 // Lifecycle, beyond picker-scan-phase.ts:
 //   - Permission is read without asking: `readBluetoothAuthorization()` on iOS
@@ -23,9 +22,17 @@
 //     Android connect: a held scan leaves the button ('busy'). Its own claim is
 //     pre-emptible: any other scan takes the radio at once, and this one ends
 //     keeping what it heard.
-//   - A start still waiting on the radio never starts it in the background
-//     (it would spend one of Android's 5 scan starts per 30 s), unless the
-//     start asked for permission: Android reports its dialog as the background.
+//   - A start, by itself or tapped, claims the radio only while the app is
+//     'active'. One that gets through the permission and power checks while it
+//     is not (Android's permission dialog reads as the background, and its
+//     answer can land before AppState says 'active' again; the iOS alert reads
+//     as 'inactive') is held, not dropped and not run. The next time the app
+//     becomes 'active' with the picker still on top, the held start runs once:
+//     it claims the radio and scans. Leaving the picker, a pick, a board link
+//     or unmounting drop it. A held start never reached the radio, so it
+//     stamps no cooldown. Running it in the background would spend one of
+//     Android's 5 scan starts per 30 s on a scan nobody sees, and the scan
+//     would end at once (the background ends a running scan).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -101,14 +108,12 @@ export function usePickerBoardScan({
   const canScan = canScanHere();
   const connectedToBoard = useBluetoothConnectedStatus();
 
-  // Checked by the scan right before it claims the radio. A start that asked
-  // for permission may still read Android's dialog as the background then, so
-  // it goes on; any other start in the background is dropped and noted.
-  const startAskedForPermissionRef = useRef(false);
-  const startDroppedInBackgroundRef = useRef(false);
+  // Checked by the scan right before it claims the radio: only an 'active' app
+  // starts it. Anything else holds the start (see the file comment).
+  const startHeldRef = useRef(false);
   const mayStartRadio = useCallback(() => {
-    if (AppState.currentState !== 'background' || startAskedForPermissionRef.current) return true;
-    startDroppedInBackgroundRef.current = true;
+    if (AppState.currentState === 'active') return true;
+    startHeldRef.current = true;
     return false;
   }, []);
   const {
@@ -133,6 +138,11 @@ export function usePickerBoardScan({
   );
   const [autoStartUsed, setAutoStartUsed] = useState(false);
   const [starting, setStarting] = useState(false);
+  // A start that passed its checks while the app was not 'active', waiting to
+  // claim the radio once it is. Who started it, so it reports as that.
+  const [heldStart, setHeldStart] = useState<BoardScanTrigger | null>(null);
+  // Bumped each time the app becomes 'active', for the held start to run on.
+  const [activations, setActivations] = useState(0);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -143,15 +153,20 @@ export function usePickerBoardScan({
   }, []);
 
   // The latest scan state, for callbacks that must not re-subscribe on it.
-  const scanStateRef = useRef({ status, unavailableReason, starting, connectedToBoard, permission });
-  scanStateRef.current = { status, unavailableReason, starting, connectedToBoard, permission };
+  const startPending = starting || heldStart !== null;
+  const scanStateRef = useRef({ status, unavailableReason, startPending, connectedToBoard, permission });
+  scanStateRef.current = { status, unavailableReason, startPending, connectedToBoard, permission };
 
   // Foreground and background. 'inactive' (the iOS Bluetooth alert, Control
   // Center) keeps the scan: it is not the background.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') setAppActive(true);
-      else if (nextAppState === 'background') setAppActive(false);
+      if (nextAppState === 'active') {
+        setAppActive(true);
+        setActivations((count) => count + 1);
+      } else if (nextAppState === 'background') {
+        setAppActive(false);
+      }
     });
     return () => subscription.remove();
   }, []);
@@ -196,25 +211,21 @@ export function usePickerBoardScan({
   }, [status]);
 
   // One start at a time. `starting` covers the permission prompt and the wait
-  // for the radio, so the slot reads 'scanning' through them, not the button.
+  // for the radio, and a held start waits for the app, so the slot reads
+  // 'scanning' through all three, not the button.
   const startAttemptRef = useRef(0);
   const runStart = useCallback(
     (trigger: BoardScanTrigger) => {
       const attempt = startAttemptRef.current + 1;
       startAttemptRef.current = attempt;
-      startAskedForPermissionRef.current = scanStateRef.current.permission !== 'granted';
-      startDroppedInBackgroundRef.current = false;
+      startHeldRef.current = false;
+      setHeldStart(null);
       setStarting(true);
       const settle = () => {
         if (!mountedRef.current || startAttemptRef.current !== attempt) return;
         setStarting(false);
-        if (startDroppedInBackgroundRef.current) {
-          // Never reached the radio: the app is in the background now (its
-          // AppState event may still be on the way), and a scan the slot
-          // started by itself may start again once the app is back.
-          setAppActive(AppState.currentState !== 'background');
-          if (trigger === 'picker_auto') setAutoStartUsed(false);
-        }
+        // Through every check, but the app was not 'active': run it when it is.
+        if (startHeldRef.current) setHeldStart(trigger);
         // The request may have changed the answer (an iOS Allow, an Android grant).
         void readPermission().then((nextPermission) => {
           if (mountedRef.current) setPermission(nextPermission);
@@ -225,6 +236,22 @@ export function usePickerBoardScan({
     [startScan],
   );
 
+  // A held start runs once the app is 'active' again with the picker on top,
+  // and goes when the picker does or the phone links to a board. AppState
+  // itself is read, not the event: the two can race, and a start run while the
+  // app is still not 'active' would only be held again. A dropped start the
+  // slot meant to run by itself may run by itself again later: it never ran.
+  useEffect(() => {
+    if (heldStart === null) return;
+    if (!focused || connectedToBoard || !canScan) {
+      startAttemptRef.current += 1;
+      setHeldStart(null);
+      if (heldStart === 'picker_auto') setAutoStartUsed(false);
+      return;
+    }
+    if (AppState.currentState === 'active') runStart(heldStart);
+  }, [heldStart, focused, connectedToBoard, canScan, activations, runStart]);
+
   const resolution = resolvePickerScan({
     canScan,
     connectedToBoard,
@@ -234,7 +261,7 @@ export function usePickerBoardScan({
     permission,
     scannedRecently,
     autoStartUsed,
-    starting,
+    starting: startPending,
     scanStatus: status,
     unavailableReason,
     lookup,
@@ -249,21 +276,26 @@ export function usePickerBoardScan({
 
   // End the scan, keeping its rows, once the slot is out of sight or the phone
   // holds a board. Leaving the picker or connecting also drops a start still
-  // waiting on the radio. The background only ends a running scan: Android
-  // reports its permission dialog as the background, and that start must go on.
+  // waiting on the radio. The background only ends a running scan: a start
+  // still on its way is held at the radio instead (`mayStartRadio`), because
+  // Android reports its permission dialog as the background.
   useEffect(() => {
     const leaving = !focused || connectedToBoard;
     if ((leaving && (status === 'scanning' || starting)) || (!appActive && status === 'scanning')) finish();
   }, [focused, connectedToBoard, appActive, status, starting, finish]);
 
   const start = useCallback(() => {
-    const { status: scanStatus, starting: alreadyStarting, connectedToBoard: connected } = scanStateRef.current;
+    const { status: scanStatus, startPending: alreadyStarting, connectedToBoard: connected } = scanStateRef.current;
     if (!canScan || connected || alreadyStarting || scanStatus === 'scanning') return;
     runStart('picker_tap');
   }, [canScan, runStart]);
 
   const stop = useCallback(() => {
-    // A pick ends this visit's scanning: nothing starts by itself after it.
+    // A pick ends this visit's scanning: nothing starts by itself after it, and
+    // a start still on its way or held for the app goes too.
+    startAttemptRef.current += 1;
+    setStarting(false);
+    setHeldStart(null);
     setAutoStartUsed(true);
     finish();
   }, [finish]);

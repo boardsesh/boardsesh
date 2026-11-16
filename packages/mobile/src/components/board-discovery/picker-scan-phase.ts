@@ -65,7 +65,10 @@ export type PickerScanInputs = {
   scannedRecently: boolean;
   /** This picker visit already scanned by itself, or a board was picked. */
   autoStartUsed: boolean;
-  /** A start is between its call and the radio: asking for permission, or waiting for the radio. */
+  /**
+   * A start is between its call and the radio: asking for permission, waiting
+   * for the radio, or held until the app is 'active' again.
+   */
   starting: boolean;
   scanStatus: BoardScanStatus;
   unavailableReason: BoardScanUnavailableReason | null;
