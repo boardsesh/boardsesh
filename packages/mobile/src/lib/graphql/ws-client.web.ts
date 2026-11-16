@@ -148,14 +148,23 @@ const unavailable: Client = {
   dispose: () => {},
 };
 
-/** A retired page opens no socket; every operation ends superseded. */
+function retiredPageIterator<Result = Record<string, unknown>, Extensions = unknown>() {
+  const iterator: AsyncIterableIterator<FormattedExecutionResult<Result, Extensions>> = {
+    next: () => Promise.reject(new SessionSupersededError()),
+    return: () => Promise.resolve({ done: true, value: undefined }),
+    [Symbol.asyncIterator]: () => iterator,
+  };
+  return iterator;
+}
+
+/** A retired page opens no socket; every operation, pushed or pulled, ends superseded. */
 const retiredPageClient: Client = {
   on: () => () => {},
   subscribe: (_payload, sink) => {
     sink.error(new SessionSupersededError());
     return () => {};
   },
-  iterate: () => unavailableSelectedBrowserIterator(),
+  iterate: () => retiredPageIterator(),
   terminate: () => {},
   dispose: () => {},
 };

@@ -248,7 +248,9 @@ describe('authenticatedFetch on web', () => {
     });
     resolveOldSession(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }));
 
-    await expect(oldRequest).rejects.toEqual(superseded());
+    // The sign-in's clear settles the old revalidation while the page still
+    // holds A, so A's own 401 reaches its caller, as before #7596.
+    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 401 }));
     expect(forcedSignOut).not.toHaveBeenCalled();
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });

@@ -14,6 +14,7 @@ import { getClientIdentityHeaderValue } from './client-identity.web';
 import { expoBrowserBackendClient } from './browser-backend-client.web';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { admitBrowserResponse } from './browser-response-admission.web';
+import { isBrowserPageRetired } from './browser-page-retirement.web';
 import {
   admitSessionResponse,
   assertBrowserPageLive,
@@ -220,9 +221,13 @@ async function authenticatedFetchInternal(
     return admitBrowserResponse(response, assertCurrent);
   }
 
+  // Again at the send itself: a session read inside the awaits above can retire
+  // the page without a new generation (a page that had lost its confirmed login
+  // confirms another one), and a retired page sends nothing.
+  assertBrowserPageLive();
   // Captured after the token read: a cold page confirms its first login there
   // without a generation change, and that login is who this request is sent as.
-  const stamp = captureSessionStamp(requestGeneration);
+  const stamp = captureSessionStamp();
   const response = await dispatch({ ...options, headers });
   if (
     !isAuthCredentialGenerationCurrent(requestGeneration) &&
@@ -250,7 +255,7 @@ async function authenticatedFetchInternal(
 
   if (refreshResult.status === 'authenticated') {
     const refreshedToken = await getAuthToken();
-    if (!isAuthCredentialGenerationCurrent(requestGeneration)) return deliver(response);
+    if (!isAuthCredentialGenerationCurrent(requestGeneration) || isBrowserPageRetired()) return deliver(response);
     if (refreshedToken) {
       const retryHeaders = new Headers(headers);
       retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);

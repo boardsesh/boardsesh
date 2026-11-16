@@ -234,7 +234,7 @@ describe('auth-store web cross-tab invalidation', () => {
     });
   });
 
-  it('fences a same-login peer during sign-out and drops its in-flight response', async () => {
+  it('fences a same-login peer during sign-out while returning its in-flight response', async () => {
     const signingOutTab = await import('../auth-store.web');
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
@@ -272,8 +272,8 @@ describe('auth-store web cross-tab invalidation', () => {
       identity: { userId: 'user-1', authSessionId: 'login-1' },
     });
     resolveOldRequest(jsonResponse({ data: { privateForOldLogin: true } }));
-    // Sent under the generation the sign-out fenced: its caller shows nothing (#7596).
-    await expect(oldRequest).rejects.toMatchObject({ name: 'AbortError', code: 'superseded' });
+    // A sign-out that has only started is not an account change (#7596).
+    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 200 }));
 
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))

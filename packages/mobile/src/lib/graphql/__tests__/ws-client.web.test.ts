@@ -468,4 +468,11 @@ describe('Expo web WebSocket session guard', () => {
     expect(error).toHaveBeenCalledWith(superseded());
     expect(capturedOptions).toBeNull();
   });
+
+  it('ends a pulled operation from a retired page as superseded too', async () => {
+    observeConfirmedBrowserIdentity({ userId: 'user-a', authSessionId: 'login-a' });
+    observeConfirmedBrowserIdentity(null);
+
+    await expect(getWsClient().iterate(payload).next()).rejects.toEqual(superseded());
+  });
 });

@@ -1,8 +1,4 @@
-import {
-  captureAuthCredentialGeneration,
-  captureConfirmedWebAuthIdentity,
-  isAuthCredentialGenerationCurrent,
-} from './auth-store.web';
+import { captureConfirmedWebAuthIdentity } from './auth-store.web';
 import { isBrowserPageRetired } from './browser-page-retirement.web';
 import { admitBrowserResponse } from './browser-response-admission.web';
 
@@ -25,20 +21,24 @@ export function isSessionSupersededError(error: unknown): error is SessionSupers
   return error instanceof SessionSupersededError;
 }
 
-/** Who a request was sent as: credential generation plus the confirmed login. */
-export type SessionStamp = Readonly<{ generation: number; userId: string | null; authSessionId: string | null }>;
+/** Which login a request was sent as. A cold or anonymous page has neither id. */
+export type SessionStamp = Readonly<{ userId: string | null; authSessionId: string | null }>;
 
-export function captureSessionStamp(generation: number = captureAuthCredentialGeneration()): SessionStamp {
+export function captureSessionStamp(): SessionStamp {
   const identity = captureConfirmedWebAuthIdentity();
-  return Object.freeze({
-    generation,
-    userId: identity?.userId ?? null,
-    authSessionId: identity?.authSessionId ?? null,
-  });
+  return Object.freeze({ userId: identity?.userId ?? null, authSessionId: identity?.authSessionId ?? null });
 }
 
+/**
+ * An answer is delivered only while its page is live and still has the login
+ * it was sent as. The credential generation fences sends, not answers: a bump
+ * with the same login (another tab's rotation hint, a sign-out that has only
+ * started) is not an account change, so its answers still arrive and their
+ * callers do not show an error for work the server did. A real change of
+ * login retires the page (or, from signed out, changes the stamp) first.
+ */
 export function isSessionStampCurrent(stamp: SessionStamp): boolean {
-  if (isBrowserPageRetired() || !isAuthCredentialGenerationCurrent(stamp.generation)) return false;
+  if (isBrowserPageRetired()) return false;
   const identity = captureConfirmedWebAuthIdentity();
   return (identity?.userId ?? null) === stamp.userId && (identity?.authSessionId ?? null) === stamp.authSessionId;
 }

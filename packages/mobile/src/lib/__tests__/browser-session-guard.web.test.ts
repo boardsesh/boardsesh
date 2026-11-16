@@ -20,6 +20,8 @@ const USER_B = { userId: 'user-b', authSessionId: 'login-b' };
 
 const site = {
   cookie: USER_A as Identity,
+  // Overrides the session body, e.g. a signed-in session without its login id.
+  sessionBody: null as unknown,
   sessionStatus: 200,
   graphqlStatus: [] as number[],
   hold: false,
@@ -43,6 +45,7 @@ beforeAll(async () => {
     const path = request.url ?? '';
     if (path === '/api/auth/session') {
       if (site.sessionStatus !== 200) return send(site.sessionStatus, {});
+      if (site.sessionBody !== null) return send(200, site.sessionBody);
       return send(
         200,
         site.cookie ? { user: { id: site.cookie.userId }, authSessionId: site.cookie.authSessionId } : {},
@@ -114,6 +117,7 @@ async function switchCookieTo(identity: Identity): Promise<void> {
 const superseded = () => expect.objectContaining({ name: 'AbortError', code: 'superseded' });
 
 beforeEach(() => {
+  site.sessionBody = null;
   site.sessionStatus = 200;
   site.graphqlStatus = [];
   site.hold = false;
@@ -177,7 +181,7 @@ describe('Expo web transport guard', () => {
     await expect(signedIn.json()).resolves.toEqual({ data: { viewer: `Bearer ${tokenFor(USER_A)}` } });
   });
 
-  it('drops an answer across a same-account credential rotation without retiring the page', async () => {
+  it('delivers an answer across a same-account credential rotation: the login did not change', async () => {
     await openPage();
     site.hold = true;
     const heldRequest = sendGraphql();
@@ -187,8 +191,26 @@ describe('Expo web transport guard', () => {
     await modules.store.synchronizeWebSession();
     site.held.shift()?.();
 
-    await expect(heldRequest).rejects.toEqual(superseded());
+    const response = await heldRequest;
+    await expect(response.json()).resolves.toEqual({ data: { viewer: `Bearer ${tokenFor(USER_A)}` } });
     expect(modules.retirement.isBrowserPageRetired()).toBe(false);
+  });
+
+  it('refuses a send whose own session read retires the page, before it reaches the network', async () => {
+    await openPage();
+    // A signed-in session without its login id: the page keeps its latch on A
+    // but no longer knows who the cookie belongs to, and holds no token.
+    site.sessionBody = { user: { id: USER_A.userId } };
+    await modules.store.synchronizeWebSession();
+    site.sessionBody = null;
+    site.cookie = USER_B;
+
+    // The send's token read confirms B, which retires the page without a new
+    // credential generation. B's token must still never leave this page.
+    await expect(sendGraphql()).rejects.toEqual(superseded());
+
+    expect(modules.retirement.isBrowserPageRetired()).toBe(true);
+    expect(site.graphqlAuthorizations).toEqual([]);
   });
 
   it('returns the 401 and keeps the session when the session read is down', async () => {
@@ -218,6 +240,26 @@ describe('Expo web GraphQL client', () => {
 
     await expect(heldQuery).rejects.toEqual(superseded());
     expect(connectivity.getConnectivitySnapshot().consecutiveTransportFailures).toBe(0);
+  });
+
+  it('lets a mutation across a same-account rotation succeed, so its error toast never runs', async () => {
+    await openPage();
+    const { QueryClient, MutationObserver } = await import('@tanstack/react-query');
+    const { getHttpClient } = await import('../graphql/client.web');
+    const showErrorToast = vi.fn();
+    const follow = new MutationObserver(new QueryClient(), {
+      mutationFn: () => getHttpClient().request<{ viewer: string }>('mutation { viewer }'),
+    });
+    site.hold = true;
+    const pending = follow.mutate(undefined, { onError: showErrorToast });
+    await vi.waitFor(() => expect(site.held).toHaveLength(1));
+
+    await modules.store.clearTokens();
+    await modules.store.synchronizeWebSession();
+    site.held.shift()?.();
+
+    await expect(pending).resolves.toEqual({ viewer: `Bearer ${tokenFor(USER_A)}` });
+    expect(showErrorToast).not.toHaveBeenCalled();
   });
 
   it('still counts a server failure (control for the assertion above)', async () => {
