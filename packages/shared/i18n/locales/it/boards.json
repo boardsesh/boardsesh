@@ -144,14 +144,10 @@
       "cancel": "Annulla",
       "deleteError": "Impossibile eliminare quel pannello. Riprova.",
       "unfollowError": "Impossibile smettere di seguire quel pannello. Riprova.",
-      "editAria": "Modifica {{name}}",
       "deleteAria": "Elimina {{name}}",
-      "unfollowAria": "Smetti di seguire {{name}}",
       "unfollowTitle": "Smettere di seguire?",
       "unfollowMessage": "\"{{name}}\" è il tuo pannello attivo. Se smetti di seguirlo, sparisce dai tuoi pannelli e la selezione viene azzerata.",
       "unfollowConfirm": "Smetti di seguire",
-      "edit": "Modifica",
-      "done": "Fatto",
       "deleteWallTitle": "Eliminare la Spraywall?",
       "deleteWallMessage": "Eliminare \"{{name}}\"? Le sue foto e i suoi blocchi non saranno più disponibili. L'operazione non si può annullare.",
       "deleteSuccess": "Hai eliminato \"{{name}}\""
@@ -218,7 +214,7 @@
       "nearbyTitle": "Vicino a te",
       "nearbyShowing": "Quelli vicini a te",
       "yourBoardsTitle": "I tuoi pannelli",
-      "activeBadge": "Attivo",
+      "onIt": "Sei qui",
       "ownedBadgeAria": "Il tuo pannello",
       "followingBadgeAria": "Lo segui",
       "popularTitle": "Configurazioni popolari",
@@ -227,14 +223,21 @@
       "createTile": "Crea",
       "followed": "{{name}} aggiunto ai tuoi pannelli",
       "followError": "Impossibile aggiungere {{name}} ai tuoi pannelli",
-      "pinAria": "Fissa {{name}}",
-      "unpinAria": "Togli {{name}} dai fissati",
       "pinnedBadgeAria": "Fissato",
       "pinError": "Impossibile aggiornare i tuoi pannelli fissati",
       "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "MoonBoard vicino a te",
       "nearbyTitleType": "Pannelli {{board}} vicino a te",
-      "nearbyShowAll": "Mostra tutti"
+      "nearbyShowAll": "Mostra tutti",
+      "cardActionsAria": "Azioni per {{name}}",
+      "menu": {
+        "climbHere": "Arrampica qui",
+        "pin": "Fissa",
+        "unpin": "Togli dai fissati",
+        "download": "Scarica per l'uso offline",
+        "edit": "Modifica il pannello",
+        "editWall": "Modifica la Spraywall"
+      }
     },
     "create": {
       "screenTitle": "Configura il tuo pannello",
@@ -337,7 +340,6 @@
         "shareLinkUnlistedHint": "Solo i climber a cui lo mandi."
       },
       "details": "Dettagli",
-      "detailsAria": "Apri i dettagli di {{name}}",
       "activeSprayDetails": "{{name}} · Dettagli della Spraywall",
       "share": {
         "shareLink": "Condividi il link",

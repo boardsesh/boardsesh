@@ -15,7 +15,6 @@ export type OnboardingBoardCopy = {
   findAnother: string;
   findFirst: string;
   offlineSkip: string;
-  downloadLabelFor: (name: string) => string;
 };
 
 /**
@@ -36,14 +35,7 @@ export function useOnboardingCopy(): OnboardingPromptCopy {
   );
 }
 
-/**
- * The board step's copy. Same static-literal rule as above.
- *
- * `downloadLabelFor` is a function rather than a string because the download
- * glyph's accessibility label names the board it would download. Building it
- * inside the memo keeps `BoardCarousel`'s `downloadLabelFor` prop referentially
- * stable, so its `renderItem` doesn't rebuild every card on every commit.
- */
+/** The board step's copy. Same static-literal rule as above. */
 export function useOnboardingBoardCopy(): OnboardingBoardCopy {
   const { t } = useTranslation('common');
   return useMemo(
@@ -54,7 +46,6 @@ export function useOnboardingBoardCopy(): OnboardingBoardCopy {
       findAnother: t('mobile.onboarding.board.findAnother'),
       findFirst: t('mobile.onboarding.board.findFirst'),
       offlineSkip: t('mobile.onboarding.board.offlineSkip'),
-      downloadLabelFor: (name: string) => t('mobile.onboarding.board.downloadAria', { name }),
     }),
     [t],
   );

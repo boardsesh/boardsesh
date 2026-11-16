@@ -66,9 +66,17 @@ const markOnboardingSeenMock = vi.hoisted(() => vi.fn());
 type ModeCardProps = { label: string; sublabel?: string; state?: string; onPress: () => void };
 const modeCards = vi.hoisted(() => ({ byLabel: new Map<string, ModeCardProps>() }));
 const choiceProps = vi.hoisted(() => ({ last: null as ChoiceProps | null }));
+type CarouselProps = {
+  items: CarouselItem[];
+  onSelect: (item: CarouselItem) => void;
+  menuCapabilities?: unknown;
+  onMenuAction?: unknown;
+};
 const carouselProps = vi.hoisted(() => ({
-  last: null as { items: CarouselItem[]; onSelect: (item: CarouselItem) => void } | null,
+  last: null as CarouselProps | null,
   renderedKeys: [] as string[][],
+  /** The last props of each carousel, keyed by its first item. */
+  byFirstKey: new Map<string, CarouselProps>(),
 }));
 type QuickstartSheetProps = {
   active: boolean;
@@ -296,9 +304,10 @@ vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', asyn
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
-  BoardCarousel: (props: { items: CarouselItem[]; onSelect: (item: CarouselItem) => void }) => {
+  BoardCarousel: (props: CarouselProps) => {
     carouselProps.last = props;
     carouselProps.renderedKeys.push(props.items.map((item) => item.key));
+    if (props.items[0]) carouselProps.byFirstKey.set(props.items[0].key, props);
     return createElement(
       'div',
       { 'data-testid': 'carousel' },
@@ -325,6 +334,7 @@ beforeEach(() => {
   carouselProps.last = null;
   quickstartProps.last = null;
   carouselProps.renderedKeys = [];
+  carouselProps.byFirstKey.clear();
   nearbyArgs.last = [];
   state.params = { source: 'onboarding', firstBoard: '1' };
   state.myBoards = [];
@@ -386,6 +396,9 @@ describe('the picker in first-board mode', () => {
 
     expect(choice().gymState).toBe('found');
     expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['gym-wall']);
+    // A first-run choice of board: plain cards, no ⋯ and no hold menu.
+    expect(carouselProps.last?.menuCapabilities).toBeUndefined();
+    expect(carouselProps.last?.onMenuAction).toBeUndefined();
   });
 
   it('says so when location is off', () => {
@@ -609,6 +622,9 @@ describe('the picker opened from Climbs with no board', () => {
     state.locationStatus = 'granted';
     state.nearbyBoards = [gymWall];
     rerender(createElement(BoardSelection));
+    // "Where do you climb?" draws plain cards here too, though it is not onboarding.
+    expect(carouselProps.last?.menuCapabilities).toBeUndefined();
+    expect(carouselProps.last?.onMenuAction).toBeUndefined();
 
     await act(async () => {
       carouselProps.last?.onSelect({ key: 'gym-wall', title: 'Crux Kilter 40' });
@@ -731,6 +747,9 @@ describe("the ordinary picker's Find nearby tile", () => {
     expect(nearbyTile().sublabel).toBe('mobile.discovery.nearbyShowing');
     expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
     expect(screen.queryByText('mobile.firstBoard.nearbyEmpty')).toBeNull();
+    // Outside onboarding and the first-board choice, Near you cards get a menu.
+    expect(carouselProps.byFirstKey.get('near-wall')?.menuCapabilities).toBeDefined();
+    expect(carouselProps.byFirstKey.get('near-wall')?.onMenuAction).toBeTypeOf('function');
   });
 });
 

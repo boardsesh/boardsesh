@@ -116,25 +116,6 @@ export function OnboardingBoardRoute({ bodyColor, backgroundColor }: { bodyColor
     [activateBoard],
   );
 
-  /**
-   * The card glyph: download a board WITHOUT binding it.
-   *
-   * Deliberately reported as `board_card`, not `onboarding` — it is the same
-   * glyph, on the same card, doing the same thing as the one on `/boards`, and
-   * it is accept-only there because a card scrolling past in a carousel is not a
-   * suggestion the way a dialog is. Filing it under `onboarding` would mix an
-   * impression-tracked offer with an untracked one and quietly wreck that
-   * surface's shown-to-accepted rate.
-   */
-  const onDownload = useCallback(
-    (board: UserBoard) => {
-      void confirmAndDownload(board, { trigger: 'onboarding', source: 'onboarding' }).then((confirmed) => {
-        if (confirmed) trackNudgeAccepted(nudgeContextFor(board, 'board_card'), 'download');
-      });
-    },
-    [confirmAndDownload, nudgeContextFor],
-  );
-
   const onFindBoard = useCallback(() => {
     // `source=onboarding` drives the picker's framing header, its location
     // pre-resolve, and — through `useActivateBoard` — the activation event and
@@ -169,7 +150,6 @@ export function OnboardingBoardRoute({ bodyColor, backgroundColor }: { bodyColor
       currentUserId={currentUserId}
       onSkipUnusable={onSkipUnusable}
       onSelect={onSelect}
-      onDownload={onDownload}
       onFindBoard={onFindBoard}
     />
   );

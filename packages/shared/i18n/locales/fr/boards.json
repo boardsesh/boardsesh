@@ -144,14 +144,10 @@
       "cancel": "Annuler",
       "deleteError": "Impossible de supprimer cette board. Réessaie.",
       "unfollowError": "Impossible de te désabonner de cette board. Réessaie.",
-      "editAria": "Modifier {{name}}",
       "deleteAria": "Supprimer {{name}}",
-      "unfollowAria": "Se désabonner de {{name}}",
       "unfollowTitle": "Se désabonner ?",
       "unfollowMessage": "« {{name}} » est ta board active. Te désabonner la retire de tes boards et efface la sélection.",
       "unfollowConfirm": "Se désabonner",
-      "edit": "Modifier",
-      "done": "Terminé",
       "deleteWallTitle": "Supprimer le Spraywall ?",
       "deleteWallMessage": "Supprimer « {{name}} » ? Ses photos et ses blocs ne seront plus accessibles. C’est définitif.",
       "deleteSuccess": "« {{name}} » supprimé"
@@ -218,7 +214,7 @@
       "nearbyTitle": "Près de toi",
       "nearbyShowing": "À proximité affichés",
       "yourBoardsTitle": "Tes boards",
-      "activeBadge": "Active",
+      "onIt": "Tu grimpes ici",
       "ownedBadgeAria": "Ta board",
       "followingBadgeAria": "Abonné",
       "popularTitle": "Configurations populaires",
@@ -227,14 +223,21 @@
       "createTile": "Créer",
       "followed": "{{name}} ajoutée à tes boards",
       "followError": "Impossible d'ajouter {{name}} à tes boards",
-      "pinAria": "Épingler {{name}}",
-      "unpinAria": "Désépingler {{name}}",
       "pinnedBadgeAria": "Épinglée",
       "pinError": "Impossible de mettre à jour tes boards épinglées",
       "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "Les MoonBoard près de toi",
       "nearbyTitleType": "Les boards {{board}} près de toi",
-      "nearbyShowAll": "Tout afficher"
+      "nearbyShowAll": "Tout afficher",
+      "cardActionsAria": "Actions pour {{name}}",
+      "menu": {
+        "climbHere": "Grimper ici",
+        "pin": "Épingler",
+        "unpin": "Désépingler",
+        "download": "Rendre disponible hors ligne",
+        "edit": "Modifier la board",
+        "editWall": "Modifier le Spraywall"
+      }
     },
     "create": {
       "screenTitle": "Configure ta board",
@@ -337,7 +340,6 @@
         "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
       },
       "details": "Détails",
-      "detailsAria": "Ouvrir les détails de {{name}}",
       "activeSprayDetails": "{{name}} · détails du Spraywall",
       "share": {
         "shareLink": "Partager le lien",

@@ -1111,6 +1111,15 @@ export const SHARED_EVENTS = {
   // from the on-device rows shown with no connection.
   // New-board creation/onboarding activation have their own existing events.
   BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
+  // Mobile only. A row picked from a board card's menu in the picker. Props:
+  // { action: climb_here | pin | unpin | download | details | edit | unfollow
+  // | delete, via: menu_button (the ⋯ beside the title) | long_press (a hold
+  // on the card) | accessibility (a VoiceOver or TalkBack action), section:
+  // your_boards | nearby }. Fires when the row is picked, before any confirm,
+  // so a delete counts even when the climber backs out of the dialog. A
+  // climb_here pick still sends its own Board Picker Selection Completed.
+  // Expected under 200 a week.
+  BoardCardAction: 'Board Card Action',
   // The launch follow heal (#5654): fired when the app follows the board it
   // launched on because the server says it is neither the climber's nor
   // followed. Repairs picks made before picks followed boards, and keeps

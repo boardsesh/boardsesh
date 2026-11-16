@@ -1010,11 +1010,10 @@
       "board": {
         "title": "¿En qué plafón escalas?",
         "body": "Cada plafón guarda su propio historial. Elige el que escalas y verás lo que ha encadenado el resto de gente que está en él.",
-        "offlineHint": "Toca la flecha para guardar un plafón en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
+        "offlineHint": "Elige un plafón y te ofreceremos guardarlo en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
         "findAnother": "Buscar otro plafón",
         "findFirst": "Buscar mi plafón",
-        "offlineSkip": "Ahora no",
-        "downloadAria": "Guardar {{name}} en este móvil"
+        "offlineSkip": "Ahora no"
       },
       "boardRevealTip": "Toca el reloj para ver los bloques que se han iluminado en este muro.",
       "quickActionsTip": "Mantén pulsado un bloque para acciones rápidas como cola, encadene y listas.",
