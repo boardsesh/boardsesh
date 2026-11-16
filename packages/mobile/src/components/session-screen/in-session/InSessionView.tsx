@@ -670,9 +670,9 @@ export function InSessionView({
       {showChrome && onShare && soloInvite ? (
         <Card onPress={onShare}>
           <View style={styles.inviteRow}>
-            <Icon name="person.badge.plus" size={22} color={brandColors.primary} />
+            <Icon name="person.badge.plus" size={22} color={systemColors.accent} />
             <View style={styles.inviteTextColumn}>
-              <Text variant="body" color={brandColors.primary} style={styles.inviteTitle}>
+              <Text variant="body" color={systemColors.accent} style={styles.inviteTitle}>
                 {t('mobile.session.invite')}
               </Text>
               <Text variant="footnote" color={systemColors.secondaryLabel}>

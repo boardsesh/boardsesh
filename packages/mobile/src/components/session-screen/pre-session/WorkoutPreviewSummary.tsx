@@ -91,8 +91,8 @@ export function WorkoutPreviewSummary({
           accessibilityState={{ disabled: shuffleDisabled }}
           style={[styles.shuffle, shuffleDisabled ? { opacity: opacity.disabled } : null]}
         >
-          <Icon name="shuffle" size={15} color={brandColors.primary} />
-          <Text variant="footnote" color={brandColors.primary} style={styles.shuffleText}>
+          <Icon name="shuffle" size={15} color={systemColors.accent} />
+          <Text variant="footnote" color={systemColors.accent} style={styles.shuffleText}>
             {t('mobile.session.preWorkoutPreviewShuffle')}
           </Text>
         </PressableSurface>

@@ -145,7 +145,7 @@ function SectionLayoutRowBase<Id extends string>({
               testID={`section-layout-move-up-${id}`}
             >
               {/* PressableSurface dims a disabled arrow; the glyph keeps one colour. */}
-              <Icon name="arrow.up" size={20} color={brandColors.primary} />
+              <Icon name="arrow.up" size={20} color={systemColors.accent} />
             </PressableSurface>
             <PressableSurface
               onPress={moveDown}
@@ -155,7 +155,7 @@ function SectionLayoutRowBase<Id extends string>({
               style={styles.arrow}
               testID={`section-layout-move-down-${id}`}
             >
-              <Icon name="arrow.down" size={20} color={brandColors.primary} />
+              <Icon name="arrow.down" size={20} color={systemColors.accent} />
             </PressableSurface>
           </View>
         ) : null}

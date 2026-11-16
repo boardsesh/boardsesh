@@ -415,7 +415,7 @@ function QueueListComponent({
               accessibilityRole="button"
               accessibilityLabel={t('queueList.showFullHistoryAria', { count: row.hiddenCount })}
             >
-              <Text variant="subheadline" color={brandColors.primary}>
+              <Text variant="subheadline" color={systemColors.accent}>
                 {t('queueList.showFullHistory', { count: row.hiddenCount })}
               </Text>
             </PressableSurface>

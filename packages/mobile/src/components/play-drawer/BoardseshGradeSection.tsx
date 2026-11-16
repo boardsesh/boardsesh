@@ -118,8 +118,8 @@ const YourGradeBlock = memo(function YourGradeBlock({
     if (myGrade.status !== 'none') return null;
     return (
       <View style={styles.row}>
-        <Icon name="add.fill" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary} style={styles.flexText}>
+        <Icon name="add.fill" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent} style={styles.flexText}>
           {t('boardseshGrade.yours.emptyBody')}
         </Text>
       </View>
@@ -256,8 +256,8 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         accessibilityRole="button"
         accessibilityLabel={t('boardseshGrade.loadError')}
       >
-        <Icon name="refresh" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary}>
+        <Icon name="refresh" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent}>
           {t('boardseshGrade.loadError')}
         </Text>
       </PressableSurface>

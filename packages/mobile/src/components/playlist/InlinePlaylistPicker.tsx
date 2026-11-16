@@ -526,7 +526,7 @@ export function InlinePlaylistPicker({
             hitSlop={8}
             style={[styles.createButton, { backgroundColor: systemColors.fill }]}
           >
-            <Icon name="plus" size={18} color={brandColors.primary} />
+            <Icon name="plus" size={18} color={systemColors.accent} />
           </PressableSurface>
         ) : null}
       </View>

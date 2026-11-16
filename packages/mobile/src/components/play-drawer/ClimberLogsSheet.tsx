@@ -431,7 +431,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
               accessibilityRole="button"
               style={styles.notice}
             >
-              <Text variant="footnote" color={brandColors.primary}>
+              <Text variant="footnote" color={systemColors.accent}>
                 {t('mobile.climberLogs.otherAngles', { count: item.count })}
               </Text>
             </PressableSurface>
@@ -511,7 +511,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     if (hasNextPage) {
       return (
         <PressableSurface onPress={handleLoadMore} feedback="opacity" accessibilityRole="button" style={styles.notice}>
-          <Text variant="footnote" color={brandColors.primary}>
+          <Text variant="footnote" color={systemColors.accent}>
             {t('mobile.climberLogs.everyone.loadMore')}
           </Text>
         </PressableSurface>

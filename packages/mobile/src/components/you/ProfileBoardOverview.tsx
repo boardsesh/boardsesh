@@ -79,7 +79,7 @@ export const ProfileBoardOverview = memo(function ProfileBoardOverview({
             accessibilityRole="button"
             style={styles.retry}
           >
-            <Text variant="subheadline" color={brandColors.primary}>
+            <Text variant="subheadline" color={systemColors.accent}>
               {tCommon('actions.retry')}
             </Text>
           </PressableSurface>

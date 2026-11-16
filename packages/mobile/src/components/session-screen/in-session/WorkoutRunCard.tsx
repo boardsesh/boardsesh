@@ -76,9 +76,9 @@ function AddWorkoutPrompt({ onPress }: { onPress: () => void }) {
       accessibilityHint={t('mobile.session.addWorkoutPromptSubtitle')}
     >
       <View style={styles.promptRow} testID="workout-add-prompt">
-        <Icon name="add" size={22} color={brandColors.primary} />
+        <Icon name="add" size={22} color={systemColors.accent} />
         <View style={styles.promptText}>
-          <Text variant="body" color={brandColors.primary} style={styles.promptTitle}>
+          <Text variant="body" color={systemColors.accent} style={styles.promptTitle}>
             {t('mobile.session.addWorkoutPromptTitle')}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -239,9 +239,9 @@ function StartWorkoutRow({ item, onPress }: { item: ClimbQueueItem; onPress: () 
       style={styles.climbRow}
       testID="workout-runner-start"
     >
-      <Icon name="play.fill" size={18} color={brandColors.primary} />
+      <Icon name="play.fill" size={18} color={systemColors.accent} />
       <View style={styles.rowText}>
-        <Text variant="body" color={brandColors.primary} style={styles.emphasis}>
+        <Text variant="body" color={systemColors.accent} style={styles.emphasis}>
           {t('mobile.workoutRunner.startWorkout')}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
@@ -367,9 +367,9 @@ function ResumeWorkoutRow({ readout, item }: { readout: WorkoutRunnerReadout; it
       style={styles.climbRow}
       testID="workout-runner-resume"
     >
-      <Icon name="play.fill" size={18} color={brandColors.primary} />
+      <Icon name="play.fill" size={18} color={systemColors.accent} />
       <View style={styles.rowText}>
-        <Text variant="body" color={brandColors.primary} style={styles.emphasis}>
+        <Text variant="body" color={systemColors.accent} style={styles.emphasis}>
           {title}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
@@ -487,7 +487,7 @@ function TurnOnRestTimerRow({
 
 function AddBlockButton({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation('session');
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={() => {
@@ -502,8 +502,8 @@ function AddBlockButton({ onPress }: { onPress: () => void }) {
       style={styles.addButton}
       testID="workout-add-block"
     >
-      <Icon name="add" size={18} color={brandColors.primary} />
-      <Text variant="subheadline" color={brandColors.primary} style={styles.addText}>
+      <Icon name="add" size={18} color={systemColors.accent} />
+      <Text variant="subheadline" color={systemColors.accent} style={styles.addText}>
         {t('mobile.session.preGeneratorAddBlock')}
       </Text>
     </PressableSurface>

@@ -104,7 +104,7 @@ export function DiscoverLibraryView({
                   {t('library.signInBanner.description')}
                 </Text>
               </View>
-              <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
+              <Text variant="subheadline" color={systemColors.accent} style={styles.signInCta}>
                 {t('library.signInBanner.cta')}
               </Text>
             </PressableSurface>

@@ -108,7 +108,7 @@ const EarlierButton = memo(function EarlierButton({
   /** Lines the label up with the text column beside a row's avatar. */
   inset?: boolean;
 }) {
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -118,10 +118,10 @@ const EarlierButton = memo(function EarlierButton({
       accessibilityState={{ expanded }}
       style={[styles.earlierButton, inset ? styles.earlierButtonInset : undefined]}
     >
-      <Text variant="footnote" color={brandColors.primary} style={styles.strong}>
+      <Text variant="footnote" color={systemColors.accent} style={styles.strong}>
         {label}
       </Text>
-      <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={14} color={brandColors.primary} />
+      <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={14} color={systemColors.accent} />
     </PressableSurface>
   );
 });

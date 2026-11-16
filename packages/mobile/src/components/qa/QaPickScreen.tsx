@@ -309,7 +309,7 @@ export function QaPickScreen({ presentation = 'prompt' }: { presentation?: 'prom
             accessibilityRole="button"
             accessibilityLabel={t('qa.pick.skip')}
           >
-            <Text variant="subheadline" color={brandColors.primary}>
+            <Text variant="subheadline" color={systemColors.accent}>
               {t('qa.pick.skip')}
             </Text>
           </PressableSurface>
@@ -433,7 +433,7 @@ function TrySurfBlock({ prNumber, busy, onTrySurf, t }: TrySurfBlockProps) {
         {busy ? (
           <ActivityIndicator />
         ) : (
-          <Text variant="subheadline" color={brandColors.primary}>
+          <Text variant="subheadline" color={systemColors.accent}>
             {t('qa.pick.trySurfAction', { prNumber })}
           </Text>
         )}

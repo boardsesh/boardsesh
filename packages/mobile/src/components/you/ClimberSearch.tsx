@@ -153,7 +153,7 @@ export function ClimberSearchErrorState({ onRetry }: { onRetry: () => void }) {
           pressed && { backgroundColor: `${brandColors.primary}1A` },
         ]}
       >
-        <Text variant="footnote" color={brandColors.primary}>
+        <Text variant="footnote" color={systemColors.accent}>
           {t('mobile.social.retry')}
         </Text>
       </PressableSurface>
