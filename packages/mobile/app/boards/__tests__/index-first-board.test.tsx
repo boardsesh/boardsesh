@@ -1108,6 +1108,9 @@ describe("the In range slot's ways forward for a board it can't name", () => {
       state.nearbyBoards = [moonboardWall, gymWall];
       rerender(createElement(BoardSelection));
       fireEvent.click(screen.getByText('mobile.discovery.nearbyShowAll'));
+      // The hold itself goes, not just the pick path: a bind from the builder or
+      // the gym map pushed over the picker after Show all must not name the box.
+      expect(recognitionHold.held).toBeNull();
 
       await pickFromCarousel('moon-wall', 'Crux MoonBoard');
       expect(setActiveBoardMock).toHaveBeenCalledWith(moonboardWall);

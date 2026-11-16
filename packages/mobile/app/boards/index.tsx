@@ -352,7 +352,13 @@ export default function BoardSelection() {
   const nearbyBoardType =
     nearbyFilter && nearbyFilter.inFirstBoardChoice === showFirstBoardChoice ? nearbyFilter.boardType : null;
   const nearbyBoardTypes = useMemo(() => (nearbyBoardType ? [nearbyBoardType] : undefined), [nearbyBoardType]);
-  const showAllNearby = useCallback(() => setNearbyFilter(null), []);
+  // Taking the filter off abandons the search for the held box, so the box goes
+  // with it: a bind from the builder or the gym map after Show all must not
+  // name it.
+  const showAllNearby = useCallback(() => {
+    dropHeldBox();
+    setNearbyFilter(null);
+  }, [dropHeldBox]);
   // 20 km, not the hook's 1 km default — "nearby" should reach across town
   // (a gym a couple of streets away must still surface).
   const {
@@ -879,10 +885,11 @@ export default function BoardSelection() {
   const [gymChosen, setGymChosen] = useState(false);
   const onFirstBoardGym = useCallback(() => {
     chooseFirstBoardPath('gym');
+    dropHeldBox();
     setNearbyFilter(null);
     setGymChosen(true);
     searchNearby();
-  }, [chooseFirstBoardPath, searchNearby]);
+  }, [chooseFirstBoardPath, dropHeldBox, searchNearby]);
   // The builder opens preset with a layout and size, so a home-wall owner's
   // Save works from the first frame instead of after finding the layout chip.
   const onFirstBoardOwn = useCallback(() => {
