@@ -33,7 +33,7 @@ These are not modes. Most `CURRENT_STORE_*` modes below need them, and a missing
 
 | Switch | Where | Values (default) | What it does | Needs first | Back out |
 | --- | --- | --- | --- | --- | --- |
-| `AUTH_CUTOFF_ENFORCEMENT` | Backend | `enforce`, `observe` (`enforce`; any other value is a startup error) | `enforce` refuses every credential that a cutoff, denial or generation bump rejects. `observe` admits and logs them (the pre-BA-04 behaviour). | Nothing | Leave it unset. The backend refuses to start with `observe` while any member of `STAGED_WRITER_MODE_ENV` (`authority-configuration.ts`) is on: `CURRENT_STORE_BROWSER_BINDING_MODE`, `_BROWSER_RENEWAL_MODE`, `CURRENT_STORE_WEB_AUTH_MODE`, `_WEB_OAUTH_MODE`, `_NATIVE_REGISTRATION_MODE`, `_NATIVE_OAUTH_MODE`, `_SYSTEM_BOARD_OWNER_MODE`, `_ACCOUNT_DELETION_MODE`, `_SET_PASSWORD_MODE`, `_PROVIDER_SECURITY_MODE`, `_FIRST_PASSWORD_MODE`, `_WEB_SIGNOUT_MODE`, `AUTH_WATCH_PAIRING_MODE`, `_BATCH_SYSTEM_USERS_MODE`, `_LOCATION_SYNC_MODE`. The proof, fixed-owner order and Google auth-time modes are not in the list. |
+| `AUTH_CUTOFF_ENFORCEMENT` | Backend | `enforce`, `observe` (`enforce`; any other value is a startup error) | `enforce` refuses every credential that a cutoff, denial or generation bump rejects. `observe` admits and logs them (the pre-BA-04 behaviour). | Nothing | Leave it unset. The backend refuses to start with `observe` while any member of `STAGED_WRITER_MODE_ENV` (`authority-configuration.ts`) is on: `CURRENT_STORE_BROWSER_BINDING_MODE`, `CURRENT_STORE_WEB_AUTH_MODE`, `_WEB_OAUTH_MODE`, `_NATIVE_REGISTRATION_MODE`, `_NATIVE_OAUTH_MODE`, `_SYSTEM_BOARD_OWNER_MODE`, `_ACCOUNT_DELETION_MODE`, `_SET_PASSWORD_MODE`, `_PROVIDER_SECURITY_MODE`, `_FIRST_PASSWORD_MODE`, `_WEB_SIGNOUT_MODE`, `AUTH_WATCH_PAIRING_MODE`, `_BATCH_SYSTEM_USERS_MODE`, `_LOCATION_SYNC_MODE`. The proof, fixed-owner order and Google auth-time modes are not in the list. |
 | `CURRENT_STORE_AUTH_RPC_SECRET` | Both | At least 32 bytes, no surrounding spaces, different from `NEXTAUTH_SECRET` and `CRON_SECRET` (unset) | Signs private web-to-backend commands. | Nothing | Unset it after the modes that use it are off. |
 | `CURRENT_STORE_AUTH_PROJECTION_ID` and `CURRENT_STORE_AUTH_WRITER_EPOCH` | Backend | The current projection id; a positive integer up to 2,147,483,647 (unset) | Tell every staged writer which authority row to expect. A mismatch is refused as stale. | `auth-authority prepare` for the id. Every staged writer also refuses with `AUTHORITY_NOT_ENFORCED` until `activate` succeeds (section "Code gates"). | Unset them after the modes are off. |
 | `CURRENT_STORE_DELETED_EMAIL_KEY` | Backend | At least 32 bytes, different from the other secrets (unset) | Keys the address digest kept for 90 days after an account is deleted. Every staged mode needs it, because an unknown address also looks up a digest. | Nothing | **Never rotate it.** Rotating frees every address deleted in the last 90 days. Keep a copy in 1Password. |
@@ -78,29 +78,28 @@ Each moves one kind of credential write from the old path into the backend's cur
 
 ## 5. Browser design that #7596 deletes. Do not turn any of these on.
 
-[#7596](https://github.com/boardsesh/boardsesh/issues/7596) replaces the host-only cookie, browser binding, lease and receipt design with one shared-domain session cookie and one central client guard, and deletes the code below. The binding was never on in production. These rows exist so nobody flips them.
+[#7596](https://github.com/boardsesh/boardsesh/issues/7596) replaces the host-only cookie, browser binding, lease and receipt design with one shared-domain session cookie and one central client guard, and deletes the code below. The binding was never on in production. These rows exist so nobody flips them. Removal is in progress: #7617 (first-password web layer), #7618 (renewal custody) and #7620 (BA-01 prototype) are merged, and #7632 and #7634 add the client guards. Rows below say what is still on main.
 
 | Switch | Where | Values (default) | What it would do | Why it stays off |
 | --- | --- | --- | --- | --- |
 | `CURRENT_STORE_BROWSER_BINDING_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Writes a server row and host-only cookies per browser. | Deleted by #7596. Bugs #7588 (locks the users row on every request) and #7594 (rollback leaves cookies that break legacy sign-in) are closed by deleting it. |
-| `CURRENT_STORE_BROWSER_RENEWAL_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Renews a browser session through custody records. | Deleted by #7596. Needs binding. |
-| `CURRENT_STORE_EXPIRED_BROWSER_BINDING_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Recovers a browser whose binding expired. | Deleted by #7596. Needs binding. |
-| `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Publishes password credentials through the binding. | Deleted by #7596. Needs binding. |
-| `BROWSER_DELEGATION_SECRET` | Backend only | At least 32 UTF-8 bytes, different from the cookie, RPC, cron and deleted-email keys (unset) | Signs the 120-second backend leases (`bsbd1_` tokens). | Deleted by #7596. Never set it on the web or in a public environment. |
-| Proof cookies (`BROWSER_PROOF_COOKIE_PREFIX`, no env switch) | Web | Active only under binding | Carry browser proofs in cookies. | Deleted by #7596. |
-| Eight readiness functions that return `false` in code | Web (seven), Expo web (one) | No variable changes them | Open the public pages. Files in `packages/web/app/lib/auth/`: `browser-consumer-readiness.ts`, `browser-coordinator-readiness.ts`, `browser-password-readiness.ts`, `browser-renewal-readiness.ts`, `expired-browser-binding-readiness.ts`, plus `first-password-readiness.ts` and `provider-security-readiness.ts`; and `packages/mobile/src/lib/browser-consumer-readiness.web.ts`. Binding has no file of its own. | The first five and the Expo one are replaced by #7596's single mode switch. First password and provider security are **kept**, with their publication layer rewritten. |
+| `CURRENT_STORE_BROWSER_RENEWAL_MODE`, `BROWSER_DELEGATION_SECRET` | Gone | | Removed from main (#7618 and the lease removal). Do not set them. | Nothing reads them. |
+| `CURRENT_STORE_EXPIRED_BROWSER_BINDING_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Recovers a browser whose binding expired. | Still on main; #7596 deletes it. Needs binding. |
+| `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Publishes password credentials through the binding. | Still on main; #7596 deletes it. Needs binding. |
+| Proof cookies (`BROWSER_PROOF_COOKIE_PREFIX`, no env switch) | Web | Active only under binding | Carry browser proofs in cookies. | Still on main (`browser-proof-cookies.server.ts`); #7596 deletes it. |
+| Six readiness functions that return `false` in code | Web (five), Expo web (one) | No variable changes them | Open the public pages. In `packages/web/app/lib/auth/`: `browser-consumer-readiness.ts`, `browser-coordinator-readiness.ts`, `browser-password-readiness.ts`, `expired-browser-binding-readiness.ts` and `provider-security-readiness.ts`; plus `packages/mobile/src/lib/browser-consumer-readiness.web.ts`. The renewal and first-password files are deleted. | The four browser ones are replaced by #7596's single mode switch. Provider security is **kept**, with its publication layer rewritten. |
 
 ## Code gates
 
 A code gate is a constant or an assertion. No variable, flag or script option closes one.
 
-**The three that block `auth-authority activate`** (`AUTHORITY_ACTIVATION_BLOCKERS` in `packages/backend/src/scripts/auth-authority.ts`). `activate` throws `ACTIVATION_CODE_GATES_OPEN` while the list is not empty. `status` and `prepare` print the list. `auth:import-identities` refuses for the same reason. The names are constants with no description in code; the meanings below come from runbook #7430.
+**The two that block `auth-authority activate`** (`AUTHORITY_ACTIVATION_BLOCKERS` in `packages/backend/src/scripts/auth-authority.ts`). `activate` throws `ACTIVATION_CODE_GATES_OPEN` while the list is not empty. `status` and `prepare` print the list. `auth:import-identities` refuses for the same reason. The names are constants with no description in code; the meanings below come from runbook #7430.
+`NATIVE_REVOKE_RESET_LOCK_ORDER` was a third gate. #7626 raced native sign-out against reset and removed it.
 
 | Gate | What it waits for |
 | --- | --- |
 | `GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION` | Proof that the Garmin watch keeps its offline tick queue on a rejected refresh and on a same-account re-pair, including installed older watch builds. The owner has only a test watch, and public release is planned for December. Real-watch QA with the original signing key is still open. #7442 (owner-scoped outbox) is merged. |
 | `STAGED_WEB_PROOF_GENERATION_STAMP` | The staged web sign-in proof carrying the account generation, with the cookie window closed, and evidence that every still-valid older web cookie (including no-session-id cookies) logs out safely.  The owner must also confirm the old sign-in issuers are retired (the old Vercel project's deployments and rollback issuers). |
-| `NATIVE_REVOKE_RESET_LOCK_ORDER` | Native sign-out and password reset taking their locks in the BA-04 order, proved against real PostgreSQL with concurrent calls. #7440 added the reviewed lock-order fix and the inactive generation writer. The gate stays until the list in the source is emptied in a reviewed PR. |
 
 **Startup assertions** (`packages/backend/src/index.ts`) refuse to boot: `AUTH_CUTOFF_ENFORCEMENT=observe` with any staged writer on; `AUTH_IDENTITY_MIRROR=on`; `AUTH_NATIVE_REVOCATION_MODE=generation`; `CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging` (its own assertion in `web-session-configuration.ts`, not tied to a gate constant); `AUTH_LEGACY_BRIDGE_MODE=on` without both of the last two.
 
@@ -130,11 +129,11 @@ Independent of everything else. No switch; these are database steps.
 
 ### C. Identity authority (BA-04): fence, prepare, activate, import, switch
 
-Needs step B done, because `activate` refuses while collisions or non-normalized emails remain. Every step here is parked until the three code gates close and a rehearsal passes.
+Needs step B done, because `activate` refuses while collisions or non-normalized emails remain. Every step here is parked until the two code gates close and a rehearsal passes.
 
 1. **Fence:** `auth-fence.ts apply --confirm-host pgdr.boardsesh.com --plan-sha256 <reviewed hash>`. Creates `boardsesh_web` with no password. Set its password, move the web onto it, retire every old web pool.
-2. **Prepare:** `auth-authority.ts prepare`. Leaves the phase `prepared`. **Do not run it in production until #7591 is fixed:** it silently stops all account deletion.
-3. **Activate:** `auth-authority.ts activate`. Refuses while any of the three gates is open. The first enforced epoch is 1. Enforcement of denials needs the denial reader (#7439) on every backend first.
+2. **Prepare:** `auth-authority.ts prepare`. Leaves the phase `prepared`. Account deletion keeps working while the projection is only prepared (#7630, which fixed #7591). The real window is from `activate` until every backend serves `CURRENT_STORE_ACCOUNT_DELETION_MODE=reserved-staging`: deletion is unavailable then. See "Deletion during cutover" in [better-auth-account-deletion.md](./better-auth-account-deletion.md).
+3. **Activate:** `auth-authority.ts activate`. Refuses while either gate is open. The first enforced epoch is 1. The email resolution tool also refuses with `STALE_AUTHORITY` once another authority is current (#7649). Enforcement of denials needs the denial reader (#7439) on every backend first.
 4. **Writer modes (section 3).** #7430 says the exact order will be recorded there before any switch, so none is fixed here. The dependencies are: proof `compatible` before `required`; `required` before set-password; fixed-owner order before location sync; native modes `reserved-staging` before the mirror. Turn on one mode at a time and watch it before the next.
 5. **Mirror:** `AUTH_IDENTITY_MIRROR=on`. Blocked in code until the activation gates close.
 6. **Import:** `vp run auth:import-identities -- --confirm-host pgdr.boardsesh.com --key-file ~/Private/boardsesh-ba04/digest-key --checkpoint ~/Private/boardsesh-ba04/checkpoints --batch 200 --pause-ms 100`. Reconcile read-only afterwards and 24 hours later.
@@ -149,3 +148,10 @@ Needs step B done, because `activate` refuses while collisions or non-normalized
 ### E. Retire NextAuth (BA-10)
 
 No switch. Remove NextAuth only after the legacy cookie has been kept for 30 days after the cutover (owner decision 23), rollback has been rehearsed against a restored database, and the installed-client compatibility API (native, Garmin) is kept. #6984 stays open until then.
+
+## Pending on open PRs (not on main)
+
+- #7631: wires the writer fence into `vp`, CI and the web pool. It adds `WEB_DATABASE_URL`, `vp run auth:fence`, a boot refusal on `WEB_DATABASE_LOGIN_BLOCKERS`, and an explicit `import` verb for `auth:import-identities`. Until it merges, the import command in section C may change.
+- #7650: shared per-client limit for staged sign-in (the login budget, #7589).
+- #7652: partner app changes that move credentials need a recent sign-in (#7598).
+- #7647: CI ratchet on new next-auth imports (BA-10).
