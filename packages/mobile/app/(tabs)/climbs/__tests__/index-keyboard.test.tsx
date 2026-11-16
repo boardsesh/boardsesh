@@ -1543,7 +1543,7 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
       await settle();
       expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
 
-      // A drag, then the next page landing, is a reason to keep going.
+      // After a drag, the screen's next settle check (here, the rerender) asks again.
       drag();
       rerender(<ClimbList />);
       await settle();
