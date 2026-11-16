@@ -14,7 +14,6 @@ import {
 import { AURORA_CREDENTIALS_QUERY_KEY, AURORA_UNSYNCED_QUERY_KEY } from './board-account-query-keys';
 import type { BoardImportState } from './board-import-completion';
 import { reportHandledError } from '../error-reporting';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 
 // The prompt and Connected apps share one cached response and invalidation key.
 /** While a board sync is waiting, re-read the credentials this often so "Syncing" clears on its own. */
@@ -132,16 +131,8 @@ async function readForView<T>(
   signal: AbortSignal | undefined,
   read: (operation: RestOperation) => Promise<RestReadOutcome<T>>,
   accepted?: (result: T, assertCurrent: () => void) => void,
-  assertBrowserGetDispatch?: () => void,
 ): Promise<T> {
-  const operation = createRestOperation(
-    view.scope,
-    view.scoped
-      ? { signal, ...(assertBrowserGetDispatch ? { assertBrowserGetDispatch } : {}) }
-      : assertBrowserGetDispatch
-        ? { assertBrowserGetDispatch }
-        : undefined,
-  );
+  const operation = createRestOperation(view.scope, view.scoped ? { signal } : undefined);
   try {
     const outcome = await read(operation);
     outcome.assertCurrent();
@@ -165,15 +156,6 @@ type CredentialsReadOptions<Selected> = {
   select?: (response: AuroraCredentialsResponse) => Selected;
 };
 
-/** An immutable original reader entry. These descriptors only restrict new
- * sends; each actual GET still owns its independent physical response proof. */
-export type OriginalCredentialsRead = Readonly<{
-  view: RestReadView;
-  assertView(): void;
-  refreshAfterSync(assertOriginal: () => void): Promise<void>;
-  retry(assertOriginal: () => void): Promise<void>;
-}>;
-
 export function useAuroraCredentialsRead<Selected = AuroraCredentialsResponse>(
   options: CredentialsReadOptions<Selected> = {},
   capturedView?: RestReadView,
@@ -181,120 +163,22 @@ export function useAuroraCredentialsRead<Selected = AuroraCredentialsResponse>(
   const currentView = useRestView();
   const view = capturedView ?? currentView;
   const queryClient = useQueryClient();
-  const queryKey = Object.freeze([...view.key(AURORA_CREDENTIALS_QUERY_KEY)]);
-  const execute = (signal: AbortSignal | undefined, assertDispatch?: () => void) =>
-    readForView(
-      view,
-      signal,
-      getAuroraCredentialsWithReceipt,
-      (response, assertCurrent) => publishAcceptedCredentials(queryClient, view, response, assertCurrent),
-      assertDispatch,
-    );
-  const queryOptions = {
-    queryKey,
-    queryFn: (context: { signal: AbortSignal }) => execute(view.scoped ? context.signal : undefined),
+  return useQuery({
+    queryKey: view.key(AURORA_CREDENTIALS_QUERY_KEY),
+    queryFn: (context) =>
+      readForView(
+        view,
+        view.scoped ? context.signal : undefined,
+        getAuroraCredentialsWithReceipt,
+        (result, assertCurrent) => publishAcceptedCredentials(queryClient, view, result, assertCurrent),
+      ),
     ...(options.networkMode === undefined ? {} : { networkMode: options.networkMode }),
     enabled: (options.enabled ?? true) && view.ready && view.isCurrent(),
     select: options.select,
     refetchInterval: view.scoped
-      ? (query: Query<AuroraCredentialsResponse>) => (view.isCurrent() ? pendingSyncRefetchInterval(query) : false)
+      ? (query) => (view.isCurrent() ? pendingSyncRefetchInterval(query) : false)
       : pendingSyncRefetchInterval,
-  };
-  const result = useQuery(queryOptions);
-  const assertView = () => {
-    if (!view.ready || !view.isCurrent()) throw new BrowserBackendConsumerError('superseded');
-  };
-  const forceOriginal = async (assertOriginal: () => void) => {
-    const assertDispatch = () => {
-      assertView();
-      assertOriginal();
-      assertView();
-    };
-    assertDispatch();
-    if (view.mode === 'native') {
-      await result.refetch();
-      return;
-    }
-    let executed = false;
-    const ordinaryOptions = queryClient.defaultQueryOptions({
-      queryKey,
-      queryFn: queryOptions.queryFn,
-      ...(options.networkMode === undefined ? {} : { networkMode: options.networkMode }),
-    });
-    // Building an existing Query does not replace its options. In particular,
-    // joining an independent paused/retrying read must not graft our SDK cause.
-    const query = queryClient.getQueryCache().build(queryClient, ordinaryOptions);
-    const invocationOptions = queryClient.defaultQueryOptions({
-      ...ordinaryOptions,
-      behavior: {
-        onFetch(context) {
-          // Capture the actual execute, not the default context.fetchFn, which
-          // consults mutable Query.options.queryFn when a paused run resumes.
-          context.fetchFn = () => {
-            executed = true;
-            assertDispatch();
-            return execute(view.scoped ? context.signal : undefined, assertDispatch);
-          };
-        },
-      },
-    });
-    const fetchOriginal = () => {
-      try {
-        // The public fetch joins pending work BEFORE applying supplied options.
-        // Its captured execution keeps E1 even after future options are cleared.
-        return query.fetch(invocationOptions, { cancelRefetch: false });
-      } finally {
-        // Remove only our behavior, never a newer observer's ordinary options.
-        // No E1 callback lives in queryFn or any other shared option slot.
-        if (query.options.behavior === invocationOptions.behavior)
-          query.setOptions({ ...query.options, behavior: undefined });
-      }
-    };
-    try {
-      await fetchOriginal();
-    } catch (error) {
-      if (executed) throw error;
-    }
-    assertDispatch();
-    // Joining an older in-flight snapshot is not a post-queue fresh read.
-    // Never cancel it; after settlement make at most one original fresh run.
-    if (!executed) {
-      await fetchOriginal();
-      assertDispatch();
-      if (!executed) throw new BrowserBackendConsumerError('unavailable');
-    }
-  };
-  const originalCredentialsRead: OriginalCredentialsRead = Object.freeze({
-    view,
-    assertView,
-    async refreshAfterSync(assertOriginal) {
-      assertView();
-      assertOriginal();
-      const invalidation = queryClient.invalidateQueries({
-        queryKey,
-        exact: true,
-        refetchType: 'none',
-      });
-      // Observe a reentrant rejection before checking the original caller again.
-      const observed = invalidation.then(
-        () => ({ ok: true as const }),
-        () => ({ ok: false as const }),
-      );
-      try {
-        assertView();
-        assertOriginal();
-        const settled = await observed;
-        assertView();
-        assertOriginal();
-        if (!settled.ok) throw new BrowserBackendConsumerError('unavailable');
-        await forceOriginal(assertOriginal);
-      } finally {
-        await observed;
-      }
-    },
-    retry: forceOriginal,
   });
-  return { ...result, originalCredentialsRead };
 }
 
 export function useAuroraUnsyncedRead(enabled: boolean) {
