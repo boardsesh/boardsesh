@@ -51,7 +51,12 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: state.sessionId, undoScope: '' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: { primary: 'brand' } }),
+  useTheme: () => ({
+    variant: 'liquidGlass',
+    systemColors: {},
+    brandColors: { primary: 'brand' },
+    selection: { text: 'label', checkmark: 'accent', fill: 'fill' },
+  }),
 }));
 vi.mock('../../Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
