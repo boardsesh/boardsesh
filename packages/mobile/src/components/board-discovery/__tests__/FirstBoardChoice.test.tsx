@@ -107,7 +107,7 @@ describe('FirstBoardChoice', () => {
     renderChoice();
     expect(screen.getByRole('button', { name: "At a gym. Pick your gym's board" })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'My own board. Set up the board you have at home' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'My Spraywall. Photograph your wall and mark the holds' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'My Spraywall. Photograph it and mark the holds' })).toBeTruthy();
     expect(screen.queryByText(/Scan for the board/)).toBeNull();
   });
 
@@ -115,7 +115,7 @@ describe('FirstBoardChoice', () => {
     renderChoice();
     fireEvent.click(screen.getByRole('button', { name: "At a gym. Pick your gym's board" }));
     fireEvent.click(screen.getByRole('button', { name: 'My own board. Set up the board you have at home' }));
-    fireEvent.click(screen.getByRole('button', { name: 'My Spraywall. Photograph your wall and mark the holds' }));
+    fireEvent.click(screen.getByRole('button', { name: 'My Spraywall. Photograph it and mark the holds' }));
     expect(callbacks.onGym).toHaveBeenCalledTimes(1);
     expect(callbacks.onOwn).toHaveBeenCalledTimes(1);
     expect(callbacks.onAddSprayWall).toHaveBeenCalledTimes(1);
