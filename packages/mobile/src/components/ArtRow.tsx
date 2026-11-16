@@ -53,6 +53,13 @@ export type ArtRowProps = {
   longPressAccessibilityLabel?: string;
   /** Without it, VoiceOver reads the row's text in order. */
   accessibilityLabel?: string;
+  /**
+   * Wraps the row's own target (art, text and a built-in accessory), never an
+   * element accessory: a hold menu's anchor goes here, so the ⋯ beside it keeps
+   * its own tap and isn't lifted with the row. Give the wrapper `flex: 1` when
+   * there is an element accessory. Memoise it (`useCallback`).
+   */
+  wrapTarget?: (target: ReactElement) => ReactElement;
   testID?: string;
 };
 
@@ -91,6 +98,7 @@ export const ArtRow = memo(function ArtRow({
   delayLongPress,
   longPressAccessibilityLabel,
   accessibilityLabel,
+  wrapTarget,
   testID,
 }: ArtRowProps) {
   const { systemColors, selection } = useTheme();
@@ -199,13 +207,14 @@ export const ArtRow = memo(function ArtRow({
       </View>
     );
 
-  if (!elementAccessory) return target;
+  const wrappedTarget = wrapTarget ? wrapTarget(target) : target;
+  if (!elementAccessory) return wrappedTarget;
   // The same box as a plain row: the target keeps the leading gutter and the
   // vertical padding, the control takes the gap before it and the trailing
   // gutter after it, and the selection wash spans both.
   return (
     <View style={rowStyle}>
-      {target}
+      {wrappedTarget}
       <View style={styles.control}>{accessory}</View>
     </View>
   );

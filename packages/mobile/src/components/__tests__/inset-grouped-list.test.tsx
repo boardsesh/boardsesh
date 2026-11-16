@@ -338,6 +338,43 @@ describe('ArtRow', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
+  // A hold menu's anchor wraps the row's own target, never the ⋯ beside it.
+  it('wraps only the row target, leaving the control outside the wrapper', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        accessory={
+          <button type="button" aria-label="Board actions">
+            ⋯
+          </button>
+        }
+        onPress={vi.fn()}
+        wrapTarget={(target) => <div data-testid="hold-anchor">{target}</div>}
+        testID="row"
+      />,
+    );
+    const anchor = screen.getByTestId('hold-anchor');
+    expect(anchor.contains(screen.getByTestId('row'))).toBe(true);
+    expect(anchor.contains(screen.getByRole('button', { name: 'Board actions' }))).toBe(false);
+  });
+
+  it('wraps the whole row when there is no control', () => {
+    render(
+      <ArtRow
+        art={null}
+        artSize="regular"
+        title="Garage Board"
+        accessory="chevron"
+        onPress={vi.fn()}
+        wrapTarget={(target) => <div data-testid="hold-anchor">{target}</div>}
+        testID="row"
+      />,
+    );
+    expect(screen.getByTestId('hold-anchor').contains(screen.getByTestId('row'))).toBe(true);
+  });
+
   it('keeps the plain row box when a control sits beside the target', () => {
     render(
       <ArtRow

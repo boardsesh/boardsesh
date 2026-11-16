@@ -501,7 +501,7 @@ showing its states. Reach for these before hand-rolling a heading, a row, a pill
   builds from `insetGroupedRowStyles` (`row`, a 44pt `leading` column, `text`).
 - **`ArtRow`** `{ art, artSize: 'compact' | 'regular', title, subtitle?, eyebrow?, status?, accessory?:
   'checkmark' | 'chevron' | element, selected?, onPress?, onLongPress?, delayLongPress?,
-  longPressAccessibilityLabel?, accessibilityLabel?, testID? }`: a row of an `InsetGroupedList` that
+  longPressAccessibilityLabel?, accessibilityLabel?, wrapTarget?, testID? }`: a row of an `InsetGroupedList` that
   leads with art (a board, a playlist, an icon). The slot is 36 or 44pt wide and the art sets the
   height; memoise `art` in the caller. Headline title, secondary subheadline subtitle, footnote
   eyebrow; a `status` pill wraps under the title when the two don't fit on one line. `selected` takes
@@ -509,7 +509,9 @@ showing its states. Reach for these before hand-rolling a heading, a row, a pill
   checkmark) and reports `selected` to assistive tech. An element accessory (a ⋯ button) is drawn
   beside the row's target, not inside it, so screen readers focus it and its tap is its own. The long
   press is also a `longpress` accessibility action; give it `longPressAccessibilityLabel` or VoiceOver
-  leaves it out. Presses dip in opacity, never scale.
+  leaves it out. `wrapTarget` wraps the row's own target and never the element accessory: a hold
+  menu's anchor goes there (the picker's board rows), so the ⋯ keeps its own tap. Presses dip in
+  opacity, never scale.
 - **`StatusPill`** `{ label, tone?: 'neutral', testID? }`: something you can't tap ("Closest", "Ready to
   review"). `theme.status` fill and label, caption 1 emphasized; it never shrinks or truncates, so put
   it beside text that can (`ArtRow`'s `status`).
