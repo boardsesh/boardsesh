@@ -1347,7 +1347,7 @@ describe('where a pick came from', () => {
   });
 
   // Near you leaves out boards already shown above it.
-  it('leaves out of Near you the boards already shown above, and counts the opening with what it found', async () => {
+  it('leaves out of Near you the boards already shown above, and reports what the search found on the pick', async () => {
     const nearbyWall = board({ uuid: 'nearby', name: 'Crux Kilter', ownerId: 'setter-1' });
     state.activeBoard = null;
     state.locationStatus = 'granted';
@@ -1355,20 +1355,17 @@ describe('where a pick came from', () => {
     render(createElement(BoardSelection));
 
     expect(carouselProps.byFirstKey.get('nearby')?.items.map((item) => item.key)).toEqual(['nearby']);
-    // The opening waits for the "already allowed?" read, then counts what the
-    // search returned, the board shown above included.
-    await waitFor(() =>
-      expect(trackMock).toHaveBeenCalledWith(
-        'Board Picker Opened',
-        expect.objectContaining({ nearbyResultCount: 2, locationStatus: 'granted' }),
-        expect.anything(),
-      ),
+    // The opening goes at once, with location as known then.
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Picker Opened',
+      expect.objectContaining({ locationStatus: 'granted' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Crux Kilter' }));
+    // The pick counts what the search returned, the board shown above included.
     await waitFor(() =>
       expect(trackMock).toHaveBeenCalledWith(
         'Board Picker Selection Completed',
-        expect.objectContaining({ pickSource: 'nearby', section: 'near_you', position: 0 }),
+        expect.objectContaining({ pickSource: 'nearby', section: 'near_you', position: 0, nearbyResultCount: 2 }),
       ),
     );
   });

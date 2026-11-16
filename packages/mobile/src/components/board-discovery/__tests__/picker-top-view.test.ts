@@ -126,10 +126,23 @@ describe('which gym the top is at', () => {
     expect(top({ rows: [], activeBoard: cruxKilter })).toBe('at_gym:Crux/active_board[crux-kilter*]');
   });
 
-  it('falls back to it as well when the named boards heard have no gym', () => {
-    expect(top({ rows: [heard(homeWall), heard(friendsWall)], activeBoard: cruxKilter })).toBe(
-      'at_gym:Crux/active_board[crux-kilter*]',
-    );
+  // Home walls name no gym: the strongest is the hero, as one board would be.
+  it('leads with the strongest when the named boards heard have no gym', () => {
+    expect(top({ rows: [heard(friendsWall), heard(homeWall)], activeBoard: cruxKilter })).toBe('hero:friends-wall');
+    expect(top({ rows: [heard(friendsWall), heard(homeWall)], activeBoard: null })).toBe('hero:friends-wall');
+  });
+
+  // The board you're on is right there, and Your boards marks it.
+  it('shows nothing when those gymless boards include the one you are on', () => {
+    expect(top({ rows: [heard(friendsWall), heard(homeWall)], activeBoard: homeWall })).toBe('none');
+    expect(
+      top({
+        phase: 'scanning',
+        lookup: 'resolved',
+        rows: [heard(friendsWall), heard(homeWall)],
+        activeBoard: homeWall,
+      }),
+    ).toBe('looking (scanning)');
   });
 
   it('counts a board as at a gym only when it carries the gym name too', () => {

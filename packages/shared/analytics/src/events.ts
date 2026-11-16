@@ -898,7 +898,9 @@ export const SHARED_EVENTS = {
   // the skip rate the launch reads against. Props: { method: 'close_button' |
   // 'dismissed' ('close_button' is the header X, "Not now" from the launch
   // gate and Close from Climbs; 'dismissed' is a swipe down or Android back),
-  // secondsOpen, lastPath (the last choice tapped, or null), entry }. A bind
+  // secondsOpen, lastPath (the last choice tapped, or null), entry,
+  // nearbyResultCount (from 2026-11: boards "At a gym" had found when the picker
+  // closed, null when it had not searched or answered) }. A bind
   // from ANY path the picker leads to (the list, the builder, the gym map, the
   // Bluetooth scan) counts as not skipped.
   FirstBoardPathChosen: 'First Board Path Chosen',
@@ -1105,11 +1107,9 @@ export const SHARED_EVENTS = {
   // gym map opened on its own, from Home or My gyms; the map pushed from the
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
-  // nearbyResultCount (from 2026-11): boards the Near you search returned, null
-  // when it did not search, failed, or had not answered; locationStatus: idle |
-  // loading | granted | denied | unavailable. The picker waits up to 5 s for
-  // Near you before sending, backdates the event to when it opened, and sends
-  // it before any pick. The gym finder's own opening carries neither.
+  // locationStatus (from 2026-11): idle | loading | granted | denied |
+  // unavailable, as known at the opening (mostly idle: the "already allowed?"
+  // read is still out). The gym finder's own opening carries none.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
@@ -1121,7 +1121,10 @@ export const SHARED_EVENTS = {
   // "Also at {gym}" rows before that) | gym_finder | null (the list the board
   // was tapped in). section (from 2026-11): at_gym | hero | your_boards |
   // near_you | offline | map | null (where it was drawn), with position, its
-  // 0-based place there (null when it has none). followed: the pick
+  // 0-based place there (null when it has none). nearbyResultCount (from
+  // 2026-11): boards the Near you search had returned by the pick, 0 for
+  // nothing within 20 km, null when it did not search, was still searching or
+  // failed; absent on the gym finder. followed: the pick
   // added the board to Your boards (#5654); false when it was already theirs,
   // was someone else's private board, the viewer was signed out, or it came
   // from the on-device rows shown with no connection.

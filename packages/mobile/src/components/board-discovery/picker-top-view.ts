@@ -11,6 +11,8 @@
 //   shows, with the board you're on in place and marked selected.
 // - Exactly one named board heard, which is not the board you're on and not at
 //   its gym: that board alone, with Climb here (the hero), and no At {gym}.
+//   Several named boards none of which is at a gym (home walls) lead with the
+//   strongest the same way, unless the board you're on is among them.
 // - Nothing named heard: the gym of the board you're on, when it has one.
 // - Only boxes it cannot name heard (a MoonBoard, a bare `Kilter Board`, a
 //   serial nobody saved) and no gym known: the box's card with its three ways
@@ -193,7 +195,13 @@ function leadFromNamed(
     if (!onIt && !atItsGym) return { kind: 'hero', board: only.board };
   }
   const gym = gymMostHeard(named, activeGym);
-  if (!gym) return null;
+  if (!gym) {
+    // Several named boards and none at a gym (home walls): the strongest leads,
+    // as one board would. Not when the board you're on is among them: it is
+    // the one in front of you, and Your boards already marks it.
+    const onItHeard = activeBoard !== null && named.some((row) => isSameBoard(row.board, activeBoard));
+    return named.length > 1 && !onItHeard ? { kind: 'hero', board: only.board } : null;
+  }
   return {
     kind: 'at_gym',
     ...gym,

@@ -68,7 +68,7 @@ import {
   setPendingBoardRecognition,
 } from '../../src/lib/boards/pending-board-recognition';
 import { useActivateBoard, type BoardPickSection, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
-import { pickerNearbyOpenedState, useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { pickerNearbyResultCount, useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import {
   useDeleteBoard,
@@ -254,7 +254,6 @@ export default function BoardSelection() {
       ? 'no_board'
       : null;
   const showFirstBoardChoice = firstBoardChoiceEntry !== null;
-  const chooseFirstBoardPath = useFirstBoardPickerTracking(firstBoardChoiceEntry);
 
   // Keep the offline snapshots in step with the live list: renames, a backfill for
   // boards downloaded before this existed, and a prune of boards the server no longer
@@ -359,11 +358,6 @@ export default function BoardSelection() {
   // denial, so a second tap has to be able to ask again: a climber coming back
   // from Settings gets their gyms from that tap, not from reopening the picker.
   const location = useDeviceLocation({ retryAfterDenial: true });
-  // Whether the on-open "is location already allowed?" read has answered (see
-  // the effect that runs it). Until it has, an idle location may be one about
-  // to search, so `Board Picker Opened` waits for it. First-board mode runs no
-  // such read: there Near you searches only from a tap.
-  const [locationCheckedOnOpen, setLocationCheckedOnOpen] = useState(firstBoardMode);
   // Set by the In range slot's "Use my location" on a board it heard but
   // couldn't name: the nearby list then holds only that board type, so a
   // climber at a MoonBoard picks from the MoonBoards around them. Filtered by
@@ -496,10 +490,9 @@ export default function BoardSelection() {
     nearbyFailed: isNearbyError,
     nearbyCount: nearbyResultItems.length,
   });
-  // The same search for `Board Picker Opened`, read the same in every layout:
+  // The same search for the picker's events, read the same in every layout:
   // the climber's choice does not change what the search came to.
-  const nearbyOpened = pickerNearbyOpenedState({
-    checkedOnOpen: locationCheckedOnOpen,
+  const nearbyResultCount = pickerNearbyResultCount({
     outcome: firstBoardGymState({
       chosen: location.status !== 'idle',
       locationStatus: location.status,
@@ -508,7 +501,6 @@ export default function BoardSelection() {
       nearbyCount: nearbyResultItems.length,
     }),
     resultCount: nearbyResultItems.length,
-    locationStatus: location.status,
   });
   const trackBoardSelection = useBoardPickerAnalytics({
     activeBoard,
@@ -516,8 +508,10 @@ export default function BoardSelection() {
     returnTo: boardReturnTo,
     fromOnboarding,
     fromNoBoard,
-    nearby: nearbyOpened,
+    locationStatus: location.status,
+    nearbyResultCount,
   });
+  const chooseFirstBoardPath = useFirstBoardPickerTracking(firstBoardChoiceEntry, nearbyResultCount);
 
   const activateBoard = useActivateBoard({
     source: fromOnboarding ? 'onboarding' : undefined,
@@ -967,11 +961,9 @@ export default function BoardSelection() {
     if (fromOnboarding && !firstBoardMode) void requestLocation();
   }, [fromOnboarding, firstBoardMode, requestLocation]);
   // Everyone else who already allowed location gets Near you on open, with no
-  // prompt. The rest see "Show boards near you", which asks. It answers once
-  // the fix is in, or at once when location is not allowed.
+  // prompt. The rest see "Show boards near you", which asks.
   useEffect(() => {
-    if (firstBoardMode) return;
-    void requestLocationIfAllowed().finally(() => setLocationCheckedOnOpen(true));
+    if (!firstBoardMode) void requestLocationIfAllowed();
   }, [firstBoardMode, requestLocationIfAllowed]);
   // Never a dead tap (#5654). With location allowed it takes a fresh fix: a
   // climber who has moved since "Nothing within 20 km" gets a search from where

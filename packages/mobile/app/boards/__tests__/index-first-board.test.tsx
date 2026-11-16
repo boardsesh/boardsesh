@@ -781,11 +781,7 @@ describe('the picker opened from Climbs with no board', () => {
     expect(routerMock.dismissTo).toHaveBeenCalledWith('/(tabs)/climbs');
     expect(markOnboardingSeenMock).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalledWith('Onboarding Board Activated', expect.anything());
-    expect(trackMock).toHaveBeenCalledWith(
-      'Board Picker Opened',
-      expect.objectContaining({ source: 'no_board' }),
-      expect.anything(),
-    );
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ source: 'no_board' }));
   });
 });
 

@@ -1,17 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const track = vi.hoisted(() => vi.fn());
 vi.mock('../../analytics', () => ({ track }));
 
-import {
-  OPENED_NEARBY_WAIT_MS,
-  pickerNearbyOpenedState,
-  useBoardPickerAnalytics,
-  type PickerNearbyOpenedState,
-} from '../use-board-picker-analytics';
+import { pickerNearbyResultCount, useBoardPickerAnalytics } from '../use-board-picker-analytics';
+import type { LocationStatus } from '../../use-device-location';
 import type { BoundBoard } from '../use-activate-board';
 
 const picked: BoundBoard = { pickSource: 'your_boards', followed: false };
@@ -41,18 +37,12 @@ describe('board picker analytics', () => {
     expect(track).not.toHaveBeenCalled();
     rerender({ activeBoard: board });
     rerender({ activeBoard: { ...board, uuid: 'wall-b' } });
-    expect(track).toHaveBeenCalledExactlyOnceWith(
-      'Board Picker Opened',
-      {
-        source: 'session',
-        returnTo: '/(tabs)/record',
-        hadActiveBoard: true,
-        restoreFailed: false,
-        nearbyResultCount: undefined,
-        locationStatus: undefined,
-      },
-      { timestamp: expect.any(Date) },
-    );
+    expect(track).toHaveBeenCalledExactlyOnceWith('Board Picker Opened', {
+      source: 'session',
+      returnTo: '/(tabs)/record',
+      hadActiveBoard: true,
+      restoreFailed: false,
+    });
   });
 
   // #5654: Climbs' "Pick your board" is where a climber with no board is sent,
@@ -67,11 +57,7 @@ describe('board picker analytics', () => {
         fromNoBoard: true,
       }),
     );
-    expect(track).toHaveBeenCalledWith(
-      'Board Picker Opened',
-      expect.objectContaining({ source: 'no_board' }),
-      expect.anything(),
-    );
+    expect(track).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ source: 'no_board' }));
   });
 
   it('records unknown rather than no board when restoration fails', () => {
@@ -83,11 +69,7 @@ describe('board picker analytics', () => {
         fromOnboarding: false,
       }),
     );
-    expect(track).toHaveBeenCalledWith(
-      'Board Picker Opened',
-      expect.objectContaining({ hadActiveBoard: null }),
-      expect.anything(),
-    );
+    expect(track).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ hadActiveBoard: null }));
   });
 
   it.each(['climbs', 'discover'] as const)(
@@ -217,7 +199,6 @@ describe('board picker analytics', () => {
     expect(track).toHaveBeenCalledExactlyOnceWith(
       'Board Picker Opened',
       expect.objectContaining({ source: 'gym_finder', hadActiveBoard: false }),
-      expect.anything(),
     );
     await result.current(board, { pickSource: 'gym_finder', followed: false });
     expect(track).toHaveBeenLastCalledWith(
@@ -227,149 +208,67 @@ describe('board picker analytics', () => {
   });
 });
 
-// Near you empty vs results (2026-11): the opening waits for Near you's answer
-// and carries it, backdated to when the picker opened.
-describe("Board Picker Opened and Near you's answer", () => {
-  const SEARCHING: PickerNearbyOpenedState = { settled: false, resultCount: null, locationStatus: 'loading' };
-  const FOUND_THREE: PickerNearbyOpenedState = { settled: true, resultCount: 3, locationStatus: 'granted' };
+// Near you empty vs results (2026-11): the opening says where location stood,
+// and each pick says what Near you had found by then.
+describe('Near you on the picker events', () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  function renderPicker(initialNearby: PickerNearbyOpenedState) {
+  function renderPicker(initial: { locationStatus: LocationStatus; nearbyResultCount: number | null }) {
     return renderHook(
-      ({ nearby }: { nearby: PickerNearbyOpenedState }) =>
+      ({ locationStatus, nearbyResultCount }: { locationStatus: LocationStatus; nearbyResultCount: number | null }) =>
         useBoardPickerAnalytics({
           activeBoard: null,
           restoreFailed: false,
           returnTo: '/(tabs)/climbs',
           fromOnboarding: false,
-          nearby,
+          locationStatus,
+          nearbyResultCount,
         }),
-      { initialProps: { nearby: initialNearby } },
+      { initialProps: initial },
     );
   }
 
-  function openedCalls() {
-    return track.mock.calls.filter(([name]) => name === 'Board Picker Opened');
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-11-16T10:00:00Z'));
-  });
-  afterEach(() => {
-    vi.useRealTimers();
+  it('sends the opening at once, with location as known then', () => {
+    const { rerender } = renderPicker({ locationStatus: 'idle', nearbyResultCount: null });
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Opened',
+      expect.objectContaining({ locationStatus: 'idle', hadActiveBoard: false }),
+    );
+    rerender({ locationStatus: 'granted', nearbyResultCount: 3 });
+    expect(track).toHaveBeenCalledOnce();
   });
 
-  it('waits for the search, then reports its count backdated to the opening', () => {
-    const { rerender } = renderPicker(SEARCHING);
-    expect(openedCalls()).toHaveLength(0);
+  it('reports what Near you had found at each pick', async () => {
+    const { result, rerender } = renderPicker({ locationStatus: 'loading', nearbyResultCount: null });
+    const pickBeforeTheAnswer = result.current;
+    await pickBeforeTheAnswer(board, picked);
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ nearbyResultCount: null }),
+    );
 
-    vi.setSystemTime(new Date('2026-11-16T10:00:02Z'));
-    rerender({ nearby: FOUND_THREE });
-    expect(openedCalls()).toEqual([
-      [
-        'Board Picker Opened',
-        expect.objectContaining({ nearbyResultCount: 3, locationStatus: 'granted', hadActiveBoard: false }),
-        { timestamp: new Date('2026-11-16T10:00:00Z') },
-      ],
-    ]);
-    rerender({ nearby: { ...FOUND_THREE, resultCount: 5 } });
-    expect(openedCalls()).toHaveLength(1);
-  });
-
-  it('reports without the answer after the longest wait', () => {
-    renderPicker(SEARCHING);
-    vi.advanceTimersByTime(OPENED_NEARBY_WAIT_MS - 1);
-    expect(openedCalls()).toHaveLength(0);
-    vi.advanceTimersByTime(1);
-    expect(openedCalls()).toEqual([
-      [
-        'Board Picker Opened',
-        expect.objectContaining({ nearbyResultCount: null, locationStatus: 'loading' }),
-        { timestamp: new Date('2026-11-16T10:00:00Z') },
-      ],
-    ]);
-  });
-
-  it('goes before a pick that comes first, so it always precedes it', async () => {
-    const { result } = renderPicker(SEARCHING);
-    await result.current(board, { pickSource: 'your_boards', followed: false });
-    expect(track.mock.calls.map(([name]) => name)).toEqual(['Board Picker Opened', 'Board Picker Selection Completed']);
-    expect(openedCalls()[0]?.[1]).toMatchObject({ nearbyResultCount: null });
-    vi.advanceTimersByTime(OPENED_NEARBY_WAIT_MS);
-    expect(openedCalls()).toHaveLength(1);
-  });
-
-  it('goes when the picker closes before the answer', () => {
-    const { unmount } = renderPicker(SEARCHING);
-    unmount();
-    expect(openedCalls()).toHaveLength(1);
-    vi.advanceTimersByTime(OPENED_NEARBY_WAIT_MS);
-    expect(openedCalls()).toHaveLength(1);
-  });
-
-  it('reports at once when Near you will not search', () => {
-    renderPicker({ settled: true, resultCount: null, locationStatus: 'idle' });
-    expect(openedCalls()).toEqual([
-      [
-        'Board Picker Opened',
-        expect.objectContaining({ nearbyResultCount: null, locationStatus: 'idle' }),
-        expect.anything(),
-      ],
-    ]);
+    rerender({ locationStatus: 'granted', nearbyResultCount: 3 });
+    // The bind callback keeps its identity while the search answers.
+    expect(result.current).toBe(pickBeforeTheAnswer);
+    await result.current(board, picked);
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ nearbyResultCount: 3 }),
+    );
   });
 });
 
-describe('pickerNearbyOpenedState', () => {
-  it.each<{
-    name: string;
-    checkedOnOpen: boolean;
-    outcome: Parameters<typeof pickerNearbyOpenedState>[0]['outcome'];
-    expected: Omit<PickerNearbyOpenedState, 'locationStatus'>;
-  }>([
-    { name: 'boards found', checkedOnOpen: true, outcome: 'found', expected: { settled: true, resultCount: 4 } },
-    {
-      name: 'nothing within 20 km',
-      checkedOnOpen: true,
-      outcome: 'none_nearby',
-      expected: { settled: true, resultCount: 0 },
-    },
-    {
-      name: 'a failed search',
-      checkedOnOpen: true,
-      outcome: 'nearby_error',
-      expected: { settled: true, resultCount: null },
-    },
-    {
-      name: 'location off',
-      checkedOnOpen: true,
-      outcome: 'location_off',
-      expected: { settled: true, resultCount: null },
-    },
-    {
-      name: 'location never asked',
-      checkedOnOpen: true,
-      outcome: 'idle',
-      expected: { settled: true, resultCount: null },
-    },
-    {
-      name: 'still searching',
-      checkedOnOpen: true,
-      outcome: 'searching',
-      expected: { settled: false, resultCount: null },
-    },
-    // The on-open "already allowed?" read is out: idle may be about to search.
-    {
-      name: 'the permission read still out',
-      checkedOnOpen: false,
-      outcome: 'idle',
-      expected: { settled: false, resultCount: null },
-    },
-  ])('$name', ({ checkedOnOpen, outcome, expected }) => {
-    expect(pickerNearbyOpenedState({ checkedOnOpen, outcome, resultCount: 4, locationStatus: 'granted' })).toEqual({
-      ...expected,
-      locationStatus: 'granted',
-    });
+describe('pickerNearbyResultCount', () => {
+  it.each<{ outcome: Parameters<typeof pickerNearbyResultCount>[0]['outcome']; expected: number | null }>([
+    { outcome: 'found', expected: 4 },
+    // "Nothing within 20 km" is an answer: none.
+    { outcome: 'none_nearby', expected: 0 },
+    { outcome: 'searching', expected: null },
+    { outcome: 'nearby_error', expected: null },
+    { outcome: 'location_off', expected: null },
+    { outcome: 'idle', expected: null },
+  ])('$outcome: $expected', ({ outcome, expected }) => {
+    expect(pickerNearbyResultCount({ outcome, resultCount: 4 })).toBe(expected);
   });
 });
 

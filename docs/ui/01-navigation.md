@@ -190,18 +190,17 @@ The bar itself depends on the device:
   their existing persistence; scroll position is retained within the running app,
   not restored across process restarts.
 
-The picker emits `Board Picker Opened` once per presentation and `Board Picker
-Selection Completed` after an existing-board selection is persisted. The
-opening waits for the active-board read to settle, then for Near you's answer
-(at most 5 s), and is backdated to when the read settled, so time to pick still
-counts from the opening. A pick, or closing the picker, sends a waiting opening
-first, so it always precedes the pick. `nearbyResultCount` is how many boards
-the Near you search returned (after a board-type filter, before boards already
-shown above are left out); it is `null` when the picker did not search (location
-not allowed, or first-board mode before "At a gym"), when the search failed, or
-when it had not answered by the time the opening went. `locationStatus` is the
-location state then: `idle`, `loading`, `granted`, `denied` or `unavailable`. The
-gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
+The picker emits `Board Picker Opened` once after the active-board read settles
+and `Board Picker Selection Completed` after an existing-board selection is
+persisted. The opening carries `locationStatus` as known then (`idle`,
+`loading`, `granted`, `denied` or `unavailable`; mostly `idle`, since the
+"already allowed?" read is still out). The pick carries `nearbyResultCount`,
+how many boards the Near you search had returned by then (after a board-type
+filter, before boards already shown above are left out): `0` for "Nothing
+within 20 km", `null` when the picker did not search (location not allowed, or
+first-board mode before "At a gym"), is still searching, or the search failed.
+`First Board Picker Skipped` carries the same count as it stood when the picker
+closed. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
 `sameConfig` compares board type, layout, size and hold sets. A failed
 restoration records unknown (`null`) rather than claiming there was no board.
 `source` distinguishes onboarding, explicit Session returns, and other picker
