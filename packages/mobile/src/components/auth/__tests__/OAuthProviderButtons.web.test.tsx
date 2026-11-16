@@ -22,6 +22,7 @@ import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'web' },
   Pressable: ({
     accessibilityLabel,
     children,
