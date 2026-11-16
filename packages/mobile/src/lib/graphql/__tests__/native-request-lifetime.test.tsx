@@ -5,6 +5,14 @@
  * effect lands. This is the behaviour the store app shipped with before the
  * BA-05 per-call-site wrappers, and the plain hooks restored in A4 must keep it.
  *
+ * The four reads pin behaviour rather than restore it: the BA-05 finite-query
+ * wrapper never handed TanStack's signal over on native, so they already
+ * finished after unmount. The disconnect case is the restored part: a plain
+ * useMutation drops its per-call callbacks (the toast, router.back) once the
+ * screen has gone, as it did before #7579. These hooks are plain TanStack again,
+ * so #7599's per-operation account fence no longer covers them; sign-out's
+ * `queryClient.clear()` is what keeps the old account's data out of the cache.
+ *
  * Real HTTP: a local node:http server answers /graphql, and the hooks send
  * through a real `GraphQLClient` on the real `fetch`. Only the module that
  * builds the app's client is swapped, so its URL points at the local server.
