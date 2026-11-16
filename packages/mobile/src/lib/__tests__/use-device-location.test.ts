@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
 const expoLocation = vi.hoisted(() => ({
+  getForegroundPermissionsAsync: vi.fn(),
   requestForegroundPermissionsAsync: vi.fn(),
   getCurrentPositionAsync: vi.fn(),
   Accuracy: { Balanced: 3 },
@@ -15,8 +16,39 @@ import { useDeviceLocation } from '../use-device-location';
 describe('useDeviceLocation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     expoLocation.getCurrentPositionAsync.mockResolvedValue({ coords: { latitude: 1, longitude: 2 } });
+  });
+
+  // The board picker searches Near you on open, but only for a climber who
+  // already said yes: the question itself waits for a tap.
+  it.each([
+    { permission: 'granted', status: 'granted', asked: true },
+    { permission: 'undetermined', status: 'idle', asked: false },
+    { permission: 'denied', status: 'idle', asked: false },
+  ])('requestIfAllowed with $permission → $status', async ({ permission, status, asked }) => {
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: permission });
+    const { result } = renderHook(() => useDeviceLocation());
+
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+
+    expect(result.current.status).toBe(status);
+    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(asked ? 1 : 0);
+  });
+
+  it('requestIfAllowed stays idle when the permission read throws', async () => {
+    expoLocation.getForegroundPermissionsAsync.mockRejectedValue(new Error('no module'));
+    const { result } = renderHook(() => useDeviceLocation());
+
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+
+    expect(result.current.status).toBe('idle');
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
 
   it('resolves coords and status=granted when permission is granted', async () => {

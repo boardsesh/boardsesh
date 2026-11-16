@@ -168,8 +168,7 @@
       "gymHint": "Pick your gym's board",
       "own": "My own board",
       "ownHint": "Set up the board you have at home",
-      "sprayWall": "Add my Spraywall",
-      "scan": "Scan for the board in front of me",
+      "sprayWall": "My Spraywall",
       "searching": "Looking for boards near you…",
       "nearbyEmpty": "Nothing within 20 km",
       "nearbyError": "Couldn't load boards near you",
@@ -178,7 +177,8 @@
       "openSettings": "Open Settings",
       "notNow": "Not now",
       "nearbyEmptyMoonboard": "No MoonBoards within 20 km",
-      "nearbyEmptyType": "No {{board}} boards within 20 km"
+      "nearbyEmptyType": "No {{board}} boards within 20 km",
+      "sprayWallHint": "Photograph it and mark the holds"
     },
     "firstConnect": {
       "card": {
@@ -208,24 +208,16 @@
       }
     },
     "discovery": {
-      "findNearby": "Find nearby",
-      "bluetooth": "Bluetooth",
-      "locationDenied": "Allow location",
       "nearbyTitle": "Near you",
-      "nearbyShowing": "Showing nearby",
       "yourBoardsTitle": "Your boards",
       "onIt": "On it",
       "ownedBadgeAria": "Your board",
       "followingBadgeAria": "Following",
-      "popularTitle": "Popular setups",
-      "findGym": "Find gym",
       "create": "Create board",
-      "createTile": "Create",
       "followed": "Added {{name}} to your boards",
       "followError": "Couldn't add {{name}} to your boards",
       "pinnedBadgeAria": "Pinned",
       "pinError": "Couldn't update your pinned boards",
-      "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "MoonBoards near you",
       "nearbyTitleType": "{{board}} boards near you",
       "nearbyShowAll": "Show all",
@@ -237,7 +229,9 @@
         "download": "Download for offline",
         "edit": "Edit board",
         "editWall": "Edit Spraywall"
-      }
+      },
+      "nearbyMap": "Map",
+      "showNearby": "Show boards near you"
     },
     "create": {
       "screenTitle": "Set up your board",
@@ -296,22 +290,46 @@
       "name": "Board name"
     },
     "bluetooth": {
-      "title": "Boards near you",
-      "scanning": "Scanning for boards…",
-      "resolving": "Loading boards…",
       "noResults": "No boards in range",
       "unavailable": "Turn on Bluetooth to scan",
-      "notAsked": "Allow Bluetooth to look for boards near you.",
-      "unknownSetupTitle": "Found a {{board}} board",
-      "unknownSetupBody": "We don't know its setup yet.",
-      "moonboardTitle": "Found a MoonBoard nearby",
-      "moonboardBody": "Let's work out which one it is.",
-      "bareNameTitle": "Found a {{board}} board nearby",
-      "bareNameBody": "Its box doesn't say which one.",
       "needSignalTitle": "Found a board, need signal",
       "needSignalBody": "We heard it but can't look it up offline.",
-      "findAtGym": "Find it at my gym",
       "ownBoard": "It's my own board"
+    },
+    "inRange": {
+      "title": "In range",
+      "inFrontOfYou": "In front of you",
+      "permissionTitle": "Spot the board you're at",
+      "permissionBody": "Boardsesh listens for boards over Bluetooth, so the one in front of you is the first thing you see.",
+      "continue": "Continue",
+      "blockedDenied": "Allow Bluetooth in Settings to spot the board in front of you.",
+      "blockedOff": "Turn on Bluetooth to spot the board in front of you.",
+      "unreachable": "Couldn't reach Bluetooth.",
+      "scanTitle": "Look for the board in front of you",
+      "scan": "Scan",
+      "scanAgain": "Scan again",
+      "lookingTitle": "Looking for boards…",
+      "lookingBody": "Stand near the wall. Boards that are switched on show up here.",
+      "gymWalls": "{{gym}} · {{count}} walls",
+      "closest": "Closest",
+      "showAll": "Show all {{count}} boards",
+      "moonboardTitle": "A MoonBoard is in range",
+      "moonboardBody": "MoonBoards don't send a serial number, so tell us where you are and we'll find this one.",
+      "typeTitle": "A {{board}} board is in range",
+      "bareNameBody": "Its box doesn't say which board it is, so tell us where you are and we'll find this one.",
+      "unknownSetupBody": "We don't know its setup yet, so tell us where you are and we'll find this one.",
+      "alsoMoonboard": "A MoonBoard is also in range",
+      "alsoType": "A {{board}} board is also in range",
+      "alsoNeedSignal": "Another board is in range. We need signal to name it.",
+      "useMyLocation": "Use my location",
+      "searchGyms": "Search gyms",
+      "alsoAt": "Also at {{gym}}"
+    },
+    "addBoard": {
+      "aria": "Add a board",
+      "setUp": "Set up a board",
+      "sprayWall": "Add a Spraywall",
+      "findGym": "Find a gym board"
     },
     "boardDetail": {
       "setActive": "Set as active board",

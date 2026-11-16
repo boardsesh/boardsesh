@@ -371,12 +371,15 @@ The setup walkthrough video still shows the old order, with the name, angle and
 visibility asked first. The flow now starts with the photo and names the wall
 last, so the walkthrough needs re-recording.
 
-Two front doors open it: the board picker's Spray wall tile, and "Add my spray
-wall" under My own board in the "Where do you climb?" block that Climbs' Find my
-board opens for a climber with no boards (#5654, `First Board Path Chosen
-{path: 'spray_wall'}`). The launch gate's first-board showing of that block does
-not offer it, because the wizard binds without the onboarding `source` and so
-would leave first-run open.
+Four front doors open it, all in the board picker (`Board Picker Add Selected
+{kind: 'spraywall'}` names which): Add a Spraywall in the + menu of the picker's
+top bar (and of Manage boards), the same button under "No boards yet", and My
+Spraywall in the "Where do you climb?" block (#5654, `First Board Path Chosen
+{path: 'spray_wall'}`). That block offers it on both of its showings, the launch
+gate's and Climbs' Find my board. The route carries the picker's `source`
+(`/boards/spray/new?source=onboarding`), and the wizard hands it to its bind, so
+a first wall closes out first-run like a first board from the builder. A
+reset's replacement never binds as onboarding.
 
 The flow starts with the photo and names the wall last, so a climber can go from
 photo to published wall without typing anything. Six steps are counted for a new
@@ -3750,7 +3753,7 @@ reports for the week that just ended. It identifies no wall and no person
 
 ## Availability and detection quality
 
-Spray walls are enabled by default. The picker tile and `/boards/spray/*`
+Spray walls are enabled by default. The picker's Add a Spraywall and `/boards/spray/*`
 routes do not depend on PostHog or an enablement environment variable. The old
 `spray-walls` flag and on-device overrides no longer gate these surfaces.
 Maintenance requires the additive backend `sourceVersionId` input. Deploy that

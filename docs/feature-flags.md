@@ -233,6 +233,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   nav bar's hide-on-scroll and the overlay bar it needs. On, the bar
   sits opaque below every screen and never moves, as before; it is also the QA
   switch for comparing the two.
+  `picker-auto-scan-kill` is a kill switch (read through
+  `usePickerAutoScanEnabled`, unresolved = enabled) for the board picker's In
+  range slot scanning over Bluetooth by itself when the picker opens
+  (`use-picker-board-scan.ts`). On, the slot shows a "Look for the board in front
+  of you" card and scans only when the climber taps Scan. The Bluetooth question
+  is never asked on open either way: only the slot's Continue button asks.
   Three more kill switches cover the launch surfaces #5654 woke up. From 2.2.0
   until that fix, all of them sat behind a `ready` prop frozen at `false` under
   `DatabaseProvider` (expo-sqlite's memo'd provider never re-renders its

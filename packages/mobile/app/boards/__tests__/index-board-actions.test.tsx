@@ -21,7 +21,7 @@ vi.mock('../../../src/components/PressableSurface', async () => {
 // when the identity lookup fails.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type {
   BoardCardMenuAction,
@@ -75,10 +75,23 @@ const carouselProps = vi.hoisted(() => ({
   byFirstKey: new Map<string, CarouselProps>(),
 }));
 const trackMock = vi.hoisted(() => vi.fn());
-// The Bluetooth quickstart sheet's props, so a scan pick can be driven directly.
-const bluetoothSheetProps = vi.hoisted(() => ({
-  last: null as { onSelect: (board: UserBoard) => void } | null,
+// The In range slot: the scan the screen reads, and the section's props, so a
+// pick from it can be driven directly.
+const scanCtrl = vi.hoisted(() => ({
+  phase: 'hidden' as string,
+  rows: [] as unknown[],
+  stop: vi.fn(),
 }));
+const inRangeProps = vi.hoisted(() => ({
+  last: null as {
+    view: { content: { kind: string; board?: { key: string } } };
+    onPickBoard: (item: { key: string }) => void;
+  } | null,
+}));
+const alsoAtProps = vi.hoisted(() => ({
+  last: null as { anchor: UserBoard; onSelectBoard: (board: UserBoard) => void } | null,
+}));
+const navigationMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   isAuthenticated: true,
@@ -150,19 +163,66 @@ vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => ({ source: state.source }),
+  useIsFocused: () => true,
+  useNavigation: () => navigationMock,
 }));
+vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => ({
+  usePickerBoardScan: () => ({
+    phase: scanCtrl.phase,
+    rows: scanCtrl.rows,
+    lookup: 'none',
+    listenedLongEnough: () => true,
+    start: vi.fn(),
+    stop: scanCtrl.stop,
+    openSettings: vi.fn(),
+    retryLookup: vi.fn(),
+  }),
+}));
+vi.mock('../../../src/components/board-discovery/use-in-range-location-hint', () => ({
+  useInRangeLocationHint: () => null,
+}));
+vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
+  InRangeSection: (props: NonNullable<(typeof inRangeProps)['last']>) => {
+    inRangeProps.last = props;
+    return null;
+  },
+}));
+vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({
+  AlsoAtGymSection: (props: NonNullable<(typeof alsoAtProps)['last']>) => {
+    alsoAtProps.last = props;
+    return null;
+  },
+}));
+// The + in the top bar: one button per way to add a board.
+vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
+  AddBoardMenu: ({ onSelect }: { onSelect: (kind: string) => void }) =>
+    createElement(
+      'div',
+      null,
+      ['board', 'spraywall', 'gym_map'].map((kind) =>
+        createElement('button', { key: kind, type: 'button', onClick: () => onSelect(kind) }, `add ${kind}`),
+      ),
+    ),
+}));
+vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
+  setPendingBoardRecognition: vi.fn(),
+  clearPendingBoardRecognition: clearPendingRecognitionMock,
+  consumePendingBoardRecognition: vi.fn(async () => {}),
+}));
+
+/** Renders whatever the screen last put in the header's trailing slot. */
+function renderHeaderPlus() {
+  const options = navigationMock.setOptions.mock.calls.at(-1)?.[0] as { headerRight?: () => ReactElement } | undefined;
+  if (options?.headerRight) render(options.headerRight());
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { name?: string }) => {
       const map: Record<string, string> = {
         'mobile.discovery.yourBoardsTitle': 'Your boards',
-        'mobile.discovery.popularTitle': 'Popular',
-        'mobile.discovery.create': 'Create',
-        'mobile.discovery.findNearby': 'Find nearby',
-        'mobile.discovery.bluetooth': 'Bluetooth',
-        'mobile.discovery.findGym': 'Find a gym',
-        'mobile.discovery.addWallTile': 'Spray wall',
         'mobile.manage.deleteTitle': 'Delete board?',
         'mobile.manage.deleteWallTitle': 'Delete spray wall?',
         'mobile.manage.deleteWallMessage':
@@ -205,7 +265,6 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
       refetch: vi.fn(),
     };
   },
-  usePopularBoardConfigs: () => ({ data: { configs: [] } }),
   useNearbyBoards: () => ({
     data: state.nearbyBoards.length > 0 ? { boards: state.nearbyBoards } : undefined,
     isLoading: false,
@@ -242,7 +301,13 @@ vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useWillFollowFoundBoard: () => () => state.willFollow,
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
-  useDeviceLocation: () => ({ status: 'idle', coords: undefined, request: vi.fn() }),
+  useDeviceLocation: () => ({
+    status: 'idle',
+    coords: undefined,
+    request: vi.fn(),
+    requestIfAllowed: vi.fn(async () => {}),
+    refresh: vi.fn(async () => false),
+  }),
 }));
 // Keep the activation/link decision real while replacing credential and preference I/O.
 vi.mock('../../../src/hooks/use-is-offline', () => ({
@@ -288,6 +353,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
+  usePickerAutoScanEnabled: () => true,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -312,16 +378,6 @@ vi.mock('../../../src/components/Button', () => ({
 }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
-}));
-vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
-  BoardModeCard: ({ label, onPress }: { label: string; onPress?: () => void }) =>
-    createElement('button', { 'data-mode-card': label, onClick: onPress, type: 'button' }, label),
-}));
-vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
-  BluetoothQuickstartSheet: (props: { onSelect: (board: UserBoard) => void }) => {
-    bluetoothSheetProps.last = props;
-    return null;
-  },
 }));
 // First-board mode (#5654) has its own suite, index-first-board.test.tsx.
 vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
@@ -393,7 +449,10 @@ beforeEach(() => {
   carouselProps.byFirstKey.clear();
   detailProps.last = null;
   state.isAuthenticated = true;
-  bluetoothSheetProps.last = null;
+  scanCtrl.phase = 'hidden';
+  scanCtrl.rows = [];
+  inRangeProps.last = null;
+  alsoAtProps.last = null;
   state.activeBoardGeneration = 0;
   state.source = undefined;
   state.profile = { id: 'me' };
@@ -1003,16 +1062,26 @@ describe('identity resolution never blocks the switcher', () => {
   });
 });
 
-describe('the spray-wall tile', () => {
-  it('renders next to the other mode cards and opens the wizard', () => {
+// The tiles are gone: the + in the top bar holds the ways to add a board, and
+// a climber with no boards gets the two that make one of their own.
+describe('the empty state', () => {
+  it.each([
+    { title: 'mobile.addBoard.setUp', kind: 'board', pathname: '/boards/create' },
+    { title: 'mobile.addBoard.sprayWall', kind: 'spraywall', pathname: '/boards/spray/new' },
+  ])('offers $title and opens $pathname', ({ title, kind, pathname }) => {
+    state.myBoards = [];
     render(createElement(BoardSelection));
-    expect(screen.getByText('Spray wall')).toBeTruthy();
-    expect(screen.getByText('mobile.discovery.createTile')).toBeTruthy();
-    fireEvent.click(screen.getByText('Spray wall'));
-    expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/boards/spray/new',
-      params: { returnTo: '/(tabs)/climbs' },
-    });
+
+    expect(screen.getByText('No boards yet')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: title }));
+
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname, params: { returnTo: '/(tabs)/climbs' } });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind, surface: 'empty_state' });
+  });
+
+  it('is not shown to a climber with boards', () => {
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('No boards yet')).toBeNull();
   });
 });
 
@@ -1099,17 +1168,71 @@ describe('where a pick came from', () => {
     expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
   });
 
-  it('tags a board the Bluetooth scan found as bluetooth', async () => {
+  // The board in front of the climber, from the In range slot's hero.
+  it('tags a board the In range slot found as bluetooth, ending the scan first', async () => {
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [{ kind: 'board', key: 'board:nearby', board: nearbyWall, rssi: -50, recognizedBy: 'serial' }];
     render(createElement(BoardSelection));
 
-    bluetoothSheetProps.last?.onSelect(nearbyWall);
+    const hero = inRangeProps.last?.view.content;
+    expect(hero?.kind).toBe('hero');
+    act(() => inRangeProps.last?.onPickBoard({ key: hero?.board?.key ?? '' }));
 
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
     await waitFor(() =>
       expect(trackMock).toHaveBeenCalledWith(
         'Board Picker Selection Completed',
         expect.objectContaining({ pickSource: 'bluetooth' }),
       ),
     );
+    expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'nearby' }));
+    // The scan ends before the bind starts, so a bind that connects never
+    // finds the radio still scanning.
+    expect(scanCtrl.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      setActiveBoardMock.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  // Every pick on the screen ends the scan, not only the In range ones.
+  it('ends the scan before a pick from a card', async () => {
+    state.nearbyBoards = [nearbyWall];
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crux Kilter' }));
+
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledOnce());
+  });
+
+  // The walls at the in-range board's gym, one tap each; nothing connects
+  // without the tap (#7117).
+  it('anchors "Also at" on the board in range and tags its picks as gym_walls', async () => {
+    const crux = { gymUuid: 'gym-crux', gymName: 'Crux' };
+    const inRangeWall = board({ uuid: 'crux-kilter', name: 'Crux Kilter', ...crux });
+    const otherWall = board({ uuid: 'crux-moon', name: 'Crux MoonBoard', boardType: 'moonboard', ...crux });
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [
+      { kind: 'board', key: 'board:crux-kilter', board: inRangeWall, rssi: -50, recognizedBy: 'serial' },
+    ];
+    render(createElement(BoardSelection));
+
+    expect(alsoAtProps.last?.anchor.uuid).toBe('crux-kilter');
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    act(() => alsoAtProps.last?.onSelectBoard(otherWall));
+
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'gym_walls' }),
+      ),
+    );
+  });
+
+  it('anchors "Also at" on the active board when nothing is in range', () => {
+    state.activeBoard = board({ uuid: 'gym', name: 'High Point Orlando', gymUuid: 'gym-hp', gymName: 'High Point' });
+    render(createElement(BoardSelection));
+    expect(alsoAtProps.last?.anchor.uuid).toBe('gym');
   });
 
   // Without `source` a gym picked on the map during onboarding would never close
@@ -1117,13 +1240,40 @@ describe('where a pick came from', () => {
   it('hands the gym finder its source and says the picker opened it', () => {
     state.source = 'onboarding';
     render(createElement(BoardSelection));
+    renderHeaderPlus();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find a gym' }));
+    fireEvent.click(screen.getByRole('button', { name: 'add gym_map' }));
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind: 'gym_map', surface: 'picker' });
+  });
+
+  // The wall wizard now takes the source too, so a first wall closes out first run.
+  it.each([
+    { kind: 'board', pathname: '/boards/create' },
+    { kind: 'spraywall', pathname: '/boards/spray/new' },
+  ])('opens $pathname from the + with the picker’s return and source', ({ kind, pathname }) => {
+    state.source = 'onboarding';
+    render(createElement(BoardSelection));
+    renderHeaderPlus();
+
+    fireEvent.click(screen.getByRole('button', { name: `add ${kind}` }));
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname,
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding' },
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind, surface: 'picker' });
+  });
+
+  it('offers no + to a signed-out climber', () => {
+    state.isAuthenticated = false;
+    render(createElement(BoardSelection));
+    const options = navigationMock.setOptions.mock.calls.at(-1)?.[0] as { headerRight?: unknown } | undefined;
+    expect(options?.headerRight).toBeUndefined();
   });
 });
 

@@ -8,9 +8,10 @@
 //
 // A box is bound when a connect to it from a board succeeds (useBoardBluetooth,
 // where it also records the reconnect handle in known-board-devices-store.ts).
-// `rememberRecognizedBoardDevice` is also exported for the picker's in-range
-// slot to bind a box when the climber picks a board for an unnamed row; that
-// call is not wired yet (the slot's UI lands in a later PR).
+// `rememberRecognizedBoardDevice` is also called after a bind that answers the
+// picker's in-range slot: the climber acted on an unnamed row and then bound a
+// board of its type, on the picker, the gym map or the builder
+// (pending-board-recognition.ts).
 //
 // This is identity only, and kept apart from the reconnect handles on purpose.
 // Those are reconnect *targets*: 8 at most, and a hang-up stamps them to expire

@@ -70,6 +70,7 @@ const ANCHOR_GLYPHS: Partial<Record<IconName, string>> = {
   more: '⋯',
   'more.actions': '⋯',
   'more.vertical': '⋮',
+  plus: '+',
 };
 
 export const anchorGlyphForIcon = (iconName: IconName): string => ANCHOR_GLYPHS[iconName] ?? '⋯';
@@ -81,3 +82,15 @@ export const anchorGlyphForIcon = (iconName: IconName): string => ANCHOR_GLYPHS[
 const OVERFLOW_ANCHORS: ReadonlySet<IconName> = new Set<IconName>(['more', 'more.actions', 'more.vertical']);
 
 export const isOverflowAnchor = (iconName: IconName): boolean => OVERFLOW_ANCHORS.has(iconName);
+
+/**
+ * The Material vector an Android icon anchor draws in an M3 IconButton, or null
+ * for a text glyph (`anchorGlyphForIcon`): `more_vert` for the overflow family,
+ * `add` for the + that opens a "new thing" menu (the board picker's top bar).
+ */
+export type AndroidAnchorIcon = 'more_vert' | 'add';
+
+export const androidAnchorIcon = (iconName: IconName): AndroidAnchorIcon | null => {
+  if (isOverflowAnchor(iconName)) return 'more_vert';
+  return iconName === 'plus' ? 'add' : null;
+};

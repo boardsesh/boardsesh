@@ -226,6 +226,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
   },
   {
+    key: 'picker-auto-scan-kill',
+    label: 'Stop the board picker scanning by itself',
+    description:
+      "Emergency kill switch for the board picker's In range slot scanning over Bluetooth on open. With it on, the slot waits for a tap on its Scan button instead; nothing else changes, and the Bluetooth question is still only asked from a tap. Unresolved reads as enabled.",
+  },
+  {
     key: 'first-connect-cta-kill',
     label: 'Disable the connect step',
     description:
@@ -570,6 +576,16 @@ export function useSendRecoveryGateEnabled(): boolean {
  */
 export function useFirstBoardPickerEnabled(): boolean {
   return useFeatureFlag('first-board-picker-kill') !== true;
+}
+
+/**
+ * Kill switch for the board picker's In range slot scanning by itself on open.
+ * With it on the slot shows its Scan button and scans on a tap only. Unresolved
+ * reads as "not killed": the scan never prompts on open whatever this says
+ * (picker-scan-phase.ts), so the first frames can scan safely.
+ */
+export function usePickerAutoScanEnabled(): boolean {
+  return useFeatureFlag('picker-auto-scan-kill') !== true;
 }
 
 /**

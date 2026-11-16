@@ -8,6 +8,7 @@ import {
 } from '@boardsesh/board-config';
 import {
   DEFAULT_WALL_FINDER_FILTER,
+  initialWallFinderFilter,
   hasActiveWallFinderFilter,
   toggleBoardTypeFilter,
   toggleLayoutFilter,
@@ -200,5 +201,17 @@ describe('buildSizeOptions', () => {
   it('stays empty for a layout the selected board type does not have', () => {
     expect(buildSizeOptions({ boardTypes: ['woods'], layoutIds: [999] })).toEqual([]);
     expect(buildSizeOptions({ boardTypes: ['moonboard'], layoutIds: [999] })).toEqual([]);
+  });
+});
+
+// The board picker's "Search gyms" opens the map on the type of the board it heard.
+describe('initialWallFinderFilter', () => {
+  it.each([
+    { param: 'moonboard', expected: { boardTypes: ['moonboard'] } },
+    { param: 'kilter', expected: { boardTypes: ['kilter'] } },
+    { param: 'not-a-board', expected: DEFAULT_WALL_FINDER_FILTER },
+    { param: undefined, expected: DEFAULT_WALL_FINDER_FILTER },
+  ])('$param → $expected', ({ param, expected }) => {
+    expect(initialWallFinderFilter(param)).toEqual(expected);
   });
 });

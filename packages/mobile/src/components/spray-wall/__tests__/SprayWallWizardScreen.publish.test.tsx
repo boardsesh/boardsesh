@@ -466,6 +466,24 @@ describe('SprayWallWizardScreen — publish and bind', () => {
   });
 });
 
+// The first-run picker's My Spraywall: the wall's bind has to close out first
+// run as the builder's does, so the onboarding source reaches the bind.
+describe('SprayWallWizardScreen — the onboarding source', () => {
+  it.each([
+    { name: 'a first wall from first run', props: { source: 'onboarding' as const }, expected: 'onboarding' },
+    { name: 'an ordinary wall', props: {}, expected: undefined },
+    {
+      name: "a reset's replacement, never a first board",
+      props: { source: 'onboarding' as const, resetOfWallUuid: 'old-wall' },
+      expected: undefined,
+    },
+  ])('binds $name with source $expected', async ({ props, expected }) => {
+    render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs', ...props }));
+    await flush();
+    expect((mocks.activateBoardOptions.current as { source?: string } | null)?.source).toBe(expected);
+  });
+});
+
 describe('SprayWallWizardScreen — publishing a reset', () => {
   // The clone, already holding a photo draft: the reset rejoins it at the editor.
   const CLONE = {

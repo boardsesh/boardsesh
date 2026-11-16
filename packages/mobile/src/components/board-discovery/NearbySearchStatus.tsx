@@ -17,8 +17,8 @@ type NearbySearchStatusProps = {
   /** Asks for the boards near the climber again, after `nearby_error`. */
   onRetryNearby: () => void;
   /**
-   * The one board type the search is narrowed to (the Bluetooth quickstart's
-   * "Find it at my gym"), or null for every board.
+   * The one board type the search is narrowed to (the In range slot's "Use my
+   * location"), or null for every board.
    */
   boardType?: BoardName | null;
   /** Drops `boardType` and shows every board near the climber. */
@@ -32,9 +32,9 @@ type NearbySearchStatusProps = {
  * a retry, or Settings. Nothing here only looks tappable.
  *
  * Shared by the first-board picker's "At a gym" choice and the ordinary
- * picker's Find nearby tile, which used to go dim and dead on a denial and
- * silently back to idle on an empty result. Renders nothing for `idle` and
- * `found`: the caller owns the list.
+ * picker's Near you section. The Find nearby tile Near you replaced used to go
+ * dim and dead on a denial and silently back to idle on an empty result.
+ * Renders nothing for `idle` and `found`: the caller owns the list.
  */
 export function NearbySearchStatus({
   state,

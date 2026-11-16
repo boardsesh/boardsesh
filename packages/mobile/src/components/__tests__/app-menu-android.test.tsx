@@ -137,7 +137,7 @@ vi.mock('../../providers/theme-provider', async () => {
   return { useTheme: () => theme };
 });
 
-vi.mock('../AppMenu.icons.android', () => ({ MORE_VERT_ICON: 1 }));
+vi.mock('../AppMenu.icons.android', () => ({ MORE_VERT_ICON: 1, ADD_ICON: 2 }));
 
 import { AppMenu } from '../AppMenu.android';
 import { makeThemeMock } from '../../test/theme-mock';

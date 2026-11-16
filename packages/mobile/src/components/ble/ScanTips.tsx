@@ -12,8 +12,8 @@ type ScanTipsProps = {
 
 /**
  * "Don't see your board?" and what to try, one line per tip, in the order
- * `orderScanTips` gives. The device picker and the /boards quickstart both show
- * it, from 5 s into a scan that has heard nothing to pick.
+ * `orderScanTips` gives. The device picker shows it from 5 s into a scan that
+ * has heard nothing to pick.
  */
 export function ScanTips({ boardName }: ScanTipsProps) {
   const { t } = useTranslation('settings');

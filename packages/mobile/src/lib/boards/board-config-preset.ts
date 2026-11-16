@@ -16,7 +16,7 @@
 //
 // MoonBoard is the one type with a fixed fallback. The popular list carries no
 // MoonBoard setups, yet MoonBoard is 37% of first binds that name a type, and
-// the Bluetooth quickstart now sends a climber standing at one straight to the
+// the picker's In range slot sends a climber standing at one straight to the
 // builder. The fallback is the setup most climbers actually use, not the
 // catalogue's first: MoonBoard 2016 (392 climbers over 30 days, ahead of 2024
 // with 304 and Masters 2019 with 282) with every hold set, at the builder's

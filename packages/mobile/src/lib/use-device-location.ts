@@ -21,6 +21,13 @@ export type DeviceLocation = {
   /** Kick off the permission prompt + one-shot fix. Safe to call repeatedly. */
   request: () => Promise<void>;
   /**
+   * `request`, but only when location is already allowed, so it never shows the
+   * permission prompt: a screen can search on open for a climber who said yes
+   * before, and ask the rest from a tap. Anything else (not asked, denied, no
+   * module) leaves `status` at `idle`.
+   */
+  requestIfAllowed: () => Promise<void>;
+  /**
    * Take a fresh fix once location is granted, for a climber who has moved
    * since the first one. `request` never does: after a grant it is a no-op.
    * Resolves `true` when the coordinates changed (a search keyed on them runs
@@ -84,6 +91,18 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
     }
   }, [retryAfterDenial]);
 
+  const requestIfAllowed = useCallback(async () => {
+    if (settledRef.current) return;
+    try {
+      const Location = await import('expo-location');
+      const { status: permission } = await Location.getForegroundPermissionsAsync();
+      if (permission !== 'granted') return;
+    } catch {
+      return;
+    }
+    await request();
+  }, [request]);
+
   const refresh = useCallback(async () => {
     // `loading` covers both a first request and another refresh in flight.
     if (statusRef.current !== 'granted') return false;
@@ -109,5 +128,5 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
     }
   }, []);
 
-  return { status, coords, request, refresh };
+  return { status, coords, request, requestIfAllowed, refresh };
 }

@@ -70,10 +70,6 @@ export const OBSERVE_FILTERED_ROUTE_PARAMS = [
   'layoutId',
   'sizeId',
   'setIds',
-  'seedBoardName',
-  'seedLayoutId',
-  'seedSizeId',
-  'seedSetIds',
 ];
 export const OBSERVE_INTEGRATIONS: ObserveIntegrationsConfig = {
   'expo-router': { filteredParams: OBSERVE_FILTERED_ROUTE_PARAMS },

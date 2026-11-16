@@ -168,8 +168,7 @@
       "gymHint": "Elige el plafón de tu rocódromo",
       "own": "Mi propio plafón",
       "ownHint": "Configura el plafón que tienes en casa",
-      "sprayWall": "Añadir mi Spraywall",
-      "scan": "Buscar el plafón que tengo delante",
+      "sprayWall": "Mi Spraywall",
       "searching": "Buscando plafones cerca de ti…",
       "nearbyEmpty": "Nada a menos de 20 km",
       "nearbyError": "No se pudieron cargar los plafones cerca de ti",
@@ -178,7 +177,8 @@
       "openSettings": "Abrir Ajustes",
       "notNow": "Ahora no",
       "nearbyEmptyMoonboard": "Ningún MoonBoard a menos de 20 km",
-      "nearbyEmptyType": "Ningún plafón {{board}} a menos de 20 km"
+      "nearbyEmptyType": "Ningún plafón {{board}} a menos de 20 km",
+      "sprayWallHint": "Fotografíalo y marca las presas"
     },
     "firstConnect": {
       "card": {
@@ -208,24 +208,16 @@
       }
     },
     "discovery": {
-      "findNearby": "Buscar cerca",
-      "bluetooth": "Bluetooth",
-      "locationDenied": "Permitir ubicación",
       "nearbyTitle": "Cerca de ti",
-      "nearbyShowing": "Mostrando cercanos",
       "yourBoardsTitle": "Tus plafones",
       "onIt": "Estás aquí",
       "ownedBadgeAria": "Tu plafón",
       "followingBadgeAria": "Siguiendo",
-      "popularTitle": "Configuraciones populares",
-      "findGym": "Buscar rocódromo",
       "create": "Crear plafón",
-      "createTile": "Crear",
       "followed": "{{name}} añadido a tus plafones",
       "followError": "No se pudo añadir {{name}} a tus plafones",
       "pinnedBadgeAria": "Fijado",
       "pinError": "No se pudieron actualizar tus plafones fijados",
-      "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "Plafones MoonBoard cerca de ti",
       "nearbyTitleType": "Plafones {{board}} cerca de ti",
       "nearbyShowAll": "Ver todos",
@@ -237,7 +229,9 @@
         "download": "Descargar para usar sin conexión",
         "edit": "Editar plafón",
         "editWall": "Editar Spraywall"
-      }
+      },
+      "nearbyMap": "Mapa",
+      "showNearby": "Ver plafones cerca de ti"
     },
     "create": {
       "screenTitle": "Configura tu plafón",
@@ -296,22 +290,46 @@
       "name": "Nombre del plafón"
     },
     "bluetooth": {
-      "title": "Plafones cerca de ti",
-      "scanning": "Buscando plafones…",
-      "resolving": "Cargando plafones…",
       "noResults": "Ningún plafón al alcance",
       "unavailable": "Activa el Bluetooth para buscar",
-      "notAsked": "Permite el Bluetooth para buscar plafones cerca de ti.",
-      "unknownSetupTitle": "Encontramos un plafón {{board}}",
-      "unknownSetupBody": "Aún no sabemos cómo está configurado.",
-      "moonboardTitle": "Hay un MoonBoard cerca",
-      "moonboardBody": "Vamos a averiguar cuál es.",
-      "bareNameTitle": "Hay un plafón {{board}} cerca",
-      "bareNameBody": "Su caja no dice cuál es.",
       "needSignalTitle": "Plafón encontrado, falta conexión",
       "needSignalBody": "Lo detectamos, pero sin conexión no podemos buscarlo.",
-      "findAtGym": "Buscarlo en mi rocódromo",
       "ownBoard": "Es mi propio plafón"
+    },
+    "inRange": {
+      "title": "Al alcance",
+      "inFrontOfYou": "Delante de ti",
+      "permissionTitle": "Encuentra el plafón en el que estás",
+      "permissionBody": "Boardsesh escucha los plafones por Bluetooth, así que el que tienes delante es lo primero que ves.",
+      "continue": "Continuar",
+      "blockedDenied": "Permite el Bluetooth en Ajustes para encontrar el plafón que tienes delante.",
+      "blockedOff": "Activa el Bluetooth para encontrar el plafón que tienes delante.",
+      "unreachable": "No se pudo conectar con el Bluetooth.",
+      "scanTitle": "Busca el plafón que tienes delante",
+      "scan": "Buscar",
+      "scanAgain": "Buscar de nuevo",
+      "lookingTitle": "Buscando plafones…",
+      "lookingBody": "Acércate al plafón. Los plafones encendidos aparecen aquí.",
+      "gymWalls": "{{gym}} · {{count}} plafones",
+      "closest": "Más cerca",
+      "showAll": "Ver los {{count}} plafones",
+      "moonboardTitle": "Hay un MoonBoard al alcance",
+      "moonboardBody": "Los MoonBoard no envían número de serie, así que dinos dónde estás y encontraremos este.",
+      "typeTitle": "Hay un plafón {{board}} al alcance",
+      "bareNameBody": "Su caja no dice qué plafón es, así que dinos dónde estás y lo encontraremos.",
+      "unknownSetupBody": "Aún no sabemos cómo está configurado, así que dinos dónde estás y lo encontraremos.",
+      "alsoMoonboard": "También hay un MoonBoard al alcance",
+      "alsoType": "También hay un plafón {{board}} al alcance",
+      "alsoNeedSignal": "Hay otro plafón al alcance. Necesitamos conexión para identificarlo.",
+      "useMyLocation": "Usar mi ubicación",
+      "searchGyms": "Buscar rocódromos",
+      "alsoAt": "También en {{gym}}"
+    },
+    "addBoard": {
+      "aria": "Añadir un plafón",
+      "setUp": "Configurar un plafón",
+      "sprayWall": "Añadir un Spraywall",
+      "findGym": "Buscar el plafón de un rocódromo"
     },
     "boardDetail": {
       "setActive": "Usar este plafón",

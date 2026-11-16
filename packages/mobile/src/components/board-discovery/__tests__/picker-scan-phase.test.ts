@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   isWithinPickerScanCooldown,
+  listenedLongEnoughForSoleBox,
   PICKER_SCAN_COOLDOWN_MS,
+  SOLE_BOX_MIN_LISTEN_MS,
   pickerScanPermissionFromAuthorization,
   resolvePickerScan,
   type PickerScanInputs,
@@ -136,6 +138,12 @@ describe('resolvePickerScan', () => {
       autoStart: false,
     },
     {
+      name: 'keeps scanning while a serial heard last is looked up behind the drawn rows',
+      inputs: { scanStatus: 'done', lookup: 'updating' },
+      phase: 'scanning',
+      autoStart: false,
+    },
+    {
       name: 'ends with final rows once the lookup answered',
       inputs: { scanStatus: 'done', lookup: 'resolved' },
       phase: 'done',
@@ -198,9 +206,9 @@ describe('resolvePickerScan', () => {
       autoStart: false,
     },
     {
-      name: 'treats a radio it could not read as off, whose Scan again can help',
+      name: 'says it could not reach a radio it could not read, never "turn it on"',
       inputs: { scanStatus: 'unavailable', unavailableReason: 'unknown' },
-      phase: 'blocked_off',
+      phase: 'unreachable',
       autoStart: false,
     },
     {
@@ -218,8 +226,31 @@ describe('resolvePickerScan', () => {
   it('reaches every phase', () => {
     const phases = new Set(cases.map((testCase) => testCase.phase));
     expect([...phases].sort()).toEqual(
-      ['blocked_denied', 'blocked_off', 'done', 'hidden', 'needs_permission', 'scanning', 'tap_to_scan'].sort(),
+      [
+        'blocked_denied',
+        'blocked_off',
+        'done',
+        'hidden',
+        'needs_permission',
+        'scanning',
+        'tap_to_scan',
+        'unreachable',
+      ].sort(),
     );
+  });
+});
+
+// Fable F2: "exactly one box" is judged on a scan the tap may have cut short.
+describe('listenedLongEnoughForSoleBox', () => {
+  it.each([
+    { name: 'no scan ran', startedAtMs: null, endedAtMs: null, nowMs: 10_000, expected: false },
+    { name: 'still running, 2 s in', startedAtMs: 0, endedAtMs: null, nowMs: 2_000, expected: false },
+    { name: 'still running, 5 s in', startedAtMs: 0, endedAtMs: null, nowMs: SOLE_BOX_MIN_LISTEN_MS, expected: true },
+    { name: 'cut short at 3 s', startedAtMs: 0, endedAtMs: 3_000, nowMs: 60_000, expected: false },
+    { name: 'pre-empted at 4.9 s', startedAtMs: 0, endedAtMs: 4_900, nowMs: 60_000, expected: false },
+    { name: 'ran to its end (15 s)', startedAtMs: 0, endedAtMs: 15_000, nowMs: 60_000, expected: true },
+  ])('$name → $expected', ({ startedAtMs, endedAtMs, nowMs, expected }) => {
+    expect(listenedLongEnoughForSoleBox({ startedAtMs, endedAtMs, nowMs })).toBe(expected);
   });
 });
 

@@ -1,4 +1,4 @@
-// The rows the Bluetooth quickstart lists, built from what the scan heard and
+// The rows the picker's In range slot lists, built from what the scan heard and
 // what the serial lookup made of it. Pure, so every state is testable without
 // a radio or a server.
 //
@@ -29,12 +29,23 @@ import { boardRowKeys, boardUuidOrNull } from '../../lib/boards/board-identity';
 /**
  * Where the serial lookup stands.
  * - `none`: no serial heard, so nothing to look up.
- * - `pending`: looking up, or waiting on the climber's saved serial choices.
- * - `resolved`: the lookup answered, even if it matched nothing.
+ * - `pending`: looking up, or waiting on the climber's saved serial choices,
+ *   with no answer drawn yet this scan.
+ * - `updating`: an answer this scan already drew stays up while the serials
+ *   heard since are looked up (`carryDrawnAnswer`).
+ * - `resolved`: the lookup answered every serial heard, even if it matched nothing.
  * - `failed`: serials heard but the lookup could not run (no signal, the
  *   request paused) or failed after its retries.
  */
-export type QuickstartLookupState = 'none' | 'pending' | 'resolved' | 'failed';
+export type QuickstartLookupState = 'none' | 'pending' | 'updating' | 'resolved' | 'failed';
+
+/** A lookup's answer: the serials it was asked about, and the boards it named for them. */
+export type QuickstartSerialAnswer = {
+  /** In the order the scan heard them. */
+  serials: readonly string[];
+  /** After `selectBleBoardCandidates`. */
+  boards: readonly UserBoard[];
+};
 
 /**
  * The lookup's state from the query's own flags. Any result wins: rows the
@@ -62,6 +73,44 @@ export function quickstartLookupState({
 }
 
 /**
+ * The lookup as the rows draw it. The lookup is keyed on every serial heard,
+ * so each new serial starts it over with no answer, and a board already drawn
+ * fell back to "Looking" whenever another box was heard across the gym. An
+ * answer this scan already drew (`drawn`) stays drawn instead, for the serials
+ * it answered, until the new answer lands:
+ * - still out: `updating`, with the serials heard since held back;
+ * - failed: `failed`, with one need-signal row for the serials heard since.
+ *
+ * `drawn` counts only when the serials it answered are where this scan's list
+ * starts. A scan only appends serials, in the order it hears them
+ * (`useBoardScan`), so an answer from earlier in this scan always answered the
+ * start of the list. One from another scan does not: a scan that hears S2 and
+ * then S1 again waits for its own first answer rather than draw the last
+ * scan's S1 board ahead of it. The caller also drops `drawn` when a scan
+ * starts over; this keeps a scan whose empty start never rendered just as safe.
+ */
+export function carryDrawnAnswer({
+  lookup,
+  serials,
+  drawn,
+}: {
+  /** `quickstartLookupState` for the serials heard now. */
+  lookup: QuickstartLookupState;
+  serials: readonly string[];
+  /** The answer for the serials heard now when `resolved`, else the last one drawn. */
+  drawn: QuickstartSerialAnswer | null;
+}): { lookup: QuickstartLookupState; answer: QuickstartSerialAnswer | null } {
+  if (lookup === 'none') return { lookup, answer: null };
+  const answeredThisScan =
+    drawn !== null &&
+    drawn.serials.length <= serials.length &&
+    drawn.serials.every((serial, index) => serials[index] === serial);
+  if (!answeredThisScan) return { lookup, answer: null };
+  if (lookup === 'pending') return { lookup: 'updating', answer: drawn };
+  return { lookup, answer: drawn };
+}
+
+/**
  * How a `board` row knows which board it is: its advertised serial matched a
  * saved board, or this phone recognised a serial-less box by its Bluetooth id.
  */
@@ -73,13 +122,25 @@ export type QuickstartRow =
   /** A serial nobody has saved a board for. */
   | { kind: 'unknown_setup'; key: string; boardType: BoardName; rssi: number | null }
   /** A MoonBoard. Its controller never says which layout it drives. */
-  | { kind: 'moonboard'; key: string; boardType: BoardName; rssi: number | null }
+  | { kind: 'moonboard'; key: string; boardType: BoardName; rssi: number | null; deviceId: string | null }
   /** An Aurora box that advertises only its type, no serial. */
-  | { kind: 'bare_name'; key: string; boardType: BoardName; rssi: number | null }
+  | { kind: 'bare_name'; key: string; boardType: BoardName; rssi: number | null; deviceId: string | null }
   /** Serials heard, but the lookup couldn't run or failed. */
   | { kind: 'lookup_failed'; key: string; rssi: number | null };
 
 type GroupedRowKind = 'unknown_setup' | 'moonboard' | 'bare_name';
+
+/**
+ * The Bluetooth ids behind one serial-less row, kept so the picker can bind the
+ * box to the board the climber goes on to pick (pending-board-recognition.ts).
+ * Only a row with exactly one box carries an id: with two MoonBoards in range
+ * the signal cannot say which one the climber is standing at.
+ */
+function soleDeviceId(deviceIds: ReadonlySet<string> | undefined): string | null {
+  if (!deviceIds || deviceIds.size !== 1) return null;
+  const [deviceId] = deviceIds;
+  return deviceId ?? null;
+}
 
 function strongest(current: number | null | undefined, next: number | null): number | null {
   if (current === undefined || current === null) return next;
@@ -124,28 +185,38 @@ function recognizedBoardFor(
  * - one MoonBoard row however many MoonBoards are in range, and one bare-name
  *   row per board type. Rows with the same type would carry the same words and
  *   the same two buttons, so one says it all;
- * - one "need signal" row in place of all serial rows while the lookup is down.
+ * - one "need signal" row in place of the serial rows the lookup is down for.
  *
- * Each grouped row takes the strongest signal in its group. Serial rows wait
- * for the lookup: while it is `pending` only the serial-less rows show.
+ * Each grouped row takes the strongest signal in its group. A MoonBoard or
+ * bare-name row also carries its box's Bluetooth id when it stands for exactly
+ * one box (`soleDeviceId`). Serial rows wait for the lookup: while it is
+ * `pending` only the serial-less rows show, and while it is `updating` the
+ * serials heard since the drawn answer are held back.
  */
 export function buildQuickstartRows({
   devices,
   boards,
+  answeredSerials,
   lookup,
   recognition,
 }: {
   devices: readonly QuickstartScanDevice[];
-  /** The saved boards the lookup resolved, after `selectBleBoardCandidates`. */
+  /** The saved boards the lookup named, after `selectBleBoardCandidates`. */
   boards: readonly UserBoard[];
+  /**
+   * The serials `boards` answers for while the lookup is `updating` or `failed`
+   * (`carryDrawnAnswer`). Absent: every serial heard once `resolved`, and none
+   * before.
+   */
+  answeredSerials?: readonly string[];
   lookup: QuickstartLookupState;
-  /** Absent: no serial-less box is named (the Bluetooth quickstart sheet). */
+  /** Absent: no serial-less box is named. */
   recognition?: QuickstartRecognition;
 }): QuickstartRow[] {
   const rows: QuickstartRow[] = [];
   const signalBySerial = new Map<string, number | null>();
   const groupSignal = new Map<string, { kind: GroupedRowKind; boardType: BoardName; rssi: number | null }>();
-  let strongestSerialSignal: number | null | undefined;
+  const groupDeviceIds = new Map<string, Set<string>>();
   const recognizedById = indexRecognizedBoardDevices(recognition?.devices ?? []);
   const knownBoardsByUuid = new Map<string, UserBoard>();
   for (const board of recognition?.knownBoards ?? []) {
@@ -155,16 +226,19 @@ export function buildQuickstartRows({
   // Keyed by board uuid: two boxes recognised as one board make one row.
   const recognizedBoards = new Map<string, { board: UserBoard; rssi: number | null }>();
 
-  const addToGroup = (kind: GroupedRowKind, boardType: BoardName, rssi: number | null) => {
+  const addToGroup = (kind: GroupedRowKind, boardType: BoardName, rssi: number | null, deviceId?: string) => {
     const groupKey = `${kind}:${boardType}`;
     const group = groupSignal.get(groupKey);
     groupSignal.set(groupKey, { kind, boardType, rssi: strongest(group?.rssi, rssi) });
+    if (deviceId === undefined) return;
+    const deviceIds = groupDeviceIds.get(groupKey) ?? new Set<string>();
+    deviceIds.add(deviceId);
+    groupDeviceIds.set(groupKey, deviceIds);
   };
 
   for (const device of devices) {
     if (device.kind === 'serial') {
       signalBySerial.set(device.serial, device.rssi);
-      strongestSerialSignal = strongest(strongestSerialSignal, device.rssi);
     } else {
       const recognizedBoard = recognizedBoardFor(device, recognizedById, knownBoardsByUuid);
       if (recognizedBoard) {
@@ -174,12 +248,19 @@ export function buildQuickstartRows({
           rssi: strongest(earlier?.rssi, device.rssi),
         });
       } else {
-        addToGroup(device.kind, device.boardType, device.rssi);
+        addToGroup(device.kind, device.boardType, device.rssi, device.deviceId);
       }
     }
   }
 
-  if (lookup === 'resolved') {
+  // Which heard serials the lookup has answered: every one once `resolved`,
+  // those of the answer still drawn while it is `updating` or `failed`.
+  const carriedSerials =
+    (lookup === 'updating' || lookup === 'failed') && answeredSerials !== undefined ? new Set(answeredSerials) : null;
+  const carriesAnswer = carriedSerials !== null;
+  const isAnswered = (serial: string): boolean => lookup === 'resolved' || (carriedSerials?.has(serial) ?? false);
+
+  if (lookup === 'resolved' || carriesAnswer) {
     const matchedSerials = new Set<string>();
     // A hidden board found by serial has an empty uuid, so rows key on its
     // serial and config instead (#6552).
@@ -200,11 +281,19 @@ export function buildQuickstartRows({
       });
     }
     for (const device of devices) {
-      if (device.kind !== 'serial' || matchedSerials.has(device.serial) || !device.boardType) continue;
+      if (device.kind !== 'serial' || !isAnswered(device.serial)) continue;
+      if (matchedSerials.has(device.serial) || !device.boardType) continue;
       addToGroup('unknown_setup', device.boardType, device.rssi);
     }
-  } else if (lookup === 'failed') {
-    rows.push({ kind: 'lookup_failed', key: 'lookup_failed', rssi: strongestSerialSignal ?? null });
+  }
+  if (lookup === 'failed') {
+    const unansweredSignals = devices.flatMap((device) =>
+      device.kind === 'serial' && !isAnswered(device.serial) ? [device.rssi] : [],
+    );
+    if (!carriesAnswer || unansweredSignals.length > 0) {
+      const rssi = unansweredSignals.reduce<number | null | undefined>(strongest, undefined) ?? null;
+      rows.push({ kind: 'lookup_failed', key: 'lookup_failed', rssi });
+    }
   }
 
   // Keyed like a serial row for the same board, so a row that turns from
@@ -220,7 +309,17 @@ export function buildQuickstartRows({
   }
 
   for (const [groupKey, group] of groupSignal) {
-    rows.push({ kind: group.kind, key: groupKey, boardType: group.boardType, rssi: group.rssi });
+    if (group.kind === 'unknown_setup') {
+      rows.push({ kind: group.kind, key: groupKey, boardType: group.boardType, rssi: group.rssi });
+    } else {
+      rows.push({
+        kind: group.kind,
+        key: groupKey,
+        boardType: group.boardType,
+        rssi: group.rssi,
+        deviceId: soleDeviceId(groupDeviceIds.get(groupKey)),
+      });
+    }
   }
 
   return rows.sort(compareBySignal);

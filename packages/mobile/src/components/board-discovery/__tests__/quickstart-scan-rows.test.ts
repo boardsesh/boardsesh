@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
 import type { RecognizedBoardDevice } from '../../../lib/ble/recognized-board-devices-store';
-import { buildQuickstartRows, quickstartLookupState, type QuickstartLookupState } from '../quickstart-scan-rows';
+import {
+  buildQuickstartRows,
+  carryDrawnAnswer,
+  quickstartLookupState,
+  type QuickstartLookupState,
+} from '../quickstart-scan-rows';
 
 function serialDevice(
   serial: string,
@@ -98,6 +103,31 @@ describe('buildQuickstartRows', () => {
     expect(rows.map((row) => row.rssi)).toEqual([-40, -45, -65, -90]);
   });
 
+  // The picker binds the box to the board picked next, so it needs the box's
+  // id, and only when one box stands behind the row.
+  it.each([
+    { name: 'one MoonBoard', devices: [moonboard('mb-1', -60)], expected: 'mb-1' },
+    { name: 'two MoonBoards', devices: [moonboard('mb-1', -60), moonboard('mb-2', -50)], expected: null },
+    { name: 'one bare Kilter box', devices: [bareBox('kb-1', 'kilter', -60)], expected: 'kb-1' },
+    {
+      name: 'two bare Kilter boxes',
+      devices: [bareBox('kb-1', 'kilter', -60), bareBox('kb-2', 'kilter', -70)],
+      expected: null,
+    },
+  ])('carries the box id for $name: $expected', ({ devices, expected }) => {
+    const [row] = buildQuickstartRows({ devices, boards: [], lookup: 'none' });
+    expect(row.kind === 'moonboard' || row.kind === 'bare_name' ? row.deviceId : 'no id field').toBe(expected);
+  });
+
+  it('keeps the box ids of two board types apart', () => {
+    const rows = buildQuickstartRows({
+      devices: [bareBox('kb-1', 'kilter', -60), bareBox('tb-1', 'tension', -70)],
+      boards: [],
+      lookup: 'none',
+    });
+    expect(rows.map((row) => (row.kind === 'bare_name' ? row.deviceId : null))).toEqual(['kb-1', 'tb-1']);
+  });
+
   it('holds serial rows back while the lookup is pending, but not the boards with no serial', () => {
     const rows = buildQuickstartRows({
       devices: [serialDevice('1', 'kilter', -50), moonboard('mb-1', -70)],
@@ -115,6 +145,30 @@ describe('buildQuickstartRows', () => {
     });
     expect(kinds(rows)).toEqual(['lookup_failed', 'moonboard:moonboard']);
     expect(rows[0].rssi).toBe(-55);
+  });
+
+  // A serial heard after the answer was drawn: the answer's rows stay, and the
+  // new serial waits for its own answer instead of reading as unknown.
+  it('keeps the drawn answer while a serial heard since is looked up', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -40), serialDevice('3', 'kilter', -60)],
+      boards: [savedBoard('crux', '1')],
+      answeredSerials: ['1', '3'],
+      lookup: 'updating',
+    });
+    expect(kinds(rows)).toEqual(['board:crux', 'unknown_setup:kilter']);
+    expect(rows.map((row) => row.rssi)).toEqual([-50, -60]);
+  });
+
+  it('keeps the drawn answer and asks for signal only for the serials heard since', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -70), serialDevice('3', 'kilter', -65)],
+      boards: [savedBoard('crux', '1')],
+      answeredSerials: ['1'],
+      lookup: 'failed',
+    });
+    expect(kinds(rows)).toEqual(['board:crux', 'lookup_failed']);
+    expect(rows[1].rssi).toBe(-65);
   });
 
   it('sorts every row by signal, strongest first, unknown last', () => {
@@ -329,5 +383,82 @@ describe('quickstartLookupState', () => {
 
   it('waits for the saved serial choices before calling an answer resolved', () => {
     expect(quickstartLookupState({ ...base, hasResult: true, resolving: true })).toBe('pending');
+  });
+});
+
+describe('carryDrawnAnswer', () => {
+  const drawn = { serials: ['1'], boards: [savedBoard('crux', '1')] };
+
+  it.each<{
+    name: string;
+    lookup: QuickstartLookupState;
+    serials: string[];
+    /** Whether an answer for serial 1 was drawn earlier. */
+    drewBefore: boolean;
+    expected: QuickstartLookupState;
+    keepsAnswer: boolean;
+  }>([
+    {
+      name: 'first answer out',
+      lookup: 'pending',
+      serials: ['1'],
+      drewBefore: false,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new serial looked up',
+      lookup: 'pending',
+      serials: ['1', '2'],
+      drewBefore: true,
+      expected: 'updating',
+      keepsAnswer: true,
+    },
+    {
+      name: 'new serial failed',
+      lookup: 'failed',
+      serials: ['1', '2'],
+      drewBefore: true,
+      expected: 'failed',
+      keepsAnswer: true,
+    },
+    {
+      name: 'every serial answered',
+      lookup: 'resolved',
+      serials: ['1'],
+      drewBefore: true,
+      expected: 'resolved',
+      keepsAnswer: true,
+    },
+    // A new scan starts empty, and one that hears other serials never draws
+    // the last scan's boards, even once it hears that scan's serial again.
+    {
+      name: 'new scan, nothing heard',
+      lookup: 'none',
+      serials: [],
+      drewBefore: true,
+      expected: 'none',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new scan, other serials',
+      lookup: 'pending',
+      serials: ['2'],
+      drewBefore: true,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new scan, other serial then the old one',
+      lookup: 'pending',
+      serials: ['2', '1'],
+      drewBefore: true,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+  ])('$name: $expected', ({ lookup, serials, drewBefore, expected, keepsAnswer }) => {
+    const carried = carryDrawnAnswer({ lookup, serials, drawn: drewBefore ? drawn : null });
+    expect(carried.lookup).toBe(expected);
+    expect(carried.answer).toBe(keepsAnswer ? drawn : null);
   });
 });

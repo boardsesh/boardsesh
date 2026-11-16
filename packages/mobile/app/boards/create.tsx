@@ -34,7 +34,7 @@ import {
   extractSerialExistsError,
   serialReuseDisclosure,
 } from '../../src/lib/boards/serial-reuse';
-import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
+import { useBoardBuilder } from '../../src/components/board-discovery/use-board-builder';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
@@ -66,7 +66,7 @@ function builderOpenedFrom(pickerSource: string | undefined): BuilderOpenedFrom 
 }
 
 /** Analytics properties describing a create attempt. Never carries free text or coordinates. */
-function describeInput(input: CreateBoardInput, source: 'popular_seed' | 'scratch') {
+function describeInput(input: CreateBoardInput, source: 'scratch') {
   return {
     boardType: input.boardType,
     layoutId: input.layoutId,
@@ -100,15 +100,11 @@ export default function CreateBoard() {
   const params = useLocalSearchParams<{
     returnTo?: string;
     source?: string;
-    seedBoardName?: string;
-    seedLayoutId?: string;
-    seedSizeId?: string;
-    seedSetIds?: string;
     /** `'1'` when "My own board" opened the builder: open with a setup chosen. */
     preset?: string;
     /**
-     * The board type to open on, when the Bluetooth quickstart heard a board it
-     * couldn't name and the climber said it's their own.
+     * The board type to open on, when the picker's In range slot heard a board
+     * it couldn't name and the climber said it's their own.
      */
     presetBoardType?: string;
   }>();
@@ -126,29 +122,18 @@ export default function CreateBoard() {
   const followBoard = useFollowBoard();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
 
-  // Pre-fill when opened from a Popular config. Memoised so the builder doesn't
-  // re-seed (and wipe edits) on every render.
-  const seed = useMemo<BoardBuilderSeed | null>(() => {
-    const boardName = params.seedBoardName ? toBoardName(params.seedBoardName) : null;
-    if (!boardName || !params.seedLayoutId || !params.seedSizeId || !params.seedSetIds) return null;
-    return {
-      boardName,
-      layoutId: Number(params.seedLayoutId),
-      sizeId: Number(params.seedSizeId),
-      setIds: params.seedSetIds,
-    };
-  }, [params.seedBoardName, params.seedLayoutId, params.seedSizeId, params.seedSetIds]);
-
-  const source = seed ? 'popular_seed' : 'scratch';
+  // Every create here starts from scratch: the picker's Popular setups cards,
+  // which opened the builder seeded with a config ('popular_seed'), went with
+  // the 2026-11 picker redesign.
+  const source = 'scratch';
 
   // "My own board" in the first-board picker (#5654): open with the board
   // type's most used setup already chosen, so the preview renders and Save
-  // works from the first frame. The popular list is the picker's own query
-  // (same key), so it is usually already cached; when it lands late the builder
+  // works from the first frame. When the popular list lands late the builder
   // fills its still-empty cascade then. A type the list does not carry opens
   // with nothing chosen rather than a guess, except MoonBoard, which opens on
   // the 2016 board most of its climbers use (see presetBoardConfig).
-  const presetRequested = params.preset === BUILDER_PRESET_PARAM_VALUE && seed === null;
+  const presetRequested = params.preset === BUILDER_PRESET_PARAM_VALUE;
   const { data: popularConfigs } = usePopularBoardConfigs({ limit: 12 }, { enabled: presetRequested });
   const popularConfigList = popularConfigs?.configs;
   const presetForBoard = useCallback(
@@ -156,9 +141,9 @@ export default function CreateBoard() {
     [popularConfigList],
   );
   const { data: privacySettings, refetch: refetchPrivacySettings } = usePrivacySettings();
-  // A seed names its own board type, so this only applies to a preset open.
+  // Only a preset open names a board type to start on.
   const initialBoardName = presetRequested ? (toBoardName(params.presetBoardType) ?? undefined) : undefined;
-  const builder = useBoardBuilder(seed, {
+  const builder = useBoardBuilder(null, {
     preset: presetRequested ? presetForBoard : undefined,
     initialBoardName,
     privacyEnabled: privacySettings?.enabled,
