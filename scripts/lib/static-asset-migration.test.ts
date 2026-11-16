@@ -28,11 +28,13 @@ function storedAsset(body: Uint8Array = contents): StoredAsset {
     metadata: { source: 'historical' },
   };
 }
-function memoryStore(initial: Record<string, Uint8Array> = {}) {
+function memoryStore(initial: Record<string, Uint8Array> = {}, contentType = 'image/webp') {
   const objects = new Map(Object.entries(initial));
   const store: AssetStore = {
     list: vi.fn(async () => ({ keys: [...objects.keys()], truncated: false })),
-    get: vi.fn(async (objectKey) => (objects.has(objectKey) ? storedAsset(objects.get(objectKey)) : undefined)),
+    get: vi.fn(async (objectKey) =>
+      objects.has(objectKey) ? { ...storedAsset(objects.get(objectKey)), contentType } : undefined,
+    ),
     put: vi.fn(async (objectKey, body) => {
       if (objects.has(objectKey)) throw { $metadata: { httpStatusCode: 412 } };
       objects.set(objectKey, body);
@@ -112,6 +114,49 @@ describe('historical immutable assets migration', () => {
     expect((await migrateStaticAssets(source, destination, 'apply')).copiedObjects).toBe(0);
     expect(destination.put).toHaveBeenCalledTimes(3);
     await expect(migrateStaticAssets(source, destination, 'verify-only')).resolves.toMatchObject({ copiedObjects: 0 });
+  });
+  it('inventories, copies and verifies immutable Aura geometry with its binary metadata', async () => {
+    const auraKey = key.replace(/\.webp$/, '.aura');
+    const source = memoryStore({ [auraKey]: contents }, 'application/octet-stream');
+    const destination = memoryStore({}, 'application/octet-stream');
+    await expect(migrateStaticAssets(source, destination, 'dry-run')).resolves.toEqual({
+      sourceObjects: 1,
+      missingObjects: 1,
+      copiedObjects: 0,
+    });
+    expect(source.get).not.toHaveBeenCalled();
+    expect(destination.put).not.toHaveBeenCalled();
+    await expect(migrateStaticAssets(source, destination, 'apply')).resolves.toMatchObject({ copiedObjects: 1 });
+    expect(destination.put).toHaveBeenCalledWith(
+      auraKey,
+      contents,
+      expect.objectContaining({
+        contentType: 'application/octet-stream',
+        cacheControl: 'public, max-age=31536000, immutable',
+      }),
+      createHash('sha256').update(contents).digest('base64'),
+    );
+    await expect(migrateStaticAssets(source, destination, 'verify-only')).resolves.toMatchObject({ copiedObjects: 0 });
+  });
+  it.each([
+    `aura/v2/${'a'.repeat(64)}.aura`,
+    `static/v1/${'a'.repeat(64)}.bin`,
+    `static/v1/${'a'.repeat(63)}.aura`,
+    `static/v1/${'a'.repeat(64)}.AURA`,
+  ])('keeps rejecting unrelated or malformed binary keys: %s', async (objectKey) => {
+    const destination = memoryStore();
+    await expect(migrateStaticAssets(memoryStore({ [objectKey]: contents }), destination, 'apply')).rejects.toThrow(
+      'Unknown immutable',
+    );
+    expect(destination.put).not.toHaveBeenCalled();
+  });
+  it('keeps the existing per-object size ceiling for Aura geometry', async () => {
+    const auraKey = key.replace(/\.webp$/, '.aura');
+    const source = memoryStore({ [auraKey]: contents }, 'application/octet-stream');
+    source.get = vi.fn(async () => ({ ...storedAsset(), bytes: 128 * 1024 * 1024 + 1 }));
+    const destination = memoryStore();
+    await expect(migrateStaticAssets(source, destination, 'apply')).rejects.toThrow('Invalid or oversized');
+    expect(destination.put).not.toHaveBeenCalled();
   });
   it('rejects unknown keys before any writes', async () => {
     const source = memoryStore({ [key]: contents, 'static/v1/unknown.png': contents });
