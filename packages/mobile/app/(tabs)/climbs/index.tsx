@@ -5,6 +5,7 @@ import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useHorizontalSafeArea } from '../../../src/hooks/use-horizontal-safe-area';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
+import { useResultSetKeyExtractor } from '../../../src/hooks/use-result-set-key-extractor';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
@@ -756,6 +757,10 @@ function ClimbListInner() {
     () => climbSearchScrollKey(searchInput, boardseshGradesActive),
     [searchInput, boardseshGradesActive],
   );
+  // Row keys per result set, so FlashList never anchors a new search's rows to
+  // a climb the previous search also had. See the hook for the blank list this
+  // caused.
+  const climbKeyExtractor = useResultSetKeyExtractor(searchScrollKey, isPlaceholderData, climbRowId);
   const hasSeenSearchKeyRef = useRef(false);
   const listTopOffset = useListTopOffset();
   // Legacy backdrop consumers attach to this store. Native capsules draw their
@@ -1980,7 +1985,7 @@ function ClimbListInner() {
               data: visibleClimbs,
               renderItem: renderClimbItem,
               numColumns: listColumns,
-              keyExtractor,
+              keyExtractor: climbKeyExtractor,
               onEndReached: handleEndReached,
               onEndReachedThreshold: 0.5,
               onViewableItemsChanged: handleViewableItemsChanged,
@@ -2121,7 +2126,7 @@ function ClimbListInner() {
   );
 }
 
-function keyExtractor(item: Climb) {
+function climbRowId(item: Climb) {
   return item.uuid;
 }
 
