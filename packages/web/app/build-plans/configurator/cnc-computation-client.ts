@@ -36,11 +36,11 @@ export async function computeCnc(
     includeHoles?: boolean;
     authToken?: string | null;
     signal: AbortSignal;
-    isCurrent?: (response?: unknown) => boolean;
+    isCurrent?: () => boolean;
   },
 ): Promise<Record<string, unknown>> {
-  const assertCurrent = (response?: unknown) => {
-    if (options.isCurrent && !options.isCurrent(response)) throw new Error('STALE_CNC_REQUEST');
+  const assertCurrent = () => {
+    if (options.isCurrent && !options.isCurrent()) throw new Error('STALE_CNC_REQUEST');
   };
   assertCurrent();
   const signal = AbortSignal.any([options.signal, AbortSignal.timeout(90_000)]);
@@ -57,7 +57,7 @@ export async function computeCnc(
           variables: { config },
           signal,
         });
-  assertCurrent(submitted);
+  assertCurrent();
   let computation =
     'requestCncLayout' in submitted ? submitted.requestCncLayout : submitted.requestCncArtworkValidation;
   while (true) {
@@ -74,7 +74,7 @@ export async function computeCnc(
       variables: { id: computation.id },
       signal,
     });
-    assertCurrent(response);
+    assertCurrent();
     if (!response.cncComputation) throw computationFailure();
     computation = response.cncComputation;
   }

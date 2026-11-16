@@ -9,7 +9,6 @@ import {
   type GetCncOrderQueryVariables,
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { isCurrentBrowserBackendGraphQLResult } from '@/app/lib/auth/browser-backend-graphql';
 import { cncErrorKey, type CncErrorKey } from './cnc-error';
 
 /**
@@ -80,21 +79,6 @@ export function orderRefetchInterval(status: CncOrderStatus): number | false {
  */
 export const MAX_CONSECUTIVE_NULL_POLLS = 5;
 
-export function cncOrderQueryKey(
-  ownerId: string | null,
-  authSessionId: string | null,
-  licenceId: string | null,
-  browserScopeKey?: string,
-) {
-  return [
-    'cncOrder',
-    ownerId,
-    authSessionId,
-    licenceId,
-    ...(browserScopeKey === undefined ? [] : [browserScopeKey]),
-  ] as const;
-}
-
 /**
  * The React Query `refetchInterval` for the next tick.
  *
@@ -137,7 +121,6 @@ export function useCncOrderPoll({
   licenceId,
   ownerId,
   authSessionId,
-  browserScopeKey,
   initialOrder,
   authToken,
   enabled,
@@ -146,7 +129,6 @@ export function useCncOrderPoll({
   licenceId: string | null;
   ownerId: string | null;
   authSessionId?: string | null;
-  browserScopeKey?: string;
   /** Server-fetched, so the order page's first paint already shows the real status. */
   initialOrder?: CncOrder;
   authToken: string | null;
@@ -154,7 +136,7 @@ export function useCncOrderPoll({
   enabled: boolean;
 }): CncOrderPollResult {
   const queryClient = useQueryClient();
-  const scopeKey = JSON.stringify(cncOrderQueryKey(ownerId, authSessionId ?? null, licenceId, browserScopeKey));
+  const scopeKey = JSON.stringify([ownerId, authSessionId ?? null, licenceId]);
   const scopeRef = useRef(scopeKey);
   scopeRef.current = scopeKey;
   const initialScopeRef = useRef(scopeKey);
@@ -180,7 +162,7 @@ export function useCncOrderPoll({
   }
 
   const query = useQuery({
-    queryKey: cncOrderQueryKey(ownerId, authSessionId ?? null, licenceId, browserScopeKey),
+    queryKey: ['cncOrder', ownerId, authSessionId ?? null, licenceId] as const,
     queryFn: async ({ signal }) => {
       if (!licenceId || !authToken) throw new Error('useCncOrderPoll: queryFn ran without a licence id and token');
       const client = createGraphQLHttpClient(authToken);
@@ -189,13 +171,7 @@ export function useCncOrderPoll({
         variables: { licenceId },
         signal,
       });
-      if (
-        signal.aborted ||
-        !mountedRef.current ||
-        scopeRef.current !== scopeKey ||
-        !isCurrentBrowserBackendGraphQLResult(response)
-      )
-        return null;
+      if (signal.aborted || !mountedRef.current || scopeRef.current !== scopeKey) return null;
       const polledOrder = response.cncOrder;
       if (polledOrder) {
         lastKnownOrderRef.current = polledOrder;
@@ -227,21 +203,12 @@ export function useCncOrderPoll({
 
   const seedOrder = useCallback(
     (order: CncOrder) => {
-      if (
-        !ownerId ||
-        !mountedRef.current ||
-        scopeRef.current !== scopeKey ||
-        !isCurrentBrowserBackendGraphQLResult(order)
-      )
-        return;
+      if (!ownerId || !mountedRef.current || scopeRef.current !== scopeKey) return;
       lastKnownOrderRef.current = order;
       consecutiveNullPollsRef.current = 0;
-      queryClient.setQueryData(
-        cncOrderQueryKey(ownerId, authSessionId ?? null, order.licenceId, browserScopeKey),
-        order,
-      );
+      queryClient.setQueryData(['cncOrder', ownerId, authSessionId ?? null, order.licenceId], order);
     },
-    [queryClient, ownerId, authSessionId, browserScopeKey, scopeKey],
+    [queryClient, ownerId, authSessionId, scopeKey],
   );
 
   return {

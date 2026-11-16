@@ -104,15 +104,13 @@ describe('async CNC computation client', () => {
     await rejection;
   });
 
-  it('rejects a stale poll receipt before exposing a completed private result', async () => {
-    requests.request.mockResolvedValueOnce({ requestCncLayout: queued }).mockResolvedValueOnce({
-      cncComputation: { ...queued, status: 'ready', result: { privateHoles: true } },
-      stale: true,
+  it('rejects a completed poll after the original account scope becomes stale', async () => {
+    let current = true;
+    requests.request.mockResolvedValueOnce({ requestCncLayout: queued }).mockImplementationOnce(async () => {
+      current = false;
+      return { cncComputation: { ...queued, status: 'ready', result: { privateHoles: true } } };
     });
-    const result = computeCnc('layout', CONFIG, {
-      signal: new AbortController().signal,
-      isCurrent: (response) => !(response && typeof response === 'object' && 'stale' in response),
-    });
+    const result = computeCnc('layout', CONFIG, { signal: new AbortController().signal, isCurrent: () => current });
     const rejection = expect(result).rejects.toThrow('STALE_CNC_REQUEST');
     await vi.advanceTimersByTimeAsync(1_000);
     await rejection;

@@ -86,7 +86,7 @@ export function useCncArtworkValidation(
   config: CncBoardConfigInput | null,
   authToken: string | null,
 ): CncArtworkValidationResult {
-  const beginRequest = useCncRequestScope(authToken);
+  const beginRequest = useCncRequestScope();
   const [result, setResult] = useState<{ ok: boolean | null; collisions: CncArtworkCollision[] }>({
     ok: null,
     collisions: [],

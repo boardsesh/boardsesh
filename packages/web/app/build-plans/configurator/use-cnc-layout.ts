@@ -83,7 +83,7 @@ export function useCncLayout(
   config: CncBoardConfigInput | null,
   { includeHoles = false, authToken = null, cacheScope = 'anonymous' }: CncLayoutOptions = {},
 ): CncLayoutResult {
-  const beginRequest = useCncRequestScope(authToken);
+  const beginRequest = useCncRequestScope();
   const debouncedConfig = useDebouncedConfig(config);
   const configKey = debouncedConfig ? JSON.stringify(debouncedConfig) : '';
   // Holes are only ever asked for on behalf of somebody signed in, so a signed

@@ -17,7 +17,6 @@ import styles from '../profile-page.module.css';
 
 type AnalyticsContentProps = {
   userId: string;
-  publicServerView?: boolean;
   initialProfileStats?: GetUserProfileStatsQueryResponse['userProfileStats'] | null;
   initialPercentile?: GetUserClimbPercentileQueryResponse['userClimbPercentile'] | null;
   initialAllBoardsTicks?: Record<string, LogbookEntry[]>;
@@ -27,7 +26,6 @@ type AnalyticsContentProps = {
 
 export default function AnalyticsContent({
   userId,
-  publicServerView,
   initialProfileStats,
   initialPercentile,
   initialAllBoardsTicks,
@@ -57,7 +55,6 @@ export default function AnalyticsContent({
     hardestFlash,
     percentile,
   } = useProfileData(userId, {
-    publicServerView,
     initialProfileStats: initialProfileStats ?? undefined,
     initialPercentile,
     initialAllBoardsTicks,
