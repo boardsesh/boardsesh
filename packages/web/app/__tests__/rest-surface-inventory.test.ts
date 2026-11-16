@@ -1,12 +1,12 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 40
+ * The standing inventory oracle for issue #1889 (REST surface audit: 39
  * routes in total, classified after the board renderer moved to Railway in
  * #4715, the Railway healthcheck route landed in #3798, and the hold-heatmap
- * route and its prewarm cron were retired). The 40 include ordinary sign-in
- * ACK. The renewal, the two canonical coordinator facades, the five staged
- * first-password browser facades, the three expired-binding recovery facades,
- * the six staged provider Settings facades and the four browser-password
- * facades went with #7596.
+ * route and its prewarm cron were retired). The staged browser routes went
+ * with #7596: the renewal, the two canonical coordinator facades, the five
+ * first-password browser facades, the three expired-binding recovery
+ * facades, the six provider Settings facades, the four browser-password
+ * facades and the provider sign-in ACK.
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -36,8 +36,6 @@
  * steady state here, not evidence of deadness. `keep-caller` = has a live
  * in-repo (web, mobile, or backend) caller. Neither verdict means "safe to
  * delete" — see issue #1889 for the full reasoning per route.
- * `keep-staged` = a deliberately disabled compatibility facade with required
- * mounted proofs; it has no active product caller until its rollout gate closes.
  */
 import { describe, expect, it } from 'vite-plus/test';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -47,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API_ROOT = join(WEB_ROOT, 'app', 'api');
 
-type Verdict = 'keep-external' | 'keep-caller' | 'keep-staged';
+type Verdict = 'keep-external' | 'keep-caller';
 
 const VERDICTS: Record<string, Verdict> = {
   // --- /api/auth/* (9) — session/OAuth/registration, called by www and by
@@ -71,7 +69,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (15) ---
+  // --- /api/internal/* (14) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -104,8 +102,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/profile/route.ts': 'keep-caller',
   'app/api/internal/profile/[userId]/route.ts': 'keep-caller',
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
-  // Exact current proof-cookie ACK only; no credential recovery or cookie writes.
-  'app/api/internal/auth/provider-signin/acknowledge/route.ts': 'keep-staged',
 
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
@@ -264,8 +260,8 @@ describe('REST surface inventory (issue #1889)', () => {
 
   it('counts exactly the audited surface', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
-    // staged provider deltas are tracked in #7430; the closed
-    // audit stays historical.
-    expect(derived.size).toBe(40);
+    // staged browser routes it once counted went with #7596; the closed audit
+    // stays historical.
+    expect(derived.size).toBe(39);
   });
 });
