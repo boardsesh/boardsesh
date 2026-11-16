@@ -12,6 +12,8 @@ import {
 import type { EvidenceWorksheet } from '../email-audit/evidence';
 import { normalizeAccountEmail } from '../normalize-email';
 import { sqlNormalizedAccountEmail } from '../account-email-sql';
+import type { CurrentStoreTransaction } from '../current-store/foundation-context';
+import { lockLegacyIdentityWriterManifest } from '../current-store/identity-writer-gate';
 
 /** Fixed messages only. Neither database messages nor private inputs may escape the CLI. */
 export class EmailResolutionError extends Error {
@@ -298,11 +300,11 @@ export async function buildResolutionPlan(
   });
 }
 
-async function reconcileReservations(transaction: Transaction, group: ResolutionGroup): Promise<void> {
-  const [manifest] = await transaction
-    .select()
-    .from(authEmailProjection)
-    .where(eq(authEmailProjection.isCurrent, true));
+async function reconcileReservations(
+  transaction: Transaction,
+  group: ResolutionGroup,
+  manifest: { readonly projectionId: string } | undefined,
+): Promise<void> {
   if (!manifest) return;
   // Caller holds the gate, every key, and users in that order. Reservation locks follow users.
   const keys = [
@@ -373,7 +375,11 @@ export async function applyResolutionPlan(database: ResolutionDatabase, plan: Re
     const result = await database.transaction(async (transaction): Promise<'applied' | 'skipped' | 'deferred'> => {
       await transaction.execute(sql`SET LOCAL lock_timeout = '2000ms'`);
       await transaction.execute(sql`SET LOCAL statement_timeout = '10000ms'`);
-      await transaction.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
+      // The shared gate and manifest check every legacy identity writer takes,
+      // before any key or row lock. An authority switch waits for this group to
+      // commit; a group that waited behind a switch reads the new manifest. Once
+      // another authority owns writes, this refuses with STALE_AUTHORITY.
+      const manifest = await lockLegacyIdentityWriterManifest(transaction as unknown as CurrentStoreTransaction);
       const keys = [
         ...new Set(group.members.flatMap((member) => [normalizeAccountEmail(member.before), member.after])),
       ].sort();
@@ -410,7 +416,7 @@ export async function applyResolutionPlan(database: ResolutionDatabase, plan: Re
       )
         return 'skipped';
       if (await hasLiveLinks(transaction, [...current.map((row) => row.email), group.address])) return 'deferred';
-      await reconcileReservations(transaction, group);
+      await reconcileReservations(transaction, group, manifest);
       // Retire first: swapping also works after the unique email index has shipped.
       for (const member of [...group.members].sort(
         (left, right) => Number(left.action === 'keep') - Number(right.action === 'keep'),

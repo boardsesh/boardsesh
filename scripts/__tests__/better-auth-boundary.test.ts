@@ -309,3 +309,126 @@ describe('Better Auth dependency boundary', () => {
     expect(excluded.filter((entry) => /^(?:better-auth|@better-auth\/|better-call)/.test(entry))).toEqual([]);
   });
 });
+
+/**
+ * One credential writer (BA-03 #6977): a direct write to an identity table
+ * (`users`, `user_credentials`, provider `accounts`, `verificationTokens`,
+ * `mobile_refresh_tokens` or any `auth_*` table) outside the two authority
+ * folders must be reviewed into this list, with the gate it sits behind. The
+ * reasons are in docs/better-auth-writer-inventory.md, "Writer gate
+ * classification". The auth `sessions` table is left out: NextAuth issues JWTs
+ * and never writes it, and the backend's `sessions` is board sessions. Web
+ * writers are catalogued under #7596; mobile has no database.
+ */
+const IDENTITY_WRITE_PATTERNS = [
+  /\.(?:insert|update|delete)\(\s*(?:[\w$]+\.)?(?:users|userCredentials|accounts|verificationTokens|mobileRefreshTokens|auth[A-Z]\w*)\s*\)/g,
+  /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\.)?"?(?:users|user_credentials|accounts|verificationTokens|verification_tokens|mobile_refresh_tokens|auth_[a-z_]+)\b/g,
+];
+/** The authority module and the staged commands: every write there runs under the gate by construction. */
+const IDENTITY_AUTHORITY_ROOTS = [FIRST_PARTY_AUTHORITY_ROOT, 'packages/backend/src/auth/current-store/'];
+
+interface ReviewedIdentityWriter {
+  /** Direct writes in the file. Outside the authority folders a new one needs review here. */
+  readonly writes?: number;
+  /** The gate the file's legacy writes sit behind, which must stay in the file. */
+  readonly gate?: string;
+}
+
+const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>> = {
+  // Legacy writers: the shared gate and manifest check before the first write.
+  'packages/backend/src/handlers/native-auth.ts': { writes: 6, gate: 'assertLegacyIdentityWriterAllowed(' },
+  'packages/backend/src/graphql/resolvers/users/mutations.ts': {
+    writes: 1,
+    gate: 'assertLegacyAccountDeletionAllowed(',
+  },
+  'packages/backend/src/graphql/resolvers/board-presence/shared.ts': {
+    writes: 1,
+    gate: 'assertLegacyIdentityWriterAllowed(',
+  },
+  'packages/backend/src/auth/email-resolution/resolution.ts': { writes: 8, gate: 'lockLegacyIdentityWriterManifest(' },
+  'packages/backend/src/auth/current-store/password-identity.ts': { gate: 'assertLegacyIdentityWriterAllowed(' },
+  'packages/backend/src/auth/current-store/system-identities.ts': { gate: 'assertLegacyIdentityWriterAllowed(' },
+  // The operator switch itself: the gate held exclusively.
+  'packages/backend/src/scripts/auth-authority.ts': { writes: 3, gate: 'lockAuthorityGateExclusively(' },
+  // Documented legacy branches of the worker jobs; their staged modes go through the backend.
+  'packages/db/src/jobs/system-user.ts': { writes: 1 },
+  'packages/location-sync/src/upsert.ts': { writes: 1 },
+  // Local fixtures, each refusing a non-loopback or non-development target.
+  'packages/backend/src/scripts/seed-instructional-video.ts': { writes: 2 },
+  'packages/db/scripts/create-test-user.ts': { writes: 2 },
+  'packages/db/scripts/seed-ios-performance.ts': { writes: 1 },
+  'packages/db/scripts/seed-social.ts': { writes: 2 },
+  'packages/db/src/testing/dedup-replay.ts': { writes: 1 },
+};
+
+function countIdentityWrites(source: string): number {
+  return IDENTITY_WRITE_PATTERNS.reduce((total, pattern) => total + [...source.matchAll(pattern)].length, 0);
+}
+
+const isInIdentityAuthorityRoot = (path: string): boolean =>
+  IDENTITY_AUTHORITY_ROOTS.some((root) => path.startsWith(root));
+
+describe('identity writer catalog', () => {
+  const identityWriteCounts = new Map(
+    trackedSourceFiles
+      .filter(
+        (path) =>
+          isProductionSource(path) &&
+          !path.startsWith('packages/web/') &&
+          !path.startsWith('packages/mobile/') &&
+          !path.startsWith(PROTOTYPE_ROOT),
+      )
+      .map((path) => [path, countIdentityWrites(readRepoFile(path))] as const)
+      .filter(([, writes]) => writes > 0),
+  );
+
+  it.each([
+    ['await tx.insert(users).values(row);'],
+    ['await transaction.update(dbSchema.users).set({ email });'],
+    ['await transaction\n  .delete(authEmailReservations)\n  .where(condition);'],
+    ['await transaction.execute(sql`INSERT INTO users (id, name) VALUES (1, 2)`);'],
+    ['sql`DELETE FROM public.mobile_refresh_tokens WHERE user_id = 1`'],
+  ])('finds the identity write in %s', (source) => {
+    expect(countIdentityWrites(source)).toBe(1);
+  });
+
+  it.each([
+    ['await db.select().from(users).where(condition);'],
+    ['await tx.insert(userProfiles).values(row);'],
+    ['await tx.update(sessions).set({ lastActivity });'],
+    ['await tx.insert(boardUsers).values(rows);'],
+    ['// update users when their profile changes'],
+  ])('ignores %s', (source) => {
+    expect(countIdentityWrites(source)).toBe(0);
+  });
+
+  it('lists every file outside the authority folders that writes an identity table', () => {
+    const unreviewed = [...identityWriteCounts.keys()].filter(
+      (path) => !isInIdentityAuthorityRoot(path) && !(path in REVIEWED_IDENTITY_WRITERS),
+    );
+    expect(unreviewed).toEqual([]);
+    const stale = Object.keys(REVIEWED_IDENTITY_WRITERS).filter((path) => !identityWriteCounts.has(path));
+    expect(stale).toEqual([]);
+  });
+
+  it('keeps the reviewed number of writes in each file outside the authority folders', () => {
+    const counted = Object.entries(REVIEWED_IDENTITY_WRITERS)
+      .filter(([, reviewed]) => reviewed.writes !== undefined)
+      .map(([path]) => [path, identityWriteCounts.get(path)]);
+    const expected = Object.entries(REVIEWED_IDENTITY_WRITERS)
+      .filter(([, reviewed]) => reviewed.writes !== undefined)
+      .map(([path, reviewed]) => [path, reviewed.writes]);
+    expect(counted).toEqual(expected);
+    const uncounted = Object.entries(REVIEWED_IDENTITY_WRITERS).filter(
+      ([path, reviewed]) => reviewed.writes === undefined && !isInIdentityAuthorityRoot(path),
+    );
+    expect(uncounted).toEqual([]);
+  });
+
+  it('keeps each legacy writer behind its gate', () => {
+    const ungated = Object.entries(REVIEWED_IDENTITY_WRITERS)
+      .filter(([path, reviewed]) => reviewed.gate !== undefined && !readRepoFile(path).includes(reviewed.gate))
+      .map(([path]) => path);
+    expect(ungated).toEqual([]);
+  });
+});

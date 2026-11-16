@@ -27,6 +27,49 @@ production database audit or permission to change account ownership. The
 | `packages/location-sync/src/upsert.ts` → `ensureSystemUser` | Inserts a deterministic catalog owner with conflict ignored. This runs during scheduled location sync. | Include scheduled jobs in the writer fence. System-principal provisioning needs an explicit supported path, rather than an unnoticed bypass. |
 | `packages/db/scripts/create-test-user.ts`, `seed-social.ts`, `seed-ios-performance.ts`; `packages/backend/src/scripts/seed-instructional-video.ts` | Direct fixture user/credential inserts. Some scripts have independent connection resolution. | Keep explicit disposable-environment guards; fixture writers must not inherit a production identity-writing capability. |
 
+## Writer gate classification
+
+Swept on 2026-11-16 (BA-03 #6977): every direct insert, update or delete of an
+identity table under `packages/backend/src`, `packages/db` and
+`packages/location-sync`. Identity tables are `users`, `user_credentials`,
+provider `accounts`, `verificationTokens`, `mobile_refresh_tokens` and every
+`auth_*` table. `user_profiles` (display name, avatar) is product data. The
+auth `sessions` table has no writer: NextAuth issues JWTs, and the backend's
+`sessions` is board sessions. The web writers above belong to #7596.
+
+"Gated" means: the shared gate `pg_advisory_xact_lock_shared(6975, 2)`, then
+the manifest read, in the same transaction as the write and before it, held
+until commit; a manifest naming another writer refuses with `STALE_AUTHORITY`.
+The order is gate, then `users`, then the climber's other rows.
+
+| Writer | Where | Before | After |
+| --- | --- | --- | --- |
+| Native registration, legacy mode | `native-auth.ts:1056` preflight; write transaction `password-identity.ts:224` | Gated. The preflight before bcrypt only fails fast; the write transaction checks again before its first lock or write | Unchanged, comment added. Two-connection proof: `native-register-writer-gate.test.ts` |
+| Native Google/Apple sign-in, legacy mode | `native-auth.ts:1399` | Gated before the link read | Unchanged |
+| Native issuance, refresh, sign-out, refresh cleanup | `native-auth.ts:690`, `:1763`; `authority/native-revocation.ts:36`; `authority/native-refresh-retention.ts:45` | Shared gate, then `users`; no manifest refusal, by design: refresh is the long-lived native facade under either writer, and cutoff generations decide admission | Unchanged (session family) |
+| Account deletion, legacy mode | `users/mutations.ts:347`, delete at `:427` | Gate at the first statement; refuses once any manifest exists | Unchanged |
+| System board owner, legacy mode | `board-presence/shared.ts:1105`, insert at `:1107` | Gated | Unchanged |
+| Fixed system identities, legacy mode | `current-store/system-identities.ts:101` | Gated | Unchanged |
+| Account email resolution (BA-02 tool) | `email-resolution/resolution.ts:382`, update at `:425` | Shared gate but no manifest check: under a Better Auth manifest it still rewrote `users.email` and reservations | **Fixed.** `lockLegacyIdentityWriterManifest`; refuses with `STALE_AUTHORITY` (CLI code `STALE_AUTHORITY`); reuses that manifest for reservation bookkeeping |
+| Staged commands | `auth/current-store/*` | `lockEnforcedProjection` or an authority receipt (`captureIdentityAuthority`, `revalidateIdentityAuthority`) | Unchanged |
+| Authority module and its seams | `auth/authority/*` | Authority receipt, revalidated before commit | Unchanged |
+| Authority prepare and activation | `scripts/auth-authority.ts:71`, `authority/router.ts:101` | The gate exclusively: this is the switch | Unchanged |
+| Batch system users, legacy mode | `packages/db/src/jobs/system-user.ts:31` | No gate | Documented legacy branch: the worker login has no auth grants to read the manifest; `CURRENT_STORE_BATCH_SYSTEM_USERS_MODE=backend-staging` routes it through the backend. The real fence is the role cutover (#7430) |
+| Location sync owner, legacy mode | `packages/location-sync/src/upsert.ts:92` | No gate | Documented legacy branch, same reason; `CURRENT_STORE_LOCATION_SYNC_MODE` |
+| Fixtures | `db/scripts/create-test-user.ts`, `seed-social.ts`, `seed-ios-performance.ts`, `backend/src/scripts/seed-instructional-video.ts`, `db/src/testing/dedup-replay.ts` | Local-target guards | Out of scope: disposable databases only |
+| Expired replay-record cleanup | `current-store/command-context.ts`, `authority/*-maintenance.ts` | Deletes expired command and receipt records | Out of scope: no identity column |
+
+`scripts/__tests__/better-auth-boundary.test.ts` ("identity writer catalog")
+fails CI when a file outside `auth/authority/` and `auth/current-store/` gains
+a direct identity write, when a listed file's count changes, or when a listed
+legacy writer loses its gate call. It is a text scan: a reviewer still checks
+that the gate comes before the write in the same transaction.
+
+No manifest exists in production, so the only effect there is on the
+resolution tool, an operator CLI: one `SHOW transaction_isolation` and one
+manifest read after the gate it already took, instead of the manifest read it
+made later. Live native registration, sign-in and refresh are unchanged.
+
 The inspected application has no separate user-email change or provider-unlink
 UI endpoint. The NextAuth adapter still exposes account and user mutations, so
 absence of a current UI does not remove those methods from the fence inventory.

@@ -7,7 +7,17 @@ import { CurrentStoreFoundationError, lockIdentityManifest, type CurrentStoreTra
  * Call before any identity writes and retain this transaction through commit.
  */
 export async function assertLegacyIdentityWriterAllowed(transaction: CurrentStoreTransaction): Promise<void> {
+  await lockLegacyIdentityWriterManifest(transaction);
+}
+
+/**
+ * The same check, returning the manifest it read for a writer that also keeps
+ * that manifest's reservations in step. The shared gate holds the manifest
+ * still until this transaction commits, so the caller need not read it again.
+ */
+export async function lockLegacyIdentityWriterManifest(transaction: CurrentStoreTransaction) {
   const manifest = await lockIdentityManifest(transaction);
   if (manifest?.phase === 'enforced' && manifest.writerAuthority !== 'current-store')
     throw new CurrentStoreFoundationError('STALE_AUTHORITY');
+  return manifest;
 }
