@@ -19,13 +19,7 @@ const mocks = vi.hoisted(() => ({
   backgrounded: false,
   generation: 1,
 }));
-vi.mock('../../client', () => ({
-  getHttpClient: () => ({
-    request: ({ document, variables }: { document: unknown; variables?: unknown }) =>
-      mocks.request(document, variables),
-  }),
-  getOfflineSyncHttpClient: vi.fn(),
-}));
+vi.mock('../../client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('expo-router', () => ({ useIsFocused: () => mocks.focused }));
 vi.mock('../../../../hooks/use-is-offline', () => ({ useIsOffline: () => mocks.offline }));
 vi.mock('../../../app-visibility', () => ({ useIsAppBackgrounded: () => mocks.backgrounded }));
@@ -171,6 +165,37 @@ describe('user data export metadata', () => {
     expect(
       queryClient.getQueryData<UserDataExportStatus>(userDataExportQueryKey('climber-a', 1, 'tension'))?.status,
     ).toBe('not_requested');
+  });
+
+  it('finishes a generation request after the screen that started it closes (#7596 A4)', async () => {
+    let finishRequest: ((response: { requestUserDataExport: UserDataExportStatus }) => void) | undefined;
+    mocks.request.mockImplementation((document: string) =>
+      document === REQUEST_USER_DATA_EXPORT
+        ? new Promise((resolve) => {
+            finishRequest = resolve;
+          })
+        : Promise.resolve({ userDataExport: exportStatus() }),
+    );
+    const { queryClient, wrapper } = makeWrapper();
+    const { result, unmount } = renderHook(() => useUserDataExport('climber-a', 'tension'), { wrapper });
+    await waitFor(() => expect(result.current.statusQuery.isSuccess).toBe(true));
+    let requesting: Promise<UserDataExportStatus> | undefined;
+    await act(async () => {
+      requesting = result.current.requestMutation.mutateAsync();
+    });
+    await waitFor(() => expect(finishRequest).toBeTypeOf('function'));
+    // The phone sends the plain request: no abort signal the screen could cancel.
+    expect(mocks.request).toHaveBeenLastCalledWith(REQUEST_USER_DATA_EXPORT, { boardType: 'tension' });
+
+    unmount();
+    const generating = exportStatus({ status: 'generating' });
+    await act(async () => {
+      finishRequest?.({ requestUserDataExport: generating });
+    });
+    await expect(requesting).resolves.toEqual(generating);
+    expect(queryClient.getQueryData(userDataExportQueryKey('climber-a', 1, 'tension', generating.period))).toEqual(
+      generating,
+    );
   });
 });
 

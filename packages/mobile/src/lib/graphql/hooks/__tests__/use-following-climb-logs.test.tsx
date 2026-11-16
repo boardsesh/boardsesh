@@ -14,13 +14,7 @@ const mocks = vi.hoisted(() => ({
   viewerId: 'viewer' as string | undefined,
 }));
 
-vi.mock('../../client', () => ({
-  getHttpClient: () => ({
-    request: ({ document, variables }: { document: unknown; variables?: unknown }) =>
-      mocks.request(document, variables),
-  }),
-  getOfflineSyncHttpClient: vi.fn(),
-}));
+vi.mock('../../client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('../../offline-request', () => ({ offlineAwareRequest: mocks.offlineAwareRequest }));
 vi.mock('../../../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: mocks.viewerId, isLoading: false }),

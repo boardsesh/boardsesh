@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+//
+// What the integration hooks do on phones: the status read, disconnect, the
+// optimistic auto-sync toggle and the manual session export. Restored with the
+// plain hooks in #7596 A4 (revert of #7533); the request-lifetime cases live in
+// screen-request-lifetime.test.tsx.
 import type { ReactNode } from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,9 +16,8 @@ vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuth
 vi.mock('../../../analytics', () => ({ track: host.track }));
 vi.mock('../../client', () => ({
   getHttpClient: () => ({
-    request: ({ document, variables }: { document: unknown; variables?: unknown }) => host.request(document, variables),
+    request: (document: unknown, variables?: unknown) => host.request(document, variables),
   }),
-  getOfflineSyncHttpClient: vi.fn(),
 }));
 import {
   useDisconnectIntegration,

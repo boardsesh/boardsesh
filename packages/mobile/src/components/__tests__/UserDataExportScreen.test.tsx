@@ -97,11 +97,6 @@ vi.mock('../../lib/auth-store', () => ({
   captureAuthCredentialGeneration: () => mocks.generation,
   isAuthCredentialGenerationCurrent: (generation: number) => generation === mocks.generation,
 }));
-// This native screen host stubs network I/O below. Keep its new view seam
-// native-shaped; the scoped screen suite exercises the real web SDK/receipts.
-vi.mock('../../lib/graphql/use-http-query-scope', () => ({
-  useHttpQueryScope: () => ({ scoped: false, scope: undefined, assertView: () => {} }),
-}));
 vi.mock('../../lib/graphql/hooks', () => ({
   useProfile: () => ({
     data: mocks.profileId ? { id: mocks.profileId } : null,
@@ -127,19 +122,8 @@ vi.mock('../../lib/graphql/hooks/use-user-data-export', () => ({
         isLoading: mocks.statusLoading,
         isFetching: false,
       },
-      requestMutation: {
-        mutateAsync: mocks.request,
-        mutateWithReceipt: async () => ({ result: await mocks.request(), assertCurrent: () => {} }),
-        isPending: false,
-      },
-      downloadMutation: {
-        mutateAsync: mocks.download,
-        mutateWithReceipt: async (download: unknown) => ({
-          result: await mocks.download(download),
-          assertCurrent: () => {},
-        }),
-        isPending: mocks.downloadPending,
-      },
+      requestMutation: { mutateAsync: mocks.request, isPending: false },
+      downloadMutation: { mutateAsync: mocks.download, isPending: mocks.downloadPending },
       refresh: mocks.refresh,
       pollLimitReached: mocks.pollStopped,
       isOffline: mocks.offline,
@@ -312,6 +296,8 @@ describe('generation preflight', () => {
     expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'kilter');
     finishProbe?.({ pendingCount: 0, deadLetterCount: 0 });
     await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+    // No action signal: leaving the screen does not abort the request on phones.
+    expect(mocks.request).toHaveBeenCalledWith();
     expect(mocks.outbox).toHaveBeenCalledTimes(1);
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
