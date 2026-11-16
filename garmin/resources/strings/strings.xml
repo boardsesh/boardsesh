@@ -79,5 +79,6 @@
     <!-- Kept on the watch: ticks the server refused, and ticks from an older
          app version waiting for proof of whose they are. -->
     <string id="SummaryRefused">refused</string>
+    <string id="SummaryRefusedFull">refused, full</string>
     <string id="SummaryHeld">on hold</string>
 </strings>

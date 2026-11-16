@@ -175,7 +175,8 @@ module TickQueue {
     // Moves a permanently refused tick from this owner's queue to the
     // dead-letter store. The dead-letter write comes FIRST: a failure after
     // it leaves a copy in both stores, never in neither. False (refused,
-    // storage failure, store full of unshown entries) keeps the tick queued.
+    // storage failure, dead-letter store full) keeps the tick queued; nothing
+    // in the store is ever evicted to make room.
     function reject(context, uuid, reason) as Lang.Boolean {
         if (!activeContext(context) || !(uuid instanceof Lang.String)) { return false; }
         var envelope = loadEnvelope();
@@ -205,20 +206,17 @@ module TickQueue {
             BuildConfig.LEGACY_ADOPT_SKEW_SEC, BuildConfig.TICK_QUEUE_MAX));
     }
 
-    // [refused for this owner, held from older builds]. Called when the counts
-    // are drawn: it marks this owner's refused ticks as shown, which is what
-    // lets a full dead-letter store drop its oldest shown entry. A failed
-    // write leaves them unshown, so they stay undroppable.
+    // [refused for this owner, held from older builds, dead-letter store full].
+    // Read-only. A full store (any owner's entries) means the next refusal
+    // stays queued and stops the drain, so it is worth showing.
     function surfaceCounts() as Lang.Array {
         var context = TokenStore.snapshot();
         var envelope = loadEnvelope();
         var held = envelope != null ? envelope["unowned"].size() : 0;
-        if (!activeContext(context)) { return [0, held]; }
-        var owner = context["owner"];
         var store = loadRejected();
-        if (store == null) { return [0, held]; }
-        if (RejectedTicks.unseenFor(store, owner) > 0) { persistRejected(RejectedTicks.markSeen(store, owner)); }
-        return [RejectedTicks.countFor(store, owner), held];
+        var full = store != null && RejectedTicks.isFull(store, BuildConfig.REJECTED_TICK_MAX);
+        if (!activeContext(context) || store == null) { return [0, held, full]; }
+        return [RejectedTicks.countFor(store, context["owner"]), held, full];
     }
 
     // Leases belong to one request, owner, login scope and UUID. A stale

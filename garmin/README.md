@@ -188,7 +188,7 @@ without either the server's acknowledgement or a copy in the dead-letter store.
 | State | Storage value | Sent? | Leaves when |
 | --- | --- | --- | --- |
 | Queued under its owner | `bs.pendingTicks` `owners[<userId>]` | Only while that verified owner is signed in | The server acknowledges its exact UUID, or refuses it for good |
-| Refused (dead letter) | `bs.rejectedTicks` | Never again | Only when the store is full and the entry's count was already shown |
+| Refused (dead letter) | `bs.rejectedTicks` | Never again | Never; the watch has no way to list or clear it yet |
 | On hold (pre-G2, owner unproven) | `bs.pendingTicks` `unowned` | Never, until adopted | The adoption rule below proves its owner |
 
 #### Server replies
@@ -218,7 +218,7 @@ refuses everything costs at most one tick per reason per drain (two ticks on
 one deleted climb take two drains). The live log path never dead-letters: a
 refused effort shows "Not saved to logbook" and stays queued for the exit
 drain. A refusal is also kept queued when the dead-letter write fails or the
-store is full of entries nobody has seen. The dead-letter write comes before
+store is full. The dead-letter write comes before
 the outbox removal, so a crash between the two leaves a copy in both stores and
 the next drain's identical refusal adds no second entry.
 
@@ -233,16 +233,17 @@ Known gap: the watch sends no `boardUuid`, so a tick on a spray wall the
 climber reaches only through a share link, or a wall an admin hid, gets
 `CLIMB_NOT_FOUND` and is dead-lettered although the climb exists. Before this
 change it blocked the queue instead. Sending `boardUuid` needs the session
-state endpoint to carry it and is a follow-up.
+state endpoint to carry it and is a follow-up. This gap is why a dead-lettered
+entry may be a real send, and why the store never drops one.
 
-`bs.rejectedTicks` is `{ version: 1, entries: [{ owner, tick, reason, seen }] }`,
+`bs.rejectedTicks` is `{ version: 1, entries: [{ owner, tick, reason }] }`,
 oldest first, capped at 25 entries (`BuildConfig.REJECTED_TICK_MAX`). A tick is
-about 500 bytes, so a full store is roughly 15KB of its own 32KB value. When it
-is full, the oldest entry whose count was already shown is dropped; with none
-shown, the refusal stays queued and the drain stops. "Shown" means its count
-appeared on the session summary; the watch cannot list or retry individual
-refused ticks yet, so a dropped entry is gone. That trade keeps a full store
-from blocking the queue again.
+about 500 bytes, so a full store is roughly 15KB of its own 32KB value. Nothing
+is ever evicted. When the store is full, the next refusal is treated as "retry
+later": the tick stays at the head of the queue and the drain stops there, as
+every refusal did before this change. The summary then says the store is full.
+Clearing or retrying refused ticks needs an on-watch list, which is a
+follow-up.
 
 #### On-hold ticks from before G2 (#7445)
 
@@ -279,8 +280,9 @@ including every tick logged before the final token or within a day of it, and
 is never sent under any account.
 
 The session summary (End activity) shows `N refused  M on hold` in orange when
-either count is above zero. Refused counts belong to the signed-in owner;
-showing them is what marks them seen.
+either count is above zero, and `N refused, full` once the refused store is
+full (any account's entries count toward it). Refused counts belong to the
+signed-in owner. Reading the counts writes nothing.
 
 Known-owner partitions survive re-pairing and become eligible only when that
 verified owner signs in again. Stale requests may settle their own flight or

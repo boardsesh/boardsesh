@@ -9,8 +9,9 @@ using Toybox.Lang;
 // Keep going); BACK -> back to the climb screen. A read-only surface — it does
 // not stop the recording (ExitConfirm does).
 class SessionSummaryView extends WatchUi.View {
-    // Ticks kept on the watch: [refused by the server, held from older builds].
-    private var _kept as Lang.Array = [0, 0];
+    // Ticks kept on the watch: [refused by the server, held from older builds,
+    // refused store full].
+    private var _kept as Lang.Array = [0, 0, false];
 
     function initialize() {
         View.initialize();
@@ -19,7 +20,7 @@ class SessionSummaryView extends WatchUi.View {
     function onLayout(dc as Graphics.Dc) as Void {
     }
 
-    // Read once per showing, not per frame: reading marks refused ticks shown.
+    // Read once per showing, not per frame: it reads two storage values.
     function onShow() as Void {
         _kept = TickQueue.surfaceCounts();
     }
@@ -62,13 +63,17 @@ class SessionSummaryView extends WatchUi.View {
         Theme.textC(dc, cx, y, Theme.metaFont(), color, value.toString() + "  " + label);
     }
 
-    // "2 refused  3 on hold", either part only when non-zero; null when both are.
+    // "2 refused  3 on hold", or "25 refused, full  3 on hold" once the refused
+    // store is full (the next refusal then stays queued and stops the save).
+    // Each part only when it applies; null when nothing does.
     private function _keptNotice() as Lang.String or Null {
         var refused = _kept[0];
         var held = _kept[1];
+        var full = _kept[2];
         var parts = "";
-        if (refused > 0) {
-            parts = refused.toString() + " " + WatchUi.loadResource(Rez.Strings.SummaryRefused);
+        if (refused > 0 || full) {
+            parts = refused.toString() + " " + WatchUi.loadResource(
+                full ? Rez.Strings.SummaryRefusedFull : Rez.Strings.SummaryRefused);
         }
         if (held > 0) {
             if (parts.length() > 0) { parts = parts + "  "; }

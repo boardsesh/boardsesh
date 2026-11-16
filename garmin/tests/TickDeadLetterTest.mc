@@ -112,7 +112,8 @@ function testRejectionMidQueueDeadLettersItAndSendsLaterTicks(logger as Test.Log
     Test.assertEqual(entries[0]["owner"], "owner-a");
     Test.assertEqual(entries[0]["reason"], "CLIMB_NOT_FOUND");
     Test.assertEqual(entries[0]["tick"]["climbUuid"], "deleted-spray");
-    Test.assertEqual(entries[0]["seen"], false);
+    Test.assertEqual(entries[0].hasKey("seen"), false);
+    Test.assertEqual(TickQueue.surfaceCounts()[2], false);
     return true;
 }
 
@@ -207,52 +208,53 @@ function testRepeatedUuidAcknowledgementSettlesOnceAndWrongUuidRetries(logger as
 }
 
 (:test)
-function testDeadLetterCapDropsOnlyEntriesAlreadyShown(logger as Test.Logger) as Lang.Boolean {
+function testFullDeadLetterStoreNeverEvictsAndKeepsTheRefusalQueued(logger as Test.Logger) as Lang.Boolean {
     var store = RejectedTicks.empty();
     store = RejectedTicks.add(store, "owner-a", { "uuid" => "one" }, "CLIMB_NOT_FOUND", 2);
-    store = RejectedTicks.add(store, "owner-b", { "uuid" => "two" }, "HTTP_400", 2);
-    Test.assertEqual(RejectedTicks.add(store, "owner-a", { "uuid" => "three" }, "HTTP_400", 2) == null, true);
+    store = RejectedTicks.add(store, "owner-b", { "uuid" => "two" }, "NULL_STATE_FIELD", 2);
+    Test.assertEqual(RejectedTicks.isFull(store, 2), true);
+    Test.assertEqual(RejectedTicks.add(store, "owner-a", { "uuid" => "three" }, "CLIMB_NOT_FOUND", 2) == null, true);
     // The same owner/UUID again is not a second entry, even when full.
-    Test.assertEqual(RejectedTicks.add(store, "owner-a", { "uuid" => "one" }, "HTTP_400", 2)["entries"].size(), 2);
-    // owner-a's view marks only owner-a's entry shown; only it may make room.
-    store = RejectedTicks.markSeen(store, "owner-a");
-    Test.assertEqual(RejectedTicks.unseenFor(store, "owner-b"), 1);
-    store = RejectedTicks.add(store, "owner-a", { "uuid" => "three" }, "HTTP_400", 2);
-    Test.assertEqual(store["entries"][0]["tick"]["uuid"], "two");
-    Test.assertEqual(store["entries"][1]["tick"]["uuid"], "three");
-    Test.assertEqual(RejectedTicks.add(store, "owner-a", { "uuid" => "four" }, "HTTP_400", 2) == null, true);
+    Test.assertEqual(RejectedTicks.add(store, "owner-a", { "uuid" => "one" }, "CLIMB_NOT_FOUND", 2)["entries"].size(), 2);
     Test.assertEqual(RejectedTicks.load({ "version" => 9, "entries" => [] }) == null, true);
     Test.assertEqual(RejectedTicks.load({ "version" => 1, "entries" => [{ "owner" => "owner-a" }] }) == null, true);
 
-    // A full store of unshown entries keeps the refused tick queued instead.
+    // Store full + another permanent refusal: nothing is evicted, the tick
+    // stays at the head of the queue, and the ticks behind it are not sent.
     var context = installAuthFixture("owner-a", 2300);
     resetTickStores();
     var full = RejectedTicks.empty();
     for (var index = 0; index < BuildConfig.REJECTED_TICK_MAX; index += 1) {
-        full = RejectedTicks.add(full, "owner-a", { "uuid" => "old-" + index.toString() }, "HTTP_400", BuildConfig.REJECTED_TICK_MAX);
+        full = RejectedTicks.add(full, "owner-a", { "uuid" => "old-" + index.toString() }, "CLIMB_NOT_FOUND", BuildConfig.REJECTED_TICK_MAX);
     }
     Application.Storage.setValue(TickQueue.REJECTED_KEY, full);
     TickQueue.enqueue({ "uuid" => "refused" }, context);
     TickQueue.enqueue({ "uuid" => "behind" }, context);
-    var client = new CapturedBsClient();
-    var observer = new FlushCompletionObserver();
-    new TickFlusher(client).start(observer.method(:done));
-    client.sent[0]["callback"].invoke(200, graphqlError("CLIMB_NOT_FOUND", "Climb not found"));
-    Test.assertEqual(client.sent.size(), 1);
-    Test.assertEqual(observer.calls, 1);
-    Test.assertEqual(TickQueue.all()[0]["uuid"], "refused");
+    for (var drain = 0; drain < 2; drain += 1) {
+        var client = new CapturedBsClient();
+        var observer = new FlushCompletionObserver();
+        new TickFlusher(client).start(observer.method(:done));
+        client.sent[0]["callback"].invoke(200, graphqlError("CLIMB_NOT_FOUND", "Climb not found"));
+        Test.assertEqual(client.sent.size(), 1);
+        Test.assertEqual(observer.calls, 1);
+        Test.assertEqual(TickQueue.size(), 2);
+        Test.assertEqual(TickQueue.all()[0]["uuid"], "refused");
+        Test.assertEqual(TickQueue.all()[1]["uuid"], "behind");
+        Test.assertEqual(rejectedEntries().size(), BuildConfig.REJECTED_TICK_MAX);
+        Test.assertEqual(rejectedEntries()[0]["tick"]["uuid"], "old-0");
+        Test.assertEqual(rejectedEntries()[BuildConfig.REJECTED_TICK_MAX - 1]["tick"]["uuid"],
+            "old-" + (BuildConfig.REJECTED_TICK_MAX - 1).toString());
+    }
+    // The summary reports the full store, and reading it changes nothing.
+    var counts = TickQueue.surfaceCounts();
+    Test.assertEqual(counts[0], BuildConfig.REJECTED_TICK_MAX);
+    Test.assertEqual(counts[2], true);
     Test.assertEqual(rejectedEntries().size(), BuildConfig.REJECTED_TICK_MAX);
-    Test.assertEqual(rejectedEntries()[0]["tick"]["uuid"], "old-0");
-
-    // Once the counts were shown, the oldest shown entry makes room.
-    Test.assertEqual(TickQueue.surfaceCounts()[0], BuildConfig.REJECTED_TICK_MAX);
-    client = new CapturedBsClient();
-    new TickFlusher(client).start(new FlushCompletionObserver().method(:done));
-    client.sent[0]["callback"].invoke(200, graphqlError("CLIMB_NOT_FOUND", "Climb not found"));
-    Test.assertEqual(rejectedEntries().size(), BuildConfig.REJECTED_TICK_MAX);
-    Test.assertEqual(rejectedEntries()[0]["tick"]["uuid"], "old-1");
-    Test.assertEqual(rejectedEntries()[BuildConfig.REJECTED_TICK_MAX - 1]["tick"]["uuid"], "refused");
-    Test.assertEqual(TickQueue.all()[0]["uuid"], "behind");
+    // Another account sees the store as full too: its next refusal also waits.
+    installAuthFixture("owner-b", 2310);
+    Test.assertEqual(TickQueue.surfaceCounts()[0], 0);
+    Test.assertEqual(TickQueue.surfaceCounts()[2], true);
+    resetTickStores();
     return true;
 }
 
@@ -352,7 +354,7 @@ function testWorstCaseSingleCallbackWorksAtFullSize(logger as Test.Logger) as La
     var entries = [];
     for (var index = 0; index < BuildConfig.REJECTED_TICK_MAX - 1; index += 1) {
         entries.add({ "owner" => "owner-b", "tick" => fullSizeTick("dead-" + index.toString(), "2026-11-16T10:00:00Z"),
-            "reason" => "CLIMB_NOT_FOUND", "seen" => false });
+            "reason" => "CLIMB_NOT_FOUND" });
     }
     Application.Storage.setValue(TickQueue.REJECTED_KEY, { "version" => RejectedTicks.VERSION, "entries" => entries });
     Application.Storage.setValue(TokenStore.KEY_JWT, LEGACY_JWT_OWNER_A);
@@ -489,7 +491,7 @@ function testQueuedAndRefusedTicksAreNeverSentUnderAnotherAccount(logger as Test
     client.sent[0]["callback"].invoke(200, savedReply("b-own"));
     Test.assertEqual(client.sent.size(), 1);
     Test.assertEqual(observer.calls, 1);
-    Test.assertEqual(RejectedTicks.unseenFor(TickQueue.loadRejected(), "owner-a"), 1);
+    Test.assertEqual(RejectedTicks.countFor(TickQueue.loadRejected(), "owner-a"), 1);
 
     installAuthFixture("owner-a", 2820);
     client = new CapturedBsClient();

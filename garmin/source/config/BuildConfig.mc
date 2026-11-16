@@ -34,8 +34,8 @@ module BuildConfig {
     const TICK_QUEUE_MAX = 25;
 
     // Dead-letter store for ticks the server refused for good. 25 entries is
-    // about 15KB of the separate 32KB storage value, and holds a full queue
-    // refused at once. When full, only an entry already shown may be dropped.
+    // about 15KB of the separate 32KB storage value. Nothing is ever evicted:
+    // when full, the next refusal stays queued and the drain stops there.
     const REJECTED_TICK_MAX = 25;
 
     // A pre-G2 tick is adopted only when logged at least this long after the

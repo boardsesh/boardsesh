@@ -4,11 +4,11 @@ using Toybox.Lang;
 // pure). It lives in its own storage value so the outbox format an older
 // build reads stays unchanged, and so its 32KB budget is separate.
 //
-// Every entry keeps the owner the tick was queued under, the server's reason
-// and whether its count has been shown on the watch. Nothing here is ever
-// sent again. A full store drops only an entry that has already been shown;
-// when every entry is unshown it refuses, and the caller keeps the tick in the
-// outbox instead.
+// Every entry keeps the owner the tick was queued under and the server's
+// reason. Nothing here is ever sent again, and nothing is ever dropped: a
+// valid tick can be refused because of a watch-side gap (no boardUuid on a
+// share-link spray wall), so an entry may be a real send. A full store
+// refuses the next tick, and the caller keeps it at the head of the outbox.
 module RejectedTicks {
     const VERSION = 1;
 
@@ -22,8 +22,7 @@ module RejectedTicks {
 
     function _validEntry(entry) as Lang.Boolean {
         return entry instanceof Lang.Dictionary && OwnedTickOutbox._validOwner(entry["owner"]) &&
-            OwnedTickOutbox._validTick(entry["tick"]) && _validReason(entry["reason"]) &&
-            entry["seen"] instanceof Lang.Boolean;
+            OwnedTickOutbox._validTick(entry["tick"]) && _validReason(entry["reason"]);
     }
 
     function _valid(store) as Lang.Boolean {
@@ -57,30 +56,25 @@ module RejectedTicks {
         return false;
     }
 
-    // Returns the next store, or null when the tick cannot be kept here. A
-    // repeated owner/UUID returns the store unchanged: a crash between this
-    // write and the outbox removal leaves one copy in each, and the next
-    // drain's identical rejection must not add a second entry.
+    // Returns the next store, or null when the tick cannot be kept here
+    // (invalid input, or the store is full). A repeated owner/UUID returns
+    // the store unchanged even when full: a crash between this write and the
+    // outbox removal leaves one copy in each, and the next drain's identical
+    // rejection must not add a second entry.
     function add(store, owner, tick, reason, capacity as Lang.Number) {
         if (!_valid(store) || !OwnedTickOutbox._validOwner(owner) || !OwnedTickOutbox._validTick(tick) ||
                 !OwnedTickOutbox._validTree(tick, 3) || !_validReason(reason) || capacity < 1) {
             return null;
         }
         if (contains(store, owner, tick["uuid"])) { return OwnedTickOutbox._copyTree(store); }
-        var entries = store["entries"];
-        var kept = [];
-        var hasRoom = entries.size() < capacity;
-        for (var index = 0; index < entries.size(); index += 1) {
-            // Oldest first. Only an entry whose count was already shown may go.
-            if (!hasRoom && entries[index]["seen"]) {
-                hasRoom = true;
-            } else {
-                kept.add(OwnedTickOutbox._copyTree(entries[index]));
-            }
-        }
-        if (!hasRoom) { return null; }
-        kept.add({ "owner" => owner, "tick" => OwnedTickOutbox._copyTree(tick), "reason" => reason, "seen" => false });
-        return { "version" => VERSION, "entries" => kept };
+        if (store["entries"].size() >= capacity) { return null; }
+        var next = OwnedTickOutbox._copyTree(store);
+        next["entries"].add({ "owner" => owner, "tick" => OwnedTickOutbox._copyTree(tick), "reason" => reason });
+        return next;
+    }
+
+    function isFull(store, capacity as Lang.Number) as Lang.Boolean {
+        return _valid(store) && store["entries"].size() >= capacity;
     }
 
     function countFor(store, owner) as Lang.Number {
@@ -91,27 +85,5 @@ module RejectedTicks {
             if (entries[index]["owner"].equals(owner)) { count += 1; }
         }
         return count;
-    }
-
-    function unseenFor(store, owner) as Lang.Number {
-        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return 0; }
-        var entries = store["entries"];
-        var count = 0;
-        for (var index = 0; index < entries.size(); index += 1) {
-            if (entries[index]["owner"].equals(owner) && !entries[index]["seen"]) { count += 1; }
-        }
-        return count;
-    }
-
-    // Marks only this owner's entries as shown. Another account's refused
-    // ticks stay unshown, so they can never be dropped on this owner's view.
-    function markSeen(store, owner) {
-        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return null; }
-        var next = OwnedTickOutbox._copyTree(store);
-        var entries = next["entries"];
-        for (var index = 0; index < entries.size(); index += 1) {
-            if (entries[index]["owner"].equals(owner)) { entries[index]["seen"] = true; }
-        }
-        return next;
     }
 }
