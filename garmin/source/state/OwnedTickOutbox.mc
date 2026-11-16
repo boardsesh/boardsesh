@@ -126,10 +126,13 @@ module OwnedTickOutbox {
 
     // The owner's queued tick with this UUID (a copy), or null.
     function find(envelope, owner, uuid) {
+        return _findIn(forOwner(envelope, owner), uuid);
+    }
+
+    function _findIn(ticks as Lang.Array, uuid) {
         if (!(uuid instanceof Lang.String)) { return null; }
-        var pending = forOwner(envelope, owner);
-        for (var tickIndex = 0; tickIndex < pending.size(); tickIndex += 1) {
-            if (pending[tickIndex]["uuid"].equals(uuid)) { return pending[tickIndex]; }
+        for (var tickIndex = 0; tickIndex < ticks.size(); tickIndex += 1) {
+            if (ticks[tickIndex]["uuid"].equals(uuid)) { return ticks[tickIndex]; }
         }
         return null;
     }
@@ -157,11 +160,13 @@ module OwnedTickOutbox {
                 skewSeconds < 0 || capacity < 1 || ownedCount(envelope) >= capacity) {
             return null;
         }
+        // One validated copy of the owner's queue, not one per on-hold tick:
+        // the watch's bytecode watchdog bounds work per event.
         var existing = forOwner(envelope, owner);
         var legacy = envelope["unowned"];
         for (var legacyIndex = 0; legacyIndex < legacy.size(); legacyIndex += 1) {
             var tick = legacy[legacyIndex];
-            if (_provablyLoggedAfter(tick, issuedAt, skewSeconds) && find(envelope, owner, tick["uuid"]) == null) {
+            if (_provablyLoggedAfter(tick, issuedAt, skewSeconds) && _findIn(existing, tick["uuid"]) == null) {
                 var remaining = [];
                 for (var otherIndex = 0; otherIndex < legacy.size(); otherIndex += 1) {
                     if (otherIndex != legacyIndex) { remaining.add(_copyTree(legacy[otherIndex])); }

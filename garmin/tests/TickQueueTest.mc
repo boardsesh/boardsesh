@@ -57,13 +57,20 @@ function testQueueAcceptsOnlyExactTypedUuidAcknowledgement(logger as Test.Logger
     Test.assertEqual(TickQueue.exactAck(200, null, "tick"), false);
     Test.assertEqual(TickQueue.exactAck(400, savedReply("tick"), "tick"), false);
     Test.assertEqual(TickQueue.exactAck(200, { "errors" => [], "data" => { "saveTick" => { "uuid" => "tick" } } }, "tick"), false);
-    // No body is a verdict; only 400 is permanent on its own.
-    var codes = [-104, -400, -2, 200, 401, 403, 404, 409, 422, 429, 500, 502, 503];
+    // A status alone is never a verdict on the tick, not even 400.
+    var codes = [-104, -400, -2, 200, 400, 401, 403, 404, 409, 422, 429, 500, 502, 503];
     for (var index = 0; index < codes.size(); index += 1) {
         Test.assertEqual(TickQueue.classifyFlushResult(codes[index], null, "tick"), :retry);
     }
-    Test.assertEqual(TickQueue.classifyFlushResult(400, null, "tick"), :rejected);
+    Test.assertEqual(TickQueue.classifyFlushResult(400, nullStateFieldReply("boardType", "String!"), "tick"), :rejected);
     return true;
+}
+
+// yoga's HTTP 400 when a variable field is null; see the native contract replay.
+(:debug)
+function nullStateFieldReply(field, type) {
+    return { "errors" => [{ "message" => "Variable \"$input\" got invalid value null at \"input." + field +
+        "\"; Expected non-nullable type \"" + type + "\" not to be null." }] };
 }
 
 (:test)
@@ -88,7 +95,7 @@ class FlushCompletionObserver {
 }
 
 (:test)
-function testFlusherBadRequestDeadLettersFrontAndSendsNext(logger as Test.Logger) as Lang.Boolean {
+function testFlusherNullStateFieldDeadLettersFrontAndSendsNext(logger as Test.Logger) as Lang.Boolean {
     var context = installAuthFixture("owner-a", 270);
     resetTickStores();
     TickQueue.enqueue({ "uuid" => "front" }, context);
@@ -98,10 +105,10 @@ function testFlusherBadRequestDeadLettersFrontAndSendsNext(logger as Test.Logger
     var flusher = new TickFlusher(client);
     flusher.start(observer.method(:done));
     Test.assertEqual(client.sent.size(), 1);
-    client.sent[0]["callback"].invoke(400, null);
+    client.sent[0]["callback"].invoke(400, nullStateFieldReply("angle", "Int!"));
     Test.assertEqual(TickQueue.size(), 1);
     Test.assertEqual(TickQueue.all()[0]["uuid"], "next");
-    Test.assertEqual(rejectedEntries()[0]["reason"], "HTTP_400");
+    Test.assertEqual(rejectedEntries()[0]["reason"], "NULL_STATE_FIELD");
     Test.assertEqual(client.sent.size(), 2);
     Test.assertEqual(observer.calls, 0);
     return true;

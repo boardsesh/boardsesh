@@ -13,17 +13,23 @@ module TickQueue {
     //
     //   acknowledged  2xx, no `errors`, data.saveTick.uuid is the sent UUID.
     //                 A UUID this account already saved answers the stored tick.
-    //   rejected      400: yoga refused the variables (unknown field, null for
-    //                 a required field, unknown enum value) or the body.
-    //                 2xx with only these errors: CLIMB_NOT_FOUND (spray climb
-    //                 gone or hidden), TICK_UUID_CONFLICT (another account owns
-    //                 this UUID), GRAPHQL_VALIDATION_FAILED, or the code-less
-    //                 "Invalid input: ..." that SaveTickInputSchema throws.
-    //   retry         everything else: SDK transport codes (< 0), 401 after the
-    //                 client's own refresh, edge 404/429/5xx, masked
-    //                 INTERNAL_SERVER_ERROR, SERVICE_UNAVAILABLE, UNAUTHENTICATED,
-    //                 the code-less "Authentication required ..." an expired
-    //                 token receives, and any reply shape not listed above.
+    //   rejected      Only verdicts about THIS tick's data:
+    //                 400 whose every error is yoga's "got invalid value null"
+    //                 for a field the watch copies from session state (the
+    //                 state lacked it). 2xx whose every error is
+    //                 CLIMB_NOT_FOUND (spray climb gone or hidden),
+    //                 TICK_UUID_CONFLICT (another account owns this UUID), or
+    //                 the code-less "Invalid input: ..." SaveTickInputSchema
+    //                 throws.
+    //   retry         everything else, including verdicts that would hit every
+    //                 tick alike (GRAPHQL_VALIDATION_FAILED on the fixed query,
+    //                 an unknown or missing input field after a schema change,
+    //                 a body-less or unparseable 400 from an edge or a mangled
+    //                 body): SDK transport codes (< 0), 401 after the client's
+    //                 own refresh, 404/429/5xx, masked INTERNAL_SERVER_ERROR,
+    //                 SERVICE_UNAVAILABLE, UNAUTHENTICATED, the code-less
+    //                 "Authentication required ..." an expired token receives,
+    //                 and any reply shape not listed above.
 
     function savedUuid(code as Lang.Number, response) {
         if (code < 200 || code >= 300 || !(response instanceof Lang.Dictionary) || response["errors"] != null) {
@@ -48,8 +54,7 @@ module TickQueue {
         var extensions = error["extensions"];
         var errorCode = extensions instanceof Lang.Dictionary ? extensions["code"] : null;
         if (errorCode instanceof Lang.String) {
-            if (errorCode.equals("CLIMB_NOT_FOUND") || errorCode.equals("TICK_UUID_CONFLICT") ||
-                    errorCode.equals("GRAPHQL_VALIDATION_FAILED")) {
+            if (errorCode.equals("CLIMB_NOT_FOUND") || errorCode.equals("TICK_UUID_CONFLICT")) {
                 return errorCode;
             }
             return null;
@@ -64,11 +69,43 @@ module TickQueue {
         return null;
     }
 
+    // True for yoga's variable-coercion message naming a null value in a field
+    // BsEndpoints.saveTickInput copies from session state. The watch sends
+    // the other fields as constants, so a refusal of one of those (or an
+    // unknown/missing field) means the schema changed, not the tick.
+    function nullStateField(message) as Lang.Boolean {
+        var prefix = "Variable \"$input\" got invalid value null at \"input.";
+        if (!(message instanceof Lang.String) || message.length() <= prefix.length() ||
+                !message.substring(0, prefix.length()).equals(prefix)) {
+            return false;
+        }
+        var rest = message.substring(prefix.length(), message.length());
+        var fields = ["boardType", "climbUuid", "angle", "isMirror", "isBenchmark"];
+        for (var index = 0; index < fields.size(); index += 1) {
+            var located = fields[index] + "\"; Expected non-nullable type ";
+            if (rest.length() >= located.length() && rest.substring(0, located.length()).equals(located)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Null unless the server positively refused this exact tick for good.
     // Every error in the reply must be a permanent one; one unknown or
     // retryable error makes the whole reply a retry.
     function rejectionReason(code as Lang.Number, response) {
-        if (code == 400) { return "HTTP_400"; }
+        if (code == 400) {
+            if (!(response instanceof Lang.Dictionary)) { return null; }
+            var coercionErrors = response["errors"];
+            if (!(coercionErrors instanceof Lang.Array) || coercionErrors.size() == 0) { return null; }
+            for (var coercionIndex = 0; coercionIndex < coercionErrors.size(); coercionIndex += 1) {
+                var coercionError = coercionErrors[coercionIndex];
+                if (!(coercionError instanceof Lang.Dictionary) || !nullStateField(coercionError["message"])) {
+                    return null;
+                }
+            }
+            return "NULL_STATE_FIELD";
+        }
         if (code < 200 || code >= 300 || !(response instanceof Lang.Dictionary)) { return null; }
         var errors = response["errors"];
         if (!(errors instanceof Lang.Array) || errors.size() == 0) { return null; }
@@ -228,6 +265,11 @@ module TickQueue {
 // auth, rate limit, server failure, unknown reply, storage refusal) keeps the
 // tick at the front and stops. Once the owner's own queue is empty, provable
 // pre-G2 ticks are adopted and sent one at a time.
+//
+// A second refusal with the SAME reason in one drain stops it and keeps that
+// tick queued: it may be the server, not the tick, so a fault that refuses
+// every tick costs at most one tick per reason per drain. Two ticks on one
+// deleted climb therefore take two drains.
 class TickFlusher {
     private var _client;
     private var _onComplete;
@@ -235,6 +277,7 @@ class TickFlusher {
     private var _lease = null;
     private var _finished = false;
     private var _sent as Lang.Array = [];
+    private var _refusedReasons as Lang.Array = [];
 
     function initialize(client) { _client = client; _context = TokenStore.snapshot(); }
     function start(onComplete) as Void { _onComplete = onComplete; _step(); }
@@ -263,6 +306,13 @@ class TickFlusher {
         _lease = null;
         if (!TickQueue.release(completed)) { return; }
         if (!AuthState.sameScope(_context, origin) || !TickQueue.activeContext(_context)) { _finish(); return; }
+        var reason = TickQueue.rejectionReason(code, response);
+        if (reason != null && !TickQueue.exactAck(code, response, completed["uuid"])) {
+            for (var index = 0; index < _refusedReasons.size(); index += 1) {
+                if (_refusedReasons[index].equals(reason)) { _finish(); return; }
+            }
+            _refusedReasons.add(reason);
+        }
         if (TickQueue.settle(_context, completed["uuid"], code, response) == :retry) { _finish(); return; }
         _step();
     }

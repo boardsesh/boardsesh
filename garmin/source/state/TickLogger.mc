@@ -20,10 +20,14 @@ class TickLogger {
         _lease = null;
         if (!TickQueue.release(completed)) { return; }
         if (!AuthState.sameScope(_context, origin) || !TickQueue.activeContext(_context)) { return; }
-        var outcome = TickQueue.settle(_context, _input["uuid"], code, response);
-        if (outcome == :success) { return; }
+        var uuid = _input["uuid"];
+        var outcome = TickQueue.classifyFlushResult(code, response, uuid);
+        if (outcome == :success && TickQueue.acknowledge(_context, uuid)) { return; }
         if (outcome == :rejected) {
-            // Kept in the dead-letter store, never re-sent; counted on the summary.
+            // Stays queued: only the exit drain, with its one-per-reason
+            // breaker, moves a refused tick to the dead-letter store. A live
+            // server fault therefore fills the queue loudly instead of
+            // dead-lettering every effort as it is logged.
             Feedback.error();
             Toast.show(WatchUi.loadResource(Rez.Strings.TickRejected));
             return;

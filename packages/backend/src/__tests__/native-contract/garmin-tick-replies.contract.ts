@@ -25,6 +25,7 @@ function watchReplay() {
   const scope: Record<string, unknown> = {};
   scope.savedUuid = currentGarminFunction('state/TickQueue.mc', 'savedUuid', scope);
   scope.errorReason = currentGarminFunction('state/TickQueue.mc', 'errorReason', scope);
+  scope.nullStateField = currentGarminFunction('state/TickQueue.mc', 'nullStateField', scope);
   const endpoints: Record<string, unknown> = {};
   return {
     exactAck: currentGarminFunction('state/TickQueue.mc', 'exactAck', scope) as (
@@ -129,12 +130,50 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     expect(watch.rejectionReason(invalid.code, invalid.reply)).toBe('INVALID_INPUT');
     expect(mutations).toContain("validateInput(SaveTickInputSchema, input, 'input')");
 
-    // The real SaveTickInput type: a state with no board type cannot coerce.
-    const uncoercible = await exchange(body({ ...slimState, boardType: null as unknown as string }), () => {
-      throw new Error('resolver must not run');
+    // The real SaveTickInput type: session state without a board type or
+    // angle cannot coerce, and only that tick is at fault.
+    for (const missing of [
+      { ...slimState, boardType: null },
+      { ...slimState, angle: null },
+      { ...slimState, climb: { ...slimState.climb, climbUuid: null } },
+    ]) {
+      const uncoercible = await exchange(body(missing as unknown as typeof slimState), () => {
+        throw new Error('resolver must not run');
+      });
+      expect(uncoercible.code).toBe(400);
+      expect(watch.rejectionReason(uncoercible.code, uncoercible.reply)).toBe('NULL_STATE_FIELD');
+    }
+  });
+
+  it('retries verdicts that would hit every tick alike', async () => {
+    // Schema skew: a field the watch sends that the server no longer knows.
+    const built = body() as { query: string; variables: { input: Record<string, unknown> } };
+    const skewed = await exchange(
+      { ...built, variables: { input: { ...built.variables.input, retiredField: 1 } } },
+      () => ({ uuid: TICK_UUID }),
+    );
+    expect(skewed.code).toBe(400);
+    expect(JSON.stringify(skewed.reply)).toContain('is not defined by type');
+    expect(watch.rejectionReason(skewed.code, skewed.reply)).toBeNull();
+
+    // The fixed query no longer validates against the schema.
+    const invalidDocument = await exchange(
+      { ...built, query: built.query.replace('{ uuid }', '{ uuid retiredField }') },
+      () => ({ uuid: TICK_UUID }),
+    );
+    expect(invalidDocument.code).toBe(200);
+    expect(JSON.stringify(invalidDocument.reply)).toContain('GRAPHQL_VALIDATION_FAILED');
+    expect(watch.rejectionReason(invalidDocument.code, invalidDocument.reply)).toBeNull();
+
+    // A body the bridge mangled: yoga cannot parse it at all.
+    const yoga = createYoga({ schema: makeExecutableSchema({ typeDefs }), logging: false });
+    const mangled = await yoga.fetch('http://localhost/graphql', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(built).slice(0, 40),
     });
-    expect(uncoercible.code).toBe(400);
-    expect(watch.rejectionReason(uncoercible.code, uncoercible.reply)).toBe('HTTP_400');
+    expect(mangled.status).toBe(400);
+    expect(watch.rejectionReason(mangled.status, (await mangled.json()) as unknown)).toBeNull();
   });
 
   it('retries auth, outage and unknown replies and never dead-letters them', async () => {

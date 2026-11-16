@@ -193,36 +193,56 @@ without either the server's acknowledgement or a copy in the dead-letter store.
 
 #### Server replies
 
-A drain sends the signed-in owner's ticks oldest first. The verdict on each
-reply comes from the `saveTick` resolver
-(`packages/backend/src/graphql/resolvers/ticks/mutations.ts`) behind
-graphql-yoga's `/graphql` transport. `saveTick` hands its callback the raw
-GraphQL body so the error codes survive.
+A drain (Save or Discard at the end of an activity) sends the signed-in
+owner's ticks oldest first. The verdict on each reply comes from the
+`saveTick` resolver (`packages/backend/src/graphql/resolvers/ticks/mutations.ts`)
+behind graphql-yoga's `/graphql` transport. `saveTick` hands its callback the
+raw GraphQL body so the error codes survive. Only verdicts about one tick's
+own data dead-letter it; anything that would refuse every tick alike retries.
 
 | Reply | Verdict | What the drain does |
 | --- | --- | --- |
 | 2xx, no `errors`, `data.saveTick.uuid` equals the sent UUID (a UUID the account already saved answers the stored tick) | Acknowledged | Removes it, sends the next |
-| HTTP 400: yoga refused the variables or body (unknown field, `null` for a required field, unknown enum value) | Refused | Moves it to the dead-letter store, sends the next |
-| 2xx whose every error is `CLIMB_NOT_FOUND`, `TICK_UUID_CONFLICT`, `GRAPHQL_VALIDATION_FAILED`, or the code-less `Invalid input: …` from `SaveTickInputSchema` | Refused | Same |
-| SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets, an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
+| 2xx whose every error is `CLIMB_NOT_FOUND` (spray climb deleted or hidden), `TICK_UUID_CONFLICT` (another account owns the UUID), or the code-less `Invalid input: …` from `SaveTickInputSchema` | Refused | Moves it to the dead-letter store, sends the next |
+| HTTP 400 whose every error is yoga's `got invalid value null at "input.<field>"` for a field the watch copies from session state (`boardType`, `climbUuid`, `angle`, `isMirror`, `isBenchmark`) | Refused | Same |
+| Every other 400 (no body, unparseable body, unknown or missing input field, a constant field refused), `GRAPHQL_VALIDATION_FAILED` on the fixed query, SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets, an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
 
 Auth failures and transport errors never dead-letter a tick: an unknown reply
-costs a stuck queue until the next drain, never a refused effort. A refusal is
-also kept queued when the dead-letter write fails or the store is full of
-entries nobody has seen. The dead-letter write comes before the outbox removal,
-so a crash between the two leaves a copy in both stores and the next drain's
-identical refusal adds no second entry. The phone outbox
-(`packages/shared/offline-sync`) dead-letters the same codes on the first
-attempt; the watch also dead-letters the code-less `Invalid input` and
-`TICK_UUID_CONFLICT`, because without a retry budget a retried refusal would
-block every later tick.
+costs a stuck queue until the next drain, never a refused effort. Whether the
+SDK hands the watch a body with a 400 is not verified on hardware; without one
+a 400 retries, as before this change.
+
+Two guards bound a misread verdict. A second refusal with the same reason in
+one drain stops the drain and keeps that tick queued, so a server fault that
+refuses everything costs at most one tick per reason per drain (two ticks on
+one deleted climb take two drains). The live log path never dead-letters: a
+refused effort shows "Not saved to logbook" and stays queued for the exit
+drain. A refusal is also kept queued when the dead-letter write fails or the
+store is full of entries nobody has seen. The dead-letter write comes before
+the outbox removal, so a crash between the two leaves a copy in both stores and
+the next drain's identical refusal adds no second entry.
+
+The phone outbox (`packages/shared/offline-sync`) dead-letters any 400, 403,
+409 or 422 and the codes `CLIMB_NOT_FOUND`, `GRAPHQL_VALIDATION_FAILED`,
+`BAD_REQUEST`, `BAD_USER_INPUT` and `FORBIDDEN` on the first attempt, and
+retries the rest ten times. Without a retry budget, the watch
+instead dead-letters only per-tick verdicts, including the code-less
+`Invalid input` and `TICK_UUID_CONFLICT`, and retries the schema-wide ones.
+
+Known gap: the watch sends no `boardUuid`, so a tick on a spray wall the
+climber reaches only through a share link, or a wall an admin hid, gets
+`CLIMB_NOT_FOUND` and is dead-lettered although the climb exists. Before this
+change it blocked the queue instead. Sending `boardUuid` needs the session
+state endpoint to carry it and is a follow-up.
 
 `bs.rejectedTicks` is `{ version: 1, entries: [{ owner, tick, reason, seen }] }`,
 oldest first, capped at 25 entries (`BuildConfig.REJECTED_TICK_MAX`). A tick is
-about 500 bytes, so a full store is roughly 15KB of its own 32KB value, and one
-full queue refused at once fits without dropping anything. When it is full, the
-oldest entry whose count was already shown is dropped; with none shown, the
-refusal stays queued and the drain stops.
+about 500 bytes, so a full store is roughly 15KB of its own 32KB value. When it
+is full, the oldest entry whose count was already shown is dropped; with none
+shown, the refusal stays queued and the drain stops. "Shown" means its count
+appeared on the session summary; the watch cannot list or retry individual
+refused ticks yet, so a dropped entry is gone. That trade keeps a full store
+from blocking the queue again.
 
 #### On-hold ticks from before G2 (#7445)
 
@@ -382,11 +402,14 @@ test execution still require installed device profiles. Generic compilation is
 separate from executing the tests or checking a watch's memory/API limits.
 
 On 2026-11-16 the dead-letter change compiled as a `fenix7` test build with SDK
-9.2.0 and an ephemeral key, and the simulator ran 89 tests: 89 passed, 0 failed,
+9.2.0 and an ephemeral key, and the simulator ran 92 tests: 92 passed, 0 failed,
 0 errors. Two SDK calls were replaced after the simulator showed they raise
 uncatchable VM errors on bad input: `Gregorian.moment` for 31 February and
-`StringUtil.convertEncodedString` for malformed base64. Real-watch behaviour is
-not covered by that run.
+`StringUtil.convertEncodedString` for malformed base64. The SDK test runner
+does not enforce the bytecode watchdog (a 50-million-iteration probe passed),
+so whether the heaviest drain callback (refuse, then adopt, beside full queues)
+fits on a real watch is a hardware check. Real-watch behaviour is not covered
+by that run.
 
 The backend pairing alphabet matches `PairingView.CHARSET`. SDK 9.2.0 documents
 `Activity.SPORT_ROCK_CLIMBING`, `Gregorian.utcInfo` with numeric `FORMAT_SHORT`

@@ -104,6 +104,12 @@ module LegacyTickProof {
             value = value * 10l + (code - 48);
             digits += 1;
         }
-        return digits > 0 && digits <= 10 ? value : null;
+        if (digits == 0 || digits > 10) { return null; }
+        // A plain integer claim ends at ',' or '}'; "1.7e9" must not read as 1.
+        if (digits < chars.size()) {
+            var next = chars[digits].toNumber();
+            if (next != 44 && next != 125) { return null; }
+        }
+        return value;
     }
 }
