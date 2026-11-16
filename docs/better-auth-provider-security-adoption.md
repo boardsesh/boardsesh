@@ -27,6 +27,8 @@ provider proof expiry, source credential expiry, browser binding and intent.
 Callback time, token `iat`, transfer/code issue time, refresh, navigation,
 `prompt=login` and `max_age` do not establish freshness.
 
+> **Partly superseded by #7596.** The browser binding/version and the binding deadline in this receipt, and the browser replacement steps in the next section, come from the browser binding design that is being removed. The five-minute reauthentication rule and the backend commands stay. B5 binds the receipt to the new session when it rebuilds the web layer. See [better-auth-browser-session.md](better-auth-browser-session.md).
+
 Google's signed session-age claim requires the applicable app configuration and
 does not make an ordinary OAuth continuation a reauthentication request.
 See [Google Security Bundle](https://developers.google.com/identity/siwg/security-bundle).
@@ -80,6 +82,8 @@ minutes and the original proof/intent/source deadlines.
 ## Evidence and remaining gates
 
 ### Ordinary sign-in to an already-owned account
+
+> **Superseded by #7596.** Provider sign-in for an admitted browser selection belongs to the browser binding design. A5 deletes the web layer that calls these commands. The backend commands stay until B5 decides whether Google and Apple sign-in on the new session reuse them; there, a login revokes the session it arrived with. See [better-auth-browser-session.md](better-auth-browser-session.md).
 
 The separate `signin-intent`, `signin-prepare`, `signin-finalize` and
 `signin-abort` private commands handle an admitted browser selecting an existing

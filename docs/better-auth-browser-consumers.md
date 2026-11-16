@@ -1,5 +1,7 @@
 # Selected browser consumer staging
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 Epic #6975 rollout remains tracked in #7430. Public selected-browser consumer
 readiness is a code-owned function returning `false`. An environment selector
 cannot enable these public readers. Bootstrap, recovery, ordinary rolling

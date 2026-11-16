@@ -1,5 +1,7 @@
 # Unmounted provider publication
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This prerequisite for epic #6975 separates an explicit Google/Apple method
 change from ordinary OAuth identity resolution. Rollout remains tracked in
 #7430. The selected flow reader and Apple transport normalizer now have

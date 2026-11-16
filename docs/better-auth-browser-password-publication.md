@@ -1,5 +1,7 @@
 # Browser password publication
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 Ordinary WWW password sign-in joins the existing backend-owned browser selection. The public password readiness function remains false. This implementation does not enable a rollout, alter native/watch compatibility endpoints, or introduce Facebook sign-in.
 
 ## Physical response sequence

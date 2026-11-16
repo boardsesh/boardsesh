@@ -1,5 +1,7 @@
 # Staged Expo browser consumers
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This child of the WWW browser consumers adopts the same process-memory lease
 factory in the Expo browser target. `publicExpoBrowserConsumersReady()` remains
 literal `false`. An environment flag cannot activate it. Native credential

@@ -8,6 +8,8 @@ The confirmation is a dedicated `first-password` purpose. Its maximum five-minut
 
 ## Preparation and publication
 
+> **Partly superseded by #7596.** The browser publication steps here (the generation+1 continuation cookie, the version-named proof cookies, the binding deadline and `publicFirstPasswordReady()`) belong to the browser binding design that is being removed. A5 deletes this web layer and B5 rebuilds it on the new session. Eligibility, the challenge, the finalize transaction, maintenance and the database profile are the backend core and stay. See [better-auth-browser-session.md](better-auth-browser-session.md).
+
 Request uses an admitted eligibility preflight, a browser replacement-intent transaction, then a freshly admitted challenge transaction. This sequence is not one atomic request. The preflight refuses an already stale or ineligible actor before intent mutation. Final challenge issuance rechecks current source, email/reservation ownership, selected password absence, Apple-only inventory and authority. Superseding an active challenge scrubs its prepared bcrypt hash and preparation state.
 
 The request returns a **private mail plan** to an authenticated backend service caller. The backend does not invoke delivery. The web broker passes only the fixed backend recipient and confirmation token to the shared email transport; browser JSON contains neither. The confirmation URL carries its token and operation selector in a fragment, with no email or UID. The client removes the fragment before reading pending state. GET requests perform no mutation; the private read command admits actual possession and returns only pending/prepared metadata, deadline and cursor.
@@ -17,6 +19,8 @@ Preparation checks the actual actor and confirmation token before bcrypt work, h
 The web broker uses the shared non-OAuth issuer and provider publication-response builder to construct the exact generation+1 continuation cookie and complete buffered response **before** invoking finalize. The actual observed old proof is retained. Both the operation carrier and future proof must fit the existing cookie/header budgets before a password can be finalized. A lost finalization response returns unavailable without retry, abort, credential reconstruction or candidate-cookie publication.
 
 ## Public browser presentation
+
+> **Partly superseded by #7596.** The five routes, the operation cookie and the proof-cookie acknowledgement in this section are the web layer that A5 deletes and B5 rebuilds. `/auth/confirm-first-password` may answer 404 in between; it serves no live flow today. The finalize transaction paragraph is backend core and stays, apart from its browser replacement step. See [better-auth-browser-session.md](better-auth-browser-session.md).
 
 The five presentation routes are under `/api/internal/auth/first-password/`: `context`, `request`, `read`, `submit` and `acknowledge`. Configuration selects their exact HTTPS Host and Origin; forwarded headers and request URLs cannot select a mail origin. POST bodies have byte, UTF-8, streaming and five-second bounds. Only actual primary-admitted source possession selects the account-level request limiter. A stale Settings UID/SID or actor context refuses before challenge creation or mail delivery.
 

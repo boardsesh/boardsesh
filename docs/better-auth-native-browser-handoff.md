@@ -1,5 +1,9 @@
 # Selected browser to native sign-in
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+>
+> The `bsnh1_` handoff goes with the binding. The legacy native callback (`packages/web/app/api/auth/native/callback/route.ts`) and its HMAC transfer (`packages/web/app/lib/auth/native-oauth-transfer.ts`) stay unchanged.
+
 The selected browser callback uses a backend-owned, single-use `bsnh1_` transfer
 capability. It sends the existing native client to the unchanged
 `/auth/native/exchange` endpoint and keeps its `{ jwt, refreshToken, expiresAt,

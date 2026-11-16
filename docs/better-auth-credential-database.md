@@ -61,6 +61,8 @@ signing keys remains a separate issuer gate.
 
 ## Private browser commands
 
+> **Partly superseded by #7596.** The browser-binding service in this section belongs to the browser binding design that is being removed. A5 deletes its web callers. The backend binding core and the binding-table readers that the kept provider-security and first-password cores use stay until B5 rebuilds those flows on the new session. The `private-native-handoff-v1` paragraph describes the `bsnh1_` handoff, which A5 deletes. See [better-auth-browser-session.md](better-auth-browser-session.md).
+
 The default-off browser service uses
 `/api/internal/auth/browser-binding/v1/{bootstrap,describe,read,intent,login,logout}`.
 Only `CURRENT_STORE_BROWSER_BINDING_MODE=backend-staging` enables it. Each command

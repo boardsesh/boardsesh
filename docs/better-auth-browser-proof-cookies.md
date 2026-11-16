@@ -1,5 +1,7 @@
 # Unmounted canonical-www proof cookie codec
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This BA05 prerequisite adds a server-only codec, not a public route or an
 authentication decision. The backend supplies the authoritative binding digest
 and selection version. The reader selects only that exact cookie family; it

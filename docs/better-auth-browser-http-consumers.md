@@ -1,5 +1,7 @@
 # Staged browser GraphQL HTTP clients
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 The HTTP continuation is based on the merged browser consumers, CNC and private
 views. The earlier composition compared 69 ending feature blobs before extracting
 the shared HTTP core. That source evidence is historical. Public browser and Expo
