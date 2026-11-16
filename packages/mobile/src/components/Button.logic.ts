@@ -4,6 +4,7 @@
 // @expo/ui tree. Mirrors SwitchRow.logic.ts.
 
 import type { ViewStyle } from 'react-native';
+import { DYNAMIC_TYPE_POINT_SIZES } from '../theme/dynamic-type';
 import { hapticLight } from '../lib/haptics';
 import type { ButtonSize, ButtonVariant } from './Button.types';
 
@@ -144,26 +145,31 @@ export function buttonMatchContents(style: ViewStyle | undefined): { horizontal:
   return { horizontal: !fills.width, vertical: !fills.height };
 }
 
-/**
- * The point size of SwiftUI's `body` text at each Dynamic Type size (Apple's
- * published table). `large` is the default.
- */
-const BODY_POINT_SIZE_BY_DYNAMIC_TYPE = [
-  ['xSmall', 14],
-  ['small', 15],
-  ['medium', 16],
-  ['large', 17],
-  ['xLarge', 19],
-  ['xxLarge', 21],
-  ['xxxLarge', 23],
-  ['accessibility1', 28],
-  ['accessibility2', 33],
-  ['accessibility3', 40],
-  ['accessibility4', 47],
-  ['accessibility5', 53],
+/** SwiftUI's `DynamicTypeSize` cases, smallest to largest. `large` is the default. */
+const BUTTON_DYNAMIC_TYPE_SIZES = [
+  'xSmall',
+  'small',
+  'medium',
+  'large',
+  'xLarge',
+  'xxLarge',
+  'xxxLarge',
+  'accessibility1',
+  'accessibility2',
+  'accessibility3',
+  'accessibility4',
+  'accessibility5',
 ] as const;
 
-export type ButtonDynamicTypeSize = (typeof BODY_POINT_SIZE_BY_DYNAMIC_TYPE)[number][0];
+export type ButtonDynamicTypeSize = (typeof BUTTON_DYNAMIC_TYPE_SIZES)[number];
+
+/**
+ * The point size of SwiftUI's `body` text at each Dynamic Type size, from the
+ * same HIG table the `Text` ramps use (`DYNAMIC_TYPE_POINT_SIZES.body`).
+ */
+const BODY_POINT_SIZE_BY_DYNAMIC_TYPE = BUTTON_DYNAMIC_TYPE_SIZES.map(
+  (size, index) => [size, DYNAMIC_TYPE_POINT_SIZES.body[index]] as const,
+);
 
 /**
  * The largest Dynamic Type size whose body text stays within `maxScale` of the

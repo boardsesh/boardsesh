@@ -458,8 +458,13 @@ above holds. Selection is a state, not a link. `ClimbListRow` still builds the s
   body curve up to xxxLarge and runs ahead of it at the accessibility sizes (AX3: 2.643 against
   body's 2.353). Against that table, titles now grow much less, body, headline and label are 8–13%
   smaller at AX1–AX5, and footnote and captions grow up to 14% more at xLarge–xxxLarge. JS layout
-  that multiplies a text height or an icon size by `fontScale` must use `textFontScale(variant,
-  fontScale)` instead, or it drifts from the text it sits beside.
+  that sizes itself around non-body text, or around body text above xxxLarge, must use
+  `textFontScale(variant, fontScale, Platform.OS)` instead of `fontScale`, or it drifts from the text
+  it sits beside. A 1.5 cap does not make `fontScale` safe: it never engages below AX1. The ramp
+  follows the `Text`'s `variant`, not its final size, so a body `Text` restyled to 34pt still asks
+  for `'body'`. An `Icon` beside footnote or caption text takes `textVariant` to match. Layout
+  switches keyed on a threshold (`fontScale > 1.3`) pick a content size category and stay on
+  `fontScale`.
 
 ### Guards
 
