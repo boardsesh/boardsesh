@@ -1429,28 +1429,45 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
 
   // Material, Android, the old floating chrome, and the iOS paths that keep a
   // painted band (before iOS 26, Reduce Transparency, Increase Contrast): no
-  // blur mounts. Only the stable native-offset tracker is needed for clearance.
+  // blur mounts. The gesture listeners are still there: they fire a few times per
+  // gesture, not per frame, and they tell the pagination fence a climber moved
+  // the list (the zero-height-row page drain).
   it.each([true, false])(
-    'tracks native offsets without extra gesture listeners before a blur mounts (UIKit header: %s)',
+    'listens for the gesture itself even before a blur mounts (UIKit header: %s)',
     async (nativeRootHeader) => {
       mocks.nativeRootHeader = nativeRootHeader;
       const { findByText } = render(<ClimbList />);
       await findByText('Moonage');
 
-      expect(mocks.listScrollProps.onScroll).toBeTypeOf('function');
-      for (const listener of SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll')) {
-        expect(mocks.listScrollProps[listener]).toBeUndefined();
+      for (const listener of SCROLL_LISTENERS) {
+        expect(mocks.listScrollProps[listener]).toBeTypeOf('function');
       }
+      // With nothing to forward to, a whole gesture is harmless.
+      act(() => {
+        mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onScroll?.(scrollEvent(40));
+        mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(40));
+        mocks.listScrollProps.onMomentumScrollBegin?.();
+        mocks.listScrollProps.onMomentumScrollEnd?.();
+      });
     },
   );
 
-  it("forwards scrolling and retains the store's gesture listeners once a blur mounts", async () => {
-    const { store } = await renderUnderFloatingChips();
+  it("forwards every gesture listener to the store's once a blur mounts", async () => {
+    const { store, rerender } = await renderUnderFloatingChips();
+    const spies = SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll').map((listener) =>
+      vi.spyOn(store.listProps, listener),
+    );
+    // The screen reads the store's handlers when it renders.
+    rerender(<ClimbList />);
 
-    expect(mocks.listScrollProps.onScroll).toBeTypeOf('function');
-    for (const listener of SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll')) {
-      expect(mocks.listScrollProps[listener]).toBe(store.listProps[listener]);
-    }
+    act(() => {
+      mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+      mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(40));
+      mocks.listScrollProps.onMomentumScrollBegin?.();
+      mocks.listScrollProps.onMomentumScrollEnd?.();
+    });
+    for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('tells the blur once rows are under the chips, and again when the list is back at rest', async () => {

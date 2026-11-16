@@ -69,6 +69,7 @@ import {
 import { useClimbListLayout } from '../../../src/hooks/use-climb-list-layout';
 import { useClimbRowDisplay, useClimbRowField } from '../../../src/lib/climb-row-display-preference';
 import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/climb-list-pagination';
+import { createClimberScrollTracker, type ForwardedScrollHandlers } from '../../../src/lib/climber-scroll-tracker';
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
 import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
 import { ClimbListThumbnailPrewarmWindow, createVisibleRowsStore } from '../../../src/components/ClimbListScrollAhead';
@@ -782,6 +783,12 @@ function ClimbListInner() {
   // controls when they sit over the list instead of above its clip.
   const restoreTopClearanceRef = useRef(0);
   restoreTopClearanceRef.current = -listTopOffset + (filterInTopChrome ? 0 : searchBarHeight);
+  // Whether the climber has dragged or flung the list since the last page ask:
+  // the fence that stops zero-height rows paging a whole search in. It wraps the
+  // scroll-edge and chrome handlers, read through a ref so neither rebuilds it.
+  const forwardedScrollRef = useRef<ForwardedScrollHandlers>({});
+  forwardedScrollRef.current = { ...scrollEdge.list?.listProps, onScroll: handleListScroll };
+  const climberScroll = useMemo(() => createClimberScrollTracker(() => forwardedScrollRef.current), []);
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
       hasSeenSearchKeyRef.current = true;
@@ -798,7 +805,8 @@ function ClimbListInner() {
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;
     lastNextPageFailureAtRef.current = null;
-  }, [searchScrollKey, visibleRowsStore, resetScrollToTop]);
+    climberScroll.reset();
+  }, [searchScrollKey, visibleRowsStore, resetScrollToTop, climberScroll]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
@@ -983,8 +991,8 @@ function ClimbListInner() {
   /**
    * Fetch the next page if `shouldFetchNextPage` says so. One page per call,
    * never a drain: the `isLoadingMoreRef` latch holds until that page settles,
-   * and an ask the climber did not cause only goes ahead when the last one made
-   * progress.
+   * an ask the climber did not cause only goes ahead when the last one made
+   * progress, and after a search's first ask each one needs a drag or fling.
    */
   const maybeFetchNextPage = useCallback(
     (trigger: NextPageTrigger) => {
@@ -996,6 +1004,7 @@ function ClimbListInner() {
         fetchInFlight: isLoadingMoreRef.current,
         msSinceLastFailure: failedAt === null ? null : Date.now() - failedAt,
         loadedCountAtLastFetch: loadedCountAtLastFetchRef.current,
+        climberScrolledSinceLastFetch: climberScroll.hasScrolled(),
         firstVisibleIndex: visibleRowsStore.getFirst(),
         lastVisibleIndex: visibleRowsStore.getLast(),
         endReachedPending: endReachedPendingRef.current,
@@ -1004,6 +1013,7 @@ function ClimbListInner() {
       if (!shouldFetch) return;
       endReachedPendingRef.current = false;
       loadedCountAtLastFetchRef.current = pagination.loadedCount;
+      climberScroll.reset();
       isLoadingMoreRef.current = true;
       void fetchNextPage()
         .then((result) => {
@@ -1013,7 +1023,7 @@ function ClimbListInner() {
           isLoadingMoreRef.current = false;
         });
     },
-    [fetchNextPage, visibleRowsStore],
+    [fetchNextPage, visibleRowsStore, climberScroll],
   );
 
   const handleEndReached = useCallback(() => {
@@ -1987,8 +1997,7 @@ function ClimbListInner() {
               viewabilityConfig: CLIMB_LIST_VIEWABILITY,
               contentInsetAdjustmentBehavior: nativeRootHeader ? 'automatic' : 'never',
               scrollToOverflowEnabled: nativeRootHeader,
-              ...scrollEdge.list?.listProps,
-              onScroll: handleListScroll,
+              ...climberScroll.handlers,
               onCommitLayoutEffect: handleListCommitLayout,
               contentContainerStyle: filterInTopChrome ? undefined : { paddingTop: searchBarHeight },
               scrollIndicatorInsets: filterInTopChrome ? undefined : { top: searchBarHeight },
