@@ -683,7 +683,8 @@ internal object OverlayRenderer {
         manifest.tuning.forEach { bytes.putFloat(it) }
         vector(manifest.tuning2[0], manifest.tuning2[1], lower.maxReach, 0f)
         bytes.putInt(manifest.covers?.offset ?: -1)
-        repeat(3) { bytes.putInt(0) }
+        bytes.putInt(OverlayPolicy.selectStampLayers(lower.stampLayers, upper.stampLayers, progress))
+        repeat(2) { bytes.putInt(0) }
         vector(manifest.width.toFloat(), manifest.height.toFloat(), 0f, 0f)
         vector(progress, OverlayPolicy.REVEAL_BAND, 0f, reach)
         vector(

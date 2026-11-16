@@ -38,7 +38,7 @@ internal object OverlayShader {
             vec4 veil;
             vec4 tuning; // merge, seam, max mix, sharpness
             vec4 tuning2; // fringe, core share, active max reach
-            uvec4 offsets; // LED covers
+            uvec4 offsets; // LED covers, active stamp-layer mask
             vec4 viewport;
             vec4 motion; // progress, reveal band width, reserved, editor reach scale
             vec4 other; // second count, second max reach, empty production source, display mirror
@@ -178,6 +178,7 @@ internal object OverlayShader {
             // Preserve CPU layer order across holds: all fills, then all plates,
             // then all glyphs. Combining each hold's layers would change overlaps.
             for(uint layer=1u;layer<5u;layer++) {
+              if((uniforms.offsets.y & (1u << (layer-1u)))==0u) continue;
               for(uint index=0u;index<count;index++) {
                 Hold hold=source_hold(index,lowerCount);
                 bool annotation=hold.identity.z>0u;

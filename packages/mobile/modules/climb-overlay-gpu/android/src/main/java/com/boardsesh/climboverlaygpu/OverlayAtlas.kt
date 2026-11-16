@@ -171,6 +171,13 @@ internal data class ActiveHold(
 internal class ActiveScene(val descriptors: List<ActiveHold>, val buffer: Int) {
     val maxReach = descriptors.filterNot { it.role.annotation }.maxOfOrNull { it.hold.reach } ?: 0f
     val roles = descriptors.associate { it.hold.id to it.role.identity }
+    val stampLayers = descriptors.fold(0) { layers, active ->
+        layers or OverlayPolicy.stampLayers(
+            active.role.annotation,
+            active.role.stamps.map { it?.offset ?: -1 }.toIntArray(),
+            active.role.extraStamps.map { it?.offset ?: -1 }.toIntArray(),
+        )
+    }
 }
 
 internal fun selectHolds(manifest: AtlasManifest, frames: String): List<ActiveHold> {

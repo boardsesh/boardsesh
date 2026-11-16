@@ -8,6 +8,23 @@ enum ClimbOverlayMotion {
   static let editPeakReach: Float = 1.35
   static let revealBand: Float = 0.22
 
+  /// Bits follow the shader's fill, plate, glyph and annotation layer order.
+  /// Missing first passes do not imply that later paint passes are absent.
+  static func stampLayers(offsets: SIMD4<UInt32>, extraOffsets: SIMD4<UInt32>,
+                          annotation: Bool) -> UInt32 {
+    let glyph = offsets.w != .max || extraOffsets.w != .max
+    if annotation { return glyph ? 8 : 0 }
+    let fill = offsets.y != .max || extraOffsets.x != .max ||
+      extraOffsets.y != .max || extraOffsets.z != .max
+    return (fill ? 1 : 0) | (offsets.z != .max ? 2 : 0) | (glyph ? 4 : 0)
+  }
+
+  static func selectStampLayers(lower: UInt32, upper: UInt32, progress: Float) -> UInt32 {
+    if progress <= 0 { return lower }
+    if progress >= 1 { return upper }
+    return lower | upper
+  }
+
   struct Selection {
     let lowerOffset: Int
     let upperOffset: Int
