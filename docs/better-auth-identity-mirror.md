@@ -71,7 +71,7 @@ reset's user lock is released.
 function-level mirroring selected. The production startup gate is not bypassed
 or disabled. Each fixture uses its existing checkout-scoped worker database;
 there is no shared infrastructure setup or service restart. Generated migration
-0305 supplies the canonical tables in the shared fixture. Restricted backend
+0306 supplies the canonical tables in the shared fixture. Restricted backend
 command actors receive only the extra source-read and canonical-table grants
 they require; fenced legacy/read-only web actors receive no canonical access.
 These are synthetic test grants, not production grants or fence evidence.

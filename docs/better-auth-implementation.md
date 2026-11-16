@@ -4,7 +4,7 @@ Parent: [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975).
 Design: [Better Auth migration](./better-auth-migration.md).
 Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
-Production migration remains gated. The user's password policy is to keep the
+Production migration remains gated. For what is merged, what is open and the order of switches, see the acceptance ledger below and [better-auth-rollout.md](./better-auth-rollout.md). The decision log and measurements further down are dated history, kept as written. The user's password policy is to keep the
 current device signed in, revoke other credentials, and revoke every session
 after forgotten-password reset.
 
@@ -77,18 +77,20 @@ test or an upstream feature description is not a passed acceptance criterion.
 
 ## Acceptance ledger
 
-| Child | Evidence/status |
-| --- | --- |
-| BA-01 #6976 | Prototype capability gate: GO for BA-03 implementation. Identity/native/session/OAuth/browser, legacy compatibility, recovery, explicit provider mutations, canonical handoff and configured Google browser-code transport are implemented and independently reviewed. Open pending review/merge; production source-provenance and operational acceptance remain separate. |
-| BA-03 #6977 | Implementation-only GO after independent capability audit. Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). Backend current-store service/reservations/fencing are next; no production writer activation or deployed role policy. |
-| BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
-| BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
-| BA-05 #6979 | Re-scoped by #7596 to one shared-domain session cookie and one central client guard ([design](./better-auth-browser-session.md)). Phase A (the client guards and removal of the browser binding design) is in progress. Phase B waits until the BA-04 authority can issue sessions. |
-| BA-06 #6980 | Canonical native, pre-cutover refresh and both Redis watch formats pass. Pending source-less pairing requires an authenticated snapshot or fenced issuer; full HTTP behavior and device/offline QA remain acceptance work. |
-| BA-07 #6981 | Tested guards preserve family ancestry after expiry/pruning and offline access after browser-session expiry, alongside client ownership, consent binding and Disconnect. Production router, app-specific subjects and operational guards remain unimplemented. |
-| BA-08 #6982 | Blocked on first-party adoption and partner authority. |
-| BA-09 #6983 | Production rollout requires restored-database and real-device evidence. |
-| BA-10 #6984 | NextAuth remains until the migration readiness gate passes. |
+Checked against GitHub on 2026-11-16. Every switch named here is listed in [better-auth-rollout.md](./better-auth-rollout.md); none is on in production.
+
+| Child | State | Evidence and what is left |
+| --- | --- | --- |
+| BA-01 #6976 | **Closed** | The prototype proof (#7280) and the fully migrated catalog check (#7321) are merged. Production acceptance is tracked in the later children. |
+| BA-03 #6977 | Open | The backend current-store service, reservations, fencing and the selected writers for password, recovery, registration, verification, provider ownership, account deletion and location owners are on main (#7323, #7350, #7438 to #7441, #7443, #7456 to #7459, #7462, #7467, #7471). They run only when their mode is on, and no mode is on. Left: deployed role fence, the three activation code gates, and every mode switch in the rollout doc. |
+| BA-02 #4847 | Open | Case-insensitive lookup (#7426), normalized new writes (#7429), the private resolution tool (#7433, #7448) and the read-only audit are merged. Left: the 17 contact emails, resolving approved groups, then the unique index and stored-form check in draft #7436. #7432 (read-only consolidation preview) and #7446 are open. #7444 is labelled do-not-merge because it merges accounts without ownership proof. |
+| BA-04 #6978 | Open | The dark legacy bridge and denials (#7439), the identity mirror and gated import and reconcile (#7438, #7437), and the authority module (#7471) are merged. `auth-authority activate` refuses on three code gates. Nothing has been fenced, prepared, imported or activated in production. #7591 (`prepare` stops account deletion) must be fixed before `prepare` runs there. |
+| BA-05 #6979 | Open, re-scoped | #7596 replaces the staged browser design on main (binding, renewal, proof cookies, coordinator, leases) with one shared-domain session cookie and one central client guard. That design sits behind eight readiness functions that return `false`, and the binding was never on in production. It will be deleted. #7588, #7592 and #7594 close with it. |
+| BA-06 #6980 | Open | Released-client contract replay (#7450), token-keyed refresh limits (#7447), ancestry through the native callback (#7463) and watch pairing and transfer ancestry (#7464) are merged, as is the Garmin owner-scoped outbox (#7442). Left: original-key installed watch, queued ticks, hardware and FIT QA, and downgrade. |
+| BA-07 #6981 | Open | The partner OAuth tables, authority, routes, `/v1` API, hourly sweep and launch suite are merged (#7361, #7393 to #7396, #7400, #7403, #7404). `PARTNER_OAUTH_MODE` is off in production. Left: stages A to D. |
+| BA-08 #6982 | Open | Developer console, consent screens, connected apps and the end-to-end journey are merged (#7406, #7408, #7411). The developer terms are a draft until the owner approves them. #7598 (console changes need a recent sign-in) is open; #7597 (consent every time for apps without a secret and for native apps) is merged; nightly CI for the journey is #7605 (draft). |
+| BA-09 #6983 | Open | [better-auth-rollout.md](./better-auth-rollout.md) lists every switch and the order. Left: restored-database and real-device evidence, then the switches. |
+| BA-10 #6984 | Open | NextAuth remains. No removal until the migration readiness gate passes. |
 
 ## Reproduce the delivered proofs
 
