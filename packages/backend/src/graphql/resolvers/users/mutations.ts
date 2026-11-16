@@ -82,6 +82,13 @@ function logStagedDeletionFailure(failureCode: string): void {
   logger.error('[deleteAccount] Staged account deletion failed', { failureCode });
 }
 
+/** What a climber sees when deletion cannot run right now; the cause is logged, never shown. */
+function accountDeletionUnavailable(): GraphQLError {
+  return new GraphQLError('Account deletion is temporarily unavailable.', {
+    extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+  });
+}
+
 export const userMutations = {
   /**
    * Update the authenticated user's profile
@@ -319,9 +326,7 @@ export const userMutations = {
       }
     } catch {
       logStagedDeletionFailure('configuration');
-      throw new GraphQLError('Account deletion is temporarily unavailable.', {
-        extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
-      });
+      throw accountDeletionUnavailable();
     }
 
     let deletedWallIds: number[] = [];
@@ -451,16 +456,22 @@ export const userMutations = {
         { alsoRetry: PARTNER_APP_LOCK_BUSY },
       );
     } catch (error) {
-      if (!deletionCommand) throw error;
+      if (!deletionCommand) {
+        // A projection refusal (enforced manifest between `activate` and the staged
+        // redeploy, or an inconsistent prepared one) is operator state: log its code
+        // and show the climber the same reply as a staged refusal. Every other legacy
+        // failure keeps its existing contract.
+        if (!(error instanceof CurrentStoreFoundationError)) throw error;
+        logger.error('[deleteAccount] Legacy account deletion refused', { failureCode: error.code });
+        throw accountDeletionUnavailable();
+      }
       logStagedDeletionFailure(stagedDeletionFailureCode(error));
       // Keep the existing deadlock-only retry in control of the original error.
       // Staged foundation/driver failures must not expose SQL or retained causes.
       if (error instanceof GraphQLError && error.extensions.code === 'ACCOUNT_DELETE_RETRY_REQUIRED') {
         throw error;
       }
-      throw new GraphQLError('Account deletion is temporarily unavailable.', {
-        extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
-      });
+      throw accountDeletionUnavailable();
     }
 
     // Kiosks showing one of the account's boards keep their last snapshot until

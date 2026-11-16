@@ -492,6 +492,10 @@ const commandsNamingTheAccount: readonly (readonly [string, () => Promise<() => 
   ],
 ];
 /** Staged-failure lines only: the PostHog erasure step logs its own error when no queue runs. */
+const legacyRefusalLine = '[deleteAccount] Legacy account deletion refused';
+function legacyRefusalLogs() {
+  return vi.mocked(logger.error).mock.calls.filter(([line]: unknown[]) => line === legacyRefusalLine);
+}
 function stagedFailureLogs() {
   return vi.mocked(logger.error).mock.calls.filter(([line]: unknown[]) => line === stagedFailureLine);
 }
@@ -631,13 +635,12 @@ describe('mounted account deletion and current-store authority', () => {
       });
       vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'legacy');
       vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
-      const before = await snapshot();
       const canonicalBefore = await db.select().from(authAccount).where(eq(authAccount.userId, ownerId));
-      await expect(remove()).rejects.toMatchObject({ code: 'STALE_AUTHORITY' });
-      expect(await snapshot()).toEqual(before);
+      // Between `activate` and the staged redeploy the climber sees the staged
+      // path's generic reply; only the server log names the cause.
+      await expectUnavailableUnchanged();
+      expect(legacyRefusalLogs()).toEqual([[legacyRefusalLine, { failureCode: 'STALE_AUTHORITY' }]]);
       expect(await db.select().from(authAccount).where(eq(authAccount.userId, ownerId))).toEqual(canonicalBefore);
-      expect(effects.publish).not.toHaveBeenCalled();
-      expect(effects.purge).not.toHaveBeenCalled();
     },
   );
   /** `auth-authority prepare` ran and `activate` did not (#7591): the backend still runs legacy deletion. */
@@ -688,6 +691,48 @@ describe('mounted account deletion and current-store authority', () => {
     expect(after.reservations[0]).toMatchObject({ state: 'blocked_ambiguous', ownerUserId: null });
     expect(after.members).toEqual(before.members.filter((row) => row.userId !== ownerId));
     expect(after.users.map((user) => user.id)).toEqual([otherId]);
+  });
+  it('answers a prepared-phase reservation inconsistency with the generic reply and keeps the account', async () => {
+    await seedPair();
+    // The owner's owned key gains a second member. No writer leaves this, so cleanup refuses.
+    await db
+      .insert(authEmailReservationMembers)
+      .values({ normalizedEmail: normalizeAccountEmail(ownerEmail), userId: otherId });
+    await preparedLegacyDeletion();
+    await expectUnavailableUnchanged();
+    expect(legacyRefusalLogs()).toEqual([[legacyRefusalLine, { failureCode: 'RESERVATION_INCONSISTENT' }]]);
+  });
+  it('rolls the whole deletion back when the prepared-phase reservation cleanup fails', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    await preparedLegacyDeletion();
+    const fault = `${triggerName}_cleanup`;
+    await db.execute(
+      sql.raw(`CREATE FUNCTION ${fault}() RETURNS trigger LANGUAGE plpgsql AS $fault$
+      BEGIN RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='${privateMarker}'; END; $fault$`),
+    );
+    await db.execute(
+      sql.raw(
+        `CREATE TRIGGER ${fault} BEFORE DELETE ON public.auth_email_reservations FOR EACH ROW EXECUTE FUNCTION ${fault}()`,
+      ),
+    );
+    try {
+      const before = await snapshot();
+      let failure: unknown;
+      try {
+        await remove();
+      } catch (caught) {
+        failure = caught;
+      }
+      // A database failure keeps the legacy contract: the original error, masked later by the GraphQL layer.
+      expect(postgresErrors.getPostgresErrorCode(failure)).toBe('23514');
+      expect(await snapshot()).toEqual(before);
+      expect(await db.select().from(users).where(eq(users.id, ownerId))).toHaveLength(1);
+      expect(effects.publish).not.toHaveBeenCalled();
+    } finally {
+      await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fault} ON public.auth_email_reservations`));
+      await db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fault}()`));
+    }
   });
   it('holds the gate through a prepared-phase legacy deletion, so activation gives up rather than land inside it', async () => {
     await seedPair({ system: true });

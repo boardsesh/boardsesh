@@ -24,6 +24,7 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { userQueries } from '../graphql/resolvers/users/queries';
+import { logger } from '../utils/logger';
 
 // Hoist mock variables so they're available before module evaluation
 const { mockDb, txCalls } = vi.hoisted(() => {
@@ -226,11 +227,20 @@ describe('deleteAccount mutation', () => {
     'refuses legacy deletion when an enforced %s projection exists, before content changes',
     async (writerAuthority) => {
       setupTransactionMock({ manifestRows: [{ phase: 'enforced', writerAuthority }] });
+      const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
 
+      // The climber sees the generic reply; the internal code goes to the server log only.
       await expect(
         userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
-      ).rejects.toThrow('STALE_AUTHORITY');
+      ).rejects.toMatchObject({
+        message: 'Account deletion is temporarily unavailable.',
+        extensions: { code: 'SERVICE_UNAVAILABLE' },
+      });
+      expect(logged).toHaveBeenCalledWith('[deleteAccount] Legacy account deletion refused', {
+        failureCode: 'STALE_AUTHORITY',
+      });
       expect(txCalls.some((call) => call.method === 'delete' || call.method === 'update')).toBe(false);
+      logged.mockRestore();
     },
   );
 
@@ -259,11 +269,19 @@ describe('deleteAccount mutation', () => {
     ['unsupported', [{ transaction_isolation: 'repeatable read' }]],
   ] as const)('refuses %s isolation evidence before content changes', async (_kind, isolationRows) => {
     setupTransactionMock({ isolationRows });
+    const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
 
     await expect(
       userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
-    ).rejects.toThrow('UNSUPPORTED_ISOLATION');
+    ).rejects.toMatchObject({
+      message: 'Account deletion is temporarily unavailable.',
+      extensions: { code: 'SERVICE_UNAVAILABLE' },
+    });
+    expect(logged).toHaveBeenCalledWith('[deleteAccount] Legacy account deletion refused', {
+      failureCode: 'UNSUPPORTED_ISOLATION',
+    });
     expect(txCalls.some((call) => call.method !== 'execute')).toBe(false);
+    logged.mockRestore();
   });
 
   it('should propagate transaction errors (rollback)', async () => {
