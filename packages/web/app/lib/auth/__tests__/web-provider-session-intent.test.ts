@@ -14,7 +14,6 @@ beforeEach(() => {
   fixture.session.mockReset().mockResolvedValue(null);
   send = vi.fn<typeof fetch>(async () => Response.json({}));
   vi.stubGlobal('window', { location: { origin, assign: vi.fn() }, dispatchEvent: vi.fn() });
-  vi.stubGlobal('navigator', { locks: { request: vi.fn() } });
   vi.stubGlobal('fetch', send);
 });
 afterEach(() => {
