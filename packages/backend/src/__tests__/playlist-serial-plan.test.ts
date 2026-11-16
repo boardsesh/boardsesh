@@ -233,6 +233,8 @@ describe('resolveRecommendationBoardTarget', () => {
 
 describe('mySmartPlaylistCounts', () => {
   it('runs the counts CTE, board resolution and every recommendation count in one guarded transaction', async () => {
+    // Authored-climb membership reads linked setters before the counts CTE.
+    state.selectQueue.push([{ boardType: 'kilter', boardUsername: 'linked-setter' }]);
     state.selectQueue.push([REGISTERED_BOARD_ROW]);
     state.rowsFor = (renderedSql) => {
       if (/WITH base/i.test(renderedSql)) return [{ type: 'FIVE_STARS', count: 7 }];
@@ -251,8 +253,9 @@ describe('mySmartPlaylistCounts', () => {
     expect(guardCount()).toBe(1);
     expect(state.executed[0]).toMatch(GUARD_PATTERN);
     expect(state.executed[1]).toMatch(/WITH base/i);
+    expect(state.executed[1]).toContain('"board_climbs"."setter_username"');
     expect(state.executeHandles.every((handle) => handle === 'tx')).toBe(true);
-    expect(state.selectHandles.every((handle) => handle === 'tx')).toBe(true);
+    expect(state.selectHandles).toEqual(['tx', 'tx']); // linked setters and registered board
   });
 });
 
