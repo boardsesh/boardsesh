@@ -39,6 +39,65 @@ function requiredStep(name: string): WorkflowStep {
   return step!;
 }
 
+function runReleaseBuild(options: { omitPatchedSource?: boolean; retryStatus?: number } = {}) {
+  const directory = mkdtempSync(join(tmpdir(), 'ios-release-build-'));
+  temporaryDirectories.push(directory);
+  const attemptsPath = join(directory, 'attempts');
+  const buildLogPath = join(directory, 'build.log');
+  writeFileSync(buildLogPath, 'stale compilation evidence\n');
+  const xcodebuildPath = join(directory, 'xcodebuild');
+  writeFileSync(
+    xcodebuildPath,
+    `#!/bin/bash
+attempt=1
+if [ -f "$CI_BUILD_ATTEMPTS" ]; then
+  attempt=$(( $(cat "$CI_BUILD_ATTEMPTS") + 1 ))
+fi
+printf '%s\\n' "$attempt" > "$CI_BUILD_ATTEMPTS"
+if [ "$attempt" -eq 1 ]; then
+  if [ "$CI_BUILD_OMIT_PATCHED_SOURCE" != 1 ]; then
+    echo 'CompileC /fixture/RNSScrollViewFinder.o /fixture/RNSScrollViewFinder.mm'
+  fi
+  echo 'SwiftCompile normal arm64 /fixture/expo-modules-core/ios/Core/Exceptions/Exception.swift'
+  echo 'SwiftCompile normal arm64 /fixture/expo-image/ios/ImageView.swift'
+  echo 'SwiftCompile normal arm64 /fixture/expo-sqlite/ios/SQLiteModule.swift'
+  echo "error: Scanning for @ExpoModule classes didn't complete" >&2
+  exit 65
+fi
+echo 'SwiftCompile normal arm64 /fixture/Boardsesh/AppDelegate.swift'
+if [ "$CI_BUILD_RETRY_STATUS" -eq 0 ]; then echo '** BUILD SUCCEEDED **'; fi
+exit "$CI_BUILD_RETRY_STATUS"
+`,
+  );
+  chmodSync(xcodebuildPath, 0o755);
+  const env = {
+    ...process.env,
+    PATH: `${directory}:${process.env.PATH}`,
+    WORKSPACE_PATH: 'fixture.xcworkspace',
+    CI_BUILD_ATTEMPTS: attemptsPath,
+    CI_BUILD_OMIT_PATCHED_SOURCE: options.omitPatchedSource ? '1' : '0',
+    CI_BUILD_RETRY_STATUS: String(options.retryStatus ?? 0),
+  };
+  const build = spawnSync(
+    'bash',
+    ['-e', '-c', requiredStep('Build the Release app (compiles startup + Pods + patched native modules)').run!],
+    { cwd: directory, env, encoding: 'utf8', timeout: 5_000 },
+  );
+  const assertions = spawnSync(
+    'bash',
+    ['-e', '-c', requiredStep('Assert app startup and patched native modules really compiled').run!],
+    { cwd: directory, env, encoding: 'utf8', timeout: 5_000 },
+  );
+  expect(build.error).toBeUndefined();
+  expect(assertions.error).toBeUndefined();
+  return {
+    build,
+    assertions,
+    attempts: readFileSync(attemptsPath, 'utf8').trim(),
+    buildLog: readFileSync(buildLogPath, 'utf8'),
+  };
+}
+
 describe('iOS Release launch workflow', () => {
   it('launches the existing Release output immediately after its ABI check, before Swift tests', () => {
     const abiIndex = steps.findIndex((step) => step.name === 'Check embedded framework ABI');
@@ -61,6 +120,30 @@ describe('iOS Release launch workflow', () => {
     expect(build.run).toContain('CODE_SIGN_ENTITLEMENTS="$PWD/scripts/screenshot-sim.entitlements"');
     expect(build.run).not.toMatch(/CODE_SIGNING_(?:ALLOWED|REQUIRED)=NO/);
     expect(workflow.env.EXPO_PUBLIC_SENTRY_DSN).toBe('http://ci-compiler@127.0.0.1:1/1');
+  });
+
+  it('retains first-attempt compilation proof when a successful retry reuses those products', () => {
+    const { build, assertions, attempts, buildLog } = runReleaseBuild();
+    expect(build.status, `${build.stdout}\n${build.stderr}`).toBe(0);
+    expect(assertions.status, `${assertions.stdout}\n${assertions.stderr}`).toBe(0);
+    expect(attempts).toBe('2');
+    expect(buildLog).toContain('RNSScrollViewFinder.mm');
+    expect(buildLog).toContain("error: Scanning for @ExpoModule classes didn't complete");
+    expect(buildLog).toContain('** BUILD SUCCEEDED **');
+    expect(buildLog).not.toContain('stale compilation evidence');
+  });
+
+  it('still rejects a missing patched source after a successful retry', () => {
+    const { build, assertions } = runReleaseBuild({ omitPatchedSource: true });
+    expect(build.status).toBe(0);
+    expect(assertions.status).toBe(1);
+    expect(assertions.stdout).toContain('RNScreens RNSScrollViewFinder.mm was not compiled');
+  });
+
+  it('still fails when both builds fail and does not add another retry', () => {
+    const { build, attempts } = runReleaseBuild({ retryStatus: 65 });
+    expect(build.status).toBe(65);
+    expect(attempts).toBe('2');
   });
 
   it('resolves an exact simulator before launching and reuses it for the standalone Swift tests', () => {
