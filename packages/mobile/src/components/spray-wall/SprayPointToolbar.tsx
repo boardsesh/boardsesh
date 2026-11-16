@@ -57,9 +57,19 @@ export function SprayPointToolbar({
             onPress={() => onModeChange(selected ? null : action.mode)}
             style={[
               icons ? styles.icon : styles.label,
-              { backgroundColor: selected ? selection.fill : systemColors.secondaryGroupedBackground },
+              // A solid ground under the wash, plus a 2pt accent ring, so the selected tool
+              // reads on the wall photo as well as on the toolbar.
+              {
+                backgroundColor: systemColors.secondaryGroupedBackground,
+                borderWidth: 2,
+                borderColor: selected ? selection.checkmark : 'transparent',
+                overflow: 'hidden',
+              },
             ]}
           >
+            {selected ? (
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: selection.fill }]} />
+            ) : null}
             {icons ? (
               <Icon name={action.icon} size={20} color={color} />
             ) : (

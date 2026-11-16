@@ -50,6 +50,7 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
             styles.chip,
             disabled && styles.chipDisabled,
             {
+              borderWidth: option.selected ? 2 : undefined,
               // Selected is a state: the brand wash behind a label-colour title.
               borderColor: option.selected ? selection.checkmark : systemColors.separator,
               backgroundColor: option.selected ? selection.fill : 'transparent',

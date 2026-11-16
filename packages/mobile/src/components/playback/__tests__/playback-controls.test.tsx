@@ -158,7 +158,7 @@ vi.mock('../../GlassCluster', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
-    selection: { text: '#111111', checkmark: '#6D28D9', fill: 'rgba(109, 40, 217, 0.18)' },
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
     systemColors: {
       tertiaryBackground: '#F2F2F7',
       label: '#000000',

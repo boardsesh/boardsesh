@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => confirm }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    selection: { text: '#111111', checkmark: '#6D28D9', fill: 'rgba(109, 40, 217, 0.18)' },
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
     spacing: [],
     radii: {},
     systemColors: {},

@@ -341,8 +341,8 @@ function BoardManageRowComponent({
 
       {isActive ? (
         <View style={styles.activeBadge}>
-          <Icon name="tick.fill" size={14} color={brandColors.primary} />
-          <Text variant="caption1" color={brandColors.primary}>
+          <Icon name="tick.fill" size={14} color={selection.checkmark} />
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('mobile.boardDetail.alreadyActive')}
           </Text>
         </View>

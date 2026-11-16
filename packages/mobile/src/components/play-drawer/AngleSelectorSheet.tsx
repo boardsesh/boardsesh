@@ -183,14 +183,14 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
                     accessibilityLabel={t('mobile.angleSelector.snapToAngle', { angle })}
                     style={({ pressed }) => [
                       styles.snapButton,
-                      { backgroundColor: isSelected ? selection.fill : systemColors.fill },
+                      {
+                        backgroundColor: isSelected ? selection.fill : systemColors.fill,
+                        borderColor: isSelected ? selection.checkmark : 'transparent',
+                      },
                       pressed && styles.snapButtonPressed,
                     ]}
                   >
-                    <Text
-                      variant="headline"
-                      style={[styles.snapText, { color: selection.text, fontWeight: isSelected ? '700' : undefined }]}
-                    >
+                    <Text variant="headline" style={[styles.snapText, { color: selection.text }]}>
                       {angle}°
                     </Text>
                   </PressableSurface>
@@ -246,6 +246,7 @@ const createStyles = (textStyles: TypographyScale) =>
       height: 44,
       paddingHorizontal: spacing[4],
       borderRadius: 22,
+      borderWidth: 2,
       alignItems: 'center',
       justifyContent: 'center',
     },

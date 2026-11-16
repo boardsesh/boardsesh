@@ -145,7 +145,7 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    selection: { text: '#111111', checkmark: '#6D28D9', fill: 'rgba(109, 40, 217, 0.18)' },
+    selection: { text: '#111111', checkmark: '#00AA55', fill: 'rgba(0, 170, 85, 0.18)' },
     systemColors: { background: '#fff', secondaryLabel: '#666', separator: '#ccc', secondaryGroupedBackground: '#eee' },
     brandColors: { primary: '#628', error: '#900' },
     spacing: [0, 4, 8, 12, 16, 20, 24],
