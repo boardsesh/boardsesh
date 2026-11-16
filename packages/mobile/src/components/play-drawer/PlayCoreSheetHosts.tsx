@@ -1,3 +1,4 @@
+import type { BetaOpening } from '../../lib/graphql/hooks/use-beta-links';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
@@ -44,6 +45,7 @@ export type PlayCoreSheetHostsProps = {
   wallClearedTarget: string | null;
   composerCredentialScope: number;
   betaVideoTarget: ComposerTarget;
+  betaOpening?: BetaOpening;
   playlistTarget: ComposerTarget;
   reportTarget: ComposerTarget;
   tickTarget: (NonNullable<ComposerTarget> & { isMirror: boolean }) | null;
@@ -53,7 +55,7 @@ export type PlayCoreSheetHostsProps = {
   onAngleChange: PlayDrawerProps['onAngleChange'];
   handleCloseSectionsSettings: () => void;
   handleCloseSubDrawer: () => void;
-  handleCloseAddBetaVideo: () => void;
+  handleCloseAddBetaVideo: (expected?: BetaOpening) => void;
   handleCloseAddToPlaylist: () => void;
   handleCloseFullLogbook: () => void;
   handleCloseClimberLogs: () => void;
@@ -96,6 +98,7 @@ export function PlayCoreSheetHosts({
   wallClearedTarget,
   composerCredentialScope,
   betaVideoTarget,
+  betaOpening,
   playlistTarget,
   reportTarget,
   tickTarget,
@@ -153,7 +156,8 @@ export function PlayCoreSheetHosts({
           boardName={(betaVideoTarget?.boardConfig.boardName ?? boardName) as BoardName}
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
-          onClose={handleCloseAddBetaVideo}
+          onClose={betaOpening ? () => handleCloseAddBetaVideo(betaOpening) : handleCloseAddBetaVideo}
+          {...(betaOpening ? { opening: betaOpening } : {})}
         />
       )}
 

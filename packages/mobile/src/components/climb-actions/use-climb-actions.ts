@@ -1,3 +1,5 @@
+import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
+import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 // Runs the shared climb commands. The descriptors (ids, labels, icons, groups,
 // visibility) come from `buildClimbMenuItems` (`climb-menu-items.ts`), the one
 // source every native climb menu reads: the row long-press, the list and player
@@ -6,7 +8,7 @@
 // state + mutation from `useFavoriteStatus` / `useToggleFavorite`, the native
 // share from `useShareClimb`, and the create-climb routes from
 // `useCreateClimbNavigation`. Menus offer no Preview: every list tap opens one.
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
@@ -213,6 +215,26 @@ export function useClimbActions({
   resolveFavoriteOnAction = false,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
+  const betaScope = useHttpQueryScope();
+  const betaActions = useHttpActionScope();
+  const betaKey = JSON.stringify([
+    betaScope.scope,
+    climb?.uuid,
+    boardConfig?.boardName,
+    boardConfig?.layoutId,
+    boardConfig?.sizeId,
+    boardConfig?.setIds,
+    boardConfig?.angle,
+  ]);
+  const betaCommitted = useRef({ key: betaKey, identity: Object.freeze({}) });
+  const betaOwner = useMemo(
+    () =>
+      betaCommitted.current.key === betaKey ? betaCommitted.current : { key: betaKey, identity: Object.freeze({}) },
+    [betaKey],
+  );
+  useLayoutEffect(() => {
+    betaCommitted.current = betaOwner;
+  }, [betaOwner]);
   const queryClient = useQueryClient();
   const inSharedSession = useIsSharedSession();
   const { openRemix, openEdit, resetActionGuard } = useCreateClimbNavigation({
@@ -505,12 +527,31 @@ export function useClimbActions({
         after();
       },
       betaVideo: () => {
-        // In-tree override (play drawer) stacks the sheet above the `/play` modal;
-        // the root sheet can't. Both take the climb/board snapshot so a live queue
-        // change can't retarget it. See #3505.
-        if (onAddBetaVideo) onAddBetaVideo(climb, boardConfig);
-        else openAddBetaVideo(climb, boardConfig);
-        after();
+        // This synchronous caller admission is separate from the provider-owned
+        // opening; finishing it cannot revoke an intentionally opened sheet.
+        if (!betaScope.scoped) {
+          if (onAddBetaVideo) onAddBetaVideo(climb, boardConfig);
+          else openAddBetaVideo(climb, boardConfig);
+          after();
+          return;
+        }
+        let action: ReturnType<typeof betaActions.capture> | undefined;
+        try {
+          action = betaActions.capture();
+          const assertOriginal = () => {
+            action!.assertView();
+            if (betaCommitted.current.identity !== betaOwner.identity) throw new Error('Retired beta command');
+          };
+          assertOriginal();
+          if (onAddBetaVideo) onAddBetaVideo(climb, boardConfig);
+          else openAddBetaVideo(climb, boardConfig);
+          assertOriginal();
+          after();
+        } catch {
+          /* An old menu cannot open or dismiss its replacement. */
+        } finally {
+          action?.finish();
+        }
       },
       // `openEdit` claims the action before dismissing this menu, then owns
       // the source-sheet → player-route → create ordering.
@@ -584,6 +625,9 @@ export function useClimbActions({
       (id) => commands[id](),
     );
   }, [
+    betaScope,
+    betaActions,
+    betaOwner,
     climb,
     boardConfig,
     queueItemUuid,

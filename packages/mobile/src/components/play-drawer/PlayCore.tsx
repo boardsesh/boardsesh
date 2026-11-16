@@ -1,3 +1,4 @@
+import { useBetaVideoProducer } from '../../lib/graphql/hooks/use-beta-links';
 import { PlayTopChromeView } from './PlayTopChromeView';
 import { PlayStageView } from './PlayStageView';
 import { randomUUID } from 'expo-crypto';
@@ -2451,22 +2452,21 @@ export function PlayCore({
     layoutId,
   ]);
 
-  // Pin the current target before opening the beta composer.
-  const handleOpenAddBetaVideo = useCallback(() => {
-    if (!displayedClimb) return;
-    setBetaVideoTarget({ climb: displayedClimb, boardConfig: { boardName, layoutId, sizeId, setIds, angle } });
-    setAddBetaVideoOpen(true);
-  }, [displayedClimb, boardName, layoutId, sizeId, setIds, angle, setBetaVideoTarget]);
-
-  // ⋯ beta: pin the climb/board the menu was opened for so a party-session
-  // queue/angle change mid-menu can't retarget the sheet (#3505).
-  const handleOpenAddBetaVideoForClimb = useCallback(
-    (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
-      setBetaVideoTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
-      setAddBetaVideoOpen(true);
-    },
-    [setBetaVideoTarget],
-  );
+  // The same consumed beta producer owns these exact callbacks in tests.
+  // PlayCore supplies its real pinned data and visibility setters; physical
+  // board/queue/BLE actions remain separate.
+  const {
+    scoped: betaScoped,
+    opening: betaOpening,
+    open: handleOpenAddBetaVideo,
+    openForClimb: handleOpenAddBetaVideoForClimb,
+    close: handleCloseAddBetaVideo,
+  } = useBetaVideoProducer({
+    displayedClimb,
+    boardConfig: { boardName, layoutId, sizeId, setIds, angle },
+    setTarget: setBetaVideoTarget,
+    setVisible: setAddBetaVideoOpen,
+  });
 
   // ⋯ tick: open the drawer's OWN in-tree tick sheet (it stacks above the `/play`
   // modal) instead of the root LogAscent sheet, which mounts behind `/play` —
@@ -2558,12 +2558,7 @@ export function PlayCore({
     setAddToPlaylistOpen(false);
   }, []);
 
-  // Don't clear betaVideoTarget here: the sheet is still animating out and reads
-  // from it, so nulling it mid-dismiss would swap the shown climb for a frame. The
-  // next open overwrites it with the newly selected target.
-  const handleCloseAddBetaVideo = useCallback(() => {
-    setAddBetaVideoOpen(false);
-  }, []);
+  // The beta producer keeps its pinned target through the dismiss animation.
 
   // Logbook card "See full logbook": the virtualised history sheet.
   // Pinned to the climb it was opened on: a climb change closes it for good.
@@ -3580,6 +3575,7 @@ export function PlayCore({
           }
           composerCredentialScope={composerCredentialScope}
           betaVideoTarget={betaVideoTarget}
+          {...(betaScoped ? { betaOpening } : {})}
           playlistTarget={playlistTarget}
           reportTarget={reportTarget}
           tickTarget={tickTarget}
