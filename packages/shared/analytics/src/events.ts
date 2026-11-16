@@ -1133,8 +1133,9 @@ export const SHARED_EVENTS = {
   // Mobile only. A row picked from a board card's menu in the picker. Props:
   // { action: climb_here | pin | unpin | download | details | edit | unfollow
   // | delete, via: menu_button (the ⋯ beside the title) | long_press (a hold
-  // on the card) | accessibility (a VoiceOver or TalkBack action), section:
-  // your_boards | nearby }. Fires when the row is picked, before any confirm,
+  // on the card or row) | accessibility (a VoiceOver or TalkBack action),
+  // section: your_boards | nearby | at_gym (from 2026-11: the climber's own and
+  // followed walls in the At {gym} list) }. Fires when the row is picked, before any confirm,
   // so a delete counts even when the climber backs out of the dialog. A
   // climb_here pick still sends its own Board Picker Selection Completed.
   // Expected under 200 a week.

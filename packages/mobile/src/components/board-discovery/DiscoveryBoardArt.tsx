@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { BoardImageNative } from '../BoardImageNative';
+import { BoardThumbnail, type BoardThumbnailSize } from '../boards/BoardThumbnail';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 
 type BoardRenderData = NonNullable<ReturnType<typeof getBoardRenderData>>;
@@ -57,18 +58,18 @@ export function DiscoveryBoardImage({
   );
 }
 
+/** What draws a board's art in a row or the hero: the real thumbnail in the app, a fixture in stories. */
+export type DiscoveryBoardArtProps = { item: DiscoveryBoardItem; size: BoardThumbnailSize };
+
 /**
- * A board's bare art (no climb lit) in a square of `size` points, for the In
- * range hero and rows. Nothing for a board the catalogue cannot draw; the
- * caller's frame shows through.
+ * A board's bare art (no climb lit) in an art slot, for the picker's rows and
+ * hero: `BoardThumbnail`, fitted to the board's own aspect with no tile behind
+ * it, a spray wall's photo or the camera glyph.
  */
-export const DiscoveryBoardArt = memo(function DiscoveryBoardArt({
-  item,
-  size,
-}: {
-  item: DiscoveryBoardItem;
-  size: number;
-}) {
-  const render = useDiscoveryBoardRender(item);
-  return render ? <DiscoveryBoardImage item={item} render={render} size={size} /> : null;
+export const DiscoveryBoardArt = memo(function DiscoveryBoardArt({ item, size }: DiscoveryBoardArtProps) {
+  const board = useMemo(
+    () => ({ boardType: item.boardName, layoutId: item.layoutId, sizeId: item.sizeId, setIds: item.setIds }),
+    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+  );
+  return <BoardThumbnail board={board} size={size} />;
 });

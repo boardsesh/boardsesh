@@ -231,7 +231,9 @@
         "editWall": "Editar Spraywall"
       },
       "nearbyMap": "Mapa",
-      "showNearby": "Ver plafones cerca de ti"
+      "showNearby": "Ver plafones cerca de ti",
+      "manage": "Gestionar",
+      "nearbyAllAbove": "No hay más plafones a menos de 20 km"
     },
     "create": {
       "screenTitle": "Configura tu plafón",

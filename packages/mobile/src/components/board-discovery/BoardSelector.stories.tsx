@@ -1,12 +1,16 @@
-import { createContext, useCallback, useContext, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { STORY_BOARD, STORY_CLIMBS } from '../../dev/fixtures/climbs';
+import { STORY_CLIMBS } from '../../dev/fixtures/climbs';
 import { StoryBoard } from '../../dev/stories/StoryBoard';
+import { useStoryArtReadiness } from '../../dev/stories/StoryPage';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
+import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import { useTheme } from '../../providers/theme-provider';
+import { BoardThumbnail } from '../boards/BoardThumbnail';
 import { SheetTopBar } from '../SheetTopBar';
+import { ShelfSection } from '../ShelfHeader';
 import { AddBoardMenu } from './AddBoardMenu';
 import type { BoardCardMenuCapabilities } from './board-card-menu';
 import { BoardCarouselView } from './BoardCarouselView';
@@ -15,118 +19,196 @@ import {
   type BoardDiscoveryCardViewProps,
   type DiscoveryBoardItem,
 } from './BoardDiscoveryCardView';
-import { BoardSelectorSection, BoardSelectorView } from './BoardSelectorView';
+import { BoardRowList } from './BoardRowList';
+import { BoardSelectorView } from './BoardSelectorView';
+import type { DiscoveryBoardArtProps } from './DiscoveryBoardArt';
+import { FirstBoardChoice } from './FirstBoardChoice';
+import { InRangeSection } from './InRangeSection';
+import { NearbyQuietStatus } from './NearbyQuietStatus';
 import type { PickerTopView } from './picker-top-view';
-import { InRangeSection, type InRangeBoardArtProps } from './InRangeSection';
+
 const noop = () => {};
 const EMPTY_BOARD = { ...STORY_CLIMBS[0], frames: '' };
 const ReadyContext = createContext<{ onDisplayed: (id: string) => void; onError: (error: unknown) => void }>({
   onDisplayed: noop,
   onError: noop,
 });
-const BOARDS: DiscoveryBoardItem[] = [
-  {
-    ...STORY_BOARD,
-    key: 'garage',
-    title: 'Garage Board',
-    subtitle: 'Kilter · 40°',
-    isActive: true,
-    isViewerOwner: true,
-    isPinned: true,
-    offlineState: 'downloaded',
-  },
-  {
-    ...STORY_BOARD,
-    key: 'gym',
-    title: 'Bergen Klatresenter Danmarksplass',
-    subtitle: 'Kilter · 12 x 12',
-    isViewerOwner: false,
-    offlineState: 'downloading',
-  },
-  {
-    ...STORY_BOARD,
-    key: 'club',
-    title: 'Club wall',
-    subtitle: 'Kilter · 7 x 10',
-    isViewerOwner: false,
-    offlineState: 'off',
-  },
-];
-const NEARBY_BOARDS: DiscoveryBoardItem[] = [
-  { ...STORY_BOARD, key: 'nearby-close', title: 'Crux Kilter', subtitle: 'Kilter · 40°', distanceMeters: 2 },
-  { ...STORY_BOARD, key: 'nearby-far', title: 'Boulder Box', subtitle: 'Kilter · 12 x 12', distanceMeters: 3240 },
-];
-// One Crux wall heard by a climber on a board somewhere else: the hero.
-const IN_RANGE_HERO: DiscoveryBoardItem = {
-  ...STORY_BOARD,
-  key: 'crux-kilter',
-  title: 'Crux Kilter Original',
-  subtitle: 'Crux · 12 x 12',
+
+type BoardConfig = Pick<DiscoveryBoardItem, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
+const CONFIG = {
+  original: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' },
+  homewall10: { boardName: 'kilter', layoutId: 8, sizeId: 21, setIds: '26,27' },
+  homewall7: { boardName: 'kilter', layoutId: 8, sizeId: 17, setIds: '26,27' },
+  moon: { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10' },
+  tension: { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13' },
+  spray: { boardName: 'spray', layoutId: 990001, sizeId: 990001, setIds: '1' },
+} satisfies Record<string, BoardConfig>;
+
+const SPRAY_READY = { stage: 'ready' } as unknown as NonNullable<DiscoveryBoardItem['sprayImport']>;
+
+// Crux's walls as At Crux lists them: A to Z, without the gym in the subtitle.
+const CRUX_HOMEWALL: DiscoveryBoardItem = {
+  ...CONFIG.homewall10,
+  key: 'crux-homewall',
+  title: 'Crux Homewall',
+  subtitle: '10 x 10',
+  isViewerOwner: false,
+  offlineState: 'downloaded',
 };
-// Crux's roster as At Crux lists it: A to Z, the subtitles without the gym,
-// the board the climber is on (Crux Homewall) in place.
-const AT_CRUX_ROWS: DiscoveryBoardItem[] = [
-  { ...STORY_BOARD, key: 'crux-homewall', title: 'Crux Homewall', subtitle: '10 x 12', isActive: true },
-  { ...IN_RANGE_HERO, subtitle: '12 x 12' },
-  { ...STORY_BOARD, key: 'crux-training', title: 'Crux Training Wall', subtitle: '7 x 10' },
+const CRUX_ORIGINAL: DiscoveryBoardItem = {
+  ...CONFIG.original,
+  key: 'crux-original',
+  title: 'Crux Kilter Original',
+  subtitle: '12 x 12',
+};
+const CRUX_MOON: DiscoveryBoardItem = {
+  ...CONFIG.moon,
+  key: 'crux-moon',
+  title: 'Crux MoonBoard',
+  subtitle: 'MoonBoard 2024 · 40°',
+};
+const CRUX_TRAINING: DiscoveryBoardItem = {
+  ...CONFIG.homewall7,
+  key: 'crux-training',
+  title: 'Crux Training Wall',
+  subtitle: '7 x 10',
+};
+const GARAGE: DiscoveryBoardItem = {
+  ...CONFIG.homewall7,
+  key: 'garage',
+  title: 'Garage Board',
+  subtitle: 'Kilter Homewall · 7 x 10',
+  isViewerOwner: true,
+  isPinned: true,
+  offlineState: 'downloaded',
+};
+const BOULDERING_BAR: DiscoveryBoardItem = {
+  ...CONFIG.moon,
+  key: 'bouldering-bar',
+  title: 'The Bouldering Bar',
+  subtitle: 'MoonBoard 2024 · 40°',
+  isViewerOwner: false,
+};
+const SHED_SPRAY: DiscoveryBoardItem = {
+  ...CONFIG.spray,
+  key: 'shed',
+  title: 'Shed spray',
+  subtitle: 'Spraywall',
+  isViewerOwner: true,
+  sprayImport: SPRAY_READY,
+};
+const NEARBY_BOARDS: DiscoveryBoardItem[] = [
+  { ...CONFIG.original, key: 'boulder-box', title: 'Boulder Box', subtitle: 'Kilter · 12 x 12', distanceMeters: 3240 },
+  {
+    ...CONFIG.tension,
+    key: 'bergen',
+    title: 'Bergen Klatresenter Danmarksplass',
+    subtitle: 'Tension 2 · 12 x 12',
+    distanceMeters: 8400,
+  },
 ];
-// Your boards while At Crux lists the board the climber is on: it shows once, up there.
-const BOARDS_AWAY_FROM_GARAGE: DiscoveryBoardItem[] = BOARDS.map((board) => ({ ...board, isActive: false }));
-const IN_RANGE_MOONBOARD = {
+
+const onIt = (item: DiscoveryBoardItem): DiscoveryBoardItem => ({ ...item, isActive: true });
+const CRUX_ROSTER = [CRUX_HOMEWALL, CRUX_ORIGINAL, CRUX_MOON, CRUX_TRAINING];
+const AT_CRUX_ON_HOMEWALL = [onIt(CRUX_HOMEWALL), CRUX_ORIGINAL, CRUX_MOON, CRUX_TRAINING];
+// Crux Homewall is a board the climber follows: the one wall At Crux with a menu.
+const CRUX_MENU_KEYS: ReadonlySet<string> = new Set([CRUX_HOMEWALL.key]);
+const MOONBOARD_ROW = {
   kind: 'moonboard',
   key: 'moonboard:moonboard',
   boardType: 'moonboard',
   rssi: -55,
   deviceId: 'MOON-BOX',
 } as const;
-const AT_CRUX = { kind: 'at_gym', gymUuid: 'gym-crux', gymName: 'Crux', rows: AT_CRUX_ROWS } as const;
-const IN_RANGE_STORY_STATES = {
-  hero: {
-    notice: null,
-    content: { kind: 'hero', board: IN_RANGE_HERO },
-    scanning: false,
-    heardNothing: false,
+
+type SelectorState = {
+  top: PickerTopView<DiscoveryBoardItem>;
+  yourBoards: DiscoveryBoardItem[];
+  nearby: 'results' | 'empty';
+  firstRun?: boolean;
+};
+
+const QUIET_TOP = { notice: null, scanning: false, heardNothing: false } as const;
+const STATES = {
+  atGym: {
+    top: {
+      ...QUIET_TOP,
+      content: { kind: 'at_gym', gymUuid: 'gym-crux', gymName: 'Crux', source: 'scan', rows: AT_CRUX_ON_HOMEWALL },
+    },
+    yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
   },
-  // The scan heard Crux walls: the gym's whole roster, not only what it heard.
-  atGym: { notice: null, content: { ...AT_CRUX, source: 'scan' }, scanning: false, heardNothing: false },
-  // The scan still listening, the gym already known from the board the climber is on.
   atGymScanning: {
-    notice: null,
-    content: { ...AT_CRUX, source: 'active_board' },
-    scanning: true,
-    heardNothing: false,
+    top: {
+      ...QUIET_TOP,
+      scanning: true,
+      content: {
+        kind: 'at_gym',
+        gymUuid: 'gym-crux',
+        gymName: 'Crux',
+        source: 'active_board',
+        rows: AT_CRUX_ON_HOMEWALL,
+      },
+    },
+    yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
   },
-  // The scan switched off (`picker-auto-scan-kill`): the Scan card, and At Crux still.
-  atGymScanOff: {
-    notice: { kind: 'tap_to_scan' },
-    content: { ...AT_CRUX, source: 'active_board' },
-    scanning: false,
-    heardNothing: false,
+  // On the garage board, one Crux wall heard: Climb here, no At Crux under it.
+  otherGymHero: {
+    top: { ...QUIET_TOP, content: { kind: 'hero', board: { ...CRUX_ORIGINAL, subtitle: 'Crux · 12 x 12' } } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
   },
-  // Only a MoonBoard it can't name, and no gym known: its three ways forward.
+  // At home on the garage board, nothing heard: Your boards leads.
+  home: {
+    top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
+  },
+  noActiveBoard: {
+    top: {
+      ...QUIET_TOP,
+      content: { kind: 'at_gym', gymUuid: 'gym-crux', gymName: 'Crux', source: 'scan', rows: CRUX_ROSTER },
+    },
+    yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
+  },
   unnamed: {
-    notice: null,
-    content: { kind: 'unnamed', row: IN_RANGE_MOONBOARD },
-    scanning: false,
-    heardNothing: false,
+    top: { ...QUIET_TOP, content: { kind: 'unnamed', row: MOONBOARD_ROW } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
   },
-  permission: { notice: { kind: 'permission_card' }, content: { kind: 'none' }, scanning: false, heardNothing: false },
-} satisfies Record<string, PickerTopView<DiscoveryBoardItem>>;
-type InRangeStoryState = keyof typeof IN_RANGE_STORY_STATES;
+  permission: {
+    top: { ...QUIET_TOP, notice: { kind: 'permission_card' }, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
+  },
+  nearbyEmpty: {
+    top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'empty',
+  },
+  firstRun: {
+    top: { ...QUIET_TOP, notice: { kind: 'permission_card' }, content: { kind: 'none' } },
+    yourBoards: [],
+    nearby: 'empty',
+    firstRun: true,
+  },
+} satisfies Record<string, SelectorState>;
+type StateName = keyof typeof STATES;
 
-/** The art each state draws, so the story is ready only once all of it painted. */
-function inRangeArtKeys(state: InRangeStoryState | null): string[] {
-  if (state === 'hero') return [`in-range:${IN_RANGE_HERO.key}`];
-  if (state === 'atGym' || state === 'atGymScanning' || state === 'atGymScanOff') {
-    return AT_CRUX_ROWS.map((item) => `in-range:${item.key}`);
-  }
-  return [];
+/** The boards whose art a state paints, so the story is ready only once all of it has. */
+function artKeys(state: SelectorState): string[] {
+  const { content } = state.top;
+  const topItems = content.kind === 'at_gym' ? content.rows : content.kind === 'hero' ? [content.board] : [];
+  // A spray wall with no photo on disk draws the camera glyph, which never reports.
+  const painted = [...topItems, ...state.yourBoards].filter((item) => item.boardName !== 'spray');
+  return [
+    ...painted.map((item) => `art:${item.key}`),
+    ...(state.nearby === 'results' && !state.firstRun ? NEARBY_BOARDS.map((item) => `card:${item.key}`) : []),
+  ];
 }
 
-/** Your boards as each state leaves it: without the board At Crux already lists. */
-function yourBoardsFor(state: InRangeStoryState | null): DiscoveryBoardItem[] {
-  return state === 'atGym' || state === 'atGymScanning' || state === 'atGymScanOff' ? BOARDS_AWAY_FROM_GARAGE : BOARDS;
-}
 const YOUR_BOARDS_MENU: BoardCardMenuCapabilities = {
   canPin: true,
   canDownload: true,
@@ -139,9 +221,27 @@ const NEARBY_MENU: BoardCardMenuCapabilities = {
   canOpenDetails: true,
   canManage: false,
 };
+
+/** The real thumbnail, reporting when its art has painted. */
+function StoryBoardArt({ item, size }: DiscoveryBoardArtProps) {
+  const { onDisplayed, onError } = useContext(ReadyContext);
+  const board = useMemo(
+    () => ({ boardType: item.boardName, layoutId: item.layoutId, sizeId: item.sizeId, setIds: item.setIds }),
+    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+  );
+  const onArtReadinessChange = useCallback(
+    (readiness: BoardArtReadiness) => {
+      if (readiness === 'ready') onDisplayed(`art:${item.key}`);
+      if (readiness === 'failed') onError(new Error(`Board art failed for ${item.key}`));
+    },
+    [item.key, onDisplayed, onError],
+  );
+  return <BoardThumbnail board={board} size={size} onArtReadinessChange={onArtReadinessChange} />;
+}
+
 function StoryCard(props: Omit<BoardDiscoveryCardViewProps, 'boardImage'>) {
   const { onDisplayed, onError } = useContext(ReadyContext);
-  const onReady = useCallback(() => onDisplayed(props.item.key), [props.item.key, onDisplayed]);
+  const onReady = useCallback(() => onDisplayed(`card:${props.item.key}`), [props.item.key, onDisplayed]);
   return (
     <BoardDiscoveryCardView
       {...props}
@@ -153,148 +253,131 @@ function StoryCard(props: Omit<BoardDiscoveryCardViewProps, 'boardImage'>) {
     />
   );
 }
-function StoryInRangeArt({ item, size }: InRangeBoardArtProps) {
-  const { onDisplayed, onError } = useContext(ReadyContext);
-  const onReady = useCallback(() => onDisplayed(`in-range:${item.key}`), [item.key, onDisplayed]);
-  return (
-    <View style={{ width: size, height: size }}>
-      <StoryBoard climb={EMPTY_BOARD} onReady={onReady} onError={onError} />
-    </View>
-  );
-}
-function SelectorStory({
-  onReady,
-  onError,
-  inRangeState,
-  withNearby,
-}: StoryRenderControls & { inRangeState: InRangeStoryState | null; withNearby: boolean }) {
+
+function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { stateName: StateName }) {
+  const state: SelectorState = STATES[stateName];
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
-  const displayed = useRef(new Set<string>());
-  const yourBoards = yourBoardsFor(inRangeState);
-  const expectedKeys = useMemo(
-    () => [
-      ...yourBoardsFor(inRangeState).map((board) => board.key),
-      ...(withNearby ? NEARBY_BOARDS.map((board) => board.key) : []),
-      ...inRangeArtKeys(inRangeState),
-    ],
-    [inRangeState, withNearby],
-  );
-  const onDisplayed = useCallback(
-    (id: string) => {
-      displayed.current.add(id);
-      if (expectedKeys.every((key) => displayed.current.has(key))) onReady();
-    },
-    [expectedKeys, onReady],
-  );
+  const expectedKeys = useMemo(() => artKeys(state), [state]);
+  const onDisplayed = useStoryArtReadiness(expectedKeys, onReady);
   const observer = useMemo(() => ({ onDisplayed, onError }), [onDisplayed, onError]);
+  const mapAction = { label: t('mobile.discovery.nearbyMap'), onPress: noop };
+  const nearbySection = (
+    <ShelfSection title={t('mobile.discovery.nearbyTitle')} action={state.firstRun ? undefined : mapAction}>
+      {state.nearby === 'results' ? (
+        <BoardCarouselView
+          Card={StoryCard}
+          items={NEARBY_BOARDS}
+          onSelect={noop}
+          menuCapabilities={NEARBY_MENU}
+          onMenuAction={noop}
+        />
+      ) : (
+        <NearbyQuietStatus
+          state="none_nearby"
+          allShownAbove={false}
+          onSearchNearby={noop}
+          onRetryNearby={noop}
+          onOpenSettings={noop}
+          onFindGymOnMap={noop}
+        />
+      )}
+    </ShelfSection>
+  );
   return (
     <ReadyContext value={observer}>
       <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: systemColors.background }}>
         <SheetTopBar
           title={tCommon('mobile.nav.boards')}
           leading={{ kind: 'close', onPress: noop, accessibilityLabel: 'Close' }}
-          trailingAccessory={<AddBoardMenu onSelect={noop} />}
+          trailingAccessory={state.firstRun ? undefined : <AddBoardMenu onSelect={noop} />}
         />
         <BoardSelectorView
           scrollBottomPadding={insets.bottom + 24}
           onActiveBoardDetails={noop}
-          showFirstBoardChoice={false}
+          showFirstBoardChoice={state.firstRun === true}
           fromOnboarding={false}
-          hasBoards
+          hasBoards={state.yourBoards.length > 0}
           onEmptySetUpBoard={noop}
           onEmptyAddSprayWall={noop}
           inRangeSection={
-            inRangeState ? (
-              <InRangeSection
-                view={IN_RANGE_STORY_STATES[inRangeState]}
-                BoardArt={StoryInRangeArt}
-                onStart={noop}
-                onOpenSettings={noop}
-                onRetryLookup={noop}
-                onPickBoard={noop}
-                onUseMyLocation={noop}
-                onSearchGyms={noop}
-                onOwnBoard={noop}
-              />
-            ) : undefined
+            <InRangeSection
+              view={state.top}
+              BoardArt={StoryBoardArt}
+              onStart={noop}
+              onOpenSettings={noop}
+              onRetryLookup={noop}
+              onPickBoard={noop}
+              onUseMyLocation={noop}
+              onSearchGyms={noop}
+              onOwnBoard={noop}
+              atGymMenuCapabilities={YOUR_BOARDS_MENU}
+              onAtGymMenuAction={noop}
+              atGymMenuKeys={CRUX_MENU_KEYS}
+            />
           }
           myBoardsSection={
-            <BoardSelectorSection title={t('mobile.discovery.yourBoardsTitle')}>
-              <BoardCarouselView
-                Card={StoryCard}
-                items={yourBoards}
-                onSelect={noop}
-                menuCapabilities={YOUR_BOARDS_MENU}
-                onMenuAction={noop}
-              />
-            </BoardSelectorSection>
-          }
-          nearbySection={
-            withNearby ? (
-              <BoardSelectorSection title={t('mobile.discovery.nearbyTitle')}>
-                <BoardCarouselView
-                  Card={StoryCard}
-                  items={NEARBY_BOARDS}
+            state.yourBoards.length > 0 ? (
+              <ShelfSection
+                title={t('mobile.discovery.yourBoardsTitle')}
+                action={{ label: t('mobile.discovery.manage'), onPress: noop }}
+              >
+                <BoardRowList
+                  items={state.yourBoards}
                   onSelect={noop}
-                  menuCapabilities={NEARBY_MENU}
+                  menuCapabilities={YOUR_BOARDS_MENU}
                   onMenuAction={noop}
+                  BoardArt={StoryBoardArt}
                 />
-              </BoardSelectorSection>
+              </ShelfSection>
             ) : undefined
+          }
+          nearbySection={nearbySection}
+          firstBoardChoice={
+            <FirstBoardChoice
+              gymState="idle"
+              nearbyResults={null}
+              onGym={noop}
+              onOwn={noop}
+              onAddSprayWall={noop}
+              onFindGymOnMap={noop}
+              onOpenSettings={noop}
+              onRetryNearby={noop}
+            />
           }
         />
       </View>
     </ReadyContext>
   );
 }
+
+function selectorStory(name: string, stateName: StateName) {
+  return {
+    name,
+    layout: 'fullscreen' as const,
+    readiness: 'explicit' as const,
+    render: (controls: StoryRenderControls) => <SelectorStory {...controls} stateName={stateName} />,
+  };
+}
+
 const stories: StoryModule = {
   title: 'Boards / Selector',
   stories: {
-    populated: {
-      name: 'The board in front of you, your boards and boards near you',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="hero" withNearby />,
-    },
-    inRangeHero: {
-      name: 'In range: one board the phone can name',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="hero" withNearby={false} />,
-    },
-    atGym: {
-      name: 'At Crux: the gym the scan heard, its walls A to Z, the board you are on in place',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="atGym" withNearby={false} />,
-    },
-    atGymScanning: {
-      name: 'At Crux while the scan still listens, the gym known from the board you are on',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="atGymScanning" withNearby={false} />,
-    },
-    atGymScanOff: {
-      name: 'At Crux with the scan waiting for a tap',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="atGymScanOff" withNearby={false} />,
-    },
-    inRangeUnnamed: {
-      name: 'In range: only a MoonBoard it cannot name, and no gym known',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="unnamed" withNearby={false} />,
-    },
-    inRangePermission: {
-      name: 'In range: asking for Bluetooth first',
-      layout: 'fullscreen',
-      readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="permission" withNearby={false} />,
-    },
+    // `board-selector--populated` is the screenshot harness's board-sheet shot: the picker at a gym.
+    populated: selectorStory('At Crux on Crux Homewall: the gym A to Z, your boards, boards near you', 'atGym'),
+    atGymScanning: selectorStory(
+      'At Crux while the scan still listens, the gym known from your board',
+      'atGymScanning',
+    ),
+    otherGymHero: selectorStory('On your garage board, one Crux wall heard: Climb here', 'otherGymHero'),
+    home: selectorStory('At home on your garage board, nothing heard: your boards lead', 'home'),
+    noActiveBoard: selectorStory('No board picked yet, at Crux', 'noActiveBoard'),
+    unnamed: selectorStory('Only a MoonBoard it cannot name, and no gym known', 'unnamed'),
+    permission: selectorStory('Asking for Bluetooth first', 'permission'),
+    nearbyEmpty: selectorStory('Nothing within 20 km: Near you keeps its Map', 'nearbyEmpty'),
+    firstRun: selectorStory('First run: asking for Bluetooth, then where you climb', 'firstRun'),
   },
 };
 export default stories;

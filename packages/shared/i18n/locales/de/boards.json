@@ -231,7 +231,9 @@
         "editWall": "Spraywall bearbeiten"
       },
       "nearbyMap": "Karte",
-      "showNearby": "Boards in deiner Nähe anzeigen"
+      "showNearby": "Boards in deiner Nähe anzeigen",
+      "manage": "Verwalten",
+      "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km"
     },
     "create": {
       "screenTitle": "Richte dein Board ein",

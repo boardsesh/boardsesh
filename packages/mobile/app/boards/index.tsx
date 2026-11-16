@@ -11,21 +11,20 @@ import { withoutBoardsShown } from '../../src/components/board-discovery/board-c
 import type {
   BoardCardMenuAction,
   BoardCardMenuCapabilities,
+  BoardCardMenuSection,
   BoardCardMenuVia,
 } from '../../src/components/board-discovery/board-card-menu';
 import { pickerTopBoardsToItems, userBoardsToItems } from '../../src/components/board-discovery/board-items';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
-import {
-  BoardSelectorView,
-  BoardSelectorSection as Section,
-} from '../../src/components/board-discovery/BoardSelectorView';
+import { BoardRowList } from '../../src/components/board-discovery/BoardRowList';
+import { BoardSelectorView } from '../../src/components/board-discovery/BoardSelectorView';
 import { DiscoveryBoardArt } from '../../src/components/board-discovery/DiscoveryBoardArt';
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
 import { InRangeSection } from '../../src/components/board-discovery/InRangeSection';
 import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
-import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
+import { NearbyQuietStatus } from '../../src/components/board-discovery/NearbyQuietStatus';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import {
   buildPickerTopView,
@@ -41,9 +40,10 @@ import { useBoardOfflineState } from '../../src/components/board-discovery/use-b
 import { useInRangeLocationHint } from '../../src/components/board-discovery/use-in-range-location-hint';
 import { usePickerBoardScan } from '../../src/components/board-discovery/use-picker-board-scan';
 import { Button } from '../../src/components/Button';
+import { EmptyState } from '../../src/components/EmptyState';
 import { Icon } from '../../src/components/Icon';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
-import { PressableSurface } from '../../src/components/PressableSurface';
+import { ShelfSection, type ShelfHeaderAction } from '../../src/components/ShelfHeader';
 import { Text } from '../../src/components/Text';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
@@ -135,6 +135,13 @@ type NearbyTypeFilter = { boardType: BoardName; inFirstBoardChoice: boolean };
 /** Where a pick on this screen happened, for `Board Picker Selection Completed`. */
 type PickerPick = { pickSource: BoardPickSource; section?: BoardPickSection; position?: number | null };
 
+/** Which list a card menu row ran in, and that list's own pick and details. */
+type BoardMenuSection = {
+  section: BoardCardMenuSection;
+  select: (item: DiscoveryBoardItem) => void;
+  openDetails: (item: DiscoveryBoardItem) => void;
+};
+
 /** A card's 0-based place in the list it is drawn in, or null when it is not there. */
 function positionOf(items: readonly DiscoveryBoardItem[], key: string): number | null {
   const position = items.findIndex((item) => item.key === key);
@@ -168,7 +175,7 @@ export default function BoardSelection() {
   const { t: tCommon } = useTranslation('common');
   const { showToast } = useToast();
   const confirm = useConfirm();
-  const { brandColors, systemColors } = useTheme();
+  const { systemColors } = useTheme();
 
   // Clear the bottom tab bar and whichever queue controls are actually visible.
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
@@ -411,12 +418,37 @@ export default function BoardSelection() {
   const gymLabelOptions = useSprayLabelOptions('within-gym');
 
   // The top's boards as its rows draw them.
+  // The climber's own and followed boards, by uuid: they draw (and bind) as
+  // these fuller, fresher copies wherever the top lists them, and only they
+  // get a menu At {gym}.
+  const myBoardsByUuid = useMemo(() => new Map(myBoards.map((board) => [board.uuid, board])), [myBoards]);
+  const myBoardKeys = useMemo<ReadonlySet<string>>(() => new Set(myBoardsByUuid.keys()), [myBoardsByUuid]);
   const topDisplay = useMemo<PickerTopView<DiscoveryBoardItem>>(
     () =>
       mapPickerTopBoards(topView, (boards, kind) =>
-        pickerTopBoardsToItems(boards, { labelOptions: kind === 'at_gym' ? gymLabelOptions : labelOptions }),
+        pickerTopBoardsToItems(
+          boards.map((row) => ({ ...row, board: myBoardsByUuid.get(row.board.uuid) ?? row.board })),
+          {
+            labelOptions: kind === 'at_gym' ? gymLabelOptions : labelOptions,
+            climbersBoardKeys: myBoardKeys,
+            offlineStateFor: boardOfflineState,
+            currentUserId,
+            pinnedOverrides,
+            importStatusStale,
+          },
+        ),
       ),
-    [topView, labelOptions, gymLabelOptions],
+    [
+      topView,
+      myBoardsByUuid,
+      myBoardKeys,
+      labelOptions,
+      gymLabelOptions,
+      boardOfflineState,
+      currentUserId,
+      pinnedOverrides,
+      importStatusStale,
+    ],
   );
 
   const myBoardItems = useMemo(
@@ -689,29 +721,21 @@ export default function BoardSelection() {
   const nearbyTitle = nearbyListTitle(t, nearbyBoardType);
   // Show all while the list is narrowed to one type; otherwise the map, except
   // under "Where do you climb?", which has its own "Find your gym on the map".
-  const nearbyTrailing = nearbyBoardType ? (
-    <PressableSurface onPress={showAllNearby} accessibilityRole="button" style={styles.sectionAction}>
-      <Text variant="body" color={brandColors.primary}>
-        {t('mobile.discovery.nearbyShowAll')}
-      </Text>
-    </PressableSurface>
-  ) : showFirstBoardChoice ? null : (
-    <PressableSurface onPress={openGymMap} accessibilityRole="button" style={styles.sectionAction}>
-      <Text variant="body" color={brandColors.primary}>
-        {t('mobile.discovery.nearbyMap')}
-      </Text>
-    </PressableSurface>
-  );
+  const nearbyAction: ShelfHeaderAction | undefined = nearbyBoardType
+    ? { label: t('mobile.discovery.nearbyShowAll'), onPress: showAllNearby }
+    : showFirstBoardChoice
+      ? undefined
+      : { label: t('mobile.discovery.nearbyMap'), onPress: openGymMap };
   const nearbySection =
     nearbyItems.length > 0 ? (
-      <Section title={nearbyTitle} trailing={nearbyTrailing}>
+      <ShelfSection title={nearbyTitle} action={nearbyAction}>
         <BoardCarousel
           items={nearbyItems}
           onSelect={onSelectNearbyBoard}
           menuCapabilities={showCardMenus ? NEARBY_MENU_CAPABILITIES : undefined}
           onMenuAction={showCardMenus ? onNearbyMenuAction : undefined}
         />
-      </Section>
+      </ShelfSection>
     ) : null;
   // Download for offline, scoped to boards the user owns or follows. The menu
   // only offers it with the engine's platform gate open, so it never shows in
@@ -871,82 +895,94 @@ export default function BoardSelection() {
   // allow; the gates are checked again here, so a row drawn before the climber
   // went offline cannot run a mutation that would fail. A refused row runs
   // nothing and is not counted.
-  const onMyBoardMenuAction = useCallback(
-    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
+  // At {gym} draws the same rows for the walls that are the climber's, so both
+  // lists run them here; `section` says which list for `Board Card Action`, and
+  // Climb here and Details go through that list's own pick and details.
+  const runBoardMenuAction = useCallback(
+    (
+      item: DiscoveryBoardItem,
+      action: BoardCardMenuAction,
+      via: BoardCardMenuVia,
+      { section, select, openDetails }: BoardMenuSection,
+    ) => {
       if (!showCardMenus) return;
       switch (action) {
         case 'climb_here':
           // The board is being edited, unfollowed or deleted: see boardActionsInFlight.
           if (boardActionsInFlight.current.has(item.key)) return;
-          trackBoardCardAction({ action, via, section: 'your_boards' });
-          onSelectMyBoard(item);
+          trackBoardCardAction({ action, via, section });
+          select(item);
           return;
         case 'pin':
         case 'unpin':
           if (!canPinBoards) return;
-          trackBoardCardAction({ action, via, section: 'your_boards' });
+          trackBoardCardAction({ action, via, section });
           setBoardPinned(item, action === 'pin');
           return;
         case 'download':
           if (!offlineDownloadsEnabled) return;
-          trackBoardCardAction({ action, via, section: 'your_boards' });
+          trackBoardCardAction({ action, via, section });
           onDownloadMyBoard(item);
           return;
         case 'details':
-          trackBoardCardAction({ action, via, section: 'your_boards' });
-          onMyBoardDetails(item);
+          trackBoardCardAction({ action, via, section });
+          openDetails(item);
           return;
         case 'edit':
         case 'unfollow':
         case 'delete':
           if (!canEditBoards || !ownershipAllows(item, action) || boardActionsInFlight.current.has(item.key)) return;
-          trackBoardCardAction({ action, via, section: 'your_boards' });
+          trackBoardCardAction({ action, via, section });
           void runMyBoardAction(item, action);
           return;
       }
     },
     [
       showCardMenus,
-      onSelectMyBoard,
       canPinBoards,
       setBoardPinned,
       offlineDownloadsEnabled,
       onDownloadMyBoard,
-      onMyBoardDetails,
       canEditBoards,
       runMyBoardAction,
     ],
+  );
+  const onMyBoardMenuAction = useCallback(
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) =>
+      runBoardMenuAction(item, action, via, {
+        section: 'your_boards',
+        select: onSelectMyBoard,
+        openDetails: onMyBoardDetails,
+      }),
+    [runBoardMenuAction, onSelectMyBoard, onMyBoardDetails],
   );
 
   const onManageBoards = useCallback(() => {
     router.push('/boards/manage');
   }, [router]);
-  // The full vertical list with the per-board download console. With the drawer's
-  // second board row gone this and OfflineSpotlightCard are the only routes to
-  // it, so it renders on the offline branch too: it is navigation, not a
-  // mutation, and the manage screen has its own offline list.
-  const manageBoardsRow = (
-    <PressableSurface onPress={onManageBoards} accessibilityRole="button" style={styles.manageRow}>
-      <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
-        {tCommon('myBoards.title')}
-      </Text>
-      <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-    </PressableSurface>
-  );
+  // The full vertical list with the per-board download console, as Your boards'
+  // own action. With the drawer's second board row gone this and
+  // OfflineSpotlightCard are the only routes to it, so it is on the offline
+  // branch too: it is navigation, not a mutation, and the manage screen has its
+  // own offline list.
+  const manageAction: ShelfHeaderAction = {
+    label: t('mobile.discovery.manage'),
+    accessibilityLabel: tCommon('myBoards.title'),
+    onPress: onManageBoards,
+  };
 
   const myBoardsSection =
     myBoardItems.length > 0 ? (
-      <Section title={t('mobile.discovery.yourBoardsTitle')}>
-        <BoardCarousel
+      <ShelfSection title={t('mobile.discovery.yourBoardsTitle')} action={manageAction}>
+        <BoardRowList
           items={myBoardItems}
           onSelect={onSelectMyBoard}
           menuCapabilities={showCardMenus ? myBoardMenuCapabilities : undefined}
           onMenuAction={showCardMenus ? onMyBoardMenuAction : undefined}
+          BoardArt={DiscoveryBoardArt}
+          testID="picker-your-boards"
         />
-        {/* Inside the section because that is what it drills into; gone with the
-            section when there are no boards to manage or download. */}
-        {manageBoardsRow}
-      </Section>
+      </ShelfSection>
     ) : null;
 
   const requestLocation = location.request;
@@ -1058,6 +1094,20 @@ export default function BoardSelection() {
     },
     [topPicks, chooseFirstBoardPath, myBoards, pickBoard],
   );
+  const onAtGymDetails = useCallback(
+    (item: DiscoveryBoardItem) => {
+      const topPick = topPicks.get(item.key);
+      if (!topPick) return;
+      const { pickSource, section, position } = topPick;
+      openBoardDetails(item, { pickSource, section, position });
+    },
+    [topPicks, openBoardDetails],
+  );
+  const onAtGymMenuAction = useCallback(
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) =>
+      runBoardMenuAction(item, action, via, { section: 'at_gym', select: onPickTopBoard, openDetails: onAtGymDetails }),
+    [runBoardMenuAction, onPickTopBoard, onAtGymDetails],
+  );
   // The three ways forward for a board it heard but couldn't name (a MoonBoard,
   // a box with no serial, a serial nobody has saved). Each one ends the scan and
   // holds the box so the board the climber binds next, here or on the route it
@@ -1134,6 +1184,9 @@ export default function BoardSelection() {
       onSearchGyms={onInRangeSearchGyms}
       onOwnBoard={onInRangeOwnBoard}
       locationHint={locationHint}
+      atGymMenuCapabilities={showCardMenus ? myBoardMenuCapabilities : undefined}
+      onAtGymMenuAction={showCardMenus ? onAtGymMenuAction : undefined}
+      atGymMenuKeys={myBoardKeys}
     />
   );
 
@@ -1143,34 +1196,23 @@ export default function BoardSelection() {
   const onRetryNearby = useCallback(() => {
     void refetchNearby();
   }, [refetchNearby]);
-  // Near you in the ordinary layout: the boards it found, or, before location
-  // was ever asked, one row that asks; otherwise what the search came to
-  // (looking, nothing within 20 km, a failed lookup, location off). Nothing at
-  // all when every board it found is already shown above it.
-  const nearbyAllShownAbove = nearbySearch === 'found' && nearbyItems.length === 0;
-  const nearbyPanel = nearbyAllShownAbove
-    ? null
-    : (nearbySection ?? (
-        <Section title={nearbyTitle} trailing={nearbyTrailing}>
-          {nearbySearch === 'idle' ? (
-            <PressableSurface onPress={searchNearby} accessibilityRole="button" style={styles.showNearbyRow}>
-              <Icon name="location" size={17} color={brandColors.primary} />
-              <Text variant="body" color={brandColors.primary}>
-                {t('mobile.discovery.showNearby')}
-              </Text>
-            </PressableSurface>
-          ) : (
-            <NearbySearchStatus
-              state={nearbySearch}
-              onFindGymOnMap={openGymMap}
-              onOpenSettings={onOpenLocationSettings}
-              onRetryNearby={onRetryNearby}
-              boardType={nearbyBoardType}
-              onShowAll={showAllNearby}
-            />
-          )}
-        </Section>
-      ));
+  // Near you in the ordinary layout: the boards it found, or one quiet line
+  // under the header (which keeps Map): ask for location, still looking,
+  // nothing within 20 km, a failed lookup, location off, or every board it
+  // found already shown above.
+  const nearbyPanel = nearbySection ?? (
+    <ShelfSection title={nearbyTitle} action={nearbyAction}>
+      <NearbyQuietStatus
+        state={nearbySearch}
+        allShownAbove={nearbySearch === 'found' && nearbyItems.length === 0}
+        onSearchNearby={searchNearby}
+        onRetryNearby={onRetryNearby}
+        onOpenSettings={onOpenLocationSettings}
+        onFindGymOnMap={openGymMap}
+        boardType={nearbyBoardType}
+      />
+    </ShelfSection>
+  );
 
   // The offline branch must not be swallowed by the loading spinner: the very first
   // offline render is still "fetching" before the retryer pauses.
@@ -1189,7 +1231,7 @@ export default function BoardSelection() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.signInTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text variant="subheadline" tone="secondary" style={styles.stateSubtitle}>
           {t('mobile.signInSubtitle')}
         </Text>
         <Button title={t('mobile.signInCta')} onPress={() => router.push('/auth/login')} style={styles.stateButton} />
@@ -1210,7 +1252,7 @@ export default function BoardSelection() {
         {/* "No signal" is only true when the phone is the thing that is down.
             Offline mode and a Boardsesh outage each get their own line — literal
             `t()` keys, because the i18n linter rejects a computed one. */}
-        <Text variant="subheadline" style={styles.offlineNotice}>
+        <Text variant="subheadline" tone="secondary" style={styles.offlineNotice}>
           {noticeKey === 'pickerNoticeOfflineMode'
             ? t('mobile.offline.pickerNoticeOfflineMode')
             : noticeKey === 'pickerNoticeUnreachable'
@@ -1218,30 +1260,32 @@ export default function BoardSelection() {
               : t('mobile.offline.pickerNotice')}
         </Text>
         {offlineItems.length > 0 ? (
-          <Section title={t('mobile.discovery.yourBoardsTitle')}>
-            <BoardCarousel items={offlineItems} onSelect={onSelectOfflineBoard} />
-            {manageBoardsRow}
-          </Section>
+          <ShelfSection title={t('mobile.discovery.yourBoardsTitle')} action={manageAction}>
+            <BoardRowList
+              items={offlineItems}
+              onSelect={onSelectOfflineBoard}
+              BoardArt={DiscoveryBoardArt}
+              testID="picker-offline-boards"
+            />
+          </ShelfSection>
         ) : (
-          <View style={styles.emptyState}>
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('mobile.offline.pickerEmptyTitle')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('mobile.offline.pickerEmptyBody')}
-            </Text>
-            {/* Only the lying-connection case gets a retry — offline it would just
-                pause, and the user already knows they have no signal. */}
-            {isError ? (
-              <Button
-                title={t('mobile.errorRetry')}
-                variant="outlined"
-                loading={isRefetching}
-                onPress={() => void refetch()}
-                style={styles.emptyCta}
-              />
-            ) : null}
-          </View>
+          <EmptyState
+            size="section"
+            title={t('mobile.offline.pickerEmptyTitle')}
+            body={t('mobile.offline.pickerEmptyBody')}
+            actions={
+              // Only the lying-connection case gets a retry — offline it would just
+              // pause, and the user already knows they have no signal.
+              isError ? (
+                <Button
+                  title={t('mobile.errorRetry')}
+                  variant="outlined"
+                  loading={isRefetching}
+                  onPress={() => void refetch()}
+                />
+              ) : undefined
+            }
+          />
         )}
         {/* Outside the empty state, because `offlineBoardRows` always offers the
             active board: the empty state only happens when there is NO board to
@@ -1252,7 +1296,7 @@ export default function BoardSelection() {
             — which is why the queued line has to replace it rather than let the
             screen fall silent on a board the user just asked for. */}
         {offlineCatalog === 'queued' ? (
-          <Text variant="subheadline" style={styles.offlineNotice}>
+          <Text variant="subheadline" tone="secondary" style={styles.offlineNotice}>
             {t('mobile.offline.pickerQueuedNotice', { name: activeBoard?.name ?? '' })}
           </Text>
         ) : (
@@ -1323,35 +1367,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    paddingVertical: spacing[4],
-    gap: spacing[5],
+    paddingTop: spacing[4],
   },
   offlineNotice: {
     paddingHorizontal: spacing[4],
-    opacity: 0.7,
-  },
-  sectionAction: {
-    minHeight: 44,
-    minWidth: 44,
-    paddingHorizontal: spacing[3],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  manageRow: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-  },
-  manageRowLabel: {
-    flex: 1,
-  },
-  showNearbyRow: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[5],
   },
   centered: {
     flexGrow: 1,
@@ -1365,23 +1385,9 @@ const styles = StyleSheet.create({
   stateSubtitle: {
     marginTop: spacing[1],
     textAlign: 'center',
-    opacity: 0.6,
   },
   stateButton: {
     marginTop: spacing[4],
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[8],
-  },
-  emptyTitle: {
-    opacity: 0.6,
-  },
-  emptySubtitle: {
-    marginTop: spacing[2],
-    opacity: 0.4,
-    textAlign: 'center',
   },
   emptyCta: {
     marginTop: spacing[5],

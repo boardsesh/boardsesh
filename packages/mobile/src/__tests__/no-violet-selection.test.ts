@@ -51,16 +51,14 @@ function countSelectionTernaries(source: string): number {
  * The allowlist's size, pinned so no one can add an entry or raise a count.
  * When you migrate a file, lower its entry AND these two numbers.
  */
-const ALLOWLIST_FILES = 18;
-const ALLOWLIST_TOTAL = 25;
+const ALLOWLIST_FILES = 16;
+const ALLOWLIST_TOTAL = 22;
 
 /** File → count today. Shrink-only. */
 const ALLOWLIST: Record<string, number> = {
   'src/components/QueueItemRowView.tsx': 1,
   'src/components/board-discovery/BoardConfigChips.tsx': 1,
-  'src/components/board-discovery/BoardDiscoveryCardView.tsx': 2,
   'src/components/board-discovery/BoardManageRow.tsx': 1,
-  'src/components/board-discovery/InRangeSection.tsx': 1,
   'src/components/board-look/BoardLookPreviewCard.tsx': 1,
   'src/components/board-look/PalettePreviewCard.tsx': 1,
   'src/components/gym-directory/GymListPanel.tsx': 4,

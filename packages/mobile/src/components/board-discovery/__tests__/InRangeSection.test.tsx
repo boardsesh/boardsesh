@@ -68,6 +68,55 @@ vi.mock('../../PressableSurface', () => ({
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
+// The Velvet pieces as plain markup: a shelf is a heading and its content.
+vi.mock('../../ShelfHeader', () => ({
+  SHELF_SECTION_GAP: 28,
+  ShelfSection: ({ title, trailing, children }: Children & { title: string; trailing?: ReactNode }) =>
+    createElement('section', null, createElement('h2', null, title), trailing, children),
+}));
+vi.mock('../../EmptyState', () => ({
+  EmptyState: ({ title, actions }: { title: string; actions?: ReactNode }) =>
+    createElement('div', null, createElement('span', null, title), actions),
+}));
+vi.mock('../../TextAction', () => ({
+  TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement('button', { type: 'button', onClick: onPress }, label),
+}));
+vi.mock('../../InsetGroupedList', () => ({
+  InsetGroupedList: ({ children }: Children) => createElement('div', null, children),
+  insetGroupedRowStyles: { row: {}, leading: {}, text: {} },
+}));
+vi.mock('../../ArtRow', () => ({
+  ArtRow: ({ title, subtitle }: { title: string; subtitle?: ReactNode }) =>
+    createElement('div', null, createElement('span', null, title), createElement('span', null, subtitle)),
+}));
+vi.mock('../../boards/BoardThumbnail', () => ({ BoardThumbnailView: () => null }));
+// One row per board, named as VoiceOver reads it, saying whether it has a menu.
+vi.mock('../BoardRow', () => ({
+  BoardRow: ({
+    item,
+    onPress,
+    menu,
+    BoardArt,
+  }: {
+    item: DiscoveryBoardItem;
+    onPress: (item: DiscoveryBoardItem) => void;
+    menu?: unknown;
+    BoardArt: (props: { item: DiscoveryBoardItem; size: string }) => ReactNode;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: () => onPress(item),
+        'aria-label': [item.title, item.subtitle].filter(Boolean).join(', '),
+        'aria-selected': item.isActive === true,
+        'data-menu': menu ? 'yes' : 'no',
+      },
+      createElement(BoardArt, { item, size: 'regular' }),
+      item.title,
+    ),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: {
@@ -76,6 +125,8 @@ vi.mock('../../../providers/theme-provider', () => ({
       tertiaryBackground: '#eee',
       secondaryBackground: '#f5f5f5',
       separator: '#ccc',
+      label: '#000',
+      accent: '#6D28D9',
     },
     brandColors: { primary: '#6D28D9', primaryFill: '#6D28D9', onPrimary: '#fff' },
   }),
@@ -295,8 +346,10 @@ describe('InRangeSection', () => {
     expect(buttons()).toEqual([]);
   });
 
+  // The hero needs no title: "In front of you" says it.
   it('leads with the one board heard somewhere else, and Climb here picks it', () => {
     renderSlot({ kind: 'hero', board: KILTER });
+    expect(headings()).toEqual([]);
     expect(screen.getByText('In front of you')).toBeTruthy();
     expect(screen.getByText('Crux Kilter')).toBeTruthy();
     expect(screen.queryByTestId('spinner')).toBeNull();
@@ -347,6 +400,22 @@ describe('InRangeSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show all 8 boards' }));
     expect(shownWalls()).toHaveLength(8);
     expect(screen.queryByRole('button', { name: 'Show all 8 boards' })).toBeNull();
+  });
+
+  // Only the climber's own and followed walls have anything to pin, download or manage.
+  it("offers the card menu only on the climber's own walls", () => {
+    render(
+      <InRangeSection
+        view={{ notice: null, content: AT_CRUX, scanning: false, heardNothing: false }}
+        BoardArt={BoardArt}
+        {...handlers}
+        atGymMenuCapabilities={{ canPin: true, canDownload: true, canOpenDetails: true, canManage: true }}
+        onAtGymMenuAction={vi.fn()}
+        atGymMenuKeys={new Set(['crux-kilter'])}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Crux Kilter, 12 x 12' }).getAttribute('data-menu')).toBe('yes');
+    expect(screen.getByRole('button', { name: 'Crux Tension, 12 x 12' }).getAttribute('data-menu')).toBe('no');
   });
 
   it('offers no Show all when it would hide one wall', () => {

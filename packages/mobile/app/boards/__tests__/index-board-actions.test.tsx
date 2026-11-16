@@ -90,10 +90,13 @@ const inRangeProps = vi.hoisted(() => ({
         board?: { key: string };
         gymName?: string;
         source?: string;
-        rows?: { key: string; title: string; isActive?: boolean }[];
+        rows?: DiscoveryBoardItem[];
       };
     };
     onPickBoard: (item: { key: string }) => void;
+    atGymMenuCapabilities?: BoardCardMenuCapabilities;
+    onAtGymMenuAction?: (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => void;
+    atGymMenuKeys?: ReadonlySet<string>;
   } | null,
 }));
 // The gym roster the screen asked for last, by gym uuid.
@@ -400,6 +403,49 @@ vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({
 // Renders a select button per card, plus one button per menu row named
 // "<action> <title>". The rows come from the real menu builder, so what this
 // suite clicks is exactly what the card's ⋯ would offer with these capabilities.
+// The Velvet shelf pieces, as plain markup: a section, its title, and its action
+// as a button named for what it opens.
+vi.mock('../../../src/components/ShelfHeader', async () => {
+  const { createElement: h } = await import('react');
+  type ShelfProps = {
+    title: string;
+    action?: { label: string; accessibilityLabel?: string; onPress: () => void };
+    children?: ReactNode;
+  };
+  return {
+    SHELF_SECTION_GAP: 28,
+    ShelfSection: ({ title, action, children }: ShelfProps) =>
+      h(
+        'section',
+        null,
+        h('span', null, title),
+        action
+          ? h('button', { type: 'button', onClick: action.onPress }, action.accessibilityLabel ?? action.label)
+          : null,
+        children,
+      ),
+  };
+});
+vi.mock('../../../src/components/EmptyState', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    EmptyState: ({ title, body, actions }: { title: string; body?: string; actions?: ReactNode }) =>
+      h('div', null, h('span', null, title), body ? h('span', null, body) : null, actions),
+  };
+});
+vi.mock('../../../src/components/TextAction', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
+      h('button', { type: 'button', onClick: onPress }, label),
+  };
+});
+// Your boards and the offline list are rows now; the suite drives them as it
+// drives the carousels, through the same stand-in.
+vi.mock('../../../src/components/board-discovery/BoardRowList', async () => {
+  const { BoardCarousel } = await import('../../../src/components/board-discovery/BoardCarousel');
+  return { BoardRowList: BoardCarousel };
+});
 vi.mock('../../../src/components/board-discovery/BoardCarousel', async () => {
   const { boardCardMenuEntries } = await vi.importActual<
     typeof import('../../../src/components/board-discovery/board-card-menu')
@@ -1301,6 +1347,50 @@ describe('where a pick came from', () => {
   });
 
   // A board in Your boards binds as that fuller copy, not the roster's narrower read.
+  // The walls At {gym} that are the climber's get Your boards' menu; picks and
+  // details from it say they came from At {gym}.
+  it("offers Your boards' menu on the climber's walls At {gym}, reported as at_gym", async () => {
+    const highPoint = { gymUuid: 'gym-hp', gymName: 'High Point' };
+    const activeWall = board({ uuid: 'hp-kilter', name: 'High Point Kilter', ownerId: 'setter-1', ...highPoint });
+    const followedWall = board({
+      uuid: 'hp-moon',
+      name: 'High Point MoonBoard',
+      boardType: 'moonboard',
+      ownerId: 'setter-1',
+      ...highPoint,
+    });
+    state.myBoards = [followedWall, myWall];
+    state.activeBoard = activeWall;
+    state.gymRosters = { 'gym-hp': [activeWall, followedWall] };
+    render(createElement(BoardSelection));
+
+    const slot = inRangeProps.last;
+    expect([...(slot?.atGymMenuKeys ?? [])]).toEqual(['hp-moon', 'mine']);
+    expect(slot?.atGymMenuCapabilities).toMatchObject({ canPin: true, canOpenDetails: true, canManage: true });
+    const followedRow = slot?.view.content.rows?.find((row) => row.key === 'hp-moon');
+    if (!followedRow || !slot?.onAtGymMenuAction) throw new Error('no At {gym} row to act on');
+    // The roster's other boards are someone else's: no ownership to read out.
+    expect(slot.view.content.rows?.find((row) => row.key === 'hp-kilter')?.isViewerOwner).toBeUndefined();
+    expect(followedRow.isViewerOwner).toBe(false);
+
+    act(() => slot.onAtGymMenuAction?.(followedRow, 'details', 'long_press'));
+    expect(trackMock).toHaveBeenCalledWith('Board Card Action', {
+      action: 'details',
+      via: 'long_press',
+      section: 'at_gym',
+    });
+    expect(detailProps.last?.board?.uuid).toBe('hp-moon');
+
+    act(() => slot.onAtGymMenuAction?.(followedRow, 'climb_here', 'menu_button'));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'gym_walls', section: 'at_gym', position: 1 }),
+      ),
+    );
+    expect(setActiveBoardMock).toHaveBeenCalledWith(followedWall);
+  });
+
   it('binds the copy from Your boards when one of its walls is picked At {gym}', async () => {
     const highPoint = { gymUuid: 'gym-hp', gymName: 'High Point' };
     const activeWall = board({ uuid: 'hp-kilter', name: 'High Point Kilter', ...highPoint });
@@ -1370,12 +1460,16 @@ describe('where a pick came from', () => {
     );
   });
 
-  it('draws no Near you when every board it found is already shown above', () => {
+  // Near you keeps its header and Map, and says why it has no cards, never
+  // "Nothing within 20 km".
+  it('says so quietly when every board it found is already shown above', () => {
     state.locationStatus = 'granted';
     state.nearbyBoards = [myWall];
     render(createElement(BoardSelection));
-    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
-    expect(carouselProps.byFirstKey.has('mine')).toBe(true);
+    expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
+    expect(screen.getByText('mobile.discovery.nearbyAllAbove')).toBeTruthy();
+    expect(screen.queryByText('mobile.firstBoard.nearbyEmpty')).toBeNull();
+    expect(screen.getByRole('button', { name: 'mobile.discovery.nearbyMap' })).toBeTruthy();
     expect([...carouselProps.byFirstKey.keys()]).toEqual(['mine']);
   });
   // Without `source` a gym picked on the map during onboarding would never close

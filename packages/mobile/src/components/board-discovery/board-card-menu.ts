@@ -26,8 +26,11 @@ export type BoardCardMenuAction =
 /** Which way in the climber used: the ⋯ button, a hold on the card, or a screen-reader action. */
 export type BoardCardMenuVia = 'menu_button' | 'long_press' | 'accessibility';
 
-/** The carousel the card sits in. Only these two get a menu. */
-export type BoardCardMenuSection = 'your_boards' | 'nearby';
+/**
+ * The picker list the board sits in. Only these get a menu; At {gym} only on
+ * the walls that are the climber's own or followed boards.
+ */
+export type BoardCardMenuSection = 'your_boards' | 'nearby' | 'at_gym';
 
 /**
  * What the surface allows, decided once per carousel by the host. Every flag is

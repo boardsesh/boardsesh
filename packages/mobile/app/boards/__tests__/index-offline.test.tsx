@@ -303,6 +303,49 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
 }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
+// The Velvet shelf pieces, as plain markup: a section, its title, and its action
+// as a button named for what it opens.
+vi.mock('../../../src/components/ShelfHeader', async () => {
+  const { createElement: h } = await import('react');
+  type ShelfProps = {
+    title: string;
+    action?: { label: string; accessibilityLabel?: string; onPress: () => void };
+    children?: ReactNode;
+  };
+  return {
+    SHELF_SECTION_GAP: 28,
+    ShelfSection: ({ title, action, children }: ShelfProps) =>
+      h(
+        'section',
+        null,
+        h('span', null, title),
+        action
+          ? h('button', { type: 'button', onClick: action.onPress }, action.accessibilityLabel ?? action.label)
+          : null,
+        children,
+      ),
+  };
+});
+vi.mock('../../../src/components/EmptyState', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    EmptyState: ({ title, body, actions }: { title: string; body?: string; actions?: ReactNode }) =>
+      h('div', null, h('span', null, title), body ? h('span', null, body) : null, actions),
+  };
+});
+vi.mock('../../../src/components/TextAction', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
+      h('button', { type: 'button', onClick: onPress }, label),
+  };
+});
+// Your boards and the offline list are rows now; the suite drives them as it
+// drives the carousels, through the same stand-in.
+vi.mock('../../../src/components/board-discovery/BoardRowList', async () => {
+  const { BoardCarousel } = await import('../../../src/components/board-discovery/BoardCarousel');
+  return { BoardRowList: BoardCarousel };
+});
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: ({
     items,

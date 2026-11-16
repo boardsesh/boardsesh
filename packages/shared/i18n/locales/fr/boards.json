@@ -231,7 +231,9 @@
         "editWall": "Modifier le Spraywall"
       },
       "nearbyMap": "Carte",
-      "showNearby": "Voir les boards près de toi"
+      "showNearby": "Voir les boards près de toi",
+      "manage": "Gérer",
+      "nearbyAllAbove": "Aucune autre board à moins de 20 km"
     },
     "create": {
       "screenTitle": "Configure ta board",

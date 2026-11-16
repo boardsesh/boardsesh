@@ -231,7 +231,9 @@
         "editWall": "Edit Spraywall"
       },
       "nearbyMap": "Map",
-      "showNearby": "Show boards near you"
+      "showNearby": "Show boards near you",
+      "manage": "Manage",
+      "nearbyAllAbove": "No other boards within 20 km"
     },
     "create": {
       "screenTitle": "Set up your board",
