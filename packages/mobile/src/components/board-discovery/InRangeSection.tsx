@@ -1,7 +1,7 @@
 import { formatBoardDisplayName } from '@boardsesh/board-config';
-import { memo, useCallback, type ComponentType } from 'react';
+import { memo, useCallback, useMemo, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { canOpenAppSettings } from '../../lib/open-app-settings';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -420,6 +420,8 @@ function UnnamedCard({
   onOwnBoard,
 }: UnnamedActionsProps & { row: UnnamedInRangeRow }) {
   const { t } = useTranslation('boards');
+  const { fontScale } = useWindowDimensions();
+  const pairedButtonStyle = useMemo(() => ({ height: pairedButtonHeight(fontScale) }), [fontScale]);
   const board = formatBoardDisplayName(row.boardType);
   let title: string;
   let body: string;
@@ -450,8 +452,7 @@ function UnnamedCard({
             title={t('mobile.inRange.useMyLocation')}
             size="small"
             icon="location"
-            style={styles.pairedButton}
-            maxFontSizeMultiplier={PAIRED_BUTTON_MAX_FONT_SCALE}
+            style={pairedButtonStyle}
             onPress={() => onUseMyLocation(row)}
           />
           <Button
@@ -459,8 +460,7 @@ function UnnamedCard({
             size="small"
             variant="tonal"
             icon="gym"
-            style={styles.pairedButton}
-            maxFontSizeMultiplier={PAIRED_BUTTON_MAX_FONT_SCALE}
+            style={pairedButtonStyle}
             onPress={() => onSearchGyms(row)}
           />
         </View>
@@ -514,13 +514,23 @@ function LookupFailedCard({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-/**
- * The unnamed card's two buttons: the 44pt tap target as their one height, and
- * labels that stop growing at 1.3x, where a small button's label still fits it
- * (the tick bar's cap, TICK_ACTION_MAX_FONT_SCALE).
- */
+/** The unnamed card's button pair at the default text size: the 44pt tap target. */
 const PAIRED_BUTTON_HEIGHT = 44;
-const PAIRED_BUTTON_MAX_FONT_SCALE = 1.3;
+/** A small button's label line: footnote's 18pt on iOS, labelLarge's 20dp on Material. The larger. */
+const SMALL_BUTTON_LABEL_LINE = 20;
+
+/**
+ * The one height of the unnamed card's two buttons. A filled and a tonal button
+ * measure differently from the same label (each native style pads its own way),
+ * and a button that measures itself can't be stretched to its neighbour's
+ * height: its native host writes its own height back over the row's. So both
+ * are pinned: 44pt, plus a label line for each step of text size past the
+ * default, always at least the taller button's own height. The labels are
+ * never capped; the pin grows with them.
+ */
+function pairedButtonHeight(fontScale: number): number {
+  return Math.round(PAIRED_BUTTON_HEIGHT + SMALL_BUTTON_LABEL_LINE * (Math.max(1, fontScale) - 1));
+}
 
 const styles = StyleSheet.create({
   gutter: {
@@ -558,11 +568,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
     marginTop: spacing[1],
-  },
-  // A filled and a tonal button measure differently from the same label (each
-  // native style pads its own way), so the pair shares one pinned height.
-  pairedButton: {
-    height: PAIRED_BUTTON_HEIGHT,
   },
   textAction: {
     alignItems: 'flex-start',

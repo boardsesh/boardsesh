@@ -15,10 +15,12 @@ import type { InRangeLocationHint } from '../InRangeSection';
 
 type Children = { children?: ReactNode };
 const settingsCtrl = vi.hoisted(() => ({ canOpen: true }));
+const windowCtrl = vi.hoisted(() => ({ fontScale: 1 }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  useWindowDimensions: () => ({ width: 393, height: 852, scale: 3, fontScale: windowCtrl.fontScale }),
 }));
 
 const CATALOGS: Record<string, unknown> = { boards: boardsCatalog, settings: settingsCatalog };
@@ -255,6 +257,7 @@ function headings(): string[] {
 
 beforeEach(() => {
   settingsCtrl.canOpen = true;
+  windowCtrl.fontScale = 1;
   for (const handler of Object.values(handlers)) handler.mockClear();
 });
 
@@ -506,12 +509,18 @@ describe('InRangeSection', () => {
   });
 
   // A filled and a tonal button measure differently from the same label: the
-  // pair shares one pinned height, labels capped where they still fit it.
-  it('draws Use my location and Search gyms at one height', () => {
+  // pair shares one pinned height that grows with the text, labels uncapped.
+  it.each([
+    [1, '44'],
+    [0.85, '44'],
+    [1.5, '54'],
+    [3.12, '86'],
+  ])('draws Use my location and Search gyms at one height (text size %sx: %spt)', (fontScale, height) => {
+    windowCtrl.fontScale = fontScale;
     renderSlot({ kind: 'none' }, { unnamed: MOONBOARD });
     const pair = ['Use my location', 'Search gyms'].map((name) => screen.getByRole('button', { name }));
-    expect(pair.map((button) => button.getAttribute('data-height'))).toEqual(['44', '44']);
-    expect(pair.map((button) => button.getAttribute('data-max-font-scale'))).toEqual(['1.3', '1.3']);
+    expect(pair.map((button) => button.getAttribute('data-height'))).toEqual([height, height]);
+    expect(pair.map((button) => button.getAttribute('data-max-font-scale'))).toEqual(['none', 'none']);
   });
 
   // The gym of the board you're on doesn't say what this box is.
