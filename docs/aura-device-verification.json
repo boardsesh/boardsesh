@@ -1,0 +1,1952 @@
+{
+  "schemaVersion": 1,
+  "status": "historical-optimized-phone-results-observed-final-integrated-source-pending",
+  "testedAppSource": "4b41371cf75848efe6c382302056ebaa67279f20",
+  "baselineSource": "f4d12c848e7eca71cf1b612228d732458422fc36",
+  "formatCommit": "4c7dc2974ce2c3fbb28183c4c5ab895fb4aa8c37",
+  "initialRejectedReport": "aura-device-verification-initial.json",
+  "censusReport": "aura-atlas-census.json",
+  "primary": {
+    "iphone": {
+      "recordedAt": "2026-11-16T13:02:51.945138+00:00",
+      "device": "USB iPhone 13 Pro, iOS26.6.1",
+      "phase": "mask-only-final",
+      "scope": "Three newly preregistered process-restart pairs at4b/f4, identical433/5dc, syntheticHQ499hold player/editor, untraced; no pooling with initial293 phase",
+      "conditioning": {
+        "wholeTourWarmups": 0,
+        "exactOriginalFlowSettles": true,
+        "excludedSetupSwipesPerMember": 1
+      },
+      "members": [
+        {
+          "member": "A1",
+          "build": "baseline",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "peakRssBytes": 852131840,
+          "peakRssMiB": 812.65625,
+          "openCallbackMs": 1035.169,
+          "openFullArtRafMs": 1050.827,
+          "openPrepareMs": 423.659,
+          "openUploadMs": 19.285,
+          "warmSwipeCallbackMeanMs": 66.842,
+          "warmSwipeFullArtRafMeanMs": 92.77799999999999,
+          "warmSwipeReadyGpuMeanMs": 5.38,
+          "warmEditorCallbackMeanMs": 28.259125,
+          "warmEditorFullArtRafMeanMs": 47.135,
+          "warmEditorReadyGpuMeanMs": 9.63625,
+          "wholeCycleCpuSeconds": 40.424268,
+          "wholeCycleElapsedSeconds": 102.91443379166722,
+          "warmSwipeCpuSeconds": 14.745465,
+          "warmEditorCpuSeconds": 9.262652000000001,
+          "playerRequestedPixelBytes": 112790176.0,
+          "editorRequestedPixelBytes": 87627168.0,
+          "warmSwipes": 10,
+          "warmEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "warmFullArtReady": 18,
+          "temperatureC": [29.29, 29.5],
+          "replayMisses": 0,
+          "failureEvents": 0,
+          "timeoutEvents": 0,
+          "forcedGeometryProbeSelections": 0
+        },
+        {
+          "member": "B1",
+          "build": "candidate",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "peakRssBytes": 556498944,
+          "peakRssMiB": 530.71875,
+          "openCallbackMs": 1056.049,
+          "openFullArtRafMs": 1070.141,
+          "openPrepareMs": 448.579,
+          "openUploadMs": 4.936,
+          "warmSwipeCallbackMeanMs": 61.786500000000004,
+          "warmSwipeFullArtRafMeanMs": 84.4965,
+          "warmSwipeReadyGpuMeanMs": 3.9203,
+          "warmEditorCallbackMeanMs": 32.38625,
+          "warmEditorFullArtRafMeanMs": 54.831625,
+          "warmEditorReadyGpuMeanMs": 11.460125,
+          "wholeCycleCpuSeconds": 40.127990999999994,
+          "wholeCycleElapsedSeconds": 103.32329354165495,
+          "warmSwipeCpuSeconds": 14.755403,
+          "warmEditorCpuSeconds": 9.170105,
+          "playerRequestedPixelBytes": 56822920.0,
+          "editorRequestedPixelBytes": 56822920.0,
+          "warmSwipes": 10,
+          "warmEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "warmFullArtReady": 18,
+          "temperatureC": [29.59, 29.69],
+          "replayMisses": 0,
+          "failureEvents": 0,
+          "timeoutEvents": 0,
+          "forcedGeometryProbeSelections": 0
+        },
+        {
+          "member": "A2",
+          "build": "baseline",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "peakRssBytes": 834715648,
+          "peakRssMiB": 796.046875,
+          "openCallbackMs": 1039.583,
+          "openFullArtRafMs": 1060.96,
+          "openPrepareMs": 417.244,
+          "openUploadMs": 16.207,
+          "warmSwipeCallbackMeanMs": 69.37129999999999,
+          "warmSwipeFullArtRafMeanMs": 92.7917,
+          "warmSwipeReadyGpuMeanMs": 5.3319,
+          "warmEditorCallbackMeanMs": 30.60875,
+          "warmEditorFullArtRafMeanMs": 50.46325,
+          "warmEditorReadyGpuMeanMs": 11.522,
+          "wholeCycleCpuSeconds": 40.504602,
+          "wholeCycleElapsedSeconds": 103.32544829167426,
+          "warmSwipeCpuSeconds": 14.780168999999999,
+          "warmEditorCpuSeconds": 9.252493999999999,
+          "playerRequestedPixelBytes": 112790176.0,
+          "editorRequestedPixelBytes": 87627168.0,
+          "warmSwipes": 10,
+          "warmEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "warmFullArtReady": 18,
+          "temperatureC": [29.69, 29.69],
+          "replayMisses": 0,
+          "failureEvents": 0,
+          "timeoutEvents": 0,
+          "forcedGeometryProbeSelections": 0
+        },
+        {
+          "member": "B2",
+          "build": "candidate",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "peakRssBytes": 552370176,
+          "peakRssMiB": 526.78125,
+          "openCallbackMs": 1077.456,
+          "openFullArtRafMs": 1091.043,
+          "openPrepareMs": 455.654,
+          "openUploadMs": 6.537,
+          "warmSwipeCallbackMeanMs": 64.0561,
+          "warmSwipeFullArtRafMeanMs": 87.8013,
+          "warmSwipeReadyGpuMeanMs": 3.6084000000000005,
+          "warmEditorCallbackMeanMs": 31.8335,
+          "warmEditorFullArtRafMeanMs": 52.337,
+          "warmEditorReadyGpuMeanMs": 9.716375,
+          "wholeCycleCpuSeconds": 40.145561,
+          "wholeCycleElapsedSeconds": 102.91311912499368,
+          "warmSwipeCpuSeconds": 14.659762,
+          "warmEditorCpuSeconds": 9.244761999999994,
+          "playerRequestedPixelBytes": 56822920.0,
+          "editorRequestedPixelBytes": 56822920.0,
+          "warmSwipes": 10,
+          "warmEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "warmFullArtReady": 18,
+          "temperatureC": [29.79, 29.89],
+          "replayMisses": 0,
+          "failureEvents": 0,
+          "timeoutEvents": 0,
+          "forcedGeometryProbeSelections": 0
+        },
+        {
+          "member": "A3",
+          "build": "baseline",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "peakRssBytes": 822231040,
+          "peakRssMiB": 784.140625,
+          "openCallbackMs": 1029.773,
+          "openFullArtRafMs": 1047.102,
+          "openPrepareMs": 420.965,
+          "openUploadMs": 21.576,
+          "warmSwipeCallbackMeanMs": 67.8798,
+          "warmSwipeFullArtRafMeanMs": 92.9765,
+          "warmSwipeReadyGpuMeanMs": 5.742900000000001,
+          "warmEditorCallbackMeanMs": 28.668625,
+          "warmEditorFullArtRafMeanMs": 48.776125,
+          "warmEditorReadyGpuMeanMs": 10.8075,
+          "wholeCycleCpuSeconds": 40.470599,
+          "wholeCycleElapsedSeconds": 103.01528662499786,
+          "warmSwipeCpuSeconds": 14.722062,
+          "warmEditorCpuSeconds": 9.275284,
+          "playerRequestedPixelBytes": 112790176.0,
+          "editorRequestedPixelBytes": 87627168.0,
+          "warmSwipes": 10,
+          "warmEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "warmFullArtReady": 18,
+          "temperatureC": [29.89, 30.0],
+          "replayMisses": 0,
+          "failureEvents": 0,
+          "timeoutEvents": 0,
+          "forcedGeometryProbeSelections": 0
+        },
+        {
+          "member": "B3",
+          "build": "candidate",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "peakRssBytes": 531775488,
+          "peakRssMiB": 507.140625,
+          "openCallbackMs": 1062.115,
+          "openFullArtRafMs": 1075.761,
+          "openPrepareMs": 456.723,
+          "openUploadMs": 9.642,
+          "warmSwipeCallbackMeanMs": 63.474599999999995,
+          "warmSwipeFullArtRafMeanMs": 86.18379999999999,
+          "warmSwipeReadyGpuMeanMs": 4.4811,
+          "warmEditorCallbackMeanMs": 26.53725,
+          "warmEditorFullArtRafMeanMs": 45.824,
+          "warmEditorReadyGpuMeanMs": 8.419,
+          "wholeCycleCpuSeconds": 40.165656000000006,
+          "wholeCycleElapsedSeconds": 103.52825033332408,
+          "warmSwipeCpuSeconds": 14.656531999999999,
+          "warmEditorCpuSeconds": 9.289618999999998,
+          "playerRequestedPixelBytes": 56822920.0,
+          "editorRequestedPixelBytes": 56822920.0,
+          "warmSwipes": 10,
+          "warmEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "warmFullArtReady": 18,
+          "temperatureC": [30.09, 30.19],
+          "replayMisses": 0,
+          "failureEvents": 0,
+          "timeoutEvents": 0,
+          "forcedGeometryProbeSelections": 0
+        }
+      ],
+      "groups": {
+        "baseline": {
+          "peakRssBytes": {
+            "samples": [852131840, 834715648, 822231040],
+            "median": 834715648,
+            "min": 822231040,
+            "max": 852131840
+          },
+          "peakRssMiB": {
+            "samples": [812.65625, 796.046875, 784.140625],
+            "median": 796.046875,
+            "min": 784.140625,
+            "max": 812.65625
+          },
+          "openCallbackMs": {
+            "samples": [1035.169, 1039.583, 1029.773],
+            "median": 1035.169,
+            "min": 1029.773,
+            "max": 1039.583
+          },
+          "openFullArtRafMs": {
+            "samples": [1050.827, 1060.96, 1047.102],
+            "median": 1050.827,
+            "min": 1047.102,
+            "max": 1060.96
+          },
+          "openPrepareMs": {
+            "samples": [423.659, 417.244, 420.965],
+            "median": 420.965,
+            "min": 417.244,
+            "max": 423.659
+          },
+          "openUploadMs": {
+            "samples": [19.285, 16.207, 21.576],
+            "median": 19.285,
+            "min": 16.207,
+            "max": 21.576
+          },
+          "warmSwipeCallbackMeanMs": {
+            "samples": [66.842, 69.37129999999999, 67.8798],
+            "median": 67.8798,
+            "min": 66.842,
+            "max": 69.37129999999999
+          },
+          "warmSwipeFullArtRafMeanMs": {
+            "samples": [92.77799999999999, 92.7917, 92.9765],
+            "median": 92.7917,
+            "min": 92.77799999999999,
+            "max": 92.9765
+          },
+          "warmSwipeReadyGpuMeanMs": {
+            "samples": [5.38, 5.3319, 5.742900000000001],
+            "median": 5.38,
+            "min": 5.3319,
+            "max": 5.742900000000001
+          },
+          "warmEditorCallbackMeanMs": {
+            "samples": [28.259125, 30.60875, 28.668625],
+            "median": 28.668625,
+            "min": 28.259125,
+            "max": 30.60875
+          },
+          "warmEditorFullArtRafMeanMs": {
+            "samples": [47.135, 50.46325, 48.776125],
+            "median": 48.776125,
+            "min": 47.135,
+            "max": 50.46325
+          },
+          "warmEditorReadyGpuMeanMs": {
+            "samples": [9.63625, 11.522, 10.8075],
+            "median": 10.8075,
+            "min": 9.63625,
+            "max": 11.522
+          },
+          "wholeCycleCpuSeconds": {
+            "samples": [40.424268, 40.504602, 40.470599],
+            "median": 40.470599,
+            "min": 40.424268,
+            "max": 40.504602
+          },
+          "warmSwipeCpuSeconds": {
+            "samples": [14.745465, 14.780168999999999, 14.722062],
+            "median": 14.745465,
+            "min": 14.722062,
+            "max": 14.780168999999999
+          },
+          "warmEditorCpuSeconds": {
+            "samples": [9.262652000000001, 9.252493999999999, 9.275284],
+            "median": 9.262652000000001,
+            "min": 9.252493999999999,
+            "max": 9.275284
+          }
+        },
+        "candidate": {
+          "peakRssBytes": {
+            "samples": [556498944, 552370176, 531775488],
+            "median": 552370176,
+            "min": 531775488,
+            "max": 556498944
+          },
+          "peakRssMiB": {
+            "samples": [530.71875, 526.78125, 507.140625],
+            "median": 526.78125,
+            "min": 507.140625,
+            "max": 530.71875
+          },
+          "openCallbackMs": {
+            "samples": [1056.049, 1077.456, 1062.115],
+            "median": 1062.115,
+            "min": 1056.049,
+            "max": 1077.456
+          },
+          "openFullArtRafMs": {
+            "samples": [1070.141, 1091.043, 1075.761],
+            "median": 1075.761,
+            "min": 1070.141,
+            "max": 1091.043
+          },
+          "openPrepareMs": {
+            "samples": [448.579, 455.654, 456.723],
+            "median": 455.654,
+            "min": 448.579,
+            "max": 456.723
+          },
+          "openUploadMs": {
+            "samples": [4.936, 6.537, 9.642],
+            "median": 6.537,
+            "min": 4.936,
+            "max": 9.642
+          },
+          "warmSwipeCallbackMeanMs": {
+            "samples": [61.786500000000004, 64.0561, 63.474599999999995],
+            "median": 63.474599999999995,
+            "min": 61.786500000000004,
+            "max": 64.0561
+          },
+          "warmSwipeFullArtRafMeanMs": {
+            "samples": [84.4965, 87.8013, 86.18379999999999],
+            "median": 86.18379999999999,
+            "min": 84.4965,
+            "max": 87.8013
+          },
+          "warmSwipeReadyGpuMeanMs": {
+            "samples": [3.9203, 3.6084000000000005, 4.4811],
+            "median": 3.9203,
+            "min": 3.6084000000000005,
+            "max": 4.4811
+          },
+          "warmEditorCallbackMeanMs": {
+            "samples": [32.38625, 31.8335, 26.53725],
+            "median": 31.8335,
+            "min": 26.53725,
+            "max": 32.38625
+          },
+          "warmEditorFullArtRafMeanMs": {
+            "samples": [54.831625, 52.337, 45.824],
+            "median": 52.337,
+            "min": 45.824,
+            "max": 54.831625
+          },
+          "warmEditorReadyGpuMeanMs": {
+            "samples": [11.460125, 9.716375, 8.419],
+            "median": 9.716375,
+            "min": 8.419,
+            "max": 11.460125
+          },
+          "wholeCycleCpuSeconds": {
+            "samples": [40.127990999999994, 40.145561, 40.165656000000006],
+            "median": 40.145561,
+            "min": 40.127990999999994,
+            "max": 40.165656000000006
+          },
+          "warmSwipeCpuSeconds": {
+            "samples": [14.755403, 14.659762, 14.656531999999999],
+            "median": 14.659762,
+            "min": 14.656531999999999,
+            "max": 14.755403
+          },
+          "warmEditorCpuSeconds": {
+            "samples": [9.170105, 9.244761999999994, 9.289618999999998],
+            "median": 9.244761999999994,
+            "min": 9.170105,
+            "max": 9.289618999999998
+          }
+        }
+      },
+      "pairs": [
+        {
+          "pair": 1,
+          "baseline": "A1",
+          "candidate": "B1",
+          "candidateMinusBaseline": {
+            "peakRssBytes": -295632896,
+            "peakRssMiB": -281.9375,
+            "openCallbackMs": 20.87999999999988,
+            "openFullArtRafMs": 19.314000000000078,
+            "openPrepareMs": 24.920000000000016,
+            "openUploadMs": -14.349,
+            "warmSwipeCallbackMeanMs": -5.055499999999995,
+            "warmSwipeFullArtRafMeanMs": -8.281499999999994,
+            "warmSwipeReadyGpuMeanMs": -1.4596999999999998,
+            "warmEditorCallbackMeanMs": 4.127124999999996,
+            "warmEditorFullArtRafMeanMs": 7.6966250000000045,
+            "warmEditorReadyGpuMeanMs": 1.8238749999999992,
+            "wholeCycleCpuSeconds": -0.29627700000000345,
+            "warmSwipeCpuSeconds": 0.009938000000000002,
+            "warmEditorCpuSeconds": -0.09254700000000149
+          },
+          "peakRssReductionPercent": 34.6933282061142
+        },
+        {
+          "pair": 2,
+          "baseline": "A2",
+          "candidate": "B2",
+          "candidateMinusBaseline": {
+            "peakRssBytes": -282345472,
+            "peakRssMiB": -269.265625,
+            "openCallbackMs": 37.87299999999982,
+            "openFullArtRafMs": 30.082999999999856,
+            "openPrepareMs": 38.40999999999997,
+            "openUploadMs": -9.670000000000002,
+            "warmSwipeCallbackMeanMs": -5.31519999999999,
+            "warmSwipeFullArtRafMeanMs": -4.990400000000008,
+            "warmSwipeReadyGpuMeanMs": -1.7234999999999996,
+            "warmEditorCallbackMeanMs": 1.2247500000000002,
+            "warmEditorFullArtRafMeanMs": 1.8737500000000011,
+            "warmEditorReadyGpuMeanMs": -1.805625000000001,
+            "wholeCycleCpuSeconds": -0.3590409999999977,
+            "warmSwipeCpuSeconds": -0.12040699999999838,
+            "warmEditorCpuSeconds": -0.007732000000004291
+          },
+          "peakRssReductionPercent": 33.82534791057373
+        },
+        {
+          "pair": 3,
+          "baseline": "A3",
+          "candidate": "B3",
+          "candidateMinusBaseline": {
+            "peakRssBytes": -290455552,
+            "peakRssMiB": -277.0,
+            "openCallbackMs": 32.3420000000001,
+            "openFullArtRafMs": 28.658999999999878,
+            "openPrepareMs": 35.75800000000004,
+            "openUploadMs": -11.934000000000001,
+            "warmSwipeCallbackMeanMs": -4.405200000000008,
+            "warmSwipeFullArtRafMeanMs": -6.792700000000011,
+            "warmSwipeReadyGpuMeanMs": -1.261800000000001,
+            "warmEditorCallbackMeanMs": -2.1313749999999985,
+            "warmEditorFullArtRafMeanMs": -2.9521250000000023,
+            "warmEditorReadyGpuMeanMs": -2.3884999999999987,
+            "wholeCycleCpuSeconds": -0.3049429999999944,
+            "warmSwipeCpuSeconds": -0.06553000000000075,
+            "warmEditorCpuSeconds": 0.014334999999999098
+          },
+          "peakRssReductionPercent": 35.32529640330776
+        }
+      ],
+      "pairedCandidateMinusBaseline": {
+        "peakRssBytes": {
+          "samples": [-295632896, -282345472, -290455552],
+          "median": -290455552,
+          "min": -295632896,
+          "max": -282345472
+        },
+        "peakRssMiB": {
+          "samples": [-281.9375, -269.265625, -277.0],
+          "median": -277.0,
+          "min": -281.9375,
+          "max": -269.265625
+        },
+        "openCallbackMs": {
+          "samples": [20.87999999999988, 37.87299999999982, 32.3420000000001],
+          "median": 32.3420000000001,
+          "min": 20.87999999999988,
+          "max": 37.87299999999982
+        },
+        "openFullArtRafMs": {
+          "samples": [19.314000000000078, 30.082999999999856, 28.658999999999878],
+          "median": 28.658999999999878,
+          "min": 19.314000000000078,
+          "max": 30.082999999999856
+        },
+        "openPrepareMs": {
+          "samples": [24.920000000000016, 38.40999999999997, 35.75800000000004],
+          "median": 35.75800000000004,
+          "min": 24.920000000000016,
+          "max": 38.40999999999997
+        },
+        "openUploadMs": {
+          "samples": [-14.349, -9.670000000000002, -11.934000000000001],
+          "median": -11.934000000000001,
+          "min": -14.349,
+          "max": -9.670000000000002
+        },
+        "warmSwipeCallbackMeanMs": {
+          "samples": [-5.055499999999995, -5.31519999999999, -4.405200000000008],
+          "median": -5.055499999999995,
+          "min": -5.31519999999999,
+          "max": -4.405200000000008
+        },
+        "warmSwipeFullArtRafMeanMs": {
+          "samples": [-8.281499999999994, -4.990400000000008, -6.792700000000011],
+          "median": -6.792700000000011,
+          "min": -8.281499999999994,
+          "max": -4.990400000000008
+        },
+        "warmSwipeReadyGpuMeanMs": {
+          "samples": [-1.4596999999999998, -1.7234999999999996, -1.261800000000001],
+          "median": -1.4596999999999998,
+          "min": -1.7234999999999996,
+          "max": -1.261800000000001
+        },
+        "warmEditorCallbackMeanMs": {
+          "samples": [4.127124999999996, 1.2247500000000002, -2.1313749999999985],
+          "median": 1.2247500000000002,
+          "min": -2.1313749999999985,
+          "max": 4.127124999999996
+        },
+        "warmEditorFullArtRafMeanMs": {
+          "samples": [7.6966250000000045, 1.8737500000000011, -2.9521250000000023],
+          "median": 1.8737500000000011,
+          "min": -2.9521250000000023,
+          "max": 7.6966250000000045
+        },
+        "warmEditorReadyGpuMeanMs": {
+          "samples": [1.8238749999999992, -1.805625000000001, -2.3884999999999987],
+          "median": -1.805625000000001,
+          "min": -2.3884999999999987,
+          "max": 1.8238749999999992
+        },
+        "wholeCycleCpuSeconds": {
+          "samples": [-0.29627700000000345, -0.3590409999999977, -0.3049429999999944],
+          "median": -0.3049429999999944,
+          "min": -0.3590409999999977,
+          "max": -0.29627700000000345
+        },
+        "warmSwipeCpuSeconds": {
+          "samples": [0.009938000000000002, -0.12040699999999838, -0.06553000000000075],
+          "median": -0.06553000000000075,
+          "min": -0.12040699999999838,
+          "max": 0.009938000000000002
+        },
+        "warmEditorCpuSeconds": {
+          "samples": [-0.09254700000000149, -0.007732000000004291, 0.014334999999999098],
+          "median": -0.007732000000004291,
+          "min": -0.09254700000000149,
+          "max": 0.014334999999999098
+        }
+      },
+      "pairedPeakRssReductionPercent": {
+        "samples": [34.6933282061142, 33.82534791057373, 35.32529640330776],
+        "median": 34.6933282061142,
+        "min": 33.82534791057373,
+        "max": 35.32529640330776
+      },
+      "totalsPerBuild": {
+        "swipes": 30,
+        "editorChanges": 24,
+        "atlasHits": 54,
+        "atlasMisses": 0,
+        "atlasUploadEvents": 0,
+        "fullArtReady": 54
+      },
+      "separateGenerationMiss": "Not collected in this phase yet; fresh mask-generated-1 is separately registered after primary. New A0/B0 are file-hit qualifications, excluded from primary.",
+      "excluded": "All initial293 phase data, originalD0B0 failure and old trace attempts preserved separately; new A0/B0 qualifications excluded; no new invalid attempts.",
+      "fieldMeanings": {
+        "peakRss": "AbsoluteDarwingetrusage.ru_maxrssbytes,processlifetimehighwaterincludingapp/nativeidentityhashing/player/editor,notdelta.",
+        "callbackAndRaf": "Requestidentity\u2192native-readycallbackandguardedfull-artRAFallbackproxy,notphysicalscanout/gesturecompletion. Warmmeansaverage10swipeor8editorreadyeventspermember.",
+        "nativeGpu": "MTLcommandbuffer.gpuEndTime\u2212gpuStartTimeoncommandsthatreportednewrequestready. Notallmotionframes,notpresentedFPS,noP95fromcounters.",
+        "prepare": "NativeprepareclockstartsexcludesinitialMetalpipelinecreation;includescachelookup/descriptorsandupload.",
+        "payload": "Requestedatlaspixelbufferlengthperreadyevent;notaggregateallocatedGPUresidency. API3viewportfields vsAPI4native1080fields;editor/playerdifferencesintentionalqualified.",
+        "cpu": "Nativeself-processuser+systemCPUbetweenacknowledgedboundaries. Wholecycleincludesdriver/accessibility/nativebackgroundwork;notrenderer-onlyCPU."
+      }
+    },
+    "pixel": {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-16T13:17:56.885293+00:00",
+      "device": "Google Pixel8Pro, Android16/API36, physicalRelease profilingclone, OTAoff",
+      "sources": {
+        "baseline": "f4d12c848e7eca71cf1b612228d732458422fc36",
+        "androidCandidate": "4b41371cf75848efe6c382302056ebaa67279f20",
+        "shippingEquivalent": "4b41371cf75848efe6c382302056ebaa67279f20"
+      },
+      "members": [
+        {
+          "member": "A1",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "e20cdbfd28a1fb34b039b85691b6edda6c7d600f750515d864327a9f1d1bcc1d",
+          "peakRssBytesAbsolute": 960585728,
+          "initialPlayer": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 554.192,
+            "uploadMs": 24.042,
+            "gpuCallbackMs": 678.869,
+            "fullArtLiveReadyMs": 736.748,
+            "atlasPayloadBytes": 91002920
+          },
+          "initialEditor": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 577.374,
+            "uploadMs": 7.199,
+            "gpuCallbackMs": 681.085,
+            "fullArtLiveReadyMs": 714.161,
+            "atlasPayloadBytes": 81054780
+          },
+          "segments": [
+            {
+              "segment": "warm-swipes",
+              "readyCount": 10,
+              "atlasHitCount": 10,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 2.6025,
+              "gpuCallbackMsMean": 78.5455,
+              "fullArtIdentityToReadyMsMean": 108.99159999999999,
+              "atlasPayloadBytesPerReadyMean": 91002920.0,
+              "editDurationUs": 0,
+              "editChangedHolds": 0,
+              "cpu": {
+                "cpuSeconds": 36.01,
+                "elapsedSeconds": 60.681,
+                "cpuCorePercent": 59.343122229363395,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            },
+            {
+              "segment": "warm-edits",
+              "readyCount": 8,
+              "atlasHitCount": 8,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 0.86225,
+              "gpuCallbackMsMean": 49.17675,
+              "fullArtIdentityToReadyMsMean": 80.24275,
+              "atlasPayloadBytesPerReadyMean": 81054780.0,
+              "editDurationUs": 1400000,
+              "editChangedHolds": 4,
+              "cpu": {
+                "cpuSeconds": 12.315,
+                "elapsedSeconds": 41.309,
+                "cpuCorePercent": 29.81190539591857,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            }
+          ],
+          "wholeCycle": {
+            "cpuSeconds": 73.076,
+            "elapsedSeconds": 158.741,
+            "cpuCorePercent": 46.034735827542974,
+            "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+          },
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "buildId": "b8fef950dd048a6e841545dee8d9cc27e0d20df6d81e914fa325131f21e90455",
+          "embeddedBundleSha256": "9523bbfd330758a6d41f9523e3705b04f6370950bf641d48488725d64b9384eb"
+        },
+        {
+          "member": "B1",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "artifactSha256": "1042e19e85ac2c08fa14bbe14e5d4eda257b729577dddeeda4235bc4d9497638",
+          "peakRssBytesAbsolute": 867356672,
+          "initialPlayer": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 563.176,
+            "uploadMs": 15.727,
+            "gpuCallbackMs": 817.783,
+            "fullArtLiveReadyMs": 863.786,
+            "atlasPayloadBytes": 56822920
+          },
+          "initialEditor": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 654.203,
+            "uploadMs": 7.332,
+            "gpuCallbackMs": 777.847,
+            "fullArtLiveReadyMs": 818.216,
+            "atlasPayloadBytes": 56822920
+          },
+          "segments": [
+            {
+              "segment": "warm-swipes",
+              "readyCount": 10,
+              "atlasHitCount": 10,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.9814,
+              "gpuCallbackMsMean": 77.4718,
+              "fullArtIdentityToReadyMsMean": 107.8442,
+              "atlasPayloadBytesPerReadyMean": 56822920.0,
+              "editDurationUs": 0,
+              "editChangedHolds": 0,
+              "cpu": {
+                "cpuSeconds": 37.051,
+                "elapsedSeconds": 60.329,
+                "cpuCorePercent": 61.414908253078956,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            },
+            {
+              "segment": "warm-edits",
+              "readyCount": 8,
+              "atlasHitCount": 8,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.43575,
+              "gpuCallbackMsMean": 49.608125,
+              "fullArtIdentityToReadyMsMean": 78.4385,
+              "atlasPayloadBytesPerReadyMean": 56822920.0,
+              "editDurationUs": 1400000,
+              "editChangedHolds": 4,
+              "cpu": {
+                "cpuSeconds": 12.237,
+                "elapsedSeconds": 40.726,
+                "cpuCorePercent": 30.047144330403185,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            }
+          ],
+          "wholeCycle": {
+            "cpuSeconds": 71.134,
+            "elapsedSeconds": 152.666,
+            "cpuCorePercent": 46.594526613653336,
+            "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+          },
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "buildId": "1199d1245d5afae6d1ab4b9158c909cdcaa1cfa5d359be946b3f57d347d3ad0a",
+          "embeddedBundleSha256": "778f5475aed871ffde6711e8baea6665965e98235346b3184d95b75fd2b0a19d"
+        },
+        {
+          "member": "A2",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "e20cdbfd28a1fb34b039b85691b6edda6c7d600f750515d864327a9f1d1bcc1d",
+          "peakRssBytesAbsolute": 956076032,
+          "initialPlayer": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 643.326,
+            "uploadMs": 21.713,
+            "gpuCallbackMs": 758.486,
+            "fullArtLiveReadyMs": 794.304,
+            "atlasPayloadBytes": 91002920
+          },
+          "initialEditor": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 532.078,
+            "uploadMs": 6.666,
+            "gpuCallbackMs": 625.772,
+            "fullArtLiveReadyMs": 656.778,
+            "atlasPayloadBytes": 81054780
+          },
+          "segments": [
+            {
+              "segment": "warm-swipes",
+              "readyCount": 10,
+              "atlasHitCount": 10,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.7690000000000001,
+              "gpuCallbackMsMean": 80.58840000000001,
+              "fullArtIdentityToReadyMsMean": 107.9034,
+              "atlasPayloadBytesPerReadyMean": 91002920.0,
+              "editDurationUs": 0,
+              "editChangedHolds": 0,
+              "cpu": {
+                "cpuSeconds": 34.854,
+                "elapsedSeconds": 57.927,
+                "cpuCorePercent": 60.16883318659693,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            },
+            {
+              "segment": "warm-edits",
+              "readyCount": 8,
+              "atlasHitCount": 8,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 0.85525,
+              "gpuCallbackMsMean": 49.934,
+              "fullArtIdentityToReadyMsMean": 77.9675,
+              "atlasPayloadBytesPerReadyMean": 81054780.0,
+              "editDurationUs": 1400000,
+              "editChangedHolds": 4,
+              "cpu": {
+                "cpuSeconds": 12.089,
+                "elapsedSeconds": 39.464,
+                "cpuCorePercent": 30.632981958240425,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            }
+          ],
+          "wholeCycle": {
+            "cpuSeconds": 68.717,
+            "elapsedSeconds": 149.845,
+            "cpuCorePercent": 45.85872067803397,
+            "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+          },
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "buildId": "b8fef950dd048a6e841545dee8d9cc27e0d20df6d81e914fa325131f21e90455",
+          "embeddedBundleSha256": "9523bbfd330758a6d41f9523e3705b04f6370950bf641d48488725d64b9384eb"
+        },
+        {
+          "member": "B2",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "artifactSha256": "1042e19e85ac2c08fa14bbe14e5d4eda257b729577dddeeda4235bc4d9497638",
+          "peakRssBytesAbsolute": 859578368,
+          "initialPlayer": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 601.122,
+            "uploadMs": 15.078,
+            "gpuCallbackMs": 676.099,
+            "fullArtLiveReadyMs": 736.2,
+            "atlasPayloadBytes": 56822920
+          },
+          "initialEditor": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 644.827,
+            "uploadMs": 6.43,
+            "gpuCallbackMs": 759.727,
+            "fullArtLiveReadyMs": 808.878,
+            "atlasPayloadBytes": 56822920
+          },
+          "segments": [
+            {
+              "segment": "warm-swipes",
+              "readyCount": 10,
+              "atlasHitCount": 10,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 2.0326,
+              "gpuCallbackMsMean": 75.1034,
+              "fullArtIdentityToReadyMsMean": 102.41569999999999,
+              "atlasPayloadBytesPerReadyMean": 56822920.0,
+              "editDurationUs": 0,
+              "editChangedHolds": 0,
+              "cpu": {
+                "cpuSeconds": 38.122,
+                "elapsedSeconds": 62.354,
+                "cpuCorePercent": 61.13801841100811,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            },
+            {
+              "segment": "warm-edits",
+              "readyCount": 8,
+              "atlasHitCount": 8,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.421125,
+              "gpuCallbackMsMean": 52.63225,
+              "fullArtIdentityToReadyMsMean": 79.782,
+              "atlasPayloadBytesPerReadyMean": 56822920.0,
+              "editDurationUs": 1400000,
+              "editChangedHolds": 4,
+              "cpu": {
+                "cpuSeconds": 12.839,
+                "elapsedSeconds": 42.129,
+                "cpuCorePercent": 30.475444468181067,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            }
+          ],
+          "wholeCycle": {
+            "cpuSeconds": 74.548,
+            "elapsedSeconds": 158.4,
+            "cpuCorePercent": 47.063131313131315,
+            "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+          },
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "buildId": "1199d1245d5afae6d1ab4b9158c909cdcaa1cfa5d359be946b3f57d347d3ad0a",
+          "embeddedBundleSha256": "778f5475aed871ffde6711e8baea6665965e98235346b3184d95b75fd2b0a19d"
+        },
+        {
+          "member": "A3",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "e20cdbfd28a1fb34b039b85691b6edda6c7d600f750515d864327a9f1d1bcc1d",
+          "peakRssBytesAbsolute": 966746112,
+          "initialPlayer": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 565.671,
+            "uploadMs": 22.874,
+            "gpuCallbackMs": 674.119,
+            "fullArtLiveReadyMs": 718.457,
+            "atlasPayloadBytes": 91002920
+          },
+          "initialEditor": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 530.881,
+            "uploadMs": 6.651,
+            "gpuCallbackMs": 645.414,
+            "fullArtLiveReadyMs": 668.367,
+            "atlasPayloadBytes": 81054780
+          },
+          "segments": [
+            {
+              "segment": "warm-swipes",
+              "readyCount": 10,
+              "atlasHitCount": 10,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.7279,
+              "gpuCallbackMsMean": 76.4508,
+              "fullArtIdentityToReadyMsMean": 104.14090000000002,
+              "atlasPayloadBytesPerReadyMean": 91002920.0,
+              "editDurationUs": 0,
+              "editChangedHolds": 0,
+              "cpu": {
+                "cpuSeconds": 35.333,
+                "elapsedSeconds": 58.601,
+                "cpuCorePercent": 60.294192931861225,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            },
+            {
+              "segment": "warm-edits",
+              "readyCount": 8,
+              "atlasHitCount": 8,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 0.764375,
+              "gpuCallbackMsMean": 48.22,
+              "fullArtIdentityToReadyMsMean": 76.460875,
+              "atlasPayloadBytesPerReadyMean": 81054780.0,
+              "editDurationUs": 1400000,
+              "editChangedHolds": 4,
+              "cpu": {
+                "cpuSeconds": 12.529,
+                "elapsedSeconds": 41.141,
+                "cpuCorePercent": 30.45380520648502,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            }
+          ],
+          "wholeCycle": {
+            "cpuSeconds": 71.197,
+            "elapsedSeconds": 153.9,
+            "cpuCorePercent": 46.26185834957765,
+            "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+          },
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "buildId": "b8fef950dd048a6e841545dee8d9cc27e0d20df6d81e914fa325131f21e90455",
+          "embeddedBundleSha256": "9523bbfd330758a6d41f9523e3705b04f6370950bf641d48488725d64b9384eb"
+        },
+        {
+          "member": "B3",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "artifactSha256": "1042e19e85ac2c08fa14bbe14e5d4eda257b729577dddeeda4235bc4d9497638",
+          "peakRssBytesAbsolute": 859385856,
+          "initialPlayer": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 592.263,
+            "uploadMs": 18.02,
+            "gpuCallbackMs": 740.645,
+            "fullArtLiveReadyMs": 771.638,
+            "atlasPayloadBytes": 56822920
+          },
+          "initialEditor": {
+            "gpuReadyCount": 1,
+            "fullArtReadyCount": 1,
+            "ramAtlasMissCount": 1,
+            "nonzeroAtlasUploads": 1,
+            "prepareMs": 620.472,
+            "uploadMs": 6.014,
+            "gpuCallbackMs": 744.811,
+            "fullArtLiveReadyMs": 809.077,
+            "atlasPayloadBytes": 56822920
+          },
+          "segments": [
+            {
+              "segment": "warm-swipes",
+              "readyCount": 10,
+              "atlasHitCount": 10,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.893,
+              "gpuCallbackMsMean": 77.92190000000001,
+              "fullArtIdentityToReadyMsMean": 108.61359999999999,
+              "atlasPayloadBytesPerReadyMean": 56822920.0,
+              "editDurationUs": 0,
+              "editChangedHolds": 0,
+              "cpu": {
+                "cpuSeconds": 36.194,
+                "elapsedSeconds": 58.461,
+                "cpuCorePercent": 61.91135970989207,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            },
+            {
+              "segment": "warm-edits",
+              "readyCount": 8,
+              "atlasHitCount": 8,
+              "atlasMissCount": 0,
+              "uploadUs": 0,
+              "nonzeroUploadCount": 0,
+              "cacheLookupPrepareMsMean": 1.192,
+              "gpuCallbackMsMean": 50.1995,
+              "fullArtIdentityToReadyMsMean": 78.972,
+              "atlasPayloadBytesPerReadyMean": 56822920.0,
+              "editDurationUs": 1400000,
+              "editChangedHolds": 4,
+              "cpu": {
+                "cpuSeconds": 12.493,
+                "elapsedSeconds": 41.13,
+                "cpuCorePercent": 30.374422562606366,
+                "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+              }
+            }
+          ],
+          "wholeCycle": {
+            "cpuSeconds": 72.712,
+            "elapsedSeconds": 154.331,
+            "cpuCorePercent": 47.114319222968824,
+            "meaning": "Cumulative self-process CPU work across acknowledged native boundaries; elapsed time is the denominator, not UI latency or presented FPS."
+          },
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "buildId": "1199d1245d5afae6d1ab4b9158c909cdcaa1cfa5d359be946b3f57d347d3ad0a",
+          "embeddedBundleSha256": "778f5475aed871ffde6711e8baea6665965e98235346b3184d95b75fd2b0a19d"
+        }
+      ],
+      "pairs": [
+        {
+          "pair": 1,
+          "metrics": {
+            "peakRssMiB": {
+              "baseline": 916.0859375,
+              "candidate": 827.17578125,
+              "delta": -88.91015625,
+              "percentDelta": -9.705438388524545
+            },
+            "ordinaryRestartGpuReadyMs": {
+              "baseline": 678.869,
+              "candidate": 817.783,
+              "delta": 138.914,
+              "percentDelta": 20.462563469535368
+            },
+            "ordinaryRestartFullArtLiveReadyMs": {
+              "baseline": 736.748,
+              "candidate": 863.786,
+              "delta": 127.0379999999999,
+              "percentDelta": 17.243073615401716
+            },
+            "warmSwipesCpuSeconds": {
+              "baseline": 36.01,
+              "candidate": 37.051,
+              "delta": 1.041000000000004,
+              "percentDelta": 2.890863648986408
+            },
+            "warmSwipesGpuCallbackMsMean": {
+              "baseline": 78.5455,
+              "candidate": 77.4718,
+              "delta": -1.0737000000000023,
+              "percentDelta": -1.3669783755912213
+            },
+            "warmSwipesFullArtLiveReadyMsMean": {
+              "baseline": 108.99159999999999,
+              "candidate": 107.8442,
+              "delta": -1.1473999999999904,
+              "percentDelta": -1.052741679175262
+            },
+            "warmEditsCpuSeconds": {
+              "baseline": 12.315,
+              "candidate": 12.237,
+              "delta": -0.0779999999999994,
+              "percentDelta": -0.6333739342265443
+            },
+            "warmEditsGpuCallbackMsMean": {
+              "baseline": 49.17675,
+              "candidate": 49.608125,
+              "delta": 0.43137500000000273,
+              "percentDelta": 0.8771929824561431
+            },
+            "warmEditsFullArtLiveReadyMsMean": {
+              "baseline": 80.24275,
+              "candidate": 78.4385,
+              "delta": -1.8042499999999961,
+              "percentDelta": -2.2484897389483782
+            }
+          }
+        },
+        {
+          "pair": 2,
+          "metrics": {
+            "peakRssMiB": {
+              "baseline": 911.78515625,
+              "candidate": 819.7578125,
+              "delta": -92.02734375,
+              "percentDelta": -10.093095190153246
+            },
+            "ordinaryRestartGpuReadyMs": {
+              "baseline": 758.486,
+              "candidate": 676.099,
+              "delta": -82.38699999999994,
+              "percentDelta": -10.862033050049702
+            },
+            "ordinaryRestartFullArtLiveReadyMs": {
+              "baseline": 794.304,
+              "candidate": 736.2,
+              "delta": -58.10399999999993,
+              "percentDelta": -7.315083393763588
+            },
+            "warmSwipesCpuSeconds": {
+              "baseline": 34.854,
+              "candidate": 38.122,
+              "delta": 3.2680000000000007,
+              "percentDelta": 9.37625523612784
+            },
+            "warmSwipesGpuCallbackMsMean": {
+              "baseline": 80.58840000000001,
+              "candidate": 75.1034,
+              "delta": -5.485000000000014,
+              "percentDelta": -6.806190469099782
+            },
+            "warmSwipesFullArtLiveReadyMsMean": {
+              "baseline": 107.9034,
+              "candidate": 102.41569999999999,
+              "delta": -5.487700000000018,
+              "percentDelta": -5.085752626886652
+            },
+            "warmEditsCpuSeconds": {
+              "baseline": 12.089,
+              "candidate": 12.839,
+              "delta": 0.75,
+              "percentDelta": 6.203987095706842
+            },
+            "warmEditsGpuCallbackMsMean": {
+              "baseline": 49.934,
+              "candidate": 52.63225,
+              "delta": 2.6982500000000016,
+              "percentDelta": 5.403632795289792
+            },
+            "warmEditsFullArtLiveReadyMsMean": {
+              "baseline": 77.9675,
+              "candidate": 79.782,
+              "delta": 1.8144999999999953,
+              "percentDelta": 2.3272517395068304
+            }
+          }
+        },
+        {
+          "pair": 3,
+          "metrics": {
+            "peakRssMiB": {
+              "baseline": 921.9609375,
+              "candidate": 819.57421875,
+              "delta": -102.38671875,
+              "percentDelta": -11.10532069044411
+            },
+            "ordinaryRestartGpuReadyMs": {
+              "baseline": 674.119,
+              "candidate": 740.645,
+              "delta": 66.52599999999995,
+              "percentDelta": 9.86858403338282
+            },
+            "ordinaryRestartFullArtLiveReadyMs": {
+              "baseline": 718.457,
+              "candidate": 771.638,
+              "delta": 53.18100000000004,
+              "percentDelta": 7.402113139686861
+            },
+            "warmSwipesCpuSeconds": {
+              "baseline": 35.333,
+              "candidate": 36.194,
+              "delta": 0.8610000000000042,
+              "percentDelta": 2.436815441655127
+            },
+            "warmSwipesGpuCallbackMsMean": {
+              "baseline": 76.4508,
+              "candidate": 77.92190000000001,
+              "delta": 1.471100000000007,
+              "percentDelta": 1.9242440890088863
+            },
+            "warmSwipesFullArtLiveReadyMsMean": {
+              "baseline": 104.14090000000002,
+              "candidate": 108.61359999999999,
+              "delta": 4.472699999999975,
+              "percentDelta": 4.294854375178225
+            },
+            "warmEditsCpuSeconds": {
+              "baseline": 12.529,
+              "candidate": 12.493,
+              "delta": -0.03599999999999959,
+              "percentDelta": -0.2873333865432204
+            },
+            "warmEditsGpuCallbackMsMean": {
+              "baseline": 48.22,
+              "candidate": 50.1995,
+              "delta": 1.9795000000000016,
+              "percentDelta": 4.1051430941517975
+            },
+            "warmEditsFullArtLiveReadyMsMean": {
+              "baseline": 76.460875,
+              "candidate": 78.972,
+              "delta": 2.5111249999999927,
+              "percentDelta": 3.284196002203732
+            }
+          }
+        }
+      ],
+      "aggregates": {
+        "peakRssMiB": {
+          "baseline": {
+            "median": 916.0859375,
+            "range": [911.78515625, 921.9609375]
+          },
+          "candidate": {
+            "median": 819.7578125,
+            "range": [819.57421875, 827.17578125]
+          },
+          "delta": {
+            "median": -92.02734375,
+            "range": [-102.38671875, -88.91015625]
+          },
+          "percentDelta": {
+            "median": -10.093095190153246,
+            "range": [-11.10532069044411, -9.705438388524545]
+          }
+        },
+        "ordinaryRestartGpuReadyMs": {
+          "baseline": {
+            "median": 678.869,
+            "range": [674.119, 758.486]
+          },
+          "candidate": {
+            "median": 740.645,
+            "range": [676.099, 817.783]
+          },
+          "delta": {
+            "median": 66.52599999999995,
+            "range": [-82.38699999999994, 138.914]
+          },
+          "percentDelta": {
+            "median": 9.86858403338282,
+            "range": [-10.862033050049702, 20.462563469535368]
+          }
+        },
+        "ordinaryRestartFullArtLiveReadyMs": {
+          "baseline": {
+            "median": 736.748,
+            "range": [718.457, 794.304]
+          },
+          "candidate": {
+            "median": 771.638,
+            "range": [736.2, 863.786]
+          },
+          "delta": {
+            "median": 53.18100000000004,
+            "range": [-58.10399999999993, 127.0379999999999]
+          },
+          "percentDelta": {
+            "median": 7.402113139686861,
+            "range": [-7.315083393763588, 17.243073615401716]
+          }
+        },
+        "warmSwipesCpuSeconds": {
+          "baseline": {
+            "median": 35.333,
+            "range": [34.854, 36.01]
+          },
+          "candidate": {
+            "median": 37.051,
+            "range": [36.194, 38.122]
+          },
+          "delta": {
+            "median": 1.041000000000004,
+            "range": [0.8610000000000042, 3.2680000000000007]
+          },
+          "percentDelta": {
+            "median": 2.890863648986408,
+            "range": [2.436815441655127, 9.37625523612784]
+          }
+        },
+        "warmSwipesGpuCallbackMsMean": {
+          "baseline": {
+            "median": 78.5455,
+            "range": [76.4508, 80.58840000000001]
+          },
+          "candidate": {
+            "median": 77.4718,
+            "range": [75.1034, 77.92190000000001]
+          },
+          "delta": {
+            "median": -1.0737000000000023,
+            "range": [-5.485000000000014, 1.471100000000007]
+          },
+          "percentDelta": {
+            "median": -1.3669783755912213,
+            "range": [-6.806190469099782, 1.9242440890088863]
+          }
+        },
+        "warmSwipesFullArtLiveReadyMsMean": {
+          "baseline": {
+            "median": 107.9034,
+            "range": [104.14090000000002, 108.99159999999999]
+          },
+          "candidate": {
+            "median": 107.8442,
+            "range": [102.41569999999999, 108.61359999999999]
+          },
+          "delta": {
+            "median": -1.1473999999999904,
+            "range": [-5.487700000000018, 4.472699999999975]
+          },
+          "percentDelta": {
+            "median": -1.052741679175262,
+            "range": [-5.085752626886652, 4.294854375178225]
+          }
+        },
+        "warmEditsCpuSeconds": {
+          "baseline": {
+            "median": 12.315,
+            "range": [12.089, 12.529]
+          },
+          "candidate": {
+            "median": 12.493,
+            "range": [12.237, 12.839]
+          },
+          "delta": {
+            "median": -0.03599999999999959,
+            "range": [-0.0779999999999994, 0.75]
+          },
+          "percentDelta": {
+            "median": -0.2873333865432204,
+            "range": [-0.6333739342265443, 6.203987095706842]
+          }
+        },
+        "warmEditsGpuCallbackMsMean": {
+          "baseline": {
+            "median": 49.17675,
+            "range": [48.22, 49.934]
+          },
+          "candidate": {
+            "median": 50.1995,
+            "range": [49.608125, 52.63225]
+          },
+          "delta": {
+            "median": 1.9795000000000016,
+            "range": [0.43137500000000273, 2.6982500000000016]
+          },
+          "percentDelta": {
+            "median": 4.1051430941517975,
+            "range": [0.8771929824561431, 5.403632795289792]
+          }
+        },
+        "warmEditsFullArtLiveReadyMsMean": {
+          "baseline": {
+            "median": 77.9675,
+            "range": [76.460875, 80.24275]
+          },
+          "candidate": {
+            "median": 78.972,
+            "range": [78.4385, 79.782]
+          },
+          "delta": {
+            "median": 1.8144999999999953,
+            "range": [-1.8042499999999961, 2.5111249999999927]
+          },
+          "percentDelta": {
+            "median": 2.3272517395068304,
+            "range": [-2.2484897389483782, 3.284196002203732]
+          }
+        }
+      },
+      "counts": {
+        "A": {
+          "members": 3,
+          "measuredSwipes": 30,
+          "measuredEditorChanges": 24,
+          "warmAtlasHits": 54,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadUs": 0
+        },
+        "B": {
+          "members": 3,
+          "measuredSwipes": 30,
+          "measuredEditorChanges": 24,
+          "warmAtlasHits": 54,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadUs": 0
+        }
+      },
+      "qualifications": [
+        "Three sequential preregistered pairs, no A/A noise distribution or population inference.",
+        "Both sources include identical reviewed Android bundled-photo correction.",
+        "Baseline GPUfield936x1303, candidate1080x1504; UI displayed at sameviewport. This is product behavior, not isolatedformat-only timing.",
+        "Readiness events are liveGPU callback/full-art proxies, not physicalscanout or firstPNGbridge visibility. Per-member timing ratios are means, never P95.",
+        "NativeVmHWM is absolute peakRSS for entire fresh process including conditioning, notRSSdelta or totalGPUdriver footprint.",
+        "CPU segments contain the Maestro-driven UI/accessibility and settling workload, notisolatedGPUrendercost.",
+        "Atlas payload is per-readydata, notaggregateGPUresidency; initialplayer/editor eachhaveoneRAMmiss/upload. Warmcounts areatlas geometry, notdynamicuniform/descriptor writes.",
+        "Ordinaryrestartgeometrysource is notdirectlyobserved; no prebuilt/CDN hit claim. Controlledlocalcachecohortsreportedseparately."
+      ]
+    }
+  },
+  "hostShaderOptimization": {
+    "change": "Immutable active-scene stamp-layer masks in existing offsets.y; shader skips absent outer layers without changing inner math/order/ABI/geometry/resolution/budget",
+    "files": {
+      "packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayShader.swift": "90e4b24005b7ba81746663d7ddeace8e3d97cffa12e74db64ce99efc4722892e",
+      "packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift": "8fc77a8d0a782c3dadbeaa03181540bf203e4d18da8539347caed8df5afc6dd0",
+      "packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayGPUView.swift": "51ec2c6e517b29e50f49e15996d298c36cfe63075a92004210063f2e0558bcea",
+      "packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayMotionTests.swift": "c51de4ef569befbc0e1077356107dee4c2b665617d13f9cc307c59e76ea092a1",
+      "packages/mobile/modules/climb-overlay-gpu/android/src/main/java/com/boardsesh/climboverlaygpu/OverlayShader.kt": "be62843e37715a41de197cd5168b6519b1fd96296942694f50b1edafa0b93a82",
+      "packages/mobile/modules/climb-overlay-gpu/android/src/main/java/com/boardsesh/climboverlaygpu/OverlayPolicy.kt": "2319ac58746cd31acf2435450a2c479c2c4647bda24d79fa8b1131e0f8d89492",
+      "packages/mobile/modules/climb-overlay-gpu/android/src/main/java/com/boardsesh/climboverlaygpu/OverlayAtlas.kt": "d07008fedc1d58856d79d359c5b2e5a6c49fe1fa1fcb25c59b4602a6e97c548d",
+      "packages/mobile/modules/climb-overlay-gpu/android/src/main/java/com/boardsesh/climboverlaygpu/OverlayRenderer.kt": "a7219c5fd39fe60f21a06379720bfb850a39e3501eba5b94490cd9fb82f36fe0",
+      "packages/mobile/modules/climb-overlay-gpu/android/src/test/java/com/boardsesh/climboverlaygpu/OverlayAtlasEncodingTest.kt": "baf6d9e0047be3a91f56c212e094f409a2d2c3715bf6597770a176ef8f5001d3"
+    },
+    "embeddedBeforeLiteralSha256": "ccd92966dbce02ad7f7a48475de2595ec06c9841af24abaa38bc75cdec3da2e1",
+    "embeddedAfterLiteralSha256": "c75824e829af06e819d29bc4add41f6c45d0dc068b227e1e206e6b01830ca066",
+    "binarySha256": "4a9c2521510e4d9405cae6ef39bb0fff0c0dd68cdbf050c7cb4e25efe5208da1",
+    "host": "Apple M5 Max",
+    "allCatalogueNativeDefaults": 51,
+    "attemptedAtlases": 75,
+    "renderedAtlases": 74,
+    "oldNewExactSamples": 631,
+    "oldNewDifferingBytes": 0,
+    "rawRustStillChecks": 74,
+    "rawRustPulseChecks": 24,
+    "rawRustMaxChannelError": 1,
+    "rawRustPixelsOverOne": 0,
+    "preparationRejections": [
+      {
+        "label": "kilter-8-25-light-dense30-outline-mirror",
+        "kind": "variant",
+        "preparationRejected": "GPU atlas exceeds 128 MiB budget",
+        "pixelComparisonPerformed": false
+      }
+    ],
+    "positiveCoverage": {
+      "intermediateUnionSamples": 327,
+      "annotationSamples": 80,
+      "laterPassOnlySamples": 23,
+      "mirroredDisplaySamples": 161
+    },
+    "checks": {
+      "swiftWholeModuleTypecheck": "pass; existing Constants deprecation warning only",
+      "swiftMotionAndMaskGuards": "pass",
+      "androidJVM": {
+        "tests": 15,
+        "failures": 0,
+        "errors": 0
+      },
+      "GLSLES31VertexFragment": "pass; NDK27.1 glslc",
+      "MetalRuntimeCompileAndDraw": "pass",
+      "gitDiffCheck": "pass"
+    },
+    "timings": {
+      "scope": "hostAppleM5Max only;8independentstoredtargets/command,10interleavedcommand samples per shader after2conditioningpairs; medians of per-draw GPUcommandduration; notphoneframes/FPS/scanout",
+      "binarySha256": "4a9c2521510e4d9405cae6ef39bb0fff0c0dd68cdbf050c7cb4e25efe5208da1",
+      "rows": [
+        {
+          "fixture": "kilter-8-25-dark-spread6",
+          "sample": "still-rust",
+          "beforeMedianMs": 0.41574739225325175,
+          "afterMedianMs": 0.09094531196751632,
+          "reductionPercent": 78.1248629186549,
+          "exact": true,
+          "beforeLiteralSha256": "ccd92966dbce02ad7f7a48475de2595ec06c9841af24abaa38bc75cdec3da2e1",
+          "afterLiteralSha256": "c75824e829af06e819d29bc4add41f6c45d0dc068b227e1e206e6b01830ca066"
+        },
+        {
+          "fixture": "kilter-8-25-dark-spread6",
+          "sample": "union-shared-rolechange-unique",
+          "beforeMedianMs": 0.6614427074964624,
+          "afterMedianMs": 0.14352083235280588,
+          "reductionPercent": 78.30184977077951,
+          "exact": true,
+          "beforeLiteralSha256": "ccd92966dbce02ad7f7a48475de2595ec06c9841af24abaa38bc75cdec3da2e1",
+          "afterLiteralSha256": "c75824e829af06e819d29bc4add41f6c45d0dc068b227e1e206e6b01830ca066"
+        },
+        {
+          "fixture": "kilter-8-25-dark-spread30-mirror-glyph",
+          "sample": "still-rust",
+          "beforeMedianMs": 2.20243750300142,
+          "afterMedianMs": 1.072893228410976,
+          "reductionPercent": 51.286098836000235,
+          "exact": true,
+          "beforeLiteralSha256": "ccd92966dbce02ad7f7a48475de2595ec06c9841af24abaa38bc75cdec3da2e1",
+          "afterLiteralSha256": "c75824e829af06e819d29bc4add41f6c45d0dc068b227e1e206e6b01830ca066"
+        },
+        {
+          "fixture": "kilter-8-25-dark-spread30-mirror-glyph",
+          "sample": "union-False-0.5",
+          "beforeMedianMs": 0.7324036450881977,
+          "afterMedianMs": 0.36871614429401234,
+          "reductionPercent": 49.656702725774835,
+          "exact": true,
+          "beforeLiteralSha256": "ccd92966dbce02ad7f7a48475de2595ec06c9841af24abaa38bc75cdec3da2e1",
+          "afterLiteralSha256": "c75824e829af06e819d29bc4add41f6c45d0dc068b227e1e206e6b01830ca066"
+        }
+      ]
+    },
+    "limits": [
+      "No independent raw Rust intermediate-union-frame oracle exists in current harness; sampled unions prove exact preservation of frozen Metal behavior, not independent correctness.",
+      "Raw Rust still and widened reach pulse comparisons use full native premultiplied RGBA.",
+      "Host GPU timings are not phone frame, FPS, or scanout evidence; new phone artifacts/captures remain pending source pin and preregistration.",
+      "The Kilter8/25 light outline plus glyph atlas was rejected by the existing128MiB preparation ceiling; no shader comparison was performed for that optional appearance.",
+      "Earlier pointer/early variants and repeated same-target timing experiments are excluded from final performance evidence."
+    ]
+  },
+  "sourceReportSha256": {
+    "initial": "df046c2b895d70b18fc3d3272c2200a046afe36e1d99cda64a7b208e5af2360c",
+    "iphonePrimary": "4f50df93c8953b64853c5969bc1d39d9af9ad7a8592909aa87db18b7237a2298",
+    "pixelPrimary": "b4e075527cf84dd63ea9cb8bc145eaa15fcafd5c57a1e3b132cbf2bc8e4908d9",
+    "maskOptimization": "fd6b87c873495a6a2909177104ef12b3028a879cd336cc0a9cba06b8fc271dc8",
+    "pixelOptimizedFrame": "d9469dd998e5cf937ba35f228b27f1608cbd6b074e811a928f9c00e8e0c72125",
+    "iphoneOptimizedGpuCommands": "51a8fef4834dd69fc8e84c0da5cdf177dce4fdedf260f3c54e3a4ccef2ed772f",
+    "pixelHumanPhotoSignoff": "d5bcb14363e650febdaed7e6f92a220b811c9eb0d2d08f7e600360cc5b7e7a42"
+  },
+  "foregroundChecks": {
+    "workspaceTypecheck": {
+      "successful": 64,
+      "total": 64
+    },
+    "mobileTests": {
+      "filesPassed": 1991,
+      "testsPassed": 29961,
+      "testsSkipped": 2,
+      "maxWorkers": 4
+    },
+    "productionMetroBundles": "pass; application JS tree is identical before and after the native-only mask change",
+    "simulatorNativeCompile": "pass",
+    "simulatorExpoWindowActivation": "failed at AppleScript activation; preserved separately",
+    "simulatorCanonicalHeadlessStartup": "pass; selected built app installed and launched with 30 seconds of log observation",
+    "simulatorScreenshotScope": "Development launcher only; not live GPU or application appearance evidence",
+    "maskRegressionGuard": {
+      "committedBeforeRevert": "4c7dc2974ce2c3fbb28183c4c5ab895fb4aa8c37",
+      "swiftRedExit": 133,
+      "jvmRedExit": 1,
+      "swiftGreenExit": 0,
+      "jvmGreenExit": 0,
+      "jvmTests": 15,
+      "exactCommittedBytesRestored": true
+    }
+  },
+  "symbolProvenance": {
+    "primaryBaselineMatchingDsym": "unavailable; no symbolized baseline stack claim",
+    "primaryCandidateMatchingDsym": "archived and UUID-matched",
+    "secondaryRequirement": "Both new frame-only native artifacts require fresh matching UUID/dSYM audits before capture"
+  },
+  "publication": {
+    "manifestEntries": 0,
+    "verifiedCdnPublication": false,
+    "productionAllowedBranch": "main",
+    "requiredOrder": "Merge prerequisites; publish and fully verify all referenced immutable objects from main; populate the catalogue rollout manifest"
+  },
+  "remainingGates": [
+    "Fresh current-main baseline and integrated candidate proper native builds: three alternating primary pairs per phone and new Pixel FrameTimeline.",
+    "Complete physical catalogue/theme/mirror/auxiliary correctness and bounded interaction/reduced-motion checks on the integrated candidate.",
+    "Verified CDN publication from main and populated catalogue manifest.",
+    "Final integrated-build visual sign-off; iPhone whole-UI cadence remains unavailable."
+  ],
+  "visualEvidenceScope": {
+    "iphonePrimary": "Twelve player/editor endpoint screenshots, two per member, were visually inspected.",
+    "pixelPrimary": "All twelve saved editor endpoint screenshots were visually inspected: conditioning and measured tours for six members. Actual main-board and kickboard photographs and aligned colored holds were visible. No primary player stills were captured.",
+    "pixelPlayer": "Separate same-artifact settled A/B frame endpoints were inspected: main-board/kickboard photographs and aligned holds visible. These do not establish per-member primary player appearance.",
+    "humanSignoff": {
+      "observedAt": "2026-11-16 15:44:27 UTC",
+      "status": "HUMAN_PHOTO_AND_HOLD_ALIGNMENT_CONFIRMED",
+      "userAnswer": "Photo and holds look correct",
+      "scope": "Board photograph and hold alignment on the supplied Pixel test phone; not animation cadence or all-catalogue visual sign-off.",
+      "testedAppSource": "4b41371cf75848efe6c382302056ebaa67279f20",
+      "artifactSha256": "1042e19e85ac2c08fa14bbe14e5d4eda257b729577dddeeda4235bc4d9497638"
+    },
+    "pixelEditorAuditSha256": "99b286740eb41c4da4fd0a83885cb0547833f2a5ec58b5814275d158f7fb5a40"
+  },
+  "iphonePrimaryProvenance": {
+    "baseline": {
+      "platform": "ios",
+      "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+      "buildId": "1d48fbf9d803fd56a4ef5183777b146204468696e54a4046747ccc0fb132f1cc",
+      "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+      "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+      "artifactSha256": "0059f6246ffe7684632b14c04bf9364a1450a573e1c6ed5f3b36e1b1d17401aa",
+      "embeddedBundleSha256": "c00024a1fb74a5cd5eab40c84c11ba612e6a84b8300605e2046ab9b6d6114aac"
+    },
+    "candidate": {
+      "platform": "ios",
+      "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+      "buildId": "60e226b6e1d296fcce1861401fb577c5662107ea27a6b8a566819f3c0b336cf3",
+      "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+      "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+      "artifactSha256": "53cdc88c1ea87b9f0728b777cd8e0c33408a03ca85857f2422a1cbc71b3779d0",
+      "embeddedBundleSha256": "5747aaf00a77014cebb8582d910554148d9711c22725bdbb0acf67d5fd9d775d"
+    },
+    "artifactManifestSha256": "7cfc33c7696d7ad83470c3dd351115ab2a82569641a9792da757ae2c4279aaf4",
+    "registrationSha256": "1a0629d99b69b0b9cd74565a01d47094d241476de98aa1d468b8325907d0db40",
+    "registrationPredatesEveryAdmission": true,
+    "flowSha256": "085766067fef71c9f71ebcaf0db733f5d44886c24ed92608c29731f35c95c1d7",
+    "admissionSha256": {
+      "A1": "4f2759209d25379657d6e46ebd9a5b2aec251ee05e8e05d20a180f7feefeaafe",
+      "B1": "4412903fa2f44fb51f339c3851ce10f2611a28c47a340e1eb92b30c40ef4b0ff",
+      "A2": "a5d0b2f433a57fc33f9db700d85efd9d1e7c26ef831c442536b94843b29cac15",
+      "B2": "5c1513fdc16b271c77632ea7b207ca71c22504fe019c0b12136d0d1118a19de6",
+      "A3": "d27f1f1ade56f51da5fc0f93a9c6e584087b39d0f75e1fb47d2d511c68888861",
+      "B3": "e907db0b38e1dc9775ef26638bec3177c570f74cc26c3069a873a596fa110dd7"
+    },
+    "nativeCandidateUuid": "26AECB53-B39E-3647-ADED-A93CA565B9DA",
+    "matchingCandidateDsym": true,
+    "nativeBaselineUuid": "235A4C5D-AC90-35E2-942D-381D2FBEEC57",
+    "matchingBaselineDsymAvailable": false
+  },
+  "secondaryObservations": {
+    "scope": "Historical f4 baseline and 4b optimized replacement only. Latest compact metadata and main integration require fresh proper artifacts and verification. Rejected initial evidence remains unchanged; phases are not pooled.",
+    "pixelFrameTimeline": {
+      "status": "PASS_REGISTERED_OBSERVATIONAL_FRAME_GATE",
+      "performanceGatePassed": true,
+      "decisionRule": "Candidate app-frameP95 AND AppDeadlineMissed% each\u2264freshmatchedbaseline, no post-hoc margin.",
+      "results": {
+        "A": {
+          "captureAndTraceQualified": true,
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "e20cdbfd28a1fb34b039b85691b6edda6c7d600f750515d864327a9f1d1bcc1d",
+          "embeddedBundleSha256": "9523bbfd330758a6d41f9523e3705b04f6370950bf641d48488725d64b9384eb",
+          "buildId": "b8fef950dd048a6e841545dee8d9cc27e0d20df6d81e914fa325131f21e90455",
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "protocolSha256": "9b087f853bc40d3d47d2123bebecd8c5f09b8d2325ea09042d4edb47139cf1d0",
+          "traceSha256": "ed4575a6f0fd6cd428bd8b419ea93cc02f147746bcb59651535532b073bd383a",
+          "swipes": 10,
+          "appFrames": 778,
+          "appDeadlineMissedFrames": 97,
+          "appDeadlineMissedPercent": 12.467866323907455,
+          "appFrameDurationMs": {
+            "p50": 7.985453,
+            "p90": 20.33095340000002,
+            "p95": 25.353946549999993,
+            "p99": 40.29954608000006,
+            "mean": 10.511612106683804,
+            "range": [2.350831, 65.562623]
+          },
+          "uniqueSurfaceFrames": 778,
+          "exactNativePidAndSoleMainActivitySurfaceVerified": true,
+          "allSurfaceFramesInsideNativeWindow": true,
+          "matchesIndependentGfxCount": true,
+          "nativeWindowSeconds": 58.334,
+          "clock": {
+            "name": "BOOTTIME",
+            "nativeSource": "SystemClock.elapsedRealtime",
+            "offsetNs": 0,
+            "snapshots": 2,
+            "producerStartAnchorsPrecedeNativeWindow": true,
+            "sameNativeClockNoOffsetConversion": true
+          },
+          "frameTimelineDataLossStats": 0,
+          "overwrittenBytesByBuffer": {
+            "0": 0,
+            "1": 14319616
+          },
+          "photo": {
+            "sha256": "3a2d714ff156fe7fe98b1ba291f744c5d399e7e0401c08df959367b5bb4b6573",
+            "scope": "Separate matched frame endpoint, not everyprimarymember",
+            "agentVisualReviewer": "root",
+            "mainAndKickboardPhotosPresent": true,
+            "holdGlowAlignmentVisible": true,
+            "humanVisualSignoff": "Separate later user confirmation applies only the candidate artifact photograph/hold alignment; no baseline, cadence, all-catalogue or final-integrated-build sign-off.",
+            "pixels": [1008, 2244]
+          },
+          "analysisSqlSha256": "11c50814cdd7376a2355ec9cd6dc3d24fc71f6b6d14d7c90be86b24fe4965d58",
+          "rawAnalysisSha256": "f94b5671121286b8912d8f2d5f6c494a435f00f0f25bc9e09db5506b98562449",
+          "globalFrameTimelineParserInfoErrors": 13
+        },
+        "B": {
+          "captureAndTraceQualified": true,
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "artifactSha256": "1042e19e85ac2c08fa14bbe14e5d4eda257b729577dddeeda4235bc4d9497638",
+          "embeddedBundleSha256": "778f5475aed871ffde6711e8baea6665965e98235346b3184d95b75fd2b0a19d",
+          "buildId": "1199d1245d5afae6d1ab4b9158c909cdcaa1cfa5d359be946b3f57d347d3ad0a",
+          "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+          "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "protocolSha256": "9b087f853bc40d3d47d2123bebecd8c5f09b8d2325ea09042d4edb47139cf1d0",
+          "traceSha256": "8a5a873f2c0ff2f8bcafb92aae1eac3acdced9a6e0632cae1205272c7a8509b1",
+          "swipes": 10,
+          "appFrames": 919,
+          "appDeadlineMissedFrames": 34,
+          "appDeadlineMissedPercent": 3.6996735582154514,
+          "appFrameDurationMs": {
+            "p50": 7.478719,
+            "p90": 14.3941648,
+            "p95": 15.787389499999994,
+            "p99": 27.43595675999999,
+            "mean": 8.735405462459195,
+            "range": [2.679118, 43.312053]
+          },
+          "uniqueSurfaceFrames": 919,
+          "exactNativePidAndSoleMainActivitySurfaceVerified": true,
+          "allSurfaceFramesInsideNativeWindow": true,
+          "matchesIndependentGfxCount": true,
+          "nativeWindowSeconds": 61.271,
+          "clock": {
+            "name": "BOOTTIME",
+            "nativeSource": "SystemClock.elapsedRealtime",
+            "offsetNs": 0,
+            "snapshots": 2,
+            "producerStartAnchorsPrecedeNativeWindow": true,
+            "sameNativeClockNoOffsetConversion": true
+          },
+          "frameTimelineDataLossStats": 0,
+          "overwrittenBytesByBuffer": {
+            "0": 0,
+            "1": 16449536
+          },
+          "photo": {
+            "sha256": "1304a0edc71e4e52250f4cf7a6dc8dba24f7d25d48e4f4c531d234e2fc33f3f0",
+            "scope": "Separate matched frame endpoint, not everyprimarymember",
+            "agentVisualReviewer": "root",
+            "mainAndKickboardPhotosPresent": true,
+            "holdGlowAlignmentVisible": true,
+            "humanVisualSignoff": "Separate later user confirmation applies only the candidate artifact photograph/hold alignment; no baseline, cadence, all-catalogue or final-integrated-build sign-off.",
+            "pixels": [1008, 2244]
+          },
+          "analysisSqlSha256": "eb8bd1c79dec9a6a49e4568bbedfb21fd0b48110f63cdc6fd8f877bb1e12c64f",
+          "rawAnalysisSha256": "bface33d60ed052646206d173cb31f9eeda7b0454910f4ce692486575e5652a7",
+          "globalFrameTimelineParserInfoErrors": 8
+        }
+      },
+      "quantileMethod": "Type7 linear interpolation at(n\u22121)q over individual app-frame slices, unchanged from initial analysis.",
+      "qualifications": [
+        "One trace/build,10swipes only; noA-A noise distribution/population or FPS/scanout/isolatedshaderclaim.",
+        "Larger1080x1504candidate versus936x1303baseline fields, same displayed viewport.",
+        "Dedicated FrameTimeline buffer0 loss checked; scheduling ring overwrites reported separately and limit scheduling attribution.",
+        "Counter readiness/CPU from instrumented traces excluded from primaryacceptance.",
+        "Photo inspection applies only separate A/B settledframe endpoints; originalPixelprimary stills areeditoronly.",
+        "Global info parser-errors13A/8B (initial16/40) have unknownPID/cause attribution. Disclosed separately from zero FrameTimeline buffer data_loss; no whole-trace-perfect claim."
+      ],
+      "workload": {
+        "family": "Kilter",
+        "layoutId": 8,
+        "sizeId": 25,
+        "setIds": [26, 27, 28, 29],
+        "angle": 35,
+        "holds": 499,
+        "baselineFieldPixels": [936, 1303],
+        "candidateFieldPixels": [1080, 1504],
+        "swipesPerBuild": 10,
+        "conditioningSwipeTours": 0,
+        "firstPhotoGpuReadyOpenExcluded": true,
+        "finalSettleMs": 2000,
+        "traceDurationMs": 120000
+      },
+      "sourceIdentity": {
+        "baseline": "f4d12c848e7eca71cf1b612228d732458422fc36",
+        "candidate": "4b41371cf75848efe6c382302056ebaa67279f20"
+      },
+      "parserInfoQualification": {
+        "name": "frame_timeline_event_parser_errors",
+        "classification": "Global aggregate info/analysis counter, not a data_loss statistic or per-PID diagnostic",
+        "finalCounts": {
+          "A": 13,
+          "B": 8
+        },
+        "initialRejectedCounts": {
+          "A": 16,
+          "B": 40
+        },
+        "meaning": "The exact v59.1 parser increments this counter for several invalid/missing-field, enum, timestamp and unknown-event paths. The aggregate does not identify the affected PID or cause.",
+        "exactVersionPrimarySource": "https://raw.githubusercontent.com/google/perfetto/v59.1/src/trace_processor/importers/proto/frame_timeline_event_parser.cc",
+        "statsPrimarySource": "https://perfetto.dev/docs/analysis/sql-stats",
+        "ownedAppImpact": "Unknown from this aggregate alone. Independent exact PID/surface uniqueness, native window inclusion, all778/919 rows and gfx totals establish the reported retained app-frame coverage; do not claim a perfect whole trace or infer benign cause."
+      }
+    },
+    "iphoneGpuCommands": {
+      "scope": "All-command Metal GPU-duration observational comparison only; no presentation cadence, UI-frame, scanout, drop-rate, CPU or RSS claim",
+      "registrationSha256": "732daa61193e923f5861fb66d06f1d28722c5d0272bd95828c2cfdbad86c8f3a",
+      "paired": {
+        "meanDelta": {
+          "count": 20,
+          "medianMs": -16.281950868603047,
+          "minimumMs": -17.12863599447975,
+          "maximumMs": -15.473584443011081
+        },
+        "p95Delta": {
+          "count": 20,
+          "medianMs": -17.964562495762948,
+          "minimumMs": -20.810250003705733,
+          "maximumMs": -13.795708320685662
+        },
+        "registeredCommandCostGatePass": true,
+        "scope": "B minus A, all20 matched gesture GPU command-duration groups; limited one-capture-per-build observation, no pooled frame/FPS/scanout/UI deadline claim",
+        "matchedGestureCount": 20
+      },
+      "builds": [
+        {
+          "variant": "A",
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "caa1c2d200c58f8e0d42e19abcb3b434bfd9cf2d58e90312f65b48ffb7908ea0",
+          "instrumentationSha256": "c39a10af2456fa5605e410a4d27c8da5d794820fb0873c4f617bb17dbaaf1bad",
+          "fixtureSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "nativeLedgerSha256": "2da61d8c25e2e83148bd434908fb86282f6dcf77be2ef6a0cd2bbe5c03244186",
+          "counters": {
+            "commitReturned": 1318,
+            "fatalErrors": [],
+            "gpuCompleted": 1318,
+            "gpuTimingUnavailable": 0,
+            "lateOrDuplicateCallbacks": 0,
+            "overflow": false,
+            "pendingAfterDrain": 0,
+            "pendingAtStop": 0,
+            "positivePresentedTime": 1231,
+            "presentCallbacks": 1318,
+            "submitted": 1318,
+            "zeroPresentedTime": 87
+          },
+          "qualification": {
+            "cpuAcceptanceEligible": false,
+            "fullUiFrameDeadlineClaim": false,
+            "gpuTimingComplete": true,
+            "immutableSnapshot": true,
+            "inflightDrained": true,
+            "instrumentsHitchesClaim": false,
+            "lifecycleHealthy": true,
+            "physicalScanoutClaim": false,
+            "presentationCallbacksComplete": true,
+            "presentationTimingComplete": false,
+            "recordingClosed": true
+          }
+        },
+        {
+          "variant": "B",
+          "sourceCommit": "4b41371cf75848efe6c382302056ebaa67279f20",
+          "artifactSha256": "c46534280930a4a2aaf344ae2d70eea6b82b512a5a73a97501411db6d66470a1",
+          "instrumentationSha256": "c39a10af2456fa5605e410a4d27c8da5d794820fb0873c4f617bb17dbaaf1bad",
+          "fixtureSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+          "nativeLedgerSha256": "3b315e4ef5a44cc34311979a5b417154ddc5549e5a40a38c44bc176ae9178b17",
+          "counters": {
+            "commitReturned": 1627,
+            "fatalErrors": [],
+            "gpuCompleted": 1627,
+            "gpuTimingUnavailable": 0,
+            "lateOrDuplicateCallbacks": 0,
+            "overflow": false,
+            "pendingAfterDrain": 0,
+            "pendingAtStop": 0,
+            "positivePresentedTime": 1545,
+            "presentCallbacks": 1627,
+            "submitted": 1627,
+            "zeroPresentedTime": 82
+          },
+          "qualification": {
+            "cpuAcceptanceEligible": false,
+            "fullUiFrameDeadlineClaim": false,
+            "gpuTimingComplete": true,
+            "immutableSnapshot": true,
+            "inflightDrained": true,
+            "instrumentsHitchesClaim": false,
+            "lifecycleHealthy": true,
+            "physicalScanoutClaim": false,
+            "presentationCallbacksComplete": true,
+            "presentationTimingComplete": false,
+            "recordingClosed": true
+          }
+        }
+      ],
+      "derivedPresentationStatistics": null,
+      "initialPresentationProtocol": "Baseline incomplete due 85 zero presentation timestamps; retained separately, candidate not run, no pooled presentation results.",
+      "wholeUiCadence": "Unavailable; three Instruments attachment attempts failed before recording."
+    },
+    "cacheControls": {
+      "completedScenariosPerPhone": 4,
+      "scenarios": [
+        "generated miss",
+        "generated process-restart reuse",
+        "valid local prebuilt",
+        "corrupt-hash regeneration"
+      ],
+      "scope": "Historical replacement only. Valid local-prebuilt use is a qualified inference from cache controls, not a direct source counter or CDN-hit observation.",
+      "timingLimit": "Two requests/selections but one successful ready event per scenario; preparation timing may exclude superseded work. No general speedup claim.",
+      "iphoneGeneratedFile": "Independently hashed actual owned-container bytes.",
+      "androidGeneratedFile": "Expected hash-bearing basename and length checked; Release access did not permit independent file-content hashing."
+    },
+    "catalogueParity": {
+      "iphone": "51 defaults and four variants observed within one channel byte before the next glyph case exceeded the 4 MiB CPU manifest cap. Wider-cohort final guards were not reached.",
+      "pixel": "Matrix never started; zero comparisons or exports.",
+      "fix": "Compact role references pass all 84 host inputs below the unchanged CPU cap with exact pixels, expanded metadata and native descriptors. Final phone validation pending."
+    }
+  }
+}

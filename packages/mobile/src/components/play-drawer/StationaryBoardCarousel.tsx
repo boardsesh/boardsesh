@@ -10,6 +10,7 @@ type Props = {
   boardProps: React.ComponentProps<typeof BoardImageNative>;
   previousFrames: string | null;
   nextFrames: string | null;
+  prefetchFrames?: readonly string[];
   centerPage: number;
   pager: SwipePager;
   pageArt: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
@@ -27,6 +28,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   boardProps,
   previousFrames,
   nextFrames,
+  prefetchFrames,
   centerPage,
   pager,
   pageArt,
@@ -51,8 +53,8 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
     return anchorPage.value + Math.max(-1, Math.min(1, offset));
   });
   const transition = useMemo(
-    () => ({ previousFrames, nextFrames, centerPage, pagePosition }),
-    [previousFrames, nextFrames, centerPage, pagePosition],
+    () => ({ previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames }),
+    [previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames],
   );
   const identity = JSON.stringify([
     centerPage,

@@ -172,21 +172,21 @@ internal class ActiveScene(val descriptors: List<ActiveHold>, val buffer: Int) {
 }
 
 internal fun selectHolds(manifest: AtlasManifest, frames: String): List<ActiveHold> {
-    require(frames.length <= 32 * 1024) { "GPU frames too large" }
+    if (frames.length > 32 * 1024) throw AtlasFrameFailure("frame-too-large")
     val active = ArrayList<ActiveHold>()
     for (token in frames.substringBefore(',').split('p')) {
         val pieces = token.split('r')
         if (pieces.size != 2) continue
         val id = pieces[0].toLongOrNull()?.takeIf { it in 0..0xffffffffL } ?: continue
         val state = pieces[1].toLongOrNull()?.takeIf { it in 0..0xffffffffL } ?: continue
-        require(state in manifest.states) { "Unsupported GPU hold role" }
+        if (state !in manifest.states) throw AtlasFrameFailure("frame-role-unsupported")
         val original = manifest.holds[id] ?: continue
         val hold = if (manifest.mirrored) manifest.holds[original.mirror] ?: original else original
-        val role = hold.roles[state] ?: error("Unsupported GPU hold role")
-        require(active.size < OverlayPolicy.MAX_ACTIVE) { "GPU source exceeds 128 active holds" }
+        val role = hold.roles[state] ?: throw AtlasFrameFailure("frame-role-unsupported")
+        if (active.size >= OverlayPolicy.MAX_ACTIVE) throw AtlasFrameFailure("frame-active-limit")
         active.add(ActiveHold(hold, role))
     }
-    require(frames.isEmpty() || active.isNotEmpty()) { "GPU source contains no matching holds" }
+    if (frames.isNotEmpty() && active.isEmpty()) throw AtlasFrameFailure("frame-no-matching-holds")
     return active
 }
 

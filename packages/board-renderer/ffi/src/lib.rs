@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::slice;
 use std::sync::{LazyLock, Mutex};
 
+pub mod gpu_packet;
+
 // Keep the original capacity so transferring a Vec never calls shrink_to_fit
 // or moves a payload-sized allocation. Legacy PNG buffers remain boxed slices.
 static OWNED_GPU_ALLOCATIONS: LazyLock<Mutex<HashMap<usize, (usize, usize)>>> =

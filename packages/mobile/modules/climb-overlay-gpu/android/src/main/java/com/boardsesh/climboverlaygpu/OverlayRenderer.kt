@@ -36,7 +36,13 @@ internal data class OverlayRequest(
     val geometryAssetPath: String? = null,
     val geometryAssetSha256: String? = null,
     val generatedGeometryDirectory: String? = null,
-)
+) {
+    fun sameGeometry(other: OverlayRequest): Boolean =
+        config == other.config && generation == other.generation &&
+            geometryAssetPath == other.geometryAssetPath &&
+            geometryAssetSha256 == other.geometryAssetSha256 &&
+            generatedGeometryDirectory == other.generatedGeometryDirectory
+}
 
 internal data class OverlayControls(
     val position: Double?,
@@ -52,20 +58,9 @@ internal data class RenderMetrics(
     val cacheHit: Boolean,
     val changed: Int,
     val editDurationMs: Double,
+    val uploadBytes: Int = 0,
+    val litHoldCount: Int = 0,
 )
-
-internal class UploadedAtlas(
-    val source: String,
-    val key: String,
-    val assetKey: List<String?>,
-    val manifest: AtlasManifest,
-    val pixels: Int,
-    val lut: Int,
-    val bytes: Int,
-    val uploadMs: Double,
-) {
-    var users = 0
-}
 
 internal class OverlaySession(
     val view: ClimbOverlayGPUView,
@@ -76,12 +71,7 @@ internal class OverlaySession(
     var bufferWidth = 0
     var bufferHeight = 0
     var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
-    var atlas: UploadedAtlas? = null
-    var preparedConfig: String? = null
-    var preparedAssetKey: List<String?>? = null
-    var current: ActiveScene? = null
-    var previous: ActiveScene? = null
-    var next: ActiveScene? = null
+    var packet: UploadedPacket? = null
     var request: OverlayRequest? = null
     var baseline: Map<Long, Long>? = null
     var baselineConfig: String? = null
@@ -91,6 +81,7 @@ internal class OverlaySession(
     var reported = false
     val ledger = PresentationLedger()
     val fences = LinkedHashMap<Long, Pair<Long, Long>>() // timestamp -> GLsync, submission nanos
+    val recovery = ContextRecoveryGate()
     var destroyed = false
 }
 
@@ -103,13 +94,15 @@ internal object OverlayRenderer {
     private var config: EGLConfig? = null
     private var parking: EGLSurface = EGL14.EGL_NO_SURFACE
     private var initialized = false
-    private var initializationFailure: String? = null
     private var program = 0
     private var uniformBuffer = 0
-    private var cache: UploadedAtlas? = null
     private val budget = AtlasBudget()
     private val bufferBytes = HashMap<Int, Int>()
     private val retiredBuffers = ArrayList<Pair<Long, Int>>()
+    private val detachedCommandFences = ArrayList<Long>()
+    private var resourcePollScheduled=false
+    private var resourcePollStarted=0L
+    private var contextGeneration=0L
     private val sessions = LinkedHashSet<OverlaySession>()
     private var maxBlockSize = 0
     private var maxTextureSize = 0
@@ -118,6 +111,7 @@ internal object OverlayRenderer {
 
     private fun checked(label: String) {
         val error = GLES31.glGetError()
+        if (error == GLES31.GL_OUT_OF_MEMORY) throw OverlayResourceFailure()
         check(error == GLES31.GL_NO_ERROR) { "$label failed (GL $error)" }
     }
 
@@ -129,14 +123,15 @@ internal object OverlayRenderer {
         GLES31.glGetShaderiv(shader, GLES31.GL_COMPILE_STATUS, status, 0)
         if (status[0] == 0) {
             val reason = GLES31.glGetShaderInfoLog(shader)
+            val glError = GLES31.glGetError()
             GLES31.glDeleteShader(shader)
+            if(glError==GLES31.GL_OUT_OF_MEMORY)throw OverlayResourceFailure()
             error("GPU shader compilation failed: $reason")
         }
         return shader
     }
 
     private fun initialize() {
-        initializationFailure?.let { error(it) }
         if (initialized) {
             park()
             return
@@ -145,8 +140,7 @@ internal object OverlayRenderer {
             initializeContext()
             initialized = true
         } catch (failure: Exception) {
-            resetContext()
-            initializationFailure = failure.message ?: "GPU initialization unavailable"
+            resetContext(recover = false)
             throw failure
         }
     }
@@ -234,7 +228,7 @@ internal object OverlayRenderer {
         val linked = IntArray(1)
         GLES31.glGetProgramiv(program, GLES31.GL_LINK_STATUS, linked, 0)
         check(linked[0] != 0) { "GPU shader link failed: ${GLES31.glGetProgramInfoLog(program)}" }
-        uniformBuffer = buffer(directBytes(144), GLES31.GL_UNIFORM_BUFFER)
+        uniformBuffer = buffer(directBytes(OverlayPacketLayout.UNIFORM_BYTES), GLES31.GL_UNIFORM_BUFFER)
         checked("GPU initialization")
     }
 
@@ -255,6 +249,7 @@ internal object OverlayRenderer {
             if (status == GLES31.GL_ALREADY_SIGNALED || status == GLES31.GL_CONDITION_SATISFIED) {
                 GLES31.glDeleteSync(fence)
                 budget.release(amount)
+                OverlayPacketMetrics.gpuEnd()
                 iterator.remove()
             } else check(status == GLES31.GL_TIMEOUT_EXPIRED) { "GPU resource retirement failed" }
         }
@@ -271,8 +266,8 @@ internal object OverlayRenderer {
 
     private fun buffer(bytes: ByteBuffer, target: Int = GLES31.GL_SHADER_STORAGE_BUFFER): Int {
         val amount = bytes.remaining()
-        reserveBytes(amount)
         val ids = IntArray(1)
+        reserveBytes(amount)
         GLES31.glGenBuffers(1, ids, 0)
         try {
             GLES31.glBindBuffer(target, ids[0])
@@ -280,7 +275,7 @@ internal object OverlayRenderer {
             checked("GPU buffer allocation")
             bufferBytes[ids[0]] = amount
             return ids[0]
-        } catch (failure: Exception) {
+        } catch (failure: Throwable) {
             GLES31.glDeleteBuffers(1, ids, 0)
             budget.release(amount)
             throw failure
@@ -297,138 +292,67 @@ internal object OverlayRenderer {
             if (fence == 0L) {
                 GLES31.glFinish()
                 budget.release(amount)
-            } else retiredBuffers.add(fence to amount)
+            } else {
+                try { retiredBuffers.add(fence to amount) }
+                catch(_: OutOfMemoryError) { GLES31.glFinish();GLES31.glDeleteSync(fence);budget.release(amount);return }
+                OverlayPacketMetrics.gpuBegin();scheduleResourceRetirement()
+            }
         }
     }
 
-    private fun releaseScene(scene: ActiveScene?) {
-        scene?.let { deleteBuffer(it.buffer) }
+    internal fun trackPacketUploads() {
+        if(context==EGL14.EGL_NO_CONTEXT)return
+        val fence=GLES31.glFenceSync(GLES31.GL_SYNC_GPU_COMMANDS_COMPLETE,0)
+        if(fence==0L) { GLES31.glFinish();return }
+        try { detachedCommandFences.add(fence) }
+        catch(_: OutOfMemoryError) { GLES31.glFinish();GLES31.glDeleteSync(fence);return }
+        OverlayPacketMetrics.gpuBegin();scheduleResourceRetirement()
+    }
+    internal fun scheduleResourceRetirement() {
+        GLES31.glFlush()
+        if(resourcePollScheduled)return
+        resourcePollScheduled=true;resourcePollStarted=System.nanoTime()
+        val generation=contextGeneration
+        handler.postDelayed(object: Runnable {
+            override fun run() {
+                if(generation!=contextGeneration)return
+                if(context==EGL14.EGL_NO_CONTEXT) { resourcePollScheduled=false;return }
+                try {
+                    val completedBefore=OverlayPacketMetrics.gpuCompletionEpoch()
+                    park();collectRetiredBuffers();OverlayPacketArena.collect()
+                    val iterator=detachedCommandFences.iterator()
+                    while(iterator.hasNext()) {
+                        val fence=iterator.next();val status=GLES31.glClientWaitSync(fence,0,0)
+                        if(status==GLES31.GL_ALREADY_SIGNALED || status==GLES31.GL_CONDITION_SATISFIED) {
+                            GLES31.glDeleteSync(fence);OverlayPacketMetrics.gpuEnd();iterator.remove()
+                        } else check(status==GLES31.GL_TIMEOUT_EXPIRED)
+                    }
+                    if(OverlayPacketMetrics.gpuCompletionEpoch()!=completedBefore)resourcePollStarted=System.nanoTime()
+                    if(retiredBuffers.isEmpty() && !OverlayPacketArena.hasRetired() && detachedCommandFences.isEmpty())resourcePollScheduled=false
+                    else if(System.nanoTime()-resourcePollStarted>5_000_000_000L) { resourcePollScheduled=false;resetContext() }
+                    else handler.postDelayed(this,8)
+                } catch(_: Exception) { resourcePollScheduled=false;resetContext() }
+            }
+        },8)
+    }
+
+    internal fun checkPacketGL() = checked("GPU packet allocation/upload")
+    internal fun uploadPacketBuffer(bytes: ByteBuffer): Int = buffer(bytes)
+    internal fun deletePacketBuffer(id: Int) = deleteBuffer(id)
+    internal fun allocatePacketBuffer(amount: Int): Int {
+        require(amount in 4..minOf(OverlayPacketLayout.MAX_GPU_BYTES,maxBlockSize))
+        val ids=IntArray(1);reserveBytes(amount)
+        GLES31.glGenBuffers(1,ids,0)
+        try {
+            GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER,ids[0])
+            GLES31.glBufferData(GLES31.GL_SHADER_STORAGE_BUFFER,amount,null,GLES31.GL_DYNAMIC_DRAW)
+            checked("GPU arena allocation");bufferBytes[ids[0]]=amount;return ids[0]
+        } catch(failure: Throwable) { GLES31.glDeleteBuffers(1,ids,0);budget.release(amount);throw failure }
     }
 
     private fun releaseScenes(session: OverlaySession) {
-        releaseScene(session.current)
-        releaseScene(session.previous)
-        releaseScene(session.next)
-        session.current = null
-        session.previous = null
-        session.next = null
-        session.editPending = false
-        session.editStart = null
-        session.metrics = null
-    }
-
-    private fun dropCache() {
-        cache?.let {
-            check(it.users == 0) { "Cannot evict an active atlas" }
-            GLES31.glFinish() // Old commands must release residency before replacement.
-            deleteBuffer(it.pixels)
-            deleteBuffer(it.lut)
-            collectRetiredBuffers()
-        }
-        cache = null
-    }
-
-    private fun releaseAtlas(session: OverlaySession) {
-        session.atlas?.let {
-            check(it.users > 0)
-            it.users--
-        }
-        session.atlas = null
-        session.preparedConfig = null
-        session.preparedAssetKey = null
-    }
-
-    private fun acquireAtlas(
-        app: Context,
-        source: String,
-        geometryAssetPath: String? = null,
-        geometryAssetSha256: String? = null,
-        generatedGeometryDirectory: String? = null,
-        canUpload: () -> Boolean = { foreground },
-    ): Pair<UploadedAtlas, Boolean> {
-        val assetKey = listOf(geometryAssetPath, geometryAssetSha256, generatedGeometryDirectory)
-        cache
-            ?.takeIf { it.source == source && it.assetKey == assetKey }
-            ?.let {
-                it.users++
-                return it to true
-            }
-        require(source.length <= 8 * 1024 * 1024) { "GPU config too large" }
-        val canonical = JSONObject(source).apply { put("frames", "") }.toString()
-        cache
-            ?.takeIf { it.key == canonical && it.assetKey == assetKey }
-            ?.let {
-                it.users++
-                return it to true
-            }
-        check(cache?.users == null || cache?.users == 0) {
-            "Another layout occupies the GPU atlas budget"
-        }
-        dropCache()
-        val activity = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memory = ActivityManager.MemoryInfo()
-        activity.getMemoryInfo(memory)
-        check(
-            !activity.isLowRamDevice &&
-                !memory.lowMemory &&
-                memory.availMem - memory.threshold >= OverlayPolicy.PREPARE_HEADROOM,
-        ) {
-            "Insufficient memory headroom for GPU atlas preparation"
-        }
-        // Serial executor permits only one Rust prepare/upload allocation at a time.
-        val atlas =
-            BoardRendererBridge.prepareOwnedAtlas(canonical, geometryAssetPath, geometryAssetSha256, generatedGeometryDirectory).use { owner ->
-                owner.useBuffers { manifestBytes, rawPixels ->
-                    require(manifestBytes.remaining() in 1..4 * 1024 * 1024)
-                    val header = ByteArray(manifestBytes.remaining())
-                    manifestBytes.get(header)
-                    val payload = rawPixels.slice().order(ByteOrder.LITTLE_ENDIAN)
-                    val manifest =
-                        AtlasManifest.parse(String(header, Charsets.UTF_8), payload.remaining())
-                    require(
-                        payload.remaining() <= maxBlockSize &&
-                            manifest.width <= maxViewport[0] &&
-                            manifest.height <= maxViewport[1] &&
-                            manifest.width <= maxTextureSize &&
-                            manifest.height <= maxTextureSize,
-                    ) {
-                        "GPU storage or viewport limit exceeded"
-                    }
-                    check(canUpload()) { "GPU atlas upload cancelled" }
-                    var pixels = 0
-                    var lut = 0
-                    try {
-                        val started = System.nanoTime()
-                        pixels = buffer(payload)
-                        val lutBytes = directBytes(257 * 4)
-                        manifest.lut.forEach { lutBytes.putFloat(it) }
-                        lutBytes.flip()
-                        lut = buffer(lutBytes)
-                        UploadedAtlas(
-                            source,
-                            canonical,
-                            assetKey,
-                            manifest,
-                            pixels,
-                            lut,
-                            payload.remaining(),
-                            (System.nanoTime() - started) / 1e6,
-                        )
-                    } catch (failure: Exception) {
-                        deleteBuffer(pixels)
-                        deleteBuffer(lut)
-                        throw failure
-                    }
-                }
-            }
-        if (!canUpload()) {
-            deleteBuffer(atlas.pixels)
-            deleteBuffer(atlas.lut)
-            error("GPU atlas preparation cancelled")
-        }
-        atlas.users = 1
-        cache = atlas
-        return atlas to false
+        OverlayPacketArena.retire(session.packet);session.packet=null
+        session.editPending=false;session.editStart=null;session.metrics=null
     }
 
     fun attach(session: OverlaySession) {
@@ -436,24 +360,24 @@ internal object OverlayRenderer {
             try {
                 if (!session.view.matchesGeneration(session.generation)) return@post
                 initialize()
-                session.surface = Surface(session.texture)
-                session.eglSurface =
-                    EGL14.eglCreateWindowSurface(
-                        display,
-                        config,
-                        session.surface,
-                        intArrayOf(EGL14.EGL_NONE),
-                        0,
-                    )
-                check(session.eglSurface != EGL14.EGL_NO_SURFACE) {
-                    "GPU window surface unavailable"
-                }
-                sessions.add(session)
+                ensureWindowSurface(session)
                 session.view.schedulePrepare()
             } catch (failure: Exception) {
                 fail(session, failure)
             }
         }
+    }
+
+    private fun ensureWindowSurface(session: OverlaySession) {
+        if (session.eglSurface != EGL14.EGL_NO_SURFACE) return
+        if (session.surface == null) session.surface = Surface(session.texture)
+        session.eglSurface = EGL14.eglCreateWindowSurface(
+            display, config, session.surface, intArrayOf(EGL14.EGL_NONE), 0,
+        )
+        check(session.eglSurface != EGL14.EGL_NO_SURFACE) { "GPU window surface unavailable" }
+        session.bufferWidth = 0
+        session.bufferHeight = 0
+        sessions.add(session)
     }
 
     fun detach(session: OverlaySession) {
@@ -465,8 +389,7 @@ internal object OverlayRenderer {
                     park()
                     clearFences(session)
                     releaseScenes(session)
-                    releaseAtlas(session)
-                } catch (_: Exception) {
+                    } catch (_: Exception) {
                     resetContext()
                 }
                 if (session.eglSurface != EGL14.EGL_NO_SURFACE)
@@ -488,7 +411,6 @@ internal object OverlayRenderer {
                 park()
                 clearFences(session)
                 releaseScenes(session)
-                releaseAtlas(session)
                 session.request = null
                 session.baseline = null
                 session.baselineConfig = null
@@ -499,102 +421,32 @@ internal object OverlayRenderer {
     }
 
     private fun clearFences(session: OverlaySession) {
-        session.fences.values.forEach { GLES31.glDeleteSync(it.first) }
+        session.fences.values.forEach { detachedCommandFences.add(it.first) }
+        if(session.fences.isNotEmpty())scheduleResourceRetirement()
         session.fences.clear()
         session.ledger.clear()
     }
 
-    fun prepare(session: OverlaySession, request: OverlayRequest) {
+    fun prepare(session: OverlaySession, request: OverlayRequest,cancel: PacketCancellation) {
         try {
-            if (!eligible(session, request)) return
-            initialize()
-            clearFences(session)
-            releaseScenes(session)
-            val started = System.nanoTime()
-            val atlas: UploadedAtlas
-            val hit: Boolean
-            if (session.atlas != null && session.preparedConfig == request.config && session.preparedAssetKey == listOf(request.geometryAssetPath, request.geometryAssetSha256, request.generatedGeometryDirectory)) {
-                atlas = session.atlas!!
-                hit = true
-            } else {
-                releaseAtlas(session)
-                val acquired =
-                    acquireAtlas(session.view.context, request.config, request.geometryAssetPath, request.geometryAssetSha256, request.generatedGeometryDirectory) {
-                        eligible(session, request)
-                    }
-                atlas = acquired.first
-                hit = acquired.second
-                session.atlas = atlas
-                session.preparedConfig = request.config
-                session.preparedAssetKey = listOf(request.geometryAssetPath, request.geometryAssetSha256, request.generatedGeometryDirectory)
+            if (!OverlayLifecycle.beginPreparation({ canPrepare(session,request) },{ initialize() },{ ensureWindowSurface(session) })) return
+            clearFences(session);releaseScenes(session)
+            val baseline=if(!request.animateEdits)null else if(session.baselineConfig==request.config)session.baseline else if(request.observedEmpty)emptyMap() else null
+            OverlayPacketArena.session(session.view.context,request.config,cancel).use { cpu ->
+                val packet=OverlayPacketArena.prepare(cpu,packetSource(request.frames,request.previous,request.next,baseline),cancel,
+                    { canPrepare(session,request) }) ?: throw OverlayWorkCancelled()
+                if(!eligible(session,request)) { OverlayPacketArena.retire(packet);return }
+                session.packet=packet;session.request=request;session.reported=false
+                if(request.animateEdits) { session.baseline=packet.header.roles;session.baselineConfig=request.config }
+                val controls=session.view.controls
+                session.editPending=request.animateEdits && packet.header.changed>0 && !controls.reduced && !controls.lowPower
+                session.metrics=RenderMetrics(packet.prepareMs,packet.uploadMs,packet.selectedBytes,packet.hit,packet.header.changed,
+                    if(session.editPending)OverlayPolicy.EDIT_DURATION_NS/1e6 else 0.0,packet.uploadBytes,packet.header.scenes[0].count)
+                ensureSurfaceSize(session,packet.header.width,packet.header.height)
+                if(eligible(session,request))session.view.requestDraw()
             }
-            if (!eligible(session, request)) {
-                releaseAtlas(session)
-                trim()
-                return
-            }
-            val frames = request.frames ?: JSONObject(request.config).getString("frames")
-            val current = selectHolds(atlas.manifest, frames)
-            val previous = request.previous?.let { selectHolds(atlas.manifest, it) }
-            val next = request.next?.let { selectHolds(atlas.manifest, it) }
-            fun roles(holds: List<ActiveHold>?) =
-                holds.orEmpty().associate { it.hold.id to it.role.identity }
-            val currentRoles = roles(current)
-            val previousRoles = roles(previous)
-            val nextRoles = roles(next)
-            val baseline =
-                if (!request.animateEdits) null
-                else if (session.baselineConfig == request.config) session.baseline
-                else if (request.observedEmpty) emptyMap() else null
-            fun annotate(
-                holds: List<ActiveHold>,
-                lower: Map<Long, Long>,
-                upper: Map<Long, Long>,
-                baseline: Map<Long, Long>?,
-            ): ActiveScene {
-                for (active in holds) {
-                    active.previous =
-                        lower[active.hold.id]?.let { if (it == active.role.identity) 1 else 2 } ?: 0
-                    active.next =
-                        upper[active.hold.id]?.let { if (it == active.role.identity) 1 else 2 } ?: 0
-                    active.changed =
-                        baseline != null && baseline[active.hold.id] != active.role.identity
-                }
-                return ActiveScene(holds, buffer(encodeHolds(holds)))
-            }
-            session.current = annotate(current, previousRoles, nextRoles, baseline)
-            session.previous = previous?.let { annotate(it, emptyMap(), currentRoles, null) }
-            session.next = next?.let { annotate(it, currentRoles, emptyMap(), null) }
-            if (!eligible(session, request)) {
-                releaseScenes(session)
-                releaseAtlas(session)
-                trim()
-                return
-            }
-            session.request = request
-            session.reported = false
-            if (request.animateEdits) {
-                session.baseline = currentRoles
-                session.baselineConfig = request.config
-            }
-            val controls = session.view.controls
-            val changed = current.count { it.changed }
-            session.editPending =
-                request.animateEdits && changed > 0 && !controls.reduced && !controls.lowPower
-            session.metrics =
-                RenderMetrics(
-                    (System.nanoTime() - started) / 1e6,
-                    if (hit) 0.0 else atlas.uploadMs,
-                    atlas.bytes,
-                    hit,
-                    changed,
-                    if (session.editPending) OverlayPolicy.EDIT_DURATION_NS / 1e6 else 0.0,
-                )
-            ensureSurfaceSize(session, atlas)
-            if (eligible(session, request)) session.view.requestDraw()
-        } catch (failure: Exception) {
-            fail(session, failure, request)
-        }
+        } catch(failure: OutOfMemoryError) { fail(session,OverlayResourceFailure(),request) }
+        catch(failure: Exception) { fail(session,failure,request) }
     }
 
     fun resized(session: OverlaySession) {
@@ -605,16 +457,18 @@ internal object OverlayRenderer {
         }
     }
 
-    private fun ensureSurfaceSize(session: OverlaySession, atlas: UploadedAtlas) {
+    private fun ensureSurfaceSize(session: OverlaySession, width: Int,height: Int) {
         if (
-            session.bufferWidth != atlas.manifest.width ||
-                session.bufferHeight != atlas.manifest.height
+            session.eglSurface == EGL14.EGL_NO_SURFACE ||
+                session.bufferWidth != width ||
+                session.bufferHeight != height
         ) {
             clearFences(session)
             park()
-            EGL14.eglDestroySurface(display, session.eglSurface)
+            if (session.eglSurface != EGL14.EGL_NO_SURFACE)
+                EGL14.eglDestroySurface(display, session.eglSurface)
             session.eglSurface = EGL14.EGL_NO_SURFACE
-            session.texture.setDefaultBufferSize(atlas.manifest.width, atlas.manifest.height)
+            session.texture.setDefaultBufferSize(width, height)
             session.eglSurface =
                 EGL14.eglCreateWindowSurface(
                     display,
@@ -643,90 +497,44 @@ internal object OverlayRenderer {
                         actualHeight,
                         0,
                     ) &&
-                    actualWidth[0] == atlas.manifest.width &&
-                    actualHeight[0] == atlas.manifest.height,
+                    actualWidth[0] == width &&
+                    actualHeight[0] == height,
             ) {
                 "GPU surface dimensions do not match atlas"
             }
-            session.bufferWidth = atlas.manifest.width
-            session.bufferHeight = atlas.manifest.height
+            session.bufferWidth = width
+            session.bufferHeight = height
         }
     }
 
     private fun eligible(session: OverlaySession, request: OverlayRequest): Boolean =
+        canPrepare(session, request) && session.eglSurface != EGL14.EGL_NO_SURFACE
+
+    private fun canPrepare(session: OverlaySession, request: OverlayRequest): Boolean =
         foreground &&
             !session.destroyed &&
-            session.eglSurface != EGL14.EGL_NO_SURFACE &&
             session.view.matches(request)
 
-    private fun uniforms(
-        atlas: UploadedAtlas,
-        lower: ActiveScene,
-        upper: ActiveScene,
-        progress: Float,
-        reach: Float,
-        productionEmpty: Boolean,
-        mirrored: Boolean,
-    ): ByteBuffer {
-        val manifest = atlas.manifest
-        val bytes = directBytes(144)
-        fun vector(vararg values: Float) {
-            values.forEach { bytes.putFloat(it) }
-        }
-        vector(
-            manifest.width.toFloat(),
-            manifest.height.toFloat(),
-            lower.descriptors.size.toFloat(),
-            if (manifest.glow) 1f else 0f,
-        )
-        manifest.veil.forEach { bytes.putFloat(it / 255) }
-        manifest.tuning.forEach { bytes.putFloat(it) }
-        vector(manifest.tuning2[0], manifest.tuning2[1], lower.maxReach, 0f)
-        bytes.putInt(manifest.covers?.offset ?: -1)
-        bytes.putInt(OverlayPolicy.selectStampLayers(lower.stampLayers, upper.stampLayers, progress))
-        repeat(2) { bytes.putInt(0) }
-        vector(manifest.width.toFloat(), manifest.height.toFloat(), 0f, 0f)
-        vector(progress, OverlayPolicy.REVEAL_BAND, 0f, reach)
-        vector(
-            upper.descriptors.size.toFloat(),
-            upper.maxReach,
-            if (productionEmpty) 1f else 0f,
-            if (mirrored) 1f else 0f,
-        )
-        (manifest.covers?.crop ?: intArrayOf(0, 0, 0, 0)).forEach { bytes.putInt(it) }
-        bytes.flip()
-        return bytes
-    }
-
-    private fun encode(
-        atlas: UploadedAtlas,
-        lower: ActiveScene,
-        upper: ActiveScene,
-        params: ByteBuffer,
-    ) {
-        GLES31.glViewport(0, 0, atlas.manifest.width, atlas.manifest.height)
-        GLES31.glDisable(GLES31.GL_BLEND)
-        GLES31.glDisable(GLES31.GL_DEPTH_TEST)
-        GLES31.glDisable(GLES31.GL_DITHER)
+    private fun encode(packet: UploadedPacket,lower: Int,upper: Int,params: ByteBuffer) {
+        GLES31.glViewport(0,0,packet.header.width,packet.header.height)
+        GLES31.glDisable(GLES31.GL_BLEND);GLES31.glDisable(GLES31.GL_DEPTH_TEST);GLES31.glDisable(GLES31.GL_DITHER)
         GLES31.glUseProgram(program)
-        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 0, atlas.pixels)
-        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 1, lower.buffer)
-        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 2, upper.buffer)
-        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 3, atlas.lut)
-        GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER, uniformBuffer)
-        GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER, 0, 144, params)
-        GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER, 0, uniformBuffer)
-        GLES31.glDrawArrays(GLES31.GL_TRIANGLES, 0, 3)
-        checked("GPU draw")
+        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_PIXELS,packet.arena.buffer)
+        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_LOWER,packet.descriptors[lower])
+        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_UPPER,packet.descriptors[upper])
+        GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_RESOURCES,packet.resources)
+        GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER,uniformBuffer)
+        GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER,0,OverlayPacketLayout.UNIFORM_BYTES,params)
+        GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER,OverlayPacketLayout.GLES_UNIFORM_BINDINGS_UNIFORMS,uniformBuffer)
+        GLES31.glDrawArrays(GLES31.GL_TRIANGLES,0,3);checked("GPU draw")
     }
 
     fun draw(session: OverlaySession): Boolean {
         val request = session.request ?: return false
         if (!eligible(session, request)) return false
         try {
-            val atlas = session.atlas ?: return false
-            val current = session.current ?: return false
-            ensureSurfaceSize(session, atlas)
+            val packet = session.packet ?: return false
+            ensureSurfaceSize(session,packet.header.width,packet.header.height)
             if (!OverlayPolicy.canSubmit(session.ledger.size, session.fences.size)) return false
             check(EGL14.eglMakeCurrent(display, session.eglSurface, session.eglSurface, context)) {
                 "GPU surface lost"
@@ -740,30 +548,18 @@ internal object OverlayRenderer {
                 OverlayPolicy.select(
                     controls.position ?: request.center,
                     request.center,
-                    session.previous != null,
-                    session.next != null,
+                    packet.header.present[1],
+                    packet.header.present[2],
                     controls.reduced,
                 )
-            val lower = if (selection.lower == -1) session.previous!! else current
-            val upper = if (selection.upper == 1) session.next!! else current
+            val lower = if (selection.lower == -1) 1 else 0
+            val upper = if (selection.upper == 1) 2 else 0
             val now = System.nanoTime()
             val reach = session.editStart?.let { OverlayPolicy.reach(now - it) } ?: 1f
             if (!eligible(session, request)) return false
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
-            encode(
-                atlas,
-                lower,
-                upper,
-                uniforms(
-                    atlas,
-                    lower,
-                    upper,
-                    selection.progress,
-                    reach,
-                    request.previous != null || request.next != null || request.animateEdits,
-                    controls.mirrored,
-                ),
-            )
+            encode(packet,lower,upper,packet.uniforms(lower,upper,selection.progress,reach,
+                request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored))
             val frame =
                 session.ledger.submit(now, request.revision, request.generation) ?: return false
             check(EGLExt.eglPresentationTimeANDROID(display, session.eglSurface, frame.timestamp)) {
@@ -772,6 +568,7 @@ internal object OverlayRenderer {
             val sync = GLES31.glFenceSync(GLES31.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
             check(sync != 0L) { "GPU completion fence unavailable" }
             session.fences[frame.timestamp] = sync to now
+            OverlayPacketMetrics.gpuBegin()
             check(EGL14.eglSwapBuffers(display, session.eglSurface)) { "GPU swap failed" }
             poll(session, frame.timestamp)
             val running =
@@ -780,7 +577,7 @@ internal object OverlayRenderer {
             if (running) session.view.requestAnimationFrame()
             return true
         } catch (failure: Exception) {
-            fail(session, failure, request)
+            fail(session, failure, request, scope = "context")
             return false
         }
     }
@@ -801,13 +598,13 @@ internal object OverlayRenderer {
             check(status == GLES31.GL_ALREADY_SIGNALED || status == GLES31.GL_CONDITION_SATISFIED) {
                 "GPU completion failed"
             }
-            GLES31.glDeleteSync(fence.first)
+            GLES31.glDeleteSync(fence.first);OverlayPacketMetrics.gpuEnd()
             session.fences.remove(timestamp)
             session.ledger.finish(timestamp)?.let { accept(session, it) }
             requestConsumptionObservation(session)
             session.view.resumeDraw()
         } catch (failure: Exception) {
-            fail(session, failure)
+            fail(session, failure, scope = "context")
         }
     }
 
@@ -857,6 +654,8 @@ internal object OverlayRenderer {
                 session.view.requestAnimationFrame()
             }
             session.view.ready(request, session.metrics ?: return)
+            session.packet?.session?.persistAfterReady()
+            session.view.schedulePrefetch()
         }
         // Progress could have changed while both queued frames were in flight.
         session.view.resumeDraw()
@@ -866,48 +665,68 @@ internal object OverlayRenderer {
         session: OverlaySession,
         failure: Exception,
         request: OverlayRequest? = session.request,
+        scope: String = "static",
     ) {
         session.editPending = false
         session.editStart = null
-        session.view.failed(request, failure.message ?: "GPU renderer unavailable")
-        // Release rejected/cancelled work instead of pinning a failed layout.
-        if (EGL14.eglGetError() == EGL14.EGL_CONTEXT_LOST) resetContext()
-        else if (context != EGL14.EGL_NO_CONTEXT) {
+        val eglFailure = EGL14.eglGetError()
+        if (eglFailure == EGL14.EGL_CONTEXT_LOST || eglFailure == EGL14.EGL_BAD_CONTEXT) {
+            session.request = request ?: session.view.currentRequest()
+            sessions.add(session)
+            resetContext()
+            return
+        }
+        val cancelled = failure is OverlayWorkCancelled || request?.let { !canPrepare(session, it) } == true
+        val frameFailure = failure as? AtlasFrameFailure
+        val packetFailure = failure as? PacketFailure
+        if (context != EGL14.EGL_NO_CONTEXT) {
             try {
                 park()
                 clearFences(session)
                 releaseScenes(session)
-                releaseAtlas(session)
-                if (cache?.users == 0) dropCache()
+                session.request = null
+                session.metrics = null
+                // Frame/cancellation errors leave CPU sessions and arena residency intact.
             } catch (_: Exception) {
-                // An invalid context can report BAD_CONTEXT rather than LOST.
-                // Cleanup failure must still restore PNG, not kill the worker.
+                session.request = request ?: session.view.currentRequest()
+                sessions.add(session)
                 resetContext()
+                return
             }
         }
+        if (cancelled) return
+        session.view.failed(request,
+            packetFailure?.reason ?: frameFailure?.reasonCode ?: if (failure is OverlayResourceFailure || eglFailure==EGL14.EGL_BAD_ALLOC) "gpu-resource-limit" else "gpu-preparation-failed",
+            packetFailure?.scope ?: if (frameFailure != null) "frame" else if (failure is OverlayResourceFailure || eglFailure==EGL14.EGL_BAD_ALLOC) "context" else scope)
     }
 
-    private fun resetContext() {
+    private fun resetContext(recover: Boolean = true) {
+        contextGeneration++
+        val retry = ArrayList<OverlaySession>()
         sessions.forEach { session ->
             session.fences.clear()
             session.ledger.clear()
-            session.atlas = null
-            session.preparedConfig = null
-            session.preparedAssetKey = null
-            session.current = null
-            session.previous = null
-            session.next = null
             session.editPending = false
             session.editStart = null
-            session.view.failed(session.request, "GPU context lost")
+            session.bufferWidth = 0
+            session.bufferHeight = 0
+            session.reported = false
+            // A newer request can already be queued while this shared context
+            // is lost. Recover the current view request, not stale scene state.
+            val request = session.view.currentRequest()
+            if (recover && request != null && canPrepare(session, request)) {
+                if (session.recovery.retry(request.revision, request.generation)) retry.add(session)
+                else session.view.failed(request, "gpu-context-lost", "context")
+            }
             if (session.eglSurface != EGL14.EGL_NO_SURFACE)
                 EGL14.eglDestroySurface(display, session.eglSurface)
             session.eglSurface = EGL14.EGL_NO_SURFACE
         }
-        cache = null
+        OverlayPacketArena.abandonContext()
+        sessions.forEach { it.packet?.let { packet->packet.handle.close();packet.session.close() };it.packet=null }
         bufferBytes.clear()
         retiredBuffers.clear()
-        if (budget.bytes > 0) budget.release(budget.bytes.toInt())
+        detachedCommandFences.clear();resourcePollScheduled=false
         EGL14.eglMakeCurrent(
             display,
             EGL14.EGL_NO_SURFACE,
@@ -923,23 +742,27 @@ internal object OverlayRenderer {
         program = 0
         uniformBuffer = 0
         initialized = false
+        OverlayPacketMetrics.gpuReset()
+        // Destroy the old context before releasing its allocation accounting.
+        if (budget.bytes > 0) budget.release(budget.bytes.toInt())
+        retry.forEach { it.view.retryAfterContextLoss() }
     }
 
     fun compare(app: Context, source: String): Map<String, Any?> {
         check(foreground) { "GPU comparison requires foreground app" }
         initialize()
         val started = System.nanoTime()
-        val (atlas, hit) = acquireAtlas(app, source)
-        var scene: ActiveScene? = null
+        val cancel=PacketCancellation()
+        val cpu=OverlayPacketArena.session(app,source,cancel)
+        val packet=try { OverlayPacketArena.prepare(cpu,packetSource(null,null,null,null),cancel,{foreground})!! }
+            catch(failure: Throwable) { cpu.close();cancel.close();throw failure }
         var texture = 0
         var framebuffer = 0
         var comparisonBytes = 0
         try {
-            val descriptors = selectHolds(atlas.manifest, JSONObject(source).getString("frames"))
-            scene = ActiveScene(descriptors, buffer(encodeHolds(descriptors)))
             val prepareMs = (System.nanoTime() - started) / 1e6
-            val width = atlas.manifest.width
-            val height = atlas.manifest.height
+            val width = packet.header.width
+            val height = packet.header.height
             val activity = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val memory = ActivityManager.MemoryInfo()
             activity.getMemoryInfo(memory)
@@ -972,7 +795,7 @@ internal object OverlayRenderer {
                     GLES31.GL_FRAMEBUFFER_COMPLETE,
             )
             check(foreground) { "GPU comparison cancelled while backgrounded" }
-            encode(atlas, scene, scene, uniforms(atlas, scene, scene, 0f, 1f, false, false))
+            encode(packet,0,0,packet.uniforms(0,0,0f,1f,false,false))
             val readback = directBytes(width * height * 4)
             GLES31.glReadPixels(
                 0,
@@ -1041,42 +864,61 @@ internal object OverlayRenderer {
                 "cpuRenderMs" to cpuMs,
                 "gpuMs" to null,
                 "prepareMs" to prepareMs,
-                "uploadMs" to if (hit) 0.0 else atlas.uploadMs,
-                "atlasBytes" to atlas.bytes,
-                "atlasCacheHit" to hit,
+                "uploadMs" to packet.uploadMs,
+                "atlasBytes" to packet.selectedBytes,
+                "atlasCacheHit" to packet.hit,
                 "gpuUri" to png(gpu, "gpu"),
                 "referenceUri" to png(reference.data, "reference"),
             )
         } finally {
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
-            releaseScene(scene)
+            OverlayPacketArena.retire(packet)
             if (framebuffer != 0) GLES31.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
             if (texture != 0) GLES31.glDeleteTextures(1, intArrayOf(texture), 0)
             if (comparisonBytes > 0) {
                 GLES31.glFinish()
                 budget.release(comparisonBytes)
             }
-            atlas.users--
+            cpu.close();cancel.close()
         }
     }
 
+    fun resourceStats(): Map<String,Any?> = packetResourceStats()+mapOf("gpuReservedBytes" to budget.bytes)
+
     fun trim() {
-        handler.post {
-            if (cache?.users == 0 && context != EGL14.EGL_NO_CONTEXT) {
-                park()
-                dropCache()
+        handler.post { if(context!=EGL14.EGL_NO_CONTEXT) { park();OverlayPacketArena.releaseGPU() } }
+    }
+    fun prefetch(app: Context,request: OverlayRequest,frames: List<String>,cancel: PacketCancellation,valid: ()->Boolean) {
+        if(!foreground || !valid() || !initialized)return
+        try {
+            park()
+            OverlayPacketArena.session(app,request.config,cancel).use { session ->
+                for(frame in frames.take(2)) {
+                    if(!foreground || !valid())return
+                    OverlayPacketArena.prepare(session,packetSource(frame,null,null,null),cancel,{foreground && valid()},true)
+                }
             }
-        }
+        } catch(_: Exception) { /* Optional acceleration never emits Ready or failure. */ }
     }
 
     fun background() {
         foreground = false
         handler.post {
-            sessions.forEach {
-                it.editPending = false
-                it.editStart = null
+            try {
+                if (context != EGL14.EGL_NO_CONTEXT) {
+                    park()
+                    sessions.forEach {
+                        it.editPending = false
+                        it.editStart = null
+                        clearFences(it)
+                        releaseScenes(it)
+                        it.request = null
+                    }
+                OverlayPacketArena.releaseGPU()
+                }
+            } catch (_: Exception) {
+                resetContext(recover = false)
             }
-            trim()
         }
     }
 }

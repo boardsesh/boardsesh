@@ -6,6 +6,7 @@
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 use super::{clamp_multiplier, effective_mark_style, geometry::LitHold, glow, marks};
@@ -82,6 +83,16 @@ fn append_stamp_region(
     )
 }
 
+/// Only pixels inside this pass's extraction rectangle can be observed.
+fn clear_stamp_region(stamp: &mut Pixmap, search: [u32; 4]) {
+    let stride = stamp.width() as usize * 4;
+    for row in search[1]..search[3] {
+        let start = row as usize * stride + search[0] as usize * 4;
+        let end = row as usize * stride + search[2] as usize * 4;
+        stamp.data_mut()[start..end].fill(0);
+    }
+}
+
 /// The 24-bit sentinel cannot alias a valid field on a 1536 × 2304 board.
 pub const PACKED_NO_DISTANCE: u32 = 0x00ff_ffff;
 pub fn pack_field(distance: u32, coverage: u8) -> Result<u32, String> {
@@ -130,6 +141,35 @@ pub(super) fn prepare_internal(
     config: &RenderConfig,
     prebuilt: Option<&super::gpu_geometry::GeometryReader>,
 ) -> Result<PreparedAtlas, String> {
+    prepare_subset(config, prebuilt, None)
+}
+
+/// Selection changes work performed, never layout-dependent crop/cap semantics.
+/// A field and a role's stamps are independently cacheable immutable chunks.
+#[derive(Default)]
+pub(super) struct AtlasSelection {
+    pub fields: HashSet<u32>,
+    pub roles: HashMap<u32, HashSet<u32>>,
+    pub covers: bool,
+    pub describe: bool,
+}
+
+pub(super) fn prepare_subset(
+    config: &RenderConfig,
+    prebuilt: Option<&super::gpu_geometry::GeometryReader>,
+    selection: Option<&AtlasSelection>,
+) -> Result<PreparedAtlas, String> {
+    prepare_subset_checked(config, prebuilt, selection, &|| Ok(()))
+}
+
+pub(super) fn prepare_subset_checked(
+    config: &RenderConfig,
+    prebuilt: Option<&super::gpu_geometry::GeometryReader>,
+    selection: Option<&AtlasSelection>,
+    check: &dyn Fn() -> Result<(), String>,
+) -> Result<PreparedAtlas, String> {
+    let _work = super::gpu_packet_stats::preparation();
+    check()?;
     let (width, height) = crate::renderer::output_size(config)?;
     if config.render_mode != BoardRenderMode::Aura
         || width > 1536
@@ -170,7 +210,8 @@ pub(super) fn prepare_internal(
     let geometry: Vec<_> = config
         .holds
         .iter()
-        .filter_map(|hold| {
+        .enumerate()
+        .filter_map(|(index, hold)| {
             let lit = LitHold::new(
                 hold,
                 HoldRole::Hand,
@@ -188,20 +229,34 @@ pub(super) fn prepare_internal(
             {
                 reach *= cap / lit.r_px;
             }
-            Some((hold, lit, reach))
+            Some((index, hold, lit, reach))
         })
         .collect();
     let max_reach = geometry
         .iter()
-        .map(|(_, _, reach)| *reach)
+        .map(|(_, _, _, reach)| *reach)
         .fold(0.0_f32, f32::max);
     if !max_reach.is_finite() || max_reach > 512.0 {
         return Err("Unsupported GPU glow reach".into());
     }
     let padding = (max_reach * EDIT_PEAK_REACH).ceil() + 2.0;
     let mut storage = Vec::new();
-    let mut covers = Pixmap::new(width, height).ok_or("Cover allocation failed")?;
-    if let Some(cover) = &config.led_cover {
+    let paint_covers = selection.is_none_or(|selection| selection.covers);
+    let paint_roles = selection.is_none_or(|selection| !selection.roles.is_empty());
+    let mut covers = Pixmap::new(
+        if paint_covers || paint_roles {
+            width
+        } else {
+            1
+        },
+        if paint_covers || paint_roles {
+            height
+        } else {
+            1
+        },
+    )
+    .ok_or("Cover allocation failed")?;
+    if paint_covers && let Some(cover) = &config.led_cover {
         marks::paint_led_covers(&mut covers, &config.holds, scale_x, scale_y, cover);
     }
     let covers_offset = append_stamp(&mut storage, &covers, 0, 0)?;
@@ -216,7 +271,15 @@ pub(super) fn prepare_internal(
     let mut entries = Vec::new();
     let mut states: Vec<_> = config.hold_state_map.iter().collect();
     states.sort_by_key(|(code, _)| **code);
-    for (source, lit, reach) in geometry {
+    for (source_index, source, lit, reach) in geometry {
+        check()?;
+        if selection.is_some_and(|selection| {
+            !selection.describe
+                && !selection.fields.contains(&source.id)
+                && !selection.roles.contains_key(&source.id)
+        }) {
+            continue;
+        }
         let bounds = lit.bounds();
         let x = (bounds.left() - padding).floor().clamp(0.0, width as f32) as u32;
         let y = (bounds.top() - padding).floor().clamp(0.0, height as f32) as u32;
@@ -228,15 +291,18 @@ pub(super) fn prepare_internal(
         let crop_width = right - x;
         let crop_height = bottom - y;
         let pixels = crop_width as usize * crop_height as usize;
+        let include_field = selection.is_none_or(|selection| selection.fields.contains(&source.id));
         // Bound all persistent bytes before allocating masks, fields or marks.
         let needed = pixels.checked_mul(4).ok_or("Atlas size overflow")?;
-        if storage.len().saturating_add(needed) > MAX_BYTES {
+        if include_field && storage.len().saturating_add(needed) > MAX_BYTES {
             return Err("GPU atlas exceeds 128 MiB budget".into());
         }
         let original_bounds = [bounds.left(), bounds.top(), bounds.right(), bounds.bottom()];
         let local = translated(lit, x as f32, y as f32)?;
         let field_offset = storage.len();
-        if let Some(prebuilt) = prebuilt {
+        if !include_field {
+            // Annotation and stamp-only chunks never allocate an unused EDT.
+        } else if let Some(prebuilt) = prebuilt {
             let field = prebuilt.field(config, source, x, y, crop_width, crop_height)?;
             append(&mut storage, &field)?;
         } else {
@@ -246,6 +312,15 @@ pub(super) fn prepare_internal(
         let mut role_entries = Vec::new();
         let mut role_stamps: HashMap<String, u32> = HashMap::new();
         for (code, state) in &states {
+            check()?;
+            if selection.is_some_and(|selection| {
+                selection
+                    .roles
+                    .get(&source.id)
+                    .is_none_or(|roles| !roles.contains(code))
+            }) {
+                continue;
+            }
             let Some(color) = Color::from_hex(&state.color) else {
                 continue;
             };
@@ -266,6 +341,10 @@ pub(super) fn prepare_internal(
                 continue;
             };
             let draws_role_plate = !annotation && draws_plate && role_hold.base_path.is_some();
+            let raster_role = draws_fill || draws_role_plate || draws_glyph || annotation;
+            if raster_role {
+                super::gpu_packet_stats::role_attempt();
+            }
             let edge_scale = clamp_multiplier(config.stroke_width_multiplier);
             let mut fill_offset = Value::Null;
             let mut plate_offset = Value::Null;
@@ -274,7 +353,6 @@ pub(super) fn prepare_internal(
             let mut glyph_passes = vec![Value::Null; 2];
             if draws_fill || draws_role_plate || draws_glyph {
                 let stamp = &mut stamp_canvas;
-                stamp.fill(tiny_skia::Color::TRANSPARENT);
                 let edge_padding = (marks::OUTLINE_WIDTH_FRACTION
                     * role_hold.r_px
                     * edge_scale
@@ -297,6 +375,7 @@ pub(super) fn prepare_internal(
                         .ceil()
                         .clamp(0.0, height as f32) as u32,
                 ];
+                clear_stamp_region(stamp, search);
                 if draws_fill {
                     marks::paint_outline(
                         stamp,
@@ -306,7 +385,7 @@ pub(super) fn prepare_internal(
                     );
                     fill_passes[0] = append_stamp_region(&mut storage, stamp, 0, 0, search)?;
                     fill_offset = fill_passes[0].clone();
-                    stamp.fill(tiny_skia::Color::TRANSPARENT);
+                    clear_stamp_region(stamp, search);
                 }
                 if draws_role_plate {
                     marks::paint_led_base(
@@ -315,11 +394,12 @@ pub(super) fn prepare_internal(
                         &config.led_base,
                     );
                     plate_offset = append_stamp_region(&mut storage, stamp, 0, 0, search)?;
-                    stamp.fill(tiny_skia::Color::TRANSPARENT);
+                    clear_stamp_region(stamp, search);
                 }
                 if draws_glyph {
                     for (pass, entry) in glyph_passes.iter_mut().enumerate() {
-                        stamp.fill(tiny_skia::Color::TRANSPARENT);
+                        check()?;
+                        clear_stamp_region(stamp, search);
                         marks::paint_glyph_pass(
                             stamp,
                             std::slice::from_ref(&role_hold),
@@ -334,6 +414,7 @@ pub(super) fn prepare_internal(
             }
             if annotation {
                 for (pass, entry) in glyph_passes.iter_mut().enumerate() {
+                    check()?;
                     *entry = append_annotation(
                         &mut storage,
                         &mut stamp_canvas,
@@ -346,15 +427,20 @@ pub(super) fn prepare_internal(
                 }
                 glyph_offset = glyph_passes[0].clone();
             }
+            if raster_role {
+                super::gpu_packet_stats::role_completed();
+            }
             let entry = json!({"state":code,"identity":code,"color":[color.r,color.g,color.b],"fill":fill_offset,"plate":plate_offset,"glyph":glyph_offset,"annotation":annotation,"fillPasses":fill_passes,"glyphPasses":glyph_passes});
             role_stamps.insert(stamp_key, **code);
             role_entries.push(entry);
         }
-        entries.push(
-            json!({"id":source.id,"mirror":source.mirrored_hold_id,"x":x,"y":y,
+        let mut entry = json!({"id":source.id,"mirror":source.mirrored_hold_id,"x":x,"y":y,
             "width":crop_width,"height":crop_height,"bounds":original_bounds,
-            "field":field_offset,"reach":reach,"roles":role_entries}),
-        );
+            "field":field_offset,"reach":reach,"roles":role_entries});
+        if selection.is_some_and(|selection| selection.describe) {
+            entry["sourceIndex"] = json!(source_index);
+        }
+        entries.push(entry);
     }
     let lut = glow::FalloffLut::from_stops(&glow::falloff_stops(
         config.glow_falloff,
@@ -383,6 +469,7 @@ pub(super) fn field_pixels(
     height: u32,
     draws_plate: bool,
 ) -> Result<Vec<u8>, String> {
+    super::gpu_packet_stats::field_attempt();
     let mut coverage = Mask::new(width, height).ok_or("Mask allocation failed")?;
     coverage.fill_path(&local.path, FillRule::Winding, true, Transform::identity());
     let mut sites_mask = coverage.clone();
@@ -410,6 +497,7 @@ pub(super) fn field_pixels(
     for (distance, coverage) in field.dist2.iter().zip(coverage.data()) {
         pixels.extend_from_slice(&pack_field(*distance, *coverage)?.to_le_bytes());
     }
+    super::gpu_packet_stats::field_completed();
     Ok(pixels)
 }
 
@@ -443,7 +531,7 @@ fn append_annotation(
     let Some(path) = PathBuilder::from_circle(cx, cy, marker_radius) else {
         return Ok(Value::Null);
     };
-    stamp.fill(tiny_skia::Color::TRANSPARENT);
+    clear_stamp_region(stamp, [left, top, right, bottom]);
     let paint = Paint {
         anti_alias: true,
         shader: tiny_skia::Shader::SolidColor(tiny_skia::Color::from_rgba8(

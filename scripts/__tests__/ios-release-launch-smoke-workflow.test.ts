@@ -99,11 +99,25 @@ exit "$CI_BUILD_RETRY_STATUS"
 }
 
 describe('iOS Release launch workflow', () => {
+  const nativeSuites = [
+    ['atlas', 'ClimbOverlayMotion.swift', 'ClimbOverlayAtlas.swift', 'tests/ClimbOverlayAtlasTests.swift'],
+    ['budget', 'ClimbOverlayBudget.swift', 'tests/ClimbOverlayBudgetTests.swift'],
+    ['arena', 'ClimbOverlayPacketLayout.swift', 'ClimbOverlayArenaIndex.swift', 'tests/ClimbOverlayArenaTests.swift'],
+    ['job', 'ClimbOverlayPacketJob.swift', 'tests/ClimbOverlayPacketJobTests.swift'],
+    [
+      'protocol',
+      'ClimbOverlayPacketLayout.swift',
+      'ClimbOverlayPacketProtocol.swift',
+      'tests/ClimbOverlayPacketProtocolTests.swift',
+    ],
+  ];
   it.each([
-    { compilerExit: 0, testExit: 0, expectedExit: 0 },
-    { compilerExit: 13, testExit: 0, expectedExit: 13 },
-    { compilerExit: 0, testExit: 17, expectedExit: 17 },
-  ])('compiles and executes the real atlas descriptor guard without hiding failures: %j', (scenario) => {
+    { suite: 'all', compilerExit: 0, testExit: 0, expectedExit: 0 },
+    ...nativeSuites.flatMap(([suite]) => [
+      { suite, compilerExit: 13, testExit: 0, expectedExit: 13 },
+      { suite, compilerExit: 0, testExit: 17, expectedExit: 17 },
+    ]),
+  ])('compiles and executes native guards without hiding failures: %j', (scenario) => {
     const directory = mkdtempSync(join(tmpdir(), 'ios-atlas-ci-'));
     temporaryDirectories.push(directory);
     const argumentsPath = join(directory, 'compile-arguments');
@@ -117,20 +131,19 @@ set -e
 shift
 if [ "$1" = swiftc ]; then
   shift
-  printf '%s\\n' "$@" > "$AURA_CI_ARGUMENTS"
-  if [ "$AURA_CI_COMPILER_EXIT" -ne 0 ]; then exit "$AURA_CI_COMPILER_EXIT"; fi
+  printf '%s\\n' "$@" >> "$AURA_CI_ARGUMENTS"
   while [ "$#" -gt 0 ]; do
-    if [ "$1" = -o ]; then
-      output="$2"
-      break
-    fi
+    if [ "$1" = -o ]; then output="$2"; break; fi
     shift
   done
-  cat > "$output" <<'ATLAS_TEST'
+  if [ "$(basename "$output")" = "aura-$AURA_CI_TARGET-tests" ] && [ "$AURA_CI_COMPILER_EXIT" -ne 0 ]; then
+    exit "$AURA_CI_COMPILER_EXIT"
+  fi
+  cat > "$output" <<'NATIVE_TEST'
 #!/bin/bash
-printf '%s\\n' executed > "$AURA_CI_EXECUTED"
-exit "$AURA_CI_TEST_EXIT"
-ATLAS_TEST
+printf '%s\\n' "$(basename "$0")" >> "$AURA_CI_EXECUTED"
+if [ "$(basename "$0")" = "aura-$AURA_CI_TARGET-tests" ]; then exit "$AURA_CI_TEST_EXIT"; fi
+NATIVE_TEST
   chmod +x "$output"
   exit 0
 fi
@@ -148,22 +161,32 @@ exec "$@"
         RUNNER_TEMP: directory,
         AURA_CI_ARGUMENTS: argumentsPath,
         AURA_CI_EXECUTED: executedPath,
+        AURA_CI_TARGET: scenario.suite,
         AURA_CI_COMPILER_EXIT: String(scenario.compilerExit),
         AURA_CI_TEST_EXIT: String(scenario.testExit),
       },
     });
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(scenario.expectedExit);
+    const selected =
+      scenario.suite === 'all'
+        ? nativeSuites.length
+        : nativeSuites.findIndex(([suite]) => suite === scenario.suite) + 1;
     expect(
       readFileSync(argumentsPath, 'utf8')
         .split('\n')
         .filter((argument) => argument.endsWith('.swift')),
-    ).toEqual([
-      'packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift',
-      'packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayAtlas.swift',
-      'packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift',
-    ]);
-    expect(existsSync(executedPath)).toBe(scenario.compilerExit === 0);
+    ).toEqual(
+      nativeSuites
+        .slice(0, selected)
+        .flatMap(([, ...sources]) =>
+          sources.map((source) => `packages/mobile/modules/climb-overlay-gpu/ios/${source}`),
+        ),
+    );
+    const executed = existsSync(executedPath) ? readFileSync(executedPath, 'utf8').trim().split('\n') : [];
+    expect(executed).toEqual(
+      nativeSuites.slice(0, selected - (scenario.compilerExit ? 1 : 0)).map(([suite]) => `aura-${suite}-tests`),
+    );
   });
 
   it('launches the existing Release output immediately after its ABI check, before Swift tests', () => {

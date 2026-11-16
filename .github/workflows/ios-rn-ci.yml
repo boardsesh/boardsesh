@@ -360,6 +360,39 @@ jobs:
             packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift \
             -o "$RUNNER_TEMP/aura-atlas-tests"
           vp exec "$RUNNER_TEMP/aura-atlas-tests"
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayBudget.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayBudgetTests.swift \
+            -o "$RUNNER_TEMP/aura-budget-tests"
+          vp exec "$RUNNER_TEMP/aura-budget-tests"
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayArenaIndex.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayArenaTests.swift \
+            -o "$RUNNER_TEMP/aura-arena-tests"
+          vp exec "$RUNNER_TEMP/aura-arena-tests"
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketJob.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayPacketJobTests.swift \
+            -o "$RUNNER_TEMP/aura-job-tests"
+          vp exec "$RUNNER_TEMP/aura-job-tests"
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketProtocol.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayPacketProtocolTests.swift \
+            -o "$RUNNER_TEMP/aura-protocol-tests"
+          vp exec "$RUNNER_TEMP/aura-protocol-tests"
+
+      - name: Test Aura JNI empty buffer ownership
+        run: |
+          vp exec c++ -std=c++17 \
+            packages/mobile/modules/board-renderer/android/src/test/cpp/GpuPacketOwnershipTest.cpp \
+            -o "$RUNNER_TEMP/aura-jni-ownership-tests"
+          vp exec "$RUNNER_TEMP/aura-jni-ownership-tests"
 
       - name: Add RN Swift test target
         run: node scripts/prepare-rn-ios-tests.mjs

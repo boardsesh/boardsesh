@@ -23,7 +23,9 @@ The largest requested static allocation is **62,130,596 bytes / 59.25 MiB**, on 
 
 ## What the byte counts include
 
-`atlasBytes` is immutable pixel storage: exact packed distance/coverage fields, nontransparent cropped cover/fill/outline/glyph stamps, and annotations. `assembledGpuBytes = atlasBytes + 257 × 4` adds the float falloff LUT. This is requested static buffer storage. Driver allocation rounding, view-owned frame buffers, uniforms and active-hold descriptor buffers are excluded from this census figure and remain subject to native aggregate admission. Each dynamic active contribution requests a **224-byte descriptor**. `manifestBytes` counts CPU-side UTF-8 JSON separately.
+`atlasBytes` is immutable pixel storage: exact packed distance/coverage fields, nontransparent cropped cover/fill/outline/glyph stamps, and annotations. `assembledGpuBytes = atlasBytes + 257 × 4` adds the float falloff LUT. This is requested static buffer storage. Allocation rounding, comparison textures and active-hold descriptor buffers are excluded from this census figure. Native admission separately accounts for application-owned resources retained by caches, mounted views and in-flight work. OS drawables, driver-internal staging and resources outside this renderer are not covered by its 128 MiB budget. Each dynamic active contribution requests a **224-byte descriptor**. `manifestBytes` counts CPU-side UTF-8 JSON separately.
+
+The selected USB iPhone 13 Pro allocates **56,836,096 bytes** for the reference's **56,822,920-byte** pixel-buffer request. Its heap estimate alone does not include that VM-page rounding. Native Metal admission conservatively rounds reservations to both the heap alignment and OS page size, retaining the actual-allocation check and the unchanged 128 MiB ceiling. This buffer accounting is not a total process-memory measurement.
 
 The independently compressed geometry artifacts total **447,141,340 bytes / 426.43 MiB** across the catalogue. Phones retain a bounded subset under the 256 MiB download ceiling; this total is not reserved phone storage. Each artifact was generated twice and matched exactly. The shipped CDN manifest remains empty until storage and public-CDN byte verification succeeds; these host artifacts are not evidence of publication.
 
@@ -35,7 +37,7 @@ For every configuration, an independent host check retained every third hold and
 
 The host Metal matrix also covers all 51 configurations with a raw Rust oracle. Filled treatments remain on PNG: after coordinate, pass-order and integer-blending fixes, a handful of dense filled pixels still differed by two channel bytes. No tolerance was silently widened. Default glow remains eligible; the final supported-mode matrix and its limits are recorded separately.
 
-Historical physical baseline/candidate runs have since been collected on the user-selected USB iPhone 13 Pro and Pixel 8 Pro. Those application sources precede role-alias compaction and newer photo-readiness changes on the main branch. Compact-metadata native artifacts and the integrated application need fresh alternating phone measurements, hardware pixel comparisons and visual checks. Atlas byte savings alone do not establish final process-memory savings or a visible speedup.
+Historical physical baseline/candidate runs have since been collected on the user-selected USB iPhone 13 Pro and Pixel 8 Pro. Those application sources precede role-alias compaction and newer photo-readiness changes on the main branch. Compact-metadata native artifacts and the integrated application need fresh alternating phone measurements, hardware pixel comparisons and visual checks. See [device verification](aura-device-verification.md) for the separate initial and optimized observations. Atlas byte savings alone do not establish final process-memory savings or a visible speedup.
 
 ## Reproduce
 

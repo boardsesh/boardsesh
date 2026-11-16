@@ -1,0 +1,63 @@
+{
+  "descriptorBytes": 224,
+  "descriptorOffsets": {
+    "bounds": 16,
+    "color": 0,
+    "crop": 32,
+    "extraOffsets": 144,
+    "fillCrop": 96,
+    "fillCrop1": 160,
+    "fillCrop2": 176,
+    "fillCrop3": 192,
+    "glyphCrop": 128,
+    "glyphCrop1": 208,
+    "identity": 80,
+    "numbers": 64,
+    "offsets": 48,
+    "plateCrop": 112
+  },
+  "glesStorageBindings": {
+    "lower": 1,
+    "pixels": 0,
+    "resources": 3,
+    "upper": 2
+  },
+  "glesUniformBindings": {
+    "uniforms": 0
+  },
+  "lutWords": 257,
+  "maxActivePerSource": 128,
+  "maxGpuBytes": 134217728,
+  "metalBindings": {
+    "lower": 1,
+    "pixels": 0,
+    "resources": 3,
+    "uniforms": 2,
+    "upper": 4
+  },
+  "nativeApiVersion": 5,
+  "packetVersion": 1,
+  "statsVersion": 1,
+  "statuses": {
+    "cancelled": -3,
+    "closed": -4,
+    "internalPanic": -6,
+    "invalid": -1,
+    "resourcePressure": -5,
+    "success": 0,
+    "unsupported": -2
+  },
+  "tileEdge": 32,
+  "uniformBytes": 144,
+  "uniformOffsets": {
+    "coverCrop": 128,
+    "motion": 96,
+    "offsets": 64,
+    "other": 112,
+    "size": 0,
+    "tuning": 32,
+    "tuning2": 48,
+    "veil": 16,
+    "viewport": 80
+  }
+}

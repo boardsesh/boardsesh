@@ -51,6 +51,7 @@ name = "board-renderer-ffi"
 version = "0.1.0"
 dependencies = [
  "board-renderer-core",
+ "serde",
  "serde_json",
 ]
 

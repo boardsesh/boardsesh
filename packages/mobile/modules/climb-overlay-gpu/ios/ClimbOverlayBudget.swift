@@ -1,5 +1,7 @@
 import Foundation
 
+let climbOverlayAggregateBudget = ClimbOverlayBudget()
+
 /// Reservations follow retained resources, rather than the cache entry. A
 /// view and its outstanding command buffers can outlive cache eviction.
 final class ClimbOverlayBudget {
@@ -59,8 +61,31 @@ final class ClimbOverlayBudget {
 
 /// Main-thread prop changes can cancel queued preparations safely.
 final class ClimbOverlayPreparation {
+  enum Completion: Equatable { case cancelled, superseded, hidden, accept }
   private let lock = NSLock()
   private var cancelled = false
+  private var discardCompletedAtlas = false
+  private let cancelAction: (() -> Void)?
+  init(cancelAction: (() -> Void)? = nil) { self.cancelAction = cancelAction }
   var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
-  func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+  var retainsCompletedAtlas: Bool {
+    lock.lock(); defer { lock.unlock() }
+    return cancelled && !discardCompletedAtlas
+  }
+  /// Detachment invalidates presentation, not a completed immutable layout.
+  /// Configuration changes/backgrounding may escalate cancellation to release
+  /// GPU resources; later presentation-only cancellation cannot undo that.
+  func cancel(releasingGPU: Bool = true) {
+    lock.lock()
+    let signal = !cancelled
+    cancelled = true
+    discardCompletedAtlas = discardCompletedAtlas || releasingGPU
+    lock.unlock()
+    if signal { cancelAction?() }
+  }
+  func completion(current: Bool, visible: Bool) -> Completion {
+    if isCancelled { return .cancelled }
+    if !current { return .superseded }
+    return visible ? .accept : .hidden
+  }
 }

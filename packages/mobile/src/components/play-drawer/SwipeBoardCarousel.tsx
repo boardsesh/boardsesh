@@ -376,6 +376,17 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     setFailedStationaryIdentity(stationaryIdentity);
   }, [stationaryIdentity]);
   const gpuEnabled = useGpuClimbOverlayEnabled(boardName, layoutId);
+  const gpuLookahead = useMemo(() => {
+    const knownFrames = new Set([currentFrames, prevFrames, nextFrames]);
+    const lookahead: string[] = [];
+    for (const frame of prefetchFrames.slice(0, 8)) {
+      if (!frame || frame.length > 16_384 || knownFrames.has(frame)) continue;
+      knownFrames.add(frame);
+      lookahead.push(frame);
+      if (lookahead.length === 2) break;
+    }
+    return lookahead.length > 0 ? lookahead : NO_PREFETCH_FRAMES;
+  }, [prefetchFrames, currentFrames, prevFrames, nextFrames]);
   const stationary =
     gpuEnabled &&
     NativeMotionClimbOverlayGPU !== null &&
@@ -674,6 +685,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             }}
             previousFrames={prevFrames}
             nextFrames={nextFrames}
+            prefetchFrames={gpuLookahead}
             centerPage={centerPage}
             pager={pager}
             pageArt={pageArt}

@@ -20,7 +20,13 @@ export type ClimbOverlayGPUNativeProps = ViewProps & {
   requestId: string;
   active: boolean;
   onRenderReady?: (event: NativeSyntheticEvent<ClimbOverlayGPUReady>) => void;
-  onRenderError?: (event: NativeSyntheticEvent<{ requestId: string; reason: string }>) => void;
+  onRenderError?: (
+    event: NativeSyntheticEvent<{
+      requestId: string;
+      reason: string;
+      failureScope?: 'frame' | 'static' | 'context';
+    }>,
+  ) => void;
 };
 
 /** v2 separates immutable layout configuration from the changing climb. */
@@ -40,6 +46,8 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;
   reduceMotion: boolean;
+  /** API5 only: at most two already-loaded adjacent climbs, prepared while idle. */
+  prefetchFrames?: readonly string[];
 };
 
 export type ClimbOverlayGPUComparison = {
@@ -58,16 +66,57 @@ export type ClimbOverlayGPUComparison = {
   referenceUri: string;
 };
 
+/** Process-cumulative counters, including cancelled and idle preparation work. */
+export type ClimbOverlayGPUResourceStats = {
+  available: true;
+  statsVersion: 1;
+  nativeActivityEpoch: number;
+  pendingNativeJobs: number;
+  pendingGpuCommands: number;
+  cpuToGpuPixelUploadBytes: number;
+  gpuArenaCopyBytes: number;
+  gpuPixelUploadBytes: number;
+  prefetchPixelUploadBytes: number;
+  arenaReplacements: number;
+  contextResets: number;
+  gpuReservedBytes: number;
+  /** No pending work and a stable activity epoch across the Rust snapshot. */
+  drained: boolean;
+  rust: {
+    available: true;
+    version: 1;
+    panicGuardEnabled: boolean;
+    fieldRasterAttempts: number;
+    fieldRasterCompleted: number;
+    roleRasterAttempts: number;
+    roleRasterCompleted: number;
+    cpuFieldMaterializations: number;
+    cpuRoleMaterializations: number;
+    cpuCacheHits: number;
+    localCacheHits: number;
+    localCacheCorrupt: number;
+    localCacheMisses: number;
+    pendingPreparationPhases: number;
+    pendingCacheWrites: number;
+    activityEpoch: number;
+    drained: boolean;
+  };
+};
+
 const nativeModule = requireOptionalNativeModule<{
   apiVersion?: number;
   compare?(configJson: string): Promise<ClimbOverlayGPUComparison>;
+  getResourceStats?(): Promise<ClimbOverlayGPUResourceStats>;
 }>('ClimbOverlayGPU');
 
 // A binary can support live rendering without the optional diagnostic readback.
-const nativeCompare = nativeModule?.compare;
 export const compareClimbOverlayGPU =
-  typeof nativeCompare === 'function'
-    ? (configJson: string): Promise<ClimbOverlayGPUComparison> => nativeCompare.call(nativeModule, configJson)
+  nativeModule && typeof nativeModule.compare === 'function' ? nativeModule.compare.bind(nativeModule) : null;
+
+/** Missing on older binaries: callers must report unavailable, never zero work. */
+export const getClimbOverlayGPUResourceStats =
+  nativeModule && typeof nativeModule.getResourceStats === 'function'
+    ? nativeModule.getResourceStats.bind(nativeModule)
     : null;
 
 export const NativeClimbOverlayGPU: ComponentType<ClimbOverlayGPUNativeProps> | null = nativeModule

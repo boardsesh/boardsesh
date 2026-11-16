@@ -1529,3 +1529,290 @@ describe('live Homewall GPU render selection', () => {
     expect(result.current.gpuConfigJson).toBeNull();
   });
 });
+
+describe('catalogue Aura GPU render selection on API v5 binaries', () => {
+  const nativeModule = {
+    boardRendererNative: {},
+    renderHoldsOverlay: vi.fn<(config: string, key: string) => Promise<string>>(),
+    probeBoardseshRendererSupport: vi.fn<() => Promise<boolean>>(),
+  };
+  const nativeSurface = { gpuSurface: true, gpuCatalogueNative: true, gpuApiVersion: 5, playSurface: true };
+  const catalogueBoards = [
+    { boardName: 'kilter', layoutId: 1, sizeId: 7, setIds: '1,20', role: 13 },
+    { ...TENSION_ORIGINAL, role: 2 },
+    { boardName: 'decoy', layoutId: 2, sizeId: 1, setIds: '1', role: 2 },
+    { boardName: 'touchstone', layoutId: 1, sizeId: 1, setIds: '1', role: 2 },
+    { ...GRASSHOPPER, role: 2 },
+    { boardName: 'soill', layoutId: 1, sizeId: 1, setIds: '1', role: 2 },
+    { boardName: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1', role: 43 },
+    { ...WOODS_8X10, role: 2 },
+  ] as const;
+  const twoHolds: MockBoardRenderData = {
+    boardWidth: 1080,
+    boardHeight: 1504,
+    holdsData: [
+      { id: 1, mirroredHoldId: 2, cx: 100, cy: 200, r: 20 },
+      { id: 2, mirroredHoldId: 1, cx: 200, cy: 200, r: 20 },
+    ],
+  };
+
+  beforeEach(() => {
+    nativeModule.renderHoldsOverlay.mockReset().mockResolvedValue('file:///catalogue-fallback.png');
+    nativeModule.probeBoardseshRendererSupport.mockReset().mockResolvedValue(true);
+    _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
+    getBoardRenderDataMock.mockReturnValue(twoHolds);
+  });
+
+  function gpuConfig(json: string | null | undefined): Record<string, unknown> {
+    expect(json).toBeTruthy();
+    return asRecord(JSON.parse(json!));
+  }
+
+  it.each([
+    { surface: 'player', frames: 'p1r2', gpuAllowEmpty: false, maxVeilOpacity: undefined },
+    { surface: 'editor', frames: '', gpuAllowEmpty: true, maxVeilOpacity: 0 },
+  ])('keeps native geometry stable when the $surface viewport changes', async (surface) => {
+    const { result, rerender } = renderHook(
+      ({ renderWidth, frames, presented }) =>
+        useNativeClimbRender({
+          ...TENSION_ORIGINAL,
+          ...nativeSurface,
+          renderWidth,
+          frames,
+          gpuPresentedConfigJson: presented,
+          gpuAllowEmpty: surface.gpuAllowEmpty,
+          maxVeilOpacity: surface.maxVeilOpacity,
+        }),
+      { initialProps: { renderWidth: 936, frames: surface.frames, presented: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    const initialJson = result.current.gpuConfigJson!;
+    expect(gpuConfig(initialJson)).toMatchObject({ output_width: 1080, board_width: 1080, board_height: 1504 });
+    const coldPngCount = surface.frames ? 1 : 0;
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(coldPngCount);
+    rerender({ renderWidth: 936, frames: surface.frames, presented: initialJson });
+    rerender({ renderWidth: 720, frames: 'p2r2', presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    expect(result.current.gpuFrames).toBe('p2r2');
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(coldPngCount);
+  });
+
+  it('uses the requested PNG size when native-resolution GPU geometry exceeds its limit', async () => {
+    getBoardRenderDataMock.mockReturnValue({ ...twoHolds, boardWidth: 1537 });
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2', renderWidth: 936 }),
+    );
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(result.current.gpuConfigJson).toBeNull();
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls.at(-1)![0]).output_width).toBe(936);
+  });
+
+  it.each(catalogueBoards)('reuses full geometry through $boardName player and editor frame changes', async (board) => {
+    const firstFrames = `p1r${board.role}`;
+    const { result, rerender } = renderHook(
+      ({ frames, presented }) =>
+        useNativeClimbRender({
+          ...board,
+          ...nativeSurface,
+          frames,
+          gpuAllowEmpty: true,
+          gpuPresentedConfigJson: presented,
+        }),
+      { initialProps: { frames: firstFrames, presented: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    const initialJson = result.current.gpuConfigJson!;
+    const config = gpuConfig(initialJson);
+    expect(config.render_mode).toBe('aura');
+    expect(config.output_width).toBe(1080);
+    expect(config.frames).toBe('');
+    expect(config.mirrored).toBe(false);
+    expect(config.holds).toEqual([
+      expect.objectContaining({ id: 1, mirroredHoldId: 2 }),
+      expect.objectContaining({ id: 2, mirroredHoldId: 1 }),
+    ]);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0]).frames).toBe(firstFrames);
+    rerender({ frames: firstFrames, presented: initialJson });
+    rerender({ frames: `p2r${board.role}`, presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    expect(result.current.gpuFrames).toBe(`p2r${board.role}`);
+    rerender({ frames: '', presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    expect(result.current.gpuFrames).toBe('');
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps all thirty Kilter state codes, Original roles and colour-mode aliases', async () => {
+    const { result, rerender } = renderHook(
+      ({ frames, presented }) =>
+        useNativeClimbRender({ ...catalogueBoards[0], ...nativeSurface, frames, gpuPresentedConfigJson: presented }),
+      { initialProps: { frames: 'p1r12p2r13', presented: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    const initialJson = result.current.gpuConfigJson!;
+    const states = asRecord(gpuConfig(initialJson).hold_state_map);
+    expect(Object.keys(states)).toHaveLength(30);
+    expect(states[12]).toEqual({ color: '#00FF00', role: 'starting' });
+    expect(states[13]).toEqual({ color: '#4DF5FD', role: 'hand' });
+    expect(states[14]).toEqual({ color: '#FF00FF', role: 'finish' });
+    expect(states[15]).toEqual({ color: '#FFAA00', role: 'foot' });
+    expect(states[37]).toEqual({ color: '#FF00FF', role: 'hand' });
+    expect(states[41]).toEqual({ color: '#0000FF', role: 'hand' });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    rerender({ frames: 'p1r12p2r13', presented: initialJson });
+    rerender({ frames: 'p1r14p2r15', presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    rerender({ frames: 'p1r37p2r41', presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Tension alternate role codes and includes the catalogue Spray layout', async () => {
+    const board = { boardName: 'tension' as const, layoutId: 11, sizeId: 6, setIds: '12' };
+    const { result, rerender } = renderHook(
+      ({ frames, presented }) =>
+        useNativeClimbRender({ ...board, ...nativeSurface, frames, gpuPresentedConfigJson: presented }),
+      { initialProps: { frames: 'p1r5p2r6', presented: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    const initialJson = result.current.gpuConfigJson!;
+    const states = asRecord(gpuConfig(initialJson).hold_state_map);
+    expect(Object.keys(states)).toHaveLength(8);
+    for (const code of [1, 2, 3, 4]) expect(states[code + 4]).toEqual(states[code]);
+    expect(states[6]).toEqual({ color: '#4DF5FD', role: 'hand' });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    rerender({ frames: 'p1r5p2r6', presented: initialJson });
+    rerender({ frames: 'p1r7p2r8', presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves MoonBoard annotations and its purple and pink preview colours', async () => {
+    const { result, rerender } = renderHook(
+      ({ frames, presented }) =>
+        useNativeClimbRender({ ...catalogueBoards[6], ...nativeSurface, frames, gpuPresentedConfigJson: presented }),
+      { initialProps: { frames: 'p1r46p2r47', presented: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    const initialJson = result.current.gpuConfigJson!;
+    const states = asRecord(gpuConfig(initialJson).hold_state_map);
+    expect(states[46]).toEqual({ color: '#FFE066', render_style: 'above-marker' });
+    expect(states[47]).toEqual({ color: '#C084FC', role: 'hand' });
+    expect(states[48]).toEqual({ color: '#FF7DBB', role: 'hand' });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    rerender({ frames: 'p1r46p2r47', presented: initialJson });
+    rerender({ frames: 'p1r48p2r46', presented: initialJson });
+    expect(result.current.gpuConfigJson).toBe(initialJson);
+    expect(result.current.gpuFrames).toBe('p1r48p2r46');
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains Woods placement zero and its own start and foot roles', async () => {
+    getBoardRenderDataMock.mockReturnValue({
+      ...twoHolds,
+      holdsData: [{ ...twoHolds.holdsData[0], id: 0 }, twoHolds.holdsData[1]],
+    });
+    const { result } = renderHook(() => useNativeClimbRender({ ...WOODS_8X10, ...nativeSurface, frames: 'p0r2p2r4' }));
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    const config = gpuConfig(result.current.gpuConfigJson);
+    expect(config.holds).toEqual(expect.arrayContaining([expect.objectContaining({ id: 0 })]));
+    const states = asRecord(config.hold_state_map);
+    expect(states[1]).toEqual({ color: '#FF00FF', role: 'foot' });
+    expect(states[4]).toEqual({ color: '#00DD00', role: 'starting' });
+    expect(result.current.gpuFrames).toBe('p0r2p2r4');
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0]).frames).toBe('p0r2p2r4');
+  });
+
+  it('uses local PNG rendering for custom spray walls', async () => {
+    const { result } = renderHook(() =>
+      useNativeClimbRender({
+        boardName: 'spray',
+        layoutId: 7431,
+        sizeId: 7431,
+        setIds: '1',
+        ...nativeSurface,
+        frames: 'p1r2',
+      }),
+    );
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(result.current.gpuConfigJson).toBeNull();
+    expect(result.current.gpuStatus).toBe('unavailable');
+  });
+
+  it('keeps Classic on its existing renderer even when the new binary is available', async () => {
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'classic' };
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2' }),
+    );
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(result.current.gpuConfigJson).toBeNull();
+    const config = asRecord(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls.at(-1)![0]));
+    expect(config.render_mode).toBeUndefined();
+    expect(asRecord(config.hold_state_map)[2]).toEqual({ color: '#4444FF' });
+  });
+
+  it.each(['fill', 'glow-fill'] as const)('keeps exact %s pixels on the PNG path', async (markStyle) => {
+    boardRenderSettingsRef.current = {
+      ...DEFAULT_BOARD_RENDER_SETTINGS,
+      mode: 'aura',
+      boardsesh: { ...DEFAULT_BOARD_RENDER_SETTINGS.boardsesh, markStyle },
+    };
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2' }),
+    );
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(result.current.gpuConfigJson).toBeNull();
+    const config = asRecord(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls.at(-1)![0]));
+    expect(config.mark_style).toBe(markStyle);
+    expect(config.output_width).toBe(twoHolds.boardWidth);
+  });
+
+  it('accepts the tallest native output without reducing resolution', async () => {
+    getBoardRenderDataMock.mockReturnValue({ ...twoHolds, boardHeight: 2304 });
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2' }),
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    expect(gpuConfig(result.current.gpuConfigJson)).toMatchObject({ output_width: 1080, board_height: 2304 });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0])).toMatchObject({
+      output_width: 1080,
+      board_height: 2304,
+      frames: 'p1r2',
+    });
+  });
+
+  it.each([
+    { reason: 'width', dimensions: { boardWidth: 1537 }, holdCount: 2 },
+    { reason: 'height', dimensions: { boardHeight: 2305 }, holdCount: 2 },
+    { reason: 'hold count', dimensions: {}, holdCount: 1025 },
+  ])(
+    'falls back at the native $reason limit while preserving the requested output',
+    async ({ dimensions, holdCount }) => {
+      getBoardRenderDataMock.mockReturnValue({
+        ...twoHolds,
+        ...dimensions,
+        holdsData: Array.from({ length: holdCount }, (_, index) => ({
+          id: index + 1,
+          mirroredHoldId: null,
+          cx: 100,
+          cy: 200,
+          r: 20,
+        })),
+      });
+      const { result } = renderHook(() =>
+        useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2' }),
+      );
+      await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+      expect(result.current.gpuConfigJson).toBeNull();
+      expect(result.current.gpuStatus).toBe('unavailable');
+      const config = asRecord(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls.at(-1)![0]));
+      expect(config.output_width).toBe(dimensions.boardWidth ?? twoHolds.boardWidth);
+      expect(config.board_height).toBe(dimensions.boardHeight ?? twoHolds.boardHeight);
+      expect(config.holds).toHaveLength(holdCount);
+    },
+  );
+});

@@ -1,6 +1,51 @@
 package com.boardsesh.climboverlaygpu
 
 import kotlin.math.max
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal class OverlayWorkCancelled : RuntimeException()
+
+internal class AtlasFrameFailure(val reasonCode: String) : IllegalArgumentException(reasonCode)
+
+internal class OverlayResourceFailure : IllegalArgumentException("gpu-resource-limit")
+
+internal object OverlayLifecycle {
+    fun beginPreparation(current: () -> Boolean, initialize: () -> Unit, surface: () -> Unit): Boolean {
+        if (!current()) return false
+        initialize()
+        surface()
+        return current()
+    }
+
+    fun retainGeometry(frameFailure: Boolean, cancelled: Boolean, sameGeometry: Boolean): Boolean =
+        frameFailure || (cancelled && sameGeometry)
+}
+
+/** Coalesces recovery with queued work without losing a reset during preparation. */
+internal class OverlayPreparationQueue {
+    private val preparing = AtomicBoolean(false)
+    private val recovery = AtomicBoolean(false)
+    val needsRecovery get() = recovery.get()
+    fun begin(): Boolean = preparing.compareAndSet(false, true)
+    fun started() { recovery.set(false) }
+    fun requestRecovery() { recovery.set(true) }
+    fun finish(newerRequest: Boolean): Boolean {
+        preparing.set(false)
+        return newerRequest || recovery.get()
+    }
+}
+
+/** One transparent context recovery per logical request; failed retries terminate. */
+internal class ContextRecoveryGate {
+    private var attempted: Pair<Long, Long>? = null
+
+    fun retry(revision: Long, generation: Long): Boolean {
+        val request = revision to generation
+        if (attempted == request) return false
+        attempted = request
+        return true
+    }
+}
 
 /** Platform-independent contracts, mirrored by the iOS motion tests. */
 internal object OverlayPolicy {
@@ -151,9 +196,7 @@ internal class AtlasBudget {
         private set
 
     fun reserve(amount: Int) {
-        require(amount > 0 && bytes + amount <= OverlayPolicy.ATLAS_LIMIT) {
-            "GPU atlas residency exceeds 128 MiB"
-        }
+        if (amount <= 0 || bytes + amount > OverlayPolicy.ATLAS_LIMIT) throw OverlayResourceFailure()
         bytes += amount
     }
 

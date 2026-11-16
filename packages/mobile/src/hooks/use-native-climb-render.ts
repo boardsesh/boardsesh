@@ -35,6 +35,7 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
+import { auraGpuRenderWidth } from '../lib/board-render/gpu-render-size';
 import { useGpuFailureStatus } from '../lib/board-render/gpu-failure-store';
 import {
   activeSprayArt,
@@ -84,7 +85,7 @@ import {
   type HoldColorOverrides,
   type HoldShapeOverrides,
 } from '../lib/hold-color-overrides';
-import { buildAuraRenderFields } from '@boardsesh/board-look';
+import { buildAuraRenderFields, supportsAuraGpu } from '@boardsesh/board-look';
 import {
   boardFieldColorForScheme,
   buildBoardRenderSignature,
@@ -200,6 +201,8 @@ type NativeClimbRenderParams = {
   playSurface?: boolean;
   /** Opt-in live GPU surface; callers gate native API compatibility and flag. */
   gpuSurface?: boolean;
+  /** Binary advertises exact packed fields, annotations and catalogue roles. */
+  gpuCatalogueNative?: boolean;
   gpuApiVersion?: number;
   /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
   gpuAllowEmpty?: boolean;
@@ -1873,6 +1876,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayFile = false,
     playSurface = false,
     gpuSurface = false,
+    gpuCatalogueNative = false,
     gpuApiVersion = 0,
     gpuAllowEmpty = false,
     gpuFallbackConfigJson,
@@ -2162,13 +2166,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // background-paths effect. Kept in sync with the strings that feed the keys.
   const setIdsArray = useMemo(() => setIds.split(',').map(Number).filter(Boolean), [setIds]);
 
+  const gpuRenderWidth = auraGpuRenderWidth(gpuCatalogueNative, renderWidth);
   const gpuStaticConfig = useMemo(() => {
     if (
       !gpuSurface ||
       filledStyle ||
       prefetch ||
-      boardName !== 'kilter' ||
-      layoutId !== 8 ||
+      !supportsAuraGpu({ boardName, layoutId, catalogueNative: gpuCatalogueNative }) ||
       effectiveRenderSettings.mode !== 'aura' ||
       effectiveRenderSettings.boardsesh.softDisc ||
       effectiveRenderSettings.boardsesh.markStyle === 'fill' ||
@@ -2185,7 +2189,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       sizeId,
       setIds,
       false,
-      renderWidth,
+      gpuRenderWidth,
       effectiveOverrides.colors,
       effectiveOverrides.shapes,
       effectiveOverrides.brushThickness,
@@ -2201,12 +2205,41 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     );
     if (!boardConfig) return null;
     const roleMap = boardConfig.configBase.hold_state_map as Record<number, unknown>;
-    // Homewall's four calibrated roles only. The general Kilter map includes
-    // other products that this layout never uses, wasting atlas role stamps.
-    const holdStateMap = Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
-    return { holdIds, json: JSON.stringify({ ...boardConfig.configBase, hold_state_map: holdStateMap, frames: '' }) };
+    const holdStateMap = gpuCatalogueNative
+      ? roleMap
+      : Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
+    const roleCodes = Object.keys(holdStateMap).map(Number);
+    const width = Number(boardConfig.configBase.output_width);
+    const height = Math.round(
+      (width * Number(boardConfig.configBase.board_height)) / Number(boardConfig.configBase.board_width),
+    );
+    if (
+      !supportsAuraGpu({
+        boardName,
+        layoutId,
+        catalogueNative: gpuCatalogueNative,
+        width,
+        height,
+        holdCount: holdIds.size,
+        roleCodes,
+        markStyle:
+          typeof boardConfig.configBase.mark_style === 'string' ? boardConfig.configBase.mark_style : undefined,
+      })
+    )
+      return null;
+    return {
+      holdIds,
+      roleCodes,
+      json: JSON.stringify({
+        ...boardConfig.configBase,
+        hold_state_map: holdStateMap,
+        frames: '',
+        geometry_cache_scope: `${boardName}/${layoutId}-${sizeId}`,
+      }),
+    };
   }, [
     gpuSurface,
+    gpuCatalogueNative,
     filledStyle,
     prefetch,
     boardName,
@@ -2214,7 +2247,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     sizeId,
     setIds,
     setIdsArray,
-    renderWidth,
+    gpuRenderWidth,
     effectiveRenderSettings,
     effectiveOverrides,
     configRenderSignature,
@@ -2232,14 +2265,27 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       gpuStaticConfig.json === gpuFallbackConfigJson
     )
       return null;
-    const rolesSupported = [...flatFrames.matchAll(/r(\d+)/g)].every((match) =>
-      [42, 43, 44, 45].includes(Number(match[1])),
-    );
+    const rolesSupported = supportsAuraGpu({
+      boardName,
+      layoutId,
+      catalogueNative: gpuCatalogueNative,
+      roleCodes: gpuStaticConfig.roleCodes,
+      frames: flatFrames,
+    });
     if (!rolesSupported) return null;
     const litIds = parseLitHoldIds(flatFrames);
     if (litIds.size > 0 && ![...litIds].some((holdId) => gpuStaticConfig.holdIds.has(holdId))) return null;
     return gpuStaticConfig.json;
-  }, [gpuStaticConfig, flatFrames, gpuAllowEmpty, gpuFallbackConfigJson, boardName, layoutId, gpuFailureStatus]);
+  }, [
+    gpuStaticConfig,
+    flatFrames,
+    gpuAllowEmpty,
+    gpuFallbackConfigJson,
+    boardName,
+    layoutId,
+    gpuCatalogueNative,
+    gpuFailureStatus,
+  ]);
 
   // A stationary carousel must wait for geometry/capability discovery rather
   // than permanently latching its PNG fallback during the first render.

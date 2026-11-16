@@ -98,4 +98,24 @@ class OverlayRoleAliasesTest {
             assertThrows("alias=$number", RuntimeException::class.java) { AtlasManifest.parse(aliasJson.replace("\"alias\":13", "\"alias\":$number"), 512) }
         }
     }
+
+    @Test
+    fun invalidFramesLeaveTheSameLayoutAvailableForTheNextValidFrame() {
+        val atlas = manifest(JSONArray().put(full(13)))
+        val layout = atlas.holds
+        val valid = selectHolds(atlas, "p1r13")
+        for ((frames, reason) in listOf(
+            "p1r999" to "frame-role-unsupported",
+            "p999r13" to "frame-no-matching-holds",
+            "p1r13".repeat(129) to "frame-active-limit",
+            "p".repeat(32 * 1024 + 1) to "frame-too-large",
+        )) {
+            val failure = assertThrows(AtlasFrameFailure::class.java) { selectHolds(atlas, frames) }
+            assertEquals(reason, failure.reasonCode)
+            assertTrue(OverlayLifecycle.retainGeometry(failure is AtlasFrameFailure, false, true))
+            assertSame(layout, atlas.holds)
+            assertEquals(valid, selectHolds(atlas, "p1r13"))
+        }
+        assertEquals(128, selectHolds(atlas, "p1r13".repeat(128)).size)
+    }
 }

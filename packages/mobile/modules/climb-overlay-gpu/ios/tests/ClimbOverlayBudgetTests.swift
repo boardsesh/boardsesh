@@ -62,7 +62,29 @@ import Foundation
     precondition(budget.bytes == 0)
     let preparation = ClimbOverlayPreparation()
     precondition(!preparation.isCancelled)
+    precondition(preparation.completion(current: true,visible: true) == .accept)
+    precondition(preparation.completion(current: false,visible: true) == .superseded)
+    precondition(preparation.completion(current: true,visible: false) == .hidden)
     preparation.cancel()
     precondition(preparation.isCancelled)
+    precondition(!preparation.retainsCompletedAtlas)
+    precondition(preparation.completion(current: true,visible: true) == .cancelled,
+      "Reattachment must not turn a cancelled preparation into a render error")
+    let detached = ClimbOverlayPreparation()
+    detached.cancel(releasingGPU: false)
+    precondition(detached.retainsCompletedAtlas,"A completed immutable layout survives presentation-only cancellation")
+    var errors = 0
+    var retries = 0
+    for failed in [false,true] {
+      switch detached.completion(current: true,visible: true) {
+      case .cancelled,.superseded: retries += 1
+      case .hidden: break
+      case .accept: if failed { errors += 1 }
+      }
+    }
+    precondition(errors == 0 && retries == 2,"Neither successful nor failed cancelled work reports a failure")
+    detached.cancel() // Configuration/background invalidation escalates retention.
+    detached.cancel(releasingGPU: false)
+    precondition(!detached.retainsCompletedAtlas,"Reattachment cannot undo GPU-release cancellation")
   }
 }
