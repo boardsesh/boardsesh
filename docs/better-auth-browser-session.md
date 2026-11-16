@@ -114,7 +114,7 @@ a cookie. Expo web learns everything from www responses, as it does today.
 ## The browser token
 
 Browser JavaScript holds the raw 30-day NextAuth JWE today:
-`/api/internal/ws-auth` returns it in JSON (`ws-auth/route.ts:84-89`), and www
+`/api/internal/ws-auth` returns it in JSON (`ws-auth/route.ts:81-86`), and www
 and Expo web send it to the backend as a bearer. B3 replaces it with a token
 that lives 15 minutes (owner decision 14, which is not written down anywhere on
 main; #7596 is the record). It is not the session token, so Better Auth's
@@ -278,7 +278,7 @@ rewrites the cookie, which is the race in
 [the cookie-order doc](./better-auth-browser-cookie-order.md), so the extra
 re-reads should use a probe that sets no cookie. The candidate is
 `/api/internal/ws-auth`, which reads the cookie with `getToken` and answers
-JSON (`ws-auth/route.ts:19-92`). A2 confirms in the installed NextAuth that
+JSON (`ws-auth/route.ts:18-89`). A2 confirms in the installed NextAuth that
 this path never sets a cookie; if it does, the re-read falls back to a session
 GET at the same 30-second throttle.
 
@@ -424,18 +424,23 @@ web files mix live and dead parts, and A5 splits them instead of deleting them:
    their selected branch and deleted `getServerRenderViewer`, which had no
    caller left after #7621; the legacy path is unchanged.
 
+A5 also removed the 503 that the selected branches of every `/api/auth/*` call,
+ws-auth, the native callback and private server renders gave any
+`__Host-boardsesh.browser-binding*` cookie, so a browser that still holds one
+signs in through the legacy cookie (#7594). The old cookies are left alone: the
+binding was never on in production, no live www path reads them, and they
+expire within 30 days. Until then a stale `__Host-boardsesh.browser-proof.*`
+cookie still counts toward the Google and Apple Cookie-header limits below.
+
 Deletions must not change live behaviour. One known live effect: in legacy
 mode, Google and Apple sign-in answer 503 when the Cookie header is malformed
 or too large (over 32,768 bytes, over 128 pairs, control characters, or a pair
-without a name). #7646 kept that check as
-`provider-oauth-cookie-header.server.ts`, answered at
-`[...nextauth]/route.ts:325-336`. The binding code also refused any
-`__Host-boardsesh.*` cookie on Google and Apple sign-in, and any
-`__Host-boardsesh.browser-binding*` cookie on every `/api/auth/*` call, on
-ws-auth, on the native callback and on private server renders. Only the
-binding design sets those cookies. #7646 and the PR that closed #7594 removed
-those refusals: a browser that still holds one now signs in through the legacy
-cookie, and nothing reads or clears the old cookie.
+without a name). A5 keeps an equivalent check and says so in its PR: since the
+route surgery it is `isAcceptableProviderOAuthCookieHeader`
+(`provider-oauth-cookie-header.server.ts`), answered at the top of
+`composedAuth` in `[...nextauth]/route.ts`. The old Google/Apple outer route,
+ws-auth and the native callback also refused any `__Host-boardsesh.*` cookie,
+which only the binding design sets; that part goes, as #7594 asks.
 
 ## Tests
 

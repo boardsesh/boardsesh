@@ -8,9 +8,10 @@ import { decode, type JWT } from 'next-auth/jwt';
 import type { Session } from 'next-auth';
 
 // A browser that was handed a `__Host-boardsesh.browser-binding` cookie while
-// the binding design was staged keeps it for up to 30 days. Nothing on www reads
-// that cookie or CURRENT_STORE_BROWSER_BINDING_MODE any more (#7596), so the
-// climber keeps signing in through the legacy NextAuth cookie (#7594).
+// the binding design was staged keeps it for up to 30 days. No live www path
+// reads that cookie or CURRENT_STORE_BROWSER_BINDING_MODE any more (#7596); the
+// readers left sit behind gated routes that refuse until they are deleted. So
+// the climber keeps signing in through the legacy NextAuth cookie (#7594).
 
 const secret = 'stale-browser-binding-fixture-secret';
 const origin = 'http://localhost:3000';
@@ -138,7 +139,12 @@ function invokeAuth(path: string, form?: Record<string, string>): Promise<Respon
   const context = { params: Promise.resolve({ nextauth: path.split('/') }) };
   return run(request, () => (form ? authPost(request, context) : authGet(request, context)));
 }
-function credentialsLogin(): Promise<Response> {
+/** A real sign-in: fetch the CSRF token with whatever cookies the browser holds, then post the credentials. */
+async function credentialsLogin(): Promise<Response> {
+  const csrf = await invokeAuth('csrf');
+  expect(csrf.status).toBe(200);
+  remember(csrf);
+  csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken;
   return invokeAuth('callback/credentials', {
     email: 'climber-a@example.invalid',
     password: 'fixture-only',
@@ -148,7 +154,7 @@ function credentialsLogin(): Promise<Response> {
   });
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   vi.stubEnv('NEXTAUTH_SECRET', secret);
   vi.stubEnv('NEXTAUTH_URL', origin);
   vi.stubEnv('AUTH_TRUST_HOST', '1');
@@ -160,14 +166,11 @@ beforeEach(async () => {
   io.authorizeCalls = 0;
   admissionReads = 0;
   cookieJar = new Map();
-  const response = await invokeAuth('csrf');
-  remember(response);
-  csrfToken = ((await response.json()) as { csrfToken: string }).csrfToken;
 });
 afterEach(() => vi.unstubAllEnvs());
 
 describe.each([
-  ['unset', ''],
+  ['unset', undefined],
   ['an invalid value', 'not-a-binding-mode'],
   ['backend-staging', 'backend-staging'],
 ])('stale browser-binding cookies with CURRENT_STORE_BROWSER_BINDING_MODE %s', (_label, mode) => {
