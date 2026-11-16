@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { CncBoardConfigInput } from '@boardsesh/shared-schema';
 
@@ -91,6 +91,34 @@ describe('CNC layout request and cache ownership', () => {
     });
     expect(publicLayout.result.current.summary?.panelCount).toBe(1);
     expect(client.getQueryCache().getAll().at(-1)?.queryKey[3]).toBe('public');
+  });
+
+  it('keeps a private layout that lands after the configurator unmounts out of the cache', async () => {
+    const pending = deferred();
+    state.compute.mockReturnValue(pending.promise);
+    const { client, Wrapper } = layoutWrapper();
+    const mounted = renderHook(
+      () => useCncLayout(CONFIG, { includeHoles: true, authToken: 'buyer-a', cacheScope: 'a' }),
+      { wrapper: Wrapper },
+    );
+    await tick();
+    const [layoutQuery] = client.getQueryCache().getAll();
+    // A second subscriber stops react-query cancelling the fetch on unmount,
+    // so only the request scope's mount fence can refuse the late layout.
+    const stopObserving = new QueryObserver(client, { queryKey: layoutQuery.queryKey, enabled: false }).subscribe(
+      () => {},
+    );
+    const isCurrent = state.compute.mock.calls[0][2].isCurrent as () => boolean;
+    expect(isCurrent()).toBe(true);
+    mounted.unmount();
+    expect(isCurrent()).toBe(false);
+    await act(async () => {
+      pending.resolve(LAYOUT);
+    });
+    await tick();
+    expect(layoutQuery.state.data).toBeUndefined();
+    expect(layoutQuery.state.error?.message).toBe('STALE_CNC_REQUEST');
+    stopObserving();
   });
 
   it('aborts an obsolete configuration when its debounced replacement starts', async () => {

@@ -38,7 +38,7 @@ const ownerProfile = {
   isPrivate: false,
   canViewActivity: true,
 };
-const privateSentinels = ['PRIVATE_EMAIL', 'PRIVATE_MAPPING', 'PRIVATE_LOGBOOK', 'PRIVATE_BETA'];
+const ownerSeedMarkers = ['OWNER_EMAIL', 'OWNER_MAPPING', 'OWNER_LOGBOOK', 'OWNER_BETA'];
 const params = () => Promise.resolve({ user_id: 'profile-owner' });
 
 beforeEach(() => {
@@ -47,16 +47,16 @@ beforeEach(() => {
   controls.session.mockResolvedValue({ user: { id: 'profile-owner' } });
   controls.profile.mockResolvedValue({
     ...ownerProfile,
-    email: privateSentinels[0],
-    credentials: [{ boardType: 'kilter', auroraUsername: privateSentinels[1] }],
+    email: ownerSeedMarkers[0],
+    credentials: [{ boardType: 'kilter', auroraUsername: ownerSeedMarkers[1] }],
   });
   controls.stats.mockResolvedValue({
     initialProfileStats: null,
     initialPercentile: null,
-    initialAllBoardsTicks: { kilter: [privateSentinels[2]] },
-    initialLogbook: [privateSentinels[2]],
+    initialAllBoardsTicks: { kilter: [ownerSeedMarkers[2]] },
+    initialLogbook: [ownerSeedMarkers[2]],
   });
-  controls.beta.mockResolvedValue([{ betaLink: privateSentinels[3] }]);
+  controls.beta.mockResolvedValue([{ betaLink: ownerSeedMarkers[3] }]);
 });
 
 describe('profile-family server props', () => {
@@ -64,8 +64,8 @@ describe('profile-family server props', () => {
     const profile = await ProfilePage({ params: params() });
     const statistics = await ProfileStatisticsPage({ params: params() });
     const sessions = await ProfileSessionsPage({ params: params() });
-    for (const sentinel of privateSentinels) expect(JSON.stringify(profile)).toContain(sentinel);
-    expect(JSON.stringify(statistics)).toContain('PRIVATE_LOGBOOK');
+    for (const marker of ownerSeedMarkers) expect(JSON.stringify(profile)).toContain(marker);
+    expect(JSON.stringify(statistics)).toContain('OWNER_LOGBOOK');
     expect(JSON.stringify(statistics)).toContain('"initialIsOwnProfile":true');
     expect(JSON.stringify(sessions)).toContain('"isAuthenticatedSSR":true');
     expect(controls.profile).toHaveBeenCalledWith('profile-owner', 'profile-owner');
