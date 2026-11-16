@@ -35,7 +35,6 @@ describe('authority operator safety', () => {
     expect(AUTHORITY_ACTIVATION_BLOCKERS).toEqual([
       'GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION',
       'STAGED_WEB_PROOF_GENERATION_STAMP',
-      'NATIVE_REVOKE_RESET_LOCK_ORDER',
     ]);
   });
   it('denies future auth tables, preserves cutoff reads and prints rollback', () => {
