@@ -1,16 +1,13 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { LinkBoardAccountModal, errorMessageFor } from './LinkBoardAccountModal';
-import {
-  AURORA_CREDENTIALS_QUERY_KEY,
-  AURORA_UNSYNCED_QUERY_KEY,
-} from '../../lib/integrations/board-account-query-keys';
+import { AURORA_UNSYNCED_QUERY_KEY } from '../../lib/integrations/board-account-query-keys';
 import { invalidateOwnDataAfterImport } from '../../lib/integrations/board-import-completion';
 import { useAuroraCredentialsRead, useAuroraUnsyncedRead } from '../../lib/integrations/use-board-account-reads';
 import { getImportPickerTypes } from '../../lib/integrations/import-picker-types';
@@ -33,14 +30,10 @@ import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useUnlinkBoardAccount } from '../../lib/integrations/use-unlink-board-account';
+import { useRequestProviderSync } from '../../lib/integrations/use-request-provider-sync';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
-import { getHttpClient } from '../../lib/graphql/client';
-import {
-  REQUEST_PROVIDER_SYNC,
-  type RequestProviderSyncMutationResponse,
-  type RequestProviderSyncMutationVariables,
-} from '../../lib/graphql/operations';
+
 import { extractGraphqlCode, isGraphqlRateLimitedError } from '../../lib/graphql/extract-error-message';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
@@ -241,13 +234,6 @@ function getMoonBoardProgressLabel(t: TFunction<'settings'>, progress: MoonBoard
 
 const SYNCABLE_SYNC_STATUSES = new Set(['pending', 'active', 'error']);
 
-function requestProviderSync(boardType: AuroraBoardName) {
-  return getHttpClient().request<RequestProviderSyncMutationResponse, RequestProviderSyncMutationVariables>(
-    REQUEST_PROVIDER_SYNC,
-    { boardType },
-  );
-}
-
 function getSyncNowErrorMessage(t: TFunction<'settings'>, error: unknown): string {
   if (isGraphqlRateLimitedError(error)) return t('aurora.mobile.syncNowRateLimited');
   switch (extractGraphqlCode(error)) {
@@ -323,39 +309,11 @@ export function BoardAccountsSection() {
     errorMessage: (error) => errorMessageFor(error, t),
   });
 
-  // Boards with a Sync now request in flight. Per board, not the mutation's
-  // own isPending/variables: one observer only remembers its latest call, so a
-  // tap on a second board would re-enable the first and let it be sent again
-  // against the shared 5-a-minute limit. A board leaves this set once its
-  // request settled and the refetched card carries its pendingRunId.
-  // The ref answers "already in flight?" synchronously for a double tap; the
-  // state copy re-renders the cards.
-  const syncRequestsInFlight = useRef(new Set<AuroraBoardName>());
-  const [syncRequests, setSyncRequests] = useState<ReadonlySet<AuroraBoardName>>(() => new Set());
-  const syncNowMutation = useMutation({
-    mutationFn: requestProviderSync,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: AURORA_CREDENTIALS_QUERY_KEY });
-    },
-    onError: (error) => {
-      showToast(getSyncNowErrorMessage(t, error), isGraphqlRateLimitedError(error) ? 'warning' : 'error');
-    },
-    // Hook-level, so it runs for every request, not only the latest one.
-    onSettled: (_result, _error, boardType) => {
-      syncRequestsInFlight.current.delete(boardType);
-      setSyncRequests(new Set(syncRequestsInFlight.current));
-    },
+  const providerSync = useRequestProviderSync({
+    reader: credentialsQuery.originalCredentialsRead,
+    errorMessage: (error) => getSyncNowErrorMessage(t, error),
+    isWarning: isGraphqlRateLimitedError,
   });
-  const { mutate: requestSync } = syncNowMutation;
-  const handleSyncNow = useCallback(
-    (boardType: AuroraBoardName) => {
-      if (syncRequestsInFlight.current.has(boardType)) return;
-      syncRequestsInFlight.current.add(boardType);
-      setSyncRequests(new Set(syncRequestsInFlight.current));
-      requestSync(boardType);
-    },
-    [requestSync],
-  );
 
   const stepLabels = useMemo(
     () => ({
@@ -544,8 +502,9 @@ export function BoardAccountsSection() {
           systemColors={systemColors}
           brandColors={brandColors}
           isRetrying={credentialsQuery.isFetching}
+          retryHaptic={providerSync.suppressButtonHaptic ? false : undefined}
           onRetry={() => {
-            void credentialsQuery.refetch();
+            void providerSync.retry();
           }}
         />
       ) : (
@@ -564,8 +523,9 @@ export function BoardAccountsSection() {
               unsyncedCounts={unsynced}
               isLast={cardIndex === cardConfigs.length - 1}
               isRemoving={unlinkAccount.isRemoving(cardConfig.boardType)}
-              isSyncing={Boolean(credential?.pendingRunId) || syncRequests.has(cardConfig.boardType)}
-              onSyncNow={() => handleSyncNow(cardConfig.boardType)}
+              isSyncing={Boolean(credential?.pendingRunId) || providerSync.isRequesting(cardConfig.boardType)}
+              onSyncNow={() => providerSync.request(cardConfig.boardType)}
+              syncHaptic={providerSync.suppressButtonHaptic ? false : undefined}
               systemColors={systemColors}
               brandColors={brandColors}
               onImport={() => handleImportPress(cardConfig.boardType)}
@@ -970,10 +930,17 @@ type BoardAccountsLoadErrorProps = {
   systemColors: ReturnType<typeof useTheme>['systemColors'];
   brandColors: ReturnType<typeof useTheme>['brandColors'];
   isRetrying: boolean;
+  retryHaptic?: boolean;
   onRetry: () => void;
 };
 
-function BoardAccountsLoadError({ systemColors, brandColors, isRetrying, onRetry }: BoardAccountsLoadErrorProps) {
+function BoardAccountsLoadError({
+  systemColors,
+  brandColors,
+  isRetrying,
+  onRetry,
+  retryHaptic,
+}: BoardAccountsLoadErrorProps) {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
 
@@ -989,6 +956,7 @@ function BoardAccountsLoadError({ systemColors, brandColors, isRetrying, onRetry
         size="small"
         loading={isRetrying}
         disabled={isRetrying}
+        haptic={retryHaptic}
         onPress={onRetry}
       />
     </View>
@@ -1010,6 +978,7 @@ type BoardAccountCardProps = {
   onLink: () => void;
   onRequestData: () => void;
   onSyncNow: () => void;
+  syncHaptic?: boolean;
   onUnlink: () => void;
 };
 
@@ -1027,6 +996,7 @@ function BoardAccountCard({
   onLink,
   onRequestData,
   onSyncNow,
+  syncHaptic,
   onUnlink,
 }: BoardAccountCardProps) {
   const { t } = useTranslation('settings');
@@ -1148,6 +1118,7 @@ function BoardAccountCard({
                 size="small"
                 loading={isSyncing}
                 disabled={isSyncing}
+                haptic={syncHaptic}
                 onPress={onSyncNow}
               />
             ) : null}

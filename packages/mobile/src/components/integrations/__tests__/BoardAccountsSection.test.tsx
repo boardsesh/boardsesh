@@ -915,3 +915,16 @@ describe('LinkBoardAccountModal host lifecycle', () => {
     expect(mocks.linkFailed).not.toHaveBeenCalled();
   });
 });
+
+// This existing host does not execute selected Sync now. Refuse unexpected
+// action work rather than importing native credential modules through its port.
+vi.mock('../../../lib/graphql/use-auth-token', () => ({
+  subscribeHttpOperationScope: () => {
+    throw new Error('Unexpected Sync observable use in compatibility host');
+  },
+}));
+vi.mock('../../../lib/haptics', () => ({
+  hapticLight: () => {
+    throw new Error('Unexpected selected Sync haptic in compatibility host');
+  },
+}));
