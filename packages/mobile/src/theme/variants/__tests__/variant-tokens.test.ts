@@ -21,6 +21,7 @@ import {
   applySectionCaption,
 } from '../variant-tokens';
 import { makeThemeMock } from '../../../test/theme-mock';
+import { selectedRowColors } from '../../../components/climb-list-row-colors';
 
 describe('selectByVariant', () => {
   it('returns the value for the active variant', () => {
@@ -107,7 +108,6 @@ describe('Velvet Send v2 roles', () => {
     label: '#LABEL',
     secondaryLabel: '#SECONDARY_LABEL',
     accent: '#ACCENT',
-    fill: '#FILL',
     tertiaryFill: '#TERTIARY_FILL',
   };
 
@@ -118,8 +118,12 @@ describe('Velvet Send v2 roles', () => {
     });
   });
 
-  it('keeps selection off violet text: label text, accent checkmark, the resolved fill', () => {
-    expect(resolveSelectionColors(inputs)).toEqual({ text: '#LABEL', checkmark: '#ACCENT', fill: '#FILL' });
+  it('keeps selection off violet text: label text, accent checkmark, a brand wash behind the row', () => {
+    expect(resolveSelectionColors(inputs, '#6D28D9')).toEqual({
+      text: '#LABEL',
+      checkmark: '#ACCENT',
+      fill: 'rgba(109, 40, 217, 0.18)',
+    });
   });
 
   it('draws a status as a quiet tertiary fill with secondary text', () => {
@@ -139,4 +143,17 @@ describe('Velvet Send v2 roles', () => {
     expect(theme.selection.checkmark).toBe(theme.systemColors.accent);
     expect(theme.status.label).toBe(theme.systemColors.secondaryLabel);
   });
+
+  it.each([
+    ['liquidGlass', 'light'],
+    ['liquidGlass', 'dark'],
+    ['material', 'light'],
+    ['material', 'dark'],
+  ] as const)(
+    'matches the current-climb wash in the Climbs list on %s %s, so moving the row onto the role changes nothing',
+    (variant, colorScheme) => {
+      const theme = makeThemeMock({ variant, colorScheme });
+      expect(theme.selection.fill).toBe(selectedRowColors(theme.brandColors.primary).fill);
+    },
+  );
 });

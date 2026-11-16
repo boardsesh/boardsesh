@@ -378,13 +378,13 @@ on the elevated #1C1C1E rather than a static #000.
 
 ### Selection (`theme.selection`)
 
-`{ text: label, checkmark: accent, fill: systemFill }`. The selected item's title stays the label
-colour, an accent checkmark marks it, and the `fill` wash may sit behind it. That wash is grey on
-iOS (`systemFill`) and on Material, but violet-tinted on Liquid Glass off iOS, whose fallback
-`fill` is `rgba(109, 40, 217, 0.1)` in light. The active-row look is still being chosen, so treat
-the fill as provisional. Selection is a state,
-not a link. `ClimbListRow`'s violet wash and bar (`selectedRowColors`) predate the role and move in
-wave W1.
+`{ text: label, checkmark: accent, fill: brand primary at 18% }`. The selected item's title stays
+the label colour, set semibold with `<Text emphasized>` at the call site; an accent checkmark marks
+it; and a violet wash sits behind the row. The wash is the current climb's look in the Climbs list
+(#6D28D9 at 18% in light, the lifted #A78BFA at 18% in dark) on every variant, Material included,
+since its climb list already draws it. It is a surface behind the row, not violet text, so the rule
+above holds. Selection is a state, not a link. `ClimbListRow` still builds the same wash itself
+(`selectedRowColors`) and moves onto the role in wave W1 with no visible change.
 
 ### Status (`theme.status`)
 

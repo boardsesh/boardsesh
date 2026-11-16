@@ -191,8 +191,8 @@ type Theme = {
   surfaces: Surfaces;
   /**
    * The selected or current item (Velvet Send v2): `label` text, an `accent`
-   * checkmark, a `fill` wash (grey on iOS and Material, violet-tinted on Liquid
-   * Glass off iOS). Selection is never violet text.
+   * checkmark, and the brand primary at 18% as the row wash (the Climbs list's
+   * current-climb look). Selection is never violet text.
    */
   selection: SelectionColors;
   /**
@@ -465,7 +465,7 @@ export function ThemeProvider({
         error: resolvedSystemColors.error,
       }),
       surfaces: resolveSurfaces(resolvedSystemColors),
-      selection: resolveSelectionColors(resolvedSystemColors),
+      selection: resolveSelectionColors(resolvedSystemColors, resolvedBrandColors.primary),
       status: resolveStatusColors(resolvedSystemColors),
       chartColors: resolvedChartColors,
       heatRamp: resolveHeatRamp(colorScheme),

@@ -96,12 +96,19 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
     });
   });
 
-  it('resolves selection and status to label, accent and the system fills', async () => {
-    const theme = await renderTheme('light');
-    expect(theme.current.selection.text).toBe('label');
-    expect(theme.current.selection.checkmark).toBe(theme.current.systemColors.accent);
-    expect(theme.current.selection.fill).toBe('systemFill');
-    expect(theme.current.status).toEqual({ fill: 'tertiarySystemFill', label: 'secondaryLabel' });
+  it('resolves selection to label, accent and the brand wash, and status to the system fills', async () => {
+    const light = await renderTheme('light');
+    expect(light.current.selection.text).toBe('label');
+    expect(light.current.selection.checkmark).toBe(light.current.systemColors.accent);
+    // The current-climb wash in the Climbs list: #6D28D9 at 18% in light...
+    expect(light.current.selection.fill).toBe('rgba(109, 40, 217, 0.18)');
+    expect(light.current.status).toEqual({ fill: 'tertiarySystemFill', label: 'secondaryLabel' });
+  });
+
+  it('lifts the selection wash to the dark brand primary in dark', async () => {
+    const dark = await renderTheme('dark');
+    // ...and the lifted #A78BFA at 18% in dark.
+    expect(dark.current.selection.fill).toBe('rgba(167, 139, 250, 0.18)');
   });
 
   it('routes errors through the adaptive systemRed', async () => {

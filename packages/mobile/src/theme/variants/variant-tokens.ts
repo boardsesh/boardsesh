@@ -1,6 +1,6 @@
 import { type OpaqueColorValue } from 'react-native';
 import type { UiVariant } from '../resolve-ui-variant';
-import { materialSurfaces, androidFallbackColors, type SystemColorKey } from '../colors';
+import { materialSurfaces, androidFallbackColors, withAlpha, type SystemColorKey } from '../colors';
 
 /**
  * Variant-resolved design tokens. These live in ONE place so the provider and
@@ -93,7 +93,6 @@ export type RoleColorInputs = Record<
   | 'label'
   | 'secondaryLabel'
   | 'accent'
-  | 'fill'
   | 'tertiaryFill',
   ColorValue
 >;
@@ -138,10 +137,12 @@ export function resolveSurfaces(inputs: RoleColorInputs): Surfaces {
 /**
  * The selected or current item in a list: the board you're on, the picked option,
  * the active filter. Selection is a state, not a link, so the text stays the label
- * colour, a checkmark in the accent marks it, and the `fill` wash can sit behind
- * it. Violet text and icons are only for things you can tap (HIG Color: "if you use
- * your brand color to indicate that a borderless button is interactive, using the
- * same or similar color to stylize noninteractive text is confusing").
+ * colour (set it semibold with `<Text emphasized>` at the call site), a checkmark
+ * in the accent marks it, and a violet wash sits behind the row. Violet text and
+ * icons are only for things you can tap (HIG Color: "if you use your brand color to
+ * indicate that a borderless button is interactive, using the same or similar color
+ * to stylize noninteractive text is confusing"); a wash behind the row is a
+ * surface, not text, so it may carry the brand.
  */
 export type SelectionColors = {
   /** The selected item's title: `label`. */
@@ -149,17 +150,24 @@ export type SelectionColors = {
   /** The checkmark beside it: `accent`. */
   checkmark: ColorValue;
   /**
-   * An optional row or cell wash: the resolved `fill`. Grey on iOS (`systemFill`)
-   * and on Material; violet-tinted on Liquid Glass off iOS, where the fallback
-   * ladder's `fill` is `rgba(109, 40, 217, 0.1)` in light. Not final: the
-   * active-row look is still being chosen.
+   * The row or cell wash: the scheme's brand primary at 18% (#6D28D9 in light,
+   * the lifted #A78BFA in dark), the same wash the current climb in the Climbs
+   * list draws (`selectedRowColors`). Every variant takes it: Material's climb
+   * list already draws this wash rather than an M3 tonal container, so one look
+   * holds everywhere.
    */
-  fill: ColorValue;
+  fill: string;
 };
 
-/** Same mapping on both variants: the variant arrives through the resolved inputs. */
-export function resolveSelectionColors(inputs: RoleColorInputs): SelectionColors {
-  return { text: inputs.label, checkmark: inputs.accent, fill: inputs.fill };
+/** The selection wash's strength. Must stay equal to `selectedRowColors`' wash. */
+export const SELECTION_WASH_ALPHA = 0.18;
+
+/**
+ * Same mapping on both variants: the variant arrives through the resolved inputs.
+ * `brandPrimary` is the scheme's `brandColors.primary`, a hex string.
+ */
+export function resolveSelectionColors(inputs: RoleColorInputs, brandPrimary: string): SelectionColors {
+  return { text: inputs.label, checkmark: inputs.accent, fill: withAlpha(brandPrimary, SELECTION_WASH_ALPHA) };
 }
 
 /**
