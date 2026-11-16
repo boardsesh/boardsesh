@@ -73,7 +73,26 @@
       "betaReady": "Ta sauvegarde est enregistrée. Confirme le modèle du contrôleur et le statut bêta avant l’installation.",
       "betaWarning": "Bêta : les tests OTA, Android et iOS sur appareils réels ne sont pas terminés. L’installation peut échouer et tu devras peut-être restaurer les réglages WLED depuis ta sauvegarde.",
       "confirmBeta": "Je comprends que ce firmware est en bêta et que les tests sur appareils réels ne sont pas terminés",
-      "installBeta": "Installer le firmware bêta"
+      "installBeta": "Installer le firmware bêta",
+      "hotspot": {
+        "toggle": "Installer sans Wi-Fi (point d’accès du contrôleur)",
+        "hint": "Pas de Wi-Fi à ton Spraywall ? Boardsesh télécharge d’abord le firmware avec n’importe quelle connexion, données mobiles comprises. Ensuite ton téléphone rejoint le point d’accès du contrôleur pour l’installer, puis le quitte une fois terminé.",
+        "ssid": "Nom du point d’accès du contrôleur",
+        "password": "Ce mot de passe ne fonctionne pas. Les mots de passe du point d’accès WLED font de 8 à 63 caractères, et celui par défaut est wled1234.",
+        "start": "Télécharger et connecter",
+        "downloading": "Téléchargement et vérification du firmware avant la connexion…",
+        "connecting": "Connexion à ton contrôleur… Accepte la demande Wi-Fi si ton téléphone te la propose.",
+        "rebooting": "WLED redémarre. Reconnexion à son point d’accès…",
+        "complete": "Bluetooth installé, et ton téléphone a quitté le point d’accès du contrôleur. Choisis Bluetooth, puis Chercher un contrôleur Bluetooth.",
+        "failed": "Impossible de terminer via le point d’accès du contrôleur. Ton téléphone l’a quitté, réessaie.",
+        "notFound": "Impossible de rejoindre {{ssid}}. Vérifie que le contrôleur est allumé et à proximité, et que le nom du réseau et le mot de passe sont corrects.",
+        "denied": "Ton téléphone n’a pas rejoint le point d’accès du contrôleur. Réessaie et choisis Se connecter quand il te le demande.",
+        "timeout": "La connexion au point d’accès du contrôleur a pris trop de temps. Rapproche-toi du contrôleur et réessaie.",
+        "unsupported": "Rejoindre le point d’accès depuis Boardsesh nécessite Android 10 ou plus récent. Rejoins {{ssid}} dans tes réglages Wi-Fi, ouvre 4.3.2.1 dans un navigateur et connecte WLED à un réseau Wi-Fi. Installe ensuite via le Wi-Fi.",
+        "lost": "WLED a redémarré, mais ton téléphone n’a pas pu rejoindre son point d’accès. Laisse le contrôleur allumé, puis vérifie l’installation.",
+        "locked": "La page de mise à jour de WLED est verrouillée. Rejoins {{ssid}} dans tes réglages Wi-Fi, ouvre 4.3.2.1/settings/sec dans un navigateur et déverrouille OTA. Puis réessaie.",
+        "leave": "Se déconnecter du contrôleur"
+      }
     }
   },
   "sprayDetection": {

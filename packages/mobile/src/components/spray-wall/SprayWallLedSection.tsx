@@ -326,7 +326,8 @@ function SprayWallLedEditor({
                             : t('sprayLed.lightFailed')}
                     </Text>
                   ) : null}
-                  {canInstall && !disabled && settings.controller.url ? (
+                  {/* No saved address: the owner can still install over the controller's hotspot. */}
+                  {canInstall && !disabled ? (
                     <WledBluetoothInstaller url={settings.controller.url} disabled={locked || pending !== null} />
                   ) : null}
                 </>
