@@ -112,102 +112,12 @@ Meaningful independently public SSR content must remain available. The dark
 source and injected transport tests do not constitute an actual browser or
 supported-engine qualification.
 
-## Public server payloads and private client views
-
-Hiding server children behind a client component does not remove their props
-from React Flight. The selected profile, statistics and profile-session routes
-therefore omit viewer-private server seeds entirely. The profile card is fetched
-without a credential and contains no owner email, local board mappings, logbook,
-stats or beta seed. Its public name remains an `h1` with existing crawlable links.
-The legacy rendering branch retains its existing behavior.
-
-Selected gym management sends only the route slug and public owner tuple to its
-client island. Its metadata uses the generic utility title without looking up
-the private gym. The client fetches the gym through the owned GraphQL transport
-only after the actual accepted SessionContext object matches UID, SID,
-generation, binding and version. A copied session object cannot supply that
-private local receipt. Invalidation, retirement, disposal and exact-tuple ABA
-invalidate earlier accepted-session receipts independently of public metadata.
-Subscriber failures cannot stop another view from receiving retirement.
-
-The private-view boundary uses a synchronous external-store subscription; its
-server HTML is the independently public fallback. Children of this boundary
-must never include private server props. Mismatched cached route labels request
-one shared route refresh per accepted response. Same-owner invalidation requests
-one central session refresh per local revision, without superseding an already
-admitted account transition that is awaiting ordered preference cleanup.
-
-Page suspension retires selected receipts, flushes the private DOM removal
-synchronously before the event returns, and aborts pending session reads.
-A restored document must accept a new primary-backed session response before
-these client islands reveal private content. Event-driven React tests cover
-suspension, outages and abort-ignoring old bodies; they do not establish actual
-browser BFCache behavior.
-
-This is a bounded source change. Remaining viewer-derived pages, private cookie
-JSON reads, server actions, native handoff, actual HTML/Flight/prefetch sentinel
-checks and supported-browser history/BFCache races remain rollout gates in
-#7430. In particular, a cache remount or event test is not evidence that every
-private response or restored document has been qualified. Public readiness
-remains false.
-
-### Selected build-plan orders
-
-Selected purchase-history and order-detail server responses contain only public
-catalog data, route parameters and owner metadata. Orders, buyer fields and
-preview URLs are loaded by the admitted browser. The same pure order-list view
-serves legacy server rendering and the selected client without duplicating its
-layout. Existing utility metadata and noindex behavior remain unchanged.
-
-The configurator, order views and polls partition state/cache keys by the actual
-accepted browser tuple and its local retirement revision. Invalidated data
-cannot reappear merely because the same tuple is admitted again. Confirmed
-anonymous configuration remains separate from an unavailable selected owner.
-Private islands share one central refresh per actual Session object/revision;
-an already admitted different owner awaiting preference cleanup is preserved.
-
-CNC actions capture the caller's original opaque lease scope before sending.
-After their own awaits, they also check the actual decoded GraphQL result's
-private receipt. That receipt retains the original delivery lease and caller
-abort signal; a renewed same-owner lease cannot extend an older result's
-deadline. Original direct operation objects/arrays are covered for up to 64
-top-level fields, without recursively walking a response. Copies and restored
-objects carry no receipt. Preview seeding, checkout after draft cleanup and
-download navigation all use these guards; uncertainty never replays a mutation.
-
-Source tests use the installed GraphQL client and real memory manager, including
-same-owner renewal, delayed post-body consumption, cancellation, exact-tuple
-re-admission and the retained legacy views. Actual Next Flight/history and
-supported-browser qualification remain required; these tests do not activate
-the browser contract or authorize a payment/production change.
+The selected private views for profile, statistics, profile sessions, gym
+management and build-plan orders, and the selected profile JSON response, were
+removed by #7596. Those pages and the profile endpoint render only through the
+existing NextAuth session.
 
 ## Evidence and remaining work
-
-The selected profile JSON endpoint now buffers a versioned profile plus its
-actual primary-admitted public owner tuple. It forwards only a backend-issued
-lease to the existing profile query and re-admits the same source before any
-profile bytes leave the endpoint. Positive anonymous observations use an
-explicit public-only lookup. Missing, denied and uncertain selected sources
-never delegate to the flat legacy response. Successful responses are bounded to
-64 KiB UTF8 and contain neither the source credential nor the short lease.
-
-The profile client captures the actual accepted Session object and local
-revision before dispatch, checks them after headers and body consumption, and
-requires the response owner to match. Copied metadata, an old body or A-to-B-to-A
-cannot populate a later scope. Known current denial retires only that still
-current request's local scope and requests a fresh central read; it does not
-clear cookies or acknowledge anonymity. A 503 remains uncertainty. The body has
-a 15-second deadline and the same 64 KiB UTF8 bound.
-
-All four profile query keys include the selected owner and local revision.
-Retirement hides their private results while retaining only the independently
-public server seed. Public server seeds do not acquire the legacy 30-second
-freshness window: a qualified accepted source triggers a fresh read immediately,
-and a later public RSC refresh cannot overwrite an admitted private result.
-Legacy profile responses, seed freshness and cache keys retain their existing
-behavior. Other profile interactions and actual application/browser response,
-Flight, prefetch and history qualification remain open; the public readiness
-gate is unchanged.
 
 The memory holder has 29 independently reviewed tests, including cached-positive
 awaits, scope changes, exact expiry, copied results and bounded timeout recovery.

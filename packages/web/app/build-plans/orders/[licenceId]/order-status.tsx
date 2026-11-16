@@ -20,7 +20,6 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { useCncRequestScope } from '../../use-cnc-request-scope';
-import { useCncBrowserScope } from '../../use-cnc-browser-scope';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
 import { createOrderDateFormatter } from '../../format-date';
 import { boardDisplayLabel, finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
@@ -99,7 +98,6 @@ type OrderStatusProps = {
   /** Server-fetched, so the first paint already shows the real status. */
   initialOrder: CncOrder;
   initialOwnerId: string;
-  initialBrowserScopeKey?: string;
   wallLabel: string;
   checkoutOutcome: 'success' | 'cancelled' | null;
   locale: string;
@@ -107,19 +105,12 @@ type OrderStatusProps = {
 
 export default function OrderStatus(props: OrderStatusProps) {
   const { data: session } = useSession();
-  const browserScopeKey = useCncBrowserScope(session);
   const ownerId = session?.user?.id ?? null;
-  if (
-    browserScopeKey === null ||
-    (browserScopeKey !== undefined && props.initialBrowserScopeKey !== browserScopeKey) ||
-    !ownerId ||
-    ownerId !== props.initialOwnerId
-  )
-    return null;
+  if (!ownerId || ownerId !== props.initialOwnerId) return null;
   const authSessionId = session?.authSessionId ?? null;
   return (
     <OwnedOrderStatus
-      key={JSON.stringify([ownerId, authSessionId, browserScopeKey])}
+      key={JSON.stringify([ownerId, authSessionId])}
       {...props}
       ownerId={ownerId}
       authSessionId={authSessionId}
@@ -134,11 +125,10 @@ function OwnedOrderStatus({
   locale,
   ownerId,
   authSessionId,
-  initialBrowserScopeKey,
 }: OrderStatusProps & { ownerId: string; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { token } = useWsAuthToken();
-  const beginRequest = useCncRequestScope(token);
+  const beginRequest = useCncRequestScope();
   const router = useLocaleRouter();
   const pathnameWithoutLocale = usePathnameWithoutLocale();
   const [downloadErrorKey, setDownloadErrorKey] = useState<CncErrorKey | null>(null);
@@ -149,7 +139,6 @@ function OwnedOrderStatus({
     licenceId,
     ownerId,
     authSessionId,
-    browserScopeKey: initialBrowserScopeKey,
     initialOrder,
     authToken: token,
     enabled: true,
@@ -184,13 +173,7 @@ function OwnedOrderStatus({
           CreateCncDownloadGrantMutationResponse,
           CreateCncDownloadGrantMutationVariables
         >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId, kind });
-        if (!isCurrent(response)) {
-          if (isCurrent()) {
-            setDownloadErrorKey('generic');
-            setPendingKind(null);
-          }
-          return;
-        }
+        if (!isCurrent()) return;
         const grantUrl = response.createCncDownloadGrant.url;
         if (!isBackendDownloadUrl(grantUrl)) {
           setDownloadErrorKey('generic');

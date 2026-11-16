@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { ServerRenderViewer } from '@/app/lib/auth/admitted-session.server';
-import type { ServerProfileDataOptions } from '../server-profile-data';
 
 const controls = vi.hoisted(() => ({
-  viewer: vi.fn(),
   token: vi.fn(),
   session: vi.fn(),
   profile: vi.fn(),
@@ -13,7 +10,6 @@ const controls = vi.hoisted(() => ({
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
 vi.mock('@/app/lib/auth/admitted-session.server', () => ({
-  getServerRenderViewer: controls.viewer,
   getAdmittedServerSession: controls.session,
 }));
 vi.mock('@/app/lib/auth/server-auth', () => ({ getServerAuthToken: controls.token }));
@@ -31,13 +27,11 @@ import ProfilePage from '../page';
 import ProfileStatisticsPage from '../statistics/page';
 import ProfileSessionsPage from '../sessions/page';
 
-const publicProfile = {
+const ownerProfile = {
   id: 'profile-owner',
-  name: 'Public climber name',
+  name: 'Climber name',
   image: null,
-  email: undefined,
   profile: null,
-  credentials: [],
   followerCount: 3,
   followingCount: 2,
   isFollowedByMe: false,
@@ -49,19 +43,13 @@ const params = () => Promise.resolve({ user_id: 'profile-owner' });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  controls.viewer.mockResolvedValue({ kind: 'legacy' });
   controls.token.mockResolvedValue('private-server-token');
   controls.session.mockResolvedValue({ user: { id: 'profile-owner' } });
-  controls.profile.mockImplementation(
-    async (_userId: string, _viewerUserId?: string, options?: ServerProfileDataOptions) =>
-      options?.publicOnly
-        ? publicProfile
-        : {
-            ...publicProfile,
-            email: privateSentinels[0],
-            credentials: [{ boardType: 'kilter', auroraUsername: privateSentinels[1] }],
-          },
-  );
+  controls.profile.mockResolvedValue({
+    ...ownerProfile,
+    email: privateSentinels[0],
+    credentials: [{ boardType: 'kilter', auroraUsername: privateSentinels[1] }],
+  });
   controls.stats.mockResolvedValue({
     initialProfileStats: null,
     initialPercentile: null,
@@ -71,53 +59,8 @@ beforeEach(() => {
   controls.beta.mockResolvedValue([{ betaLink: privateSentinels[3] }]);
 });
 
-describe('profile-family server prop inputs', () => {
-  const viewers: ServerRenderViewer[] = [
-    {
-      kind: 'selected',
-      owner: {
-        userId: 'profile-owner',
-        authSessionId: 'selected-session',
-        generation: 4,
-        cursor: { bindingId: 'b'.repeat(64), version: 8 },
-      },
-    },
-    { kind: 'anonymous' },
-    { kind: 'refused' },
-  ];
-
-  for (const viewer of viewers) {
-    it(`${viewer.kind}: passes only independently public profile props and no private seeds`, async () => {
-      controls.viewer.mockResolvedValue(viewer);
-      const tree = await ProfilePage({ params: params() });
-      const payloadInputs = JSON.stringify(tree);
-      expect(controls.profile).toHaveBeenCalledWith('profile-owner', undefined, {
-        authToken: undefined,
-        publicOnly: true,
-      });
-      expect(payloadInputs).toContain('Public climber name');
-      for (const sentinel of privateSentinels) expect(payloadInputs).not.toContain(sentinel);
-      expect(payloadInputs).not.toContain('private-server-token');
-      expect(controls.token).not.toHaveBeenCalled();
-      expect(controls.session).not.toHaveBeenCalled();
-      expect(controls.stats).not.toHaveBeenCalled();
-      expect(controls.beta).not.toHaveBeenCalled();
-    });
-
-    it(`${viewer.kind}: statistics has no logbook seed and sessions has no authenticated server hint`, async () => {
-      controls.viewer.mockResolvedValue(viewer);
-      const statistics = await ProfileStatisticsPage({ params: params() });
-      const sessions = await ProfileSessionsPage({ params: params() });
-      expect(JSON.stringify(statistics)).not.toContain('PRIVATE_LOGBOOK');
-      expect(JSON.stringify(statistics)).toContain('"initialIsOwnProfile":false');
-      expect(JSON.stringify(sessions)).toContain('"isAuthenticatedSSR":false');
-      expect(controls.stats).not.toHaveBeenCalled();
-      expect(controls.token).not.toHaveBeenCalled();
-      expect(controls.session).not.toHaveBeenCalled();
-    });
-  }
-
-  it('retains existing owner-specific profile/statistics seeds and session hints for legacy rendering', async () => {
+describe('profile-family server props', () => {
+  it('passes owner-specific profile and statistics seeds and session hints to the signed-in owner', async () => {
     const profile = await ProfilePage({ params: params() });
     const statistics = await ProfileStatisticsPage({ params: params() });
     const sessions = await ProfileSessionsPage({ params: params() });
@@ -130,13 +73,13 @@ describe('profile-family server prop inputs', () => {
     expect(controls.beta).toHaveBeenCalledTimes(1);
   });
 
-  it('propagates central uncertainty before any profile-family data fetch or legacy token lookup', async () => {
-    controls.viewer.mockRejectedValue(new Error('primary authority unavailable'));
+  it('propagates credential uncertainty before any profile-family data fetch', async () => {
+    controls.token.mockRejectedValue(new Error('primary authority unavailable'));
+    controls.session.mockRejectedValue(new Error('primary authority unavailable'));
     for (const page of [ProfilePage, ProfileStatisticsPage, ProfileSessionsPage])
       await expect(page({ params: params() })).rejects.toThrow('primary authority unavailable');
     expect(controls.profile).not.toHaveBeenCalled();
     expect(controls.stats).not.toHaveBeenCalled();
     expect(controls.beta).not.toHaveBeenCalled();
-    expect(controls.token).not.toHaveBeenCalled();
   });
 });
