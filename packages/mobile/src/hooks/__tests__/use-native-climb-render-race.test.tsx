@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useLayoutEffect } from 'react';
+import { tryGetBackgroundPathsSync, ensureBackgroundsCached } from '../../lib/background-image-cache';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { noteBoardArtInMemory } from '../../lib/board-render/board-art-memory-index';
@@ -152,6 +153,24 @@ describe('useNativeClimbRender in-flight race', () => {
     fakeNativeModule.renderHoldsOverlay.mockClear();
     reportErrorMock.mockClear();
     _setNativeModuleForTests(fakeNativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+  });
+
+  it.each([0, 1])('settles pending backgrounds even when %s layers remain missing', async (missingCount) => {
+    vi.mocked(tryGetBackgroundPathsSync).mockReturnValueOnce({ paths: [], missingCount: 1 });
+    let finishDownload!: (result: { paths: string[]; missingCount: number }) => void;
+    vi.mocked(ensureBackgroundsCached).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishDownload = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_CACHED }));
+    expect(result.current.backgroundsLoading).toBe(true);
+    await act(async () => {
+      finishDownload({ paths: missingCount ? [] : ['file:///bg.png'], missingCount });
+    });
+    expect(result.current.backgroundsLoading).toBe(false);
+    expect(result.current.missingBackgroundCount).toBe(missingCount);
   });
 
   it('retires row artwork authority across synchronous withdrawal and later rerenders', () => {
