@@ -19,6 +19,7 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
+  compareStoredPassword,
   matchCurrentStorePasswordCandidate,
   MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
   prepareCurrentStorePasswordRegistration,
@@ -258,12 +259,31 @@ export interface PreparedWebPasswordAuthentication {
   readonly matchedUserId: string | null;
 }
 
+/**
+ * Runs one sign-in's whole group of compares in a single turn. The staged
+ * password command passes its process-wide gate; browser publication passes none.
+ */
+export type PasswordCompareSlot = <Result>(compares: () => Promise<Result>) => Promise<Result>;
+
+type PasswordVerifier = (passwordHash: string, submittedPassword: string) => Promise<boolean>;
+
+/** The group's compares one after another, so a slot never stacks bcrypt slices. */
+function oneAtATime(verify: PasswordVerifier): PasswordVerifier {
+  let previous: Promise<unknown> = Promise.resolve();
+  return (passwordHash, submittedPassword) => {
+    const result = previous.then(() => verify(passwordHash, submittedPassword));
+    previous = result.catch(() => undefined);
+    return result;
+  };
+}
+
 /** Both ordinary login and browser publication use this one byte-preserving verifier. */
 export async function prepareWebPasswordAuthentication(
   database: DbInstance,
   authority: WebPasswordAuthority,
   email: string,
   password: string,
+  compareSlot?: PasswordCompareSlot,
 ): Promise<PreparedWebPasswordAuthentication> {
   const prepared = await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
@@ -275,14 +295,23 @@ export async function prepareWebPasswordAuthentication(
       ? []
       : [{ userId: candidate.userId, createdAt: candidate.createdAt, passwordHash: candidate.passwordHash }],
   );
-  const matched = await matchCurrentStorePasswordCandidate(
-    credentialCandidates,
-    password,
+  const authorityVerify: PasswordVerifier | undefined =
     prepared.receipt.authority === 'better-auth'
       ? (passwordHash, submittedPassword) =>
           verifyAuthorityPassword({ hash: passwordHash, password: submittedPassword })
-      : undefined,
-  );
+      : undefined;
+  // In a slot, the whole group (an address several accounts share, or the
+  // stand-in for an unknown one) takes one turn, so it is never partly shed and
+  // load cannot answer a shared address differently from an unknown one.
+  const matched = compareSlot
+    ? await compareSlot(() =>
+        matchCurrentStorePasswordCandidate(
+          credentialCandidates,
+          password,
+          oneAtATime(authorityVerify ?? compareStoredPassword),
+        ),
+      )
+    : await matchCurrentStorePasswordCandidate(credentialCandidates, password, authorityVerify);
   return { ...prepared, email, matchedUserId: matched?.userId ?? null };
 }
 
@@ -335,12 +364,13 @@ export async function authenticateWebPassword(
   database: DbInstance,
   authorityInput: WebPasswordAuthority,
   input: PasswordCommand,
+  compareSlot?: PasswordCompareSlot,
 ): Promise<PasswordReply> {
   if (process.env.DEBUG_SQL === 'true') throw new Error('Web authentication unavailable');
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { email, password } = input.payload;
-  const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password);
+  const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password, compareSlot);
   const { receipt } = prepared;
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   return database.transaction(async (transaction): Promise<PasswordReply> => {

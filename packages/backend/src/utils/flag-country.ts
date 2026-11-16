@@ -38,6 +38,14 @@ export function isPrivatePeerAddress(address: string): boolean {
 }
 
 /**
+ * True for an address a visitor on the internet can have: not private, loopback,
+ * link-local, carrier-grade NAT or unspecified. Expects a normalized address.
+ */
+export function isPublicAddress(address: string): boolean {
+  return !includesAddress(privatePeers, address) && !includesAddress(nonPublicPeers, address);
+}
+
+/**
  * True when this request reached us from a Cloudflare edge: the socket peer is
  * Cloudflare itself, or it is our private ingress and the last XFF hop (the
  * peer that ingress observed, the same append contract as client-ip.ts) is
@@ -66,8 +74,7 @@ export function resolveEdgeVisitorIp(req: IncomingMessage): string | null {
   if (!isTrustedCloudflareEdge(req)) return null;
   const connecting = req.headers['cf-connecting-ip'];
   const address = normalizeAddress(typeof connecting === 'string' ? connecting : undefined);
-  if (!address || includesAddress(privatePeers, address) || includesAddress(nonPublicPeers, address)) return null;
-  return address;
+  return address && isPublicAddress(address) ? address : null;
 }
 
 /**
