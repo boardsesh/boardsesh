@@ -1602,7 +1602,8 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
       expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
 
       // Coasting when the list goes to two columns: the old list's end event
-      // never arrives, so the new list's first scroll event is not a fling.
+      // never arrives, so the remount forgets that fling, both the scroll it
+      // already counted and the coasting a later scroll event would count.
       act(() => {
         mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
         mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(0));
