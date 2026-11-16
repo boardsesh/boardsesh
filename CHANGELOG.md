@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Selected options across the app share one look: a soft purple wash, the same as the climb you're on ([#7677](https://github.com/boardsesh/boardsesh/pull/7677))
 - The Boards sheet lists your gym's walls together, with the one you're on marked ([#7643](https://github.com/boardsesh/boardsesh/pull/7643))
   Your boards is a quick list, so every board you own is one tap away
   Walking into another gym? The board in front of you is offered first
@@ -18,6 +19,11 @@ manual changes). See docs/mobile-ota-updates.md.
 - The Boards list finds the board in front of you on its own ([#7580](https://github.com/boardsesh/boardsesh/pull/7580))
   Add a board or a Spraywall from the + at the top of Boards
   Walls at your gym sit right under the one you're on
+
+### Improved
+
+- A new profile photo now saves even if you leave Edit profile before it finishes. ([#7672](https://github.com/boardsesh/boardsesh/pull/7672))
+- A half-written comment is still there when you reopen the comments sheet. ([#7671](https://github.com/boardsesh/boardsesh/pull/7671))
 
 ### Fixed
 

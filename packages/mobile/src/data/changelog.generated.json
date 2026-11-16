@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-11-16T20:45:08.489Z",
+  "generatedAt": "2026-11-16T23:42:00.073Z",
   "entries": [
+    {
+      "prNumber": 7672,
+      "category": "improved",
+      "title": "A new profile photo now saves even if you leave Edit profile before it finishes.",
+      "mergedAt": "2026-11-16T23:09:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7672"
+    },
+    {
+      "prNumber": 7677,
+      "category": "new",
+      "title": "Selected options across the app share one look: a soft purple wash, the same as the climb you're on",
+      "mergedAt": "2026-11-16T23:00:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7677"
+    },
+    {
+      "prNumber": 7671,
+      "category": "improved",
+      "title": "A half-written comment is still there when you reopen the comments sheet.",
+      "mergedAt": "2026-11-16T22:46:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7671"
+    },
     {
       "prNumber": 7643,
       "category": "new",
