@@ -1,3 +1,4 @@
+import { GraphQLClient } from 'graphql-request';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import {
   captureAuthCredentialGeneration,
@@ -7,10 +8,12 @@ import {
   isRequiredBrowserDispatch,
 } from '../auth-store.web';
 import { authenticatedFetch } from '../auth-interceptor.web';
+import { isSessionSupersededError } from '../browser-session-guard.web';
 import { expoBrowserBackendClient } from '../browser-backend-client.web';
 import { getClientIdentityHeaderValue } from '../client-identity.web';
 import { createBrowserHttpClientFacade } from './http-client-facade.web';
 import { isInteractiveRequestDeadlineEnabled } from './request-timeout';
+import { createGraphQLRequestGate } from './request-gate';
 import * as legacy from './client-default';
 
 export { isGraphqlRequestTimeoutError } from './request-timeout';
@@ -20,6 +23,30 @@ export {
   OFFLINE_SYNC_GRAPHQL_REQUEST_TIMEOUT_MS,
 } from './request-gate';
 export { getGraphQLHttpUrl } from './client-default';
+
+type HttpMode = 'interactive' | 'offline';
+
+/** client-default's gate, plus one rule: a response dropped because the
+ * browser session changed says nothing about the backend's health. */
+const legacyGraphqlFetchGated = createGraphQLRequestGate({
+  fetch: authenticatedFetch,
+  ignoreFailure: isSessionSupersededError,
+});
+
+function legacyTimeoutMs(mode: HttpMode): number | null {
+  if (mode === 'offline') return legacy.OFFLINE_SYNC_GRAPHQL_REQUEST_TIMEOUT_MS;
+  // Read per request: the flag resolves after the client singleton exists.
+  return isInteractiveRequestDeadlineEnabled() ? legacy.INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS : null;
+}
+
+function createLegacyClient(mode: HttpMode): GraphQLClient {
+  return new GraphQLClient(legacy.getGraphQLHttpUrl(), {
+    fetch: (url: string | URL | Request, options: RequestInit = {}) =>
+      legacyGraphqlFetchGated(url, options, legacyTimeoutMs(mode)),
+  });
+}
+
+let legacyClients: Partial<Record<HttpMode, GraphQLClient>> = {};
 
 export const browserHttpClients = createBrowserHttpClientFacade({
   backendClient: expoBrowserBackendClient,
@@ -38,16 +65,14 @@ export const browserHttpClients = createBrowserHttpClientFacade({
   url: legacy.getGraphQLHttpUrl(),
   fetch: (...parameters) => fetch(...parameters),
   legacyFetch: authenticatedFetch,
-  timeoutMs: (mode) =>
-    mode === 'offline'
-      ? legacy.OFFLINE_SYNC_GRAPHQL_REQUEST_TIMEOUT_MS
-      : isInteractiveRequestDeadlineEnabled()
-        ? legacy.INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS
-        : null,
+  isLegacySuperseded: isSessionSupersededError,
+  timeoutMs: legacyTimeoutMs,
   clientIdentity: getClientIdentityHeaderValue,
   legacy: {
-    get: (mode) => (mode === 'offline' ? legacy.getOfflineSyncHttpClient() : legacy.getHttpClient()),
-    reset: legacy.resetHttpClient,
+    get: (mode) => (legacyClients[mode] ??= createLegacyClient(mode)),
+    reset: () => {
+      legacyClients = {};
+    },
   },
 });
 
@@ -56,15 +81,15 @@ export const getOfflineSyncHttpClient = browserHttpClients.getOfflineSyncHttpCli
 export const resetHttpClient = browserHttpClients.reset;
 
 export function createGraphQLHttpClient() {
-  return isRequiredBrowserDispatch() ? getHttpClient() : legacy.createGraphQLHttpClient();
+  return isRequiredBrowserDispatch() ? getHttpClient() : createLegacyClient('interactive');
 }
 export function createOfflineSyncGraphQLHttpClient() {
-  return isRequiredBrowserDispatch() ? getOfflineSyncHttpClient() : legacy.createOfflineSyncGraphQLHttpClient();
+  return isRequiredBrowserDispatch() ? getOfflineSyncHttpClient() : createLegacyClient('offline');
 }
 
 /** No application caller uses this raw API. Selected publication requires the
  * actual SDK decoder and its receipt; there is no thinner selected escape. */
 export const graphqlFetchGated: typeof legacy.graphqlFetchGated = (...parameters) => {
   if (isRequiredBrowserDispatch()) return Promise.reject(new BrowserBackendConsumerError('unavailable'));
-  return legacy.graphqlFetchGated(...parameters);
+  return legacyGraphqlFetchGated(...parameters);
 };

@@ -28,6 +28,8 @@ export function createBrowserHttpClientFacade(provided: {
   readonly url: string;
   readonly fetch: typeof fetch;
   readonly legacyFetch: typeof fetch;
+  /** A legacy-fetch refusal that says nothing about backend health. */
+  readonly isLegacySuperseded?: (error: unknown) => boolean;
   readonly timeoutMs: (mode: HttpMode) => number | null;
   readonly clientIdentity: () => string;
   readonly legacy: {
@@ -66,7 +68,8 @@ export function createBrowserHttpClientFacade(provided: {
         return admitBrowserResponse(response, assertPublicOrLegacy);
       },
       composeSignal: (caller, deadline) => (caller ? AbortSignal.any([caller, deadline]) : deadline),
-      ignoreFailure: (error) => error instanceof BrowserBackendConsumerError,
+      ignoreFailure: (error) =>
+        error instanceof BrowserBackendConsumerError || options.isLegacySuperseded?.(error) === true,
     });
     const client = new GraphQLClient(options.url, {
       fetch(input, init = {}) {

@@ -22,6 +22,7 @@ import { isAccountDeletionIntentCurrent, type SignOutRequest } from '../lib/acco
 import { userIdFromJwt } from '../lib/jwt-user-id';
 import { subscribeAuthTokenChanges } from '../lib/auth-token-events';
 import { bumpAuthTransportRevision } from '../lib/auth-transport-revision';
+import { isBrowserPageRetired, reloadRetiredBrowserPage } from '../lib/browser-page-retirement';
 import {
   signInWithApple as authSignInWithApple,
   signInWithGoogle as authSignInWithGoogle,
@@ -509,6 +510,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // earlier would be rewritten by the next settings write, re-pinning into
       // the wipe and leaving nothing to pin on the next sign-in.
       clearOwnedSprayWallPins();
+      // A browser page holds one account (#7596). Once it has seen its account
+      // replaced or signed out, the old owner's cleanup above is its last act:
+      // reload from the root instead of publishing anyone else in this page.
+      if (Platform.OS === 'web' && isBrowserPageRetired()) {
+        reloadRetiredBrowserPage();
+        return false;
+      }
       // The spray registry is module state, so `clear()` does not reach it, and
       // it holds one per-account answer: whether the viewer can edit each wall.
       // After the client reset above, so the re-read is the next viewer's.
@@ -543,6 +551,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (Platform.OS === 'web' && !forceFullCleanup && anonymousSessionIsolatedRef.current) {
         authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
         setIsAuthenticated(false);
+        // The old owner was already cleaned up when this page went signed out.
+        if (isBrowserPageRetired()) {
+          reloadRetiredBrowserPage();
+          return false;
+        }
         return true;
       }
 
@@ -620,6 +633,12 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
             wasAuthenticated: true,
           });
           if (!cleanedPreviousUser || !isAuthTransitionCurrent(transitionEpoch)) return false;
+        }
+        // Never mount a second account in a page that already had one; its
+        // cleanup ran when it went signed out, so only the reload is left.
+        if (isBrowserPageRetired()) {
+          reloadRetiredBrowserPage();
+          return false;
         }
         setCurrentUserStorageOwner(nextStorageOwner);
         authenticatedStorageOwnerRef.current = nextStorageOwner;

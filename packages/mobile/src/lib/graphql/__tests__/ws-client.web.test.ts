@@ -5,10 +5,13 @@ import { createClient as createRawGraphQLWsClient } from 'graphql-ws';
 type WebAuthRecoveryResult = 'authenticated' | 'anonymous' | 'unavailable' | 'superseded';
 
 let capturedOptions: CreateGraphQLClientOptions | null = null;
+const generationListeners = vi.hoisted(() => new Set<(generation: number) => void>());
 const disposeSpy = vi.fn();
+// The transport's own subscribe, before any fence wraps it.
+const rawSubscribe = vi.fn((_payload: unknown, _sink: unknown) => () => {});
 const singletonClient = {
   dispose: disposeSpy,
-  subscribe: vi.fn(() => () => {}),
+  subscribe: rawSubscribe,
   on: vi.fn(() => () => {}),
   terminate: vi.fn(),
   iterate: vi.fn(() => {
@@ -33,7 +36,10 @@ vi.mock('../../auth-store.web', () => ({
   getAuthToken: vi.fn().mockResolvedValue('browser-jwe'),
   isAuthCredentialGenerationCurrent: vi.fn().mockReturnValue(true),
   hasConfirmedAnonymousWebSession: vi.fn().mockReturnValue(true),
-  subscribeAuthCredentialGenerationChanges: vi.fn(() => () => {}),
+  subscribeAuthCredentialGenerationChanges: vi.fn((listener: (generation: number) => void) => {
+    generationListeners.add(listener);
+    return () => generationListeners.delete(listener);
+  }),
 }));
 
 vi.mock('../../auth-interceptor.web', () => ({
@@ -125,6 +131,7 @@ class BrowserSocketStub {
 vi.stubGlobal('WebSocket', BrowserSocketStub);
 
 import { disposeWsClient, getWsClient } from '../ws-client.web';
+import { observeConfirmedBrowserIdentity, resetBrowserPageRetirementForTests } from '../../browser-page-retirement.web';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../../auth-store.web';
 import { ensureFreshToken, recoverAuthRejection } from '../../auth-interceptor.web';
 
@@ -153,6 +160,7 @@ function messagesOfType(socket: BrowserSocketStub, type: string): Array<Record<s
 }
 
 beforeEach(() => {
+  resetBrowserPageRetirementForTests();
   disposeWsClient();
   vi.clearAllMocks();
   vi.stubGlobal('WebSocket', BrowserSocketStub);
@@ -408,5 +416,56 @@ describe('Expo web GraphQL WebSocket auth', () => {
 
     await vi.waitFor(() => expect(closeCodes).toEqual([4403]));
     expect(recoverAuthRejectionMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Expo web WebSocket session guard', () => {
+  const payload = { query: 'subscription { queueUpdates }' };
+  const superseded = () => expect.objectContaining({ name: 'AbortError', code: 'superseded' });
+
+  it('disposes the socket when the browser credential generation changes', async () => {
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    getWsClient();
+    capturedOptions = null;
+
+    currentGeneration = 2;
+    for (const listener of generationListeners) listener(currentGeneration);
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+    getWsClient();
+    // A new client, so its handshake reads the new login's token.
+    expect(capturedOptions).not.toBeNull();
+  });
+
+  it('ends an operation opened under the old generation as superseded instead of delivering it', () => {
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    const next = vi.fn();
+    const error = vi.fn();
+    getWsClient().subscribe(payload, { next, error, complete: vi.fn() });
+    const transportSink = rawSubscribe.mock.calls.at(-1)?.[1] as { next: (result: unknown) => void } | undefined;
+
+    currentGeneration = 2;
+    transportSink?.next({ data: { queueUpdates: 'private to the old login' } });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(superseded());
+  });
+
+  it('opens no socket from a retired page', () => {
+    getWsClient();
+    observeConfirmedBrowserIdentity({ userId: 'user-a', authSessionId: 'login-a' });
+    observeConfirmedBrowserIdentity({ userId: 'user-b', authSessionId: 'login-b' });
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+    capturedOptions = null;
+    const error = vi.fn();
+
+    getWsClient().subscribe(payload, { next: vi.fn(), error, complete: vi.fn() });
+
+    expect(error).toHaveBeenCalledWith(superseded());
+    expect(capturedOptions).toBeNull();
   });
 });

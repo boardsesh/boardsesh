@@ -12,6 +12,7 @@ import {
   type WebAuthIdentity,
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
+import { retireBrowserPageForSignOut } from './browser-page-retirement.web';
 import { WEB_BASE_URL, webApiUrl } from './env';
 import {
   createWebOAuthAttemptId,
@@ -493,6 +494,8 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
   // gone. Peer tabs treat this as an authoritative logout instead of a login
   // rotation hint, so they can hide private state even if revalidation is down.
   broadcastConfirmedSignOut(departingIdentity);
+  // This page's account is gone: the provider's cleanup reloads it from the root.
+  retireBrowserPageForSignOut();
   return true;
 }
 
