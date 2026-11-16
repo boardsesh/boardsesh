@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as dbSchema from '@boardsesh/db/schema';
+import { keepLedPairsFromOlderApp, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { SaveSprayWallLedSetupInputSchema } from '../../../validation/schemas/spray-walls';
@@ -99,13 +100,31 @@ export const sprayWallLedSetupMutations = {
     }
     if (wall.archivedAt != null) throw sprayWallArchivedError();
 
+    // An app from before LED pairs sends the layout without `ledGroups` (an app that
+    // knows about pairs always sends the key). Saving that as is would erase a newer
+    // phone's pairs, so keep the stored ones. Hand-made hold links need no such care:
+    // every installed app knows them, and one with no links left omits the key, so a
+    // layout without `holdLeds` is the sender clearing them.
+    const sentLayout = (input as { layout?: unknown } | null)?.layout;
+    const sentPairs = typeof sentLayout === 'object' && sentLayout !== null && 'ledGroups' in sentLayout;
+    let savedLayout: TnutLayout | null | undefined = layout;
+    if (layout != null && !sentPairs) {
+      const [stored] = await db
+        .select({ layout: dbSchema.sprayWallLedSetups.layout })
+        .from(dbSchema.sprayWallLedSetups)
+        .where(eq(dbSchema.sprayWallLedSetups.boardId, board.id))
+        .limit(1);
+      const storedLayout = stored?.layout ? readTnutLayout(stored.layout) : null;
+      savedLayout = keepLedPairsFromOlderApp(layout, sentPairs, storedLayout);
+    }
+
     const now = new Date();
     const fields = {
       updatedAt: now,
       ...(controllerType != null ? { controllerType } : controllerUrl != null ? { controllerType: 'wled' } : {}),
       ...(controllerUrl != null ? { controllerUrl } : {}),
       ...(enabled != null ? { enabled } : {}),
-      ...(layout != null ? { layout: layout as Record<string, unknown> } : {}),
+      ...(savedLayout != null ? { layout: savedLayout as unknown as Record<string, unknown> } : {}),
     };
     const [row] = await db
       .insert(dbSchema.sprayWallLedSetups)

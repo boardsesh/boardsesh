@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
+// The sync module loads its storage and network layers on first use; under a
+// full parallel run that can take longer than the default 5 s.
+vi.setConfig({ testTimeout: 20_000 });
+
 const backend = vi.hoisted(() => ({ request: vi.fn() }));
 const storage = vi.hoisted(() => ({
   records: new Map<string, unknown>(),
@@ -62,6 +66,9 @@ function layout(photoKey = 'photo-key'): TnutLayout {
     photoKey,
   };
 }
+
+/** What the upload sends: `ledGroups` is always named, null for the default pairs. */
+const uploaded = (sent: TnutLayout) => ({ ...sent, ledGroups: sent.ledGroups ?? null });
 
 /** The server's row: jsonb key order differs from what the reader builds. */
 const rowFor = (overrides: Record<string, unknown> = {}) => ({
@@ -317,7 +324,7 @@ describe('one-time adoption of a phone-only setup', () => {
       controllerType: 'wled',
       controllerUrl: 'http://wled.local',
       enabled: true,
-      layout: layout(),
+      layout: uploaded(layout()),
     });
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
@@ -347,7 +354,7 @@ describe('one-time adoption of a phone-only setup', () => {
       .mockResolvedValueOnce({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
     await prepareSprayWallLedRead(WALL, 'settings');
     await settle();
-    expect(saves()[0]).toMatchObject({ controllerUrl: '', layout: layout() });
+    expect(saves()[0]).toMatchObject({ controllerUrl: '', layout: uploaded(layout()) });
   });
 });
 
@@ -432,6 +439,18 @@ describe('saving', () => {
     expect(Object.keys(saves()[0])).toEqual(['boardUuid', 'layout']);
   });
 
+  it('always names the LED pairs, so the server can tell this app from one that predates them', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    await saveLocally('layout', layout());
+    await settle();
+    // No list: the default pairs, said out loud.
+    expect(saves()[0].layout).toHaveProperty('ledGroups', null);
+    // A list, even an empty one, goes as it is.
+    await saveLocally('layout', { ...layout(), ledGroups: [] });
+    await settle();
+    expect(saves()[1].layout).toHaveProperty('ledGroups', []);
+  });
+
   it('coalesces step saves: one upload in flight, then only the newest', async () => {
     const firstUpload = deferred<unknown>();
     backend.request
@@ -450,8 +469,8 @@ describe('saving', () => {
     await settle();
 
     expect(saves()).toHaveLength(2);
-    expect(saves()[0].layout).toEqual(layout('step-1'));
-    expect(saves()[1]).toMatchObject({ layout: layout('step-3'), enabled: true });
+    expect(saves()[0].layout).toEqual(uploaded(layout('step-1')));
+    expect(saves()[1]).toMatchObject({ layout: uploaded(layout('step-3')), enabled: true });
   });
 
   it('does not let a read started before an upload overwrite what the upload just sent', async () => {
@@ -491,7 +510,7 @@ describe('saving', () => {
 
     expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('mine'));
     expect(saves()).toHaveLength(2);
-    expect(saves()[1].layout).toEqual(layout('mine'));
+    expect(saves()[1].layout).toEqual(uploaded(layout('mine')));
     expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
     expect(uploadOutcomes).toEqual(['failed', 'uploaded']);
   });

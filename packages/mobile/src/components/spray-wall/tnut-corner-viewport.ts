@@ -1,7 +1,12 @@
 /** View-only transforms; persisted corners always remain normalized wall coordinates. */
-export function clampViewportPan(pan: number, size: number, zoom: number): number {
+/**
+ * Keep the zoomed photo covering the frame. `minTravel` (a fraction of the frame)
+ * lets the photo move that far at any zoom, so a hold on the photo's edge can be
+ * brought away from the edge and the fingers even before zooming in.
+ */
+export function clampViewportPan(pan: number, size: number, zoom: number, minTravel = 0): number {
   'worklet';
-  const limit = (size * (zoom - 1)) / 2;
+  const limit = Math.max((size * (zoom - 1)) / 2, size * minTravel);
   if (limit <= 0) return 0;
   return Math.max(-limit, Math.min(limit, pan));
 }
@@ -19,10 +24,11 @@ export function focalZoomPan(
   startZoom: number,
   zoom: number,
   startPan: number,
+  minTravel = 0,
 ): number {
   'worklet';
   const anchored = focal - size / 2 - ((startFocal - size / 2 - startPan) * zoom) / startZoom;
-  return clampViewportPan(anchored, size, zoom);
+  return clampViewportPan(anchored, size, zoom, minTravel);
 }
 
 export function draggedCornerCoordinate(start: number, translation: number, size: number, zoom: number): number {

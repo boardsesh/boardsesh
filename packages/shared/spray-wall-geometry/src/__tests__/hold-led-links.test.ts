@@ -61,7 +61,8 @@ describe('hand-made hold to LED links', () => {
     const none = setHoldLedLink(configured, 1, []);
     expect(buildSprayLedMapping(none, frame, holds).holds[0].indices).toEqual([]);
     const restored = clearHoldLedLink(none, 1);
-    expect(restored.holdLeds).toBeUndefined();
+    // The list stays, empty: a save then says the links were cleared on purpose.
+    expect(restored.holdLeds).toEqual([]);
     expect(buildSprayLedMapping(restored, frame, holds).holds[0].indices).toEqual([4]);
   });
 
@@ -91,6 +92,8 @@ describe('hand-made hold to LED links', () => {
     expect(readTnutLayout({ ...stored, holdLeds: [{ holdId: 'one', ledIds: [] }] })).toBeNull();
     expect(readTnutLayout({ ...stored, holdLeds: [{ holdId: 1, ledIds: [7] }] })).toBeNull();
     expect(readTnutLayout({ ...stored, holdLeds: {} })).toBeNull();
-    expect(readTnutLayout({ ...stored, holdLeds: [] })?.holdLeds).toBeUndefined();
+    expect(readTnutLayout({ ...stored, holdLeds: [] })?.holdLeds).toEqual([]);
+    const { holdLeds: _links, ...withoutLinks } = stored;
+    expect(readTnutLayout(withoutLinks)).not.toHaveProperty('holdLeds');
   });
 });

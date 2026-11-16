@@ -120,6 +120,8 @@ vi.mock('react-native-gesture-handler', () => {
     for (const name of [
       'withRef',
       'maxPointers',
+      'minPointers',
+      'averageTouches',
       'minDistance',
       'manualActivation',
       'simultaneousWithExternalGesture',
@@ -190,6 +192,10 @@ function fire(gesture: GestureRecord, name: string, overrides: Partial<Event> = 
   );
   return state;
 }
+/** Corner handles follow the viewport's pinch, one-finger pan and two-finger pan. */
+function cornerHandles() {
+  return runtime.gestures.slice(2).filter((gesture) => gesture.options.minPointers?.[0] !== 2);
+}
 function pinchTo(scale: number) {
   const pinch = runtime.gestures.find((gesture) => gesture.kind === 'pinch');
   if (!pinch) throw new Error('No pinch');
@@ -257,6 +263,71 @@ describe('SprayPhotoCanvas', () => {
     expect(onTap).not.toHaveBeenCalled();
     end(tap, { x: 150, y: 225 });
     expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 600, 900);
+  });
+
+  it('pans with a two-finger drag that never spreads the fingers, and leaves the pan to a running pinch', () => {
+    const onTap = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    pinchTo(2);
+    const twoFinger = runtime.gestures.find((gesture) => gesture.options.minPointers?.[0] === 2)!;
+    expect(twoFinger.options.averageTouches?.[0]).toBe(true);
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(twoFinger, 'onFinalize');
+    const tap = runtime.gestures.find((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0.4, y: 0.4 }, 600, 900);
+    // While the pinch scales, its own focal pan wins: the drag adds nothing.
+    const pinch = runtime.gestures.find((gesture) => gesture.kind === 'pinch')!;
+    fire(pinch, 'onStart');
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: -60, translationY: -90 });
+    fire(twoFinger, 'onFinalize');
+    fire(pinch, 'onFinalize');
+    end(tap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0.4, y: 0.4 }, 600, 900);
+  });
+
+  it('pans with two fingers on a freshly opened photo, before any pinch, within a quarter of the frame', () => {
+    const onTap = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    const twoFinger = runtime.gestures.find((gesture) => gesture.options.minPointers?.[0] === 2)!;
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(twoFinger, 'onFinalize');
+    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 60 }, { translateY: 90 }, { scale: 1 }] });
+    const tap = runtime.gestures.find((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0.3, y: 0.3 }, 300, 450);
+    // A long drag stops a quarter of the frame (75 × 112.5 points) from centre.
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 999, translationY: -999 });
+    fire(twoFinger, 'onFinalize');
+    expect(runtime.styles[0].compute()).toEqual({
+      transform: [{ translateX: 75 }, { translateY: -112.5 }, { scale: 1 }],
+    });
+  });
+
+  it('drops a tap in the blank margin beside the photo when asked, instead of moving it to the edge', () => {
+    const onTap = vi.fn();
+    const { rerender } = render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    const twoFinger = runtime.gestures.find((gesture) => gesture.options.minPointers?.[0] === 2)!;
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 60, translationY: 0 });
+    fire(twoFinger, 'onFinalize');
+    // The photo now starts 60 points in: x = 30 is blank margin.
+    end(
+      runtime.gestures.find((gesture) => gesture.kind === 'tap')!,
+      { x: 30, y: 225 },
+    );
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0, y: 0.5 }, 300, 450);
+    onTap.mockClear();
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap, ignoreTapsOutsidePhoto: true })));
+    const tap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 30, y: 225 });
+    expect(onTap).not.toHaveBeenCalled();
+    end(tap, { x: 90, y: 225 });
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.1, y: 0.5 }, 300, 450);
   });
 
   it('collects a normalized trace on the UI thread and commits only once at release', () => {
@@ -450,7 +521,7 @@ describe('ZoomableTnutMarker', () => {
     fire(viewportPan, 'onStart');
     fire(viewportPan, 'onUpdate', { translationX: 60, translationY: 90 });
     fire(viewportPan, 'onFinalize');
-    const topLeft = runtime.gestures[2];
+    const topLeft = cornerHandles()[0];
     fire(topLeft, 'onBegin');
     const bridges = runtime.bridges;
     fire(topLeft, 'onUpdate', { translationX: 60, translationY: 90 });
@@ -467,7 +538,7 @@ describe('ZoomableTnutMarker', () => {
     const viewportPan = runtime.gestures[1];
     expect(fire(viewportPan, 'onTouchesMove').fail).toHaveBeenCalledOnce();
     expect(viewportPan.options.requireExternalGestureToFail).toHaveLength(4);
-    for (const handle of runtime.gestures.slice(2)) {
+    for (const handle of cornerHandles()) {
       expect(handle.options.maxPointers).toEqual([1]);
       expect(handle.options.simultaneousWithExternalGesture).toHaveLength(1);
     }
@@ -478,7 +549,7 @@ describe('ZoomableTnutMarker', () => {
     const onChange = vi.fn();
     render(createElement(ZoomableTnutMarker, props({ onDragActiveChange: lock, onChange })));
     const pinch = runtime.gestures[0];
-    const handle = runtime.gestures[2];
+    const handle = cornerHandles()[0];
     fire(handle, 'onBegin');
     fire(pinch, 'onTouchesDown', { numberOfTouches: 2 });
     fire(pinch, 'onStart');
@@ -595,7 +666,7 @@ describe('ZoomableTnutMarker', () => {
     pinchTo(100);
     expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 6 }] });
     expect(Number(runtime.styles[1].compute().left)).toBeLessThan(-44);
-    const handle = runtime.gestures[2];
+    const handle = cornerHandles()[0];
     fire(handle, 'onBegin');
     unmount();
     expect(lock).toHaveBeenLastCalledWith(false);

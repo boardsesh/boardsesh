@@ -323,6 +323,11 @@ export function cutWiring(wiring: TnutWiring, from: string, to: string): TnutWir
   }
   return wiring;
 }
+/** Skips are undirected: a stored skip counts for its connection in either direction. */
+export function wiringSkipCount(wiring: TnutWiring | undefined, from: string, to: string): number {
+  const key = edgeKey(from, to);
+  return wiring?.skips.find((skip) => edgeKey(skip.from, skip.to) === key)?.count ?? 0;
+}
 export function setWiringSkip(wiring: TnutWiring, from: string, to: string, count: number): TnutWiring {
   if (!validSkipCount(count) || !edgeSet(wiring.paths).has(edgeKey(from, to))) return wiring;
   const aggregate =

@@ -3,6 +3,9 @@ import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { clampViewportPan, focalZoomPan } from './tnut-corner-viewport';
 
+/** At any zoom the photo can move a quarter of the frame, so two fingers can pan it before a pinch. */
+export const SPRAY_PHOTO_MIN_PAN_TRAVEL = 0.25;
+
 /** The detector remains untransformed: focal coordinates never feed back through the image. */
 export function useSprayPhotoViewport(
   width: number,
@@ -46,6 +49,9 @@ export function useSprayPhotoViewport(
   const lastX = useSharedValue(0),
     lastY = useSharedValue(0),
     panning = useSharedValue(false);
+  const lastTwoX = useSharedValue(0),
+    lastTwoY = useSharedValue(0),
+    twoFingerPanning = useSharedValue(false);
   const viewportGesture = useMemo(() => {
     const releasePinch = () => {
       'worklet';
@@ -105,8 +111,24 @@ export function useSprayPhotoViewport(
           return;
         }
         const next = Math.max(1, Math.min(6, (startZoom.value * event.scale) / startScale.value));
-        panX.value = focalZoomPan(focalX.value, event.focalX, width, startZoom.value, next, startX.value);
-        panY.value = focalZoomPan(focalY.value, event.focalY, height, startZoom.value, next, startY.value);
+        panX.value = focalZoomPan(
+          focalX.value,
+          event.focalX,
+          width,
+          startZoom.value,
+          next,
+          startX.value,
+          SPRAY_PHOTO_MIN_PAN_TRAVEL,
+        );
+        panY.value = focalZoomPan(
+          focalY.value,
+          event.focalY,
+          height,
+          startZoom.value,
+          next,
+          startY.value,
+          SPRAY_PHOTO_MIN_PAN_TRAVEL,
+        );
         zoom.value = next;
       })
       .onFinalize(() => {
@@ -133,8 +155,8 @@ export function useSprayPhotoViewport(
         lastX.value = event.translationX;
         lastY.value = event.translationY;
         if (isPinching.value) return;
-        panX.value = clampViewportPan(panX.value + dx, width, zoom.value);
-        panY.value = clampViewportPan(panY.value + dy, height, zoom.value);
+        panX.value = clampViewportPan(panX.value + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+        panY.value = clampViewportPan(panY.value + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
       })
       .onFinalize(() => {
         if (!panning.value) return;
@@ -143,7 +165,36 @@ export function useSprayPhotoViewport(
         if (interactions.value === 0) runOnJS(reportInteraction)(false);
       });
     if (failures.length) pan.requireExternalGestureToFail(...failures);
-    return Gesture.Simultaneous(pinch, pan);
+    // A pinch only starts once the fingers spread or close, so a plain two-finger
+    // drag would not move the photo. In the editors one finger draws or taps, which
+    // leaves two fingers as the only way to pan. Once the pinch runs, it owns the pan.
+    const twoFingerPan = Gesture.Pan()
+      .minPointers(2)
+      .maxPointers(2)
+      .averageTouches(true)
+      .onStart((event) => {
+        lastTwoX.value = event.translationX;
+        lastTwoY.value = event.translationY;
+        twoFingerPanning.value = true;
+        interactions.value++;
+        if (interactions.value === 1) runOnJS(reportInteraction)(true);
+      })
+      .onUpdate((event) => {
+        const dx = event.translationX - lastTwoX.value,
+          dy = event.translationY - lastTwoY.value;
+        lastTwoX.value = event.translationX;
+        lastTwoY.value = event.translationY;
+        if (!panEnabled || pinchStarted.value) return;
+        panX.value = clampViewportPan(panX.value + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+        panY.value = clampViewportPan(panY.value + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+      })
+      .onFinalize(() => {
+        if (!twoFingerPanning.value) return;
+        twoFingerPanning.value = false;
+        interactions.value--;
+        if (interactions.value === 0) runOnJS(reportInteraction)(false);
+      });
+    return Gesture.Simultaneous(pinch, pan, twoFingerPan);
   }, [
     width,
     height,
@@ -166,6 +217,9 @@ export function useSprayPhotoViewport(
     lastY,
     panning,
     pointerCount,
+    lastTwoX,
+    lastTwoY,
+    twoFingerPanning,
   ]);
   const imageTransform = useAnimatedStyle(() => ({
     transform: [{ translateX: panX.value }, { translateY: panY.value }, { scale: zoom.value }],
