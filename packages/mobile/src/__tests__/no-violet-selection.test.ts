@@ -30,8 +30,10 @@ import { join, relative } from 'node:path';
 const PACKAGE_ROOT = join(__dirname, '..', '..');
 const SOURCE_ROOTS = [join(PACKAGE_ROOT, 'src'), join(PACKAGE_ROOT, 'app')];
 
+// The lookbehind skips a negated flag however it is written: `!selected`,
+// `! selected`, `!item.selected`, `!item?.isActive`.
 const SELECTION_TERNARY =
-  /(?<!!)\b(?:isActive|active|isSelected|selected)\s*\?\s*(?:theme\.)?(?:brandColors|brand)\.primary\b/g;
+  /(?<!!\s*(?:[\w$]+\??\.)*)\b(?:isActive|active|isSelected|selected)\s*\?\s*(?:theme\.)?(?:brandColors|brand)\.primary\b/g;
 
 /**
  * Drop block comments and `//` comments that follow whitespace (not the `//` in a
@@ -44,6 +46,13 @@ function stripComments(source: string): string {
 function countSelectionTernaries(source: string): number {
   return (stripComments(source).match(SELECTION_TERNARY) ?? []).length;
 }
+
+/**
+ * The allowlist's size, pinned so no one can add an entry or raise a count.
+ * When you migrate a file, lower its entry AND these two numbers.
+ */
+const ALLOWLIST_FILES = 18;
+const ALLOWLIST_TOTAL = 25;
 
 /** File → count today. Shrink-only. */
 const ALLOWLIST: Record<string, number> = {
@@ -105,6 +114,10 @@ describe('the selection-ternary scanner', () => {
     ['the brand alias', 'const tint = isActive ? brand.primary : label;', 1],
     ['a fill, not a foreground', 'backgroundColor: selected ? brandColors.primaryFill : fill', 0],
     ['a negated flag', 'color={!selected ? brandColors.primary : label}', 0],
+    ['a negated member flag', 'color={!item.selected ? brandColors.primary : label}', 0],
+    ['a negated flag after a space', 'color={! selected ? brandColors.primary : label}', 0],
+    ['a negated optional member flag', 'color={!option?.isActive ? brandColors.primary : label}', 0],
+    ['a flag after an unrelated negation', 'color={!hidden && selected ? brandColors.primary : label}', 1],
     ['a comparison', 'color={index === activeIndex ? brandColors.primary : label}', 0],
     ['another flag name', 'color={isPinned ? brandColors.primary : label}', 0],
     ['a comment', '// selected ? brandColors.primary was the old look', 0],
@@ -129,6 +142,13 @@ describe('selection is never violet text', () => {
       .filter(([path, allowed]) => (counts.get(path) ?? 0) < allowed)
       .map(([path, allowed]) => `${path}: now ${counts.get(path) ?? 0}, allowlist says ${allowed}`);
     expect(stale, 'Lower or delete these entries: the file has fewer ternaries now.').toEqual([]);
+  });
+
+  it('pins the allowlist size (it only ever shrinks)', () => {
+    const total = Object.values(ALLOWLIST).reduce((sum, count) => sum + count, 0);
+    const pinned = 'Never grow the allowlist; after a migration, lower ALLOWLIST_FILES / ALLOWLIST_TOTAL to match.';
+    expect(Object.keys(ALLOWLIST).length, pinned).toBe(ALLOWLIST_FILES);
+    expect(total, pinned).toBe(ALLOWLIST_TOTAL);
   });
 
   it('actually scans the source tree', () => {

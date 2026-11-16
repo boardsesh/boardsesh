@@ -93,6 +93,13 @@ function countDimmedText(rawSource: string): number {
   return count;
 }
 
+/**
+ * The allowlist's size, pinned so no one can add an entry or raise a count.
+ * When you migrate a file, lower its entry AND these two numbers.
+ */
+const ALLOWLIST_FILES = 36;
+const ALLOWLIST_TOTAL = 98;
+
 /** File → count today. Shrink-only. */
 const ALLOWLIST: Record<string, number> = {
   'app/(tabs)/climbs/index.tsx': 4,
@@ -206,6 +213,13 @@ describe('text is never dimmed with opacity', () => {
       .filter(([path, allowed]) => (counts.get(path) ?? 0) < allowed)
       .map(([path, allowed]) => `${path}: now ${counts.get(path) ?? 0}, allowlist says ${allowed}`);
     expect(stale, 'Lower or delete these entries: the file has fewer dimmed Text tags now.').toEqual([]);
+  });
+
+  it('pins the allowlist size (it only ever shrinks)', () => {
+    const total = Object.values(ALLOWLIST).reduce((sum, count) => sum + count, 0);
+    const pinned = 'Never grow the allowlist; after a migration, lower ALLOWLIST_FILES / ALLOWLIST_TOTAL to match.';
+    expect(Object.keys(ALLOWLIST).length, pinned).toBe(ALLOWLIST_FILES);
+    expect(total, pinned).toBe(ALLOWLIST_TOTAL);
   });
 
   it('actually scans the source tree', () => {
