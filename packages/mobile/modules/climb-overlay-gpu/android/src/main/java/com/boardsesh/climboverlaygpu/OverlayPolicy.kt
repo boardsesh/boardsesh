@@ -5,9 +5,9 @@ import kotlin.math.max
 /** Platform-independent contracts, mirrored by the iOS motion tests. */
 internal object OverlayPolicy {
     const val ATLAS_LIMIT = 128 * 1024 * 1024
-    // Rust final packing temporarily holds storage+packed bytes, plus growth,
-    // EDT/masks and the GPU upload. This is admission, not a peak-RSS claim.
-    const val PREPARE_HEADROOM = 4L * ATLAS_LIMIT + 64L * 1024 * 1024
+    // Separate owned pixels avoid the payload-sized final packing copy.
+    // Allow atlas growth, EDT/masks and GPU upload; not a peak-RSS claim.
+    const val PREPARE_HEADROOM = 3L * ATLAS_LIMIT + 64L * 1024 * 1024
     const val EDIT_DURATION_NS = 350_000_000L
     const val EDIT_PEAK_NS = 100_000_000L
     const val EDIT_PEAK_REACH = 1.35f
@@ -22,7 +22,7 @@ internal object OverlayPolicy {
         previous == 0L || current - previous >= 15_666_667L
 
     fun comparisonHeadroom(width: Int, height: Int): Long {
-        require(width in 1..1536 && height in 1..2048)
+        require(width in 1..1536 && height in 1..2304)
         // FBO, readback, row-flipped bytes, JNI/reference copies and PNG bitmap.
         return width.toLong() * height * 4 * 8 + 64L * 1024 * 1024
     }

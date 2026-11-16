@@ -27,6 +27,9 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private val onRenderReady by EventDispatcher<Map<String, Any?>>()
     private val onRenderError by EventDispatcher()
     var configJson = ""
+    var geometryAssetPath: String? = null
+    var geometryAssetSha256: String? = null
+    var generatedGeometryDirectory: String? = null
     var frames: String? = null
     var previousFrames: String? = null
     var nextFrames: String? = null
@@ -199,6 +202,9 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         val same =
             old != null &&
                 old.config == configJson &&
+                old.geometryAssetPath == geometryAssetPath &&
+                old.geometryAssetSha256 == geometryAssetSha256 &&
+                old.generatedGeometryDirectory == generatedGeometryDirectory &&
                 old.frames == frames &&
                 old.previous == previousFrames &&
                 old.next == nextFrames &&
@@ -223,6 +229,9 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                     generation,
                     animateEdits,
                     observedEmptyConfig == configJson,
+                    geometryAssetPath,
+                    geometryAssetSha256,
+                    generatedGeometryDirectory,
                 )
             schedulePrepare()
         } else requestDraw()

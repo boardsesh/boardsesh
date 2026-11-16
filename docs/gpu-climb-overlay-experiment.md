@@ -51,6 +51,16 @@ The v2 live integration on the same iPhone reported fourteen consecutive cached 
 
 ## Android implementation and verification
 
+### Packed atlas format v2
+
+Native API v4 packs exact squared distance into 24 bits and coverage into eight bits. The all-ones distance sentinel is distinct from every possible distance at the supported 1536 × 2304 bounds. The 135% editing padding and native resolution are preserved. Transparent covers and stamps occupy no pixel storage; nonempty stamps are cropped after rasterization in board coordinates. Outline and glyph stamps preserve CPU drawing order and integer source-over rounding. Equivalent role aliases share a visual identity, so a code alias alone cannot trigger a role-change fade or editing pulse.
+
+Filled appearances (`fill` and `glow-fill`) use PNG. Three rounds of stamp fixes removed coordinate and pass-order defects, but the final raw parity matrix still found two-channel-byte differences on a handful of dense filled pixels. The assumption that cached 8-bit fill passes exactly reproduce every clipped tiny-skia blend remains unproven. Glow, outlines, glyphs and auxiliary annotations keep the GPU path; the fallback preserves filled appearance at native resolution.
+
+Rust hands manifest and pixel allocations to native separately, removing the explicit full-payload concatenation from the production transfer. Both platforms serialize preparation and count atlas, LUT and scene buffers through their retained GPU lifetime, including mounted views and submitted work, against the existing 128 MiB budget. Driver internals and OS drawable pools are not a process-memory bound. Rejected allocations keep the PNG path.
+
+The reference 499-hold atlas falls from 120,143,120 to 56,822,920 pixel bytes (114.58 to 54.19 MiB). All 51 full-resolution configurations pass the requested-buffer size census; the largest is 59.25 MiB before its small LUT and scene descriptors. See [the catalogue census](aura-atlas-census.md) for per-configuration measurements and evidence limits. These host measurements do not establish physical-device peak memory or visible-ready latency.
+
 The Android follow-up uses a transparent `TextureView` and an OpenGL ES 3.1 compositor. It keeps the same shared player/editor API, supported Homewall Aura configurations, directional reveal and 135% edit-glow reach. The outer React Native view still owns zoom, clipping and mirroring. Registering native API v3 enables the existing default-on selection; there is no additional feature flag.
 
 The native bridge transfers ownership of the Rust atlas through a direct buffer, avoiding a Java byte-array copy of the large payload. Cold preparations are serialized and GPU atlas residency is bounded, including entries retained by mounted views. The Rust packing step can still hold both its working storage and its final payload temporarily. Neither the GPU residency limit nor the atlas byte count establishes a peak process-memory bound. Low-memory admission checks and unsupported GPU limits must fall back to PNG rather than retry indefinitely.
