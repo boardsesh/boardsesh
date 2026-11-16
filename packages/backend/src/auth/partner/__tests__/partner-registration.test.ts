@@ -8,6 +8,7 @@ import {
   oauthClient,
   oauthClientResource,
   oauthConnections,
+  oauthConsent,
   oauthConsentInteractions,
   oauthGrants,
   oauthRefreshToken,
@@ -17,6 +18,7 @@ import {
 import { getWorkerDatabaseUrl } from '../../../__tests__/worker-db';
 import { db } from '../../../db/client';
 import { getPostgresErrorCode } from '../../../utils/postgres-errors';
+import { listConnectedApps } from '../connected-apps';
 import { disconnectPartnerConnection } from '../connection';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { PARTNER_SCOPES } from '../configuration';
@@ -544,6 +546,47 @@ describe('partner app registration', () => {
         requirePKCE: true,
         tokenEndpointAuthMethod: 'client_secret_post',
       });
+    });
+
+    it('asks every climber again once the app gains a redirect URI, and keeps their tokens', async () => {
+      const developerId = await createDeveloper();
+      const climber = await environment.createClimber();
+      const created = await register(developerId);
+      const client = testClient(created, climber);
+      const sibling = testClient(await register(developerId, { ...APP_INPUT, name: 'Campus Board Log' }), climber);
+      const issued = await connect(client);
+      expect(issued.response.status).toBe(200);
+      expect((await connect(sibling)).response.status).toBe(200);
+      // Remembered: a confidential app on https comes straight back with a code.
+      expect((await environment.authorize(client)).location).toContain('code=');
+
+      const added = 'https://planner.example.test/oauth/added';
+      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, {
+        redirectUris: [...created.app.redirectUris, added],
+      });
+      expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(0);
+      for (const redirectUri of [client.redirectUri, added]) {
+        const asked = await environment.authorize({ ...client, redirectUri });
+        expect({ redirectUri, location: asked.location }).toEqual({
+          redirectUri,
+          location: expect.stringContaining(TEST_OAUTH_OPTIONS.consentPage),
+        });
+      }
+      // Tokens already issued keep working, and Connected apps still lists what they read.
+      const refreshed = await environment.refresh(client, issued.body.refresh_token!);
+      expect(refreshed.response.status).toBe(200);
+      const listed = (await listConnectedApps(consoleDatabase, climber.userId)).find(
+        (app) => app.name === APP_INPUT.name,
+      );
+      expect([...(listed?.scopes ?? [])].sort()).toEqual(['offline_access', 'profile:read']);
+      // The developer's other app keeps its consent.
+      expect((await environment.authorize(sibling)).location).toContain('code=');
+
+      // Approved again, a removal alone keeps consent: it opens nowhere new.
+      expect((await connect(client)).response.status).toBe(200);
+      await runtime.registration.updateApp(consoleDatabase, developerId, client.clientId, { redirectUris: [added] });
+      expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, client.clientId))).toBe(1);
+      expect((await environment.authorize({ ...client, redirectUri: added })).location).toContain('code=');
     });
 
     it('holds an edit to the same redirect rules, for the app type it was registered with', async () => {

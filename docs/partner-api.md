@@ -70,6 +70,10 @@ team has invited; anyone else sees "App registration is invite-only for now".
 | Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code). Registration also records web versus native redirect behavior separately |
 | Redirect URIs | Up to 10, matched as exact strings. Allowed: any `https://` URL; and for a native app, loopback `http://127.0.0.1:{port}/…` or `http://[::1]:{port}/…` for tools running on the user's machine (the port is ignored when matching, so register it without one and pick any free port at runtime) and private-use schemes containing a dot, such as `com.example.app:/oauth/boardsesh`. Not allowed: other `http://` URLs including `http://localhost`, wildcards, fragments, user names or passwords, `boardsesh.com` hosts, and schemes containing `boardsesh`. Write each URI the way a URL parser prints it back (lower-case scheme and host, `https://example.com/` rather than `https://example.com`) |
 
+Adding a redirect URI, or replacing one, makes every climber who approved your
+app see the consent screen again at their next authorization. The tokens you
+already hold keep working. Removing a redirect URI changes nothing for climbers.
+
 You get an opaque `client_id`, and for a confidential app a client secret,
 shown once. Never ship a client secret inside a mobile or desktop binary:
 make that app public instead. You can rotate the secret in the console; the
@@ -169,6 +173,22 @@ Check `state`, and check `iss` equals `https://api.boardsesh.com/api/auth` (RFC 
 it stops a mix-up if your app talks to several OAuth servers).
 
 If they decline: `?error=access_denied&state=...`.
+
+When the consent screen appears again depends on your app:
+
+- A confidential app whose redirect URI is `https://` is remembered. Once a
+  climber approves, the next authorization goes straight back to you with a
+  code, unless you ask for more scopes, the climber disconnected your app, or
+  you added a redirect URI since. `prompt=none` gets a code when the approval is
+  remembered, and `consent_required` when it is not.
+- A public app (`none`), and any authorization whose redirect URI is a
+  private-use scheme or a loopback address, shows the consent screen every time,
+  even if the climber approved a minute ago. On a phone or a laptop, any app can
+  claim a scheme or a port and send your `client_id`; nothing proves the request
+  came from you (RFC 8252 section 8.6), so the climber's tap is the check.
+  `prompt=none` never gets a code here: the browser comes back to your redirect
+  URI with `error=consent_required` and your `state`. Keep the refresh token
+  instead of authorizing again.
 
 The code lives for 60 seconds and works exactly once. Reusing it is rejected.
 Reuse also ends the tokens that code issued, including when a confidential

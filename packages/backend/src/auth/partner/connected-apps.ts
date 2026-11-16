@@ -1,5 +1,12 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
-import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsent } from '@boardsesh/db/schema/auth';
+import { and, desc, eq, gt, inArray, isNotNull, isNull } from 'drizzle-orm';
+import {
+  oauthAccessToken,
+  oauthAppPolicy,
+  oauthClient,
+  oauthConnections,
+  oauthConsent,
+  oauthRefreshToken,
+} from '@boardsesh/db/schema/auth';
 import { endPartnerConnection } from './connection';
 import { lockPartnerConnection } from './locks';
 import type { PartnerDatabase } from './tables';
@@ -18,7 +25,10 @@ export interface ConnectedAppRecord {
   name: string | null;
   /** Who makes the app, from its registration; null for an app registered before it was required. */
   publisherName: string | null;
-  /** What the climber approved, from the remembered consent. */
+  /**
+   * What the climber approved, from the remembered consent. With none remembered
+   * (the app gained a redirect URI since), what its live tokens can read.
+   */
   scopes: string[];
   connectedAt: Date;
   lastUsedAt: Date | null;
@@ -79,6 +89,35 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
   const scopesByClient = new Map<string, string[]>();
   for (const consent of consents) {
     if (!scopesByClient.has(consent.clientId)) scopesByClient.set(consent.clientId, consent.scopes);
+  }
+
+  // An app whose developer added a redirect URI has no remembered consent until
+  // the climber approves it again (registration.ts), but it keeps the tokens it
+  // holds. Until then the list shows what those tokens can read.
+  const withoutConsent = connections
+    .map((connection) => connection.clientId)
+    .filter((clientId) => !scopesByClient.has(clientId));
+  if (withoutConsent.length > 0) {
+    const now = new Date();
+    const liveTokens = (table: typeof oauthRefreshToken | typeof oauthAccessToken) =>
+      database
+        .select({ clientId: table.clientId, scopes: table.scopes })
+        .from(table)
+        .where(
+          and(
+            eq(table.userId, userId),
+            inArray(table.clientId, withoutConsent),
+            isNull(table.revoked),
+            gt(table.expiresAt, now),
+          ),
+        );
+    const tokenScopes = new Map<string, Set<string>>();
+    for (const token of [...(await liveTokens(oauthRefreshToken)), ...(await liveTokens(oauthAccessToken))]) {
+      const scopes = tokenScopes.get(token.clientId) ?? new Set<string>();
+      for (const scope of token.scopes) scopes.add(scope);
+      tokenScopes.set(token.clientId, scopes);
+    }
+    for (const [clientId, scopes] of tokenScopes) scopesByClient.set(clientId, [...scopes]);
   }
 
   return connections.map((connection) => ({
