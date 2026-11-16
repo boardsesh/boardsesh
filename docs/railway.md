@@ -69,6 +69,11 @@ ours attached, so this tool manages its declared settings through the API.
   it. `WEB_DATABASE_URL` on `boardsesh-web` is one: the web's own `boardsesh_web`
   login for the BA-04 writer fence, set by the owner from runbook #7430
   ([fence commands](./better-auth-writer-fence-proof.md#operator-commands)).
+  **Setting it before the web's identity writes move to the backend breaks
+  sign-up, password reset and email verification**, so until then the web
+  refuses to boot with it set (`WEB_DATABASE_LOGIN_BLOCKED`). Once it is live and
+  verified, remove `DATABASE_URL` from `boardsesh-web`
+  ([why and what else reads it](./better-auth-writer-fence-proof.md#web-connection-string)).
 - **The OTA cache variables.** `boardsesh-ota-v3` needs `REDIS_HOST`,
   `REDIS_PORT` and `REDIS_PASSWORD` set (by name only; they are Railway references
   to the shared Redis), and two public values pinned exactly: `CACHE_MODE` must be

@@ -8,7 +8,7 @@ import { runAuthFence } from '../../auth-fence';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { fencePlan, protectedIdentityTable, readFenceCatalog, verifyFence } from '../catalog';
+import { fencePlan, protectedIdentityTable, readFenceCatalog, verifyFence, WEB_FENCE_LOCK_SQL } from '../catalog';
 import { reconcileWebRuntimeAcl, quoteIdentifier } from '@boardsesh/db/auth-web-acl';
 import { runAuthAuthority } from '../../auth-authority';
 import { grantOwnedCredentialWriterCapabilities } from '../../../auth/authority/__tests__/fixtures/credential-writer-environment';
@@ -83,7 +83,7 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     expect(plan.sql).toContain('CREATE ROLE "boardsesh_web" LOGIN');
     createdRole = true;
     expect(
-      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.sha256], environment),
+      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.planSha256], environment),
     ).toMatchObject({ mode: 'applied' });
     await admin.unsafe(`ALTER ROLE boardsesh_web PASSWORD '${secret}'`);
   });
@@ -137,6 +137,38 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       .catch((error: unknown) => {
         if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
       });
+    expect(await verifyFence(owner)).toMatchObject({ verified: true });
+  });
+  it('closes identity sequences and refuses TRIGGER, REFERENCES, TRUNCATE and setval grants', async () => {
+    const [sequences] = await owner<{ identity: string; product: string }[]>`
+      SELECT pg_get_serial_sequence('public.aurora_credentials','id') AS identity,
+        pg_get_serial_sequence('public.playlists','id') AS product`;
+    const [usage] = await owner<{ identity: boolean; product: boolean }[]>`
+      SELECT has_sequence_privilege('boardsesh_web',${sequences.identity},'USAGE,UPDATE') AS identity,
+        has_sequence_privilege('boardsesh_web',${sequences.product},'USAGE') AS product`;
+    expect(usage).toEqual({ identity: false, product: true });
+    for (const [mutation, code] of [
+      [`GRANT USAGE ON SEQUENCE ${sequences.identity} TO boardsesh_web`, 'IDENTITY_SEQUENCE_PATH'],
+      [`GRANT UPDATE ON SEQUENCE ${sequences.identity} TO boardsesh_web`, 'IDENTITY_SEQUENCE_PATH'],
+      [`GRANT UPDATE ON SEQUENCE ${sequences.product} TO boardsesh_web`, 'UNREVIEWED_SEQUENCE_PRIVILEGE'],
+      ['GRANT TRIGGER ON users TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+      ['GRANT REFERENCES ON user_credentials TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+      ['GRANT TRIGGER ON gyms TO boardsesh_web', 'UNREVIEWED_TABLE_PRIVILEGE'],
+      ['GRANT REFERENCES (name) ON gyms TO boardsesh_web', 'UNREVIEWED_TABLE_PRIVILEGE'],
+      ['GRANT TRUNCATE ON gyms TO boardsesh_web', 'UNREVIEWED_TABLE_PRIVILEGE'],
+      ['GRANT INSERT ON aurora_credentials TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+      ['GRANT DELETE ON user_board_mappings TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+    ] as const) {
+      await owner
+        .begin(async (transaction) => {
+          await transaction.unsafe(mutation);
+          await expect(verifyFence(transaction), mutation).rejects.toThrow(code);
+          throw new Error('ROLLBACK_FIXTURE');
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+        });
+    }
     expect(await verifyFence(owner)).toMatchObject({ verified: true });
   });
   it('detects PUBLIC and column grants and owner/membership counterexamples', async () => {
@@ -212,8 +244,18 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', 'wrong'], environment),
     ).rejects.toThrow('PLAN_CHANGED');
     expect(
-      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.sha256], environment),
+      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.planSha256], environment),
     ).toMatchObject({ mode: 'applied', evidence: { verified: true } });
+  });
+  it('apply waits for the fence lock a migration reconcile holds, then gives up at 2 seconds', async () => {
+    const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
+    if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
+    await owner.begin(async (transaction) => {
+      await transaction.unsafe(WEB_FENCE_LOCK_SQL);
+      await expect(
+        runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.planSha256], environment),
+      ).rejects.toMatchObject({ code: '55P03' });
+    });
   });
   it('verifies read-only from the CLI and refuses a reopened identity write path', async () => {
     expect(await runAuthFence(['verify', '--confirm-host', address.hostname], environment)).toMatchObject({

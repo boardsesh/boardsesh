@@ -15,11 +15,13 @@ export function isTestEnvironment(): boolean {
 
 /**
  * The Postgres hostname this process is configured to talk to, lowercased and
- * with IPv6 brackets stripped, or undefined when DATABASE_URL is unset or isn't
- * a parseable URL (a socket path, say). Callers treat "unknown" as "no signal".
+ * with IPv6 brackets stripped, or undefined when no connection string is set or
+ * it isn't a parseable URL (a socket path, say). Callers treat "unknown" as "no
+ * signal". The web reads WEB_DATABASE_URL first, like its pool (see below), so it
+ * keeps working once DATABASE_URL is removed from that service.
  */
 function getDatabaseHostname(): string | undefined {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = primaryConnectionString();
   if (!connectionString) return undefined;
 
   try {
@@ -164,11 +166,34 @@ export function isProductionSentryEnvironment(): boolean {
  */
 export const WEB_DATABASE_URL_VARIABLE = 'WEB_DATABASE_URL';
 
+/**
+ * Code gates for running the web on its fenced login. Neither an environment
+ * variable nor a flag closes one; reviewed code that removes the cause does.
+ *
+ * LEGACY_WEB_IDENTITY_WRITERS: Next still writes identity tables itself —
+ * registration, forgot/reset password, resend and verify email, set-password,
+ * the NextAuth DrizzleAdapter on users/accounts, and the sign-in callback that
+ * sets emailVerified (its failure is swallowed, so it would stop silently).
+ * On `boardsesh_web` every one of those fails with 42501. Full list with line
+ * numbers: docs/better-auth-writer-fence-proof.md, "Web connection string".
+ */
+export const WEB_DATABASE_LOGIN_BLOCKERS: readonly string[] = Object.freeze(['LEGACY_WEB_IDENTITY_WRITERS']);
+
+/** Throws `WEB_DATABASE_LOGIN_BLOCKED` when WEB_DATABASE_URL is set while a blocker remains. */
+export function assertWebDatabaseLoginAllowed(blockers: readonly string[] = WEB_DATABASE_LOGIN_BLOCKERS): void {
+  if (readWebDatabaseUrl() && blockers.length > 0) throw new Error('WEB_DATABASE_LOGIN_BLOCKED');
+}
+
 // On globalThis, like the pool cache, so a Next.js module re-evaluation keeps it.
 const globalForConfig = globalThis as unknown as { __boardseshWebDatabaseUrl?: boolean };
 
-/** Marks this process as the web server. Use `applyWebDatabaseUrl()` from ./postgres. */
-export function markWebDatabaseUrlProcess(): void {
+/**
+ * Marks this process as the web server, after the blocker check. Import-free, so
+ * the web's instrumentation calls it at boot before Sentry reads the hostname.
+ * The pool side is `applyWebDatabaseUrl()` in ./postgres.
+ */
+export function markWebDatabaseUrlProcess(blockers: readonly string[] = WEB_DATABASE_LOGIN_BLOCKERS): void {
+  assertWebDatabaseLoginAllowed(blockers);
   globalForConfig.__boardseshWebDatabaseUrl = true;
 }
 

@@ -16,6 +16,7 @@ describe('identity import and reconcile', () => {
   afterAll(async () => environment?.close());
   it('bounds batches and requires private cursor rather than a user ID argument', () => {
     const arguments_ = [
+      'import',
       '--confirm-host',
       'localhost',
       '--key-file',
@@ -24,6 +25,14 @@ describe('identity import and reconcile', () => {
       '/private/checkpoints',
     ];
     expect(identityArguments(arguments_, true).batch).toBe(200);
+    // Import writes, so the verb is never defaulted, with or without the `--` vp forwards.
+    for (const unnamed of [arguments_.slice(1), ['--', ...arguments_.slice(1)]])
+      expect(() => identityArguments(unnamed, true)).toThrow('WRITE_COMMAND_REQUIRED');
+    expect(identityArguments(['--', ...arguments_], true).batch).toBe(200);
+    // Read-only reconcile keeps its verb-free default.
+    expect(identityArguments(['--', '--confirm-host', 'localhost', '--key-file', '/private/key'], false).keyFile).toBe(
+      '/private/key',
+    );
     for (const invalid of [
       ['--batch', '201'],
       ['--pause-ms', '-1'],
@@ -40,7 +49,7 @@ describe('identity import and reconcile', () => {
   it('never falls back to DATABASE_URL', async () => {
     await expect(
       runImportIdentities(
-        ['--confirm-host', 'localhost', '--key-file', '/private/key', '--checkpoint', '/private/checkpoints'],
+        ['import', '--confirm-host', 'localhost', '--key-file', '/private/key', '--checkpoint', '/private/checkpoints'],
         { DATABASE_URL: 'postgresql://postgres:postgres@localhost/postgres' },
       ),
     ).rejects.toThrow();

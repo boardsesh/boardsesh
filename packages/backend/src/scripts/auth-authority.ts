@@ -37,7 +37,7 @@ export async function runAuthAuthority(
   arguments_: readonly string[],
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
-  const options = parseOperatorArguments(arguments_, ['status', 'prepare', 'activate']);
+  const options = parseOperatorArguments(arguments_, ['status', 'prepare', 'activate'], [], ['prepare', 'activate']);
   if (options.planSha256 || (options.command !== 'prepare' && options.projectionId))
     throw new Error('INVALID_ARGUMENTS');
   const client = operatorClient(environment, options.confirmHost, options.command !== 'status');

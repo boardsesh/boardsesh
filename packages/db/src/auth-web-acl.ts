@@ -3,26 +3,48 @@ import { createHash } from 'node:crypto';
 
 export const WEB_ROLE = 'boardsesh_web';
 export const quoteIdentifier = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
+/** Identity tables outside the `auth_`/`oauth_` prefixes. The web role may read them, never write. */
+export const NAMED_IDENTITY_TABLES: readonly string[] = Object.freeze([
+  'users',
+  'accounts',
+  'sessions',
+  'verificationTokens',
+  'user_credentials',
+  'mobile_refresh_tokens',
+  'integration_credentials',
+  // Encrypted board passwords and refresh tokens. Written by the backend's
+  // board-credential service and the sync workers; the web only reads it.
+  'aurora_credentials',
+  // Which board account a Boardsesh user is. Written by the backend and the
+  // sync workers; the web only reads it (sitemap, profile).
+  'user_board_mappings',
+]);
 export function protectedIdentityTable(name: string): boolean {
-  return (
-    /^(auth_|oauth_)/.test(name) ||
-    [
-      'users',
-      'accounts',
-      'sessions',
-      'verificationTokens',
-      'user_credentials',
-      'mobile_refresh_tokens',
-      'integration_credentials',
-    ].includes(name)
-  );
+  return /^(auth_|oauth_)/.test(name) || NAMED_IDENTITY_TABLES.includes(name);
 }
+/**
+ * Tables declared under `packages/db/src/schema/auth/` that the web role may
+ * still write, each with the reason. Every other table there must be an
+ * identity table above: the fence grants web CRUD on anything that is not, so
+ * a new auth table missing from both lists fails `catalog.test.ts`.
+ */
+export const WEB_WRITABLE_AUTH_SCHEMA_TABLES: Readonly<Record<string, string>> = Object.freeze({
+  user_profiles:
+    'Display name, avatar and privacy, not a credential. Web sign-in inserts the row (auth-options.ts) and registration creates it.',
+});
+/**
+ * Serializes fence `apply` with the web reconcile every migration runs. Both
+ * take it inside their transaction. The migration runner had no lock of its own.
+ */
+export const WEB_FENCE_LOCK_SQL = 'SELECT pg_advisory_xact_lock(6975, 3)';
 export interface FenceRelation {
   schema: string;
   name: string;
   kind: string;
   columns: string[];
   owner?: string;
+  /** For a sequence: the table whose serial or identity column owns it. */
+  sequenceOwner?: string | null;
 }
 export interface FenceCatalog {
   webRoleExists?: boolean;
@@ -41,7 +63,10 @@ export async function readFenceCatalog(client: postgres.Sql | postgres.Transacti
   >`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${WEB_ROLE}) AS present`;
   const relations = await client<FenceRelation[]>`
     SELECT namespace.nspname AS schema, relation.relname AS name, relation.relkind AS kind, pg_get_userbyid(relation.relowner) AS owner,
-      to_json(ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = relation.oid AND attnum > 0 AND NOT attisdropped ORDER BY attnum)) AS columns
+      to_json(ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = relation.oid AND attnum > 0 AND NOT attisdropped ORDER BY attnum)) AS columns,
+      (SELECT owning.relname FROM pg_depend dependency JOIN pg_class owning ON owning.oid = dependency.refobjid
+        WHERE relation.relkind = 'S' AND dependency.classid = 'pg_class'::regclass AND dependency.objid = relation.oid
+          AND dependency.refclassid = 'pg_class'::regclass AND dependency.deptype IN ('a','i') LIMIT 1) AS "sequenceOwner"
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname <> 'information_schema'
       AND relation.relkind IN ('r','p','v','m','f','S') ORDER BY 1,2`;
@@ -89,10 +114,11 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
     if (options.ddlOwner && relation.owner !== options.ddlOwner) continue;
     const target = `${quoteIdentifier(relation.schema)}.${quoteIdentifier(relation.name)}`;
     if (relation.kind === 'S') {
-      apply.push(
-        `REVOKE ALL ON SEQUENCE ${target} FROM PUBLIC, ${role};`,
-        `GRANT USAGE ON SEQUENCE ${target} TO ${role};`,
-      );
+      apply.push(`REVOKE ALL ON SEQUENCE ${target} FROM PUBLIC, ${role};`);
+      // An identity table's own sequence stays closed: the web never inserts there.
+      const identitySequence = !!relation.sequenceOwner && protectedIdentityTable(relation.sequenceOwner);
+      if (identitySequence) rollback.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
+      else apply.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
       continue;
     }
     apply.push(`REVOKE ALL ON TABLE ${target} FROM PUBLIC, ${role};`);
@@ -142,12 +168,14 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
   if (!role?.safe) throw new Error('UNSAFE_WEB_ROLE');
   const catalog = await readFenceCatalog(client);
   const relationPrivileges = await client<
-    { name: string; kind: string; writes: boolean; reads: boolean; maintain: boolean }[]
+    { name: string; kind: string; writes: boolean; unreviewed: boolean; reads: boolean; maintain: boolean }[]
   >`
     SELECT relation.relname AS name, relation.relkind AS kind,
       has_table_privilege(${WEB_ROLE},relation.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
         OR has_any_column_privilege(${WEB_ROLE},relation.oid,'INSERT,UPDATE,REFERENCES')
         OR CASE WHEN current_setting('server_version_num')::integer >= 170000 THEN has_table_privilege(${WEB_ROLE},relation.oid,'MAINTAIN') ELSE false END AS writes,
+      has_table_privilege(${WEB_ROLE},relation.oid,'TRUNCATE,REFERENCES,TRIGGER')
+        OR has_any_column_privilege(${WEB_ROLE},relation.oid,'REFERENCES') AS unreviewed,
       has_table_privilege(${WEB_ROLE},relation.oid,'SELECT') OR has_any_column_privilege(${WEB_ROLE},relation.oid,'SELECT') AS reads,
       CASE WHEN current_setting('server_version_num')::integer >= 170000 THEN has_table_privilege(${WEB_ROLE},relation.oid,'MAINTAIN') ELSE false END AS maintain
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
@@ -155,9 +183,26 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
   for (const relation of relationPrivileges) {
     if ((protectedIdentityTable(relation.name) || !['r', 'p'].includes(relation.kind)) && relation.writes)
       throw new Error('IDENTITY_WRITE_PATH');
+    // The plan grants product tables SELECT/INSERT/UPDATE/DELETE only. TRIGGER can
+    // attach an existing definer routine, so any of these three fails closed.
+    if (relation.unreviewed) throw new Error('UNREVIEWED_TABLE_PRIVILEGE');
     if (relation.maintain) throw new Error('UNREVIEWED_MAINTAIN_PATH');
     if ((relation.name === 'auth_session' || ['v', 'm', 'f'].includes(relation.kind)) && relation.reads)
       throw new Error('UNREVIEWED_READ_PATH');
+  }
+  const sequencePrivileges = await client<{ owner: string | null; usable: boolean; settable: boolean }[]>`
+    SELECT (SELECT owning.relname FROM pg_depend dependency JOIN pg_class owning ON owning.oid = dependency.refobjid
+        WHERE dependency.classid = 'pg_class'::regclass AND dependency.objid = relation.oid
+          AND dependency.refclassid = 'pg_class'::regclass AND dependency.deptype IN ('a','i') LIMIT 1) AS owner,
+      has_sequence_privilege(${WEB_ROLE},relation.oid,'USAGE,UPDATE') AS usable,
+      has_sequence_privilege(${WEB_ROLE},relation.oid,'UPDATE') AS settable
+    FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname !~ '^pg_' AND namespace.nspname <> 'information_schema' AND relation.relkind = 'S'`;
+  for (const sequence of sequencePrivileges) {
+    if (sequence.owner && protectedIdentityTable(sequence.owner) && sequence.usable)
+      throw new Error('IDENTITY_SEQUENCE_PATH');
+    // setval is never granted: it can make another writer's nextval collide.
+    if (sequence.settable) throw new Error('UNREVIEWED_SEQUENCE_PRIVILEGE');
   }
   const triggerFunctions = await client<
     {
@@ -288,7 +333,7 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     )
     SELECT EXISTS (
       SELECT 1 FROM cascading JOIN pg_class identity_table ON identity_table.oid = cascading.target
-      WHERE (identity_table.relname ~ '^(auth_|oauth_)' OR identity_table.relname IN ('users','accounts','sessions','verificationTokens','user_credentials','mobile_refresh_tokens','integration_credentials'))
+      WHERE (identity_table.relname ~ '^(auth_|oauth_)' OR identity_table.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(NAMED_IDENTITY_TABLES)}::text::jsonb)))
         AND has_table_privilege(${WEB_ROLE}, cascading.source, 'UPDATE,DELETE')
     ) AS cascade, EXISTS (
       SELECT 1 FROM pg_proc routine JOIN pg_namespace namespace ON namespace.oid = routine.pronamespace
@@ -338,6 +383,8 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
 
 /** Called inside the migration owner's transaction after the broad backend grants. */
 export async function reconcileWebRuntimeAcl(client: postgres.Sql | postgres.TransactionSql, ddlOwner: string) {
+  // Waits for a running `auth:fence apply`; both hold it until their transaction ends.
+  await client.unsafe(WEB_FENCE_LOCK_SQL);
   const plan = fencePlan(await readFenceCatalog(client), { ddlOwner });
   await client.unsafe(plan.sql);
   return verifyFence(client);

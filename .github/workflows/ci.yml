@@ -1796,7 +1796,7 @@ jobs:
           const xml = readFileSync('packages/backend/test-results/junit-auth-fence.xml', 'utf8');
           const fullSchema = [...xml.matchAll(/<testcase\b[^>]*full-schema[^>]*>/g)].length;
           if (/<skipped(?:\s|\/|>)/.test(xml)) throw new Error('A writer fence case was skipped');
-          if (fullSchema < 16) throw new Error(`Expected at least 16 full-schema fence cases, ran ${fullSchema}`);
+          if (fullSchema < 18) throw new Error(`Expected at least 18 full-schema fence cases, ran ${fullSchema}`);
           NODE
       - name: Upload writer fence proof results
         uses: actions/upload-artifact@v4

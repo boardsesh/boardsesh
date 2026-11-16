@@ -52,6 +52,7 @@ it('rolls back a semantic failure after second-user writes and resumes actual pr
   url.pathname = `/${environment.client.options.database}`;
   const settings = { AUTH_OPERATOR_DATABASE_URL: url.toString(), AUTH_IDENTITY_MIRROR: 'on' };
   const arguments_ = [
+    'import',
     '--confirm-host',
     url.hostname,
     '--key-file',
@@ -150,6 +151,7 @@ it('full reconciliation detects new users behind the completed import cursor', a
   const settings = { AUTH_OPERATOR_DATABASE_URL: url.toString(), AUTH_IDENTITY_MIRROR: 'on' };
   try {
     const importing = [
+      'import',
       '--confirm-host',
       url.hostname,
       '--key-file',

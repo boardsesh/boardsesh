@@ -1,18 +1,21 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ExplicitConnectionConfigurationError } from '../auth/email-audit/connection';
-import { fencePlan, readFenceCatalog, verifyFence } from './auth-fence/catalog';
+import { WEB_FENCE_LOCK_SQL, fencePlan, readFenceCatalog, verifyFence } from './auth-fence/catalog';
 import { operatorClient, parseOperatorArguments } from './auth-fence/operator';
 
 /**
  * `plan` (the default) and `verify` open a read-only transaction. Only `apply`
- * writes, and only with the SHA-256 printed by a fresh `plan`.
+ * writes, and only with the `planSha256` printed by a fresh `plan`. Two hashes
+ * appear and are never comparable: `planSha256` names the SQL `plan` printed;
+ * `catalogSha256` (in verify/apply evidence) names the plan the catalogue would
+ * produce at that moment, which no longer creates the role once it exists.
  */
 export async function runAuthFence(
   arguments_: readonly string[],
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
-  const options = parseOperatorArguments(arguments_, ['plan', 'apply', 'verify']);
+  const options = parseOperatorArguments(arguments_, ['plan', 'apply', 'verify'], [], ['apply']);
   if (options.projectionId) throw new Error('INVALID_ARGUMENTS');
   // A plan hash only means something to apply; anywhere else it is a mistyped command.
   if (options.command !== 'apply' && options.planSha256) throw new Error('INVALID_ARGUMENTS');
@@ -24,13 +27,18 @@ export async function runAuthFence(
       write ? 'isolation level read committed' : 'isolation level repeatable read read only',
       async (transaction) => {
         if (options.command === 'verify') return { mode: 'verify' as const, ...(await verifyFence(transaction)) };
-        const plan = fencePlan(await readFenceCatalog(transaction));
-        if (options.command === 'plan') return { mode: 'plan' as const, ...plan };
-        if (options.planSha256 !== plan.sha256) throw new Error('PLAN_CHANGED');
-        await transaction.unsafe("SET LOCAL lock_timeout = '2000ms'");
-        await transaction.unsafe(plan.sql);
+        if (write) {
+          // Bounded wait, then hold the lock every migration's web reconcile takes,
+          // so no reconcile interleaves between this catalogue read and commit.
+          await transaction.unsafe("SET LOCAL lock_timeout = '2000ms'");
+          await transaction.unsafe(WEB_FENCE_LOCK_SQL);
+        }
+        const { sql, rollbackSql, sha256: planSha256 } = fencePlan(await readFenceCatalog(transaction));
+        if (options.command === 'plan') return { mode: 'plan' as const, sql, rollbackSql, planSha256 };
+        if (options.planSha256 !== planSha256) throw new Error('PLAN_CHANGED');
+        await transaction.unsafe(sql);
         const evidence = await verifyFence(transaction);
-        return { mode: 'applied' as const, sha256: plan.sha256, evidence };
+        return { mode: 'applied' as const, planSha256, evidence };
       },
     );
   } finally {
@@ -55,9 +63,9 @@ export function authFenceRefusalCode(error: unknown): string {
 async function main() {
   try {
     const result = await runAuthFence(process.argv.slice(2));
-    if ('sql' in result) {
+    if (result.mode === 'plan') {
       process.stdout.write(
-        `-- SHA-256: ${result.sha256}\n${result.sql}\n${result.rollbackSql
+        `-- planSha256: ${result.planSha256}\n${result.sql}\n${result.rollbackSql
           .split('\n')
           .map((line) => `-- ROLLBACK: ${line}`)
           .join('\n')}\n`,

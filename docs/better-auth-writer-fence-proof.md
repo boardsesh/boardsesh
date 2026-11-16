@@ -241,13 +241,27 @@ requires every owner's global routine-default deny row. New privileged owners
 or drift require a new administrative plan; migration SQL does not impersonate
 another owner.
 
-New identity tables must use that prefix or extend the explicit identity list
-before landing. `auth_session` has no web read grant; `auth_subject_cutoffs`
-keeps SELECT because web credential stamping needs it.
+New identity tables must use that prefix or extend `NAMED_IDENTITY_TABLES` in
+`packages/db/src/auth-web-acl.ts` before landing; every other table gets web
+CRUD from the next migration's reconcile. A unit test enforces this for
+`packages/db/src/schema/auth/`: it imports every table that folder declares and
+fails unless each is fenced or listed in `WEB_WRITABLE_AUTH_SCHEMA_TABLES` with a
+reason. Today that list holds only `user_profiles` (display name, avatar and
+privacy; web sign-in and registration create the row). `aurora_credentials`
+(encrypted board passwords and refresh tokens) and `user_board_mappings` are now
+fenced: the backend and sync workers write them, the web only reads them.
+`auth_session` has no web read grant; `auth_subject_cutoffs` keeps SELECT
+because web credential stamping needs it. An identity table's own sequence gets
+no web USAGE either (re-granted only by the emergency rollback SQL).
 
 Effective checks cover table and column ACLs, PUBLIC, ownership, memberships
 including SET ROLE paths, defaults, writable views/rules, foreign-key cascades,
 and executable SECURITY DEFINER routines. Unknown indirect paths fail closed.
+The plan grants product tables only SELECT/INSERT/UPDATE/DELETE, so `verify`
+refuses TRIGGER, REFERENCES or TRUNCATE on any table
+(`UNREVIEWED_TABLE_PRIVILEGE`; on an identity table, `IDENTITY_WRITE_PATH`),
+USAGE or UPDATE on an identity table's sequence (`IDENTITY_SEQUENCE_PATH`), and
+UPDATE (setval) on any sequence (`UNREVIEWED_SEQUENCE_PRIVILEGE`).
 The reviewed 0298 logbook trigger bodies are pinned by SHA-256, attachment,
 language and search path, with an exact logbook sink column/default/index/primary-key contract, no RLS,
 inheritance, extra trigger or rule, and pinned plain enum I/O on source tables.
@@ -279,7 +293,7 @@ as `test-credential-writer`, but not that job's cluster: roles are cluster-wide
 and the credential proofs leave both roles behind. It applies the full canonical
 journal with the credential bootstrap, dumps the schema with the server's own
 `pg_dump`, then runs `vp run test:auth-fence`. A JUnit check fails the job if any
-case is skipped or fewer than 16 full-schema cases ran. The run proves, on the
+case is skipped or fewer than 18 full-schema cases ran. The run proves, on the
 current journal:
 
 - the fence applies through the operator CLI's `plan` hash and `verify` passes;
@@ -295,7 +309,22 @@ current journal:
   changes a password and adds and removes a session, while `verify` still passes
   and the web login still gets `42501` on `user_credentials`;
 - reopening one identity write (`GRANT INSERT ON users`) makes `verify` refuse
-  with `IDENTITY_WRITE_PATH`.
+  with `IDENTITY_WRITE_PATH`;
+- each newer `verify` check fails with its own code when its grant is present:
+  USAGE or UPDATE on `aurora_credentials_id_seq`, UPDATE on a product sequence,
+  TRIGGER or REFERENCES on an identity table, TRIGGER, column REFERENCES or
+  TRUNCATE on `gyms`, and writes on the two newly fenced board-account tables;
+- `apply` waits for the fence lock a migration reconcile holds and gives up
+  with SQLSTATE `55P03` after 2 seconds.
+
+The job runs 2 minutes or less (1 min 36 s on the first run, 11 s of it tests),
+so it keeps its own runner rather than a second cluster inside
+`test-credential-writer`. Sharing that job would mean a second service
+container, a role bootstrap on it (the dump references
+`boardsesh_sync_cutoff_owner`, `boardsesh_runtime` and
+`boardsesh_snapshot_fence_owner`), and relaxing two pinned assertions in that
+job's boundary test (`services` is exactly `['postgres']`, the bootstrap only
+accepts port 5432).
 
 Local reproduction needs any PG18 cluster without those two roles, a migrated
 database to dump, and the same two variables:
@@ -307,10 +336,11 @@ AUTH_FENCE_TEST_DATABASE_URL=postgresql://postgres:<password>@127.0.0.1:<port>/p
   vp run test:auth-fence
 ```
 
-Author run on 2026-11-16, PG18.6/PostGIS 3.6.4, 317-entry journal: 24/24 cases
-(8 unit, 16 full-schema) in 8.5 seconds. A deliberate `GRANT DELETE ON
+Author run on 2026-11-16, PG18.6/PostGIS 3.6.4, 317-entry journal: 30/30 cases
+(12 unit, 18 full-schema) in 8.9 seconds. A deliberate `GRANT DELETE ON
 oauth_session TO boardsesh_web` made the per-table case fail and name that
-statement.
+statement; a `passkey` table added under `schema/auth/` made the coverage test
+fail and name it.
 
 ### Operator commands
 
@@ -319,9 +349,22 @@ three modes, with `plan` as the default:
 
 | Mode | Transaction | Output |
 | --- | --- | --- |
-| `plan` | read-only, repeatable read | `-- SHA-256: <hash>`, every `CREATE ROLE`/`REVOKE`/`GRANT`/`ALTER DEFAULT PRIVILEGES` statement, then the emergency re-grant SQL as `-- ROLLBACK:` comments |
+| `plan` | read-only, repeatable read | `-- planSha256: <hash>`, every `CREATE ROLE`/`REVOKE`/`GRANT`/`ALTER DEFAULT PRIVILEGES` statement, then the emergency re-grant SQL as `-- ROLLBACK:` comments |
 | `verify` | read-only, repeatable read | `{"mode":"verify","role":"boardsesh_web","verified":true,"catalogSha256":…}` |
-| `apply` | read committed, 2 s lock timeout | `{"mode":"applied","sha256":…,"evidence":{…}}` after `verifyFence` passes inside the same transaction |
+| `apply` | read committed, 2 s lock timeout, fence lock | `{"mode":"applied","planSha256":…,"evidence":{…,"catalogSha256":…}}` after `verifyFence` passes inside the same transaction |
+
+Two hashes appear, and they are never comparable. `planSha256` names the SQL
+that `plan` printed; it is the value `apply --plan-sha256` takes. `catalogSha256`
+names the plan the catalogue would produce at the moment of `verify` or `apply`,
+which drops the `CREATE ROLE` line once the role exists, so it differs from the
+`planSha256` you applied. Compare `planSha256` only with `planSha256`.
+
+`apply` first waits up to 2 s for the transaction-scoped advisory lock
+`(6975, 3)` and holds it to commit. Every migration's web reconcile
+(`reconcileWebRuntimeAcl`) takes the same lock, so a migration and an apply
+cannot interleave their grant reads and writes. The migration runner had no
+advisory lock of its own; the migration DDL itself is not covered, only the
+reconcile that follows it.
 
 `apply` refuses without `--plan-sha256` (`PLAN_SHA256_REQUIRED`) and refuses a
 hash the live catalogue no longer produces (`PLAN_CHANGED`); `plan` and `verify`
@@ -337,22 +380,62 @@ vp run auth:fence -- apply --confirm-host <host> --plan-sha256 <hash-from-plan>
 vp run auth:fence -- verify --confirm-host <host>
 ```
 
-The leading `--` is optional; the operator parser drops exactly one.
+The leading `--` is optional; the operator parser drops exactly one. Every
+tool on that parser names its write modes, and a write mode is never the
+default: with no verb, `auth:fence` plans, `auth-authority` reports status and
+`auth:revoke-sessions` plans. `auth:import-identities` has only a write mode, so
+it now needs the verb (`vp run auth:import-identities -- import --confirm-host …`)
+and refuses `WRITE_COMMAND_REQUIRED` without it.
 
 ### Web connection string
 
-The web server builds its shared pool in `packages/web/app/lib/db/db.ts`, which
-calls `applyWebDatabaseUrl()` from `@boardsesh/db/client` before the first pool.
-That process then reads `WEB_DATABASE_URL` and falls back to `DATABASE_URL` when
-it is unset or blank, so production is unchanged until the owner sets it. The
-backend never calls it, so a stray copy on the backend service changes nothing.
-`READ_REPLICA_URL` is unchanged. `infra/railway/config.ts` declares
-`WEB_DATABASE_URL` on `boardsesh-web` as an optional secret: absence is not
-drift, only an unfilled placeholder is reported, and `railway:apply` never
-writes it.
+**Setting `WEB_DATABASE_URL` before the web's identity writes move to the
+backend breaks sign-up, password reset and email verification.** The code
+refuses it: `WEB_DATABASE_LOGIN_BLOCKERS` in `packages/db/src/client/config.ts`
+holds `LEGACY_WEB_IDENTITY_WRITERS`, and while that list is non-empty a set
+`WEB_DATABASE_URL` stops the web at boot (`instrumentation.ts` exits 1 with
+`WEB_DATABASE_LOGIN_BLOCKED`, so the deploy fails instead of serving errors) and
+again in `applyWebDatabaseUrl()`. No variable or flag closes the gate; removing
+the entry is a reviewed code change made once every writer below has moved.
 
-Setting it is a rollout step, not a configuration fix. While web sign-in,
-registration and password reset still write identity tables from the web
-(see the [writer inventory](./better-auth-writer-inventory.md)), pointing the
-web at `boardsesh_web` makes those writes fail with `42501`. The order and the
-gates belong to #7430.
+The web writes these identity tables today; on `boardsesh_web` each fails with
+`42501`:
+
+| File (under `packages/web/app/`) | Lines | Write |
+| --- | --- | --- |
+| `api/auth/register/route.ts` | 93, 101, 112 | insert `users`, `user_credentials`, `verificationTokens` |
+| `api/auth/forgot-password/route.ts` | 92, 95 | replace the reset token in `verificationTokens` |
+| `api/auth/resend-verification/route.ts` | 97, 99 | replace the verification token |
+| `api/auth/reset-password/route.ts` | 145, 152, 162, 166 | update or insert `user_credentials`, verify `users`, delete the token |
+| `api/auth/verify-email/route.ts` | 86–115 | delete tokens, set `users.emailVerified` |
+| `api/internal/set-password/route.ts` | 111, 120 | insert `user_credentials`, verify `users` |
+| `lib/auth/auth-options.ts` | 255 | `DrizzleAdapter` creates and updates `users` and `accounts` on OAuth sign-in |
+| `lib/auth/auth-options.ts` | 408 | sign-in callback sets `users.emailVerified`; its failure is swallowed, so it would stop silently |
+
+How the URL is chosen. The web builds its shared pool in
+`packages/web/app/lib/db/db.ts`, which calls `applyWebDatabaseUrl()` from
+`@boardsesh/db/client` before the first pool; `instrumentation.ts` marks the
+process the same way at boot, before Sentry starts. A marked process reads
+`WEB_DATABASE_URL` and falls back to `DATABASE_URL` when it is unset or blank,
+for both the pool and the hostname Sentry uses to tell production from a
+private database. The backend never marks itself, so a stray copy there changes
+nothing. `infra/railway/config.ts` declares `WEB_DATABASE_URL` on
+`boardsesh-web` as an optional secret: absence is not drift, only an unfilled
+placeholder is reported, and `railway:apply` never writes it.
+
+Remove `DATABASE_URL` from `boardsesh-web` once `WEB_DATABASE_URL` is live and
+verified. While it stays, the web process still holds the backend's full-write
+login and a compromised web process could use it. Nothing else on the web
+service needs it: at runtime only `@boardsesh/db/client` reads it (the pool and
+the Sentry hostname above, both now preferring `WEB_DATABASE_URL`); the web
+image is built in GitHub Actions with no database variable; migrations run in
+`production-deploy.yml`'s `migrate` job with `MIGRATOR_DATABASE_URL`, not on the
+web service. `DATABASE_URL` in `packages/web/.env.local` and the e2e harnesses
+is local and test only.
+
+`READ_REPLICA_URL` is not changed. If it is ever set on `boardsesh-web`, the web's
+read pool uses the replica's own login, which the fence does not cover and which
+may still read `auth_session`; a web replica login needs its own grant review
+before that variable is set there.
+
+The order of these owner steps belongs to #7430.

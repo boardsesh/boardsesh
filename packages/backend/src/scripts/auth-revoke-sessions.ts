@@ -14,7 +14,7 @@ export async function runRevokeSessions(
   arguments_: readonly string[],
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
-  const options = parseOperatorArguments(arguments_, ['plan', 'apply'], ['--subject-file', '--key-file']);
+  const options = parseOperatorArguments(arguments_, ['plan', 'apply'], ['--subject-file', '--key-file'], ['apply']);
   const subjectFile = options.options.get('--subject-file');
   const keyFile = options.options.get('--key-file');
   if (!subjectFile || !keyFile) throw new Error('PRIVATE_SUBJECT_AND_KEY_REQUIRED');

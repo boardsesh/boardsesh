@@ -32,7 +32,7 @@ describe('private operator state', () => {
     const cursor = join(path, 'checkpoints');
     mkdirSync(cursor, { mode: 0o700 });
     await expect(
-      runImportIdentities(['--confirm-host', '127.0.0.1', '--key-file', key, '--checkpoint', cursor], {
+      runImportIdentities(['import', '--confirm-host', '127.0.0.1', '--key-file', key, '--checkpoint', cursor], {
         AUTH_OPERATOR_DATABASE_URL: 'postgresql://synthetic:synthetic@127.0.0.1:1/synthetic',
         AUTH_IDENTITY_MIRROR: 'on',
       }),

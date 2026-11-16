@@ -81,7 +81,7 @@ describe('BA-04 writer fence CI proof', () => {
     expect(proof.run).toContain('--reporter=junit');
     expect(proof.run).toContain('test -s packages/backend/test-results/junit-auth-fence.xml');
     expect(proof.run).toContain('/<skipped');
-    expect(proof.run).toContain('fullSchema < 16');
+    expect(proof.run).toContain('fullSchema < 18');
     expect(proof.run).not.toMatch(/--changed|--shard|-t /);
     const task = rootSource.slice(
       rootSource.indexOf("'test:auth-fence': {"),

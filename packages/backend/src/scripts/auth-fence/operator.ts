@@ -26,18 +26,26 @@ export function operatorClient(
   return postgres(operatorConnectionOptions(environment, confirmHost, write));
 }
 
+/**
+ * `commands[0]` is the default when no verb is given. A command listed in
+ * `writeCommands` is never defaulted: it must be named, so a missing verb can
+ * only ever select a read-only mode.
+ */
 export function parseOperatorArguments(
   argumentsWithBoundary: readonly string[],
   commands: readonly string[],
-  additionalFlags: readonly string[] = [],
+  additionalFlags: readonly string[],
+  writeCommands: readonly string[],
 ) {
   // `vp run <task> -- <arguments>` forwards the `--` itself. Drop that one leading
   // boundary so the documented runbook form and the bare form parse the same.
   const arguments_ = argumentsWithBoundary[0] === '--' ? argumentsWithBoundary.slice(1) : argumentsWithBoundary;
-  const command = arguments_[0]?.startsWith('--') || !arguments_[0] ? commands[0] : arguments_[0];
+  const named = !!arguments_[0] && !arguments_[0].startsWith('--');
+  const command = named ? arguments_[0] : commands[0];
   if (!commands.includes(command)) throw new Error('INVALID_ARGUMENTS');
+  if (!named && writeCommands.includes(command)) throw new Error('WRITE_COMMAND_REQUIRED');
   const options = new Map<string, string>();
-  const start = arguments_[0] === command ? 1 : 0;
+  const start = named ? 1 : 0;
   for (let index = start; index < arguments_.length; index += 2) {
     const flag = arguments_[index];
     const argument = arguments_[index + 1];

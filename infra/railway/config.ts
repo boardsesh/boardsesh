@@ -805,8 +805,9 @@ export const desiredRailwayState: RailwayDesiredState = {
           name: 'WEB_DATABASE_URL',
           reason:
             "The web's own connection string for the restricted boardsesh_web login (BA-04 writer fence). " +
-            'Unset, the web keeps DATABASE_URL. Set it only in the rehearsed switch in runbook #7430: the role ' +
-            'must exist and verify, and while web sign-in still writes identity tables itself, this login breaks it.',
+            'Unset, the web keeps DATABASE_URL. Setting it before the web identity writes move to the backend ' +
+            'breaks sign-up, password reset and email verification, so the web refuses to boot with it until then ' +
+            '(WEB_DATABASE_LOGIN_BLOCKED). Runbook #7430 owns the switch, then removing DATABASE_URL here.',
         },
       ],
       optionalConstrainedVars: [
