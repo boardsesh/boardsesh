@@ -60,14 +60,14 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
   const [isCapacitorApp, setIsCapacitorApp] = useState(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const active = useRef<AbortController | null>(null);
+  // One provider start at a time; the symbol identifies the attempt in flight.
+  const activeAttempt = useRef<symbol | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      active.current?.abort();
     };
   }, []);
 
@@ -90,9 +90,9 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
   }, []);
 
   const handleSocialSignIn = async (provider: 'apple' | 'google') => {
-    if (active.current || disabled) return;
-    const controller = new AbortController();
-    active.current = controller;
+    if (activeAttempt.current || disabled) return;
+    const attempt = Symbol(provider);
+    activeAttempt.current = attempt;
     setPending(true);
     setFailed(false);
     try {
@@ -125,10 +125,10 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
       const response = await signIn(provider, { callbackUrl });
       if (response?.error) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
     } catch {
-      if (mounted.current && !controller.signal.aborted) setFailed(true);
+      if (mounted.current) setFailed(true);
     } finally {
-      if (active.current === controller) {
-        active.current = null;
+      if (activeAttempt.current === attempt) {
+        activeAttempt.current = null;
         if (mounted.current) setPending(false);
       }
     }
