@@ -97,15 +97,14 @@ function countDimmedText(rawSource: string): number {
  * The allowlist's size, pinned so no one can add an entry or raise a count.
  * When you migrate a file, lower its entry AND these two numbers.
  */
-const ALLOWLIST_FILES = 36;
-const ALLOWLIST_TOTAL = 98;
+const ALLOWLIST_FILES = 35;
+const ALLOWLIST_TOTAL = 96;
 
 /** File → count today. Shrink-only. */
 const ALLOWLIST: Record<string, number> = {
   'app/(tabs)/climbs/index.tsx': 4,
   'app/(tabs)/discover/[playlist_uuid].tsx': 4,
   'app/(tabs)/discover/community.tsx': 8,
-  'app/(tabs)/discover/smart/[type].tsx': 2,
   'app/boards/index.tsx': 5,
   'app/boards/manage.tsx': 5,
   'app/users/connections.tsx': 1,

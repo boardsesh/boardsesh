@@ -462,10 +462,10 @@ function SmartPlaylistBody({
     return (
       <View style={styles.stateContainer}>
         <PlaylistStateHeader />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text variant="headline" tone="secondary" style={styles.stateTitle}>
           {t('library.signInBanner.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text variant="subheadline" tone="tertiary" style={styles.stateSubtitle}>
           {t('library.signInBanner.description')}
         </Text>
         <Button title={t('library.signInBanner.cta')} onPress={() => router.push('/auth/login')} />
@@ -478,10 +478,10 @@ function SmartPlaylistBody({
       <View style={styles.stateContainer}>
         <PlaylistStateHeader />
         <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text variant="headline" tone="secondary" style={styles.stateTitle}>
           {t('library.smart.notFound.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text variant="subheadline" tone="tertiary" style={styles.stateSubtitle}>
           {t('library.smart.notFound.description')}
         </Text>
       </View>
@@ -546,10 +546,8 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: 12,
-    opacity: 0.6,
   },
   stateSubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
 });
