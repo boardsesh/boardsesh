@@ -260,6 +260,7 @@ vi.mock('../PressableSurface', () => {
 
 import { favoritesStore, playlistMembershipStore } from '@boardsesh/climb-actions';
 import { ClimbListItemContent } from '../ClimbListItemContent';
+import { textFontScale } from '../../theme/dynamic-type';
 import { ClimbListRow } from '../ClimbListRow';
 import {
   CLIMB_ROW_FIELD_IDS,
@@ -772,8 +773,9 @@ describe('accessible names and drag-row geometry', () => {
     const { container } = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
 
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe(expectedLines);
+    // Two body lines on the body Dynamic Type ramp (this suite runs as iOS).
     expect(styleOf(container.querySelector(NAME)).minHeight).toBe(
-      expectedLines === '2' ? 22 * fontScale * 2 : undefined,
+      expectedLines === '2' ? 22 * textFontScale('body', fontScale) * 2 : undefined,
     );
   });
 
@@ -805,7 +807,7 @@ describe('accessible names and drag-row geometry', () => {
 
     for (const { container } of [unresolved, resolved]) {
       expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('2');
-      expect(styleOf(container.querySelector(NAME)).minHeight).toBe(66);
+      expect(styleOf(container.querySelector(NAME)).minHeight).toBe(22 * textFontScale('body', 1.5) * 2);
     }
   });
 

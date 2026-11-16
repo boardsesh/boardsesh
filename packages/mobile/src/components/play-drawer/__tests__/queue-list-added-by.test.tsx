@@ -446,9 +446,10 @@ describe('mixed-board compact queue reorder', () => {
     renderList([...queue, tensionItem]);
     const futureRows = capturedRows.props.filter((row) => row.isDraggable);
     expect(futureRows).toHaveLength(2);
+    // At 1.5 the footnote and caption lines grow on their iOS ramps, a little past 1.5.
     expect(futureRows.map((row) => row.minimumHeight)).toEqual([
-      fontScale === 1 ? 73 : 100,
-      fontScale === 1 ? 73 : 100,
+      fontScale === 1 ? 73 : 102,
+      fontScale === 1 ? 73 : 102,
     ]);
     expect(
       capturedRows.props

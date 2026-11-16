@@ -1,4 +1,5 @@
 import {
+  Platform,
   Text as RNText,
   type TextProps as RNTextProps,
   type TextStyle,
@@ -6,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { emphasizedWeightsByVariant, textStyles, type TextVariant } from '../theme/typography';
+import { dynamicTypeRamps } from '../theme/dynamic-type';
 import { useBoldText } from '../hooks/use-bold-text';
 import { boldTextWeight } from '../theme/accessible-typography';
 import { useOptionalTheme, type ResolvedSystemColors } from '../providers/theme-provider';
@@ -109,6 +111,10 @@ export function Text({
     <RNText
       allowFontScaling
       maxFontSizeMultiplier={0}
+      // Scale on the matching UIKit text style's curve rather than React Native's
+      // single multiplier table (see `dynamicTypeRamps`). Layout that has to match
+      // this text reads `textFontScale`. An explicit `dynamicTypeRamp` still wins.
+      dynamicTypeRamp={Platform.OS === 'ios' ? dynamicTypeRamps[variant] : undefined}
       style={[
         typeStyle,
         emphasisStyle,

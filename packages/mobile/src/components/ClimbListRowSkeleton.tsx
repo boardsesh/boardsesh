@@ -7,6 +7,7 @@ import type { ClimbRowDisplay } from '../lib/climb-row-display';
 import { useClimbRowDisplay } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
+import { textFontScale } from '../theme/dynamic-type';
 import { CLIMB_ROW_GUTTER } from './climb-list-row-styles';
 import {
   CLIMB_ROW_DIRECTION_STATUS,
@@ -114,7 +115,9 @@ export function ClimbListRowSkeletonView({
               barStyle={styles.titleBlock}
               color={blockColor}
               minHeight={
-                climbRowNameLines(fontScale) === 2 ? (textStyles.body.lineHeight ?? 22) * fontScale * 2 : undefined
+                climbRowNameLines(fontScale) === 2
+                  ? (textStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale) * 2
+                  : undefined
               }
             />
             {layout.hasDetailLine ? (

@@ -15,6 +15,7 @@ import { useBoardseshGradesActive } from '../hooks/use-display-grade';
 import { usePersonalGradesActive } from '../hooks/use-personal-grades';
 import { climbStatsKnown, isProjectClimb } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
+import { textFontScale } from '../theme/dynamic-type';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
@@ -990,7 +991,7 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
   const { textStyles: rowTextStyles } = useTheme();
   const nameStyle =
     nameLines === 2
-      ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
+      ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale) * 2 }]
       : styles.climbName;
   const Thumbnail = leaves.Thumbnail;
   // 88×112 in a two-column Climbs list, 76×96 in every other host.

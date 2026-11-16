@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-// The Velvet Send v2 Text roles: the emphasized weight, and the label tone that
-// replaces opacity dims.
+// The Velvet Send v2 Text roles: the Dynamic Type ramp each style scales on (iOS),
+// the emphasized weight, and the label tone that replaces opacity dims.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { materialTextStyles, textStyles } from '../../theme/typography';
+import { materialTextStyles, textStyles, type TextVariant } from '../../theme/typography';
 
 const ctrl = vi.hoisted(() => ({
+  os: 'ios' as 'ios' | 'android',
   bold: false,
   theme: null as null | {
     variant: 'liquidGlass' | 'material';
@@ -21,10 +22,16 @@ function flatten(style: unknown): Record<string, unknown> {
 }
 
 vi.mock('react-native', () => ({
-  Text: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+  Platform: {
+    get OS() {
+      return ctrl.os;
+    },
+  },
+  Text: ({ children, style, dynamicTypeRamp }: { children?: ReactNode; style?: unknown; dynamicTypeRamp?: string }) =>
     createElement(
       'span',
       {
+        'data-ramp': dynamicTypeRamp ?? 'none',
         'data-weight': flatten(style).fontWeight,
         'data-color': flatten(style).color ?? 'none',
       },
@@ -43,8 +50,45 @@ import { Text } from '../Text';
 const systemColors = { label: '#LABEL', secondaryLabel: '#SECONDARY', tertiaryLabel: '#TERTIARY' };
 
 beforeEach(() => {
+  ctrl.os = 'ios';
   ctrl.bold = false;
   ctrl.theme = { variant: 'liquidGlass', textStyles, systemColors };
+});
+
+describe('Text Dynamic Type ramp', () => {
+  it.each([
+    ['largeTitle', 'largeTitle'],
+    ['title1', 'title1'],
+    ['title2', 'title2'],
+    ['title3', 'title3'],
+    ['headline', 'headline'],
+    ['body', 'body'],
+    ['callout', 'callout'],
+    ['subheadline', 'subheadline'],
+    ['footnote', 'footnote'],
+    ['caption1', 'caption1'],
+    ['caption2', 'caption2'],
+    // A bar label is body-sized and sits beside body text, so it grows with it.
+    ['label', 'body'],
+  ] as const)('scales %s on the %s curve on iOS', (variant: TextVariant, ramp) => {
+    const { getByText } = render(<Text variant={variant}>Sample</Text>);
+    expect(getByText('Sample').getAttribute('data-ramp')).toBe(ramp);
+  });
+
+  it('sets no ramp off iOS', () => {
+    ctrl.os = 'android';
+    const { getByText } = render(<Text variant="title1">Sample</Text>);
+    expect(getByText('Sample').getAttribute('data-ramp')).toBe('none');
+  });
+
+  it('lets an explicit ramp win', () => {
+    const { getByText } = render(
+      <Text variant="caption1" dynamicTypeRamp="body">
+        Sample
+      </Text>,
+    );
+    expect(getByText('Sample').getAttribute('data-ramp')).toBe('body');
+  });
 });
 
 describe('Text emphasized', () => {

@@ -28,6 +28,7 @@ function flatten(style: unknown): Record<string, unknown> {
 const resolveWeight = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   Text: ({
     children,
     style,

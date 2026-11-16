@@ -71,6 +71,8 @@ const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProp
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
+  // The row height estimate reads it to pick the iOS Dynamic Type ramp.
+  Platform: { OS: 'ios' },
   useWindowDimensions: () => ({ fontScale: ctrl.fontScale }),
   View: ({
     children,
@@ -922,7 +924,8 @@ describe('PlaylistDetailView', () => {
         {...makeProps({ climbs: [KILTER_CLIMB, UNKNOWN_BOARD_CLIMB, TENSION_CLIMB], editMode: true })}
       />,
     );
-    const expectedHeight = fontScale === 1 ? 76 : 105;
+    // At 1.5 the footnote warning lines grow on their iOS ramp, a little past 1.5.
+    const expectedHeight = fontScale === 1 ? 76 : 107;
     expect(capturedEditRows.map((row) => row.minimumHeight)).toEqual([expectedHeight, expectedHeight]);
     expect(container.querySelector(`[data-min-height="${expectedHeight}"]`)).not.toBeNull();
   });

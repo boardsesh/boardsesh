@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { SymbolView, type SymbolWeight, type SymbolScale } from 'expo-symbols';
 import { Platform, I18nManager, useWindowDimensions, type ColorValue } from 'react-native';
 import { useBoldText } from '../hooks/use-bold-text';
+import { textFontScale } from '../theme/dynamic-type';
 import { iconMap, type IconMapping, type IconName } from './icon-map';
 
 type IconProps = {
@@ -31,7 +32,14 @@ export function Icon({
 }: IconProps) {
   const { fontScale } = useWindowDimensions();
   const boldText = useBoldText();
-  const size = baseSize * Math.min(fontScale, maxFontSizeMultiplier <= 0 ? fontScale : maxFontSizeMultiplier);
+  // An icon has no text style of its own, so it grows with body text, the style
+  // most icons sit beside: on iOS that is the body Dynamic Type ramp `Text`
+  // scales on. The body ramp equals React Native's `fontScale` up to xxxLarge
+  // (1.353), so an icon under the default 1.5 cap draws the same size at every
+  // setting; only an uncapped icon, or one capped above 1.353, comes out smaller
+  // at AX1–AX5, in step with the body text beside it.
+  const textScale = textFontScale('body', fontScale);
+  const size = baseSize * Math.min(textScale, maxFontSizeMultiplier <= 0 ? textScale : maxFontSizeMultiplier);
   const mapping: IconMapping = iconMap[name];
   const resolvedWeight = boldText
     ? weight === 'regular'
