@@ -33,6 +33,7 @@ export function webSessionMode(environment: Readonly<Record<string, string | und
 export const WEB_SESSION_PROTOCOL_VERSION = 1;
 export const WEB_SESSION_PATH_PREFIX = '/api/internal/auth/current-store/web-session/v1';
 export const WEB_SESSION_COMMAND_PATHS = {
+  session: `${WEB_SESSION_PATH_PREFIX}/session`,
   signout: `${WEB_SESSION_PATH_PREFIX}/signout`,
   roll: `${WEB_SESSION_PATH_PREFIX}/roll`,
 } as const;
@@ -90,12 +91,34 @@ const requestId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab]
 const issuedAt = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const metadata = { webSessionProtocolVersion: version, requestId, issuedAt };
 
-/** Ends the session the cookie carries, only if it is still the one the tab expected. */
+/**
+ * Reads the session a cookie carries. It writes nothing: no roll, no last-seen
+ * time, no bridge. A legacy cookie is answered by its own admission rules.
+ */
+export const webSessionReadCommandSchema = z
+  .object({
+    ...metadata,
+    operation: z.literal('session'),
+    payload: z.object({ presented: presentedWebSessionSchema }).strict(),
+  })
+  .strict();
+
+const expectedIdentity = { expectedUserId: identityId, expectedAuthSessionId: identityId };
+
+/**
+ * Ends the session the cookie carries, only if it is still the one the tab
+ * expected. `presented` lets a browser holding only a legacy cookie sign out;
+ * the first form, a bare canonical `token`, stays accepted so a web deployed
+ * before this field keeps working.
+ */
 export const webSessionSignOutCommandSchema = z
   .object({
     ...metadata,
     operation: z.literal('signout'),
-    payload: z.object({ token: sessionToken, expectedUserId: identityId, expectedAuthSessionId: identityId }).strict(),
+    payload: z.union([
+      z.object({ token: sessionToken, ...expectedIdentity }).strict(),
+      z.object({ presented: presentedWebSessionSchema, ...expectedIdentity }).strict(),
+    ]),
   })
   .strict();
 
@@ -114,6 +137,37 @@ const unavailableReply = <Operation extends keyof typeof WEB_SESSION_COMMAND_PAT
       code: z.literal('unavailable'),
     })
     .strict();
+
+/**
+ * The user fields today's NextAuth session JSON exposes (`session.user`): the
+ * profile display name and avatar win over the account's own name and image.
+ */
+const sessionUser = z
+  .object({ id: identityId, email: z.string().nullable(), name: z.string().nullable(), image: z.string().nullable() })
+  .strict();
+
+export const webSessionReadReplySchema = z.union([
+  z
+    .object({
+      ...replyBase,
+      operation: z.literal('session'),
+      outcome: z.literal('active'),
+      userId: identityId,
+      authSessionId: identityId,
+      generation: z.number().int().nonnegative().max(2_147_483_647),
+      expiresAt: z.iso.datetime(),
+      /** `login`: a sign-in this system verified. `bridge`: carried over from an older credential. */
+      source: z.enum(['login', 'bridge']),
+      /** The recorded sign-in time; null when unknown. Freshness also needs `source: 'login'`. */
+      authenticatedAt: z.iso.datetime().nullable(),
+      linkGuarded: z.boolean(),
+      user: sessionUser,
+    })
+    .strict(),
+  /** No live session: expired, revoked, cut off, deleted, or never issued. */
+  z.object({ ...replyBase, operation: z.literal('session'), outcome: z.literal('unauthenticated') }).strict(),
+  unavailableReply('session'),
+]);
 
 export const webSessionSignOutReplySchema = z.union([
   /** The session ended, or was not live to begin with. Clear the cookie. */
@@ -143,6 +197,8 @@ export const webSessionRollReplySchema = z.union([
 export type PresentedWebSession = z.infer<typeof presentedWebSessionSchema>;
 export type WebSessionRequest = z.infer<typeof webSessionRequestSchema>;
 export type IssuedWebSessionReply = z.infer<typeof issuedWebSessionSchema>;
+export type WebSessionReadCommand = z.infer<typeof webSessionReadCommandSchema>;
+export type WebSessionReadReply = z.infer<typeof webSessionReadReplySchema>;
 export type WebSessionSignOutCommand = z.infer<typeof webSessionSignOutCommandSchema>;
 export type WebSessionSignOutReply = z.infer<typeof webSessionSignOutReplySchema>;
 export type WebSessionRollCommand = z.infer<typeof webSessionRollCommandSchema>;
@@ -154,7 +210,9 @@ export type WebSessionRollReply = z.infer<typeof webSessionRollReplySchema>;
  * for a wrong secret is `{ error: 'unauthorized' }`, which never parses as a
  * reply, so a caller keys on the parsed body and never on the status alone.
  */
-export function webSessionReplyStatus(reply: WebSessionSignOutReply | WebSessionRollReply): number {
+export function webSessionReplyStatus(
+  reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply,
+): number {
   if (reply.outcome === 'identity_changed') return 409;
   if (reply.outcome === 'unauthenticated') return 401;
   if (reply.outcome === 'error') return 503;

@@ -116,6 +116,21 @@ export function assertCutoffEnforcementConfiguration(environment: Environment = 
     throw new Error(`${AUTH_CUTOFF_ENFORCEMENT_ENV}=observe cannot run with ${selected.join(', ')} on`);
 }
 
+/** `CURRENT_STORE_AUTH_PROJECTION_ID`: set, no surrounding spaces, at most 256 characters. */
+export function isValidAuthorityProjectionId(projectionId: string | undefined): projectionId is string {
+  return Boolean(projectionId) && projectionId === projectionId?.trim() && (projectionId?.length ?? 0) <= 256;
+}
+
+/** `CURRENT_STORE_AUTH_WRITER_EPOCH`: a positive integer up to 2,147,483,647, written without a leading zero. */
+export function isValidAuthorityWriterEpoch(epochText: string | undefined): epochText is string {
+  return (
+    epochText !== undefined &&
+    /^[1-9]\d*$/.test(epochText) &&
+    Number.isSafeInteger(Number(epochText)) &&
+    Number(epochText) <= 2_147_483_647
+  );
+}
+
 /** Invoked only after the caller explicitly selects its own staging mode. */
 export function currentStoreAuthorityConfiguration(environment: Environment): WebPasswordAuthority {
   if (environment.DEBUG_SQL === 'true') throw new Error('Unsafe current-store auth SQL logging');
@@ -124,15 +139,7 @@ export function currentStoreAuthorityConfiguration(environment: Environment): We
     throw new Error('Staged auth writers need cutoff enforcement');
   const projectionId = environment.CURRENT_STORE_AUTH_PROJECTION_ID;
   const epochText = environment.CURRENT_STORE_AUTH_WRITER_EPOCH;
-  if (
-    !projectionId ||
-    projectionId !== projectionId.trim() ||
-    projectionId.length > 256 ||
-    !epochText ||
-    !/^[1-9]\d*$/.test(epochText) ||
-    !Number.isSafeInteger(Number(epochText)) ||
-    Number(epochText) > 2_147_483_647
-  )
+  if (!isValidAuthorityProjectionId(projectionId) || !isValidAuthorityWriterEpoch(epochText))
     throw new Error('Invalid current-store authority configuration');
   // Fails every staged mode alike at configuration, never per address.
   currentStoreDeletedEmailKey(environment);

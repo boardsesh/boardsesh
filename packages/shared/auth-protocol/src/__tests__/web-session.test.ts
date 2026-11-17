@@ -7,6 +7,8 @@ import {
   passwordCommandSchema,
   passwordReplySchema,
   webSessionMode,
+  webSessionReadCommandSchema,
+  webSessionReadReplySchema,
   webSessionReplyStatus,
   webSessionRollReplySchema,
   webSessionSignOutCommandSchema,
@@ -98,5 +100,46 @@ describe('web session protocol', () => {
         rolled: true,
       }).success,
     ).toBe(true);
+  });
+
+  it('reads a session from either cookie and signs out from either form', () => {
+    const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId } as const;
+    const read = (presented: unknown) =>
+      webSessionReadCommandSchema.safeParse({ ...base, operation: 'session', issuedAt: 1, payload: { presented } })
+        .success;
+    expect(read({ kind: 'canonical-token', token: 't' })).toBe(true);
+    expect(read({ kind: 'legacy-jwe', credential: 'jwe' })).toBe(true);
+    expect(read({ kind: 'canonical-token', token: 't', userId: 'u' })).toBe(false);
+    expect(read(undefined)).toBe(false);
+
+    const signOut = (payload: unknown) =>
+      webSessionSignOutCommandSchema.safeParse({ ...base, operation: 'signout', issuedAt: 1, payload }).success;
+    const expected = { expectedUserId: 'u', expectedAuthSessionId: 's' };
+    expect(signOut({ token: 't', ...expected })).toBe(true);
+    expect(signOut({ presented: { kind: 'legacy-jwe', credential: 'jwe' }, ...expected })).toBe(true);
+    expect(signOut({ token: 't', presented: { kind: 'canonical-token', token: 't' }, ...expected })).toBe(false);
+    expect(signOut({ presented: { kind: 'legacy-jwe', credential: 'jwe' }, expectedUserId: 'u' })).toBe(false);
+  });
+
+  it('answers a session read with the NextAuth user fields and nothing to write', () => {
+    const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId } as const;
+    const active = {
+      ...base,
+      operation: 'session',
+      outcome: 'active',
+      userId: 'u',
+      authSessionId: 's',
+      generation: 0,
+      expiresAt: new Date(0).toISOString(),
+      source: 'login',
+      authenticatedAt: null,
+      linkGuarded: false,
+      user: { id: 'u', email: 'climber@example.test', name: null, image: null },
+    } as const;
+    expect(webSessionReadReplySchema.safeParse(active).success).toBe(true);
+    expect(webSessionReadReplySchema.safeParse({ ...active, token: 't' }).success).toBe(false);
+    expect(webSessionReadReplySchema.safeParse({ ...active, source: 'native' }).success).toBe(false);
+    expect(webSessionReplyStatus(active)).toBe(200);
+    expect(webSessionReplyStatus({ ...base, operation: 'session', outcome: 'unauthenticated' })).toBe(401);
   });
 });

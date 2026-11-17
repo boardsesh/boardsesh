@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNotNull, isNull, lt, ne, notExists, notLike, or, sql, type SQL } from 'drizzle-orm';
-import { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS } from '@boardsesh/auth-protocol';
+import {
+  WEB_SESSION_LIFETIME_SECONDS,
+  WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS,
+  type PresentedWebSession,
+} from '@boardsesh/auth-protocol';
 import {
   authCredentialLineage,
   authSession,
   authSessionDenials,
   authSubjectCutoffs,
+  userProfiles,
   users,
 } from '@boardsesh/db/schema/auth';
 import { requireHumanSubjectForIssuance } from '../human-admission';
@@ -19,7 +24,7 @@ import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { denyFirstPartySessionInTransaction } from './lineage';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
-import { readFirstPartySession, type FirstPartySession } from './session-reader';
+import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from './session-reader';
 import { newSessionToken } from './session-token';
 
 export { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS };
@@ -282,19 +287,42 @@ export async function rollWebSession(
   return rolled ? { rolled: true, expiresAt: rolled.expiresAt } : { rolled: false };
 }
 
+/**
+ * The reader credential for a session www presented. A legacy cookie needs
+ * `NEXTAUTH_SECRET`; without it the session store is unavailable, never a
+ * signed-out answer.
+ */
+export function presentedWebCredential(
+  presented: PresentedWebSession,
+  nextAuthSecret: string | undefined = process.env.NEXTAUTH_SECRET,
+): FirstPartyCredential {
+  if (presented.kind === 'canonical-token') return { kind: 'canonical-token', token: presented.token };
+  if (!nextAuthSecret) throw new Error('Web session authority unavailable');
+  return { kind: 'legacy-jwe', credential: presented.credential, secret: nextAuthSecret };
+}
+
 export interface WebSessionSignOut {
-  /** The opaque token from the session cookie, after its signature checked out. */
-  readonly token: string;
+  /**
+   * The cookie's credential: the canonical token after its signature checked
+   * out, or the joined legacy NextAuth cookie.
+   */
+  readonly credential: FirstPartyCredential;
   /** Who the tab believed it was signed in as. */
   readonly expectedUserId: string;
   readonly expectedAuthSessionId: string;
 }
 
 /**
- * Guarded sign-out of a canonical web session. `identity-changed` when the
- * token reads as another live session than the tab expected: nothing ends.
+ * Guarded sign-out of a web session. `identity-changed` when the credential
+ * reads as another live session than the tab expected: nothing ends.
  * `signed-out` once the session is revoked, or when it was not live anyway.
- * It never performs an account cutoff.
+ *
+ * A legacy cookie with its own session id gets a denial of that id, which
+ * ends that login and no other. A legacy cookie without one could only be
+ * ended by cutting off its whole account, phones included, so it is answered
+ * `signed-out` with nothing written: www clears the cookie, as NextAuth's own
+ * sign-out does today. A bridged row of such a cookie is ended as that row
+ * alone. It never performs an account cutoff.
  */
 export async function signOutWebSession(
   database: AuthorityDatabase,
@@ -302,14 +330,15 @@ export async function signOutWebSession(
   authority: ExpectedCurrentStoreAuthority,
   now = new Date(),
 ): Promise<'signed-out' | 'identity-changed'> {
-  const request = { ...input };
+  const request = { ...input, credential: { ...input.credential } };
   const expectedAuthority = captureExpectedAuthority(authority);
-  const outcome = await readFirstPartySession(database, { kind: 'canonical-token', token: request.token }, now);
+  const outcome = await readFirstPartySession(database, request.credential, now);
   if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
   if (outcome.status === 'denied') return 'signed-out';
   const { session } = outcome;
   if (session.userId !== request.expectedUserId || session.authSessionId !== request.expectedAuthSessionId)
     return 'identity-changed';
+  if (request.credential.kind === 'legacy-jwe' && session.requiresAccountCutoff) return 'signed-out';
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     // A bridged row of a legacy cookie without a session id is ended as that
@@ -323,6 +352,59 @@ export async function signOutWebSession(
     );
   });
   return 'signed-out';
+}
+
+/** The user fields of today's NextAuth session JSON. */
+export interface WebSessionUser {
+  readonly id: string;
+  readonly email: string | null;
+  readonly name: string | null;
+  readonly image: string | null;
+}
+
+export type WebSessionRead =
+  | { readonly status: 'active'; readonly session: FirstPartySession; readonly user: WebSessionUser }
+  | { readonly status: 'unauthenticated' };
+
+/**
+ * Read the session a cookie carries, by exactly the rules every request uses
+ * (`readFirstPartySession`), and the user fields the NextAuth session JSON
+ * shows. Only SELECTs: no roll, no last-seen time, no bridge. A legacy cookie
+ * is answered by its own admission rules.
+ */
+export async function readWebSession(
+  database: Pick<AuthorityDatabase, 'select'>,
+  credential: FirstPartyCredential,
+  now = new Date(),
+): Promise<WebSessionRead> {
+  const outcome = await readFirstPartySession(database, credential, now);
+  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (outcome.status === 'denied') return { status: 'unauthenticated' };
+  const { session } = outcome;
+  const [account] = await database
+    .select({
+      email: users.email,
+      name: users.name,
+      image: users.image,
+      displayName: userProfiles.displayName,
+      avatarUrl: userProfiles.avatarUrl,
+    })
+    .from(users)
+    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+    .where(eq(users.id, session.userId));
+  // The reader admitted it a moment ago; an account gone since is signed out.
+  if (!account) return { status: 'unauthenticated' };
+  return {
+    status: 'active',
+    session,
+    user: {
+      id: session.userId,
+      email: account.email,
+      // As the NextAuth session callback: the profile's name and avatar win.
+      name: account.displayName || account.name,
+      image: account.avatarUrl || account.image,
+    },
+  };
 }
 
 export type WebSessionRefresh =

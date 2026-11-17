@@ -289,7 +289,7 @@ cookie signature check.
 
 ### The private commands B1 calls
 
-All three sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
+All four sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
 backend (404 `{ "error": "disabled" }` when off, 503 for an unknown value), use
 the existing `Authorization: Bearer <CURRENT_STORE_AUTH_RPC_SECRET>` and refuse
 any request carrying an `Origin` header. Schemas and types are in
@@ -298,7 +298,8 @@ any request carrying an `Origin` header. Schemas and types are in
 | Command | Request | Replies |
 | --- | --- | --- |
 | Login: the staged password command, `POST /api/internal/auth/current-store/password` | `passwordCommandSchema` plus `webSession: { presented? }`. `presented` is `{ kind: 'legacy-jwe', credential }` (the joined NextAuth cookie) or `{ kind: 'canonical-token', token }` (from the new cookie). There is no field for an account: the session goes to the account the password proves. | `authenticated` with `webSession: { sessionId, token, expiresAt, generation }`; `invalid_credentials` with nothing issued and nothing revoked. An account that still needs email verification gets `authenticated` with `verification.verified: false` and no `webSession`, and its presented session stays. Rate limits and the compare gate are those of #7650. |
-| Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ token, expectedUserId, expectedAuthSessionId }` | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. |
+| Session read, `POST /api/internal/auth/current-store/web-session/v1/session` | `webSessionReadCommandSchema`: `{ presented }`, the same `PresentedWebSession` login takes | 200 `active` with `userId`, `authSessionId`, `generation`, `expiresAt`, `source` (`login` or `bridge`), `authenticatedAt` (or null), `linkGuarded` and `user: { id, email, name, image }`, the fields of today's NextAuth session JSON (profile display name and avatar win); 401 `unauthenticated`; 503 `unavailable`. It applies exactly `readFirstPartySession`'s rules and writes nothing: no roll, no last-seen time, no bridge. A legacy cookie is answered by its own admission rules. |
+| Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ presented, expectedUserId, expectedAuthSessionId }`, or the first form `{ token, … }` with a bare canonical token, still accepted so either web works with either backend | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. A legacy cookie with its own session id gets a denial of that id and nothing else ends; one without a session id is answered `signed_out` with nothing written. |
 | Roll, `POST /api/internal/auth/current-store/web-session/v1/roll` | `webSessionRollCommandSchema`: `{ token }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` and `rolled`; 401 `unauthenticated`; 503 `unavailable`. |
 
 A 401 means "no live session" only when its body parses as the command's own
@@ -315,8 +316,13 @@ login presenting a legacy cookie answers 503 before any password work when the
 backend has no `NEXTAUTH_SECRET`. A joined legacy cookie may be at most 12,288
 characters (`LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH`), so the command stays
 inside the 16,384-byte body budget. The legacy cookie's own sign-out
-stays the existing `/api/internal/auth/current-store/signout` behind
-`CURRENT_STORE_WEB_SIGNOUT_MODE`.
+can also go to the existing `/api/internal/auth/current-store/signout` behind
+`CURRENT_STORE_WEB_SIGNOUT_MODE`, whose no-SID path cuts off the account.
+
+No reply of these commands sets a cookie. When a login asks for a session and
+a credential proof together, the proof's `authSessionId` and `generation` are
+the issued session's, so the legacy NextAuth cookie www writes from the proof
+during the 30-day rollback window names the same session.
 
 ## One guard in each browser client
 

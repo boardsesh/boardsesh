@@ -56,8 +56,8 @@ import {
 } from '../authority/router';
 import { bindIdentityAuthority } from '../authority/identity-authority';
 import { verifyAuthorityPassword } from '../authority/authority';
-import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from '../authority/session-reader';
-import { issueWebSession, lockWebSessionAccounts } from '../authority/web-session';
+import { readFirstPartySession, type FirstPartySession } from '../authority/session-reader';
+import { issueWebSession, lockWebSessionAccounts, presentedWebCredential } from '../authority/web-session';
 import { readLockedWebSubjectState } from './web-credential-state';
 
 function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
@@ -377,13 +377,7 @@ async function readPresentedSession(
 ): Promise<FirstPartySession | undefined> {
   const { presented } = request;
   if (!presented) return undefined;
-  let credential: FirstPartyCredential;
-  if (presented.kind === 'canonical-token') credential = { kind: 'canonical-token', token: presented.token };
-  else {
-    const secret = process.env.NEXTAUTH_SECRET;
-    if (!secret) throw new Error('Web session authority unavailable');
-    credential = { kind: 'legacy-jwe', credential: presented.credential, secret };
-  }
+  const credential = presentedWebCredential(presented);
   const outcome = await readFirstPartySession(transaction, credential, now, (userId) =>
     readLockedWebSubjectState(transaction, userId),
   );
@@ -470,16 +464,22 @@ export async function authenticateWebPassword(
             authority: receipt,
           })
         : undefined;
-    // The proof comes after the session. A cookie minted from it must carry the
-    // session's generation, or it would die before the session does; a login
-    // never moves the generation, so a difference here is a bug, not a race.
+    // The proof comes after the session and names it: one login, one session
+    // id, so the legacy NextAuth cookie www writes from the proof during the
+    // rollback window carries the canonical session's id and generation. A
+    // login never moves the generation, so a difference here is a bug.
     const credentialProof = await issueWebCredentialProof(
       transaction,
       selected.userId,
       credentialProofVersion,
       selected.generation,
+      webSession?.sessionId,
     );
-    if (webSession && credentialProof && credentialProof.generation !== webSession.generation)
+    if (
+      webSession &&
+      credentialProof &&
+      (credentialProof.generation !== webSession.generation || credentialProof.authSessionId !== webSession.sessionId)
+    )
       throw new Error('Web credential proof and web session disagree');
     await revalidateIdentityAuthority(transaction, receipt);
     // Past the command's age limit nobody waits for the token: roll the new session back.
