@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 
 // Issue #2202: the Boardsesh drawing — a wash of the play field over the unlit
@@ -1290,6 +1290,7 @@ describe('live Homewall GPU render selection', () => {
     sizeId: 25,
     setIds: '26,27,28,29',
     gpuSurface: true,
+    gpuApiVersion: 3,
     playSurface: true,
   };
   const nativeModule = {
@@ -1318,23 +1319,54 @@ describe('live Homewall GPU render selection', () => {
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
     const firstConfig = result.current.gpuConfigJson!;
     const firstIdentity = result.current.artworkIdentity;
+    const firstKey = buildCacheKey(
+      board.boardName,
+      board.layoutId,
+      board.sizeId,
+      board.setIds,
+      'p4131r42',
+      false,
+      undefined,
+      firstIdentity.renderSignature,
+    );
+    await waitFor(() => expect(_renderedOverlaysForTests.has(firstKey)).toBe(true));
     expect(JSON.parse(firstConfig).veil.color).toBe('#1C1C1E');
     rerender({ fieldColorOverride: '#15131a', fallback: null });
-    await waitFor(() => expect(result.current.gpuConfigJson).not.toBe(firstConfig));
+    await waitFor(() => {
+      expect(result.current.gpuStatus).toBe('ready');
+      expect(result.current.gpuConfigJson).not.toBe(firstConfig);
+    });
     const nextConfig = result.current.gpuConfigJson!;
+    const nextKey = buildCacheKey(
+      board.boardName,
+      board.layoutId,
+      board.sizeId,
+      board.setIds,
+      'p4131r42',
+      false,
+      undefined,
+      result.current.artworkIdentity.renderSignature,
+    );
+    await waitFor(() => expect(_renderedOverlaysForTests.has(nextKey)).toBe(true));
     expect(JSON.parse(nextConfig).veil.color).toBe('#15131a');
     expect(result.current.artworkIdentity.renderSignature).not.toBe(firstIdentity.renderSignature);
-    rerender({ fieldColorOverride: '#15131a', fallback: nextConfig });
-    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(nextKey).not.toBe(firstKey);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
     const [fallbackConfig, fallbackKey] = nativeModule.renderHoldsOverlay.mock.calls.at(-1)!;
+    expect(fallbackKey).toBe(nextKey);
     expect(JSON.parse(fallbackConfig).veil.color).toBe('#15131a');
+    rerender({ fieldColorOverride: '#15131a', fallback: nextConfig });
     expect(result.current.gpuConfigJson).toBeNull();
+    expect(result.current.overlayUri).toBe(_renderedOverlaysForTests.get(nextKey)?.uri);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
     rerender({ fieldColorOverride: '#1C1C1E', fallback: nextConfig });
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
     const restoredConfig = result.current.gpuConfigJson!;
     rerender({ fieldColorOverride: '#1C1C1E', fallback: restoredConfig });
-    await waitFor(() => expect(nativeModule.renderHoldsOverlay.mock.calls.at(-1)?.[1]).not.toBe(fallbackKey));
-    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls.at(-1)![0]).veil.color).toBe('#1C1C1E');
+    expect(result.current.gpuConfigJson).toBeNull();
+    expect(result.current.artworkIdentity.renderSignature).toBe(firstIdentity.renderSignature);
+    expect(result.current.overlayUri).toBe(_renderedOverlaysForTests.get(firstKey)?.uri);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
     // A list/editor/share caller without the override keeps its existing palette.
     rerender({ fieldColorOverride: undefined, fallback: null });
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
@@ -1365,16 +1397,24 @@ describe('live Homewall GPU render selection', () => {
     const { result } = renderHook(() => useNativeClimbRender({ ...board, frames: 'p4131r42' }));
     expect(result.current.gpuConfigJson).toBeNull();
     expect(result.current.gpuStatus).toBe('loading');
-    resolveSupport(true);
+    act(() => resolveSupport(true));
     await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
-    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0])).toMatchObject({
+      render_mode: 'aura',
+      frames: 'p4131r42',
+    });
   });
 
-  it('prepares all hold geometry once across frame changes and skips competing PNG work', async () => {
-    const { result, rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...board, frames }), {
-      initialProps: { frames: 'p4131r42' },
-    });
+  it('hedges one cold GPU attempt with exact PNG art and renders no new PNG after presentation', async () => {
+    const { result, rerender } = renderHook(
+      ({ frames, presented }) => useNativeClimbRender({ ...board, frames, gpuPresentedConfigJson: presented }),
+      {
+        initialProps: { frames: 'p4131r42', presented: null as string | null },
+      },
+    );
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///gpu-fallback.png'));
     const initialConfig = result.current.gpuConfigJson!;
     const parsed = JSON.parse(initialConfig) as {
       holds: Array<{ id: number; outline?: number[] }>;
@@ -1386,35 +1426,60 @@ describe('live Homewall GPU render selection', () => {
     expect(parsed.output_width).toBe(1080);
     expect(parsed.holds.every((hold) => hold.outline && hold.outline.length > 0)).toBe(true);
     expect(Object.keys(parsed.hold_state_map)).toEqual(['42', '43', '44', '45']);
-    rerender({ frames: 'p4306r43' });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0])).toMatchObject({
+      render_mode: 'aura',
+      frames: 'p4131r42',
+    });
+    rerender({ frames: 'p4131r42', presented: initialConfig });
+    rerender({ frames: 'p4306r43', presented: initialConfig });
     expect(result.current.gpuConfigJson).toBe(initialConfig);
     expect(result.current.gpuFrames).toBe('p4306r43');
-    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
-    rerender({ frames: '' });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    rerender({ frames: '', presented: initialConfig });
     expect(result.current.gpuConfigJson).toBeNull();
-    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
   });
 
-  it('reuses one config across empty and first-hold v3 editor scenes without PNG work', async () => {
+  it('reuses a presented empty baseline across first-hold v3 editor scenes without PNG work', async () => {
     const { result, rerender } = renderHook(
-      ({ frames }) =>
+      ({ frames, presented }) =>
         useNativeClimbRender({
           ...board,
           frames,
           gpuAllowEmpty: true,
+          gpuPresentedConfigJson: presented,
           maxVeilOpacity: 0,
         }),
-      { initialProps: { frames: '' } },
+      { initialProps: { frames: '', presented: null as string | null } },
     );
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
-    const initialConfig = result.current.gpuConfigJson;
+    const initialConfig = result.current.gpuConfigJson!;
     expect(result.current.gpuFrames).toBe('');
-    rerender({ frames: 'p4131r42' });
+    rerender({ frames: '', presented: initialConfig });
+    rerender({ frames: 'p4131r42', presented: initialConfig });
     expect(result.current.gpuConfigJson).toBe(initialConfig);
-    rerender({ frames: '' });
+    rerender({ frames: '', presented: initialConfig });
     expect(result.current.gpuConfigJson).toBe(initialConfig);
     expect(result.current.gpuFrames).toBe('');
     expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it.each([2, 3])('preserves viewport-sized GPU preparation on an API v%s binary', async (gpuApiVersion) => {
+    const { result, rerender } = renderHook(
+      ({ renderWidth }) => useNativeClimbRender({ ...board, gpuApiVersion, frames: 'p4131r42', renderWidth }),
+      { initialProps: { renderWidth: 936 } },
+    );
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    expect(JSON.parse(result.current.gpuConfigJson!).output_width).toBe(936);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    rerender({ renderWidth: 720 });
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    expect(JSON.parse(result.current.gpuConfigJson!).output_width).toBe(720);
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
+    expect(nativeModule.renderHoldsOverlay.mock.calls.map(([config]) => JSON.parse(config).output_width)).toEqual([
+      936, 720,
+    ]);
   });
 
   it('falls back for a failed static config across later taps, with editor veil preserved', async () => {
@@ -1435,6 +1500,17 @@ describe('live Homewall GPU render selection', () => {
     expect(result.current.gpuConfigJson).toBeNull();
     expect(result.current.gpuStatus).toBe('unavailable');
     await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+  });
+
+  it.each(['fill', 'glow-fill'] as const)('keeps %s on PNG on older Homewall binaries', async (markStyle) => {
+    boardRenderSettingsRef.current = {
+      ...DEFAULT_BOARD_RENDER_SETTINGS,
+      mode: 'aura',
+      boardsesh: { ...DEFAULT_BOARD_RENDER_SETTINGS.boardsesh, markStyle },
+    };
+    const { result } = renderHook(() => useNativeClimbRender({ ...board, frames: 'p4131r42' }));
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(result.current.gpuConfigJson).toBeNull();
   });
 
   it('uses PNG for unsupported soft discs and role codes', async () => {

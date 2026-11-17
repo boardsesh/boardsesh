@@ -617,3 +617,13 @@ spelling, so there is no compatibility window to keep open.
 module path in each committed binary, so an artifact that predates the rename
 fails CI rather than silently answering `Unknown` and rendering every board
 classic.
+
+## Aura GPU rollout diagnostics
+
+`Aura GPU Fallback` and `Aura GPU Prepared` use the existing consent-controlled mobile analytics client. Each request/type receives one 10% sampling decision; at most 128 decisions are made per JS lifetime. A retry cannot repeatedly sample the same event. A diagnostics failure cannot block rendering or fallback.
+
+Both carry `board_name` (one of eight catalogue families or `unknown`), `api_version`, `surface` (`player` or `editor`) and `sample_rate: 0.1`. Fallbacks add a closed `reason` and `failure_scope` (`static`, `frame` or `context`). Cancellation is excluded. Cold preparations add native `prepare_ms`, `upload_ms` and requested `atlas_bytes`; warm cache-hit frame events stay silent. These timings are not full photograph readiness or physical scanout measurements.
+
+No raw native error, request ID, configuration, config hash, frame string, hold ID, URI, board/account UUID or climb identifier is included in these event properties. The existing client consent and identity rules still apply. This is sampled evidence from consenting clients, not a census of every installation.
+
+The CDN acceleration PR is parked. Reconsider it only if the final native path's cold-preparation/fallback observations demonstrate a need; no asset prefetch, publication or catalogue manifest is part of this rollout.

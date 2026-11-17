@@ -34,9 +34,20 @@ vi.mock('react-native', () => ({
   },
 }));
 
-import { useIsAppBackgrounded } from '../app-visibility';
+import { useIsAppBackgrounded, useIsAppActive } from '../app-visibility';
 
 describe('app-visibility store', () => {
+  it('pauses presentation during inactive without hiding background image layers', () => {
+    const { result } = renderHook(() => ({ active: useIsAppActive(), backgrounded: useIsAppBackgrounded() }));
+    expect(result.current).toEqual({ active: true, backgrounded: false });
+    act(() => appState.fire('inactive'));
+    expect(result.current).toEqual({ active: false, backgrounded: false });
+    act(() => appState.fire('background'));
+    expect(result.current).toEqual({ active: false, backgrounded: true });
+    act(() => appState.fire('active'));
+    expect(result.current).toEqual({ active: true, backgrounded: false });
+    expect(appState.addEventListener).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     appState.addEventListener.mockClear();
     appState.ref.currentState = 'active';

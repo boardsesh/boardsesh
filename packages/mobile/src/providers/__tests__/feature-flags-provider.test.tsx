@@ -79,6 +79,40 @@ describe('FeatureFlagsProvider', () => {
     }
   });
 
+  it('applies live global disables to the shipped Homewall path', () => {
+    let enabled = true;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={{ 'aura-gpu-enabled': enabled }}>{children}</FeatureFlagsProvider>
+    );
+    const { result, rerender } = renderHook(() => useGpuClimbOverlayEnabled('kilter', 8), { wrapper });
+    expect(result.current).toBe(true);
+    enabled = false;
+    rerender();
+    expect(result.current).toBe(false);
+  });
+
+  it('requires an explicit family policy in addition to a true flag', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider
+        flags={{ 'aura-gpu-enabled': true }}
+        payloads={{
+          'aura-gpu-enabled': { version: 1, enabledFamilies: ['tension'], disabledFamilies: ['kilter'] },
+        }}
+      >
+        {children}
+      </FeatureFlagsProvider>
+    );
+    const { result } = renderHook(
+      () => ({
+        tension: useGpuClimbOverlayEnabled('tension', 1),
+        kilter: useGpuClimbOverlayEnabled('kilter', 8),
+        woods: useGpuClimbOverlayEnabled('woods', 1),
+      }),
+      { wrapper },
+    );
+    expect(result.current).toEqual({ tension: true, kilter: false, woods: false });
+  });
+
   it('exposes flags passed via the `flags` prop', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <FeatureFlagsProvider flags={{ heroImage: true, newQueueBar: false }}>{children}</FeatureFlagsProvider>

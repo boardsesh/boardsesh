@@ -1,12 +1,25 @@
+import {
+  climbOverlayGpuApiVersion,
+  type ClimbOverlayGPUFailure,
+  type ClimbOverlayGPUFailureScope,
+} from '../lib/board-render/gpu-native-capability';
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
 import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
+import { useIsAppActive, isAppActiveNow } from '../lib/app-visibility';
 import {
   NativeFrameClimbOverlayGPU,
   NativeMotionClimbOverlayGPU,
   type ClimbOverlayGPUReady,
 } from '../../modules/climb-overlay-gpu/src';
+import {
+  classifyGpuFallback,
+  reportGpuFallback,
+  reportGpuPreparation,
+  resolveGpuFailureScope,
+  type GpuFallbackReason,
+} from '../lib/board-render/gpu-telemetry';
 
 export type GpuClimbTransition = {
   previousFrames: string | null;
@@ -23,11 +36,17 @@ type Props = {
   configJson: string;
   frames: string;
   requestId: string;
+  boardName?: string;
   transition?: GpuClimbTransition;
   animateEdits?: boolean;
   displayMirrored?: boolean;
-  onPresented: (requestId: string) => void;
-  onFailure: (requestId: string, configJson: string) => void;
+  onPresented: (requestId: string, configJson: string) => void;
+  onFailure: (
+    requestId: string,
+    configJson: string,
+    reason: GpuFallbackReason,
+    failureScope: ClimbOverlayGPUFailureScope,
+  ) => void;
   onReset: (requestId: string) => void;
   onRelease: () => void;
 };
@@ -37,6 +56,7 @@ export function GpuClimbOverlay({
   configJson,
   frames,
   requestId,
+  boardName = 'unknown',
   transition,
   animateEdits = false,
   displayMirrored = false,
@@ -46,6 +66,7 @@ export function GpuClimbOverlay({
   onRelease,
 }: Props) {
   const reduceMotion = useReduceMotion();
+  const appActive = useIsAppActive();
   const pagePosition = transition?.pagePosition;
   const centerPage = transition?.centerPage ?? 0;
   // Updating this native numeric prop stays on the UI thread. No React render,
@@ -63,7 +84,7 @@ export function GpuClimbOverlay({
   const answered = useRef(false);
   const failureReported = useRef(false);
   useLayoutEffect(() => {
-    currentRequest.current = requestId;
+    currentRequest.current = appActive ? requestId : null;
     answered.current = false;
     failureReported.current = false;
     onReset(requestId);
@@ -71,21 +92,35 @@ export function GpuClimbOverlay({
       currentRequest.current = null;
       onReset(requestId);
     };
-  }, [requestId, onReset]);
+  }, [requestId, onReset, appActive]);
   useEffect(() => {
+    if (!appActive) return;
+    // A missed deadline says this phone was slow or the view left the screen,
+    // not that the config is broken. Fall back for these frames on this mount
+    // only; the next frames try the GPU again.
     const timeout = setTimeout(() => {
-      if (currentRequest.current !== requestId || answered.current) return;
+      if (!isAppActiveNow() || currentRequest.current !== requestId || answered.current) return;
       answered.current = true;
       failureReported.current = true;
       if (__DEV__) console.info('[gpu-climb-live]', JSON.stringify({ requestId, reason: 'presentation-timeout' }));
-      onFailure(requestId, configJson);
+      reportGpuFallback(
+        { boardName, apiVersion: climbOverlayGpuApiVersion, surface: animateEdits ? 'editor' : 'player' },
+        requestId,
+        'presentation-timeout',
+        'context',
+      );
+      onFailure(requestId, configJson, 'presentation-timeout', 'context');
     }, 10000);
     return () => clearTimeout(timeout);
-  }, [requestId, configJson, onFailure]);
+  }, [requestId, configJson, onFailure, boardName, animateEdits, appActive]);
   const ready = useCallback(
     ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUReady>) => {
-      if (currentRequest.current !== nativeEvent.requestId || answered.current) return;
+      if (!isAppActiveNow() || currentRequest.current !== nativeEvent.requestId || answered.current) return;
       answered.current = true;
+      reportGpuPreparation(
+        { boardName, apiVersion: climbOverlayGpuApiVersion, surface: animateEdits ? 'editor' : 'player' },
+        nativeEvent,
+      );
       if (__DEV__) {
         const {
           requestId,
@@ -111,29 +146,38 @@ export function GpuClimbOverlay({
             editDurationMs,
             lowPowerMode,
             surface: animateEdits ? 'editor' : 'player',
-            apiVersion: NativeMotionClimbOverlayGPU ? 3 : 2,
+            apiVersion: climbOverlayGpuApiVersion,
             reduceMotion,
           }),
         );
       }
-      onPresented(nativeEvent.requestId);
+      onPresented(nativeEvent.requestId, configJson);
     },
-    [onPresented, animateEdits, reduceMotion],
+    [onPresented, configJson, animateEdits, reduceMotion, boardName],
   );
   const failed = useCallback(
-    ({ nativeEvent }: NativeSyntheticEvent<{ requestId: string; reason: string }>) => {
-      if (currentRequest.current !== nativeEvent.requestId || failureReported.current) return;
+    ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUFailure>) => {
+      if (!isAppActiveNow() || currentRequest.current !== nativeEvent.requestId || failureReported.current) return;
+      const reason = classifyGpuFallback(nativeEvent.reason);
+      if (reason === 'cancelled') return;
       answered.current = true;
       failureReported.current = true;
+      const failureScope = resolveGpuFailureScope(nativeEvent.failureScope, nativeEvent.reason, reason);
       if (__DEV__) {
         console.info(
           '[gpu-climb-live]',
           JSON.stringify({ requestId: nativeEvent.requestId, reason: nativeEvent.reason }),
         );
       }
-      onFailure(nativeEvent.requestId, configJson);
+      reportGpuFallback(
+        { boardName, apiVersion: climbOverlayGpuApiVersion, surface: animateEdits ? 'editor' : 'player' },
+        nativeEvent.requestId,
+        reason,
+        failureScope,
+      );
+      onFailure(nativeEvent.requestId, configJson, reason, failureScope);
     },
-    [onFailure, configJson],
+    [onFailure, configJson, boardName, animateEdits],
   );
   if (NativeMotionClimbOverlayGPU && AnimatedMotionOverlay) {
     return (
@@ -149,7 +193,7 @@ export function GpuClimbOverlay({
         reduceMotion={reduceMotion}
         displayMirrored={displayMirrored}
         requestId={requestId}
-        active
+        active={appActive}
         onRenderReady={ready}
         onRenderError={failed}
       />
@@ -162,7 +206,7 @@ export function GpuClimbOverlay({
       configJson={configJson}
       frames={frames}
       requestId={requestId}
-      active
+      active={appActive}
       onRenderReady={ready}
       onRenderError={failed}
     />
