@@ -5,7 +5,7 @@ import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reani
 import type { LedPosition, SprayLedPair, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import type { SprayLiveDrag } from './SprayPhotoCanvas';
-import { cableEndpoints } from './spray-cable-endpoints';
+import { sprayCableDisplayGeometry } from './spray-cable-display';
 
 /** One empty list for every render without pairs, so `pairPoints` stays memoised. */
 const NO_LED_PAIRS: readonly SprayLedPair[] = [];
@@ -13,7 +13,7 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 // Cable colour is separate from the orange holes and violet LEDs. Skipped LEDs are
 // small dots in the cable colour, so red stays for loose ends that need fixing.
 export const SPRAY_CABLE_COLOR = '#0891B2';
-type Edge = { from: TnutPoint; to: TnutPoint; skip: number; first: boolean };
+const SPRAY_PAIR_CONNECTION_COLOR = '#FBBF24';
 export type SprayHoldRing = { id: number; points: TnutPoint[] };
 function screenPoint(
   point: TnutPoint,
@@ -53,27 +53,35 @@ function circles(
   }
   return path;
 }
-/**
- * A pair behind one hold (#7355 item 8) as two interlocking rings around its
- * dots: each ring is just over half the gap wide, so they always overlap.
- */
-function pairRings(
+/** Draw paired rings, or the link between the rings once they no longer overlap. */
+function pairPath(
   pairs: readonly (readonly [TnutPoint, TnutPoint])[],
   width: number,
   height: number,
   zoom: number,
   panX: number,
   panY: number,
+  connector = false,
 ): string {
   'worklet';
   let path = '';
   for (let index = 0; index < pairs.length; index++) {
     const first = screenPoint(pairs[index][0], width, height, zoom, panX, panY);
     const second = screenPoint(pairs[index][1], width, height, zoom, panX, panY);
-    const radius = Math.max(6, Math.min(14, Math.hypot(second.x - first.x, second.y - first.y) * 0.65));
+    const dx = second.x - first.x;
+    const dy = second.y - first.y;
+    const distance = Math.hypot(dx, dy);
+    const radius = Math.max(6, Math.min(14, distance * 0.65));
     if (Math.max(first.x, second.x) < -radius || Math.min(first.x, second.x) > width + radius) continue;
     if (Math.max(first.y, second.y) < -radius || Math.min(first.y, second.y) > height + radius) continue;
-    path += circlePath(first.x, first.y, radius) + circlePath(second.x, second.y, radius);
+    if (connector) {
+      if (distance <= radius * 2) continue;
+      const offsetX = (dx * radius) / distance;
+      const offsetY = (dy * radius) / distance;
+      path += `M${first.x + offsetX} ${first.y + offsetY}L${second.x - offsetX} ${second.y - offsetY}`;
+    } else {
+      path += circlePath(first.x, first.y, radius) + circlePath(second.x, second.y, radius);
+    }
   }
   return path;
 }
@@ -134,6 +142,7 @@ export function SpraySetupOverlay({
   unmappedHoles = [],
   unmappedHoldIds = [],
   ledPairs = NO_LED_PAIRS,
+  showPairConnectors = false,
   width,
   height,
   zoom,
@@ -149,6 +158,8 @@ export function SpraySetupOverlay({
   unmappedHoldIds?: number[];
   /** LED pairs behind one hold, drawn as interlocking rings. */
   ledPairs?: readonly SprayLedPair[];
+  /** In the position editor, link separated pair rings with a dashed line. */
+  showPairConnectors?: boolean;
   /** Draw holes small and faded so the LEDs stay readable (LED and cable editors). */
   compactHoles?: boolean;
   /** A point being dragged right now; drawn at the finger until the move commits. */
@@ -171,50 +182,20 @@ export function SpraySetupOverlay({
   panY: SharedValue<number>;
 }) {
   const { brandColors } = useTheme();
-  const { edges, gapEdges, selectedLeds, cableStarts, cableEnds, looseEnds } = useMemo(() => {
-    const byId = new Map(leds.map((point) => [point.id, point]));
-    const skips = new Map<string, number>();
-    for (const skip of (showSkips ? wiring?.skips : undefined) ?? []) {
-      skips.set(JSON.stringify([skip.from, skip.to]), skip.count);
-      skips.set(JSON.stringify([skip.to, skip.from]), skip.count);
-    }
-    const edges: Edge[] = [],
-      gapEdges: Edge[] = [];
-    const endpoints = cableEndpoints(wiring?.paths ?? []);
-    const pointsFor = (ids: (string | null)[]) =>
-      ids.flatMap((id) => {
-        const point = id === null ? undefined : byId.get(id);
-        return point ? [point] : [];
-      });
-    const cableStarts = pointsFor([endpoints.start]);
-    // A one-LED cable starts and ends on the same LED; the green start mark wins.
-    const cableEnds = pointsFor([endpoints.end === endpoints.start ? null : endpoints.end]);
-    const looseEnds = pointsFor(endpoints.loose);
-    for (const path of wiring?.paths ?? []) {
-      for (let index = 1; index < path.length; index++) {
-        const from = byId.get(path[index - 1]),
-          to = byId.get(path[index]);
-        if (!from || !to) continue;
-        const edge = {
-          from,
-          to,
-          skip: skips.get(JSON.stringify([from.id, to.id])) ?? 0,
-          first: index === 1 && path[0] === endpoints.start,
-        };
-        edges.push(edge);
-        if (edge.skip > 0) gapEdges.push(edge);
-      }
-    }
-    const selection = new Set(selected);
+  const { edges, gapEdges, cableStarts, cableEnds, looseEnds } = useMemo(() => {
+    const { edges, start, end, loose } = sprayCableDisplayGeometry(leds, wiring, ledPairs);
     return {
       edges,
-      gapEdges,
-      cableStarts,
-      cableEnds,
-      looseEnds,
-      selectedLeds: leds.filter((point) => selection.has(point.id)),
+      gapEdges: showSkips ? edges.filter((edge) => edge.skip > 0) : [],
+      cableStarts: start ? [start] : [],
+      cableEnds: end ? [end] : [],
+      looseEnds: loose,
     };
-  }, [leds, wiring, showSkips, selected]);
+  }, [leds, wiring, ledPairs, showSkips]);
+  const selectedLeds = useMemo(() => {
+    const selection = new Set(selected);
+    return leds.filter((point) => selection.has(point.id));
+  }, [leds, selected]);
   const smallHoles = Boolean(wiring) || compactHoles;
   const holeRadius = smallHoles ? 3 : 7;
   const selectedRings = useMemo(() => {
@@ -265,7 +246,10 @@ export function SpraySetupOverlay({
     });
   }, [leds, ledPairs]);
   const pairProps = useAnimatedProps(() => ({
-    d: pairRings(pairPoints, width, height, zoom.value, panX.value, panY.value),
+    d: pairPath(pairPoints, width, height, zoom.value, panX.value, panY.value),
+  }));
+  const pairConnectorProps = useAnimatedProps(() => ({
+    d: showPairConnectors ? pairPath(pairPoints, width, height, zoom.value, panX.value, panY.value, true) : '',
   }));
   const ledProps = useAnimatedProps(() => ({
     d: circles(
@@ -285,7 +269,7 @@ export function SpraySetupOverlay({
   const cableProps = useAnimatedProps(() => {
     let path = '';
     for (const edge of edges) {
-      if (edge.skip) continue;
+      if (showSkips && edge.skip) continue;
       const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
         to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
       if (visibleEdge(from, to, width, height)) path += `M${from.x} ${from.y}L${to.x} ${to.y}`;
@@ -304,7 +288,7 @@ export function SpraySetupOverlay({
   const arrowProps = useAnimatedProps(() => {
     let path = '';
     for (const edge of edges) {
-      if (edge.skip || edge.first) continue;
+      if ((showSkips && edge.skip) || edge.first) continue;
       const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
         to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
       if (visibleEdge(from, to, width, height)) path += arrowHead(from, to, 5, 3);
@@ -316,7 +300,7 @@ export function SpraySetupOverlay({
   const startArrowProps = useAnimatedProps(() => {
     let path = '';
     for (const edge of edges) {
-      if (edge.skip || !edge.first) continue;
+      if ((showSkips && edge.skip) || !edge.first) continue;
       const from = screenPoint(edge.from, width, height, zoom.value, panX.value, panY.value),
         to = screenPoint(edge.to, width, height, zoom.value, panX.value, panY.value);
       if (visibleEdge(from, to, width, height)) path += arrowHead(from, to, 8, 5);
@@ -394,6 +378,15 @@ export function SpraySetupOverlay({
           stroke={brandColors.primary}
           strokeWidth={1.5}
           opacity={subtleLeds ? 0.4 : 1}
+        />
+      ) : null}
+      {showPairConnectors && pairPoints.length ? (
+        <AnimatedPath
+          animatedProps={pairConnectorProps}
+          fill="none"
+          stroke={SPRAY_PAIR_CONNECTION_COLOR}
+          strokeWidth={1.5}
+          strokeDasharray={[4, 3]}
         />
       ) : null}
       {unmappedHoles.length ? (

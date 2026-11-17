@@ -13,6 +13,7 @@ import {
   bindLedPositionsToHoles,
   migrateTnutLayoutColumns,
   createWiring,
+  ledPairs,
   rowMajorLedIndices,
   setWiringInitialSkip,
   MAX_WIRING_SKIP,
@@ -588,7 +589,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       const wiring =
         preserveWiring && layout.wiring
           ? layout.wiring
-          : createWiring(layout.ledPositions ?? [], direction, startCorner, layout);
+          : createWiring(layout.ledPositions ?? [], direction, startCorner, layout, ledPairs(layout));
       const startingWiring = setWiringInitialSkip(wiring, initialSkip);
       const draft = startingWiring === layout.wiring ? layout : withUpdate(layout, { wiring: startingWiring });
       setLayout(draft);

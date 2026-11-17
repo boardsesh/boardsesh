@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, useState, type ReactNode } from 'react';
+import { createElement, useState, type ReactElement, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, ledPairs, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
@@ -11,6 +11,7 @@ const controls = vi.hoisted(() => ({
   confirm: vi.fn(),
   changed: vi.fn(),
   layout: null as TnutLayout | null,
+  preview: { available: false, show: vi.fn(), stop: vi.fn(), error: null },
 }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -26,7 +27,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: {}, systemColors: {}, spacing: [0, 4, 8, 12, 16] }),
 }));
 vi.mock('../../../lib/spray/use-spray-led-preview', () => ({
-  useSprayLedPreview: () => ({ available: false, show: vi.fn(), stop: vi.fn(), error: null }),
+  useSprayLedPreview: () => controls.preview,
 }));
 vi.mock('../SprayPhotoStage', () => ({
   SprayPhotoStage: ({ canvas }: { canvas: typeof controls.canvas }) => {
@@ -121,6 +122,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   controls.canvas = null;
+  controls.preview.available = false;
 });
 describe('LED position edits with cable work', () => {
   it('does not transfer a removed manual LED link when Add reuses its id, and Undo restores it', () => {
@@ -323,5 +325,48 @@ describe('Skipped LEDs on a connection', () => {
     fireEvent.click(screen.getByText('sprayLed.confirm'));
     expect(controls.layout?.wiring?.skips).toEqual([]);
     expect(screen.getByText('sprayLedSetup.skipsNone')).toBeTruthy();
+  });
+
+  it('hits the midpoint connection, rings and lights both pairs, and updates the physical gap', () => {
+    controls.preview.available = true;
+    render(
+      <Editor
+        kind="skips"
+        initial={{
+          ...original,
+          ledPositions: [
+            { id: 'a', x: 0.1, y: 0.2 },
+            { id: 'b', x: 0.7, y: 0.2 },
+            { id: 'c', x: 0.2, y: 0.8 },
+            { id: 'd', x: 0.8, y: 0.8 },
+          ],
+          ledGroups: [
+            ['a', 'b'],
+            ['c', 'd'],
+          ],
+          wiring: { ...original.wiring!, paths: [['a', 'b', 'c', 'd']], skips: [{ from: 'b', to: 'c', count: 2 }] },
+        }}
+      />,
+    );
+    // Near the rendered midpoint line only, away from the diagonal between b and c.
+    act(() => controls.canvas?.onTap?.({ x: 0.4167, y: 0.3 }, 400, 400));
+    const overlay = controls.canvas?.renderOverlay?.(
+      400,
+      400,
+      { value: 1 } as never,
+      { value: 0 } as never,
+      { value: 0 } as never,
+      { value: null } as never,
+    ) as ReactElement<{ selected: string[] }>;
+    expect(overlay.props.selected.toSorted()).toEqual(['a', 'b', 'c', 'd']);
+    expect(controls.preview.show).toHaveBeenLastCalledWith([3, 4, 7, 8]);
+
+    fireEvent.click(screen.getByText('sprayLedSetup.insertSkips'));
+    fireEvent.change(screen.getByLabelText('skip count'), { target: { value: '3' } });
+    fireEvent.click(screen.getByText('sprayLed.confirm'));
+    expect(controls.layout?.wiring?.skips).toEqual([{ from: 'b', to: 'c', count: 3 }]);
+    expect(controls.preview.show).toHaveBeenLastCalledWith([3, 4, 8, 9]);
+    fireEvent.click(screen.getByText('sprayLedSetup.skipsEndsOff'));
+    expect(controls.preview.stop).toHaveBeenCalledTimes(1);
   });
 });

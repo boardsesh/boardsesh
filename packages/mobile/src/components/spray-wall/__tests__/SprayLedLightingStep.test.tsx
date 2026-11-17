@@ -103,7 +103,7 @@ const source: SprayLookPreviewSource = {
 };
 const props = {
   wallUuid: 'wall',
-  orderedIndices: [7, 2, 9],
+  orderedIndices: [5, 2, 9],
   layout,
   source,
   holds: [
@@ -142,11 +142,11 @@ afterEach(cleanup);
 describe('final lighting test', () => {
   it('offers all LEDs, the ordered row chase, and an always reachable stop', () => {
     render(<SprayLedLightingStep {...props} />);
-    fireEvent.click(screen.getByText('sprayLed.lightAll'));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightWired'));
     fireEvent.click(screen.getByText('sprayLedSetup.lightingChase'));
     fireEvent.click(screen.getByText('sprayLedSetup.lightingStop'));
-    expect(preview.lightAll).toHaveBeenCalledTimes(1);
-    expect(preview.chase).toHaveBeenCalledWith([7, 2, 9]);
+    expect(preview.lightAll).toHaveBeenCalledExactlyOnceWith([2, 5]);
+    expect(preview.chase).toHaveBeenCalledWith([5, 2]);
     expect(preview.stop).toHaveBeenCalledTimes(1);
   });
 
@@ -155,21 +155,46 @@ describe('final lighting test', () => {
     tap(hole.x, hole.y);
     expect(screen.getByText('sprayLedSetup.selectionSummary:1')).toBeTruthy();
     preview.stop.mockClear();
-    fireEvent.click(screen.getByText('sprayLed.lightAll'));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightWired'));
     expect(preview.lightAll).toHaveBeenCalledTimes(1);
     expect(screen.getByText('sprayLedSetup.selectionSummary:0')).toBeTruthy();
     expect(preview.stop).not.toHaveBeenCalled();
   });
 
-  it('while every LED is lit, says so, draws them all and offers to switch them off', () => {
+  it('tests and highlights wired photo LEDs, leaving skips, unwired and off-photo positions out', () => {
+    const wiring = { ...layout.wiring!, paths: [['a', 'b', 'off-photo']] };
+    const fixture = {
+      ...props,
+      orderedIndices: [6, 5, 2],
+      source: { ...source, homography: [0.5, 0, 50, 0, 0.5, 0, 0, 0, 1] },
+      layout: { ...layout, wiring, ledPositions: [...layout.ledPositions!, { id: 'off-photo', x: 0.02, y: 0.5 }] },
+    };
+    const view = render(<SprayLedLightingStep {...fixture} />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightWired'));
+    expect(preview.lightAll).toHaveBeenCalledExactlyOnceWith([2, 5]);
     preview.allLit = true;
-    render(<SprayLedLightingStep {...props} />);
-    expect(screen.getByText('sprayLedSetup.allLitSummary:3')).toBeTruthy();
-    expect(litOnPhoto()).toEqual(['a', 'b', 'c']);
-    expect(screen.queryByText('sprayLed.lightAll')).toBeNull();
+    view.rerender(<SprayLedLightingStep {...fixture} />);
+    expect(screen.getByText('sprayLedSetup.allLitSummary:2')).toBeTruthy();
+    expect(litOnPhoto()).toEqual(['a', 'b']);
+    expect(screen.queryByText('sprayLedSetup.lightWired')).toBeNull();
     fireEvent.click(screen.getByText('sprayLed.turnOff'));
     expect(preview.stop).toHaveBeenCalledTimes(1);
-    expect(preview.lightAll).not.toHaveBeenCalled();
+    expect(preview.lightAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses selection feedback after a hole lights and stops a pending batch on an unwired tap', () => {
+    const view = render(<SprayLedLightingStep {...props} />);
+    tap(hole.x, hole.y);
+    preview.state = 'lit';
+    view.rerender(<SprayLedLightingStep {...props} />);
+    expect(screen.getByText('sprayLedSetup.lightingSelected')).toBeTruthy();
+    expect(screen.queryByText('sprayLed.lit')).toBeNull();
+    fireEvent.click(screen.getByText('sprayLedSetup.lightWired'));
+    preview.state = 'sending';
+    view.rerender(<SprayLedLightingStep {...props} />);
+    tap(0.8, 0.3);
+    expect(preview.stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('sprayLedSetup.selectionUnmapped:1')).toBeTruthy();
   });
 
   it('draws the LED the row-by-row test has reached', () => {
@@ -191,7 +216,7 @@ describe('final lighting test', () => {
     expect(screen.getByText('sprayLedSetup.lightingUnavailable')).toBeTruthy();
     expect(screen.getByText('sprayLedSetup.lightingRangeError')).toBeTruthy();
     expect(screen.getByText('sprayLedSetup.lightingStop').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('sprayLed.lightAll').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('sprayLedSetup.lightWired').hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('sprayLedSetup.lightingChase').hasAttribute('disabled')).toBe(true);
   });
 

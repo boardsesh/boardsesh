@@ -133,11 +133,34 @@ describe('spray LED preview lifecycle', () => {
     expect(result.current.allLit).toBe(false);
     await act(() => result.current.lightAll());
     expect(result.current.allLit).toBe(true);
+    expect(mocks.lightAll).toHaveBeenCalledTimes(1);
     await act(() => result.current.stop());
     expect(result.current.allLit).toBe(false);
     await act(() => result.current.lightAll());
     await act(() => result.current.show([1]));
     expect(result.current.allLit).toBe(false);
+  });
+
+  it('uses individual indices for a batch and ignores a cancelled batch acknowledgement', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(() => result.current.lightAll([2, 5]));
+    expect(result.current.allLit).toBe(true);
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
+    expect(mocks.lightAll).not.toHaveBeenCalled();
+
+    let acknowledge!: (completed: boolean) => void;
+    mocks.show.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        acknowledge = resolve;
+      }),
+    );
+    act(() => {
+      void result.current.lightAll([2, 5]);
+    });
+    await act(() => result.current.stop());
+    await act(async () => acknowledge(true));
+    expect(result.current.allLit).toBe(false);
+    expect(result.current.state).toBe('idle');
   });
 
   it('stop cancels the chase without advancing another LED', async () => {

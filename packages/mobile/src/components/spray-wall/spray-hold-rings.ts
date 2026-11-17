@@ -1,33 +1,18 @@
 import { isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
-import {
-  invert,
-  mapPoint,
-  type CanonicalSprayHold,
-  type ReferenceSize,
-  type TnutPoint,
-} from '@boardsesh/spray-wall-geometry';
+import type { CanonicalSprayHold, TnutPoint } from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../lib/spray/spray-look-preview';
 import type { SprayHoldRing } from './SpraySetupOverlay';
-
-function withinImage(x: number, y: number, size: ReferenceSize) {
-  return x >= 0 && x <= size.width && y >= 0 && y <= size.height;
-}
+import { sprayPhotoCoverage } from './spray-photo-coverage';
 
 /** Draw only holds whose centres land on photo pixels inside the calibrated crop. */
 export function sprayHoldRings(
   holds: readonly CanonicalSprayHold[],
-  { frame, photo, homography }: Pick<SprayLookPreviewSource, 'frame' | 'photo' | 'homography'>,
+  source: Pick<SprayLookPreviewSource, 'frame' | 'photo' | 'homography'>,
 ): SprayHoldRing[] {
-  let frameToPhoto;
-  try {
-    frameToPhoto = invert(homography);
-  } catch {
-    return [];
-  }
+  const { frame } = source;
+  const onPhoto = sprayPhotoCoverage(source);
   return holds.flatMap((hold) => {
-    if (!Number.isFinite(hold.r) || hold.r <= 0 || !withinImage(hold.cx, hold.cy, frame)) return [];
-    const [photoX, photoY] = mapPoint(frameToPhoto, hold.cx, hold.cy);
-    if (!withinImage(photoX, photoY, photo)) return [];
+    if (!Number.isFinite(hold.r) || hold.r <= 0 || !onPhoto(hold.cx, hold.cy)) return [];
     const outline = isValidOutlineRing(hold.outline)
       ? hold.outline
       : Array.from({ length: 64 }, (_, index) => {

@@ -15,7 +15,6 @@ import {
   withLedPartners,
   setWiringSkip,
   traceLedPath,
-  wiringSkipCount,
   MAX_LED_POSITIONS,
   MAX_WIRING_SKIP,
   MAX_WIRING_TOTAL_SKIPS,
@@ -34,6 +33,7 @@ import { BuilderTextInput } from '../board-discovery/BoardMetaFields';
 import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay, SPRAY_CABLE_COLOR } from './SpraySetupOverlay';
 import { SprayPhotoToolButton, SprayPointToolbar, SprayUndoButton, type SprayPointMode } from './SprayPointToolbar';
+import { sprayCableDisplayGeometry } from './spray-cable-display';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 const NO_LEDS: LedPosition[] = [];
@@ -262,6 +262,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
               holes={layout.holes}
               leds={leds}
               ledPairs={pairs}
+              showPairConnectors
               selected={pendingPair ? [pendingPair] : []}
               compactHoles
               liveDrag={liveDrag}
@@ -659,7 +660,7 @@ type Connection = { from: string; to: string };
 /**
  * Skipped LEDs (#7355 item 10): after the cable is laid, pick a connection on it
  * and say how many LEDs the strip has there that are not on the wall. The wall
- * can light just the two LEDs at the ends of that connection to check the count.
+ * lights the wired LEDs or LED pairs at the ends of the connection to check the count.
  */
 function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
   const { t } = useTranslation('boards');
@@ -668,27 +669,36 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const { change, undo, canUndo } = useEditorHistory(layout, onChange);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [skipText, setSkipText] = useState<string | null>(null);
-  const [endsLit, setEndsLit] = useState(false);
+  const [endsLit, setEndsLit] = useState(true);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
-  const byId = useMemo(() => new Map(leds.map((led) => [led.id, led])), [leds]);
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
   const indices = useMemo(
     () => new Map(wiring ? assignLedIndices(wiring).map(({ id, index }) => [id, index]) : []),
     [wiring],
   );
-  const connections = useMemo<Connection[]>(
-    () => (wiring?.paths ?? []).flatMap((path) => path.slice(1).map((to, index) => ({ from: path[index], to }))),
-    [wiring],
-  );
+  const connections = useMemo(() => sprayCableDisplayGeometry(leds, wiring, pairs).edges, [leds, wiring, pairs]);
   // Undo, or a cable changed on the previous step, can remove the selected connection.
-  const selected =
-    connection && connections.some(({ from, to }) => from === connection.from && to === connection.to)
-      ? connection
-      : null;
+  const selected = connection
+    ? connections.find(({ fromId, toId }) => fromId === connection.from && toId === connection.to)
+    : undefined;
   // A stored skip may name the connection's ends in the other order.
-  const gapCount = selected ? wiringSkipCount(wiring, selected.from, selected.to) : 0;
-  const ends = selected ? [indices.get(selected.from), indices.get(selected.to)] : [];
-  const endsKey = endsLit && ends.length === 2 && ends.every((index) => index !== undefined) ? ends.join(',') : '';
+  const gapCount = selected?.skip ?? 0;
+  const endLedIds = selected
+    ? [
+        ...new Set([
+          selected.fromId,
+          ledPartner(pairs, selected.fromId),
+          selected.toId,
+          ledPartner(pairs, selected.toId),
+        ]),
+      ].filter((id) => id !== null)
+    : [];
+  const ends = endLedIds
+    .map((id) => indices.get(id))
+    .filter((index) => index !== undefined)
+    .sort((first, second) => first - second);
+  const endsKey = endsLit ? ends.join(',') : '';
 
   const preview = useSprayLedPreview(wallUuid);
   const { available, show, stop } = preview;
@@ -702,7 +712,8 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   const newSkip = skipText === null ? NaN : Number(skipText);
   const validSkip = skipText !== null && /^\d+$/.test(skipText) && newSkip <= MAX_WIRING_SKIP;
-  const skipped = wiring && selected && validSkip ? setWiringSkip(wiring, selected.from, selected.to, newSkip) : wiring;
+  const skipped =
+    wiring && selected && validSkip ? setWiringSkip(wiring, selected.fromId, selected.toId, newSkip) : wiring;
   const canApplySkip = Boolean(selected) && validSkip && (newSkip === gapCount || skipped !== wiring);
   const dialog =
     skipText === null ? null : (
@@ -720,18 +731,16 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     );
   const insertSkips = () => setSkipText(String(gapCount || 1));
   const toggleEnds = () => setEndsLit((lit) => !lit);
-  const endsLabel = t(endsLit ? 'sprayLedSetup.skipsEndsOff' : 'sprayLedSetup.skipsLightEnds');
+  const previewEnds = endsLit && Boolean(selected);
+  const endsLabel = t(previewEnds ? 'sprayLedSetup.skipsEndsOff' : 'sprayLedSetup.skipsLightEnds');
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
     let best: Connection | null = null;
     let bestDistance = 24;
     for (const candidate of connections) {
-      const from = byId.get(candidate.from),
-        to = byId.get(candidate.to);
-      if (!from || !to) continue;
-      const distance = distanceToConnection(point, from, to, renderWidth, renderHeight);
+      const distance = distanceToConnection(point, candidate.from, candidate.to, renderWidth, renderHeight);
       if (distance < bestDistance) {
-        best = candidate;
+        best = { from: candidate.fromId, to: candidate.toId };
         bestDistance = distance;
       }
     }
@@ -743,7 +752,7 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       <Button title={t('sprayLedSetup.insertSkips')} variant="outlined" disabled={!selected} onPress={insertSkips} />
       <Button
         title={endsLabel}
-        variant={endsLit ? 'filled' : 'outlined'}
+        variant={previewEnds ? 'filled' : 'outlined'}
         disabled={!available || !selected}
         onPress={toggleEnds}
       />
@@ -760,15 +769,15 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
         fullScreenRail={
           <>
             <SprayPhotoToolButton
-              icon="add"
+              icon="insert-skipped-leds"
               label={t('sprayLedSetup.insertSkips')}
               disabled={!selected}
               onPress={insertSkips}
             />
             <SprayPhotoToolButton
-              icon={endsLit ? 'lightbulb.fill' : 'lightbulb'}
+              icon={previewEnds ? 'lightbulb.fill' : 'lightbulb'}
               label={endsLabel}
-              selected={endsLit}
+              selected={previewEnds}
               disabled={!available || !selected}
               onPress={toggleEnds}
             />
@@ -787,8 +796,9 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               compactHoles
               leds={leds}
               wiring={wiring}
+              ledPairs={pairs}
               distinguishSkips
-              selected={selected ? [selected.from, selected.to] : []}
+              selected={endLedIds}
               width={renderWidth}
               height={renderHeight}
               zoom={zoom}
@@ -801,8 +811,8 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       <Text accessibilityLiveRegion="polite">
         {selected
           ? t('sprayLedSetup.skipsSelected', {
-              from: indices.get(selected.from) ?? '—',
-              to: indices.get(selected.to) ?? '—',
+              from: indices.get(selected.fromId) ?? '—',
+              to: indices.get(selected.toId) ?? '—',
             })
           : t('sprayLedSetup.skipsNoConnection')}
       </Text>
