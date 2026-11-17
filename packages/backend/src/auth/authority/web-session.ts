@@ -294,6 +294,7 @@ export interface WebSessionSignOut {
  * Guarded sign-out of a canonical web session. `identity-changed` when the
  * token reads as another live session than the tab expected: nothing ends.
  * `signed-out` once the session is revoked, or when it was not live anyway.
+ * It never performs an account cutoff.
  */
 export async function signOutWebSession(
   database: AuthorityDatabase,
@@ -311,8 +312,15 @@ export async function signOutWebSession(
     return 'identity-changed';
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
-    // A bridged no-SID row ends its whole account, which needs the expected authority.
-    await denyFirstPartySessionInTransaction(transaction, session, now, expectedAuthority);
+    // A bridged row of a legacy cookie without a session id is ended as that
+    // row alone (row, lineage, denial of its id), never by cutting off the
+    // account: that would end every session and phone (#7596 review of #7722).
+    await denyFirstPartySessionInTransaction(
+      transaction,
+      { ...session, requiresAccountCutoff: false },
+      now,
+      expectedAuthority,
+    );
   });
   return 'signed-out';
 }

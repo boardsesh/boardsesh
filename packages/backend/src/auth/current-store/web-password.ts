@@ -16,7 +16,7 @@ import {
 } from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
@@ -57,7 +57,7 @@ import {
 import { bindIdentityAuthority } from '../authority/identity-authority';
 import { verifyAuthorityPassword } from '../authority/authority';
 import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from '../authority/session-reader';
-import { issueWebSession } from '../authority/web-session';
+import { issueWebSession, lockWebSessionAccounts } from '../authority/web-session';
 import { readLockedWebSubjectState } from './web-credential-state';
 
 function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
@@ -332,18 +332,13 @@ async function lockWebPasswordAuthentication(
   // no row is upgraded later and two crossed logins queue instead of
   // deadlocking. The statement below then only re-takes rows already held,
   // plus any candidate that appeared since this read.
-  if (presentedUserId !== undefined) {
-    const ordered = await transaction
-      .select({ id: users.id })
-      .from(users)
-      .where(or(accountEmailCandidates(prepared.email), eq(users.id, presentedUserId)))
-      .orderBy(users.id)
-      .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 2);
-    for (const { id } of ordered) {
-      const row = transaction.select({ id: users.id }).from(users).where(eq(users.id, id));
-      await (id === presentedUserId ? row.for('update') : row.for('key share'));
-    }
-  }
+  if (presentedUserId !== undefined)
+    await lockWebSessionAccounts(
+      transaction,
+      accountEmailCandidates(prepared.email),
+      presentedUserId,
+      ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1,
+    );
   const lockedUsers = await transaction
     .select({ id: users.id })
     .from(users)
@@ -367,6 +362,13 @@ async function lockWebPasswordAuthentication(
 /**
  * The session the login arrived with, read in this transaction. One that no
  * longer reads as live needs no revocation; an unreadable store fails the login.
+ *
+ * A login revokes only a session it can name: a canonical row or a legacy
+ * cookie with its own session id. A legacy cookie without one could only be
+ * ended by cutting off its whole account (every session and every phone), so
+ * it is left alone and the login goes ahead (#7596 review of #7722, finding 1).
+ * The subject state is read before the user lock is taken; both ways it can
+ * be used (an idempotent SID denial, or nothing) stay correct under the lock.
  */
 async function readPresentedSession(
   transaction: CurrentStoreTransaction,
@@ -386,7 +388,8 @@ async function readPresentedSession(
     readLockedWebSubjectState(transaction, userId),
   );
   if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
-  return outcome.status === 'admitted' ? outcome.session : undefined;
+  if (outcome.status !== 'admitted' || outcome.session.requiresAccountCutoff) return undefined;
+  return outcome.session;
 }
 
 /**
@@ -436,7 +439,9 @@ export async function authenticateWebPassword(
     // only has to keep every credential writer out until it answers. Every such
     // writer takes users FOR UPDATE first, which KEY SHARE excludes, while the
     // foreign-key KEY SHARE an ordinary write (a logbook sync page) holds does not
-    // conflict, so a sign-in never waits for one. No other climber's command
+    // conflict, so a plain sign-in never waits for one. A login that revokes a
+    // presented session takes that account FOR UPDATE, which does wait for such
+    // a write and may answer unavailable after 250 ms; the web retries. No other climber's command
     // shares a lock with this one. Old writers are explicitly NOT assumed to
     // take the gate or the user lock. A held row is given up on after 250 ms
     // and answered unavailable, never as a wrong password.
@@ -453,12 +458,6 @@ export async function authenticateWebPassword(
         requestId,
         outcome: 'invalid_credentials',
       };
-    const credentialProof = await issueWebCredentialProof(
-      transaction,
-      selected.userId,
-      credentialProofVersion,
-      selected.generation,
-    );
     // The web refuses a sign-in that still needs email verification, so no
     // session is issued for it and the presented one stays.
     const webSession =
@@ -471,6 +470,17 @@ export async function authenticateWebPassword(
             authority: receipt,
           })
         : undefined;
+    // The proof comes after the session. A cookie minted from it must carry the
+    // session's generation, or it would die before the session does; a login
+    // never moves the generation, so a difference here is a bug, not a race.
+    const credentialProof = await issueWebCredentialProof(
+      transaction,
+      selected.userId,
+      credentialProofVersion,
+      selected.generation,
+    );
+    if (webSession && credentialProof && credentialProof.generation !== webSession.generation)
+      throw new Error('Web credential proof and web session disagree');
     await revalidateIdentityAuthority(transaction, receipt);
     // Past the command's age limit nobody waits for the token: roll the new session back.
     if (webSession) assertFresh(issuedAt);

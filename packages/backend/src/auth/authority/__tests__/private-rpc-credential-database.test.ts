@@ -8,6 +8,8 @@ import {
   AUTH_PROTOCOL_VERSION,
   WEB_OAUTH_COMMAND_PATHS,
   WEB_OAUTH_PROTOCOL_VERSION,
+  WEB_SESSION_COMMAND_PATHS,
+  WEB_SESSION_PROTOCOL_VERSION,
 } from '@boardsesh/auth-protocol';
 
 const dependencies = vi.hoisted(() => ({
@@ -15,6 +17,8 @@ const dependencies = vi.hoisted(() => ({
   password: vi.fn(),
   oauth: vi.fn(),
   signout: vi.fn(),
+  webSessionSignout: vi.fn(),
+  webSessionRoll: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('../../credential-database', () => ({ getCredentialDatabase: dependencies.database }));
@@ -42,23 +46,49 @@ vi.mock('../../current-store/web-oauth-identity', () => ({
   resolveWebOAuthIdentity: vi.fn(),
 }));
 vi.mock('../web-signout', () => ({ signOutLegacyWebSession: dependencies.signout }));
+vi.mock('../web-session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../web-session')>()),
+  signOutWebSession: dependencies.webSessionSignout,
+  refreshWebSession: dependencies.webSessionRoll,
+}));
 
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
 import { handleCurrentStoreWebOAuth } from '../../../handlers/current-store-web-oauth';
 import { handleCurrentStoreWebSignOut } from '../../../handlers/current-store-web-signout';
+import { handleCurrentStoreWebSession } from '../../../handlers/current-store-web-session';
 
 const rpcSecret = 'owned-private-rpc-service-secret-at-least-32-bytes';
 const defaultDatabase = Object.freeze({ owner: 'qualified-private-pool' }) as unknown as DbInstance;
 const injectedDatabase = Object.freeze({ owner: 'explicit-owned-test-pool' }) as unknown as DbInstance;
 type Handler = (request: IncomingMessage, response: ServerResponse, database?: DbInstance) => Promise<unknown>;
 interface Route {
-  readonly name: 'password' | 'oauth' | 'signout';
+  readonly name: 'password' | 'oauth' | 'signout' | 'webSessionSignout' | 'webSessionRoll';
   readonly mode: string;
   readonly path: string;
   readonly handle: Handler;
   command(): Record<string, unknown>;
   unavailable(command: Record<string, unknown>): unknown;
   success(command: Record<string, unknown>): unknown;
+  /** What the command's core resolves to, when that is not the reply itself. */
+  result?(command: Record<string, unknown>): unknown;
+}
+const SESSION_EXPIRES_AT = new Date(Date.now() + 86_400_000);
+function webSessionCommand(operation: 'signout' | 'roll', payload: Record<string, unknown>) {
+  return () => ({
+    webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
+    operation,
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    payload,
+  });
+}
+function webSessionReply(operation: 'signout' | 'roll', fields: Record<string, unknown>) {
+  return (command: Record<string, unknown>) => ({
+    webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
+    requestId: command.requestId,
+    operation,
+    ...fields,
+  });
 }
 const routes: Route[] = [
   {
@@ -135,6 +165,41 @@ const routes: Route[] = [
       outcome: 'signed_out',
     }),
   },
+  {
+    name: 'webSessionSignout',
+    mode: 'CURRENT_STORE_WEB_SESSION_MODE',
+    path: WEB_SESSION_COMMAND_PATHS.signout,
+    handle: handleCurrentStoreWebSession,
+    command: webSessionCommand('signout', {
+      token: 'owned-synthetic-token',
+      expectedUserId: 'owned-user',
+      expectedAuthSessionId: 'owned-session',
+    }),
+    unavailable: webSessionReply('signout', { outcome: 'error', code: 'unavailable' }),
+    success: webSessionReply('signout', { outcome: 'signed_out' }),
+    result: () => 'signed-out',
+  },
+  {
+    name: 'webSessionRoll',
+    mode: 'CURRENT_STORE_WEB_SESSION_MODE',
+    path: WEB_SESSION_COMMAND_PATHS.roll,
+    handle: handleCurrentStoreWebSession,
+    command: webSessionCommand('roll', { token: 'owned-synthetic-token' }),
+    unavailable: webSessionReply('roll', { outcome: 'error', code: 'unavailable' }),
+    success: webSessionReply('roll', {
+      outcome: 'active',
+      userId: 'owned-user',
+      authSessionId: 'owned-session',
+      expiresAt: SESSION_EXPIRES_AT.toISOString(),
+      rolled: false,
+    }),
+    result: () => ({
+      status: 'active',
+      session: { userId: 'owned-user', authSessionId: 'owned-session' },
+      rolled: false,
+      expiresAt: SESSION_EXPIRES_AT,
+    }),
+  },
 ];
 
 async function invoke(route: Route, command: unknown, options: { authorization?: string; database?: DbInstance } = {}) {
@@ -177,6 +242,7 @@ describe('private RPC default credential database selection', () => {
       CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
       CURRENT_STORE_WEB_OAUTH_MODE: 'backend-staging',
       CURRENT_STORE_WEB_SIGNOUT_MODE: 'backend-staging',
+      CURRENT_STORE_WEB_SESSION_MODE: 'backend-staging',
       CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
       NEXTAUTH_SECRET: 'owned-nextauth-private-rpc-key',
       CURRENT_STORE_AUTH_PROJECTION_ID: 'owned-private-rpc-projection',
@@ -193,6 +259,8 @@ describe('private RPC default credential database selection', () => {
     dependencies.password.mockReset();
     dependencies.oauth.mockReset();
     dependencies.signout.mockReset().mockResolvedValue({ status: 'signed-out' });
+    dependencies.webSessionSignout.mockReset();
+    dependencies.webSessionRoll.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -223,7 +291,8 @@ describe('private RPC default credential database selection', () => {
       it.each([false, true])('forwards the actual selected handle with injected=%s', async (injected) => {
         const command = route.command();
         const expectedReply = route.success(command);
-        if (route.name !== 'signout') dependencies[route.name].mockResolvedValue(expectedReply);
+        if (route.name !== 'signout')
+          dependencies[route.name].mockResolvedValue(route.result ? route.result(command) : expectedReply);
         const result = await invoke(route, command, injected ? { database: injectedDatabase } : {});
         expect(result.status).toBe(200);
         expect(result.body).toEqual(expectedReply);

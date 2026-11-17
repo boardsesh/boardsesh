@@ -177,6 +177,18 @@ export async function handleCurrentStoreWebAuth(
       sendJson(response, 503, { error: 'disabled' });
       return;
     }
+    // A legacy cookie can only be read with NEXTAUTH_SECRET. Without it the
+    // answer is unavailable whatever the password, and no attempt is spent.
+    if (command.webSession.presented?.kind === 'legacy-jwe' && !process.env.NEXTAUTH_SECRET) {
+      sendJson(response, 503, {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'password',
+        requestId: command.requestId,
+        outcome: 'error',
+        code: 'unavailable',
+      });
+      return;
+    }
   }
   let passwordAttempt: PasswordLoginAttempt | undefined;
   // A sign-in still waiting for its compare when the web server gives up is dropped unrun.
