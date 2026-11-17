@@ -150,24 +150,39 @@ export type SelectionColors = {
   /** The checkmark beside it: `accent`. */
   checkmark: ColorValue;
   /**
-   * The row or cell wash: the scheme's brand primary at 18% (#6D28D9 in light,
-   * the lifted #A78BFA in dark), the same wash the current climb in the Climbs
-   * list draws (`selectedRowColors`). Every variant takes it: Material's climb
-   * list already draws this wash rather than an M3 tonal container, so one look
-   * holds everywhere.
+   * The row or cell wash: the scheme's brand FILL, never the tint (#5B22F2 at 13%
+   * in light, #6D33FF at 20% in dark), the same wash the current climb in the
+   * Climbs list draws (`selectedRowColors`). Every variant takes it: Material's
+   * climb list already draws this wash rather than an M3 tonal container, so one
+   * look holds everywhere.
    */
   fill: string;
 };
 
-/** The selection wash's strength. Must stay equal to `selectedRowColors`' wash. */
-export const SELECTION_WASH_ALPHA = 0.18;
+/**
+ * The selection wash's strength per scheme, applied to the brand fill. Dark needs
+ * more: the wash sits on near-black OLED, where a swiped row's accent bar scrolls
+ * away and the wash is the only state cue left. The checkmark (the tint) stays
+ * 3:1 or better on it: 5.13:1 on the light wash over #F2F2F7, 4.18:1 on the dark
+ * wash over #2C2C2E. Must stay equal to `selectedRowColors`' wash.
+ */
+export const SELECTION_WASH_ALPHA = { light: 0.13, dark: 0.2 } as const satisfies Record<'light' | 'dark', number>;
+
+/** The selection wash for one scheme: `brandFill` (the scheme's `primaryFill`) at its alpha. */
+export function selectionWash(brandFill: string, colorScheme: 'light' | 'dark'): string {
+  return withAlpha(brandFill, SELECTION_WASH_ALPHA[colorScheme]);
+}
 
 /**
  * Same mapping on both variants: the variant arrives through the resolved inputs.
- * `brandPrimary` is the scheme's `brandColors.primary`, a hex string.
+ * `brandFill` is the scheme's `brandColors.primaryFill`, a hex string.
  */
-export function resolveSelectionColors(inputs: RoleColorInputs, brandPrimary: string): SelectionColors {
-  return { text: inputs.label, checkmark: inputs.accent, fill: withAlpha(brandPrimary, SELECTION_WASH_ALPHA) };
+export function resolveSelectionColors(
+  inputs: RoleColorInputs,
+  brandFill: string,
+  colorScheme: 'light' | 'dark',
+): SelectionColors {
+  return { text: inputs.label, checkmark: inputs.accent, fill: selectionWash(brandFill, colorScheme) };
 }
 
 /**
@@ -212,14 +227,19 @@ export function resolveChartColors(variant: UiVariant, colorScheme: 'light' | 'd
  * against the sheet. Plain strings: the renderer's hold-state map and the
  * legend both need hex. Pinned by `heat-ramp.test.ts` (strictly monotonic,
  * at least 1.3:1 between neighbours).
+ *
+ * The brand's Ultraviolet hue, OKLCH 287, held fixed: each stop is that hue at a
+ * lightness step of about 0.11 (dark 0.38 → 0.81) or 0.13 (light 0.81 → 0.29),
+ * with the most chroma sRGB allows there, capped at the brand's 0.27. Neighbours
+ * are 1.48:1 apart or more in dark and 1.58:1 or more in light.
  */
 export type HeatRamp = readonly [string, string, string, string, string];
 
 export const heatRampByScheme = {
   // Violet end to end: a near-white top stop read as an unheated grey hold on
   // the board photo, and a near-white cold stop faded the same way in light mode.
-  dark: ['#4C1D95', '#6D28D9', '#8B5CF6', '#A78BFA', '#C4B5FD'],
-  light: ['#C4B5FD', '#A78BFA', '#7C3AED', '#5B21B6', '#2E1065'],
+  dark: ['#4600AD', '#6418EC', '#7E5CFF', '#9B8DFF', '#BCB7FF'],
+  light: ['#BCB7FF', '#9687FF', '#7543FF', '#5401CC', '#2E0077'],
 } as const satisfies Record<'light' | 'dark', HeatRamp>;
 
 export function resolveHeatRamp(colorScheme: 'light' | 'dark'): HeatRamp {

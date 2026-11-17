@@ -12,12 +12,12 @@
 
   /* Primary colors — Velvet Send violet. `--color-primary` is the FOREGROUND (links,
      indicators, borders, focus); `--color-primary-fill` is the FILLED button
-     background (white text). The two are NOT interchangeable: white on #a78bfa is
-     2.5:1, so a filled button must use the darker fill. */
-  --color-primary: #a78bfa;
-  --color-primary-hover: #c4b5fd;
-  --color-primary-fill: #7c3aed;
-  --color-primary-fill-hover: #6d28d9;
+     background (white text). The two are NOT interchangeable: white on #9784ff is
+     2.97:1, so a filled button must use the darker fill. */
+  --color-primary: #9784ff;
+  --color-primary-hover: #b6afff;
+  --color-primary-fill: #6d33ff;
+  --color-primary-fill-hover: #5b22f2;
   --color-on-primary: #ffffff;
 
   /* Amber accent — FILL-ONLY, always pair with --color-on-accent for text. */
@@ -57,7 +57,7 @@
   --semantic-selected: rgba(199, 184, 232, 0.16);
   --semantic-selected-hover: rgba(199, 184, 232, 0.24);
   --semantic-selected-light: rgba(199, 184, 232, 0.1);
-  --semantic-selected-border: #a78bfa;
+  --semantic-selected-border: #9784ff;
   /* THE SPLIT, and it is load-bearing — pick by ROLE, not by looks:
      `--separator` is DECORATIVE: dividers, hairlines, rules, image frames, the edge of a
      non-interactive card or badge. It is translucent and low-contrast on purpose.
@@ -98,8 +98,9 @@
   /* Icon-chip tints for the homepage onboarding cards. THREE roles, by what the
      card does — this site (brand), the app (amber spark), community/help (info)
      — replacing six tints keyed to V-grade purples that had nothing to do with
-     what the card was for. ~10-12% alpha over the card surface. */
-  --home-accent-brand-surface: rgba(167, 139, 250, 0.12);
+     what the card was for. ~10-12% alpha over the card surface. The brand wash
+     mixes from the FILL (#6d33ff), never the tint, like every violet wash. */
+  --home-accent-brand-surface: rgba(109, 51, 255, 0.12);
   --home-accent-spark-surface: rgba(255, 138, 61, 0.12);
   --home-accent-info-surface: rgba(165, 171, 214, 0.12);
 

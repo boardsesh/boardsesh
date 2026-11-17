@@ -23,8 +23,8 @@ ordinary view. UIKit interaction/activation and text-size changes require iOS
 device verification before extending this wrapper to more chrome.
 
 The `with-brand-accent-color` config plugin generates a light/dark iOS
-`AccentColor` asset, including Increase Contrast variants (`#4C1D95` light,
-`#C4B5FD` dark), and the app target's global accent setting. Android AppTheme
+`AccentColor` asset, including Increase Contrast variants (`#5613EA` light,
+`#B6AFFF` dark, each 7:1 on its grouped ground), and the app target's global accent setting. Android AppTheme
 uses the matching light/night `colorAccent`; Expo's `primaryColor` sets the same
 brand violet. These native inputs require a new binary; an OTA cannot add them.
 

@@ -15,7 +15,16 @@
 const isDev = process.env.NODE_ENV !== 'production';
 
 /**
- * Brand colors — "Velvet Send" system, anchored on the logo's V11–V16 purples.
+ * Brand colors — "Velvet Send" system. The violet is "Ultraviolet": OKLCH hue
+ * ~287. Stock Tailwind violet, the one it replaced, read bland; Ultraviolet sits
+ * clear of the V13–V16 grade purples and the blue hand-hold LEDs on the board.
+ *
+ * Accent system rules:
+ * 1. Tint and fill share one hue (~287) and differ only in lightness.
+ * 2. A selection wash mixes from the FILL, never the tint: fill at 0.13 in light,
+ *    fill at 0.20 in dark (`SELECTION_WASH_ALPHA` in the mobile app).
+ * 3. Dark fill chroma ≥ light fill chroma: dark mode lifts the violet, it never
+ *    greys it.
  *
  * `brandColors` holds the LIGHT-scheme values (and the scheme-agnostic anchors);
  * `brandColorsDark` overrides the few roles that need a different value in dark
@@ -30,8 +39,9 @@ const isDev = process.env.NODE_ENV !== 'production';
  * - `primary`/`tint`: brand colour for FOREGROUND use (text, icons, links, borders).
  * - `primaryFill`: brand colour for a FILLED surface/button background.
  * - `primaryStrong`: brand foreground for text on a TONAL violet wash (the
- *   player's wall button): one step deeper than `primary` in light, so the label
- *   keeps 4.6:1 on the 20% wash over every sheet; the same lifted violet in dark.
+ *   player's wall button: `primaryFill` at 20%). One step deeper than `primary`
+ *   in light and one step lighter in dark, same hue, so the label clears 4.5:1
+ *   on the wash over every sheet.
  * - `onPrimary`: text/icon colour sitting on `primaryFill`.
  * - `accent`: warm amber spark for highlights — FILL-ONLY, always pair with dark text.
  * - `onAccent`: the ink that pairs with `accent`. Same value in both schemes because
@@ -44,13 +54,15 @@ const isDev = process.env.NODE_ENV !== 'production';
  *   state — a positive, distinct-from-amber signal, not an absence-of-amber wash.
  *   White text clears AA on both schemes.
  *
- * Contrast (WCAG, light): white-on-primary #6D28D9 = 7.10:1; black-on-accent = 8.95:1.
+ * Contrast (WCAG, light): #5B22F2 is 7.10:1 on #FFFFFF and 6.37:1 on #F2F2F7, and
+ * white on it is 7.10:1. `primaryStrong` #4A16CF is 5.81:1 on the 20% fill wash
+ * over #F2F2F7 (6.43:1 over white). Black-on-accent = 8.95:1.
  */
 export const brandColors = {
-  tint: '#6D28D9',
-  primary: '#6D28D9',
-  primaryFill: '#6D28D9',
-  primaryStrong: '#5B21B6',
+  tint: '#5B22F2',
+  primary: '#5B22F2',
+  primaryFill: '#5B22F2',
+  primaryStrong: '#4A16CF',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
   onAccent: '#16111F',
@@ -62,21 +74,23 @@ export const brandColors = {
 } as const;
 
 /**
- * Dark-scheme brand overrides. The dark violet primary is too low-contrast as a
- * foreground on near-black, so the tint lifts to #A78BFA; filled buttons use a
- * brighter #7C3AED so white text still clears AA (5.70:1). Semantic tones brighten
+ * Dark-scheme brand overrides. The light violet is too low-contrast as a
+ * foreground on near-black, so the tint lifts to #9784FF; filled buttons use a
+ * brighter #6D33FF so white text still clears AA (5.89:1). Semantic tones brighten
  * for legibility on dark surfaces. Same keys as `brandColors`.
  *
- * Contrast (WCAG, dark): #A78BFA tint 6.25:1 on #1C1C1E and 5.12:1 on the iOS
- * elevated grouped card (#2C2C2E) — legible for text and controls drawn on a card.
- * #7C3AED is a FILL only: white-on-#7C3AED = 5.70:1, but #7C3AED itself is 2.45:1
- * on #2C2C2E, so never use it as a control tint or text on a dark card.
+ * Contrast (WCAG, dark): #9784FF tint 7.06:1 on #000000, 5.72:1 on #1C1C1E and
+ * 4.69:1 on the iOS elevated grouped card (#2C2C2E) — legible for text and
+ * controls drawn on a card. #6D33FF is a FILL only: white-on-#6D33FF = 5.89:1, but
+ * #6D33FF itself is 2.37:1 on #2C2C2E, so never use it as a control tint or text
+ * on a dark card. `primaryStrong` #9C8CFF is the tint's hue lifted until it clears
+ * 4.5:1 on the 20% fill wash over #2C2C2E (4.50:1; 5.33:1 over #1C1C1E).
  */
 export const brandColorsDark = {
-  tint: '#A78BFA',
-  primary: '#A78BFA',
-  primaryFill: '#7C3AED',
-  primaryStrong: '#A78BFA',
+  tint: '#9784FF',
+  primary: '#9784FF',
+  primaryFill: '#6D33FF',
+  primaryStrong: '#9C8CFF',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
   onAccent: '#16111F',
@@ -131,7 +145,7 @@ export const materialSurfaces = {
     // Neutral track for segmented controls and small fills.
     fill: 'rgba(0, 0, 0, 0.08)',
     // Interactive-accent foreground: brand violet, lifted in dark.
-    accent: '#6D28D9',
+    accent: '#5B22F2',
   },
   dark: {
     background: '#0E0E0E',
@@ -145,7 +159,7 @@ export const materialSurfaces = {
     tertiaryLabel: '#8F8F8F',
     separator: 'rgba(255, 255, 255, 0.12)',
     fill: 'rgba(255, 255, 255, 0.10)',
-    accent: '#A78BFA',
+    accent: '#9784FF',
   },
 } as const;
 

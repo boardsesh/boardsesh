@@ -23,7 +23,7 @@ obvious thing to play, one row of obvious things to tap and quiet chrome around 
 by its hierarchy, never by its control count: a dense row of controls is fine when each one reads at
 a glance.
 
-- **Violet brand, platform-native chrome.** The colour comes from the logo (the V11–V16 grade purples); silhouettes, elevation, motion and type follow the platform.
+- **Violet brand, platform-native chrome.** The colour is "Ultraviolet", a blue-leaning violet at OKLCH hue ~287; silhouettes, elevation, motion and type follow the platform.
 - **One violet across light and dark.** Dark mode lifts the tint and brightens fills; it is not a different palette.
 - **Read the theme, never the raw constants.** Colour, type, spacing, radii and motion come from `useTheme()`. The constants in `theme/` are inputs to the provider; using them directly bypasses variants and dark mode.
 - **Accessible by construction.** Colours are chosen against documented WCAG ratios (recorded in `colors.ts`), interactive tiers sit at or above the 44pt touch floor, and text honours Dynamic Type.
@@ -61,9 +61,9 @@ on near-black. `tint` aliases `primary`.
 
 | Role            | Light     | Dark      | Use                                                                        |
 | --------------- | --------- | --------- | -------------------------------------------------------------------------- |
-| `primary`       | `#6D28D9` | `#A78BFA` | Brand **foreground**: text, icons, links, borders                          |
-| `primaryFill`   | `#6D28D9` | `#7C3AED` | Brand **filled** surface/button background                                 |
-| `primaryStrong` | `#5B21B6` | `#A78BFA` | Brand foreground on a tonal violet wash (the player wall button)           |
+| `primary`       | `#5B22F2` | `#9784FF` | Brand **foreground**: text, icons, links, borders                          |
+| `primaryFill`   | `#5B22F2` | `#6D33FF` | Brand **filled** surface/button background                                 |
+| `primaryStrong` | `#4A16CF` | `#9C8CFF` | Brand foreground on a tonal violet wash (the player wall button)           |
 | `onPrimary`     | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                         |
 | `accent`        | `#FF8A3D` | `#FF8A3D` | Warm amber spark for highlights; **fill-only, always pair with dark text** |
 | `onAccent`      | `#16111F` | `#16111F` | The dark ink that pairs with `accent`; same in both schemes                |
@@ -75,10 +75,34 @@ on near-black. `tint` aliases `primary`.
 
 <!-- velvet-tokens:brand:end -->
 
-**Foreground vs fill.** In dark mode the tint lifts to `#A78BFA` as a foreground, while filled buttons use
-a brighter `#7C3AED` so white text clears AA. Contrast: white on `#6D28D9` is 7.10:1; `#A78BFA` is 5.12:1 on
-`#2C2C2E` and 6.25:1 on `#1C1C1E`; white on `#7C3AED` is 5.70:1; `#7C3AED` as a foreground on `#2C2C2E` is
-2.45:1, under the 3:1 a control needs. `accent` amber is fill-only with `onAccent` ink (8.95:1).
+**Why Ultraviolet.** Stock Tailwind violet (`#6D28D9` / `#A78BFA`) read bland; Ultraviolet sits at hue
+~287, clear of the V13–V16 grade purples and the blue hand-hold LEDs.
+
+**The accent system.** Three rules hold the violet together; `velvet-tokens` and the mobile theme tests pin them.
+
+1. Tint and fill share one hue (OKLCH ~287) and differ only in lightness.
+2. A wash mixes from the **fill**, never the tint: the selection wash is `primaryFill` at 0.13 in light and
+   0.20 in dark (`SELECTION_WASH_ALPHA`).
+3. Dark chroma is at least light chroma (the dark fill `#6D33FF` is C 0.272, the light `#5B22F2` C 0.271):
+   dark mode lifts the violet, it never greys it.
+
+**Foreground vs fill.** In light, tint and fill are one `#5B22F2`. In dark the tint lifts to `#9784FF` as a
+foreground, while filled buttons use a brighter `#6D33FF` so white text clears AA. `primaryStrong` is the
+same hue one step further from the ground (`#4A16CF` light, `#9C8CFF` dark), for text on the 20% fill wash of
+the wall button. Contrast (WCAG):
+
+| Pairing                                                                     | Ratio                    |
+| --------------------------------------------------------------------------- | ------------------------ |
+| `#5B22F2` on `#FFFFFF` / `#F2F2F7`                                          | 7.10:1 / 6.37:1          |
+| `#9784FF` on `#000000` / `#1C1C1E` / `#2C2C2E`                              | 7.06:1 / 5.72:1 / 4.69:1 |
+| White on `#5B22F2` / `#6D33FF`                                              | 7.10:1 / 5.89:1          |
+| `#4A16CF` on the 20% fill wash over `#FFFFFF` / `#F2F2F7`                   | 6.43:1 / 5.81:1          |
+| `#9C8CFF` on the 20% fill wash over `#1C1C1E` / `#2C2C2E`                   | 5.33:1 / 4.50:1          |
+| Checkmark (tint) on the selection wash over `#F2F2F7` / `#2C2C2E`           | 5.13:1 / 4.18:1          |
+| Increase Contrast: `#5613EA` on `#F2F2F7`, `#B6AFFF` on `#2C2C2E`           | 7.03:1 / 7.01:1          |
+
+`#6D33FF` as a foreground on `#2C2C2E` is 2.37:1, under the 3:1 a control needs, so it is a fill only.
+`accent` amber is fill-only with `onAccent` ink (8.95:1).
 
 **Settings rows and controls.** Row titles, values and chevrons use `label` / `secondaryLabel` /
 `tertiaryLabel`, never the accent. On iOS that means fixed `PlatformColor` styles
@@ -98,7 +122,7 @@ color to indicate that a borderless button is interactive, using the same or sim
 noninteractive text is confusing."_
 
 - **Surfaces (`theme.surfaces`).** Two page styles, each a `{ page, card, tile }` ladder: `plain` (a feed, a shelf, a climb list: `systemBackground` / `secondarySystemBackground` / `tertiarySystemBackground`) and `grouped` (inset-grouped rows like Settings: the `…Grouped…` trio). iOS resolves base vs elevated itself, so a page drawn in a sheet steps up (the React Navigation ground in dark is `surfaces.plain.page`, not a static `#000`). Material and Liquid Glass off iOS take the same steps from their own ladders.
-- **Selection (`theme.selection`).** `{ text: label, checkmark: accent, fill: primary at 18% }`. The title stays `label`, set semibold with `<Text emphasized>`; an accent checkmark marks it; a violet wash sits behind the row (the current climb's look in the Climbs list, on every variant: `#6D28D9` light, `#A78BFA` dark, each at 18%). A surface, not violet text. Selection is a state, not a link.
+- **Selection (`theme.selection`).** `{ text: label, checkmark: accent, fill: primaryFill at 13% light / 20% dark }`. The title stays `label`, set semibold with `<Text emphasized>`; an accent checkmark marks it; a violet wash mixed from the fill sits behind the row (the current climb's look in the Climbs list, on every variant: `#5B22F2` at 13% light, `#6D33FF` at 20% dark). A surface, not violet text. Selection is a state, not a link.
 - **Status (`theme.status`).** `{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap ("Ready to review", "On it").
 - **Guards.** `no-violet-selection.test.ts` (a selection flag choosing `brandColors.primary`: use `theme.selection`) and `no-text-opacity-dim.test.ts` (a `StyleSheet` opacity on a `<Text>`: use `tone`). Their allowlists only shrink.
 - **Scroll edges.** iOS 26 draws its own (no forced pre-26 blur, `useHeaderBlurEffect`). HIG Layout: _"Instead of applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to visually elevate controls above content."_
@@ -135,19 +159,19 @@ reads these as plain strings for `chartColors` and `sheetSurface`); **Material o
 
 <!-- velvet-tokens:android-fallback:start -->
 
-| Key                   | Light                     | Dark                        | Meaning                                                       |
-| --------------------- | ------------------------- | --------------------------- | ------------------------------------------------------------- |
-| `background`          | `#F4F1FB`                 | `#0F0B16`                   | Screen base                                                   |
-| `secondaryBackground` | `#FFFFFF`                 | `#181225`                   | Cards, sheets                                                 |
-| `tertiaryBackground`  | `#FFFFFF`                 | `#221A32`                   | A step above the card                                         |
-| `groupedBackground`   | `#F4F1FB`                 | `#0F0B16`                   | Grouped-list base                                             |
-| `elevatedSurface`     | `#FFFFFF`                 | `#221A32`                   | Raised tile (selected segmented pill, elevated bar)           |
-| `label`               | `#16111F`                 | `#F5F2FB`                   | Primary text                                                  |
-| `secondaryLabel`      | `#5B5563`                 | `#A9A2B6`                   | Secondary text                                                |
-| `tertiaryLabel`       | `#8E8898`                 | `#6E687C`                   | Tertiary text                                                 |
-| `separator`           | `rgba(60, 55, 75, 0.18)`  | `rgba(180, 168, 205, 0.2)`  | Hairlines, dividers                                           |
-| `fill`                | `rgba(109, 40, 217, 0.1)` | `rgba(199, 184, 232, 0.12)` | Small control fills (segmented tracks)                        |
-| `accent`              | `#6D28D9`                 | `#A78BFA`                   | Interactive foreground; on iOS it adapts to Increase Contrast |
+| Key                   | Light                    | Dark                        | Meaning                                                       |
+| --------------------- | ------------------------ | --------------------------- | ------------------------------------------------------------- |
+| `background`          | `#F4F1FB`                | `#0F0B16`                   | Screen base                                                   |
+| `secondaryBackground` | `#FFFFFF`                | `#181225`                   | Cards, sheets                                                 |
+| `tertiaryBackground`  | `#FFFFFF`                | `#221A32`                   | A step above the card                                         |
+| `groupedBackground`   | `#F4F1FB`                | `#0F0B16`                   | Grouped-list base                                             |
+| `elevatedSurface`     | `#FFFFFF`                | `#221A32`                   | Raised tile (selected segmented pill, elevated bar)           |
+| `label`               | `#16111F`                | `#F5F2FB`                   | Primary text                                                  |
+| `secondaryLabel`      | `#5B5563`                | `#A9A2B6`                   | Secondary text                                                |
+| `tertiaryLabel`       | `#8E8898`                | `#6E687C`                   | Tertiary text                                                 |
+| `separator`           | `rgba(60, 55, 75, 0.18)` | `rgba(180, 168, 205, 0.2)`  | Hairlines, dividers                                           |
+| `fill`                | `rgba(91, 34, 242, 0.1)` | `rgba(199, 184, 232, 0.12)` | Small control fills (segmented tracks)                        |
+| `accent`              | `#5B22F2`                | `#9784FF`                   | Interactive foreground; on iOS it adapts to Increase Contrast |
 
 <!-- velvet-tokens:android-fallback:end -->
 
@@ -173,7 +197,7 @@ level2 (the MiniPlayer ground), `high` level3, `level4`, `highest` level5. The M
 | `tertiaryLabel`       | `#8F8F8F`                   | `#686868`             |
 | `separator`           | `rgba(255, 255, 255, 0.12)` | `rgba(0, 0, 0, 0.12)` |
 | `fill`                | `rgba(255, 255, 255, 0.10)` | `rgba(0, 0, 0, 0.08)` |
-| `accent`              | `#A78BFA`                   | `#6D28D9`             |
+| `accent`              | `#9784FF`                   | `#5B22F2`             |
 
 <!-- velvet-tokens:material-surfaces:end -->
 
@@ -202,7 +226,7 @@ lowest, low, base, high (4.68:1). Light: page, card, lowest, low (4.63:1). Never
 `material-theme-contrast.test.ts` pins every pairing in this section.
 
 **Compose, nav bar, www.** `ComposeHost` seeds Android Compose from `primaryFill` plus `composeSurfaceColorOverrides`,
-so menus and dialogs sit on the same greys. The Android phone nav bar overlays tab roots at `m3.surface` 92% dark /
+so menus and dialogs sit on the same greys. The Android phone nav bar overlays tab roots at `m3.surface` 94% dark /
 85% light so it can hide on scroll, with a 24dp fade above its top edge; dark needs the extra cover so the violet label stays 4.5:1 over white content. `theme.m3` exposes the MD3 role palette on Material only. www stays violet on
 purpose (`packages/web/app/theme/theme-config.ts`; video renders read the frozen `marketingSurfaces`).
 
@@ -210,12 +234,14 @@ purpose (`packages/web/app/theme/theme-config.ts`; video renders read the frozen
 
 Hold heatmap, few to many: **single violet hue, luminance-ordered, never a role hue** (Start / Hand /
 Finish / Foot already own green, cyan, magenta and amber). No near-white stop; `heat-ramp.test.ts` holds
-it monotonic with at least 1.3:1 between neighbours. Grade mode uses `V_GRADE_COLORS` instead.
+it monotonic with at least 1.3:1 between neighbours. Every stop is the brand hue, OKLCH 287, at stepped
+lightness with the most chroma sRGB allows there (capped at 0.27); neighbours are at least 1.48:1 apart in dark
+and 1.58:1 in light. Grade mode uses `V_GRADE_COLORS` instead.
 
 | Scheme | 1 (few)   | 2         | 3         | 4         | 5 (many)  |
 | ------ | --------- | --------- | --------- | --------- | --------- |
-| Dark   | `#4C1D95` | `#6D28D9` | `#8B5CF6` | `#A78BFA` | `#C4B5FD` |
-| Light  | `#C4B5FD` | `#A78BFA` | `#7C3AED` | `#5B21B6` | `#2E1065` |
+| Dark   | `#4600AD` | `#6418EC` | `#7E5CFF` | `#9B8DFF` | `#BCB7FF` |
+| Light  | `#BCB7FF` | `#9687FF` | `#7543FF` | `#5401CC` | `#2E0077` |
 
 ### Helpers and overlays
 
@@ -427,7 +453,7 @@ dark when no choice is saved, with a black `color-scheme: dark` shell so it neve
 
 - **Text.** Full Dynamic Type range on content; capped chrome exposes a Large Content Viewer; Bold Text applies live. Use `AccessibleTextInput` (and `AccessibleBottomSheetTextInput` in sheets).
 - **Colour is never the only signal.** With Differentiate Without Color on, Classic board art gives uncustomised hold roles distinct shapes (start up-triangle, hand circle, finish square, foot down-triangle); state carries shape or label before colour.
-- **Contrast.** `systemColors.accent` adapts to Increase Contrast; the iOS `AccentColor` asset has contrast variants (`#4C1D95` light, `#C4B5FD` dark) and needs a new binary. Pairings are pinned by `material-theme-contrast.test.ts`.
+- **Contrast.** `systemColors.accent` adapts to Increase Contrast; the iOS `AccentColor` asset has contrast variants (`#5613EA` light, `#B6AFFF` dark, 7:1 or better on `#F2F2F7` / `#2C2C2E`) and needs a new binary. Pairings are pinned by `material-theme-contrast.test.ts`.
 - **Touch and motion.** 44pt targets on Liquid Glass, 48dp on Material; Reduce Motion replaces slides and shrinks with fades or steps.
 - **Layout.** Readable columns max 672pt on iPad; Start/End spacing and directional SF Symbols prepare for RTL (board hold coordinates stay physical); above font scale 1.3 segmented controls become scrollable tabs.
 - **Device QA is required** for UIKit/SwiftUI layout and gestures: iPhone/iPad AX1–AX5 with Bold Text, VoiceOver/TalkBack, RTL and Reduce Motion. Linux tests cannot validate them. Details: [mobile-accessibility.md](./mobile-accessibility.md).

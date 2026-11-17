@@ -3,27 +3,28 @@ import { describe, it, expect, vi } from 'vitest';
 // theme/colors touches Platform/PlatformColor at import; stub for the test env.
 vi.mock('react-native', () => ({ Platform: { OS: 'android' }, PlatformColor: (name: string) => name }));
 
+import { brandColors, brandColorsDark } from '@boardsesh/velvet-tokens';
 import { selectedRowColors } from '../climb-list-row-colors';
 
 describe('selectedRowColors', () => {
-  it('derives the active-row wash + accent from the light brand primary', () => {
-    // Light scheme: brandColors.primary = #6D28D9 -> rgb(109, 40, 217).
-    expect(selectedRowColors('#6D28D9')).toEqual({
-      fill: 'rgba(109, 40, 217, 0.18)',
-      accent: '#6D28D9',
+  it('mixes the light wash from the fill at 13%, with the tint as the accent bar', () => {
+    // Light scheme: brandColors.primaryFill = #5B22F2 -> rgb(91, 34, 242).
+    expect(selectedRowColors(brandColors, 'light')).toEqual({
+      fill: 'rgba(91, 34, 242, 0.13)',
+      accent: '#5B22F2',
     });
   });
 
-  it('uses the lifted tint in dark so the highlight stays visible on near-black', () => {
-    // Dark scheme: brandColorsDark.primary = #A78BFA -> rgb(167, 139, 250). The
-    // wash/accent MUST differ from the light scheme, or dark rows lose the cue.
-    expect(selectedRowColors('#A78BFA')).toEqual({
-      fill: 'rgba(167, 139, 250, 0.18)',
-      accent: '#A78BFA',
+  it('mixes the dark wash from the fill at 20%, and keeps the lifted tint as the accent bar', () => {
+    // Dark scheme: the wash is the #6D33FF FILL (rgb(109, 51, 255)), never the
+    // #9784FF tint; the bar is the tint, so it stays visible on near-black.
+    expect(selectedRowColors(brandColorsDark, 'dark')).toEqual({
+      fill: 'rgba(109, 51, 255, 0.2)',
+      accent: '#9784FF',
     });
   });
 
   it('produces a different wash per scheme (regression guard for the static-style bug)', () => {
-    expect(selectedRowColors('#6D28D9').fill).not.toBe(selectedRowColors('#A78BFA').fill);
+    expect(selectedRowColors(brandColors, 'light').fill).not.toBe(selectedRowColors(brandColorsDark, 'dark').fill);
   });
 });

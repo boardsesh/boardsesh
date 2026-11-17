@@ -21,14 +21,15 @@ import type { UiVariant } from './resolve-ui-variant';
  */
 /**
  * The iOS accent's four appearances. Light/dark are the brand `tint` per scheme;
- * the Increase Contrast pair steps one notch further along the brand violet ramp
- * (the same #4C1D95 / #C4B5FD ends the heat ramp uses).
+ * the Increase Contrast pair is the same hue moved just far enough from the ground
+ * to clear 7:1 (HIG Contrast): #5613EA is 7.03:1 on #F2F2F7 (7.84:1 on white),
+ * #B6AFFF is 7.01:1 on #2C2C2E (8.56:1 on #1C1C1E).
  */
 export const brandAccentDynamic = {
   light: brandColors.tint,
   dark: brandColorsDark.tint,
-  highContrastLight: '#4C1D95',
-  highContrastDark: '#C4B5FD',
+  highContrastLight: '#5613EA',
+  highContrastDark: '#B6AFFF',
 } as const;
 
 export const iosSystemColors: Record<string, OpaqueColorValue> | null =
@@ -95,10 +96,10 @@ export const androidFallbackColors = {
     secondaryLabel: '#5B5563',
     tertiaryLabel: '#8E8898',
     separator: 'rgba(60, 55, 75, 0.18)',
-    fill: 'rgba(109, 40, 217, 0.1)',
+    fill: 'rgba(91, 34, 242, 0.1)',
     // Interactive-accent foreground (links, active tab, edit·copy·open). The
-    // brand violet, lifted to #A78BFA in dark so it clears AA on near-black.
-    accent: '#6D28D9',
+    // brand violet, lifted to #9784FF in dark so it clears AA on near-black.
+    accent: '#5B22F2',
   },
   dark: {
     background: '#0F0B16',
@@ -111,7 +112,7 @@ export const androidFallbackColors = {
     tertiaryLabel: '#6E687C',
     separator: 'rgba(180, 168, 205, 0.2)',
     fill: 'rgba(199, 184, 232, 0.12)',
-    accent: '#A78BFA',
+    accent: '#9784FF',
   },
 } as const;
 
@@ -129,7 +130,7 @@ export const tertiaryFillFallback = {
     dark: 'rgba(255, 255, 255, 0.05)',
   },
   liquidGlass: {
-    light: 'rgba(109, 40, 217, 0.06)',
+    light: 'rgba(91, 34, 242, 0.06)',
     dark: 'rgba(199, 184, 232, 0.07)',
   },
 } as const satisfies Record<UiVariant, Record<'light' | 'dark', string>>;
@@ -184,7 +185,8 @@ export const playDrawerMaterialTint = {
  * `low`↔level1, `base`↔level2, `high`↔level3, `level4`↔level4, `highest`↔level5.
  *
  * `base` is the MiniPlayer ground. It stays at #1A1A1A in dark so the filled
- * #7C3AED play button keeps a 3:1 edge on it; a lighter base drops under 3:1.
+ * #6D33FF play button keeps the strongest edge it can: 2.96:1, just under 3:1
+ * (the white glyph on it, 5.89:1, is what identifies it); a lighter base drops lower.
  * `material-theme-contrast.test.ts` pins every label, outline and accent pairing.
  */
 export const materialSurfaceContainers = {

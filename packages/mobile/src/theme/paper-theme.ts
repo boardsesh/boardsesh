@@ -52,13 +52,13 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
   const onSurfaceVariant = surfaces.secondaryLabel as string;
   const tonal = materialTonalContainers[colorScheme];
   // M3 `primary` is a FOREGROUND role (selected tab label, text buttons, focused
-  // field outline), so it takes the brand foreground tint — `#A78BFA` in dark
-  // (6.13:1 on the `#1E1E1E` surface), not the fill-only `#7C3AED`. A
-  // light `primary` then needs dark ink on top: `#2E1065`, the end of the brand
-  // violet ramp (5.60:1 on `#A78BFA`). Light is unchanged: there `primary` and
-  // `primaryFill` are both `#6D28D9` under white. Filled brand buttons don't use
-  // this role; they paint `primaryFill` with white (`brandAccentColor`).
-  const onPrimary = isDark ? '#2E1065' : brand.onPrimary;
+  // field outline), so it takes the brand foreground tint — `#9784FF` in dark
+  // (5.60:1 on the `#1E1E1E` surface), not the fill-only `#6D33FF`. A
+  // light `primary` then needs dark ink on top: `#2E0077`, the dark end of the
+  // brand's light heat ramp, same hue (5.11:1 on `#9784FF`). Light is unchanged:
+  // there `primary` and `primaryFill` are both `#5B22F2` under white. Filled brand
+  // buttons don't use this role; they paint `primaryFill` with white (`brandAccentColor`).
+  const onPrimary = isDark ? '#2E0077' : brand.onPrimary;
 
   return {
     ...base,

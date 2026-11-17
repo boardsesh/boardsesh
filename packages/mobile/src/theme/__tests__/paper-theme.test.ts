@@ -27,7 +27,7 @@ function contrastRatio(foreground: string, background: string): number {
 describe('buildPaperTheme', () => {
   it('maps the brand + Graphite surfaces onto MD3 roles (light)', () => {
     const theme = buildPaperTheme('light');
-    expect(theme.colors.primary).toBe('#6D28D9');
+    expect(theme.colors.primary).toBe('#5B22F2');
     expect(theme.colors.onPrimary).toBe('#FFFFFF');
     expect(theme.colors.background).toBe('#F2F2F2'); // materialSurfaces.light.background
     expect(theme.colors.surface).toBe('#FFFFFF'); // secondaryBackground
@@ -85,12 +85,12 @@ describe('buildPaperTheme', () => {
 
   it('uses the foreground tint for dark primary, with dark ink on top', () => {
     const theme = buildPaperTheme('dark');
-    // Not the fill-only #7C3AED: primary colours text (tab labels, text buttons).
-    expect(theme.colors.primary).toBe('#A78BFA');
-    expect(theme.colors.onPrimary).toBe('#2E1065');
+    // Not the fill-only #6D33FF: primary colours text (tab labels, text buttons).
+    expect(theme.colors.primary).toBe('#9784FF');
+    expect(theme.colors.onPrimary).toBe('#2E0077');
     // `secondary` stays violet: it is the active nav label.
-    expect(theme.colors.secondary).toBe('#A78BFA');
-    expect(theme.colors.onSecondary).toBe('#2E1065');
+    expect(theme.colors.secondary).toBe('#9784FF');
+    expect(theme.colors.onSecondary).toBe('#2E0077');
     // Opaque tonal containers with a light violet ink.
     expect(theme.colors.primaryContainer).toBe('#4F378B');
     expect(theme.colors.secondaryContainer).toBe('#3C2467');

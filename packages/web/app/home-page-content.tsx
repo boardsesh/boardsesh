@@ -75,7 +75,7 @@ const HERO_CTA_SX = brandCtaSx({ size: 'large', glow: true });
 const HERO_SECONDARY_CTA_SX = brandCtaOutlinedSx({ size: 'large' });
 
 // The web hand-off reads as a link, so it takes the foreground violet rather
-// than the fill — #A78BFA on text, never behind white.
+// than the fill — #9784FF on text, never behind white.
 const HERO_WEB_CTA_SX = {
   textTransform: 'none',
   fontWeight: themeTokens.typography.fontWeight.semibold,

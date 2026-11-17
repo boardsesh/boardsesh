@@ -24,6 +24,6 @@
     <!-- Holds sit right under the card's text, so its line is lighter: 4.5:1 over
          the brightest one. A heavier scrim would hide the glow instead. -->
     <color name="session_card_meta">#D3CEDD</color>
-    <color name="session_card_rest">#A78BFA</color>
+    <color name="session_card_rest">#9784FF</color>
     <color name="session_card_rest_over">#F87171</color>
 </resources>

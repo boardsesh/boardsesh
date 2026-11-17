@@ -93,7 +93,7 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
       error: systemColors.error,
     }),
     surfaces: resolveSurfaces(systemColors),
-    selection: resolveSelectionColors(systemColors, brand.primary),
+    selection: resolveSelectionColors(systemColors, brand.primaryFill, colorScheme),
     status: resolveStatusColors(systemColors),
     chartColors: resolvedChartColors,
     heatRamp: resolveHeatRamp(colorScheme),

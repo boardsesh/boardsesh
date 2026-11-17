@@ -202,7 +202,8 @@ vi.mock('../../providers/theme-provider', async () => {
       variant: 'liquidGlass',
       textStyles,
       systemColors: { background: '#fff', separator: '#ccc', secondaryLabel: '#8E8E93', fill: '#E5E5EA' },
-      brandColors: { primary: '#6D28D9', success: '#0a0' },
+      colorScheme: 'light',
+      brandColors: { primary: '#5B22F2', primaryFill: '#5B22F2', success: '#0a0' },
       m3: { surfaceVariant: '#333', onSurfaceVariant: '#ccc' },
     }),
   };

@@ -176,9 +176,9 @@ export const material = {
     /** Resting elevation of the solid Android nav surface (M3 nav bar = level 2). */
     surfaceElevation: 2,
     /** How opaque the bar's surface is when it is drawn over the tab root. Dark
-     *  needs more cover: at 0.85 the violet active label is 3.81:1 over white
-     *  content, at 0.92 it is 4.85:1. Light keeps 0.85 (5.03:1 over black). */
-    overlaySurfaceAlpha: { light: 0.85, dark: 0.92 },
+     *  needs more cover: the #9784FF active label is 4.44:1 over white content
+     *  at 0.92 and 4.70:1 at 0.94. Light keeps 0.85 (5.03:1 over black). */
+    overlaySurfaceAlpha: { light: 0.85, dark: 0.94 },
   },
   navRail: {
     /** Tonal pill behind the focused rail item's icon (M3 navigation-rail spec:

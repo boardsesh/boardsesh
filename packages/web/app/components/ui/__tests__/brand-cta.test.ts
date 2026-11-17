@@ -61,8 +61,8 @@ describe('the outlined recipe reads the control-boundary token', () => {
   });
 
   it('uses the FOREGROUND violet for its label, not the fill violet', () => {
-    // #A78BFA on the page; #7C3AED is the filled-surface violet and would be
-    // 2.5:1 as text. The filled recipe is the one that may touch the fill.
+    // #9784FF on the page; #6D33FF is the filled-surface violet and would be
+    // 3.28:1 as text, under AA. The filled recipe is the one that may touch the fill.
     expect(brandCtaOutlinedSx().color).toBe('var(--color-primary)');
     expect(brandCtaSx().backgroundColor).toBe('var(--color-primary-fill)');
   });

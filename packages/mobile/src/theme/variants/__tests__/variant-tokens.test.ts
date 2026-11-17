@@ -10,8 +10,10 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 
+import { withAlpha } from '@boardsesh/velvet-tokens';
 import { selectByVariant } from '../select-by-variant';
 import {
+  SELECTION_WASH_ALPHA,
   resolveActionColors,
   resolveChartColors,
   resolveSelectionColors,
@@ -119,12 +121,22 @@ describe('Velvet Send v2 roles', () => {
   });
 
   it('keeps selection off violet text: label text, accent checkmark, a brand wash behind the row', () => {
-    expect(resolveSelectionColors(inputs, '#6D28D9')).toEqual({
+    expect(resolveSelectionColors(inputs, '#5B22F2', 'light')).toEqual({
       text: '#LABEL',
       checkmark: '#ACCENT',
-      fill: 'rgba(109, 40, 217, 0.18)',
+      fill: 'rgba(91, 34, 242, 0.13)',
     });
+    expect(resolveSelectionColors(inputs, '#6D33FF', 'dark').fill).toBe('rgba(109, 51, 255, 0.2)');
   });
+
+  it.each(['light', 'dark'] as const)(
+    'mixes the %s selection wash from the brand fill, never the tint',
+    (colorScheme) => {
+      const theme = makeThemeMock({ colorScheme });
+      expect(theme.selection.fill).toBe(withAlpha(theme.brandColors.primaryFill, SELECTION_WASH_ALPHA[colorScheme]));
+      expect(SELECTION_WASH_ALPHA).toEqual({ light: 0.13, dark: 0.2 });
+    },
+  );
 
   it('draws a status as a quiet tertiary fill with secondary text', () => {
     expect(resolveStatusColors(inputs)).toEqual({ fill: '#TERTIARY_FILL', label: '#SECONDARY_LABEL' });
@@ -153,7 +165,7 @@ describe('Velvet Send v2 roles', () => {
     'matches the current-climb wash in the Climbs list on %s %s, so moving the row onto the role changes nothing',
     (variant, colorScheme) => {
       const theme = makeThemeMock({ variant, colorScheme });
-      expect(theme.selection.fill).toBe(selectedRowColors(theme.brandColors.primary).fill);
+      expect(theme.selection.fill).toBe(selectedRowColors(theme.brandColors, colorScheme).fill);
     },
   );
 });
