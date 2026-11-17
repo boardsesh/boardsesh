@@ -4,6 +4,9 @@ import { createHash, randomBytes } from 'node:crypto';
  * `auth_session.token` stores this digest of a session token, never the token.
  * A copy of the table (a dump, the DR standby, a backup) then holds nothing a
  * browser could present. Lookups hash the presented token and compare digests.
+ * Better Auth's own session API (`createAuthority`, unmounted; no Better Auth
+ * handler faces browsers) would still write clear tokens, which this reader
+ * refuses.
  */
 export function sessionTokenDigest(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('base64url');
