@@ -35,9 +35,25 @@ await test('one real catalogue fixture retains its native dimensions, aliases an
   assert.deepEqual(config.hold_state_map[43], config.hold_state_map[13]);
   assert.deepEqual(config.hold_state_map[44], config.hold_state_map[14]);
 });
-await test('thirty controls include forward and reverse sequences, both source pairs and truthful editor pulses', () => {
-  assert.equal(validateControls(controls()).samples.length, 30);
+await test('thirty-eight controls include forward and reverse sequences, both source pairs, truthful editor pulses and the wall swap', () => {
+  assert.equal(validateControls(controls()).samples.length, 38);
   assert.equal(controls().samples.filter((sample) => sample.editorAllChanged).length, 6);
+  const swaps = controls().samples.filter((sample) => sample.swap);
+  assert.equal(swaps.length, 8);
+  assert.ok(swaps.every((sample) => sample.progress === 0 && sample.pulse === 1));
+  assert.deepEqual(
+    swaps.map((sample) => sample.swap),
+    [
+      [1, 0],
+      [0.4, 0],
+      [0.25, 0.3],
+      [0, 0.6],
+      [0, 1],
+      [0.25, 0.3],
+      [0.2, 0.4],
+      [0, 0.6],
+    ],
+  );
 });
 for (const [name, mutate] of [
   ['missing sample', (record) => record.samples.pop()],
@@ -88,6 +104,36 @@ for (const [name, mutate] of [
     'unknown field',
     (record) => {
       record.samples[0].unused = 0;
+    },
+  ],
+  [
+    'swap weight out of range',
+    (record) => {
+      record.samples[31].swap = [1.5, 0];
+    },
+  ],
+  [
+    'swap with wipe progress',
+    (record) => {
+      record.samples[31].progress = 0.5;
+    },
+  ],
+  [
+    'swap weights on a wipe control',
+    (record) => {
+      record.samples[1].swap = [0.4, 0];
+    },
+  ],
+  [
+    'changed swap sequence',
+    (record) => {
+      record.samples[32].swap = [0.3, 0.3];
+    },
+  ],
+  [
+    'missing swap weights',
+    (record) => {
+      delete record.samples[33].swap;
     },
   ],
 ])

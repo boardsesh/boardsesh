@@ -247,10 +247,24 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
       ranges.every((range, index) => index === 0 || ranges[index - 1][1] === range[0]),
     'Resource ranges overlap or leave unreferenced bytes',
   );
+  /**
+   * Independent of the Rust encoder: the swap's still endpoints and veil follow
+   * Reveal::progress, step by step in f32 as Rust evaluates it.
+   */
+  function progressOf(sample) {
+    if (!sample.swap) return sample.progress;
+    if (sample.lower === sample.upper) return 0;
+    const [lowerWeight, upperWeight] = sample.swap.map(Math.fround);
+    const lit = [counts[sample.lower] > 0, counts[sample.upper] > 0];
+    if (lit[0] && !lit[1]) return Math.fround(1 - lowerWeight);
+    if (!lit[0] && lit[1]) return upperWeight;
+    return Math.fround(Math.fround(Math.fround(1 - lowerWeight) + upperWeight) * 0.5);
+  }
   function uniforms(sample, tiled) {
     const output = Buffer.alloc(144),
       lower = sample.lower,
-      upper = sample.upper;
+      upper = sample.upper,
+      progress = progressOf(sample);
     const floats = [
       manifest.width,
       manifest.height,
@@ -264,18 +278,17 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
     floats.forEach((number, index) => output.writeFloatLE(number, index * 4));
     [
       NONE,
-      sample.progress <= 0 ? layers[lower] : sample.progress >= 1 ? layers[upper] : layers[lower] | layers[upper],
+      progress <= 0 ? layers[lower] : progress >= 1 ? layers[upper] : layers[lower] | layers[upper],
       tiled ? packet.scenes[lower].tile_directory : 0,
       tiled ? packet.scenes[upper].tile_directory : 0,
     ].forEach((number, index) => output.writeUInt32LE(number, 64 + index * 4));
     [
       manifest.width,
       manifest.height,
-      0,
-      0,
-      sample.progress,
+      ...(sample.swap ?? [0, 0]),
+      progress,
       0.22,
-      0,
+      sample.swap ? 1 : 0,
       sample.pulse,
       counts[upper],
       reaches[upper],

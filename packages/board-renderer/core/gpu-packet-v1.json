@@ -38,9 +38,11 @@
     "uniforms": 2,
     "upper": 4
   },
-  "nativeApiVersion": 5,
+  "nativeApiVersion": 6,
   "packetVersion": 1,
   "revealBandBits": 1046562734,
+  "revealModeSwap": 1,
+  "revealModeWipe": 0,
   "statsVersion": 1,
   "statuses": {
     "cancelled": -3,
@@ -59,6 +61,7 @@
     "offsets": 64,
     "other": 112,
     "size": 0,
+    "swapWeights": 88,
     "tuning": 32,
     "tuning2": 48,
     "veil": 16,

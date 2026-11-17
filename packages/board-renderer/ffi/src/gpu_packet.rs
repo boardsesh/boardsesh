@@ -4,7 +4,7 @@ use std::slice;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use board_renderer_core::aura::gpu_packet::{
-    self, Cancellation, ChunkLayout, Packet, Plan, Session,
+    self, Cancellation, ChunkLayout, Packet, Plan, Reveal, Session,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -508,14 +508,20 @@ pub unsafe extern "C" fn board_renderer_gpu_plan_encode(
 }
 
 /// Allocation-free frame path. Slot0=current,1=previous,2=next.
+/// `reveal_mode` 0 wipes with `progress`; 1 swaps, weighting lower-only and
+/// upper-only holds by `swap_lower` and `swap_upper`. Each mode ignores the
+/// other's values.
 /// # Safety
 /// Output identifies exactly144 writable bytes; length must be144.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn board_renderer_gpu_packet_uniforms(
+pub unsafe extern "C" fn board_renderer_gpu_packet_reveal_uniforms(
     packet: u64,
     lower: u32,
     upper: u32,
+    reveal_mode: u32,
     progress: f32,
+    swap_lower: f32,
+    swap_upper: f32,
     pulse: f32,
     viewport_width: f32,
     viewport_height: f32,
@@ -535,11 +541,12 @@ pub unsafe extern "C" fn board_renderer_gpu_packet_uniforms(
         let Lease::Packet(packet) = lookup(packet)? else {
             return Err("wrong packet handle".into());
         };
+        let reveal = Reveal::from_native(reveal_mode, progress, swap_lower, swap_upper)?;
         let output = unsafe { &mut *(output as *mut [u8; gpu_packet::UNIFORM_BYTES]) };
         packet.encode_uniforms(
             lower as usize,
             upper as usize,
-            progress,
+            reveal,
             pulse,
             [viewport_width, viewport_height],
             production_empty == 1,
@@ -605,6 +612,7 @@ pub unsafe extern "C" fn board_renderer_gpu_packet_stats(output: *mut AuraGpuByt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use board_renderer_core::aura::gpu_constants::{REVEAL_MODE_SWAP, REVEAL_MODE_WIPE};
     static TEST_LOCK: Mutex<()> = Mutex::new(());
     fn fixture() -> Vec<u8> {
         serde_json::to_vec(&json!({"board_width":100,"board_height":100,"output_width":100,"frames":"p1r42",
@@ -723,11 +731,14 @@ mod tests {
         let mut uniforms = [0; 144];
         assert_eq!(
             unsafe {
-                board_renderer_gpu_packet_uniforms(
+                board_renderer_gpu_packet_reveal_uniforms(
                     packet.handle,
                     0,
                     2,
+                    REVEAL_MODE_WIPE,
                     0.5,
+                    0.0,
+                    0.0,
                     1.0,
                     100.0,
                     100.0,
@@ -739,6 +750,32 @@ mod tests {
             },
             0
         );
+        let swap = |mode: u32, lower: f32, upper: f32, uniforms: &mut [u8; 144]| unsafe {
+            board_renderer_gpu_packet_reveal_uniforms(
+                packet.handle,
+                0,
+                2,
+                mode,
+                0.0,
+                lower,
+                upper,
+                1.0,
+                100.0,
+                100.0,
+                1,
+                0,
+                uniforms.as_mut_ptr(),
+                144,
+            )
+        };
+        assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.25, &mut uniforms), 0);
+        let float =
+            |offset: usize| f32::from_le_bytes(uniforms[offset..offset + 4].try_into().unwrap());
+        assert_eq!([float(88), float(92), float(104)], [0.4, 0.25, 1.0]);
+        let mut rejected = [7; 144];
+        assert_eq!(swap(2, 0.4, 0.25, &mut rejected), -1);
+        assert_eq!(swap(REVEAL_MODE_SWAP, f32::NAN, 0.0, &mut rejected), -1);
+        assert_eq!(swap(REVEAL_MODE_SWAP, 0.0, 1.01, &mut rejected), -1);
         for bytes in [
             chunks.pixels,
             chunks.handles,
@@ -756,11 +793,14 @@ mod tests {
         board_renderer_gpu_handle_close(cancel);
         assert_eq!(
             unsafe {
-                board_renderer_gpu_packet_uniforms(
+                board_renderer_gpu_packet_reveal_uniforms(
                     packet.handle,
                     0,
                     2,
+                    REVEAL_MODE_WIPE,
                     0.5,
+                    0.0,
+                    0.0,
                     1.0,
                     100.0,
                     100.0,

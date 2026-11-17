@@ -68,7 +68,7 @@ if (existsSync(join(work, 'metal-registration.json'))) {
     hostHelpers: Object.fromEntries(
       ['metal.mjs', 'analyse.mjs', 'lib.mjs'].map((name) => [name, fileSha256(join(here, name))]),
     ),
-    limits: { samples: 30, commands: 60, maxChannelError: 1, pixelsOverOne: 0, timeoutSeconds: 180 },
+    limits: { samples: 38, commands: 76, maxChannelError: 1, pixelsOverOne: 0, timeoutSeconds: 180 },
     qualification: 'Compile-only by default. --execute yes is explicit local host GPU execution; never phone proof.',
   };
   save(join(work, 'metal-registration.json'), registration);

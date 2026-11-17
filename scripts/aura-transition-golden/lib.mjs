@@ -52,10 +52,22 @@ export function ownedProcessState(result, pid, expectedCommand) {
     return 'gone';
   return 'unknown';
 }
+/** Wall-swap controls after the thirty wipe/editor controls: name, slots, weights, mirror. */
+export const SWAP_CONTROLS = [
+  ['swap-0-m0', 0, 2, [1, 0], false],
+  ['swap-1-m0', 0, 2, [0.4, 0], false],
+  ['swap-2-m0', 0, 2, [0.25, 0.3], false],
+  ['swap-3-m0', 0, 2, [0, 0.6], false],
+  ['swap-4-m0', 0, 2, [0, 1], false],
+  ['swap-2-m1', 0, 2, [0.25, 0.3], true],
+  ['swap-previous-0-m0', 1, 0, [0.2, 0.4], false],
+  ['swap-previous-1-m0', 1, 0, [0, 0.6], false],
+];
+export const CONTROL_COUNT = 30 + SWAP_CONTROLS.length;
 export function validateControls(controls) {
   requireCondition(
-    controls?.version === 1 && Array.isArray(controls.samples) && controls.samples.length === 30,
-    'Exactly thirty controls required',
+    controls?.version === 1 && Array.isArray(controls.samples) && controls.samples.length === CONTROL_COUNT,
+    'Exactly thirty-eight controls required',
   );
   requireCondition(
     Object.keys(controls).every((key) => ['version', 'samples'].includes(key)),
@@ -67,7 +79,7 @@ export function validateControls(controls) {
       sample &&
         typeof sample === 'object' &&
         Object.keys(sample).every((key) =>
-          ['name', 'lower', 'upper', 'progress', 'pulse', 'mirrored', 'editorAllChanged'].includes(key),
+          ['name', 'lower', 'upper', 'progress', 'pulse', 'mirrored', 'editorAllChanged', 'swap'].includes(key),
         ),
       'Unknown control field',
     );
@@ -99,6 +111,15 @@ export function validateControls(controls) {
       !sample.editorAllChanged || (sample.lower === 0 && sample.upper === 0 && sample.progress === 0),
       'Editor oracle requires current still',
     );
+    requireCondition(
+      sample.swap === undefined ||
+        (Array.isArray(sample.swap) &&
+          sample.swap.length === 2 &&
+          sample.swap.every((weight) => Number.isFinite(weight) && weight >= 0 && weight <= 1) &&
+          sample.progress === 0 &&
+          !sample.editorAllChanged),
+      'Invalid swap weights',
+    );
   }
   const expectedNames = [];
   for (const mirror of [0, 1])
@@ -107,9 +128,25 @@ export function validateControls(controls) {
   for (const mirror of [0, 1]) for (let index = 0; index < 3; index++) expectedNames.push(`editor-${index}-m${mirror}`);
   for (const mirror of [0, 1])
     for (let index = 0; index < 2; index++) expectedNames.push(`previous-${index}-m${mirror}`);
+  for (const [name] of SWAP_CONTROLS) expectedNames.push(name);
   requireCondition(
     JSON.stringify(controls.samples.map((sample) => sample.name)) === JSON.stringify(expectedNames),
     'Fixed sample ordering changed',
+  );
+  for (const [name, lower, upper, weights, mirrored] of SWAP_CONTROLS) {
+    const sample = controls.samples.find((candidate) => candidate.name === name);
+    requireCondition(
+      sample.lower === lower &&
+        sample.upper === upper &&
+        sample.mirrored === mirrored &&
+        sample.pulse === 1 &&
+        JSON.stringify(sample.swap) === JSON.stringify(weights),
+      'Wall-swap sequence changed',
+    );
+  }
+  requireCondition(
+    controls.samples.filter((sample) => sample.swap !== undefined).length === SWAP_CONTROLS.length,
+    'Only the registered swap controls carry weights',
   );
   const group = (prefix) => controls.samples.filter((sample) => sample.name.startsWith(prefix));
   requireCondition(

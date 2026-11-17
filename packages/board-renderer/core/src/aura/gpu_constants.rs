@@ -9,6 +9,14 @@ pub const EDIT_PEAK_TIME_MS: u32 = 100;
 pub const EDIT_PEAK_REACH: f32 = 1.35;
 pub const REVEAL_BAND: f32 = 0.22;
 
+/// How the player's swipe hands the wall from one climb to the next, written
+/// to uniform `motion.z`. The wipe sweeps a soft band across the wall with the
+/// page position. The swap is position-independent: holds only in the climb
+/// being left take one weight, holds only in the arriving climb another, and
+/// holds lit the same way in both stay fully lit. Its timing lives in the app.
+pub const REVEAL_MODE_WIPE: u32 = 0;
+pub const REVEAL_MODE_SWAP: u32 = 1;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -28,5 +36,6 @@ mod tests {
         );
         assert_eq!(EDIT_PEAK_REACH.to_bits(), 0x3fac_cccd);
         assert_eq!(REVEAL_BAND.to_bits(), 0x3e61_47ae);
+        assert_eq!((REVEAL_MODE_WIPE, REVEAL_MODE_SWAP), (0, 1));
     }
 }

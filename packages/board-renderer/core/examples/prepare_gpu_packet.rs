@@ -1,7 +1,8 @@
 //! Host export of the exact production packet encoder for native pixel goldens.
 use board_renderer_core::aura::gpu_constants::EDIT_PEAK_REACH;
 use board_renderer_core::aura::gpu_packet::{
-    Cancellation, Packet, Placement, Placements, Plan, Session, SourceRequest, UNIFORM_BYTES,
+    Cancellation, Packet, Placement, Placements, Plan, Reveal, Session, SourceRequest,
+    UNIFORM_BYTES,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,6 +27,19 @@ struct Control {
     mirrored: bool,
     #[serde(default)]
     editor_all_changed: bool,
+    /// Wall-swap lower and upper class weights; absent for the wipe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    swap: Option<[f32; 2]>,
+}
+impl Control {
+    fn reveal(&self) -> Reveal {
+        match self.swap {
+            Some([lower, upper]) => Reveal::Swap { lower, upper },
+            None => Reveal::Wipe {
+                progress: self.progress,
+            },
+        }
+    }
 }
 
 fn validate_controls(controls: &Controls) -> Result<(), String> {
@@ -49,6 +63,13 @@ fn validate_controls(controls: &Controls) -> Result<(), String> {
             || !(1.0..=EDIT_PEAK_REACH).contains(&sample.pulse)
             || (sample.editor_all_changed
                 && (sample.lower != 0 || sample.upper != 0 || sample.progress != 0.0))
+            || sample.swap.is_some_and(|weights| {
+                sample.editor_all_changed
+                    || sample.progress != 0.0
+                    || weights
+                        .iter()
+                        .any(|weight| !weight.is_finite() || !(0.0..=1.0).contains(weight))
+            })
         {
             return Err("invalid, duplicate or unsafe control".into());
         }
@@ -84,7 +105,7 @@ fn write_uniform(
     packet.encode_uniforms(
         sample.lower,
         sample.upper,
-        sample.progress,
+        sample.reveal(),
         sample.pulse,
         viewport,
         true,
@@ -215,7 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     packet.encode_uniforms(
                         lower,
                         upper,
-                        progress,
+                        Reveal::Wipe { progress },
                         pulse,
                         [width, height],
                         true,
@@ -266,7 +287,29 @@ mod tests {
             pulse: 1.0,
             mirrored: false,
             editor_all_changed: false,
+            swap: None,
         });
+        assert!(validate_controls(&controls).is_err());
+    }
+
+    #[test]
+    fn swap_controls_need_unit_weights_and_no_wipe_progress() {
+        let mut controls = controls();
+        controls.samples[0].swap = Some([0.4, 0.0]);
+        assert!(validate_controls(&controls).is_ok());
+        assert_eq!(
+            controls.samples[0].reveal(),
+            Reveal::Swap {
+                lower: 0.4,
+                upper: 0.0
+            }
+        );
+        for weights in [[f32::NAN, 0.0], [0.0, 1.5], [-0.1, 0.0]] {
+            controls.samples[0].swap = Some(weights);
+            assert!(validate_controls(&controls).is_err());
+        }
+        controls.samples[0].swap = Some([0.4, 0.0]);
+        controls.samples[0].progress = 0.5;
         assert!(validate_controls(&controls).is_err());
     }
 

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { load, fileSha256, sha256, imageDifference, requireCondition as check, save } from './lib.mjs';
 export function verifyPrepared(work) {
   const prepared = load(join(work, 'prepared.json'));
-  check(prepared.status === 'PREPARED_ONE_RICH_30_NOT_EXECUTED', 'Invalid preparation');
+  check(prepared.status === 'PREPARED_ONE_RICH_38_NOT_EXECUTED', 'Invalid preparation');
   for (const [path, expected] of Object.entries(prepared.files))
     check(fileSha256(join(work, path)) === expected, `Prepared file changed: ${path}`);
   return prepared;
@@ -12,9 +12,9 @@ export function analyse(work, renders, backend) {
   verifyPrepared(work);
   const metadata = load(join(work, 'inputs/inputs.json'));
   const native = load(join(renders, 'result.json'));
-  check(native.status === `PASS_ACTUAL_${backend}_RICH_30`, 'Native comparison did not pass');
+  check(native.status === `PASS_ACTUAL_${backend}_RICH_38`, 'Native comparison did not pass');
   check(
-    native.width === 1080 && native.height === 1504 && native.commandsCompleted === 60,
+    native.width === 1080 && native.height === 1504 && native.commandsCompleted === 76,
     'Native dimensions/counts changed',
   );
   check(native.compiledContractSha256 === metadata.contractSha256, 'Native compiled contract changed');
@@ -102,16 +102,29 @@ export function analyse(work, renders, backend) {
           hashes.get(`forward-${index}-m${mirror}-${mode}`) === hashes.get(`reverse-${4 - index}-m${mirror}-${mode}`),
           'Reverse control replay differs',
         );
+    // The swap settles on the same stills as the wipe, ignores the display
+    // mirror (position plays no part), and each weight change shows.
+    check(hashes.get(`swap-0-m0-${mode}`) === hashes.get(`forward-0-m0-${mode}`), 'Swap rest differs from still');
+    check(hashes.get(`swap-4-m0-${mode}`) === hashes.get(`forward-4-m0-${mode}`), 'Swap end differs from still');
+    check(hashes.get(`swap-2-m0-${mode}`) === hashes.get(`swap-2-m1-${mode}`), 'Swap depends on display mirror');
+    for (const [first, second] of [
+      ['swap-0-m0', 'swap-1-m0'],
+      ['swap-1-m0', 'swap-2-m0'],
+      ['swap-2-m0', 'swap-3-m0'],
+      ['swap-3-m0', 'swap-4-m0'],
+      ['swap-previous-0-m0', 'swap-previous-1-m0'],
+    ])
+      check(hashes.get(`${first}-${mode}`) !== hashes.get(`${second}-${mode}`), 'Swap weights are vacuous');
   }
   verifyPrepared(work);
   return {
-    status: `PASS_INDEPENDENT_${backend}_RICH_30`,
+    status: `PASS_INDEPENDENT_${backend}_RICH_38`,
     backend,
     nativeResultSha256: fileSha256(join(renders, 'result.json')),
     preparedSha256: fileSha256(join(work, 'prepared.json')),
     fixtureSha256: fileSha256(join(work, 'config.json')),
-    samples: 30,
-    commands: 60,
+    samples: 38,
+    commands: 76,
     rustStillComparisons: rows.filter((row) => row.rustOracle).length,
     maximumChannelError: Math.max(...rows.map((row) => row.maxChannelError)),
     pixelsOverOne: rows.reduce((sum, row) => sum + row.pixelsOverOne, 0),

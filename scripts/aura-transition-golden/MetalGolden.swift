@@ -43,7 +43,7 @@ enum MetalGolden {
     }
     let inputs = try JSONDecoder().decode(AuraGoldenInputs.self, from: Data(contentsOf: inputURL))
     try require(inputs.version == 1 && inputs.width == 1080 && inputs.height == 1504, "Fixture dimensions/version changed")
-    try require(inputs.scenes.map { $0.count } == [6, 7, 7] && inputs.samples.count == 30, "Fixture scenes/controls changed")
+    try require(inputs.scenes.map { $0.count } == [6, 7, 7] && inputs.samples.count == 38, "Fixture scenes/controls changed")
     try require(inputs.contractSha256 == ClimbOverlayPacketLayout.contractSha256, "Compiled contract differs from input")
     try require(!FileManager.default.fileExists(atPath: outputURL.path), "Preserve existing output folder")
     try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
@@ -138,9 +138,17 @@ enum MetalGolden {
     for mirror in 0..<2 { for index in 0..<5 { for mode in ["old", "new"] {
       reversalStable = reversalStable && hashes["forward-\(index)-m\(mirror)-\(mode)"] == hashes["reverse-\(4-index)-m\(mirror)-\(mode)"]
     } } }
-    let passed = maximumError <= 1 && pixelsOverOne == 0 && commands == 60 && progressChanges && pulseChanges && mirrorChanges && reversalStable
+    var swapStable = true
+    for mode in ["old", "new"] {
+      swapStable = swapStable && hashes["swap-0-m0-\(mode)"] == hashes["forward-0-m0-\(mode)"]
+        && hashes["swap-4-m0-\(mode)"] == hashes["forward-4-m0-\(mode)"]
+        && hashes["swap-2-m0-\(mode)"] == hashes["swap-2-m1-\(mode)"]
+        && hashes["swap-1-m0-\(mode)"] != hashes["swap-0-m0-\(mode)"]
+        && hashes["swap-2-m0-\(mode)"] != hashes["swap-3-m0-\(mode)"]
+    }
+    let passed = maximumError <= 1 && pixelsOverOne == 0 && commands == 76 && progressChanges && pulseChanges && mirrorChanges && reversalStable && swapStable
     let executableHash = try Bundle.main.executableURL.map { hash(try Data(contentsOf: $0)) } ?? "unavailable"
-    let report: [String: Any] = ["status": passed ? "PASS_ACTUAL_METAL_RICH_30" : "FAIL_ACTUAL_METAL_RICH_30", "device": device.name, "processId": ProcessInfo.processInfo.processIdentifier, "bundleId": Bundle.main.bundleIdentifier ?? "host-helper", "executableSha256": executableHash, "compiledContractSha256": ClimbOverlayPacketLayout.contractSha256, "beforeRuntimeShaderSha256": hash(Data(ReferenceShader.source.utf8)), "afterRuntimeShaderSha256": hash(Data(ClimbOverlayShader.source.utf8)), "width": inputs.width, "height": inputs.height, "commandsCompleted": commands, "maximumChannelError": maximumError, "pixelsOverOne": pixelsOverOne, "progressChangesPixels": progressChanges, "editingPulseChangesPixels": pulseChanges, "displayMirrorChangesPixels": mirrorChanges, "reversalStable": reversalStable, "trackedOwnedAllocationBytes": allocations, "samples": rows, "qualification": "Offscreen actual Metal shader images. Host and physical iPhone runs are separately identified; no gesture cadence, scanout, frame performance or driver-private allocation claim. Rust endpoint/pulse comparisons are independently checked by the host collector."]
+    let report: [String: Any] = ["status": passed ? "PASS_ACTUAL_METAL_RICH_38" : "FAIL_ACTUAL_METAL_RICH_38", "device": device.name, "processId": ProcessInfo.processInfo.processIdentifier, "bundleId": Bundle.main.bundleIdentifier ?? "host-helper", "executableSha256": executableHash, "compiledContractSha256": ClimbOverlayPacketLayout.contractSha256, "beforeRuntimeShaderSha256": hash(Data(ReferenceShader.source.utf8)), "afterRuntimeShaderSha256": hash(Data(ClimbOverlayShader.source.utf8)), "width": inputs.width, "height": inputs.height, "commandsCompleted": commands, "maximumChannelError": maximumError, "pixelsOverOne": pixelsOverOne, "progressChangesPixels": progressChanges, "editingPulseChangesPixels": pulseChanges, "displayMirrorChangesPixels": mirrorChanges, "reversalStable": reversalStable, "swapStable": swapStable, "trackedOwnedAllocationBytes": allocations, "samples": rows, "qualification": "Offscreen actual Metal shader images. Host and physical iPhone runs are separately identified; no gesture cadence, scanout, frame performance or driver-private allocation claim. Rust endpoint/pulse comparisons are independently checked by the host collector."]
     try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: outputURL.appendingPathComponent("result.json"), options: .atomic)
     try require(passed, "Metal comparison failed; all raw outputs retained")
   }
