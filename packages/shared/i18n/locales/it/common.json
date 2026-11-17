@@ -224,6 +224,10 @@
           "title": "MoonBoard",
           "gridLabels": "Lettere e numeri della griglia",
           "footer": "Mostra da A a K e i numeri delle righe attorno al pannello, così puoi indicare le prese come F5."
+        },
+        "gpuAcceleration": {
+          "title": "Accelerazione GPU",
+          "description": "Disegna le prese accese con il chip grafico del telefono. Disattivala se il pannello sfarfalla o va a scatti."
         }
       },
       "accessibility": {

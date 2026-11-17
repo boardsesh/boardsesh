@@ -11,6 +11,7 @@ import type { MoreFormModel } from '../../../MoreForm.types';
 const screen = vi.hoisted(() => ({
   activeBoardType: 'moonboard' as string | null,
   platform: 'ios',
+  gpuOffered: true,
   showPreview: false,
   applyPreset: vi.fn(),
   lastModel: null as MoreFormModel | null,
@@ -92,6 +93,9 @@ vi.mock('../../../../lib/board-render/board-look-suggestion-dismissals', () => (
 vi.mock('../../../../lib/spray-wall-look-preference', () => ({
   useSprayWallsUseOwnLookSetting: () => ({ useOwnLook: false, setUseOwnLook: vi.fn() }),
 }));
+vi.mock('../../../../providers/feature-flags-provider', () => ({
+  useGpuAccelerationSettingOffered: () => screen.gpuOffered,
+}));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../lib/settings-analytics', () => ({ withSettingTracking: (model: MoreFormModel) => model }));
 vi.mock('../../board-lighting/use-board-lighting-sections', () => ({
@@ -115,11 +119,13 @@ afterEach(() => {
   cleanup();
   screen.activeBoardType = 'moonboard';
   screen.platform = 'ios';
+  screen.gpuOffered = true;
   screen.showPreview = false;
   screen.applyPreset.mockClear();
   screen.lastModel = null;
   screen.lightingSections = [];
   setSetting('moonboardGridLabels', DEFAULT_SETTINGS.moonboardGridLabels);
+  setSetting('gpuAcceleration', DEFAULT_SETTINGS.gpuAcceleration);
 });
 
 describe('BoardLookScreen MoonBoard grid labels', () => {
@@ -145,6 +151,37 @@ describe('BoardLookScreen MoonBoard grid labels', () => {
     act(() => moonboardToggle()?.onValueChange(false));
     expect(getSetting('moonboardGridLabels')).toBe(false);
     expect(moonboardToggle()?.value).toBe(false);
+  });
+});
+
+function gpuToggle() {
+  const row = screen.lastModel?.sections
+    .find((section) => section.key === 'gpuAcceleration')
+    ?.rows.find((candidate) => candidate.key === 'gpuAcceleration');
+  return row?.kind === 'toggle' ? row : undefined;
+}
+
+describe('BoardLookScreen GPU acceleration', () => {
+  it('shows the switch, on by default, with its name and hint', () => {
+    render(<BoardLookScreen />);
+    expect(gpuToggle()?.value).toBe(true);
+    expect(gpuToggle()?.label).toBe('mobile.settings.boardLook.gpuAcceleration.title');
+    expect(gpuToggle()?.subtitle).toBe('mobile.settings.boardLook.gpuAcceleration.description');
+  });
+
+  it('hides the row when this binary cannot use the GPU or the kill switch is off', () => {
+    screen.gpuOffered = false;
+    render(<BoardLookScreen />);
+    expect(screen.lastModel?.sections.map((section) => section.key)).not.toContain('gpuAcceleration');
+  });
+
+  it('writes the setting both ways', () => {
+    render(<BoardLookScreen />);
+    act(() => gpuToggle()?.onValueChange(false));
+    expect(getSetting('gpuAcceleration')).toBe(false);
+    expect(gpuToggle()?.value).toBe(false);
+    act(() => gpuToggle()?.onValueChange(true));
+    expect(getSetting('gpuAcceleration')).toBe(true);
   });
 });
 

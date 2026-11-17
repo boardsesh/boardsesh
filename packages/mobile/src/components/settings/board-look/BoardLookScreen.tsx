@@ -33,6 +33,7 @@ import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useBoardLightingSections } from '../board-lighting/use-board-lighting-sections';
 import { useActiveBoardIsMoonboard } from '../../../hooks/use-active-board-is-moonboard';
 import { useSetting } from '../../../settings';
+import { useGpuAccelerationSettingOffered } from '../../../providers/feature-flags-provider';
 
 /**
  * "Board" — the parent. Pick a look from a rail of renders of your own board,
@@ -91,6 +92,24 @@ export function BoardLookScreen({ leadWithLighting = false }: { leadWithLighting
           }
         : null,
     [showMoonboardGridLabels, moonboardGridLabelsEnabled, setMoonboardGridLabelsEnabled],
+  );
+
+  // Hidden where the switch would do nothing: no native overlay module in this
+  // binary, or the remote kill switch is off.
+  const gpuAccelerationOffered = useGpuAccelerationSettingOffered();
+  const [gpuAccelerationEnabled, setGpuAccelerationEnabled] = useSetting('gpuAcceleration');
+  const gpuAcceleration = useMemo(
+    () =>
+      gpuAccelerationOffered
+        ? {
+            enabled: gpuAccelerationEnabled,
+            onChange: (enabled: boolean) => {
+              hapticSelection();
+              setGpuAccelerationEnabled(enabled);
+            },
+          }
+        : null,
+    [gpuAccelerationOffered, gpuAccelerationEnabled, setGpuAccelerationEnabled],
   );
 
   // Start fully dismissed, so a banner can never flash in during hydration and
@@ -191,6 +210,7 @@ export function BoardLookScreen({ leadWithLighting = false }: { leadWithLighting
           onDismissSuggestion: () => suggestion && settleSuggestion(suggestion.id, false),
           sprayWalls,
           moonboardGridLabels,
+          gpuAcceleration,
           lightingSections,
           leadWithLighting,
         }),
@@ -209,6 +229,7 @@ export function BoardLookScreen({ leadWithLighting = false }: { leadWithLighting
       settleSuggestion,
       sprayWalls,
       moonboardGridLabels,
+      gpuAcceleration,
       lightingSections,
       leadWithLighting,
     ],

@@ -224,6 +224,10 @@
           "title": "MoonBoard",
           "gridLabels": "Lettres et numéros de la grille",
           "footer": "Affiche les lettres de A à K et les numéros de rangée autour de la board, pour annoncer les prises comme F5."
+        },
+        "gpuAcceleration": {
+          "title": "Accélération GPU",
+          "description": "Dessine les prises allumées avec la puce graphique de ton téléphone. Désactive-la si le board clignote ou saccade."
         }
       },
       "accessibility": {

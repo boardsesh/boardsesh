@@ -45,13 +45,19 @@ export function parseAuraGpuRollout(payload: unknown): AuraGpuRollout {
   };
 }
 
+/**
+ * Precedence: remote kill switch (`flag === false`), then the climber's own
+ * switch (`userEnabled`, Settings > Board > GPU acceleration), then the rollout.
+ * `userEnabled` can only turn the GPU off, never force it on.
+ */
 export function auraGpuRolloutEnabled(input: {
   flag: boolean | string | undefined;
   policy: AuraGpuRollout;
+  userEnabled: boolean;
   boardName?: string;
   layoutId?: number;
 }): boolean {
-  if (input.flag === false) return false;
+  if (input.flag === false || !input.userEnabled) return false;
   // The no-board form answers the emergency switch only, for existing callers.
   const boardName = input.boardName;
   if (!boardName) return true;

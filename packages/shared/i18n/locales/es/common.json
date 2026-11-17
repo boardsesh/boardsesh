@@ -492,6 +492,10 @@
           "title": "MoonBoard",
           "gridLabels": "Letras y números de la cuadrícula",
           "footer": "Muestra de la A a la K y los números de fila alrededor del plafón, para que puedas nombrar presas como F5."
+        },
+        "gpuAcceleration": {
+          "title": "Aceleración por GPU",
+          "description": "Dibuja las presas iluminadas con el chip gráfico del móvil. Desactívala si el plafón parpadea o va a tirones."
         }
       },
       "accessibility": {

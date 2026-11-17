@@ -224,6 +224,10 @@
           "title": "MoonBoard",
           "gridLabels": "Rasterbuchstaben und -zahlen",
           "footer": "Zeigt A bis K und die Reihennummern rund ums Board, damit du Griffe wie F5 ansagen kannst."
+        },
+        "gpuAcceleration": {
+          "title": "GPU-Beschleunigung",
+          "description": "Zeichnet beleuchtete Griffe mit dem Grafikchip deines Handys. Schalte sie aus, wenn das Board flackert oder ruckelt."
         }
       },
       "accessibility": {

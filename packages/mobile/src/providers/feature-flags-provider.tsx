@@ -26,6 +26,8 @@ import {
 } from '../lib/analytics';
 import { useFeatureFlagOverrides, type FeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isDevBuild } from '../lib/is-dev-build';
+import { climbOverlayGpuApiVersion } from '../lib/board-render/gpu-native-capability';
+import { useSetting } from '../settings';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
 import {
   AURA_GPU_FLAG,
@@ -745,13 +747,28 @@ export function useWallFrostMotionEnabled(): boolean {
   return wallFrostMotionOffered(useFeatureFlag('wall-frost-motion'));
 }
 
+/**
+ * The ONE place every GPU surface asks. Remote kill switch, then the climber's
+ * GPU acceleration setting (synchronous MMKV, so first render is already right
+ * and a flip reaches mounted boards at once), then the rollout.
+ */
 export function useGpuClimbOverlayEnabled(boardName?: string, layoutId?: number): boolean {
+  const [userEnabled] = useSetting('gpuAcceleration');
   return auraGpuRolloutEnabled({
     flag: useFeatureFlag(AURA_GPU_FLAG),
     policy: useContext(AuraGpuRolloutContext),
+    userEnabled,
     boardName,
     layoutId,
   });
+}
+
+/**
+ * Whether the GPU acceleration switch in Settings has anything to do: this
+ * binary carries the native overlay module and the remote kill switch is not off.
+ */
+export function useGpuAccelerationSettingOffered(): boolean {
+  return climbOverlayGpuApiVersion > 0 && useFeatureFlag(AURA_GPU_FLAG) !== false;
 }
 
 /** The rule behind `useWallFrostMotionEnabled`, for tests. */

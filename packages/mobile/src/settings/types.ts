@@ -117,6 +117,16 @@ export type AppSettings = {
    */
   moonboardGridLabels: boolean;
   /**
+   * Draw lit holds with the phone's graphics chip (the native Aura GPU overlay).
+   * On by default. Off sends every board surface to the PNG renderer, for a
+   * phone where the board flickers or stutters. It can only turn the GPU off:
+   * the remote `aura-gpu-enabled` switch and rollout still decide whether the
+   * GPU is used when this is on (`auraGpuRolloutEnabled`,
+   * docs/gpu-climb-overlay-experiment.md). Read synchronously, so a board
+   * never mounts on the GPU and then drops to PNG.
+   */
+  gpuAcceleration: boolean;
+  /**
    * Always drive the wall: this phone drives the wall whenever it holds the board. While this phone's own
    * Bluetooth link holds the board (never a relay, never a wall with no
    * lights), it drives with no end (`DriveModeWatcher`, `startedBy: 'always'`),
