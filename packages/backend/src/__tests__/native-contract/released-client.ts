@@ -5,6 +5,22 @@ import { transformWithOxc } from 'vite-plus';
 import { recordedSource, type ReleasedClient } from './recordings';
 
 type Exports = Record<string, unknown>;
+
+// Oxc output is a pure function of path and recorded bytes. The staged-mode
+// matrix builds several clients per release, so reuse the stripped code; the
+// integrity check still runs on every read and every client gets fresh modules.
+const transformedSources = new Map<string, Promise<string>>();
+async function transformedModule(release: ReleasedClient, identifier: string): Promise<string> {
+  const source = recordedSource(release, identifier);
+  const key = `${identifier}\0${release.modules[identifier].sha256}`;
+  let transformed = transformedSources.get(key);
+  if (!transformed) {
+    transformed = transformWithOxc(source, identifier, { jsx: { runtime: 'automatic' } }).then((result) => result.code);
+    transformedSources.set(key, transformed);
+  }
+  return transformed;
+}
+
 export interface ReleasedPlatformIo {
   fetch: typeof fetch;
   secureReadFailure?: (key: string) => boolean;
@@ -227,6 +243,7 @@ export async function createReleasedClient(release: ReleasedClient, io: Released
   };
   const aliases: Record<string, string> = {
     '@boardsesh/shared-schema/client-identity': 'packages/shared-schema/src/client-identity.ts',
+    '@boardsesh/watch-pairing': 'packages/shared/watch-pairing/src/index.ts',
   };
   function resolvePath(specifier: string, parent: string): string {
     if (aliases[specifier]) return aliases[specifier];
@@ -257,9 +274,7 @@ export async function createReleasedClient(release: ReleasedClient, io: Released
       return synthetic;
     }
     if (!release.modules[identifier]) throw new Error(`Unrecorded client module refused: ${identifier}`);
-    const source = recordedSource(release, identifier);
-    const transformed = await transformWithOxc(source, identifier, { jsx: { runtime: 'automatic' } });
-    const module = new SourceTextModule(transformed.code, {
+    const module = new SourceTextModule(await transformedModule(release, identifier), {
       context,
       identifier,
       importModuleDynamically: async (specifier, parent) => {

@@ -19,7 +19,10 @@ const boundaryPaths = [
   '/consent-state.ts',
   '/analytics.ts',
 ];
-const seeds = ['auth.ts', 'auth-interceptor.ts', 'auth-store.ts', 'auth-session.ts'];
+// watch-pairing.ts is the phone half of Garmin pairing: it asks for the code
+// through the released interceptor and validates the reply with the released
+// shared parser, so the staged watch-pairing cells run the app's own request.
+const seeds = ['auth.ts', 'auth-interceptor.ts', 'auth-store.ts', 'auth-session.ts', 'watch-pairing.ts'];
 const callbackNames = new Set([
   'resetAnalyticsForSignedOutTransition',
   'clearPersistedUserStores',
@@ -50,6 +53,7 @@ function record(ref, path, modules) {
 function resolve(ref, from, specifier) {
   if (specifier === '@boardsesh/analytics') return 'packages/shared/analytics/src/account-creation.ts';
   if (specifier === '@boardsesh/shared-schema/client-identity') return 'packages/shared-schema/src/client-identity.ts';
+  if (specifier === '@boardsesh/watch-pairing') return 'packages/shared/watch-pairing/src/index.ts';
   if (!specifier.startsWith('.')) return null;
   const base = posix.normalize(posix.join(posix.dirname(from), specifier));
   return [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`].find((path) => read(ref, path) !== null) ?? null;
