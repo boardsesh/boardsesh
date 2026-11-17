@@ -355,7 +355,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // Android `colorPrimary` (Expo's default is #023c69). The brand tint,
     // brandColors.tint in @boardsesh/velvet-tokens; ./plugins/with-brand-accent-color
     // sets the matching accent on both platforms.
-    primaryColor: '#6D28D9',
+    primaryColor: '#5B22F2',
     newArchEnabled: true,
     // PILOT (draft — measure before merge): React Compiler auto-memoization.
     // SDK 57's babel-preset-expo enables babel-plugin-react-compiler when Expo

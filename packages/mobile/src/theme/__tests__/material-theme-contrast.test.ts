@@ -279,7 +279,7 @@ describe.each(SCHEMES)('Graphite Material theme (%s)', (scheme) => {
 describe('Liquid Glass keeps its violet values', () => {
   it('splits the tertiary fill and the drawer tint by variant', () => {
     expect(tertiaryFillFallback.liquidGlass).toEqual({
-      light: 'rgba(109, 40, 217, 0.06)',
+      light: 'rgba(91, 34, 242, 0.06)',
       dark: 'rgba(199, 184, 232, 0.07)',
     });
     expect(playDrawerMaterialTint.liquidGlass.dark).toBe('rgba(15, 11, 22, 0.55)');

@@ -87,12 +87,12 @@ describe('with-brand-accent-color (HIG Color: the app accent in system UI)', () 
       expect(hexOf(dark!.color.components)).toBe(plugin.ACCENT_DARK.toUpperCase());
 
       expect(highContrastLight?.appearances).toEqual([{ appearance: 'contrast', value: 'high' }]);
-      expect(hexOf(highContrastLight!.color.components)).toBe('#4C1D95');
+      expect(hexOf(highContrastLight!.color.components)).toBe('#5613EA');
       expect(highContrastDark?.appearances).toEqual([
         { appearance: 'luminosity', value: 'dark' },
         { appearance: 'contrast', value: 'high' },
       ]);
-      expect(hexOf(highContrastDark!.color.components)).toBe('#C4B5FD');
+      expect(hexOf(highContrastDark!.color.components)).toBe('#B6AFFF');
 
       // A second prebuild rewrites the same file rather than failing.
       expect(() => plugin.writeAccentColorSet(sourceRoot)).not.toThrow();

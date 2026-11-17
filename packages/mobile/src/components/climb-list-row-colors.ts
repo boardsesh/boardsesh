@@ -1,19 +1,22 @@
-import { withAlpha } from '../theme/colors';
-import { SELECTION_WASH_ALPHA } from '../theme/variants/variant-tokens';
+import { selectionWash } from '../theme/variants/variant-tokens';
 
 /**
  * Highlight colours for the active (selected) climb row, derived from the
- * scheme-aware brand primary. Pass `useTheme().brandColors.primary` so the wash
- * + accent track the colour scheme: in dark the resolved primary is the lifted
- * `#A78BFA` tint, not the dark `#6D28D9` fill (which is near-invisible on a
- * near-black row). Kept as a pure function so the per-scheme behaviour is unit
- * testable without rendering the (reanimated + swipeable) row.
+ * scheme-aware brand. Pass `useTheme().brandColors` and `useTheme().colorScheme`.
+ * The wash is the brand FILL at the scheme's selection alpha, exactly the
+ * `theme.selection.fill` role; the left accent bar is the tint (`primary`), the
+ * lifted #9784FF in dark rather than the #6D33FF fill. Kept as a pure function so
+ * the per-scheme behaviour is unit testable without rendering the (reanimated +
+ * swipeable) row.
  */
-export function selectedRowColors(brandPrimary: string): { fill: string; accent: string } {
+export function selectedRowColors(
+  brand: { primary: string; primaryFill: string },
+  colorScheme: 'light' | 'dark',
+): { fill: string; accent: string } {
   return {
     // Subtle wash behind the row content.
-    fill: withAlpha(brandPrimary, SELECTION_WASH_ALPHA),
+    fill: selectionWash(brand.primaryFill, colorScheme),
     // Solid left accent bar.
-    accent: brandPrimary,
+    accent: brand.primary,
   };
 }

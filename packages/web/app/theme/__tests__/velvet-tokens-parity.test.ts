@@ -168,7 +168,7 @@ describe('MUI theme wires the foreground/fill split correctly', () => {
   // THE fence for the split. With two schemes, the light rows (equal) and the dark rows
   // (divergent) together said the divergence was deliberate. One scheme says nothing —
   // two palette slots holding different violets just reads like an accident, and the
-  // obvious "simplification" is to collapse them. White on #A78BFA is 2.5:1.
+  // obvious "simplification" is to collapse them. White on #9784FF is 2.97:1.
   it('the foreground violet and the fill violet are NOT the same colour', () => {
     expect(darkTheme.palette.primary.main.toLowerCase()).not.toBe(darkTheme.palette.primaryFill.main.toLowerCase());
     expect(themeTokens.colors.primary).not.toBe(themeTokens.colors.primaryFill);
@@ -258,7 +258,7 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast(themeTokens.colors.primary, themeTokens.semantic.background)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('the dark focus ring (foreground violet #A78BFA) clears the 3:1 UI floor on the field, card, and page', () => {
+  it('the dark focus ring (foreground violet #9784FF) clears the 3:1 UI floor on the field, card, and page', () => {
     // Inputs are no longer white in dark mode, so the focus ring is the FOREGROUND violet
     // everywhere (index.css dropped the fill-violet override). It must clear 3:1 on the
     // elevated input field, the card, and the page.

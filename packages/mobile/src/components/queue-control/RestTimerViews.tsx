@@ -130,8 +130,8 @@ type PhaseColorInputs = {
 /**
  * The colour is the state. Past the target the digits go RED — a product
  * decision (you are over your rest, not "done"), so this must never become a
- * success green. The final countdown is the brand tint, `accent` (#6D28D9
- * light, #A78BFA dark, a notch further under Increase Contrast on iOS): 4.5:1 or
+ * success green. The final countdown is the brand tint, `accent` (#5B22F2
+ * light, #9784FF dark, a notch further under Increase Contrast on iOS): 4.5:1 or
  * better on every opaque surface the pill and sheet draw on. Same semibold
  * digits, no animation: the number counting is the motion, so Reduce Motion has
  * nothing to turn off.

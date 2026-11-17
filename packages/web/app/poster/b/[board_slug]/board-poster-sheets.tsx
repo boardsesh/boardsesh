@@ -143,7 +143,7 @@ export function splitHeadlineAtBrand(headline: string): { lead: string; trail: s
 function StepBadge({ number }: { number: number }) {
   return (
     <svg className={styles.badge} viewBox="0 0 20 20" aria-hidden>
-      <circle cx="10" cy="10" r="10" fill="#6D28D9" />
+      <circle cx="10" cy="10" r="10" fill="#5B22F2" />
       <text x="10" y="14.3" textAnchor="middle" fontSize="12.5" fontWeight="800" fill="#ffffff">
         {number}
       </text>

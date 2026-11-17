@@ -33,14 +33,14 @@ const LIGHT_M3 = {
 
 describe('brand control colours', () => {
   it('tints controls with the foreground violet and keeps the fill for white-text surfaces', () => {
-    expect(brandControlTint(brandColorsDark)).toBe('#A78BFA');
-    expect(brandAccentColor(brandColorsDark)).toBe('#7C3AED');
-    expect(brandControlTint(brandColors)).toBe('#6D28D9');
+    expect(brandControlTint(brandColorsDark)).toBe('#9784FF');
+    expect(brandAccentColor(brandColorsDark)).toBe('#6D33FF');
+    expect(brandControlTint(brandColors)).toBe('#5B22F2');
   });
 
   it('gives the dark-mode Android Switch a dark checked thumb on the lighter track', () => {
     expect(switchControlColors(brandColorsDark, DARK_M3, 'dark')).toEqual({
-      checkedTrackColor: '#A78BFA',
+      checkedTrackColor: '#9784FF',
       checkedThumbColor: '#16111F',
       uncheckedTrackColor: '#1A1A1A',
       uncheckedThumbColor: '#8A8A8A',
@@ -50,7 +50,7 @@ describe('brand control colours', () => {
 
   it('gives the light-mode Android Switch a white checked thumb and the Velvet off state', () => {
     expect(switchControlColors(brandColors, LIGHT_M3, 'light')).toEqual({
-      checkedTrackColor: '#6D28D9',
+      checkedTrackColor: '#5B22F2',
       checkedThumbColor: '#FFFFFF',
       uncheckedTrackColor: '#E4E4E4',
       uncheckedThumbColor: '#7A7A7A',
@@ -59,8 +59,8 @@ describe('brand control colours', () => {
   });
 
   it('seeds every Compose Host from the brand fill', () => {
-    expect(composeSeedColor(brandColorsDark)).toBe('#7C3AED');
-    expect(composeSeedColor(brandColors)).toBe('#6D28D9');
+    expect(composeSeedColor(brandColorsDark)).toBe('#6D33FF');
+    expect(composeSeedColor(brandColors)).toBe('#5B22F2');
   });
 
   it('fills the tonal button from Velvet, not the seeded Compose default', () => {
@@ -73,8 +73,8 @@ describe('brand control colours', () => {
   it('names the filter chip label, icon and fill states and borders only the idle chip', () => {
     expect(filterChipBrandColors(brandColorsDark, DARK_M3)).toEqual({
       labelColor: '#B0B0B0',
-      iconColor: '#A78BFA',
-      selectedContainerColor: '#7C3AED',
+      iconColor: '#9784FF',
+      selectedContainerColor: '#6D33FF',
       selectedLabelColor: '#FFFFFF',
       selectedLeadingIconColor: '#FFFFFF',
     });
@@ -86,31 +86,31 @@ describe('brand control colours', () => {
 
   it('dots the selected radio in the control tint and rings the empty one in onSurfaceVariant', () => {
     expect(radioControlColors(brandColorsDark, DARK_M3)).toEqual({
-      selectedColor: '#A78BFA',
+      selectedColor: '#9784FF',
       unselectedColor: '#B0B0B0',
     });
   });
 
   it('fills the Android Slider with the control tint', () => {
-    expect(sliderControlColors(brandColorsDark)).toEqual({ thumbColor: '#A78BFA', activeTrackColor: '#A78BFA' });
+    expect(sliderControlColors(brandColorsDark)).toEqual({ thumbColor: '#9784FF', activeTrackColor: '#9784FF' });
   });
 });
 
 describe('text input brand colours', () => {
   it('gives Android an opaque caret and handles with a translucent highlight', () => {
     expect(textInputBrandColors(brandColorsDark, 'android')).toEqual({
-      cursorColor: '#A78BFA',
-      selectionHandleColor: '#A78BFA',
-      selectionColor: 'rgba(167, 139, 250, 0.4)',
+      cursorColor: '#9784FF',
+      selectionHandleColor: '#9784FF',
+      selectionColor: 'rgba(151, 132, 255, 0.4)',
     });
   });
 
   it('gives iOS only an opaque selection tint', () => {
-    expect(textInputBrandColors(brandColorsDark, 'ios')).toEqual({ selectionColor: '#A78BFA' });
+    expect(textInputBrandColors(brandColorsDark, 'ios')).toEqual({ selectionColor: '#9784FF' });
   });
 
   it('draws the Compose caret in the foreground tint', () => {
-    expect(textFieldBrandColors(brandColorsDark).cursorColor).toBe('#A78BFA');
+    expect(textFieldBrandColors(brandColorsDark).cursorColor).toBe('#9784FF');
   });
 });
 

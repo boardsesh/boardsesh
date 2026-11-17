@@ -6,9 +6,9 @@ import { brandColors } from './colors';
  * the app's interactive elements; Apple's link blue was a second tint).
  *
  * For FOREGROUND use prefer the scheme-aware `useTheme().systemColors.accent`
- * (lifts to #A78BFA in dark so it clears AA on near-black). This static value
+ * (lifts to #9784FF in dark so it clears AA on near-black). This static value
  * stays as the FILL fallback for the few StyleSheet backgrounds that carry white
- * text (e.g. the logbook angle chip): white on #6D28D9 is 7.10:1.
+ * text (e.g. the logbook angle chip): white on #5B22F2 is 7.10:1.
  */
 const ACCENT_TINT = brandColors.tint;
 

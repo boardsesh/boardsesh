@@ -396,8 +396,8 @@
 
 .photoFacts .separator {
   padding: 0 1.6mm;
-  /* Text colour, not a background: it prints. */
-  color: #6d28d9;
+  /* Text colour, not a background: it prints. The light-scheme brand violet. */
+  color: #5b22f2;
   font-weight: 800;
 }
 

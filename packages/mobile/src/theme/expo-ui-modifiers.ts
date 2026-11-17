@@ -28,9 +28,9 @@
 //   WHITE text or a white glyph: a filled button, a selected segment, a badge.
 // - `brandControlTint` (the theme's `primary`) is for a control's on-state drawn
 //   straight on a card: a Toggle / Switch track, a Slider, a menu Picker's value,
-//   a plain text button. In dark mode `primaryFill` #7C3AED is 2.45:1 on the iOS
-//   grouped card #2C2C2E, under the 3:1 minimum for a control; `primary` #A78BFA
-//   is 5.12:1 there. Light mode is the same violet (#6D28D9) either way.
+//   a plain text button. In dark mode `primaryFill` #6D33FF is 2.37:1 on the iOS
+//   grouped card #2C2C2E, under the 3:1 minimum for a control; `primary` #9784FF
+//   is 4.69:1 there. Light mode is the same violet (#5B22F2) either way.
 // Add control-specific Android colour mappers here as more primitives land, each
 // reading one of those two so they can't drift.
 
@@ -44,12 +44,12 @@ import { withAlpha } from '@boardsesh/velvet-tokens';
 export type BrandControlColors = {
   /**
    * Brand colour for FOREGROUND use: text, icons, and a control's on-state drawn
-   * on a card. Scheme-aware (`#6D28D9` light, lighter `#A78BFA` dark).
+   * on a card. Scheme-aware (`#5B22F2` light, lighter `#9784FF` dark).
    */
   primary: string;
   /**
    * Brand colour for a FILLED surface — the on-track / selected-fill accent.
-   * Scheme-aware (`#6D28D9` light, brighter `#7C3AED` dark) so white thumbs and
+   * Scheme-aware (`#5B22F2` light, brighter `#6D33FF` dark) so white thumbs and
    * labels sitting on top clear WCAG AA.
    */
   primaryFill: string;
@@ -235,8 +235,8 @@ export function brandAccentColor(brandColors: BrandControlColors): string {
 /**
  * The tint for a native control's on-state drawn straight on a card: iOS
  * `tint(...)` on a Toggle, menu Picker, Slider or plain Button, the Android
- * Switch track and Slider. `#A78BFA` in dark is 5.12:1 on the iOS grouped card
- * (#2C2C2E) and 6.25:1 on #1C1C1E; `#6D28D9` in light is 7.10:1 on white.
+ * Switch track and Slider. `#9784FF` in dark is 4.69:1 on the iOS grouped card
+ * (#2C2C2E) and 5.72:1 on #1C1C1E; `#5B22F2` in light is 7.10:1 on white.
  */
 export function brandControlTint(brandColors: BrandControlColors): string {
   return brandColors.primary;
@@ -244,7 +244,7 @@ export function brandControlTint(brandColors: BrandControlColors): string {
 
 /**
  * Ink for a dark-mode Switch's CHECKED thumb. On the lighter dark-mode track
- * (#A78BFA) a white thumb blurs into it; this dark ink is 6.8:1 against it, the
+ * (#9784FF) a white thumb blurs into it; this dark ink is 6.23:1 against it, the
  * M3 pattern of a dark `onPrimary` over a light primary. Same value as the
  * Velvet dark ink, `brandColors.onAccent`.
  */
@@ -253,8 +253,8 @@ const DARK_SCHEME_CHECKED_THUMB = '#16111F';
 /**
  * Plain Compose `SwitchColors` for a native Android `Switch` drawn on a settings
  * card. Checked: the track is `brandControlTint`; in dark mode that track is the
- * light #A78BFA, so the thumb is a dark ink to stay visible, and in light mode
- * it is white on #6D28D9. Unchecked follows the M3 switch: a neutral track whose
+ * light #9784FF, so the thumb is a dark ink to stay visible, and in light mode
+ * it is white on #5B22F2. Unchecked follows the M3 switch: a neutral track whose
  * `outline` border and thumb carry the boundary (3:1 or better on the card).
  */
 export function switchControlColors(

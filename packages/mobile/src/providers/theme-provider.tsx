@@ -101,7 +101,7 @@ type ResolvedSystemColors = {
   /**
    * Interactive-accent foreground (links, checkmarks, active tab, edit·copy·open).
    * The brand violet on every platform and variant — the same tint the @expo/ui
-   * controls use — lifted to #A78BFA in dark so it clears AA on near-black. HIG
+   * controls use — lifted to #9784FF in dark so it clears AA on near-black. HIG
    * Color: one tint for every interactive element.
    */
   accent: string | OpaqueColorValue;
@@ -191,8 +191,8 @@ type Theme = {
   surfaces: Surfaces;
   /**
    * The selected or current item (Velvet Send v2): `label` text, an `accent`
-   * checkmark, and the brand primary at 18% as the row wash (the Climbs list's
-   * current-climb look). Selection is never violet text.
+   * checkmark, and the brand fill as the row wash (13% light, 20% dark: the
+   * Climbs list's current-climb look). Selection is never violet text.
    */
   selection: SelectionColors;
   /**
@@ -465,7 +465,7 @@ export function ThemeProvider({
         error: resolvedSystemColors.error,
       }),
       surfaces: resolveSurfaces(resolvedSystemColors),
-      selection: resolveSelectionColors(resolvedSystemColors, resolvedBrandColors.primary),
+      selection: resolveSelectionColors(resolvedSystemColors, resolvedBrandColors.primaryFill, colorScheme),
       status: resolveStatusColors(resolvedSystemColors),
       chartColors: resolvedChartColors,
       heatRamp: resolveHeatRamp(colorScheme),

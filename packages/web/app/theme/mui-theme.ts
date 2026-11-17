@@ -5,7 +5,7 @@ import { themeTokens } from './theme-config';
 // - `primaryFill`: the FILLED-surface violet (button bg + white text). Kept separate
 //   from `primary` (the FOREGROUND violet that MUI reads via palette.primary.main for
 //   links, text/outlined buttons, and selection controls) because in dark mode the
-//   two diverge — foreground #A78BFA vs fill #7C3AED.
+//   two diverge — foreground #9784FF vs fill #6D33FF.
 // - `accent`: the amber spark (#FF8A3D), fill-only with dark text.
 declare module '@mui/material/styles' {
   interface Palette {
@@ -174,7 +174,7 @@ const sharedComponents: Components<Theme> = {
   },
   // Input surface + borders ride the scheme-aware `--input-*` CSS vars (light: white field,
   // #7B7591 border; dark: elevated violet #2F234A, translucent border). The focused outline
-  // uses the FOREGROUND violet `palette.primary.main` (#6D28D9 light, #A78BFA dark) at 2px;
+  // uses the FOREGROUND violet `palette.primary.main` (#9784FF; www is dark only) at 2px;
   // the field surface itself never changes on hover/focus — hover is carried by the border.
   MuiOutlinedInput: {
     styleOverrides: {
@@ -608,7 +608,7 @@ function buildTheme(): Theme {
       // primary.main is the FOREGROUND violet (links, text/outlined buttons, selection
       // controls, tab indicator all read palette.primary.main). FILL goes to the
       // augmented `primaryFill` channel below. contrastText is the INK on the lifted
-      // foreground violet, and that ink is dark: white on #A78BFA is 2.5:1. Set
+      // foreground violet, and that ink is dark: white on #9784FF is 2.97:1. Set
       // explicitly so MUI's getContrastText never warns.
       primary: {
         main: brand.primary,

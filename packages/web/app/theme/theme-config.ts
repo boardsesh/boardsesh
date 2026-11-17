@@ -15,9 +15,10 @@
 // `darkTokens` no longer exists and nothing branches on scheme.
 //
 // `primary` is the FOREGROUND violet (links, indicators, borders, focus) at
-// #A78BFA; `primaryFill` is the FILLED-surface violet (button bg + white text) at
-// #7C3AED. The two are NOT interchangeable and must never be collapsed into one:
-// white on #A78BFA is 2.5:1. The parity test fences this.
+// #9784FF; `primaryFill` is the FILLED-surface violet (button bg + white text) at
+// #6D33FF. The two are NOT interchangeable and must never be collapsed into one:
+// white on #9784FF is 2.97:1. The parity test fences this. Hover and active are
+// the same Ultraviolet hue (OKLCH ~287) one lightness step either side.
 
 import { brandColorsDark } from '@boardsesh/velvet-tokens';
 
@@ -29,11 +30,11 @@ import { brandColorsDark } from '@boardsesh/velvet-tokens';
 export const themeTokens = {
   // Brand colors — Velvet Send violet + amber
   colors: {
-    primary: brandColorsDark.primary, // #A78BFA — FOREGROUND violet (text, icons, links, borders, focus)
-    primaryHover: '#C4B5FD',
-    primaryActive: '#8B5CF6',
-    primaryFill: brandColorsDark.primaryFill, // #7C3AED — FILLED bg; white text clears 5.70:1
-    primaryFillHover: '#6D28D9', // Darker than the fill so white text stays AA on hover
+    primary: brandColorsDark.primary, // #9784FF — FOREGROUND violet (text, icons, links, borders, focus)
+    primaryHover: '#B6AFFF', // Lighter step, 9.71:1 on the page
+    primaryActive: '#8360FF', // Darker step, 4.67:1 on the page
+    primaryFill: brandColorsDark.primaryFill, // #6D33FF — FILLED bg; white text clears 5.89:1
+    primaryFillHover: '#5B22F2', // Darker than the fill so white text stays AA on hover (7.10:1)
     onPrimary: brandColorsDark.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
     accent: brandColorsDark.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
     onAccent: brandColorsDark.onAccent, // #16111F — dark text on accent (8.95:1)
@@ -97,7 +98,7 @@ export const themeTokens = {
     selected: 'rgba(199, 184, 232, 0.16)', // Violet tint for selected state
     selectedHover: 'rgba(199, 184, 232, 0.24)',
     selectedLight: 'rgba(199, 184, 232, 0.10)', // Very subtle violet highlight
-    selectedBorder: brandColorsDark.primary, // #A78BFA — matches foreground primary
+    selectedBorder: brandColorsDark.primary, // #9784FF — matches foreground primary
     separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines (decoupled from neutral-200)
     // The visual boundary of an INTERACTIVE thing (outlined buttons, chips, toggles,
     // pagination pills, floating surfaces). Opaque on purpose so WCAG 1.4.11's 3:1 floor is

@@ -510,7 +510,7 @@ older iPhone is the variant with the chrome degraded, not Material.
     create button, the Start button, snackbars and toasts move with it on one shared value
     (`tabBarHiddenProgress`, `TabBarHideFollower`); `bottom` never animates. The bottom-chrome
     metrics describe the shown bar, as on iOS. Kill switch: `tab-bar-hide-on-scroll-kill`.
-  - **Fades in where it overlays** (Spotify's bar): on those tab roots the bar is `m3.surface` at 92% in dark
+  - **Fades in where it overlays** (Spotify's bar): on those tab roots the bar is `m3.surface` at 94% in dark
     and 85% in light behind the icons, labels and gesture inset (`material.navBar.overlaySurfaceAlpha`),
     so content is faint there
     and never legible. A 24dp fade above its top edge runs from clear to that same fill, so content dissolves into the
@@ -769,8 +769,8 @@ Read tokens at the top of the component and compose with `StyleSheet`. Brand col
 
 ```tsx
 const { radii, brandColors: brand } = useTheme();
-const fillColor = tintColor ?? brand.primaryFill; // #6D28D9 light · #7C3AED dark
-const accentColor = tintColor ?? brand.primary; // #6D28D9 light · #A78BFA dark
+const fillColor = tintColor ?? brand.primaryFill; // #5B22F2 light · #6D33FF dark
+const accentColor = tintColor ?? brand.primary; // #5B22F2 light · #9784FF dark
 const containerStyle = {
   borderRadius: radii.button, // 10 glass · 20 material
   ...(variant === 'filled' && { backgroundColor: fillColor }),

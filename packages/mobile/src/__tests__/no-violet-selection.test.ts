@@ -9,7 +9,7 @@
 //
 //   selected title    → theme.selection.text      (label)
 //   checkmark         → theme.selection.checkmark (accent)
-//   row / cell wash   → theme.selection.fill      (brand primary at 18%)
+//   row / cell wash   → theme.selection.fill      (brand fill at 13% light, 20% dark)
 //
 // The scan is one deliberately simple pattern: a selection flag named `isActive`,
 // `active`, `isSelected` or `selected` (bare or as a member, `item.isActive`),
