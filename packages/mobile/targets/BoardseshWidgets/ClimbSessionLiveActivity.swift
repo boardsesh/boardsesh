@@ -30,7 +30,7 @@ func loadThumbnail(climbUuid: String) -> UIImage? {
 /// fallback and a running rest; red only ever means "over your rest"; gray
 /// carries plain metadata. Nothing else competes.
 enum VelvetSend {
-    /// 8-bit hex helper, e.g. `VelvetSend.hex(0xFF, 0x8A, 0x3D)`.
+    /// 8-bit hex helper, e.g. `VelvetSend.hex(0x3E, 0xE6, 0xC1)`.
     static func hex(_ red: Int, _ green: Int, _ blue: Int) -> Color {
         Color(
             red: Double(red) / 255.0,
@@ -43,7 +43,7 @@ enum VelvetSend {
         let tint: Color
         let primaryFill: Color
         let onPrimary: Color
-        /// Amber accent — reserved (no longer used on this surface; amber lives
+        /// Mint spark — reserved (not drawn on this surface; amber lives
         /// only on the lit bulb's `warning`). Kept for token completeness.
         let accent: Color
         let onAccent: Color
@@ -66,7 +66,7 @@ enum VelvetSend {
                 tint: dark ? VelvetSend.hex(0x97, 0x84, 0xFF) : VelvetSend.hex(0x5B, 0x22, 0xF2),
                 primaryFill: dark ? VelvetSend.hex(0x78, 0x55, 0xFF) : VelvetSend.hex(0x5B, 0x22, 0xF2),
                 onPrimary: VelvetSend.hex(0xFF, 0xFF, 0xFF),
-                accent: VelvetSend.hex(0xFF, 0x8A, 0x3D),
+                accent: dark ? VelvetSend.hex(0x3E, 0xE6, 0xC1) : VelvetSend.hex(0x0F, 0x9F, 0x86),
                 onAccent: VelvetSend.hex(0x16, 0x11, 0x1F),
                 warning: dark ? VelvetSend.hex(0xFB, 0xBF, 0x24) : VelvetSend.hex(0xB4, 0x53, 0x09),
                 // #F87171 on the dark surface; #B91C1C keeps AA contrast on the

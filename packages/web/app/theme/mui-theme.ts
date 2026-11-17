@@ -6,7 +6,7 @@ import { themeTokens } from './theme-config';
 //   from `primary` (the FOREGROUND violet that MUI reads via palette.primary.main for
 //   links, text/outlined buttons, and selection controls) because in dark mode the
 //   two diverge — foreground #9784FF vs fill #7855FF.
-// - `accent`: the amber spark (#FF8A3D), fill-only with dark text.
+// - `accent`: the mint spark (#3EE6C1 on www), fill-only with dark text.
 declare module '@mui/material/styles' {
   interface Palette {
     primaryFill: Palette['primary'];
@@ -36,8 +36,8 @@ declare module '@mui/material/Fab' {
   }
 }
 // Note: `accent` is deliberately NOT exposed on SvgIcon. Accent is a FILL colour with
-// dark text (Button/Chip/Fab); as an icon FOREGROUND the amber #FF8A3D is only ~2.2:1
-// on the page and invites an inaccessible misuse. Icons must use a foreground role.
+// dark text (Button/Chip/Fab). The mint reads as a foreground on the dark page, but the spark is
+// spent once per page as a fill, and its light value is 3.32:1 on white. Icons use a foreground role.
 declare module '@mui/material/SvgIcon' {
   interface SvgIconPropsColorOverrides {
     primaryFill: true;
@@ -668,9 +668,10 @@ function buildTheme(): Theme {
       accent: base.palette.augmentColor({
         color: {
           main: themeTokens.colors.accent,
-          // MUI would auto-derive accent.dark ≈ #B36127, where the dark-text brand rule
-          // (accent is fill-only, dark text) fails AA (4.11:1). Pin a compliant orange.
-          dark: '#F97316',
+          // Pin the hover step instead of MUI's auto-derived one, so the dark-text brand
+          // rule (accent is fill-only, dark text) is a known number: the mint's own hue,
+          // one lightness step down, with #16111F on it at 9.18:1.
+          dark: '#02CEAA',
           contrastText: themeTokens.colors.onAccent,
         },
         name: 'accent',

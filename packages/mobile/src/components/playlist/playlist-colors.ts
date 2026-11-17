@@ -13,7 +13,7 @@ import { brandColors } from '@boardsesh/velvet-tokens';
 // with an earlier brand hex keeps that hex: the colour is the climber's data.
 export const PLAYLIST_COLORS = [
   brandColors.primaryFill, // brand violet (white text reads on it in both schemes)
-  brandColors.accent, // amber accent
+  brandColors.accent, // mint spark (follows the token)
   '#047857', // emerald
   '#2563EB', // blue
   '#DB2777', // pink

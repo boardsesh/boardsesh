@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brandColors, brandColorsDark, marketingSurfaces, materialSurfaces, withAlpha, blendOpaque } from '../index';
+import { blendOpaque, brandColors, brandColorsDark, marketingSurfaces, materialSurfaces, withAlpha } from '../index';
 
 /** sRGB `#RRGGBB` channels, linearised. */
 function linearChannels(hex: string): [number, number, number] {
@@ -39,7 +39,7 @@ describe('brand palette anchors', () => {
     expect(brandColors.primary).toBe('#5B22F2');
     expect(brandColors.primaryFill).toBe('#5B22F2');
     expect(brandColors.primaryStrong).toBe('#4A16CF');
-    expect(brandColors.accent).toBe('#FF8A3D');
+    expect(brandColors.accent).toBe('#0F9F86');
     expect(brandColors.onPrimary).toBe('#FFFFFF');
     expect(brandColorsDark.tint).toBe('#9784FF');
     expect(brandColorsDark.primary).toBe('#9784FF'); // lifted foreground
@@ -96,13 +96,18 @@ describe('brand palette anchors', () => {
     }
   });
 
-  it('pairs the amber accent with the same dark ink in both schemes', () => {
-    // The accent does not change per scheme, so its ink must not either — a filled
-    // amber chip is the same colour on a light page and a dark one, and mobile reads
-    // `brandColors.onAccent` off whichever set the scheme resolved.
+  it('pairs the mint spark with the same dark ink in both schemes, at AA on each mint', () => {
+    // The spark differs per scheme (#0F9F86 light, #3EE6C1 dark); one dark ink reads on
+    // both, so a filled mint chip needs no per-scheme text colour.
+    expect(brandColors.accent).toBe('#0F9F86');
+    expect(brandColorsDark.accent).toBe('#3EE6C1');
     expect(brandColors.onAccent).toBe('#16111F');
     expect(brandColorsDark.onAccent).toBe(brandColors.onAccent);
-    expect(brandColorsDark.accent).toBe(brandColors.accent);
+    expect(contrastRatio(brandColors.onAccent, brandColors.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(brandColorsDark.onAccent, brandColorsDark.accent)).toBeGreaterThanOrEqual(4.5);
+    // Fill or stroke only: the light mint is under 4.5:1 on white, so it never sets text.
+    expect(contrastRatio(brandColors.accent, '#FFFFFF')).toBeLessThan(4.5);
+    expect(contrastRatio(brandColors.accent, '#FFFFFF')).toBeGreaterThanOrEqual(3);
   });
 
   it('holds the neutral Graphite surface anchors the app reads', () => {

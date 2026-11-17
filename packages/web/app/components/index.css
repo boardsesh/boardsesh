@@ -20,8 +20,8 @@
   --color-primary-fill-hover: #5b22f2;
   --color-on-primary: #ffffff;
 
-  /* Amber accent — FILL-ONLY, always pair with --color-on-accent for text. */
-  --color-accent: #ff8a3d;
+  /* Mint spark — FILL-ONLY, always pair with --color-on-accent for text. */
+  --color-accent: #3ee6c1;
   --color-on-accent: #16111f;
 
   /* Flash/benchmark data yellow (badges, star ratings) — scheme-invariant by design,
@@ -89,19 +89,19 @@
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
 
-  /* Amber glow under the one hero CTA per page. Amber is fill-only in Velvet
+  /* Mint glow under the one hero CTA per page. The spark is fill-only in Velvet
      Send, and this is the only place it appears as light rather than a fill —
      it is the spark, so exactly one surface should carry it. */
-  --shadow-accent-glow: 0 6px 18px rgba(255, 138, 61, 0.35);
-  --shadow-accent-glow-hover: 0 8px 22px rgba(255, 138, 61, 0.45);
+  --shadow-accent-glow: 0 6px 18px rgba(62, 230, 193, 0.35);
+  --shadow-accent-glow-hover: 0 8px 22px rgba(62, 230, 193, 0.45);
 
   /* Icon-chip tints for the homepage onboarding cards. THREE roles, by what the
-     card does — this site (brand), the app (amber spark), community/help (info)
+     card does — this site (brand), the app (mint spark), community/help (info)
      — replacing six tints keyed to V-grade purples that had nothing to do with
      what the card was for. ~10-12% alpha over the card surface. The brand wash
      mixes from the FILL (#7855ff), never the tint, like every violet wash. */
   --home-accent-brand-surface: rgba(120, 85, 255, 0.12);
-  --home-accent-spark-surface: rgba(255, 138, 61, 0.12);
+  --home-accent-spark-surface: rgba(62, 230, 193, 0.12);
   --home-accent-info-surface: rgba(165, 171, 214, 0.12);
 
   /* Reading surface for the /help guides (mirrors `themeTokens.read`). Neutral

@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { brandColors, brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
+import { brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '../app/theme/theme-config';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -92,7 +92,7 @@ function writeTokens(): void {
     'sub-dark': marketingSurfaces.dark.secondaryLabel,
     'accent-dark': marketingSurfaces.dark.accent,
     'glow-dark': brandColorsDark.primaryFill,
-    amber: brandColors.accent,
+    amber: brandColorsDark.accent,
     good: themeTokens.colors.success,
     bad: themeTokens.colors.error,
   };

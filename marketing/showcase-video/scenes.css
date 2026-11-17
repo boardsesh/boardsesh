@@ -36,7 +36,7 @@
   --sub-on-light: var(--token-sub-light, #5b5563);
   --accent-on-dark: var(--token-accent-dark, #a78bfa);
   --accent-on-light: var(--token-accent-light, #6d28d9);
-  --amber: var(--token-amber, #ff8a3d);
+  --amber: var(--token-amber, #3ee6c1);
   --glow-dark: var(--token-glow-dark, #7c3aed);
   --glow-light: #c4b5fd;
   --role-start: var(--token-role-start, #00ff00);

@@ -59,19 +59,19 @@ on near-black. `tint` aliases `primary`.
 
 <!-- velvet-tokens:brand:start -->
 
-| Role            | Light     | Dark      | Use                                                                        |
-| --------------- | --------- | --------- | -------------------------------------------------------------------------- |
-| `primary`       | `#5B22F2` | `#9784FF` | Brand **foreground**: text, icons, links, borders                          |
-| `primaryFill`   | `#5B22F2` | `#7855FF` | Brand **filled** surface/button background                                 |
-| `primaryStrong` | `#4A16CF` | `#A294FF` | Brand foreground on a tonal violet wash (the player wall button)           |
-| `onPrimary`     | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                         |
-| `accent`        | `#FF8A3D` | `#FF8A3D` | Warm amber spark for highlights; **fill-only, always pair with dark text** |
-| `onAccent`      | `#16111F` | `#16111F` | The dark ink that pairs with `accent`; same in both schemes                |
-| `success`       | `#047857` | `#34D399` | Success states                                                             |
-| `warning`       | `#B45309` | `#FBBF24` | Warnings                                                                   |
-| `error`         | `#C81E1E` | `#F87171` | Destructive actions                                                        |
-| `live`          | `#B45309` | `#FBBF24` | This climb is lit / now on the wall                                        |
-| `historyFill`   | `#475569` | `#64748B` | The wall kiosk's "viewing history" bar                                     |
+| Role            | Light     | Dark      | Use                                                                                        |
+| --------------- | --------- | --------- | ------------------------------------------------------------------------------------------ |
+| `primary`       | `#5B22F2` | `#9784FF` | Brand **foreground**: text, icons, links, borders                                          |
+| `primaryFill`   | `#5B22F2` | `#7855FF` | Brand **filled** surface/button background                                                 |
+| `primaryStrong` | `#4A16CF` | `#A294FF` | Brand foreground on a tonal violet wash (the player wall button)                           |
+| `onPrimary`     | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                                         |
+| `accent`        | `#0F9F86` | `#3EE6C1` | Mint spark for highlights; **fill or stroke only, never text; pair a fill with dark text** |
+| `onAccent`      | `#16111F` | `#16111F` | The dark ink that pairs with `accent`; one ink for both mints                              |
+| `success`       | `#047857` | `#34D399` | Success states                                                                             |
+| `warning`       | `#B45309` | `#FBBF24` | Warnings                                                                                   |
+| `error`         | `#C81E1E` | `#F87171` | Destructive actions                                                                        |
+| `live`          | `#B45309` | `#FBBF24` | This climb is lit / now on the wall                                                        |
+| `historyFill`   | `#475569` | `#64748B` | The wall kiosk's "viewing history" bar                                                     |
 
 <!-- velvet-tokens:brand:end -->
 
@@ -106,7 +106,14 @@ wash of the wall button. Contrast (WCAG):
 | Increase Contrast: `#5613EA` on `#F2F2F7`, `#B6AFFF` on `#2C2C2E`           | 7.03:1 / 7.01:1          |
 
 `#7855FF` as a foreground on `#2C2C2E` is 3.01:1, under the 4.5:1 text needs, so it is a fill only.
-`accent` amber is fill-only with `onAccent` ink (8.95:1).
+
+**The spark: mint.** `accent` is mint, `#0F9F86` in light and `#3EE6C1` in dark, and it is the one brand
+colour that differs per scheme on purpose. It replaced an amber spark that sat between the V2 and V3 grade
+oranges. Mint (OKLCH hue ~175) sits about 33° from the green start-hold LED and 25° from the cyan hand-hold
+LED, and pairs with Ultraviolet. Use it as a fill or a stroke only (outlines, dots, a filled chip under
+`onAccent` ink), never as text: the light mint is 3.32:1 on white and 2.98:1 on `#F2F2F7`, enough for a 3:1
+outline or dot, not for words. `onAccent` `#16111F` is one ink for both: 5.58:1 on the light mint, 11.72:1
+on the dark. The amber that stays is `live` (`#B45309` / `#FBBF24`), the lit-bulb hue; it is not the spark.
 
 **Settings rows and controls.** Row titles, values and chevrons use `label` / `secondaryLabel` /
 `tertiaryLabel`, never the accent. On iOS that means fixed `PlatformColor` styles

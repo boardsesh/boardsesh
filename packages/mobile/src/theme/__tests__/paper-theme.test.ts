@@ -55,7 +55,7 @@ describe('buildPaperTheme', () => {
     // `outline` (form border) is a fixed grey, distinct from the faint divider.
     expect(theme.colors.outline).toBe('#7A7A7A');
     expect(theme.colors.outlineVariant).toBe('rgba(0, 0, 0, 0.12)');
-    // The amber tertiary keeps its dark ink in both schemes.
+    // The mint tertiary keeps its dark ink in both schemes.
     expect(theme.colors.onTertiary).toBe('#16111F');
   });
 
@@ -99,13 +99,14 @@ describe('buildPaperTheme', () => {
   });
 
   // The Climbs bar's wall pill fills with tertiaryContainer, so it must be the
-  // amber accent's container (not Paper's baseline pink) with AA-legible ink.
+  // mint spark's container (not Paper's baseline pink) with AA-legible ink.
   it.each([
-    ['light', '#FFDBCA', '#341100'],
-    ['dark', '#773300', '#FFDBCA'],
-  ] as const)('gives the amber tertiary a legible tonal container (%s)', (scheme, container, ink) => {
+    ['light', '#0F9F86', '#C5EEE2', '#00231C'],
+    ['dark', '#3EE6C1', '#005747', '#C5EEE2'],
+  ] as const)('gives the mint tertiary a legible tonal container (%s)', (scheme, spark, container, ink) => {
     const theme = buildPaperTheme(scheme);
-    expect(theme.colors.tertiary).toBe('#FF8A3D');
+    expect(theme.colors.tertiary).toBe(spark);
+    expect(contrastRatio(theme.colors.onTertiary, theme.colors.tertiary)).toBeGreaterThanOrEqual(4.5);
     expect(theme.colors.tertiaryContainer).toBe(container);
     expect(theme.colors.onTertiaryContainer).toBe(ink);
     expect(contrastRatio(theme.colors.onTertiaryContainer, theme.colors.tertiaryContainer)).toBeGreaterThanOrEqual(4.5);

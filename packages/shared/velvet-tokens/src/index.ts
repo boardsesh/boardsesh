@@ -46,10 +46,14 @@ const isDev = process.env.NODE_ENV !== 'production';
  *   in light and one step lighter in dark, same hue, so the label clears 4.5:1
  *   on the wash over every sheet.
  * - `onPrimary`: text/icon colour sitting on `primaryFill`.
- * - `accent`: warm amber spark for highlights — FILL-ONLY, always pair with dark text.
- * - `onAccent`: the ink that pairs with `accent`. Same value in both schemes because
- *   `accent` itself doesn't change per scheme — a filled amber chip reads identically
- *   in light and dark, so its text must too.
+ * - `accent`: the mint spark for highlights — FILL or STROKE only (outlines, dots,
+ *   a fill under `onAccent` ink), never text: the light mint is 3.32:1 on white. It
+ *   differs per scheme (#0F9F86 light, #3EE6C1 dark). Mint replaced the amber
+ *   spark, which sat between the V2/V3 grade oranges; mint (OKLCH hue ~175) sits
+ *   about 33° from the green start-hold LED and 25° from the cyan hand-hold LED,
+ *   and pairs with Ultraviolet.
+ * - `onAccent`: the ink that pairs with `accent`. The same #16111F in both schemes:
+ *   5.58:1 on the light mint, 11.72:1 on the dark one.
  * - `live`: the "this climb is physically lit / now on the wall" status hue. A
  *   dedicated role (not `warning`) so a future warning retune can't silently shift
  *   the board-presence affordance. Resolves to the warm amber per scheme.
@@ -59,7 +63,7 @@ const isDev = process.env.NODE_ENV !== 'production';
  *
  * Contrast (WCAG, light): #5B22F2 is 7.10:1 on #FFFFFF and 6.37:1 on #F2F2F7, and
  * white on it is 7.10:1. `primaryStrong` #4A16CF is 5.81:1 on the 20% fill wash
- * over #F2F2F7 (6.43:1 over white). Black-on-accent = 8.95:1.
+ * over #F2F2F7 (6.43:1 over white). `onAccent` on the mint `accent` = 5.58:1.
  */
 export const brandColors = {
   tint: '#5B22F2',
@@ -67,7 +71,7 @@ export const brandColors = {
   primaryFill: '#5B22F2',
   primaryStrong: '#4A16CF',
   onPrimary: '#FFFFFF',
-  accent: '#FF8A3D',
+  accent: '#0F9F86',
   onAccent: '#16111F',
   success: '#047857',
   warning: '#B45309',
@@ -97,7 +101,8 @@ export const brandColorsDark = {
   primaryFill: '#7855FF',
   primaryStrong: '#A294FF',
   onPrimary: '#FFFFFF',
-  accent: '#FF8A3D',
+  // Lifted for dark grounds: 10.77:1 on #1C1C1E, and `onAccent` on it 11.72:1.
+  accent: '#3EE6C1',
   onAccent: '#16111F',
   success: '#34D399',
   warning: '#FBBF24',
