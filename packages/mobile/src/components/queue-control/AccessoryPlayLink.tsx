@@ -4,6 +4,7 @@ import { Platform, StyleSheet, type PressableProps, type StyleProp, type ViewSty
 import { Link } from 'expo-router';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
+import { notePlayerZoomOpen } from '../../lib/player-zoom-presentation';
 import { opacity } from '../../theme/tokens';
 
 type AccessoryPlayLinkProps = {
@@ -70,6 +71,8 @@ export function AccessoryPlayLink({
       asChild
       onPress={(event) => {
         if (!onPrepare()) event.preventDefault();
+        // The player hands its swipe close to UIKit so the zoom can undo itself (#7733).
+        else notePlayerZoomOpen();
       }}
     >
       <Link.AppleZoom>{content}</Link.AppleZoom>

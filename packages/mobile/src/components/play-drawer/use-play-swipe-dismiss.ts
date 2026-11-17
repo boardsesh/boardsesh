@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { ANDROID_PLAYER_TRANSITION_MS, getPlayerRouteAnimation } from '../../lib/player-route-animation';
+import { clearPlayerZoomOpen, wasPlayerZoomOpened } from '../../lib/player-zoom-presentation';
 import { useNavigation, useRouter } from 'expo-router';
 import {
   cancelAnimation,
@@ -63,10 +64,14 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
     return () => cancelAnimation(translateY);
   }, [height, translateY, isOpening]);
 
+  // Read once: how this route was presented holds for its whole life (#7733).
+  const [zoomPresented] = useState(() => Platform.OS === 'ios' && wasPlayerZoomOpened());
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      clearPlayerZoomOpen();
     };
   }, []);
 
@@ -305,9 +310,23 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
   );
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
+  // After the accessory's zoom, a swipe closes like the close button: through
+  // UIKit's animated dismiss, which zooms back and grows the list behind (#7733).
+  const onNativeDismiss = useCallback(
+    (releasedRevision = openingRevision) => dismissNative(releasedRevision),
+    [dismissNative, openingRevision],
+  );
   const swipeDismiss = useMemo<SwipeDismissAnimation>(
-    () => ({ translateY, height, isOpening, isDismissing, revision: dismissRevision, onComplete }),
-    [translateY, height, isOpening, isDismissing, dismissRevision, onComplete],
+    () => ({
+      translateY,
+      height,
+      isOpening,
+      isDismissing,
+      revision: dismissRevision,
+      onComplete,
+      onNativeDismiss: zoomPresented ? onNativeDismiss : undefined,
+    }),
+    [translateY, height, isOpening, isDismissing, dismissRevision, onComplete, zoomPresented, onNativeDismiss],
   );
 
   return { swipeDismiss, animatedStyle, onLayout, close, canConsumeTarget, dismissAndWait };

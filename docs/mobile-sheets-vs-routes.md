@@ -1155,6 +1155,14 @@ instead. The player's native interactive dismissal stays
 disabled; its existing vertical swipe owns dismissal, so two gestures cannot
 compete. Keep the lightbulb and tick controls outside the zoom source.
 
+The zoom shrinks the tabs screen behind the transparent player to about 92%, and only UIKit's own
+animated dismiss grows it back (#7733). So a zoom-presented player closes through UIKit on every
+path: the chevron already did, and a committed swipe settles the card back to rest and calls the
+animated `router.dismiss()` at once. It never slides offscreen first and then dismisses with
+`animation: 'none'`, which showed the shrunken list during the slide and snapped it to full size
+after. The accessory's Link press records the zoom (`src/lib/player-zoom-presentation.ts`) and
+`usePlaySwipeDismiss` reads it once on mount. Players opened any other way keep the slide.
+
 While VoiceOver runs, the accessory uses the existing opener too (#7082). After UIKit's zoom, the
 player's whole subtree and the zoom source itself are missing from the accessibility tree, while
 the row-style open keeps both. iOS tells React Native nothing about Voice Control, Switch Control or
