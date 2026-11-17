@@ -22,7 +22,7 @@ const INPUTS = [
   'patches',
 ];
 
-export function cacheName(directory: string, env: NodeJS.ProcessEnv = process.env): string {
+export function cacheName(directory: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
   if (!/^[1-9][0-9]*$/.test(env.PR_NUMBER ?? '')) throw new Error('Missing PR number');
   const digest = createHash('sha256');
   const field = (name: string, contents: string | Buffer) => {
@@ -180,7 +180,7 @@ export function archiveStore(mode: 'pack' | 'unpack', archive: string, parent: s
   );
 }
 
-function output(entries: Record<string, string | number>, env: NodeJS.ProcessEnv) {
+function output(entries: Record<string, string | number>, env: Readonly<Record<string, string | undefined>>) {
   if (env.GITHUB_OUTPUT) {
     appendFileSync(
       env.GITHUB_OUTPUT,
@@ -190,12 +190,15 @@ function output(entries: Record<string, string | number>, env: NodeJS.ProcessEnv
     );
   }
 }
-function summary(message: string, env: NodeJS.ProcessEnv) {
+function summary(message: string, env: Readonly<Record<string, string | undefined>>) {
   console.log(message);
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `${message}\n`);
 }
 
-export async function main(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function main(
+  args = process.argv.slice(2),
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<void> {
   const [mode, first, second] = args;
   try {
     if (mode === 'key') {
