@@ -36,6 +36,10 @@ import { captureIdentityAuthority } from '../router';
 import { providerTokenHash } from '../provider-security-context';
 import { reserveEnforcedEmail } from '../../current-store/email-reservations';
 import { getPostgresErrorCode } from '../../../utils/postgres-errors';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 type Provider = 'google' | 'apple';
 type Kind = 'legacy-jwe' | 'canonical-token';

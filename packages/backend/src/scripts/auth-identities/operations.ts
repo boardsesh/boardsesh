@@ -1,34 +1,42 @@
 import type postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { asc, gt } from 'drizzle-orm';
+import { asc, count, gt } from 'drizzle-orm';
 import { accounts, authAccount, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
-import type { AuthorityTransaction } from '../../auth/authority/adapter';
 import { syncIdentity } from '../../auth/authority/sync-identity';
+import { transactionDatabase, type IdentityCopyAuthority } from '../../auth/authority/identity-copy-preconditions';
 import { keyedDigest } from './private-state';
 
-export function operatorTransaction(connection: postgres.TransactionSql, client: postgres.Sql): AuthorityTransaction {
-  const transactionClient = new Proxy(connection, {
-    get(target, property, receiver) {
-      return property === 'options' ? client.options : Reflect.get(target, property, receiver);
-    },
-  });
-  return drizzle(transactionClient as unknown as postgres.Sql) as unknown as AuthorityTransaction;
-}
+const after = (lastUserId: string | undefined) => (lastUserId === undefined ? undefined : gt(users.id, lastUserId));
 
-export async function importIdentityBatch(client: postgres.Sql, lastUserId: string | undefined, batch: number) {
-  const database = drizzle(client);
-  const selected = await database
+/**
+ * One transaction per user, each refusing with STALE_AUTHORITY unless the
+ * manifest is still the one `qualified` names.
+ */
+export async function importIdentityBatch(
+  client: postgres.Sql,
+  lastUserId: string | undefined,
+  batch: number,
+  qualified: IdentityCopyAuthority,
+) {
+  const authority = { ...qualified };
+  const selected = await drizzle(client)
     .select({ id: users.id })
     .from(users)
-    .where(lastUserId === undefined ? undefined : gt(users.id, lastUserId))
+    .where(after(lastUserId))
     .orderBy(asc(users.id))
     .limit(batch);
   for (const user of selected) {
     await client.begin('isolation level read committed', async (connection) => {
-      await syncIdentity(operatorTransaction(connection, client), user.id, 'current-store-to-authority');
+      await syncIdentity(transactionDatabase(connection, client), user.id, 'current-store-to-authority', authority);
     });
   }
   return { count: selected.length, lastUserId: selected.at(-1)?.id };
+}
+
+/** Users the next import pass would visit; a count only, never an identifier. */
+export async function countUsersAfter(client: postgres.Sql, lastUserId: string | undefined): Promise<number> {
+  const [row] = await drizzle(client).select({ users: count() }).from(users).where(after(lastUserId));
+  return row?.users ?? 0;
 }
 
 function indexByUser<Row extends { userId: string }>(rows: readonly Row[]): Map<string, Row[]> {
@@ -44,7 +52,7 @@ function indexByUser<Row extends { userId: string }>(rows: readonly Row[]): Map<
 /** One stable read-only snapshot; identity content never escapes this function. */
 export async function reconcileIdentities(client: postgres.Sql, key: Buffer) {
   return client.begin('isolation level repeatable read read only', async (connection) => {
-    const transaction = operatorTransaction(connection, client);
+    const transaction = transactionDatabase(connection, client);
     const source: string[] = [];
     const target: string[] = [];
     const selected = await transaction.select({ id: users.id }).from(users).orderBy(asc(users.id));

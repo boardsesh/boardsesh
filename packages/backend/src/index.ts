@@ -25,7 +25,7 @@ import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summ
 import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
 import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
-import { assertIdentityMirrorActivationConfiguration } from './auth/authority/mirror-configuration';
+import { qualifyIdentityMirrorAtStartup } from './auth/authority/mirror-activation';
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { assertCutoffEnforcementConfiguration } from './auth/current-store/authority-configuration';
 
@@ -33,9 +33,19 @@ async function main() {
   // Before anything listens: a staged writer under AUTH_CUTOFF_ENFORCEMENT=observe
   // would bump generations no reader enforces (docs/better-auth-migration.md).
   assertCutoffEnforcementConfiguration();
-  assertIdentityMirrorActivationConfiguration();
   assertNativeRevocationActivationConfiguration();
   assertWebSessionWriterActivationConfiguration();
+  // Off (the default) runs no query. On qualifies against the database and
+  // otherwise throws one fixed code and the process exits; after an authority
+  // switch it boots inert instead (docs/better-auth-identity-mirror.md).
+  const identityMirror = await qualifyIdentityMirrorAtStartup();
+  if (identityMirror?.state === 'qualified')
+    logger.info(`[IdentityMirror] Qualified at writer epoch ${identityMirror.authority.epoch}`);
+  else if (identityMirror?.state === 'inert')
+    // An error, so Sentry records every boot in this state.
+    logger.error(
+      `[IdentityMirror] Inert (${identityMirror.reason}): mirrored credential writes refuse until a redeploy with AUTH_IDENTITY_MIRROR=off or the current CURRENT_STORE_AUTH_WRITER_EPOCH`,
+    );
 
   // The durable job queue (docs/partner-workouts-internal.md, "The job queue").
   //

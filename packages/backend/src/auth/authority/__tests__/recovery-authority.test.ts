@@ -21,6 +21,10 @@ import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation
 import { requestPasswordRecovery, consumePasswordRecovery } from '../../current-store/password-recovery';
 import { syncIdentity } from '../sync-identity';
 import { switchIdentityAuthority, type IdentityAuthorityName } from '../router';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 let environment: Awaited<ReturnType<typeof createEnvironment>>;
 const projectionId = randomUUID();

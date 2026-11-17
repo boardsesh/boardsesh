@@ -35,6 +35,10 @@ import { closeCredentialDatabase, getCredentialDatabase } from '../../credential
 import { handleFirstPassword } from '../../../handlers/first-password';
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
 import { normalizeAccountEmail } from '../../normalize-email';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 vi.mock('../../../db/client', () => ({
   db: new Proxy(

@@ -35,6 +35,10 @@ import { recordWebOAuthIntent, resolveWebOAuthIdentity } from '../../current-sto
 import { handleCurrentStoreWebOAuth } from '../../../handlers/current-store-web-oauth';
 import { handleNativeAuthOAuth, __resetNativeAuthStateForTests } from '../../../handlers/native-auth';
 import { createNativeOAuthProviderFixture } from '../../current-store/__tests__/fixtures/native-oauth-provider-fixture';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 // No issuer or selected reader may fall back to the process database singleton.
 vi.mock('../../../db/client', () => ({

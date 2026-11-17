@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   accounts,
   authAccount,
@@ -21,7 +22,18 @@ import {
 } from '../../current-store/foundation-context';
 import { recordSecurityMutation } from '../../current-store/security-mutations';
 import type { AuthorityTransaction } from '../adapter';
-import { assertIdentityMirrorActivationConfiguration, identityMirrorMode } from '../mirror-configuration';
+import { identityMirrorMode } from '../mirror-configuration';
+import {
+  identityMirrorRecord,
+  qualifyIdentityMirrorAtStartup,
+  recordFunctionLevelIdentityMirrorForTests,
+} from '../mirror-activation';
+import {
+  IdentityCopyPreconditionError,
+  fenceRefusal,
+  writerQualificationRefusal,
+} from '../identity-copy-preconditions';
+import { IDENTITY_COPY_BLOCKERS, assertIdentityCopyGates } from '../identity-copy-gates';
 import { insertCurrentStorePasswordIdentity } from '../../current-store/password-identity';
 import {
   currentStoreNativeOAuthConfiguration,
@@ -37,6 +49,9 @@ describe('same-transaction identity mirror', () => {
     environment = await createEnvironment();
   });
   afterAll(async () => environment?.close());
+  // The startup cases clear the record; every other case exercises writers
+  // with the mirror on and no backend boot (function-level mirror).
+  beforeEach(() => recordFunctionLevelIdentityMirrorForTests());
   afterEach(() => vi.unstubAllEnvs());
 
   async function fixture() {
@@ -52,24 +67,179 @@ describe('same-transaction identity mirror', () => {
   const canonical = (userId: string) =>
     environment.database.select().from(authAccount).where(eq(authAccount.userId, userId));
 
-  it('defaults off, rejects unknown selectors, and blocks production activation after requiring delegated set-password', () => {
+  it('defaults off with no query, refuses unknown selectors, and names each configuration precondition', async () => {
     expect(identityMirrorMode({})).toBe('off');
     expect(identityMirrorMode({ AUTH_IDENTITY_MIRROR: 'off' })).toBe('off');
     expect(identityMirrorMode({ AUTH_IDENTITY_MIRROR: 'on' })).toBe('on');
     expect(() => identityMirrorMode({ AUTH_IDENTITY_MIRROR: 'true' })).toThrow();
-    expect(() => assertIdentityMirrorActivationConfiguration({})).not.toThrow();
-    expect(() => assertIdentityMirrorActivationConfiguration({ AUTH_IDENTITY_MIRROR: 'on' })).toThrow(
-      'delegated set-password',
+    // Off returns before any configuration or connection is read.
+    await expect(qualifyIdentityMirrorAtStartup({})).resolves.toBeUndefined();
+    await expect(qualifyIdentityMirrorAtStartup({ AUTH_IDENTITY_MIRROR: 'off' })).resolves.toBeUndefined();
+    await expect(qualifyIdentityMirrorAtStartup({ AUTH_IDENTITY_MIRROR: 'true' })).rejects.toThrow(
+      'MIRROR_SELECTOR_INVALID',
     );
-    expect(() =>
-      assertIdentityMirrorActivationConfiguration({
-        AUTH_IDENTITY_MIRROR: 'on',
-        CURRENT_STORE_SET_PASSWORD_MODE: 'backend-staging',
-        CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
-      }),
-    ).toThrow('complete writer/fence proof');
+    const delegated = {
+      AUTH_IDENTITY_MIRROR: 'on',
+      CURRENT_STORE_SET_PASSWORD_MODE: 'backend-staging',
+      CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
+    };
+    const staged = {
+      ...delegated,
+      CURRENT_STORE_NATIVE_REGISTRATION_MODE: 'reserved-staging',
+      CURRENT_STORE_NATIVE_OAUTH_MODE: 'reserved-staging',
+    };
+    const configured = {
+      ...staged,
+      AUTH_CUTOFF_ENFORCEMENT: 'enforce',
+      CURRENT_STORE_AUTH_PROJECTION_ID: randomUUID(),
+      CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
+      CURRENT_STORE_DELETED_EMAIL_KEY: 'synthetic-mirror-startup-deleted-email-key-6975',
+    };
+    for (const [environment, code] of [
+      [{ AUTH_IDENTITY_MIRROR: 'on' }, 'SET_PASSWORD_NOT_DELEGATED'],
+      [{ ...delegated, CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'compatible' }, 'SET_PASSWORD_NOT_DELEGATED'],
+      [delegated, 'NATIVE_WRITERS_NOT_STAGED'],
+      [{ ...staged, CURRENT_STORE_NATIVE_OAUTH_MODE: 'legacy' }, 'NATIVE_WRITERS_NOT_STAGED'],
+      [staged, 'AUTHORITY_CONFIGURATION_INVALID'],
+      [{ ...configured, AUTH_CUTOFF_ENFORCEMENT: 'observe' }, 'AUTHORITY_CONFIGURATION_INVALID'],
+      // No credential LOGIN configured: never falls back to the content pool.
+      [configured, 'CREDENTIAL_WRITER_UNQUALIFIED'],
+      [
+        { ...configured, DATABASE_URL: 'postgresql://boardsesh_runtime:synthetic@127.0.0.1:1/synthetic' },
+        'CREDENTIAL_WRITER_UNQUALIFIED',
+      ],
+      // Configured, but nothing answers: the check did not run, which is no verdict.
+      [
+        {
+          ...configured,
+          DATABASE_URL: 'postgresql://boardsesh_runtime:synthetic@127.0.0.1:1/synthetic',
+          AUTH_IDENTITY_DATABASE_URL: 'postgresql://boardsesh_identity_writer:other@127.0.0.1:1/synthetic',
+        },
+        'PRECONDITION_CHECK_UNAVAILABLE',
+      ],
+    ] as const) {
+      const refusal = await qualifyIdentityMirrorAtStartup(environment).catch((error: unknown) => error);
+      expect(refusal).toBeInstanceOf(IdentityCopyPreconditionError);
+      expect(refusal).toMatchObject({ code, message: code });
+    }
+    expect(identityMirrorRecord()).toBeUndefined();
     expect(() => currentStoreNativeOAuthConfiguration({ AUTH_IDENTITY_MIRROR: 'on' })).toThrow('staged native');
     expect(() => currentStoreNativeRegistrationConfiguration({ AUTH_IDENTITY_MIRROR: 'on' })).toThrow('staged native');
+  });
+
+  it('refuses every copy with the mirror on in a process that never qualified, before any query', async () => {
+    await qualifyIdentityMirrorAtStartup({});
+    vi.stubEnv('AUTH_IDENTITY_MIRROR', 'on');
+    await expect(mirrorIdentityIfEnabled({} as AuthorityTransaction, 'synthetic-unqualified')).rejects.toMatchObject({
+      code: 'MIRROR_NOT_QUALIFIED',
+    });
+  });
+
+  it('tells a verdict from a check that could not run', () => {
+    const qualification = (error: unknown) => writerQualificationRefusal(error).code;
+    expect(
+      qualification(
+        Object.assign(new Error('CREDENTIAL_WRITER_EXCESS_RELATION_GRANT'), {
+          name: 'CredentialWriterQualificationError',
+        }),
+      ),
+    ).toBe('CREDENTIAL_WRITER_UNQUALIFIED');
+    expect(qualification(new Error('CREDENTIAL_DATABASE_TARGET_MISMATCH'))).toBe('CREDENTIAL_WRITER_UNQUALIFIED');
+    expect(qualification(Object.assign(new Error('password authentication failed'), { code: '28P01' }))).toBe(
+      'CREDENTIAL_WRITER_UNQUALIFIED',
+    );
+    expect(qualification(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }))).toBe(
+      'PRECONDITION_CHECK_UNAVAILABLE',
+    );
+    expect(qualification(Object.assign(new Error('canceling statement'), { code: '57014' }))).toBe(
+      'PRECONDITION_CHECK_UNAVAILABLE',
+    );
+    expect(qualification(new Error('CREDENTIAL_DATABASE_TARGET_UNAVAILABLE'))).toBe('PRECONDITION_CHECK_UNAVAILABLE');
+    expect(fenceRefusal(new Error('IDENTITY_WRITE_PATH')).code).toBe('WEB_FENCE_UNVERIFIED');
+    expect(fenceRefusal(new Error('UNSAFE_WEB_ROLE')).code).toBe('WEB_FENCE_UNVERIFIED');
+    expect(fenceRefusal(Object.assign(new Error('terminating connection'), { code: '57P01' })).code).toBe(
+      'PRECONDITION_CHECK_UNAVAILABLE',
+    );
+    expect(fenceRefusal(Object.assign(new Error('write CONNECTION_CLOSED'), { code: 'CONNECTION_CLOSED' })).code).toBe(
+      'PRECONDITION_CHECK_UNAVAILABLE',
+    );
+    expect(fenceRefusal('not an error').code).toBe('PRECONDITION_CHECK_UNAVAILABLE');
+  });
+
+  it('keeps the function-level mirror and the copy code gate out of production reach', () => {
+    const root = new URL('../../../', import.meta.url);
+    const callers: string[] = [];
+    const walk = (directory: URL) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          if (entry.name !== '__tests__') walk(new URL(`${entry.name}/`, directory));
+        } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+          const source = readFileSync(new URL(entry.name, directory), 'utf8');
+          if (source.includes('recordFunctionLevelIdentityMirrorForTests'))
+            callers.push(new URL(entry.name, directory).pathname.slice(root.pathname.length));
+        }
+      }
+    };
+    walk(root);
+    expect(callers).toEqual(['auth/authority/mirror-activation.ts']);
+    expect(IDENTITY_COPY_BLOCKERS).toEqual(['LEGACY_WEB_IDENTITY_WRITERS']);
+    expect(() => assertIdentityCopyGates()).toThrow('IDENTITY_COPY_CODE_GATES_OPEN');
+  });
+
+  it('qualifies the mirror in main() before the job queue or the server can run a writer', () => {
+    const source = readFileSync(new URL('../../../index.ts', import.meta.url), 'utf8');
+    const main = source.slice(source.indexOf('async function main()'));
+    const qualify = main.indexOf('await qualifyIdentityMirrorAtStartup()');
+    expect(qualify).toBeGreaterThan(-1);
+    // Named without the call parentheses: ci-test-default-projects reads them as this file starting a queue.
+    const queue = main.indexOf('= await startJobQueue');
+    const server = main.indexOf('= await startServer');
+    expect(queue).toBeGreaterThan(-1);
+    expect(server).toBeGreaterThan(-1);
+    expect(qualify).toBeLessThan(queue);
+    expect(qualify).toBeLessThan(server);
+  });
+
+  it('refuses a copy under any manifest but the qualified one, before reading or writing identity rows', async () => {
+    const userId = await fixture();
+    const projectionId = randomUUID();
+    const qualified = { projectionId, epoch: 1 };
+    const copy = (authority: { projectionId: string; epoch: number }) =>
+      environment.database.transaction((transaction) =>
+        syncIdentity(transaction, userId, 'current-store-to-authority', authority),
+      );
+    // No manifest at all.
+    await expect(copy(qualified)).rejects.toThrow('STALE_AUTHORITY');
+    await environment.database.insert(authEmailProjection).values({
+      projectionId,
+      isCurrent: true,
+      normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+      writerEpoch: 1,
+      phase: 'prepared',
+      preparedAt: new Date(),
+    });
+    try {
+      await expect(copy(qualified)).rejects.toThrow('STALE_AUTHORITY');
+      const current = eq(authEmailProjection.projectionId, projectionId);
+      await environment.database.update(authEmailProjection).set({ phase: 'enforced' }).where(current);
+      await expect(copy({ projectionId, epoch: 2 })).rejects.toThrow('STALE_AUTHORITY');
+      await expect(copy({ projectionId: randomUUID(), epoch: 1 })).rejects.toThrow('STALE_AUTHORITY');
+      expect(await canonical(userId)).toHaveLength(0);
+      await copy(qualified);
+      expect(await canonical(userId)).toMatchObject([{ password: originalHash }]);
+      await environment.database
+        .update(authEmailProjection)
+        .set({ writerAuthority: 'better-auth', writerEpoch: 2 })
+        .where(current);
+      await environment.database
+        .update(userCredentials)
+        .set({ passwordHash: replacementHash })
+        .where(eq(userCredentials.userId, userId));
+      await expect(copy(qualified)).rejects.toThrow('STALE_AUTHORITY');
+      expect(await canonical(userId)).toMatchObject([{ password: originalHash }]);
+    } finally {
+      await environment.database.delete(authEmailProjection).where(eq(authEmailProjection.projectionId, projectionId));
+    }
   });
 
   it('preserves IDs, exact bcrypt/provider subjects and user verification without creating sessions or epochs', async () => {

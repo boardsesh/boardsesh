@@ -11,6 +11,11 @@ export default defineConfig({
     ...backendConfiguration.test,
     name: 'auth-mirror',
     globalSetup: [],
+    // The backend never boots here, so record the function-level mirror the suites exercise.
+    setupFiles: [
+      ...[backendConfiguration.test?.setupFiles ?? []].flat(),
+      './src/auth/authority/__tests__/function-level-mirror.setup.ts',
+    ],
     include: ['src/auth/current-store/__tests__/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
     fileParallelism: false,

@@ -1,13 +1,20 @@
 import postgres from 'postgres';
 import { explicitReadOnlyConnectionOptions } from '../../auth/email-audit/connection';
 
+/**
+ * `identity-writer` connects as the dedicated credential LOGIN from
+ * AUTH_IDENTITY_DATABASE_URL (the identity import); every other tool uses the
+ * administrative AUTH_OPERATOR_DATABASE_URL. Same TLS, timeout and host rules.
+ */
 export function operatorConnectionOptions(
   environment: Readonly<Record<string, string | undefined>>,
   confirmHost: string,
   write: boolean,
+  login: 'operator' | 'identity-writer' = 'operator',
 ) {
-  const options = explicitReadOnlyConnectionOptions(environment.AUTH_OPERATOR_DATABASE_URL, environment.DEBUG_SQL, {
-    applicationName: 'boardsesh_auth_operator',
+  const url = login === 'operator' ? environment.AUTH_OPERATOR_DATABASE_URL : environment.AUTH_IDENTITY_DATABASE_URL;
+  const options = explicitReadOnlyConnectionOptions(url, environment.DEBUG_SQL, {
+    applicationName: login === 'operator' ? 'boardsesh_auth_operator' : 'boardsesh_identity_import',
     targetSessionAttrs: 'primary',
     statementTimeoutMs: 30000,
     lockTimeoutMs: 2000,
@@ -15,7 +22,13 @@ export function operatorConnectionOptions(
     maxLifetimeSeconds: 120,
   });
   if (!confirmHost || options.host !== confirmHost) throw new Error('HOST_CONFIRMATION_REQUIRED');
-  return { ...options, connection: { ...options.connection, default_transaction_read_only: !write } };
+  return {
+    ...options,
+    // The LOGIN's qualification compares name[] arrays, which postgres.js parses
+    // only once it has read the array types at connect.
+    fetch_types: login === 'identity-writer',
+    connection: { ...options.connection, default_transaction_read_only: !write },
+  };
 }
 
 export function operatorClient(
