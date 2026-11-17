@@ -202,5 +202,116 @@
       "body": "You can delete your app in the console at any time, and every climber’s connection to it ends at once. Then delete the Boardsesh data you hold, unless a climber asked you to keep theirs."
     },
     "contact": "Questions about these terms: legal@boardsesh.com"
+  },
+  "docs": {
+    "metadata": {
+      "title": "Read a climber's logbook with the Boardsesh API",
+      "description": "Register an app, send the climber to approve it, then read their logbook: a full download first, then only what changed. Scopes, limits and errors on one page."
+    },
+    "title": "Connect an app to a climber's logbook",
+    "lead": "Let a training planner, a logbook or your own script read a climber's Boardsesh ticks once they approve it. They can disconnect it at any time.",
+    "access": {
+      "invitation": {
+        "title": "Registration is by invitation",
+        "body": "Early access is open only to developer accounts the Boardsesh team has added. Each app can have {{live}} climbers connected at once and {{perDay}} new ones in any 24 hours. To ask for access, write to {{email}} and say what your app does."
+      },
+      "open": {
+        "title": "Register your app",
+        "body": "Sign in as an enabled developer, accept the developer terms and create an app in the console. You get a client ID straight away, and a client secret if your server exchanges the code. If your account isn't enabled yet, the console says so.",
+        "action": "Open the developer console"
+      }
+    },
+    "can": {
+      "title": "What an app can do",
+      "items": {
+        "read": "Read every tick the climber has logged, on every board, including ticks they keep private on Boardsesh.",
+        "sync": "Download the whole logbook once, then fetch only what changed. A change usually shows up within a second.",
+        "profile": "Read their display name and avatar, if you ask for that scope.",
+        "disconnect": "The climber can disconnect your app at any time in Settings, Connected apps. Your next call then fails, and you delete what you stored.",
+        "notYet": "Reading the logbook is the only thing live today. Workouts and webhooks are not available yet."
+      }
+    },
+    "steps": {
+      "title": "How it works",
+      "items": {
+        "register": "Register an app in the developer console and keep the client ID.",
+        "approve": "Send the climber to the authorize URL in their system browser. They sign in and tap Allow.",
+        "exchange": "Swap the code your redirect URI receives for an access token and a refresh token.",
+        "snapshot": "Call the changes endpoint with no cursor and follow every page until hasMore is false. That is the full logbook.",
+        "feed": "From then on, call it with your last cursor to get new, edited and deleted ticks."
+      }
+    },
+    "scopes": {
+      "title": "Scopes",
+      "lead": "Ask for the smallest set you need. The consent screen lists each one in plain words.",
+      "items": {
+        "logbook": "Every tick on every board, including ones the climber keeps private.",
+        "profile": "Display name and avatar.",
+        "offline": "A refresh token, so you can keep reading while the climber is away. It opens no data by itself."
+      }
+    },
+    "rules": {
+      "title": "Rules that catch developers out",
+      "items": {
+        "consent": "An app without a client secret, and every native app, shows the consent screen on every authorization. prompt=none never returns a code; it returns error=consent_required. Keep the refresh token instead of authorizing again. Only a confidential web app with an https redirect is remembered.",
+        "redirect": "Redirect URIs match as exact strings, up to {{max}} per app. Use https, a loopback address (http://127.0.0.1 or http://[::1], port ignored) or a private-use scheme with a dot in it. http://localhost and wildcards are refused.",
+        "redirectChange": "Adding or replacing a redirect URI asks every climber who approved your app to approve it again. Removing one, or editing the name or links, does not. Tokens you already hold keep working until the climber is asked again.",
+        "pkce": "PKCE with S256 is required for every app. Send resource=https://api.boardsesh.com/v1 when you authorize, exchange a code and refresh. Tokens issued without it are refused by the API.",
+        "code": "A code lasts {{seconds}} seconds and works once. Sending it twice also ends the tokens it issued, so restart authorization instead of retrying.",
+        "tokens": "An access token lasts 1 hour. A refresh token lasts {{days}} days and changes on every use: store the new one before you use the new access token, and never refresh for one climber in parallel.",
+        "signin": "A climber who last signed in more than 30 days ago, or before their last password change, signs in again before the consent screen.",
+        "disconnect": "If a climber disconnects, resets their password or deletes their account, the API answers 401 invalid_token and a refresh answers invalid_grant. Show a Reconnect Boardsesh state, stop calling for that climber and delete what you stored."
+      }
+    },
+    "requests": {
+      "title": "A first connection",
+      "lead": "Open the authorize URL in the system browser, never in an embedded web view. Swap in your own client ID, redirect URI, state and code.",
+      "authorize": "Send the climber here:",
+      "authorizeLabel": "Authorize request",
+      "exchange": "Your redirect URI gets a code. Exchange it:",
+      "exchangeLabel": "Token request",
+      "exchangeResponseLabel": "Token response",
+      "sync": "Then read the logbook. Leave cursor out the first time and follow the cursor in each answer. Sync when the climber opens your app, and in the background no more than every 15 minutes per climber.",
+      "syncLabel": "Logbook changes request and response",
+      "confidential": "A confidential app, one that keeps a client secret on its server, also sends client_secret in the body (client_secret_post) or as HTTP Basic (client_secret_basic), whichever it registered. A public app sends only client_id."
+    },
+    "limits": {
+      "title": "Limits",
+      "items": {
+        "api": "API: {{climber}} requests a minute per climber and {{app}} a minute per app.",
+        "token": "Token endpoint: {{refresh}} refreshes a minute per climber, and {{exchange}} code exchanges or revokes a minute per app per client IP.",
+        "fullSync": "Starting a full download: 2 a minute per climber. A 503 with Retry-After on a download means wait at least that long.",
+        "page": "limit runs from 1 to 200 and defaults to 100. A page can be empty and still have hasMore: true.",
+        "history": "Changes are kept for 90 days. An older cursor answers 410 cursor_expired; start a full download without a cursor.",
+        "body": "A request body over 64 KB answers 413.",
+        "caps": "Early access: {{apps}} apps per developer account, and per app {{live}} climbers connected at once and {{perDay}} new ones in 24 hours.",
+        "headers": "Every response carries Boardsesh-Request-Id and RateLimit headers. A 429 carries Retry-After in seconds."
+      }
+    },
+    "errors": {
+      "title": "Errors",
+      "lead": "Errors are JSON with error, message and requestId. Branch on the HTTP status first; new codes can appear.",
+      "items": {
+        "invalidToken": "The access token expired or was revoked. Refresh once and retry. If the refresh fails, ask the climber to reconnect.",
+        "insufficientScope": "The token doesn't carry the scope this call needs.",
+        "cursorExpired": "The cursor is too old or no longer valid. Start a full download without a cursor.",
+        "rateLimited": "Over a limit. Wait for the seconds in Retry-After.",
+        "busy": "Boardsesh is busy or paused app access for a moment. Wait for Retry-After and retry. It never means the climber disconnected."
+      }
+    },
+    "versioning": {
+      "title": "Versions",
+      "body": "The version is in the path, /v1. New fields, routes, scopes and enum values arrive on v1 without notice, so read what you know and ignore the rest. Removing or renaming a field becomes v2, and v1 keeps running for at least six months with a Sunset header on every response.",
+      "openapi": "The OpenAPI 3.1 description of every route:"
+    },
+    "related": {
+      "title": "Keep reading",
+      "items": {
+        "docs": "The public read API for climbs and grades",
+        "privacy": "How Boardsesh handles your data",
+        "legal": "Terms and trademark use",
+        "support": "Ask the Boardsesh team"
+      }
+    }
   }
 }

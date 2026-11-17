@@ -1,0 +1,19 @@
+/* Colours are CSS vars from app/components/index.css, never literals. */
+
+.block {
+  margin: var(--spacing-3) 0 0;
+  padding: var(--spacing-4);
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--semantic-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius-lg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.block code {
+  font: inherit;
+}

@@ -1,6 +1,28 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { expandAllLocales } from '../entries';
-import { STATIC_ENTRIES } from '../static-entries';
+import { DEVELOPER_DOCS_ENTRY, STATIC_ENTRIES, buildStaticEntries } from '../static-entries';
+
+describe('developer docs entry', () => {
+  const originalMode = process.env.PARTNER_OAUTH_MODE;
+  afterEach(() => {
+    if (originalMode === undefined) delete process.env.PARTNER_OAUTH_MODE;
+    else process.env.PARTNER_OAUTH_MODE = originalMode;
+  });
+
+  const listsDevelopers = () => buildStaticEntries().some((entry) => entry.path === '/developers');
+
+  it.each([undefined, 'off', 'hold', 'allowlist'])('is not listed while PARTNER_OAUTH_MODE is %s', (mode) => {
+    if (mode === undefined) delete process.env.PARTNER_OAUTH_MODE;
+    else process.env.PARTNER_OAUTH_MODE = mode;
+    expect(listsDevelopers()).toBe(false);
+  });
+
+  it('is listed once PARTNER_OAUTH_MODE is open, with a real date', () => {
+    process.env.PARTNER_OAUTH_MODE = 'open';
+    expect(buildStaticEntries()).toContain(DEVELOPER_DOCS_ENTRY);
+    expect(DEVELOPER_DOCS_ENTRY.lastModified!.getTime()).toBeLessThan(Date.now() - 60 * 1000);
+  });
+});
 
 // Replaces the deleted app/__tests__/sitemap.test.ts, carrying over its four
 // assertions and adding the "real content timestamps" pin.
