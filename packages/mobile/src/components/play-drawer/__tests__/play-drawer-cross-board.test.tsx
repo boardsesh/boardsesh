@@ -979,7 +979,7 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     navigation.state = { nextItem: queueItem(woods, 'queue-woods'), prevItem: null, canNext: true, canPrevious: false };
     renderDrawer(vi.fn());
-    const header = recorded.headers.find((props) => (props.climb as Climb).uuid === 'woods-peek');
+    const header = recorded.headers.find((props) => (props.climb as Climb | null)?.uuid === 'woods-peek');
     expect(header).toMatchObject({ boardName: 'woods', layoutId: 1 });
   });
 

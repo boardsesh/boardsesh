@@ -61,10 +61,12 @@ import { useDeferredUntilFrame } from '../../hooks/use-deferred-until-frame';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
-import { LivePlayDrawerHeader, PreparedPlayDrawerHeader, useLivePlayDrawerHeaderModel } from './PlayDrawerHeader';
+import { LivePlayDrawerHeader, useLivePlayDrawerHeaderModel } from './PlayDrawerHeader';
 import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
+import { useSwipeStaleContentStyle } from './use-swipe-stale-content';
+import { CollapsibleSummaryStyleContext } from '../collapsible-summary-style';
 import {
   useSwipeNavigation,
   useSwipePager,
@@ -474,6 +476,10 @@ export function PlayCore({
   // queue lookups that name the neighbours, because the dismiss gesture below
   // reads the offset. See use-swipe-pager.
   const { pager: swipePager, stepSignal: swipeStepSignal } = useSwipePager();
+  // The sections' collapsed lines (the Logbook's "1 send · sent at 35°") fade
+  // with the outgoing header and stay hidden until the step that changed the
+  // climb has rendered, so they never describe the climb that left.
+  const staleSummaryStyle = useSwipeStaleContentStyle(swipePager);
   const swipeTranslateX = swipePager.translateX;
   const swipeIsAnimating = swipePager.isAnimating;
 
@@ -2700,6 +2706,11 @@ export function PlayCore({
       onPress={handleBackToLive}
     />
   ) : undefined;
+  // What every drawn header holds in the chip's place: the real chip, invisible,
+  // so it measures the same flank (with or without the driver's face).
+  const headerLeadingReserve = headerPillState ? (
+    <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
+  ) : undefined;
   const currentHeaderModel = useLivePlayDrawerHeaderModel({
     climb: displayedClimb ?? null,
     boardName: boardName as BoardName,
@@ -3001,15 +3012,6 @@ export function PlayCore({
     requestBelowFoldContent,
   });
   const showPanePlaceholder = shouldShowPanePlaceholder(isPane, displayedClimb != null);
-  // Beside the panel the header swipes across the board column, not the window,
-  // so the title keeps pace with the board and its neighbour enters at the
-  // column's edge. Measured only while the panel is up.
-  const [playerColumnWidth, setPlayerColumnWidth] = useState(0);
-  const handlePlayerColumnLayout = useCallback((event: LayoutChangeEvent) => {
-    const measured = Math.round(event.nativeEvent.layout.width);
-    setPlayerColumnWidth((previous) => (previous === measured ? previous : measured));
-  }, []);
-  const headerViewportWidth = hasSidePanel && playerColumnWidth > 0 ? playerColumnWidth : windowWidth;
   // The landscape iPad panel follows the climb on screen. Memoised on what it
   // reads, so the panel's memoised content skips the player's own re-renders.
   const sidePanelClimb = useMemo(
@@ -3169,10 +3171,7 @@ export function PlayCore({
       onLayout={actionsVisibility.onLayout}
       style={[styles.root, hasSidePanel ? styles.rootSideBySide : null]}
     >
-      <View
-        style={[styles.playerColumn, hasSidePanel ? styles.playerColumnSideBySide : null]}
-        onLayout={hasSidePanel ? handlePlayerColumnLayout : undefined}
-      >
+      <View style={[styles.playerColumn, hasSidePanel ? styles.playerColumnSideBySide : null]}>
         {enhancementsReady ? (
           <PlayCoreEnhancements
             boardName={boardName}
@@ -3317,7 +3316,13 @@ export function PlayCore({
                             <SwipeableHeader
                               pager={swipePager}
                               centerPage={swipeCenterPage}
-                              viewportWidth={headerViewportWidth}
+                              // What the WALL is doing rides the header's leading slot
+                              // (left of the name, opposite the grade). Drawn once, over
+                              // the slots, so the back chip stays put through a swipe;
+                              // every header below reserves its width. Absent when there
+                              // are no wall stakes, so the plain solo header keeps
+                              // today's mirrored-flank centring.
+                              leading={headerLeading}
                               // The header a screen reader reads, in one place that
                               // the climb changing never moves: every drawn header
                               // below is hidden from it.
@@ -3335,60 +3340,47 @@ export function PlayCore({
                                   />
                                 ) : null
                               }
+                              // All three headers are one component, so the neighbour that
+                              // becomes current is the header already on screen, gaining
+                              // only its handlers. Each reserves the flank the pinned chip
+                              // takes, so the name and its attribute glyphs sit at one
+                              // position in every header. The reserve is invisible and
+                              // a11y-hidden: it holds space, it claims nothing.
                               current={
                                 currentHeaderModel ? (
-                                  <PreparedPlayDrawerHeader
+                                  <LivePlayDrawerHeader
                                     model={currentHeaderModel}
-                                    // What the WALL is doing rides the header's leading slot
-                                    // (left of the name, opposite the grade). It's absent
-                                    // entirely when there are no wall stakes, so the plain solo
-                                    // header keeps today's mirrored-flank centring.
-                                    leading={headerLeading}
+                                    climb={null}
+                                    boardName={boardName as BoardName}
+                                    layoutId={layoutId}
+                                    angle={angle}
+                                    leading={headerLeadingReserve}
                                     onLongPressName={handleCopyName}
                                     onPressSetter={openSetterPlaylist}
                                   />
                                 ) : null
                               }
-                              // A neighbour's header reserves the same flank the
-                              // current one spends on the pill, so the name and its
-                              // attribute glyphs slide across at a fixed position
-                              // instead of stepping mid-swipe. Invisible and
-                              // a11y-hidden: it holds space, it claims nothing.
                               previous={
                                 previousHeaderClimb ? (
                                   <LivePlayDrawerHeader
+                                    peek
                                     climb={previousHeaderClimb}
                                     boardName={previousHeaderBoard.boardName as BoardName}
                                     layoutId={previousHeaderBoard.layoutId}
                                     angle={previousHeaderBoard.angle}
-                                    leading={
-                                      headerPillState ? (
-                                        <WallStatePill
-                                          state={headerPillState}
-                                          backTarget={headerBackTarget}
-                                          reserveOnly
-                                        />
-                                      ) : undefined
-                                    }
+                                    leading={headerLeadingReserve}
                                   />
                                 ) : null
                               }
                               next={
                                 nextHeaderClimb ? (
                                   <LivePlayDrawerHeader
+                                    peek
                                     climb={nextHeaderClimb}
                                     boardName={nextHeaderBoard.boardName as BoardName}
                                     layoutId={nextHeaderBoard.layoutId}
                                     angle={nextHeaderBoard.angle}
-                                    leading={
-                                      headerPillState ? (
-                                        <WallStatePill
-                                          state={headerPillState}
-                                          backTarget={headerBackTarget}
-                                          reserveOnly
-                                        />
-                                      ) : undefined
-                                    }
+                                    leading={headerLeadingReserve}
                                   />
                                 ) : null
                               }
@@ -3516,27 +3508,29 @@ export function PlayCore({
                               : null
                           }
                         >
-                          <DeferredSections
-                            climb={displayedClimb}
-                            boardName={boardName as BoardName}
-                            layoutId={layoutId}
-                            sizeId={sizeId}
-                            setIds={setIds}
-                            angle={angle}
-                            enabled={isSheetOpen}
-                            contentEnabled={belowFoldContentRequested}
-                            sections={sections}
-                            order={sectionOrder}
-                            onSimilarClimbPress={handleSimilarClimbPress}
-                            onFirstSectionHeaderLayout={onSectionHeaderMeasured}
-                            onFirstSectionLayout={handleFirstSectionLayout}
-                            onFirstSectionToggle={handleFirstSectionToggle}
-                            onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-                            onOpenFullLogbook={handleOpenFullLogbook}
-                            onOpenClimberLogs={handleOpenClimberLogs}
-                            onOpenClimberProfile={handleOpenClimberProfile}
-                            onFindClimbers={handleFindClimbers}
-                          />
+                          <CollapsibleSummaryStyleContext.Provider value={staleSummaryStyle}>
+                            <DeferredSections
+                              climb={displayedClimb}
+                              boardName={boardName as BoardName}
+                              layoutId={layoutId}
+                              sizeId={sizeId}
+                              setIds={setIds}
+                              angle={angle}
+                              enabled={isSheetOpen}
+                              contentEnabled={belowFoldContentRequested}
+                              sections={sections}
+                              order={sectionOrder}
+                              onSimilarClimbPress={handleSimilarClimbPress}
+                              onFirstSectionHeaderLayout={onSectionHeaderMeasured}
+                              onFirstSectionLayout={handleFirstSectionLayout}
+                              onFirstSectionToggle={handleFirstSectionToggle}
+                              onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                              onOpenFullLogbook={handleOpenFullLogbook}
+                              onOpenClimberLogs={handleOpenClimberLogs}
+                              onOpenClimberProfile={handleOpenClimberProfile}
+                              onFindClimbers={handleFindClimbers}
+                            />
+                          </CollapsibleSummaryStyleContext.Provider>
                         </PlaybackFrameContext.Provider>
                       </View>
                     )}

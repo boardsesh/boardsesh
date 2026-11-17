@@ -1,7 +1,8 @@
 import { PressableSurface } from './PressableSurface';
-import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { CollapsibleSummaryStyleContext } from './collapsible-summary-style';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { hapticSelection } from '../lib/haptics';
@@ -147,6 +148,7 @@ function CollapsibleSectionInternal({
   children: ReactNode;
 }) {
   const { systemColors } = useTheme();
+  const summaryStyle = useContext(CollapsibleSummaryStyleContext);
   // Seed from the persisted store synchronously when warm (no flash on the next
   // climb); fall back to `defaultExpanded` for a cold store or no persistKey.
   const initialExpanded = persistKey ? (getSectionExpandedSync(persistKey) ?? defaultExpanded) : defaultExpanded;
@@ -200,6 +202,7 @@ function CollapsibleSectionInternal({
 
   // A summary that draws itself may stand in for the title while collapsed.
   const summaryReplacesTitle = hideTitleWhenCollapsed && !expanded && summary != null && typeof summary !== 'string';
+  const summarySlotStyle = summaryReplacesTitle ? styles.summaryRow : styles.summarySlot;
 
   const chevronStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${chevronRotation.value * 180}deg` }],
@@ -226,11 +229,21 @@ function CollapsibleSectionInternal({
             </Text>
           )}
           {expanded || !summary ? null : typeof summary === 'string' ? (
-            <Text tone="secondary" variant="footnote" style={styles.summary} numberOfLines={1}>
-              {summary}
-            </Text>
+            summaryStyle ? (
+              <Animated.View style={[styles.summaryTextSlot, summaryStyle]}>
+                <Text tone="secondary" variant="footnote" style={styles.summaryText} numberOfLines={1}>
+                  {summary}
+                </Text>
+              </Animated.View>
+            ) : (
+              <Text tone="secondary" variant="footnote" style={styles.summary} numberOfLines={1}>
+                {summary}
+              </Text>
+            )
+          ) : summaryStyle ? (
+            <Animated.View style={[summarySlotStyle, summaryStyle]}>{summary}</Animated.View>
           ) : (
-            <View style={summaryReplacesTitle ? styles.summaryRow : styles.summarySlot}>{summary}</View>
+            <View style={summarySlotStyle}>{summary}</View>
           )}
         </PressableSurface>
         {headerAction}
@@ -292,6 +305,18 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginStart: spacing[2],
     marginEnd: spacing[2],
+  },
+  // `summary`'s share of the row, for a text summary that fades: the slot takes
+  // the flex, the text inside right-aligns and ellipsizes into it.
+  summaryTextSlot: {
+    flexGrow: 1,
+    flexBasis: 0,
+    flexShrink: 1,
+    marginStart: spacing[2],
+    marginEnd: spacing[2],
+  },
+  summaryText: {
+    textAlign: 'right',
   },
   // The same share of the row as a text summary, for a summary that draws itself.
   summarySlot: {

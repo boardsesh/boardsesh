@@ -425,9 +425,11 @@ vi.mock('../PlayDrawerHeader', () => ({
   LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
 }));
 vi.mock('../SwipeableHeader', () => ({
-  SwipeableHeader: (props: { current?: ReactNode; next?: ReactNode; previous?: ReactNode }) => {
+  // Renders the pinned `leading` chip after the current header's reserve, so
+  // the last WallStatePill recorded is the one a climber taps.
+  SwipeableHeader: (props: { current?: ReactNode; next?: ReactNode; previous?: ReactNode; leading?: ReactNode }) => {
     recorded.swipeableHeader.push(props);
-    return createElement('div', null, props.current);
+    return createElement('div', null, props.current, props.leading);
   },
 }));
 vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));

@@ -149,8 +149,10 @@ export const PreparedPlayDrawerHeader = memo(function PreparedPlayDrawerHeader({
   leading,
   onLongPressName,
   onPressSetter,
+  peek,
 }: Pick<LivePlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'> & {
   model: LivePlayDrawerHeaderModel;
+  peek?: boolean;
 }) {
   return (
     <PlayDrawerHeader
@@ -158,19 +160,37 @@ export const PreparedPlayDrawerHeader = memo(function PreparedPlayDrawerHeader({
       onPressSetter={onPressSetter}
       leading={leading}
       onLongPressName={onLongPressName}
+      peek={peek}
     />
   );
 });
 
-/** Existing callers keep one model observer; prepared callers reuse that model. */
-export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader(props: LivePlayDrawerHeaderProps) {
-  const model = useLivePlayDrawerHeaderModel(props);
-  return model ? (
+type SwipeHeaderProps = LivePlayDrawerHeaderProps & {
+  /**
+   * The current climb's model, already derived for the screen-reader stand-in.
+   * When given, `climb` is not read: the header observes nothing of its own.
+   */
+  model?: LivePlayDrawerHeaderModel | null;
+  /** A neighbour in the swipe; see `PlayDrawerHeader`'s `peek`. */
+  peek?: boolean;
+};
+
+/**
+ * Every header in the swipe, the current climb's and its neighbours', is this
+ * one component. A neighbour that becomes current keeps its mounted header and
+ * only gains its handlers: a different component there remounted the header at
+ * the commit, after the title had already landed.
+ */
+export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({ model, peek, ...props }: SwipeHeaderProps) {
+  const derived = useLivePlayDrawerHeaderModel(model ? { ...props, climb: null } : props);
+  const resolved = model ?? derived;
+  return resolved ? (
     <PreparedPlayDrawerHeader
-      model={model}
+      model={resolved}
       leading={props.leading}
       onLongPressName={props.onLongPressName}
       onPressSetter={props.onPressSetter}
+      peek={peek}
     />
   ) : null;
 });

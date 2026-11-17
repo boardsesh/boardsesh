@@ -67,8 +67,16 @@ export type PlayDrawerHeaderProps = {
    *  reserve-only copy so the incoming header matches this one exactly. */
   leading?: ReactNode;
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
-   *  name is a plain, non-interactive label — used for the swipe "peek" header. */
+   *  name is a plain, non-interactive label. */
   onLongPressName?: () => void;
+  /**
+   * A neighbour's header in the swipe, the one that crossfades in: drawn exactly
+   * as it will be once its climb is current (the name at full strength, the
+   * setter in its link colour), so nothing on it changes when the swipe
+   * commits. It takes no touches: its slot passes them through, and the
+   * handlers arrive with the commit.
+   */
+  peek?: boolean;
   /** The crowd's grade, demoted to a small `people`-marked line under the main
    *  one. Only set when it disagrees with the grade the climber gave (#4796). */
   secondaryGrade?: string | null;
@@ -215,6 +223,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   onPressSetter,
   statsAngle,
   angle,
+  peek = false,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -244,7 +253,10 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
     },
     t,
   );
-  const subtitleParts = setterUsername && !onPressSetter ? [...statsParts, setterUsername] : statsParts;
+  // A peek draws the setter as the link it becomes on commit, so the swap
+  // changes nothing on screen.
+  const setterAsLink = Boolean(setterUsername) && (onPressSetter !== undefined || peek);
+  const subtitleParts = setterUsername && !setterAsLink ? [...statsParts, setterUsername] : statsParts;
 
   return (
     <DrawerHeader
@@ -262,9 +274,14 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 that scrolls when it overflows, so the header height — and the board
                 below it — stays constant per climb. Under Reduce Motion it falls
                 back to a 2-line wrap (full name). */}
+            {/* Never dimmed on a peek: the disabled look (50%, 38% on Material)
+                read as a greyed-out title for the whole swipe, then snapped to
+                white when it committed. The same element either way, so the
+                commit does not remount the name. */}
             <PressableSurface
               onLongPress={onLongPressName}
-              disabled={!onLongPressName}
+              disabled={!onLongPressName && !peek}
+              feedback={onLongPressName ? 'scale' : 'none'}
               delayLongPress={350}
               accessibilityRole={onLongPressName ? 'button' : undefined}
               accessibilityHint={onLongPressName ? t('mobile.climbActions.copyNameHint') : undefined}
@@ -295,8 +312,8 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 one at large text sizes, and a climb with no stats would then
                 step the board against one that has them. */}
             {subtitleParts.length > 0 ? subtitleParts.join(' · ') : ZERO_WIDTH_SPACE}
-            {setterUsername && onPressSetter ? (
-              <Text variant="caption1" onPress={onPressSetter} accessibilityRole="link">
+            {setterAsLink ? (
+              <Text variant="caption1" onPress={onPressSetter} accessibilityRole={onPressSetter ? 'link' : undefined}>
                 {subtitleParts.length > 0 ? ' · ' : ''}
                 {setterUsername}
               </Text>
