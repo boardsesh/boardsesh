@@ -43,6 +43,10 @@ function watchReplay() {
     saveTickGraphqlBody: currentGarminFunction('net/BsEndpoints.mc', 'saveTickGraphqlBody', endpoints) as (
       input: unknown,
     ) => unknown,
+    graphqlAuthRequired: currentGarminFunction('net/BsClient.mc', 'graphqlAuthRequired', {}) as (
+      code: number,
+      reply: unknown,
+    ) => boolean,
   };
 }
 
@@ -101,6 +105,7 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     expect(watch.exactAck(saved.code, saved.reply, TICK_UUID)).toBe(true);
     expect(watch.exactAck(saved.code, saved.reply, 'another-uuid')).toBe(false);
     expect(watch.rejectionReason(saved.code, saved.reply)).toBeNull();
+    expect(watch.graphqlAuthRequired(saved.code, saved.reply)).toBe(false);
     expect(backendSource('graphql/resolvers/ticks/mutations.ts')).toContain('if (existingTick.userId !== userId) {');
   });
 
@@ -118,6 +123,7 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
       expect(refused.code).toBe(200);
       expect(watch.exactAck(refused.code, refused.reply, TICK_UUID)).toBe(false);
       expect(watch.rejectionReason(refused.code, refused.reply)).toBe(code);
+      expect(watch.graphqlAuthRequired(refused.code, refused.reply)).toBe(false);
     }
 
     // The real input schema: an impossible climbedAt is refused without a code.
@@ -185,6 +191,9 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     });
     expect(anonymous.code).toBe(200);
     expect(watch.rejectionReason(anonymous.code, anonymous.reply)).toBeNull();
+    // That reply, and only that reply, sends the watch to its token refresh
+    // and one retry, the same path an HTTP 401 takes (BsRequest.onResponse).
+    expect(watch.graphqlAuthRequired(anonymous.code, anonymous.reply)).toBe(true);
 
     // A refused credential and an unavailable auth admission are transport
     // replies from the context factory (yoga.ts), not verdicts on the tick.
@@ -203,6 +212,8 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
       );
       expect(refused.code).toBe(status);
       expect(watch.rejectionReason(refused.code, refused.reply)).toBeNull();
+      // A 401 already refreshes by status; a 503 must not spend the refresh secret.
+      expect(watch.graphqlAuthRequired(refused.code, refused.reply)).toBe(false);
     }
 
     // The production mask: a database statement failure and an unreachable
@@ -215,6 +226,7 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     expect(statementFailure.code).toBe(200);
     expect(JSON.stringify(statementFailure.reply)).toContain('INTERNAL_SERVER_ERROR');
     expect(watch.rejectionReason(statementFailure.code, statementFailure.reply)).toBeNull();
+    expect(watch.graphqlAuthRequired(statementFailure.code, statementFailure.reply)).toBe(false);
     const outage = await exchange(body(), () => {
       throw Object.assign(new Error('Failed query: select 1'), {
         cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
