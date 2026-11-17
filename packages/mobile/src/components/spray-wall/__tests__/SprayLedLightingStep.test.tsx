@@ -234,6 +234,28 @@ describe('final lighting test', () => {
     expect(overlayProps().unmappedHoldIds).toEqual([20]);
   });
 
+  it.each(['holes', 'holds'] as const)('replaces the previous %s selection and lights only the new match', (kind) => {
+    render(
+      <SprayLedLightingStep
+        {...props}
+        layout={{
+          ...layout,
+          wiring: { ...layout.wiring!, paths: [['a', 'b', 'c']] },
+        }}
+      />,
+    );
+    if (kind === 'holds') fireEvent.click(screen.getByText('sprayLedSetup.selectHolds'));
+    tap(0.2, 0.3);
+    expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
+    tap(0.8, 0.3);
+    expect(preview.show).toHaveBeenLastCalledWith([6]);
+    expect(litOnPhoto()).toEqual(['c']);
+    expect(screen.getByText('sprayLedSetup.selectionSummary:1')).toBeTruthy();
+    tap(0.8, 0.3);
+    expect(litOnPhoto()).toEqual([]);
+    expect(screen.getByText('sprayLedSetup.selectionSummary:0')).toBeTruthy();
+  });
+
   it('selects canonical hold contours, clears the selection on switching, and reports unwired positions', () => {
     render(<SprayLedLightingStep {...props} />);
     fireEvent.click(screen.getByText('sprayLedSetup.selectHolds'));

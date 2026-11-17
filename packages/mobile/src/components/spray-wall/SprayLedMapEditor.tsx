@@ -205,15 +205,18 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   }
 
   const toolbar = { mode: pairing ? null : mode, onModeChange: chooseMode, onUndo: undo, canUndo };
+  function togglePairing() {
+    setMode(null);
+    setPendingPair(null);
+    setPairing(!pairing);
+  }
   const pairButton = (
     <Button
       title={t('sprayLedSetup.pairLeds')}
       variant={pairing ? 'filled' : 'outlined'}
-      onPress={() => {
-        setMode(null);
-        setPendingPair(null);
-        setPairing(!pairing);
-      }}
+      size="small"
+      minHeight={44}
+      onPress={togglePairing}
     />
   );
   const tools = (
@@ -233,7 +236,17 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       <SprayPhotoStage
         width={width}
         tools={tools}
-        fullScreenRail={<SprayPointToolbar {...toolbar} icons />}
+        fullScreenRail={
+          <>
+            <SprayPointToolbar {...toolbar} icons />
+            <SprayPhotoToolButton
+              icon="link"
+              label={t('sprayLedSetup.pairLeds')}
+              selected={pairing}
+              onPress={togglePairing}
+            />
+          </>
+        }
         canvas={{
           source,
           photoUri,
@@ -290,12 +303,10 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     () => new Map(wiring ? assignLedIndices(wiring).map(({ id, index }) => [id, index]) : []),
     [wiring],
   );
-  // Lay cable and Light and tap only add LEDs to the end of the cable, so they
-  // are hidden once every LED is on it (a generated horizontal or
-  // vertical run, or a finished custom one). A cut keeps every LED on one of
-  // the sections, so rerouting is Cut and Connect under "Select two LEDs".
+  // Light and tap must stop once there is no unwired marker left to assign.
+  // Lay cable stays available, and extending it only adds unwired LEDs.
   const cableComplete = leds.length > 0 && leds.every((point) => indices.has(point.id));
-  const mode = cableComplete && (chosenMode === 'draw' || chosenMode === 'light') ? null : chosenMode;
+  const mode = cableComplete && chosenMode === 'light' ? null : chosenMode;
   const preview = useSprayLedPreview(wallUuid);
   const { available, show, stop } = preview;
 
@@ -405,19 +416,17 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   const tools = (
     <View style={[styles.row, { gap: spacing[2] }]}>
+      <Button
+        title={t('sprayLedSetup.drawCable')}
+        variant={mode === 'draw' ? 'filled' : 'outlined'}
+        onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
+      />
       {cableComplete ? null : (
-        <>
-          <Button
-            title={t('sprayLedSetup.drawCable')}
-            variant={mode === 'draw' ? 'filled' : 'outlined'}
-            onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
-          />
-          <Button
-            title={t('sprayLedSetup.lightAndTap')}
-            variant={mode === 'light' ? 'filled' : 'outlined'}
-            onPress={() => chooseMode(mode === 'light' ? null : 'light')}
-          />
-        </>
+        <Button
+          title={t('sprayLedSetup.lightAndTap')}
+          variant={mode === 'light' ? 'filled' : 'outlined'}
+          onPress={() => chooseMode(mode === 'light' ? null : 'light')}
+        />
       )}
       <Button
         title={t('sprayLedSetup.selectLeds')}
@@ -499,24 +508,22 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   );
   const rail = (
     <>
+      <SprayPhotoToolButton
+        icon="pencil.tip"
+        label={t('sprayLedSetup.drawCable')}
+        selected={mode === 'draw'}
+        onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
+      />
       {!cableComplete ? (
-        <>
-          <SprayPhotoToolButton
-            icon="pencil.tip"
-            label={t('sprayLedSetup.drawCable')}
-            selected={mode === 'draw'}
-            onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
-          />
-          <SprayPhotoToolButton
-            icon="lightbulb"
-            label={t('sprayLedSetup.lightAndTap')}
-            selected={mode === 'light'}
-            onPress={() => chooseMode(mode === 'light' ? null : 'light')}
-          />
-        </>
+        <SprayPhotoToolButton
+          icon="lightbulb"
+          label={t('sprayLedSetup.lightAndTap')}
+          selected={mode === 'light'}
+          onPress={() => chooseMode(mode === 'light' ? null : 'light')}
+        />
       ) : null}
       <SprayPhotoToolButton
-        icon="crop.free"
+        icon="select-two-leds"
         label={t('sprayLedSetup.selectLeds')}
         selected={mode === 'select'}
         onPress={() => chooseMode(mode === 'select' ? null : 'select')}
@@ -579,14 +586,13 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   );
   return (
     <>
-      {/* Lay cable is hidden once every LED is wired, so its hint gives way to how to reroute. */}
       <Text>{t(cableComplete ? 'sprayLedSetup.cableComplete' : 'sprayLedSetup.cableEditorHint')}</Text>
       {tools}
       <SprayPhotoStage
         width={width}
         tools={tools}
-        lockOrientationToWall
         fullScreenRail={rail}
+        accessoryTools={accessoryTools}
         overlayTools={
           <SprayUndoButton
             disabled={!canUndo}
@@ -616,6 +622,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               holes={layout.holes}
               leds={leds}
               wiring={previewWiring ?? wiring}
+              showSkips={false}
               ledPairs={pairs}
               selected={mode === 'select' ? selected : undefined}
               width={renderWidth}

@@ -97,14 +97,22 @@ const holds = [
   { id: 20, cx: 400, cy: 210, r: 35 },
 ];
 const changes: Partial<TnutLayout>[] = [];
-function Harness({ start = initial, wallHolds = holds }: { start?: TnutLayout; wallHolds?: typeof holds }) {
+function Harness({
+  start = initial,
+  wallHolds = holds,
+  wallSource = source,
+}: {
+  start?: TnutLayout;
+  wallHolds?: typeof holds;
+  wallSource?: SprayLookPreviewSource;
+}) {
   const [layout, setLayout] = useState(start);
   return (
     <SprayHoldLedStep
       wallUuid="wall"
       layout={layout}
       holds={wallHolds}
-      source={source}
+      source={wallSource}
       photoUri="file:///photo"
       width={400}
       onChange={(update) => {
@@ -148,14 +156,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('holds and LEDs step', () => {
-  it('counts and cycles holds that appear at least partly in the rectified photo', () => {
+  it('counts and cycles only holds centred on the photo within the calibrated crop', () => {
     render(
-      <Harness wallHolds={[...holds, { id: 30, cx: -20, cy: 500, r: 30 }, { id: 40, cx: -50, cy: 100, r: 20 }]} />,
+      <Harness
+        wallSource={{ ...source, homography: [0.5, 0, 50, 0, 0.5, 0, 0, 0, 1] }}
+        wallHolds={[
+          ...holds,
+          { id: 30, cx: -20, cy: 500, r: 30 },
+          { id: 40, cx: 20, cy: 100, r: 35 },
+          { id: 50, cx: 490, cy: 500, r: 30 },
+        ]}
+      />,
     );
-    expect(overlay().holdRings.map((ring) => ring.id)).toEqual([10, 20, 30]);
+    expect(overlay().holdRings.map((ring) => ring.id)).toEqual([10, 20, 50]);
     expect(screen.getByText('sprayLedSetup.holdLedsSummary:2/3')).toBeTruthy();
+    expect(overlay().unmappedHoldIds).toEqual([50]);
+    tap({ x: 0.04, y: 100 / 700 });
+    expect(overlay().selectedHoldIds).toEqual([]);
     fireEvent.click(button('holdLedsNextUnmapped'));
-    expect(overlay().selectedHoldIds).toEqual([30]);
+    expect(overlay().selectedHoldIds).toEqual([50]);
   });
 
   it('shows a lighting error and retries only on an explicit selection or retry press', () => {

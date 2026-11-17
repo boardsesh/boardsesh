@@ -45,8 +45,9 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    With LEDs on both sides of the hold ("sides"), the two LEDs behind each
    hole are a **pair**: they are drawn as interlocking rings, move together,
    are removed together, and laying the cable through one adds the other
-   straight after it. **Pair LEDs** separates a pair with one tap (each LED can
-   then be moved or deleted on its own) or groups two single LEDs with two taps.
+   straight after it. **Pair LEDs** works in the editor and in fullscreen. Tap
+   a pair to separate it or tap two single LEDs to pair them. Separated LEDs
+   can move or be deleted on their own.
    Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
    placement pairs the LEDs it generated per hole, and an explicit empty list
    keeps every pair separated. Rebuilding the LEDs returns to those defaults.
@@ -62,9 +63,9 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    **Next hold without LEDs** steps through the red holds top to bottom.
    LEDs that belong to no hold get a red dashed ring, and **Next LED without a
    hold** picks them one by one, the same way; tapping a hold then adds the
-   picked LED to it. The hold count and the hold picker use the rectified photo's
-   bounds, including holds that are partially visible. **Back to automatic** drops
-   a hold's link; Undo reverts link edits. Before
+   picked LED to it. The hold count and picker include holds whose centers appear
+   in the rectified photo. **Back to automatic** drops a hold's link, and Undo
+   reverts link edits. Before
    the cable exists the LEDs have no physical index, so the wall cannot light
    the chosen hold; coming back to this step after the cable does light it.
    Increasing the grid with the same LED pattern adds unwired positions and keeps
@@ -85,25 +86,21 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 10. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,
-   drawing extends the last cable section. Choose **Select two LEDs** to cut a
-   connection or reconnect free endpoints; skipped LEDs have their own next
-   step. Lay cable and
-   Light and tap only extend the cable's end, so they are hidden while every
-   LED is already on the cable (a generated horizontal or vertical run, or a
-   finished custom one). In Light and tap, a marker is assigned only after the
+   drawing extends the last cable section. **Lay cable** stays available with
+   a complete route. To reroute already wired LEDs, choose **Select two LEDs**
+   to cut a connection or reconnect free endpoints. **Light and tap** is
+   available while some LEDs are still unwired. It assigns a marker only after the
    controller acknowledges that physical LED; pending or failed writes cannot
    change the cable. Skip respects both the remaining gap and total skip limits.
-   A note explains that rerouting is Cut and Connect
-   under Select two LEDs (a cut keeps every LED on a section). The legend
-   follows the photo, one meaning per colour: purple dots are LEDs; the
-   turquoise line is the cable, with arrows for its direction; a green ring and
-   larger green arrow mark where it starts and a turquoise ring where it ends
-   (where laying continues); small turquoise dots on a cable segment are its
-   skipped LEDs; a red ring is a loose end a cut left unconnected; faint orange
-   rings are holes. A selected LED gets a larger purple ring, and the selection
+   A cut keeps every LED on a section. Purple dots mark LEDs and faint orange
+   rings mark holes. Turquoise lines show the cable and arrows show its direction.
+   A green ring and green arrow mark the start. A turquoise ring marks the end
+   where laying continues. A red ring marks a loose end. Skipped LEDs are shown on
+   the next step and still count toward the cable's physical LED numbers.
+   A selected LED gets a larger purple ring, and the selection
    is listed below the photo by cable position (for example 3 → 4). Undo
-   restores edits. In fullscreen, the cable editor locks to the wall photo's
-   orientation and puts its controls on the right.
+   restores edits. Open the cable editor fullscreen in portrait or landscape.
+   In landscape, the controls sit to the right of the photo.
 11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a
     connection (the line between two LEDs) to select it; its two end LEDs get the
     selection ring and the page names their positions and its skipped count.
@@ -113,14 +110,15 @@ every signed-in climber who can open the wall lights it from their own phone. Se
     skipped ones, so the count can be checked on the wall: with the right count,
     both lit LEDs sit on the photo's two markers. Skipped LEDs and their
     connections are red. Undo restores edits.
-12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
-    photo to select positions. The bulb starts enabled so selecting a position
-    lights it. Tap the bulb to switch selection lighting off or on.
-    Tap a selected position again to remove it. The page reports holds linked
-    to wired LEDs and selected positions with no LED assignment. These controls
-    also work in the zoomable fullscreen photo. In the regular view, light the
-    full strip or start a quick row-by-row test of wired positions from the upper left. Every row starts on
-    the left, regardless of the cable's serpentine order. Unwired positions do
+12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap
+    one position on the photo. Tapping another replaces the selection. Tap the
+    same position again to clear it. The bulb starts enabled so selecting a
+    position lights it. Tap the bulb to switch selection lighting off or on.
+    The page counts holds linked to wired LEDs and flags a selection with no
+    LED assignment. These controls also work in the zoomable fullscreen photo.
+    In the regular view, light the full strip or start a quick row-by-row test
+    of wired positions from the upper left. Every row starts on the left,
+    regardless of the cable's serpentine order. Unwired positions do
     not participate. While the whole strip is lit the button turns it off and the
     summary says every LED is lit; the photo rings what the wall shows, including
     the LED the row test has reached. The bulb also stops a running test. These controls require

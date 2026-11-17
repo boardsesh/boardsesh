@@ -121,6 +121,7 @@ export function SpraySetupOverlay({
   holes,
   leds = [],
   wiring,
+  showSkips = true,
   distinguishSkips = false,
   selected = [],
   holdRings,
@@ -155,6 +156,8 @@ export function SpraySetupOverlay({
   liveDragTarget?: 'holes' | 'leds';
   leds?: LedPosition[];
   wiring?: TnutWiring;
+  /** Hide skipped slots in the cable editor without changing the stored wiring. */
+  showSkips?: boolean;
   /** Skipped physical slots stand out from the cable in the skip editor. */
   distinguishSkips?: boolean;
   selected?: string[];
@@ -171,7 +174,7 @@ export function SpraySetupOverlay({
   const { edges, gapEdges, selectedLeds, cableStarts, cableEnds, looseEnds } = useMemo(() => {
     const byId = new Map(leds.map((point) => [point.id, point]));
     const skips = new Map<string, number>();
-    for (const skip of wiring?.skips ?? []) {
+    for (const skip of (showSkips ? wiring?.skips : undefined) ?? []) {
       skips.set(JSON.stringify([skip.from, skip.to]), skip.count);
       skips.set(JSON.stringify([skip.to, skip.from]), skip.count);
     }
@@ -211,7 +214,7 @@ export function SpraySetupOverlay({
       looseEnds,
       selectedLeds: leds.filter((point) => selection.has(point.id)),
     };
-  }, [leds, wiring, selected]);
+  }, [leds, wiring, showSkips, selected]);
   const smallHoles = Boolean(wiring) || compactHoles;
   const holeRadius = smallHoles ? 3 : 7;
   const selectedRings = useMemo(() => {

@@ -44,25 +44,25 @@ export function SprayLedLightingStep({
   const { spacing, brandColors } = useTheme();
   const preview = useSprayLedPreview(wallUuid);
   const [kind, setKind] = useState<'holes' | 'holds'>('holes');
-  const [selected, setSelected] = useState<number[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectionLighting, setSelectionLighting] = useState(true);
   const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
-  const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
+  const rings = useMemo(() => sprayHoldRings(holds, source), [holds, source]);
   const visibleIds = useMemo(() => new Set(rings.map((ring) => ring.id)), [rings]);
   const visibleHolds = useMemo(() => holds.filter((hold) => visibleIds.has(hold.id)), [holds, visibleIds]);
   const entries = kind === 'holes' ? mapping.holes : mapping.holds;
-  const selection = new Set(selected);
-  const chosen = entries.filter((entry) => selection.has('holeIndex' in entry ? entry.holeIndex : entry.holdId));
-  const indices = [...new Set(chosen.flatMap((entry) => entry.indices))];
-  const selectedLedIds = [...new Set(chosen.flatMap((entry) => entry.ledIds))];
-  const selectedHoles = kind === 'holes' ? layout.holes.filter((_, index) => selection.has(index)) : [];
-  const missing = chosen.filter((entry) => !entry.indices.length).length;
+  const chosen = entries.find((entry) => ('holeIndex' in entry ? entry.holeIndex : entry.holdId) === selectedId);
+  const indices = chosen?.indices ?? [];
+  const selectedHole = kind === 'holes' && selectedId !== null ? layout.holes[selectedId] : undefined;
+  const missing = Boolean(chosen && !indices.length);
   const { unmappedHoles, unmappedHoldIds } = useMemo(
     () => ({
       unmappedHoles: mapping.holes.filter((hole) => !hole.indices.length).map((hole) => layout.holes[hole.holeIndex]),
-      unmappedHoldIds: mapping.holds.filter((hold) => !hold.indices.length).map((hold) => hold.holdId),
+      unmappedHoldIds: mapping.holds
+        .filter((hold) => visibleIds.has(hold.holdId) && !hold.indices.length)
+        .map((hold) => hold.holdId),
     }),
-    [mapping, layout.holes],
+    [mapping, layout.holes, visibleIds],
   );
   // Selecting holds or holes lights them straight away; clearing the selection turns them off.
   const indicesKey = selectionLighting ? indices.join(',') : '';
@@ -90,11 +90,11 @@ export function SprayLedLightingStep({
         ? []
         : [chaseLedId]
       : selectionLighting
-        ? selectedLedIds
+        ? (chosen?.ledIds ?? [])
         : [];
   /** Light all and the row test replace the selection on the wall, so they clear it on screen too. */
   function clearSelection() {
-    setSelected([]);
+    setSelectedId(null);
     // An emptied selection must not switch off what is about to light.
     lastLit.current = '';
   }
@@ -105,8 +105,7 @@ export function SprayLedLightingStep({
   function selectKind(next: 'holes' | 'holds') {
     if (next === kind) return;
     setKind(next);
-    setSelected([]);
-    lastLit.current = '';
+    clearSelection();
     void preview.stop();
   }
   function toggleLighting() {
@@ -124,9 +123,7 @@ export function SprayLedLightingStep({
         ? findSprayHoldAtPoint(visibleHolds, point, source.frame)
         : nearestPhotoPointIndex(layout.holes, point, photoWidth, photoHeight, 18);
     if (id === null || id < 0) return;
-    setSelected((previous) =>
-      previous.includes(id) ? previous.filter((selectedId) => selectedId !== id) : [...previous, id],
-    );
+    setSelectedId((previous) => (previous === id ? null : id));
   }
   const bulbOn = selectionLighting || testingStrip;
   const lightbulb = (
@@ -184,9 +181,9 @@ export function SprayLedLightingStep({
               holes={kind === 'holes' ? layout.holes : []}
               leds={layout.ledPositions}
               selected={litLedIds}
-              selectedHoles={selectedHoles}
+              selectedHoles={selectedHole ? [selectedHole] : []}
               holdRings={kind === 'holds' ? rings : undefined}
-              selectedHoldIds={kind === 'holds' ? selected : []}
+              selectedHoldIds={kind === 'holds' && selectedId !== null ? [selectedId] : []}
               subtleLeds
               unmappedHoles={kind === 'holes' ? unmappedHoles : []}
               unmappedHoldIds={kind === 'holds' ? unmappedHoldIds : []}
@@ -202,11 +199,11 @@ export function SprayLedLightingStep({
       <Text variant="footnote" accessibilityLiveRegion="polite">
         {preview.allLit
           ? t('sprayLedSetup.allLitSummary', { count: layout.ledPositions?.length ?? 0 })
-          : t('sprayLedSetup.selectionSummary', { count: selected.length, leds: indices.length })}
+          : t('sprayLedSetup.selectionSummary', { count: chosen ? 1 : 0, leds: indices.length })}
       </Text>
       {missing ? (
         <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
-          {t('sprayLedSetup.selectionUnmapped', { count: missing })}
+          {t('sprayLedSetup.selectionUnmapped', { count: 1 })}
         </Text>
       ) : null}
       <Text variant="footnote">{t('sprayLedSetup.lightingHint')}</Text>
