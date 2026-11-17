@@ -35,9 +35,9 @@ export {
 const prefixes = ['__Host-boardsesh.provider-signin.', '__Host-boardsesh.anonymous-provider.'] as const;
 const empty = z.object({}).strict();
 
-/** Canonical observers may join this server-only readonly helper. No flow
- * selector, UID, proof or credential crosses a client/coordinator message. */
-export function createProviderSigninAcknowledgment(
+/** Server-only readonly helper behind the acknowledge route. No flow selector,
+ * UID, proof or credential crosses from the client. */
+function createProviderSigninAcknowledgment(
   options: {
     readonly environment?: AuthServiceEnvironment;
     readonly ready?: () => boolean;

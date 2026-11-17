@@ -1,9 +1,9 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 42
+ * The standing inventory oracle for issue #1889 (REST surface audit: 40
  * routes in total, classified after the board renderer moved to Railway in
  * #4715, the Railway healthcheck route landed in #3798, and the hold-heatmap
- * route and its prewarm cron were retired). The 42 include two canonical
- * coordinator facades and ordinary sign-in ACK. The renewal, the five staged
+ * route and its prewarm cron were retired). The 40 include ordinary sign-in
+ * ACK. The renewal, the two canonical coordinator facades, the five staged
  * first-password browser facades, the three expired-binding recovery facades,
  * the six staged provider Settings facades and the four browser-password
  * facades went with #7596.
@@ -71,7 +71,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (21) ---
+  // --- /api/internal/* (15) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -106,10 +106,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
   // Exact current proof-cookie ACK only; no credential recovery or cookie writes.
   'app/api/internal/auth/provider-signin/acknowledge/route.ts': 'keep-staged',
-
-  // Canonical coordinator bootstrap remains disabled until joined browser QA.
-  'app/api/internal/auth/browser-coordinator/observe/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-coordinator/initialize/route.ts': 'keep-staged',
 
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
@@ -270,6 +266,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged provider deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(42);
+    expect(derived.size).toBe(40);
   });
 });

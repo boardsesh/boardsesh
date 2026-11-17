@@ -5,11 +5,9 @@ import { decode, encode } from 'next-auth/jwt';
 vi.mock('server-only', () => ({}));
 import {
   BROWSER_CORRELATION_COOKIE,
-  BROWSER_CORRELATION_LEASE_SECONDS,
   BROWSER_PROOF_COOKIE_LIMITS,
   browserProofCookieName,
   buildBrowserProofCookieCandidate,
-  buildCanonicalCoordinatorCorrelationCookie,
   buildObservedOlderBrowserProofCookieClears,
   readBrowserCorrelationCookie,
   readBrowserProofCookie,
@@ -308,24 +306,14 @@ describe('unmounted canonical-www proof cookie codec', () => {
     expect(projected.split(';')).toHaveLength(128);
     expect(readBrowserProofCookie(projected, cursor)).toEqual({ status: 'present', proof: source });
   });
-  it('validates the host-only canonical coordinator scope and uses a relative constant lease', () => {
+  it('reads one well-formed correlation cookie and derives its binding digest', () => {
     const token = randomBytes(32).toString('base64url');
     const bindingId = createHash('sha256').update(token).digest('hex');
-    const input = {
+    expect(readBrowserCorrelationCookie(`${BROWSER_CORRELATION_COOKIE}=${token}`)).toEqual({
+      status: 'present',
       token,
       bindingId,
-      servingOrigin: 'https://www.boardsesh.test',
-      canonicalOrigin: 'https://www.boardsesh.test',
-    };
-    const header = buildCanonicalCoordinatorCorrelationCookie(input);
-    expect(header).toBe(
-      `${BROWSER_CORRELATION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${BROWSER_CORRELATION_LEASE_SECONDS}`,
-    );
-    expect(readBrowserCorrelationCookie(pair(header))).toEqual({ status: 'present', token, bindingId });
-    expect(() =>
-      buildCanonicalCoordinatorCorrelationCookie({ ...input, servingOrigin: 'https://app.boardsesh.test' }),
-    ).toThrow();
-    expect(() => buildCanonicalCoordinatorCorrelationCookie({ ...input, bindingId: 'b'.repeat(64) })).toThrow();
+    });
   });
   it.each(['duplicate', 'chunk', 'bad-token'] as const)('refuses ambiguous correlation input %s', (failure) => {
     const token = randomBytes(32).toString('base64url');

@@ -8,7 +8,6 @@ import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import { publicBrowserCoordinatorReady } from '@/app/lib/auth/browser-coordinator-readiness';
 import { publicProviderSecurityReady } from '@/app/lib/auth/provider-security-readiness';
 
 const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
@@ -66,10 +65,10 @@ function NativeStartInner() {
       }
     };
     void (async () => {
-      // #7596 removed the selected provider start. While a gate is on, the
-      // legacy form would write a NextAuth cookie the selected reader ignores.
-      if (publicBrowserCoordinatorReady() || publicProviderSecurityReady())
-        throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
+      // #7596 removed the selected provider start. While the provider security
+      // gate is on, the legacy form would write a NextAuth cookie the selected
+      // reader ignores.
+      if (publicProviderSecurityReady()) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
       await prepareAttribution();
       if (!active) return;
       if (controller.signal.aborted) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');

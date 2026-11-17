@@ -35,18 +35,8 @@ describe('supported social sign-in buttons', () => {
     fireEvent.click(google);
     await waitFor(() => expect(google.hasAttribute('disabled')).toBe(false));
     fireEvent.click(apple);
-    expect(signIn).toHaveBeenNthCalledWith(
-      1,
-      'google',
-      { callbackUrl: '/settings' },
-      { signal: expect.any(AbortSignal) },
-    );
-    expect(signIn).toHaveBeenNthCalledWith(
-      2,
-      'apple',
-      { callbackUrl: '/settings' },
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(signIn).toHaveBeenNthCalledWith(1, 'google', { callbackUrl: '/settings' });
+    expect(signIn).toHaveBeenNthCalledWith(2, 'apple', { callbackUrl: '/settings' });
   });
 
   it('renders no sign-in option when only the removed provider is configured', async () => {
@@ -58,7 +48,7 @@ describe('supported social sign-in buttons', () => {
     await waitFor(() => expect(container.textContent).toBe(''));
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
-  it('keeps duplicate provider starts disabled through the pending operation and aborts on unmount', async () => {
+  it('keeps duplicate provider starts disabled through the pending operation', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => Response.json({ google: true, apple: true })),
@@ -70,20 +60,17 @@ describe('supported social sign-in buttons', () => {
           settle = resolve;
         }),
     );
-    const rendered = render(<SocialLoginButtons />);
+    render(<SocialLoginButtons />);
     const google = await screen.findByRole('button', { name: 'Continue with Google' });
     const apple = screen.getByRole('button', { name: 'Continue with Apple' });
     fireEvent.click(google);
     fireEvent.click(apple);
     expect(signIn).toHaveBeenCalledOnce();
-    const context: unknown = signIn.mock.calls[0]?.[2];
-    if (!context || typeof context !== 'object' || !('signal' in context) || !(context.signal instanceof AbortSignal))
-      throw new Error('Missing captured provider lifetime');
-    expect(context.signal.aborted).toBe(false);
-    rendered.unmount();
-    expect(context.signal.aborted).toBe(true);
+    expect(google.hasAttribute('disabled')).toBe(true);
+    expect(apple.hasAttribute('disabled')).toBe(true);
     settle();
-    await Promise.resolve();
+    await waitFor(() => expect(apple.hasAttribute('disabled')).toBe(false));
+    expect(signIn).toHaveBeenCalledOnce();
   });
   it('shows the existing retry copy for a refused canonical start without retrying', async () => {
     vi.stubGlobal(

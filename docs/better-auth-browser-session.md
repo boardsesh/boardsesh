@@ -329,19 +329,20 @@ These are the three items #7596 lists:
 or empty, and `better-auth`. The parser lives in `@boardsesh/auth-protocol`,
 shaped like `partner-oauth-mode.ts`. The backend refuses an unknown value at
 startup. www reads it on the server at request time and passes resolved values
-to client components as props, as `app/layout.tsx:128` already does with
-`canonicalBrowserOrigin`. It is never `NEXT_PUBLIC_*`, which is baked in at
+to client components as props, as `app/layout.tsx` already does with
+`enableExpoAuthBridge`. It is never `NEXT_PUBLIC_*`, which is baked in at
 build time, so a rollback would need a rebuild. Expo web has no flag.
 
-It replaces the eight code-owned gates, each a literal `return false`: the
-seven `packages/web/app/lib/auth/*-readiness.ts` files and
+It replaces the code-owned gates, each a literal `return false`: the
+`packages/web/app/lib/auth/*-readiness.ts` files that are still in the tree and
 `packages/mobile/src/lib/browser-consumer-readiness.web.ts`
 (`scripts/lib/expo-web-readiness.ts` is the dev server's Metro prewarm helper,
-not a gate). The Expo web gate went first, in A5, with the selected mode it
-guarded: the lease client, the iframe coordinator client and the selected
-WebSocket client. Expo web has no flag, so nothing replaces it. The last A5 PR
-adds the switch and deletes the web gates that remain. Until B1
-lands, `better-auth` has nothing to turn on.
+not a gate). Earlier A5 PRs delete some of those gates with the code they
+guard. The Expo web gate went with the selected mode it guarded: the lease
+client, the iframe coordinator client and the selected WebSocket client. Expo
+web has no flag, so nothing replaces it. The last A5 PR adds the switch and
+deletes the web gates that remain. Until B1 lands, `better-auth` has nothing to
+turn on.
 
 Turn it on in the backend first, then web. Roll back web first, then backend.
 A browser signed in before cutover keeps its legacy cookie and stays signed in

@@ -43,13 +43,7 @@ export type BrowserCorrelationCookieRead =
   | { readonly status: 'missing' | 'invalid' };
 export class BrowserProofCookieError extends Error {
   constructor(
-    readonly code:
-      | 'INVALID_CURSOR'
-      | 'INVALID_SOURCE'
-      | 'INVALID_HEADER'
-      | 'INVALID_FAMILY'
-      | 'COOKIE_BUDGET'
-      | 'INVALID_CORRELATION_SCOPE',
+    readonly code: 'INVALID_CURSOR' | 'INVALID_SOURCE' | 'INVALID_HEADER' | 'INVALID_FAMILY' | 'COOKIE_BUDGET',
   ) {
     super(code);
     this.name = 'BrowserProofCookieError';
@@ -148,30 +142,6 @@ export function readBrowserCorrelationCookie(header: string | null): BrowserCorr
   }
 }
 
-/** Only a future, qualified canonical coordinator may publish this header.
- * Ordinary proof candidates never contain a correlation-cookie write/clear. */
-export function buildCanonicalCoordinatorCorrelationCookie(input: {
-  readonly servingOrigin: string;
-  readonly canonicalOrigin: string;
-  readonly token: string;
-  readonly bindingId: string;
-}): string {
-  let address: URL;
-  try {
-    address = new URL(input.servingOrigin);
-  } catch {
-    throw new BrowserProofCookieError('INVALID_CORRELATION_SCOPE');
-  }
-  if (
-    address.protocol !== 'https:' ||
-    address.origin !== input.servingOrigin ||
-    input.servingOrigin !== input.canonicalOrigin ||
-    !correlationTokenValid(input.token) ||
-    createHash('sha256').update(input.token).digest('hex') !== input.bindingId
-  )
-    throw new BrowserProofCookieError('INVALID_CORRELATION_SCOPE');
-  return `${BROWSER_CORRELATION_COOKIE}=${input.token}${attributes}; Max-Age=${BROWSER_CORRELATION_LEASE_SECONDS}`;
-}
 function validCredential(credential: string) {
   return (
     credential.length > 0 &&
@@ -288,7 +258,9 @@ export interface BrowserProofCookieCandidate {
 /** Synchronous and immutable: call BEFORE any credential/selection mutation.
  * Header feasibility does not authorize a write; backend receipt/CAS still must.
  * Same-version chunk-layout changes are refused until revision/serialization is
- * qualified; GC must never delete a current-version cookie. */
+ * qualified; GC must never delete a current-version cookie.
+ * No production caller since #7596 deleted the coordinator routes; the reader
+ * tests and the cookie proof build their fixtures with it until this file goes. */
 export function buildBrowserProofCookieCandidate(input: {
   readonly cursor: BrowserBindingCursor;
   readonly proof: BrowserCookieSourceProof;

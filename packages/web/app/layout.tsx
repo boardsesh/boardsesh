@@ -9,7 +9,6 @@ import { ConsentProvider } from './components/consent/consent-provider';
 import { CONSENT_PREPAINT_SCRIPT } from './lib/consent';
 import AnalyticsIdentity from './components/providers/analytics-identity';
 import SessionProviderWrapper from './components/providers/session-provider';
-import { resolvePublicAuthOrigin } from './lib/auth/canonical-auth-url';
 import QueryClientProvider from './components/providers/query-client-provider';
 import SiteChrome from './components/providers/site-chrome';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
@@ -123,10 +122,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body suppressHydrationWarning>
         {/* QueryClientProvider sits inside SessionProviderWrapper so its
             PersistQueryClientProvider can read useSession() — do not reorder. */}
-        <SessionProviderWrapper
-          enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}
-          canonicalBrowserOrigin={resolvePublicAuthOrigin()}
-        >
+        <SessionProviderWrapper enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}>
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <AppThemeProvider>
