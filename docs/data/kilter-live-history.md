@@ -2,6 +2,8 @@
 
 **Status:** One-way reading implemented, gated by `KILTER_LIVE_SYNC_ENABLED=1` on the backend. Upstream contribution is deferred: Boardsesh has no agreement with Kilter to publish live activity.
 
+Kilter shares the lease/scheduling lifecycle with the [Aurora live-history reader](../aurora-live-history.md); its transport, credentials and wall selectors remain separate.
+
 Protocol: [KILTER_LIVE_SPEC.md](../integrations/KILTER_LIVE_SPEC.md). Related: [Kilter sync](kilter-sync.md), [board merges](../boards/board-merge-tombstones.md), [WebSockets](../backend/websocket-implementation.md).
 
 ## Scope

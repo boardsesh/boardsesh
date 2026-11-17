@@ -644,6 +644,7 @@
         "headerSwitcherHintClose": "Blendet die anderen Boards aus"
       },
       "kilterHistorySource": "Über Kilter beleuchtet",
+      "auroraHistorySource": "Über {{board}} beleuchtet",
       "retryHistory": "Verlauf erneut laden",
       "wallDisplay": {
         "open": "Wandanzeige",

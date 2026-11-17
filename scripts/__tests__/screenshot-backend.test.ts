@@ -250,6 +250,78 @@ describe('screenshot backend', () => {
     rmSync(fixturesDir, { recursive: true, force: true });
   });
 
+  it('replays a pre-Aurora snapshot for exact optional opt-in without changing fixture keys', async () => {
+    const legacy =
+      'query BoardRecentHistory($boardId: Int!) { boardRecentHistory(boardId: $boardId) { climbUuid source } }';
+    const current =
+      'query BoardRecentHistory($boardId: Int!, $boardUuid: ID, $includeAurora: Boolean) { boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid, includeAurora: $includeAurora) { climbUuid source } }';
+    const response = { data: { boardRecentHistory: [{ climbUuid: 'recorded', source: 'kilter' }] } };
+    await start({ mode: 'record', fresh: true });
+    upstream.nextGraphqlResponse = { status: 200, body: response };
+    await postGraphql({ operationName: 'BoardRecentHistory', query: legacy, variables: { boardId: 42 } });
+    await stop();
+    const manifestBytes = readFileSync(join(fixturesDir, 'manifest.json'));
+    const requests = upstream.graphqlRequests.length;
+    await start({ mode: 'replay' });
+    expect(
+      await (
+        await postGraphql({
+          operationName: 'BoardRecentHistory',
+          query: current,
+          variables: { boardId: 42, includeAurora: true },
+        })
+      ).json(),
+    ).toEqual(response);
+    const wrongBoard = await (
+      await postGraphql({
+        operationName: 'BoardRecentHistory',
+        query: current,
+        variables: { boardId: 42, includeAurora: true, boardUuid: 'other-wall' },
+      })
+    ).json();
+    expect(wrongBoard.errors).toBeDefined();
+    const changedSelection = await (
+      await postGraphql({
+        operationName: 'BoardRecentHistory',
+        query: current.replace('climbUuid source', 'climbUuid source angle'),
+        variables: { boardId: 42, includeAurora: true },
+      })
+    ).json();
+    expect(changedSelection.errors).toBeDefined();
+    expect(upstream.graphqlRequests).toHaveLength(requests);
+    expect(readFileSync(join(fixturesDir, 'manifest.json'))).toEqual(manifestBytes);
+  });
+
+  it('does not reuse a capability-aware default-false snapshot for an unrecorded true request', async () => {
+    const query =
+      'query BoardRecentHistory($boardId: Int!, $boardUuid: ID, $includeAurora: Boolean) { boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid, includeAurora: $includeAurora) { climbUuid source } }';
+    const legacyResponse = { data: { boardRecentHistory: [{ climbUuid: 'native', source: 'boardsesh' }] } };
+    const capableResponse = { data: { boardRecentHistory: [{ climbUuid: 'import', source: 'aurora' }] } };
+    await start({ mode: 'record', fresh: true });
+    upstream.nextGraphqlResponse = { status: 200, body: legacyResponse };
+    await postGraphql({ operationName: 'BoardRecentHistory', query, variables: { boardId: 42 } });
+    upstream.nextGraphqlResponse = { status: 200, body: capableResponse };
+    await postGraphql({ operationName: 'BoardRecentHistory', query, variables: { boardId: 43, includeAurora: true } });
+    await stop();
+    await start({ mode: 'replay' });
+    const unrecorded = await (
+      await postGraphql({ operationName: 'BoardRecentHistory', query, variables: { boardId: 42, includeAurora: true } })
+    ).json();
+    expect(unrecorded.errors).toBeDefined();
+    expect(
+      await (await postGraphql({ operationName: 'BoardRecentHistory', query, variables: { boardId: 42 } })).json(),
+    ).toEqual(legacyResponse);
+    expect(
+      await (
+        await postGraphql({
+          operationName: 'BoardRecentHistory',
+          query,
+          variables: { boardId: 43, includeAurora: true },
+        })
+      ).json(),
+    ).toEqual(capableResponse);
+  });
+
   it('persists the record capture scenario and keeps it when replay has a different environment', async () => {
     const capture = {
       sharedSessionId: '00000000-0000-4000-8000-000000000004',

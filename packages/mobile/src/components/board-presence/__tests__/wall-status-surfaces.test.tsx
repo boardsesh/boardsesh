@@ -2,6 +2,7 @@
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 
 const wallSelector = vi.hoisted(() => ({
   // BoardPresenceClimb shape: WallStrip and SidebarWallCell both read the raw wall
@@ -11,7 +12,9 @@ const wallSelector = vi.hoisted(() => ({
     uuid: string;
     climbUuid: string;
     name: string;
-    grade: string;
+    source?: BoardPresenceClimb['source'];
+    angle?: number | null;
+    grade: string | null;
     difficulty: string;
     frames: string;
     mirrored?: boolean;
@@ -81,6 +84,21 @@ vi.mock('../../../providers/theme-provider', () => ({
       separator: '#ccc',
     },
     brandColors: { warning: '#B45309' },
+  }),
+}));
+
+vi.mock('../../../hooks/use-aurora-presence-grades', () => ({
+  useAuroraPresenceClimb: (climb: BoardPresenceClimb | null, config: { angle: number } | null) =>
+    climb?.source === 'aurora' && config
+      ? {
+          climb: { ...climb, angle: config.angle, grade: `V${config.angle}` },
+          grade: { difficulty: `V${config.angle}` },
+        }
+      : { climb, grade: undefined },
+}));
+vi.mock('../../../hooks/use-display-grade', () => ({
+  useDisplayGrade: () => ({
+    resolveGrade: (climb: { difficulty?: string | null }) => ({ label: climb.difficulty ?? '', color: '#ff0' }),
   }),
 }));
 
@@ -208,4 +226,16 @@ describe('wall status surfaces', () => {
     expect(darkRender.container.querySelector('[data-icon="lightbulb"]')).not.toBeNull();
     expect(darkRender.container.querySelector('[data-thumb="true"]')).toBeNull();
   });
+});
+
+it.each([WallStrip, SidebarWallCell])('tablet wall surface updates Aurora grades at the selected angle', (Surface) => {
+  wallSelector.climb = { ...litWallClimb(), source: 'aurora', angle: null, grade: null };
+  drawerHost.boardPanelProps.boardConfig = { ...drawerHost.boardPanelProps.boardConfig, angle: 20 };
+  const { container, rerender } = render(createElement(Surface));
+  expect(container.textContent).toContain('V20');
+  drawerHost.boardPanelProps.boardConfig = { ...drawerHost.boardPanelProps.boardConfig, angle: 45 };
+  rerender(createElement(Surface, { key: 'selected-angle-45' }));
+  expect(container.textContent).toContain('V45');
+  expect(wallSelector.climb.angle).toBeNull();
+  expect(wallSelector.climb.grade).toBeNull();
 });

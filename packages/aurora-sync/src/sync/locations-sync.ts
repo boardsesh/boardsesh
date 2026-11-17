@@ -19,6 +19,7 @@ import type { AuroraGymUser } from '../api/gym-walls-api';
 import { isAuroraRequestError } from '../api/errors';
 import { findCrawledGymSourceKeys, markGymWallsCrawled } from '@boardsesh/db/queries';
 import type { Wall } from '../api/sync-api-types';
+import { syncAuroraWallSources } from './aurora-wall-sources';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 export type AuroraLocationBoardName = Exclude<AuroraBoardName, 'kilter'>;
@@ -309,6 +310,12 @@ export async function syncAuroraBoardLocations(args: {
         batchWriter: args.batchWriter,
       });
 
+  if (args.transaction) {
+    await args.transaction((transaction) => syncAuroraWallSources(transaction, args.board, pinsWithUsers, records));
+  } else {
+    await syncAuroraWallSources(args.db, args.board, pinsWithUsers, records);
+  }
+
   // Stamped AFTER the upsert, so a gym is only marked once its data is actually
   // written. Stamping first meant a transient upsert failure left the gym
   // looking enriched while still holding the guess, and the "don't re-guess a
@@ -472,6 +479,11 @@ export async function crawlGymWallsForSourceKeys(args: {
         logger: toLocationSyncLogger(args.log),
         batchWriter: args.batchWriter,
       });
+    }
+    if (args.transaction) {
+      await args.transaction((transaction) => syncAuroraWallSources(transaction, args.board, pinsWithUsers, records));
+    } else {
+      await syncAuroraWallSources(args.db, args.board, pinsWithUsers, records);
     }
   }
 

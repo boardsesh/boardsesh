@@ -2166,3 +2166,36 @@ describe('legacy numeric-only presence recording compatibility', () => {
     expect(numeric.variablesHash).not.toBe(linked.variablesHash);
   });
 });
+
+describe('Aurora history opt-in recording compatibility', () => {
+  const legacy =
+    'query BoardRecentHistory($boardId: Int!) { boardRecentHistory(boardId: $boardId) { climbUuid source } }';
+  const current =
+    'query BoardRecentHistory($boardId: Int!, $boardUuid: ID, $includeAurora: Boolean) { boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid, includeAurora: $includeAurora) { climbUuid source } }';
+  const fixture: GraphqlFixtureFile = {
+    formatVersion: 1,
+    operationName: 'BoardRecentHistory',
+    documentHash: 'old-document',
+    variablesHash: 'old-vars',
+    query: legacy,
+    variables: { boardId: 42 },
+    response: { data: { boardRecentHistory: [] } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  };
+  it('adapts only the two optional declarations and arguments, preserving recording bytes', () => {
+    const bytes = JSON.stringify(fixture);
+    expect(replayCompatibleFixtureResponse(current, fixture)).toEqual({ response: fixture.response });
+    expect(JSON.stringify(fixture)).toBe(bytes);
+    expect(
+      replayCompatibleFixtureResponse(current.replace('climbUuid source', 'climbUuid source angle'), fixture),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(
+        current.replace('$includeAurora: Boolean)', '$includeAurora: Boolean!)'),
+        fixture,
+      ),
+    ).toBeNull();
+  });
+});

@@ -1035,8 +1035,18 @@ export type BoardPresenceClimb = {
   seq: Scalars['Int']['output'];
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
-  /** Origin of the display: boardsesh or kilter. Missing means boardsesh. */
+  /** Origin of the display: boardsesh, kilter, or aurora. Missing means boardsesh. */
   source?: Maybe<Scalars['String']['output']>;
+};
+
+/** Public catalog grades for a wall at the viewer's selected angle. */
+export type BoardPresenceClimbGrade = {
+  __typename?: 'BoardPresenceClimbGrade';
+  boardseshConfidence?: Maybe<Scalars['String']['output']>;
+  boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  difficulty?: Maybe<Scalars['String']['output']>;
+  /** The requested climb UUID, retaining an alias when one was supplied. */
+  uuid: Scalars['String']['output'];
 };
 
 export type BoardPresenceEvent =
@@ -8667,6 +8677,8 @@ export type Query = {
    * followed-climber reasons need authentication.
    */
   boardLiveSessions: Array<LiveSession>;
+  /** Public catalog grades for up to 50 climbs on this wall, at the viewer's selected angle. */
+  boardPresenceClimbGrades: Array<BoardPresenceClimbGrade>;
   /**
    * Lightweight stats for a board's wall feed — durable counts derived from
    * `boardsesh_ticks` stamped with this board_id, plus the live window.
@@ -9676,6 +9688,7 @@ export type QueryBoardHistoryPageArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  includeAurora?: InputMaybe<Scalars['Boolean']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
@@ -9688,6 +9701,14 @@ export type QueryBoardLeaderboardArgs = {
 export type QueryBoardLiveSessionsArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardPresenceClimbGradesArgs = {
+  angle: Scalars['Int']['input'];
+  boardId: Scalars['Int']['input'];
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  climbUuids: Array<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9712,6 +9733,7 @@ export type QueryBoardRecentClimbsArgs = {
 export type QueryBoardRecentHistoryArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  includeAurora?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -13694,6 +13716,7 @@ export type Subscription = {
 export type SubscriptionBoardNowPlayingArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  includeAurora?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root subscription type for real-time updates. */

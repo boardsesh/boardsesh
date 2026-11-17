@@ -51,6 +51,8 @@ export const subscriptionsTypeDefs = /* GraphQL */ `
       boardId: Int!
       "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
       boardUuid: ID
+      "Opt in to Aurora history; older clients only understand native and Kilter displays."
+      includeAurora: Boolean = false
     ): BoardPresenceEvent!
 
     """

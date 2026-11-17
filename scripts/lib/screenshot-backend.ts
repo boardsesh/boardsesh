@@ -57,6 +57,7 @@ import {
 } from './screenshot-campaign-session';
 
 import {
+  AURORA_HISTORY_CAPABILITY_OPERATIONS,
   FIXTURE_HASH_DISPLAY_LENGTH,
   FIXTURE_SIZE_NOTE_BYTES,
   RE_RECORD_COMMAND,
@@ -1240,6 +1241,33 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       }
     }
     let entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
+    if (!entry && AURORA_HISTORY_CAPABILITY_OPERATIONS.has(operationName)) {
+      const variables = parsedBody.variables;
+      if (
+        variables &&
+        typeof variables === 'object' &&
+        !Array.isArray(variables) &&
+        (variables as Record<string, unknown>).includeAurora === true
+      ) {
+        const legacyVariables = Object.fromEntries(
+          Object.entries(variables).filter(([name]) => name !== 'includeAurora'),
+        );
+        const legacyKey = graphqlFixtureKey({ operationName, query, variables: legacyVariables }, sha256Hex);
+        const legacyEntry = graphqlIndex.get(`${operationName}\n${legacyKey.variablesHash}`);
+        if (legacyEntry && isFixtureFileWithinDirectory(fixturesDir, legacyEntry.file)) {
+          try {
+            const fixture = JSON.parse(readFileSync(join(fixturesDir, legacyEntry.file), 'utf8')) as GraphqlFixtureFile;
+            // Only replay the exact additive opt-in over the unchanged recorded
+            // snapshot. Recording keys/hashes and real board UUIDs stay intact.
+            if (!fixture.query.includes('includeAurora') && replayCompatibleFixtureResponse(query, fixture))
+              entry = legacyEntry;
+          } catch {
+            missGraphql(operationName, 'unreadable-fixture');
+            return;
+          }
+        }
+      }
+    }
     if (!entry && operationName === 'SearchClimbsCount') {
       try {
         entry = countEntryWithoutPagination(key.documentHash, parsedBody.variables) ?? undefined;

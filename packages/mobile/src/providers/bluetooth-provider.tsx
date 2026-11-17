@@ -17,6 +17,7 @@ import {
 import { SHARED_EVENTS, blePickerSessionProps, type BlePickerSessionInput } from '@boardsesh/analytics';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
+import { resolveBoardPresenceAngle } from '@boardsesh/board-presence-react/presentation';
 import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import {
@@ -418,7 +419,11 @@ function physicalFramesSignature(frames: string, mirrored: boolean): string {
   return `${frames}::${mirrored ? 1 : 0}`;
 }
 
-function presenceClimbToQueueInput(climb: BoardPresenceClimb, mirrored: boolean): ClimbQueueItemInput {
+function presenceClimbToQueueInput(
+  climb: BoardPresenceClimb,
+  mirrored: boolean,
+  selectedAngle = 0,
+): ClimbQueueItemInput {
   return {
     uuid: climb.queueItemUuid ?? `undo:${climb.climbUuid}:${climb.seq}`,
     climb: {
@@ -426,7 +431,7 @@ function presenceClimbToQueueInput(climb: BoardPresenceClimb, mirrored: boolean)
       setter_username: climb.setter ?? '',
       name: climb.name ?? '',
       frames: climb.frames ?? '',
-      angle: climb.angle ?? 0,
+      angle: resolveBoardPresenceAngle(climb, selectedAngle),
       ascensionist_count: 0,
       difficulty: climb.grade ?? '',
       quality_average: '',
@@ -1014,6 +1019,8 @@ function VirtualWallHolderWatch({
 }
 
 type BluetoothProviderProps = {
+  /** Viewer-selected angle for explicit actions on angle-less Aurora display records. */
+  angle?: number;
   boardName?: string;
   layoutId?: number;
   sizeId?: number;
@@ -1042,6 +1049,7 @@ type BluetoothProviderProps = {
 };
 
 export function BluetoothProvider({
+  angle,
   boardName,
   layoutId,
   sizeId,
@@ -1119,6 +1127,8 @@ export function BluetoothProvider({
   // Mirror the rendered board config for identity-stable send/skip analytics.
   // Connection resolution uses BleConnectionHandle.config instead (the exact
   // adapter-generation snapshot), never these mutable route refs.
+  const selectedAngleRef = useRef(angle);
+  selectedAngleRef.current = angle;
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
   const layoutIdRef = useRef(layoutId);
@@ -2496,11 +2506,17 @@ export function BluetoothProvider({
       return false;
     }
 
+    const undoAngle = undoTarget.source === 'aurora' ? selectedAngleRef.current : undoTarget.angle;
+    if (undoTarget.source === 'aurora' && undoAngle == null) return false;
     lastAcceptedReportSignatureRef.current = null;
     // Undo restores what was lit, so the orientation the feed recorded wins
     // (#5238). An unambiguous queue occurrence only fills in for an older
-    // build that reported no orientation.
-    const undoMirrored = undoTarget.mirrored ?? queueMirrorFor(undoTarget.climbUuid) ?? false;
+    // build that reported no orientation. Aurora has no recorded orientation,
+    // so an explicit action uses this viewer's current selection.
+    const undoMirrored =
+      undoTarget.source === 'aurora'
+        ? getQueueSnapshot().currentClimbQueueItem?.climb.mirrored === true
+        : (undoTarget.mirrored ?? queueMirrorFor(undoTarget.climbUuid) ?? false);
     const writeSucceeded = await commitWallFrames(frames, undoMirrored, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
@@ -2515,7 +2531,15 @@ export function BluetoothProvider({
 
     const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
       reportClimbForBoardRef
-        .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
+        .current(
+          boardId,
+          presenceClimbToQueueInput(
+            undoTarget,
+            undoMirrored,
+            undoTarget.source === 'aurora' ? (undoAngle ?? undefined) : undefined,
+          ),
+          undoAngle ?? null,
+        )
         .catch((error: unknown) => {
           console.warn('[board-presence] undo report failed', error);
           return false;
@@ -2525,10 +2549,13 @@ export function BluetoothProvider({
       return false;
     }
 
-    lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget, undoMirrored);
+    lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(
+      { ...undoTarget, angle: undoAngle },
+      undoMirrored,
+    );
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [commitWallFrames, queueMirrorFor, sendFencedClimbReport]);
+  }, [commitWallFrames, getQueueSnapshot, queueMirrorFor, sendFencedClimbReport]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -2552,10 +2579,16 @@ export function BluetoothProvider({
         return false;
       }
 
+      const relightAngle = climb.source === 'aurora' ? selectedAngleRef.current : climb.angle;
+      if (climb.source === 'aurora' && relightAngle == null) return false;
       lastAcceptedReportSignatureRef.current = null;
       // Restore the recorded orientation, including an explicit unmirror.
       // Older records can borrow an unambiguous queue occurrence's orientation.
-      const relightMirrored = climb.mirrored ?? queueMirrorFor(climb.climbUuid) ?? false;
+      // Aurora actions use the viewer's current selection instead.
+      const relightMirrored =
+        climb.source === 'aurora'
+          ? getQueueSnapshot().currentClimbQueueItem?.climb.mirrored === true
+          : (climb.mirrored ?? queueMirrorFor(climb.climbUuid) ?? false);
       const writeSucceeded = await commitWallFrames(frames, relightMirrored, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
@@ -2570,7 +2603,15 @@ export function BluetoothProvider({
 
       const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
         reportClimbForBoardRef
-          .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
+          .current(
+            boardId,
+            presenceClimbToQueueInput(
+              climb,
+              relightMirrored,
+              climb.source === 'aurora' ? (relightAngle ?? undefined) : undefined,
+            ),
+            relightAngle ?? null,
+          )
           .catch((error: unknown) => {
             console.warn('[board-presence] kiosk relight report failed', error);
             return false;
@@ -2580,10 +2621,13 @@ export function BluetoothProvider({
         return false;
       }
 
-      lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb, relightMirrored);
+      lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(
+        { ...climb, angle: relightAngle },
+        relightMirrored,
+      );
       return true;
     },
-    [commitWallFrames, queueMirrorFor, sendFencedClimbReport],
+    [commitWallFrames, getQueueSnapshot, queueMirrorFor, sendFencedClimbReport],
   );
 
   const clearBoard = useCallback(

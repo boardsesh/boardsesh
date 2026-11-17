@@ -9458,7 +9458,11 @@ type Query {
     boardId: Int!
     "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
     boardUuid: ID
+    "Opt in to Aurora history; older clients only understand native and Kilter displays."
+    includeAurora: Boolean = false
   ): [BoardPresenceClimb!]!
+  "Public catalog grades for up to 50 climbs on this wall, at the viewer's selected angle."
+  boardPresenceClimbGrades(boardId: Int!, boardUuid: ID, angle: Int!, climbUuids: [ID!]!): [BoardPresenceClimbGrade!]!
   "Chronological durable history with an opaque, board-scoped pagination cursor."
   boardHistoryPage(
     boardId: Int!
@@ -9466,6 +9470,8 @@ type Query {
     boardUuid: ID
     limit: Int
     before: String
+    "Opt in to Aurora history; older clients only understand native and Kilter displays."
+    includeAurora: Boolean = false
   ): BoardHistoryPage!
 
   """
@@ -11509,6 +11515,8 @@ type Subscription {
     boardId: Int!
     "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
     boardUuid: ID
+    "Opt in to Aurora history; older clients only understand native and Kilter displays."
+    includeAurora: Boolean = false
   ): BoardPresenceEvent!
 
   """
@@ -12757,7 +12765,7 @@ A climb reported as lit on a physical board. Denormalised for display (mirrors
 the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
 """
 type BoardPresenceClimb {
-  "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+  "Origin of the display: boardsesh, kilter, or aurora. Missing means boardsesh."
   source: String
   "UUID of the climb lit on the wall"
   climbUuid: String!
@@ -12874,6 +12882,15 @@ Union of board-presence events streamed by `boardNowPlaying`.
 type BoardHistoryUpdated {
   climbs: [BoardPresenceClimb!]!
   seq: Int!
+}
+
+"Public catalog grades for a wall at the viewer's selected angle."
+type BoardPresenceClimbGrade {
+  "The requested climb UUID, retaining an alias when one was supplied."
+  uuid: String!
+  difficulty: String
+  boardseshDifficulty: Float
+  boardseshConfidence: String
 }
 
 type BoardHistoryPage {

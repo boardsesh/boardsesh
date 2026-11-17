@@ -7,7 +7,7 @@ export type BoardPresenceClimb = {
   sessionId?: string | null;
   identityPolicyVersion?: number;
   /** Missing on older servers means a native Boardsesh display. */
-  source?: 'boardsesh' | 'kilter' | null;
+  source?: 'boardsesh' | 'kilter' | 'aurora' | null;
   climbUuid: string;
   queueItemUuid?: string | null;
   name?: string | null;
@@ -173,4 +173,12 @@ export type BoardPresenceStats = {
   hardestSend?: BoardPresenceHardestSend | null;
   topGrade?: string | null;
   lastSentAt?: string | null;
+};
+
+/** Public wall catalog grades at one viewer-selected angle. */
+export type BoardPresenceClimbGrade = {
+  uuid: string;
+  difficulty: string | null;
+  boardseshDifficulty: number | null;
+  boardseshConfidence: string | null;
 };

@@ -22,6 +22,30 @@ export const kilterWallSources = pgTable(
   (table) => ({ sourceBoardIdx: index('kilter_wall_sources_board_idx').on(table.sourceBoardUuid) }),
 );
 
+/** Exact Aurora controller/wall provenance, scoped to its board product. */
+export const auroraWallSources = pgTable(
+  'aurora_wall_sources',
+  {
+    sourceKey: text('source_key').primaryKey(),
+    // Raw serial witnesses need no published board; only listed mappings are importable.
+    sourceBoardUuid: text('source_board_uuid').references(() => userBoards.uuid, { onDelete: 'cascade' }),
+    boardType: text('board_type').notNull(),
+    gymUserId: integer('gym_user_id').notNull(),
+    wallUuid: text('wall_uuid').notNull(),
+    serialNumber: text('serial_number').notNull(),
+    layoutId: integer('layout_id').notNull(),
+    sizeId: integer('size_id').notNull(),
+    setIds: text('set_ids').notNull(),
+    isListed: boolean('is_listed').notNull().default(true),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    sourceBoardIdx: index('aurora_wall_sources_board_idx').on(table.sourceBoardUuid),
+    serialIdx: index('aurora_wall_sources_serial_idx').on(table.boardType, table.serialNumber),
+    gymIdx: index('aurora_wall_sources_gym_idx').on(table.boardType, table.gymUserId),
+  }),
+);
+
 /**
  * Maps upstream public-location source keys to the canonical Boardsesh gym row.
  *

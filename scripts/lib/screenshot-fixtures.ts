@@ -243,6 +243,12 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardLiveSessions',
 ]);
 
+export const AURORA_HISTORY_CAPABILITY_OPERATIONS = new Set([
+  'BoardNowPlaying',
+  'BoardRecentHistory',
+  'BoardHistoryPage',
+]);
+
 /**
  * Pinned recordings that predate a field the current document now selects.
  * Adapt those responses in memory; never rewrite their bytes or hashes. A
@@ -291,12 +297,19 @@ export function replayCompatibleFixtureResponse(
     if (adapted) return adapted;
   }
   if (PRESENCE_CAPABILITY_OPERATIONS.has(operationName ?? '')) {
-    const normalized = normalizeDocument(requestQuery);
-    const declaration = ', $boardUuid: ID';
-    const argument = ', boardUuid: $boardUuid';
-    if (normalized.split(declaration).length !== 2 || normalized.split(argument).length !== 2) return null;
-    const withoutCapability = normalized.replace(declaration, '').replace(argument, '');
-    if (withoutCapability !== normalizeDocument(fixture.query)) return null;
+    let normalized = normalizeDocument(requestQuery);
+    const recorded = normalizeDocument(fixture.query);
+    const capabilities = [{ declaration: ', $boardUuid: ID', argument: ', boardUuid: $boardUuid' }];
+    if (AURORA_HISTORY_CAPABILITY_OPERATIONS.has(operationName ?? '')) {
+      capabilities.push({ declaration: ', $includeAurora: Boolean', argument: ', includeAurora: $includeAurora' });
+    }
+    for (const { declaration, argument } of capabilities) {
+      if (!recorded.includes(declaration) && normalized.includes(declaration)) {
+        if (normalized.split(declaration).length !== 2 || normalized.split(argument).length !== 2) return null;
+        normalized = normalized.replace(declaration, '').replace(argument, '');
+      }
+    }
+    if (normalized !== recorded) return null;
     // The replay backend selects an entry by the unchanged variables hash first.
     // Supplying a UUID therefore needs its own recording, never this old no-link response.
     return { response: fixture.response };

@@ -68,3 +68,15 @@ export const ReportBoardClimbInputSchema = z.object({
   tickedBy: z.array(z.string().max(100)).max(100).nullish(),
   suggested: z.boolean().nullish(),
 });
+
+/** A bounded public batch at a live board angle; negative tilt stays board-specific. */
+export const BoardPresenceClimbGradesArgsSchema = z
+  .object({
+    boardType: z.string(),
+    angle: z.number().int().min(-90).max(90),
+    climbUuids: z.array(ClimbUuidSchema.refine((uuid) => uuid.trim().length > 0, 'Climb UUID cannot be empty')).max(50),
+  })
+  .refine((args) => isBoardAngleSupported(args.boardType, args.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });

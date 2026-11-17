@@ -644,6 +644,7 @@
         "headerSwitcherHintClose": "Masque les autres boards"
       },
       "kilterHistorySource": "Allumé via Kilter",
+      "auroraHistorySource": "Allumé via {{board}}",
       "retryHistory": "Réessayer de charger l’historique",
       "wallDisplay": {
         "open": "Affichage mural",

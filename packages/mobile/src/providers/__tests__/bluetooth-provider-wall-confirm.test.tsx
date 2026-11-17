@@ -350,9 +350,10 @@ function makePresenceClimb(overrides: Partial<BoardPresenceClimb> = {}): BoardPr
   };
 }
 
-function renderProvider(children?: ReactNode) {
+function renderProvider(children?: ReactNode, angle?: number) {
   return render(
     createElement(BluetoothProvider, {
+      angle,
       boardName: 'kilter',
       layoutId: 1,
       sizeId: 10,
@@ -3211,6 +3212,38 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
       });
     });
+
+    it.each([0, 45])(
+      'relights an Aurora record at selected angle %s without changing its source metadata',
+      async (angle) => {
+        queue.sessionId = null;
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = makePresenceClimb();
+        bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+          bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+        const imported = makePresenceClimb({
+          source: 'aurora',
+          climbUuid: 'aurora-climb',
+          angle: null,
+          grade: null,
+          mirrored: null,
+        });
+        renderProvider(createElement(BluetoothProbe), angle);
+        await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await capturedBluetooth?.relightPresenceClimb(imported);
+        });
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          expect.objectContaining({
+            climb: expect.objectContaining({ uuid: 'aurora-climb', angle }),
+          }),
+          angle,
+        );
+        expect(imported).toMatchObject({ angle: null, grade: null, mirrored: null });
+      },
+    );
 
     it('relights an older presence record using its unique queued occurrence', async () => {
       queue.sessionId = null;

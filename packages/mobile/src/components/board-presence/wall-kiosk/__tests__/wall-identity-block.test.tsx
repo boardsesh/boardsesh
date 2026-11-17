@@ -31,8 +31,19 @@ vi.mock('../../../../providers/theme-provider', () => ({
     brandColors: { historyFill: '#333' },
   }),
 }));
+vi.mock('../../../../hooks/use-aurora-presence-grades', () => ({
+  useAuroraPresenceClimb: (climb: BoardPresenceClimb | null, config: { angle: number } | null) =>
+    climb?.source === 'aurora' && config
+      ? {
+          climb: { ...climb, angle: config.angle, grade: `V${config.angle}` },
+          grade: { difficulty: `V${config.angle}` },
+        }
+      : { climb, grade: undefined },
+}));
 vi.mock('../../../../hooks/use-display-grade', () => ({
-  useDisplayGrade: () => ({ resolveGrade: () => ({ label: 'V5', color: '#ff0' }) }),
+  useDisplayGrade: () => ({
+    resolveGrade: (climb: { difficulty?: string | null }) => ({ label: climb.difficulty ?? '', color: '#ff0' }),
+  }),
 }));
 vi.mock('../../../../theme/tokens', () => ({
   spacing: { 2: 8, 3: 12 },
@@ -40,6 +51,7 @@ vi.mock('../../../../theme/tokens', () => ({
 }));
 
 import { WallIdentityBlock } from '../WallIdentityBlock';
+import { WallIdleRecoveryView } from '../WallIdleRecoveryView';
 
 const typeScale = {
   gradeFontSize: 64,
@@ -90,4 +102,49 @@ describe('WallIdentityBlock at reading distance', () => {
 
     expect(container.textContent).toBe('');
   });
+});
+
+it('updates kiosk identity grades at the selected angle without stamping shared history', () => {
+  const imported = { ...climb, source: 'aurora' as const, grade: null, angle: null };
+  const config = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 20 };
+  const { getByText, rerender } = render(
+    <WallIdentityBlock climb={imported} typeScale={typeScale} isPreviewing={false} boardConfig={config} />,
+  );
+  expect(getByText('V20')).toBeTruthy();
+  rerender(
+    <WallIdentityBlock
+      climb={imported}
+      typeScale={typeScale}
+      isPreviewing={false}
+      boardConfig={{ ...config, angle: 45 }}
+    />,
+  );
+  expect(getByText('V45')).toBeTruthy();
+  expect(imported.angle).toBeNull();
+});
+
+it('shows the selected-angle Boardsesh-only estimate for the idle last-lit Aurora climb', () => {
+  const lastLit = { ...climb, source: 'aurora' as const, grade: null, angle: null };
+  const { container, rerender } = render(
+    <WallIdleRecoveryView
+      lastLitClimb={lastLit}
+      typeScale={typeScale}
+      ledless={false}
+      resolvedGrade={{ label: '≈V5', color: '#ff0' }}
+      relativeTime="now"
+    />,
+  );
+  expect(container.textContent).toContain('≈V5');
+  expect(container.textContent).toContain('Moon Cheese');
+  expect(lastLit).toMatchObject({ grade: null, angle: null });
+  rerender(
+    <WallIdleRecoveryView
+      lastLitClimb={{ ...lastLit, source: 'boardsesh' }}
+      typeScale={typeScale}
+      ledless={false}
+      resolvedGrade={{ label: '≈V5', color: '#ff0' }}
+      relativeTime="now"
+    />,
+  );
+  expect(container.textContent).not.toContain('≈V5');
 });
