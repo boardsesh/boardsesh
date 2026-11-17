@@ -613,6 +613,32 @@ served as the warm rollback during the cut-over window is gone. Steps 2 and 3
 above — the dashboard rollback and the immutable `:sha-<short>` retag — are the
 web rollback levers.
 
+## Benchmark Next asset publication
+
+`benchmark-next-static-assets.yml` is a manual, main-only benchmark on a
+GitHub-hosted runner with the existing Production storage credentials. Run it
+after the workflow has merged; the Production environment permits only `main`.
+Choose an immutable digest of `ghcr.io/boardsesh/boardsesh-web` whose Next assets
+have already passed production publication. The default is the 284-file image
+used for the November 17, 2026 timing investigation.
+
+The workflow extracts `.next/static` without starting the image. It first proves
+that every object already exists with matching bytes and metadata through signed
+S3 reads. It then calls the production publisher with four workers at 5, 10, 20,
+20, 10, and 5 request starts per second, retaining all storage, hash, caching and
+CORS validation. For the default image, allow approximately 19 minutes. Choose
+a quiet period without another asset publisher running for comparable results.
+The run summary and `next-static-benchmark-*` JSON artifact record the
+measurements; partial results are retained on failure.
+
+This performs conditional `PUT` requests with `If-None-Match: *`, which should
+return 412 for these existing objects. It never overwrites or deletes objects.
+If an object is deleted after preflight, the conditional upload can recreate the
+same immutable bytes; the benchmark stops when it detects a created object,
+unexpected request errors or retries. The measurements cover an already-published
+asset set, not first-upload propagation. The workflow does not promote an image,
+deploy an application, or change the normal publisher's five-request limit.
+
 ## Where the images are built
 
 `build-web` and `build-backend` run on GitHub-hosted runners, like every other

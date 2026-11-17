@@ -358,6 +358,9 @@
     "mobile-recover-android-candidate.ts",
     "__tests__/mobile-recover-android-candidate.test.ts",
     "__tests__/mobile-native-build-source.test.ts",
-    "mobile-native-release.test.ts"
+    "mobile-native-release.test.ts",
+    "benchmark-next-static-assets.ts",
+    "__tests__/benchmark-next-static-assets.test.ts",
+    "__tests__/next-static-benchmark-workflow.test.ts"
   ]
 }
