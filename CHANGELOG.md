@@ -8,7 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### App update
 
-A new version shipped to the Play Store.
+A new version shipped to the App Store and Play Store.
 
 ### New
 

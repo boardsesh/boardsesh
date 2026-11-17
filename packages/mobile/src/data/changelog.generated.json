@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T07:38:59.984Z",
+  "generatedAt": "2026-11-17T07:57:01.609Z",
   "entries": [
     {
       "prNumber": 7454,
@@ -9777,10 +9777,12 @@
       "date": "2026-11-17T07:00:48Z",
       "sha": "f042c76c0ba3d6e4ff059a7d5b5aa77ee68e0a32",
       "platforms": [
-        "android"
+        "android",
+        "ios"
       ],
       "fingerprints": {
-        "android": "f331d5ced4d9327d7403df63042b45a4f66fe0e0"
+        "android": "f331d5ced4d9327d7403df63042b45a4f66fe0e0",
+        "ios": "359878ab8f09c58a49f9e765f49b59ead11a84d9"
       }
     },
     {
