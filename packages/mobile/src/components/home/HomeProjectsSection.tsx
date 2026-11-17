@@ -19,7 +19,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { track } from '../../lib/analytics';
 import { hapticLight } from '../../lib/haptics';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
-import { getBoardConfigForClimb } from '../../lib/playlists/board-details-for-playlist';
+import { getBoardConfigForClimb, type PlaylistBoardConfig } from '../../lib/playlists/board-details-for-playlist';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { smartPlaylistHref } from '../../lib/smart-playlists';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -50,12 +50,14 @@ function useProjectArt(projects: readonly Project[]): ReadonlyMap<string, LocalC
   );
   const { data } = useQuery({
     queryKey: ['localClimbArt', viewerId ?? '', refs.map((ref) => projectKey(ref.boardType, ref.climbUuid))],
-    enabled: refs.length > 0,
+    enabled: refs.length > 0 && !!viewerId,
+    // The board_climbs sync invalidates this key, so a board downloaded later
+    // fills the blank tiles in.
     staleTime: Infinity,
     networkMode: 'always',
     queryFn: async () => {
       const db = getDatabaseHandle();
-      return db ? readClimbArtLocal(db, refs, viewerId ?? null) : [];
+      return db && viewerId ? readClimbArtLocal(db, refs, viewerId) : [];
     },
   });
   return useMemo(
@@ -84,11 +86,23 @@ export const HomeProjectsSection = memo(function HomeProjectsSection() {
   const artByClimb = useProjectArt(shown);
 
   const openProject = useCallback(
-    (project: Project) => {
-      const { climbUuid, boardType, layoutId, angle } = project.latest;
+    (project: Project, boardConfig: PlaylistBoardConfig) => {
+      const { climbUuid, boardType, angle } = project.latest;
       hapticLight();
       track(SHARED_EVENTS.HomeSectionTapped, { section: 'projects', target: 'climb' });
-      openClimbInPlayDrawer({ kind: 'ref', climbUuid, boardType, layoutId, angle }, { openPlayDrawer, router });
+      // The climb's own layout, size and sets, so it never opens on a board guessed from its type.
+      openClimbInPlayDrawer(
+        {
+          kind: 'ref',
+          climbUuid,
+          boardType,
+          layoutId: boardConfig.layoutId,
+          angle,
+          sizeId: boardConfig.sizeId,
+          setIds: boardConfig.setIds.join(','),
+        },
+        { openPlayDrawer, router },
+      );
     },
     [openPlayDrawer, router],
   );
@@ -137,18 +151,19 @@ const ProjectRow = memo(function ProjectRow({
 }: {
   project: Project;
   art: LocalClimbArt | null;
-  onOpen: (project: Project) => void;
+  onOpen: (project: Project, boardConfig: PlaylistBoardConfig) => void;
 }) {
   const { t } = useTranslation('feed');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
   const { latest, tries } = project;
-  const handlePress = useCallback(() => onOpen(project), [onOpen, project]);
-
   const boardConfig = useMemo(
     () => (art ? getBoardConfigForClimb(art.boardType, art.layoutId, art.compatibleSizeIds) : null),
     [art],
   );
+  const handlePress = useCallback(() => {
+    if (boardConfig) onOpen(project, boardConfig);
+  }, [onOpen, project, boardConfig]);
   const placeholderStyle = useMemo(
     () => [styles.placeholder, { backgroundColor: systemColors.tertiaryFill }],
     [systemColors.tertiaryFill],
@@ -185,8 +200,10 @@ const ProjectRow = memo(function ProjectRow({
       artSize="large"
       title={name}
       subtitle={subtitle}
-      accessory="chevron"
-      onPress={handlePress}
+      // Without the climb's board on this phone there is no layout to open it
+      // on: the row names the project and is not a button.
+      accessory={boardConfig ? 'chevron' : undefined}
+      onPress={boardConfig ? handlePress : undefined}
       accessibilityLabel={`${name}, ${subtitle}`}
       testID={`home-project-${latest.climbUuid}`}
     />

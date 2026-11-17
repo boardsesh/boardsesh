@@ -56,7 +56,7 @@
           "tries_one": "{{count}} essai",
           "tries_other": "{{count}} essais",
           "seeAll": "Tout voir",
-          "unknownClimb": "Voie inconnue"
+          "unknownClimb": "Bloc inconnu"
         },
         "playlists": {
           "title": "À ton niveau, pas encore enchaînées",

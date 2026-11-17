@@ -49,6 +49,15 @@ describe('deriveProjects', () => {
     expect(projects.map((project) => project.latest.id)).toEqual(['t']);
   });
 
+  it('orders equal times by board and climb, and never lets an unreadable date lead', () => {
+    const projects = deriveProjects([
+      tick('z', 'climb-z', 'attempt', '2026-11-10T18:00:00Z'),
+      tick('a', 'climb-a', 'attempt', '2026-11-10T18:00:00Z'),
+      tick('bad', 'climb-bad', 'attempt', 'not a date'),
+    ]);
+    expect(projects.map((project) => project.latest.id)).toEqual(['a', 'z', 'bad']);
+  });
+
   it('counts a tick with no or a zero try count as one try', () => {
     const projects = deriveProjects([
       tick('a1', 'climb-a', 'attempt', '2026-11-10T18:00:00Z', { attemptCount: null }),

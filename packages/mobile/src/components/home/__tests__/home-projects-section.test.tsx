@@ -8,7 +8,10 @@ import type { ActivityTick } from '../../../db/queries/get-activity-ticks-local'
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), openClimb: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
-const state = vi.hoisted(() => ({ ticks: undefined as unknown[] | undefined }));
+const state = vi.hoisted(() => ({
+  ticks: undefined as unknown[] | undefined,
+  art: undefined as unknown[] | undefined,
+}));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -25,7 +28,15 @@ vi.mock('react-i18next', () => ({
     i18n: { language: 'en-US' },
   }),
 }));
-vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: undefined }) }));
+vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: state.art }) }));
+vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
+  getBoardConfigForClimb: (_boardType: string, layoutId: number) => ({
+    boardName: 'kilter',
+    layoutId,
+    sizeId: 10,
+    setIds: [1, 20],
+  }),
+}));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => null }));
 vi.mock('../../../db/queries/get-climb-art-local', () => ({ readClimbArtLocal: vi.fn(async () => []) }));
 vi.mock('../use-activity-ticks', () => ({ useActivityTicks: () => state.ticks }));
@@ -116,6 +127,7 @@ function tick(
 
 beforeEach(() => {
   state.ticks = undefined;
+  state.art = undefined;
   router.push.mockClear();
   drawer.openClimb.mockClear();
   analytics.track.mockClear();
@@ -179,16 +191,25 @@ describe('HomeProjectsSection', () => {
       tick('a', '2026-11-01T18:00:00Z', 'attempt', { angle: 35 }),
       tick('a', '2026-11-03T18:00:00Z', 'attempt', { angle: 45 }),
     ];
+    state.art = [{ boardType: 'kilter', climbUuid: 'a', frames: 'p1r12', layoutId: 8, compatibleSizeIds: [10] }];
     render(createElement(HomeProjectsSection));
     fireEvent.click(screen.getByTestId('home-project-a'));
     expect(drawer.openClimb).toHaveBeenCalledExactlyOnceWith(
-      { kind: 'ref', climbUuid: 'a', boardType: 'kilter', layoutId: 8, angle: 45 },
+      { kind: 'ref', climbUuid: 'a', boardType: 'kilter', layoutId: 8, angle: 45, sizeId: 10, setIds: '1,20' },
       { openPlayDrawer: drawer.openPlayDrawer, router },
     );
     expect(analytics.track).toHaveBeenCalledExactlyOnceWith(SHARED_EVENTS.HomeSectionTapped, {
       section: 'projects',
       target: 'climb',
     });
+  });
+
+  it('does not open a climb whose board is not on this phone', () => {
+    state.ticks = [tick('a', '2026-11-01T18:00:00Z', 'attempt')];
+    render(createElement(HomeProjectsSection));
+    fireEvent.click(screen.getByTestId('home-project-a'));
+    expect(drawer.openClimb).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
   });
 
   it('opens the Projects playlist from See all, with its anchor, and tracks the tap', () => {

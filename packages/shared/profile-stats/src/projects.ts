@@ -30,7 +30,9 @@ export function deriveProjects<T extends ProjectTickEntry>(entries: readonly T[]
   const byClimb = new Map<string, ClimbProject<T> & { sent: boolean }>();
   for (const entry of entries) {
     const key = `${entry.boardType}\u0000${entry.climbUuid}`;
-    const climbedMs = parseTickTime(entry.climbedAt).valueOf();
+    const parsedMs = parseTickTime(entry.climbedAt).valueOf();
+    // An unreadable date still counts its tries, but never reads as the latest.
+    const climbedMs = Number.isNaN(parsedMs) ? 0 : parsedMs;
     const tries = Math.max(1, entry.attemptCount ?? 1);
     const sent = entry.status === 'flash' || entry.status === 'send';
     const existing = byClimb.get(key);
@@ -47,5 +49,11 @@ export function deriveProjects<T extends ProjectTickEntry>(entries: readonly T[]
   }
   const projects: ClimbProject<T>[] = [];
   for (const { sent, ...project } of byClimb.values()) if (!sent) projects.push(project);
-  return projects.sort((left, right) => right.lastTriedMs - left.lastTriedMs);
+  // Ties break on board and climb, as the server's list does, so the order is stable.
+  return projects.sort(
+    (left, right) =>
+      right.lastTriedMs - left.lastTriedMs ||
+      left.latest.boardType.localeCompare(right.latest.boardType) ||
+      left.latest.climbUuid.localeCompare(right.latest.climbUuid),
+  );
 }

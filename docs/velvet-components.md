@@ -65,7 +65,7 @@ page with 32pt above and below, `quiet` is one secondary footnote line at the gu
 ## `BoardThumbnail`
 
 **`BoardThumbnail`** (`components/boards/`) `{ board: { boardType, layoutId, sizeId, setIds }, size:
-'compact' | 'regular' | number, accessibilityHidden? }`: a board's bare art in a 36×44 or 44×56 slot
+'compact' | 'regular' | 'large' | number, accessibilityHidden? }`: a board's bare art in a 36×44, 44×56 or 72×92 slot
 (or a square of `size` points). The art keeps its own aspect ratio with a `separator` hairline on it
 and no tile behind it; an unknown config shows the boards glyph and a spray wall shows its cached
 photo, or a camera glyph until the photo is on disk. It renders at 400px so it shares the raster
