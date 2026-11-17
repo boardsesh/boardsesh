@@ -18,7 +18,6 @@ export default defineConfig({
     env: { AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-browser-renewal-v1' },
     include: [
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',
-      'src/auth/authority/__tests__/browser-credential-writer-http.proof.ts',
       'src/auth/authority/__tests__/provider-security-http.proof.ts',
       'src/auth/authority/__tests__/first-password-http.proof.ts',
       'src/auth/authority/__tests__/anonymous-provider-http.proof.ts',

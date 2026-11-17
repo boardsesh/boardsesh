@@ -1578,15 +1578,6 @@ jobs:
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
         run: vp run test:auth-web-credential-proof
-      - name: Install Chromium for auth compatibility proof
-        if: ${{ !cancelled() }}
-        working-directory: packages/web
-        run: vp exec playwright install --with-deps chromium
-      - name: Run versioned proof cookies
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-browser-proof-cookies
 
   # Mirror-on qualification repeats the complete current-store suite. It owns
   # service containers so its budget is independent of baseline tests and HTTPS.

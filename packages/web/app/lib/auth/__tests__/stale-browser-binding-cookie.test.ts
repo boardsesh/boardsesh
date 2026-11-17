@@ -8,10 +8,9 @@ import { decode, type JWT } from 'next-auth/jwt';
 import type { Session } from 'next-auth';
 
 // A browser that was handed a `__Host-boardsesh.browser-binding` cookie while
-// the binding design was staged keeps it for up to 30 days. No live www path
-// reads that cookie or CURRENT_STORE_BROWSER_BINDING_MODE any more (#7596); the
-// readers left sit behind gated routes that refuse until they are deleted. So
-// the climber keeps signing in through the legacy NextAuth cookie (#7594).
+// the binding design was staged keeps it for up to 30 days. No www code reads
+// that cookie or CURRENT_STORE_BROWSER_BINDING_MODE any more (#7596), so the
+// climber keeps signing in through the legacy NextAuth cookie (#7594).
 
 const secret = 'stale-browser-binding-fixture-secret';
 const origin = 'http://localhost:3000';

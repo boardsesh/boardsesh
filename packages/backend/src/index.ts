@@ -28,6 +28,7 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { qualifyIdentityMirrorAtStartup } from './auth/authority/mirror-activation';
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { assertCutoffEnforcementConfiguration } from './auth/current-store/authority-configuration';
+import { assertBrowserSessionModeConfiguration } from './auth/authority/browser-session-mode';
 
 async function main() {
   // Before anything listens: a staged writer under AUTH_CUTOFF_ENFORCEMENT=observe
@@ -35,6 +36,7 @@ async function main() {
   assertCutoffEnforcementConfiguration();
   assertNativeRevocationActivationConfiguration();
   assertWebSessionWriterActivationConfiguration();
+  assertBrowserSessionModeConfiguration();
   // Off (the default) runs no query. On qualifies against the database and
   // otherwise throws one fixed code and the process exits; after an authority
   // switch it boots inert instead (docs/better-auth-identity-mirror.md).

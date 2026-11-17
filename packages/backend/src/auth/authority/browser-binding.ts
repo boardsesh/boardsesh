@@ -30,13 +30,6 @@ import {
   type FirstPartyContinuationMutationKind,
 } from '../current-store/security-mutation-core';
 
-/** No public bootstrap or session route is mounted. An origin-local fallback
- * cannot establish the shared www/app coordinator required for activation. */
-export const BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY = false;
-export function assertBrowserBindingPublicBootstrap(): never {
-  throw new Error('BROWSER_BINDING_COORDINATOR_UNQUALIFIED');
-}
-
 const MAX_VERSION = 2_147_483_647;
 const INTENT_LIFETIME_MS = 15 * 60 * 1000;
 const MAX_BINDING_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -319,37 +312,6 @@ export async function createUnpublishedBrowserBinding(
       .values({ id: digest(token), createdAt: now, expiresAt })
       .returning();
     return { status: 'created' as const, token, cursor: cursor(binding) };
-  });
-}
-
-export type BrowserBindingDescriptorResult =
-  | {
-      readonly status: 'known';
-      readonly state: 'anonymous' | 'selected';
-      readonly cursor: BrowserBindingCursor;
-      readonly credentialKind: FirstPartyCredential['kind'] | null;
-    }
-  | Refusal;
-
-/** Correlation metadata is not authenticated identity. It only lets the thin
- * server adapter choose the exact version-named cookie for actual admission. */
-export async function describeBrowserBinding(
-  database: AuthorityDatabase,
-  qualification: IdentityAuthorityQualification,
-  token: string,
-): Promise<BrowserBindingDescriptorResult> {
-  if (!tokenPattern.test(token)) return { status: 'denied' };
-  return withAuthority(database, qualification, async (transaction) => {
-    const binding = await findBinding(transaction, token);
-    const now = await databaseNow(transaction);
-    if (!binding || binding.expiresAt.getTime() <= now.getTime()) return { status: 'denied' as const };
-    const selected = selectedSession(binding);
-    return {
-      status: 'known' as const,
-      state: selected ? ('selected' as const) : ('anonymous' as const),
-      cursor: cursor(binding),
-      credentialKind: selected ? (binding.credentialKind as FirstPartyCredential['kind']) : null,
-    };
   });
 }
 

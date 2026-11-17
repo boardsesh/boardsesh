@@ -29,8 +29,6 @@ import {
   readBrowserBindingInTransaction,
   prepareBrowserReplacementInTransaction,
   commitPreparedBrowserReplacementInTransaction,
-  BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY,
-  assertBrowserBindingPublicBootstrap,
   type BrowserBindingCommitResult,
   type BrowserSelectionCredential,
   type BrowserReplacementPreparation,
@@ -1703,9 +1701,5 @@ describe('dark stable browser binding under the selected identity authority', ()
     }
     expect(await pending).toEqual({ status: 'conflict' });
     expect((await environment.database.select().from(authBrowserBindings))[0].version).toBe(0);
-  });
-  it('keeps the public bootstrap closed', () => {
-    expect(BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY).toBe(false);
-    expect(assertBrowserBindingPublicBootstrap).toThrow('BROWSER_BINDING_COORDINATOR_UNQUALIFIED');
   });
 });

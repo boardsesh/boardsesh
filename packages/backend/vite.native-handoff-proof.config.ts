@@ -13,7 +13,6 @@ export default defineConfig({
     env: { AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-native-handoff-v1', CURRENT_STORE_FIRST_PASSWORD_MODE: 'legacy' },
     include: [
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',
-      'src/auth/authority/__tests__/browser-credential-writer-http.proof.ts',
       'src/auth/authority/__tests__/provider-security-http.proof.ts',
       'src/auth/authority/__tests__/first-password-http.proof.ts',
       'src/auth/authority/__tests__/anonymous-provider-http.proof.ts',

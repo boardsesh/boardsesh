@@ -27,7 +27,7 @@ Phase A is in progress. It works against today's NextAuth sessions:
 | A1 | This doc. Banners on the superseded docs, notes on the partly superseded ones. No code. |
 | A2, A3 | The central guard on www (A2) and on Expo web at app.boardsesh.com (A3). |
 | A4 | Remove the per-site wrappers and scopes from `packages/mobile` and `packages/shared` and restore the plain hooks. Remove the selected outbox drain ([#7592](https://github.com/boardsesh/boardsesh/issues/7592)) and restore the #6302 comments in `invalidation-batch.ts`. The native climb-delete fix, draft [#7599](https://github.com/boardsesh/boardsesh/pull/7599), merges first or A4 rebases on it. |
-| A5 (several PRs) | Delete the browser binding design listed under "What is removed", except the backend binding core, which stays until B5. The last A5 PR replaces the remaining readiness gates with the one switch. The Expo web gate needs no switch and is already gone (see "The switch"). |
+| A5 (several PRs) | Delete the browser binding design listed under "What is removed", except the backend binding core, which stays until B5. The last A5 PR deletes the last readiness gate and adds the one switch, which the backend checks at startup (see "The switch"). |
 
 Phase B is blocked. #7596 says to stop after Phase A if the BA-04 authority
 cannot issue sessions yet, and on main it cannot. Nothing at runtime calls
@@ -326,25 +326,40 @@ These are the three items #7596 lists:
 ## The switch
 
 `AUTH_BROWSER_SESSION_MODE` takes two values: `legacy`, the default when unset
-or empty, and `better-auth`. The parser lives in `@boardsesh/auth-protocol`,
-shaped like `partner-oauth-mode.ts`. The backend refuses an unknown value at
-startup. www reads it on the server at request time and passes resolved values
-to client components as props, as `app/layout.tsx` already does with
-`enableExpoAuthBridge`. It is never `NEXT_PUBLIC_*`, which is baked in at
-build time, so a rollback would need a rebuild. Expo web has no flag.
+or empty, and `better-auth`. Any other value is refused, including a different
+case or surrounding spaces. The parser is `parseBrowserSessionMode` in
+`@boardsesh/auth-protocol/browser-session-mode`, shaped like
+`partner-oauth-mode.ts`, except that an unknown value throws instead of
+reading as off, and the error never repeats the value.
 
-It replaces the code-owned gates, each a literal `return false`: the
-`packages/web/app/lib/auth/*-readiness.ts` files that are still in the tree and
+What the code does in Phase A:
+
+- **Backend.** `assertBrowserSessionModeConfiguration`
+  (`packages/backend/src/auth/authority/browser-session-mode.ts`) runs at
+  startup, in `main()` and in `startServer()`, next to the other authority
+  startup checks and before anything listens. An unknown value refuses to
+  start. `better-auth` refuses to start too, with an error that says B1
+  (#7596) has not landed, because nothing serves a Better Auth browser
+  session yet. B1 replaces that refusal with its startup preconditions.
+- **www.** No reader. Nothing on www changes with the mode until B4. B4 adds a
+  server-side reader at request time that passes resolved values to client
+  components as props, as `app/layout.tsx` already does with
+  `enableExpoAuthBridge`. It is never `NEXT_PUBLIC_*`, which is baked in at
+  build time, so a rollback would need a rebuild.
+- **Expo web.** No flag.
+
+It replaces the eight code-owned gates, each a literal `return false`: seven
+`packages/web/app/lib/auth/*-readiness.ts` files and
 `packages/mobile/src/lib/browser-consumer-readiness.web.ts`
 (`scripts/lib/expo-web-readiness.ts` is the dev server's Metro prewarm helper,
-not a gate). Earlier A5 PRs delete some of those gates with the code they
-guard. The Expo web gate went with the selected mode it guarded: the lease
-client, the iframe coordinator client and the selected WebSocket client. Expo
-web has no flag, so nothing replaces it. The last A5 PR adds the switch and
-deletes the web gates that remain. Until B1 lands, `better-auth` has nothing to
-turn on.
+not a gate). A5 deleted each one with the code it guarded; the last,
+`browser-consumer-readiness.ts`, went with the binding web core. None is left
+in `packages/web` or `packages/backend`. The Expo web gate went with the
+selected mode it guarded: the lease client, the iframe coordinator client and
+the selected WebSocket client.
 
-Turn it on in the backend first, then web. Roll back web first, then backend.
+Once B4 gives www its reader, turn it on in the backend first, then web. Roll
+back web first, then backend.
 A browser signed in before cutover keeps its legacy cookie and stays signed in
 after a rollback. A browser that logged in after cutover has no valid legacy
 cookie, because the login revoked the legacy session it presented, so a
@@ -414,6 +429,19 @@ The PRs that delete it close
 [#7588](https://github.com/boardsesh/boardsesh/issues/7588) and
 [#7594](https://github.com/boardsesh/boardsesh/issues/7594).
 
+The last web piece of the binding went in one A5 PR: the www binding command
+client, the presented-selection reader, the proof-cookie codec with its
+Chromium proof, and the last web readiness gate
+(`browser-consumer-readiness.ts`). Nothing on www imported any of them except
+each other and their tests. The same PR deleted the backend's private binding
+route (`/api/internal/auth/browser-binding/v1/*`, now the ordinary 404) and its
+HTTP proof, because the deleted www client was its only caller. What stays
+until B5: the backend binding core (`authority/browser-binding.ts`) and the
+binding-table readers the kept provider-security and first-password cores use,
+`@boardsesh/auth-protocol/browser-binding-v1`, the `private-browser-v1`
+database profile, and `CURRENT_STORE_BROWSER_BINDING_MODE`, which the startup
+check for staged writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads.
+
 Kept, per #7596: BA-04 cutoffs, SID denials and the legacy bridge; BA-06
 native and Garmin work; the backend provider and first-password cores. Some
 web files mix live and dead parts, and A5 splits them instead of deleting them:
@@ -464,7 +492,7 @@ Web tests have no jest-dom, so they assert DOM properties directly.
 | 5. A browser signed in before cutover stays signed in, with every legacy cookie shape | B2 and B4 tests per shape, including the conflicting host-only and domain pair. B7 Playwright. |
 | 6. Rollback leaves every browser signed in through the legacy cookie, with no clearing step | B7 Playwright that switches the mode back, including a browser that logged in after cutover. |
 | 7. Native iOS and Android unchanged; no abort on unmount; no new identity per render | A3 and A4 tests that run each flow with the platform set to `ios` and `android`. `src/__tests__/web-fork-export-parity.test.ts`. The mobile suite in CI. |
-| 8. One mode switch gates the whole web cutover | A5 parser tests in `@boardsesh/auth-protocol`, backend startup refusal of unknown values, and a check that no `*-readiness.ts` gate is left. |
+| 8. One mode switch gates the whole web cutover | A5: parser tests in `@boardsesh/auth-protocol` (`browser-session-mode.test.ts`), and backend tests that `startServer()` refuses an unknown value and `better-auth` before any startup I/O (`authority/__tests__/browser-session-mode.test.ts`). No `*-readiness.ts` gate is left. B4 adds the www reader. |
 | #6979 criterion 4: an outage keeps the local session | A2: a session read answering 503 causes no reload and no cleanup. A3: a session read reporting "unavailable", or a peer `credential-rotation` hint, retires nothing. |
 
 The other #6979 criteria map onto the items above: criterion 1 is item 5,

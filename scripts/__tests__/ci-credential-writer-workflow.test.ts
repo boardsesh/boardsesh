@@ -184,13 +184,20 @@ describe('owned credential writer CI boundary', () => {
     expect(firstPasswordConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-first-password-v1'");
     expect(nativeHandoffConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-native-handoff-v1'");
     expect(browserRenewalConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-browser-renewal-v1'");
-    for (const file of ['credential-writer-http.proof.ts', 'browser-credential-writer-http.proof.ts']) {
-      expect(proofConfiguration).toContain(file);
-      expect(providerConfiguration).toContain(file);
-      expect(firstPasswordConfiguration).toContain(file);
-      expect(nativeHandoffConfiguration).toContain(file);
-      expect(browserRenewalConfiguration).toContain(file);
+    for (const configuration of [
+      proofConfiguration,
+      providerConfiguration,
+      firstPasswordConfiguration,
+      nativeHandoffConfiguration,
+      browserRenewalConfiguration,
+    ]) {
+      expect(configuration).toContain('__tests__/credential-writer-http.proof.ts');
+      // The private binding transport and its HTTP proof left with the www binding client (#7596).
+      expect(configuration).not.toContain('browser-credential-writer-http.proof.ts');
     }
+    expect(existsSync('packages/backend/src/auth/authority/__tests__/browser-credential-writer-http.proof.ts')).toBe(
+      false,
+    );
     expect(proofConfiguration).toContain('credential-writer-acl.proof.ts');
     expect(proofConfiguration).toContain('browser-credential-writer.proof.ts');
     expect(proofConfiguration).not.toContain('provider-credential-writer.proof.ts');

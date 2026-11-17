@@ -16,7 +16,6 @@ interface Job {
 }
 const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as { jobs: Record<string, Job> };
 const proofFile = 'web-credential-proof.integration.proof.ts';
-const cookieProofFile = 'browser-proof-cookies.proof.ts';
 const task = 'vp run test:auth-web-credential-proof';
 
 describe('database-backed backend/web credential proof placement', () => {
@@ -43,7 +42,7 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(typecheck).toContain('cache: false');
     const start = tasks.indexOf("'test:auth-web-credential-proof':");
     expect(start).toBeGreaterThanOrEqual(0);
-    const definition = tasks.slice(start, tasks.indexOf("'test:auth-browser-proof-cookies':", start));
+    const definition = tasks.slice(start, tasks.indexOf("'test:offline-sync':", start));
     expect(definition).toContain("dependsOn: ['typecheck:auth-proofs']");
     expect(definition).toContain('--maxWorkers=1');
     expect(definition).not.toContain('--changed');
@@ -75,23 +74,5 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(step).toBeDefined();
     expect(step?.if).not.toContain('needs.changes');
     expect(step?.['continue-on-error']).toBeUndefined();
-  });
-  it('runs the actual-cookie proof explicitly in the required post-install task', () => {
-    const configuration = readFileSync('packages/web/auth-proofs/browser-proof-cookies.vite.config.ts', 'utf8');
-    const types = JSON.parse(readFileSync('packages/web/auth-proofs/tsconfig.json', 'utf8')) as {
-      include: string[];
-    };
-    expect(existsSync(`packages/web/auth-proofs/${cookieProofFile}`)).toBe(true);
-    expect(configuration).toContain(`'auth-proofs/${cookieProofFile}'`);
-    expect(types.include).toContain(cookieProofFile);
-    const tasks = readFileSync('vite.config.ts', 'utf8');
-    const start = tasks.indexOf("'test:auth-browser-proof-cookies':");
-    expect(start).toBeGreaterThanOrEqual(0);
-    const task = tasks.slice(start, tasks.indexOf("'test:offline-sync':", start));
-    expect(task).toContain('browser-proof-cookies.vite.config.ts');
-    expect(task).toContain("dependsOn: ['typecheck:auth-proofs']");
-    expect(task).toContain('--maxWorkers=1');
-    expect(task).toContain('cache: false');
-    expect(task).not.toContain('--changed');
   });
 });
