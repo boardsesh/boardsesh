@@ -24,6 +24,14 @@ name: Build Renderer iOS Artifact
 
 on:
   workflow_dispatch:
+    inputs:
+      rust-toolchain:
+        description: >-
+          Exact Rust release to build with (e.g. 1.98.0), so the iOS slices match
+          the compiler that built the committed Android jniLibs. Empty uses the
+          runner's default toolchain.
+        required: false
+        default: ''
 
 concurrency:
   group: build-renderer-ios-artifact-${{ github.ref }}
@@ -38,6 +46,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Pin the Rust toolchain
+        if: ${{ inputs.rust-toolchain != '' }}
+        env:
+          RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$RUST_TOOLCHAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::rust-toolchain must be an exact release like 1.98.0"
+            exit 1
+          fi
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          # rustup and cargo (including the build script's `rustup target add`)
+          # honour this for every later step.
+          echo "RUSTUP_TOOLCHAIN=$RUST_TOOLCHAIN" >> "$GITHUB_ENV"
 
       - name: Show toolchain versions
         run: |

@@ -30,9 +30,11 @@ const PACKET_CONTRACT_MARKERS: [&[u8]; 13] = [
     b"board_renderer_gpu_plan_create",
     b"board_renderer_gpu_plan_prepare",
     b"board_renderer_gpu_plan_encode",
-    // Renamed when the wall swap added its reveal mode and two weights, so a
-    // stale archive fails here and at link time, never with shifted arguments.
-    b"board_renderer_gpu_packet_reveal_uniforms",
+    // Renamed when the wall swap added its reveal mode and two weights
+    // (`..._reveal_uniforms`), and again when it added the shared-hold weight,
+    // so a stale archive fails here and at link time, never with shifted
+    // arguments. Neither older name is a substring of this one.
+    b"board_renderer_gpu_packet_shared_reveal_uniforms",
     b"board_renderer_gpu_packet_contract",
     b"board_renderer_gpu_packet_stats",
 ];

@@ -100,9 +100,9 @@ object GpuPacketBridge {
     external fun freeBuffer(buffer: ByteBuffer)
     external fun setCacheDirectory(session: Long, path: ByteArray): Int
     external fun schedulePersist(session: Long): Int
-    /** `revealMode` 0 wipes with `progress`; 1 swaps with the lower/upper class weights. */
+    /** `revealMode` 0 wipes with `progress`; 1 swaps with the lower-only, upper-only and shared hold weights. */
     external fun encodeUniforms(packet: Long, lower: Int, upper: Int, revealMode: Int, progress: Float,
-        swapLower: Float, swapUpper: Float, pulse: Float,
+        swapLower: Float, swapUpper: Float, swapShared: Float, pulse: Float,
         viewportWidth: Float, viewportHeight: Float, productionEmpty: Boolean, mirrored: Boolean,
         destination: ByteBuffer, length: Int): Int
     fun createCancel(): LongArray = nativeCancelCreate()

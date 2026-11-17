@@ -130,10 +130,10 @@ Java_com_boardsesh_boardrenderer_GpuPacketBridge_setCacheDirectory(JNIEnv *env,j
 extern "C" JNIEXPORT jint JNICALL
 Java_com_boardsesh_boardrenderer_GpuPacketBridge_schedulePersist(JNIEnv *,jobject,jlong session){return board_renderer_gpu_session_schedule_persist(session);}
 extern "C" JNIEXPORT jint JNICALL
-Java_com_boardsesh_boardrenderer_GpuPacketBridge_encodeUniforms(JNIEnv *env,jobject,jlong packet,jint lower,jint upper,jint revealMode,jfloat progress,jfloat swapLower,jfloat swapUpper,jfloat pulse,jfloat width,jfloat height,jboolean empty,jboolean mirrored,jobject destination,jint length){
+Java_com_boardsesh_boardrenderer_GpuPacketBridge_encodeUniforms(JNIEnv *env,jobject,jlong packet,jint lower,jint upper,jint revealMode,jfloat progress,jfloat swapLower,jfloat swapUpper,jfloat swapShared,jfloat pulse,jfloat width,jfloat height,jboolean empty,jboolean mirrored,jobject destination,jint length){
     void *pointer=env->GetDirectBufferAddress(destination);jlong capacity=env->GetDirectBufferCapacity(destination);
     if(!pointer||length<0||capacity<length||revealMode<0)return -1;
-    return board_renderer_gpu_packet_reveal_uniforms(packet,lower,upper,revealMode,progress,swapLower,swapUpper,pulse,width,height,empty?1:0,mirrored?1:0,static_cast<uint8_t *>(pointer),length);
+    return board_renderer_gpu_packet_shared_reveal_uniforms(packet,lower,upper,revealMode,progress,swapLower,swapUpper,swapShared,pulse,width,height,empty?1:0,mirrored?1:0,static_cast<uint8_t *>(pointer),length);
 }
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_boardsesh_boardrenderer_GpuPacketBridge_nativeContract(JNIEnv *env,jobject){

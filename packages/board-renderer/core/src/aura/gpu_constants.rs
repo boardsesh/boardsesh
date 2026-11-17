@@ -13,7 +13,7 @@ pub const REVEAL_BAND: f32 = 0.22;
 /// to uniform `motion.z`. The wipe sweeps a soft band across the wall with the
 /// page position. The swap is position-independent: holds only in the climb
 /// being left take one weight, holds only in the arriving climb another, and
-/// holds lit the same way in both stay fully lit. Its timing lives in the app.
+/// holds lit the same way in both a third. Its timing lives in the app.
 pub const REVEAL_MODE_WIPE: u32 = 0;
 pub const REVEAL_MODE_SWAP: u32 = 1;
 

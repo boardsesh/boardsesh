@@ -38,7 +38,7 @@
     "uniforms": 2,
     "upper": 4
   },
-  "nativeApiVersion": 6,
+  "nativeApiVersion": 7,
   "packetVersion": 1,
   "revealBandBits": 1046562734,
   "revealModeSwap": 1,
@@ -60,6 +60,7 @@
     "motion": 96,
     "offsets": 64,
     "other": 112,
+    "sharedWeight": 60,
     "size": 0,
     "swapWeights": 88,
     "tuning": 32,

@@ -508,13 +508,13 @@ pub unsafe extern "C" fn board_renderer_gpu_plan_encode(
 }
 
 /// Allocation-free frame path. Slot0=current,1=previous,2=next.
-/// `reveal_mode` 0 wipes with `progress`; 1 swaps, weighting lower-only and
-/// upper-only holds by `swap_lower` and `swap_upper`. Each mode ignores the
-/// other's values.
+/// `reveal_mode` 0 wipes with `progress`; 1 swaps, weighting lower-only,
+/// upper-only and shared same-role holds by `swap_lower`, `swap_upper` and
+/// `swap_shared`. Each mode ignores the other's values.
 /// # Safety
 /// Output identifies exactly144 writable bytes; length must be144.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn board_renderer_gpu_packet_reveal_uniforms(
+pub unsafe extern "C" fn board_renderer_gpu_packet_shared_reveal_uniforms(
     packet: u64,
     lower: u32,
     upper: u32,
@@ -522,6 +522,7 @@ pub unsafe extern "C" fn board_renderer_gpu_packet_reveal_uniforms(
     progress: f32,
     swap_lower: f32,
     swap_upper: f32,
+    swap_shared: f32,
     pulse: f32,
     viewport_width: f32,
     viewport_height: f32,
@@ -541,7 +542,7 @@ pub unsafe extern "C" fn board_renderer_gpu_packet_reveal_uniforms(
         let Lease::Packet(packet) = lookup(packet)? else {
             return Err("wrong packet handle".into());
         };
-        let reveal = Reveal::from_native(reveal_mode, progress, swap_lower, swap_upper)?;
+        let reveal = Reveal::from_native(reveal_mode, progress, swap_lower, swap_upper, swap_shared)?;
         let output = unsafe { &mut *(output as *mut [u8; gpu_packet::UNIFORM_BYTES]) };
         packet.encode_uniforms(
             lower as usize,
@@ -731,12 +732,13 @@ mod tests {
         let mut uniforms = [0; 144];
         assert_eq!(
             unsafe {
-                board_renderer_gpu_packet_reveal_uniforms(
+                board_renderer_gpu_packet_shared_reveal_uniforms(
                     packet.handle,
                     0,
                     2,
                     REVEAL_MODE_WIPE,
                     0.5,
+                    0.0,
                     0.0,
                     0.0,
                     1.0,
@@ -750,8 +752,8 @@ mod tests {
             },
             0
         );
-        let swap = |mode: u32, lower: f32, upper: f32, uniforms: &mut [u8; 144]| unsafe {
-            board_renderer_gpu_packet_reveal_uniforms(
+        let swap = |mode: u32, lower: f32, upper: f32, shared: f32, uniforms: &mut [u8; 144]| unsafe {
+            board_renderer_gpu_packet_shared_reveal_uniforms(
                 packet.handle,
                 0,
                 2,
@@ -759,6 +761,7 @@ mod tests {
                 0.0,
                 lower,
                 upper,
+                shared,
                 1.0,
                 100.0,
                 100.0,
@@ -768,14 +771,19 @@ mod tests {
                 144,
             )
         };
-        assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.25, &mut uniforms), 0);
+        assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.25, 0.4, &mut uniforms), 0);
         let float =
             |offset: usize| f32::from_le_bytes(uniforms[offset..offset + 4].try_into().unwrap());
-        assert_eq!([float(88), float(92), float(104)], [0.4, 0.25, 1.0]);
+        assert_eq!(
+            [float(60), float(88), float(92), float(104)],
+            [0.4, 0.4, 0.25, 1.0]
+        );
         let mut rejected = [7; 144];
-        assert_eq!(swap(2, 0.4, 0.25, &mut rejected), -1);
-        assert_eq!(swap(REVEAL_MODE_SWAP, f32::NAN, 0.0, &mut rejected), -1);
-        assert_eq!(swap(REVEAL_MODE_SWAP, 0.0, 1.01, &mut rejected), -1);
+        assert_eq!(swap(2, 0.4, 0.25, 1.0, &mut rejected), -1);
+        assert_eq!(swap(REVEAL_MODE_SWAP, f32::NAN, 0.0, 1.0, &mut rejected), -1);
+        assert_eq!(swap(REVEAL_MODE_SWAP, 0.0, 1.01, 1.0, &mut rejected), -1);
+        assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.0, f32::NAN, &mut rejected), -1);
+        assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.0, 1.01, &mut rejected), -1);
         for bytes in [
             chunks.pixels,
             chunks.handles,
@@ -793,12 +801,13 @@ mod tests {
         board_renderer_gpu_handle_close(cancel);
         assert_eq!(
             unsafe {
-                board_renderer_gpu_packet_reveal_uniforms(
+                board_renderer_gpu_packet_shared_reveal_uniforms(
                     packet.handle,
                     0,
                     2,
                     REVEAL_MODE_WIPE,
                     0.5,
+                    0.0,
                     0.0,
                     0.0,
                     1.0,

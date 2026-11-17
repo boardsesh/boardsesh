@@ -27,15 +27,26 @@ struct Control {
     mirrored: bool,
     #[serde(default)]
     editor_all_changed: bool,
-    /// Wall-swap lower and upper class weights; absent for the wipe.
+    /// Wall-swap lower-only, upper-only and (optionally, default 1) shared
+    /// hold weights; absent for the wipe.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    swap: Option<[f32; 2]>,
+    swap: Option<Vec<f32>>,
 }
 impl Control {
+    /// Only after `validate_controls`: a swap carries two or three weights.
     fn reveal(&self) -> Reveal {
-        match self.swap {
-            Some([lower, upper]) => Reveal::Swap { lower, upper },
-            None => Reveal::Wipe {
+        match self.swap.as_deref() {
+            Some(&[lower, upper]) => Reveal::Swap {
+                lower,
+                upper,
+                shared: 1.0,
+            },
+            Some(&[lower, upper, shared]) => Reveal::Swap {
+                lower,
+                upper,
+                shared,
+            },
+            _ => Reveal::Wipe {
                 progress: self.progress,
             },
         }
@@ -63,9 +74,10 @@ fn validate_controls(controls: &Controls) -> Result<(), String> {
             || !(1.0..=EDIT_PEAK_REACH).contains(&sample.pulse)
             || (sample.editor_all_changed
                 && (sample.lower != 0 || sample.upper != 0 || sample.progress != 0.0))
-            || sample.swap.is_some_and(|weights| {
+            || sample.swap.as_ref().is_some_and(|weights| {
                 sample.editor_all_changed
                     || sample.progress != 0.0
+                    || !(2..=3).contains(&weights.len())
                     || weights
                         .iter()
                         .any(|weight| !weight.is_finite() || !(0.0..=1.0).contains(weight))
@@ -295,20 +307,39 @@ mod tests {
     #[test]
     fn swap_controls_need_unit_weights_and_no_wipe_progress() {
         let mut controls = controls();
-        controls.samples[0].swap = Some([0.4, 0.0]);
+        controls.samples[0].swap = Some(vec![0.4, 0.0]);
         assert!(validate_controls(&controls).is_ok());
         assert_eq!(
             controls.samples[0].reveal(),
             Reveal::Swap {
                 lower: 0.4,
-                upper: 0.0
+                upper: 0.0,
+                shared: 1.0
             }
         );
-        for weights in [[f32::NAN, 0.0], [0.0, 1.5], [-0.1, 0.0]] {
+        controls.samples[0].swap = Some(vec![0.4, 0.0, 0.4]);
+        assert!(validate_controls(&controls).is_ok());
+        assert_eq!(
+            controls.samples[0].reveal(),
+            Reveal::Swap {
+                lower: 0.4,
+                upper: 0.0,
+                shared: 0.4
+            }
+        );
+        for weights in [
+            vec![f32::NAN, 0.0],
+            vec![0.0, 1.5],
+            vec![-0.1, 0.0],
+            vec![0.4, 0.0, f32::NAN],
+            vec![0.4, 0.0, 1.1],
+            vec![0.4],
+            vec![0.4, 0.0, 0.4, 0.4],
+        ] {
             controls.samples[0].swap = Some(weights);
             assert!(validate_controls(&controls).is_err());
         }
-        controls.samples[0].swap = Some([0.4, 0.0]);
+        controls.samples[0].swap = Some(vec![0.4, 0.0]);
         controls.samples[0].progress = 0.5;
         assert!(validate_controls(&controls).is_err());
     }

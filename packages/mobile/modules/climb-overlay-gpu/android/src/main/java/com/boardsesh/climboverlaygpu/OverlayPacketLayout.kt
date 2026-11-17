@@ -32,7 +32,7 @@ internal object OverlayPacketLayout {
   const val METAL_BINDINGS_RESOURCES: Int = 3
   const val METAL_BINDINGS_UNIFORMS: Int = 2
   const val METAL_BINDINGS_UPPER: Int = 4
-  const val NATIVE_API_VERSION: Int = 6
+  const val NATIVE_API_VERSION: Int = 7
   const val PACKET_VERSION: Int = 1
   const val REVEAL_BAND_BITS: Int = 1046562734
   const val REVEAL_MODE_SWAP: Int = 1
@@ -51,6 +51,7 @@ internal object OverlayPacketLayout {
   const val UNIFORM_OFFSETS_MOTION: Int = 96
   const val UNIFORM_OFFSETS_OFFSETS: Int = 64
   const val UNIFORM_OFFSETS_OTHER: Int = 112
+  const val UNIFORM_OFFSETS_SHARED_WEIGHT: Int = 60
   const val UNIFORM_OFFSETS_SIZE: Int = 0
   const val UNIFORM_OFFSETS_SWAP_WEIGHTS: Int = 88
   const val UNIFORM_OFFSETS_TUNING: Int = 32
@@ -61,5 +62,5 @@ internal object OverlayPacketLayout {
   const val EDIT_PEAK_NS: Long = EDIT_PEAK_TIME_MS * 1_000_000L
   val EDIT_PEAK_REACH: Float = Float.fromBits(EDIT_PEAK_REACH_BITS)
   val REVEAL_BAND: Float = Float.fromBits(REVEAL_BAND_BITS)
-  const val CONTRACT_SHA256 = "cb3156d677ea24c921df9aa0b9849a44bc02a5687dbbe497dbaf3e824aedc8cc"
+  const val CONTRACT_SHA256 = "b819df27ef6725dce201b5df13d6a562fe54742242e11276a84fbb07a06acba0"
 }

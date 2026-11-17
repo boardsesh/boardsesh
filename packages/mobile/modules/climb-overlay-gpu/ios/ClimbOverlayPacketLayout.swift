@@ -32,7 +32,7 @@ enum ClimbOverlayPacketLayout {
   static let metalBindingsResources: Int = 3
   static let metalBindingsUniforms: Int = 2
   static let metalBindingsUpper: Int = 4
-  static let nativeApiVersion: Int = 6
+  static let nativeApiVersion: Int = 7
   static let packetVersion: Int = 1
   static let revealBandBits: Int = 1046562734
   static let revealModeSwap: Int = 1
@@ -51,6 +51,7 @@ enum ClimbOverlayPacketLayout {
   static let uniformOffsetsMotion: Int = 96
   static let uniformOffsetsOffsets: Int = 64
   static let uniformOffsetsOther: Int = 112
+  static let uniformOffsetsSharedWeight: Int = 60
   static let uniformOffsetsSize: Int = 0
   static let uniformOffsetsSwapWeights: Int = 88
   static let uniformOffsetsTuning: Int = 32
@@ -61,5 +62,5 @@ enum ClimbOverlayPacketLayout {
   static let editPeakTimeSeconds: Double = Double(editPeakTimeMs) / 1000.0
   static let editPeakReach = Float(bitPattern: UInt32(editPeakReachBits))
   static let revealBand = Float(bitPattern: UInt32(revealBandBits))
-  static let contractSha256 = "cb3156d677ea24c921df9aa0b9849a44bc02a5687dbbe497dbaf3e824aedc8cc"
+  static let contractSha256 = "b819df27ef6725dce201b5df13d6a562fe54742242e11276a84fbb07a06acba0"
 }
