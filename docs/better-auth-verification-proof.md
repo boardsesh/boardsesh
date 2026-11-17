@@ -1,5 +1,7 @@
 # BA-01 canonical verification and resend proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. The same behavior (UID-bound receipts, single use, newest resend wins, expiry never becomes fresh issuance) is tested by `packages/backend/src/auth/authority/__tests__/verification-authority.test.ts` and `packages/backend/src/auth/current-store/__tests__/email-verification.test.ts`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This is the **new canonical link** proof for
 [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976), tracked in the
 [implementation ledger](./better-auth-implementation.md). The separate
@@ -133,9 +135,8 @@ external side effects inside application hooks cannot be rolled back by Postgres
 ## Validation and remaining gates
 
 ```sh
-vp check packages/backend/src/auth/prototype/verification-state.ts packages/backend/src/auth/prototype/verification-lifecycle.ts packages/backend/src/auth/prototype/__tests__/verification-lifecycle.test.ts packages/backend/src/auth/prototype/legacy-bridge.ts
-AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent verification-lifecycle
-vp exec tsc --noEmit --project packages/backend/tsconfig.json
+vp test run --config packages/backend/vite.auth-authority.config.ts verification-authority --reporter=agent
+vp test run --config packages/backend/vite.auth-mirror.config.ts email-verification --reporter=agent
 ```
 
 Final author validation passed **41/41 in 26.55 seconds**. Independent review

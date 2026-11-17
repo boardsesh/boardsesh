@@ -1,5 +1,7 @@
 # BA-01 legacy recovery compatibility proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Recovery is live. It is tested by `recovery-authority.test.ts` in `packages/backend/src/auth/authority/__tests__/` and by `password-recovery.test.ts` and `recovery-public-consumer.test.ts` in `packages/backend/src/auth/current-store/__tests__/`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This disposable proof supports [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975),
 BA-01 (#6976) and the recovery work in BA-03 (#6977). The
 [implementation ledger](./better-auth-implementation.md) owns delivery status.
@@ -98,9 +100,8 @@ change/set-password, provider-link or administrative mutation paths.
 Run the suite against a disposable local Postgres administrator:
 
 ```sh
-AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres \
-  vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  legacy-recovery.test.ts --reporter=agent
+vp test run --config packages/backend/vite.auth-authority.config.ts recovery-authority --reporter=agent
+vp test run --config packages/backend/vite.auth-mirror.config.ts password-recovery recovery-public-consumer --reporter=agent
 ```
 
 The proof uses two separately created facades over the same database and real

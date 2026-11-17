@@ -1,5 +1,7 @@
 # Pre-cutover native and Garmin refresh proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Native refresh lineage is live. It is tested by `native-session.test.ts`, `native-integration-review.test.ts` and `native-revocation.test.ts` in `packages/backend/src/auth/authority/__tests__/` and by `native-ancestry.contract.ts` under `packages/backend/src/__tests__/native-contract/`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This disposable proof advances BA-01 (#6976) and BA-06 (#6980) in
 [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). The
 [implementation ledger](./better-auth-implementation.md) owns readiness. No
@@ -111,9 +113,8 @@ installed-client storage and real-device/Garmin QA remain separate gates.
 ## Reproduce and review
 
 ```sh
-AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres \
-  vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  legacy-native-refresh.test.ts --reporter=agent
+vp test run --config packages/backend/vite.auth-authority.config.ts native-session native-integration-review native-revocation --reporter=agent
+vp run test:native-contract
 ```
 
 Author validation after the durable-epoch fix on 2026-11-04: **29 integration

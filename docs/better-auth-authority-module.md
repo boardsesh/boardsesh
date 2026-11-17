@@ -66,7 +66,7 @@ filters, nonboolean-write rejection, mixed-case-row rejection, canonical
 session reads, expiry and sign-out, wrong-password refusal, caller rollback including adapter transactions,
 cascade deletion with surviving evidence, and fully initialized instance
 construction averaging under 5 ms across 100 requests. The prototype's native
-and legacy lifecycle adapters remain prototype-only; production bridge and
+and legacy lifecycle adapters were deleted with it in #7620; production bridge and
 native issuance adoption belong to later BA-04 slices.
 
 Rollback removes the unmounted code and leaves the unused additive tables.

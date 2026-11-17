@@ -159,48 +159,7 @@ counts are assumed, copied from historical issues, or committed here.
    independent review can pass a gate; this inventory does not complete BA-02,
    BA-03, BA-04, or authorize production rollout.
 
-## Independent review evidence
-
-The inventory/audit implementation agent independently reviewed the other
-agents' prototype authority configuration, disposable database environment,
-generated schema, legacy bridge, native facade, OAuth transaction/family guards,
-and HTTPS browser test harness. The primary agent separately reviewed the audit;
-its author's own test run is not presented as independent audit review.
-
-| Finding | Resolution reviewed |
-| --- | --- |
-| Native password verification outside the issuance transaction could finish after a reset and manufacture a post-cutoff session from an old password. | Verification, canonical session creation, and native issuance now use a transaction-bound authority under the same mutation fence. A deliberately held bcrypt verifier races a reset in the regression test. |
-| Prototype revoke initially ended only one canonical native session, differing from current whole-account sign-out. | Account-wide first-party revocation now shares the cutoff helper while preserving approved partner connections. Stale removed ancestors cannot sign out a newer login. Acceptance of an unexpired consumed ancestor is explicitly a prototype policy extension, not shipped contract equivalence. |
-| OAuth consumed-token cleanup could affect independent grants and, through stock owner-check ordering, another public client's connection. | The authenticated guard checks actual token ownership before delegation and scopes reuse cleanup to immutable authorization-code lineage. Same-user public-client and independent-grant regressions cover both boundaries. |
-| Expired or decorated consumed tokens could bypass the guard and reach broad stock revocation. | Expired revocation is an idempotent no-op. The guard uses the provider's public normalization helper for whitespace/Bearer/DPoP and handles both supported type hints without bypassing ownership. |
-| Prototype lifetimes differed from the accepted contract; repeated consent insertion could conflict; a rollback test overstated its credential evidence. | Lifetimes are 90 days/60 seconds, immutable repeated interactions do not overwrite ownership, and the recreated-handler test now performs a real password reset and verifies both new and rejected old password bytes. |
-| The default web Vitest discovery would import the Playwright-only browser spec, while a browser-only follow-up could skip its backend CI job. | `packages/web/vite.config.ts` excludes `auth-prototype/**`; the dedicated Playwright task owns those tests. The backend change filter explicitly includes the browser fixture folder and Playwright config. |
-
-Independent execution on Node **22.22.2**, using disposable local Postgres:
-
-```sh
-vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  src/auth/prototype/__tests__/identity-native-facade.test.ts \
-  src/auth/prototype/__tests__/legacy-bridge.test.ts --reporter=agent
-# 2 files, 33 tests passed.
-
-vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  src/auth/prototype/__tests__/oauth-provider.test.ts --reporter=agent
-# 1 file, 39 tests passed after the reviewed OAuth fixes.
-
-vp test list --project web auth-prototype --reporter=agent
-# No matching web Vitest tests; the Playwright-only file is excluded.
-
-vp test run --project web \
-  packages/web/app/lib/auth/__tests__/auth-options.test.ts \
-  packages/web/app/api/auth/register/__tests__/route.test.ts \
-  packages/web/app/api/auth/reset-password/__tests__/route.test.ts --reporter=agent
-# 3 existing auth test files, 85 tests passed.
-```
-
-The existing CI capacity, fork, web-fork parity, and location-sync workflow
-regressions also passed: **4 files, 50 tests** after the narrow browser-path
-filter change. Selected-file `vp check` passed, including type-aware lint.
+## Audit evidence
 
 The audit author's separate validation passed **19 pure/URL-policy tests** and
 **2 real-Postgres audit tests**. The latter reuse generated legacy migrations
@@ -210,19 +169,14 @@ The local database named `boardsesh_backend_test` did not exist during an initia
 CLI probe; the CLI returned its fixed failure message. Successful audit evidence
 comes from those isolated fixtures, not from an application or production audit.
 
-No unresolved actionable finding remained in the reviewed, isolated prototype
-scope after those fixes. This is not a first-party migration or partner-launch
-approval. The HTTPS tests were independently source-reviewed and executed by the
-primary agent: they exercise actual browser cookie transport, sibling-domain GET
-reads, a fixture OAuth redirect, discovery, and sign-out. Consent is deliberately
-skipped for that browser fixture. These were the initial evidence runs. The
-[HTTPS browser proof](./better-auth-browser-proof.md) now adds real credentialed
-www/app CORS and server cookie forwarding. Follow-up proofs cover
+This is not a first-party migration or partner-launch
+approval. The [HTTPS browser proof](./better-auth-browser-proof.md) adds real
+credentialed www/app CORS and server cookie forwarding. Follow-up proofs cover
 [genuine NextAuth cookies](./better-auth-legacy-web-proof.md),
 [purpose-bound old recovery links](./better-auth-legacy-recovery.md),
 [pre-cutover refresh](./better-auth-legacy-refresh-proof.md) and
-[actual process replacement](./better-auth-process-proof.md), with later counts
-and decisions in the implementation ledger. Consent UI, actual production
+actual process replacement (that page was deleted with the prototype in #7620), with later
+counts and decisions in the implementation ledger. Consent UI, actual production
 forwarding, Safari and device behavior remain unproved. Production writer
 fencing, normalized/provider uniqueness, every credential mutation, active
 WebSocket revocation, ownership resolution and restored-database rollback remain
