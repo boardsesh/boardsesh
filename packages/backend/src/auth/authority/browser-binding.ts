@@ -30,13 +30,6 @@ import {
   type FirstPartyContinuationMutationKind,
 } from '../current-store/security-mutation-core';
 
-/** No public bootstrap or session route is mounted. An origin-local fallback
- * cannot establish the shared www/app coordinator required for activation. */
-export const BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY = false;
-export function assertBrowserBindingPublicBootstrap(): never {
-  throw new Error('BROWSER_BINDING_COORDINATOR_UNQUALIFIED');
-}
-
 const MAX_VERSION = 2_147_483_647;
 const INTENT_LIFETIME_MS = 15 * 60 * 1000;
 const MAX_BINDING_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;

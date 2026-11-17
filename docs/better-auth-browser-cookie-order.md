@@ -114,9 +114,9 @@ AUTH_PROTOTYPE_DATABASE_URL='<owned localhost admin URL accepted by the proof>' 
 ```
 
 This is a backend prerequisite, not a repaired browser publication result.
-`BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY` remains false and public bootstrap
-throws. No public session/bootstrap/coordinator routes or www/app transport
-adoption are mounted. A single canonical-origin initialization and shared
+No public session/bootstrap/coordinator routes or www/app transport adoption
+are mounted, and #7596 deleted the unused `BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY`
+constant that said so. A single canonical-origin initialization and shared
 coordinator, private command/CSRF/Origin proof, actual publication and cross-tab
 transport, per-version host-only source-proof cookies, all authoritative reader
 adoption, ordinary same-selection renewal, missing-proof/expiry recovery,
