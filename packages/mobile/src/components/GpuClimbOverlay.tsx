@@ -15,6 +15,7 @@ import {
   NativeMotionClimbOverlayGPU,
   type ClimbOverlayGPUMotionProps,
   type ClimbOverlayGPUReady,
+  type ClimbOverlayGPUSwapLookState,
 } from '../../modules/climb-overlay-gpu/src';
 import {
   nativeWallSwapFrame,
@@ -22,7 +23,12 @@ import {
   type NativeWallSwapFrame,
   type RevealMode,
 } from './play-drawer/wall-swap';
-import { shippedSwapFrame, SWAP_LOOK_NATIVE_VERSION, type SwapFrameSource } from './play-drawer/swap-look';
+import {
+  shippedSwapFrame,
+  SWAP_LOOK_NATIVE_VERSION,
+  type SwapFrameSource,
+  type SwapLookStatus,
+} from './play-drawer/swap-look';
 import {
   INITIAL_SWAP_FRAME_SEQUENCE,
   sequencedSwapFrame,
@@ -50,6 +56,8 @@ export type GpuClimbTransition = {
   swapFrame?: SwapFrameSource;
   /** Board motion lab only: the encoded swap look (`encodeSwapLook`) its six-number frames are drawn with. */
   swapLook?: readonly number[];
+  /** Board motion lab only: the native look's state, when it changes. */
+  onSwapLookState?: (status: SwapLookStatus) => void;
   /** Board motion lab only: Reduce Motion as it chose; absent, the system setting. */
   reduceMotion?: boolean;
   /** Board motion lab only: this board presented a request, with the native timings. */
@@ -59,6 +67,15 @@ export type GpuClimbTransition = {
 };
 
 const NO_GPU_PREFETCH_FRAMES: readonly string[] = [];
+
+/** The native look event as a status, or null for a payload this app does not know. */
+function swapLookStatus(event: ClimbOverlayGPUSwapLookState): SwapLookStatus | null {
+  const reachOff = typeof event.reachOff === 'string' ? { reachOff: event.reachOff } : {};
+  if (event.state === 'off') return { state: 'off', reason: event.reason ?? 'unknown' };
+  if (event.state === 'ready') return { state: 'ready', ...reachOff };
+  if (event.state === 'on' && typeof event.holds === 'number') return { state: 'on', holds: event.holds, ...reachOff };
+  return null;
+}
 
 /** What a ref on the animated motion overlay receives: the swap command's target. */
 type MotionOverlayInstance = Component<ClimbOverlayGPUMotionProps> | FunctionComponent<ClimbOverlayGPUMotionProps>;
@@ -104,6 +121,7 @@ export function GpuClimbOverlay({
   const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
   const onTransitionReady = transition?.onRenderReady;
   const onTransitionError = transition?.onRenderError;
+  const onTransitionLook = transition?.onSwapLookState;
   const appActive = useIsAppActive();
   const pagePosition = transition?.pagePosition;
   const centerPage = transition?.centerPage ?? 0;
@@ -120,6 +138,13 @@ export function GpuClimbOverlay({
   // the shipped four numbers and no look, and draws API 7's swap.
   const swapLookSupported = swapCommand && climbOverlaySwapLookVersion >= SWAP_LOOK_NATIVE_VERSION;
   const swapLook = swapLookSupported ? transition?.swapLook : undefined;
+  const swapLookState = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUSwapLookState>) => {
+      const status = swapLookStatus(nativeEvent);
+      if (status) onTransitionLook?.(status);
+    },
+    [onTransitionLook],
+  );
   const { target: swapCommandTarget, latest: latestSequencedFrame } = useSwapFrameCommand<MotionOverlayInstance>(
     swapFrame,
     swapCommand,
@@ -256,7 +281,7 @@ export function GpuClimbOverlay({
           ? { prefetchFrames: transition?.prefetchFrames ?? NO_GPU_PREFETCH_FRAMES }
           : {})}
         {...(climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
-        {...(swapLook ? { swapLook: reduceMotion ? null : swapLook } : {})}
+        {...(swapLook ? { swapLook, onSwapLookState: swapLookState } : {})}
         centerPage={centerPage}
         ref={swapCommandTarget}
         animatedProps={animatedProps}

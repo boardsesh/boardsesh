@@ -32,9 +32,9 @@ import { LAB_BOARDS, climbSetsFor, findLabBoard } from './fixtures';
 import { LabStage } from './LabStage';
 import { SPEED_CHOICES, parseLabParams, slowdownForSpeed, speedLabel, type SpeedChoice } from './params';
 import { FINGER_SCRIPTS, SHOWCASE_SCRIPT } from './scripts';
-import type { FingerScript, LabRenderStatus, ParamValues, ReduceMotionChoice } from './types';
+import type { FingerScript, LabPreset, LabRenderStatus, ParamValues, ReduceMotionChoice } from './types';
 import { fingerScriptMs } from './use-virtual-finger';
-import { BOARD_MOTION_VARIANTS } from './variants';
+import { BOARD_MOTION_VARIANTS, DEFAULT_VARIANT_ID } from './variants';
 
 const STAGE_MAX_HEIGHT_RATIO = 0.5;
 const COPIED_LABEL_MS = 1500;
@@ -45,6 +45,10 @@ const REDUCE_MOTION_OPTIONS = [
   { key: 'off', label: 'Off' },
 ];
 const SPEED_OPTIONS = SPEED_CHOICES.map((speed) => ({ key: String(speed), label: speedLabel(speed) }));
+const PRESET_OPTIONS = [
+  { key: 'subtle', label: 'Subtle' },
+  { key: 'bold', label: 'Bold' },
+];
 
 function defaultsFor(params: readonly { key: string; default: number }[]): ParamValues {
   return Object.fromEntries(params.map((spec) => [spec.key, spec.default]));
@@ -65,8 +69,11 @@ export default function BoardMotionLabScreen() {
       ),
     [],
   );
-  const firstVariant = availableVariants[0] ?? BOARD_MOTION_VARIANTS[0];
-  // A linked variant this build can't run opens on the first one it can.
+  const firstVariant =
+    availableVariants.find((candidate) => candidate.id === DEFAULT_VARIANT_ID) ??
+    availableVariants[0] ??
+    BOARD_MOTION_VARIANTS[0];
+  // A linked variant this build can't run falls back to firstVariant.
   const linkedVariant = availableVariants.find((candidate) => candidate.id === link.variant);
 
   const [variantId, setVariantId] = useState(linkedVariant?.id ?? firstVariant.id);
@@ -75,6 +82,8 @@ export default function BoardMotionLabScreen() {
   const [speed, setSpeed] = useState<SpeedChoice>(link.speed ?? 1);
   const [reduceMotion, setReduceMotion] = useState<ReduceMotionChoice>(link.reduceMotion ?? 'system');
   const [overrides, setOverrides] = useState<Record<string, ParamValues>>({});
+  // One choice for every variant, so Play all can run them all on Bold.
+  const [preset, setPreset] = useState<LabPreset>(link.preset ?? 'subtle');
   const [status, setStatus] = useState<LabRenderStatus>({ path: 'loading' });
   const [scriptId, setScriptId] = useState(FINGER_SCRIPTS[0]?.id ?? '');
   const [script, setScript] = useState<{ script: FingerScript; runId: number } | null>(null);
@@ -87,7 +96,11 @@ export default function BoardMotionLabScreen() {
   const board = findLabBoard(boardId);
   const climbSets = useMemo(() => climbSetsFor(board), [board]);
   const climbSet = climbSets.find((candidate) => candidate.id === setId) ?? climbSets[0];
-  const params = useMemo(() => ({ ...defaultsFor(variant.params), ...overrides[variant.id] }), [variant, overrides]);
+  const presetParams = preset === 'bold' ? variant.boldParams : undefined;
+  const params = useMemo(
+    () => ({ ...defaultsFor(variant.params), ...presetParams, ...overrides[variant.id] }),
+    [variant, presetParams, overrides],
+  );
 
   const boardAspect = useMemo(() => {
     const renderData = getBoardRenderData({ ...board, setIds: board.setIds.split(',').map(Number) });
@@ -218,11 +231,19 @@ export default function BoardMotionLabScreen() {
     [],
   );
   const copyParams = useCallback(async () => {
-    await Clipboard.setStringAsync(JSON.stringify({ variant: variant.id, params }, null, 2));
+    await Clipboard.setStringAsync(JSON.stringify({ variant: variant.id, preset, params }, null, 2));
     setCopied(true);
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
     copiedTimerRef.current = setTimeout(() => setCopied(false), COPIED_LABEL_MS);
-  }, [variant.id, params]);
+  }, [variant.id, preset, params]);
+  /** Loads a preset into the sliders: this variant's own slider changes go. */
+  const choosePreset = useCallback(
+    (next: LabPreset) => {
+      setPreset(next);
+      setOverrides((current) => ({ ...current, [variant.id]: {} }));
+    },
+    [variant.id],
+  );
 
   const variantOptions = BOARD_MOTION_VARIANTS.map((candidate) => {
     const availability = variantAvailability(candidate, climbOverlayGpuApiVersion, climbOverlaySwapLookVersion);
@@ -282,6 +303,14 @@ export default function BoardMotionLabScreen() {
           <Text variant="footnote" tone="secondary" style={styles.summary}>
             {variant.summary}
           </Text>
+          {variant.boldParams ? (
+            <SegmentedControl
+              options={PRESET_OPTIONS}
+              selectedKey={preset}
+              onSelect={(key) => choosePreset(key === 'bold' ? 'bold' : 'subtle')}
+              accessibilityLabel="Preset"
+            />
+          ) : null}
         </Section>
         <Section title="Speed">
           <SegmentedControl
@@ -313,10 +342,7 @@ export default function BoardMotionLabScreen() {
             </View>
             <View style={styles.buttonRow}>
               <ActionButton label={copied ? 'Copied' : 'Copy params'} onPress={copyParams} />
-              <ActionButton
-                label="Reset params"
-                onPress={() => setOverrides((current) => ({ ...current, [variant.id]: {} }))}
-              />
+              <ActionButton label="Reset params" onPress={() => choosePreset('subtle')} />
             </View>
           </Section>
         ) : null}

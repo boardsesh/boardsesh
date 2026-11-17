@@ -11,6 +11,7 @@ describe('parseLabParams', () => {
         speed: '0.25',
         autoplay: 'all',
         reduceMotion: 'on',
+        preset: 'Bold',
       }),
     ).toEqual({
       variant: 'wipe',
@@ -19,6 +20,7 @@ describe('parseLabParams', () => {
       speed: 0.25,
       autoplay: 'all',
       reduceMotion: 'on',
+      preset: 'bold',
     });
   });
   it('nulls anything unrecognised', () => {
@@ -29,6 +31,7 @@ describe('parseLabParams', () => {
       speed: null,
       autoplay: null,
       reduceMotion: null,
+      preset: null,
     });
   });
   it('takes the first of repeated params and accepts 0.5x', () => {

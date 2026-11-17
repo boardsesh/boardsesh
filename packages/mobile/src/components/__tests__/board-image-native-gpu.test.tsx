@@ -31,6 +31,7 @@ const controls = vi.hoisted(() => ({
     configJson: string;
     reduceMotion?: boolean;
     swapLook?: readonly number[] | null;
+    onSwapLookState?: (event: { nativeEvent: Record<string, unknown> }) => void;
     previousFrames?: string | null;
     nextFrames?: string | null;
     centerPage?: number;
@@ -603,7 +604,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     expect(controls.dispatchCommand).toHaveBeenLastCalledWith(controls.props?.ref, 'swapFrame', [4.25, 0.6, 0.2, 1, 1]);
     unmount();
     // A look binary: the look as a prop, and the frame whole with its flags after the sequence.
-    controls.swapLookVersion = 1;
+    controls.swapLookVersion = 2;
     controls.dispatchCommand.mockClear();
     render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
     expect(controls.props?.swapLook).toEqual(look);
@@ -624,11 +625,13 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     );
   });
 
-  it('turns the swap look off under Reduce Motion', () => {
+  it('sends the look under Reduce Motion too, so the native view can say it is off and why', () => {
     controls.apiVersion = 7;
     controls.swapCommandApi = 1;
-    controls.swapLookVersion = 1;
+    controls.swapLookVersion = 2;
     controls.reduceMotion = true;
+    const onSwapLookState = vi.fn();
+    const look = [2, 1, 1, 0.4, 0.4, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0];
     const transition = {
       previousFrames: 'p4131r43',
       nextFrames: 'p4306r43',
@@ -636,10 +639,17 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
       pagePosition: { value: 4.25 } as SharedValue<number>,
       revealMode: 'swap' as const,
       swapFrame: { value: [4.25, 1, 0, 1] } as unknown as SharedValue<readonly [number, number, number, number]>,
-      swapLook: [1, 1, 1, 0.4, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      swapLook: look,
+      onSwapLookState,
     };
     render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
-    expect(controls.props?.swapLook).toBeNull();
+    expect(controls.props?.swapLook).toEqual(look);
+    act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'off', reason: 'Reduce Motion' } }));
+    expect(onSwapLookState).toHaveBeenLastCalledWith({ state: 'off', reason: 'Reduce Motion' });
+    act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'on', holds: 24, reachOff: 'Low Power' } }));
+    expect(onSwapLookState).toHaveBeenLastCalledWith({ state: 'on', holds: 24, reachOff: 'Low Power' });
+    act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'weird' } }));
+    expect(onSwapLookState).toHaveBeenCalledTimes(2);
   });
 
   it('flattens multi-frame neighboring climbs just like the current climb', () => {

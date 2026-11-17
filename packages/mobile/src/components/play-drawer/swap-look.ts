@@ -12,10 +12,10 @@ import type { SharedValue } from 'react-native-reanimated';
 import type { WallSwapFrame } from './wall-swap';
 
 /** The native swap look this app speaks. A binary below it gets no look and four-number frames. */
-export const SWAP_LOOK_NATIVE_VERSION = 1;
+export const SWAP_LOOK_NATIVE_VERSION = 2;
 
 /** First number of the encoded look, so a binary can reject a layout it does not know. */
-const SWAP_LOOK_FORMAT = 1;
+const SWAP_LOOK_FORMAT = 2;
 
 /**
  * Every number of a look. "Progress" is a side's weight scaled to its stage:
@@ -26,8 +26,13 @@ export type SwapLook = {
   readonly holdWindow: number;
   /** The same below the floor. */
   readonly lowWindow: number;
-  /** The weight where the two stages meet: every hold is at the floor when its side is. */
+  /** A leaving climb's stages meet here (the drag's dim): every hold is at it when its side is. */
   readonly floor: number;
+  /**
+   * The same for an arriving climb. Equal to `floor` it moves like a leaving one; 0 lights it in
+   * one front from dark to whole; with ghosts, where the ghosts end and the marks begin.
+   */
+  readonly arrivalFloor: number;
   /** An arriving climb lights bottom to top within its own holds instead of from the swipe edge. */
   readonly climbUp: boolean;
   /** 0 to 0.5: mixes each hold's order toward a hash of its id, for a ragged run. */
@@ -40,8 +45,10 @@ export type SwapLook = {
   readonly swell: number;
   /** How long the swell settles, as a share of the arriving climb's progress above the floor. */
   readonly swellTail: number;
-  /** An arriving hold's reach is 1 + focus × (1 − weight)²: wide and soft while faint. */
+  /** An arriving hold's reach is 1 + focus × (1 − weight)^focusShape: wide and soft while faint. */
   readonly focus: number;
+  /** 2 pulls the halo in early; 0.5 keeps it wide until the hold is nearly whole. */
+  readonly focusShape: number;
   /** A leaving hold's reach is 1 − tighten × (1 − weight): it pulls in as it fades. */
   readonly tighten: number;
   /** The swell grows with a hold's order: with climb-up order, the top of the climb swells most. */
@@ -53,6 +60,7 @@ export const PLAIN_SWAP_LOOK: SwapLook = {
   holdWindow: 1,
   lowWindow: 1,
   floor: 0.4,
+  arrivalFloor: 0.4,
   climbUp: false,
   jitter: 0,
   ghost: 0,
@@ -60,6 +68,7 @@ export const PLAIN_SWAP_LOOK: SwapLook = {
   swell: 0,
   swellTail: 0,
   focus: 0,
+  focusShape: 2,
   tighten: 0,
   topBoost: 0,
 };
@@ -71,6 +80,7 @@ export function encodeSwapLook(look: SwapLook): readonly number[] {
     look.holdWindow,
     look.lowWindow,
     look.floor,
+    look.arrivalFloor,
     look.climbUp ? 1 : 0,
     look.jitter,
     look.ghost,
@@ -78,17 +88,30 @@ export function encodeSwapLook(look: SwapLook): readonly number[] {
     look.swell,
     look.swellTail,
     look.focus,
+    look.focusShape,
     look.tighten,
     look.topBoost,
   ];
 }
 
 /**
+ * What the native view says about the look (`onSwapLookState`), only when it
+ * changes: off and why, ready (valid, not drawn yet), or drawn with its hold
+ * count. `reachOff` says why glow reach is pinned at 1 while it draws.
+ */
+export type SwapLookStatus =
+  | { state: 'off'; reason: string }
+  | { state: 'ready'; reachOff?: string }
+  | { state: 'on'; holds: number; reachOff?: string };
+
+/**
  * A swap frame under a look: the pair and the two side weights as in
  * `WallSwapFrame`, then the floor below which shared holds never go (the
  * native look gives each shared hold the brighter of the two fronts at its
- * spot), then 1 when the climb being left, and the arriving one, use the
- * look's arriving rules. A climb's flag only flips while its weight is 0 or 1.
+ * spot), then the arrival code of the climb being left and of the arriving
+ * one: 0 leaving, 1 arriving from the right edge, 2 from the left, plus 4 for a
+ * flick run's calm arrival (no swell). A climb's code only changes while its
+ * weight is 0 or 1 (`look-driver.ts` in the board motion lab).
  */
 export type SwapLookFrame = readonly [
   pagePosition: number,

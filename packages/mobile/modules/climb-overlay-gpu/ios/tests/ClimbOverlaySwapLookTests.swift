@@ -11,9 +11,9 @@ import Foundation
   static func near(_ first: Float, _ second: Float, _ tolerance: Float = 1e-5) -> Bool { abs(first - second) <= tolerance }
 
   static func values(_ look: Look) -> [Double] {
-    [1, Double(look.holdWindow), Double(look.lowWindow), Double(look.floor), look.climbUp ? 1 : 0,
-     Double(look.jitter), Double(look.ghost), Double(look.markLag), Double(look.swell), Double(look.swellTail),
-     Double(look.focus), Double(look.tighten), Double(look.topBoost)]
+    [2, Double(look.holdWindow), Double(look.lowWindow), Double(look.floor), Double(look.arrivalFloor),
+     look.climbUp ? 1 : 0, Double(look.jitter), Double(look.ghost), Double(look.markLag), Double(look.swell),
+     Double(look.swellTail), Double(look.focus), Double(look.focusShape), Double(look.tighten), Double(look.topBoost)]
   }
 
   /// Looks across every slider's extremes and the variants' defaults.
@@ -26,6 +26,8 @@ import Foundation
           look.holdWindow = window
           look.lowWindow = arrivingRules % 2 == 0 ? 1 : window
           look.floor = floor
+          look.arrivalFloor = [floor, 0, 0.4, 0.25][arrivingRules]
+          look.focusShape = [2, 0.5, 0.25, 3][arrivingRules]
           look.climbUp = arrivingRules >= 2
           look.jitter = arrivingRules == 3 ? 0.5 : (arrivingRules == 1 ? 0.25 : 0)
           look.ghost = arrivingRules == 1 ? 0.3 : (arrivingRules == 3 ? 1 : 0)
@@ -35,6 +37,7 @@ import Foundation
           look.focus = [0, 0.3, 0.35, 0][arrivingRules]
           look.tighten = [0, 0.15, 0.6, 0.5][arrivingRules]
           look.topBoost = [0, 1, 0.6, 0][arrivingRules]
+          if look.swell > 0 { look.holdWindow = min(look.holdWindow, 1 - look.swellTail) }
           precondition(Look(values(look)) == look, "Every test look round-trips through the prop")
           looks.append(look)
         }
@@ -55,14 +58,16 @@ import Foundation
 
   static func main() {
     // The prop: exactly 13 finite numbers, format 1, every number clamped.
-    precondition(Look([]) == nil && Look([2,1,1,0.4,0,0,0,0,0,0,0,0,0]) == nil)
-    precondition(Look([1,1,1,0.4,0,0,0,0,0,0,0,0,.nan]) == nil)
-    precondition(Look([1,1,1,0.4,0,0,0,0,0,0,0,0]) == nil)
-    let wild = Look([1,0,9,-1,0.7,5,-2,3,1,0,2,-1,4])!
-    precondition(wild.holdWindow == 0.05 && wild.lowWindow == 1 && wild.floor == 0 && wild.climbUp && wild.jitter == 0.5)
-    precondition(wild.ghost == 0 && wild.markLag == 1 && wild.swell == 0.35 && wild.swellTail == 0.05)
-    precondition(wild.focus == 0.35 && wild.tighten == 0 && wild.topBoost == 1,
-      "A swell always gets a tail, so it ends at reach 1 before its hold is whole")
+    precondition(Look([]) == nil && Look([1,1,1,0.4,0.4,0,0,0,0,0,0,0,2,0,0]) == nil, "Format 1 is gone")
+    precondition(Look([2,1,1,0.4,0.4,0,0,0,0,0,0,0,2,0,.nan]) == nil)
+    precondition(Look([2,1,1,0.4,0,0,0,0,0,0,0,0,0]) == nil)
+    let wild = Look([2,0,9,-1,3,0.7,5,-2,3,1,0,2,9,-1,4])!
+    precondition(wild.holdWindow == 0.05 && wild.lowWindow == 1 && wild.floor == 0 && wild.arrivalFloor == 0.95)
+    precondition(wild.climbUp && wild.jitter == 0.5 && wild.ghost == 0 && wild.markLag == 1 && wild.swell == 0.35)
+    precondition(wild.swellTail == 0.05 && wild.focus == 0.35 && wild.focusShape == 3 && wild.tighten == 0
+      && wild.topBoost == 1, "A swell always gets a tail, so it ends at reach 1 before its hold is whole")
+    let wide = Look([2,1,1,0.4,0,0,0,0,0,0.3,0.25,0,2,0,0])!
+    precondition(wide.holdWindow == 0.75, "A swell's hold window leaves room for its tail")
 
     let lower = holds(24, seed: 11)
     let upper = holds(24, seed: 97)
@@ -86,8 +91,14 @@ import Foundation
             precondition(shapes(1).allSatisfy { $0 == ClimbOverlaySwapLook.Shape(mark: 1, glow: 1, reach: 1) },
               "W = 1 is the still image: every hold whole at reach 1")
             precondition(shapes(0).allSatisfy { $0 == .hidden }, "W = 0 hides every hold")
-            let atFloor = shapes(look.floor)
-            precondition(atFloor.allSatisfy { $0 == atFloor[0] }, "W = floor is uniform for every key")
+            let atFloor = shapes(ClimbOverlaySwapLook.stageFloor(arriving: arriving, look: look))
+            precondition(atFloor.allSatisfy { $0 == atFloor[0] }, "W = this side's floor is uniform for every key")
+            // The last frame before whole: a swell has settled, so nothing snaps back at W = 1.
+            for hold in scene.holds {
+              let key = ClimbOverlaySwapLook.key(hold, upper: upperSide, side: side, look: look, mirrored: mirrored)
+              precondition(ClimbOverlaySwapLook.swell(1 - 1e-3, key: key, look: look) < 1e-3,
+                "The swell is gone just before its side is whole")
+            }
             for hold in scene.holds {
               let key = ClimbOverlaySwapLook.key(hold, upper: upperSide, side: side, look: look, mirrored: mirrored)
               var previous: Float = 0
@@ -109,6 +120,18 @@ import Foundation
         }
       }
     }
+
+    // An arrival floor of 0 lights an arriving climb in one front, from dark to whole.
+    var single = Look()
+    single.holdWindow = 0.2
+    single.arrivalFloor = 0
+    precondition(ClimbOverlaySwapLook.lit(0.3, key: 0, arriving: true, look: single) == 1
+      && ClimbOverlaySwapLook.lit(0.3, key: 1, arriving: true, look: single) == 0, "One front, no stop at the floor")
+    // A focus shape under 2 keeps the halo wide for longer.
+    var focus = Look()
+    focus.focus = 0.35
+    focus.focusShape = 0.5
+    precondition(near(ClimbOverlaySwapLook.shaped(0.75, key: 0, arriving: true, look: focus, allowReach: true).reach, 1.175))
 
     // Window 1 and no reach terms is API 7's swap: one weight per side.
     var plain = Look()
@@ -140,6 +163,7 @@ import Foundation
     var front = Look()
     front.holdWindow = 0.2
     front.floor = 0
+    front.arrivalFloor = 0
     let left = Hold(centerX: 0.1, centerY: 0.5, membership: 0, entropy: 0.5, annotation: false)
     let right = Hold(centerX: 0.9, centerY: 0.5, membership: 0, entropy: 0.5, annotation: false)
     func litAt(_ hold: Hold, upper: Bool, weight: Float, mirrored: Bool = false) -> Float {
@@ -213,12 +237,44 @@ import Foundation
     precondition(ClimbOverlayShader.source.contains("constant ushort4* look [[buffer(\(ClimbOverlaySwapLook.metalBinding))]]"))
 
     // The lower page is the climb being left while the pair leans toward the upper one.
-    precondition(ClimbOverlaySwapLook.sides(progress: 0.25, outgoingArrives: false, incomingArrives: true) == (false, true))
-    precondition(ClimbOverlaySwapLook.sides(progress: 0.75, outgoingArrives: false, incomingArrives: true) == (true, false))
+    precondition(ClimbOverlaySwapLook.sides(progress: 0.25, outgoing: 0, incoming: 1) == (0, 1))
+    precondition(ClimbOverlaySwapLook.sides(progress: 0.75, outgoing: 0, incoming: 2) == (2, 0))
+
+    // The app's codes: 0 leaving, 1 arriving from the right, 2 from the left, +4 calm.
+    precondition(Side(weight: 0.5, code: 0) == Side(weight: 0.5, arriving: false))
+    precondition(Side(weight: 0.5, code: 1) == Side(weight: 0.5, arriving: true, fromRight: true))
+    precondition(Side(weight: 0.5, code: 6) == Side(weight: 0.5, arriving: true, fromRight: false, calm: true))
+    precondition(Side(weight: 0.5, code: 4) == Side(weight: 0.5, arriving: false), "Calm only matters when arriving")
+    // A climb skipped mid-front moves from the upper slot to the lower one; its entry edge keeps its key.
+    let skippedUpper = ClimbOverlaySwapLook.key(right, upper: true, side: Side(weight: 0.3, arriving: true, fromRight: true),
+      look: front, mirrored: false)
+    let skippedLower = ClimbOverlaySwapLook.key(right, upper: false, side: Side(weight: 0.3, arriving: true, fromRight: true),
+      look: front, mirrored: false)
+    precondition(skippedUpper == skippedLower && near(skippedLower, 0.1), "The front keeps its side through the slot change")
+    precondition(ClimbOverlaySwapLook.key(right, upper: false, side: Side(weight: 0.3, arriving: false, fromRight: true),
+      look: front, mirrored: false) == 0.9, "A leaving climb keys from its slot")
+    // A flick run's arrival has no swell.
+    var calmSwell = Look()
+    calmSwell.arrivalFloor = 0
+    calmSwell.holdWindow = 0.3
+    calmSwell.swell = 0.3
+    calmSwell.swellTail = 0.3
+    let swollen = ClimbOverlaySwapLook.shaped(0.5, key: 0.2, arriving: true, look: calmSwell, allowReach: true)
+    let calm = ClimbOverlaySwapLook.shaped(0.5, key: 0.2, arriving: true, look: calmSwell, allowReach: true, calm: true)
+    precondition(swollen.reach > 1.05 && calm.reach == 1 && calm.glow == swollen.glow)
 
     // Seven-number frames carry the arrival flags; old frame lengths keep theirs off.
-    let seven = ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, 0, 1])!
-    precondition(seven.sequence == 9 && seven.arrivals == .init(outgoing: false, incoming: true) && seven.frame.shared == 1)
+    let seven = ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, 0, 5])!
+    precondition(seven.sequence == 9 && seven.arrivals == .init(outgoing: 0, incoming: 5) && seven.frame.shared == 1)
+    precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, 9, -1])!.arrivals == .init(),
+      "Unknown codes are leaving")
+    // Without the look (Reduce Motion), a look frame's shared holds follow the shipped rule, not the floor.
+    let floorFrame = ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.9, 0.2, 0.7, 10, 0, 1])!.frame
+    precondition(floorFrame.shared == 0.9 && floorFrame.sharedFloor == 0.7)
+    precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.3, 0.2, 0.7, 11, 0, 1])!.frame.shared == 0.7)
+    precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.3, 0.2, 0.7, 12])!.frame.sharedFloor == nil)
+    precondition(ClimbOverlaySwapLook.reach16(ClimbOverlaySwapLook.maxReach) * 1 <= UInt16(ClimbOverlaySwapLook.maxReach * 32768),
+      "Reach rounds down, never past the atlas padding")
     precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9])!.arrivals == .init())
     precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, 0]) == nil)
     precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, .nan, 1]) == nil)

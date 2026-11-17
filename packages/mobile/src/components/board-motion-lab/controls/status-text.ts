@@ -1,8 +1,25 @@
 import { SWAP_LOOK_NATIVE_VERSION } from '../../play-drawer/swap-look';
-import type { BoardMotionVariant, LabRenderStatus } from '../types';
+import type { BoardMotionVariant, LabLookStatus, LabRenderStatus } from '../types';
 import { SWAP_LOOK_LAB_MODE } from '../variants/look-variant';
 
-/** "GPU · API 7 · prepare 42 ms · upload 3 ms", "PNG · <reason>" or "Loading…". */
+/** "look on (24 holds)", "look off (Reduce Motion)", …: whether the native look is drawing. */
+export function formatLook(look: LabLookStatus): string {
+  const reach = 'reachOff' in look && look.reachOff ? ` · reach off (${look.reachOff})` : '';
+  switch (look.state) {
+    case 'unsupported':
+      return `look off (unsupported build: swapLookVersion ${look.swapLookVersion})`;
+    case 'waiting':
+      return 'look sent, no answer yet';
+    case 'off':
+      return `look off (${look.reason})`;
+    case 'ready':
+      return `look ready${reach}`;
+    case 'on':
+      return `look on (${look.holds} holds)${reach}`;
+  }
+}
+
+/** "GPU · API 7 · prepare 42 ms · upload 3 ms · look on (24 holds)", "PNG · <reason>" or "Loading…". */
 export function formatStatus(status: LabRenderStatus): string {
   switch (status.path) {
     case 'loading':
@@ -13,6 +30,7 @@ export function formatStatus(status: LabRenderStatus): string {
         `API ${status.apiVersion}`,
         status.prepareMs === null ? null : `prepare ${Math.round(status.prepareMs)} ms`,
         status.uploadMs === null ? null : `upload ${Math.round(status.uploadMs)} ms`,
+        status.look ? formatLook(status.look) : null,
       ]
         .filter((part) => part !== null)
         .join(' · ');

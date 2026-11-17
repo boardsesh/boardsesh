@@ -5,7 +5,7 @@
  * (`src/components/board-motion-lab/`) passes its own to compare alternatives.
  */
 import type { ClimbOverlayGPUReady } from '../../../modules/climb-overlay-gpu/src';
-import type { BoardSwapFrame, SwapLook } from './swap-look';
+import type { BoardSwapFrame, SwapLook, SwapLookStatus } from './swap-look';
 import type { RevealMode, WallSwapInput } from './wall-swap';
 
 /** What a transition sees each UI frame: the pager plus its own two clocks. */
@@ -63,4 +63,6 @@ export type BoardRenderDiagnostics = {
   onGpuReady: (ready: ClimbOverlayGPUReady) => void;
   /** The GPU board gave up on the climbs it was given; the native reason. */
   onGpuError: (reason: string) => void;
+  /** The native swap look's state, when it changes (look variants on a binary with the look). */
+  onSwapLook?: (status: SwapLookStatus) => void;
 };

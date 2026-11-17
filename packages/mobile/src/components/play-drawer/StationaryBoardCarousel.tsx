@@ -71,6 +71,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   const swapLook = useMemo(() => (look ? encodeSwapLook(look) : undefined), [look]);
   const onRenderReady = diagnostics?.onGpuReady;
   const onRenderError = diagnostics?.onGpuError;
+  const onSwapLookState = diagnostics?.onSwapLook;
   const transition = useMemo(
     () => ({
       previousFrames,
@@ -84,6 +85,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
       reduceMotion,
       onRenderReady,
       onRenderError,
+      onSwapLookState,
     }),
     [
       previousFrames,
@@ -97,6 +99,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
       reduceMotion,
       onRenderReady,
       onRenderError,
+      onSwapLookState,
     ],
   );
   const identity = JSON.stringify([

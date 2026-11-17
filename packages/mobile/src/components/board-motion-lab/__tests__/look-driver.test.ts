@@ -5,7 +5,16 @@ import { shippedSwapFrame, type BoardSwapFrame } from '../../play-drawer/swap-lo
 import { WALL_SWAP, wallSwapDriver, type WallSwapInput } from '../../play-drawer/wall-swap';
 import type { BoardMotionVariant, ParamValues } from '../types';
 import { BOARD_MOTION_VARIANTS } from '../variants';
-import { arrivalFlag, NOT_SHOWN, runTuning, swapLookDriver } from '../variants/look-driver';
+import {
+  ARRIVES_CALM,
+  ARRIVES_FROM_LEFT,
+  ARRIVES_FROM_RIGHT,
+  arrivalCode,
+  LEAVING,
+  NOT_SHOWN,
+  runTuning,
+  swapLookDriver,
+} from '../variants/look-driver';
 import { lookTransition, lookVariantDefaults, lookVariantTuning, SWAP_LOOK_LAB_MODE } from '../variants/look-variant';
 
 type Operation =
@@ -176,6 +185,15 @@ function lookDriverOf(variant: BoardMotionVariant, params: ParamValues = default
   return driver;
 }
 
+/** Leaving, arriving from either edge, either calm or not. */
+const ARRIVAL_CODES = [
+  LEAVING,
+  ARRIVES_FROM_RIGHT,
+  ARRIVES_FROM_LEFT,
+  ARRIVES_FROM_RIGHT + ARRIVES_CALM,
+  ARRIVES_FROM_LEFT + ARRIVES_CALM,
+];
+
 /**
  * The look's invariants on every frame: weights in range, the shared floor
  * never below the variant's, and a climb already on screen changing its
@@ -191,8 +209,8 @@ function expectLookInvariants(frames: readonly BoardSwapFrame[], sharedFloor: nu
       expect(weight).toBeLessThanOrEqual(1);
     }
     expect(frame[3]).toBeGreaterThanOrEqual(sharedFloor - 1e-9);
-    if (frame.length === 6) expect([0, 1]).toContain(frame[4]);
-    if (frame.length === 6) expect([0, 1]).toContain(frame[5]);
+    if (frame.length === 6) expect(ARRIVAL_CODES).toContain(frame[4]);
+    if (frame.length === 6) expect(ARRIVAL_CODES).toContain(frame[5]);
     if (index === 0) continue;
     const before = pages(frames[index - 1]);
     for (const [page, now] of pages(frame)) {
@@ -203,8 +221,8 @@ function expectLookInvariants(frames: readonly BoardSwapFrame[], sharedFloor: nu
 }
 
 describe('swap look driver', () => {
-  it('lists D to H, each needing the native swap look and API 7', () => {
-    expect(LOOK_VARIANTS.map((variant) => variant.letter)).toEqual(['D', 'E', 'F', 'G', 'H']);
+  it('lists I and J first, then D to H, each needing the native swap look and API 7', () => {
+    expect(LOOK_VARIANTS.map((variant) => variant.letter)).toEqual(['I', 'J', 'D', 'E', 'F', 'G', 'H']);
     for (const variant of LOOK_VARIANTS) {
       expect(variant.requiresNativeApi).toBe(7);
       const transition = variant.createTransition(defaults(variant));
@@ -215,7 +233,8 @@ describe('swap look driver', () => {
   });
 
   it('ties the look floor to the drag floor and follows its sliders', () => {
-    const cascade = LOOK_VARIANTS[0];
+    const cascade = LOOK_VARIANTS.find((variant) => variant.id === 'sideways-cascade');
+    if (!cascade) throw new Error('no cascade');
     const look = cascade.createTransition({ ...defaults(cascade), dimFloor: 0.3, holdWindow: 0.6 }).look;
     expect(look).toMatchObject({ floor: 0.3, holdWindow: 0.6, climbUp: false });
     const climbUp = LOOK_VARIANTS.find((variant) => variant.id === 'climb-up');
@@ -259,7 +278,7 @@ describe('swap look driver', () => {
   );
 
   it('without ghosts, the side weights are exactly the shipped machine with the variant’s tuning', () => {
-    for (const variant of LOOK_VARIANTS.filter((candidate) => candidate.id !== 'ghost-peek')) {
+    for (const variant of LOOK_VARIANTS.filter((candidate) => !lookVariantDefaults(candidate)?.ghostDrag)) {
       const params = { ...defaults(variant), runWindowMs: 0 };
       const tuning = tuningOf(variant, params);
       for (const operations of [...Object.values(SEQUENCES), randomWalk(5, 1500)]) {
@@ -276,7 +295,9 @@ describe('swap look driver', () => {
       [{ drag: -40 }, { drag: -90 }, { commit: 1 }, ...ticks(40), { land: 0 }, ...ticks(40)],
       lookDriverOf(variant),
     );
-    expect(frames[0].slice(4)).toEqual([0, 1]);
+    expect(frames[0].slice(4)).toEqual([LEAVING, ARRIVES_FROM_RIGHT]);
+    // Previous: the climb on the left comes in from the left edge.
+    expect(run([{ drag: 40 }], lookDriverOf(variant))[0].slice(4)).toEqual([LEAVING, ARRIVES_FROM_LEFT]);
     const arrived = frames.at(-1);
     expect(arrived?.slice(0, 3)).toEqual([1, 1, 0]);
     expect(arrived?.slice(4)).toEqual([0, 0]);
@@ -307,6 +328,7 @@ describe('swap look driver', () => {
   it('E shows the next climb as a ghost while dragging, carries it into the swap and takes it back on a cancel', () => {
     const ghost = LOOK_VARIANTS.find((variant) => variant.id === 'ghost-peek');
     if (!ghost) throw new Error('no ghost peek');
+    expect(lookVariantDefaults(ghost)?.calmRuns).toBe(true);
     const floor = defaults(ghost).dimFloor;
     const dragged = run([{ drag: -40 }, { drag: -SWIPE_THRESHOLD }], lookDriverOf(ghost));
     expect(dragged[0][2]).toBeCloseTo(floor / 2, 6);
@@ -351,6 +373,57 @@ describe('swap look driver', () => {
     expect(slow.at(-1)?.[3]).toBe(params.sharedFloor);
   });
 
+  it('gives every look variant a Bold preset over its own sliders, inside their ranges', () => {
+    for (const variant of LOOK_VARIANTS) {
+      const bold = variant.boldParams;
+      if (!bold) throw new Error(`${variant.id} has no Bold preset`);
+      expect(Object.keys(bold).sort()).toEqual(variant.params.map((spec) => spec.key).sort());
+      for (const spec of variant.params) {
+        expect(bold[spec.key]).toBeGreaterThanOrEqual(spec.min);
+        expect(bold[spec.key]).toBeLessThanOrEqual(spec.max);
+      }
+      expect(bold).not.toEqual(defaults(variant));
+      // Where Bold asks for it, the side weights are linear and each hold eases itself.
+      if (bold.linear === 1) expect(tuningOf(variant, bold).easeOut).toEqual([0, 0, 1, 1]);
+      const look = variant.createTransition(bold).look;
+      expect(look?.arrivalFloor).toBe((look?.floor ?? 0) * (bold.arrivalFloorShare ?? 1));
+    }
+  });
+
+  it.each(LOOK_VARIANTS.map((variant) => [variant.letter, variant] as const))(
+    '%s on Bold keeps the look invariants and ends every swipe at rest',
+    (_letter, variant) => {
+      const bold = variant.boldParams ?? {};
+      for (const operations of [...Object.values(SEQUENCES), randomWalk(23, 2500)]) {
+        expectLookInvariants(run(operations, lookDriverOf(variant, bold)), bold.sharedFloor);
+      }
+      for (const name of ['drag and cancel', 'commit and land', 'reversed mid-swap', 'three quick flicks']) {
+        const last = run(SEQUENCES[name], lookDriverOf(variant, bold)).at(-1);
+        expect(last?.slice(1, 3)).toEqual([1, 0]);
+        expect(last?.slice(4)).toEqual([0, 0]);
+      }
+    },
+  );
+
+  it('on Bold, a flick onward mid-swap keeps the skipped climb at its weight on screen', () => {
+    // One front for the arriving climb is not uniform at the drag floor, so the
+    // machine's "at least the floor" restart would jump; the driver keeps the screen.
+    const keepers = LOOK_VARIANTS.filter((candidate) => (candidate.boldParams?.arrivalFloorShare ?? 1) < 1);
+    expect(keepers.map((variant) => variant.letter)).toEqual(['D', 'F', 'G']);
+    for (const variant of keepers) {
+      const frames = run(
+        [{ drag: -90 }, { commit: 1 }, ...ticks(10), { land: 140 }, { drag: 120 }, { commit: 1 }, ...ticks(4)],
+        lookDriverOf(variant, variant.boldParams),
+      );
+      const commitIndex = frames.length - 5;
+      const skipped = pages(frames[commitIndex - 1]).get(1);
+      const restarted = pages(frames[commitIndex]).get(1);
+      expect(skipped?.weight).toBeLessThan(defaults(variant).dimFloor);
+      expect(restarted?.weight).toBeCloseTo(skipped?.weight ?? -1, 12);
+      expect(restarted?.arrives).toBe(skipped?.arrives);
+    }
+  });
+
   it('a flick run can shorten the swap', () => {
     expect(runTuning(WALL_SWAP, 100)).toMatchObject({ durationMs: 100, outgoingEndMs: 60, incomingStartMs: 30 });
     expect(runTuning(WALL_SWAP, 0)).toBe(WALL_SWAP);
@@ -367,14 +440,76 @@ describe('swap look driver', () => {
     }
   });
 
-  it('flags a climb only while it is dark or new to the screen, and clears it when whole', () => {
-    expect(arrivalFlag(NOT_SHOWN, 0.3, true)).toBe(1);
-    expect(arrivalFlag(NOT_SHOWN, 0.3, false)).toBe(0);
-    expect(arrivalFlag(0, 0, true)).toBe(1);
-    expect(arrivalFlag(1, 0, false)).toBe(0);
-    expect(arrivalFlag(1, 0.5, false)).toBe(1);
-    expect(arrivalFlag(0, 0.5, true)).toBe(0);
-    expect(arrivalFlag(1, 1, true)).toBe(0);
+  it('codes a climb only while it is dark or new to the screen, and clears it when whole', () => {
+    expect(arrivalCode(NOT_SHOWN, 0.3, true, ARRIVES_FROM_LEFT)).toBe(ARRIVES_FROM_LEFT);
+    expect(arrivalCode(NOT_SHOWN, 0.3, false, ARRIVES_FROM_LEFT)).toBe(LEAVING);
+    expect(arrivalCode(LEAVING, 0, true, ARRIVES_FROM_RIGHT)).toBe(ARRIVES_FROM_RIGHT);
+    expect(arrivalCode(ARRIVES_FROM_RIGHT, 0, false, ARRIVES_FROM_LEFT)).toBe(LEAVING);
+    // Mid-weight a climb keeps its code, entry edge included, whichever slot it moves to.
+    expect(arrivalCode(ARRIVES_FROM_RIGHT, 0.5, false, ARRIVES_FROM_LEFT)).toBe(ARRIVES_FROM_RIGHT);
+    expect(arrivalCode(LEAVING, 0.5, true, ARRIVES_FROM_RIGHT)).toBe(LEAVING);
+    expect(arrivalCode(ARRIVES_FROM_RIGHT, 1, true, ARRIVES_FROM_RIGHT)).toBe(LEAVING);
+  });
+
+  it('a quick re-flick keeps the skipped climb’s entry edge, so its front never flips side', () => {
+    let checked = 0;
+    for (const variant of LOOK_VARIANTS) {
+      for (const ms of [16, 48, 80, 104, 160]) {
+        const frames = run(
+          [{ drag: -90 }, { commit: 1 }, ...ticks(ms / 8), { land: 140 }, { drag: 120 }, { commit: 1 }, ...ticks(2)],
+          lookDriverOf(variant),
+        );
+        const before = pages(frames[frames.length - 4]).get(1);
+        const after = pages(frames[frames.length - 3]).get(1);
+        if (before && after && before.weight > 0 && before.weight < 1 && after.weight > 0 && after.weight < 1) {
+          expect(after.arrives & 3).toBe(ARRIVES_FROM_RIGHT);
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
+
+  it('I and E keep a flick run calm: no ghosts, no drag dim, no swell', () => {
+    for (const id of ['ghost-peek-standby', 'ghost-peek']) {
+      const variant = LOOK_VARIANTS.find((candidate) => candidate.id === id);
+      if (!variant) throw new Error(`no ${id}`);
+      const operations: Operation[] = [
+        { drag: -40 },
+        { drag: -90 },
+        { commit: 1 },
+        ...ticks(3),
+        { land: 0 },
+        // The swap finishes (240 ms), still inside the 400 ms run window.
+        ...ticks(27),
+        // A second drag inside the run window: calm until it commits.
+        { drag: -20 },
+        { drag: -60 },
+        { commit: 1 },
+        ...ticks(3),
+      ];
+      const frames = run(operations, lookDriverOf(variant));
+      for (const frame of frames.slice(34, 36)) {
+        expect(frame[1]).toBe(1);
+        expect(frame[2]).toBe(0);
+        expect(frame.length === 6 ? frame[5] : -1).toBe(ARRIVES_FROM_RIGHT + ARRIVES_CALM);
+      }
+      // The run's arrival keeps its calm code: no swell.
+      expect(frames.at(-1)?.[5]).toBe(ARRIVES_FROM_RIGHT + ARRIVES_CALM);
+      // The same drag outside a run: ghosts and dim.
+      const fresh = run([{ drag: -60 }], lookDriverOf(variant))[0];
+      expect(fresh[1]).toBeLessThan(1);
+      expect(fresh[2]).toBeGreaterThan(0);
+      expect(fresh.length === 6 ? fresh[5] : -1).toBe(ARRIVES_FROM_RIGHT);
+    }
+    // D keeps its drag dim in a run (calm runs are E and I only).
+    const cascade = LOOK_VARIANTS.find((candidate) => candidate.id === 'sideways-cascade');
+    if (!cascade) throw new Error('no cascade');
+    const frames = run(
+      [{ drag: -90 }, { commit: 1 }, ...ticks(3), { land: 0 }, { drag: -20 }, { drag: -60 }],
+      lookDriverOf(cascade),
+    );
+    expect(frames.at(-1)?.[1]).toBeLessThan(1);
   });
 
   it('look frames reach a binary without the look as the shipped four numbers', () => {
@@ -400,17 +535,33 @@ describe('swap look driver', () => {
           swell: 0,
           swellTail: 0,
           focus: 0,
+          focusShape: 2,
           tighten: 0,
           topBoost: 0,
         },
+        arrivalFloorShare: 1,
+        linear: 0,
         sharedFloor: 1,
         runWindowMs: 0,
         runSwapMs: 0,
         ghostDrag: false,
+        calmRuns: false,
       },
     );
-    expect(transition.look).toMatchObject({ holdWindow: 0.5, floor: WALL_SWAP.dimFloor });
-    const plain = swapLookDriver({ tuning: WALL_SWAP, sharedFloor: 1, ghostDrag: false, runWindowMs: 0, runSwapMs: 0 });
+    expect(transition.look).toMatchObject({
+      holdWindow: 0.5,
+      floor: WALL_SWAP.dimFloor,
+      arrivalFloor: WALL_SWAP.dimFloor,
+    });
+    const plain = swapLookDriver({
+      tuning: WALL_SWAP,
+      sharedFloor: 1,
+      ghostFloor: 0,
+      arrivalFloor: WALL_SWAP.dimFloor,
+      runWindowMs: 0,
+      runSwapMs: 0,
+      calmRuns: false,
+    });
     expect(run(SEQUENCES['commit and land'], plain).map((frame) => frame.slice(0, 3))).toEqual(
       run(SEQUENCES['commit and land'], wallSwapDriver()).map((frame) => frame.slice(0, 3)),
     );

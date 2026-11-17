@@ -102,6 +102,9 @@ enum ClimbOverlayMotion {
     let outgoing: Float
     let incoming: Float
     var shared: Float = 1
+    /// Swap look only: the floor below which the look's shared holds never go
+    /// (a seven-number frame's fourth number). Nil for every other frame.
+    var sharedFloor: Float?
   }
   static func swapFrame(_ values: [Double]) -> SwapFrame? {
     guard values.count == 3 || values.count == 4, values.prefix(3).allSatisfy({ $0.isFinite }) else { return nil }
@@ -117,13 +120,20 @@ enum ClimbOverlayMotion {
   /// an unknown command without a word, so the app checks this first.
   static let swapCommandApi = 1
 
-  /// Swap look only (`swapLookVersion` 1): whether the climb being left and
-  /// the arriving one each use the look's arriving rules this frame. The app
-  /// flips a climb's flag only while its weight is 0 or 1, so a relabelled pair
-  /// keeps its pixels.
+  /// Swap look only (`swapLookVersion` 2): how the climb being left and the
+  /// arriving one each move this frame, as the app's per-climb code (0 leaving;
+  /// 1 arriving from the right edge, 2 from the left; +4 calm, a flick run's
+  /// arrival with no swell; `ClimbOverlaySwapLook.Side`). The app changes a
+  /// climb's code only while its weight is 0 or 1, so a relabelled pair keeps
+  /// its pixels.
   struct SwapArrivals: Equatable {
-    var outgoing = false
-    var incoming = false
+    var outgoing = 0
+    var incoming = 0
+    /// A frame number as a code: 0...7, anything else 0.
+    static func code(_ value: Double) -> Int {
+      let rounded = value.rounded()
+      return rounded >= 0 && rounded <= 7 ? Int(rounded) : 0
+    }
   }
 
   /// A swap frame and the app's sequence number for it. A frame reaches the
@@ -143,8 +153,14 @@ enum ClimbOverlayMotion {
     if values.count == 5 || values.count == 7 {
       guard values[4].isFinite, values.suffix(from: 5).allSatisfy({ $0.isFinite }),
         let frame = swapFrame(Array(values.prefix(4))) else { return nil }
-      let arrivals = values.count == 7 ? SwapArrivals(outgoing: values[5] >= 0.5,incoming: values[6] >= 0.5) : SwapArrivals()
-      return SequencedSwapFrame(frame: frame,sequence: values[4],arrivals: arrivals)
+      guard values.count == 7 else { return SequencedSwapFrame(frame: frame,sequence: values[4]) }
+      // A look frame's fourth number is the look's shared floor. Whenever the look
+      // is not drawn (Reduce Motion, no look yet) API 7 needs the shipped shared
+      // weight instead: the brighter side, never below that floor.
+      let lookFrame = SwapFrame(pagePosition: frame.pagePosition,outgoing: frame.outgoing,incoming: frame.incoming,
+        shared: min(1,max(frame.shared,max(frame.outgoing,frame.incoming))),sharedFloor: frame.shared)
+      return SequencedSwapFrame(frame: lookFrame,sequence: values[4],
+        arrivals: SwapArrivals(outgoing: SwapArrivals.code(values[5]),incoming: SwapArrivals.code(values[6])))
     }
     guard let frame = swapFrame(values) else { return nil }
     return SequencedSwapFrame(frame: frame,sequence: nil)

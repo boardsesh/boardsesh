@@ -17,7 +17,7 @@ public class ClimbOverlayGPUModule: Module {
       try compareClimbOverlayGPU(configJson)
     }.runOnQueue(climbOverlayGPUWorkQueue)
     View(ClimbOverlayGPUView.self) {
-      Events("onRenderReady", "onRenderError")
+      Events("onRenderReady", "onRenderError", "onSwapLookState")
       Prop("configJson") { (view: ClimbOverlayGPUView, config: String) in view.configJson = config }
       Prop("geometryAssetPath") { (view: ClimbOverlayGPUView, path: String?) in view.geometryAssetPath = path }
       Prop("geometryAssetSha256") { (view: ClimbOverlayGPUView, hash: String?) in view.geometryAssetSha256 = hash }

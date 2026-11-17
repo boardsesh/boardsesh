@@ -3,7 +3,7 @@ import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import type { BoardTransitionDriver } from '../../play-drawer/board-transition';
 import { WALL_SWAP, WALL_SWAP_NATIVE_API, wallSwapDriver, type WallSwapInput } from '../../play-drawer/wall-swap';
 import type { BoardMotionVariant, ParamValues } from '../types';
-import { BOARD_MOTION_VARIANTS } from '../variants';
+import { BOARD_MOTION_VARIANTS, DEFAULT_VARIANT_ID } from '../variants';
 import { tuningFromParams, WALL_SWAP_PARAMS } from '../variants/tuning-params';
 
 function defaults(variant: BoardMotionVariant): ParamValues {
@@ -42,17 +42,20 @@ function dragAndCommit(driver: BoardTransitionDriver) {
 }
 
 describe('board motion variants', () => {
-  it('are lettered A to H with unique kebab-case ids and slider keys', () => {
+  it('list A to C, then I and J, then D to H, with unique kebab-case ids and slider keys', () => {
     expect(BOARD_MOTION_VARIANTS.map((candidate) => candidate.letter)).toEqual([
       'A',
       'B',
       'C',
+      'I',
+      'J',
       'D',
       'E',
       'F',
       'G',
       'H',
     ]);
+    expect(DEFAULT_VARIANT_ID).toBe('ghost-peek-standby');
     expect(new Set(BOARD_MOTION_VARIANTS.map((candidate) => candidate.id)).size).toBe(BOARD_MOTION_VARIANTS.length);
     for (const candidate of BOARD_MOTION_VARIANTS) {
       expect(candidate.id).toMatch(/^[a-z]+(-[a-z]+)*$/);

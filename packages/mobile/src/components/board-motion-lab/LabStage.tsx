@@ -9,16 +9,17 @@ import { StyleSheet, View } from 'react-native';
 import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
 import type { ClimbOverlayGPUReady } from '../../../modules/climb-overlay-gpu/src';
 import type { BoardRenderDiagnostics, BoardTransition } from '../play-drawer/board-transition';
+import { SWAP_LOOK_NATIVE_VERSION, type SwapLookStatus } from '../play-drawer/swap-look';
 import { SwipeBoardCarousel } from '../play-drawer/SwipeBoardCarousel';
 import { usePlayerGpuBoard } from '../play-drawer/use-player-gpu-board';
 import { useSwipeNavigation, useSwipePager, useSwipePages } from '../play-drawer/use-swipe-pager';
 import { getBoardRenderData } from '../../lib/board-details';
-import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
+import { climbOverlayGpuApiVersion, climbOverlaySwapLookVersion } from '../../lib/board-render/gpu-native-capability';
 import { AURA_GPU_FAMILIES, AURA_GPU_FLAG } from '../../lib/board-render/gpu-rollout';
 import { FeatureFlagsProvider, useGpuClimbOverlayEnabled } from '../../providers/feature-flags-provider';
 import { useSetting } from '../../settings/hooks';
 import { stageStatus } from './stage-status';
-import type { LabClimb, LabStageProps } from './types';
+import type { LabClimb, LabLookStatus, LabStageProps } from './types';
 import { useVirtualFinger } from './use-virtual-finger';
 
 /**
@@ -48,6 +49,7 @@ function climbAt(climbs: readonly LabClimb[], position: number): LabClimb {
 /** A presentation's timings, or a failure's reason, and the carousel and board they came from. */
 type GpuTimings = { renderKey: string; prepareMs: number; uploadMs: number };
 type GpuError = { renderKey: string; reason: string };
+type LookReport = { renderKey: string; status: SwapLookStatus };
 
 function LabBoardStage({
   board,
@@ -129,6 +131,7 @@ function LabBoardStage({
   const [renderPath, setRenderPath] = useState<'gpu' | 'png' | null>(null);
   const [timings, setTimings] = useState<GpuTimings | null>(null);
   const [gpuError, setGpuError] = useState<GpuError | null>(null);
+  const [lookReport, setLookReport] = useState<LookReport | null>(null);
   const diagnostics = useMemo<BoardRenderDiagnostics>(
     () => ({
       onRenderPath: setRenderPath,
@@ -141,9 +144,20 @@ function LabBoardStage({
         setGpuError(null);
       },
       onGpuError: (reason: string) => setGpuError({ renderKey, reason }),
+      onSwapLook: (status: SwapLookStatus) => setLookReport({ renderKey, status }),
     }),
     [renderKey],
   );
+  // Look variants only: what the native view last said about the look on this carousel.
+  const hasLook = transition.look !== undefined && transition.revealMode === 'swap';
+  const currentLook = lookReport?.renderKey === renderKey ? lookReport.status : null;
+  const look = useMemo<LabLookStatus | undefined>(() => {
+    if (!hasLook) return undefined;
+    if (climbOverlaySwapLookVersion < SWAP_LOOK_NATIVE_VERSION) {
+      return { state: 'unsupported', swapLookVersion: climbOverlaySwapLookVersion };
+    }
+    return currentLook ?? { state: 'waiting' };
+  }, [hasLook, currentLook]);
   const currentTimings = timings?.renderKey === renderKey ? timings : null;
   const currentError = gpuError?.renderKey === renderKey ? gpuError.reason : null;
   const [gpuSettingOn] = useSetting('gpuAcceleration');
@@ -163,8 +177,9 @@ function LabBoardStage({
         renderPath,
         timings: currentTimings,
         gpuError: currentError,
+        look,
       }),
-    [hasRenderData, hasClimbs, gpuSettingOn, gpuAllowed, gpuBoard, renderPath, currentTimings, currentError],
+    [hasRenderData, hasClimbs, gpuSettingOn, gpuAllowed, gpuBoard, renderPath, currentTimings, currentError, look],
   );
   // Sent again for every new carousel or board, unchanged or not: the screen
   // shows "Loading…" when it switches variant and waits for this.

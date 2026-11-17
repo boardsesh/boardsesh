@@ -18,8 +18,9 @@ import Foundation
 /// `ushort4` per candidate hold instead of re-deriving it per pixel, and no
 /// Rust, xcframework or contract change is needed.
 enum ClimbOverlaySwapLook {
-  /// Advertised as the module constant `swapLookVersion`.
-  static let version = 1
+  /// Advertised as the module constant `swapLookVersion`. 2: the look's
+  /// format 2 (arrival floor, focus shape) and the `onSwapLookState` event.
+  static let version = 2
   /// The fragment buffer the look is bound at, past the Rust contract's 0...4.
   static let metalBinding = 5
   /// The atlas pads every field for this reach (`EDIT_PEAK_REACH`); a halo past it would clip.
@@ -28,16 +29,20 @@ enum ClimbOverlaySwapLook {
   /// One `ushort4` per hold after a header `ushort4`; header x = 1 turns the look on.
   static let off: [UInt16] = [0, 0, 0, 0]
 
-  /// The static look, from the `swapLook` prop: `[1, holdWindow, lowWindow,
-  /// floor, climbUp, jitter, ghost, markLag, swell, swellTail, focus, tighten,
-  /// topBoost]`. Every number is clamped to its range; nil turns the look off.
+  /// The static look, from the `swapLook` prop: `[2, holdWindow, lowWindow,
+  /// floor, arrivalFloor, climbUp, jitter, ghost, markLag, swell, swellTail,
+  /// focus, focusShape, tighten, topBoost]`. Every number is clamped to its
+  /// range; nil turns the look off.
   struct Look: Equatable {
     /// Above the floor, each hold changes over this share of the side's progress. 1: all together.
     var holdWindow: Float = 1
     /// Below the floor, the same. 1: all together.
     var lowWindow: Float = 1
-    /// Where the two stages meet; every hold is at the floor when its side is.
+    /// A leaving climb's two stages meet here (the drag's dim); every hold is at it when its side is.
     var floor: Float = 0.4
+    /// The same for an arriving climb. Equal to `floor` it moves like a leaving one; 0 lights it
+    /// in one front from dark to whole; with ghosts it is where the ghosts end and the marks begin.
+    var arrivalFloor: Float = 0.4
     /// An arriving climb lights bottom to top within its own lit holds, not from the swipe edge.
     var climbUp = false
     /// Mixes each key toward a hash of the hold id: a ragged order.
@@ -50,15 +55,17 @@ enum ClimbOverlaySwapLook {
     var swell: Float = 0
     /// How long the swell takes to settle, in the side's progress above the floor.
     var swellTail: Float = 0
-    /// An arriving hold's reach is 1 + focus × (1 − w)²: wide while faint.
+    /// An arriving hold's reach is 1 + focus × (1 − w)^focusShape: wide while faint.
     var focus: Float = 0
+    /// 2 pulls the halo in early (inside the flash budget); 0.5 keeps it wide until the hold is nearly whole.
+    var focusShape: Float = 2
     /// A leaving hold's reach is 1 − tighten × (1 − w): it pulls in as it fades.
     var tighten: Float = 0
     /// The swell grows with the key: mix(1, key, topBoost). With climb-up keys, the top swells most.
     var topBoost: Float = 0
 
-    static let fieldCount = 13
-    static let format: Double = 1
+    static let fieldCount = 15
+    static let format: Double = 2
 
     init() {}
 
@@ -70,16 +77,21 @@ enum ClimbOverlaySwapLook {
       holdWindow = number(1, 0.05, 1)
       lowWindow = number(2, 0.05, 1)
       floor = number(3, 0, 0.95)
-      climbUp = values[4] >= 0.5
-      jitter = number(5, 0, 0.5)
-      ghost = number(6, 0, 1)
-      markLag = number(7, 0, 1)
-      swell = number(8, 0, 0.35)
-      // A swell needs time to settle before its hold is whole, or it would end at full reach.
-      swellTail = max(number(9, 0, 0.6), swell > 0 ? 0.05 : 0)
-      focus = number(10, 0, 0.35)
-      tighten = number(11, 0, 0.6)
-      topBoost = number(12, 0, 1)
+      arrivalFloor = number(4, 0, 0.95)
+      climbUp = values[5] >= 0.5
+      jitter = number(6, 0, 0.5)
+      ghost = number(7, 0, 1)
+      markLag = number(8, 0, 1)
+      swell = number(9, 0, 0.35)
+      // A swell needs time to settle before its hold is whole, or it would end at full reach,
+      // and its hold's window must leave that time: otherwise the last hold's swell is cut
+      // off at the side's last frame and its halo snaps back.
+      swellTail = max(number(10, 0, 0.6), swell > 0 ? 0.05 : 0)
+      if swell > 0 { holdWindow = min(holdWindow, 1 - swellTail) }
+      focus = number(11, 0, 0.35)
+      focusShape = number(12, 0.25, 3)
+      tighten = number(13, 0, 0.8)
+      topBoost = number(14, 0, 1)
     }
   }
 
@@ -117,6 +129,30 @@ enum ClimbOverlaySwapLook {
     var arriving: Bool
     var top: Float = 0
     var bottom: Float = 1
+    /// An arriving climb's entry edge (true: the right, before any display mirror). It keys the
+    /// climb's front from that edge whichever slot it now sits in, so a climb skipped mid-front
+    /// by a quick re-flick, which moves from the upper to the lower slot, keeps its front's side.
+    /// Nil: the slot's own edge (lower from the left, upper from the right).
+    var fromRight: Bool?
+    /// A flick run's arrival: no swell.
+    var calm = false
+
+    init(weight: Float, arriving: Bool, top: Float = 0, bottom: Float = 1, fromRight: Bool? = nil, calm: Bool = false) {
+      self.weight = weight
+      self.arriving = arriving
+      self.top = top
+      self.bottom = bottom
+      self.fromRight = fromRight
+      self.calm = calm
+    }
+
+    /// From the app's code (`ClimbOverlayMotion.SwapArrivals`): 0 leaving, 1 arriving from the
+    /// right, 2 from the left, +4 calm.
+    init(weight: Float, code: Int) {
+      let edge = code & 3
+      self.init(weight: weight, arriving: edge == 1 || edge == 2, fromRight: edge == 1 ? true : (edge == 2 ? false : nil),
+        calm: edge != 0 && code & 4 != 0)
+    }
   }
 
   struct Shape: Equatable {
@@ -174,7 +210,8 @@ enum ClimbOverlaySwapLook {
       key = span > 1e-4 ? (side.bottom - hold.centerY) / span : 0
     } else {
       let across = mirrored ? 1 - hold.centerX : hold.centerX
-      key = upper ? 1 - across : across
+      let fromRight = side.arriving ? (side.fromRight ?? upper) : upper
+      key = fromRight ? 1 - across : across
     }
     key = clampUnit(key)
     return key + (hold.entropy - key) * look.jitter
@@ -192,13 +229,16 @@ enum ClimbOverlaySwapLook {
     return local + (smoothed - local) * (1 - width)
   }
 
+  /// The floor a side's two stages meet at: `arrivalFloor` for an arriving climb.
+  static func stageFloor(arriving: Bool, look: Look) -> Float { arriving ? look.arrivalFloor : look.floor }
+
   /// One hold's weight when its side is at `weight`. Above the floor holds move
   /// between the floor and 1 in key order; below it, between 0 and the floor.
   /// An arriving climb finishes its front early by `swellTail`, so the last
   /// hold's swell can settle before the side reaches 1.
   static func lit(_ weight: Float, key: Float, arriving: Bool, look: Look) -> Float {
     let weight = clampUnit(weight)
-    let floor = look.floor
+    let floor = stageFloor(arriving: arriving, look: look)
     if weight >= floor {
       let span = 1 - floor
       let progress = span > 0 ? (weight - floor) / span : 1
@@ -212,8 +252,9 @@ enum ClimbOverlaySwapLook {
   /// An arriving hold's swell above reach 1: up as it lights, back down over
   /// `swellTail`, 0 at and below the floor and at 1.
   static func swell(_ weight: Float, key: Float, look: Look) -> Float {
-    guard look.swell > 0, weight > look.floor, weight < 1 else { return 0 }
-    let progress = (weight - look.floor) / (1 - look.floor)
+    let floor = look.arrivalFloor
+    guard look.swell > 0, weight > floor, weight < 1 else { return 0 }
+    let progress = (weight - floor) / (1 - floor)
     let width = look.holdWindow
     let span = width + look.swellTail
     let local = clampUnit((progress - key * max(0, 1 - span)) / span)
@@ -223,17 +264,18 @@ enum ClimbOverlaySwapLook {
   }
 
   /// Mark, glow and reach for a hold of one side at per-hold weight `weight`.
-  static func shaped(_ weight: Float, key: Float, arriving: Bool, look: Look, allowReach: Bool) -> Shape {
+  static func shaped(_ weight: Float, key: Float, arriving: Bool, look: Look, allowReach: Bool,
+                     calm: Bool = false) -> Shape {
     guard weight > 0 else { return .hidden }
     var mark = weight
     var glow = weight
-    if arriving && look.ghost > 0 && look.floor > 0 {
-      // A ghost: glow only up to the floor, then the mark fills in as the glow finishes.
-      if weight <= look.floor {
-        glow = weight * look.ghost / look.floor
+    if arriving && look.ghost > 0 && look.arrivalFloor > 0 {
+      // A ghost: glow only up to the arrival floor, then the mark fills in as the glow finishes.
+      if weight <= look.arrivalFloor {
+        glow = weight * look.ghost / look.arrivalFloor
         mark = 0
       } else {
-        let filled = (weight - look.floor) / (1 - look.floor)
+        let filled = (weight - look.arrivalFloor) / (1 - look.arrivalFloor)
         glow = look.ghost + (1 - look.ghost) * filled
         mark = filled
       }
@@ -241,8 +283,8 @@ enum ClimbOverlaySwapLook {
     mark *= 1 + (weight - 1) * look.markLag
     guard allowReach else { return Shape(mark: mark, glow: glow, reach: 1) }
     let missing = 1 - weight
-    let base = arriving ? 1 + look.focus * missing * missing : 1 - look.tighten * missing
-    let grown = arriving ? base * (1 + swell(weight, key: key, look: look)) : base
+    let base = arriving ? 1 + look.focus * pow(missing, look.focusShape) : 1 - look.tighten * missing
+    let grown = arriving && !calm ? base * (1 + swell(weight, key: key, look: look)) : base
     return Shape(mark: mark, glow: glow, reach: min(maxReach, max(minReach, grown)))
   }
 
@@ -268,18 +310,18 @@ enum ClimbOverlaySwapLook {
       let otherWeight = lit(other.weight, key: otherKey, arriving: other.arriving, look: look)
       if upper ? ownWeight <= otherWeight : ownWeight < otherWeight { return .hidden }
     }
-    return shaped(ownWeight, key: ownKey, arriving: own.arriving, look: look, allowReach: allowReach)
+    return shaped(ownWeight, key: ownKey, arriving: own.arriving, look: look, allowReach: allowReach, calm: own.calm)
   }
 
-  /// Which side's climb arrives: the lower page is the outgoing one while the
+  /// Each side's arrival code: the lower page is the outgoing one while the
   /// pair's progress is below one half, as `ClimbOverlayMotion.selectSwap` maps weights.
-  static func sides(progress: Float, outgoingArrives: Bool, incomingArrives: Bool) -> (lower: Bool, upper: Bool) {
-    progress < 0.5 ? (outgoingArrives, incomingArrives) : (incomingArrives, outgoingArrives)
+  static func sides(progress: Float, outgoing: Int, incoming: Int) -> (lower: Int, upper: Int) {
+    progress < 0.5 ? (outgoing, incoming) : (incoming, outgoing)
   }
 
   static func unorm16(_ value: Float) -> UInt16 { UInt16((clampUnit(value) * 65535).rounded()) }
-  /// Reach in 1/32768 steps, so 1 decodes exactly; at most `maxReach`, so it fits.
-  static func reach16(_ value: Float) -> UInt16 { UInt16((min(maxReach, max(0, value)) * 32768).rounded()) }
+  /// Reach in 1/32768 steps, so 1 decodes exactly; rounded down, so `maxReach` never decodes past the padding.
+  static func reach16(_ value: Float) -> UInt16 { UInt16((min(maxReach, max(0, value)) * 32768).rounded(.down)) }
 
   /// The fragment buffer for one frame: the header, then every lower hold, then
   /// every upper hold, in the shader's union order. Mark and glow are 0...1 in

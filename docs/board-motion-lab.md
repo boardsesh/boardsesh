@@ -10,27 +10,39 @@ Dev builds, testers and admins: the same people who see the dev tools on Setting
 
 - Settings > Developer > Board motion lab.
 - Deep link: `com.boardsesh.app://settings/board-motion-lab?variant=<id>&board=<id>&set=<id>&speed=0.25&autoplay=all&reduceMotion=on`.
-  - `variant`: a variant id; one this build can't run opens on the first it can. `board`: a board id from `fixtures.ts`. `set`: `real`, `none`, `half`, `mostly` or `role-change`.
+  - `variant`: a variant id; one this build can't run opens on I, or on the first variant it can run when I is out too. `board`: a board id from `fixtures.ts`. `set`: `real`, `none`, `half`, `mostly` or `role-change`.
   - `speed`: `1`, `0.5` or `0.25`. `reduceMotion`: `system`, `on` or `off`.
+  - `preset`: `subtle` (the default) or `bold`, for every variant that has a Bold preset.
   - `autoplay`: `all` or one variant id.
 
 ## Screen
 
-Caption bar (letter, variant name, speed, board), the board, a status line (`GPU · API 7 · prepare 42 ms · upload 3 ms`, `PNG · <reason>` or `Loading…`), then controls: Play script, Play all variants, variant, speed, Reduce Motion, one slider per parameter (committed on release), Copy params, Reset params, script, board, climb set. Variants that need a newer native API than the build has are greyed out with the reason. There is no light/dark toggle; the lab follows the system theme.
+Caption bar (letter, variant name, speed, board), the board, a status line (`GPU · API 7 · prepare 42 ms · upload 3 ms`, `PNG · <reason>` or `Loading…`), then controls: Play script, Play all variants, variant, the Subtle / Bold preset (variants that have one), speed, Reduce Motion, one slider per parameter (committed on release), Copy params, Reset params, script, board, climb set. Variants that need a newer native API than the build has are greyed out with the reason. The lab opens on I (Ghost peek + standby) when the build can run it. There is no light/dark toggle; the lab follows the system theme.
+
+For the swap looks the status line also says what the native view reports about the look: `look on (24 holds)` once a frame has drawn it, `look ready` before the first swipe, `look off (Reduce Motion)`, `look off (no look prop)` or `look off (look rejected)`, `look off (unsupported build: swapLookVersion 1)` when the binary is older than the JS, and `· reach off (Low Power)` or `(hot phone)` when glow reach is pinned at 1. The native view also logs `swap look applied: N holds` once per view (subsystem `com.boardsesh.climb-overlay-gpu`, category `swap-look`).
+
+### Presets and speed
+
+Each swap look has two presets. **Subtle** is the variant's defaults: the values the design reviews picked, which read as "more polished" at 1× without an obvious effect. **Bold** pushes the same look far enough to see what it does at 1× (narrow per-hold windows so the sweep travels, linear side weights, 1.25-1.35× swells). Bold values are for exploring, not flash-safe: perf-a11y's R7 limits (swell at most 0.06 on the plateau 0.7 falloff) apply to whatever ships. Picking a preset loads it into the sliders and drops this variant's slider changes; Reset params goes back to Subtle.
+
+To judge a look, play it at 0.25×: at 1× its fronts last 40-120 ms, which the eye takes in as "smoother" without seeing why. The slow speed shows the order holds light in, the ghosts and the standby rings. For E and I, also try a slow drag at 1× and stop at 40-60 pt: the ghosts are the part a climber uses.
 
 ## Add a variant
 
 One file in `src/components/board-motion-lab/variants/` exporting a `BoardMotionVariant` (see `types.ts`), plus one line in `variants/index.ts`. Its `params` become sliders; `createTransition(params)` returns the transition the carousel uses.
 
-## The swap look (D to H)
+## The swap look (D to J)
 
-A to C change only the three per-kind weights. D (Sideways cascade), E (Ghost peek), F (Climb-up), G (LED strike) and H (Focus in) also send a native swap look, which gives each hold its own timing and glow. iOS only: the module constant `swapLookVersion` is 1 on iOS and 0 on Android, and the lab greys D to H out where it is 0. The player sends no look and draws the shipped swap.
+A to C change only the three per-kind weights. D (Sideways cascade), E (Ghost peek), F (Climb-up), G (LED strike), H (Focus in), I (Ghost peek + standby, the round-2 pick: E's ghosts with G's standby ring on the climb being left) and J (Sideways strike, perf-a11y's re-tuned G) also send a native swap look, which gives each hold its own timing and glow. The lab lists them I, J, then D to H. iOS only: the module constant `swapLookVersion` is 2 on iOS and 0 on Android, and the lab greys the looks out where it is below 2. The player sends no look and draws the shipped swap.
 
 - The wall swap's state machine still decides one weight per side, so cancels, re-flicks, reversals and pull-backs behave as in the player. The native side (`ClimbOverlaySwapLook.swift`) turns a side's weight into each hold's weight with a front: holds change in order of a key (distance from the edge that climb enters from, or bottom to top for F's arriving climb), each over its own window. At weight 1, at the drag floor and at 0 every hold of a side looks the same, so a relabelled pair or a re-flick never jumps.
-- Per hold it also splits the mark from the glow (E's ghosts, G's afterglow) and changes the glow reach between 0.6× and 1.35× (D, F and G swell an arriving hold, H focuses it from wide, G and H pull a leaving hold's glow in). Reach stays at 1 in Low Power Mode and on a hot phone. Reduce Motion turns the look off natively, whatever the app sends.
+- An arriving climb can have its own floor (`arrivalFloor`): equal to the drag floor it first comes up to the floor everywhere, then sweeps; at 0 it lights in one front from dark to whole (the Bold presets).
+- Per hold it also splits the mark from the glow (E and I's ghosts, G and I's standby rings) and changes the glow reach between 0.6× and 1.35× (arriving holds swell or focus from wide, leaving holds pull their glow in). Reach stays at 1 in Low Power Mode and on a hot phone. Reduce Motion turns the look off natively, whatever the app sends. In the look, a hold never owns pixels past its own reach, so a ghost's halo is never cut along a lit neighbour's box.
 - Swift computes this once per frame for at most 2 × 128 holds and binds it as fragment buffer 5; the shader reads one `ushort4` per candidate hold. With no look the shader takes API 7's path, byte-identical to before (checked by `scripts/board-motion-preview`).
-- The look's numbers are the `swapLook` view prop, set when a slider is released. Each frame adds two numbers to the swap frame (seven with the sequence): whether the climb being left and the arriving one use the arriving rules. A climb takes them when it shows up as the incoming climb and drops them only at weight 0 or 1. The fourth number is then the floor below which shared holds never go; a commit within the flick-run window eases it to 1.
-- To see a variant without a phone, `scripts/board-motion-preview/README.md` renders ten frames of each on the Mac's GPU with the real shader.
+- The look's numbers are the `swapLook` view prop, set when a slider is released. Each frame adds two numbers to the swap frame (seven with the sequence): an arrival code for the climb being left and for the arriving one (leaving; arriving from the right or the left edge; plus calm). A climb takes its code when it shows up as the incoming climb, keeps it, entry edge included, until its weight is 0 or 1: a climb skipped mid-front by a quick re-flick keeps its front's side. The fourth number is the floor below which shared holds never go (when the look is not drawn, native uses the shipped shared weight instead); a commit within the flick-run window eases it to 1.
+- Flick runs (E and I): a drag that starts within `runWindowMs` of the last commit shows no ghosts and no drag dim, the run's arrival has no swell, and the swap takes `runSwapMs`. A fast run never shows the next climb's ghosts or pulses halos.
+- To see a variant without a phone, `scripts/board-motion-preview/README.md` renders contact sheets and 60 fps videos (1× and 0.25×, each beside A) on the Mac's GPU with the real shader.
+- Follow-ups, not done: Reduce Motion's dissolve steps 0.15-0.25 per frame for every variant including A (it wants its own linear timing); ghosts show role colour without role shape, which Differentiate Without Color users lose mid-drag; the GLES port for Android.
 
 ## Scripts and Play all
 

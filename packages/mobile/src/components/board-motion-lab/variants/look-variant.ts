@@ -2,8 +2,8 @@
  * The swap-look variants (D onward): each is the wall swap's state machine with
  * its own timing, plus a native swap look (`play-drawer/swap-look.ts`) and the
  * look driver (`look-driver.ts`). One factory, so every variant gets the same
- * slider names, ranges and plumbing; a variant lists which sliders it shows and
- * its defaults.
+ * slider names, ranges and plumbing; a variant lists which sliders it shows, its
+ * defaults (the Subtle preset) and its Bold preset.
  */
 import type { BoardTransition } from '../../play-drawer/board-transition';
 import type { SwapLook } from '../../play-drawer/swap-look';
@@ -18,15 +18,24 @@ export const SWAP_LOOK_LAB_MODE = 'swap-look';
 /** CSS `linear`, for a side weight the look's fronts ease per hold instead. */
 export const LINEAR: BezierControls = [0, 0, 1, 1];
 
-/** Everything a look variant starts from. The look's floor is always the tuning's `dimFloor`. */
+/**
+ * Everything a look variant starts from. The look's floor is always the
+ * tuning's `dimFloor`; its arrival floor is `arrivalFloorShare` of it.
+ */
 export type LookVariantDefaults = {
   tuning: WallSwapTuning;
-  look: Omit<SwapLook, 'floor'>;
+  look: Omit<SwapLook, 'floor' | 'arrivalFloor'>;
+  /** The arriving climb's floor as a share of the drag floor: 1 moves like a leaving climb, 0 one front. */
+  arrivalFloorShare: number;
+  /** 0 keeps the tuning's curves; 1 makes both side weights linear, so the fronts travel at an even pace. */
+  linear: number;
   sharedFloor: number;
   runWindowMs: number;
   runSwapMs: number;
-  /** E: the arriving climb rises with the drag's dim, up to the floor (ghosts). */
+  /** E: the arriving climb rises with the drag's dim, up to its arrival floor (ghosts). */
   ghostDrag: boolean;
+  /** E, I: inside a flick run, no ghosts, no drag dim and no swell. */
+  calmRuns: boolean;
 };
 
 type SliderRange = Omit<ParamSpec, 'default'>;
@@ -37,8 +46,16 @@ const SLIDERS = {
   durationMs: { key: 'durationMs', label: 'Swap length', min: 80, max: 600, step: 10, unit: 'ms' },
   outgoingEndMs: { key: 'outgoingEndMs', label: 'Outgoing gone by', min: 20, max: 400, step: 10, unit: 'ms' },
   incomingStartMs: { key: 'incomingStartMs', label: 'Incoming starts at', min: 0, max: 300, step: 10, unit: 'ms' },
+  linear: { key: 'linear', label: 'Linear sweep (0 eased)', min: 0, max: 1, step: 0.25 },
   holdWindow: { key: 'holdWindow', label: 'Hold window (1 = all together)', min: 0.05, max: 1, step: 0.05 },
   lowWindow: { key: 'lowWindow', label: 'Below-floor window', min: 0.05, max: 1, step: 0.05 },
+  arrivalFloorShare: {
+    key: 'arrivalFloorShare',
+    label: 'Arrival floor (× drag floor, 0 = one front)',
+    min: 0,
+    max: 1,
+    step: 0.05,
+  },
   climbUp: { key: 'climbUp', label: 'Climb-up order (0 sideways)', min: 0, max: 1, step: 1 },
   jitter: { key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.05 },
   ghost: { key: 'ghost', label: 'Ghost glow (0 off)', min: 0, max: 1, step: 0.05 },
@@ -46,7 +63,8 @@ const SLIDERS = {
   swell: { key: 'swell', label: 'Arrival swell', min: 0, max: 0.35, step: 0.01 },
   swellTail: { key: 'swellTail', label: 'Swell settle', min: 0, max: 0.6, step: 0.05 },
   focus: { key: 'focus', label: 'Arrival focus', min: 0, max: 0.35, step: 0.01 },
-  tighten: { key: 'tighten', label: 'Leaving tighten', min: 0, max: 0.6, step: 0.05 },
+  focusShape: { key: 'focusShape', label: 'Focus shape (2 early, 0.5 late)', min: 0.25, max: 3, step: 0.25 },
+  tighten: { key: 'tighten', label: 'Leaving tighten', min: 0, max: 0.8, step: 0.05 },
   topBoost: { key: 'topBoost', label: 'Top swells most', min: 0, max: 1, step: 0.1 },
   sharedFloor: { key: 'sharedFloor', label: 'Shared floor (1 = never dip)', min: 0, max: 1, step: 0.05 },
   runWindowMs: { key: 'runWindowMs', label: 'Flick run window (0 off)', min: 0, max: 800, step: 10, unit: 'ms' },
@@ -70,6 +88,8 @@ function defaultFor(key: LookSliderKey, defaults: LookVariantDefaults): number {
     case 'sharedFloor':
     case 'runWindowMs':
     case 'runSwapMs':
+    case 'arrivalFloorShare':
+    case 'linear':
       return defaults[key];
     default:
       return defaults.look[key];
@@ -79,36 +99,51 @@ function defaultFor(key: LookSliderKey, defaults: LookVariantDefaults): number {
 /** The look from slider values; anything without a slider keeps the variant's default. */
 export function lookFromParams(params: ParamValues, defaults: LookVariantDefaults, floor: number): SwapLook {
   const base = defaults.look;
-  const value = (key: Exclude<keyof SwapLook, 'floor' | 'climbUp'>) => paramOr(params, key, base[key]);
+  const lookParam = (key: Exclude<keyof SwapLook, 'floor' | 'arrivalFloor' | 'climbUp'>) =>
+    paramOr(params, key, base[key]);
   return {
-    holdWindow: value('holdWindow'),
-    lowWindow: value('lowWindow'),
+    holdWindow: lookParam('holdWindow'),
+    lowWindow: lookParam('lowWindow'),
     floor,
+    arrivalFloor: floor * paramOr(params, 'arrivalFloorShare', defaults.arrivalFloorShare),
     climbUp: paramOr(params, 'climbUp', base.climbUp ? 1 : 0) >= 0.5,
-    jitter: value('jitter'),
-    ghost: value('ghost'),
-    markLag: value('markLag'),
-    swell: value('swell'),
-    swellTail: value('swellTail'),
-    focus: value('focus'),
-    tighten: value('tighten'),
-    topBoost: value('topBoost'),
+    jitter: lookParam('jitter'),
+    ghost: lookParam('ghost'),
+    markLag: lookParam('markLag'),
+    swell: lookParam('swell'),
+    swellTail: lookParam('swellTail'),
+    focus: lookParam('focus'),
+    focusShape: lookParam('focusShape'),
+    tighten: lookParam('tighten'),
+    topBoost: lookParam('topBoost'),
   };
+}
+
+function towardLinear(curve: BezierControls, amount: number): BezierControls {
+  return [
+    curve[0] + (LINEAR[0] - curve[0]) * amount,
+    curve[1] + (LINEAR[1] - curve[1]) * amount,
+    curve[2] + (LINEAR[2] - curve[2]) * amount,
+    curve[3] + (LINEAR[3] - curve[3]) * amount,
+  ];
 }
 
 /** The transition a look variant runs with these slider values. */
 export function lookTransition(params: ParamValues, defaults: LookVariantDefaults): BoardTransition {
   const tuning = lookVariantTuning(params, defaults);
+  const look = lookFromParams(params, defaults, tuning.dimFloor);
   return {
     revealMode: 'swap',
     driver: swapLookDriver({
       tuning,
       sharedFloor: paramOr(params, 'sharedFloor', defaults.sharedFloor),
-      ghostDrag: defaults.ghostDrag,
+      ghostFloor: defaults.ghostDrag ? look.arrivalFloor : 0,
+      arrivalFloor: look.arrivalFloor,
       runWindowMs: paramOr(params, 'runWindowMs', defaults.runWindowMs),
       runSwapMs: paramOr(params, 'runSwapMs', defaults.runSwapMs),
+      calmRuns: defaults.calmRuns,
     }),
-    look: lookFromParams(params, defaults, tuning.dimFloor),
+    look,
   };
 }
 
@@ -122,7 +157,11 @@ export function lookVariantDefaults(variant: BoardMotionVariant): LookVariantDef
 
 /** The full tuning a look variant runs with these slider values (curves included). */
 export function lookVariantTuning(params: ParamValues, defaults: LookVariantDefaults): WallSwapTuning {
-  return tuningFromParams(params, defaults.tuning);
+  const tuning = tuningFromParams(params, defaults.tuning);
+  const linear = paramOr(params, 'linear', defaults.linear);
+  if (!(linear > 0)) return tuning;
+  const amount = linear < 1 ? linear : 1;
+  return { ...tuning, easeIn: towardLinear(tuning.easeIn, amount), easeOut: towardLinear(tuning.easeOut, amount) };
 }
 
 export function lookVariant(spec: {
@@ -132,8 +171,16 @@ export function lookVariant(spec: {
   summary: string;
   defaults: LookVariantDefaults;
   sliders: readonly LookSlider[];
+  /** The Bold preset: slider values over the defaults. Every key must be one of `sliders`. */
+  bold: Readonly<Partial<Record<LookSliderKey, number>>>;
 }): BoardMotionVariant {
   const { defaults } = spec;
+  const sliderKeys = spec.sliders.map((slider) => (typeof slider === 'string' ? slider : slider.key));
+  for (const key of Object.keys(spec.bold)) {
+    if (!sliderKeys.some((sliderKey) => sliderKey === key)) {
+      throw new Error(`${spec.id}: the Bold preset sets ${key}, which has no slider`);
+    }
+  }
   const params: ParamSpec[] = spec.sliders.map((slider) => {
     const key = typeof slider === 'string' ? slider : slider.key;
     const range = SLIDERS[key];
@@ -149,6 +196,7 @@ export function lookVariant(spec: {
     name: spec.name,
     summary: spec.summary,
     params,
+    boldParams: { ...Object.fromEntries(params.map((param) => [param.key, param.default])), ...spec.bold },
     createTransition: (values) => lookTransition(values, defaults),
     requiresNativeApi: WALL_SWAP_SHARED_NATIVE_API,
     requiresNativeLab: SWAP_LOOK_LAB_MODE,

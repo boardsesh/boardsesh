@@ -1,4 +1,4 @@
-import type { ReduceMotionChoice } from './types';
+import type { LabPreset, ReduceMotionChoice } from './types';
 
 export type SpeedChoice = 1 | 0.5 | 0.25;
 
@@ -15,6 +15,8 @@ export type LabLinkParams = {
   /** `'all'`, one variant id, or null for no autoplay. */
   autoplay: string | null;
   reduceMotion: ReduceMotionChoice | null;
+  /** `preset=bold` starts every variant that has one on its Bold preset. */
+  preset: LabPreset | null;
 };
 
 function first(raw: string | string[] | undefined): string | null {
@@ -46,6 +48,11 @@ function parseReduceMotion(text: string | null): ReduceMotionChoice | null {
   }
 }
 
+function parsePreset(text: string | null): LabPreset | null {
+  const preset = text?.toLowerCase();
+  return preset === 'bold' || preset === 'subtle' ? preset : null;
+}
+
 /** Reads the lab's deep-link params. Anything unrecognised becomes null, never an error. */
 export function parseLabParams(raw: RawLabParams): LabLinkParams {
   return {
@@ -55,6 +62,7 @@ export function parseLabParams(raw: RawLabParams): LabLinkParams {
     speed: parseSpeed(first(raw.speed)),
     autoplay: first(raw.autoplay),
     reduceMotion: parseReduceMotion(first(raw.reduceMotion)),
+    preset: parsePreset(first(raw.preset)),
   };
 }
 

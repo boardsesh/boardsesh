@@ -15,6 +15,14 @@ export type ClimbOverlayGPUReady = {
   lowPowerMode?: boolean;
 };
 
+/** `onSwapLookState`'s payload; `SwapLookStatus` in play-drawer/swap-look.ts. */
+export type ClimbOverlayGPUSwapLookState = {
+  state: 'off' | 'ready' | 'on';
+  reason?: string;
+  holds?: number;
+  reachOff?: string;
+};
+
 export type ClimbOverlayGPUNativeProps = ViewProps & {
   configJson: string;
   requestId: string;
@@ -79,12 +87,17 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
         incomingArrives: number,
       ];
   /**
-   * `swapLookVersion` 1 (iOS) only, board motion lab only: the swap look
+   * `swapLookVersion` 2 (iOS) only, board motion lab only: the swap look
    * (`encodeSwapLook` in play-drawer/swap-look.ts), set when a slider is
    * released. Null or absent draws the API 7 swap; Reduce Motion turns it off
    * natively. Android takes the prop and ignores it.
    */
   swapLook?: readonly number[] | null;
+  /**
+   * `swapLookVersion` 2 only: whether the look is off (and why), ready or
+   * drawn, sent when that changes and only once a look was sent.
+   */
+  onSwapLookState?: (event: NativeSyntheticEvent<ClimbOverlayGPUSwapLookState>) => void;
   animateEdits: boolean;
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;

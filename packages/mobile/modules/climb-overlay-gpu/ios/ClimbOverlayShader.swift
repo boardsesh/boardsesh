@@ -157,6 +157,10 @@ enum ClimbOverlayShader {
       // Faint incoming fields must not steal an existing glow, even at d=0.
       // Keep real distance for falloff, and use a continuous positive fade
       // bias for ownership and seam interpolation during the reveal only.
+      // Shaped only: a hold never owns a pixel past its own (scaled) reach. It
+      // could not light it, and owning it would cut a neighbour's halo, such as a
+      // ghost beside a lit hold of the same colour, along this hold's crop box.
+      if(shaped && max(sqrt(dist2)-0.5,0.0)>=hold.numbers.x*shape.z) continue;
       float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+hold.numbers.x*(1-glowWeight)/max(glowWeight,0.0001) : dist2;
       if(transitioning && nearest>=0 && hold.identity.x==source_hold(uint(nearest),lowerCount,lower,upper).identity.x) continue;
       if(score<bestScore) {
