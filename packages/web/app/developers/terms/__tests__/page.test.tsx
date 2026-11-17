@@ -35,11 +35,12 @@ beforeEach(() => {
 });
 
 describe('developer terms page', () => {
-  it('shows the terms behind the console flag, marked as a draft, with the version registration records', async () => {
+  it('shows the terms behind the console flag, with the version registration records', async () => {
     const { container } = render(await DeveloperTermsPage());
     expect(mocks.flag).toHaveBeenCalledWith('developer-console', { distinctId: 'developer-account' });
     expect(screen.getByRole('heading', { name: 'Boardsesh developer terms' })).toBeTruthy();
-    expect(screen.getByText('Draft, not in force')).toBeTruthy();
+    expect(screen.queryByText('Draft, not in force')).toBeNull();
+    expect(PARTNER_DEVELOPER_TERMS_VERSION).not.toMatch(/-draft$/);
     expect(screen.getByText(`Version ${PARTNER_DEVELOPER_TERMS_VERSION}`)).toBeTruthy();
     for (const heading of [
       'Climbers’ data',

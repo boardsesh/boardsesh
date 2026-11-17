@@ -1531,8 +1531,8 @@ constant in production, so publishing terms is a reviewed code change and never
 an environment flip. Outside production (the backend's own test, the one its
 Sentry gate uses, since Railway leaves `NODE_ENV` unset) a
 `PARTNER_DEVELOPER_TERMS_VERSION` variable may name another version, which is how
-the tests and the end-to-end journey register apps while the shipped terms are a
-draft. While that version ends in `-draft` it refuses every registration with
+the tests and the end-to-end journey register apps under their own version. While
+that version ends in `-draft` (none ships; the refusal stays for a future draft) it refuses every registration with
 `BAD_USER_INPUT`, reason `TERMS_UNPUBLISHED`, "Developer terms are not published
 yet", in every mode that reaches registration. Otherwise it refuses any other
 accepted value with `BAD_USER_INPUT`, so a console left open across a terms change
@@ -2366,10 +2366,10 @@ What LEGAL.md implies:
   wording, not endorsement ("Works with Boardsesh"), and board brands only to
   name boards; and Boardsesh may suspend or delete an app that breaks them.
   Registration requires the current version (below), and **refuses every app
-  while that version is a draft**: the shipped `PARTNER_DEVELOPER_TERMS_VERSION`
-  ends in `-draft` until the owner approves the text, the page shows "Draft, not
-  in force", and the console's register form answers "Developer terms are not
-  published yet".
+  while that version is a draft** (a version ending in `-draft`; the shipped
+  `PARTNER_DEVELOPER_TERMS_VERSION` has been the dated `2026-11-17` since the
+  owner approved the text, and the console's register form would answer
+  "Developer terms are not published yet" for a draft).
 - **Privacy policy**: an "Apps you connect" section on www `/privacy`, shown
   only while the web's `PARTNER_OAUTH_MODE` is not `off`, in every locale. It
   says what an app can receive (display name and photo; every tick, "Only me"
@@ -2379,8 +2379,8 @@ What LEGAL.md implies:
   app's own policy governs the data afterwards, how to disconnect, that any
   password change (a reset, or setting one for the first time) disconnects
   every app, and that disconnecting or deleting the account does not delete
-  copies an app already holds. **Draft until the owner approves it**; it shows
-  only once partner apps are on, which itself waits for that approval (gate 9).
+  copies an app already holds. **Approved 2026-11-17**; it shows only while
+  partner apps are on.
 - **Trademarks**: the docs say "Kilter", "Tension", "MoonBoard" only to name
   board types, never to suggest the API is an official channel for them.
 
@@ -2497,7 +2497,7 @@ stays `off` until step 1 of stage A.
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
-| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | The terms page no longer says "Draft, not in force"; the console registers an app |
+| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | Done 2026-11-17 once deployed: the terms page has no "Draft, not in force" notice; the console registers an app |
 
 ### Turning it on and off
 

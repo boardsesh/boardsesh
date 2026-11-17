@@ -163,10 +163,6 @@
     },
     "title": "Boardsesh developer terms",
     "version": "Version {{version}}",
-    "draftNotice": {
-      "title": "Draft, not in force",
-      "body": "The Boardsesh team has not approved these terms yet. They may change before any app connects to a real climber’s account."
-    },
     "intro": "These terms apply to anyone who registers an app that connects to Boardsesh accounts through the Boardsesh API. You accept them when you register an app, for yourself and for everyone who works on the app with you.",
     "data": {
       "title": "Climbers’ data",

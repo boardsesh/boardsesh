@@ -342,7 +342,7 @@
       "p2Start": "L'API pubblica documentata nella",
       "p2Link": "pagina della documentazione API",
       "p2End": "serve per le integrazioni: strumenti che leggono i dati dei blocchi o agiscono per conto di un climber che ha effettuato l'accesso, dal suo account, entro i limiti di richieste applicati dal servizio.",
-      "p3": "Il servizio ospitato non è un backend per altre app. Un'app o un fork distribuito pubblicamente che usa account, dati o server di Boardsesh come proprio servizio richiede il nostro permesso scritto, e al momento non lo concediamo. Se fai un fork di Boardsesh, gestisci anche il tuo backend. Il codice è lì proprio per questo. Oggi il punto di partenza è la configurazione di sviluppo in CONTRIBUTING.md; la documentazione ufficiale sul self-hosting deve ancora arrivare.",
+      "p3": "Il servizio ospitato non è un backend per altre app. Un'app o un fork distribuito pubblicamente i cui account, l'arrampicata, il controllo dei pannelli o le sessioni girano sui server di Boardsesh richiede il nostro permesso scritto, e al momento non lo concediamo. Collegare alla tua app l'account Boardsesh di un climber con il suo permesso è diverso: se avviene tramite l'API OAuth, entro gli scope della documentazione per sviluppatori e secondo i termini per sviluppatori che accetti quando registri l'app, è un'integrazione e non richiede altri permessi da parte nostra. Se fai un fork di Boardsesh, gestisci anche il tuo backend. Il codice è lì proprio per questo. Oggi il punto di partenza è la configurazione di sviluppo in CONTRIBUTING.md; la documentazione ufficiale sul self-hosting deve ancora arrivare.",
       "p4Start": "Non devi nemmeno partire da un database vuoto. Gli",
       "p4Link": "snapshot notturni dei pannelli",
       "p4End": "sono file SQLite pubblici dei cataloghi dei blocchi, economici da servire per noi, e puoi usarli liberamente. Siamo anche disponibili a parlare della sincronizzazione di dati non utente, come blocchi e gradi, verso un servizio alternativo.",
@@ -937,7 +937,7 @@
   },
   "privacy": {
     "title": "Informativa sulla privacy",
-    "lastUpdated": "Ultimo aggiornamento: 3 novembre 2026",
+    "lastUpdated": "Ultimo aggiornamento: 17 novembre 2026",
     "intro1": "Boardsesh è un'app open source per controllare via Bluetooth i pannelli di allenamento in arrampicata (Kilter, Tension, MoonBoard). Questa informativa spiega quali dati raccogliamo, perché e cosa ne facciamo.",
     "intro2ProductAnalytics": "In breve: raccogliamo solo ciò che serve a far funzionare l'app. Non vendiamo i tuoi dati, in Boardsesh non ci sono pubblicità e non condividiamo dati con data broker. Pubblicizziamo Boardsesh su Reddit e Instagram e sul nostro sito l'analisi include la misurazione di quegli annunci con Meta e Reddit, come spiegato più sotto.",
     "collect": {
