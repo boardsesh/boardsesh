@@ -692,7 +692,10 @@ outside the harness is that the partner journey's local-only check accepts
   Domain=.boardsesh.test` set by one host is stored, sent to a sibling host,
   and removed by an expiring `Set-Cookie`, and that one without a `Domain`
   stays on its host. Public-suffix rules and `Secure` handling with ignored
-  HTTPS errors differ by engine, so this is tested, not assumed. When another
+  HTTPS errors differ by engine, so this is tested, not assumed. Result, first
+  run (PR #7767, Playwright 1.62.1 on Linux): all three pass in Chromium and
+  WebKit, so `.boardsesh.test` is a registrable domain in both and a `Secure`
+  cookie is stored and sent over the ignored-error certificate. When another
   spec fails in only one engine, read this one first.
 - `legacy-mode.spec.ts` is the baseline in today's mode
   (`AUTH_BROWSER_SESSION_MODE` unset): sign in on www as the seeded test user
