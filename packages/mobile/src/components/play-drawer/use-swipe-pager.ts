@@ -169,9 +169,9 @@ export type SwipeStepSignal = { direction: -1 | 0 | 1; step: number };
 
 /**
  * How far from the middle, as a share of the board's width, the incoming board
- * is when the JS thread is told about the step: 3%, about 10 pt on a phone.
+ * is when the JS thread is told about the step: 10%, about 34 pt on a phone.
  */
-export const TELL_JS_REMAINING = 0.03;
+export const TELL_JS_REMAINING = 0.1;
 
 /**
  * The pager's shared values, and the last swipe step the JS thread was told
@@ -260,17 +260,21 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
     untoldStep.value = 0;
     runOnJS(requestStep)(flingDirection.value > 0 ? 1 : -1, step);
   }, [untoldStep, flingDirection, requestStep]);
-  // The JS thread is told once the incoming board is all but home: within
-  // `TELL_JS_REMAINING` of a board width of the middle (10 pt on a 335 pt board),
-  // where the settle is down to a few points a frame. A flick gets there 55–70
-  // ms after the finger lifts, a slow release in about 250 ms.
+  // The JS thread is told once the incoming board is within `TELL_JS_REMAINING`
+  // of a board width of the middle (34 pt on a 335 pt board): 8–42 ms after the
+  // finger lifts from a flick, 58–83 ms after a slow release, never later than
+  // when the old spring reached its clamp. Its render then lands while the settle
+  // is easing out, and a second swipe that way finds its page mounted sooner.
   //
   // Changing the climb costs the UI thread a frame now and then (the new
   // neighbour's board is mounted, the rest of the drawer updates), and it
   // should not be a frame in which a board is moving fast. Told at finger-up it
   // was: 5 to 7 frames in 2,500 on an iPhone 13 Pro, all of them mid-fling.
-  // Told only when the fling has landed, the next swipe waits longer for its
-  // page: the settle creeps over its last few points for another 100 ms.
+  //
+  // The anchored GPU board is unaffected by when the trio changes: the native
+  // scene picks the same two pages and progress for (anchor, +0.9) as for
+  // (anchor + 1, −0.1), so long as the new trio's previous climb is the one the
+  // step left, as it is for every step forward and back.
   useAnimatedReaction(
     () => flingDirection.value !== 0 && Math.abs(translateX.value) >= slideWidth.value * (1 - TELL_JS_REMAINING),
     (incomingBoardHasStopped, before) => {
@@ -424,6 +428,21 @@ export function useTrackEndSwipe(pager: SwipePager, onTrackEnd: (() => void) | n
 }
 
 /**
+ * The most a board's path is stretched beyond its own width, in points: a phone's
+ * letterbox margin (33.5 pt for a 335 pt board on a 402 pt screen) and more.
+ * A wider margin (an iPad, or a phone on its side) is not crossed by stretching,
+ * which left up to 125 pt of empty frame between the boards and the incoming
+ * one moving at 1.8 times the finger; see `pageOffset`.
+ */
+export const PAGE_MAX_STRETCH = 48;
+
+/**
+ * The share of the swipe, at either end, over which a board fades when its
+ * margin is wider than {@link PAGE_MAX_STRETCH}.
+ */
+export const PAGE_EDGE_FADE = 0.3;
+
+/**
  * Where a board sits, for a board `slideWidth` wide in a frame that clips it
  * `exitWidth` from the middle (half the frame plus half the board).
  *
@@ -437,6 +456,10 @@ export function useTrackEndSwipe(pager: SwipePager, onTrackEnd: (() => void) | n
  * moves exactly with the finger. The gap between the two boards is the margin
  * at either end and half of it halfway.
  *
+ * The stretch stops at {@link PAGE_MAX_STRETCH}. Past that the board would sit
+ * in the margin when the swipe lands, so it fades out over the swipe's last
+ * {@link PAGE_EDGE_FADE} instead, and the incoming one fades in over its first.
+ *
  * Only the page in the middle and its neighbour on the side being swiped
  * towards are drawn, never more than one board width from the middle; at rest
  * only the middle page is.
@@ -447,17 +470,25 @@ export function pageOffset(
   translateX: number,
   slideWidth: number,
   exitWidth: number = slideWidth,
-): { visible: boolean; offset: number } {
+): { visible: boolean; offset: number; opacity: number } {
   'worklet';
   if (!(slideWidth > 0)) {
-    return page === anchorPage ? { visible: true, offset: translateX } : { visible: false, offset: 0 };
+    return page === anchorPage
+      ? { visible: true, offset: translateX, opacity: 1 }
+      : { visible: false, offset: 0, opacity: 0 };
   }
   // Clamped to one page: a drag past the board's width does not carry the
   // incoming board on past the middle, or bring a third.
   const progress = Math.max(-1, Math.min(1, translateX / slideWidth));
   const distance = page - anchorPage + progress;
   // Parked a board width along, out of sight, like every page at rest.
-  if (Math.abs(distance) >= 1) return { visible: false, offset: slideWidth };
-  const stretch = Math.max(0, exitWidth - slideWidth);
-  return { visible: true, offset: distance * slideWidth + Math.sign(distance) * stretch * distance * distance };
+  if (Math.abs(distance) >= 1) return { visible: false, offset: slideWidth, opacity: 0 };
+  const margin = Math.max(0, exitWidth - slideWidth);
+  const stretch = Math.min(margin, PAGE_MAX_STRETCH);
+  const opacity = margin > stretch ? Math.min(1, (1 - Math.abs(distance)) / PAGE_EDGE_FADE) : 1;
+  return {
+    visible: true,
+    offset: distance * slideWidth + Math.sign(distance) * stretch * distance * distance,
+    opacity,
+  };
 }

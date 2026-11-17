@@ -2329,8 +2329,9 @@ export function PlayCore({
       browseCaption ??
       thenSignposts.upNextFirstCaption);
   // The note on line 2 now: only then does it spend its caps (once per open,
-  // three per run), and a screen reader hears it as the board's value, which
-  // VoiceOver and TalkBack read after the adjust action that earned it.
+  // three per run). TalkBack reads it as the board's value after the adjust
+  // action that earned it; on iOS the board carries no value and VoiceOver
+  // hears the landing announcement instead.
   const previewNoteOnLine = resolvePreviewNoteOnLine({
     previewNote: thenSignposts.previewNote,
     busyWallUp: busyWall.model != null,

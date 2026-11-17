@@ -4,6 +4,7 @@ import {
   StyleSheet,
   useWindowDimensions,
   PixelRatio,
+  Platform,
   type LayoutChangeEvent,
   type ViewProps,
   type ViewStyle,
@@ -97,8 +98,9 @@ type SwipeBoardCarouselProps = {
   onSwipeNext: () => void;
   onSwipePrevious: () => void;
   /**
-   * The board's spoken value, as the then-signposts word it on a climb that
-   * plays Up next: "Up next, 4 of 4, then Projects". Absent everywhere else.
+   * The board's spoken value: the climb on screen and where it sits, "Yoshi's
+   * Island, V5, 5 of 40", then Up next's stretch or the preview note. Used on
+   * Android only; see `boardAccessibility`.
    */
   accessibilityValueText?: string;
   /** The adjust actions' names when a step crosses into the list ("Next in Projects"); the plain ones otherwise. */
@@ -266,7 +268,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     }
   }, [artIdentity, onCurrentArtReadinessChange]);
   const slotStyle = useAnimatedStyle(() => {
-    const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth, exitWidth);
+    const { visible, offset, opacity } = pageOffset(page, anchorPage.value, translateX.value, slideWidth, exitWidth);
     // Opacity and transform only, and never zIndex. Two pages that are both
     // drawn never overlap (the incoming one lands in the middle as the outgoing
     // one leaves the frame), so there is no order to keep. And a
@@ -274,7 +276,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     // the native view among its siblings, which cancels a touch that began on
     // it. A swipe that took over a fling was cut off that way, 3 ms after it
     // started, until this stopped animating zIndex.
-    return { opacity: visible ? 1 : 0, transform: [{ translateX: offset }] };
+    return { opacity: visible ? opacity : 0, transform: [{ translateX: offset }] };
   }, [page, slideWidth, exitWidth]);
 
   return (
@@ -423,7 +425,14 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       accessibilityLabel: accessibilitySummary,
       accessibilityHint: t('mobile.boardAccessibility.adjustHint'),
       accessibilityState: { disabled: !enabled },
-      ...(accessibilityValueText ? { accessibilityValue: { text: accessibilityValueText } } : null),
+      // Not on iOS. VoiceOver reads an adjustable element's value the moment its
+      // increment returns, before the JS thread has changed the climb, and
+      // Fabric tells it nothing when the value changes after: it would say the
+      // climb that left, then the player's announcement of the new one. There
+      // the announcement alone says where a step went.
+      ...(accessibilityValueText && Platform.OS !== 'ios'
+        ? { accessibilityValue: { text: accessibilityValueText } }
+        : null),
       accessibilityActions: [
         ...(enabled && canSwipeNext
           ? [{ name: 'increment', label: nextActionLabel ?? t('mobile.boardAccessibility.next') }]

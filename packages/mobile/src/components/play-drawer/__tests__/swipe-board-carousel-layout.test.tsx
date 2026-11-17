@@ -54,6 +54,9 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useGpuClimbOverlayEnabled: () => recorded.gpuEnabled,
 }));
 
+// The platform the board's spoken value is decided for.
+const platform = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' }));
+
 const sharedThreads = vi.hoisted(() => ({
   asynchronous: false,
   onUiThread: false,
@@ -104,6 +107,7 @@ vi.mock('react-native', () => {
     StyleSheet: { create: (styles: unknown) => styles },
     useWindowDimensions: () => ({ width: 390, height: 844 }),
     PixelRatio: { get: () => 3 },
+    Platform: platform,
   };
 });
 vi.mock('react-native-reanimated', async () => {
@@ -298,6 +302,7 @@ function readinessCallbackFor(frames: string): (readiness: BoardArtReadiness) =>
 }
 
 beforeEach(() => {
+  platform.OS = 'android';
   recorded.motionNative = false;
   recorded.gpuEnabled = true;
   recorded.apiVersion = 5;
@@ -1032,6 +1037,28 @@ describe('SwipeBoardCarousel pages', () => {
       { name: 'increment', label: 'Next in Projects' },
       { name: 'decrement', label: 'mobile.boardAccessibility.previous' },
     ]);
+  });
+
+  // VoiceOver reads an adjustable element's value as soon as its increment
+  // returns, before the JS thread has changed the climb, and is not told when
+  // the value changes after: it would say the climb that left, then the
+  // player's announcement of the new one.
+  it('gives VoiceOver no value to read stale, leaving the step to its announcement', () => {
+    platform.OS = 'ios';
+    const onSwipeNext = vi.fn();
+    render(
+      createElement(SwipeBoardCarousel, {
+        ...baseProps,
+        accessibilityValueText: 'Low, V4, 4 of 40',
+        onSwipeNext,
+      }),
+    );
+    measure(350, 500);
+    expect(recorded.accessibility?.accessibilityValue).toBeUndefined();
+    // Still adjustable, and the adjust still steps.
+    expect(recorded.accessibility?.accessibilityRole).toBe('adjustable');
+    act(() => recorded.accessibility?.onAccessibilityAction?.({ nativeEvent: { actionName: 'increment' } }));
+    expect(onSwipeNext).toHaveBeenCalledOnce();
   });
 
   it('has no value off Up next', () => {

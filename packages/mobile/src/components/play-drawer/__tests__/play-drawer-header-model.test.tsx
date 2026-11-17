@@ -65,7 +65,7 @@ vi.mock('@boardsesh/board-react', () => ({
   },
 }));
 
-import { PreparedPlayDrawerHeader, useLivePlayDrawerHeaderModel } from '../PlayDrawerHeader';
+import { LivePlayDrawerHeader, PreparedPlayDrawerHeader, useLivePlayDrawerHeaderModel } from '../PlayDrawerHeader';
 const climb = {
   uuid: 'climb-1',
   name: 'Original',
@@ -183,5 +183,23 @@ describe('prepared live header geometry identity', () => {
     expect(rendered.getByText('V6')).toBeTruthy();
     expect(reads.stats).toHaveBeenCalledTimes(1);
     expect(reads.myGrade).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A swipe's commit turns the neighbour's header into the current one. It used to
+// be a different component there (Prepared for the current climb, Live for the
+// neighbours), so the commit remounted the header after its title had landed.
+describe('the swipe header across a commit', () => {
+  it('keeps the neighbour’s header mounted when it becomes the current one', () => {
+    const { result } = renderHook(() => useLivePlayDrawerHeaderModel(args));
+    const model = result.current;
+    if (!model) throw new Error('no model');
+    const { getByText, rerender } = render(createElement(LivePlayDrawerHeader, { ...args, peek: true }));
+    const drawnName = getByText('Original');
+
+    rerender(createElement(LivePlayDrawerHeader, { ...args, climb: null, model, onLongPressName: vi.fn() }));
+
+    // The same DOM node: React kept the header, and only its props changed.
+    expect(getByText('Original')).toBe(drawnName);
   });
 });

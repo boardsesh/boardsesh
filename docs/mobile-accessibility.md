@@ -53,7 +53,10 @@ nonlinear ValueSlider tracks retain their existing mapping.
 Boards announce the rendered hold-role counts. Play boards expose adjustable
 previous/next actions at queue boundaries. Their value names the climb on screen
 by name and grade, and its place in the list ("Yoshi's Island, V5, 5 of 40");
-a step the climber takes announces it where it lands. Create's “Choose holds from a list”
+a step the climber takes announces it where it lands. On iOS the board carries
+no value: VoiceOver reads an adjustable element's value as soon as its increment
+returns, before the JS thread has changed the climb, so it would say the climb
+that left first. The announcement alone says where the step went. Create's “Choose holds from a list”
 action lives in the header's overflow menu and replaces the drawing area with a virtualized list using the same paint and
 role-picker callbacks. A short fast flick commits a carousel swipe; springs use
 release velocity and retain the host's post-render handoff.
