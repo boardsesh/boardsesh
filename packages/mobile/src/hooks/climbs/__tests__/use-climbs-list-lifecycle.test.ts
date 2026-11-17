@@ -21,6 +21,12 @@ type ViewableReport = Parameters<ReturnType<typeof useClimbsListLifecycle>['hand
 function rowsOnScreen(first: number, last: number): ViewableReport {
   return { viewableItems: [{ index: first }, { index: last }] } as unknown as ViewableReport;
 }
+/** A scroll event with the list at `offsetY`. */
+function scrollAt(offsetY: number): Parameters<Options['climberScroll']['handlers']['onScroll']>[0] {
+  return { nativeEvent: { contentOffset: { x: 0, y: offsetY } } } as unknown as Parameters<
+    Options['climberScroll']['handlers']['onScroll']
+  >[0];
+}
 function alwaysScrolled(): Options['climberScroll'] {
   const tracker = createClimberScrollTracker(() => undefined);
   return { ...tracker, hasScrolled: () => true };
@@ -174,6 +180,10 @@ describe('useClimbsListLifecycle', () => {
     act(() => climberScroll.handlers.onMomentumScrollBegin());
     expect(climberScroll.hasScrolled()).toBe(true);
     screen.rerender({ ...screen.initialProps, climberScroll, searchKey: 'second' });
+    expect(climberScroll.hasScrolled()).toBe(false);
+    // The coasting is forgotten too: the scroll to the top that follows only
+    // records where the list is.
+    act(() => climberScroll.handlers.onScroll(scrollAt(0)));
     expect(climberScroll.hasScrolled()).toBe(false);
     screen.unmount();
   });
