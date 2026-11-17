@@ -924,6 +924,28 @@ describe('diffServiceVars', () => {
     );
   });
 
+  it('treats an absent or set WEB_DATABASE_URL as converged and never prints it', () => {
+    const webDatabaseUrl = 'postgresql://boardsesh_web:not-printed@db.example:5432/main';
+    const variables = convergedVariables();
+    expect(diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS)).toEqual([]);
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME], WEB_DATABASE_URL: webDatabaseUrl };
+    expect(diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS)).toEqual([]);
+  });
+
+  it('reports a placeholder WEB_DATABASE_URL as blocked, never as something to write', () => {
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME], WEB_DATABASE_URL: '<web-database-url>' };
+    const changes = diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS);
+    expect(changes).toEqual([
+      expect.objectContaining({
+        summary: `${WEB_SERVICE_NAME}: WEB_DATABASE_URL is placeholder`,
+        target: { serviceName: WEB_SERVICE_NAME, varName: 'WEB_DATABASE_URL' },
+        blocked: true,
+      }),
+    ]);
+    expect(JSON.stringify(changes)).not.toContain('<web-database-url>');
+  });
+
   it.each(['off', 'hold', 'allowlist', 'open'])('accepts PARTNER_OAUTH_MODE=%s on the web', (mode) => {
     const variables = convergedVariables();
     variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME], PARTNER_OAUTH_MODE: mode };

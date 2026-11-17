@@ -6,6 +6,7 @@ export {
   createDbOnPool,
   resolvePoolMax,
   applyRequestPoolDefaults,
+  applyWebDatabaseUrl,
   REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS,
   closePool,
   createReadDb,

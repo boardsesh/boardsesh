@@ -12,6 +12,9 @@ export function identityArguments(arguments_: readonly string[], importing: bool
     arguments_,
     [importing ? 'import' : 'reconcile'],
     importing ? ['--batch', '--pause-ms', '--checkpoint', '--key-file'] : ['--key-file'],
+    // Import writes: it must be named (`vp run auth:import-identities -- import …`).
+    // Reconcile is read-only and stays the default of its own command.
+    importing ? ['import'] : [],
   );
   if (parsed.projectionId || parsed.planSha256) throw new Error('INVALID_ARGUMENTS');
   const batch = Number(parsed.options.get('--batch') ?? '200');

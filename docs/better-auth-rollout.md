@@ -8,7 +8,7 @@ This file answers one question: what can change how sign-in works in production,
 
 - **Nothing in the repo sets any switch below.** Check Railway for the live values; do not assume them from this file.
 - **The owner flips every switch.** Agents prepare commands and read production. They do not change production variables, flags or the database.
-- **Only `PARTNER_OAUTH_MODE` is checked by `infra/railway/config.ts`** (web service: it must be `off`, `hold`, `allowlist` or `open`). No plan catches a typo in any other row. The code does: an unknown value throws at startup or on the first request, except where the row says "reads as off".
+- **Only `PARTNER_OAUTH_MODE` is checked by value in `infra/railway/config.ts`** (web service: it must be `off`, `hold`, `allowlist` or `open`). `WEB_DATABASE_URL` is declared there as an optional secret: absence is fine, only an unfilled placeholder is reported. No plan catches a typo in any other row. The code does: an unknown value throws at startup or on the first request, except where the row says "reads as off".
 - **Unset, empty or `legacy` means off** for every `CURRENT_STORE_*` mode and for `AUTH_WATCH_PAIRING_MODE`.
 - **Changing a mode never closes a code gate.** Section "Code gates" lists the ones that refuse regardless of environment.
 
@@ -41,7 +41,8 @@ These are not modes. Most `CURRENT_STORE_*` modes below need them, and a missing
 | `EMAIL_VERIFICATION_ENABLED` | Backend | `true` or anything else (existing setting) | Staged writers copy it into their authority record. | Not an epic switch | Existing behaviour. |
 | `DEBUG_SQL` | Backend | Must not be `true` while a staged writer is on | Staged modes refuse to run with SQL logging on, because it would log credentials. | Not applicable | Unset it. |
 | `AUTH_IDENTITY_DATABASE_URL` and `AUTH_IDENTITY_DATABASE_CONTRACT` | Backend | A connection string for the dedicated credential-writer role: same host, port and database as `DATABASE_URL`, a different user and password. The contract is `private-web-v1` (default), `private-browser-v1`, `private-provider-v1`, `private-first-password-v1`, `private-native-handoff-v1` or `private-browser-renewal-v1`. | Opens the separate pool the staged credential writers and their maintenance jobs use. A wrong or shared role is refused at startup of that pool. | The owner creates the role `boardsesh_identity_writer`; no repo script does (`auth-fence apply` creates `boardsesh_web`, a different role). The connection user must be exactly that name. Hosts other than loopback need `sslmode=verify-full`. See [better-auth-credential-database.md](./better-auth-credential-database.md) | Unset both. |
-| `AUTH_OPERATOR_DATABASE_URL` | Operator shell | Administrative connection string (unset) | Input to `auth-fence`, `auth-authority`, `auth:import-identities` and `auth:revoke-sessions`; used with `--confirm-host`. Not read by any service. | The reviewed plan hash, trusted CA in `NODE_EXTRA_CA_CERTS` | Unset it. |
+| `AUTH_OPERATOR_DATABASE_URL` | Operator shell | Administrative connection string (unset) | Input to `vp run auth:fence`, `auth-authority`, `auth:import-identities` and `auth:revoke-sessions`; used with `--confirm-host`. Not read by any service. | The reviewed plan hash, trusted CA in `NODE_EXTRA_CA_CERTS` | Unset it. |
+| `WEB_DATABASE_URL` | Web | Connection string for the `boardsesh_web` role: same host, port and database as `DATABASE_URL`, its own user and password (unset; unset or blank falls back to `DATABASE_URL`) | Moves the web's pool, and the hostname Sentry checks, onto the fenced role that cannot write identity tables. | **The web refuses to boot with it set** (`WEB_DATABASE_LOGIN_BLOCKED`) while `WEB_DATABASE_LOGIN_BLOCKERS` is not empty (section "Code gates"): web sign-up, password reset and email verification still write identity tables and would fail with `42501`. Also the fence applied and verified (section C step 1). Details: "Web connection string" in [better-auth-writer-fence-proof.md](./better-auth-writer-fence-proof.md). | Unset it and redeploy; the web is back on `DATABASE_URL`. After it is live and verified, remove `DATABASE_URL` from the web service (nothing else there reads it). |
 | `ACCOUNT_EMAIL_RESOLVE_DATABASE_URL` | Operator shell | Connection string for the intended database; never falls back to `DATABASE_URL` (unset) | Input to `resolve-account-emails.ts`. | Private evidence and decisions files | Unset it. |
 | `AUTH_IDENTITY_AUDIT_DATABASE_URL` | Operator shell | A local PostgreSQL URL only (unset) | Input to `audit-auth-identities.ts`; production URLs are refused. | Nothing | Unset it. |
 
@@ -100,6 +101,12 @@ A code gate is a constant or an assertion. No variable, flag or script option cl
 | `GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION` | Proof that the Garmin watch keeps its offline tick queue on a rejected refresh and on a same-account re-pair, including installed older watch builds. The owner has only a test watch, and public release is planned for December. Real-watch QA with the original signing key is still open. #7442 (owner-scoped outbox) is merged. |
 | `STAGED_WEB_PROOF_GENERATION_STAMP` | The staged web sign-in proof carrying the account generation, with the cookie window closed, and evidence that every still-valid older web cookie (including no-session-id cookies) logs out safely.  The owner must also confirm the old sign-in issuers are retired (the old Vercel project's deployments and rollback issuers). |
 
+**The one that blocks the fenced web login** (`WEB_DATABASE_LOGIN_BLOCKERS` in `packages/db/src/client/config.ts`). While it is not empty, a set `WEB_DATABASE_URL` stops the web at boot (`instrumentation.ts` exits 1 with `WEB_DATABASE_LOGIN_BLOCKED`) and in `applyWebDatabaseUrl()`.
+
+| Gate | What it waits for |
+| --- | --- |
+| `LEGACY_WEB_IDENTITY_WRITERS` | Every identity write in the web moved to the backend: registration, forgot and reset password, resend and verify email, set-password, the NextAuth `DrizzleAdapter` on `users` and `accounts`, and the sign-in callback that sets `emailVerified`. The file and line list is in "Web connection string" in [better-auth-writer-fence-proof.md](./better-auth-writer-fence-proof.md). |
+
 **Startup assertions** (`packages/backend/src/index.ts`) refuse to boot: `AUTH_CUTOFF_ENFORCEMENT=observe` with any staged writer on; `AUTH_IDENTITY_MIRROR=on`; `AUTH_NATIVE_REVOCATION_MODE=generation`; `CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging` (its own assertion in `web-session-configuration.ts`, not tied to a gate constant); `AUTH_LEGACY_BRIDGE_MODE=on` without both of the last two.
 
 ## Order to turn things on
@@ -130,12 +137,12 @@ Independent of everything else. No switch; these are database steps.
 
 Needs step B done, because `activate` refuses while collisions or non-normalized emails remain. Every step here is parked until the two code gates close and a rehearsal passes.
 
-1. **Fence:** `auth-fence.ts apply --confirm-host pgdr.boardsesh.com --plan-sha256 <reviewed hash>`. Creates `boardsesh_web` with no password. Set its password, move the web onto it, retire every old web pool.
+1. **Fence:** `vp run auth:fence -- plan --confirm-host pgdr.boardsesh.com` prints the SQL and its `planSha256` (read-only); after review, `vp run auth:fence -- apply --confirm-host pgdr.boardsesh.com --plan-sha256 <reviewed planSha256>`. Creates `boardsesh_web` with no password; set one with `\password boardsesh_web` in admin psql. `vp run auth:fence -- verify --confirm-host pgdr.boardsesh.com` must print `"verified":true`. CI proves the fence on the current journal in the `test-auth-fence` job. Moving the web onto the role (`WEB_DATABASE_URL`, section 2) waits for the `LEGACY_WEB_IDENTITY_WRITERS` gate; then retire every old web pool and remove `DATABASE_URL` from the web service.
 2. **Prepare:** `auth-authority.ts prepare`. Leaves the phase `prepared`. Account deletion keeps working while the projection is only prepared (#7630, which fixed #7591). The real window is from `activate` until every backend serves `CURRENT_STORE_ACCOUNT_DELETION_MODE=reserved-staging`: deletion is unavailable then. See "Deletion during cutover" in [better-auth-account-deletion.md](./better-auth-account-deletion.md).
 3. **Activate:** `auth-authority.ts activate`. Refuses while either gate is open. The first enforced epoch is 1. The email resolution tool also refuses with `STALE_AUTHORITY` once another authority is current (#7649). Enforcement of denials needs the denial reader (#7439) on every backend first.
 4. **Writer modes (section 3).** #7430 says the exact order will be recorded there before any switch, so none is fixed here. The dependencies are: proof `compatible` before `required`; `required` before set-password; fixed-owner order before location sync; native modes `reserved-staging` before the mirror. Turn on one mode at a time and watch it before the next.
 5. **Mirror:** `AUTH_IDENTITY_MIRROR=on`. Blocked in code until the activation gates close.
-6. **Import:** `vp run auth:import-identities -- --confirm-host pgdr.boardsesh.com --key-file ~/Private/boardsesh-ba04/digest-key --checkpoint ~/Private/boardsesh-ba04/checkpoints --batch 200 --pause-ms 100`. Reconcile read-only afterwards and 24 hours later.
+6. **Import:** `vp run auth:import-identities -- import --confirm-host pgdr.boardsesh.com --key-file ~/Private/boardsesh-ba04/digest-key --checkpoint ~/Private/boardsesh-ba04/checkpoints --batch 200 --pause-ms 100`. Reconcile read-only afterwards and 24 hours later.
 7. **Switch:** `AUTH_LEGACY_BRIDGE_MODE=shadow`, then `on` once web sign-out is staged and generation revocation is allowed. Before generation revocation, `AUTH_WATCH_PAIRING_MODE=source-bound-staging`.
 
 ### D. First-party clients (BA-05, BA-06)
@@ -150,7 +157,6 @@ No switch. Remove NextAuth only after the legacy cookie has been kept for 30 day
 
 ## Pending on open PRs (not on main)
 
-- #7631: wires the writer fence into `vp`, CI and the web pool. It adds `WEB_DATABASE_URL`, `vp run auth:fence`, a boot refusal on `WEB_DATABASE_LOGIN_BLOCKERS`, and an explicit `import` verb for `auth:import-identities`. Until it merges, the import command in section C may change.
 - #7650: shared per-client limit for staged sign-in (the login budget, #7589).
 - #7652: partner app changes that move credentials need a recent sign-in (#7598).
 - #7647: CI ratchet on new next-auth imports (BA-10).

@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
-import { users } from '@boardsesh/db/schema/auth';
-import { boardseshTicks } from '@boardsesh/db/schema/app';
+import { authSession, userCredentials, users } from '@boardsesh/db/schema/auth';
+import { boardseshTicks, playlistOwnership, playlists, syncDeletions } from '@boardsesh/db/schema/app';
+import { qualifyCredentialWriter } from '@boardsesh/db/credential-writer-acl';
 import { runAuthFence } from '../../auth-fence';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { fencePlan, readFenceCatalog, verifyFence } from '../catalog';
+import { fencePlan, protectedIdentityTable, readFenceCatalog, verifyFence, WEB_FENCE_LOCK_SQL } from '../catalog';
 import { reconcileWebRuntimeAcl, quoteIdentifier } from '@boardsesh/db/auth-web-acl';
 import { runAuthAuthority } from '../../auth-authority';
+import { grantOwnedCredentialWriterCapabilities } from '../../../auth/authority/__tests__/fixtures/credential-writer-environment';
+
+const WRITER_ROLE = 'boardsesh_identity_writer';
+// The current canonical journal's reviewed credential profile (CI's provider proofs use it too).
+const WRITER_CONTRACT = 'private-browser-renewal-v1';
 
 // Explicit local schema-only fixture; never copies data or uses DATABASE_URL.
 const schemaFile = process.env.AUTH_FENCE_TEST_SCHEMA_FILE;
@@ -31,13 +37,22 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     max: 1,
     onnotice: () => {},
   });
+  const writerSecret = randomUUID().replaceAll('-', '');
+  const writer = postgres(address.toString(), {
+    username: WRITER_ROLE,
+    password: () => writerSecret,
+    max: 1,
+    onnotice: () => {},
+  });
   let createdDatabase = false;
   let createdRole = false;
+  let createdWriterRole = false;
   beforeAll(async () => {
-    const [role] = await admin<
-      { present: boolean }[]
-    >`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'boardsesh_web') AS present`;
+    const [role] = await admin<{ present: boolean; writer: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'boardsesh_web') AS present,
+        EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${WRITER_ROLE}) AS writer`;
     if (role.present) throw new Error('TEST_REQUIRES_ABSENT_WEB_ROLE');
+    if (role.writer) throw new Error('TEST_REQUIRES_ABSENT_WRITER_ROLE');
     await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
     createdDatabase = true;
     const schema = readFileSync(schemaFile!, 'utf8')
@@ -64,15 +79,17 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       );
     }
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
-    expect('sql' in plan && plan.sql).toContain('CREATE ROLE "boardsesh_web" LOGIN');
+    if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
+    expect(plan.sql).toContain('CREATE ROLE "boardsesh_web" LOGIN');
     createdRole = true;
     expect(
-      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.sha256], environment),
+      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.planSha256], environment),
     ).toMatchObject({ mode: 'applied' });
     await admin.unsafe(`ALTER ROLE boardsesh_web PASSWORD '${secret}'`);
   });
   afterAll(async () => {
     await web.end({ timeout: 3 });
+    await writer.end({ timeout: 3 });
     await owner.end({ timeout: 3 });
     try {
       if (createdDatabase) await admin.unsafe(`DROP DATABASE "${databaseName}"`);
@@ -80,10 +97,21 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       try {
         if (createdRole) await admin.unsafe('DROP ROLE IF EXISTS boardsesh_web');
       } finally {
-        await admin.end({ timeout: 3 });
+        try {
+          if (createdWriterRole) await admin.unsafe(`DROP ROLE IF EXISTS ${quoteIdentifier(WRITER_ROLE)}`);
+        } finally {
+          await admin.end({ timeout: 3 });
+        }
       }
     }
   });
+  /** Runs one statement as the web LOGIN and never lets it commit. */
+  async function webStatement(statement: string) {
+    await web.begin(async (transaction) => {
+      await transaction.unsafe(statement);
+      throw new Error('ROLLBACK_FIXTURE');
+    });
+  }
   it('verifies the complete migrated schema and preserves nonauth web writes and cutoff reads', async () => {
     expect(await verifyFence(owner)).toMatchObject({ verified: true, role: 'boardsesh_web' });
     const [access] = await owner<{ cutoff: boolean; gyms: boolean; sessions: boolean }[]>`
@@ -109,6 +137,38 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       .catch((error: unknown) => {
         if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
       });
+    expect(await verifyFence(owner)).toMatchObject({ verified: true });
+  });
+  it('closes identity sequences and refuses TRIGGER, REFERENCES, TRUNCATE and setval grants', async () => {
+    const [sequences] = await owner<{ identity: string; product: string }[]>`
+      SELECT pg_get_serial_sequence('public.aurora_credentials','id') AS identity,
+        pg_get_serial_sequence('public.playlists','id') AS product`;
+    const [usage] = await owner<{ identity: boolean; product: boolean }[]>`
+      SELECT has_sequence_privilege('boardsesh_web',${sequences.identity},'USAGE,UPDATE') AS identity,
+        has_sequence_privilege('boardsesh_web',${sequences.product},'USAGE') AS product`;
+    expect(usage).toEqual({ identity: false, product: true });
+    for (const [mutation, code] of [
+      [`GRANT USAGE ON SEQUENCE ${sequences.identity} TO boardsesh_web`, 'IDENTITY_SEQUENCE_PATH'],
+      [`GRANT UPDATE ON SEQUENCE ${sequences.identity} TO boardsesh_web`, 'IDENTITY_SEQUENCE_PATH'],
+      [`GRANT UPDATE ON SEQUENCE ${sequences.product} TO boardsesh_web`, 'UNREVIEWED_SEQUENCE_PRIVILEGE'],
+      ['GRANT TRIGGER ON users TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+      ['GRANT REFERENCES ON user_credentials TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+      ['GRANT TRIGGER ON gyms TO boardsesh_web', 'UNREVIEWED_TABLE_PRIVILEGE'],
+      ['GRANT REFERENCES (name) ON gyms TO boardsesh_web', 'UNREVIEWED_TABLE_PRIVILEGE'],
+      ['GRANT TRUNCATE ON gyms TO boardsesh_web', 'UNREVIEWED_TABLE_PRIVILEGE'],
+      ['GRANT INSERT ON aurora_credentials TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+      ['GRANT DELETE ON user_board_mappings TO boardsesh_web', 'IDENTITY_WRITE_PATH'],
+    ] as const) {
+      await owner
+        .begin(async (transaction) => {
+          await transaction.unsafe(mutation);
+          await expect(verifyFence(transaction), mutation).rejects.toThrow(code);
+          throw new Error('ROLLBACK_FIXTURE');
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+        });
+    }
     expect(await verifyFence(owner)).toMatchObject({ verified: true });
   });
   it('detects PUBLIC and column grants and owner/membership counterexamples', async () => {
@@ -178,13 +238,68 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
   });
   it('applies the same reviewed CLI plan with operator parser settings', async () => {
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
-    expect('sql' in plan).toBe(true);
+    if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
+    expect(plan.sql).toContain('REVOKE');
     await expect(
       runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', 'wrong'], environment),
     ).rejects.toThrow('PLAN_CHANGED');
     expect(
-      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.sha256], environment),
+      await runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.planSha256], environment),
     ).toMatchObject({ mode: 'applied', evidence: { verified: true } });
+  });
+  it('apply waits for the fence lock a migration reconcile holds, then gives up at 2 seconds', async () => {
+    const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
+    if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
+    await owner.begin(async (transaction) => {
+      await transaction.unsafe(WEB_FENCE_LOCK_SQL);
+      await expect(
+        runAuthFence(['apply', '--confirm-host', address.hostname, '--plan-sha256', plan.planSha256], environment),
+      ).rejects.toMatchObject({ code: '55P03' });
+    });
+  });
+  it('a migration reconcile gives up on a held fence lock within 2 seconds and names the apply', async () => {
+    // A second owner session plays the migration; the first holds the lock like an idle apply.
+    const migration = postgres(address.toString(), { max: 1, onnotice: () => {} });
+    try {
+      await owner.begin(async (holder) => {
+        await holder.unsafe(WEB_FENCE_LOCK_SQL);
+        const started = Date.now();
+        await expect(
+          migration.begin(async (transaction) => {
+            await transaction`SET LOCAL lock_timeout = 0`;
+            return reconcileWebRuntimeAcl(transaction, 'postgres');
+          }),
+        ).rejects.toMatchObject({ code: '55P03', message: expect.stringContaining('auth:fence apply') });
+        expect(Date.now() - started).toBeLessThan(5000);
+      });
+      // Free lock: the session's own lock_timeout comes back for the grants.
+      const [setting] = await migration.begin(async (transaction) => {
+        await transaction`SET LOCAL lock_timeout = '7s'`;
+        await reconcileWebRuntimeAcl(transaction, 'postgres');
+        return transaction<{ value: string }[]>`SELECT current_setting('lock_timeout') AS value`;
+      });
+      expect(setting.value).toBe('7s');
+    } finally {
+      await migration.end({ timeout: 3 });
+    }
+  });
+  it('verifies read-only from the CLI and refuses a reopened identity write path', async () => {
+    expect(await runAuthFence(['verify', '--confirm-host', address.hostname], environment)).toMatchObject({
+      mode: 'verify',
+      role: 'boardsesh_web',
+      verified: true,
+    });
+    await owner.unsafe('GRANT INSERT ON public.users TO boardsesh_web');
+    try {
+      await expect(runAuthFence(['verify', '--confirm-host', address.hostname], environment)).rejects.toThrow(
+        'IDENTITY_WRITE_PATH',
+      );
+    } finally {
+      await owner.unsafe('REVOKE INSERT ON public.users FROM boardsesh_web');
+    }
+    expect(await runAuthFence(['verify', '--confirm-host', address.hostname], environment)).toMatchObject({
+      verified: true,
+    });
   });
   it('rejects domain defaults and shadow comparison operators in reviewed definer paths', async () => {
     for (const mutation of [
@@ -230,6 +345,75 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     await expect(web.unsafe('SELECT * FROM auth_session')).rejects.toMatchObject({ code: '42501' });
     await web.unsafe('SELECT * FROM auth_subject_cutoffs');
     await web.unsafe('SELECT * FROM auth_session_denials');
+  });
+  it('refuses INSERT, UPDATE, DELETE and TRUNCATE on every identity table with 42501', async () => {
+    const relations = await owner<{ name: string; firstColumn: string }[]>`
+      SELECT relation.relname AS name,
+        (SELECT attname FROM pg_attribute WHERE attrelid = relation.oid AND attnum > 0 AND NOT attisdropped ORDER BY attnum LIMIT 1) AS "firstColumn"
+      FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+      WHERE namespace.nspname = 'public' AND relation.relkind IN ('r','p') ORDER BY 1`;
+    const identityTables = relations.filter(({ name }) => protectedIdentityTable(name));
+    // Positive control: an empty or renamed catalogue must not pass as "every table refused".
+    expect(identityTables.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        'users',
+        'accounts',
+        'sessions',
+        'verificationTokens',
+        'user_credentials',
+        'mobile_refresh_tokens',
+        'integration_credentials',
+        'auth_account',
+        'auth_session',
+        'auth_subject_cutoffs',
+        'auth_session_denials',
+        'oauth_access_token',
+        'oauth_refresh_token',
+        'oauth_connections',
+      ]),
+    );
+    const allowed: string[] = [];
+    for (const { name, firstColumn } of identityTables) {
+      const table = `public.${quoteIdentifier(name)}`;
+      for (const statement of [
+        `INSERT INTO ${table} DEFAULT VALUES`,
+        `UPDATE ${table} SET ${quoteIdentifier(firstColumn)} = ${quoteIdentifier(firstColumn)}`,
+        `DELETE FROM ${table}`,
+        `TRUNCATE ${table}`,
+      ]) {
+        // webStatement always throws: its own sentinel means the statement ran.
+        const code = await webStatement(statement).then(
+          () => 'ALLOWED',
+          (error: unknown) =>
+            error instanceof Error && error.message === 'ROLLBACK_FIXTURE'
+              ? 'ALLOWED'
+              : ((error as { code?: string }).code ?? 'NO_SQLSTATE'),
+        );
+        if (code !== '42501') allowed.push(`${statement}: ${code}`);
+      }
+    }
+    expect(allowed).toEqual([]);
+  });
+  it('keeps an ordinary playlist write working for the web role', async () => {
+    const ownerId = randomUUID();
+    const playlistUuid = randomUUID();
+    await drizzle(owner)
+      .insert(users)
+      .values({ id: ownerId, email: `playlist-${ownerId}@example.invalid` });
+    const database = drizzle(web);
+    const [created] = await database
+      .insert(playlists)
+      .values({ uuid: playlistUuid, boardType: 'kilter', name: 'Fence check' })
+      .returning({ id: playlists.id });
+    await database.insert(playlistOwnership).values({ playlistId: created.id, userId: ownerId, role: 'owner' });
+    await database.update(playlists).set({ name: 'Fence check, renamed' }).where(eq(playlists.id, created.id));
+    await database.delete(playlists).where(eq(playlists.id, created.id));
+    // The delete trigger runs as the web role and records the tombstone the sync pull reads.
+    const tombstones = await drizzle(owner)
+      .select({ userId: syncDeletions.userId })
+      .from(syncDeletions)
+      .where(eq(syncDeletions.recordId, playlistUuid));
+    expect(tombstones).toEqual([{ userId: ownerId }]);
   });
   it('prepare and activate both wait on the exclusive gate and fail at the 2-second deadline', async () => {
     await owner.begin(async (transaction) => {
@@ -298,5 +482,51 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     } finally {
       await admin.unsafe(`DROP ROLE ${quoteIdentifier(helperOwner)}; DROP ROLE ${quoteIdentifier(ddlOwner)}`);
     }
+  });
+  // Last on purpose: the test-only writer grants also strip PUBLIC rights the earlier cases do not expect.
+  it('lets the separately authenticated identity writer change credentials while the web fence holds', async () => {
+    await admin.unsafe(
+      `CREATE ROLE ${quoteIdentifier(WRITER_ROLE)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '${writerSecret}'`,
+    );
+    createdWriterRole = true;
+    await admin.unsafe(`ALTER ROLE ${quoteIdentifier(WRITER_ROLE)} SET search_path = pg_catalog, public`);
+    await grantOwnedCredentialWriterCapabilities(owner, WRITER_CONTRACT);
+    await expect(
+      qualifyCredentialWriter(writer, {
+        expectedRole: WRITER_ROLE,
+        expectedDatabase: databaseName,
+        contract: WRITER_CONTRACT,
+      }),
+    ).resolves.toMatchObject({ role: WRITER_ROLE, sessionRole: WRITER_ROLE });
+    const userId = randomUUID();
+    const sessionId = randomUUID();
+    const database = drizzle(writer);
+    await database.insert(users).values({ id: userId, email: `writer-${userId}@example.invalid` });
+    await database.insert(userCredentials).values({ userId, passwordHash: 'synthetic-before' });
+    await database
+      .update(userCredentials)
+      .set({ passwordHash: 'synthetic-after' })
+      .where(eq(userCredentials.userId, userId));
+    await database.update(users).set({ name: 'Writer renamed' }).where(eq(users.id, userId));
+    await database.insert(authSession).values({
+      id: sessionId,
+      token: randomUUID(),
+      userId,
+      expiresAt: new Date(Date.now() + 60_000),
+      updatedAt: new Date(),
+    });
+    await database.delete(authSession).where(eq(authSession.id, sessionId));
+    const [stored] = await drizzle(owner)
+      .select({ passwordHash: userCredentials.passwordHash })
+      .from(userCredentials)
+      .where(eq(userCredentials.userId, userId));
+    expect(stored).toEqual({ passwordHash: 'synthetic-after' });
+    // The writer's grants leave the web fence intact.
+    expect(await runAuthFence(['verify', '--confirm-host', address.hostname], environment)).toMatchObject({
+      verified: true,
+    });
+    await expect(
+      webStatement(`UPDATE public.user_credentials SET password_hash = 'web' WHERE user_id = '${userId}'`),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 });

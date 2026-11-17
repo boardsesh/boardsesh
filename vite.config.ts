@@ -248,6 +248,12 @@ export default defineConfig({
         command: 'tsx packages/backend/src/scripts/auth-reconcile-identities.ts',
         cache: false,
       },
+      // BA-04 web writer fence (docs/better-auth-writer-fence-proof.md). `plan` is the
+      // default and read-only; `verify` is read-only; `apply` needs the plan's SHA-256.
+      'auth:fence': {
+        command: 'tsx packages/backend/src/scripts/auth-fence.ts',
+        cache: false,
+      },
       'test:auth-identities': {
         command: 'vp test run --config packages/backend/vite.auth-identities.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
@@ -1248,6 +1254,12 @@ export default defineConfig({
       },
       'test:auth-authority': {
         command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
+      // The full-schema case needs AUTH_FENCE_TEST_SCHEMA_FILE and a loopback
+      // AUTH_FENCE_TEST_DATABASE_URL; without them only the unit cases run.
+      'test:auth-fence': {
+        command: 'vp test run --config packages/backend/vite.auth-fence.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
       'test:auth-web-credential-proof': {

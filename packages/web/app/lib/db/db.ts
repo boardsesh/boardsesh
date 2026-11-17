@@ -1,5 +1,11 @@
 import 'server-only';
-import { applyRequestPoolDefaults, createDb, createPool, createReadDb } from '@boardsesh/db/client';
+import {
+  applyRequestPoolDefaults,
+  applyWebDatabaseUrl,
+  createDb,
+  createPool,
+  createReadDb,
+} from '@boardsesh/db/client';
 
 export {
   createDb as getDb,
@@ -24,6 +30,9 @@ export {
 // session left idle inside a transaction (docs/db-connectivity.md, "Idle
 // transactions end after 60 s on request pools").
 applyRequestPoolDefaults();
+// WEB_DATABASE_URL, when set, names the web's own restricted login (BA-04 writer
+// fence, docs/better-auth-writer-fence-proof.md). Unset, the web stays on DATABASE_URL.
+applyWebDatabaseUrl();
 export const sql = createPool();
 export const dbz = createDb();
 export const dbzRead = createReadDb();
