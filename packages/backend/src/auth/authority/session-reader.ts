@@ -4,6 +4,7 @@ import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 import { decideCredential, type SubjectCutoffState } from '../credential-cutoffs';
 import { readHumanSubjectState } from '../human-admission';
 import type { AuthorityDatabase } from './adapter';
+import { sessionTokenDigest } from './session-token';
 
 export interface FirstPartySession {
   readonly userId: string;
@@ -48,7 +49,11 @@ export async function readFirstPartySession(
       };
     } else {
       if (!credential.token || credential.token.length > 4096) return { status: 'denied' };
-      const [canonical] = await database.select().from(authSession).where(eq(authSession.token, credential.token));
+      // Rows store only the token's digest; a stored digest presented as a token never matches.
+      const [canonical] = await database
+        .select()
+        .from(authSession)
+        .where(eq(authSession.token, sessionTokenDigest(credential.token)));
       if (!canonical || canonical.expiresAt.getTime() <= now.getTime()) return { status: 'denied' };
       if (canonical.legacyLineageId) {
         const [lineage] = await database

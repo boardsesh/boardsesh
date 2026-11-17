@@ -1,8 +1,8 @@
-import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { authCredentialLineage, authSession, authSessionDenials } from '@boardsesh/db/schema/auth';
 import type { AuthorityTransaction } from './adapter';
 import type { FirstPartySession } from './session-reader';
+import { newSessionToken } from './session-token';
 
 /** Caller owns gate/user/cutoff locks and has just advanced the admitted actor's generation. */
 export async function replaceCanonicalAfterSecurityMutation(
@@ -30,11 +30,11 @@ export async function replaceCanonicalAfterSecurityMutation(
     if (lineage && (lineage.revokedAt || lineage.userId !== actor.userId || lineage.sessionId !== actor.authSessionId))
       throw new Error('SESSION_REPLACEMENT_LINEAGE_MISMATCH');
   }
-  const token = randomBytes(32).toString('base64url');
+  const { token, stored } = newSessionToken();
   const [replaced] = await transaction
     .update(authSession)
     .set({
-      token,
+      token: stored,
       revocationGeneration: newGeneration,
       updatedAt: now,
       expiresAt: new Date(Math.min(session.expiresAt.getTime(), actor.expiresAt.getTime())),
