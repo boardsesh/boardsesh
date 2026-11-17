@@ -37,7 +37,7 @@ internal object OverlayShader {
             vec4 size; // output width, height, active count, draw glow
             vec4 veil;
             vec4 tuning; // merge, seam, max mix, sharpness
-            vec4 tuning2; // fringe, core share, active max reach
+            vec4 tuning2; // fringe, core share, active max reach, wall-swap shared-hold weight
             uvec4 offsets; // LED covers, active stamp-layer mask
             vec2 viewport;
             vec2 swapWeights; // wall swap: lower-only and upper-only hold weights
@@ -91,8 +91,9 @@ internal object OverlayShader {
           }
           float reveal_weight(Hold hold, bool upper) {
             float membership=upper ? hold.numbers.z : hold.numbers.w;
-            // A shared same-role hold stays fully lit, and appears only once.
-            if(membership==1.0) return upper ? 0.0 : 1.0;
+            // A shared same-role hold appears only once, on the lower side. The wipe
+            // keeps it fully lit; the wall swap gives it the app's shared weight.
+            if(membership==1.0) return upper ? 0.0 : (uniforms.motion.z>0.5 ? uniforms.tuning2.w : 1.0);
             // Wall swap: one weight per side, wherever the hold is. A changed hold
             // shows only its stronger role (the lower one on a tie), never two marks.
             if(uniforms.motion.z>0.5) {

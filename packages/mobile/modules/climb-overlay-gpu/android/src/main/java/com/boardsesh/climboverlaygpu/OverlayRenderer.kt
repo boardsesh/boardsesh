@@ -53,18 +53,23 @@ internal data class OverlayControls(
     val revealMode: Int = OverlayPolicy.REVEAL_MODE_WIPE,
     val outgoing: Float = 1f,
     val incoming: Float = 0f,
+    val shared: Float = 1f,
 ) {
     /**
-     * The swap's animated prop: its pair and both weights in one snapshot, so
-     * the render thread never pairs a new position with old weights. Null
-     * unless it is three finite numbers; the weights clamp to 0..1.
+     * The swap's animated prop: its pair and weights in one snapshot, so the
+     * render thread never pairs a new position with old weights. Null unless
+     * the first three are finite numbers and nothing follows the fourth (API 7:
+     * the shared-hold weight). The weights clamp to 0..1; a missing or
+     * non-finite shared weight is 1, so three numbers keep shared holds whole.
      */
     fun withSwapFrame(frame: List<Double>?): OverlayControls? {
-        if (frame == null || frame.size != 3 || frame.any { !it.isFinite() }) return null
+        if (frame == null || frame.size !in 3..4 || frame.take(3).any { !it.isFinite() }) return null
+        val shared = frame.getOrNull(3)?.takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 1f) ?: 1f
         return copy(
             position = frame[0],
             outgoing = frame[1].toFloat().coerceIn(0f, 1f),
             incoming = frame[2].toFloat().coerceIn(0f, 1f),
+            shared = shared,
         )
     }
 }
@@ -600,6 +605,7 @@ internal object OverlayRenderer {
                         packet.header.present[2],
                         controls.outgoing,
                         controls.incoming,
+                        controls.shared,
                     ) ?: return false
                 else if (swap)
                     OverlayPolicy.selectSwap(
@@ -609,6 +615,7 @@ internal object OverlayRenderer {
                         packet.header.present[2],
                         controls.outgoing,
                         controls.incoming,
+                        controls.shared,
                     )
                 else
                     OverlayPolicy.select(
