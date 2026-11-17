@@ -6,6 +6,13 @@ on:
         description: Historical main commit whose unchanged hinge helper should run
         required: true
         type: string
+      runner:
+        description: Runner capacity for this manual diagnostic (xlarge uses paid larger-runner capacity)
+        type: choice
+        default: xcode-27
+        options:
+          - xcode-27
+          - xcode-27-xlarge
 permissions:
   contents: read
 concurrency:
@@ -41,7 +48,7 @@ jobs:
   diagnose:
     needs: validate-source
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: xcode-27
+    runs-on: ${{ inputs.runner == 'xcode-27-xlarge' && 'xcode-27-xlarge' || 'xcode-27' }}
     timeout-minutes: 35
     steps:
       - name: Checkout diagnostic tooling
