@@ -15,6 +15,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-
 import {
   AUTH_COMMAND_PATHS,
   AUTH_PROTOCOL_VERSION,
+  LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH,
   WEB_SESSION_COMMAND_PATHS,
   WEB_SESSION_LIFETIME_SECONDS,
   WEB_SESSION_PROTOCOL_VERSION,
@@ -23,9 +24,17 @@ import {
   webSessionSignOutReplySchema,
   type PresentedWebSession,
 } from '@boardsesh/auth-protocol';
-import { authEmailProjection, authSession, userCredentials, users } from '@boardsesh/db/schema';
+import {
+  authEmailProjection,
+  authSession,
+  authSubjectCutoffs,
+  mobileRefreshTokens,
+  userCredentials,
+  users,
+} from '@boardsesh/db/schema';
 import { createEnvironment } from './environment';
 import { readFirstPartySession } from '../session-reader';
+import { newSessionToken } from '../session-token';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
 import { createPasswordCompareGate } from '../../current-store/password-compare-gate';
 import { createPasswordLoginLimiter, type PasswordLoginLimiter } from '../../current-store/password-login-limits';
@@ -161,7 +170,8 @@ async function sessionStatus(token: string) {
   return (await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status;
 }
 
-async function legacyCookie(userId: string, authSessionId: string) {
+/** A NextAuth cookie; without `authSessionId` it is a no-SID one, which only an account cutoff could end. */
+async function legacyCookie(userId: string, authSessionId?: string) {
   const key = await hkdf(
     'sha256',
     new TextEncoder().encode(nextAuthSecret),
@@ -170,12 +180,41 @@ async function legacyCookie(userId: string, authSessionId: string) {
     32,
   );
   const issuedAt = Math.floor(Date.now() / 1000);
-  return new EncryptJWT({ authSessionId })
+  return new EncryptJWT(authSessionId === undefined ? {} : { authSessionId })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
     .setSubject(userId)
     .setIssuedAt(issuedAt)
     .setExpirationTime(issuedAt + 3600)
     .encrypt(key);
+}
+
+/** Everything an account cutoff would move: the generation, every session row and every refresh token. */
+async function accountState(userId: string) {
+  const [cutoff] = await environment.database
+    .select({ generation: authSubjectCutoffs.generation })
+    .from(authSubjectCutoffs)
+    .where(eq(authSubjectCutoffs.userId, userId));
+  return {
+    generation: cutoff?.generation ?? 0,
+    sessions: await environment.database
+      .select({ id: authSession.id, expiresAt: authSession.expiresAt })
+      .from(authSession)
+      .where(eq(authSession.userId, userId))
+      .orderBy(authSession.id),
+    refreshTokens: await environment.database
+      .select({ id: mobileRefreshTokens.id, revokedAt: mobileRefreshTokens.revokedAt })
+      .from(mobileRefreshTokens)
+      .where(eq(mobileRefreshTokens.userId, userId)),
+  };
+}
+
+async function phone(userId: string) {
+  await environment.database.insert(mobileRefreshTokens).values({
+    id: randomUUID(),
+    userId,
+    tokenHash: randomBytes(32).toString('base64url'),
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
 }
 
 describe('login through the staged password command', () => {
@@ -238,6 +277,117 @@ describe('login through the staged password command', () => {
     expect(body).toMatchObject({ outcome: 'authenticated', verification: { required: true, verified: false } });
     expect(body).not.toHaveProperty('webSession');
     expect(await sessionStatus(presented.token)).toBe('admitted');
+  });
+});
+
+describe('no account cutoff', () => {
+  it('leaves a presented no-SID legacy cookie alone and still signs in', async () => {
+    const { id, email } = await climber();
+    const other = (await login(email)).webSession!;
+    await phone(id);
+    const noSid = await legacyCookie(id);
+    const legacy = { kind: 'legacy-jwe' as const, credential: noSid, secret: nextAuthSecret };
+    const before = await accountState(id);
+    const signedIn = await login(email, { kind: 'legacy-jwe', credential: noSid });
+    expect(await sessionStatus(signedIn.webSession!.token)).toBe('admitted');
+    const after = await accountState(id);
+    expect(after.generation).toBe(before.generation);
+    expect(after.refreshTokens).toEqual(before.refreshTokens);
+    expect(after.sessions).toEqual(
+      [...before.sessions, { id: signedIn.webSession!.sessionId, expiresAt: expect.any(Date) }].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      ),
+    );
+    expect(await sessionStatus(other.token)).toBe('admitted');
+    expect((await readFirstPartySession(environment.database, legacy)).status).toBe('admitted');
+  });
+
+  it('signs out a bridged no-SID row alone', async () => {
+    const { id, email } = await climber();
+    const other = (await login(email)).webSession!;
+    await phone(id);
+    const bridged = newSessionToken();
+    const bridgedId = `credential:${randomUUID()}`;
+    await environment.database.insert(authSession).values({
+      id: bridgedId,
+      token: bridged.stored,
+      userId: id,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      createdAt: new Date(0),
+      updatedAt: new Date(),
+      legacyLineageId: bridgedId,
+      revocationGeneration: 0,
+    });
+    const before = await accountState(id);
+    const { status } = await post(
+      WEB_SESSION_COMMAND_PATHS.signout,
+      command('signout', { token: bridged.token, expectedUserId: id, expectedAuthSessionId: bridgedId }),
+    );
+    expect(status).toBe(200);
+    expect(await sessionStatus(bridged.token)).toBe('denied');
+    const after = await accountState(id);
+    expect(after.generation).toBe(before.generation);
+    expect(after.refreshTokens).toEqual(before.refreshTokens);
+    expect(after.sessions).toEqual(before.sessions.filter((session) => session.id !== bridgedId));
+    expect(await sessionStatus(other.token)).toBe('admitted');
+  });
+});
+
+describe('login details', () => {
+  it('revokes nothing on a wrong password with a legacy cookie presented', async () => {
+    const { id, email } = await climber();
+    const cookie = await legacyCookie(id, randomUUID());
+    const wrong = await post(
+      AUTH_COMMAND_PATHS.password,
+      loginCommand(email, { presented: { kind: 'legacy-jwe', credential: cookie } }, 'wrong password'),
+    );
+    expect(wrong.body).toMatchObject({ outcome: 'invalid_credentials' });
+    expect(wrong.body).not.toHaveProperty('webSession');
+    const legacy = { kind: 'legacy-jwe' as const, credential: cookie, secret: nextAuthSecret };
+    expect((await readFirstPartySession(environment.database, legacy)).status).toBe('admitted');
+  });
+
+  it('issues the proof at the session generation', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'compatible');
+    const { id, email } = await climber();
+    await environment.database
+      .insert(authSubjectCutoffs)
+      .values({ userId: id, generation: 3, revokedThrough: new Date(), lastOperationId: randomUUID() });
+    const { status, body } = await post(AUTH_COMMAND_PATHS.password, {
+      ...loginCommand(email, {}),
+      credentialProofVersion: 1,
+    });
+    expect(status).toBe(200);
+    const reply = passwordReplySchema.parse(body);
+    if (reply.outcome !== 'authenticated') throw new Error('Not signed in');
+    expect(reply.webSession?.generation).toBe(3);
+    expect(reply.credentialProof?.generation).toBe(reply.webSession?.generation);
+  });
+
+  it('answers 503 before the limiter when a legacy cookie cannot be read', async () => {
+    vi.stubEnv('NEXTAUTH_SECRET', '');
+    const { id, email } = await climber();
+    const cookie = await legacyCookie(id, randomUUID());
+    for (const password of [PASSWORD, 'wrong password']) {
+      const { status, body } = await post(
+        AUTH_COMMAND_PATHS.password,
+        loginCommand(email, { presented: { kind: 'legacy-jwe', credential: cookie } }, password),
+      );
+      expect(status).toBe(503);
+      expect(body).toMatchObject({ outcome: 'error', code: 'unavailable' });
+    }
+    expect(admitted).not.toHaveBeenCalled();
+  });
+
+  it('refuses a legacy cookie longer than the body budget allows, before any work', async () => {
+    const { email } = await climber();
+    const credential = 'a'.repeat(LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH + 1);
+    const { status } = await post(
+      AUTH_COMMAND_PATHS.password,
+      loginCommand(email, { presented: { kind: 'legacy-jwe', credential } }),
+    );
+    expect(status).toBe(400);
+    expect(admitted).not.toHaveBeenCalled();
   });
 });
 
@@ -335,6 +485,8 @@ describe('private transport', () => {
       body: JSON.stringify(roll),
     });
     expect(fromBrowser.status).toBe(401);
+    // The transport's 401 never parses as a reply, so it cannot read as "no live session".
+    expect(webSessionRollReplySchema.safeParse(await fromBrowser.json()).success).toBe(false);
     vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'on');
     expect((await post(WEB_SESSION_COMMAND_PATHS.roll, roll)).status).toBe(503);
     expect((await post(AUTH_COMMAND_PATHS.password, loginCommand(email, {}))).status).toBe(503);

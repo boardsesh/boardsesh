@@ -301,9 +301,20 @@ any request carrying an `Origin` header. Schemas and types are in
 | Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ token, expectedUserId, expectedAuthSessionId }` | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. |
 | Roll, `POST /api/internal/auth/current-store/web-session/v1/roll` | `webSessionRollCommandSchema`: `{ token }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` and `rolled`; 401 `unauthenticated`; 503 `unavailable`. |
 
+A 401 means "no live session" only when its body parses as the command's own
+reply (`outcome: 'unauthenticated'`). The transport answers a wrong secret or a
+browser `Origin` with 401 `{ "error": "unauthorized" }`, which no reply schema
+accepts; www must treat that as unavailable and never clear a cookie on it.
+
 A presented session that no longer reads as live is ignored, and a session
 store that cannot be read fails the login with 503, so a login never succeeds
-while leaving the presented session live. The legacy cookie's own sign-out
+while leaving the presented session live. A presented legacy cookie without a
+session id is ignored too: ending it would cut off the whole account, phones
+included, so neither login nor sign-out ever performs an account cutoff. A
+login presenting a legacy cookie answers 503 before any password work when the
+backend has no `NEXTAUTH_SECRET`. A joined legacy cookie may be at most 12,288
+characters (`LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH`), so the command stays
+inside the 16,384-byte body budget. The legacy cookie's own sign-out
 stays the existing `/api/internal/auth/current-store/signout` behind
 `CURRENT_STORE_WEB_SIGNOUT_MODE`.
 

@@ -42,12 +42,27 @@ const sessionToken = z.string().min(1).max(4096);
 const identityId = z.string().min(1).max(1024);
 
 /**
+ * The longest joined NextAuth cookie a command accepts. It must fit the
+ * 16,384-byte private body budget (`AUTH_COMMAND_REQUEST_BYTES`) with the rest
+ * of the command. NextAuth splits its cookie into chunks of at most 4,096
+ * bytes, name included, and today's is one chunk of about 1.5 KB, so three
+ * full chunks still fit. A longer value is refused by the schema (400) instead
+ * of by the body reader.
+ */
+export const LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH = 12_288;
+
+/**
  * The session a login request arrived with, which that login revokes: the raw
  * NextAuth cookie (`legacy-jwe`, joined from its chunks) or the canonical
  * token. A session that no longer reads as live is ignored.
  */
 export const presentedWebSessionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('legacy-jwe'), credential: z.string().min(1).max(65_536) }).strict(),
+  z
+    .object({
+      kind: z.literal('legacy-jwe'),
+      credential: z.string().min(1).max(LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH),
+    })
+    .strict(),
   z.object({ kind: z.literal('canonical-token'), token: sessionToken }).strict(),
 ]);
 
@@ -133,6 +148,12 @@ export type WebSessionSignOutReply = z.infer<typeof webSessionSignOutReplySchema
 export type WebSessionRollCommand = z.infer<typeof webSessionRollCommandSchema>;
 export type WebSessionRollReply = z.infer<typeof webSessionRollReplySchema>;
 
+/**
+ * The status each reply is sent with. A 401 here always carries a body that
+ * parses as the reply (`outcome: 'unauthenticated'`). The transport's own 401
+ * for a wrong secret is `{ error: 'unauthorized' }`, which never parses as a
+ * reply, so a caller keys on the parsed body and never on the status alone.
+ */
 export function webSessionReplyStatus(reply: WebSessionSignOutReply | WebSessionRollReply): number {
   if (reply.outcome === 'identity_changed') return 409;
   if (reply.outcome === 'unauthenticated') return 401;
