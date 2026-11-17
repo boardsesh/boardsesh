@@ -92,7 +92,10 @@ first swap was still easing a pulled-back board to whole, that ease carries on a
 climb the climber turned back from never lights. A commit toward the other side of a pulled-back board
 first eases that board's climb back to whole over 120 ms, then swaps. Reduce Motion: no
 drag dim, and the swap is one 120 ms dissolve that leaves shared holds fully lit. The PNG
-fallback still slides the whole board.
+fallback still slides the whole board. Each frame leaves the UI thread as a `swapFrame` view
+command, so a player re-render during the fade cannot hold it back (#7737); the animated prop
+with the same sequence number covers mount and binaries without the command. Details in
+`docs/gpu-climb-overlay-experiment.md`.
 
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual
 press feedback is separate (that's `PressableSurface`); fire haptics from the handler:

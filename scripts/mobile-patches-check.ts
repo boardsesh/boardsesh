@@ -150,6 +150,32 @@ export const RULES: readonly PatchRule[] = [
     forbiddenSubstrings: ['case .failure(let error as any Error):'],
     patchedKey: 'expo-modules-core@58.0.28',
   },
+  // #7737: Expo's Android view managers drop Fabric view commands. The Aura
+  // overlay receives each wall-swap frame as a command from a UI-thread worklet.
+  {
+    package: 'expo-modules-core',
+    file: 'android/src/main/java/expo/modules/kotlin/views/ExpoViewCommandReceiver.kt',
+    sentinels: [
+      'interface ExpoViewCommandReceiver {',
+      'fun receiveViewCommand(commandId: String, args: List<Any?>): Boolean',
+    ],
+    patchedKey: 'expo-modules-core@58.0.28',
+  },
+  ...(
+    [
+      ['SimpleViewManagerWrapper.kt', 'View'],
+      ['GroupViewManagerWrapper.kt', 'ViewGroup'],
+    ] as const
+  ).map(([wrapperFile, viewType]) => ({
+    package: 'expo-modules-core',
+    file: `android/src/main/java/expo/modules/kotlin/views/${wrapperFile}`,
+    sentinels: [
+      `override fun receiveCommand(view: ${viewType}, commandId: String, args: ReadableArray?) {`,
+      'receiver.receiveViewCommand(commandId, args?.toArrayList() ?: emptyList())',
+      'super.receiveCommand(view, commandId, args)',
+    ],
+    patchedKey: 'expo-modules-core@58.0.28',
+  })),
   // Pin the callable source and both distributed JS entrypoints: exporting a
   // type alone cannot stop recording in a compiled native replay SDK.
   ...(['src/index.tsx', 'lib/module/index.js', 'lib/commonjs/index.js'] as const).map((file) => ({

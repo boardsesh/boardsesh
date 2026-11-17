@@ -23,3 +23,22 @@ function readApiVersion(): number {
 }
 
 export const climbOverlayGpuApiVersion = readApiVersion();
+
+/**
+ * 1 when the native view takes each wall-swap frame as the `swapFrame` view
+ * command (#7737), else 0. An older binary drops an unknown command without a
+ * word, so this constant, not the API version, decides whether to send one.
+ */
+function readSwapCommandApi(): number {
+  try {
+    const { requireOptionalNativeModule } = require('expo-modules-core') as typeof import('expo-modules-core');
+    const swapCommandApi = requireOptionalNativeModule<{ swapCommandApi?: unknown }>('ClimbOverlayGPU')?.swapCommandApi;
+    return typeof swapCommandApi === 'number' && Number.isSafeInteger(swapCommandApi) && swapCommandApi > 0
+      ? swapCommandApi
+      : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export const climbOverlaySwapCommandApi = readSwapCommandApi();

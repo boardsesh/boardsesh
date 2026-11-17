@@ -110,6 +110,56 @@ enum ClimbOverlayMotion {
       incoming: Float(min(1,max(0,values[2]))),shared: shared)
   }
 
+  /// The view command the app sends each swap frame under (#7737). A command
+  /// skips React's commit, so a re-render cannot hold the frame back.
+  static let swapFrameCommand = "swapFrame"
+  /// Advertised as the module constant `swapCommandApi`. An older binary drops
+  /// an unknown command without a word, so the app checks this first.
+  static let swapCommandApi = 1
+
+  /// A swap frame and the app's sequence number for it. A frame reaches the
+  /// view twice, as the command and later as the animated prop; the sequence
+  /// tells the late copy from a newer frame.
+  struct SequencedSwapFrame: Equatable {
+    let frame: SwapFrame
+    /// Nil for an app that sends no sequence: that frame always applies.
+    let sequence: Double?
+  }
+  /// Five numbers: the four-number frame, then its sequence, which must be
+  /// finite. Three or four numbers: a frame from an app without sequences.
+  static func sequencedSwapFrame(_ values: [Double]) -> SequencedSwapFrame? {
+    if values.count == 5 {
+      guard values[4].isFinite, let frame = swapFrame(Array(values.prefix(4))) else { return nil }
+      return SequencedSwapFrame(frame: frame,sequence: values[4])
+    }
+    guard let frame = swapFrame(values) else { return nil }
+    return SequencedSwapFrame(frame: frame,sequence: nil)
+  }
+
+  /// A command's arguments (the NSArray Fabric hands over) as numbers; nil if
+  /// any argument is not a number.
+  static func commandValues<Arguments: Sequence>(_ args: Arguments) -> [Double]? {
+    var values: [Double] = []
+    for arg in args {
+      guard let number = arg as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+      values.append(number.doubleValue)
+    }
+    return values
+  }
+
+  /// Applies a frame only if it is newer than every frame applied so far. A
+  /// new view starts empty, so its first frame always applies; a frame
+  /// without a sequence always applies and leaves the record alone.
+  struct SwapFrameSequenceGate {
+    private(set) var lastApplied: Double?
+    mutating func admit(_ sequence: Double?) -> Bool {
+      guard let sequence else { return true }
+      if let lastApplied, sequence <= lastApplied { return false }
+      lastApplied = sequence
+      return true
+    }
+  }
+
   /// While the next trio prepares, the packet already on screen keeps drawing
   /// the running swap if it holds every climb the frame shows: then the frame
   /// is the one the new packet will draw, and the hand-over changes nothing.

@@ -1,9 +1,10 @@
 import {
   climbOverlayGpuApiVersion,
+  climbOverlaySwapCommandApi,
   type ClimbOverlayGPUFailure,
   type ClimbOverlayGPUFailureScope,
 } from '../lib/board-render/gpu-native-capability';
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type Component, type FunctionComponent } from 'react';
 import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
 import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
@@ -11,6 +12,7 @@ import { useIsAppActive, isAppActiveNow } from '../lib/app-visibility';
 import {
   NativeFrameClimbOverlayGPU,
   NativeMotionClimbOverlayGPU,
+  type ClimbOverlayGPUMotionProps,
   type ClimbOverlayGPUReady,
 } from '../../modules/climb-overlay-gpu/src';
 import {
@@ -20,6 +22,12 @@ import {
   type RevealMode,
   type WallSwapFrame,
 } from './play-drawer/wall-swap';
+import {
+  INITIAL_SWAP_FRAME_SEQUENCE,
+  sequencedSwapFrame,
+  useSwapFrameCommand,
+  type SequencedSwapFrame,
+} from './play-drawer/use-swap-frame-command';
 import {
   classifyGpuFallback,
   reportGpuFallback,
@@ -42,6 +50,9 @@ export type GpuClimbTransition = {
 };
 
 const NO_GPU_PREFETCH_FRAMES: readonly string[] = [];
+
+/** What a ref on the animated motion overlay receives: the swap command's target. */
+type MotionOverlayInstance = Component<ClimbOverlayGPUMotionProps> | FunctionComponent<ClimbOverlayGPUMotionProps>;
 
 const AnimatedMotionOverlay = NativeMotionClimbOverlayGPU
   ? Animated.createAnimatedComponent(NativeMotionClimbOverlayGPU)
@@ -88,15 +99,27 @@ export function GpuClimbOverlay({
   // The swap handles Reduce Motion itself, as a shorter dissolve; the wipe stops.
   const swap =
     transition?.revealMode === 'swap' && swapFrame !== undefined && climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API;
+  // #7737: a binary that advertises the command takes each swap frame as a view
+  // command, which a React commit cannot hold back. The animated prop still
+  // carries the frame, with the same sequence, for mount and as a backstop.
+  const swapCommand = swap && AnimatedMotionOverlay !== null && climbOverlaySwapCommandApi >= 1;
+  const { target: swapCommandTarget, latest: latestSequencedFrame } = useSwapFrameCommand<MotionOverlayInstance>(
+    swapFrame,
+    swapCommand,
+  );
   // Updating these native numeric props stays on the UI thread. No React render,
   // config serialization or hold-list preparation runs for a drag frame.
-  const animatedProps = useAnimatedProps(
-    (): { pagePosition?: number; swapFrame?: NativeWallSwapFrame } =>
-      swap && swapFrame
-        ? { swapFrame: nativeWallSwapFrame(swapFrame.value, climbOverlayGpuApiVersion) }
-        : { pagePosition: reduceMotion ? centerPage : (pagePosition?.value ?? centerPage) },
-    [pagePosition, centerPage, reduceMotion, swap, swapFrame],
-  );
+  const animatedProps = useAnimatedProps((): {
+    pagePosition?: number;
+    swapFrame?: NativeWallSwapFrame | SequencedSwapFrame;
+  } => {
+    if (!swap || !swapFrame) return { pagePosition: reduceMotion ? centerPage : (pagePosition?.value ?? centerPage) };
+    if (!swapCommand) return { swapFrame: nativeWallSwapFrame(swapFrame.value, climbOverlayGpuApiVersion) };
+    // Before the UI thread's first frame, the frame on hand with the lowest sequence.
+    return {
+      swapFrame: latestSequencedFrame.value ?? sequencedSwapFrame(swapFrame.value, INITIAL_SWAP_FRAME_SEQUENCE),
+    };
+  }, [pagePosition, centerPage, reduceMotion, swap, swapCommand, swapFrame, latestSequencedFrame]);
   // Clearing the view/config releases its last presented drawable; changing
   // only the request keeps that drawable on screen until the next is ready.
   useLayoutEffect(() => () => onRelease(), [configJson, onRelease]);
@@ -212,6 +235,7 @@ export function GpuClimbOverlay({
           : {})}
         {...(climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
         centerPage={centerPage}
+        ref={swapCommandTarget}
         animatedProps={animatedProps}
         animateEdits={animateEdits && !transition}
         reduceMotion={reduceMotion}

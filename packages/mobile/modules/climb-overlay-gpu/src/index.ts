@@ -51,10 +51,21 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
    * being left and only in the arriving one, each 0 to 1. API7 adds a fourth
    * number, the weight of holds lit the same way in both (missing or not
    * finite: 1). API6 rejects any frame that is not exactly three numbers.
+   * A binary with the module constant `swapCommandApi` also takes five: the
+   * four, then the frame's sequence; it drops a frame whose sequence is not
+   * above the newest it applied. The same frame arrives first as the
+   * `swapFrame` view command (#7737).
    */
   swapFrame?:
     | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number]
-    | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number, sharedWeight: number];
+    | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number, sharedWeight: number]
+    | readonly [
+        pagePosition: number,
+        outgoingWeight: number,
+        incomingWeight: number,
+        sharedWeight: number,
+        sequence: number,
+      ];
   animateEdits: boolean;
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;

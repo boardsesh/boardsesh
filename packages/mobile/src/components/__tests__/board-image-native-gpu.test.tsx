@@ -8,15 +8,20 @@ const controls = vi.hoisted(() => ({
   platform: 'ios' as 'ios' | 'android',
   enabled: true,
   apiVersion: 5,
+  swapCommandApi: 0,
   nativeAvailable: true,
   motionAvailable: true,
   reduceMotion: false,
   gpuStatus: 'ready' as 'loading' | 'ready',
   animatedWorklet: null as null | (() => { pagePosition?: number; swapFrame?: readonly number[] }),
+  /** One UI-thread run of the overlay's animated reaction, as a swap frame lands. */
+  runSwapReaction: null as null | (() => void),
+  dispatchCommand: vi.fn(),
   hidden: false,
   active: true,
   visibilityListeners: new Set<() => void>(),
   props: null as null | {
+    ref?: unknown;
     requestId: string;
     frames: string;
     animateEdits?: boolean;
@@ -100,6 +105,12 @@ vi.mock('react-native-reanimated', () => ({
     controls.animatedWorklet = factory;
     return factory();
   },
+  useSharedValue: <Value,>(initial: Value) => React.useRef({ value: initial }).current,
+  useAnimatedRef: () => React.useRef({ commandTarget: true }).current,
+  useAnimatedReaction: <Prepared,>(prepare: () => Prepared, react: (prepared: Prepared, previous: null) => void) => {
+    controls.runSwapReaction = () => react(prepare(), null);
+  },
+  dispatchCommand: (...args: unknown[]) => controls.dispatchCommand(...args),
 }));
 vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => controls.enabled }));
 vi.mock('../../hooks/use-board-accessibility-summary', () => ({ useBoardAccessibilitySummary: () => 'Board' }));
@@ -107,6 +118,9 @@ vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null
 vi.mock('../../lib/board-render/gpu-native-capability', () => ({
   get climbOverlayGpuApiVersion() {
     return controls.apiVersion;
+  },
+  get climbOverlaySwapCommandApi() {
+    return controls.swapCommandApi;
   },
 }));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
@@ -212,6 +226,9 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     controls.platform = platform;
     controls.enabled = true;
     controls.apiVersion = 5;
+    controls.swapCommandApi = 0;
+    controls.runSwapReaction = null;
+    controls.dispatchCommand.mockClear();
     controls.nativeAvailable = true;
     controls.motionAvailable = true;
     controls.reduceMotion = false;
@@ -506,6 +523,56 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.4, 0, 0.4] });
     swapFrame.value = [4.25, 0, 0.7, 0.7];
     expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0, 0.7, 0.7] });
+    // Without the swapCommandApi constant the binary would drop a command: none is sent.
+    act(() => controls.runSwapReaction?.());
+    expect(controls.dispatchCommand).not.toHaveBeenCalled();
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0, 0.7, 0.7] });
+  });
+
+  it('sends each swap frame as a sequenced view command when the binary takes one (#7737)', () => {
+    controls.apiVersion = 7;
+    controls.swapCommandApi = 1;
+    const swapFrame = { value: [4.25, 0.4, 0, 0.4] } as unknown as SharedValue<
+      readonly [number, number, number, number]
+    >;
+    const transition = {
+      previousFrames: 'p4131r43',
+      nextFrames: 'p4306r43',
+      centerPage: 4,
+      pagePosition: { value: 4.6 } as SharedValue<number>,
+      revealMode: 'swap' as const,
+      swapFrame,
+    };
+    const { unmount } = render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    expect(controls.props?.revealMode).toBe('swap');
+    // Before the UI thread's first frame, the prop carries the frame with sequence 0.
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.4, 0, 0.4, 0] });
+    act(() => controls.runSwapReaction?.());
+    const target = controls.props?.ref;
+    expect(target).toEqual({ commandTarget: true });
+    expect(controls.dispatchCommand).toHaveBeenLastCalledWith(target, 'swapFrame', [4.25, 0.4, 0, 0.4, 1]);
+    // The prop carries the same frame and sequence; the view drops it as already applied.
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.4, 0, 0.4, 1] });
+    const sequences: number[] = [];
+    for (const incoming of [0.2, 0.5, 0.9]) {
+      swapFrame.value = [4.25, 1 - incoming, incoming, 0.6];
+      act(() => controls.runSwapReaction?.());
+      sequences.push((controls.dispatchCommand.mock.lastCall?.[2] as number[])[4]!);
+      expect(controls.dispatchCommand.mock.lastCall?.[2]).toEqual([
+        4.25,
+        1 - incoming,
+        incoming,
+        0.6,
+        sequences.at(-1),
+      ]);
+    }
+    expect(sequences).toEqual([2, 3, 4]);
+    expect(controls.dispatchCommand).toHaveBeenCalledTimes(4);
+    // An unmounted view gets no command: Android would log one soft exception each.
+    unmount();
+    swapFrame.value = [4.25, 0, 1, 1];
+    act(() => controls.runSwapReaction?.());
+    expect(controls.dispatchCommand).toHaveBeenCalledTimes(4);
   });
 
   it('flattens multi-frame neighboring climbs just like the current climb', () => {
