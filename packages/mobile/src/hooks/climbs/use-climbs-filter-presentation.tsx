@@ -51,8 +51,36 @@ import type { useClimbsSearchSession } from './use-climbs-search-session';
 
 const SUMMARY_MAX_CHARS = 28;
 const DIMENSION_LOCK_SUPPORTED = Platform.OS === 'ios';
+/** Presentation reads these controls without depending on query or sheet lifecycle internals. */
+type ClimbFilterPresentationInput = Pick<
+  ReturnType<typeof useClimbsSearchSession>,
+  | 'filters'
+  | 'boardFilters'
+  | 'name'
+  | 'setGrade'
+  | 'patchFilters'
+  | 'patchBoardFilters'
+  | 'isAuthenticated'
+  | 'searchReady'
+  | 'grades'
+  | 'gradeStops'
+  | 'formatBoardGradeByDifficultyId'
+  | 'lastUsedGrade'
+  | 'handleClearName'
+  | 'handleOpenFilters'
+  | 'recentFilters'
+  | 'handleApplyRecentFilter'
+  | 'handleClearRecentFilters'
+  | 'handleClearNonGradeFilters'
+  | 'gradeRowShown'
+  | 'gradeUsesPopover'
+  | 'gradePopoverOpen'
+  | 'handleOpenGrade'
+  | 'handleCloseGrade'
+>;
+
 export function useClimbsFilterPresentation(
-  session: ReturnType<typeof useClimbsSearchSession>,
+  session: ClimbFilterPresentationInput,
   boardConfig: BoardSearchConfig | null,
 ) {
   const {
