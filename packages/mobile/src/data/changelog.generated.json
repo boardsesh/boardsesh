@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-11-16T23:42:00.073Z",
+  "generatedAt": "2026-11-17T07:38:59.984Z",
   "entries": [
+    {
+      "prNumber": 7454,
+      "category": "new",
+      "title": "Set your Spraywall's LED brightness once for everyone at the wall.",
+      "mergedAt": "2026-11-17T07:00:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7454",
+      "body": "Your Spraywall's LEDs can switch off by themselves after 15 minutes to 2 hours.\nFind your Spraywall's WLED controller on your Wi-Fi in one tap.\nUntil every phone at a Spraywall has this update, a phone without it resets the brightness and cancels auto-off whenever it lights a climb."
+    },
+    {
+      "prNumber": 7644,
+      "category": "fixed",
+      "title": "Your board keeps the right holds lit through fast swipes.",
+      "mergedAt": "2026-11-17T06:58:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7644"
+    },
     {
       "prNumber": 7672,
       "category": "improved",
@@ -9757,6 +9772,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T07:00:48Z",
+      "sha": "f042c76c0ba3d6e4ff059a7d5b5aa77ee68e0a32",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "f331d5ced4d9327d7403df63042b45a4f66fe0e0"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-15T21:23:36Z",

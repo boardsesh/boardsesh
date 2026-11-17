@@ -4,6 +4,23 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-17
+
+### App update
+
+A new version shipped to the Play Store.
+
+### New
+
+- Set your Spraywall's LED brightness once for everyone at the wall. ([#7454](https://github.com/boardsesh/boardsesh/pull/7454))
+  Your Spraywall's LEDs can switch off by themselves after 15 minutes to 2 hours.
+  Find your Spraywall's WLED controller on your Wi-Fi in one tap.
+  Until every phone at a Spraywall has this update, a phone without it resets the brightness and cancels auto-off whenever it lights a climb.
+
+### Fixed
+
+- Your board keeps the right holds lit through fast swipes. ([#7644](https://github.com/boardsesh/boardsesh/pull/7644))
+
 ## 2026-11-16
 
 ### New
