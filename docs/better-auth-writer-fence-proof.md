@@ -211,6 +211,30 @@ that `users` row, and once released both finish: new password set, every refresh
 row revoked, the cutoff generation advanced so older web and app credentials are
 refused. A control that locks a refresh row before the `users` row gets a real
 `40P01` deadlock against the same reset, so the harness can see the failure.
+
+Push-device registration follows the same rule (#7645). It is not a credential
+writer and takes no gate, but sign-out retires the climber's push devices last:
+
+- Registration (`saveNotificationDevice`): the push token's advisory lock, then
+  `users` FOR KEY SHARE for the climber and every current owner of a device row
+  it touches (the rows holding the token and its own installation; a token can
+  arrive from another climber's account), in id order, then those device rows
+  FOR NO KEY UPDATE in installation id order, in the same statement that retires
+  the other installations, then the upsert of its own installation.
+
+KEY SHARE conflicts with the FOR UPDATE that sign-out, reset and the
+generation writers take and with an account deletion, so whichever of them
+arrives second queues on the `users` row. Sign-in, refresh and foreign-key
+checks also take KEY SHARE, so they never wait for a registration. The token
+lock is only ever taken first, by registrations. Before #7645 registration
+locked the device rows first and reached `users` last, through its insert's
+foreign key, the reverse of sign-out. Two registrations whose installations
+trade tokens also locked each other's rows crosswise.
+`notification-device-signout-lock-order.test.ts` runs registration against
+sign-out in both start orders and both revocation modes, for the same climber
+and for a token moving from the climber signing out to another, plus two
+registrations trading tokens in both orders. Its controls replay the old order
+and get `40P01` against sign-out and between the two registrations.
 `CURRENT_STORE_DELETED_EMAIL_KEY` must separately be provisioned before any
 staged writer and must never rotate. Neither command enables a writer mode,
 partner mode, mirror or Better Auth module. The owner-only production sequence

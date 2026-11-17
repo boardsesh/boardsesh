@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import postgres from 'postgres';
+import type postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -21,6 +21,8 @@ import { decideCredential } from '../../credential-cutoffs';
 import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../../current-store/email-reservations';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../../current-store/password-recovery';
+import { getPostgresErrorCode } from '../../../utils/postgres-errors';
+import { barrier, blockedStatement, bounded, connectAs, parkBeforeCommit } from './lock-order-harness';
 
 /**
  * The BA-04 activation gate NATIVE_REVOKE_RESET_LOCK_ORDER: native sign-out
@@ -49,79 +51,8 @@ const authority = {
   emailVerificationEnabled: false,
 };
 
-function barrier() {
-  let resolve = () => {};
-  const promise = new Promise<void>((complete) => {
-    resolve = complete;
-  });
-  return { promise, resolve };
-}
-
-async function bounded<T>(pending: Promise<T>, milliseconds = 8000): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      pending,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Lock-order race did not settle in time')), milliseconds);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/**
- * Wraps one database's transactions so the one whose result `parks` matches
- * waits before COMMIT, still holding every row and advisory lock it took.
- */
-function parkBeforeCommit(database: typeof environment.database, parks: (result: unknown) => boolean) {
-  const reached = barrier();
-  const release = barrier();
-  const runTransaction = database.transaction.bind(database);
-  vi.spyOn(database, 'transaction').mockImplementation(((work, config) =>
-    runTransaction(async (transaction) => {
-      const result = await work(transaction);
-      if (parks(result)) {
-        reached.resolve();
-        await release.promise;
-      }
-      return result;
-    }, config)) as typeof database.transaction);
-  return { reached: reached.promise, release: release.resolve };
-}
-
 const isResetReply = (result: unknown) =>
   typeof result === 'object' && result !== null && 'operation' in result && result.operation === 'reset-password';
-
-interface BlockedStatement {
-  readonly query: string;
-  readonly blockers: string[];
-}
-
-/** The waiting statement of one connection and the application names holding what it waits for. */
-async function blockedStatement(applicationName: string, pending: Promise<unknown>): Promise<BlockedStatement> {
-  const deadline = Date.now() + 5000;
-  let settled = false;
-  void pending.then(
-    () => (settled = true),
-    () => (settled = true),
-  );
-  while (Date.now() < deadline) {
-    const [waiting] = await observer<BlockedStatement[]>`
-      SELECT waiter.query, array_agg(blocker.application_name ORDER BY blocker.application_name) AS blockers
-      FROM pg_stat_activity waiter
-      JOIN pg_stat_activity blocker ON blocker.pid = ANY (pg_blocking_pids(waiter.pid))
-      WHERE waiter.datname = current_database()
-        AND waiter.application_name = ${applicationName}
-        AND waiter.wait_event_type = 'Lock'
-      GROUP BY waiter.query`;
-    if (waiting) return waiting;
-    if (settled) throw new Error(`${applicationName} finished without waiting on a lock`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`${applicationName} never waited on a lock`);
-}
 
 async function fixture() {
   const userId = randomUUID();
@@ -211,23 +142,10 @@ async function expectResetEndState(userId: string, nativeSignouts: number) {
   expect(events.filter((event) => event.kind === 'native-signout')).toHaveLength(nativeSignouts);
 }
 
-function postgresCode(error: unknown): string | undefined {
-  if (!error || typeof error !== 'object') return undefined;
-  const candidate = error as { code?: unknown; cause?: unknown };
-  return typeof candidate.code === 'string' && /^[0-9A-Z]{5}$/.test(candidate.code)
-    ? candidate.code
-    : postgresCode(candidate.cause);
-}
-
 describe('native revoke and password reset share one lock order', () => {
   beforeAll(async () => {
     environment = await createEnvironment();
-    const address = new URL(
-      process.env.AUTH_PROTOTYPE_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',
-    );
-    address.pathname = `/${environment.client.options.database}`;
-    const connect = (applicationName: string) =>
-      postgres(address.toString(), { max: 1, onnotice: () => {}, connection: { application_name: applicationName } });
+    const connect = (applicationName: string) => connectAs(environment.client.options.database, applicationName);
     resetClient = connect(RESET_APPLICATION);
     revokeClient = connect(REVOKE_APPLICATION);
     observer = connect('ba04-lock-order-observer');
@@ -260,7 +178,7 @@ describe('native revoke and password reset share one lock order', () => {
         // The reset holds the gate, users row, cutoff, credential and every refresh row.
         await bounded(parked.reached);
         revoke = revokeNativeCredentials(revokeDatabase, subject.presentedTokenHash, mode);
-        const waiting = await blockedStatement(REVOKE_APPLICATION, revoke);
+        const waiting = await blockedStatement(observer, REVOKE_APPLICATION, revoke);
         expect(waiting.query).toMatch(/from "users" where "users"\."id" = \$1 for update/i);
         expect(waiting.blockers).toEqual([RESET_APPLICATION]);
       } finally {
@@ -282,7 +200,7 @@ describe('native revoke and password reset share one lock order', () => {
         // The sign-out holds the gate, users row and every refresh row (plus the cutoff in generation mode).
         await bounded(parked.reached);
         reset = consumePasswordRecovery(resetDatabase, authority, resetCommand(subject.recoveryToken));
-        const waiting = await blockedStatement(RESET_APPLICATION, reset);
+        const waiting = await blockedStatement(observer, RESET_APPLICATION, reset);
         expect(waiting.query).toMatch(/from "users" where "users"\."id" = \$1 for update/i);
         expect(waiting.blockers).toEqual([REVOKE_APPLICATION]);
       } finally {
@@ -321,7 +239,7 @@ describe('native revoke and password reset share one lock order', () => {
       await bounded(refreshLocked.promise);
       reset = consumePasswordRecovery(resetDatabase, authority, resetCommand(subject.recoveryToken));
       // The reset now holds the users row and waits for the refresh row.
-      const waiting = await blockedStatement(RESET_APPLICATION, reset);
+      const waiting = await blockedStatement(observer, RESET_APPLICATION, reset);
       expect(waiting.query).toMatch(/update "mobile_refresh_tokens"/i);
       expect(waiting.blockers).toEqual([REVOKE_APPLICATION]);
     } finally {
@@ -329,7 +247,7 @@ describe('native revoke and password reset share one lock order', () => {
     }
     const outcomes = await bounded(Promise.allSettled([reset, reversed]));
     const deadlocks = outcomes.filter(
-      (outcome) => outcome.status === 'rejected' && postgresCode(outcome.reason) === '40P01',
+      (outcome) => outcome.status === 'rejected' && getPostgresErrorCode(outcome.reason) === '40P01',
     );
     expect(deadlocks).toHaveLength(1);
   });
