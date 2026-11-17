@@ -22,6 +22,12 @@ export function isAuroraLiveEnabled(boardType: string): boardType is AuroraLiveB
     (process.env.AURORA_LIVE_SYNC_BOARDS ?? '').split(',').some((entry) => entry.trim() === boardType)
   );
 }
+export class AuroraLiveReadStaleError extends Error {
+  constructor() {
+    super('Aurora live read is no longer current');
+    this.name = 'AuroraLiveReadStaleError';
+  }
+}
 type AuroraViewer = LiveHistoryAccount & AuroraLiveCredentialBinding & { boardType: AuroraLiveBoardName };
 
 export class AuroraLiveSync extends LiveHistoryPoller<AuroraViewer> {
@@ -105,13 +111,14 @@ export class AuroraLiveSync extends LiveHistoryPoller<AuroraViewer> {
     let refreshed = false;
     const fetchPage = async (before?: string) => {
       signal.throwIfAborted();
-      if (!(await isCurrent())) throw new AuroraLiveCredentialChangedError();
+      if (!(await isCurrent())) throw new AuroraLiveReadStaleError();
       const request = () => fetchAuroraLiveHistory(wall.boardType, wall.serialNumber, token, { before, signal });
       return request().catch(async (error: unknown) => {
-        if (refreshed || !isAuroraRequestError(error) || error.status !== 401 || !(await isCurrent())) throw error;
+        if (refreshed || !isAuroraRequestError(error) || error.status !== 401) throw error;
+        if (!(await isCurrent())) throw new AuroraLiveReadStaleError();
         refreshed = true;
         token = await getAuroraLiveToken(account.userId, wall.boardType, account, signal, token);
-        if (!(await isCurrent())) throw new AuroraLiveCredentialChangedError();
+        if (!(await isCurrent())) throw new AuroraLiveReadStaleError();
         return request();
       });
     };
@@ -134,6 +141,9 @@ export class AuroraLiveSync extends LiveHistoryPoller<AuroraViewer> {
         imported += await importAuroraDisplays(wall, displays, isCurrent);
       },
       onGap: () => logger.warn('[AuroraLive] Catch-up remains incomplete', { boardId, boardType: wall.boardType }),
+    }).catch((error: unknown) => {
+      if (error instanceof AuroraLiveReadStaleError) return null;
+      throw error;
     });
     if (next && (await isCurrent()) && sameAuroraWall(wall, await matchAuroraWall(boardId))) {
       await this.saveCheckpoint(boardId, JSON.stringify(next));

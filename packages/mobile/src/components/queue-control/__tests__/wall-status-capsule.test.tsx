@@ -30,7 +30,7 @@ const spies = vi.hoisted(() => ({
     setIds: string;
     angle: number;
   } | null,
-  currentMirrored: false,
+  mirroredClimbUuid: null as string | null,
   // The sends after the grade; null leaves the grade alone, as for an unsent climb.
   sends: null as string | null,
   statsArgs: null as unknown,
@@ -43,7 +43,7 @@ vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthent
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
     boardConfig: spies.boardConfig,
-    boardPanelProps: { getCurrentMirrored: () => spies.currentMirrored },
+    boardPanelProps: { getClimbMirror: (uuid: string) => uuid === spies.mirroredClimbUuid },
   }),
 }));
 vi.mock('../../../providers/board-presence-provider', () => ({
@@ -1105,12 +1105,15 @@ it('disables settled Aurora previews until the same physical wall config is avai
   rerender(<WallStatusCapsule boardId={42} boardName="tension" climb={imported} occurrenceKey="mismatched-wall" />);
   expect(container.querySelector('button')).toBeNull();
   spies.boardId = 42;
-  spies.currentMirrored = true;
+  spies.mirroredClimbUuid = 'different-climb';
   rerender(<WallStatusCapsule boardId={42} boardName="tension" climb={imported} occurrenceKey="matched-wall" />);
   const button = container.querySelector('button');
   expect(button).not.toBeNull();
   fireEvent.click(button!);
+  expect(spies.openWallPreview).toHaveBeenLastCalledWith(expect.objectContaining({ mirrored: false }));
+  spies.mirroredClimbUuid = imported.climbUuid;
+  fireEvent.click(button!);
   expect(spies.openWallPreview).toHaveBeenLastCalledWith(expect.objectContaining({ mirrored: true }));
   spies.boardConfig = originalConfig;
-  spies.currentMirrored = false;
+  spies.mirroredClimbUuid = null;
 });

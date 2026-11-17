@@ -85,10 +85,8 @@ function WallStatusCapsuleImpl(props: WallStatusCapsuleProps) {
   });
   const onPress = useCallback(() => {
     if (!previewClimb || !canPreview) return;
-    openWallPreview(
-      withAuroraActionOrientation(previewClimb, climb.source, boardPanelProps?.getCurrentMirrored?.() ?? false),
-    );
-  }, [openWallPreview, previewClimb, canPreview, climb.source, boardPanelProps]);
+    openWallPreview(withAuroraActionOrientation(previewClimb, climb, boardPanelProps?.getClimbMirror));
+  }, [openWallPreview, previewClimb, canPreview, climb, boardPanelProps]);
   return (
     <WallStatusCapsuleView
       {...props}

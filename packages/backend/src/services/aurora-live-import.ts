@@ -38,6 +38,22 @@ const normalizedSets = (setIds: string) =>
     .sort((left, right) => left - right)
     .join(',');
 
+const skippedBindings = new Map<number, { reason: string; loggedAt: number }>();
+
+/** Bounded diagnostics for bindings that need operator reconciliation, not every heartbeat. */
+function skipAuroraWall(boardId: number, reason: string, details: Record<string, unknown> = {}): null {
+  const previous = skippedBindings.get(boardId);
+  if (previous?.reason === reason && Date.now() - previous.loggedAt < 300_000) return null;
+  skippedBindings.delete(boardId);
+  if (skippedBindings.size >= 1000) {
+    const oldestBoardId = skippedBindings.keys().next().value;
+    if (oldestBoardId !== undefined) skippedBindings.delete(oldestBoardId);
+  }
+  skippedBindings.set(boardId, { reason, loggedAt: Date.now() });
+  logger.warn('[AuroraLive] Wall binding skipped', { boardId, reason, ...details });
+  return null;
+}
+
 /** A serial-only feed must resolve to exactly one public physical source, including merged sources. */
 export async function matchAuroraWall(
   boardId: number,
@@ -48,7 +64,9 @@ export async function matchAuroraWall(
     .from(userBoards)
     .where(and(eq(userBoards.id, boardId), isNull(userBoards.deletedAt)))
     .limit(1);
-  if (!board?.isPublic || board.isUnlisted || !isAuroraLiveBoardName(board.boardType)) return null;
+  if (!board?.isPublic || board.isUnlisted || !isAuroraLiveBoardName(board.boardType)) {
+    return skipAuroraWall(boardId, 'board_not_eligible');
+  }
   const sourceUuids = new Set([board.uuid]);
   let frontier = [board.uuid];
   for (let depth = 0; depth < 3 && frontier.length; depth++) {
@@ -69,7 +87,9 @@ export async function matchAuroraWall(
         eq(auroraWallSources.isListed, true),
       ),
     );
-  if (mappings.length !== 1) return null;
+  if (mappings.length !== 1) {
+    return skipAuroraWall(boardId, 'source_mapping_unresolved', { sourceCount: mappings.length });
+  }
   const mapping = mappings[0];
   if (
     !mapping.sourceBoardUuid ||
@@ -79,7 +99,7 @@ export async function matchAuroraWall(
     mapping.sizeId !== board.sizeId ||
     normalizedSets(mapping.setIds) !== normalizedSets(board.setIds)
   )
-    return null;
+    return skipAuroraWall(boardId, 'source_configuration_mismatch', { sourceKey: mapping.sourceKey });
   // Controller serials are not globally unique. Never merge separate upstream walls' streams.
   const serialSources = await reader
     .select({ gymUserId: auroraWallSources.gymUserId, wallUuid: auroraWallSources.wallUuid })
@@ -87,14 +107,26 @@ export async function matchAuroraWall(
     .where(
       and(eq(auroraWallSources.boardType, board.boardType), eq(auroraWallSources.serialNumber, mapping.serialNumber)),
     );
-  if (serialSources.some((source) => source.gymUserId !== mapping.gymUserId || source.wallUuid !== mapping.wallUuid))
-    return null;
+  const conflictingSources = serialSources.filter(
+    (source) => source.gymUserId !== mapping.gymUserId || source.wallUuid !== mapping.wallUuid,
+  );
+  if (conflictingSources.length) {
+    return skipAuroraWall(boardId, 'serial_conflict', {
+      boardType: board.boardType,
+      serialNumber: mapping.serialNumber,
+      sourceKey: mapping.sourceKey,
+      conflictingSources: conflictingSources.slice(0, 5),
+    });
+  }
   const [gymSource] = await reader
     .select({ gymId: locationSyncGymSources.gymId })
     .from(locationSyncGymSources)
     .where(eq(locationSyncGymSources.sourceKey, `${board.boardType}:${mapping.gymUserId}`))
     .limit(1);
-  if (!gymSource || gymSource.gymId !== board.gymId) return null;
+  if (!gymSource || gymSource.gymId !== board.gymId) {
+    return skipAuroraWall(boardId, 'source_gym_mismatch', { sourceKey: mapping.sourceKey });
+  }
+  skippedBindings.delete(boardId);
   return {
     sourceKey: mapping.sourceKey,
     sourceBoardUuid: mapping.sourceBoardUuid,
@@ -130,8 +162,41 @@ export async function importAuroraDisplays(
   isCurrent: (reader?: Pick<typeof db, 'select'>) => Promise<boolean>,
 ): Promise<number> {
   if (!(await isCurrent())) return 0;
-  const validDisplays = displays.filter((display) => display.serialNumber === wall.serialNumber);
-  const upstreamUuids = [...new Set(validDisplays.map((display) => display.climbUuid))];
+  // Most polls repeat the same upstream page. Find known occurrences once,
+  // before alias/catalog work or any per-occurrence row-locking transaction.
+  const displaysByKey = new Map<string, AuroraLiveDisplay>();
+  for (const display of displays) {
+    if (display.serialNumber !== wall.serialNumber) continue;
+    const occurrenceKey = createHash('sha256')
+      .update(
+        JSON.stringify([
+          'aurora',
+          wall.boardType,
+          wall.sourceKey,
+          wall.gymUserId,
+          wall.wallUuid,
+          wall.serialNumber,
+          display.climbUuid,
+          display.displayedAt,
+        ]),
+      )
+      .digest('hex');
+    displaysByKey.set(occurrenceKey, display);
+  }
+  const existingOccurrences = displaysByKey.size
+    ? await db
+        .select({ occurrenceKey: boardClimbEvents.externalOccurrenceKey })
+        .from(boardClimbEvents)
+        .where(
+          and(
+            eq(boardClimbEvents.source, 'aurora'),
+            inArray(boardClimbEvents.externalOccurrenceKey, [...displaysByKey.keys()]),
+          ),
+        )
+    : [];
+  const existingKeys = new Set(existingOccurrences.map((occurrence) => occurrence.occurrenceKey));
+  const unseenDisplays = [...displaysByKey].filter(([occurrenceKey]) => !existingKeys.has(occurrenceKey));
+  const upstreamUuids = [...new Set(unseenDisplays.map(([, display]) => display.climbUuid))];
   const aliases = upstreamUuids.length
     ? await db
         .select()
@@ -162,25 +227,11 @@ export async function importAuroraDisplays(
     : [];
   const climbsByUuid = new Map(catalog.map((climb) => [climb.uuid, climb]));
   let insertedCount = 0;
-  for (const display of validDisplays) {
+  for (const [occurrenceKey, display] of unseenDisplays) {
     if (!(await isCurrent())) break;
     const climbUuid = canonicalByAlias.get(display.climbUuid) ?? display.climbUuid;
     const climb = climbsByUuid.get(climbUuid);
     if (!climb) continue;
-    const occurrenceKey = createHash('sha256')
-      .update(
-        JSON.stringify([
-          'aurora',
-          wall.boardType,
-          wall.sourceKey,
-          wall.gymUserId,
-          wall.wallUuid,
-          wall.serialNumber,
-          display.climbUuid,
-          display.displayedAt,
-        ]),
-      )
-      .digest('hex');
     const inserted = await db.transaction(async (transaction) => {
       const [board] = await transaction
         .select({ id: userBoards.id })

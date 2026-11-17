@@ -197,8 +197,8 @@ export type NowOnTheWallPanelProps = {
    * and doesn't subscribe to that volatile context.
    */
   boardConfig: BoardConfig | null;
-  /** Live user orientation, read only when an action is explicitly chosen. */
-  getCurrentMirrored?: () => boolean;
+  /** Local orientation for a climb with one unambiguous queue occurrence. */
+  getClimbMirror?: (climbUuid: string) => boolean | undefined;
   /** Sheet only: when set, the header renders a close chevron that calls this. */
   onClose?: () => void;
   /**
@@ -239,7 +239,7 @@ function NowOnTheWallPanelComponent(
     variant,
     boardLabel,
     boardConfig,
-    getCurrentMirrored,
+    getClimbMirror,
     onClose,
     dismissAndWait,
     onSwitchBoard,
@@ -282,8 +282,8 @@ function NowOnTheWallPanelComponent(
   // today, so those fall back to the legacy grade until the backend stamps them.
   const { formatGrade } = useGradeFormat();
   const { resolveGrade } = useDisplayGrade();
-  const currentMirroredReaderRef = useRef(getCurrentMirrored);
-  currentMirroredReaderRef.current = getCurrentMirrored;
+  const climbMirrorReaderRef = useRef(getClimbMirror);
+  climbMirrorReaderRef.current = getClimbMirror;
   const boardConfigRef = useRef(boardConfig);
   boardConfigRef.current = boardConfig;
   const { boardId: boardPresenceBoardId, boardUuid: boardPresenceBoardUuid } = useBoardPresenceControls();
@@ -443,11 +443,7 @@ function NowOnTheWallPanelComponent(
       const cachedClimb = getActionClimbCacheEntry(actionClimbCacheRef.current, cacheKey);
       if (cachedClimb) {
         return {
-          climb: withAuroraActionOrientation(
-            cachedClimb,
-            presenceClimb.source,
-            currentMirroredReaderRef.current?.() ?? false,
-          ),
+          climb: withAuroraActionOrientation(cachedClimb, presenceClimb, climbMirrorReaderRef.current),
           queueItemUuid: presenceClimb.queueItemUuid ?? null,
           boardConfig: actionBoardConfig,
         };
@@ -485,11 +481,7 @@ function NowOnTheWallPanelComponent(
       const loadedClimb = await climbRequest;
       if (!loadedClimb) return null;
       return {
-        climb: withAuroraActionOrientation(
-          loadedClimb,
-          presenceClimb.source,
-          currentMirroredReaderRef.current?.() ?? false,
-        ),
+        climb: withAuroraActionOrientation(loadedClimb, presenceClimb, climbMirrorReaderRef.current),
         queueItemUuid: presenceClimb.queueItemUuid ?? null,
         boardConfig: actionBoardConfig,
       };
@@ -605,14 +597,14 @@ function NowOnTheWallPanelComponent(
   // Read through a ref at the tap, so a history page landing doesn't rebuild
   // every row's handler. Rows with no frames have nothing to draw and stay out.
   const wallTrackClimbs = useMemo(() => {
-    const climbs: Array<{ climb: QueueClimb; source: BoardPresenceClimb['source'] }> = [];
+    const climbs: Array<{ climb: QueueClimb; occurrence: BoardPresenceClimb }> = [];
     const seenClimbUuids = new Set<string>();
     for (const presenceClimb of currentClimb ? [currentClimb, ...combinedHistory] : combinedHistory) {
       if (!presenceClimb.frames || seenClimbUuids.has(presenceClimb.climbUuid)) continue;
       seenClimbUuids.add(presenceClimb.climbUuid);
       climbs.push({
         climb: boardPresenceClimbToClimb(presenceClimb, boardConfig?.angle),
-        source: presenceClimb.source,
+        occurrence: presenceClimb,
       });
     }
     return climbs;
@@ -639,8 +631,8 @@ function NowOnTheWallPanelComponent(
             ? createPlaylistSuggestionSource({
                 playlistUuid: `wall-history:${boardConfigSignatureRef.current}`,
                 activatedClimb: toQueueClimb(action.climb),
-                climbs: wallTrackClimbsRef.current.map(({ climb, source }) =>
-                  withAuroraActionOrientation(climb, source, currentMirroredReaderRef.current?.() ?? false),
+                climbs: wallTrackClimbsRef.current.map(({ climb, occurrence }) =>
+                  withAuroraActionOrientation(climb, occurrence, climbMirrorReaderRef.current),
                 ),
                 boardKey: getQueueBoardKey({
                   board_name: panelBoard.boardName,
@@ -698,8 +690,8 @@ function NowOnTheWallPanelComponent(
       const target = onOpenActions({
         climb: withAuroraActionOrientation(
           loadedClimb ?? boardPresenceClimbToClimb(presenceClimb, actionContext.actionBoardConfig.angle),
-          presenceClimb.source,
-          currentMirroredReaderRef.current?.() ?? false,
+          presenceClimb,
+          climbMirrorReaderRef.current,
         ),
         boardConfig: actionContext.actionBoardConfig,
         queueItemUuid: presenceClimb.queueItemUuid ?? null,
