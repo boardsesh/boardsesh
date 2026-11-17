@@ -14,11 +14,13 @@ export function presentAuroraClimb(
   return climb.source === 'aurora' ? { ...climb, angle: selectedAngle, grade: selectedGrade } : climb;
 }
 
-/** Resolve the viewer's orientation at an explicit action, without changing cached catalog data. */
+/** Use only the displayed climb's own orientation when creating an action from its catalog entry. */
 export function withAuroraActionOrientation<Climb extends { mirrored?: boolean | null }>(
   climb: Climb,
-  source: BoardPresenceClimb['source'],
-  currentMirrored: boolean,
+  occurrence: Pick<BoardPresenceClimb, 'source' | 'climbUuid' | 'mirrored'>,
+  getClimbMirror?: (climbUuid: string) => boolean | undefined,
 ): Climb {
-  return source === 'aurora' ? { ...climb, mirrored: currentMirrored } : climb;
+  return occurrence.source === 'aurora'
+    ? { ...climb, mirrored: occurrence.mirrored ?? getClimbMirror?.(occurrence.climbUuid) ?? false }
+    : climb;
 }

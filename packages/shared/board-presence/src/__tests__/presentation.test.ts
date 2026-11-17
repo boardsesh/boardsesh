@@ -35,11 +35,12 @@ describe('Aurora display presentation', () => {
   });
 });
 
-it('resolves the current Aurora action orientation without changing catalog or event metadata', () => {
-  const catalog = { uuid: 'climb', mirrored: false };
-  expect(withAuroraActionOrientation(catalog, 'aurora', true)).toEqual({ uuid: 'climb', mirrored: true });
-  expect(withAuroraActionOrientation(catalog, 'aurora', false)).toEqual(catalog);
-  expect(withAuroraActionOrientation(catalog, 'kilter', true)).toBe(catalog);
+it('resolves Aurora actions by occurrence climb UUID, including a merged catalog UUID', () => {
+  const catalog = { uuid: 'canonical', mirrored: false };
+  const readMirror = (uuid: string) => uuid === occurrence.climbUuid;
+  expect(withAuroraActionOrientation(catalog, occurrence, readMirror)).toEqual({ uuid: 'canonical', mirrored: true });
+  expect(withAuroraActionOrientation(catalog, { ...occurrence, climbUuid: 'other' }, readMirror)).toEqual(catalog);
+  expect(withAuroraActionOrientation(catalog, { ...occurrence, source: 'kilter' }, readMirror)).toBe(catalog);
   expect(catalog.mirrored).toBe(false);
   expect(occurrence.mirrored).toBeNull();
 });

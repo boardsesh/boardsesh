@@ -660,21 +660,21 @@ describe('NowOnTheWallPanel', () => {
     presenceControls.boardId = 123;
   });
 
-  it('reads current Aurora orientation for each explicit action without mutating cached catalog', async () => {
+  it('reads the imported climb’s own queue orientation on each action, including cached actions', async () => {
     const imported = makeClimb('aurora-climb', 3, { source: 'aurora', angle: null, grade: null, mirrored: null });
     presence.currentClimb = imported;
     const catalog = makeFullClimb('aurora-climb', { mirrored: false });
     graphql.request.mockResolvedValue({ climb: catalog });
     const onPlayNext = vi.fn();
-    let mirrored = true;
-    const { getByLabelText } = render(panelElement({ onPlayNext, getCurrentMirrored: () => mirrored }));
+    const mirroredClimbs = new Set(['aurora-climb', 'different-climb']);
+    const { getByLabelText } = render(panelElement({ onPlayNext, getClimbMirror: (uuid) => mirroredClimbs.has(uuid) }));
     fireEvent.click(getByLabelText('queue aurora-climb'));
     await waitFor(() =>
       expect(onPlayNext).toHaveBeenLastCalledWith(
         expect.objectContaining({ climb: expect.objectContaining({ mirrored: true }) }),
       ),
     );
-    mirrored = false;
+    mirroredClimbs.delete('aurora-climb');
     fireEvent.click(getByLabelText('queue aurora-climb'));
     await waitFor(() =>
       expect(onPlayNext).toHaveBeenLastCalledWith(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import { resolveTickMirror, unambiguousQueueMirror } from '../queue-mirror-orientation';
+import { createQueueMirrorReader, resolveTickMirror } from '../queue-mirror-orientation';
 
 function occurrence(uuid: string, mirrored: boolean): ClimbQueueItem {
   return { uuid, climb: { uuid: 'climb-a', mirrored } } as ClimbQueueItem;
@@ -20,21 +20,24 @@ describe('occurrence mirror resolution', () => {
   it('never guesses a legacy presence orientation between repeated occurrences', () => {
     const first = occurrence('first', true);
     const second = occurrence('second', false);
-    expect(
-      unambiguousQueueMirror({ queue: [first, second], currentClimbQueueItem: second }, 'climb-a'),
-    ).toBeUndefined();
+    const readMirror = createQueueMirrorReader(() => ({ queue: [first, second], currentClimbQueueItem: second }));
+    expect(readMirror('climb-a')).toBeUndefined();
   });
 
   it('deduplicates current and queue copies by occurrence, preferring the current copy', () => {
     const old = occurrence('same-slot', true);
-    const current = occurrence('same-slot', false);
-    expect(unambiguousQueueMirror({ queue: [old], currentClimbQueueItem: current }, 'climb-a')).toBe(false);
+    const queue = [old];
+    let current = old;
+    const readMirror = createQueueMirrorReader(() => ({ queue, currentClimbQueueItem: current }));
+    expect(readMirror('climb-a')).toBe(true);
+    current = occurrence('same-slot', false);
+    expect(readMirror('climb-a')).toBe(false);
   });
 
   it('supports a current-only occurrence and distinguishes missing from explicit false', () => {
     const current = occurrence('outside-queue', false);
-    expect(unambiguousQueueMirror({ queue: [], currentClimbQueueItem: current }, 'climb-a')).toBe(false);
-    expect(unambiguousQueueMirror({ queue: [], currentClimbQueueItem: current }, 'other-climb')).toBeUndefined();
-    expect(unambiguousQueueMirror({ queue: [], currentClimbQueueItem: null }, undefined)).toBeUndefined();
+    const readMirror = createQueueMirrorReader(() => ({ queue: [], currentClimbQueueItem: current }));
+    expect(readMirror('climb-a')).toBe(false);
+    expect(readMirror('other-climb')).toBeUndefined();
   });
 });

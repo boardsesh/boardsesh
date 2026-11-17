@@ -3,8 +3,7 @@ import { redactBoardEvent } from '../../../services/board-session-privacy';
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { kilterLiveSync } from '../../../services/kilter-live-sync';
-import { auroraLiveSync } from '../../../services/aurora-live-sync';
-import { isAuroraBoardName } from '@boardsesh/aurora-sync/api';
+import { auroraLiveSync, isAuroraLiveEnabled } from '../../../services/aurora-live-sync';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
@@ -108,7 +107,7 @@ export const boardPresenceSubscriptions = {
           if (!lifetime.closed && ctx.userId && presenceBoard) {
             if (presenceBoard.boardType === 'kilter') {
               stopWatching = kilterLiveSync.watch(boardId, ctx.userId, ctx.connectionId);
-            } else if (includeAurora === true && isAuroraBoardName(presenceBoard.boardType)) {
+            } else if (includeAurora === true && isAuroraLiveEnabled(presenceBoard.boardType)) {
               stopWatching = auroraLiveSync.watch(boardId, ctx.userId, ctx.connectionId);
             }
           }

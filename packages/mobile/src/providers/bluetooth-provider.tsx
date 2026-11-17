@@ -31,7 +31,7 @@ import {
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
-import { unambiguousQueueMirror } from '../lib/queue-mirror-orientation';
+import { createQueueMirrorReader } from '../lib/queue-mirror-orientation';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
 import { drivesWithoutBluetooth } from '../lib/boards/board-lighting';
 import {
@@ -1210,10 +1210,7 @@ export function BluetoothProvider({
   // its dedup-report branch never confirms a queue climb the wall isn't showing.
   const lastPhysicalFramesRef = useRef<string | null>(null);
   const [reassertNonce, setReassertNonce] = useState(0);
-  const queueMirrorFor = useCallback(
-    (climbUuid: string | undefined) => unambiguousQueueMirror(getQueueSnapshot(), climbUuid),
-    [getQueueSnapshot],
-  );
+  const queueMirrorFor = useMemo(() => createQueueMirrorReader(getQueueSnapshot), [getQueueSnapshot]);
   // Monotonic id of the physical BLE link the auto-sender is writing over, fed
   // from BleConnectionHandle.generation. The auto-sender is mounted on the
   // rendered `isConnected` flag, which a connect that starts while the app
@@ -2509,14 +2506,9 @@ export function BluetoothProvider({
     const undoAngle = undoTarget.source === 'aurora' ? selectedAngleRef.current : undoTarget.angle;
     if (undoTarget.source === 'aurora' && undoAngle == null) return false;
     lastAcceptedReportSignatureRef.current = null;
-    // Undo restores what was lit, so the orientation the feed recorded wins
-    // (#5238). An unambiguous queue occurrence only fills in for an older
-    // build that reported no orientation. Aurora has no recorded orientation,
-    // so an explicit action uses this viewer's current selection.
-    const undoMirrored =
-      undoTarget.source === 'aurora'
-        ? getQueueSnapshot().currentClimbQueueItem?.climb.mirrored === true
-        : (undoTarget.mirrored ?? queueMirrorFor(undoTarget.climbUuid) ?? false);
+    // Aurora and older native records have no orientation. Only a unique
+    // occurrence of the target climb can supply a local mirror choice.
+    const undoMirrored = undoTarget.mirrored ?? queueMirrorFor(undoTarget.climbUuid) ?? false;
     const writeSucceeded = await commitWallFrames(frames, undoMirrored, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
@@ -2555,7 +2547,7 @@ export function BluetoothProvider({
     );
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [commitWallFrames, getQueueSnapshot, queueMirrorFor, sendFencedClimbReport]);
+  }, [commitWallFrames, queueMirrorFor, sendFencedClimbReport]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -2583,12 +2575,8 @@ export function BluetoothProvider({
       if (climb.source === 'aurora' && relightAngle == null) return false;
       lastAcceptedReportSignatureRef.current = null;
       // Restore the recorded orientation, including an explicit unmirror.
-      // Older records can borrow an unambiguous queue occurrence's orientation.
-      // Aurora actions use the viewer's current selection instead.
-      const relightMirrored =
-        climb.source === 'aurora'
-          ? getQueueSnapshot().currentClimbQueueItem?.climb.mirrored === true
-          : (climb.mirrored ?? queueMirrorFor(climb.climbUuid) ?? false);
+      // When it is unknown, consult only this climb's unique queue occurrence.
+      const relightMirrored = climb.mirrored ?? queueMirrorFor(climb.climbUuid) ?? false;
       const writeSucceeded = await commitWallFrames(frames, relightMirrored, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
@@ -2627,7 +2615,7 @@ export function BluetoothProvider({
       );
       return true;
     },
-    [commitWallFrames, getQueueSnapshot, queueMirrorFor, sendFencedClimbReport],
+    [commitWallFrames, queueMirrorFor, sendFencedClimbReport],
   );
 
   const clearBoard = useCallback(

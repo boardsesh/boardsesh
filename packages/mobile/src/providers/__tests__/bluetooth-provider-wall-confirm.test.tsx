@@ -3213,37 +3213,50 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
-    it.each([0, 45])(
-      'relights an Aurora record at selected angle %s without changing its source metadata',
-      async (angle) => {
-        queue.sessionId = null;
-        presence.enabled = true;
-        presence.boardId = 99;
-        presence.currentClimb = makePresenceClimb();
-        bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-          bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-        const imported = makePresenceClimb({
-          source: 'aurora',
-          climbUuid: 'aurora-climb',
-          angle: null,
-          grade: null,
-          mirrored: null,
-        });
-        renderProvider(createElement(BluetoothProbe), angle);
-        await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    it.each([
+      { scenario: 'ignore a different mirrored climb', targetQueued: false, angle: 0 },
+      { scenario: 'use the target climb’s unique mirrored occurrence', targetQueued: true, angle: 45 },
+    ])('Aurora undo and relight $scenario at the selected $angle degrees', async ({ targetQueued, angle }) => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      const imported = makePresenceClimb({
+        source: 'aurora',
+        climbUuid: 'aurora-climb',
+        queueItemUuid: null,
+        angle: null,
+        grade: null,
+        mirrored: null,
+      });
+      presence.currentClimb = imported;
+      queue.currentClimbQueueItem = makeQueueItem('different-climb', 'p1r12', !targetQueued);
+      if (targetQueued) queue.items = [makeQueueItem(imported.climbUuid, 'previous-frames', true)];
+      renderProvider(createElement(BluetoothProbe), angle);
+      await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+      for (const sendSource of ['undo', 'wall-relight'] as const) {
         await act(async () => {
-          await capturedBluetooth?.relightPresenceClimb(imported);
+          const success =
+            sendSource === 'undo'
+              ? await capturedBluetooth?.undoWallChange()
+              : await capturedBluetooth?.relightPresenceClimb(imported);
+          expect(success).toBe(true);
         });
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          imported.frames,
+          targetQueued,
+          undefined,
+          expect.objectContaining({ sendSource }),
+        );
         expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
           99,
           expect.objectContaining({
-            climb: expect.objectContaining({ uuid: 'aurora-climb', angle }),
+            climb: expect.objectContaining({ uuid: imported.climbUuid, angle, mirrored: targetQueued }),
           }),
           angle,
         );
-        expect(imported).toMatchObject({ angle: null, grade: null, mirrored: null });
-      },
-    );
+      }
+      expect(imported).toMatchObject({ angle: null, grade: null, mirrored: null });
+    });
 
     it('relights an older presence record using its unique queued occurrence', async () => {
       queue.sessionId = null;

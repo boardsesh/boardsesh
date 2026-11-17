@@ -22,8 +22,10 @@ Imported climbs appear in wall history with the board's source label. Their
 presentation, grades and ordinary climb actions use the viewer's currently
 selected angle. Changing angle changes that viewer's presentation; it does not
 rewrite shared history or change what another viewer sees. The source event's
-angle remains unknown. Missing orientation and displaying-user identity are not
-invented from the setter or linked viewer.
+angle, orientation and displaying-user identity remain unknown. When someone
+chooses an imported climb to preview, queue or light, a single matching queue
+occurrence supplies its mirror setting. With no match or multiple occurrences,
+the action uses the climb's original orientation.
 
 The current-climb capsule follows the newest display timestamp across native
 and imported events. An imported event is an inference about what may be lit,
@@ -98,6 +100,25 @@ Non-importable observations of unlisted or unsupported walls retain serial
 conflict evidence across crawl slices and controller replacements without
 creating public board rows.
 
+Serial observations deliberately have no automatic expiry. A removed upstream
+registration or a transferred controller can therefore leave a retained conflict
+that continues to block importing. A later location crawl does not erase that
+evidence: absence from one public snapshot does not prove the old physical wall
+could never contribute to the serial-only display history.
+
+The backend logs `[AuroraLive] Wall binding skipped` with a machine-readable
+`reason`, board ID and relevant source details. `serial_conflict` includes the
+controller serial and up to five conflicting gym/wall references. An unchanged
+skip reason is throttled for five minutes in a bounded per-process cache; a valid
+binding resets the diagnostic. Other reasons distinguish an ineligible board,
+an unresolved source mapping, a changed configuration and a mismatched gym.
+
+For a retained conflict, inspect the named upstream gym/wall registrations and
+controller ownership before enabling that wall. Keep the reader skipped while
+the evidence is ambiguous. Any manual source reconciliation needs positive
+physical-wall evidence and a separately reviewed maintenance change; this feature
+does not delete observations, age them out or merge walls to make a feed match.
+
 The binding, viewer eligibility and ownership are checked again after HTTP and
 inside the history transaction. Catalog joins are board-specific. Unknown or
 layout-incompatible climbs never become history for another wall.
@@ -107,11 +128,27 @@ layout-incompatible climbs never become history for another wall.
 The shared polling lifecycle retains Kilter's ownership/viewer leases,
 non-overlapping requests, cancellation, retry/backoff and linked-viewer failover.
 Aurora requests use the linked account for the matching product. A rejected
-session may trigger one normal login/retry; unlink/relink and sync writers share
-credential coordination. Credentials never enter the display event.
+session may trigger one normal login/retry. Short transactions read a locked
+credential snapshot, then release the connection and locks before the HTTP
+login. A second short transaction rechecks the credential ID, upstream account,
+link generation and saved token before writing. A concurrent refresh winner's
+stored token wins; unlinking or relinking while login waits invalidates its result.
+Concurrent walls on one backend share an in-flight refresh for the same link.
+
+An explicit `invalid_credentials` login refusal clears only the matching
+snapshot's token and marks that credential `expired`. The link generation is
+rotated, including for legacy links, so already-running fenced sync jobs cannot
+revive the refused credential. Pollers and routine sync selection exclude it
+until the climber reconnects the account. A newer stored token or replacement
+link is never expired by an older request's refusal. Redis/owner-lease loss and
+disabled flags cancel stale reads without rejecting an otherwise valid account.
+Credentials never enter the display event.
 
 Display occurrence keys include provider, product, stable physical source,
 controller, climb and full timestamp. Repeated pages deduplicate transactionally.
+Each page first checks its occurrence keys in one set-based read; already imported
+entries do not open per-row locking transactions. New occurrences retain the
+in-transaction duplicate check and unique conflict guard for overlapping readers.
 Newest-first reads and bounded catch-up retain unfinished continuation; a partial
 page walk must not claim a completed checkpoint. Equal-timestamp events across
 page boundaries cannot be proven complete without an upstream tie-breaker.

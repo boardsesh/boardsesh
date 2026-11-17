@@ -7,10 +7,12 @@ import { AuroraRequestError, fetchAuroraLiveHistory, type AuroraLiveDisplay } fr
 import { db } from '../db/client';
 import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
-import { AuroraLiveSync, isAuroraLiveEnabled } from '../services/aurora-live-sync';
+import { AuroraLiveSync, auroraLiveSync, isAuroraLiveEnabled } from '../services/aurora-live-sync';
+import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
 import { importAuroraDisplays, matchAuroraWall } from '../services/aurora-live-import';
 import { getAuroraLiveToken } from '../services/aurora-live-token';
 import { catchUpAuroraHistory, parseAuroraCheckpoint } from '../services/aurora-live-catchup';
+import { logger } from '../utils/logger';
 
 vi.mock('@boardsesh/aurora-sync/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/aurora-sync/api')>()),
@@ -143,6 +145,33 @@ function poller() {
 }
 
 describe('Aurora display imports', () => {
+  it('skips row-locking transactions for a duplicate page and locks only new occurrences', async () => {
+    const wall = await matchAuroraWall(boardId);
+    const first = display();
+    expect(await importAuroraDisplays(wall!, [first], async () => true)).toBe(1);
+    const transaction = vi.spyOn(db, 'transaction');
+    const repeatedPage = Array.from({ length: 100 }, () => ({ ...first }));
+    expect(await importAuroraDisplays(wall!, repeatedPage, async () => true)).toBe(0);
+    expect(transaction).not.toHaveBeenCalled();
+
+    const next = display({ displayedAt: first.displayedAt.replace('123Z', '124Z') });
+    expect(await importAuroraDisplays(wall!, [...repeatedPage, next, next], async () => true)).toBe(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the transactional duplicate guard when concurrent readers prefilter the same new occurrence', async () => {
+    const wall = await matchAuroraWall(boardId);
+    const occurrence = display();
+    const imported = await Promise.all([
+      importAuroraDisplays(wall!, [occurrence], async () => true),
+      importAuroraDisplays(wall!, [occurrence], async () => true),
+    ]);
+    expect(imported.reduce((total, count) => total + count, 0)).toBe(1);
+    expect(
+      await db.select().from(schema.boardClimbEvents).where(eq(schema.boardClimbEvents.boardId, boardId)),
+    ).toHaveLength(1);
+  });
+
   it.each([true, false])(
     'retains unknown angle on adjustable=%s walls and deduplicates microsecond occurrences',
     async (adjustable) => {
@@ -165,6 +194,7 @@ describe('Aurora display imports', () => {
     },
   );
   it.each([true, false])('rejects reused serials even when the competing source listed=%s', async (isListed) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     await db.insert(schema.auroraWallSources).values({
       sourceKey: `${sourceKey}:other`,
       isListed,
@@ -178,6 +208,24 @@ describe('Aurora display imports', () => {
       setIds: '12,13',
     });
     expect(await matchAuroraWall(boardId)).toBeNull();
+    expect(await matchAuroraWall(boardId)).toBeNull();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      '[AuroraLive] Wall binding skipped',
+      expect.objectContaining(
+        isListed
+          ? {
+              boardId,
+              reason: 'source_mapping_unresolved',
+              sourceCount: 2,
+            }
+          : {
+              boardId,
+              reason: 'serial_conflict',
+              serialNumber: serial,
+              conflictingSources: [{ gymUserId: 999, wallUuid: 'another-wall' }],
+            },
+      ),
+    );
   });
   it('does not confuse a different product reusing the same controller serial', async () => {
     await db.insert(schema.auroraWallSources).values({
@@ -250,6 +298,83 @@ describe('Aurora display imports', () => {
 });
 
 describe('Aurora viewer-driven lifecycle', () => {
+  it.each(['redis', 'owner-lease', 'global-flag', 'board-allowlist'])(
+    'resumes after stale %s coordination without rejecting the account for five minutes',
+    async (staleReason) => {
+      const instance = poller();
+      vi.mocked(getAuroraLiveToken).mockImplementationOnce(async () => {
+        if (staleReason === 'redis') vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(false);
+        if (staleReason === 'owner-lease') await publisher.del(`aurora-live:${boardId}:owner`);
+        if (staleReason === 'global-flag') vi.stubEnv('AURORA_LIVE_SYNC_ENABLED', '0');
+        if (staleReason === 'board-allowlist') vi.stubEnv('AURORA_LIVE_SYNC_BOARDS', '');
+        return 'test-session';
+      });
+      instance.watch(boardId, userId, 'coordination-socket');
+      await vi.waitFor(() => expect(getAuroraLiveToken).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(fetchAuroraLiveHistory).not.toHaveBeenCalled();
+      vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(true);
+      vi.stubEnv('AURORA_LIVE_SYNC_ENABLED', '1');
+      vi.stubEnv('AURORA_LIVE_SYNC_BOARDS', 'tension');
+      const resumedAt = Date.now() + 35_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => resumedAt);
+      await instance.credentialsChanged();
+      await vi.waitFor(() => expect(fetchAuroraLiveHistory).toHaveBeenCalledOnce());
+    },
+  );
+
+  it('does not register Aurora watchers for products outside the enabled allowlist', async () => {
+    vi.stubEnv('AURORA_LIVE_SYNC_BOARDS', 'decoy');
+    const watch = vi.spyOn(auroraLiveSync, 'watch').mockReturnValue(() => {});
+    const subscribed = vi.fn();
+    vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardKey, listener) => {
+      subscribed();
+      // Give the eager iterator a payload so its initial setup must finish.
+      setTimeout(() => listener({ __typename: 'BoardClimbCleared', clearedAt: new Date().toISOString(), seq: 1 }), 20);
+      return () => {};
+    });
+    vi.spyOn(pubsub, 'getActiveBoardClear').mockResolvedValue(null);
+    const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(
+      undefined,
+      { boardId, includeAurora: true },
+      { connectionId: 'disabled-product', isAuthenticated: true, userId },
+    );
+    const first = iterator.next();
+    await vi.waitFor(() => expect(subscribed).toHaveBeenCalledOnce());
+    await first;
+    expect(watch).not.toHaveBeenCalled();
+    await iterator.return();
+  });
+
+  it('never selects a persistently refused credential for a second watched wall', async () => {
+    await db
+      .update(schema.auroraCredentials)
+      .set({ syncStatus: 'expired', auroraToken: null })
+      .where(and(eq(schema.auroraCredentials.userId, userId), eq(schema.auroraCredentials.boardType, 'tension')));
+    const secondUuid = randomUUID();
+    const [secondBoard] = await db
+      .insert(schema.userBoards)
+      .values({
+        uuid: secondUuid,
+        slug: secondUuid,
+        ownerId: userId,
+        name: 'Another watched wall',
+        boardType: 'tension',
+        layoutId: 10,
+        sizeId: 6,
+        setIds: '12,13',
+      })
+      .returning();
+    const instance = poller();
+    instance.watch(boardId, userId, 'first-refused-wall');
+    instance.watch(secondBoard.id, userId, 'second-refused-wall');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(getAuroraLiveToken).not.toHaveBeenCalled();
+    expect(fetchAuroraLiveHistory).not.toHaveBeenCalled();
+    instance.releaseConnection('first-refused-wall');
+    instance.releaseConnection('second-refused-wall');
+  });
+
   it.each(['tension', 'decoy', 'touchstone', 'grasshopper', 'soill'] as const)(
     'enables %s independently and never enables Kilter',
     (boardType) => {
