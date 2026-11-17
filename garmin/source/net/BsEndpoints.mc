@@ -120,7 +120,9 @@ module BsEndpoints {
         };
         // The board's own uuid, the field the phone fills from its active
         // board. On an unlisted spray wall it is the share-link capability
-        // saveTick checks. Only a UUID-length string is sent: the input schema
+        // saveTick checks. Forward-compatible: no server puts it in session
+        // state today, and an unlisted spray wall's uuid never will (#7636
+        // decision 1). Only a UUID-length string is sent: the input schema
         // refuses null or a malformed value (UUIDSchema.optional()), which
         // would dead-letter a valid send. State without one leaves the body
         // exactly as before.

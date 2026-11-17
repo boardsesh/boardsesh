@@ -229,20 +229,26 @@ retries the rest ten times. Without a retry budget, the watch
 instead dead-letters only per-tick verdicts, including the code-less
 `Invalid input` and `TICK_UUID_CONFLICT`, and retries the schema-wide ones.
 
-Known gap: a spray wall the climber reaches only through a share link. Its
-`?wall=` uuid is the capability `saveTick` checks as `boardUuid`. The watch
-copies `boardUuid` from session state into every tick when the state carries
-a 36-character string, and leaves the key out otherwise (the input schema
-refuses a null). No server sends it today: `/api/session/state` would have to
-hand a wall's capability to a session member, and the backend's rule is that a
-session invite is not the board's link. The same endpoint also checks the
-current climb without the capability, so it returns `climb: null` for such a
-wall and the watch cannot log there at all. Until the owner decides that rule,
-a tick only reaches this path when a wall's visibility changes between logging
-and the drain (made unlisted, a gym membership ended), or when an admin hid the
-wall, which a uuid does not reopen for anyone but its owner. This gap is why a
-dead-lettered entry may be a real send, and why the store never drops one on
-its own.
+Unlisted spray walls are not loggable from the watch, by decision (#7636,
+decision 1). A wall's `?wall=` uuid is its only capability, the one `saveTick`
+checks as `boardUuid`, and session state never carries an unlisted spray
+wall's uuid: a session invite is not the wall's link. The same endpoint checks
+the current climb without the capability, so it returns `climb: null` for such
+a wall and the watch cannot log there at all. The climber logs those climbs on
+the phone, which holds the link.
+
+`boardUuid` on the watch is a forward-compatible field that no server fills
+today. The watch copies it from session state into every tick when the state
+carries a 36-character string, and leaves the key out otherwise (the input
+schema refuses a null). It is there so a later server change needs no new
+watch build; reopening the decision would take both a stored per-member link
+standing and that same uuid passed to the session-state climb check.
+
+So a tick only reaches `CLIMB_NOT_FOUND` when a wall's or climb's visibility
+changes between logging and the drain (made unlisted, a gym membership ended),
+or when an admin hid the wall, which a uuid does not reopen for anyone but its
+owner. That is why a dead-lettered entry may be a real send, and why the store
+never drops one on its own.
 
 `bs.rejectedTicks` is `{ version: 1, entries: [{ owner, tick, reason }] }`,
 oldest first, capped at 25 entries (`BuildConfig.REJECTED_TICK_MAX`). A tick is
