@@ -104,6 +104,38 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     expect(backendSource('graphql/resolvers/ticks/mutations.ts')).toContain('if (existingTick.userId !== userId) {');
   });
 
+  it('sends the board uuid only when session state carries one, in a form the schema accepts', async () => {
+    const wallUuid = '0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10';
+    const inputs: Record<string, unknown>[] = [];
+    const accept = (input: Record<string, unknown>) => {
+      validateInput(SaveTickInputSchema, input, 'input');
+      inputs.push(input);
+      return { uuid: input.uuid };
+    };
+
+    // The share-link capability: sent like the phone's activeBoard.uuid.
+    const withBoard = await exchange(body({ ...slimState, boardUuid: wallUuid } as typeof slimState), accept);
+    expect(withBoard.code).toBe(200);
+    expect(watch.exactAck(withBoard.code, withBoard.reply, TICK_UUID)).toBe(true);
+    expect(inputs.at(-1)?.boardUuid).toBe(wallUuid);
+    expect(backendSource('graphql/resolvers/ticks/mutations.ts')).toContain('validatedInput.boardUuid ?? null,');
+
+    // Session state from a server that sends no board uuid (every server
+    // today) or a null or malformed one: the key is left out. A null would be
+    // refused by the schema (`UUIDSchema.optional()`) and dead-lettered.
+    for (const boardUuid of [undefined, null, '', 'not-a-uuid', 42]) {
+      const state = boardUuid === undefined ? slimState : { ...slimState, boardUuid };
+      const built = watch.saveTickInput(state, 'fixture-session', 'send', 1, '2026-11-16T10:00:00Z', TICK_UUID);
+      expect(Object.hasOwn(built, 'boardUuid')).toBe(false);
+      const saved = await exchange(watch.saveTickGraphqlBody(built), accept);
+      expect(watch.exactAck(saved.code, saved.reply, TICK_UUID)).toBe(true);
+    }
+    const refusedNull = await exchange(body(), (input) =>
+      accept({ ...input, boardUuid: null } as Record<string, unknown>),
+    );
+    expect(watch.rejectionReason(refusedNull.code, refusedNull.reply)).toBe('INVALID_INPUT');
+  });
+
   it('dead-letters the permanent refusals the saveTick handler can produce', async () => {
     const mutations = backendSource('graphql/resolvers/ticks/mutations.ts');
     for (const [code, message] of [
