@@ -90,14 +90,19 @@ export function usePlayOpeningLayout({
     },
     [openingLayoutKey, windowWidth, windowHeight],
   );
-  const measuredForCurrentLayout = boardContainerMeasurement?.layoutKey === openingLayoutKey;
-  const boardContainerSize =
-    !measuredForCurrentLayout && cachedOpeningLayout
-      ? cachedOpeningLayout.containerSize
-      : boardContainerMeasurement?.viewportWidth === windowWidth &&
-          boardContainerMeasurement.viewportHeight === windowHeight
-        ? boardContainerMeasurement
-        : cachedOpeningLayout?.containerSize;
+  // The board container stays mounted while the climber swipes, and every climb
+  // has its own layout key. Once this window has measured the container, that
+  // measurement is its size: a cached entry for the next climb's key can be a
+  // size caught mid-opening, before the first section header was measured, and
+  // fitting the board to it shrank the board for a few frames on every swipe
+  // that committed to that climb. A real size change re-fires onLayout. The
+  // cache only covers what is not measured yet: the first frame of an opening,
+  // or a new window size.
+  const measuredForWindow =
+    boardContainerMeasurement !== null &&
+    boardContainerMeasurement.viewportWidth === windowWidth &&
+    boardContainerMeasurement.viewportHeight === windowHeight;
+  const boardContainerSize = measuredForWindow ? boardContainerMeasurement : cachedOpeningLayout?.containerSize;
   const layoutMeasurementKeys = useRef<{ viewport?: string; header?: string; section?: string }>({});
   const onViewportMeasured = useCallback(
     (event: LayoutChangeEvent) => {

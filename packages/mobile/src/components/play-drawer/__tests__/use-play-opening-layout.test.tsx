@@ -149,14 +149,42 @@ describe('usePlayOpeningLayout', () => {
     expect(result.current.boardContainerSize).toBeUndefined();
   });
 
-  it('prefers exact cached geometry over the fallback from a previous layout', () => {
-    const oldKey = buildOpeningLayoutKey(identity);
-    const newKey = buildOpeningLayoutKey({ ...identity, climbUuid: 'climb-2' });
-    rememberOpeningLayout(newKey, { ...measurements, containerSize: { width: 380, height: 570 } });
-    const { result, rerender } = renderHook(useMeasuredLayout, { initialProps: props(oldKey) });
+  it('keeps the measured board size when a swipe commits to a climb with a stale cached size', () => {
+    // Opening climb 1: the board is measured before the first section header
+    // is, so its first size is the pre-section one, and that is what the
+    // opening key caches.
+    const openingKey = buildOpeningLayoutKey(identity);
+    const liveStatsKey = buildOpeningLayoutKey({ ...identity, headerFingerprint: 'live stats' });
+    const nextClimbKey = buildOpeningLayoutKey({ ...identity, climbUuid: 'climb-2' });
+    const { result, rerender } = renderHook(useMeasuredLayout, { initialProps: props(openingKey) });
+    act(() => {
+      result.current.onViewportMeasured(layout(390, 763));
+      result.current.onHeaderMeasured(layout(390, 100, 8));
+      result.current.handleBoardContainerLayout(layout(390, 572));
+      result.current.onSectionHeaderMeasured(52);
+    });
+    expect(readOpeningLayout(openingKey)?.containerSize).toEqual({ width: 390, height: 572 });
+    // The header's live stats land before the settled layout does.
+    rerender(props(liveStatsKey));
+    act(() => result.current.handleBoardContainerLayout(layout(390, 590)));
+    expect(readOpeningLayout(openingKey)?.containerSize).toEqual({ width: 390, height: 572 });
+    // Swipe to climb 2 and back: the commit render carries climb 1's opening key.
+    rerender(props(nextClimbKey));
+    expect(result.current.boardContainerSize).toMatchObject({ width: 390, height: 590 });
+    rerender(props(openingKey));
+    expect(result.current.boardContainerSize).toMatchObject({ width: 390, height: 590 });
+  });
+
+  it('uses the cached size for a new window size until the board is measured in it', () => {
+    const key = buildOpeningLayoutKey(identity);
+    const rotatedKey = buildOpeningLayoutKey({ ...identity, viewportWidth: 844, viewportHeight: 390 });
+    rememberOpeningLayout(rotatedKey, { ...measurements, containerSize: { width: 600, height: 300 } });
+    const { result, rerender } = renderHook(useMeasuredLayout, { initialProps: props(key) });
     act(() => measure(result.current));
-    rerender(props(newKey));
-    expect(result.current.boardContainerSize).toEqual({ width: 380, height: 570 });
+    rerender({ ...props(rotatedKey), windowWidth: 844, windowHeight: 390 });
+    expect(result.current.boardContainerSize).toEqual({ width: 600, height: 300 });
+    act(() => result.current.handleBoardContainerLayout(layout(610, 290)));
+    expect(result.current.boardContainerSize).toMatchObject({ width: 610, height: 290 });
   });
 
   it('rejects zero board bounds and coalesces two-pixel measurement jitter', () => {
