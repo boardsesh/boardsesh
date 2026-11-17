@@ -1,30 +1,22 @@
 'use client';
 
-import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  hydrate,
-  QueryClient,
-  QueryClientProvider as MemoryQueryClientProvider,
-  type Query,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { hydrate, QueryClient, type Query, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 import { removePreference } from '@/app/lib/user-preferences-db';
-import {
-  readBrowserBackendSessionScope,
-  browserBackendSessionKey,
-} from '@boardsesh/auth-protocol/browser-backend-session';
-import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
-import { publicBrowserConsumersReady } from '@/app/lib/auth/browser-consumer-readiness';
 import { browserSessionGuard, shouldRetryQuery } from '@/app/lib/auth/session-guard';
 
 type QueryClientProviderProps = {
   children: ReactNode;
 };
+
+// The persisted blob is tagged with the account that wrote it
+// (react-query-idb-persister.ts), so the buster stays constant.
+const PERSIST_BUSTER = '';
 
 export default function QueryClientProvider({ children }: QueryClientProviderProps) {
   const [queryClient] = useState(
@@ -41,13 +33,12 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
       }),
   );
 
-  const persistedBusterRef = useRef('');
   const [persister] = useState(() =>
     createIdbPersister({
       // The checks persistQueryClientRestore makes before it hydrates.
       restoreLate: (persisted) => {
         if (!persisted.timestamp || Date.now() - persisted.timestamp > PERSIST_MAX_AGE_MS) return;
-        if (persisted.buster !== persistedBusterRef.current) return;
+        if (persisted.buster !== PERSIST_BUSTER) return;
         hydrate(queryClient, persisted.clientState);
       },
     }),
@@ -59,40 +50,17 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   );
   // Reads useSession(), so this provider must mount inside SessionProviderWrapper.
   // See app/layout.tsx for the nesting order.
-  const { data: session, status: sessionStatus } = useSession();
+  const { data: session } = useSession();
   const sessionUserId = session?.user?.id ?? null;
-  const browserScope = readBrowserBackendSessionScope(session ?? null);
-  const persistenceScope =
-    browserScope.status === 'selected'
-      ? browserBackendSessionKey(browserScope.owner)
-      : browserBackendClient.isSelected()
-        ? 'selected-anonymous'
-        : '';
 
-  // Legacy loading retains its empty buster. Selected sessions remount this
-  // tree only after their exact central owner is confirmed, so the matching
-  // buster is installed before persisted queries can hydrate the new cache.
-  const persistOptions = useMemo(
-    () => ({
-      persister,
-      maxAge: PERSIST_MAX_AGE_MS,
-      // SessionProvider remounts this private client tree on every selected
-      // owner/cursor change. An older persisted blob cannot hydrate its cache.
-      buster: persistenceScope,
-      dehydrateOptions: {
-        shouldDehydrateQuery: (query: Query) => query.meta?.persist === true && query.state.status === 'success',
-      },
-    }),
-    [persister, persistenceScope],
-  );
-  useEffect(() => {
-    persistedBusterRef.current = persistenceScope;
-  }, [persistenceScope]);
-
-  // Once selected consumers are qualified, an unconfirmed initial owner cannot
-  // restore or erase another scope's persisted cache during its session read.
-  if (publicBrowserConsumersReady() && sessionStatus === 'loading')
-    return <MemoryQueryClientProvider client={queryClient}>{children}</MemoryQueryClientProvider>;
+  const [persistOptions] = useState(() => ({
+    persister,
+    maxAge: PERSIST_MAX_AGE_MS,
+    buster: PERSIST_BUSTER,
+    dehydrateOptions: {
+      shouldDehydrateQuery: (query: Query) => query.meta?.persist === true && query.state.status === 'success',
+    },
+  }));
 
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>

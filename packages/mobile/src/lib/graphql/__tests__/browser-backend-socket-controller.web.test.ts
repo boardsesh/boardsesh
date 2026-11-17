@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+// Direct tests of the shared selected socket controller and replay policy that
+// selected-ws-client.web.ts composes. They moved here from the deleted www
+// realtime suite (#7596) and are deleted with the shared module.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createClient, type Client, type Sink, type FormattedExecutionResult } from 'graphql-ws';
 import { execute } from '@boardsesh/graphql-client';

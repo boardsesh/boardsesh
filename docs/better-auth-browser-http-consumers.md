@@ -4,6 +4,12 @@
 >
 > The Expo web half is gone from `packages/mobile`: the selected HTTP factory, the opaque view facade and the required-dispatch path were deleted with the Expo web selected mode. The Expo sections below are history.
 
+The www half is gone: #7596 removed the www lease client and its
+`graphql-request` receipt adapter, and www now sends every GraphQL request
+through the session guard described in
+[better-auth-browser-session.md](better-auth-browser-session.md). What follows
+describes the shared HTTP core and the Expo web clients, which A4 removes.
+
 The HTTP continuation is based on the merged browser consumers, CNC and private
 views. The earlier composition compared 69 ending feature blobs before extracting
 the shared HTTP core. That source evidence is historical. Public browser
@@ -12,8 +18,7 @@ readiness remains code-owned false.
 ## Original delivery authority
 
 `@boardsesh/auth-protocol/browser-backend-http` owns HTTP delivery admission
-without depending on a GraphQL SDK. WWW keeps its existing `graphql-request`
-error and parsed-header adapter. An exact actual response-header object refers
+without depending on a GraphQL SDK. An exact actual response-header object refers
 to its original issued lease and request abort signal. Successful decoding
 registers only the original result object and at most 64 direct object-valued
 fields. A copied result or copied headers cannot create a receipt.
@@ -34,7 +39,6 @@ The cold-view creator preserves Expo's selected 401 policy: only a confirmed
 401 for the exact original, still-live lease and uncancelled request retires
 that scope. It throws without retrying the operation. Expired, aborted, disposed,
 superseded and changed-generation responses cannot invalidate a current scope.
-The existing fixed-scope WWW creator retains its released error behavior.
 
 Reachability reporting is separate from admission. Local view refusals and private
 source-issuer errors supply no GraphQL reachability sample. A trusted diagnostic
@@ -90,6 +94,9 @@ identity requirement. Browser follow and audience writes still require the
 original view and credential generation even when profile data has not loaded.
 
 ## Historical producer evidence
+
+The 24 WWW SDK cases cited in this section and the next were deleted with the
+www client by #7596. The shared and mobile cases remain.
 
 Independent extraction review passed 12 shared cases and the unchanged 24
 actual WWW SDK cases. The separate cold-view 401 change passed independent

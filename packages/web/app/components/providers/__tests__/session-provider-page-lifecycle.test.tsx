@@ -3,7 +3,6 @@ import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/app/lib/auth/nextauth-cookie-fetch-lock', () => ({ installNextAuthCookieFetchLock: () => {} }));
-vi.mock('@/app/lib/user-preferences-db', () => ({ removePreference: async () => {} }));
 // The session guard retires the page on a switch to another account; these
 // tests restore a new login of the same climber, which the guard publishes.
 const reload = vi.hoisted(() => vi.fn<() => void>());

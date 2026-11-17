@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { flushSync } from 'react-dom';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Session } from 'next-auth';
 import { getSession, SessionContext, type SessionContextValue } from 'next-auth/react';
 import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
@@ -9,10 +8,6 @@ import { BROWSER_COORDINATOR_FRAME_PATH } from '@boardsesh/auth-protocol/browser
 import { publicBrowserCoordinatorReady } from '../../lib/auth/browser-coordinator-readiness';
 import { readCanonicalBrowserCoordinator } from '../../lib/auth/browser-coordinator-client';
 import { registerCanonicalBrowserOrigin } from '../../lib/auth/canonical-browser-origin';
-import { browserBackendClient } from '../../lib/auth/browser-backend-client';
-import { PRIVACY_REVOKED_EVENT } from '../../lib/privacy-client';
-import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
-import { removePreference } from '../../lib/user-preferences-db';
 import {
   beginWebSessionIntent,
   captureWebSessionEpoch,
@@ -106,19 +101,12 @@ export default function SessionProviderWrapper({
   enableExpoAuthBridge = false,
   canonicalBrowserOrigin,
 }: SessionProviderWrapperProps) {
-  const [acceptedView, setAcceptedView] = useState<{
-    session: Session | null;
-    clientScopeKey: string | null;
-    retired: boolean;
-  }>({
+  const [acceptedView, setAcceptedView] = useState<{ session: Session | null; retired: boolean }>({
     session: null,
-    clientScopeKey: null,
     retired: false,
   });
-  const { session, clientScopeKey, retired } = acceptedView;
+  const { session, retired } = acceptedView;
   const [settled, setSettled] = useState(false);
-  const clientScopeKeyRef = useRef<string | null>(null);
-  const selectedCleanupRef = useRef<Promise<void> | null>(null);
   const settledRef = useRef(false);
   const sessionRef = useRef<Session | null>(null);
   const requestSequenceRef = useRef(0);
@@ -203,45 +191,6 @@ export default function SessionProviderWrapper({
         if (controller.signal.aborted) throw new Error('Session authority is unavailable');
         if (!response.ok) throw new Error('Session authority is unavailable');
         const acceptedSession = parseSession(body);
-        // The authority/controller lives above this key. Retire old request
-        // receipts before exposing the new context, including same-UID logins.
-        const acceptedScopeKey = browserBackendClient.acceptSession(acceptedSession);
-        if (acceptedScopeKey !== clientScopeKeyRef.current) {
-          const previousUserId = sessionRef.current?.user.id;
-          if (previousUserId && previousUserId !== acceptedSession?.user.id) {
-            // A selected remount skips the legacy cache buster's initial effect.
-            // Preserve main's UID-switch/sign-out cleanup; anonymous sign-in and
-            // another login for the same account retain their existing policy.
-            const cleanup = (selectedCleanupRef.current ?? Promise.resolve()).then(async () => {
-              try {
-                await removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
-              } catch {
-                /* Preserve the existing best-effort preference cleanup policy. */
-              }
-            });
-            selectedCleanupRef.current = cleanup;
-            void cleanup.then(() => {
-              if (selectedCleanupRef.current === cleanup) selectedCleanupRef.current = null;
-            });
-          }
-        }
-        // A newer response joins older cleanup even when it returns to the same
-        // UID. No older deletion may finish after the new view creates a draft.
-        const pendingCleanup = selectedCleanupRef.current;
-        if (pendingCleanup) {
-          await pendingCleanup;
-          if (!ownsResult()) return sessionRef.current;
-          if (controller.signal.aborted) {
-            // Cleanup may outlive the request deadline. Re-read through GET once
-            // it settles; never publish the old response or replay an update POST.
-            requestWebSessionRefresh(epoch);
-            return sessionRef.current;
-          }
-        }
-        if (acceptedScopeKey !== clientScopeKeyRef.current) {
-          clientScopeKeyRef.current = acceptedScopeKey;
-          if (typeof window !== 'undefined') window.dispatchEvent(new Event(PRIVACY_REVOKED_EVENT));
-        }
         // An account change made in another tab or app is never shown in this
         // page: the guard clears its caches and reloads it from the root.
         if (browserSessionGuard().accept(sessionViewerOf(acceptedSession)) === 'retire') {
@@ -255,9 +204,7 @@ export default function SessionProviderWrapper({
           clearTimeout(retryTimerRef.current);
           retryTimerRef.current = null;
         }
-        // Identity and subtree ownership are one update, independent of React's
-        // batching or a synchronous external-store notification during admission.
-        setAcceptedView({ session: acceptedSession, clientScopeKey: acceptedScopeKey, retired: false });
+        setAcceptedView({ session: acceptedSession, retired: false });
         setSettled(true);
         return acceptedSession;
       } catch {
@@ -292,25 +239,14 @@ export default function SessionProviderWrapper({
       if (event.key === NEXT_AUTH_STORAGE_KEY) externalRefresh();
     };
     const pageHide = () => {
-      // A frozen document cannot keep an accepted private receipt. Retire
-      // before suspension, and reject even transports that ignore abort.
+      // A frozen document keeps its accepted session but drops any read in
+      // flight, and rejects even transports that ignore abort.
       suspendedRef.current = true;
       ++requestSequenceRef.current;
       activeControllerRef.current?.abort();
       if (retryTimerRef.current !== null) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
-      }
-      if (browserBackendClient.isSelected()) {
-        // The browser can freeze the document as soon as this event returns.
-        // Retiring a receipt alone leaves React's pending DOM update batched.
-        flushSync(() => {
-          browserBackendClient.retire();
-          // A committed child can still be waiting for its passive store
-          // subscription. Publish retirement through the provider too, without
-          // discarding the accepted identity or claiming an anonymous read.
-          setAcceptedView((current) => (current.retired ? current : { ...current, retired: true }));
-        });
       }
     };
     const pageShow = (event: PageTransitionEvent) => {
@@ -415,9 +351,5 @@ export default function SessionProviderWrapper({
     [retired, session, settled, update],
   );
 
-  return (
-    <SessionContext.Provider value={context}>
-      <React.Fragment key={clientScopeKey ?? 'legacy'}>{children}</React.Fragment>
-    </SessionContext.Provider>
-  );
+  return <SessionContext.Provider value={context}>{children}</SessionContext.Provider>;
 }
