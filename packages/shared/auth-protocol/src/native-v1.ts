@@ -30,7 +30,17 @@ export interface NativeV1TokenReply {
   readonly expiresAt: string;
   readonly userId?: string;
   readonly accountCreation?: NativeV1AccountCreationReceipt;
+  /**
+   * Additive (#7656): a signed note that this device has signed in to this
+   * account, on sign-in, registration, OAuth, exchange and refresh replies
+   * when the backend has device tokens on. Opaque to the app: store it and
+   * send it back in `NATIVE_V1_DEVICE_TOKEN_HEADER`. Released apps ignore it.
+   */
+  readonly deviceToken?: string;
 }
+
+/** The optional request header that returns a stored `deviceToken`. No release sends it yet. */
+export const NATIVE_V1_DEVICE_TOKEN_HEADER = 'x-boardsesh-device-token';
 
 export interface NativeV1ErrorReply {
   readonly error: string;

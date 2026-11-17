@@ -7,7 +7,8 @@ import { users, accounts, userCredentials, mobileRefreshTokens } from '@boardses
 import { NATIVE_V1_PATHS } from '@boardsesh/auth-protocol/native-v1';
 import { recordings } from './recordings';
 import { callRecorded, createReleasedClient } from './released-client';
-import { createNativeHttpFixture } from './http-fixture';
+import { createNativeHttpFixture, DEVICE_TOKEN_SECRET } from './http-fixture';
+import { verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
 
 // Replace only the provider's remote JWKS transport. Signature, issuer,
 // audience, nonce, subject resolution and all database writes stay real.
@@ -60,6 +61,20 @@ async function assertPair(pair: Pair, expectedOwner: string = ownerId) {
   expect(rows[0].userId).toBe(expectedOwner);
 }
 
+/**
+ * Every 2xx reply on `path` carried a `deviceToken` minted for `userId` (#7656),
+ * and the released client parsing that reply still succeeded: the field is additive.
+ */
+async function expectDeviceTokens(path: string, userId: string, count: number) {
+  const replies = fixture.responses.filter((response) => response.path === path && response.status < 300);
+  expect(replies).toHaveLength(count);
+  for (const { body } of replies) {
+    const deviceToken = (body as { deviceToken?: unknown }).deviceToken;
+    expect(await verifyDeviceToken(deviceToken, { userId, secret: DEVICE_TOKEN_SECRET })).not.toBeNull();
+    expect(await verifyDeviceToken(deviceToken, { userId: `${userId}-other`, secret: DEVICE_TOKEN_SECRET })).toBeNull();
+  }
+}
+
 describe('released clients against mounted native handlers, primary Postgres and Redis', () => {
   beforeAll(async () => {
     const keys = await generateKeyPair('RS256');
@@ -81,6 +96,7 @@ describe('released clients against mounted native handlers, primary Postgres and
   beforeEach(() => {
     fixture.native.__resetNativeAuthStateForTests();
     fixture.requests.length = 0;
+    fixture.responses.length = 0;
   });
   afterAll(async () => {
     await fixture?.close();
@@ -115,6 +131,8 @@ describe('released clients against mounted native handlers, primary Postgres and
       // the shared vocabulary. Keep the independent literal controls above.
       expect(fixture.requests[0].path).toBe(NATIVE_V1_PATHS.credentials);
       expect(fixture.requests[1].path).toBe(NATIVE_V1_PATHS.refresh);
+      await expectDeviceTokens('/auth/native/credentials', ownerId, 1);
+      await expectDeviceTokens('/auth/native/refresh', ownerId, 1);
       const replay = await fixture.post('/auth/native/refresh', { refreshToken });
       expect(replay.status).toBe(401);
       expect(await replay.json()).toMatchObject({ error: 'Invalid refresh token' });
@@ -146,6 +164,7 @@ describe('released clients against mounted native handlers, primary Postgres and
       }
       expect(fixture.requests.map((request) => request.path)).toEqual(['/auth/native/oauth', '/auth/native/oauth']);
       for (const request of fixture.requests) expect(request.path).toBe(NATIVE_V1_PATHS.oauth);
+      await expectDeviceTokens('/auth/native/oauth', ownerId, 2);
       expect(fixture.requests[0].body).toMatchObject({
         provider: 'apple',
         identityToken: expect.any(String),
@@ -174,6 +193,7 @@ describe('released clients against mounted native handlers, primary Postgres and
         body: { email: createdEmail, password, name: 'Synthetic registration' },
       });
       expect(fixture.requests[0].path).toBe(NATIVE_V1_PATHS.register);
+      await expectDeviceTokens('/auth/native/register', created.id, 1);
       expect(await callRecorded(client.auth, 'registerWithCredentials', createdEmail, password)).toMatchObject({
         success: false,
         status: 409,
@@ -356,6 +376,7 @@ describe('released clients against mounted native handlers, primary Postgres and
     expect(fixture.requests[0]).toMatchObject({ path: '/auth/native/exchange', body: { transferToken } });
     expect(fixture.requests[0].path).toBe(NATIVE_V1_PATHS.exchange);
     expect(browserStartPath).toBe(NATIVE_V1_PATHS.browserStart);
+    await expectDeviceTokens('/auth/native/exchange', ownerId, 1);
   });
 
   it('pairs once through Redis and persists a refresh credential for that account', async () => {
@@ -372,7 +393,10 @@ describe('released clients against mounted native handlers, primary Postgres and
     const paired = await fixture.post('/api/watch/pair', { code: codeReply.code });
     expect(paired.status).toBe(200);
     expect(fixture.requests.at(-1)?.path).toBe(NATIVE_V1_PATHS.watchPair);
-    await assertPair((await paired.json()) as Pair);
+    const pairedReply = (await paired.json()) as Pair & { deviceToken?: string };
+    await assertPair(pairedReply);
+    // The watch never signs in with a password, so pairing mints no device token.
+    expect(pairedReply.deviceToken).toBeUndefined();
     expect(await fixture.redis.getClients().publisher.get(key)).toBeNull();
     expect((await fixture.post('/api/watch/pair', { code: codeReply.code })).status).toBe(401);
   });

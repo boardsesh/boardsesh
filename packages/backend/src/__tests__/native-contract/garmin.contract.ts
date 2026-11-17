@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vite-plus/test';
 import { recordings } from './recordings';
 import { garminFunction } from './garmin-source';
 
+/** The shape of a minted device token: `v1.<22-char id>.<epoch seconds>.<43-char MAC>`. */
+const DEVICE_TOKEN_SHAPE = `v1.${'A'.repeat(22)}.1795000000.${'B'.repeat(43)}`;
+
 for (const recording of recordings.garmin) {
   const g2 = recording.name === 'g2-reviewed';
   describe(`recorded Garmin source replay: ${recording.name}`, () => {
@@ -11,8 +14,14 @@ for (const recording of recordings.garmin) {
       expect(recording.modules['garmin/source/views/PairingView.mc']).toBeDefined();
       expect(recording.modules['garmin/source/views/LoadingView.mc']).toBeDefined();
     });
-    for (const status of [200, 400, 401, 403, 404, 429, 500, 503, -1]) {
-      it(`executes actual refresh completion branching for ${status}`, () => {
+    // The last case is today's 200 reply with the additive `deviceToken` (#7656):
+    // the recorded watch must branch on it exactly as on the reply without it.
+    const refreshCases = [
+      ...[200, 400, 401, 403, 404, 429, 500, 503, -1].map((status) => ({ status, deviceToken: false })),
+      { status: 200, deviceToken: true },
+    ];
+    for (const { status, deviceToken } of refreshCases) {
+      it(`executes actual refresh completion branching for ${status}${deviceToken ? ' with a device token' : ''}`, () => {
         const effects: string[] = [];
         const requests = [
           {
@@ -65,6 +74,7 @@ for (const recording of recordings.garmin) {
                 jwt: 'fixture-jwt',
                 refreshToken: 'fixture-refresh',
                 expiresAt: '2099-01-01T00:00:00Z',
+                ...(deviceToken ? { deviceToken: DEVICE_TOKEN_SHAPE } : {}),
               }
             : { error: 'ambiguous fixture response' };
         if (!g2) {
