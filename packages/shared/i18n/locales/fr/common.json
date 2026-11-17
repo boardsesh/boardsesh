@@ -227,7 +227,7 @@
         },
         "gpuAcceleration": {
           "title": "Accélération GPU",
-          "description": "Dessine les prises allumées avec la puce graphique de ton téléphone. Désactive-la si le board clignote ou saccade."
+          "description": "Dessine les prises allumées avec la puce graphique de ton téléphone. Désactive-la si la board clignote ou saccade."
         }
       },
       "accessibility": {
