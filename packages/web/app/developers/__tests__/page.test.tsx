@@ -98,6 +98,9 @@ describe('developer docs page', () => {
     // Workouts and webhooks are not live, so no scope or endpoint for them.
     expect(container.textContent).not.toContain('workouts:write');
     expect(container.textContent).not.toContain('/v1/workouts');
+    // The console's recent sign-in rule, with the minutes taken from the shared constant.
+    expect(container.textContent).toContain('each need a sign-in within the last 5 minutes');
+    expect(container.textContent).toContain('You get an email when redirect URIs change');
     // Every line resolved to catalog text: no key printed in its place.
     expect(container.textContent).not.toMatch(/docs\.[a-z]+\./);
     const internalLinks = [...container.querySelectorAll('a')].map((link) => link.getAttribute('href'));

@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS } from '@boardsesh/auth-protocol/auth-time';
 import MuiLink from '@mui/material/Link';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageSection, PageShell, Prose, ProseList } from '@/app/components/ui/page-shell';
@@ -37,7 +38,18 @@ const DEVELOPERS_PATH = '/developers';
 
 const CAN_ITEMS = ['read', 'sync', 'profile', 'disconnect', 'notYet'] as const;
 const STEP_ITEMS = ['register', 'approve', 'exchange', 'snapshot', 'feed'] as const;
-const RULE_ITEMS = ['consent', 'redirect', 'redirectChange', 'pkce', 'code', 'tokens', 'signin', 'disconnect'] as const;
+const RULE_ITEMS = [
+  'consent',
+  'redirect',
+  'redirectChange',
+  'recentSignIn',
+  'notice',
+  'pkce',
+  'code',
+  'tokens',
+  'signin',
+  'disconnect',
+] as const;
 const LIMIT_ITEMS = ['api', 'token', 'fullSync', 'page', 'history', 'body', 'caps', 'headers'] as const;
 const RELATED = [
   { key: 'docs', href: '/docs' },
@@ -90,6 +102,7 @@ export default async function DevelopersPage() {
     app: number.format(API_PER_APP),
     refresh: REFRESH_PER_CLIMBER,
     exchange: TOKEN_EXCHANGE_PER_APP_AND_IP,
+    minutes: PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS / 60,
   };
 
   return (
