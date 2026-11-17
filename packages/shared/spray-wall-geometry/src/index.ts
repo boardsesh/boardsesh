@@ -100,6 +100,7 @@ export {
   type TnutPoint,
 } from './tnut-layout';
 export { migrateTnutLayoutColumns } from './tnut-layout';
+export { expandLedGrid, hasStaleLedGrid } from './expand-led-grid';
 export {
   MAX_HOLD_LED_LINKS,
   MAX_LEDS_PER_HOLD_LINK,

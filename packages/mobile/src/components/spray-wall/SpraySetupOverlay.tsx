@@ -121,6 +121,7 @@ export function SpraySetupOverlay({
   holes,
   leds = [],
   wiring,
+  distinguishSkips = false,
   selected = [],
   holdRings,
   selectedHoldIds = [],
@@ -154,6 +155,8 @@ export function SpraySetupOverlay({
   liveDragTarget?: 'holes' | 'leds';
   leds?: LedPosition[];
   wiring?: TnutWiring;
+  /** Skipped physical slots stand out from the cable in the skip editor. */
+  distinguishSkips?: boolean;
   selected?: string[];
   holdRings?: SprayHoldRing[];
   selectedHoldIds?: number[];
@@ -354,9 +357,19 @@ export function SpraySetupOverlay({
   return (
     <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
       <AnimatedPath animatedProps={cableProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
-      <AnimatedPath animatedProps={gapLineProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
+      <AnimatedPath
+        animatedProps={gapLineProps}
+        fill="none"
+        stroke={distinguishSkips ? brandColors.error : SPRAY_CABLE_COLOR}
+        strokeWidth={2}
+      />
       <AnimatedPath animatedProps={arrowProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
-      <AnimatedPath animatedProps={gapProps} fill={SPRAY_CABLE_COLOR} stroke={brandColors.onPrimary} strokeWidth={1} />
+      <AnimatedPath
+        animatedProps={gapProps}
+        fill={distinguishSkips ? brandColors.error : SPRAY_CABLE_COLOR}
+        stroke={brandColors.onPrimary}
+        strokeWidth={1}
+      />
       <AnimatedPath
         animatedProps={holeProps}
         fill="none"

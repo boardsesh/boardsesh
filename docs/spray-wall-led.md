@@ -62,12 +62,16 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    **Next hold without LEDs** steps through the red holds top to bottom.
    LEDs that belong to no hold get a red dashed ring, and **Next LED without a
    hold** picks them one by one, the same way; tapping a hold then adds the
-   picked LED to it. The summary counts both holds with LEDs and LEDs with a
-   hold. **Back to automatic** drops a hold's link; Undo reverts link edits. Before
+   picked LED to it. The hold count and the hold picker use the rectified photo's
+   bounds, including holds that are partially visible. **Back to automatic** drops
+   a hold's link; Undo reverts link edits. Before
    the cable exists the LEDs have no physical index, so the wall cannot light
    the chosen hold; coming back to this step after the cable does light it.
-   Regenerating the LED positions clears all links, because the new LEDs reuse
-   the old ids. Removing a single LED prunes its manual links immediately, so
+   Increasing the grid with the same LED pattern adds unwired positions and keeps
+   the existing cable path and physical indices. If manual LED work or unmatched
+   wired positions need checking, the setup prompts you to review the LED positions.
+   Starting the LED positions over clears the old links. Removing a single LED
+   prunes its manual links immediately, so
    adding another LED cannot inherit a deleted position’s links. Undo restores
    the previous positions and links. A failed preview shows an error; select
    the hold again or tap **Try again** to retry.
@@ -98,9 +102,8 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    skipped LEDs; a red ring is a loose end a cut left unconnected; faint orange
    rings are holes. A selected LED gets a larger purple ring, and the selection
    is listed below the photo by cable position (for example 3 → 4). Undo
-   restores edits. **Light selected LEDs** is an
-   optional physical preview of the selected positions using their assigned
-   WLED indices, including initial and intermediate skips.
+   restores edits. In fullscreen, the cable editor locks to the wall photo's
+   orientation and puts its controls on the right.
 11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a
     connection (the line between two LEDs) to select it; its two end LEDs get the
     selection ring and the page names their positions and its skipped count.
@@ -108,17 +111,19 @@ every signed-in climber who can open the wall lights it from their own phone. Se
     on the wall (type it or use − and +); zero removes the gap. **Light the ends**
     lights only the two LEDs at the ends of the selected connection, never the
     skipped ones, so the count can be checked on the wall: with the right count,
-    both lit LEDs sit on the photo's two markers. Undo restores edits.
+    both lit LEDs sit on the photo's two markers. Skipped LEDs and their
+    connections are red. Undo restores edits.
 12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
-    photo to select positions. **Light selection** tests their assigned LEDs.
+    photo to select positions. The bulb starts enabled so selecting a position
+    lights it. Tap the bulb to switch selection lighting off or on.
     Tap a selected position again to remove it. The page reports holds linked
     to wired LEDs and selected positions with no LED assignment. These controls
-    also work in the zoomable fullscreen photo. Light the full strip or start a quick
-    row-by-row test of wired positions from the upper left. Every row starts on
+    also work in the zoomable fullscreen photo. In the regular view, light the
+    full strip or start a quick row-by-row test of wired positions from the upper left. Every row starts on
     the left, regardless of the cable's serpentine order. Unwired positions do
     not participate. While the whole strip is lit the button turns it off and the
     summary says every LED is lit; the photo rings what the wall shows, including
-    the LED the row test has reached. **Stop lighting** ends the test. These controls require
+    the LED the row test has reached. The bulb also stops a running test. These controls require
     enabled LEDs and a saved WLED address. Indices outside the controller's LED
     count produce an error rather than addressing a different LED.
 13. Done saves positions and wiring to the wall. Partial wiring can be saved.

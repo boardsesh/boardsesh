@@ -141,9 +141,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   // onPress and onDismiss in the same tick, or is double-tapped before re-render.
   const settledIdsRef = useRef<Set<number>>(new Set());
 
-  // Native Alert on Liquid Glass everywhere, and on iOS regardless of variant (see
-  // the FullWindowOverlay note above). Android/web Material uses the Paper queue.
-  const useNativeAlert = variant === 'liquidGlass' || Platform.OS === 'ios';
+  // iOS and native Liquid Glass use Alert (see FullWindowOverlay above).
+  // The browser always uses the Paper queue.
+  const useNativeAlert = Platform.OS !== 'web' && (variant === 'liquidGlass' || Platform.OS === 'ios');
 
   const choose = useCallback(
     <TValue extends string>(options: ChooseOptions<TValue>) =>

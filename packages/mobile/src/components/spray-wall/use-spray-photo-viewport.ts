@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { clampViewportPan, focalZoomPan } from './tnut-corner-viewport';
@@ -33,12 +33,17 @@ export function useSprayPhotoViewport(
       callback.current?.(false);
     };
   }, []);
-  useEffect(() => {
-    zoom.value = 1;
-    panX.value = 0;
-    panY.value = 0;
-  }, [width, height, zoom, panX, panY]);
   const pointerCount = useSharedValue(0);
+  const previousSize = useRef({ width, height });
+  useLayoutEffect(() => {
+    const previous = previousSize.current;
+    if (width === previous.width && height === previous.height) return;
+    // Preserve the point at the viewport centre as the fitted photo resizes.
+    panX.value *= width / previous.width;
+    panY.value *= height / previous.height;
+    pointerCount.value = 0;
+    previousSize.current = { width, height };
+  }, [width, height, panX, panY, pointerCount]);
   const pinchRef = useRef<GestureType | undefined>(undefined);
   const startZoom = useSharedValue(1),
     startScale = useSharedValue(1),

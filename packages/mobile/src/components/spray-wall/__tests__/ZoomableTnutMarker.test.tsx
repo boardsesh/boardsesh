@@ -265,6 +265,23 @@ describe('SprayPhotoCanvas', () => {
     expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 600, 900);
   });
 
+  it('retains zoom and the centered photo point when the fitted canvas changes', () => {
+    const onTap = vi.fn();
+    const { rerender } = render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    fire(pan, 'onStart');
+    fire(pan, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(pan, 'onFinalize');
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap, maxWidth: 450, maxHeight: 300 })));
+    expect(runtime.styles.at(-1)?.compute()).toEqual({
+      transform: [{ translateX: 40 }, { translateY: 60 }, { scale: 2 }],
+    });
+    const tap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 100, y: 150 });
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 400, 600);
+  });
+
   it('pans with a two-finger drag that never spreads the fingers, and leaves the pan to a running pinch', () => {
     const onTap = vi.fn();
     render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
@@ -643,18 +660,18 @@ describe('ZoomableTnutMarker', () => {
     expect(runtime.shapes[0].compute().d).toBe('M90 135L210 135L210 315L90 315Z');
   });
 
-  it('keeps corner coordinates on rotation while resetting the zoomed viewport', () => {
+  it('keeps corner coordinates and zoom on rotation', () => {
     const onChange = vi.fn();
     const { rerender } = render(createElement(ZoomableTnutMarker, props({ onChange })));
     pinchTo(3);
     rerender(createElement(ZoomableTnutMarker, props({ onChange, renderWidth: 450, renderHeight: 675 })));
-    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] });
+    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 3 }] });
     const coordinates = runtime.shapes[0]
       .compute()
-      .d?.match(/[\d.]+/g)
+      .d?.match(/-?[\d.]+/g)
       ?.map(Number);
     expect(coordinates).toHaveLength(8);
-    [135, 202.5, 315, 202.5, 315, 472.5, 135, 472.5].forEach((coordinate, index) =>
+    [-45, -67.5, 495, -67.5, 495, 742.5, -45, 742.5].forEach((coordinate, index) =>
       expect(coordinates?.[index]).toBeCloseTo(coordinate, 8),
     );
     expect(onChange).not.toHaveBeenCalled();

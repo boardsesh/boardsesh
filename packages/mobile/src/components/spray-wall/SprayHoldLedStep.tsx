@@ -19,6 +19,7 @@ import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { SprayPhotoStage } from './SprayPhotoStage';
+import { SprayPhotoToolButton, SprayUndoButton } from './SprayPointToolbar';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { sprayHoldRings } from './spray-hold-rings';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
@@ -62,13 +63,16 @@ export function SprayHoldLedStep({
   const [freeLedId, setFreeLedId] = useState<string | null>(null);
   const [history, setHistory] = useState<(SprayHoldLedLink[] | undefined)[]>([]);
   const leds = layout.ledPositions ?? NO_LEDS;
-  const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
   const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
+  const visibleIds = useMemo(() => new Set(rings.map((ring) => ring.id)), [rings]);
+  const visibleHolds = useMemo(() => holds.filter((hold) => visibleIds.has(hold.id)), [holds, visibleIds]);
+  // Resolve links against the full list so hidden holds keep any manual LED ownership.
+  const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
   // This step comes before the cable, so a hold counts as linked when it has LED
   // positions, wired or not; Test LEDs later reports the wired ones.
   const unmappedHoldIds = useMemo(
-    () => mapping.holds.filter((hold) => !hold.ledIds.length).map((hold) => hold.holdId),
-    [mapping],
+    () => mapping.holds.filter((hold) => visibleIds.has(hold.holdId) && !hold.ledIds.length).map((hold) => hold.holdId),
+    [mapping, visibleIds],
   );
   const ledsWithHold = useMemo(() => new Set(mapping.holds.flatMap((hold) => hold.ledIds)), [mapping]);
   const freeLeds = useMemo(() => leds.filter((led) => !ledsWithHold.has(led.id)), [leds, ledsWithHold]);
@@ -118,7 +122,7 @@ export function SprayHoldLedStep({
       }
     }
     // Away from any LED, a tap picks the hold under the finger.
-    const hit = findSprayHoldAtPoint(holds, point, source.frame);
+    const hit = findSprayHoldAtPoint(visibleHolds, point, source.frame);
     if (hit === null) return;
     if (focusLed !== null) {
       // "Next LED without a hold" picked this LED: the tapped hold is where it belongs.
@@ -129,7 +133,7 @@ export function SprayHoldLedStep({
   }
   /** Holds without an LED, top to bottom and left to right, starting after the current one. */
   function nextUnmapped() {
-    const order = holds
+    const order = visibleHolds
       .filter((hold) => unmappedHoldIds.includes(hold.id))
       .sort((first, second) => first.cy - second.cy || first.cx - second.cx)
       .map((hold) => hold.id);
@@ -153,8 +157,11 @@ export function SprayHoldLedStep({
     setHistory((entries) => entries.slice(0, -1));
     onChange({ holdLeds: previous ?? [] });
   }
+  function resetLink() {
+    if (holdId !== null) commit(clearHoldLedLink(layout, holdId));
+  }
 
-  const linked = mapping.holds.length - unmappedHoldIds.length;
+  const linked = visibleHolds.length - unmappedHoldIds.length;
   const tools = (
     <View style={{ gap: spacing[2] }}>
       <SegmentedControl
@@ -183,9 +190,7 @@ export function SprayHoldLedStep({
           title={t('sprayLedSetup.holdLedsReset')}
           variant="outlined"
           disabled={!linkedByHand}
-          onPress={() => {
-            if (holdId !== null) commit(clearHoldLedLink(layout, holdId));
-          }}
+          onPress={resetLink}
         />
         <Button title={t('sprayLedSetup.undo')} variant="text" disabled={!history.length} onPress={undo} />
       </View>
@@ -194,7 +199,7 @@ export function SprayHoldLedStep({
   return (
     <View style={{ gap: spacing[3] }}>
       <Text>{t('sprayLedSetup.holdLedsHint')}</Text>
-      <Text variant="footnote">{t('sprayLedSetup.holdLedsSummary', { linked, total: holds.length })}</Text>
+      <Text variant="footnote">{t('sprayLedSetup.holdLedsSummary', { linked, total: visibleHolds.length })}</Text>
       <Text variant="footnote">
         {t('sprayLedSetup.holdLedsLedSummary', { linked: leds.length - freeLeds.length, total: leds.length })}
       </Text>
@@ -202,6 +207,34 @@ export function SprayHoldLedStep({
       <SprayPhotoStage
         width={width}
         tools={tools}
+        fullScreenRail={
+          <>
+            <SprayPhotoToolButton
+              icon={target === 'holds' ? 'lightbulb' : 'hand.raised'}
+              label={t(target === 'holds' ? 'sprayLedSetup.holdLedsPickLeds' : 'sprayLedSetup.holdLedsPickHolds')}
+              onPress={() => setTarget(target === 'holds' ? 'leds' : 'holds')}
+            />
+            <SprayPhotoToolButton
+              icon="chevron.right"
+              label={t('sprayLedSetup.holdLedsNextUnmapped')}
+              disabled={!unmappedHoldIds.length}
+              onPress={nextUnmapped}
+            />
+            <SprayPhotoToolButton
+              icon="lightbulb.slash"
+              label={t('sprayLedSetup.holdLedsNextFreeLed')}
+              disabled={!freeLeds.length}
+              onPress={nextFreeLed}
+            />
+            <SprayPhotoToolButton
+              icon="mirror"
+              label={t('sprayLedSetup.holdLedsReset')}
+              disabled={!linkedByHand}
+              onPress={resetLink}
+            />
+            <SprayUndoButton disabled={!history.length} onPress={undo} />
+          </>
+        }
         canvas={{
           source,
           photoUri,

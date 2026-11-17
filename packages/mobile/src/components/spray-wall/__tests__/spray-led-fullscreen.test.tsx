@@ -33,7 +33,7 @@ const controls = vi.hoisted(() => ({
     {
       onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
       onContentSizeChange?: (width: number, height: number) => void;
-      style?: { height?: number };
+      style?: { height?: number; maxHeight?: number };
     }
   >(),
 }));
@@ -247,7 +247,7 @@ describe('fullscreen T-nut calibration route', () => {
 });
 
 describe('fullscreen point/cable editors', () => {
-  it('uses a side rail in matching orientation, retains accessory actions, and fits the measured canvas box', () => {
+  it('uses a side rail in landscape and keeps the canvas independent of the toolbar', () => {
     const { snapshot } = open();
     controls.id = undefined;
     const id = createSprayPhotoSession(
@@ -272,32 +272,64 @@ describe('fullscreen point/cable editors', () => {
     expect(screen.queryByText('bottom tools')).toBeNull();
     expect(screen.getByText('undo')).toBeTruthy();
     expect(screen.getByText('gap editor')).toBeTruthy();
-    act(() =>
-      controls.surfaces
-        .get('spray-fullscreen-canvas')
-        ?.onLayout?.({ nativeEvent: { layout: { width: 340, height: 710 } } }),
-    );
-    expect(controls.canvas?.maxWidth).toBe(340);
-    expect(controls.canvas?.maxHeight).toBe(710);
+    expect(controls.canvas?.maxWidth).toBe(400);
+    expect(controls.canvas?.maxHeight).toBe(800);
     act(() =>
       controls.surfaces
         .get('spray-fullscreen-layout')
         ?.onLayout?.({ nativeEvent: { layout: { width: 1100, height: 600 } } }),
     );
-    expect(screen.getByText('bottom tools')).toBeTruthy();
-    expect(screen.queryByText('rail tools')).toBeNull();
-    act(() => controls.surfaces.get('spray-fullscreen-bottom-tools')?.onContentSizeChange?.(1100, 64));
-    expect(controls.surfaces.get('spray-fullscreen-bottom-tools')?.style?.height).toBe(64);
+    expect(screen.getByText('rail tools')).toBeTruthy();
+    expect(screen.queryByText('bottom tools')).toBeNull();
+    expect(controls.canvas?.maxWidth).toBe(1100);
+    expect(controls.canvas?.maxHeight).toBe(600);
+    act(() =>
+      controls.surfaces
+        .get('spray-fullscreen-layout')
+        ?.onLayout?.({ nativeEvent: { layout: { width: 0, height: 0 } } }),
+    );
+    expect(controls.canvas?.maxWidth).toBe(1100);
+    expect(controls.canvas?.maxHeight).toBe(600);
+    act(() => closeSprayPhotoSession(id));
+  });
+  it('gives locked cable routing its own rail and fullscreen dialog', () => {
+    const { snapshot } = open();
+    controls.id = undefined;
+    const id = createSprayPhotoSession(
+      {
+        viewerId: 'viewer-one',
+        canvas: { source: snapshot.source, photoUri: snapshot.photoUri },
+        tools: createElement('span', null, 'bottom tools'),
+        fullScreenRail: createElement('span', null, 'rail tools'),
+        accessoryTools: createElement('span', null, 'bottom actions'),
+        fullScreenDialog: createElement('span', null, 'fullscreen dialog'),
+        lockOrientationToWall: true,
+      },
+      vi.fn(),
+    );
+    controls.photoId = id;
+    render(createElement(SprayLedFullscreen));
+    expect(screen.getByText('rail tools')).toBeTruthy();
+    expect(screen.getByText('fullscreen dialog')).toBeTruthy();
+    expect(screen.queryByText('bottom actions')).toBeNull();
+    expect(screen.queryByText('bottom tools')).toBeNull();
     act(() => closeSprayPhotoSession(id));
   });
   it('shares the rectified frame and live tools without exposing photo URLs in navigation', () => {
     const { snapshot } = open();
     controls.id = undefined;
     const onTap = vi.fn(),
-      onClose = vi.fn();
+      onClose = vi.fn(),
+      onInteractionChange = vi.fn();
     const session = {
       viewerId: 'viewer-one',
-      canvas: { source: snapshot.source, photoUri: snapshot.photoUri, mode: 'tap' as const, onTap },
+      canvas: {
+        source: snapshot.source,
+        photoUri: snapshot.photoUri,
+        mode: 'tap' as const,
+        onTap,
+        onInteractionChange,
+      },
       tools: createElement('span', null, 'initial-tools'),
     };
     const id = createSprayPhotoSession(session, onClose);
@@ -308,6 +340,11 @@ describe('fullscreen point/cable editors', () => {
     expect(controls.canvas?.photoUri).toBe(snapshot.photoUri);
     act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.3 }, 300, 450));
     expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.2, y: 0.3 }, 300, 450);
+    act(() => controls.canvas?.onInteractionChange?.(true));
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+    act(() => controls.canvas?.onInteractionChange?.(false));
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false);
+    expect(onInteractionChange.mock.calls).toEqual([[true], [false]]);
     act(() =>
       updateSprayPhotoSession(id, {
         ...session,

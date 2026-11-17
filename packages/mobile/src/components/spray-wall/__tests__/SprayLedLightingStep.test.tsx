@@ -25,6 +25,10 @@ vi.mock('../SprayPhotoStage', () => ({
   },
 }));
 vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null }));
+vi.mock('../SprayPointToolbar', () => ({
+  SprayPhotoToolButton: ({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) =>
+    createElement('button', { 'aria-pressed': selected, onClick: onPress }, label),
+}));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({
     options,
@@ -186,24 +190,27 @@ describe('final lighting test', () => {
     render(<SprayLedLightingStep {...props} orderedIndices={[]} />);
     expect(screen.getByText('sprayLedSetup.lightingUnavailable')).toBeTruthy();
     expect(screen.getByText('sprayLedSetup.lightingRangeError')).toBeTruthy();
-    expect(screen.getByText('sprayLedSetup.lightSelection').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('sprayLedSetup.lightingStop').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByText('sprayLed.lightAll').hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('sprayLedSetup.lightingChase').hasAttribute('disabled')).toBe(true);
   });
 
-  it('starts empty and lights selected holes with physical skips and both behind-hold LEDs', () => {
+  it('lights selected holes by default and only lights them again after re-enabling the bulb', () => {
     render(<SprayLedLightingStep {...props} />);
-    const light = screen.getByText('sprayLedSetup.lightSelection');
-    expect(light.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('sprayLedSetup.lightingStop').getAttribute('aria-pressed')).toBe('true');
     expect(preview.show).not.toHaveBeenCalled();
     tap(hole.x, hole.y);
-    // Selecting lights the selection straight away; the button re-sends it.
     expect(preview.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
-    fireEvent.click(light);
-    expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
-    tap(hole.x, hole.y);
-    expect(light.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightingStop'));
+    expect(litOnPhoto()).toEqual([]);
     expect(preview.stop).toHaveBeenCalledTimes(1);
+    tap(hole.x, hole.y);
+    tap(hole.x, hole.y);
+    expect(preview.show).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightSelection'));
+    expect(preview.show).toHaveBeenCalledTimes(2);
+    expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
+    expect(litOnPhoto()).toEqual(['a', 'b']);
   });
 
   it('marks holes and holds without a wired LED and fades the LED dots', () => {
@@ -241,22 +248,20 @@ describe('final lighting test', () => {
       { value: null } as never,
     ) as ReactElement<{ selectedHoldIds: number[] }>;
     expect(overlay.props.selectedHoldIds).toEqual([10]);
-    fireEvent.click(screen.getByText('sprayLedSetup.lightSelection'));
     expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
     tap(0.8, 0.3);
     expect(screen.getByText('sprayLedSetup.selectionUnmapped:1')).toBeTruthy();
     fireEvent.click(screen.getByText('sprayLedSetup.selectHoles'));
-    expect(screen.getByText('sprayLedSetup.lightSelection').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('sprayLedSetup.selectionSummary:0')).toBeTruthy();
   });
 
   it('ignores blank photo taps and returns no indices for an unassigned hold', () => {
     render(<SprayLedLightingStep {...props} />);
     fireEvent.click(screen.getByText('sprayLedSetup.selectHolds'));
     tap(0.5, 0.8);
-    expect(screen.getByText('sprayLedSetup.lightSelection').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('sprayLedSetup.selectionSummary:0')).toBeTruthy();
     tap(0.8, 0.3);
     expect(screen.getByText('sprayLedSetup.selectionUnmapped:1')).toBeTruthy();
-    expect(screen.getByText('sprayLedSetup.lightSelection').hasAttribute('disabled')).toBe(true);
     expect(preview.show).not.toHaveBeenCalled();
   });
 });

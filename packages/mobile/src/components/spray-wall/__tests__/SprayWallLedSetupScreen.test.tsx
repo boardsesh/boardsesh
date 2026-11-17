@@ -15,6 +15,7 @@ import {
   createWiring,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
+  generateTnutGrid,
   type Quad,
   type TnutLayout,
   type TnutPoint,
@@ -49,7 +50,7 @@ const controls = vi.hoisted(() => ({
   viewerId: 'viewer-1' as string | null,
   back: vi.fn(),
   push: vi.fn(),
-  alert: vi.fn(),
+  confirm: vi.fn(),
   scrollTo: vi.fn(),
 }));
 const backend = vi.hoisted(() => ({
@@ -82,6 +83,7 @@ vi.mock('../../SegmentedControl', () => ({
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 56 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => backend.client }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: controls.authenticated }) }));
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => controls.confirm }));
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => controls.viewerId }));
 vi.mock('../../../hooks/use-transparent-header-inset', () => ({ useTransparentHeaderInset: () => 0 }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
@@ -117,11 +119,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('react-native', () => ({
-  Alert: { alert: controls.alert },
   Keyboard: { dismiss: vi.fn() },
   TextInput: { State: { currentlyFocusedInput: () => undefined } },
   Platform: { OS: 'android' },
-  Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
+  Modal: ({ visible = true, children }: { visible?: boolean; children?: ReactNode }) =>
     visible ? createElement('div', { role: 'dialog' }, children) : null,
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -320,12 +321,12 @@ function finish() {
 function back() {
   act(() => controls.header?.leading.onPress());
 }
-type AlertButton = { text: string; style?: string; onPress?: () => void };
-function alertButton(style: string) {
-  const buttons = controls.alert.mock.calls.at(-1)?.[2] as AlertButton[];
-  const match = buttons.find((entry) => entry.style === style);
-  if (!match) throw new Error(`No ${style} alert button`);
-  return match;
+let resolveConfirm: ((confirmed: boolean) => void) | undefined;
+async function respondToConfirm(confirmed: boolean) {
+  const resolve = resolveConfirm;
+  if (!resolve) throw new Error('No confirmation to answer');
+  resolveConfirm = undefined;
+  await act(async () => resolve(confirmed));
 }
 const savedWithLeds = (): TnutLayout => {
   const layout: TnutLayout = { ...savedLayout(), ledPlacement: 'center' };
@@ -353,6 +354,13 @@ function expectHoles(count: number) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resolveConfirm = undefined;
+  controls.confirm.mockImplementation(
+    () =>
+      new Promise<boolean>((resolve) => {
+        resolveConfirm = resolve;
+      }),
+  );
   preview.show.mockReset().mockResolvedValue(true);
   preview.available = true;
   preview.state = 'lit';
@@ -526,13 +534,10 @@ describe('SprayWallLedSetupScreen', () => {
       ),
     );
     fireEvent.click(button('selectLeds'));
-    const checkbox = () => screen.getByRole('checkbox', { name: 'sprayLedSetup.lightSelected' });
-    expect(checkbox().getAttribute('aria-checked')).toBe('false');
-    fireEvent.click(checkbox());
+    expect(screen.queryByRole('checkbox', { name: 'sprayLedSetup.lightSelected' })).toBeNull();
     tap({ x: 0.2, y: 0.3 });
     tap({ x: 0.5, y: 0.3 });
-    expect(preview.show).toHaveBeenLastCalledWith([2, 3]);
-    expect(checkbox().getAttribute('aria-checked')).toBe('true');
+    expect(preview.show).not.toHaveBeenCalled();
     expect(screen.queryByRole('textbox', { name: 'sprayLedSetup.skipCount' })).toBeNull();
     fireEvent.click(button('cutCable'));
     fireEvent.click(button('connectCable'));
@@ -1197,7 +1202,8 @@ describe('SprayWallLedSetupScreen', () => {
     const leave = vi.fn();
     act(() => controls.leave?.(leave));
     expect(leave).not.toHaveBeenCalled();
-    expect(controls.alert).toHaveBeenCalledOnce();
+    expect(controls.confirm).toHaveBeenCalledOnce();
+    await respondToConfirm(false);
     fireEvent.click(radio('custom'));
     next();
     fireEvent.click(button('add'));
@@ -1232,6 +1238,79 @@ describe('SprayWallLedSetupScreen', () => {
   });
 
   describe('replacing LED and cable work', () => {
+    function wiredGrid(rows: number, columns: number): TnutLayout {
+      const grid = { ...savedLayout(), pattern: 'grid' as const, rows, columns };
+      const layout = { ...grid, holes: generateTnutGrid(grid), ledPlacement: 'center' as const };
+      const ledPositions = generateLedPositions(layout);
+      const wiring = createWiring(ledPositions, 'horizontal', 'tl', layout);
+      return {
+        ...layout,
+        ledPositions,
+        wiring: {
+          ...wiring,
+          initialSkip: 2,
+          skips: [{ from: wiring.paths[0][0], to: wiring.paths[0][1], count: 3 }],
+        },
+      };
+    }
+
+    async function growGrid(saved: TnutLayout, size: number) {
+      storage.load.mockResolvedValue(saved);
+      await open();
+      next();
+      fireEvent.change(field('rows'), { target: { value: String(size) } });
+      fireEvent.change(field('columns'), { target: { value: String(size) } });
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(storage.save).not.toHaveBeenCalled();
+    }
+
+    it('adds the missing grid positions and preserves the original physical indices through cable setup', async () => {
+      const saved = wiredGrid(2, 2);
+      await growGrid(saved, 3);
+      next();
+      expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      expect(lastSaved().ledPositions).toHaveLength(9);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+      advanceToWiring();
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+    });
+
+    it('warns about manual edits on expansion and keeps them and their wire when confirmed', async () => {
+      const saved = wiredGrid(2, 2);
+      const [firstLed, ...otherLeds] = saved.ledPositions ?? [];
+      const moved = { ...firstLed, x: 0.12, y: 0.13 };
+      saved.ledPositions = [moved, ...otherLeds];
+      await growGrid(saved, 3);
+      next();
+      next();
+      expect(controls.confirm).toHaveBeenCalledOnce();
+      expect(controls.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'sprayLedSetup.expandLedsTitle' }),
+      );
+      await respondToConfirm(false);
+      expect(storage.save).not.toHaveBeenCalled();
+      expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();
+      next();
+      await respondToConfirm(true);
+      expect(lastSaved().ledPositions).toHaveLength(9);
+      expect(lastSaved().ledPositions).toContainEqual(moved);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+    });
+
+    it('repairs an older checkpoint that saved a larger hole grid with the previous LED positions', async () => {
+      const saved = wiredGrid(3, 3);
+      const draft = wiredGrid(4, 4);
+      storage.load.mockResolvedValue({ ...draft, wiring: saved.wiring, ledPositions: saved.ledPositions });
+      await openOnLedStep();
+      next();
+      await respondToConfirm(true);
+      expect(lastSaved().ledPositions).toHaveLength(21);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+    });
+
     it('asks before a rebuild clears holds linked to LEDs by hand', async () => {
       const saved = savedWithLeds();
       const ledId = saved.ledPositions?.[0]?.id ?? '';
@@ -1239,8 +1318,8 @@ describe('SprayWallLedSetupScreen', () => {
       await openOnLedStep();
       fireEvent.click(radio('ledBelow'));
       next();
-      expect(controls.alert).toHaveBeenCalledOnce();
-      act(() => alertButton('destructive').onPress?.());
+      expect(controls.confirm).toHaveBeenCalledOnce();
+      await respondToConfirm(true);
       expect(lastSaved().holdLeds).toEqual([]);
     });
 
@@ -1253,15 +1332,17 @@ describe('SprayWallLedSetupScreen', () => {
       back();
       fireEvent.click(radio('ledBelow'));
       next();
-      expect(controls.alert).toHaveBeenCalledOnce();
-      expect(controls.alert.mock.calls[0].slice(0, 2)).toEqual([
-        'sprayLedSetup.rebuildLedsTitle',
-        'sprayLedSetup.rebuildLedsBody',
-      ]);
+      expect(controls.confirm).toHaveBeenCalledOnce();
+      expect(controls.confirm.mock.calls[0][0]).toMatchObject({
+        title: 'sprayLedSetup.rebuildLedsTitle',
+        message: 'sprayLedSetup.rebuildLedsBody',
+      });
       expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();
-      expect(alertButton('cancel').onPress).toBeUndefined();
       expect(lastSaved().ledPositions).toEqual([expect.objectContaining({ x: 0.35, y: 0.45 })]);
-      act(() => alertButton('destructive').onPress?.());
+      await respondToConfirm(false);
+      expect(screen.getByText('sprayLedSetup.ledHint')).toBeTruthy();
+      next();
+      await respondToConfirm(true);
       expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
       expect(screen.getByTestId('hole-editor').getAttribute('data-led-count')).toBe('1');
       expect(lastSaved().ledPlacement).toBe('below');
@@ -1277,8 +1358,8 @@ describe('SprayWallLedSetupScreen', () => {
       await openOnLedStep();
       fireEvent.click(radio('ledBelow'));
       next();
-      expect(controls.alert).toHaveBeenCalledOnce();
-      act(() => alertButton('destructive').onPress?.());
+      expect(controls.confirm).toHaveBeenCalledOnce();
+      await respondToConfirm(true);
       expect(lastSaved().wiring).toBeUndefined();
     });
 
@@ -1287,7 +1368,7 @@ describe('SprayWallLedSetupScreen', () => {
       await openOnLedStep();
       fireEvent.click(radio('ledBelow'));
       next();
-      expect(controls.alert).not.toHaveBeenCalled();
+      expect(controls.confirm).not.toHaveBeenCalled();
       expect(screen.getByText('sprayLedSetup.ledPositionsTitle')).toBeTruthy();
     });
 
@@ -1299,7 +1380,7 @@ describe('SprayWallLedSetupScreen', () => {
       back();
       fireEvent.click(radio('ledBelow'));
       next();
-      expect(controls.alert).not.toHaveBeenCalled();
+      expect(controls.confirm).not.toHaveBeenCalled();
       expect(lastSaved().ledPlacement).toBe('below');
     });
   });
@@ -1389,7 +1470,7 @@ describe('SprayWallLedSetupScreen', () => {
       back();
       const leave = vi.fn();
       act(() => controls.leave?.(leave));
-      expect(controls.alert).toHaveBeenCalledOnce();
+      expect(controls.confirm).toHaveBeenCalledOnce();
       expect(leave).not.toHaveBeenCalled();
     });
 
@@ -1405,7 +1486,7 @@ describe('SprayWallLedSetupScreen', () => {
       const leave = vi.fn();
       act(() => controls.leave?.(leave));
       expect(leave).toHaveBeenCalledOnce();
-      expect(controls.alert).not.toHaveBeenCalled();
+      expect(controls.confirm).not.toHaveBeenCalled();
     });
 
     it('keeps the earlier setup untouched before the holes are confirmed', async () => {
