@@ -1,6 +1,7 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
 import * as Sentry from '@sentry/nextjs';
+import { FEATURE_FLAG_OVERRIDES_ENV, parseFeatureFlagOverrides } from '@boardsesh/analytics';
 
 /**
  * Server-side PostHog feature-flag evaluation.
@@ -59,56 +60,6 @@ const FLAG_REQUEST_TIMEOUT_MS = 1_500;
 const FLAG_CACHE_REVALIDATE_SECONDS = 60;
 
 export const SERVER_FEATURE_FLAG_CACHE_TAG = 'server-feature-flag';
-
-/** Env var holding the local override list. See `parseFeatureFlagOverrides`. */
-export const FEATURE_FLAG_OVERRIDES_ENV = 'FEATURE_FLAG_OVERRIDES';
-
-const TRUTHY_OVERRIDE_VALUES = new Set(['1', 'true', 'on', 'yes']);
-const FALSY_OVERRIDE_VALUES = new Set(['0', 'false', 'off', 'no']);
-
-/**
- * Parse `FEATURE_FLAG_OVERRIDES` into a key -> boolean map.
- *
- * Two forms, comma separated:
- *   `some-flag`        — bare key, forces ON
- *   `some-flag=false`  — explicit value, forces ON or OFF
- *
- * An explicit OFF matters as much as an ON: it is how you check the 404 branch
- * without editing the PostHog dashboard. Entries that parse to neither are
- * ignored rather than throwing — a typo in a dev env var should not take the
- * whole page down.
- */
-export function parseFeatureFlagOverrides(raw: string | undefined): Record<string, boolean> {
-  const overrides: Record<string, boolean> = {};
-  if (!raw) {
-    return overrides;
-  }
-
-  for (const entry of raw.split(',')) {
-    const trimmed = entry.trim();
-    if (!trimmed) continue;
-
-    const separator = trimmed.indexOf('=');
-    if (separator === -1) {
-      overrides[trimmed] = true;
-      continue;
-    }
-
-    const key = trimmed.slice(0, separator).trim();
-    const value = trimmed
-      .slice(separator + 1)
-      .trim()
-      .toLowerCase();
-    if (!key) continue;
-    if (TRUTHY_OVERRIDE_VALUES.has(value)) {
-      overrides[key] = true;
-    } else if (FALSY_OVERRIDE_VALUES.has(value)) {
-      overrides[key] = false;
-    }
-  }
-
-  return overrides;
-}
 
 /** Env var names holding the PostHog project key, in resolution order. */
 const API_KEY_ENV_NAMES = ['POSTHOG_PROJECT_KEY', 'NEXT_PUBLIC_POSTHOG_KEY'] as const;

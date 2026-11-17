@@ -228,3 +228,6 @@ export {
   type CncPreviewRequestedInput,
   type CncCheckoutStartedInput,
 } from './cnc-funnel';
+// The `FEATURE_FLAG_OVERRIDES` syntax, read by www's server flags and by the
+// backend's developer-console check, so one env line means the same to both.
+export { FEATURE_FLAG_OVERRIDES_ENV, parseFeatureFlagOverrides } from './feature-flag-overrides';

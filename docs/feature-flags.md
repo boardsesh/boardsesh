@@ -8,7 +8,7 @@ Two kinds, and they fail in different ways.
 
 **Server flags** (`SERVER_FEATURE_FLAG_KEYS`) resolve during SSR via `getServerFeatureFlag` and decide whether a route renders at all — with one off, its route is a plain `notFound()`. A client-resolved flag could not do this: by the time the browser knows the answer the HTML has already shipped.
 
-The registry holds `developer-console` for the signed-in partner console at `/developers/apps`, and `cnc-packs` for `/build-plans`. The latter resolves with `allowAnonymous: true` so visitors can discover build packs before signing in. `/gyms` and its facet routes render for everyone; their former `gyms-directory` gate is gone. The diagnostics endpoint answers any key you name.
+The registry holds `developer-console` for the signed-in partner console at `/developers/apps`, and `cnc-packs` for `/build-plans`. `developer-console` is also the one flag the backend reads: before every developer console operation it asks PostHog the same question for the same `users.id` (`packages/backend/src/auth/partner/developer-access.ts`; the key is `PARTNER_DEVELOPER_CONSOLE_FLAG` in `@boardsesh/auth-protocol`, so the two cannot drift). The backend's rules are in "Who is invited" in [integration-platform.md](./integration-platform.md#what-the-backend-does-today-f12). The latter resolves with `allowAnonymous: true` so visitors can discover build packs before signing in. `/gyms` and its facet routes render for everyone; their former `gyms-directory` gate is gone. The diagnostics endpoint answers any key you name.
 
 
 ## How a server flag resolves
@@ -66,7 +66,9 @@ Read it like this:
 
 ## The override lever
 
-`FEATURE_FLAG_OVERRIDES` is a comma-separated list, `some-flag` (forces ON) or `some-flag=false` (forces OFF).
+`FEATURE_FLAG_OVERRIDES` is a comma-separated list, `some-flag` (forces ON) or `some-flag=false` (forces OFF). The parser is `parseFeatureFlagOverrides` in `@boardsesh/analytics`, shared by www and the backend.
+
+**The backend honours it outside production only, and only for `developer-console`.** There `developer-console` lets every account into the developer console without PostHog, which is how backend tests, the partner e2e journey and a laptop register apps. In production the backend ignores it and logs a warning once, because there it would open app registration to every account. www's override still works in production, so it can show the console pages, but the backend then decides who registers from PostHog alone.
 
 Locally it is the only way in: the browser PostHog client refuses to initialise off a production hostname, so on localhost there is no person and nothing to evaluate against.
 

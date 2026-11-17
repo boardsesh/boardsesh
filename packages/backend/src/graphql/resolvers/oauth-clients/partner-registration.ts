@@ -1,6 +1,9 @@
 import { GraphQLError } from 'graphql';
 import { PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS } from '@boardsesh/auth-protocol/auth-time';
-import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protocol/partner-oauth';
+import {
+  PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE,
+  PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED,
+} from '@boardsesh/auth-protocol/partner-oauth';
 import type {
   ConnectionContext,
   CreateOAuthClientInput,
@@ -8,10 +11,13 @@ import type {
   OAuthClientCredentials,
   UpdateOAuthClientInput,
 } from '@boardsesh/shared-schema';
+import {
+  __resetPartnerDeveloperAccessForTests,
+  checkPartnerDeveloperAccess,
+} from '../../../auth/partner/developer-access';
 import { loadPartnerAuthority } from '../../../auth/partner/load-authority';
 import { readPartnerOAuthMode, type PartnerOAuthMode } from '../../../auth/partner/mode';
 import {
-  parsePartnerDeveloperAllowlist,
   PartnerRegistrationError,
   type PartnerAppCredentials,
   type PartnerAppRecord,
@@ -41,26 +47,20 @@ const WRITES_PER_DEVELOPER = 10;
 const WRITES_PER_ADDRESS = 30;
 const READS_PER_DEVELOPER = 60;
 const READS_PER_ADDRESS = 120;
-const HOLD_RETRY_AFTER_SECONDS = 60;
+const RETRY_AFTER_SECONDS = 60;
 
-interface RegistrationDeployment {
-  mode: PartnerOAuthMode;
-  developerAllowlist: ReadonlySet<string>;
+let deploymentMode: PartnerOAuthMode | undefined;
+
+/** Read once, from the environment. No request can choose it. */
+function registrationMode(): PartnerOAuthMode {
+  deploymentMode ??= readPartnerOAuthMode();
+  return deploymentMode;
 }
 
-let deployment: RegistrationDeployment | undefined;
-
-/** Read once, from the environment. No request can choose either value. */
-function registrationDeployment(): RegistrationDeployment {
-  deployment ??= {
-    mode: readPartnerOAuthMode(),
-    developerAllowlist: parsePartnerDeveloperAllowlist(process.env.PARTNER_OAUTH_DEVELOPER_ALLOWLIST),
-  };
-  return deployment;
-}
-
+/** Forgets the mode and the cached `developer-console` answers, as a fresh deploy would. */
 export function __resetPartnerRegistrationDeploymentForTests(): void {
-  deployment = undefined;
+  deploymentMode = undefined;
+  __resetPartnerDeveloperAccessForTests();
 }
 
 function rateLimited(error: RateLimitError, operation: string): GraphQLError {
@@ -76,6 +76,29 @@ function limitOperation(kind: 'read' | 'write'): string {
 /** Charged only once the caller is a signed-in account, and only that account can spend it. */
 async function chargeDeveloperLimit(ctx: ConnectionContext, kind: 'read' | 'write'): Promise<void> {
   await applyRateLimit(ctx, kind === 'write' ? WRITES_PER_DEVELOPER : READS_PER_DEVELOPER, limitOperation(kind));
+}
+
+/**
+ * The `developer-console` flag, asked before any transaction or Better Auth
+ * work (`auth/partner/developer-access.ts`). PostHog saying no is
+ * `NOT_ALLOWLISTED`; PostHog not answering is not a no, so it gets its own
+ * reason and the console offers a retry.
+ */
+async function requireInvitedDeveloper(developerId: string): Promise<void> {
+  const { decision } = await checkPartnerDeveloperAccess(developerId);
+  if (decision === 'allowed') return;
+  if (decision === 'refused') {
+    throw new GraphQLError('Developer apps are invite-only for now.', {
+      extensions: { code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' },
+    });
+  }
+  throw new GraphQLError("Developer apps couldn't check your invite. Try again in a minute.", {
+    extensions: {
+      code: 'SERVICE_UNAVAILABLE',
+      reason: PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE,
+      retryAfterSeconds: RETRY_AFTER_SECONDS,
+    },
+  });
 }
 
 /**
@@ -132,7 +155,8 @@ function refusalError(error: PartnerRegistrationError): GraphQLError {
 /**
  * Every operation's way in. The order is the contract: the mode first, so an
  * off deployment does nothing at all; then the account and its own limit; then
- * the allowlist; then the address limit, which only listed developers spend. `open` registers allowlisted developers only, like
+ * the `developer-console` flag; then the address limit, which only invited
+ * developers spend. `open` registers invited developers only, like
  * `allowlist`, until a developer's email has a real proof of ownership
  * (BA-02, or registration's own email check): `emailVerified` was stamped
  * without one while verification was off.
@@ -146,24 +170,20 @@ async function withRegistration<Result>(
     database: RegistrationDatabase,
   ) => Promise<Result>,
 ): Promise<Result> {
-  const { mode, developerAllowlist } = registrationDeployment();
+  const mode = registrationMode();
   if (mode === 'off') {
     throw new GraphQLError('Developer apps are not available.', { extensions: { code: 'NOT_FOUND' } });
   }
   if (mode === 'hold') {
     throw new GraphQLError('Developer apps are paused. Try again shortly.', {
-      extensions: { code: 'SERVICE_UNAVAILABLE', retryAfterSeconds: HOLD_RETRY_AFTER_SECONDS },
+      extensions: { code: 'SERVICE_UNAVAILABLE', retryAfterSeconds: RETRY_AFTER_SECONDS },
     });
   }
   requireAuthenticated(ctx);
   const developerId = ctx.userId;
   if (!developerId) throw new Error('Authentication required to perform this operation');
   await chargeDeveloperLimit(ctx, kind);
-  if (!developerAllowlist.has(developerId)) {
-    throw new GraphQLError('Developer apps are invite-only for now.', {
-      extensions: { code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' },
-    });
-  }
+  await requireInvitedDeveloper(developerId);
   await chargeAddressLimit(ctx, kind);
 
   let runtime: PartnerRuntime | null;

@@ -11,6 +11,7 @@ describe('classifyConsoleError', () => {
     [{ code: 'NOT_FOUND', reason: 'NOT_FOUND' }, 'gone'],
     [{ code: 'SERVICE_UNAVAILABLE', retryAfterSeconds: 60 }, 'paused'],
     [{ code: 'SERVICE_UNAVAILABLE', reason: 'BUSY' }, 'busy'],
+    [{ code: 'SERVICE_UNAVAILABLE', reason: 'ALLOWLIST_UNAVAILABLE', retryAfterSeconds: 60 }, 'invite-check-failed'],
     [{ code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' }, 'not-allowlisted'],
     [{ code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' }, 'email-not-verified'],
     [{ code: 'FORBIDDEN', reason: 'SUSPENDED' }, 'suspended'],

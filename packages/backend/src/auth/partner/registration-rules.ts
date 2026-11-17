@@ -17,7 +17,6 @@ export const PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY = 20;
 const NAME_MIN_LENGTH = 3;
 const NAME_MAX_LENGTH = 50;
 const URL_MAX_LENGTH = 2048;
-const ALLOWLIST_ID_MAX_LENGTH = 128;
 
 export const PARTNER_APP_APPLICATION_TYPES = ['web', 'native'] as const;
 export type PartnerAppApplicationType = (typeof PARTNER_APP_APPLICATION_TYPES)[number];
@@ -412,16 +411,4 @@ export function normalizePartnerAppPatch(
   }
   if (Object.keys(patch).length === 0) invalid('Change at least one field.');
   return patch;
-}
-
-/**
- * `PARTNER_OAUTH_DEVELOPER_ALLOWLIST`: comma-separated Boardsesh user ids. Unset
- * or empty means nobody may register, so a missing variable fails closed.
- */
-export function parsePartnerDeveloperAllowlist(rawAllowlist: string | undefined): ReadonlySet<string> {
-  const ids = (rawAllowlist ?? '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0 && id.length <= ALLOWLIST_ID_MAX_LENGTH && !/\s/.test(id));
-  return new Set(ids);
 }

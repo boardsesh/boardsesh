@@ -55,33 +55,7 @@ afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
 });
 
-describe('parseFeatureFlagOverrides', () => {
-  it('reads the bare-key form as ON', async () => {
-    const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides('some-server-flag')).toEqual({ 'some-server-flag': true });
-  });
-
-  it('reads the key=value form in both directions', async () => {
-    const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides('some-server-flag=true,gym-kiosk=false')).toEqual({
-      'some-server-flag': true,
-      'gym-kiosk': false,
-    });
-  });
-
-  it('ignores blank entries and unparseable values instead of throwing', async () => {
-    const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides(' , some-server-flag = ON ,broken=maybe,=true')).toEqual({
-      'some-server-flag': true,
-    });
-  });
-
-  it('returns nothing for an unset variable', async () => {
-    const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides(undefined)).toEqual({});
-  });
-});
-
+// The override syntax itself is tested where it lives, in @boardsesh/analytics.
 describe('getServerFeatureFlag — overrides', () => {
   it('honours the bare-key override without calling PostHog', async () => {
     process.env.FEATURE_FLAG_OVERRIDES = FLAG;

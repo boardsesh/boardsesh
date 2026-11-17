@@ -24,8 +24,8 @@ export async function generateMetadata(): Promise<Metadata> {
  * The developer console (docs/integration-platform.md, "Self-service
  * registration"). A utility page: noindex, and behind the server flag
  * `developer-console` (`requireDeveloperConsoleAccess`). The backend gates
- * every operation again (PARTNER_OAUTH_MODE and its developer allowlist), and
- * the page says which of those refused.
+ * every operation again (PARTNER_OAUTH_MODE, then the same flag), and the page
+ * says which of those refused, or that the flag could not be checked.
  */
 export default async function DeveloperAppsPage() {
   const { t, locale } = await getServerTranslation('developers');

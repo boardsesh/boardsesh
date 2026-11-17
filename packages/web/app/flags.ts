@@ -1,3 +1,5 @@
+import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner-oauth';
+
 // A flat bag of runtime feature flags. `Record<string, boolean | undefined>` (rather than
 // the prior `Record<string, never>`, which made `useFeatureFlag` resolve to
 // `never` and was therefore unusable) so consumers can call
@@ -31,9 +33,10 @@ export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as
 // Gates the developer console at /developers/apps, where a developer registers
 // partner OAuth apps (docs/integration-platform.md, milestone 1.6). Server-side
 // and failing closed: with the flag off, or PostHog unreachable, the route is a
-// 404. The backend gates the same operations again on PARTNER_OAUTH_MODE and
-// its developer allowlist, so this flag only decides who sees the page.
-export const DEVELOPER_CONSOLE_FLAG = 'developer-console';
+// 404. The backend asks the same flag again before every console operation
+// (after PARTNER_OAUTH_MODE), so the key lives in @boardsesh/auth-protocol and
+// the page and the operations cannot disagree on who is invited.
+export const DEVELOPER_CONSOLE_FLAG = PARTNER_DEVELOPER_CONSOLE_FLAG;
 
 // Gates `/build-plans` — the paid CNC build-pack configurator, the orders
 // pages, and the footer link into them. Server-resolved rather than client,

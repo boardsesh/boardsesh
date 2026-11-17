@@ -25,6 +25,10 @@
       "title": "L'enregistrement d'apps est sur invitation pour le moment",
       "body": "Ton compte n'est pas sur la liste d'invités. Demande l'accès à l'équipe Boardsesh."
     },
+    "inviteCheckFailed": {
+      "title": "Impossible de vérifier ton invitation",
+      "body": "Boardsesh n'a pas pu consulter la liste d'invités. Réessaie dans une minute."
+    },
     "paused": {
       "title": "L'enregistrement d'apps est en pause",
       "body": "Boardsesh a mis les apps partenaires en pause un instant. Réessaie dans une minute."

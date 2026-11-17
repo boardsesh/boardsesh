@@ -25,6 +25,10 @@
       "title": "App registration is invite-only for now",
       "body": "Your account isn't on the invite list. Ask the Boardsesh team for access."
     },
+    "inviteCheckFailed": {
+      "title": "We couldn't check your invite",
+      "body": "Boardsesh couldn't reach its invite list just now. Try again in a minute."
+    },
     "paused": {
       "title": "App registration is paused",
       "body": "Boardsesh paused partner apps for a moment. Try again in a minute."

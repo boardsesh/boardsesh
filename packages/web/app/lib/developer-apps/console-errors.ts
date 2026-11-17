@@ -1,4 +1,7 @@
-import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protocol/partner-oauth';
+import {
+  PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE,
+  PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED,
+} from '@boardsesh/auth-protocol/partner-oauth';
 
 /**
  * What a refused developer-console operation means, read from the GraphQL
@@ -10,8 +13,10 @@ import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protoco
 export type ConsoleProblem =
   /** PARTNER_OAUTH_MODE is off: registration does not exist yet. */
   | { kind: 'not-available' }
-  /** Signed in, but not on PARTNER_OAUTH_DEVELOPER_ALLOWLIST. */
+  /** Signed in, but PostHog's `developer-console` flag does not name the account. */
   | { kind: 'not-allowlisted' }
+  /** The backend could not ask PostHog whether the account is invited. A retry helps. */
+  | { kind: 'invite-check-failed' }
   /** PARTNER_OAUTH_MODE is hold. */
   | { kind: 'paused' }
   | { kind: 'email-not-verified' }
@@ -51,7 +56,9 @@ export function classifyConsoleError(error: unknown): ConsoleProblem {
       // The mode is off, or an app id that is not (or no longer) this developer's.
       return reason === 'NOT_FOUND' ? { kind: 'gone' } : { kind: 'not-available' };
     case 'SERVICE_UNAVAILABLE':
-      return reason === 'BUSY' ? { kind: 'busy' } : { kind: 'paused' };
+      if (reason === 'BUSY') return { kind: 'busy' };
+      if (reason === PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE) return { kind: 'invite-check-failed' };
+      return { kind: 'paused' };
     case 'FORBIDDEN':
       if (reason === 'NOT_ALLOWLISTED') return { kind: 'not-allowlisted' };
       if (reason === 'EMAIL_NOT_VERIFIED') return { kind: 'email-not-verified' };

@@ -25,6 +25,10 @@
       "title": "Die App-Registrierung läuft vorerst nur per Einladung",
       "body": "Dein Konto steht nicht auf der Einladungsliste. Frag das Boardsesh-Team nach Zugang."
     },
+    "inviteCheckFailed": {
+      "title": "Deine Einladung konnte nicht geprüft werden",
+      "body": "Boardsesh konnte die Einladungsliste gerade nicht abrufen. Versuch es in einer Minute noch mal."
+    },
     "paused": {
       "title": "Die App-Registrierung ist pausiert",
       "body": "Boardsesh hat Partner-Apps kurz pausiert. Versuch es in einer Minute noch mal."

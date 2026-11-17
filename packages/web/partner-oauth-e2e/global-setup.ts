@@ -6,6 +6,7 @@ import { request } from 'node:http';
 import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner-oauth';
 import { startEdge, type Edge } from './edge';
 import {
   assertLocalOnly,
@@ -278,7 +279,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         ...shared,
         PORT: String(backendPort),
         PARTNER_OAUTH_SECRETS: `1:${randomBytes(32).toString('base64url')}`,
-        PARTNER_OAUTH_DEVELOPER_ALLOWLIST: seeded.developer.userId,
+        // Lets accounts into the developer console without PostHog. Honoured
+        // because SENTRY_ENVIRONMENT above is not production.
+        FEATURE_FLAG_OVERRIDES: PARTNER_DEVELOPER_CONSOLE_FLAG,
         PARTNER_DEVELOPER_TERMS_VERSION: E2E_DEVELOPER_TERMS_VERSION,
         BOARDSESH_WEB_URL: `http://127.0.0.1:${webPort}`,
         // As in packages/backend/.env.development: no background job families on a test run.
