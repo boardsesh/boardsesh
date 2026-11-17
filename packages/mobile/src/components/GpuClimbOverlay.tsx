@@ -13,8 +13,13 @@ import {
   NativeMotionClimbOverlayGPU,
   type ClimbOverlayGPUReady,
 } from '../../modules/climb-overlay-gpu/src';
-import type { RevealMode } from './play-drawer/wall-swap';
-import type { WallSwapFrame } from './play-drawer/use-wall-swap';
+import {
+  nativeWallSwapFrame,
+  WALL_SWAP_NATIVE_API,
+  type NativeWallSwapFrame,
+  type RevealMode,
+  type WallSwapFrame,
+} from './play-drawer/wall-swap';
 import {
   classifyGpuFallback,
   reportGpuFallback,
@@ -32,7 +37,7 @@ export type GpuClimbTransition = {
   prefetchFrames?: readonly string[];
   /** API 6: the swap weights hold classes over time instead of wiping by position. */
   revealMode?: RevealMode;
-  /** The swap's pair and two weights, one value (see play-drawer/wall-swap). */
+  /** The swap's pair and three weights, one value (see play-drawer/wall-swap). */
   swapFrame?: SharedValue<WallSwapFrame>;
 };
 
@@ -81,13 +86,14 @@ export function GpuClimbOverlay({
   const centerPage = transition?.centerPage ?? 0;
   const swapFrame = transition?.swapFrame;
   // The swap handles Reduce Motion itself, as a shorter dissolve; the wipe stops.
-  const swap = transition?.revealMode === 'swap' && swapFrame !== undefined && climbOverlayGpuApiVersion >= 6;
+  const swap =
+    transition?.revealMode === 'swap' && swapFrame !== undefined && climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API;
   // Updating these native numeric props stays on the UI thread. No React render,
   // config serialization or hold-list preparation runs for a drag frame.
   const animatedProps = useAnimatedProps(
-    (): { pagePosition?: number; swapFrame?: WallSwapFrame } =>
+    (): { pagePosition?: number; swapFrame?: NativeWallSwapFrame } =>
       swap && swapFrame
-        ? { swapFrame: swapFrame.value }
+        ? { swapFrame: nativeWallSwapFrame(swapFrame.value, climbOverlayGpuApiVersion) }
         : { pagePosition: reduceMotion ? centerPage : (pagePosition?.value ?? centerPage) },
     [pagePosition, centerPage, reduceMotion, swap, swapFrame],
   );
@@ -204,7 +210,7 @@ export function GpuClimbOverlay({
         {...(climbOverlayGpuApiVersion >= 5
           ? { prefetchFrames: transition?.prefetchFrames ?? NO_GPU_PREFETCH_FRAMES }
           : {})}
-        {...(climbOverlayGpuApiVersion >= 6 ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
+        {...(climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
         centerPage={centerPage}
         animatedProps={animatedProps}
         animateEdits={animateEdits && !transition}

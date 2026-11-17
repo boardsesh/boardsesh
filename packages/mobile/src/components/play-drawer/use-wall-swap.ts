@@ -16,15 +16,10 @@ import {
   WALL_SWAP,
   wallSwapPagePosition,
   wallSwapRest,
+  wallSwapSharedWeight,
+  type WallSwapFrame,
   type WallSwapState,
 } from './wall-swap';
-
-/**
- * One frame of the swap: the pair on show (the nearest page is the climb being
- * left; see `wall-swap`), then the outgoing-only and incoming-only weights. One
- * value, so the native view never applies a new pair with old weights.
- */
-export type WallSwapFrame = readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number];
 
 /** A clock, not motion: the dissolve still runs under Reduce Motion. */
 function startClock(clock: SharedValue<number>, durationMs: number) {
@@ -38,7 +33,7 @@ function startClock(clock: SharedValue<number>, durationMs: number) {
 }
 
 /**
- * The wall swap's two weights and its pair, driven from the pager on the UI
+ * The wall swap's three weights and its pair, driven from the pager on the UI
  * thread. Nothing crosses to the JS thread per frame, and nothing runs at rest.
  * `enabled` is false for the wipe; the values then stay at rest.
  */
@@ -49,7 +44,7 @@ export function useWallSwap(pager: SwipePager, centerPage: number, enabled: bool
   useEffect(() => {
     reduceMotionValue.value = reduceMotion;
   }, [reduceMotion, reduceMotionValue]);
-  const frame = useSharedValue<WallSwapFrame>([centerPage, 1, 0]);
+  const frame = useSharedValue<WallSwapFrame>([centerPage, 1, 0, 1]);
   const swapClock = useSharedValue(0);
   const settleClock = useSharedValue(0);
   const state = useSharedValue<WallSwapState | null>(null);
@@ -74,7 +69,12 @@ export function useWallSwap(pager: SwipePager, centerPage: number, enabled: bool
       state.value = step.state;
       if (step.startSwap) startClock(swapClock, swapClockMs(step.state));
       if (step.startSettle) startClock(settleClock, WALL_SWAP.settleMs);
-      frame.value = [wallSwapPagePosition(step.state), step.state.outgoing, step.state.incoming];
+      frame.value = [
+        wallSwapPagePosition(step.state),
+        step.state.outgoing,
+        step.state.incoming,
+        wallSwapSharedWeight(step.state, input.reduceMotion),
+      ];
     },
     [enabled],
   );

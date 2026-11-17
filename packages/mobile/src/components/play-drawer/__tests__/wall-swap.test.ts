@@ -4,14 +4,18 @@ import {
   dragOutgoingWeight,
   easeIn,
   easeOut,
+  nativeWallSwapFrame,
   playerRevealMode,
   stepWallSwap,
   swapClockMs,
   swapTiming,
   swapWeightsAt,
   WALL_SWAP,
+  WALL_SWAP_SHARED_NATIVE_API,
   wallSwapPagePosition,
   wallSwapRest,
+  wallSwapSharedWeight,
+  type WallSwapFrame,
   type WallSwapInput,
   type WallSwapState,
 } from '../wall-swap';
@@ -31,10 +35,10 @@ const CLIMBS = new Map<number, ReadonlySet<number>>([
 
 /**
  * What the board shows for a state, hold by hold, as the native compositor
- * draws it: a pair lights shared holds fully and each side's own holds at its
- * weight; no pair is the climb's still.
+ * draws it: a pair lights shared holds at the shared weight and each side's own
+ * holds at its weight; no pair is the climb's still.
  */
-function holdWeights(state: WallSwapState): Map<number, number> {
+function holdWeights(state: WallSwapState, reduceMotion: boolean): Map<number, number> {
   const leaving = CLIMBS.get(state.from) ?? new Set<number>();
   const shown = new Map<number, number>();
   if (state.dir === 0) {
@@ -42,13 +46,14 @@ function holdWeights(state: WallSwapState): Map<number, number> {
     return shown;
   }
   const arriving = CLIMBS.get(state.from + state.dir) ?? new Set<number>();
-  for (const hold of leaving) shown.set(hold, arriving.has(hold) ? 1 : state.outgoing);
+  const shared = wallSwapSharedWeight(state, reduceMotion);
+  for (const hold of leaving) shown.set(hold, arriving.has(hold) ? shared : state.outgoing);
   for (const hold of arriving) if (!leaving.has(hold)) shown.set(hold, state.incoming);
   return shown;
 }
 
 /** One frame: the weights, the pair's page position, and every hold as drawn. */
-type Frame = { outgoing: number; incoming: number; position: number; holds: Map<number, number> };
+type Frame = { outgoing: number; incoming: number; shared: number; position: number; holds: Map<number, number> };
 
 /**
  * Drives the UI-thread step the way use-wall-swap does: the pager's values in,
@@ -77,8 +82,9 @@ function harness(reduceMotion = false) {
     frames.push({
       outgoing: state.outgoing,
       incoming: state.incoming,
+      shared: wallSwapSharedWeight(state, input.reduceMotion),
       position: wallSwapPagePosition(state),
-      holds: holdWeights(state),
+      holds: holdWeights(state, input.reduceMotion),
     });
     return state;
   };
@@ -411,6 +417,123 @@ describe('wall swap under Reduce Motion', () => {
       commitDistance: SWIPE_THRESHOLD,
     });
     expect(step).toMatchObject({ startSwap: true, state: { from: 0, dir: -1, durationMs: 120 } });
+  });
+});
+
+describe('wall swap shared holds', () => {
+  /** Hold 3: shared between pages 0 and 1, outgoing-only from page 0 toward page -1. */
+  const holdThree = (frame: Frame) => frame.holds.get(3);
+
+  it('are whole at rest, follow the outgoing dim while dragging and never go below 40%', () => {
+    expect(wallSwapSharedWeight(wallSwapRest(0, { anchor: 0, steps: 0, reset: 0 }), false)).toBe(1);
+    const swap = harness();
+    for (const offset of [-8, -20, -40, -60, -SWIPE_THRESHOLD, -SWIPE_THRESHOLD * 2, -40, 0]) swap.drag(offset);
+    expect(swap.frames.map((frame) => frame.shared)).toEqual(swap.frames.map((frame) => frame.outgoing));
+    expect(swap.frames[5].shared).toBeCloseTo(WALL_SWAP.dimFloor, 10);
+    expect(swap.frames.map(holdThree)).toEqual(swap.frames.map((frame) => frame.shared));
+    expect(swap.state()).toMatchObject({ dir: 0, outgoing: 1 });
+    expect(swap.frames.at(-1)?.shared).toBe(1);
+  });
+
+  it('hold 40% through a swap until the incoming holds pass it, then come back with them', () => {
+    const swap = harness();
+    swap.drag(-SWIPE_THRESHOLD - 10);
+    swap.commit(1);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
+    swap.land();
+    swap.tick(8);
+    let reachedFloor = false;
+    let previous = 1;
+    for (const frame of swap.frames.slice(1)) {
+      expect(frame.shared).toBeGreaterThanOrEqual(WALL_SWAP.dimFloor);
+      // Once at the floor, only up: never a second dip.
+      if (reachedFloor) expect(frame.shared).toBeGreaterThanOrEqual(previous);
+      if (frame.incoming <= WALL_SWAP.dimFloor && frame.outgoing <= WALL_SWAP.dimFloor) {
+        expect(frame.shared).toBe(WALL_SWAP.dimFloor);
+        reachedFloor = true;
+      }
+      if (frame.incoming > WALL_SWAP.dimFloor) expect(frame.shared).toBe(frame.incoming);
+      previous = frame.shared;
+    }
+    expect(reachedFloor).toBe(true);
+    expect(swap.state()).toMatchObject({ from: 1, dir: 0 });
+    expect(swap.frames.at(-1)?.shared).toBe(1);
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('keep their weight when a pulled-back pair swaps outgoing and incoming', () => {
+    const swap = harness();
+    swap.drag(-90);
+    swap.commit(1);
+    for (let elapsed = 0; elapsed < 96; elapsed += 8) swap.tick(8);
+    swap.land(140);
+    for (const offset of [120, 100]) {
+      swap.drag(offset);
+      swap.tick(8);
+    }
+    const before = swap.frames.at(-1)!;
+    swap.drag(110);
+    const after = swap.frames.at(-1)!;
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, settling: true });
+    expect([after.outgoing, after.incoming]).toEqual([before.incoming, before.outgoing]);
+    expect(after.shared).toBe(before.shared);
+    expect(after.shared).toBeGreaterThan(WALL_SWAP.dimFloor);
+    // Pages 0 and 1 share hold 3 whichever way round the pair is named.
+    expect(holdThree(after)).toBe(holdThree(before));
+    for (let frame = 0; frame < 16; frame++) {
+      swap.drag(170);
+      swap.tick(8);
+    }
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('switch pairs without a jump: a hold that changes kind keeps its weight', () => {
+    const swap = harness();
+    // Toward page -1 hold 3 is outgoing-only; toward page 1 it is shared.
+    swap.drag(40);
+    swap.drag(-40);
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 0, dir: 1, settling: false });
+    expect(swap.frames.map(holdThree)).toEqual(swap.frames.map(() => dragOutgoingWeight(-40, SWIPE_THRESHOLD, false)));
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('stay whole under Reduce Motion, through the drag and the dissolve', () => {
+    const swap = harness(true);
+    swap.drag(-SWIPE_THRESHOLD * 2);
+    swap.commit(1);
+    for (let frame = 0; frame < 8; frame++) swap.tick(8);
+    expect(swap.state().outgoing).toBeLessThan(1);
+    expect(swap.state().incoming).toBeGreaterThan(0);
+    for (let frame = 0; frame < 8; frame++) swap.tick(8);
+    expect(swap.frames.every((frame) => frame.shared === 1 && holdThree(frame) === 1)).toBe(true);
+    expect(wallSwapSharedWeight({ outgoing: 0.1, incoming: 0.2 }, true)).toBe(1);
+  });
+
+  it('stay within 40-100% and ignore which side is which', () => {
+    for (const [outgoing, incoming, expected] of [
+      [1, 0, 1],
+      [0.7, 0, 0.7],
+      [0.4, 0, 0.4],
+      [0.1, 0.3, 0.4],
+      [0, 0.6, 0.6],
+      [0, 1, 1],
+      [0.6, 0.2, 0.6],
+      [Number.NaN, Number.NaN, 0.4],
+      [2, 0, 1],
+    ] as const) {
+      expect(wallSwapSharedWeight({ outgoing, incoming }, false)).toBe(expected);
+      expect(wallSwapSharedWeight({ outgoing: incoming, incoming: outgoing }, false)).toBe(expected);
+    }
+  });
+
+  it('reach API 7 binaries as a fourth number and stay off API 6 ones', () => {
+    const frame: WallSwapFrame = [4.25, 0.4, 0, 0.4];
+    expect(WALL_SWAP_SHARED_NATIVE_API).toBe(7);
+    expect(nativeWallSwapFrame(frame, 7)).toBe(frame);
+    expect(nativeWallSwapFrame(frame, 8)).toEqual([4.25, 0.4, 0, 0.4]);
+    // API 6 rejects anything but exactly three numbers, which would freeze the swap.
+    expect(nativeWallSwapFrame(frame, 6)).toEqual([4.25, 0.4, 0]);
   });
 });
 

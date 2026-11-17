@@ -466,11 +466,11 @@ it('hands an API 6 board the wall swap frame alongside the wipe progress', () =>
     swapFrame: { value: readonly number[] };
   };
   expect(transition.revealMode).toBe('swap');
-  expect(transition.swapFrame.value).toEqual([0, 1, 0]);
+  expect(transition.swapFrame.value).toEqual([0, 1, 0, 1]);
   // The swap's frame moves only on the UI thread, never with the pager's raw offset.
   pager.slideWidth.value = 250;
   pager.translateX.value = -125;
-  expect(transition.swapFrame.value).toEqual([0, 1, 0]);
+  expect(transition.swapFrame.value).toEqual([0, 1, 0, 1]);
   expect(transition.pagePosition.value).toBe(0.5);
 });
 
