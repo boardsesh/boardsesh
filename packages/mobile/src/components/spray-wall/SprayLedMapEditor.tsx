@@ -4,8 +4,6 @@ import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
   assignLedIndices,
-  connectWiring,
-  cutWiring,
   extendWiring,
   groupLedPair,
   ledPairs,
@@ -34,6 +32,8 @@ import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay, SPRAY_CABLE_COLOR } from './SpraySetupOverlay';
 import { SprayPhotoToolButton, SprayPointToolbar, SprayUndoButton, type SprayPointMode } from './SprayPointToolbar';
 import { sprayCableDisplayGeometry } from './spray-cable-display';
+import { planCableUnitEdits } from './spray-cable-unit-edits';
+import { mapLedPairsById } from './spray-led-units';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 const NO_LEDS: LedPosition[] = [];
@@ -297,6 +297,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const [selected, setSelected] = useState<string[]>([]);
   const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
   const pairs = useMemo(() => ledPairs(layout), [layout]);
+  const pairsById = useMemo(() => mapLedPairsById(pairs), [pairs]);
   const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
@@ -316,6 +317,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const lastWired = useMemo(() => (wiring ? assignLedIndices(wiring).at(-1) : undefined), [wiring]);
   const litIndex = (lastWired ? lastWired.index + 1 : (wiring?.initialSkip ?? 0)) + pendingSkip;
   const acknowledgedIndex = useRef<number | null>(null);
+  const validatingPair = useRef<object | null>(null);
+  const [pairPreviewFailed, setPairPreviewFailed] = useState(false);
   const skipBudget = Math.max(
     0,
     Math.min(
@@ -328,6 +331,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   useEffect(() => {
     let active = true;
     acknowledgedIndex.current = null;
+    setPairPreviewFailed(false);
     if (mode === 'light' && available)
       void show([litIndex]).then((completed) => {
         if (active && completed) acknowledgedIndex.current = litIndex;
@@ -335,49 +339,93 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     return () => {
       active = false;
       acknowledgedIndex.current = null;
+      validatingPair.current = null;
     };
-  }, [mode, available, litIndex, show]);
+  }, [mode, available, litIndex, show, wiring]);
   // The last tap of Light and tap completes the cable: switch its LED off.
   useEffect(() => {
     if (cableComplete && chosenMode === 'light') void stop();
   }, [cableComplete, chosenMode, stop]);
 
   function chooseMode(next: typeof mode) {
+    validatingPair.current = null;
+    acknowledgedIndex.current = null;
     if (mode === 'light' && next !== 'light') void stop();
     setPendingSkip(0);
     setMode(next);
   }
 
-  /** Assign the lit LED to the marker the climber tapped. One Undo step per LED. */
+  function changePendingSkip(delta: number) {
+    const next = Math.max(0, Math.min(skipBudget, pendingSkip + delta));
+    if (next === pendingSkip) return;
+    validatingPair.current = null;
+    acknowledgedIndex.current = null;
+    setPendingSkip(next);
+  }
+
+  /** Assign the next physical index to the tapped LED and keep a pair in one Undo step. */
   function assignLit(id: string) {
     if (
       !wiring ||
-      indices.has(id) ||
       !available ||
       preview.state !== 'lit' ||
       preview.error ||
+      validatingPair.current ||
       acknowledgedIndex.current !== litIndex
     )
       return;
-    let next = extendWiring(wiring, [id]);
+    const additions = withLedPartners([id], pairs, new Set(indices.keys())).filter((member) => !indices.has(member));
+    let next = extendWiring(wiring, additions);
     if (next === wiring) return;
     if (pendingSkip) {
       next = lastWired
-        ? setWiringSkip(next, lastWired.id, id, pendingSkip)
+        ? setWiringSkip(next, lastWired.id, additions[0], pendingSkip)
         : setWiringInitialSkip(next, (wiring.initialSkip ?? 0) + pendingSkip);
     }
     // Setters reject out-of-budget skips as no-ops. Never save a different LED
     // from the one the controller acknowledged, even after a rejected edit.
-    if (assignLedIndices(next).find((entry) => entry.id === id)?.index !== litIndex) return;
+    const appended = assignLedIndices(next).slice(indices.size);
+    if (appended.length !== additions.length || appended.some(({ index }, offset) => index !== litIndex + offset))
+      return;
+    const commit = () => {
+      change({ wiring: next });
+      setPendingSkip(0);
+    };
     acknowledgedIndex.current = null;
-    change({ wiring: next });
-    setPendingSkip(0);
+    if (additions.length === 1) {
+      commit();
+      return;
+    }
+
+    // Let the controller validate both consecutive indices before saving the pair.
+    const attempt = {};
+    validatingPair.current = attempt;
+    setPairPreviewFailed(false);
+    void (async () => {
+      const received = await preview.showPair(litIndex);
+      if (validatingPair.current !== attempt) return;
+      validatingPair.current = null;
+      if (received === 'pair') {
+        commit();
+      } else if (received === 'single') {
+        acknowledgedIndex.current = litIndex;
+        setPairPreviewFailed(true);
+      }
+    })();
   }
 
-  const pair = mode === 'select' && selected.length === 2 ? selected : null;
-  const cut = wiring && pair ? cutWiring(wiring, pair[0], pair[1]) : wiring;
-  const joined = wiring && pair ? connectWiring(wiring, pair[0], pair[1]) : wiring;
+  const selectedUnits = mode === 'select' ? selected.map((id) => pairsById.get(id) ?? ([id] as const)) : [];
+  const twoUnits = selectedUnits.length === 2;
+  const { cut, joined } =
+    wiring && twoUnits
+      ? planCableUnitEdits(wiring, selectedUnits[0], selectedUnits[1])
+      : { cut: wiring, joined: wiring };
   const edge = Boolean(cut && cut !== wiring);
+  const lightError = preview.error
+    ? t(preview.error === 'invalid-indices' ? 'sprayLedSetup.lightAndTapEnd' : 'sprayLed.lightFailed')
+    : pairPreviewFailed
+      ? t('sprayLedSetup.lightAndTapPairFailed')
+      : null;
 
   function extend(ids: string[]) {
     setPreviewWiring(null);
@@ -409,10 +457,12 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     const id = leds[index].id;
     if (mode === 'draw') extend([id]);
     else if (mode === 'light') assignLit(id);
-    else if (mode === 'select')
+    else if (mode === 'select') {
+      const unitId = pairsById.get(id)?.[0] ?? id;
       setSelected((previous) =>
-        previous.includes(id) ? previous.filter((entry) => entry !== id) : [...previous.slice(-1), id],
+        previous.includes(unitId) ? previous.filter((entry) => entry !== unitId) : [...previous.slice(-1), unitId],
       );
+    }
   }
 
   const tools = (
@@ -459,18 +509,18 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               title={t('sprayLedSetup.lightAndTapSkip')}
               variant="outlined"
               disabled={!available || pendingSkip >= skipBudget}
-              onPress={() => setPendingSkip((count) => count + 1)}
+              onPress={() => changePendingSkip(1)}
             />
             <Button
               title={t('sprayLedSetup.lightAndTapUnskip')}
               variant="text"
               disabled={!pendingSkip}
-              onPress={() => setPendingSkip((count) => Math.max(0, count - 1))}
+              onPress={() => changePendingSkip(-1)}
             />
           </View>
-          {preview.error ? (
+          {lightError ? (
             <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
-              {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightAndTapEnd') : t('sprayLed.lightFailed')}
+              {lightError}
             </Text>
           ) : null}
         </>
@@ -480,10 +530,12 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
           <Text variant="footnote">{t('sprayLedSetup.wiringHint')}</Text>
           {selected.length ? (
             <Text accessibilityLiveRegion="polite">
-              {t('sprayLedSetup.selectedLeds', { ids: selected.map((id) => indices.get(id) ?? '—').join(' → ') })}
+              {t('sprayLedSetup.selectedLeds', {
+                ids: selectedUnits.map((unit) => unit.map((id) => indices.get(id) ?? '—').join(' + ')).join(' → '),
+              })}
             </Text>
           ) : null}
-          {pair ? (
+          {twoUnits ? (
             <>
               <View style={[styles.row, { gap: spacing[2] }]}>
                 <Button
@@ -531,18 +583,14 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       />
       {mode === 'light' ? (
         <>
-          {!available || preview.error ? (
+          {!available || lightError ? (
             <Text
               variant="caption2"
               color={brandColors.error}
               accessibilityLiveRegion="polite"
               style={styles.railStatus}
             >
-              {!available
-                ? t('sprayLedSetup.lightingUnavailable')
-                : preview.error === 'invalid-indices'
-                  ? t('sprayLedSetup.lightAndTapEnd')
-                  : t('sprayLed.lightFailed')}
+              {!available ? t('sprayLedSetup.lightingUnavailable') : lightError}
             </Text>
           ) : (
             <Text variant="footnote" accessibilityLabel={t('sprayLedSetup.lightAndTapHint', { index: litIndex })}>
@@ -553,17 +601,17 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             icon="plus"
             label={t('sprayLedSetup.lightAndTapSkip')}
             disabled={!available || pendingSkip >= skipBudget}
-            onPress={() => setPendingSkip((count) => count + 1)}
+            onPress={() => changePendingSkip(1)}
           />
           <SprayPhotoToolButton
             icon="minus"
             label={t('sprayLedSetup.lightAndTapUnskip')}
             disabled={!pendingSkip}
-            onPress={() => setPendingSkip((count) => Math.max(0, count - 1))}
+            onPress={() => changePendingSkip(-1)}
           />
         </>
       ) : null}
-      {pair ? (
+      {twoUnits ? (
         <>
           <SprayPhotoToolButton
             icon="scissors"
@@ -598,6 +646,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
           <SprayUndoButton
             disabled={!canUndo}
             onPress={() => {
+              validatingPair.current = null;
+              acknowledgedIndex.current = null;
               undo();
               setSelected([]);
               setPendingSkip(0);
@@ -625,7 +675,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               wiring={previewWiring ?? wiring}
               showSkips={false}
               ledPairs={pairs}
-              selected={mode === 'select' ? selected : undefined}
+              selected={mode === 'select' ? selectedUnits.flat() : undefined}
               width={renderWidth}
               height={renderHeight}
               zoom={zoom}

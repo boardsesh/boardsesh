@@ -6,6 +6,7 @@ import {
   buildSprayLedMapping,
   clearHoldLedLink,
   findSprayHoldAtPoint,
+  ledPairs,
   setHoldLedLink,
   type CanonicalSprayHold,
   type SprayHoldLedLink,
@@ -22,6 +23,7 @@ import { SprayPhotoStage } from './SprayPhotoStage';
 import { SprayPhotoToolButton, SprayUndoButton } from './SprayPointToolbar';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { sprayHoldRings } from './spray-hold-rings';
+import { mapLedPairsById } from './spray-led-units';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 type TapTarget = 'holds' | 'leds';
@@ -59,10 +61,11 @@ export function SprayHoldLedStep({
   const [target, setTarget] = useState<TapTarget>('holds');
   const [holdId, setHoldId] = useState<number | null>(null);
   const [selectionAttempt, setSelectionAttempt] = useState(0);
-  // An LED with no hold, picked with "Next LED without a hold"; tapping a hold then adds it there.
-  const [freeLedId, setFreeLedId] = useState<string | null>(null);
+  const [freeUnitId, setFreeUnitId] = useState<string | null>(null);
   const [history, setHistory] = useState<(SprayHoldLedLink[] | undefined)[]>([]);
   const leds = layout.ledPositions ?? NO_LEDS;
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
+  const pairsById = useMemo(() => mapLedPairsById(pairs), [pairs]);
   const rings = useMemo(() => sprayHoldRings(holds, source), [holds, source]);
   const visibleIds = useMemo(() => new Set(rings.map((ring) => ring.id)), [rings]);
   const visibleHolds = useMemo(() => holds.filter((hold) => visibleIds.has(hold.id)), [holds, visibleIds]);
@@ -76,8 +79,10 @@ export function SprayHoldLedStep({
   );
   const ledsWithHold = useMemo(() => new Set(mapping.holds.flatMap((hold) => hold.ledIds)), [mapping]);
   const freeLeds = useMemo(() => leds.filter((led) => !ledsWithHold.has(led.id)), [leds, ledsWithHold]);
-  // Once the LED joins a hold, it is no longer the focus.
-  const focusLed = freeLedId !== null && !ledsWithHold.has(freeLedId) ? freeLedId : null;
+  const freeIds = useMemo(() => new Set(freeLeds.map(({ id }) => id)), [freeLeds]);
+  const focusMembers = freeUnitId === null ? [] : (pairsById.get(freeUnitId) ?? [freeUnitId]);
+  const unassignedMembers = focusMembers.filter((id) => freeIds.has(id));
+  const focusIds = unassignedMembers.length ? [...focusMembers] : [];
   const wired = Boolean(layout.wiring?.paths.some((path) => path.length));
   const indexById = useMemo(
     () => new Map(layout.wiring ? assignLedIndices(layout.wiring).map(({ id, index }) => [id, index]) : []),
@@ -86,10 +91,12 @@ export function SprayHoldLedStep({
   const entry = holdId === null ? undefined : mapping.holds.find((hold) => hold.holdId === holdId);
   const linkedByHand = holdId !== null && (layout.holdLeds ?? []).some((link) => link.holdId === holdId);
 
-  // The wall shows the chosen hold's LEDs (or the chosen loose LED), so a wrong
-  // link is obvious on the wall too.
-  const focusIndex = focusLed === null ? undefined : indexById.get(focusLed);
-  const indicesKey = entry ? entry.indices.join(',') : focusIndex === undefined ? '' : String(focusIndex);
+  // Preview every wired LED in a focused unit so it can be found on the wall.
+  const focusIndices = focusIds
+    .map((id) => indexById.get(id))
+    .filter((index) => index !== undefined)
+    .sort((first, second) => first - second);
+  const indicesKey = (entry?.indices ?? focusIndices).join(',');
   const lastLit = useRef('');
   const { available, show, stop } = preview;
   useEffect(() => {
@@ -107,7 +114,7 @@ export function SprayHoldLedStep({
   function chooseHold(id: number) {
     setSelectionAttempt((attempt) => attempt + 1);
     setHoldId(id);
-    setFreeLedId(null);
+    setFreeUnitId(null);
     // Picking a hold is almost always followed by fixing its LEDs.
     setTarget('leds');
   }
@@ -124,10 +131,10 @@ export function SprayHoldLedStep({
     // Away from any LED, a tap picks the hold under the finger.
     const hit = findSprayHoldAtPoint(visibleHolds, point, source.frame);
     if (hit === null) return;
-    if (focusLed !== null) {
-      // "Next LED without a hold" picked this LED: the tapped hold is where it belongs.
+    if (unassignedMembers.length) {
+      // A partly linked pair can be found as a unit without stealing its assigned LED.
       const hitLeds = mapping.holds.find((hold) => hold.holdId === hit)?.ledIds ?? [];
-      commit(setHoldLedLink(layout, hit, [...hitLeds, focusLed]));
+      commit(setHoldLedLink(layout, hit, [...hitLeds, ...unassignedMembers]));
     }
     chooseHold(hit);
   }
@@ -141,12 +148,18 @@ export function SprayHoldLedStep({
     const after = holdId === null ? -1 : order.indexOf(holdId);
     chooseHold(order[(after + 1) % order.length]);
   }
-  /** LEDs without a hold, in the same order. Picks one and waits for the tap on its hold. */
+  /** Step through singles and pairs with a free LED, in the same photo order. */
   function nextFreeLed() {
-    const order = [...freeLeds].sort((first, second) => first.y - second.y || first.x - second.x).map((led) => led.id);
+    const order = [
+      ...new Set(
+        [...freeLeds]
+          .sort((first, second) => first.y - second.y || first.x - second.x)
+          .map(({ id }) => pairsById.get(id)?.[0] ?? id),
+      ),
+    ];
     if (!order.length) return;
-    const after = focusLed === null ? -1 : order.indexOf(focusLed);
-    setFreeLedId(order[(after + 1) % order.length]);
+    const after = freeUnitId === null ? -1 : order.indexOf(freeUnitId);
+    setFreeUnitId(order[(after + 1) % order.length]);
     setSelectionAttempt((attempt) => attempt + 1);
     setHoldId(null);
     setTarget('holds');
@@ -245,7 +258,8 @@ export function SprayHoldLedStep({
             <SpraySetupOverlay
               holes={[]}
               leds={leds}
-              selected={entry?.ledIds ?? (focusLed === null ? [] : [focusLed])}
+              ledPairs={pairs}
+              selected={entry?.ledIds ?? focusIds}
               unmappedHoles={freeLeds}
               holdRings={rings}
               selectedHoldIds={holdId === null ? [] : [holdId]}
@@ -261,8 +275,12 @@ export function SprayHoldLedStep({
         }}
       />
       <Text variant="footnote" accessibilityLiveRegion="polite">
-        {focusLed !== null && !entry
-          ? t('sprayLedSetup.holdLedsFreeLedSelected')
+        {focusIds.length && !entry
+          ? t(
+              focusIds.length === 2
+                ? 'sprayLedSetup.holdLedsFreePairSelected'
+                : 'sprayLedSetup.holdLedsFreeLedSelected',
+            )
           : entry
             ? t(linkedByHand ? 'sprayLedSetup.holdLedsSelectedManual' : 'sprayLedSetup.holdLedsSelected', {
                 count: entry.ledIds.length,
