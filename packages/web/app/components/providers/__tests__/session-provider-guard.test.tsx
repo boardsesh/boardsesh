@@ -14,7 +14,12 @@ import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionProviderWrapper from '../session-provider';
 import QueryClientProvider from '../query-client-provider';
-import { guardedFetch, isSessionSuperseded, WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
+import {
+  guardedActionFetch,
+  guardedFetch,
+  isSessionSuperseded,
+  WEB_SESSION_CHECK_EVENT,
+} from '@/app/lib/auth/session-guard';
 import { guardedNextAuthSignOut } from '@/app/lib/auth/nextauth-cookie-fetch-lock';
 import { signInWithSessionIntent } from '@/app/lib/auth/web-session-events';
 
@@ -256,6 +261,24 @@ describe('re-reading the session', () => {
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
     expect(calls('/api/internal/ws-auth')).toBe(1);
     expect(published.some((state) => state.includes('user-b'))).toBe(false);
+  });
+
+  it('a delete refused after a new login of the same account goes through once the re-check accepts it', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    serverSession = session('user-a', 'login-a2');
+
+    let response: Response | undefined;
+    await act(async () => {
+      response = await guardedActionFetch('/api/internal/controllers', { method: 'DELETE' });
+    });
+
+    expect(response?.status).toBe(200);
+    expect(namedViewers).toEqual(['user-a:login-a', 'user-a:login-a2']);
+    expect(calls('/api/internal/ws-auth')).toBe(1);
+    expect(screen.getByText('authenticated:user-a:login-a2')).toBeTruthy();
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('a viewer_changed answer during a focus probe runs one more probe after it', async () => {

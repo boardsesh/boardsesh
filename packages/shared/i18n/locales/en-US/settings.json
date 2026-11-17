@@ -697,5 +697,9 @@
     "publishLinkMessage": "Anyone with the link can open this board, even though it stays off search and the map. The link is built from the board's name, so it isn't secret. Keep its location hidden unless you choose to share it.",
     "publishLink": "Share by link",
     "publishResourceMessage": "Anyone can open this session or board. Your other private activity stays limited to people you approve."
+  },
+  "reloadRequired": {
+    "message": "Your account changed in another tab or the app. Reload this page to keep going.",
+    "action": "Reload"
   }
 }

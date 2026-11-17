@@ -11,7 +11,7 @@ import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createSessionGuard, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 
-const cookie = vi.hoisted(() => ({ session: vi.fn(), selectedFor: vi.fn(), deleted: vi.fn() }));
+const cookie = vi.hoisted(() => ({ session: vi.fn(), selectedFor: vi.fn(), deleted: vi.fn(), inserted: vi.fn() }));
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/auth/admitted-session.server', () => ({ getAdmittedServerSession: cookie.session }));
 vi.mock('@/app/lib/db/db', () => ({
@@ -29,10 +29,16 @@ vi.mock('@/app/lib/db/db', () => ({
         cookie.deleted((await cookie.session())?.user.id);
       },
     }),
+    insert: () => ({
+      values: (values: { userId: string }) => {
+        cookie.inserted(values.userId);
+        return { returning: async () => [{ id: 'controller-1', createdAt: new Date(), ...values }] };
+      },
+    }),
   }),
 }));
 
-import { DELETE, GET } from '../route';
+import { DELETE, GET, POST } from '../route';
 
 const PAGE_ORIGIN = 'https://www.boardsesh.test';
 const signedInAs = (userId: string, authSessionId: string) => ({ user: { id: userId }, authSessionId });
@@ -41,6 +47,7 @@ const signedInAs = (userId: string, authSessionId: string) => ({ user: { id: use
 const sendToRoute: typeof fetch = async (input, init) => {
   const target = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
   const request = new NextRequest(new URL(target, PAGE_ORIGIN), init as ConstructorParameters<typeof NextRequest>[1]);
+  if (request.method === 'POST') return POST(request);
   return request.method === 'DELETE' ? DELETE(request) : GET(request);
 };
 
@@ -97,6 +104,35 @@ describe('a tab that has not noticed an account switch on the other origin', () 
 
     expect(cookie.deleted).not.toHaveBeenCalled();
     expect(requestSessionCheck).toHaveBeenCalledOnce();
+  });
+
+  it('never registers a controller, and its one-time key, under the new account', async () => {
+    const tab = tabShowing({ userId: 'user-a', authSessionId: 'login-a' });
+    cookie.session.mockResolvedValue(signedInAs('user-b', 'login-b'));
+
+    await expect(
+      tab.fetch('/api/internal/controllers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Projector', boardName: 'spray' }),
+      }),
+    ).rejects.toSatisfy(isSessionSuperseded);
+
+    expect(cookie.inserted).not.toHaveBeenCalled();
+    expect(requestSessionCheck).toHaveBeenCalledOnce();
+  });
+
+  it('registers for its own account while the cookie still names it', async () => {
+    const tab = tabShowing({ userId: 'user-a', authSessionId: 'login-a' });
+
+    const response = await tab.fetch('/api/internal/controllers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boardName: 'spray' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(cookie.inserted).toHaveBeenCalledWith('user-a');
   });
 
   it('a signed-out tab is refused a signed-in cookie’s data too', async () => {

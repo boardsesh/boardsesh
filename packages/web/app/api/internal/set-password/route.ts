@@ -42,7 +42,10 @@ export async function POST(request: NextRequest) {
     // the cookie, so this is the only thing that stops a stale tab writing a
     // password to the account the cookie names now. The settings card, through
     // the www guard, is the one caller, so a missing header is refused.
-    const viewerChanged = requireExpectedViewer(request, session, 'reject');
+    const viewerChanged = requireExpectedViewer(request, session, {
+      route: '/api/internal/set-password',
+      missing: 'reject',
+    });
     if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {

@@ -64,7 +64,7 @@ describe('GET /api/internal/profile', () => {
   ])('answers 409 without reading anything when the tab shows %s', async (_label, expected) => {
     const response = await read(expected);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ code: 'viewer_changed' });
+    expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
     expect(control.select).not.toHaveBeenCalled();
   });
 

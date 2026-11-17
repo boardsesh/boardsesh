@@ -29,7 +29,12 @@ function json(response: ServerResponse, status: number, body: unknown) {
 let requestSessionCheck: ReturnType<typeof vi.fn<() => void>>;
 
 function guardOn(): SessionGuard {
-  return createSessionGuard({ reloadPage: vi.fn(), requestSessionCheck, pageOrigin: () => pageOrigin });
+  return createSessionGuard({
+    reloadPage: vi.fn(),
+    requestSessionCheck,
+    pageOrigin: () => pageOrigin,
+    recheckTimeoutMs: 100,
+  });
 }
 
 beforeAll(async () => {

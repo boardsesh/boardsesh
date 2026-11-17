@@ -11,7 +11,8 @@ import { reloadAfterAccountChange } from './reload-after-account-change';
  * Same-origin requests name the account this page shows in
  * `X-Boardsesh-Expected-Viewer`; a 409 `viewer_changed` answer means the cookie
  * names another account, so it is superseded too and the session is re-checked
- * at once. Design: issue #7596.
+ * at once. `actionFetch` waits for that re-check and retries a climber's read
+ * or delete once. Design: issue #7596.
  */
 export const WEB_SESSION_CHECK_EVENT = 'boardsesh-web-session-check';
 const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
@@ -20,18 +21,42 @@ const REMEMBERED_TOKEN_LIMIT = 32;
 // A login whose session has no authSessionId yet. Same placeholder as the Expo auth bridge.
 const PENDING_LOGIN_IDENTITY = 'pending-login-identity';
 const QUERY_RETRY_LIMIT = 3;
+// The provider's probe and the session read that may follow each stop at 15 s.
+const RECHECK_TIMEOUT_MS = 30_000;
+// Sent again after the re-check. A write is never sent twice: its answer may be lost after a commit.
+const RETRIED_METHODS = new Set(['GET', 'HEAD', 'DELETE']);
 
 export type SessionViewer = { readonly userId: string; readonly authSessionId: string } | null;
 
 export class SessionSupersededError extends Error {
-  constructor() {
+  /** The server answered `viewer_changed`, so it read and wrote nothing. */
+  readonly refusedByServer: boolean;
+  constructor(options: { readonly refusedByServer?: boolean } = {}) {
     super('The signed-in account changed while this request was in flight');
     this.name = 'SessionSupersededError';
+    this.refusedByServer = options.refusedByServer ?? false;
   }
 }
 
 export function isSessionSuperseded(error: unknown): error is SessionSupersededError {
   return error instanceof Error && error.name === 'SessionSupersededError';
+}
+
+/**
+ * The page kept its account through the re-check, yet the action still did not
+ * go through: a retried read or delete was refused again, a write was refused
+ * twice in a row, or a write's answer was lost. The caller shows "Reload this
+ * page" instead of nothing.
+ */
+export class ReloadRequiredError extends Error {
+  constructor() {
+    super('The action could not be confirmed for the account this page shows');
+    this.name = 'ReloadRequiredError';
+  }
+}
+
+export function isReloadRequired(error: unknown): error is ReloadRequiredError {
+  return error instanceof Error && error.name === 'ReloadRequiredError';
 }
 
 /** React Query retry: a superseded request is tried once more, under the account that replaced it. */
@@ -60,11 +85,18 @@ function bearerToken(input: RequestInfo | URL, init?: RequestInit): string | und
   return /^Bearer\s+(\S+)$/i.exec(outgoingHeaders(input, init).get('authorization') ?? '')?.[1];
 }
 
+function requestTarget(input: RequestInfo | URL): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+}
+
+function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
+  return (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+}
+
 function isSameOrigin(input: RequestInfo | URL, pageOrigin: string | undefined): boolean {
   if (!pageOrigin) return false;
-  const target = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   try {
-    return new URL(target, pageOrigin).origin === pageOrigin;
+    return new URL(requestTarget(input), pageOrigin).origin === pageOrigin;
   } catch {
     return false;
   }
@@ -91,6 +123,8 @@ export type SessionGuardDependencies = {
   readonly cleanupTimeoutMs?: number;
   readonly localChangeWindowMs?: number;
   readonly unauthorizedDelayMs?: number;
+  /** How long `actionFetch` waits for a re-check the provider never reports. */
+  readonly recheckTimeoutMs?: number;
 };
 
 export function createSessionGuard(dependencies: SessionGuardDependencies) {
@@ -145,6 +179,33 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     }, dependencies.unauthorizedDelayMs ?? 1000);
   }
 
+  // The re-check a viewer_changed answer asked for, open until the provider
+  // accepts a read or reports a probe that changed nothing.
+  let pendingCheck: { readonly done: Promise<void>; readonly settle: () => void } | null = null;
+  function askForCheck(): void {
+    if (!pendingCheck) {
+      let resolve = () => {};
+      const done = new Promise<void>((settle) => {
+        resolve = settle;
+      });
+      const timer = setTimeout(settleCheck, dependencies.recheckTimeoutMs ?? RECHECK_TIMEOUT_MS);
+      pendingCheck = {
+        done,
+        settle: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      };
+    }
+    dependencies.requestSessionCheck();
+  }
+  function settleCheck(): void {
+    const pending = pendingCheck;
+    pendingCheck = null;
+    pending?.settle();
+  }
+  const afterSessionCheck = (): Promise<void> => pendingCheck?.done ?? Promise.resolve();
+
   // Only this page's own origin hears who it shows; other origins never get the
   // header (it would also force a CORS preflight). Before the first accepted
   // read the page shows nobody, so it names nobody.
@@ -179,8 +240,8 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     // The cookie names another account than this page shows, and the route read
     // and wrote nothing. Ask now rather than at the next focus.
     if (response.status === 409 && isViewerChangedBody(body)) {
-      dependencies.requestSessionCheck();
-      throw new SessionSupersededError();
+      askForCheck();
+      throw new SessionSupersededError({ refusedByServer: true });
     }
     if (response.status === 401) noteUnauthorized();
     return new Response(NULL_BODY_STATUSES.has(response.status) ? null : body, {
@@ -190,8 +251,78 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     });
   };
 
+  function acceptViewer(next: SessionViewer): 'publish' | 'retire' {
+    if (retiring) return 'retire';
+    const previous = viewer;
+    viewer = next;
+    if (previous === undefined) {
+      notify();
+      return 'publish';
+    }
+    if (sessionViewerKey(previous) === sessionViewerKey(next)) return 'publish';
+    generation += 1;
+    // A claim covers one change.
+    const local = localChange !== null && localChange.until > now();
+    localChange = null;
+    // Anonymous to signed-in, a new login of the same account, and this tab's
+    // own sign-in or sign-out keep the page. Its own flow navigates.
+    if (previous === null || previous.userId === next?.userId || local) {
+      notify();
+      return 'publish';
+    }
+    retiring = true;
+    notify();
+    void retire();
+    return 'retire';
+  }
+
+  // Consecutive viewer_changed refusals of one write (method and URL), reset by any answer.
+  const refusedWrites = new Map<string, number>();
+
+  /**
+   * A climber's action. A superseded request waits for the session re-check; a
+   * page moving to another account rethrows it (show nothing, the page
+   * reloads). Otherwise a read or delete is sent once more under the account
+   * the re-check kept, and ReloadRequiredError replaces silence when that is
+   * refused again, when a write is refused twice in a row, or when a write's
+   * answer was lost. One retry at most, never for a write.
+   */
+  const actionFetch: typeof fetch = async (input, init) => {
+    const method = requestMethod(input, init);
+    const action = `${method} ${requestTarget(input)}`;
+    let response: Response;
+    try {
+      response = await guardedFetch(input instanceof Request ? input.clone() : input, init);
+    } catch (error) {
+      if (!isSessionSuperseded(error) || retiring) throw error;
+      await afterSessionCheck();
+      if (retiring) throw error;
+      if (!RETRIED_METHODS.has(method)) {
+        if (!error.refusedByServer) throw new ReloadRequiredError();
+        const refusals = (refusedWrites.get(action) ?? 0) + 1;
+        if (refusals < 2) {
+          refusedWrites.set(action, refusals);
+          throw error;
+        }
+        refusedWrites.delete(action);
+        throw new ReloadRequiredError();
+      }
+      try {
+        response = await guardedFetch(input, init);
+      } catch (retryError) {
+        if (!isSessionSuperseded(retryError) || retiring) throw retryError;
+        throw new ReloadRequiredError();
+      }
+    }
+    refusedWrites.delete(action);
+    return response;
+  };
+
   return {
     fetch: guardedFetch,
+    actionFetch,
+    /** The provider's probe ended without a session read: nothing changed, or it proved nothing. */
+    sessionChecked: settleCheck,
     subscribe,
     isCurrent,
     viewerKey,
@@ -237,28 +368,10 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     },
     /** Called by the session provider before it publishes a read. 'retire' means: publish nothing. */
     accept(next: SessionViewer): 'publish' | 'retire' {
-      if (retiring) return 'retire';
-      const previous = viewer;
-      viewer = next;
-      if (previous === undefined) {
-        notify();
-        return 'publish';
-      }
-      if (sessionViewerKey(previous) === sessionViewerKey(next)) return 'publish';
-      generation += 1;
-      // A claim covers one change.
-      const local = localChange !== null && localChange.until > now();
-      localChange = null;
-      // Anonymous to signed-in, a new login of the same account, and this tab's
-      // own sign-in or sign-out keep the page. Its own flow navigates.
-      if (previous === null || previous.userId === next?.userId || local) {
-        notify();
-        return 'publish';
-      }
-      retiring = true;
-      notify();
-      void retire();
-      return 'retire';
+      const outcome = acceptViewer(next);
+      // Any accepted read answers an open re-check, after the viewer has moved.
+      settleCheck();
+      return outcome;
     },
   };
 }
@@ -278,3 +391,10 @@ export function browserSessionGuard(): SessionGuard {
 
 /** fetch for user-scoped requests: a response from an earlier account rejects with SessionSupersededError. */
 export const guardedFetch: typeof fetch = (input, init) => browserSessionGuard().fetch(input, init);
+
+/**
+ * fetch for a climber's action (a tap, or the list it refreshes): like
+ * guardedFetch, then after a re-check one retry of a read or delete, and
+ * ReloadRequiredError where silence would hide a press that did nothing.
+ */
+export const guardedActionFetch: typeof fetch = (input, init) => browserSessionGuard().actionFetch(input, init);

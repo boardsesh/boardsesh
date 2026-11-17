@@ -95,7 +95,7 @@ describe('profile route', () => {
     ])('answers 409 without reading the profile when the tab shows %s', async (_label, expected) => {
       const response = await read('climber-c', expected);
       expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
       expect(response.headers.get('Cache-Control')).toBe('private, no-store');
       expect(control.profile).not.toHaveBeenCalled();
     });

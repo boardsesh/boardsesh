@@ -198,6 +198,8 @@ export default function SessionProviderWrapper({
       // Only an unknown initial owner retries, and the timer always reads GET
       // through the public refresh event instead of replaying an update POST.
       scheduleInitialRetry();
+      // A re-check waiting on this read learns that it proved nothing.
+      if (ownsResult()) browserSessionGuard().sessionChecked();
       return sessionRef.current;
     } finally {
       clearTimeout(deadline);
@@ -254,6 +256,7 @@ export default function SessionProviderWrapper({
       const probe = new AbortController();
       identityProbe = probe;
       const deadline = setTimeout(() => probe.abort(), 15_000);
+      let readsSession = false;
       try {
         const response = await fetch(IDENTITY_PROBE_PATH, { cache: 'no-store', signal: probe.signal });
         // An outage proves nothing and keeps the accepted session.
@@ -265,6 +268,7 @@ export default function SessionProviderWrapper({
         ) {
           // The session read that follows answers the queued check too.
           recheckAfterProbe = false;
+          readsSession = true;
           externalRefresh();
         }
       } catch {
@@ -276,6 +280,9 @@ export default function SessionProviderWrapper({
           if (recheckAfterProbe) {
             recheckAfterProbe = false;
             void checkIdentity(false);
+          } else if (!readsSession) {
+            // No session read follows, so a request waiting on this check goes on now.
+            browserSessionGuard().sessionChecked();
           }
         }
       }

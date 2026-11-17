@@ -17,7 +17,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { applyLocale } from '@/app/lib/i18n/locale-href';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { guardedFetch, isSessionSuperseded } from '@/app/lib/auth/session-guard';
+import { guardedActionFetch, isReloadRequired, isSessionSuperseded } from '@/app/lib/auth/session-guard';
+import ReloadPageAlert from './reload-page-alert';
 
 type SetPasswordSectionProps = {
   hasPassword: boolean;
@@ -58,6 +59,8 @@ export default function SetPasswordSection({
   const [passwordError, setPasswordError] = useState('');
   const [confirmError, setConfirmError] = useState('');
   const [saving, setSaving] = useState(false);
+  // Still refused after the session re-check: say so instead of nothing.
+  const [reloadRequired, setReloadRequired] = useState(false);
   const { showMessage } = useSnackbar();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -93,7 +96,7 @@ export default function SetPasswordSection({
 
     try {
       setSaving(true);
-      const response = await guardedFetch('/api/internal/set-password', {
+      const response = await guardedActionFetch('/api/internal/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -132,8 +135,13 @@ export default function SetPasswordSection({
       setConfirmPassword('');
       onPasswordSet();
     } catch (error) {
-      // The account changed under this page; the guard re-checks the session.
+      // The account changed under this page, or the server refused once and
+      // wrote nothing; the typed password stays for another try.
       if (isSessionSuperseded(error)) return;
+      if (isReloadRequired(error)) {
+        setReloadRequired(true);
+        return;
+      }
       console.error('Set password error:', error);
       showMessage(t('password.validation.retryError'), 'error');
     } finally {
@@ -177,6 +185,7 @@ export default function SetPasswordSection({
           </Alert>
         )}
 
+        {reloadRequired && <ReloadPageAlert />}
         {reauthenticationRequired && (
           <Alert severity="info" sx={{ mb: 2 }}>
             {t('password.reauthenticationRequired')}

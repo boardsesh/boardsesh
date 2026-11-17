@@ -246,7 +246,7 @@ describe('POST /api/internal/set-password', () => {
       const response = await POST(createRequest(body, expected));
 
       expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
       expectNothingTouched();
     });
 
@@ -256,7 +256,7 @@ describe('POST /api/internal/set-password', () => {
       const response = await POST(createRequest(body, null));
 
       expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
       expectNothingTouched();
     });
 

@@ -21,7 +21,8 @@ import ConnectedAppsSection from '@/app/components/account/connected-apps-sectio
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
-import { guardedFetch, isSessionSuperseded } from '@/app/lib/auth/session-guard';
+import { guardedActionFetch, isReloadRequired, isSessionSuperseded } from '@/app/lib/auth/session-guard';
+import ReloadPageAlert from '@/app/components/account/reload-page-alert';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
@@ -52,6 +53,7 @@ export default function SettingsPageContent() {
   const activeLocale: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [reloadRequired, setReloadRequired] = useState(false);
   const { showMessage } = useSnackbar();
 
   // Redirect unauthenticated users to login with a return URL
@@ -64,7 +66,7 @@ export default function SettingsPageContent() {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const response = await guardedFetch('/api/internal/profile');
+      const response = await guardedActionFetch('/api/internal/profile');
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
@@ -72,6 +74,10 @@ export default function SettingsPageContent() {
       setProfile(data);
     } catch (error) {
       if (isSessionSuperseded(error)) return;
+      if (isReloadRequired(error)) {
+        setReloadRequired(true);
+        return;
+      }
       console.error('Failed to fetch profile:', error);
       showMessage(t('loading.profileError'), 'error');
     } finally {
@@ -159,6 +165,7 @@ export default function SettingsPageContent() {
           width: '100%',
         }}
       >
+        {reloadRequired && <ReloadPageAlert />}
         <ConsentSettingsCard />
         <MuiDivider sx={{ my: 2 }} />
         <Box id="password">

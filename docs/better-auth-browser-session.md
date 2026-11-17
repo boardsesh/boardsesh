@@ -325,13 +325,42 @@ after the route reads the session and before any other read or write. It
 compares the header with the session the cookie resolved to, in the same key
 format. On a mismatch (another account, another login of the same account, a
 signed-out page against a signed-in cookie, the reverse, or an unreadable
-value) it answers 409 with `{ "code": "viewer_changed" }` and
-`Cache-Control: private, no-store`. The body names no account. The guard turns
-that answer into `SessionSupersededError`, so the caller shows nothing, and it
-asks for the session check at once, skipping the 30-second focus throttle. If a
-probe is already out, one more runs after it, because that probe may have read
-the cookie before it changed. The check then retires the page as in the table
+value) it answers 409 with
+`{ "code": "viewer_changed", "error": "Reload this page." }` and
+`Cache-Control: private, no-store`. The body names no account; `error` is what
+a tab loaded before this change shows as its failure toast. Each refusal writes
+one `warn` line, `expected viewer refused`, with the route template, the method
+and a reason (`header_missing`, `other_user`, `other_session`,
+`anonymous_cookie` or `malformed`), and no user id, session id, header value or
+resolved path. It is a log line, not a Sentry event: searchable in the Railway
+logs, and it pages nobody. A run of `malformed` or `other_session` with no
+account switch behind it means the browser and the server build the key
+differently.
+
+The guard turns that answer into `SessionSupersededError` and asks for the
+session check at once, skipping the 30-second focus throttle. If a probe is
+already out, one more runs after it, because that probe may have read the
+cookie before it changed. The check then retires the page as in the table
 above. Other 409s, such as "Password already set.", reach the caller as before.
+
+The settings page sends its requests through `guardedActionFetch`, which waits
+for that check (the provider reports the probe's outcome; 30 seconds at most)
+and then:
+
+- the page is moving to another account: nothing is shown, the page reloads;
+- a read or a delete: sent once more, with the header the check left (a new
+  login of the same account keeps the page and changes only the session id).
+  Refused again, the card shows "Reload this page" with a Reload button;
+- a write (register a controller, set a password) is never sent twice, because
+  a lost answer may have committed. Refused once, nothing is shown and the form
+  keeps what was typed for another press. Refused twice in a row, or answered
+  after the page's login changed (a controller may exist whose one-time key is
+  gone), the card shows "Reload this page" and the controllers list is read
+  again.
+
+The message is inline rather than a toast, because the snackbar drops a toast
+from before an account change, and after a new login of the same account it
+must still show. Its text is `settings.reloadRequired` in all five locales.
 
 | Route | Missing header | Why |
 | --- | --- | --- |
@@ -356,9 +385,10 @@ changed.
 
 What stays open:
 
-1. A tab loaded before this shipped sends no header. Its controllers and
-   set-password requests get 409 until it reloads, which its old code shows as
-   the generic error. Its profile reads are served as before.
+1. A tab loaded before this shipped sends no header. Until it reloads, its
+   controllers card lists no controllers (the old code shows the empty state
+   for any failed read), and registering, removing or setting a password shows
+   the toast "Reload this page." Its profile reads are served as before.
 2. Soft navigation. The App Router fetches server components with the cookie,
    not through `guardedFetch`, and the guard cannot add a header to those
    requests. A stale tab that follows a link to `/profile/<id>` gets that page
@@ -367,10 +397,14 @@ What stays open:
    `/api/internal/profile/[userId]`); other private server pages (playlists,
    gym management, build-plan orders) behave the same. The four API routes are
    not reachable that way. The next re-read still retires the page.
-3. No browser test drives two real origins. `viewer-switch-race.test.ts` runs
-   the real guard against the real controllers route with the cookie switched
-   underneath, and `session-provider-guard.test.tsx` runs the provider's
-   re-check and reload.
+3. No browser test drives two real origins. `expected-viewer-sign-in.test.ts`
+   runs the real NextAuth `jwt` and `session` callbacks, NextAuth's session
+   handler, `getAdmittedServerSession`, the guard and the four routes, and
+   expects no 409 (the browser and server keys agree);
+   `viewer-switch-race.test.ts` runs the real guard against the real
+   controllers route with the cookie switched underneath; and
+   `session-provider-guard.test.tsx` runs the provider's re-check, retry and
+   reload.
 
 ## How each race is handled
 

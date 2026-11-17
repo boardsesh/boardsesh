@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SetPasswordSection from '../set-password-section';
-import { WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
+import { browserSessionGuard, WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -26,6 +26,8 @@ let mockFetch: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // A fresh guard per case: it counts refused writes.
+  delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[Symbol.for('boardsesh.web-session-guard.v1')];
   mockFetch = vi.fn();
   global.fetch = mockFetch as unknown as typeof fetch;
 });
@@ -248,9 +250,12 @@ describe('SetPasswordSection', () => {
       });
     });
 
-    it('shows nothing when the cookie names another account, and asks for a session check', async () => {
-      mockFetch.mockImplementation(async () => Response.json({ code: 'viewer_changed' }, { status: 409 }));
-      const checks = vi.fn();
+    it('keeps the typed password after one refusal, and asks for a reload after the second', async () => {
+      mockFetch.mockImplementation(async () =>
+        Response.json({ code: 'viewer_changed', error: 'Reload this page.' }, { status: 409 }),
+      );
+      // The session provider's probe finds the page's own account: nothing changes.
+      const checks = vi.fn(() => browserSessionGuard().sessionChecked());
       window.addEventListener(WEB_SESSION_CHECK_EVENT, checks);
       const onPasswordSet = vi.fn();
 
@@ -271,7 +276,15 @@ describe('SetPasswordSection', () => {
 
       await waitFor(() => expect(checks).toHaveBeenCalledOnce());
       await waitFor(() => expect(screen.getByText('Set Password').closest('button')?.disabled).toBe(false));
+      expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('testpass123');
+      expect(screen.queryByText(tFromCatalog('settings', 'reloadRequired.message'))).toBeNull();
+
+      fireEvent.click(screen.getByText('Set Password'));
+
+      expect(await screen.findByText(tFromCatalog('settings', 'reloadRequired.message'))).toBeTruthy();
       window.removeEventListener(WEB_SESSION_CHECK_EVENT, checks);
+      // A write is never sent twice per press.
+      expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(mockShowMessage).not.toHaveBeenCalled();
       expect(onPasswordSet).not.toHaveBeenCalled();
     });

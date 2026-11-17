@@ -17,7 +17,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await params;
     const session = await getAdmittedServerSession();
-    const viewerChanged = requireExpectedViewer(request, session, 'allow');
+    const viewerChanged = requireExpectedViewer(request, session, {
+      route: '/api/internal/profile/[userId]',
+      missing: 'allow',
+    });
     if (viewerChanged) return viewerChanged;
     const viewerUserId = session?.user?.id;
 

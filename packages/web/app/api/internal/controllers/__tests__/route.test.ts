@@ -114,7 +114,7 @@ describe('expected viewer on /api/internal/controllers', () => {
       const response = await sends[method]();
 
       expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
       expect(control.selected).not.toHaveBeenCalled();
       expect(control.insertedValues).not.toHaveBeenCalled();
       expect(control.deleted).not.toHaveBeenCalled();

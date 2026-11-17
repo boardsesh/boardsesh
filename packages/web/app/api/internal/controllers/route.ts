@@ -47,6 +47,7 @@ export type ControllerInfo = {
 // Every handler checks the expected viewer first. Its one caller is the
 // /settings controllers card through the www guard, which always names the
 // viewer, so a request without the header from a signed-in cookie is refused.
+const VIEWER_POLICY = { route: '/api/internal/controllers', missing: 'reject' } as const;
 
 // Consider controller online if seen within last 60 seconds
 const ONLINE_THRESHOLD_MS = 60 * 1000;
@@ -64,7 +65,7 @@ function generateApiKey(): string {
 export async function GET(request: NextRequest) {
   try {
     const session = await getAdmittedServerSession();
-    const viewerChanged = requireExpectedViewer(request, session, 'reject');
+    const viewerChanged = requireExpectedViewer(request, session, VIEWER_POLICY);
     if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await getAdmittedServerSession();
-    const viewerChanged = requireExpectedViewer(request, session, 'reject');
+    const viewerChanged = requireExpectedViewer(request, session, VIEWER_POLICY);
     if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const session = await getAdmittedServerSession();
-    const viewerChanged = requireExpectedViewer(request, session, 'reject');
+    const viewerChanged = requireExpectedViewer(request, session, VIEWER_POLICY);
     if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {

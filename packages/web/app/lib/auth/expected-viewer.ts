@@ -13,9 +13,15 @@
 export const EXPECTED_VIEWER_HEADER = 'X-Boardsesh-Expected-Viewer';
 export const VIEWER_CHANGED_CODE = 'viewer_changed';
 
-export type ViewerChangedBody = { readonly code: typeof VIEWER_CHANGED_CODE };
+/**
+ * Tabs loaded before the header existed show `error` as their failure toast,
+ * so it is plain text a climber can act on. Current tabs never show it.
+ */
+export const VIEWER_CHANGED_ERROR = 'Reload this page.';
 
-// The 409 body is a dozen bytes; anything longer is some other route's answer.
+export type ViewerChangedBody = { readonly code: typeof VIEWER_CHANGED_CODE; readonly error: string };
+
+// The 409 body is a few dozen bytes; anything longer is some other route's answer.
 const MAX_VIEWER_CHANGED_BODY_BYTES = 256;
 
 /** True for the body `requireExpectedViewer` answers, and for nothing else a route sends with 409. */
