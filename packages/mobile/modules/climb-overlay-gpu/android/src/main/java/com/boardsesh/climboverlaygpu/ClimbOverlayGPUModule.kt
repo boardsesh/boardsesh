@@ -24,7 +24,11 @@ class ClimbOverlayGPUModule : Module() {
 
     override fun definition() = ModuleDefinition {
         Name("ClimbOverlayGPU")
-        Constants("apiVersion" to OverlayPacketLayout.NATIVE_API_VERSION, "assetApiVersion" to 0)
+        Constants(
+            "apiVersion" to OverlayPacketLayout.NATIVE_API_VERSION,
+            "assetApiVersion" to 0,
+            "swapCommandApi" to OverlaySwapCommand.API,
+        )
         OnCreate {
             application = appContext.reactContext?.applicationContext
             application?.registerComponentCallbacks(callbacks)

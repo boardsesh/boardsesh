@@ -136,6 +136,35 @@ import Foundation
     for malformed in [[12.25,0.4], [12.25,0.4,0,1,1], [.nan,0.4,0], [12,0.4,.infinity], [.nan,0.4,0,1], []] {
       precondition(ClimbOverlayMotion.swapFrame(malformed) == nil,"Malformed swap frames are ignored whole")
     }
+    // #7737: a fifth number is the frame's sequence; three or four numbers are an older app's frame.
+    precondition(ClimbOverlayMotion.sequencedSwapFrame([12.25,0.4,0,0.5,7])
+      == .init(frame: .init(pagePosition: 12.25,outgoing: 0.4,incoming: 0,shared: 0.5),sequence: 7))
+    precondition(ClimbOverlayMotion.sequencedSwapFrame([12.25,0.4,0,0.5])
+      == .init(frame: .init(pagePosition: 12.25,outgoing: 0.4,incoming: 0,shared: 0.5),sequence: nil))
+    precondition(ClimbOverlayMotion.sequencedSwapFrame([12.25,0.4,0])?.sequence == nil)
+    for malformed in [[12.25,0.4,0,0.5,.nan], [12.25,0.4,0,0.5,.infinity], [.nan,0.4,0,0.5,3],
+                      [12.25,0.4,0,0.5,3,4], [12.25,0.4], []] {
+      precondition(ClimbOverlayMotion.sequencedSwapFrame(malformed) == nil,"Malformed sequenced frames are ignored whole")
+    }
+    // Command arguments arrive as NSNumbers; anything else rejects the command.
+    precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 12.25),NSNumber(value: 0.4),NSNumber(value: 0),
+      NSNumber(value: 1),NSNumber(value: 3)]) == [12.25,0.4,0,1,3])
+    precondition(ClimbOverlayMotion.commandValues([]) == [])
+    precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 1),"2"]) == nil)
+    precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 1),NSNull()]) == nil)
+    precondition(ClimbOverlayMotion.commandValues([NSNumber(value: true)]) == nil,"A boolean is not a frame number")
+    // The sequence gate: the command lands first, the same frame's prop later is dropped,
+    // and so is any older prop a late React mount delivers.
+    var gate = ClimbOverlayMotion.SwapFrameSequenceGate()
+    precondition(gate.lastApplied == nil && gate.admit(5),"A new view applies its first frame, whatever its sequence")
+    precondition(!gate.admit(5),"The prop copy of an applied command is dropped")
+    precondition(!gate.admit(3),"A stale prop never overwrites a newer command")
+    precondition(gate.admit(6) && gate.lastApplied == 6)
+    precondition(gate.admit(nil) && gate.lastApplied == 6,"An unsequenced frame (older app) always applies")
+    precondition(!gate.admit(6))
+    var remounted = ClimbOverlayMotion.SwapFrameSequenceGate()
+    precondition(remounted.admit(1),"A remounted view starts empty, so a restarted counter still applies")
+    precondition(ClimbOverlayMotion.swapFrameCommand == "swapFrame" && ClimbOverlayMotion.swapCommandApi == 1)
     // While the next trio prepares, the old one keeps the running swap moving:
     // leaving 12 for 13 after the app rendered 13, the old trio (11, 12, 13)
     // draws the same pair and weights the new trio (12, 13, 14) will.
@@ -189,6 +218,6 @@ import Foundation
     precondition(pulse.reachScale(at: 200.10)==1,"Rapid edits replace, never queue, the pulse")
     pulse.cancel()
     precondition(!pulse.present(at: 201),"Suppressed pending edits cannot start later")
-    print("Motion guards passed: reveal direction/mirror/roles, wall-swap pairs/weights, ownership, pager endpoints, and presentation-started 350ms reach expansion/cancellation")
+    print("Motion guards passed: reveal direction/mirror/roles, wall-swap pairs/weights, swap-frame command sequence gate, ownership, pager endpoints, and presentation-started 350ms reach expansion/cancellation")
   }
 }

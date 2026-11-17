@@ -6,9 +6,10 @@ public class ClimbOverlayGPUModule: Module {
     #if targetEnvironment(simulator)
     // The simulator SDK omits MTLDrawable.addPresentedHandler. Keep the
     // diagnostic story available, but do not promise live presentation fences.
-    Constants(["apiVersion": 1, "assetApiVersion": 0])
+    Constants(["apiVersion": 1, "assetApiVersion": 0, "swapCommandApi": ClimbOverlayMotion.swapCommandApi])
     #else
-    Constants(["apiVersion": ClimbOverlayPacketLayout.nativeApiVersion, "assetApiVersion": 0])
+    Constants(["apiVersion": ClimbOverlayPacketLayout.nativeApiVersion, "assetApiVersion": 0,
+      "swapCommandApi": ClimbOverlayMotion.swapCommandApi])
     #endif
     AsyncFunction("getResourceStats") { () throws -> [String: Any] in try climbOverlayPacketResourceStats() }
     AsyncFunction("compare") { (configJson: String) throws -> [String: Any] in

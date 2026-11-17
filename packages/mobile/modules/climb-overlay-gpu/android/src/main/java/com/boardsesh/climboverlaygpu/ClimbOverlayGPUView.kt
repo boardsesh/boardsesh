@@ -15,15 +15,17 @@ import android.provider.Settings
 import android.view.Choreographer
 import android.view.TextureView
 import android.view.View
+import com.facebook.react.bridge.ReadableArray
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
+import expo.modules.kotlin.views.ExpoViewCommandReceiver
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
-    ExpoView(context, appContext), TextureView.SurfaceTextureListener {
+    ExpoView(context, appContext), TextureView.SurfaceTextureListener, ExpoViewCommandReceiver {
     private val onRenderReady by EventDispatcher<Map<String, Any?>>()
     private val onRenderError by EventDispatcher()
     var configJson = ""
@@ -45,6 +47,8 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var outgoingWeight = 1f
     private var incomingWeight = 0f
     private var sharedWeight = 1f
+    /** The newest swap frame this view has applied, by the app's sequence. */
+    private val swapSequence = SwapFrameSequenceGate()
     private val main = Handler(Looper.getMainLooper())
     private val texture =
         TextureView(context).apply {
@@ -179,11 +183,15 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     }
 
     /**
-     * The swap's animated prop: its pair and weights, published to the
-     * render thread as one controls snapshot. The timing lives in the app.
+     * The swap's frame: its pair and weights, published to the render thread
+     * as one controls snapshot. It arrives as the `swapFrame` command and again
+     * as the animated prop; a frame older than one already applied is dropped.
+     * The timing lives in the app.
      */
     fun setSwapFrame(frame: List<Double>?) {
-        val next = controls.withSwapFrame(frame) ?: return
+        val sequenced = OverlaySwapCommand.split(frame) ?: return
+        val next = controls.withSwapFrame(sequenced.frame) ?: return
+        if (!swapSequence.admit(sequenced.sequence)) return
         if (next == controls) return
         if (next.position != pagePosition) cancelPrefetch()
         pagePosition = next.position
@@ -192,6 +200,17 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         sharedWeight = next.shared
         controls = next
         requestDraw()
+    }
+
+    /**
+     * Fabric view commands, forwarded by the patched expo-modules-core view
+     * manager on the main thread. They run first in the next mount pass, so a
+     * pending React commit cannot hold the frame back (#7737).
+     */
+    override fun receiveViewCommand(commandId: String, args: ReadableArray?): Boolean {
+        if (commandId != OverlaySwapCommand.NAME) return false
+        OverlaySwapCommand.values(args?.toArrayList())?.let(::setSwapFrame)
+        return true
     }
 
     private fun refreshMotionPolicy() {

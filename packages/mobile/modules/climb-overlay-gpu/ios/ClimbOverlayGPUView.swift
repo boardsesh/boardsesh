@@ -154,6 +154,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var outgoingWeight: Float = 1
   private var incomingWeight: Float = 0
   private var sharedWeight: Float = 1
+  /// The newest swap frame this view has applied, by the app's sequence.
+  private var swapSequence = ClimbOverlayMotion.SwapFrameSequenceGate()
   /// The packet on screen when a new trio started preparing, kept drawing the
   /// running swap until the replacement is ready. Same layout revision only.
   private struct CarryOver {
@@ -278,12 +280,16 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     requestDraw()
   }
 
-  /// The swap's animated prop: its pair and weights, applied together.
-  /// The timing lives in the app.
+  /// The swap's frame: its pair and weights, applied together. It arrives as
+  /// the `swapFrame` command and again as the animated prop; a frame older
+  /// than one already applied is dropped. The timing lives in the app.
   func setSwapFrame(_ values: [Double]) {
-    guard let frame = ClimbOverlayMotion.swapFrame(values),
-      frame.pagePosition != pagePosition || frame.outgoing != outgoingWeight || frame.incoming != incomingWeight
-        || frame.shared != sharedWeight
+    guard let sequenced = ClimbOverlayMotion.sequencedSwapFrame(values),
+      swapSequence.admit(sequenced.sequence)
+    else { return }
+    let frame = sequenced.frame
+    guard frame.pagePosition != pagePosition || frame.outgoing != outgoingWeight || frame.incoming != incomingWeight
+      || frame.shared != sharedWeight
     else { return }
     if frame.pagePosition != pagePosition { cancelPrefetch() }
     pagePosition = frame.pagePosition
@@ -291,6 +297,30 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     incomingWeight = frame.incoming
     sharedWeight = frame.shared
     requestDraw()
+  }
+
+  /// Fabric view commands. Reanimated's `dispatchCommand` reaches here through
+  /// RCTMountingManager, inline on the main thread when it dispatches from the
+  /// UI runtime, without waiting for a React commit to mount (#7737). Swift sees
+  /// ExpoFabricViewObjC as a plain UIView, so this names the selector that
+  /// RCTViewComponentView implements; anything but `swapFrame` goes to that.
+  @objc(handleCommand:args:)
+  func handleViewCommand(_ commandName: NSString, args: NSArray) {
+    guard commandName as String == ClimbOverlayMotion.swapFrameCommand else {
+      forwardViewCommand(commandName, args: args)
+      return
+    }
+    guard let values = ClimbOverlayMotion.commandValues(args as [Any]) else { return }
+    setSwapFrame(values)
+  }
+
+  private func forwardViewCommand(_ commandName: NSString, args: NSArray) {
+    typealias CommandHandler = @convention(c) (AnyObject, Selector, NSString, NSArray) -> Void
+    let selector = #selector(handleViewCommand(_:args:))
+    guard let parent = ClimbOverlayGPUView.superclass(),
+      let method = class_getInstanceMethod(parent, selector)
+    else { return }
+    unsafeBitCast(method_getImplementation(method), to: CommandHandler.self)(self, selector, commandName, args)
   }
 
   @objc private func motionPolicyChanged() {
