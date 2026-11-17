@@ -1,5 +1,7 @@
 # BA-01 HTTP and WebSocket revocation proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. The live HTTP and WebSocket revocation behavior is tested by `packages/backend/src/__tests__/deletion-credential-admission.test.ts` (real sockets ended at a reset) and `packages/backend/src/auth/authority/__tests__/revocation-authority.test.ts`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This disposable proof supports [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975)
 and the session-security gate in [the migration design](./better-auth-migration.md).
 The [implementation ledger](./better-auth-implementation.md) owns readiness. These
@@ -11,7 +13,7 @@ files do not register production routes or change the active credential writer.
 each with its own Postgres pool and HTTP/WebSocket listener on an ephemeral
 loopback port. Both use one test-owned database created and migrated by
 `createPrototypeEnvironment`. These authorities run in the same Node process;
-the separate [application-process proof](./better-auth-process-proof.md) covers
+the application-process proof (deleted with the prototype in #7620) covered
 independent PIDs and application termination. No part of this transport suite
 claims an operating-system or database crash.
 
@@ -110,9 +112,8 @@ proof.
 ## Reproduce and recorded evidence
 
 ```sh
-AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres \
-  vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  transport-revocation.test.ts --reporter=agent
+vp test run --project backend deletion-credential-admission --reporter=agent
+vp test run --config packages/backend/vite.auth-authority.config.ts revocation-authority --reporter=agent
 ```
 
 On 2026-11-04 the author run passed **16 tests** in **4.79 seconds**, including

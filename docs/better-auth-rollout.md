@@ -157,6 +157,4 @@ No switch. Remove NextAuth only after the legacy cookie has been kept for 30 day
 
 ## Pending on open PRs (not on main)
 
-- #7650: shared per-client limit for staged sign-in (the login budget, #7589).
-- #7652: partner app changes that move credentials need a recent sign-in (#7598).
 - #7647: CI ratchet on new next-auth imports (BA-10).

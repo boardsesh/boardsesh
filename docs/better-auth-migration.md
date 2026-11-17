@@ -19,13 +19,13 @@ owns first-party identity, credentials, compatibility, and the migration. The
 describe the current system until implementation changes them.
 
 Implementation evidence, decisions and the current no-go gate are recorded in
-[the implementation ledger](./better-auth-implementation.md). The isolated
-[OAuth prototype](./better-auth-prototype.md) and
-[writer/installed-client inventory](./better-auth-writer-inventory.md) are
-supporting evidence, alongside the [HTTPS browser](./better-auth-browser-proof.md),
-[process replacement](./better-auth-process-proof.md) and
-[pre-cutover refresh](./better-auth-legacy-refresh-proof.md) proofs. They do not
-imply a production authority switch.
+[the implementation ledger](./better-auth-implementation.md). The
+[writer/installed-client inventory](./better-auth-writer-inventory.md) is
+supporting evidence, alongside the [HTTPS browser](./better-auth-browser-proof.md)
+and [pre-cutover refresh](./better-auth-legacy-refresh-proof.md) proofs. The
+BA-01 OAuth prototype and process-replacement proof pages were deleted in
+[#7620](https://github.com/boardsesh/boardsesh/pull/7620) with the prototype.
+Nothing here implies a production authority switch.
 
 ## Decisions and completion criteria
 

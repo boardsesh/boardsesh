@@ -25,7 +25,7 @@ missing claim, one that is not a whole positive number of seconds, one more than
 Where several copies of one login are accepted, the earliest sign-in counts, and
 none if any copy lacks one. The attribution timestamp is never read as a sign-in.
 Partner consent is the one production reader (`auth/partner/first-party-session.ts`);
-the prototype's canonical bridge still ignores it. The current web callback's explicit `authSessionId`
+the deleted prototype's canonical bridge ignored it. The current web callback's explicit `authSessionId`
 identifies a stable login; NextAuth regenerates `jti` during rolling encoding,
 so an unpersisted `jti` cannot establish durable lineage. Credentials without
 explicit lineage require a conservative account cutoff in a later bridge.

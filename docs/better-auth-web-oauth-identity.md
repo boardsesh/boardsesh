@@ -70,7 +70,7 @@ all-validator revocation authority is issued by these identity commands.
 5. **Password policy remains the user's decision.** Authenticated password
    set/change keeps the requesting device signed in and revokes other credentials,
    preserving its original proven authentication age. Forgotten-password reset
-   revokes every session. The isolated prototype proves that policy; this OAuth
+   revokes every session. The deleted BA-01 prototype (#7620) proved that policy; this OAuth
    identity slice does not adopt it into production password routes.
 
 ## Apple continuation and browser cookies
