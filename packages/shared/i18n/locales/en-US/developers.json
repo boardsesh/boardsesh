@@ -149,6 +149,13 @@
     "emailNotVerified": "Verify your email address before you register an app.",
     "generic": "Something went wrong. Try again."
   },
+  "signInAgain": {
+    "title": "Sign in again to make this change",
+    "body": "Changing redirect URIs, making a new secret or deleting an app needs a sign-in from the last {{minutes}} minutes. That way, nobody else who has your session can take over your app.",
+    "next": "You'll sign out, sign back in and come straight back here. Then make the change again.",
+    "formKept": "Your edits stay in the form behind this message. Signing in again leaves this page and clears them, so copy any redirect URIs you typed before you go.",
+    "button": "Sign in again"
+  },
   "terms": {
     "metadata": {
       "title": "Developer terms | Boardsesh for developers",

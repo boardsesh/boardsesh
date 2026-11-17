@@ -30,7 +30,13 @@ import {
   type PartnerLogbookDatabases,
 } from './logbook-access';
 import { createPartnerOriginDirectory, type PartnerRegisteredOrigins } from './registered-origins';
-import { createPartnerRegistration, partnerRegistrationActorPlugin, type PartnerRegistration } from './registration';
+import { sendPartnerAppChangeEmail } from '../../email/partner-app-emails';
+import {
+  createPartnerRegistration,
+  partnerRegistrationActorPlugin,
+  type PartnerAppChangeNotifier,
+  type PartnerRegistration,
+} from './registration';
 import { PARTNER_DISABLED_PATHS } from './routes';
 import { partnerAdapterSchema, type PartnerDatabase } from './tables';
 import {
@@ -233,8 +239,14 @@ export async function createPartnerAuthorityRuntime(
   {
     close,
     logbook,
+    notifyDeveloper = sendPartnerAppChangeEmail,
     ...buildOptions
-  }: PartnerAuthorityBuildOptions & { close: () => Promise<void>; logbook: PartnerLogbookDatabases },
+  }: PartnerAuthorityBuildOptions & {
+    close: () => Promise<void>;
+    logbook: PartnerLogbookDatabases;
+    /** Who hears about a redirect URI change, a new secret or a deleted app. The email, unless a test listens instead. */
+    notifyDeveloper?: PartnerAppChangeNotifier;
+  },
 ): Promise<PartnerAuthorityRuntime> {
   const authority = createPartnerAuthority(database, configuration, buildOptions);
   await authority.$context;
@@ -251,7 +263,7 @@ export async function createPartnerAuthorityRuntime(
     configuration,
     admission: createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS),
     registeredOrigins,
-    registration: createPartnerRegistration({ authority, configuration, registeredOrigins }),
+    registration: createPartnerRegistration({ authority, configuration, registeredOrigins, notifyDeveloper }),
     handleRequest: (request, options) => handlePartnerRequest(database, request, authority.handler, options),
     discoveryResponse: (logContext) =>
       handlePartnerRequest(

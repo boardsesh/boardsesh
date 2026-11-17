@@ -37,3 +37,12 @@ export const PARTNER_CONSENT_ERRORS = {
 } as const;
 
 export type PartnerConsentError = (typeof PARTNER_CONSENT_ERRORS)[keyof typeof PARTNER_CONSENT_ERRORS];
+
+/**
+ * The `extensions.reason` of a developer console change the backend refused
+ * because the developer's sign-in is older than
+ * `PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` (or its age is unknown). The
+ * code is `FORBIDDEN`; the console switches on this reason, signs the developer
+ * in again and brings them back to retry.
+ */
+export const PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED = 'RECENT_SIGN_IN_REQUIRED';

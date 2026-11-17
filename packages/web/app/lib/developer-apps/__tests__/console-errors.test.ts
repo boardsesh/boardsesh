@@ -14,6 +14,7 @@ describe('classifyConsoleError', () => {
     [{ code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' }, 'not-allowlisted'],
     [{ code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' }, 'email-not-verified'],
     [{ code: 'FORBIDDEN', reason: 'SUSPENDED' }, 'suspended'],
+    [{ code: 'FORBIDDEN', reason: 'RECENT_SIGN_IN_REQUIRED', maxAgeSeconds: 300 }, 'sign-in-again'],
     [{ code: 'RATE_LIMITED', retryAfterSeconds: 12 }, 'rate-limited'],
     [{ code: 'INTERNAL_SERVER_ERROR' }, 'failed'],
   ])('reads %j as %s, by code and reason', (extensions, kind) => {

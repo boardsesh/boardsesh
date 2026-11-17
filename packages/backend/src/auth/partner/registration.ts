@@ -3,6 +3,10 @@ import type { BetterAuthPlugin } from 'better-auth';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
 import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
+  isSignInGoodForPartnerAppChange,
+  PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS,
+} from '@boardsesh/auth-protocol/auth-time';
+import {
   oauthAppPolicy,
   oauthClient,
   oauthClientResource,
@@ -10,8 +14,13 @@ import {
   oauthConsent,
   oauthGrants,
   oauthVerification,
+  userCredentials,
   users,
 } from '@boardsesh/db/schema/auth';
+import type { WebSignInProof } from '@boardsesh/shared-schema';
+// Type only: the email owns the notice's shape, and never reaches into this folder.
+import type { PartnerAppChangeNotice } from '../../email/partner-app-emails';
+import { logger } from '../../utils/logger';
 import type { PartnerAuthority } from './authority';
 import { lockAppForDeletion } from './locks';
 import type { PartnerAuthorityConfiguration } from './configuration';
@@ -253,6 +262,88 @@ function providerRefusal(error: unknown): PartnerRegistrationError | null {
   return new PartnerRegistrationError('invalid_input', description ?? 'These app details were refused.');
 }
 
+export type { PartnerAppChangeNotice };
+
+/**
+ * Sends the notice, to a verified address only. Called after commit and never
+ * awaited; a throw or a rejection is logged and goes no further, so it can
+ * neither hold nor fail a change (nor lose a rotated secret).
+ */
+export type PartnerAppChangeNotifier = (notice: PartnerAppChangeNotice) => Promise<void>;
+
+/** A notice a transaction prepared, sent or skipped once it commits. */
+type PendingNotice = { readonly notice: PartnerAppChangeNotice; readonly emailVerified: boolean };
+
+/** The developer's address, read with their `users` row. */
+type DeveloperAddress = { readonly email: string; readonly emailVerified: boolean };
+
+/** The redirect URIs an edit adds and removes, or null when it leaves the set as it was. */
+function redirectUriChange(
+  before: readonly string[],
+  after: readonly string[] | undefined,
+): { added: number; removed: number } | null {
+  if (after === undefined) return null;
+  const added = after.filter((uri) => !before.includes(uri)).length;
+  const removed = before.filter((uri) => !after.includes(uri)).length;
+  return added === 0 && removed === 0 ? null : { added, removed };
+}
+
+function recentSignInRefusal(): PartnerRegistrationError {
+  return new PartnerRegistrationError(
+    'recent_sign_in_required',
+    `Sign in again to make this change. Changing redirect URIs, making a new client secret or deleting an app needs a sign-in from the last ${PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS / 60} minutes.`,
+  );
+}
+
+/**
+ * The gate in front of every change that decides where an app's codes and
+ * tokens go: a redirect URI added, replaced or removed, a new client secret,
+ * or the app deleted (#7598). Anyone holding an older session, on a shared
+ * laptop or with a copied cookie, could otherwise point the app at their own
+ * redirect and take its secret.
+ *
+ * The sign-in comes from the credential the request authenticated with: the
+ * www session's `auth_time` and `link_guarded`, read the way partner consent
+ * reads them (`legacyWebSignIn`). It must be under
+ * `PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` old and clearly after the
+ * developer's last password write. An unknown age, an app token or a WebSocket
+ * call is refused.
+ *
+ * Runs after the developer's advisory lock and before any write. The
+ * developer's `users` row is taken FOR SHARE first, the partner lock order, and
+ * the password write time is read once it is held, so a change queued behind a
+ * password reset reads the reset's time. An account deleted while this waited
+ * took its apps with it, so that reads as the app being gone. Returns the
+ * address for the notice.
+ */
+async function requireRecentSignIn(
+  transaction: PartnerDatabase,
+  developerId: string,
+  signIn: WebSignInProof | null | undefined,
+): Promise<DeveloperAddress> {
+  if (!signIn?.linkGuarded || signIn.authenticatedAtMs === null) throw recentSignInRefusal();
+  const [developer] = await transaction
+    .select({ email: users.email, emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, developerId))
+    .for('share');
+  if (!developer) throw new PartnerRegistrationError('not_found', 'No app with that client ID.');
+  const [password] = await transaction
+    .select({ updatedAt: userCredentials.updatedAt })
+    .from(userCredentials)
+    .where(eq(userCredentials.userId, developerId));
+  const recent = isSignInGoodForPartnerAppChange(
+    {
+      authTimeSeconds: Math.floor(signIn.authenticatedAtMs / 1000),
+      linkGuarded: signIn.linkGuarded,
+      passwordChangedAt: password?.updatedAt ?? null,
+    },
+    Date.now(),
+  );
+  if (!recent) throw recentSignInRefusal();
+  return { email: developer.email, emailVerified: developer.emailVerified !== null };
+}
+
 /** A lock or statement timeout is a retry, never a broken app. */
 async function inRegistrationTransaction<Result>(
   database: PartnerDatabase,
@@ -275,15 +366,31 @@ export interface PartnerRegistration {
     developerId: string,
     input: Record<string, unknown>,
   ): Promise<PartnerAppCredentials>;
+  /**
+   * `signIn` is the request's verified sign-in (`ConnectionContext.webSignIn`).
+   * An edit that adds or removes a redirect URI needs it recent; any other edit does not.
+   */
   updateApp(
     database: PartnerDatabase,
     developerId: string,
     clientId: string,
     patch: Record<string, unknown>,
+    signIn: WebSignInProof | null | undefined,
   ): Promise<PartnerAppRecord>;
-  rotateSecret(database: PartnerDatabase, developerId: string, clientId: string): Promise<PartnerAppCredentials>;
-  /** False when the developer has no app with that id. */
-  deleteApp(database: PartnerDatabase, developerId: string, clientId: string): Promise<boolean>;
+  /** Needs a recent `signIn`. */
+  rotateSecret(
+    database: PartnerDatabase,
+    developerId: string,
+    clientId: string,
+    signIn: WebSignInProof | null | undefined,
+  ): Promise<PartnerAppCredentials>;
+  /** False when the developer has no app with that id. Needs a recent `signIn`. */
+  deleteApp(
+    database: PartnerDatabase,
+    developerId: string,
+    clientId: string,
+    signIn: WebSignInProof | null | undefined,
+  ): Promise<boolean>;
 }
 
 /**
@@ -291,16 +398,55 @@ export interface PartnerRegistration {
  * database the caller passes (the GraphQL pool), and the provider's own calls
  * join it through the partner handle. The developer id is the authenticated
  * Boardsesh account; eligibility (mode, allowlist) is the caller's to check.
+ * A redirect URI change, a new secret and a deletion each need a recent
+ * sign-in (`requireRecentSignIn`). Those and a new app, once committed, tell
+ * `notifyDeveloper` when the developer's address is verified.
  */
 export function createPartnerRegistration({
   authority,
   configuration,
   registeredOrigins,
+  notifyDeveloper,
 }: {
   authority: PartnerAuthority;
   configuration: PartnerAuthorityConfiguration;
   registeredOrigins: PartnerRegisteredOrigins;
+  notifyDeveloper: PartnerAppChangeNotifier;
 }): PartnerRegistration {
+  function notifyFailed(notice: PartnerAppChangeNotice, error: unknown): void {
+    logger.warn('[PartnerApps] The app change email could not be sent', {
+      change: notice.change,
+      clientId: notice.clientId,
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  }
+
+  /**
+   * After commit, and never awaited: the change stands whatever the mailer
+   * does. Neither a notifier that throws at once nor one that rejects later
+   * reaches the request, so a rotation always returns its new secret. Logs
+   * carry the change and the client ID, never an address.
+   */
+  function notifyAfterCommit(pending: PendingNotice | null): void {
+    if (!pending) return;
+    const { notice, emailVerified } = pending;
+    if (!emailVerified) {
+      logger.warn('[PartnerApps] No app change email: the developer email is not verified', {
+        change: notice.change,
+        clientId: notice.clientId,
+      });
+      return;
+    }
+    let sending: Promise<void>;
+    try {
+      sending = notifyDeveloper(notice);
+    } catch (error) {
+      notifyFailed(notice, error);
+      return;
+    }
+    void Promise.resolve(sending).catch((error: unknown) => notifyFailed(notice, error));
+  }
+
   return {
     async listApps(database, developerId) {
       const rows = await database
@@ -322,7 +468,7 @@ export function createPartnerRegistration({
         // Serializes this developer's registrations, so the app count below holds under a race.
         await lockDeveloper(transaction, developerId);
         const [developer] = await transaction
-          .select({ emailVerified: users.emailVerified })
+          .select({ email: users.email, emailVerified: users.emailVerified })
           .from(users)
           .where(eq(users.id, developerId));
         if (!developer?.emailVerified) {
@@ -364,17 +510,36 @@ export function createPartnerRegistration({
             termsAcceptedAt: new Date(),
           })
           .returning();
-        return { app: toRecord(row, policy, 0), clientSecret: registered.client_secret ?? null };
+        const credentials: PartnerAppCredentials = {
+          app: toRecord(row, policy, 0),
+          clientSecret: registered.client_secret ?? null,
+        };
+        // Not gated: told instead, so a developer hears of an app someone else registered in their name.
+        const registeredNotice: PendingNotice = {
+          notice: {
+            developerEmail: developer.email,
+            appName: row.name ?? '',
+            clientId: row.clientId,
+            changedAt: new Date(),
+            change: 'app_registered',
+          },
+          emailVerified: true,
+        };
+        return { credentials, notice: registeredNotice };
       });
       registeredOrigins.invalidate();
-      return created;
+      notifyAfterCommit(created.notice);
+      return created.credentials;
     },
 
-    async updateApp(database, developerId, clientId, rawPatch) {
-      const updated = await inRegistrationTransaction(database, async (transaction) => {
+    async updateApp(database, developerId, clientId, rawPatch, signIn) {
+      const { updated, notice } = await inRegistrationTransaction(database, async (transaction) => {
         await lockDeveloper(transaction, developerId);
         const { row } = await requireOwnedApp(transaction, developerId, clientId);
         const patch = normalizePartnerAppPatch(rawPatch, row.applicationType === 'native' ? 'native' : 'web');
+        // Checked after the input, so a developer fixes the form before signing in again.
+        const redirectChange = redirectUriChange(row.redirectUris, patch.redirectUris);
+        const developer = redirectChange ? await requireRecentSignIn(transaction, developerId, signIn) : null;
         const now = new Date();
         // Written directly: the provider's update could also reach consent,
         // PKCE and the auth method, and none of those may ever change here.
@@ -406,41 +571,76 @@ export function createPartnerRegistration({
             .where(eq(oauthAppPolicy.clientId, clientId));
         }
         const current = await assertManagedClient(transaction, developerId, clientId, configuration.resource);
-        return toRecord(current.row, current.policy, await activeConnectionsOf(transaction, clientId));
+        const changed: PendingNotice | null =
+          redirectChange && developer
+            ? {
+                notice: {
+                  developerEmail: developer.email,
+                  appName: current.row.name ?? '',
+                  clientId,
+                  changedAt: now,
+                  change: 'redirect_uris_changed',
+                  ...redirectChange,
+                },
+                emailVerified: developer.emailVerified,
+              }
+            : null;
+        return {
+          updated: toRecord(current.row, current.policy, await activeConnectionsOf(transaction, clientId)),
+          notice: changed,
+        };
       });
       registeredOrigins.invalidate();
+      notifyAfterCommit(notice);
       return updated;
     },
 
-    async rotateSecret(database, developerId, clientId) {
-      return inRegistrationTransaction(database, async (transaction) => {
+    async rotateSecret(database, developerId, clientId, signIn) {
+      const { rotated, notice } = await inRegistrationTransaction(database, async (transaction) => {
         await lockDeveloper(transaction, developerId);
         const { row, policy } = await requireOwnedApp(transaction, developerId, clientId);
         if (row.tokenEndpointAuthMethod === 'none') {
           throw new PartnerRegistrationError('no_secret', 'A public app has no client secret to rotate.');
         }
+        const developer = await requireRecentSignIn(transaction, developerId, signIn);
         // The provider stores the new secret encrypted; the old one stops working at commit.
-        const rotated = await actAsDeveloper(developerId, () =>
+        const provided = await actAsDeveloper(developerId, () =>
           authority.api.rotateClientSecret({ headers: new Headers(), body: { client_id: clientId } }),
         );
-        if (typeof rotated.client_secret !== 'string' || rotated.client_secret.length === 0) {
+        if (typeof provided.client_secret !== 'string' || provided.client_secret.length === 0) {
           throw new Error('Secret rotation returned no secret.');
         }
-        return {
+        const credentials: PartnerAppCredentials = {
           app: toRecord(row, policy, await activeConnectionsOf(transaction, clientId)),
-          clientSecret: rotated.client_secret,
+          clientSecret: provided.client_secret,
         };
+        const changed: PendingNotice = {
+          notice: {
+            developerEmail: developer.email,
+            appName: row.name ?? '',
+            clientId,
+            changedAt: new Date(),
+            change: 'secret_rotated',
+          },
+          emailVerified: developer.emailVerified,
+        };
+        return { rotated: credentials, notice: changed };
       });
+      notifyAfterCommit(notice);
+      return rotated;
     },
 
-    async deleteApp(database, developerId, clientId) {
-      const deleted = await inRegistrationTransaction(database, async (transaction) => {
+    async deleteApp(database, developerId, clientId, signIn) {
+      const notice = await inRegistrationTransaction(database, async (transaction) => {
         await lockDeveloper(transaction, developerId);
         const found = await findOwnedApp(transaction, developerId, clientId);
-        if (!found) return false;
+        if (!found) return null;
         if (isSuspended(found.row, found.policy)) {
           throw new PartnerRegistrationError('suspended', 'This app is suspended, so it cannot be deleted.');
         }
+        // Before the cascade's locks. This holds the developer's own `users` row
+        // FOR SHARE, which never waits on the FOR SHARE the cascade takes below.
+        const developer = await requireRecentSignIn(transaction, developerId, signIn);
         // Every climber row, consent screen and connection the cascade reaches,
         // in the partner lock order. Waits for any issuer holding one, and no
         // grant can then be added to a locked connection. The app row goes last,
@@ -464,10 +664,22 @@ export function createPartnerRegistration({
         await transaction
           .delete(oauthClient)
           .where(and(eq(oauthClient.clientId, clientId), eq(oauthClient.userId, developerId)));
-        return true;
+        const changed: PendingNotice = {
+          notice: {
+            developerEmail: developer.email,
+            appName: found.row.name ?? '',
+            clientId,
+            changedAt: new Date(),
+            change: 'app_deleted',
+          },
+          emailVerified: developer.emailVerified,
+        };
+        return changed;
       });
-      if (deleted) registeredOrigins.invalidate();
-      return deleted;
+      if (!notice) return false;
+      registeredOrigins.invalidate();
+      notifyAfterCommit(notice);
+      return true;
     },
   };
 }

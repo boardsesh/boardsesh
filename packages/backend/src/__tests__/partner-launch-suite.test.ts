@@ -46,6 +46,7 @@ import {
   startRealServer,
   useDeployment,
   WEB_ORIGIN,
+  webSessionBearer,
   type RunningServer,
 } from './helpers/partner-launch-harness';
 import { getWorkerDatabaseUrl } from './worker-db';
@@ -380,6 +381,16 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
     developerId,
     ip: freshClientIp(),
   };
+}
+
+/**
+ * The console's bearer from a www sign-in made just now: the only kind that may
+ * rotate a secret, delete an app or change its redirect URIs (#7598).
+ */
+async function freshDeveloperBearer(developerId: string): Promise<string> {
+  const bearer = await webSessionBearer(developerId, { webMode: 'allowlist' });
+  remember(bearer);
+  return bearer;
 }
 
 async function newClimber(label = 'climber', webMode = 'allowlist'): Promise<Climber> {
@@ -2336,7 +2347,7 @@ describe('partner OAuth on, in the real server', () => {
         const wider = await startAuthorization(app);
         const { location } = await openAuthorize(wider.url, climber);
         expect(location.startsWith(`${CONSENT_PAGE}?`)).toBe(true);
-        const developerBearer = await firstPartyToken(app.developerId);
+        const developerBearer = await freshDeveloperBearer(app.developerId);
 
         // The gun: a key share on the app row, which any in-flight insert naming
         // the app holds. The delete takes every lock of its own, then waits here
@@ -2605,10 +2616,20 @@ describe('partner OAuth on, in the real server', () => {
       async () => {
         const app = await registerApp('confidential-basic');
         const connection = await connect(app, await newClimber());
-        const rotated = await server.graphql(
-          `mutation Rotate($clientId: ID!) { rotateOAuthClientSecret(clientId: $clientId) { clientSecret } }`,
+        const rotate = `mutation Rotate($clientId: ID!) { rotateOAuthClientSecret(clientId: $clientId) { clientSecret } }`;
+        // An app token proves no recent www sign-in (#7598): refused, and the secret stays.
+        const refused = await server.graphql(
+          rotate,
           { clientId: app.clientId },
           { bearer: await firstPartyToken(app.developerId) },
+        );
+        expect(refused.errors?.[0]?.extensions).toMatchObject({ code: 'FORBIDDEN', reason: 'RECENT_SIGN_IN_REQUIRED' });
+        // The old secret still authenticates: an unknown refresh token is a grant error, not a client one.
+        expect(await refresh(app, `unknown-${randomUUID()}`)).toMatchObject({ ok: false, error: 'invalid_grant' });
+        const rotated = await server.graphql(
+          rotate,
+          { clientId: app.clientId },
+          { bearer: await freshDeveloperBearer(app.developerId) },
         );
         expect(rotated.errors).toBeUndefined();
         const credentials = rotated.data?.rotateOAuthClientSecret as { clientSecret: string } | undefined;
@@ -2636,7 +2657,7 @@ describe('partner OAuth on, in the real server', () => {
         const deleted = await server.graphql(
           `mutation Delete($clientId: ID!) { deleteOAuthClient(clientId: $clientId) }`,
           { clientId: app.clientId },
-          { bearer: await firstPartyToken(app.developerId) },
+          { bearer: await freshDeveloperBearer(app.developerId) },
         );
         expect(deleted.data).toEqual({ deleteOAuthClient: true });
         expect(await callMe(app, doomed.tokens.access_token)).toEqual({

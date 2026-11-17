@@ -86,3 +86,26 @@ export function isSignInGoodForPartnerConsent(signIn: PartnerConsentSignIn, nowM
     signedInAfterPasswordChange(signIn.authTimeSeconds, signIn.passwordChangedAt)
   );
 }
+
+/**
+ * How recent a developer's sign-in must be to change what decides where a
+ * partner app's codes and tokens go: its redirect URIs, its client secret, or
+ * the app itself (#7598). Five minutes, the window the owner set on 2026-11-13
+ * for linking or unlinking Google and Apple. Anyone holding an older session (a
+ * shared laptop, a copied cookie) must sign in again first.
+ */
+export const PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS = 5 * 60;
+
+/**
+ * The partner consent rule above with a five-minute window: a known sign-in,
+ * made while links were guarded, clearly after the last password write, and no
+ * more than `PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` old. A sign-in up to
+ * the clock skew ahead of the reader counts as just made, as `readAuthTimeClaim`
+ * allows, so a web server with a fast clock cannot refuse the sign-in it has
+ * only just written; one further ahead is unknown.
+ */
+export function isSignInGoodForPartnerAppChange(signIn: PartnerConsentSignIn, nowMs: number): boolean {
+  const authTimeSeconds = readAuthTimeClaim(signIn.authTimeSeconds, nowMs);
+  if (authTimeSeconds === null || !isSignInGoodForPartnerConsent(signIn, nowMs)) return false;
+  return nowMs - authTimeSeconds * 1000 <= PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS * 1000;
+}

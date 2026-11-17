@@ -267,6 +267,110 @@ describe('DeveloperAppsContent', () => {
     ).toBeTruthy();
   });
 
+  describe('a change that needs a sign-in from the last five minutes', () => {
+    const recentSignInRequired = () =>
+      graphQLRefusal({ code: 'FORBIDDEN', reason: 'RECENT_SIGN_IN_REQUIRED', maxAgeSeconds: 300 });
+    const SIGN_IN_AGAIN_HREF = `/auth/signout?callbackUrl=${encodeURIComponent(
+      `/auth/login?callbackUrl=${encodeURIComponent('/developers/apps')}`,
+    )}`;
+
+    function expectSignInAgainPrompt() {
+      return screen.findByRole('dialog', { name: 'Sign in again to make this change' }).then((prompt) => {
+        expect(
+          within(prompt).getByText(
+            'Changing redirect URIs, making a new secret or deleting an app needs a sign-in from the last 5 minutes. That way, nobody else who has your session can take over your app.',
+          ),
+        ).toBeTruthy();
+        const link = within(prompt).getByRole('link', { name: 'Sign in again' });
+        expect(link.getAttribute('href')).toBe(SIGN_IN_AGAIN_HREF);
+        return prompt;
+      });
+    }
+
+    it('asks for a fresh sign-in when a new secret is refused, and shows no error toast', async () => {
+      serve({
+        MyOAuthClients: () => ({ myOAuthClients: [app()] }),
+        RotateOAuthClientSecret: () => {
+          throw recentSignInRequired();
+        },
+      });
+      renderConsole();
+      const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
+      fireEvent.click(within(card).getByRole('button', { name: 'New secret' }));
+      const confirm = await screen.findByRole('dialog', { name: 'Make a new secret for Hangboard Planner?' });
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Make new secret' }));
+      const prompt = await expectSignInAgainPrompt();
+      expect(screen.queryByRole('dialog', { name: 'Make a new secret for Hangboard Planner?' })).toBeNull();
+      expect(mocks.showMessage).not.toHaveBeenCalled();
+      fireEvent.click(within(prompt).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Sign in again to make this change' })).toBeNull(),
+      );
+    });
+
+    it('asks for a fresh sign-in when a delete is refused', async () => {
+      serve({
+        MyOAuthClients: () => ({ myOAuthClients: [app()] }),
+        DeleteOAuthClient: () => {
+          throw recentSignInRequired();
+        },
+      });
+      renderConsole();
+      const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
+      fireEvent.click(within(card).getByRole('button', { name: 'Delete' }));
+      const confirm = await screen.findByRole('dialog', { name: 'Delete Hangboard Planner?' });
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Delete app' }));
+      await expectSignInAgainPrompt();
+      // The app is still listed behind the prompt: nothing was deleted.
+      expect(screen.getByRole('listitem', { name: 'Hangboard Planner', hidden: true })).toBeTruthy();
+      expect(mocks.showMessage).not.toHaveBeenCalled();
+    });
+
+    it('keeps the typed redirect URIs behind the prompt, and says signing in again clears them', async () => {
+      serve({
+        MyOAuthClients: () => ({ myOAuthClients: [app()] }),
+        UpdateOAuthClient: () => {
+          throw recentSignInRequired();
+        },
+      });
+      renderConsole();
+      const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
+      fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
+      const form = await screen.findByRole('dialog', { name: 'Edit Hangboard Planner' });
+      const typed = 'https://planner.example/oauth/boardsesh\nhttps://planner.example/oauth/second';
+      fireEvent.change(within(form).getByLabelText(/Redirect URIs/), { target: { value: typed } });
+      fireEvent.click(within(form).getByRole('button', { name: 'Save changes' }));
+      const prompt = await expectSignInAgainPrompt();
+      expect(
+        within(prompt).getByText(
+          'Your edits stay in the form behind this message. Signing in again leaves this page and clears them, so copy any redirect URIs you typed before you go.',
+        ),
+      ).toBeTruthy();
+      fireEvent.click(within(prompt).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Sign in again to make this change' })).toBeNull(),
+      );
+      const kept = screen.getByRole('dialog', { name: 'Edit Hangboard Planner' });
+      expect((within(kept).getByLabelText(/Redirect URIs/) as HTMLTextAreaElement).value).toBe(typed);
+    });
+
+    it('says nothing about a form when a secret or delete was refused', async () => {
+      serve({
+        MyOAuthClients: () => ({ myOAuthClients: [app()] }),
+        RotateOAuthClientSecret: () => {
+          throw recentSignInRequired();
+        },
+      });
+      renderConsole();
+      const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
+      fireEvent.click(within(card).getByRole('button', { name: 'New secret' }));
+      const confirm = await screen.findByRole('dialog', { name: 'Make a new secret for Hangboard Planner?' });
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Make new secret' }));
+      const prompt = await expectSignInAgainPrompt();
+      expect(within(prompt).queryByText(/Your edits stay in the form/)).toBeNull();
+    });
+  });
+
   it('offers no change to a suspended app, and says why', async () => {
     serve({
       MyOAuthClients: () => ({

@@ -4,7 +4,9 @@ import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
+import type { WebSignInProof } from '@boardsesh/shared-schema';
 import { decryptLegacyWebJwe } from '../auth/legacy-web-jwe';
+import { legacyWebSignIn } from '../auth/legacy-web-credentials';
 import {
   AuthAdmissionUnavailableError,
   AuthCredentialRefusedError,
@@ -19,6 +21,11 @@ export type AuthResult = {
   credentialExpiresAt?: number;
   /** The stamps admission decided on, so the WebSocket sweep can decide again without decrypting. */
   credential: PresentedCredential;
+  /**
+   * When the climber behind a website credential signed in, for operations
+   * that need a recent sign-in. Unset for app tokens, which never count.
+   */
+  webSignIn?: WebSignInProof;
 };
 
 export type ControllerAuthResult = {
@@ -64,7 +71,11 @@ function secretDigest(secret: string): string {
 
 function cacheCryptoResult(token: string, result: AuthResult, format: TokenCacheEntry['format'], secret: string) {
   tokenCache.set(token, {
-    result: Object.freeze({ ...result, credential: Object.freeze(result.credential) }),
+    result: Object.freeze({
+      ...result,
+      credential: Object.freeze(result.credential),
+      ...(result.webSignIn ? { webSignIn: Object.freeze(result.webSignIn) } : {}),
+    }),
     format,
     secretDigest: secretDigest(secret),
     expiresAt: Math.min(Date.now() + TOKEN_CACHE_TTL_MS, (result.credentialExpiresAt ?? Infinity) + 60_000),
@@ -122,6 +133,8 @@ async function verifyNextAuthToken(token: string, secret: string): Promise<AuthR
       return null;
     }
 
+    // The same reading of `auth_time` and `link_guarded` the partner consent routes use.
+    const signIn = legacyWebSignIn(payload, new Date(now));
     const result: AuthResult = {
       userId,
       isAuthenticated: true,
@@ -132,6 +145,7 @@ async function verifyNextAuthToken(token: string, secret: string): Promise<AuthR
         sessionKeyClaim: payload.authSessionId,
         authTimeClaim: payload.auth_time,
       },
+      webSignIn: { authenticatedAtMs: signIn.authenticatedAt?.getTime() ?? null, linkGuarded: signIn.linkGuarded },
     };
     cacheCryptoResult(token, result, 'jwe', secret);
     return result;

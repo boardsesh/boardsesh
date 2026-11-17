@@ -80,6 +80,24 @@ shown once. Never ship a client secret inside a mobile or desktop binary:
 make that app public instead. You can rotate the secret in the console; the
 old one stops working immediately. Coordinate the change with your token-exchange backend; there is no overlap window.
 
+Changing your redirect URIs (adding, replacing or removing one), making a new
+client secret and deleting an app each need a sign-in from the last 5 minutes.
+If yours is older, the console asks you to sign in again and brings you back to
+your apps; make the change again from there. This stops anyone else who has your
+session, on a shared computer for example, from pointing your app somewhere else
+or taking its secret. Registering an app and editing its name, publisher,
+homepage or privacy policy never ask.
+
+If the console asks you to sign in again while you are editing an app, what you
+typed stays in the form until you leave the page. Signing in again leaves it, so
+copy any redirect URIs you want to keep first.
+
+After each of those changes, and whenever an app is registered on your account,
+Boardsesh emails the address on your account once it is verified: which app,
+what happened and when. The email never contains a secret or a redirect URI. If
+you did not make the change, change your Boardsesh password, check your apps in
+the console, and reply to the email.
+
 Limits that apply to every app (see section 6 for request rates):
 
 - 10 apps per developer account.

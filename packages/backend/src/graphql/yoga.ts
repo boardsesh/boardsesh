@@ -115,6 +115,7 @@ export async function buildHttpConnectionContext({
     sessionId: undefined,
     userId: authResult?.userId,
     credentialExpiresAt: authResult?.credentialExpiresAt,
+    webSignIn: authResult?.webSignIn,
     isAuthenticated: authResult !== null,
     authCredentialProvided: authHeader !== null,
     isCronAuthenticated,

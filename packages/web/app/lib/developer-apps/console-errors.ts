@@ -1,3 +1,5 @@
+import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protocol/partner-oauth';
+
 /**
  * What a refused developer-console operation means, read from the GraphQL
  * error's `extensions` (`graphql/resolvers/oauth-clients/partner-registration.ts`),
@@ -13,6 +15,11 @@ export type ConsoleProblem =
   /** PARTNER_OAUTH_MODE is hold. */
   | { kind: 'paused' }
   | { kind: 'email-not-verified' }
+  /**
+   * A redirect URI change, a new secret or a deletion, from a session signed in
+   * more than five minutes ago (or of unknown age): sign in again, then retry.
+   */
+  | { kind: 'sign-in-again' }
   | { kind: 'rate-limited' }
   /** A lock or statement timeout on the server: a retry helps. */
   | { kind: 'busy' }
@@ -49,6 +56,7 @@ export function classifyConsoleError(error: unknown): ConsoleProblem {
       if (reason === 'NOT_ALLOWLISTED') return { kind: 'not-allowlisted' };
       if (reason === 'EMAIL_NOT_VERIFIED') return { kind: 'email-not-verified' };
       if (reason === 'SUSPENDED') return { kind: 'suspended' };
+      if (reason === PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED) return { kind: 'sign-in-again' };
       return { kind: 'failed' };
     case 'RATE_LIMITED':
       return { kind: 'rate-limited' };
