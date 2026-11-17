@@ -173,15 +173,16 @@ describe('getBoardConnectionLabel', () => {
 // #7113: a driver's bulb sits on the wall button's live fill, so a tap on any
 // climb reads as lighting it, on the Climbs tab too.
 describe('the driving bulb', () => {
-  const brand = { live: '#FBBF24', onAccent: '#16111F', onPrimary: '#FFFFFF' };
+  const darkBrand = { live: '#FBBF24', onLive: '#16111F' };
+  const lightBrand = { live: '#B45309', onLive: '#FFFFFF' };
 
-  it('takes the live fill with the lit label colour, per scheme', () => {
-    expect(drivingBulbColors(brand, 'dark')).toEqual({ fillColor: '#FBBF24', iconColor: '#16111F' });
-    expect(drivingBulbColors(brand, 'light')).toEqual({ fillColor: '#FBBF24', iconColor: '#FFFFFF' });
+  it('takes the live fill with its onLive ink, per scheme', () => {
+    expect(drivingBulbColors(darkBrand)).toEqual({ fillColor: '#FBBF24', iconColor: '#16111F' });
+    expect(drivingBulbColors(lightBrand)).toEqual({ fillColor: '#B45309', iconColor: '#FFFFFF' });
   });
 
   it('draws the MiniPlayer bulb filled while this phone drives', () => {
-    const driving = drivingBulbColors(brand, 'dark');
+    const driving = drivingBulbColors(darkBrand);
     expect(getBoardControlIndicatorVisual({ boardConnection: 'connectedByMe', ...colors, driving })).toEqual({
       iconName: 'lightbulb.fill',
       iconColor: '#16111F',
@@ -203,10 +204,10 @@ describe('the driving bulb', () => {
       ...colors,
       wallHeldColor: '#6D28D9',
     };
-    expect(getPaneWallControlVisual({ ...base, look: 'driving', driving: drivingBulbColors(brand, 'light') })).toEqual({
+    expect(getPaneWallControlVisual({ ...base, look: 'driving', driving: drivingBulbColors(lightBrand) })).toEqual({
       iconName: 'lightbulb.fill',
       iconColor: '#FFFFFF',
-      haloColor: '#FBBF24',
+      haloColor: '#B45309',
     });
     expect(getPaneWallControlVisual({ ...base, look: 'driving' }).haloColor).toBe('#FBBF2424');
   });

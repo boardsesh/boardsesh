@@ -118,19 +118,19 @@ export const brandColorsDark = {
 } as const;
 
 /**
- * Brand hexes that climbers saved as data before a retune (a playlist colour picked
- * from the brand swatch), mapped to the token that replaced each one. Keyed by
- * uppercase `#RRGGBB`. Readers map a saved colour through `currentBrandColor` so an
- * old playlist shows today's brand instead of a colour the app no longer uses.
+ * The brand swatches the app itself offered for a saved colour (the mobile playlist
+ * form's first two swatches) before a retune, mapped to the token that replaced each.
+ * Keyed by uppercase `#RRGGBB`. Readers map a saved colour through `currentBrandColor`
+ * so an old playlist shows today's brand instead of a colour the app no longer uses.
+ *
+ * Only values the app offered as swatches belong here. Other retired brand hexes
+ * (#7C3AED, #A78BFA, #5B21B6) were never swatches; they are stock Tailwind values a
+ * climber or Aurora could have picked on purpose, so they stay as saved.
  */
 export const RETIRED_BRAND_COLORS: Readonly<Record<string, string>> = {
-  // Velvet violet, before Ultraviolet: the light tint and fill (the old brand swatch),
-  // the dark fill, the light strong and the dark tint.
+  // The Velvet violet swatch, before Ultraviolet.
   '#6D28D9': brandColors.primaryFill,
-  '#7C3AED': brandColors.primaryFill,
-  '#5B21B6': brandColors.primaryFill,
-  '#A78BFA': brandColors.primaryFill,
-  // The amber spark, before mint.
+  // The amber spark swatch, before mint.
   '#FF8A3D': brandColors.accent,
 };
 

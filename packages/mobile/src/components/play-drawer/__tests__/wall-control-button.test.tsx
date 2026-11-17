@@ -109,6 +109,8 @@ vi.mock('../../../providers/theme-provider', () => ({
       onPrimary: '#fff',
       onAccent: '#111',
       live: '#B45309',
+      // The live fill's ink resolves per scheme, as the real token does.
+      onLive: themeCtrl.scheme === 'dark' ? '#111' : '#fff',
       warning: '#FBBF24',
     },
   }),

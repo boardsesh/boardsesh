@@ -51,7 +51,14 @@ vi.mock('../../Icon', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { secondaryLabel: '#888' },
-    brandColors: { warning: '#FBBF24', primary: '#6D28D9', live: '#FBBF24', onAccent: '#16111F', onPrimary: '#FFFFFF' },
+    brandColors: {
+      warning: '#FBBF24',
+      primary: '#6D28D9',
+      live: '#FBBF24',
+      onLive: '#16111F',
+      onAccent: '#16111F',
+      onPrimary: '#FFFFFF',
+    },
     colorScheme: 'dark',
   }),
 }));

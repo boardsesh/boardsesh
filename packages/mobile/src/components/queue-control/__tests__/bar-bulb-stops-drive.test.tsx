@@ -97,7 +97,14 @@ vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { secondaryLabel: '#8E8E93' },
-    brandColors: { warning: '#FBBF24', live: '#FBBF24', primary: '#A78BFA', onAccent: '#16111F', onPrimary: '#FFF' },
+    brandColors: {
+      warning: '#FBBF24',
+      live: '#FBBF24',
+      onLive: '#16111F',
+      primary: '#A78BFA',
+      onAccent: '#16111F',
+      onPrimary: '#FFF',
+    },
     colorScheme: 'dark',
   }),
 }));

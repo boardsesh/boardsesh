@@ -171,10 +171,13 @@ describe('marketingSurfaces', () => {
 });
 
 describe('currentBrandColor', () => {
-  it('maps every retired brand violet to the current fill, in any case', () => {
-    for (const retired of ['#6D28D9', '#7C3AED', '#5B21B6', '#A78BFA', '#6d28d9']) {
-      expect(currentBrandColor(retired), retired).toBe(brandColors.primaryFill);
-    }
+  it('maps only the swatches the app offered: the old violet and the amber spark', () => {
+    expect(Object.keys(RETIRED_BRAND_COLORS).sort()).toEqual(['#6D28D9', '#FF8A3D']);
+  });
+
+  it('maps the retired violet swatch to the current fill, in any case', () => {
+    expect(currentBrandColor('#6D28D9')).toBe(brandColors.primaryFill);
+    expect(currentBrandColor('#6d28d9')).toBe('#5B22F2');
   });
 
   it('maps the retired amber spark to the current spark', () => {
@@ -182,8 +185,8 @@ describe('currentBrandColor', () => {
     expect(currentBrandColor('#ff8a3d')).toBe('#0F9F86');
   });
 
-  it('leaves any other colour alone, the current brand included', () => {
-    for (const color of ['#047857', '#5B22F2', '#0F9F86', '#8B5CF6', 'not-a-colour']) {
+  it('leaves any other colour alone: other old brand violets a climber could pick, the current brand', () => {
+    for (const color of ['#7C3AED', '#A78BFA', '#5B21B6', '#047857', '#5B22F2', '#0F9F86', '#8B5CF6', 'not-a-colour']) {
       expect(currentBrandColor(color)).toBe(color);
     }
   });

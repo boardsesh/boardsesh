@@ -11,6 +11,7 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { withAlpha } from '../../../theme/colors';
 import { borderRadius, spacing } from '../../../theme/tokens';
+import { BRAND_CHIP_WASH_ALPHA } from '../../../theme/variants/variant-tokens';
 import type { WorkoutHeadlineView } from './types';
 import { workoutHeadlineText } from './workout-summary-format';
 
@@ -20,11 +21,14 @@ export const WorkoutHeadlineChip = memo(function WorkoutHeadlineChip({ headline 
   const { text } = workoutHeadlineText(headline, t);
   return (
     <View
-      style={[styles.chip, { backgroundColor: withAlpha(brandColors.primaryFill, 0.12) }]}
+      style={[
+        styles.chip,
+        { backgroundColor: withAlpha(brandColors.primaryFill, BRAND_CHIP_WASH_ALPHA.workoutHeadline) },
+      ]}
       testID="workout-headline-chip"
     >
-      <Icon name="repeat" size={12} color={brandColors.primary} />
-      <Text variant="caption1" color={brandColors.primary} numberOfLines={1} style={styles.text} numeric>
+      <Icon name="repeat" size={12} color={brandColors.primaryStrong} />
+      <Text variant="caption1" color={brandColors.primaryStrong} numberOfLines={1} style={styles.text} numeric>
         {text}
       </Text>
     </View>

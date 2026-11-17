@@ -9,9 +9,11 @@ describe('normalizePlaylistColor', () => {
     // Any spelling the shared normaliser accepts: lowercase, no hash.
     expect(normalizePlaylistColor('#6d28d9')).toBe(brandColors.primaryFill);
     expect(normalizePlaylistColor('6D28D9')).toBe(brandColors.primaryFill);
-    // The other retired brand violets too.
-    for (const retired of ['#7C3AED', '#5B21B6', '#A78BFA']) {
-      expect(normalizePlaylistColor(retired), retired).toBe(brandColors.primaryFill);
+  });
+
+  it('keeps old brand violets the app never offered as a swatch: a climber may have picked them', () => {
+    for (const picked of ['#7C3AED', '#5B21B6', '#A78BFA']) {
+      expect(normalizePlaylistColor(picked), picked).toBe(picked);
     }
   });
 

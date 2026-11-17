@@ -175,6 +175,19 @@ export function selectionWash(brandFill: string, colorScheme: 'light' | 'dark'):
 }
 
 /**
+ * Decorative brand chips, not a selection: the brand fill at a light, fixed alpha
+ * behind a violet label. The label is `primaryStrong`, never the tint: the dark
+ * tint is 4.20:1 on the 12% wash over #2C2C2E and 4.37:1 on the 8% one, under AA
+ * for their caption text, where #A294FF is 4.89:1 and 5.09:1.
+ */
+export const BRAND_CHIP_WASH_ALPHA = {
+  /** The feed card's workout line (`WorkoutHeadlineChip`). */
+  workoutHeadline: 0.12,
+  /** The logbook's day divider on Liquid Glass (`LogbookDayDividerView`). */
+  logbookDay: 0.08,
+} as const;
+
+/**
  * Same mapping on both variants: the variant arrives through the resolved inputs.
  * `brandFill` is the scheme's `brandColors.primaryFill`, a hex string.
  */
