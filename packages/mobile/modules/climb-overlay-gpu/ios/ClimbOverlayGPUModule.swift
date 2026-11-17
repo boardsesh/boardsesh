@@ -26,6 +26,9 @@ public class ClimbOverlayGPUModule: Module {
       Prop("nextFrames") { (view: ClimbOverlayGPUView, frames: String?) in view.nextFrames = frames }
       Prop("centerPage") { (view: ClimbOverlayGPUView, page: Double) in view.centerPage = page }
       Prop("pagePosition") { (view: ClimbOverlayGPUView, page: Double) in view.setPagePosition(page) }
+      Prop("revealMode") { (view: ClimbOverlayGPUView, mode: String?) in view.setRevealMode(mode) }
+      Prop("outgoingWeight") { (view: ClimbOverlayGPUView, weight: Double) in view.setSwapWeight(outgoing: weight) }
+      Prop("incomingWeight") { (view: ClimbOverlayGPUView, weight: Double) in view.setSwapWeight(incoming: weight) }
       Prop("animateEdits") { (view: ClimbOverlayGPUView, animate: Bool) in view.animateEdits = animate }
       Prop("reduceMotion") { (view: ClimbOverlayGPUView, reduce: Bool) in view.reduceMotion = reduce }
       Prop("displayMirrored") { (view: ClimbOverlayGPUView, mirrored: Bool) in view.displayMirrored = mirrored }

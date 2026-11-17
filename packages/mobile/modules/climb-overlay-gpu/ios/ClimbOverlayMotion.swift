@@ -7,6 +7,8 @@ enum ClimbOverlayMotion {
   // Must match the immutable Rust GPU atlas padding reserve.
   static let editPeakReach = ClimbOverlayPacketLayout.editPeakReach
   static let revealBand = ClimbOverlayPacketLayout.revealBand
+  static let revealModeWipe = ClimbOverlayPacketLayout.revealModeWipe
+  static let revealModeSwap = ClimbOverlayPacketLayout.revealModeSwap
 
   /// Bits follow the shader's fill, plate, glyph and annotation layer order.
   /// Missing first passes do not imply that later paint passes are absent.
@@ -44,6 +46,55 @@ enum ClimbOverlayMotion {
       return Selection(lowerOffset: 0,upperOffset: 1,progress: Float(delta))
     }
     return Selection(lowerOffset: 0,upperOffset: 0,progress: 0)
+  }
+
+  /// The app names the reveal; the generated contract numbers it.
+  static func revealMode(named name: String?) -> Int { name == "swap" ? revealModeSwap : revealModeWipe }
+
+  /// Scene slot for a page offset from the centre: 0 current, 1 previous, 2 next.
+  static func slot(_ offset: Int) -> Int { offset == -1 ? 1 : (offset == 1 ? 2 : 0) }
+
+  /// The wall swap's lower and upper class weights.
+  struct SwapWeights: Equatable {
+    let lower: Float
+    let upper: Float
+  }
+
+  /// In swap mode the app's page position names a pair, not a progress: the
+  /// nearest page is the climb being left, and the side it leans to is the
+  /// arriving one. The timing lives in the app; only two weights arrive here.
+  /// A pair beyond the prepared neighbours shows the nearest prepared climb on
+  /// its own, so a lagging scene can never light a third climb.
+  static func selectSwap(pagePosition: Double, centerPage: Double, hasPrevious: Bool, hasNext: Bool,
+                         outgoing: Float, incoming: Float) -> (Selection, SwapWeights) {
+    let still = SwapWeights(lower: 1, upper: 0)
+    guard pagePosition.isFinite, centerPage.isFinite else {
+      return (Selection(lowerOffset: 0,upperOffset: 0,progress: 0), still)
+    }
+    let delta = pagePosition-centerPage
+    if abs(delta) > 1 {
+      let edge = delta > 0 ? (hasNext ? 1 : 0) : (hasPrevious ? -1 : 0)
+      return (Selection(lowerOffset: edge,upperOffset: edge,progress: 0), still)
+    }
+    let selection = select(pagePosition: pagePosition,centerPage: centerPage,hasPrevious: hasPrevious,
+      hasNext: hasNext,reduceMotion: false)
+    guard selection.lowerOffset != selection.upperOffset else { return (selection, still) }
+    let outgoing = min(1,max(0,outgoing.isFinite ? outgoing : 1))
+    let incoming = min(1,max(0,incoming.isFinite ? incoming : 0))
+    // Progress below one half: the lower page is the nearer one, so it is outgoing.
+    return (selection, selection.progress < 0.5
+      ? SwapWeights(lower: outgoing,upper: incoming)
+      : SwapWeights(lower: incoming,upper: outgoing))
+  }
+
+  /// The shader's per-hold swap weight. Same-role shared holds stay lit once;
+  /// a changed hold shows only its stronger role, the lower one on a tie.
+  static func swapHoldWeight(_ weights: SwapWeights, membership: Int, upper: Bool) -> Float {
+    if membership == 1 { return upper ? 0 : 1 }
+    let own = upper ? weights.upper : weights.lower
+    let other = upper ? weights.lower : weights.upper
+    if membership == 2 && (upper ? own <= other : own < other) { return 0 }
+    return own
   }
 
   /// Progress at one whole hold's screen-space centre. The incoming upper

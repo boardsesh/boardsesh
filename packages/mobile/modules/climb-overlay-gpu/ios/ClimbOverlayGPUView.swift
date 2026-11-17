@@ -150,6 +150,9 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   var reduceMotion = false
   var displayMirrored = false
   private var pagePosition: Double?
+  private var revealMode = ClimbOverlayMotion.revealModeWipe
+  private var outgoingWeight: Float = 1
+  private var incomingWeight: Float = 0
   var requestId = ""
   var active = false
   private let metal: MTKView
@@ -253,6 +256,22 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     pagePosition = position
     cancelPrefetch()
     requestDraw()
+  }
+
+  /// "swap" or "wipe" from the app; anything else is the wipe.
+  func setRevealMode(_ name: String?) {
+    let mode = ClimbOverlayMotion.revealMode(named: name)
+    guard mode != revealMode else { return }
+    revealMode = mode
+    requestDraw()
+  }
+
+  /// UI-thread animated props: the swap's timing lives in the app.
+  func setSwapWeight(outgoing: Double? = nil, incoming: Double? = nil) {
+    let previous = (outgoingWeight, incomingWeight)
+    if let outgoing, outgoing.isFinite { outgoingWeight = Float(min(1,max(0,outgoing))) }
+    if let incoming, incoming.isFinite { incomingWeight = Float(min(1,max(0,incoming))) }
+    if previous != (outgoingWeight, incomingWeight) && revealMode == ClimbOverlayMotion.revealModeSwap { requestDraw() }
   }
 
   @objc private func motionPolicyChanged() {
@@ -467,13 +486,21 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       return
     }
     needsFrame = false
-    let selection = ClimbOverlayMotion.select(pagePosition: pagePosition ?? submittedCenterPage,
-      centerPage: submittedCenterPage,hasPrevious: packet.header.present[1],hasNext: packet.header.present[2],
-      reduceMotion: suppressMotion)
-    let lower = selection.lowerOffset == -1 ? 1 : 0
-    let upper = selection.upperOffset == 1 ? 2 : 0
+    // The swap honours Reduce Motion in the app, as a shorter dissolve; only
+    // the position-driven wipe is switched off here.
+    let swap = revealMode == ClimbOverlayMotion.revealModeSwap
+    let (selection, weights) = swap
+      ? ClimbOverlayMotion.selectSwap(pagePosition: pagePosition ?? submittedCenterPage,
+        centerPage: submittedCenterPage,hasPrevious: packet.header.present[1],hasNext: packet.header.present[2],
+        outgoing: outgoingWeight,incoming: incomingWeight)
+      : (ClimbOverlayMotion.select(pagePosition: pagePosition ?? submittedCenterPage,
+        centerPage: submittedCenterPage,hasPrevious: packet.header.present[1],hasNext: packet.header.present[2],
+        reduceMotion: suppressMotion), ClimbOverlayMotion.SwapWeights(lower: 1,upper: 0))
+    let lower = ClimbOverlayMotion.slot(selection.lowerOffset)
+    let upper = ClimbOverlayMotion.slot(selection.upperOffset)
     do {
-      try packet.uniforms(slot: uniformSlot,lower: lower,upper: upper,progress: selection.progress,
+      try packet.uniforms(slot: uniformSlot,lower: lower,upper: upper,revealMode: revealMode,
+        progress: selection.progress,swap: weights,
         pulse: editorPulse.reachScale(at: CACurrentMediaTime()),
         viewport: SIMD2(Float(view.drawableSize.width),Float(view.drawableSize.height)),
         productionEmpty: previousFrames != nil || nextFrames != nil || animateEdits,
