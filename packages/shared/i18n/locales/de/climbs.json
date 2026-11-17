@@ -570,7 +570,6 @@
       "gradeAction": "Grad-Bereich einstellen",
       "gradeOpenHint": "Öffnet die Grad-Auswahl",
       "gradeCloseHint": "Schließt die Grad-Auswahl",
-      "allClimbs": "Alle Boulder",
       "clearRecentSearches": "Letzte Suchen löschen",
       "chips": {
         "filtersWithCount": "Filter · {{count}}",

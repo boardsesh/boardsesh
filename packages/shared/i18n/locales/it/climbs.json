@@ -570,7 +570,6 @@
       "gradeAction": "Imposta l'intervallo di gradi",
       "gradeOpenHint": "Apre il selettore del grado",
       "gradeCloseHint": "Chiude il selettore del grado",
-      "allClimbs": "Tutti i blocchi",
       "clearRecentSearches": "Cancella le ricerche recenti",
       "chips": {
         "filtersWithCount": "Filtri · {{count}}",

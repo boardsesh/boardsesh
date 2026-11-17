@@ -570,7 +570,6 @@
       "gradeAction": "Set grade range",
       "gradeOpenHint": "Opens the grade picker",
       "gradeCloseHint": "Closes the grade picker",
-      "allClimbs": "All climbs",
       "clearRecentSearches": "Clear recent searches",
       "chips": {
         "filtersWithCount": "Filters · {{count}}",

@@ -570,7 +570,6 @@
       "gradeAction": "Définir la plage de cotation",
       "gradeOpenHint": "Ouvre le sélecteur de cotation",
       "gradeCloseHint": "Ferme le sélecteur de cotation",
-      "allClimbs": "Toutes les voies",
       "clearRecentSearches": "Effacer les recherches récentes",
       "chips": {
         "filtersWithCount": "Filtres · {{count}}",
