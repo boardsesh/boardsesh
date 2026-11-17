@@ -234,6 +234,7 @@ vi.mock('../SprayCornerMarker', () => ({
 }));
 vi.mock('../CablePatternThumbnail', () => ({ CablePatternThumbnail: () => null }));
 vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null, SPRAY_CABLE_COLOR: '#0891B2' }));
+vi.mock('../SprayLedToolIcon', () => ({ SprayLedToolIcon: () => null }));
 vi.mock('../SprayPhotoStage', () => ({
   SprayPhotoStage: ({
     canvas,
@@ -744,7 +745,7 @@ describe('SprayWallLedSetupScreen', () => {
     expect(lastSaved().wiring?.paths).toEqual([]);
   });
 
-  it('offers Lay cable and Light and tap only while some LEDs are not on the cable', async () => {
+  it('keeps Lay cable available after Light and tap wires the last LED', async () => {
     const holes = [
       { x: 0.2, y: 0.3 },
       { x: 0.5, y: 0.3 },
@@ -768,8 +769,7 @@ describe('SprayWallLedSetupScreen', () => {
     expect(shown('drawCable')).toBe(true);
     expect(shown('lightAndTap')).toBe(true);
     expect(screen.queryByText('sprayLedSetup.cableComplete')).toBeNull();
-    // Light and tap wires the last LED: the cable is complete, so its LED goes dark
-    // and both tools that only extend the cable are hidden.
+    // The last Light and tap assignment switches off its LED.
     fireEvent.click(button('lightAndTap'));
     await act(async () => {});
     tap({ x: 0.2, y: 0.3 });
@@ -780,17 +780,20 @@ describe('SprayWallLedSetupScreen', () => {
     tap({ x: 0.8, y: 0.3 });
     expect(wired()).toBe('3');
     await waitFor(() => expect(preview.stop).toHaveBeenCalled());
-    expect(shown('drawCable')).toBe(false);
+    expect(shown('drawCable')).toBe(true);
     expect(shown('lightAndTap')).toBe(false);
     expect(controls.canvas?.mode).toBe('pan');
     expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
-    // A cut keeps every LED on one of the two sections: rerouting is Cut and
-    // Connect, so the extending tools stay hidden.
+    fireEvent.click(button('drawCable'));
+    expect(controls.canvas?.mode).toBe('draw');
+    tap({ x: 0.2, y: 0.3 });
+    expect(wired()).toBe('3');
+    // Cutting keeps each LED on one of the sections.
     fireEvent.click(button('selectLeds'));
     tap({ x: 0.5, y: 0.3 });
     tap({ x: 0.8, y: 0.3 });
     fireEvent.click(button('cutCable'));
-    expect(shown('drawCable')).toBe(false);
+    expect(shown('drawCable')).toBe(true);
     expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
   });
 

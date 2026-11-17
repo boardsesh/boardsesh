@@ -63,7 +63,7 @@ export function SprayHoldLedStep({
   const [freeLedId, setFreeLedId] = useState<string | null>(null);
   const [history, setHistory] = useState<(SprayHoldLedLink[] | undefined)[]>([]);
   const leds = layout.ledPositions ?? NO_LEDS;
-  const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
+  const rings = useMemo(() => sprayHoldRings(holds, source), [holds, source]);
   const visibleIds = useMemo(() => new Set(rings.map((ring) => ring.id)), [rings]);
   const visibleHolds = useMemo(() => holds.filter((hold) => visibleIds.has(hold.id)), [holds, visibleIds]);
   // Resolve links against the full list so hidden holds keep any manual LED ownership.
@@ -215,13 +215,13 @@ export function SprayHoldLedStep({
               onPress={() => setTarget(target === 'holds' ? 'leds' : 'holds')}
             />
             <SprayPhotoToolButton
-              icon="chevron.right"
+              icon="next-unmapped-hold"
               label={t('sprayLedSetup.holdLedsNextUnmapped')}
               disabled={!unmappedHoldIds.length}
               onPress={nextUnmapped}
             />
             <SprayPhotoToolButton
-              icon="lightbulb.slash"
+              icon="next-free-led"
               label={t('sprayLedSetup.holdLedsNextFreeLed')}
               disabled={!freeLeds.length}
               onPress={nextFreeLed}

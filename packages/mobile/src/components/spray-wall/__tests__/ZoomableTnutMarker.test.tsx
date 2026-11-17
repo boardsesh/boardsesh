@@ -70,6 +70,15 @@ vi.mock('react-native-reanimated', async () => {
       });
       return state.current;
     },
+    useDerivedValue: (compute: () => unknown) => {
+      const read = useRef(compute);
+      read.current = compute;
+      return useRef({
+        get value() {
+          return read.current();
+        },
+      }).current;
+    },
     useAnimatedStyle: (compute: () => Record<string, unknown>) => {
       const entry = useRef<{ compute: () => Record<string, unknown> } | null>(null);
       if (!entry.current) {
@@ -280,6 +289,14 @@ describe('SprayPhotoCanvas', () => {
     const tap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
     end(tap, { x: 100, y: 150 });
     expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 400, 600);
+
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    expect(runtime.styles.at(-1)?.compute()).toEqual({
+      transform: [{ translateX: 60 }, { translateY: 90 }, { scale: 2 }],
+    });
+    const portraitTap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
+    end(portraitTap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0.4, y: 0.4 }, 600, 900);
   });
 
   it('pans with a two-finger drag that never spreads the fingers, and leaves the pan to a running pinch', () => {

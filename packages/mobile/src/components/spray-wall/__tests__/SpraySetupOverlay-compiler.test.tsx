@@ -51,6 +51,7 @@ type OverlayProps = {
   selectedHoldIds?: number[];
   selectedHoles?: TnutPoint[];
   distinguishSkips?: boolean;
+  showSkips?: boolean;
 };
 const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
@@ -264,6 +265,15 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(paths[0].stroke).toBe('#0891B2');
     expect(paths[1]).toMatchObject({ stroke: palette.error, d: 'M180 150L180 400' });
     expect(paths[3].fill).toBe(palette.error);
+  });
+
+  it('draws an ordinary cable segment with no skip dots when skips are hidden', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    render(React.createElement(Component, { ...props(), showSkips: false }));
+    const paths = evaluated(shapes);
+    expect(paths[0].d).toContain('M180 150L180 400');
+    expect(paths[1].d).toBe('');
+    expect(paths[3].d).toBe('');
   });
 
   it('rings the ends a cut left unconnected in red, and only the real start in green', () => {

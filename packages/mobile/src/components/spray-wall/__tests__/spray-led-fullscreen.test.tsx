@@ -28,14 +28,8 @@ const controls = vi.hoisted(() => ({
   back: vi.fn(),
   platformOS: 'android',
   setStatusBarHidden: vi.fn(),
-  surfaces: new Map<
-    string,
-    {
-      onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
-      onContentSizeChange?: (width: number, height: number) => void;
-      style?: { height?: number; maxHeight?: number };
-    }
-  >(),
+  width: 400,
+  height: 800,
 }));
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ sessionId: controls.id, photoSessionId: controls.photoId }),
@@ -43,10 +37,8 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => createElement('div', { 'data-testid': 'redirect' }, href),
 }));
 vi.mock('react-native', () => {
-  const Surface = ({ children, testID, ...props }: { children?: ReactNode; testID?: string }) => {
-    if (testID) controls.surfaces.set(testID, props);
-    return createElement('div', { 'data-testid': testID }, children);
-  };
+  const Surface = ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children);
   return {
     Platform: {
       get OS() {
@@ -54,6 +46,7 @@ vi.mock('react-native', () => {
       },
     },
     StatusBar: { setHidden: controls.setStatusBarHidden },
+    useWindowDimensions: () => ({ width: controls.width, height: controls.height }),
     View: Surface,
     ScrollView: Surface,
     StyleSheet: { create: (styles: unknown) => styles },
@@ -151,7 +144,8 @@ beforeEach(() => {
   controls.back.mockReset();
   controls.platformOS = 'android';
   controls.setStatusBarHidden.mockReset();
-  controls.surfaces.clear();
+  controls.width = 400;
+  controls.height = 800;
 });
 afterEach(() => {
   cleanup();
@@ -183,12 +177,13 @@ describe('status bar', () => {
 describe('fullscreen T-nut calibration route', () => {
   it('uses the same rectified source and canonical corner dimensions, and returns edits to its owner', () => {
     const { id, snapshot, onChange } = open();
-    render(createElement(SprayLedFullscreen));
+    const view = render(createElement(SprayLedFullscreen));
     expect(controls.marker?.photo).toEqual({ uri: snapshot.photoUri, width: 800, height: 1200 });
     expect(screen.getByTestId('rectified-photo').getAttribute('data-uri')).toBe(snapshot.photoUri);
     expect(controls.marker?.enableZoom).toBe(true);
     expect(controls.marker?.edgeToEdge).toBe(true);
     expect(controls.marker?.invalid).toBe(false);
+    expect(controls.marker).toMatchObject({ maxWidth: 400, maxHeight: 800 });
     act(() =>
       controls.marker?.onChange([
         [100, 160],
@@ -199,6 +194,11 @@ describe('fullscreen T-nut calibration route', () => {
     );
     expect(onChange).toHaveBeenCalledOnce();
     expect(readTnutCalibrationSession(id)?.quad[0]).toEqual([100, 160]);
+    expect(controls.marker?.value?.[0]).toEqual([100, 160]);
+    controls.width = 800;
+    controls.height = 400;
+    view.rerender(createElement(SprayLedFullscreen));
+    expect(controls.marker).toMatchObject({ maxWidth: 800, maxHeight: 400 });
     expect(controls.marker?.value?.[0]).toEqual([100, 160]);
   });
 
@@ -247,7 +247,7 @@ describe('fullscreen T-nut calibration route', () => {
 });
 
 describe('fullscreen point/cable editors', () => {
-  it('uses a side rail in landscape and keeps the canvas independent of the toolbar', () => {
+  it('fits straight from the current window in both directions and keeps the canvas independent of tools', () => {
     const { snapshot } = open();
     controls.id = undefined;
     const id = createSprayPhotoSession(
@@ -262,53 +262,51 @@ describe('fullscreen point/cable editors', () => {
       vi.fn(),
     );
     controls.photoId = id;
-    render(createElement(SprayLedFullscreen));
-    act(() =>
-      controls.surfaces
-        .get('spray-fullscreen-layout')
-        ?.onLayout?.({ nativeEvent: { layout: { width: 400, height: 800 } } }),
-    );
+    const view = render(createElement(SprayLedFullscreen));
     expect(screen.getByText('rail tools')).toBeTruthy();
     expect(screen.queryByText('bottom tools')).toBeNull();
     expect(screen.getByText('undo')).toBeTruthy();
-    expect(screen.getByText('gap editor')).toBeTruthy();
+    expect(screen.queryByText('gap editor')).toBeNull();
     expect(controls.canvas?.maxWidth).toBe(400);
     expect(controls.canvas?.maxHeight).toBe(800);
-    act(() =>
-      controls.surfaces
-        .get('spray-fullscreen-layout')
-        ?.onLayout?.({ nativeEvent: { layout: { width: 1100, height: 600 } } }),
-    );
+    controls.width = 1100;
+    controls.height = 600;
+    view.rerender(createElement(SprayLedFullscreen));
     expect(screen.getByText('rail tools')).toBeTruthy();
     expect(screen.queryByText('bottom tools')).toBeNull();
     expect(controls.canvas?.maxWidth).toBe(1100);
     expect(controls.canvas?.maxHeight).toBe(600);
-    act(() =>
-      controls.surfaces
-        .get('spray-fullscreen-layout')
-        ?.onLayout?.({ nativeEvent: { layout: { width: 0, height: 0 } } }),
-    );
-    expect(controls.canvas?.maxWidth).toBe(1100);
-    expect(controls.canvas?.maxHeight).toBe(600);
+    controls.width = 400;
+    controls.height = 800;
+    view.rerender(createElement(SprayLedFullscreen));
+    expect(controls.canvas?.maxWidth).toBe(400);
+    expect(controls.canvas?.maxHeight).toBe(800);
     act(() => closeSprayPhotoSession(id));
   });
-  it('gives locked cable routing its own rail and fullscreen dialog', () => {
+  it('opens a wide wall in portrait before rotating to a right-hand rail', () => {
     const { snapshot } = open();
     controls.id = undefined;
     const id = createSprayPhotoSession(
       {
         viewerId: 'viewer-one',
-        canvas: { source: snapshot.source, photoUri: snapshot.photoUri },
+        canvas: { source: { ...snapshot.source, frame: { width: 1200, height: 800 } }, photoUri: snapshot.photoUri },
         tools: createElement('span', null, 'bottom tools'),
         fullScreenRail: createElement('span', null, 'rail tools'),
         accessoryTools: createElement('span', null, 'bottom actions'),
         fullScreenDialog: createElement('span', null, 'fullscreen dialog'),
-        lockOrientationToWall: true,
       },
       vi.fn(),
     );
     controls.photoId = id;
-    render(createElement(SprayLedFullscreen));
+    const view = render(createElement(SprayLedFullscreen));
+    expect(controls.canvas).toMatchObject({ maxWidth: 400, maxHeight: 800 });
+    expect(screen.getByText('bottom tools')).toBeTruthy();
+    expect(screen.getByText('bottom actions')).toBeTruthy();
+    expect(screen.queryByText('rail tools')).toBeNull();
+    controls.width = 800;
+    controls.height = 400;
+    view.rerender(createElement(SprayLedFullscreen));
+    expect(controls.canvas).toMatchObject({ maxWidth: 800, maxHeight: 400 });
     expect(screen.getByText('rail tools')).toBeTruthy();
     expect(screen.getByText('fullscreen dialog')).toBeTruthy();
     expect(screen.queryByText('bottom actions')).toBeNull();

@@ -8,8 +8,6 @@ export type SprayPhotoSession = {
   overlayTools?: ReactNode;
   accessoryTools?: ReactNode;
   fullScreenDialog?: ReactNode;
-  /** Keep the cable editor in the calibrated photo's orientation until it closes. */
-  lockOrientationToWall?: boolean;
 };
 const entries = new Map<string, { snapshot: SprayPhotoSession; onClose: () => void }>();
 const listeners = new Set<() => void>();
