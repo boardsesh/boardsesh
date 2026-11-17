@@ -312,6 +312,82 @@ internal class PresentationLedger {
     }
 }
 
+/**
+ * What the render thread does about pending frames, by who drew them. TextureView's
+ * update listener runs before HWUI latches the buffer, so its timestamp is usually
+ * the previous frame's; a delayed re-read is what drains the ledger once frames stop.
+ * A carried frame (the old request still drawing the swap while the next trio
+ * prepares) is re-read too, but it can never report ready or fail the board.
+ */
+internal object OverlayConsumption {
+    enum class Presenter {
+        /** The view's current request: it reports ready and fails the board. */
+        CURRENT,
+        /** The old request drawing the running swap until its replacement installs. */
+        CARRIED,
+        /** Neither: superseded, hidden or destroyed. Nothing is observed. */
+        NONE,
+    }
+
+    enum class Observation {
+        NONE,
+        /** Re-read the texture timestamp shortly; the frame may be latched already. */
+        OBSERVE,
+        /** The current request's frame was never consumed: fail the board. */
+        FAIL,
+        /** A carried frame was never consumed: let the carried packet go, report nothing. */
+        STOP_CARRY,
+    }
+
+    enum class Accepted {
+        /** The frame left the ledger; nothing more to do. */
+        DROPPED,
+        /** A carried frame left the ledger: draw the next one, never report it. */
+        RESUME,
+        /** A current frame was presented: report ready once, then draw on. */
+        PRESENTED,
+    }
+
+    fun presenter(eligible: Boolean, carrying: Boolean): Presenter =
+        if (eligible) Presenter.CURRENT else if (carrying) Presenter.CARRIED else Presenter.NONE
+
+    fun observation(presenter: Presenter, wait: PresentationLedger.ConsumptionWait): Observation =
+        when {
+            presenter == Presenter.NONE || wait == PresentationLedger.ConsumptionWait.NONE -> Observation.NONE
+            wait == PresentationLedger.ConsumptionWait.RETRY -> Observation.OBSERVE
+            presenter == Presenter.CURRENT -> Observation.FAIL
+            else -> Observation.STOP_CARRY
+        }
+
+    /** [left] is whether the ledger released the frame as one of the presenting request's. */
+    fun accepted(presenter: Presenter, left: Boolean): Accepted =
+        when {
+            !left || presenter == Presenter.NONE -> Accepted.DROPPED
+            presenter == Presenter.CARRIED -> Accepted.RESUME
+            else -> Accepted.PRESENTED
+        }
+
+    /**
+     * A carry arms its re-read itself, when it starts and whenever a draw is
+     * refused for a full ledger: no later frame will arrive to do it. The current
+     * request keeps arming it from fence completion and update callbacks, as before.
+     */
+    fun armsOwnObservation(presenter: Presenter): Boolean = presenter == Presenter.CARRIED
+
+    /** The view's delayed re-read still applies: the current request, or a carry the view still allows. */
+    fun observationCurrent(matches: Boolean, carried: Boolean, matchesGeometry: Boolean): Boolean =
+        matches || (carried && matchesGeometry)
+
+    /**
+     * The view holds one pending re-read. A new one takes the slot when it is
+     * empty, or when the pending one is a carry's and the new one is the current
+     * request's (or a later carry's): a late carried re-read never displaces the
+     * request that replaced it, and the current request's never waits behind one.
+     */
+    fun <T> takesSlot(pending: T?, pendingCarried: Boolean, request: T, carried: Boolean): Boolean =
+        pending == null || (pendingCarried && (!carried || pending != request))
+}
+
 /** Aggregate residency; pinned entries cannot be evicted to hide excess use. */
 internal class AtlasBudget {
     var bytes = 0L

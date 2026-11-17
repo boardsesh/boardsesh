@@ -496,7 +496,10 @@ internal object OverlayRenderer {
         try {
             if (!OverlayLifecycle.beginPreparation({ canPrepare(session,request) },{ initialize() },{ ensureWindowSurface(session) })) { work.complete();return }
             val swap=session.view.controls.revealMode==OverlayPolicy.REVEAL_MODE_SWAP
-            if(!OverlayLifecycle.carriesPacket(session.request.takeIf { session.packet!=null },request,swap)) { clearFences(session);releaseScenes(session) }
+            val onScreen=session.request.takeIf { session.packet!=null }
+            // On a carry, the new trio cancelled the view's pending re-read; frames already in the ledger are now carried.
+            if(!OverlayLifecycle.carriesPacket(onScreen,request,swap)) { clearFences(session);releaseScenes(session) }
+            else if(onScreen!=null &&OverlayConsumption.armsOwnObservation(presenter(session,onScreen)))requestConsumptionObservation(session)
             val baseline=if(!request.animateEdits)null else if(session.baselineConfig==request.config)session.baseline else if(request.observedEmpty)emptyMap() else null
             work.source=packetSource(request.frames,request.previous,request.next,baseline)
             work.rust=OverlayPacketArena.session(session.view.context,request.config,cancel)
@@ -702,7 +705,11 @@ internal object OverlayRenderer {
         try {
             val packet = session.packet ?: return false
             ensureSurfaceSize(session,packet.header.width,packet.header.height)
-            if (!OverlayPolicy.canSubmit(session.ledger.size, session.fences.size)) return false
+            if (!OverlayPolicy.canSubmit(session.ledger.size, session.fences.size)) {
+                if (OverlayConsumption.armsOwnObservation(presenter(session, request)))
+                    requestConsumptionObservation(session)
+                return false
+            }
             check(EGL14.eglMakeCurrent(display, session.eglSurface, session.eglSurface, context)) {
                 "GPU surface lost"
             }
@@ -811,16 +818,28 @@ internal object OverlayRenderer {
         }
     }
 
+    /** Who the frames of [request], the session's packet request, are drawn for right now. */
+    private fun presenter(session: OverlaySession, request: OverlayRequest): OverlayConsumption.Presenter =
+        OverlayConsumption.presenter(
+            eligible(session, request),
+            session.packet != null && carryOver(session, request, session.view.controls),
+        )
+
     private fun requestConsumptionObservation(session: OverlaySession) {
         val request = session.request ?: return
-        if (!eligible(session, request)) return
-        when (
-            session.ledger.consumptionWait(System.nanoTime(), request.revision, request.generation)
-        ) {
-            PresentationLedger.ConsumptionWait.NONE -> Unit
-            PresentationLedger.ConsumptionWait.RETRY ->
-                session.view.observeConsumption(session, request)
-            PresentationLedger.ConsumptionWait.TIMED_OUT -> {
+        val presenter = presenter(session, request)
+        val wait =
+            if (presenter == OverlayConsumption.Presenter.NONE) PresentationLedger.ConsumptionWait.NONE
+            else session.ledger.consumptionWait(System.nanoTime(), request.revision, request.generation)
+        when (OverlayConsumption.observation(presenter, wait)) {
+            OverlayConsumption.Observation.NONE -> Unit
+            OverlayConsumption.Observation.OBSERVE ->
+                session.view.observeConsumption(
+                    session,
+                    request,
+                    carried = presenter == OverlayConsumption.Presenter.CARRIED,
+                )
+            OverlayConsumption.Observation.FAIL -> {
                 clearFences(session)
                 fail(
                     session,
@@ -828,13 +847,27 @@ internal object OverlayRenderer {
                     request,
                 )
             }
+            // The carry stops; the new request's own frames start after its hand-over.
+            // A failure here names the old request, which fail() treats as cancelled.
+            OverlayConsumption.Observation.STOP_CARRY ->
+                try {
+                    clearFences(session)
+                    releaseScenes(session)
+                } catch (failure: Exception) {
+                    fail(session, failure, request)
+                }
         }
     }
 
     private fun accept(session: OverlaySession, frame: PresentationLedger.Frame) {
         val request = session.request ?: return
-        if (!session.ledger.accept(frame, request.revision, request.generation)) return
-        if (!eligible(session, request)) return
+        val left = session.ledger.accept(frame, request.revision, request.generation)
+        when (OverlayConsumption.accepted(presenter(session, request), left)) {
+            OverlayConsumption.Accepted.DROPPED -> return
+            // The carried frame freed its ledger slot: draw the next swap frame.
+            OverlayConsumption.Accepted.RESUME -> { session.view.resumeDraw(); return }
+            OverlayConsumption.Accepted.PRESENTED -> Unit
+        }
         if (!session.reported) {
             session.reported = true
             val controls = session.view.controls

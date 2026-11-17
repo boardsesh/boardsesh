@@ -215,6 +215,125 @@ class OverlayPolicyTest {
     }
 
     @Test
+    fun twoCarriedFramesSeenOnlyWithStaleTimestampsDrainOnTheReRead() {
+        // The old request (revision 7) keeps drawing the swap while revision 8 prepares.
+        val ledger = PresentationLedger()
+        val before = ledger.submit(50, 7, 3)!!
+        ledger.finish(before.timestamp)
+        ledger.consume(before.timestamp)
+        assertTrue(ledger.accept(before, 7, 3))
+        val first = ledger.submit(100, 7, 3)!!
+        val second = ledger.submit(108, 7, 3)!!
+        ledger.finish(first.timestamp)
+        ledger.finish(second.timestamp)
+        // Both update callbacks ran before HWUI latched: each read the frame before the carry.
+        assertNull(ledger.consume(before.timestamp))
+        assertNull(ledger.consume(before.timestamp))
+        assertFalse(OverlayPolicy.canSubmit(ledger.size, 0))
+
+        val presenter = OverlayConsumption.presenter(eligible = false, carrying = true)
+        assertEquals(OverlayConsumption.Presenter.CARRIED, presenter)
+        // No later frame can arrive, so the refused draw arms the re-read itself.
+        assertTrue(OverlayConsumption.armsOwnObservation(presenter))
+        assertEquals(
+            OverlayConsumption.Observation.OBSERVE,
+            OverlayConsumption.observation(presenter, ledger.consumptionWait(120, 7, 3)),
+        )
+        val old = "revision-7"
+        assertTrue(OverlayConsumption.takesSlot(null, false, old, carried = true))
+        assertTrue(OverlayConsumption.observationCurrent(matches = false, carried = true, matchesGeometry = true))
+
+        // 16 ms later the texture holds the newest carried frame.
+        val latched = ledger.consume(second.timestamp)!!
+        assertEquals(1, ledger.size) // The skipped earlier frame left with it.
+        assertTrue(ledger.accept(latched, 7, 3))
+        assertEquals(OverlayConsumption.Accepted.RESUME, OverlayConsumption.accepted(presenter, true))
+        assertEquals(0, ledger.size)
+        assertTrue(OverlayPolicy.canSubmit(ledger.size, 0))
+        assertEquals(
+            OverlayConsumption.Observation.NONE,
+            OverlayConsumption.observation(presenter, ledger.consumptionWait(130, 7, 3)),
+        )
+    }
+
+    @Test
+    fun aCarriedFrameNeverReportsReady() {
+        val carried = OverlayConsumption.Presenter.CARRIED
+        for (left in listOf(true, false)) {
+            assertNotEquals(OverlayConsumption.Accepted.PRESENTED, OverlayConsumption.accepted(carried, left))
+            assertEquals(OverlayConsumption.Accepted.DROPPED, OverlayConsumption.accepted(OverlayConsumption.Presenter.NONE, left))
+        }
+        assertEquals(OverlayConsumption.Accepted.DROPPED, OverlayConsumption.accepted(carried, false))
+        // The current request is unchanged: its consumed, completed frame is presented.
+        assertEquals(
+            OverlayConsumption.Accepted.PRESENTED,
+            OverlayConsumption.accepted(OverlayConsumption.Presenter.CURRENT, true),
+        )
+        assertEquals(
+            OverlayConsumption.Accepted.DROPPED,
+            OverlayConsumption.accepted(OverlayConsumption.Presenter.CURRENT, false),
+        )
+        assertEquals(OverlayConsumption.Presenter.CURRENT, OverlayConsumption.presenter(eligible = true, carrying = true))
+        assertEquals(OverlayConsumption.Presenter.NONE, OverlayConsumption.presenter(eligible = false, carrying = false))
+        assertFalse(OverlayConsumption.armsOwnObservation(OverlayConsumption.Presenter.CURRENT))
+        assertFalse(OverlayConsumption.armsOwnObservation(OverlayConsumption.Presenter.NONE))
+    }
+
+    @Test
+    fun aStuckCarriedFrameStopsTheCarryWithoutFailingTheNewRequest() {
+        val ledger = PresentationLedger()
+        val stuck = ledger.submit(100, 7, 3)!!
+        ledger.finish(stuck.timestamp)
+        val late = 2_000_000_100L
+        assertEquals(PresentationLedger.ConsumptionWait.TIMED_OUT, ledger.consumptionWait(late, 7, 3))
+        assertEquals(
+            OverlayConsumption.Observation.STOP_CARRY,
+            OverlayConsumption.observation(OverlayConsumption.Presenter.CARRIED, ledger.consumptionWait(late, 7, 3)),
+        )
+        // The new request has no frame of its own in the ledger, so nothing fails it.
+        assertEquals(
+            OverlayConsumption.Observation.NONE,
+            OverlayConsumption.observation(OverlayConsumption.Presenter.CURRENT, ledger.consumptionWait(late, 8, 3)),
+        )
+        for (wait in PresentationLedger.ConsumptionWait.entries) {
+            assertNotEquals(
+                OverlayConsumption.Observation.FAIL,
+                OverlayConsumption.observation(OverlayConsumption.Presenter.CARRIED, wait),
+            )
+            assertEquals(
+                OverlayConsumption.Observation.NONE,
+                OverlayConsumption.observation(OverlayConsumption.Presenter.NONE, wait),
+            )
+        }
+        // The current request keeps its 2-second failure and its re-read.
+        assertEquals(
+            OverlayConsumption.Observation.FAIL,
+            OverlayConsumption.observation(OverlayConsumption.Presenter.CURRENT, PresentationLedger.ConsumptionWait.TIMED_OUT),
+        )
+        assertEquals(
+            OverlayConsumption.Observation.OBSERVE,
+            OverlayConsumption.observation(OverlayConsumption.Presenter.CURRENT, PresentationLedger.ConsumptionWait.RETRY),
+        )
+    }
+
+    @Test
+    fun aCarriedReReadGivesWayToTheRequestThatReplacedIt() {
+        val old = "revision-7"
+        val next = "revision-8"
+        // The current request's pending re-read is never displaced, as before.
+        assertFalse(OverlayConsumption.takesSlot(next, false, next, carried = false))
+        assertFalse(OverlayConsumption.takesSlot(next, false, old, carried = true))
+        // A late carried re-read never queues behind or replaces the current one.
+        assertTrue(OverlayConsumption.takesSlot(old, true, next, carried = false))
+        assertFalse(OverlayConsumption.takesSlot(old, true, old, carried = true))
+        assertTrue(OverlayConsumption.takesSlot(old, true, next, carried = true))
+        // Hidden, detached, destroyed or regeometried: the view no longer allows the carry.
+        assertFalse(OverlayConsumption.observationCurrent(matches = false, carried = true, matchesGeometry = false))
+        assertFalse(OverlayConsumption.observationCurrent(matches = false, carried = false, matchesGeometry = true))
+        assertTrue(OverlayConsumption.observationCurrent(matches = true, carried = false, matchesGeometry = true))
+    }
+
+    @Test
     fun animationCadenceDoesNotRoundPastSixtyHertzVsync() {
         assertTrue(OverlayPolicy.animationFrameDue(1_000_000_000, 1_016_666_666))
         assertFalse(OverlayPolicy.animationFrameDue(1_000_000_000, 1_008_333_333))
