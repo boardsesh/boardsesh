@@ -80,7 +80,13 @@ clock: old-only holds fade out over 0–120 ms with ease-in, new-only holds fade
 60–200 ms with ease-out, and the new holds wait until the old ones are down to 40%.
 Catching the board mid-swap lets the swap run on; pulling it back toward the old climb
 (4 points past where it was caught) eases from what is on screen over 120 ms. A second
-commit onward ends the first swap at once. A commit straight back to the old climb starts
+commit onward ends the first swap at once and swaps from the climb it skips at 40% (or at
+its weight on screen if that is higher), so a skipped climb never flashes whole; the next
+climb is at rest 200 ms after the second commit. Limit: the climb the first swap was
+leaving goes dark in that one frame, by its weight then (40% or less after a drag to the
+commit distance, up to about 80% after a short flick). The native view only has the
+climbs either side of the pager's centre prepared, and the centre moves on 40–110 ms after
+the commit, so the older pair cannot stay on screen. A commit straight back to the old climb starts
 from what is on screen, the same pair named the other way round, so nothing jumps; if the
 first swap was still easing a pulled-back board to whole, that ease carries on and the
 climb the climber turned back from never lights. A commit toward the other side of a pulled-back board

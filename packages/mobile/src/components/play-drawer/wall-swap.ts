@@ -20,9 +20,17 @@
  *   board has dimmed waits for the fade to reach 40% before the new holds start.
  * - Catching the board mid-swap does not stop the swap. Pulling it back toward
  *   the climb being left (4 points or more past where it was caught) fades from
- *   the weights on screen to what the finger asks for, with no jump. A new commit
- *   onward during a swap, a caught board flicked onward included, ends the
- *   running swap first: its old holds go and its new climb is whole.
+ *   the weights on screen to what the finger asks for, with no jump.
+ * - A commit onward during a swap, a caught board flicked onward included, ends
+ *   the running swap at once and swaps from the climb it skips: that climb starts
+ *   at 40%, or at its weight on screen if that is higher, so it never flashes
+ *   whole and is never brightened past 40%. Shared holds follow as always.
+ *   The limit: the climb the first swap was leaving goes dark in that one frame,
+ *   by its weight then (40% or less after a drag to the commit distance, up to
+ *   about 80% after a short flick). The native view only has the climbs either
+ *   side of the pager's centre prepared, and the centre moves on within 40-110
+ *   ms of the commit; an older pair kept on screen would then show the skipped
+ *   climb whole.
  * - A commit that reverses a running swap (it leaves the swap's arriving climb
  *   and heads back to its leaving one) starts from the weights on screen: the
  *   same pair named the other way round, so the first frame after it shows the
@@ -444,6 +452,31 @@ function backThroughLeadIn(
   };
 }
 
+/** The weight on screen of `page`'s own holds: its side of the pair on show, or 0 when it is not shown. */
+function shownWeight(state: WallSwapState, page: number): number {
+  'worklet';
+  if (state.from === page) return state.outgoing;
+  return state.dir !== 0 && state.from + state.dir === page ? state.incoming : 0;
+}
+
+/**
+ * Where an onward commit during a swap starts: the running swap's arriving
+ * climb, which this commit skips, alone at 40%, or at its weight on screen when
+ * that is higher. Never brighter than that, so a skipped climb never flashes
+ * whole. Its pair goes at once: the native view has only the climbs either side
+ * of the pager's centre prepared, and keeping the older pair on screen would
+ * leave it outside them as soon as the centre moves on.
+ */
+function skippedClimb(previous: WallSwapState, seen: Pick<WallSwapState, 'anchor' | 'steps' | 'reset'>): WallSwapState {
+  'worklet';
+  const skipped = previous.swapFrom + previous.swapDir;
+  const weight = shownWeight(previous, skipped);
+  return {
+    ...wallSwapRest(skipped, seen),
+    outgoing: weight > WALL_SWAP.dimFloor ? (weight < 1 ? weight : 1) : WALL_SWAP.dimFloor,
+  };
+}
+
 function commit(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
   'worklet';
   const seen = { anchor: input.anchor, steps: input.steps, reset: input.reset };
@@ -457,9 +490,10 @@ function commit(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
   if (reverses && previous.from === from + dir && previous.dir !== -dir) {
     return backThroughLeadIn(previous, seen, from, dir, WALL_SWAP.leadInMs * scale);
   }
-  // An onward commit during a swap ends that swap first: its arriving climb is
-  // whole. A reversing one starts from the weights on screen, relabelled.
-  const base = previous.swapping && !reverses ? wallSwapRest(previous.swapFrom + previous.swapDir, seen) : previous;
+  // A reversing commit starts from the weights on screen, relabelled. An onward
+  // one ends the running swap first, from the climb it skips at no more than 40%
+  // or its weight on screen.
+  const base = previous.swapping && !reverses ? skippedClimb(previous, seen) : previous;
   const start = weightsFor(base, from, dir);
   const [outgoing, incoming] = start ?? [1, 0];
   return {
