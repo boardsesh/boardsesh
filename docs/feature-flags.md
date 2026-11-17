@@ -251,6 +251,14 @@ diagnostic) applies on native. The whole surface lives in three files:
   nav bar's hide-on-scroll and the overlay bar it needs. On, the bar
   sits opaque below every screen and never moves, as before; it is also the QA
   switch for comparing the two.
+  `player-swap-look-kill` is a kill switch (read through
+  `usePlayerSwapLookEnabled`, unresolved = enabled) for the player board's swap
+  look on iOS (`play-drawer/player-swap-look.ts`, the board motion lab's I; see
+  `docs/board-motion-lab.md`). It ships at 100% with no A/B test. On, the board
+  swaps climbs exactly as before, the shipped wall swap, and the change reaches
+  an open board at once, so it is also the QA switch for comparing the two.
+  Android, iOS binaries without `swapLookVersion` 2 and Reduce Motion get the
+  shipped swap whatever it says.
   `picker-auto-scan-kill` is a kill switch (read through
   `usePickerAutoScanEnabled`, unresolved = enabled) for the board picker's In
   range slot scanning over Bluetooth by itself when the picker opens

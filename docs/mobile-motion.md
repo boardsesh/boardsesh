@@ -97,6 +97,18 @@ command, so a player re-render during the fade cannot hold it back (#7737); the 
 with the same sequence number covers mount and binaries without the command. Details in
 `docs/gpu-climb-overlay-experiment.md`.
 
+**Player swap look** (`play-drawer/player-swap-look.ts`, iOS binaries with
+`swapLookVersion` 2). On those the player draws the board motion lab's I on top of the
+same state machine: dragging dims the old holds to 40% one by one from the edge the next
+climb comes from and pulls each glow in to a standby ring, and the next climb shows
+behind that front as glow-only halos up to 40%. Letting go fills the halos in along the
+same sweep over 220 ms while the rings go out by 150 ms; arriving halos swell by at most
+5%. A commit within 400 ms of the last one is a flick run: no halos, no drag dim, no
+swell, a 140 ms swap. Shared holds never dip. Android, older iOS binaries, Reduce Motion
+(the 120 ms dissolve above, no look) and the `player-swap-look-kill` switch get the
+shipped swap, frame for frame. The numbers are one constant, `PLAYER_SWAP_LOOK`; the lab's
+I reads it (`docs/board-motion-lab.md`).
+
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual
 press feedback is separate (that's `PressableSurface`); fire haptics from the handler:
 

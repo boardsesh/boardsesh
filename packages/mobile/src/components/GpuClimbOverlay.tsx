@@ -54,7 +54,7 @@ export type GpuClimbTransition = {
   revealMode?: RevealMode;
   /** The swap's pair and three weights, one value (see play-drawer/wall-swap), or a swap-look frame. */
   swapFrame?: SwapFrameSource;
-  /** Board motion lab only: the encoded swap look (`encodeSwapLook`) its six-number frames are drawn with. */
+  /** The encoded swap look (`encodeSwapLook`) its six-number frames are drawn with: the player's or the lab's. */
   swapLook?: readonly number[];
   /** Board motion lab only: the native look's state, when it changes. */
   onSwapLookState?: (status: SwapLookStatus) => void;
@@ -133,9 +133,10 @@ export function GpuClimbOverlay({
   // command, which a React commit cannot hold back. The animated prop still
   // carries the frame, with the same sequence, for mount and as a backstop.
   const swapCommand = swap && AnimatedMotionOverlay !== null && climbOverlaySwapCommandApi >= 1;
-  // Board motion lab only: a binary with the swap look takes its six-number
-  // frames (seven with the sequence) and the look itself; any other binary gets
-  // the shipped four numbers and no look, and draws API 7's swap.
+  // A binary with the swap look takes its six-number frames (seven with the
+  // sequence) and the look itself; any other binary gets the shipped four
+  // numbers and no look, and draws API 7's swap. The player only sends a look
+  // where this holds (`binaryDrawsPlayerSwapLook`).
   const swapLookSupported = swapCommand && climbOverlaySwapLookVersion >= SWAP_LOOK_NATIVE_VERSION;
   const swapLook = swapLookSupported ? transition?.swapLook : undefined;
   const swapLookState = useCallback(

@@ -1,10 +1,12 @@
 /**
- * The swap look: the board motion lab's way to give each hold its own timing
- * and glow during the wall swap. Native iOS (`swapLookVersion` 1) turns the
- * swap's per-side weights into per-hold weights with a front, a glow-only
- * ghost, a mark that trails its glow and a glow reach that swells, focuses or
- * tightens (`ClimbOverlaySwapLook.swift`). The player sends no look and draws
- * the shipped swap; Android advertises version 0 and ignores it.
+ * The swap look: a way to give each hold its own timing and glow during the
+ * wall swap. Native iOS (`swapLookVersion` 2) turns the swap's per-side weights
+ * into per-hold weights with a front, a glow-only ghost, a mark that trails its
+ * glow and a glow reach that swells, focuses or tightens
+ * (`ClimbOverlaySwapLook.swift`). The player draws `PLAYER_SWAP_LOOK`
+ * (`player-swap-look.ts`) where the binary has it; the board motion lab draws
+ * any look. Android advertises version 0, ignores the look and draws the
+ * shipped swap.
  *
  * Pure and worklet-safe.
  */
@@ -111,7 +113,7 @@ export type SwapLookStatus =
  * spot), then the arrival code of the climb being left and of the arriving
  * one: 0 leaving, 1 arriving from the right edge, 2 from the left, plus 4 for a
  * flick run's calm arrival (no swell). A climb's code only changes while its
- * weight is 0 or 1 (`look-driver.ts` in the board motion lab).
+ * weight is 0 or 1 (`swap-look-driver.ts`).
  */
 export type SwapLookFrame = readonly [
   pagePosition: number,

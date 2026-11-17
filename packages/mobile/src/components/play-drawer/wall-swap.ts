@@ -2,6 +2,14 @@
  * The wall swap: how the player's stationary GPU board hands its lit holds from
  * one climb to the next during a swipe.
  *
+ * On an iOS binary that draws the native swap look (`swapLookVersion` 2), the
+ * player runs this state machine with its own numbers and a per-hold look on
+ * top (`player-swap-look.ts`: a 220 ms swap, the next climb as halos while
+ * dragging, standby rings on the old one). Everything below describes the
+ * shipped swap that Android, older iOS binaries, Reduce Motion and the
+ * `player-swap-look-kill` switch get; the look keeps its rules for cancels,
+ * re-flicks, reversals and pull-backs.
+ *
  * Between the climb being left and the one arriving, every hold is one of three
  * kinds. Shared holds are lit with the same role in both. Outgoing-only holds
  * are lit only in the old climb, or show a changed hold's old role.

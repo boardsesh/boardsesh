@@ -1,8 +1,10 @@
 /**
- * The wall swap with a native swap look (`play-drawer/swap-look.ts`): the
- * shipped state machine still decides every weight, so cancels, re-flicks,
- * reversals and pull-backs behave as they do in the player. This driver adds
- * what the look needs on top, each frame, on the UI thread:
+ * The wall swap with a native swap look (`swap-look.ts`): the shipped state
+ * machine still decides every weight, so cancels, re-flicks, reversals and
+ * pull-backs behave as they do with the shipped swap. This driver adds what the
+ * look needs on top, each frame, on the UI thread. The player runs it with
+ * `PLAYER_SWAP_LOOK` (`player-swap-look.ts`); the board motion lab runs it with
+ * every look variant's numbers.
  *
  * - How each climb on screen moves, as a code (`ARRIVES_*`): leaving, or
  *   arriving from the right or the left edge, and calm (a flick run's arrival,
@@ -16,30 +18,32 @@
  *   their spot and never go below it. A commit within `runWindowMs` of the
  *   previous one (a flick run) eases it to 1 over the settle, so a fast run
  *   never blinks the holds that stay.
- * - Ghosts (E). While dragging, the arriving climb's weight follows the dim up
- *   to the look's arrival floor, which the look draws as glow without marks. A
- *   commit carries that weight into the swap as its starting point, so nothing
- *   jumps.
+ * - Ghosts (`ghostFloor`). While dragging, the arriving climb's weight follows
+ *   the dim up to the look's arrival floor, which the look draws as glow without
+ *   marks. A commit carries that weight into the swap as its starting point, so
+ *   nothing jumps.
  * - An onward flick mid-swap. The machine restarts the climb it skips at the
  *   drag floor or its weight, whichever is higher. When the look's arrival floor
  *   sits below the drag floor that climb is not uniform at the drag floor, so
  *   it would jump; it keeps its weight on screen instead.
  * - A flick-run swap length (`runSwapMs`), using the machine's own per-swap
  *   timing.
- * - Calm runs (`calmRuns`, E and I). A drag whose offset leaves 0 within
- *   `runWindowMs` of the last commit shows no ghost and no drag dim until the
- *   offset returns to 0 or it commits, and a flick run's arrival has no swell,
- *   so a fast run never shows the next climb's ghosts or pulses halos.
+ * - Calm runs (`calmRuns`). A drag whose offset leaves 0 within `runWindowMs`
+ *   of the last commit shows no ghost and no drag dim until the offset returns
+ *   to 0 or it commits, and a flick run's arrival has no swell, so a fast run
+ *   never shows the next climb's ghosts or pulses halos.
  *
- * Under Reduce Motion it is the shipped swap: one dissolve, four-number
- * frames, no look (native turns the look off too).
+ * Under Reduce Motion it is the machine's dissolve with this tuning: four-number
+ * frames, no look (native turns the look off too). The player never gets here
+ * under Reduce Motion: it runs the shipped swap instead (`player-swap-look.ts`).
  */
 import type {
+  BoardTransition,
   BoardTransitionDriver,
   BoardTransitionState,
   BoardTransitionStep,
-} from '../../play-drawer/board-transition';
-import type { SwapLookFrame } from '../../play-drawer/swap-look';
+} from './board-transition';
+import type { SwapLook, SwapLookFrame } from './swap-look';
 import {
   easeOut,
   stepWallSwap,
@@ -50,13 +54,35 @@ import {
   type WallSwapInput,
   type WallSwapState,
   type WallSwapTuning,
-} from '../../play-drawer/wall-swap';
+} from './wall-swap';
+
+/**
+ * Everything a swap look runs on: the wall swap's timing, the native look's
+ * numbers and the driver's rules. The look's floor is always the tuning's
+ * `dimFloor`; its arrival floor is `arrivalFloorShare` of it.
+ */
+export type SwapLookSpec = {
+  readonly tuning: WallSwapTuning;
+  readonly look: Omit<SwapLook, 'floor' | 'arrivalFloor'>;
+  /** The arriving climb's floor as a share of the drag floor: 1 moves like a leaving climb, 0 one front. */
+  readonly arrivalFloorShare: number;
+  /** Shared holds never go below this; 1 keeps them whole. */
+  readonly sharedFloor: number;
+  /** A commit this soon after the previous one is a flick run; 0 turns runs off. */
+  readonly runWindowMs: number;
+  /** A flick run's swap length; 0 keeps the normal one. */
+  readonly runSwapMs: number;
+  /** The arriving climb rises with the drag's dim, up to its arrival floor (ghosts). */
+  readonly ghostDrag: boolean;
+  /** Inside a flick run: no ghosts, no drag dim, no swell. */
+  readonly calmRuns: boolean;
+};
 
 export type SwapLookDriverOptions = {
   tuning: WallSwapTuning;
   /** Shared holds never go below this; 1 keeps them whole. */
   sharedFloor: number;
-  /** E: while dragging, the arriving climb rises with the dim, up to this weight (the look's arrival floor); 0 off. */
+  /** While dragging, the arriving climb rises with the dim, up to this weight (the look's arrival floor); 0 off. */
   ghostFloor: number;
   /** The look's arrival floor: below the drag floor, a skipped climb keeps its weight on screen. */
   arrivalFloor: number;
@@ -314,4 +340,23 @@ export function swapLookDriver(options: SwapLookDriverOptions): BoardTransitionD
   };
 
   return { rest: lookRest, step };
+}
+
+/** The board transition a swap look runs as: the wall swap's driver with the look on top, and the look itself. */
+export function swapLookTransition(spec: SwapLookSpec): BoardTransition {
+  const floor = spec.tuning.dimFloor;
+  const look: SwapLook = { ...spec.look, floor, arrivalFloor: floor * spec.arrivalFloorShare };
+  return {
+    revealMode: 'swap',
+    driver: swapLookDriver({
+      tuning: spec.tuning,
+      sharedFloor: spec.sharedFloor,
+      ghostFloor: spec.ghostDrag ? look.arrivalFloor : 0,
+      arrivalFloor: look.arrivalFloor,
+      runWindowMs: spec.runWindowMs,
+      runSwapMs: spec.runSwapMs,
+      calmRuns: spec.calmRuns,
+    }),
+    look,
+  };
 }
