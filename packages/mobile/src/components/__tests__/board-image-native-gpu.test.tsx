@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const controls = vi.hoisted(() => ({
   platform: 'ios' as 'ios' | 'android',
   enabled: true,
+  apiVersion: 5,
   nativeAvailable: true,
   motionAvailable: true,
   reduceMotion: false,
@@ -94,7 +95,11 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => controls.enabled }));
 vi.mock('../../hooks/use-board-accessibility-summary', () => ({ useBoardAccessibilitySummary: () => 'Board' }));
 vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null }));
-vi.mock('../../lib/board-render/gpu-native-capability', () => ({ climbOverlayGpuApiVersion: 5 }));
+vi.mock('../../lib/board-render/gpu-native-capability', () => ({
+  get climbOverlayGpuApiVersion() {
+    return controls.apiVersion;
+  },
+}));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
   climbOverlayGpuApiVersion: 5,
   get NativeMotionClimbOverlayGPU() {
@@ -172,6 +177,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
   beforeEach(() => {
     controls.platform = platform;
     controls.enabled = true;
+    controls.apiVersion = 5;
     controls.nativeAvailable = true;
     controls.motionAvailable = true;
     controls.reduceMotion = false;
@@ -190,6 +196,27 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'] as const)(
+    'uses the catalogue capability and remote switch for %s',
+    (boardName) => {
+      const props = { ...BOARD, boardName, layoutId: 1 };
+      const { rerender } = render(<BoardImageNative {...props} />);
+      expect(screen.getByTestId('native-gpu')).toBeTruthy();
+      controls.enabled = false;
+      rerender(<BoardImageNative {...props} frames="p4131r43" />);
+      expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
+      expect(screen.queryByTestId('native-gpu')).toBeNull();
+    },
+  );
+
+  it.each([0, 2, 3, 4])('keeps catalogue rendering on PNG with API %s', (apiVersion) => {
+    controls.apiVersion = apiVersion;
+    const { rerender } = render(<BoardImageNative {...BOARD} boardName="tension" layoutId={1} />);
+    expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
+    rerender(<BoardImageNative {...BOARD} />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
   });
 
   it('forwards the host ground and rejects a full opening snapshot from another surface', () => {

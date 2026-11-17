@@ -17,6 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { supportsAuraGpu } from '@boardsesh/board-look';
+import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
@@ -390,13 +392,15 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const stationary =
     gpuEnabled &&
     NativeMotionClimbOverlayGPU !== null &&
-    boardName === 'kilter' &&
-    layoutId === 8 &&
     !currentFrameOverride &&
-    renderSettings.mode !== 'classic' &&
-    !renderSettings.boardsesh.softDisc &&
-    renderSettings.boardsesh.markStyle !== 'fill' &&
-    renderSettings.boardsesh.markStyle !== 'glow-fill' &&
+    supportsAuraGpu({
+      boardName,
+      layoutId,
+      catalogueNative: climbOverlayGpuApiVersion >= 5,
+      renderMode: renderSettings.mode,
+      softDisc: renderSettings.boardsesh.softDisc,
+      markStyle: renderSettings.boardsesh.markStyle,
+    }) &&
     failedStationaryIdentity !== stationaryIdentity;
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');

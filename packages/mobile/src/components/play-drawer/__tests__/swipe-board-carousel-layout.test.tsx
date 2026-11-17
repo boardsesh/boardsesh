@@ -23,6 +23,7 @@ type ViewProps = {
 const recorded = vi.hoisted(() => ({
   motionNative: false,
   gpuEnabled: true,
+  apiVersion: 5,
   renderSettings: { mode: 'aura', boardsesh: { softDisc: false } },
   onLayout: undefined as ViewProps['onLayout'],
   prefetch: vi.fn(),
@@ -35,7 +36,11 @@ const recorded = vi.hoisted(() => ({
     | undefined,
 }));
 
-vi.mock('../../../lib/board-render/gpu-native-capability', () => ({ climbOverlayGpuApiVersion: 5 }));
+vi.mock('../../../lib/board-render/gpu-native-capability', () => ({
+  get climbOverlayGpuApiVersion() {
+    return recorded.apiVersion;
+  },
+}));
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
   climbOverlayGpuApiVersion: 5,
   get NativeMotionClimbOverlayGPU() {
@@ -295,6 +300,7 @@ function readinessCallbackFor(frames: string): (readiness: BoardArtReadiness) =>
 beforeEach(() => {
   recorded.motionNative = false;
   recorded.gpuEnabled = true;
+  recorded.apiVersion = 5;
   recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: false } };
   recorded.onLayout = undefined;
   _resetPlayBoardPrewarmForTests();
@@ -311,21 +317,42 @@ beforeEach(() => {
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
 });
 
-it('releases stationary motion when the remote GPU switch turns off', () => {
+it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'] as const)(
+  'releases stationary %s motion when the remote GPU switch turns off',
+  (boardName) => {
+    recorded.motionNative = true;
+    const pager = restingPager();
+    const props = {
+      ...baseProps,
+      boardName,
+      layoutId: 1,
+      pager,
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    };
+    const { rerender } = render(createElement(SwipeBoardCarousel, props));
+    expect(pager.stationaryMotion.value).toBe(true);
+    recorded.gpuEnabled = false;
+    rerender(createElement(SwipeBoardCarousel, { ...props, containerSize: { ...props.containerSize } }));
+    expect(pager.stationaryMotion.value).toBe(false);
+  },
+);
+
+it.each([0, 2, 3, 4])('keeps catalogue motion on PNG with API %s', (apiVersion) => {
   recorded.motionNative = true;
+  recorded.apiVersion = apiVersion;
   const pager = restingPager();
   const props = {
     ...baseProps,
-    layoutId: 8,
+    boardName: 'tension' as const,
+    layoutId: 1,
     pager,
-    prevFrames: 'previous',
     containerSize: { width: 350, height: 500 },
   };
   const { rerender } = render(createElement(SwipeBoardCarousel, props));
-  expect(pager.stationaryMotion.value).toBe(true);
-  recorded.gpuEnabled = false;
-  rerender(createElement(SwipeBoardCarousel, { ...props, containerSize: { ...props.containerSize } }));
   expect(pager.stationaryMotion.value).toBe(false);
+  rerender(createElement(SwipeBoardCarousel, { ...props, boardName: 'kilter', layoutId: 8 }));
+  expect(pager.stationaryMotion.value).toBe(true);
 });
 afterEach(() => vi.unstubAllEnvs());
 
