@@ -5,8 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { encode } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 
-// The admitted-session reader, the browser-consumer facade and the transfer
-// signer all run for real here. Only the Next request store and NextAuth's
+// The admitted-session reader and the transfer signer run for real here. Only the Next request store and NextAuth's
 // session callback stand in, and the backend authority is a local HTTP server.
 const controls = vi.hoisted(() => ({
   cookies: [] as { name: string; value: string }[],
@@ -101,14 +100,16 @@ describe('native callback with the selected handoff deleted', () => {
     expect(authorityBearers).toEqual([`Bearer ${sessionCookie}`, `Bearer ${sessionCookie}`]);
   });
 
+  // #7594: a cookie left over from the staged browser binding no longer blocks
+  // the legacy session.
   it.each(['__Host-boardsesh.browser-binding', '__Host-boardsesh.browser-binding.0'])(
-    'still answers session_unavailable when the browser carries a retired %s cookie',
+    'signs the legacy transfer when the browser still carries a retired %s cookie',
     async (retiredCookie) => {
       const deepLink = await callback([{ name: retiredCookie, value: 'retired' }]);
 
-      expect(deepLink.href).toBe('com.boardsesh.app://auth/callback?error=session_unavailable');
-      expect(authorityBearers).toEqual([]);
-      expect(controls.session).not.toHaveBeenCalled();
+      expect(deepLink.searchParams.get('error')).toBeNull();
+      expect(deepLink.searchParams.get('transferToken')).toBeTruthy();
+      expect(authorityBearers).toEqual([`Bearer ${sessionCookie}`, `Bearer ${sessionCookie}`]);
     },
   );
 });
