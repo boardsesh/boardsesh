@@ -1,12 +1,10 @@
 diff --git a/android/src/main/java/expo/modules/kotlin/views/ExpoViewCommandReceiver.kt b/android/src/main/java/expo/modules/kotlin/views/ExpoViewCommandReceiver.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..1728fa9cfbf060d31915388b94333fc735a0a541
+index 0000000000000000000000000000000000000000..e2001a5a8f0292bb4efea89942f5c1dc5db8d06b
 --- /dev/null
 +++ b/android/src/main/java/expo/modules/kotlin/views/ExpoViewCommandReceiver.kt
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,16 @@
 +package expo.modules.kotlin.views
-+
-+import com.facebook.react.bridge.ReadableArray
 +
 +/**
 + * Lets an Expo view receive Fabric view commands, such as the ones Reanimated's
@@ -15,11 +13,15 @@ index 0000000000000000000000000000000000000000..1728fa9cfbf060d31915388b94333fc7
 + * React Native drops the command, because the wrappers have no delegate.
 + */
 +interface ExpoViewCommandReceiver {
-+  /** Returns true when the view handled the command, false to fall through to React Native. */
-+  fun receiveViewCommand(commandId: String, args: ReadableArray?): Boolean
++  /**
++   * [args] holds the command's arguments as `ReadableArray.toArrayList()` gives
++   * them: numbers are Doubles. Returns true when the view handled the command,
++   * false to fall through to React Native.
++   */
++  fun receiveViewCommand(commandId: String, args: List<Any?>): Boolean
 +}
 diff --git a/android/src/main/java/expo/modules/kotlin/views/GroupViewManagerWrapper.kt b/android/src/main/java/expo/modules/kotlin/views/GroupViewManagerWrapper.kt
-index b3440d8d1773026622b96d231c5086b6f9aa5e13..f3f6874aa3815b3f5e2047533828f7a8c24c186f 100644
+index b3440d8d1773026622b96d231c5086b6f9aa5e13..9b42247622b1e7267bb0cf635c9a944c5a7651b7 100644
 --- a/android/src/main/java/expo/modules/kotlin/views/GroupViewManagerWrapper.kt
 +++ b/android/src/main/java/expo/modules/kotlin/views/GroupViewManagerWrapper.kt
 @@ -2,6 +2,7 @@ package expo.modules.kotlin.views
@@ -30,14 +32,15 @@ index b3440d8d1773026622b96d231c5086b6f9aa5e13..f3f6874aa3815b3f5e2047533828f7a8
  import com.facebook.react.uimanager.ReactStylesDiffMap
  import com.facebook.react.uimanager.StateWrapper
  import com.facebook.react.uimanager.ThemedReactContext
-@@ -53,6 +54,15 @@ class GroupViewManagerWrapper(
+@@ -53,6 +54,16 @@ class GroupViewManagerWrapper(
      return props
    }
  
 +  // Fabric delivers view commands (e.g. Reanimated's dispatchCommand) here; without a
 +  // delegate React Native drops them. Views opt in through ExpoViewCommandReceiver.
 +  override fun receiveCommand(view: ViewGroup, commandId: String, args: ReadableArray?) {
-+    if ((view as? ExpoViewCommandReceiver)?.receiveViewCommand(commandId, args) == true) {
++    val receiver = view as? ExpoViewCommandReceiver
++    if (receiver != null && receiver.receiveViewCommand(commandId, args?.toArrayList() ?: emptyList())) {
 +      return
 +    }
 +    super.receiveCommand(view, commandId, args)
@@ -47,7 +50,7 @@ index b3440d8d1773026622b96d231c5086b6f9aa5e13..f3f6874aa3815b3f5e2047533828f7a8
      super.onDropViewInstance(view)
      viewWrapperDelegate.onDestroy(view)
 diff --git a/android/src/main/java/expo/modules/kotlin/views/SimpleViewManagerWrapper.kt b/android/src/main/java/expo/modules/kotlin/views/SimpleViewManagerWrapper.kt
-index 1a15d12e91fc66faf19fd45e3311d44458a74f5d..313bd5aef46ec575c93f60369ea3ee372af8c32e 100644
+index 1a15d12e91fc66faf19fd45e3311d44458a74f5d..cf7f5560cc4df4026c0e958538dc0c0728519476 100644
 --- a/android/src/main/java/expo/modules/kotlin/views/SimpleViewManagerWrapper.kt
 +++ b/android/src/main/java/expo/modules/kotlin/views/SimpleViewManagerWrapper.kt
 @@ -1,6 +1,7 @@
@@ -58,14 +61,15 @@ index 1a15d12e91fc66faf19fd45e3311d44458a74f5d..313bd5aef46ec575c93f60369ea3ee37
  import com.facebook.react.uimanager.ReactStylesDiffMap
  import com.facebook.react.uimanager.SimpleViewManager
  import com.facebook.react.uimanager.StateWrapper
-@@ -51,6 +52,15 @@ class SimpleViewManagerWrapper(
+@@ -51,6 +52,16 @@ class SimpleViewManagerWrapper(
      return props
    }
  
 +  // Fabric delivers view commands (e.g. Reanimated's dispatchCommand) here; without a
 +  // delegate React Native drops them. Views opt in through ExpoViewCommandReceiver.
 +  override fun receiveCommand(view: View, commandId: String, args: ReadableArray?) {
-+    if ((view as? ExpoViewCommandReceiver)?.receiveViewCommand(commandId, args) == true) {
++    val receiver = view as? ExpoViewCommandReceiver
++    if (receiver != null && receiver.receiveViewCommand(commandId, args?.toArrayList() ?: emptyList())) {
 +      return
 +    }
 +    super.receiveCommand(view, commandId, args)

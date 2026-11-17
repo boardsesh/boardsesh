@@ -29,8 +29,7 @@ internal object OverlaySwapCommand {
     }
 
     /** A command's arguments as numbers; null if any argument is not a number. */
-    fun values(args: List<Any?>?): List<Double>? {
-        if (args == null) return null
+    fun values(args: List<Any?>): List<Double>? {
         return args.map { arg -> (arg as? Number)?.toDouble() ?: return null }
     }
 }

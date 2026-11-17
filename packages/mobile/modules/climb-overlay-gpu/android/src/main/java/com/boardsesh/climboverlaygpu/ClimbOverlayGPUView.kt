@@ -15,7 +15,6 @@ import android.provider.Settings
 import android.view.Choreographer
 import android.view.TextureView
 import android.view.View
-import com.facebook.react.bridge.ReadableArray
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
@@ -207,9 +206,9 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
      * manager on the main thread. They run first in the next mount pass, so a
      * pending React commit cannot hold the frame back (#7737).
      */
-    override fun receiveViewCommand(commandId: String, args: ReadableArray?): Boolean {
+    override fun receiveViewCommand(commandId: String, args: List<Any?>): Boolean {
         if (commandId != OverlaySwapCommand.NAME) return false
-        OverlaySwapCommand.values(args?.toArrayList())?.let(::setSwapFrame)
+        OverlaySwapCommand.values(args)?.let(::setSwapFrame)
         return true
     }
 

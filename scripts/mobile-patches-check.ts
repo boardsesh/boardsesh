@@ -157,7 +157,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'android/src/main/java/expo/modules/kotlin/views/ExpoViewCommandReceiver.kt',
     sentinels: [
       'interface ExpoViewCommandReceiver {',
-      'fun receiveViewCommand(commandId: String, args: ReadableArray?): Boolean',
+      'fun receiveViewCommand(commandId: String, args: List<Any?>): Boolean',
     ],
     patchedKey: 'expo-modules-core@58.0.28',
   },
@@ -171,7 +171,7 @@ export const RULES: readonly PatchRule[] = [
     file: `android/src/main/java/expo/modules/kotlin/views/${wrapperFile}`,
     sentinels: [
       `override fun receiveCommand(view: ${viewType}, commandId: String, args: ReadableArray?) {`,
-      '(view as? ExpoViewCommandReceiver)?.receiveViewCommand(commandId, args) == true',
+      'receiver.receiveViewCommand(commandId, args?.toArrayList() ?: emptyList())',
       'super.receiveCommand(view, commandId, args)',
     ],
     patchedKey: 'expo-modules-core@58.0.28',

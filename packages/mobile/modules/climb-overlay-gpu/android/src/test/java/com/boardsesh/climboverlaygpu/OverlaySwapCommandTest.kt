@@ -39,7 +39,6 @@ class OverlaySwapCommandTest {
     fun commandArgumentsMustAllBeNumbers() {
         assertEquals(listOf(12.25, .4, 0.0, 1.0, 3.0), OverlaySwapCommand.values(listOf(12.25, .4, 0.0, 1.0, 3)))
         assertEquals(emptyList<Double>(), OverlaySwapCommand.values(emptyList()))
-        assertNull(OverlaySwapCommand.values(null))
         assertNull(OverlaySwapCommand.values(listOf(1.0, "2")))
         assertNull(OverlaySwapCommand.values(listOf(1.0, null)))
         assertNull(OverlaySwapCommand.values(listOf(true)))
