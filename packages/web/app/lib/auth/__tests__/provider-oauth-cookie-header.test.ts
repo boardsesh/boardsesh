@@ -2,7 +2,6 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { isAcceptableProviderOAuthCookieHeader, isProviderOAuthRequest } from '../provider-oauth-cookie-header.server';
-import { boundedAuthCookiePairs, PublicAuthRequestError } from '../public-auth-request.server';
 
 describe('isProviderOAuthRequest', () => {
   it.each([
@@ -55,48 +54,5 @@ describe('isAcceptableProviderOAuthCookieHeader', () => {
     expect(isAcceptableProviderOAuthCookieHeader(pairs(129).join('; '))).toBe(false);
     // A trailing separator adds a 129th, empty segment.
     expect(isAcceptableProviderOAuthCookieHeader(`${pairs(128).join('; ')};`)).toBe(false);
-  });
-});
-
-// The older parser still used by modules that later #7596 PRs delete applies
-// the same rules, so the two cannot drift until it goes.
-describe('boundedAuthCookiePairs', () => {
-  const pairs = (count: number) => Array.from({ length: count }, (_, index) => `c${index}=1`).join('; ');
-  const headers: [string | null, 'accepted' | 'refused'][] = [
-    [null, 'accepted'],
-    ['', 'accepted'],
-    ['a=1; b=2', 'accepted'],
-    ['  =x', 'accepted'],
-    ['=x', 'refused'],
-    ['a=1; flag', 'refused'],
-    ['a=1\u0001', 'refused'],
-    ['a=1\u007f', 'refused'],
-    [`a=${'x'.repeat(32_766)}`, 'accepted'],
-    [`a=${'x'.repeat(32_767)}`, 'refused'],
-    [pairs(128), 'accepted'],
-    [pairs(129), 'refused'],
-  ];
-
-  it.each(headers)('agrees with the provider check on %j (%s)', (header, outcome) => {
-    expect(isAcceptableProviderOAuthCookieHeader(header)).toBe(outcome === 'accepted');
-    let refusal: unknown;
-    try {
-      boundedAuthCookiePairs(header);
-    } catch (error) {
-      refusal = error;
-    }
-    if (outcome === 'accepted') {
-      expect(refusal).toBeUndefined();
-      return;
-    }
-    expect(refusal).toBeInstanceOf(PublicAuthRequestError);
-    expect(refusal).toMatchObject({ status: 400 });
-  });
-
-  it('returns trimmed name and content pairs and skips blank segments', () => {
-    expect(boundedAuthCookiePairs(' a = 1 ;; b=2=3; ')).toEqual([
-      { name: 'a', content: '1' },
-      { name: 'b', content: '2=3' },
-    ]);
   });
 });

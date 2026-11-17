@@ -5,9 +5,17 @@
 This prerequisite for epic #6975 separates an explicit Google/Apple method
 change from ordinary OAuth identity resolution. Rollout remains tracked in
 #7430. #7596 deleted the selected flow reader, the explicit link publication
-factory and the Google reauthentication web seam; B5 rebuilds the provider
-flows on the new browser session. Public composition, Settings wiring and mode
-activation remain incomplete.
+factory, the Google reauthentication web seam, owned-account and anonymous
+Google/Apple sign-in and the sign-in ACK; B5 rebuilds the provider flows on the
+new browser session. What is left on www, in `packages/web/app/lib/auth/`, is
+the server-only client (`provider-security-command-client.server.ts`), the
+candidate issuer below (`provider-security-publication.server.ts`) and the flow
+and actor-selection helpers (`provider-security-flow.server.ts`,
+`provider-security-selection.server.ts`). No route or page reaches them any
+more; their tests and the `auth-proofs` publication proof are their last
+callers. The client's owned-account sign-in reply check has had no caller since
+the owned sign-in publication went. The next #7596 slice deletes these four
+files and this doc.
 
 The server-only client uses the frozen private provider-security protocol with
 explicit 192 KiB request and 128 KiB response budgets. It captures submitted
@@ -27,8 +35,9 @@ private opaque proposal; no framework JWE is substituted for it.
 The server-only candidate issuer and synchronous response preflight were shared
 with the direct unlink commands. #7596 deleted that unlink publication and the
 Settings link client; B5 rebuilds them on the shared-domain session. The
-first-password writer still uses the claims-free path described here. That path
-does not simulate an OAuth callback: the issuer decodes the actual original JWE, validates its proof and deadline, copies
+first-password web writer used the claims-free path described here until #7596
+deleted it too. That path does not simulate an OAuth callback: the issuer
+decodes the actual original JWE, validates its proof and deadline, copies
 its profile claims and uses the primary SID, next generation and conservative
 provenance before applying the same real-codec checks. Historical missing SID
 and generation retain the centrally admitted credential lineage and default
@@ -38,36 +47,6 @@ actual bounded opaque token can use its original format; only the distinct new
 backend proposal uses the current emitter format. The broker must still obtain a qualified
 prepared command, check current admission and finalize its exact candidate; the
 helpers do not authorize or perform a provider mutation.
-
-## Ordinary owned-account publication
-
-The request-local owned sign-in factory keeps the browser's actual A credential
-for central admission while NextAuth verifies Google or Apple. A separate
-pending cookie family prevents NextAuth from automatically associating B's
-provider subject with A. All adapter writes and email matching are refused.
-The backend's existing `signin-prepare` result either preserves the same owner
-without a new credential or fixes the distinct B owner, SID, generation,
-provenance, expiry and canonical proposal. Apple never supplies a fresh age.
-
-The actual JWT callback and installed public encoder run before finalization.
-The factory removes the entire pending session-cookie family, waits for the
-original A response admission and partner response work, buffers the response,
-seals a metadata-only preparation carrier and checks the complete projected
-browser Cookie header. Only then does it finalize the exact candidate. Failures
-before finalization attempt cancellation; an uncertain finalization never
-retries, aborts or publishes the pending candidate.
-
-The next-request acknowledgment factory requires both physically observed
-versioned A and B proofs, the preparation carrier, and current primary B
-admission. It matches the complete prepared B proof and cursor, calls the exact
-backend acknowledgment once, and rechecks primary admission before returning
-only `recovered`. It emits no cookies and cannot recover credentials after
-their bytes or the carrier were lost. Its production readiness remains false.
-
-#7596 deleted the installed NextAuth proof that drove this factory through
-Google/Apple discovery, token exchange and cookie publication. Restricted LOGIN
-and real transaction composition, public mounting, selected anonymous sign-in
-and real browser/device acceptance remain open.
 
 ## Evidence limits
 
