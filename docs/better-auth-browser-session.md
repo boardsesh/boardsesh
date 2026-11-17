@@ -269,6 +269,26 @@ What B1 does with the token: put it in the signed session cookie, Max-Age
 it to page JavaScript. Reads present it back as a `canonical-token` after the
 cookie signature check.
 
+### The private commands B1 calls
+
+All three sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
+backend (404 `{ "error": "disabled" }` when off, 503 for an unknown value), use
+the existing `Authorization: Bearer <CURRENT_STORE_AUTH_RPC_SECRET>` and refuse
+any request carrying an `Origin` header. Schemas and types are in
+`@boardsesh/auth-protocol` (`web-session.ts`).
+
+| Command | Request | Replies |
+| --- | --- | --- |
+| Login: the staged password command, `POST /api/internal/auth/current-store/password` | `passwordCommandSchema` plus `webSession: { presented? }`. `presented` is `{ kind: 'legacy-jwe', credential }` (the joined NextAuth cookie) or `{ kind: 'canonical-token', token }` (from the new cookie). There is no field for an account: the session goes to the account the password proves. | `authenticated` with `webSession: { sessionId, token, expiresAt, generation }`; `invalid_credentials` with nothing issued and nothing revoked. An account that still needs email verification gets `authenticated` with `verification.verified: false` and no `webSession`, and its presented session stays. Rate limits and the compare gate are those of #7650. |
+| Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ token, expectedUserId, expectedAuthSessionId }` | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. |
+| Roll, `POST /api/internal/auth/current-store/web-session/v1/roll` | `webSessionRollCommandSchema`: `{ token }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` and `rolled`; 401 `unauthenticated`; 503 `unavailable`. |
+
+A presented session that no longer reads as live is ignored, and a session
+store that cannot be read fails the login with 503, so a login never succeeds
+while leaving the presented session live. The legacy cookie's own sign-out
+stays the existing `/api/internal/auth/current-store/signout` behind
+`CURRENT_STORE_WEB_SIGNOUT_MODE`.
+
 ## One guard in each browser client
 
 Each browser surface gets one guard in its transport, keyed by who a request

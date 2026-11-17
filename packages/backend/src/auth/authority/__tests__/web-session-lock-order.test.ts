@@ -16,6 +16,7 @@ import { issueWebSession, type IssuedWebSession } from '../web-session';
 import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../../current-store/email-reservations';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../../current-store/password-recovery';
+import { authenticateWebPassword } from '../../current-store/web-password';
 import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 
 /**
@@ -57,6 +58,9 @@ vi.mock('../../admission-pool', () => ({
 const isIssued = (result: unknown) => typeof result === 'object' && result !== null && 'token' in result;
 const isResetReply = (result: unknown) =>
   typeof result === 'object' && result !== null && 'operation' in result && result.operation === 'reset-password';
+const isPasswordReply = (result: unknown) =>
+  typeof result === 'object' && result !== null && 'operation' in result && result.operation === 'password';
+const ORIGINAL_PASSWORD = 'web session lock original';
 
 async function climber() {
   const userId = randomUUID();
@@ -64,11 +68,23 @@ async function climber() {
   await environment.database.insert(users).values({ id: userId, email });
   await environment.database.transaction(async (transaction) => {
     await reserveEnforcedEmail(transaction, { ...authority, rawEmail: email, requestedUserId: userId });
-    await transaction
-      .insert(userCredentials)
-      .values({ userId, passwordHash: await bcrypt.hash('web session lock original', 4) });
+    await transaction.insert(userCredentials).values({ userId, passwordHash: await bcrypt.hash(ORIGINAL_PASSWORD, 4) });
   });
   return { userId, email };
+}
+
+/** The staged password command asking for a web session, presenting `token`. */
+async function passwordLogin(database: typeof environment.database, email: string, token: string) {
+  const reply = await authenticateWebPassword(database, authority, {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
+    operation: 'password',
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    webSession: { presented: { kind: 'canonical-token', token } },
+    payload: { email, password: ORIGINAL_PASSWORD },
+  });
+  if (reply.outcome !== 'authenticated' || !reply.webSession) throw new Error('No web session issued');
+  return reply.webSession;
 }
 
 async function login(database: typeof environment.database, userId: string, presented?: FirstPartySession) {
@@ -87,8 +103,8 @@ async function session(issued: IssuedWebSession): Promise<FirstPartySession> {
   return outcome.session;
 }
 
-async function status(issued: IssuedWebSession) {
-  return (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: issued.token })).status;
+async function status({ token }: { readonly token: string }) {
+  return (await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status;
 }
 
 async function resetCommand(email: string): Promise<ResetPasswordCommand> {
@@ -245,6 +261,55 @@ describe('a login and the writers that end its sessions share one lock order', (
           .from(schema.authSession)
           .where(eq(schema.authSession.id, presented.authSessionId)),
       ).toEqual([]);
+  });
+
+  it('two password logins presenting each other’s sessions queue in id order and both finish', async () => {
+    const [left, right] = [await climber(), await climber()];
+    const [leftToken, rightToken] = [
+      (await login(environment.database, left.userId)).token,
+      (await login(environment.database, right.userId)).token,
+    ];
+    const parked = parkBeforeCommit(issueDatabase, isPasswordReply);
+    const asRight = passwordLogin(issueDatabase, right.email, leftToken);
+    let asLeft: ReturnType<typeof passwordLogin> | undefined;
+    try {
+      await bounded(parked.reached);
+      asLeft = passwordLogin(otherDatabase, left.email, rightToken);
+      const waiting = await blockedStatement(observer, OTHER_APPLICATION, asLeft);
+      expect(waiting.query).toMatch(/from "users" where "users"\."id" = \$1 for (update|key share)/i);
+      expect(waiting.blockers).toEqual([ISSUE_APPLICATION]);
+    } finally {
+      parked.release();
+    }
+    const issued = await bounded(Promise.all([asRight, asLeft]));
+    expect(await Promise.all(issued.map((session) => status(session)))).toEqual(['admitted', 'admitted']);
+    for (const token of [leftToken, rightToken])
+      expect((await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status).toBe(
+        'denied',
+      );
+  });
+
+  it('two password logins of one climber presenting the same session never upgrade a lock', async () => {
+    const { userId, email } = await climber();
+    const presented = (await login(environment.database, userId)).token;
+    const parked = parkBeforeCommit(issueDatabase, isPasswordReply);
+    const first = passwordLogin(issueDatabase, email, presented);
+    let second: ReturnType<typeof passwordLogin> | undefined;
+    try {
+      await bounded(parked.reached);
+      second = passwordLogin(otherDatabase, email, presented);
+      // The presented account is locked FOR UPDATE from the start, not KEY SHARE then FOR UPDATE.
+      const waiting = await blockedStatement(observer, OTHER_APPLICATION, second);
+      expect(waiting.query).toMatch(USERS_FOR_UPDATE);
+      expect(waiting.blockers).toEqual([ISSUE_APPLICATION]);
+    } finally {
+      parked.release();
+    }
+    const issued = await bounded(Promise.all([first, second]));
+    expect(await Promise.all(issued.map((session) => status(session)))).toEqual(['admitted', 'admitted']);
+    expect(
+      (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: presented })).status,
+    ).toBe('denied');
   });
 
   it('control: an issuer that locked the higher id first deadlocks with a login in id order', async () => {

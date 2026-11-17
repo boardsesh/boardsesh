@@ -9,11 +9,17 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { requireHumanSubjectForIssuance } from '../human-admission';
-import { CurrentStoreFoundationError, requireReadCommitted } from '../current-store/foundation-context';
+import {
+  captureExpectedAuthority,
+  CurrentStoreFoundationError,
+  requireReadCommitted,
+  type ExpectedCurrentStoreAuthority,
+} from '../current-store/foundation-context';
+import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { denyFirstPartySessionInTransaction } from './lineage';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
-import type { FirstPartySession } from './session-reader';
+import { readFirstPartySession, type FirstPartySession } from './session-reader';
 import { newSessionToken } from './session-token';
 
 export { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS };
@@ -220,4 +226,66 @@ export async function rollWebSession(
     )
     .returning({ expiresAt: authSession.expiresAt });
   return rolled ? { rolled: true, expiresAt: rolled.expiresAt } : { rolled: false };
+}
+
+export interface WebSessionSignOut {
+  /** The opaque token from the session cookie, after its signature checked out. */
+  readonly token: string;
+  /** Who the tab believed it was signed in as. */
+  readonly expectedUserId: string;
+  readonly expectedAuthSessionId: string;
+}
+
+/**
+ * Guarded sign-out of a canonical web session. `identity-changed` when the
+ * token reads as another live session than the tab expected: nothing ends.
+ * `signed-out` once the session is revoked, or when it was not live anyway.
+ */
+export async function signOutWebSession(
+  database: AuthorityDatabase,
+  input: WebSessionSignOut,
+  authority: ExpectedCurrentStoreAuthority,
+  now = new Date(),
+): Promise<'signed-out' | 'identity-changed'> {
+  const request = { ...input };
+  const expectedAuthority = captureExpectedAuthority(authority);
+  const outcome = await readFirstPartySession(database, { kind: 'canonical-token', token: request.token }, now);
+  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (outcome.status === 'denied') return 'signed-out';
+  const { session } = outcome;
+  if (session.userId !== request.expectedUserId || session.authSessionId !== request.expectedAuthSessionId)
+    return 'identity-changed';
+  await database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    // A bridged no-SID row ends its whole account, which needs the expected authority.
+    await denyFirstPartySessionInTransaction(transaction, session, now, expectedAuthority);
+  });
+  return 'signed-out';
+}
+
+export type WebSessionRefresh =
+  | {
+      readonly status: 'active';
+      readonly session: FirstPartySession;
+      readonly rolled: boolean;
+      readonly expiresAt: Date;
+    }
+  | { readonly status: 'unauthenticated' };
+
+/** Read the session a cookie carries, as every request does, then roll it when it is due. */
+export async function refreshWebSession(
+  database: AuthorityDatabase,
+  token: string,
+  now = new Date(),
+): Promise<WebSessionRefresh> {
+  const outcome = await readFirstPartySession(database, { kind: 'canonical-token', token }, now);
+  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (outcome.status === 'denied') return { status: 'unauthenticated' };
+  const roll = await rollWebSession(database, outcome.session.authSessionId, now);
+  return {
+    status: 'active',
+    session: outcome.session,
+    rolled: roll.rolled,
+    expiresAt: roll.rolled ? roll.expiresAt : outcome.session.expiresAt,
+  };
 }

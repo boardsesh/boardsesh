@@ -7,6 +7,7 @@ import {
   currentStoreLocationSyncMode,
   BATCH_SYSTEM_USER_COMMAND_ENV,
   currentStoreBatchSystemUsersMode as parseBatchSystemUsersMode,
+  WEB_SESSION_MODE_ENV,
 } from '@boardsesh/auth-protocol';
 import { logger } from '../../utils/logger';
 import { AUTH_CUTOFF_ENFORCEMENT_ENV, parseCutoffEnforcement } from '../credential-cutoffs';
@@ -96,6 +97,7 @@ export const STAGED_WRITER_MODE_ENV = [
   'CURRENT_STORE_PROVIDER_SECURITY_MODE',
   'CURRENT_STORE_FIRST_PASSWORD_MODE',
   'CURRENT_STORE_WEB_SIGNOUT_MODE',
+  WEB_SESSION_MODE_ENV,
   'AUTH_WATCH_PAIRING_MODE',
   BATCH_SYSTEM_USER_COMMAND_ENV.mode,
   LOCATION_SYNC_COMMAND_ENV.mode,

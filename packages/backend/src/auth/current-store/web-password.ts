@@ -7,6 +7,7 @@ import {
   type PasswordReply,
   type RegisterCommand,
   type RegisterReply,
+  type WebSessionRequest,
 } from '@boardsesh/auth-protocol';
 import {
   ACCOUNT_EMAIL_CANDIDATE_LIMIT,
@@ -15,7 +16,7 @@ import {
 } from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
@@ -55,6 +56,9 @@ import {
 } from '../authority/router';
 import { bindIdentityAuthority } from '../authority/identity-authority';
 import { verifyAuthorityPassword } from '../authority/authority';
+import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from '../authority/session-reader';
+import { issueWebSession } from '../authority/web-session';
+import { readLockedWebSubjectState } from './web-credential-state';
 
 function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
   return (
@@ -319,9 +323,27 @@ async function prepareWebPasswordAuthentication(
 async function lockWebPasswordAuthentication(
   transaction: CurrentStoreTransaction,
   prepared: PreparedWebPasswordAuthentication,
+  presentedUserId?: string,
 ): Promise<WebPasswordCandidate | null> {
   if (prepared.matchedUserId === null) return null;
   await boundSignInLockWaits(transaction);
+  // A login that revokes a presented session also holds that account FOR
+  // UPDATE. Take every row in users.id order with its final strength now, so
+  // no row is upgraded later and two crossed logins queue instead of
+  // deadlocking. The statement below then only re-takes rows already held,
+  // plus any candidate that appeared since this read.
+  if (presentedUserId !== undefined) {
+    const ordered = await transaction
+      .select({ id: users.id })
+      .from(users)
+      .where(or(accountEmailCandidates(prepared.email), eq(users.id, presentedUserId)))
+      .orderBy(users.id)
+      .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 2);
+    for (const { id } of ordered) {
+      const row = transaction.select({ id: users.id }).from(users).where(eq(users.id, id));
+      await (id === presentedUserId ? row.for('update') : row.for('key share'));
+    }
+  }
   const lockedUsers = await transaction
     .select({ id: users.id })
     .from(users)
@@ -342,7 +364,36 @@ async function lockWebPasswordAuthentication(
   return selected && sameCredentialMembers(prepared.snapshot, current) && !selected.deleted ? selected : null;
 }
 
-/** One-request password/UID verification snapshot, NOT a continuing credential. */
+/**
+ * The session the login arrived with, read in this transaction. One that no
+ * longer reads as live needs no revocation; an unreadable store fails the login.
+ */
+async function readPresentedSession(
+  transaction: CurrentStoreTransaction,
+  request: WebSessionRequest,
+  now: Date,
+): Promise<FirstPartySession | undefined> {
+  const { presented } = request;
+  if (!presented) return undefined;
+  let credential: FirstPartyCredential;
+  if (presented.kind === 'canonical-token') credential = { kind: 'canonical-token', token: presented.token };
+  else {
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) throw new Error('Web session authority unavailable');
+    credential = { kind: 'legacy-jwe', credential: presented.credential, secret };
+  }
+  const outcome = await readFirstPartySession(transaction, credential, now, (userId) =>
+    readLockedWebSubjectState(transaction, userId),
+  );
+  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
+  return outcome.status === 'admitted' ? outcome.session : undefined;
+}
+
+/**
+ * One-request password/UID verification snapshot. With `webSession` (its mode
+ * checked by the transport), it also issues a first-party web session for the
+ * verified account and revokes the presented one, in the same transaction.
+ */
 export async function authenticateWebPassword(
   database: DbInstance,
   authorityInput: WebPasswordAuthority,
@@ -391,7 +442,9 @@ export async function authenticateWebPassword(
     // and answered unavailable, never as a wrong password.
     // BA-02: the lock covers every row the address rule could name (the typed
     // text and its other capitals), still in users.id order.
-    const selected = await lockWebPasswordAuthentication(transaction, prepared);
+    const now = new Date();
+    const presented = input.webSession ? await readPresentedSession(transaction, input.webSession, now) : undefined;
+    const selected = await lockWebPasswordAuthentication(transaction, prepared, presented?.userId);
     assertFresh(issuedAt);
     if (!selected)
       return {
@@ -406,13 +459,36 @@ export async function authenticateWebPassword(
       credentialProofVersion,
       selected.generation,
     );
+    // The web refuses a sign-in that still needs email verification, so no
+    // session is issued for it and the presented one stays.
+    const webSession =
+      input.webSession && !(authority.emailVerificationEnabled && selected.emailVerified === null)
+        ? await issueWebSession(transaction, {
+            userId: selected.userId,
+            authenticatedAt: now,
+            presented,
+            now,
+            authority: receipt,
+          })
+        : undefined;
     await revalidateIdentityAuthority(transaction, receipt);
+    assertFresh(issuedAt);
     return {
       protocolVersion: AUTH_PROTOCOL_VERSION,
       operation: 'password',
       requestId,
       outcome: 'authenticated',
       ...(credentialProof ? { credentialProof } : {}),
+      ...(webSession
+        ? {
+            webSession: {
+              sessionId: webSession.sessionId,
+              token: webSession.token,
+              expiresAt: webSession.expiresAt.toISOString(),
+              generation: webSession.generation,
+            },
+          }
+        : {}),
       user: { id: selected.userId, email: selected.email, name: selected.name, image: selected.image },
       verification: {
         userId: selected.userId,
