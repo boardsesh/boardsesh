@@ -600,6 +600,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.climbStatsHistory': 'ascent/quality/grade numbers per angle, never a name or a frame',
   'Query.climbStatsForAngles': 'counts and grades per angle, never a name or a frame',
   'Query.climbStatsForClimbs': 'counts and grades per uuid, echoing only the uuids the caller sent',
+  'Query.boardPresenceClimbGrades':
+    'public catalog grade values and requested UUID echoes only, never climb names, frames or wall metadata; the explicit private-spray grade-batch test below proves the owner receives grades and anonymous/stranger readers are refused',
   'Query.boardseshGrade': 'the Boardsesh grade model writes no spray rows, so there is nothing to answer with',
   'Query.boardseshGradesForAngles': 'same: no spray rows in board_climb_grades',
   'Query.climbCommunityStatus': 'a hidden/classic flag and vote counts for the uuid the caller sent',
@@ -1335,6 +1337,22 @@ describe('the spray-wall visibility sweep', () => {
       'Query.boardDiscovery',
     ]) {
       expect(swept).toContain(key);
+    }
+  });
+
+  it('serves a private spray wall’s grade batch to its owner while refusing anonymous and stranger readers', () => {
+    const perViewer = outcomes.get('Query.boardPresenceClimbGrades');
+    expect(perViewer).toBeDefined();
+    if (!perViewer) throw new Error('boardPresenceClimbGrades must participate in the visibility sweep');
+    expect(perViewer.owner.errorMessages).toEqual([]);
+    // The UUID is a caller-supplied echo, so a non-null grade is the positive
+    // control that proves this query reached the seeded private wall's stats.
+    expect(perViewer.owner.data).toMatchObject({
+      boardPresenceClimbGrades: [{ uuid: world.climbUuid, difficulty: expect.any(String) }],
+    });
+    for (const viewer of ['anonymous', 'stranger'] as const) {
+      expect(perViewer[viewer].errorMessages, viewer).toContain('Board not found');
+      expect(perViewer[viewer].data, viewer).toBeNull();
     }
   });
 
