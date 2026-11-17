@@ -342,7 +342,7 @@
       "p2Start": "La API pública documentada en la",
       "p2Link": "página de documentación de la API",
       "p2End": "es para integraciones: herramientas que leen datos de bloques, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso que aplica el servicio.",
-      "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente que use las cuentas, los datos o los servidores de Boardsesh como su servicio necesita nuestro permiso por escrito, y por ahora no lo concedemos. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código está ahí precisamente para eso. La guía de configuración de desarrollo en CONTRIBUTING.md es el punto de partida hoy; la documentación oficial de autoalojamiento aún está por llegar.",
+      "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente cuyas cuentas, escalada, control de plafones o sesiones funcionen en los servidores de Boardsesh necesita nuestro permiso por escrito, y por ahora no lo concedemos. Conectar la cuenta de Boardsesh de un escalador a tu app con su permiso es distinto: si se hace a través de la API OAuth, dentro de los scopes de la documentación para desarrolladores y con las condiciones para desarrolladores que aceptas al registrar la app, es una integración y no necesita ningún otro permiso nuestro. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código está ahí precisamente para eso. La guía de configuración de desarrollo en CONTRIBUTING.md es el punto de partida hoy; la documentación oficial de autoalojamiento aún está por llegar.",
       "p4Start": "Tampoco tienes que empezar con una base de datos vacía. Las",
       "p4Link": "instantáneas nocturnas de los plafones",
       "p4End": "son archivos SQLite públicos con los catálogos de bloques, nos cuesta poco servirlas y puedes usarlas con total libertad. También estamos abiertos a hablar de sincronizar datos que no sean de usuarios, como bloques y grados, con un servicio alternativo.",
@@ -937,7 +937,7 @@
   },
   "privacy": {
     "title": "Política de Privacidad",
-    "lastUpdated": "Última actualización: 3 de noviembre de 2026",
+    "lastUpdated": "Última actualización: 17 de noviembre de 2026",
     "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no hay anuncios en Boardsesh y no compartimos datos con brokers de datos. Sí anunciamos Boardsesh en Reddit e Instagram, y en nuestra web la analítica incluye medir esos anuncios con Meta y Reddit, como explicamos más abajo.",
     "collect": {
