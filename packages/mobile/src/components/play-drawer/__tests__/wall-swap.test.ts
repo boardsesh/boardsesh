@@ -92,6 +92,9 @@ function harness(reduceMotion = false) {
     drag: (offset: number) => apply({ offset }),
     /** The pager's startFling: a committed step and a fling toward `direction`. */
     commit: (direction: 1 | -1) => apply({ steps: input.steps + 1, fling: direction }),
+    /** Reduce Motion: the fling's spring landed before the step reached the UI thread. */
+    commitLanded: (direction: 1 | -1) =>
+      apply({ steps: input.steps + 1, fling: 0, anchor: input.anchor + direction, offset: 0 }),
     /** landFling: the arriving page becomes the anchor; `carry` keeps a caught board's offset. */
     land: (carry = 0) => apply({ anchor: input.anchor + input.fling, fling: 0, offset: carry }),
     /** One frame on both clocks; they stop exactly at their ends, as withTiming does. */
@@ -376,6 +379,214 @@ describe('wall swap interruptions', () => {
       expect(Math.abs(wallSwapPagePosition(swap.state()) - from)).toBeLessThanOrEqual(WALL_SWAP.pairLean);
     }
   });
+});
+
+describe('wall swap reversed by a commit mid-swap', () => {
+  /** A board caught this far off the middle still shows mostly the climb it was leaving. */
+  const CAUGHT_CARRY = 300;
+
+  /** The holds and shared weight of the frame before the latest one, and of the latest. */
+  function lastTwo(frames: Frame[]) {
+    return { before: frames[frames.length - 2], after: frames[frames.length - 1] };
+  }
+
+  /**
+   * After the frame at `fromIndex`, incoming-only holds never brighten while
+   * outgoing-only ones are above 40%. A reversed pair may start with a residue
+   * of incoming light, but it waits there.
+   */
+  function expectNoEarlyBrightening(frames: Frame[], fromIndex: number) {
+    for (let index = fromIndex + 1; index < frames.length; index++) {
+      if (frames[index].position !== frames[index - 1].position) continue;
+      if (frames[index].outgoing > WALL_SWAP.dimFloor) {
+        expect(frames[index].incoming).toBeLessThanOrEqual(frames[index - 1].incoming);
+      }
+    }
+  }
+
+  it('reproduces the logged fling back: no cut to the climb the swap had not shown', () => {
+    // Logged as pages 10 and 11: [10.25, 0.4, 0] then [10.75, 1, 0].
+    const swap = harness();
+    swap.drag(-SWIPE_THRESHOLD - 10);
+    swap.commit(1);
+    swap.land(CAUGHT_CARRY);
+    expect(swap.frames.at(-1)).toMatchObject({ position: WALL_SWAP.pairLean, outgoing: 0.4, incoming: 0 });
+    swap.commit(-1);
+    const { before, after } = lastTwo(swap.frames);
+    expect(after.position).toBe(1 - WALL_SWAP.pairLean);
+    // Was [0.75, 1, 0]: page 1 whole in one frame, page 0's own holds gone.
+    expect([after.outgoing, after.incoming]).toEqual([0, 0.4]);
+    expect(after.holds).toEqual(before.holds);
+    expect(after.shared).toBe(before.shared);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: -1, leadMs: 0 });
+    for (let frame = 0; frame < 10; frame++) swap.tick(8);
+    swap.land();
+    for (let frame = 0; frame < 20; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it.each([
+    ['early, nothing arriving yet', 0],
+    ['mid, both climbs partly lit', 96],
+    ['late, the old climb gone and the new nearly whole', 184],
+  ])('starts from the weights on screen, relabelled (%s)', (_label, ms) => {
+    const swap = harness();
+    swap.drag(-SWIPE_THRESHOLD - 10);
+    swap.commit(1);
+    for (let elapsed = 0; elapsed < ms; elapsed += 8) swap.tick(8);
+    swap.land(CAUGHT_CARRY);
+    const shown = swap.state();
+    if (ms === 96) {
+      expect(shown.outgoing).toBeGreaterThan(0);
+      expect(shown.incoming).toBeGreaterThan(0);
+    }
+    if (ms === 184) {
+      expect(shown.outgoing).toBe(0);
+      expect(shown.incoming).toBeGreaterThan(0.9);
+    }
+    swap.commit(-1);
+    const commitIndex = swap.frames.length - 1;
+    const { before, after } = lastTwo(swap.frames);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: true, swapFrom: 1, swapDir: -1, leadMs: 0 });
+    expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
+    expect(after.holds).toEqual(before.holds);
+    expect(after.shared).toBe(before.shared);
+    for (let frame = 0; frame < 10; frame++) swap.tick(8);
+    swap.land();
+    for (let frame = 0; frame < 20; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
+    expectNoEarlyBrightening(swap.frames, commitIndex);
+    for (const frame of swap.frames) expect(frame.shared).toBeGreaterThanOrEqual(WALL_SWAP.dimFloor);
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('during a lead-in, eases the pair on screen to the climb it heads back to and never shows the other', () => {
+    const swap = caughtPulledBack();
+    // Flicked toward page 2: a lead-in eases the pulled-back pair to page 1, whole.
+    swap.commit(1);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: 1, from: 1, dir: -1 });
+    swap.tick(8);
+    swap.tick(8);
+    // Caught on page 2 and flicked straight back to page 1.
+    swap.land(CAUGHT_CARRY);
+    swap.commit(-1);
+    const { before, after } = lastTwo(swap.frames);
+    expect(after.holds).toEqual(before.holds);
+    expect(after.shared).toBe(before.shared);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 2, swapDir: -1, from: 1, dir: -1 });
+    for (let frame = 0; frame < 8; frame++) swap.tick(8);
+    swap.land();
+    for (let frame = 0; frame < 10; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 1, dir: 0, outgoing: 1, incoming: 0, swapping: false });
+    // Holds 7 and 8 are page 2's own: page 2 was never on screen.
+    for (const frame of swap.frames) {
+      expect(frame.holds.get(7) ?? 0).toBe(0);
+      expect(frame.holds.get(8) ?? 0).toBe(0);
+    }
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('a second flick onward out of that lead-in leads in to page 1, whole, then swaps', () => {
+    const swap = caughtPulledBack();
+    swap.commit(1);
+    swap.tick(8);
+    swap.land(CAUGHT_CARRY);
+    swap.commit(-1);
+    swap.tick(8);
+    swap.land(-CAUGHT_CARRY);
+    swap.commit(1);
+    const { before, after } = lastTwo(swap.frames);
+    expect(after.holds).toEqual(before.holds);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: 1, from: 1, dir: -1 });
+    for (let frame = 0; frame < 15; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 1, dir: 1, incoming: 0 });
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
+    swap.land();
+    swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 2, dir: 0, outgoing: 1, incoming: 0 });
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('under Reduce Motion relabels the dissolve and keeps shared holds whole', () => {
+    const swap = harness(true);
+    swap.drag(-SWIPE_THRESHOLD - 10);
+    swap.commit(1);
+    swap.tick(8);
+    swap.tick(8);
+    swap.land(CAUGHT_CARRY);
+    const shown = swap.state();
+    swap.commit(-1);
+    const { before, after } = lastTwo(swap.frames);
+    expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
+    expect(after.holds).toEqual(before.holds);
+    expect(swap.state()).toMatchObject({ swapping: true, from: 1, dir: -1, durationMs: 120 });
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    swap.land();
+    swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
+    expect(swap.frames.every((frame) => frame.shared === 1)).toBe(true);
+  });
+
+  it('under Reduce Motion, a fling back that landed before its step still starts from the screen', () => {
+    const swap = harness(true);
+    swap.drag(-20);
+    swap.commitLanded(1);
+    swap.tick(8);
+    swap.tick(8);
+    const shown = swap.state();
+    expect(shown.outgoing).toBeLessThan(1);
+    swap.commitLanded(-1);
+    const { before, after } = lastTwo(swap.frames);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: -1, from: 1, dir: -1 });
+    expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
+    expect(after.holds).toEqual(before.holds);
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
+  });
+
+  it('pins the onward commit: it still ends the running swap with its arriving climb whole', () => {
+    // Flung 0 -> 1, then onward to 2 at 30 ms into the first swap.
+    const swap = harness();
+    swap.drag(-SWIPE_THRESHOLD - 10);
+    swap.commit(1);
+    for (let frame = 0; frame < 3; frame++) swap.tick(10);
+    swap.land(CAUGHT_CARRY);
+    const before = swap.frames.at(-1)!;
+    expect(before.position).toBe(WALL_SWAP.pairLean);
+    expect(before.outgoing).toBeCloseTo(0.4 * (1 - easeIn(30 / 120)), 10);
+    expect(before.incoming).toBe(0);
+    swap.commit(1);
+    const after = swap.frames.at(-1)!;
+    expect(swap.state()).toMatchObject({
+      from: 1,
+      dir: 1,
+      outgoing: 1,
+      incoming: 0,
+      swapping: true,
+      swapFrom: 1,
+      swapDir: 1,
+      swapStartOutgoing: 1,
+      swapStartIncoming: 0,
+      leadMs: 0,
+    });
+    expect(after.position).toBe(1 + WALL_SWAP.pairLean);
+    // Page 1 whole at once, page 0's own holds gone: today's documented cut.
+    expect(Object.fromEntries(after.holds)).toEqual({ 3: 1, 4: 1, 5: 1, 6: 1, 7: 0, 8: 0 });
+  });
+
+  /** A forward swap from page 0 caught on page 1 and pulled back toward page 0. */
+  function caughtPulledBack() {
+    const swap = harness();
+    swap.drag(-90);
+    swap.commit(1);
+    for (let elapsed = 0; elapsed < 40; elapsed += 8) swap.tick(8);
+    swap.land(140);
+    swap.drag(150);
+    swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, settling: true, swapping: false });
+    return swap;
+  }
 });
 
 describe('wall swap under Reduce Motion', () => {

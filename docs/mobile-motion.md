@@ -80,7 +80,10 @@ clock: old-only holds fade out over 0–120 ms with ease-in, new-only holds fade
 60–200 ms with ease-out, and the new holds wait until the old ones are down to 40%.
 Catching the board mid-swap lets the swap run on; pulling it back toward the old climb
 (4 points past where it was caught) eases from what is on screen over 120 ms. A second
-commit ends the first swap at once. A commit toward the other side of a pulled-back board
+commit onward ends the first swap at once. A commit straight back to the old climb starts
+from what is on screen, the same pair named the other way round, so nothing jumps; if the
+first swap was still easing a pulled-back board to whole, that ease carries on and the
+climb the climber turned back from never lights. A commit toward the other side of a pulled-back board
 first eases that board's climb back to whole over 120 ms, then swaps. Reduce Motion: no
 drag dim, and the swap is one 120 ms dissolve that leaves shared holds fully lit. The PNG
 fallback still slides the whole board.
