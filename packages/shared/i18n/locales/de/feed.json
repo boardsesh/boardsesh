@@ -44,9 +44,15 @@
           "startTitle": "Starte eine Session",
           "startBody": "Wähl ein Workout oder kletter einfach",
           "running": "Session läuft",
-          "open": "Session öffnen"
+          "open": "Session öffnen",
+          "lastWorkoutToday": "Letztes Workout · Heute",
+          "lastWorkoutYesterday": "Letztes Workout · Gestern",
+          "lastWorkoutOn": "Letztes Workout · {{day}}",
+          "lastWorkoutSends_one": "{{count}} Begehung",
+          "lastWorkoutSends_other": "{{count}} Begehungen"
         },
         "playlists": {
+          "title": "Auf deinem Level, noch nicht getoppt",
           "all": "Alle Playlists"
         },
         "empty": {

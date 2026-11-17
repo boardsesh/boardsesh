@@ -763,7 +763,7 @@
           "week": "Esta semana",
           "board": "Tu plafón",
           "session": "Sesión",
-          "playlists": "Listas",
+          "playlists": "A tu nivel",
           "climbingNow": "Escalando ahora",
           "beta": "Beta reciente",
           "feed": "Feed"
@@ -771,8 +771,8 @@
         "descriptions": {
           "week": "Sesiones, encadenes y semanas seguidas",
           "board": "Explora bloques o cambia de plafón",
-          "session": "Empieza una sesión o mira su cronómetro",
-          "playlists": "Bloques favoritos y Proyectos",
+          "session": "Tu último entrenamiento, o empieza una sesión",
+          "playlists": "A tu nivel, Joyas ocultas y Novedades",
           "climbingNow": "Sesiones en directo a las que unirte",
           "beta": "Vídeos de beta nuevos para tu plafón",
           "feed": "Sesiones y bloques nuevos de tu crew. Siempre al final."

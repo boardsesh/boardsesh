@@ -29,6 +29,7 @@ import {
   clearEndedWorkouts,
   forgetEndedWorkoutTick,
   getEndedWorkout,
+  getLatestEndedWorkout,
   hydrateEndedWorkouts,
   rememberEndedWorkout,
   resetEndedWorkoutStoreForTests,
@@ -64,6 +65,16 @@ describe('ended workout recaps', () => {
     expect(recap).toMatchObject({ ...record('session-1'), endedAtMs: NOW, userId: 'user-1' });
     expect(recap?.pendingStart).toBeUndefined();
     expect(getEndedWorkout('session-2')).toBeNull();
+  });
+
+  it("answers the newest recap of the climber's own, never another account's", () => {
+    rememberEndedWorkout(record('mine-old'), NOW - DAY_MS, 'user-1');
+    rememberEndedWorkout(record('mine-new'), NOW - 60_000, 'user-1');
+    rememberEndedWorkout(record('theirs'), NOW, 'user-2');
+    expect(getLatestEndedWorkout('user-1')?.sessionId).toBe('mine-new');
+    expect(getLatestEndedWorkout('user-2')?.sessionId).toBe('theirs');
+    expect(getLatestEndedWorkout('user-3')).toBeNull();
+    expect(getLatestEndedWorkout(null)).toBeNull();
   });
 
   it('skips a run with no stages', () => {

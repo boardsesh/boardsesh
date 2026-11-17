@@ -495,7 +495,7 @@
           "week": "This week",
           "board": "Your board",
           "session": "Session",
-          "playlists": "Playlists",
+          "playlists": "At your level",
           "climbingNow": "Climbing now",
           "beta": "Fresh beta",
           "feed": "Feed"
@@ -503,8 +503,8 @@
         "descriptions": {
           "week": "Sessions, sends and weeks running",
           "board": "Browse climbs or change board",
-          "session": "Start a session or see its timer",
-          "playlists": "Liked climbs and Projects",
+          "session": "Your last workout, or start a session",
+          "playlists": "At your level, Hidden gems and Fresh",
           "climbingNow": "Live sessions you can join",
           "beta": "New beta videos for your board",
           "feed": "Sessions and new climbs from your crew. Always last."

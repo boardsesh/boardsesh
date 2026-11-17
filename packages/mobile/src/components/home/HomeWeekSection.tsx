@@ -1,9 +1,11 @@
 import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { WeekDay, WeekSummary } from '@boardsesh/profile-stats';
 import type { WeekActivityTick } from '../../db/queries/get-week-activity-local';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { track } from '../../lib/analytics';
 import { hapticLight } from '../../lib/haptics';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
@@ -60,6 +62,7 @@ export const HomeWeekCard = memo(function HomeWeekCard({ summary }: { summary: W
     if (!record) return;
     const { climbUuid, boardType, layoutId, angle } = record.entry;
     hapticLight();
+    track(SHARED_EVENTS.HomeSectionTapped, { section: 'week', target: 'record' });
     openClimbInPlayDrawer({ kind: 'ref', climbUuid, boardType, layoutId, angle }, { openPlayDrawer, router });
   }, [record, openPlayDrawer, router]);
 

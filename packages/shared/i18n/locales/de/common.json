@@ -495,7 +495,7 @@
           "week": "Diese Woche",
           "board": "Dein Board",
           "session": "Session",
-          "playlists": "Playlists",
+          "playlists": "Auf deinem Level",
           "climbingNow": "Gerade am Klettern",
           "beta": "Frische Beta",
           "feed": "Feed"
@@ -503,8 +503,8 @@
         "descriptions": {
           "week": "Sessions, Begehungen und Wochen am Stück",
           "board": "Boulder durchsuchen oder Board wechseln",
-          "session": "Session starten oder ihre Zeit sehen",
-          "playlists": "Gelikte Boulder und Projekte",
+          "session": "Dein letztes Workout, oder starte eine Session",
+          "playlists": "Auf deinem Level, Geheimtipps und Frisch",
           "climbingNow": "Live-Sessions zum Mitmachen",
           "beta": "Neue Beta-Videos für dein Board",
           "feed": "Sessions und neue Boulder deiner Crew. Immer ganz unten."

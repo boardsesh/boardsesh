@@ -44,9 +44,15 @@
           "startTitle": "Start a session",
           "startBody": "Pick a workout or just climb",
           "running": "Session running",
-          "open": "Open session"
+          "open": "Open session",
+          "lastWorkoutToday": "Last workout · Today",
+          "lastWorkoutYesterday": "Last workout · Yesterday",
+          "lastWorkoutOn": "Last workout · {{day}}",
+          "lastWorkoutSends_one": "{{count}} send",
+          "lastWorkoutSends_other": "{{count}} sends"
         },
         "playlists": {
+          "title": "At your level, unsent",
           "all": "All playlists"
         },
         "empty": {

@@ -1,18 +1,23 @@
 import { isSameSectionLayout, type SectionLayout, type SectionLayoutSpec } from './section-layout';
 import { createSectionLayoutStore, settingsLayoutStorage, useSectionLayout } from './section-layout-store';
 
-// The sections Home shows, and in what order (#6289). The default is This week
-// (#7690), Climbing now, then the feed. The three Boardz-style cards and Fresh
-// beta (the beta shelf Home had until #5518) start hidden, and "Focused" is one
-// tap away.
+// The sections Home shows, and in what order (#6289). The default is the Home
+// redesign's (#7688): This week (#7690), Session, Climbing now, At your level,
+// then the feed. Your board and Fresh beta (the beta shelf Home had until #5518)
+// start hidden, and "Focused" is one tap away.
 //
-// A section added in a later release takes its default place and switch, also
+// Climbing now stays its own rail until the Session card can lead with a live
+// session and Join (#7689, waiting on the button pair in #7695).
+//
+// A climber who customised Home keeps their layout: a stored record holds every
+// section's switch and place, so a new default order or switch reaches only
+// climbers on the defaults (stored as `null`). A section added in a later release takes its default place and switch, also
 // for a climber who customised Home: their own order and switches stay as they
 // were around it.
 //
 // The feed stays last: it scrolls forever, so nothing could sit under it.
 
-export const HOME_SECTION_IDS = ['week', 'board', 'session', 'playlists', 'climbingNow', 'beta', 'feed'] as const;
+export const HOME_SECTION_IDS = ['week', 'session', 'climbingNow', 'playlists', 'board', 'beta', 'feed'] as const;
 export type HomeSectionId = (typeof HOME_SECTION_IDS)[number];
 /** The sections drawn above the feed; the feed is the list itself. */
 export type HomeTopSectionId = Exclude<HomeSectionId, 'feed'>;
@@ -25,7 +30,7 @@ export const HOME_SECTIONS: SectionLayoutSpec<HomeSectionId> = {
   ids: HOME_SECTION_IDS,
   defaults: {
     order: HOME_SECTION_IDS,
-    visible: { week: true, board: false, session: false, playlists: false, climbingNow: true, beta: false, feed: true },
+    visible: { week: true, session: true, climbingNow: true, playlists: true, board: false, beta: false, feed: true },
   },
   lockedLast: 'feed',
 };

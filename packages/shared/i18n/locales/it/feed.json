@@ -44,9 +44,15 @@
           "startTitle": "Inizia una session",
           "startBody": "Scegli un allenamento o scala e basta",
           "running": "Session in corso",
-          "open": "Apri session"
+          "open": "Apri session",
+          "lastWorkoutToday": "Ultimo allenamento · Oggi",
+          "lastWorkoutYesterday": "Ultimo allenamento · Ieri",
+          "lastWorkoutOn": "Ultimo allenamento · {{day}}",
+          "lastWorkoutSends_one": "{{count}} ripetizione",
+          "lastWorkoutSends_other": "{{count}} ripetizioni"
         },
         "playlists": {
+          "title": "Al tuo livello, non ancora chiusi",
           "all": "Tutte le playlist"
         },
         "empty": {
