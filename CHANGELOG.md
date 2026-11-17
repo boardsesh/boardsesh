@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Swiping to the next climb now swaps only the holds that change, just like your wall. ([#7725](https://github.com/boardsesh/boardsesh/pull/7725))
 - Spraywall "maybe" holds stand out in mint, clear of every grade colour ([#7721](https://github.com/boardsesh/boardsesh/pull/7721))
 - A brighter, richer violet across the app, with selected items easier to spot ([#7711](https://github.com/boardsesh/boardsesh/pull/7711))
 - Set your Spraywall's LED brightness once for everyone at the wall. ([#7454](https://github.com/boardsesh/boardsesh/pull/7454))

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-17T10:30:11.512Z",
+  "generatedAt": "2026-11-17T14:52:37.388Z",
   "entries": [
+    {
+      "prNumber": 7725,
+      "category": "new",
+      "title": "Swiping to the next climb now swaps only the holds that change, just like your wall.",
+      "mergedAt": "2026-11-17T14:06:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7725"
+    },
     {
       "prNumber": 7721,
       "category": "new",
@@ -9815,6 +9822,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T14:06:29Z",
+      "sha": "4aff415625ff33743f9c6a57d07d55473919534f",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "bafceeb0492b225377a94d2e68a5f155d6521037"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-17T09:25:11Z",
