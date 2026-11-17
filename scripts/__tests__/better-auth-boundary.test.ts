@@ -351,6 +351,10 @@ const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>
   'packages/backend/src/auth/current-store/system-identities.ts': { gate: 'assertLegacyIdentityWriterAllowed(' },
   // The operator switch itself: the gate held exclusively.
   'packages/backend/src/scripts/auth-authority.ts': { writes: 3, gate: 'lockAuthorityGateExclusively(' },
+  // Per-account password guess counter (#7656): no identity, credential or user
+  // id, only rejected-password counts by email digest. Fails open in 250 ms, so
+  // it must never wait on the authority gate.
+  'packages/backend/src/auth/password-guess-windows.ts': { writes: 4 },
   // Documented legacy branches of the worker jobs; their staged modes go through the backend.
   'packages/db/src/jobs/system-user.ts': { writes: 1 },
   'packages/location-sync/src/upsert.ts': { writes: 1 },
