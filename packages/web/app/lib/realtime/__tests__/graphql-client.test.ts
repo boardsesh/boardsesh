@@ -3,6 +3,7 @@ import type { CreateGraphQLClientOptions, ExtendedClient } from '@boardsesh/grap
 
 const shared = vi.hoisted(() => ({
   capturedOptions: [] as CreateGraphQLClientOptions[],
+  registerClient: vi.fn((): (() => void) => () => {}),
 }));
 
 vi.mock('@boardsesh/graphql-client', () => ({
@@ -18,11 +19,12 @@ vi.mock('@boardsesh/graphql-client', () => ({
 }));
 
 vi.mock('../websocket-connection-manager', () => ({
-  connectionManager: { registerClient: vi.fn(() => () => {}) },
+  connectionManager: { registerClient: shared.registerClient },
 }));
 
 import { acquireRealtimeClient as acquireSharedRealtimeClient, createGraphQLClient } from '../graphql-client';
 import { WEB_CLIENT_VERSION } from '@/app/lib/client-identity';
+import { browserSessionGuard } from '@/app/lib/auth/session-guard';
 
 const BROWSER_IDENTITY = `boardsesh-web/${WEB_CLIENT_VERSION}`;
 
@@ -59,6 +61,40 @@ describe('web realtime createGraphQLClient connectionParams', () => {
     createGraphQLClient('wss://backend.test/graphql');
 
     await expect(lastConnectionParams()).resolves.toEqual({ clientIdentity: BROWSER_IDENTITY, clientPlatform: 'web' });
+  });
+});
+
+describe('web realtime createGraphQLClient socket wiring', () => {
+  beforeEach(() => {
+    shared.capturedOptions.length = 0;
+    shared.registerClient.mockClear();
+  });
+
+  it('uses the error-swallowing socket and registers the client with the connection manager', () => {
+    const unregister = vi.fn();
+    shared.registerClient.mockReturnValueOnce(unregister);
+    const client = createGraphQLClient({
+      url: 'wss://backend.test/graphql',
+      authToken: 'session-token',
+      connectionName: 'privacy',
+    });
+    const options = shared.capturedOptions.at(-1);
+    if (!options?.webSocketImpl || !options.onClientCreated) throw new Error('Socket wiring was not passed');
+
+    expect(Object.getPrototypeOf(options.webSocketImpl)).toBe(WebSocket);
+    expect(options).not.toHaveProperty('lazyCloseTimeoutMs');
+
+    const cleanup = options.onClientCreated(client);
+    expect(shared.registerClient).toHaveBeenCalledWith(client, 'privacy');
+    expect(unregister).not.toHaveBeenCalled();
+    cleanup?.();
+    expect(unregister).toHaveBeenCalledOnce();
+  });
+
+  it('passes a caller’s lazy-close delay through unchanged', () => {
+    createGraphQLClient({ url: 'wss://backend.test/graphql', authToken: null, lazyCloseTimeoutMs: 1500 });
+
+    expect(shared.capturedOptions.at(-1)?.lazyCloseTimeoutMs).toBe(1500);
   });
 });
 
@@ -103,5 +139,18 @@ describe('acquireRealtimeClient', () => {
     expect(old.client.dispose).toHaveBeenCalledOnce();
     expect(renewed.client.dispose).not.toHaveBeenCalled();
     renewed.release();
+  });
+
+  it('closes the shared socket as soon as the account changes, before its holders release it', () => {
+    const guard = browserSessionGuard();
+    guard.accept({ userId: 'user-a', authSessionId: 'login-a' });
+    const held = acquireRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'token-a' });
+
+    guard.accept({ userId: 'user-a', authSessionId: 'login-a2' });
+
+    expect(held.client.dispose).toHaveBeenCalledOnce();
+    const reacquired = acquireRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'token-a' });
+    expect(reacquired.client).not.toBe(held.client);
+    reacquired.release();
   });
 });

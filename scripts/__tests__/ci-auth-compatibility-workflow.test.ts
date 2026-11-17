@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
@@ -24,11 +26,9 @@ const compatibility = workflow.jobs['test-auth-compatibility'];
 const backend = workflow.jobs['test-backend'];
 const proofs = [
   'test:native-contract',
-  'test:auth-prototype',
   'test:auth-authority',
   'test:auth-identities',
   'test:auth-web-credential-proof',
-  'test:auth-prototype:browser',
   'test:auth-browser-proof-cookies',
 ];
 
@@ -70,14 +70,16 @@ describe('auth compatibility CI has an independent complete budget', () => {
       compatibility.steps.filter((step) => step.run === 'vp exec playwright install --with-deps chromium'),
     ).toHaveLength(1);
   });
-  it('runs cookie recovery after Chromium and preserves all actual proof inputs', () => {
+  it('runs the versioned proof-cookie proof after Chromium against the owned database', () => {
     const install = compatibility.steps.findIndex(
       (step) => step.run === 'vp exec playwright install --with-deps chromium',
     );
     const proof = compatibility.steps.findIndex((step) => step.run === 'vp run test:auth-browser-proof-cookies');
     expect(install).toBeGreaterThanOrEqual(0);
     expect(proof).toBeGreaterThan(install);
-    expect(compatibility.steps[proof].env?.AUTH_PROTOTYPE_REDIS_URL).toBe('redis://localhost:6380');
+    expect(compatibility.steps[proof].env).toEqual({
+      AUTH_PROTOTYPE_DATABASE_URL: 'postgresql://postgres:postgres@localhost:5433/postgres',
+    });
   });
   it('targets web auth/proof inputs without widening the baseline backend trigger', () => {
     const source = readFileSync('.github/workflows/ci.yml', 'utf8');
@@ -89,12 +91,10 @@ describe('auth compatibility CI has an independent complete budget', () => {
     const filters = parse(filter!) as Record<string, string[]>;
     expect(filters.authCompatibility).toEqual(
       expect.arrayContaining([
-        'packages/web/auth-prototype/**',
-        'packages/web/playwright.auth-prototype.config.ts',
+        'packages/web/auth-proofs/**',
         'packages/web/app/lib/auth/**',
         'packages/web/app/lib/partner-oauth/**',
         'packages/web/app/api/auth/**',
-        'packages/web/app/api/internal/auth/**',
         'packages/web/app/api/internal/ws-auth/**',
         'packages/web/app/lib/seo/base-url.ts',
         'packages/web/vite.config.ts',

@@ -242,10 +242,10 @@ const BOARDSESH_PROBE_CONFIG_JSON = JSON.stringify({
  * PRE-upgrade launch wrote answer for the POST-upgrade library — a permanent
  * false negative that only a cache wipe would clear.
  *
- * The prefix keeps them out of the hook's warm-up scan too, which only adopts
- * files starting with the current `v<RENDERER_VERSION>_` (see
- * warmupRenderedOverlaysOnce in use-native-climb-render.ts) — and sweeps
- * anything else, which is a second safety net under the explicit delete below.
+ * The prefix also keeps probes out of the hook's overlay warm-up scan. The
+ * probe owns their lifetime so a board mounting mid-probe cannot delete them.
+ * Explicit cleanup below removes both outputs; native cache pruning reclaims
+ * any leftovers after a crash.
  */
 function probeCacheKeys(): { classic: string; boardsesh: string } {
   const runId = `${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffffff).toString(36)}`;
@@ -265,9 +265,13 @@ function probeCacheKeys(): { classic: string; boardsesh: string } {
 async function readProbeFingerprint(uri: string): Promise<string | null> {
   try {
     const probeFile = new File(uri);
-    if (!probeFile.exists) return null;
+    if (!probeFile.exists) {
+      console.warn(`[BoardRenderer] Aura probe output is missing: ${uri}`);
+      return null;
+    }
     return `${probeFile.size ?? -1}:${await probeFile.base64()}`;
-  } catch {
+  } catch (error) {
+    console.warn('[BoardRenderer] Aura probe output could not be read:', error);
     return null;
   }
 }
@@ -277,7 +281,7 @@ function discardProbeOutput(uri: string): void {
   try {
     new File(uri).delete();
   } catch {
-    // The next warm-up sweeps it: it carries no current-version prefix.
+    // The native cache pruner eventually reclaims any leftover probe PNG.
   }
 }
 
@@ -297,8 +301,11 @@ async function runBoardseshSupportProbe(): Promise<boolean> {
 
     const [classicFingerprint, boardseshFingerprint] = await Promise.all(probeOutputs.map(readProbeFingerprint));
     if (!classicFingerprint || !boardseshFingerprint) return false;
-    return classicFingerprint !== boardseshFingerprint;
-  } catch {
+    const supported = classicFingerprint !== boardseshFingerprint;
+    if (!supported) console.warn('[BoardRenderer] Aura probe matched classic output');
+    return supported;
+  } catch (error) {
+    console.warn('[BoardRenderer] Aura capability probe render failed:', error);
     // A render that fails outright (no native module, disk full, a binary with
     // no usable render function) is not a Boardsesh-capable one as far as this
     // session is concerned.

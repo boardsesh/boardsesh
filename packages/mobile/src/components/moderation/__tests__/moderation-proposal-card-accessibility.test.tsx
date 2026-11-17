@@ -25,6 +25,10 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/profile-stats', () => ({ getLayoutDisplayName: () => 'Layout' }));
 vi.mock('@boardsesh/community-roles', () => ({ rolesGrantAdmin: () => false, rolesGrantAdminOrLeader: () => false }));
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label, tone }: { label: string; tone?: string }) =>
+    createElement('span', { 'data-tone': tone ?? 'neutral' }, label),
+}));
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../../Card', () => ({ Card: ({ children }: Children) => createElement('div', null, children) }));
@@ -162,11 +166,4 @@ describe('ModerationProposalCard — native climb commands', () => {
     fireEvent.click(block);
     expect(onOpenClimb).toHaveBeenCalledWith(proposal);
   });
-});
-
-// The native host keeps its existing credential policy; the real action hook
-// still owns layout cleanup and caller cancellation.
-vi.mock('../../../lib/graphql/use-http-query-scope', () => {
-  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
-  return { useHttpQueryScope: () => scope };
 });

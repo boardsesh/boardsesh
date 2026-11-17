@@ -10,9 +10,10 @@
 // thumbnail asks once. The switcher is a disclosure, so this fires only when
 // someone opens it, and only for the rows on screen.
 
-import { useHttpQuery } from '../use-http-query';
+import { useQuery } from '@tanstack/react-query';
 import { BOARD_RECENT_CLIMBS } from '@boardsesh/graphql/operations/board-presence';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { getHttpClient } from '../client';
 import { boardUuidOrNull } from '../../boards/board-identity';
 
 type BoardRecentClimbsResponse = { boardRecentClimbs: BoardPresenceClimb[] };
@@ -35,10 +36,10 @@ const RECENT_CLIMB_GC_TIME_MS = 10 * 60 * 1000;
  */
 export function useBoardRecentClimb(boardId: number | null | undefined, boardUuid?: string | null) {
   const heldBoardUuid = boardUuidOrNull(boardUuid);
-  const { data } = useHttpQuery({
+  const { data } = useQuery({
     queryKey: ['boardRecentClimb', boardId ?? null, heldBoardUuid] as const,
-    queryFn: (_context, operation) =>
-      operation.request<BoardRecentClimbsResponse>(BOARD_RECENT_CLIMBS, {
+    queryFn: () =>
+      getHttpClient().request<BoardRecentClimbsResponse>(BOARD_RECENT_CLIMBS, {
         boardId: boardId as number,
         ...(heldBoardUuid ? { boardUuid: heldBoardUuid } : {}),
       }),

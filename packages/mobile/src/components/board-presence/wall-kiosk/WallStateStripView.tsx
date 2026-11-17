@@ -95,7 +95,7 @@ function WallStateStripViewComponent({
             {glanceLine}
           </Text>
           {detailLine ? (
-            <Text color={barTextColor} numberOfLines={1} style={[styles.barDetail, detailTextStyle]}>
+            <Text emphasized color={barTextColor} numberOfLines={1} style={[styles.barDetail, detailTextStyle]}>
               {detailLine}
             </Text>
           ) : null}
@@ -150,7 +150,6 @@ const createStyles = (textStyles: TypographyScale) =>
       letterSpacing: 0.4,
     },
     barDetail: {
-      fontWeight: '600',
       opacity: 0.85,
     },
     onWallRow: {

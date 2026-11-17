@@ -18,22 +18,16 @@ import {
 import { prepareProjectionUnderUsersTableLock, rebuildLiveProjection } from '../auth/current-store/email-reservations';
 import { operatorClient, parseOperatorArguments } from './auth-fence/operator';
 import { verifyFence } from './auth-fence/catalog';
+import { AUTHORITY_ACTIVATION_BLOCKERS, assertAuthorityActivationGates } from '../auth/authority/activation-gates';
 
-/** These are code gates. Neither an environment variable nor an operator flag closes one. */
-export const AUTHORITY_ACTIVATION_BLOCKERS: readonly string[] = Object.freeze([
-  'GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION',
-  'STAGED_WEB_PROOF_GENERATION_STAMP',
-  'NATIVE_REVOKE_RESET_LOCK_ORDER',
-]);
-export function assertAuthorityActivationGates(): void {
-  if (AUTHORITY_ACTIVATION_BLOCKERS.length) throw new Error('ACTIVATION_CODE_GATES_OPEN');
-}
+// The code gates live with the authority module so the identity mirror's startup checks them too.
+export { AUTHORITY_ACTIVATION_BLOCKERS, assertAuthorityActivationGates };
 
 export async function runAuthAuthority(
   arguments_: readonly string[],
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
-  const options = parseOperatorArguments(arguments_, ['status', 'prepare', 'activate']);
+  const options = parseOperatorArguments(arguments_, ['status', 'prepare', 'activate'], [], ['prepare', 'activate']);
   if (options.planSha256 || (options.command !== 'prepare' && options.projectionId))
     throw new Error('INVALID_ARGUMENTS');
   const client = operatorClient(environment, options.confirmHost, options.command !== 'status');

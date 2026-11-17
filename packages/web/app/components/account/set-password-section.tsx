@@ -17,8 +17,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { applyLocale } from '@/app/lib/i18n/locale-href';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import FirstPasswordEmailSection from './first-password-email-section';
-import { publicFirstPasswordReady } from '@/app/lib/auth/first-password-readiness';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 type SetPasswordSectionProps = {
   hasPassword: boolean;
@@ -94,7 +93,7 @@ export default function SetPasswordSection({
 
     try {
       setSaving(true);
-      const response = await fetch('/api/internal/set-password', {
+      const response = await guardedFetch('/api/internal/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,14 +155,6 @@ export default function SetPasswordSection({
     );
   }
 
-  if (
-    publicFirstPasswordReady() &&
-    expectedSession &&
-    linkedProviders.includes('apple') &&
-    linkedProviders.every((provider) => provider === 'apple')
-  ) {
-    return <FirstPasswordEmailSection expectedSession={expectedSession} onAccountChanged={onAccountChanged} />;
-  }
   const providerNames = linkedProviders.map(formatProviderName);
   const providersJoined = providerNames.join(', ');
 

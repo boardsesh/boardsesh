@@ -9,6 +9,8 @@ import {
   type GraphQLSchema,
 } from 'graphql';
 import { typeDefs, type ConnectionContext } from '@boardsesh/shared-schema';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 // Regression guard: every resolver that returns Climb objects must project the
 // same set of board_climbs columns that searchClimbs and getClimb do. The list
@@ -232,19 +234,9 @@ const REQUIRED_CLIMB_FIELDS: Record<string, unknown> = {
   statsAngle: 40,
 };
 
-/**
- * Flatten a Drizzle `sql` template back into its literal text so a raw-SQL entry
- * point can be checked for the columns it selects. Only the string chunks matter
- * — the interpolated params are bind values, never column names.
- */
+/** Render nested QueryBuilder projections as well as literal SQL chunks. */
 function sqlText(query: unknown): string {
-  const chunks = (query as { queryChunks?: unknown[] } | undefined)?.queryChunks ?? [];
-  return chunks
-    .map((chunk) => {
-      const value = (chunk as { value?: unknown }).value;
-      return Array.isArray(value) ? value.join('') : '';
-    })
-    .join('');
+  return new PgDialect().sqlToQuery(query as SQL).sql;
 }
 
 type EntryPoint = {
@@ -423,11 +415,10 @@ for (const entryPoint of ENTRY_POINTS) {
         // so it gets its own spelling rather than the two-halves check below.
         expect(statement).toContain('AS stats_angle');
         for (const column of REQUIRED_SELECT_KEYS) {
-          // Both halves, because dropping either one is the bug: `c.<column>` is
-          // where the owned_climbs CTE reads it off board_climbs, and
-          // `owned_climbs.<column>` is where the outer SELECT carries it out to
-          // the mapper. A bare substring check would pass with one of them gone.
-          expect(statement).toContain(`c.${column}`);
+          // Both halves: the QueryBuilder projection inside owned_climbs and
+          // the raw outer SELECT that carries the field out to the mapper.
+          const ownedProjection = statement.split('best_angle AS')[0];
+          expect(ownedProjection).toContain(`"${column}"`);
           expect(statement).toContain(`owned_climbs.${column}`);
         }
       });

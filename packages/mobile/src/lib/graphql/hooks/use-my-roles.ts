@@ -12,8 +12,6 @@ import { GET_MY_ROLES, type GetMyRolesResponse } from '@boardsesh/graphql/operat
 import type { CommunityRoleScope } from '@boardsesh/community-roles';
 import { getHttpClient } from '../client';
 import { useAuthToken } from '../use-auth-token';
-import { useHttpRequestScope } from '../use-http-request-scope';
-import { assertCurrentHttpResult, httpScopeQueryKey } from '../request-scope';
 
 export const MY_ROLES_QUERY_KEY = ['myRoles'] as const;
 
@@ -31,13 +29,11 @@ const NO_ROLES: readonly CommunityRoleScope[] = [];
  */
 export function useMyRoles(): readonly CommunityRoleScope[] {
   const { data: authToken } = useAuthToken();
-  const httpScope = useHttpRequestScope();
 
   const { data } = useQuery({
-    queryKey: httpScopeQueryKey(MY_ROLES_QUERY_KEY, httpScope),
+    queryKey: MY_ROLES_QUERY_KEY,
     queryFn: async () => {
-      const response = await getHttpClient(httpScope).request<GetMyRolesResponse>(GET_MY_ROLES);
-      assertCurrentHttpResult(httpScope, response);
+      const response = await getHttpClient().request<GetMyRolesResponse>(GET_MY_ROLES);
       return response.myRoles;
     },
     enabled: !!authToken,

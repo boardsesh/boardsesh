@@ -41,6 +41,11 @@ export interface CurrentStorePasswordCandidate {
   readonly createdAt: Date;
 }
 
+/** The bcrypt check every current-store password comparison runs by default. */
+export function compareStoredPassword(passwordHash: string, submittedPassword: string): Promise<boolean> {
+  return compare(submittedPassword, passwordHash);
+}
+
 /**
  * One bounded comparison engine; callers own their explicit legacy lookup policy.
  * An address with no password still runs one comparison at the stored cost, so
@@ -49,8 +54,7 @@ export interface CurrentStorePasswordCandidate {
 export async function matchCurrentStorePasswordCandidate(
   candidates: readonly CurrentStorePasswordCandidate[],
   password: string,
-  verify: (passwordHash: string, submittedPassword: string) => Promise<boolean> = (passwordHash, submittedPassword) =>
-    compare(submittedPassword, passwordHash),
+  verify: (passwordHash: string, submittedPassword: string) => Promise<boolean> = compareStoredPassword,
 ): Promise<{ userId: string; createdAt: Date } | null> {
   const snapshot = candidates.map((candidate) => ({
     userId: candidate.userId,

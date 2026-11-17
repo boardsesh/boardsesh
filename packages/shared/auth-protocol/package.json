@@ -37,11 +37,6 @@
       "import": "./src/browser-backend-socket-controller.ts",
       "default": "./src/browser-backend-socket-controller.ts"
     },
-    "./native-browser-handoff-v1": {
-      "types": "./src/native-browser-handoff-v1.ts",
-      "import": "./src/native-browser-handoff-v1.ts",
-      "default": "./src/native-browser-handoff-v1.ts"
-    },
     "./browser-backend-client": {
       "types": "./src/browser-backend-client.ts",
       "import": "./src/browser-backend-client.ts",
@@ -141,32 +136,6 @@
       "types": "./src/browser-coordinator-dom.ts",
       "import": "./src/browser-coordinator-dom.ts",
       "default": "./src/browser-coordinator-dom.ts"
-    },
-    "./browser-renewal-v1": {
-      "types": "./src/browser-renewal-v1.ts",
-      "import": "./src/browser-renewal-v1.ts",
-      "default": "./src/browser-renewal-v1.ts"
-    },
-    "./browser-renewal-browser-v1": "./src/browser-renewal-browser-v1.ts",
-    "./expired-browser-binding-browser-v1": {
-      "types": "./src/expired-browser-binding-browser-v1.ts",
-      "import": "./src/expired-browser-binding-browser-v1.ts",
-      "default": "./src/expired-browser-binding-browser-v1.ts"
-    },
-    "./expired-browser-binding-v1": {
-      "types": "./src/expired-browser-binding-v1.ts",
-      "import": "./src/expired-browser-binding-v1.ts",
-      "default": "./src/expired-browser-binding-v1.ts"
-    },
-    "./browser-password-v1": {
-      "types": "./src/browser-password-v1.ts",
-      "import": "./src/browser-password-v1.ts",
-      "default": "./src/browser-password-v1.ts"
-    },
-    "./browser-password-browser-v1": {
-      "types": "./src/browser-password-browser-v1.ts",
-      "import": "./src/browser-password-browser-v1.ts",
-      "default": "./src/browser-password-browser-v1.ts"
     }
   },
   "scripts": {

@@ -15,7 +15,8 @@ import { LargeContentViewer } from './LargeContentViewer';
 // off-centre before it truncates. Only the title can move when the flanks
 // measure; the actions sit at the edges from the first frame.
 import React, { useCallback, useState, type ReactNode } from 'react';
-import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { textFontScale } from '../theme/dynamic-type';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Icon } from './Icon';
@@ -186,6 +187,7 @@ export const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingBu
             color={look.labelColor}
             numberOfLines={1}
             maxFontSizeMultiplier={spec.labelMaxFontScale}
+            // text-dim-ok: a disabled button's label fades as a state, not a tone
             style={look.opacity < 1 ? { opacity: look.opacity } : null}
           >
             {label}
@@ -406,7 +408,9 @@ export const SheetTopBar = React.memo(function SheetTopBar({
   // One line of footnote at the capped font scale, plus padding. The error text
   // is capped to the same scale and one line, so a long or scaled error can't
   // make the slot taller than what was reserved.
-  const errorLineHeight = (textStyles.footnote.lineHeight ?? 0) * Math.min(fontScale, CHROME_LABEL_MAX_FONT_SCALE);
+  const errorLineHeight =
+    (textStyles.footnote.lineHeight ?? 0) *
+    Math.min(textFontScale('footnote', fontScale, Platform.OS), CHROME_LABEL_MAX_FONT_SCALE);
   const errorSlotHeight = Math.ceil(errorLineHeight) + spacing[1] * 2;
   const showErrorSlot = reserveErrorSlot || Boolean(error);
 

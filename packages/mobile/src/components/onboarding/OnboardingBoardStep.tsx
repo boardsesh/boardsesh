@@ -37,8 +37,6 @@ export type OnboardingBoardStepProps = {
   onSkipUnusable: (() => void) | null;
   /** Bind this board and move on. */
   onSelect: (board: UserBoard) => void;
-  /** Download this board without binding it. */
-  onDownload: (board: UserBoard) => void;
   /** Hand off to the full /boards picker. */
   onFindBoard: () => void;
 };
@@ -49,11 +47,13 @@ export type OnboardingBoardStepProps = {
  *
  * Two things happen here beyond picking a board. It **names the mechanism**:
  * board history is shared per named board, so which board you pick is what
- * decides whose sends you see. And it **offers the download**, because a board
- * on the phone opens instantly and works on gym wifi that has given up.
+ * decides whose sends you see. And it **offers the download**, once the board
+ * is picked, because a board on the phone opens instantly and works on gym wifi
+ * that has given up.
  *
  * Reuses `BoardCarousel` / `BoardDiscoveryCard` rather than growing a second
- * board slider — same cards, same download glyph, same active tick as `/boards`.
+ * board slider — same cards and same active tick as `/boards`, with no card
+ * menu: the only thing a card does here is answer the question.
  *
  * **There is no exit** (issue #4961), with exactly one exception: a climber who
  * is offline with nothing cached cannot be shown a usable choice, and stranding
@@ -71,7 +71,6 @@ export function OnboardingBoardStep({
   currentUserId,
   onSkipUnusable,
   onSelect,
-  onDownload,
   onFindBoard,
 }: OnboardingBoardStepProps) {
   const copy = useOnboardingBoardCopy();
@@ -93,7 +92,7 @@ export function OnboardingBoardStep({
     [boards, boardOfflineState, currentUserId, labelOptions],
   );
 
-  // Both handlers resolve the item back to its UserBoard. A refetch that drops a
+  // Resolves the item back to its UserBoard. A refetch that drops a
   // board between render and tap is the only way to miss, and the right answer
   // there is to do nothing rather than bind something else.
   const findBoard = useCallback((key: string) => boards.find((board) => board.uuid === key), [boards]);
@@ -105,16 +104,6 @@ export function OnboardingBoardStep({
     },
     [findBoard, onSelect],
   );
-
-  const handleDownload = useCallback(
-    (item: DiscoveryBoardItem) => {
-      const board = findBoard(item.key);
-      if (board) onDownload(board);
-    },
-    [findBoard, onDownload],
-  );
-
-  const downloadLabelFor = useCallback((item: DiscoveryBoardItem) => copy.downloadLabelFor(item.title), [copy]);
 
   const hasBoards = items.length > 0;
 
@@ -155,12 +144,10 @@ export function OnboardingBoardStep({
 
         {hasBoards ? (
           <>
-            <BoardCarousel
-              items={items}
-              onSelect={handleSelect}
-              onDownload={offlineDownloadsEnabled ? handleDownload : undefined}
-              downloadLabelFor={downloadLabelFor}
-            />
+            {/* No card menu: no pins, details, downloads or board management
+                here, only the choice of board. The download is offered once
+                the board is picked. */}
+            <BoardCarousel items={items} onSelect={handleSelect} />
             {offlineDownloadsEnabled ? (
               <View style={styles.copy}>
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>

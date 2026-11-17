@@ -13,9 +13,9 @@ export function HorizontalSafeAreaApplied({ children }: { children: ReactNode })
 }
 
 /**
- * The left and right insets a container should pad its content by: iPhone Duo's
- * side tab bar and status bar. Zero on a portrait iPhone, on iPad, and inside a
- * `HorizontalSafeAreaApplied` subtree. See `resolveHorizontalSafeArea`.
+ * The left and right insets a container should pad its content by: native
+ * side navigation, including the Duo rail and an overlaying iPad sidebar. Zero
+ * when the host reports no side inset or inside `HorizontalSafeAreaApplied`.
  *
  * Read where the content is laid out: inside a native tab the insets include the
  * side tab bar, at the root only the window's own.

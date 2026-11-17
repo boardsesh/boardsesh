@@ -29,7 +29,7 @@ export const ProfileBoardOverview = memo(function ProfileBoardOverview({
 }) {
   const { t, i18n } = useTranslation('profile');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors, textStyles } = useTheme();
+  const { systemColors, textStyles } = useTheme();
   const totalColor = useVariantValue({ liquidGlass: systemColors.accent, material: systemColors.label });
   return (
     <View style={styles.header} testID="profile-board-overview" accessible={status !== 'error'}>
@@ -79,7 +79,7 @@ export const ProfileBoardOverview = memo(function ProfileBoardOverview({
             accessibilityRole="button"
             style={styles.retry}
           >
-            <Text variant="subheadline" color={brandColors.primary}>
+            <Text variant="subheadline" color={systemColors.accent}>
               {tCommon('actions.retry')}
             </Text>
           </PressableSurface>

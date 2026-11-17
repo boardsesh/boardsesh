@@ -669,6 +669,21 @@ export function diffServiceVars(desired: ServiceDesired, live: LiveState, option
     });
   }
 
+  for (const optional of desired.optionalVars ?? []) {
+    // Absent or set are both fine; only a never-filled placeholder fails at boot.
+    if (classifyVar(serviceVars[optional.name]) !== 'placeholder') continue;
+    changes.push({
+      resource: 'env-var',
+      summary: `${desired.name}: ${optional.name} is placeholder`,
+      detail:
+        `${optional.reason}\n` +
+        'The variable still holds an unfilled <placeholder> value. Set the real value in Railway or remove it; ' +
+        'this tool never writes an optional secret.',
+      target: { serviceName: desired.name, varName: optional.name },
+      blocked: true,
+    });
+  }
+
   for (const constrained of desired.optionalConstrainedVars ?? []) {
     const rawValue = serviceVars[constrained.name];
     const state = classifyVar(rawValue);

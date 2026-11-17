@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "name": "forward-0-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "forward-1-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.25,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "forward-2-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.5,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "forward-3-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.75,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "forward-4-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 1,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "reverse-0-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 1,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "reverse-1-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.75,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "reverse-2-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.5,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "reverse-3-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.25,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "reverse-4-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "forward-0-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "forward-1-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.25,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "forward-2-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.5,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "forward-3-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.75,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "forward-4-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 1,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "reverse-0-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 1,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "reverse-1-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.75,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "reverse-2-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.5,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "reverse-3-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0.25,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "reverse-4-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "editor-0-m0",
+      "lower": 0,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "editorAllChanged": true
+    },
+    {
+      "name": "editor-1-m0",
+      "lower": 0,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1.175,
+      "mirrored": false,
+      "editorAllChanged": true
+    },
+    {
+      "name": "editor-2-m0",
+      "lower": 0,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1.35,
+      "mirrored": false,
+      "editorAllChanged": true
+    },
+    {
+      "name": "editor-0-m1",
+      "lower": 0,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": true,
+      "editorAllChanged": true
+    },
+    {
+      "name": "editor-1-m1",
+      "lower": 0,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1.175,
+      "mirrored": true,
+      "editorAllChanged": true
+    },
+    {
+      "name": "editor-2-m1",
+      "lower": 0,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1.35,
+      "mirrored": true,
+      "editorAllChanged": true
+    },
+    {
+      "name": "previous-0-m0",
+      "lower": 1,
+      "upper": 0,
+      "progress": 0.25,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "previous-1-m0",
+      "lower": 1,
+      "upper": 0,
+      "progress": 0.75,
+      "pulse": 1,
+      "mirrored": false
+    },
+    {
+      "name": "previous-0-m1",
+      "lower": 1,
+      "upper": 0,
+      "progress": 0.25,
+      "pulse": 1,
+      "mirrored": true
+    },
+    {
+      "name": "previous-1-m1",
+      "lower": 1,
+      "upper": 0,
+      "progress": 0.75,
+      "pulse": 1,
+      "mirrored": true
+    }
+  ]
+}

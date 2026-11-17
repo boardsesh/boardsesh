@@ -1,5 +1,7 @@
 # Disposable Garmin pairing proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Garmin pairing is live. It is tested by `packages/backend/src/auth/authority/__tests__/watch-pairing-configuration.test.ts`, `packages/backend/src/__tests__/watch-pair.test.ts` and the released-client replay in `packages/backend/src/__tests__/native-contract/garmin.contract.ts` (`vp run test:native-contract`). Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This supports [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976)
 and the compatibility work in [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975).
 It is an isolated protocol proof, not a mounted replacement for the current watch
@@ -64,9 +66,8 @@ reviewer reran all **26 tests**, which passed in **3.59 seconds** with clean
 Redis and Postgres teardown and no remaining actionable findings in this scope.
 
 ```sh
-AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres \
-AUTH_PROTOTYPE_REDIS_URL=redis://127.0.0.1:15476 \
-vp test run --config packages/backend/vite.auth-prototype.config.ts identity-watch-facade.test.ts --reporter=agent
+vp test run --config packages/backend/vite.auth-authority.config.ts watch-pairing-configuration --reporter=agent
+vp run test:native-contract
 ```
 
 The test defaults to the existing local/CI Redis service on port 6380 when

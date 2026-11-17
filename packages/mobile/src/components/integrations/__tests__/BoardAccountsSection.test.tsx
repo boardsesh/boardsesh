@@ -215,6 +215,10 @@ vi.mock('../../../theme/tokens', () => ({
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 
 type TextProps = { children?: ReactNode; variant?: string };
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label, tone }: { label: string; tone?: string }) =>
+    createElement('span', { 'data-tone': tone ?? 'neutral' }, label),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children, variant }: TextProps) => createElement('span', { 'data-text-variant': variant }, children),
 }));
@@ -263,6 +267,10 @@ describe('BoardAccountsSection — board cards', () => {
     mocks.flags = { 'kilter-oauth-linking': true };
     const { container } = render(<BoardAccountsSection />);
     expect(button(container, 'aurora.card.kilterSignIn')).not.toBeNull();
+    const notConnected = [...container.querySelectorAll('span[data-tone]')].find(
+      (node) => node.textContent === 'aurora.mobile.notConnected',
+    );
+    expect(notConnected?.getAttribute('data-tone') ?? 'neutral').toBe('neutral');
   });
 
   it('hides the Kilter (new) card when the flag is off and nothing is linked', () => {
@@ -292,6 +300,10 @@ describe('BoardAccountsSection — board cards', () => {
     // The connected card (Unlink) shows; the sign-in button does not.
     expect(button(container, 'aurora.card.unlink')).not.toBeNull();
     expect(button(container, 'aurora.card.kilterSignIn')).toBeNull();
+    const connectedPill = [...container.querySelectorAll('span[data-tone]')].find(
+      (node) => node.textContent === 'aurora.status.connected',
+    );
+    expect(connectedPill?.getAttribute('data-tone')).toBe('positive');
   });
 
   it('links Kilter via the password grant when the sign-in form is submitted', async () => {

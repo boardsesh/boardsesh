@@ -1,5 +1,5 @@
 import type { BoardName, SprayWallImportProgress } from '@boardsesh/shared-schema';
-import { memo, useCallback, useMemo, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Platform,
@@ -10,24 +10,34 @@ import {
   type AccessibilityActionInfo,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { hapticHeavy, hapticLight } from '../../lib/haptics';
+import { hapticLight } from '../../lib/haptics';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
-import { sprayImportCopy } from '../../lib/spray/spray-import-progress';
 import { useTheme } from '../../providers/theme-provider';
 import { springs } from '../../theme/animations';
-import { withAlpha } from '../../theme/colors';
-import { iosSystemColors } from '../../theme/ios-colors';
-import { borderRadius, overlays, spacing } from '../../theme/tokens';
+import { borderRadius, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE, textStyles } from '../../theme/typography';
-import { ActivityIndicator } from '../ActivityIndicator';
+import { AppMenu } from '../AppMenu';
+import type { AppMenuHandle } from '../AppMenu.types';
 import { Icon } from '../Icon';
-import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
-import type { BoardCardAction } from './board-card-actions';
+import type {
+  BoardCardMenuAction,
+  BoardCardMenuCapabilities,
+  BoardCardMenuLabels,
+  BoardCardMenuVia,
+} from './board-card-menu';
 import type { BoardDownloadState } from './board-offline-state';
+import {
+  BOARD_MENU_BUTTON_FOOTPRINT,
+  BOARD_MENU_BUTTON_SIZE,
+  BOARD_MENU_LONG_PRESS_DELAY_MS,
+  BOARD_SUBTITLE_GLYPH_SIZE,
+} from './board-menu-metrics';
+import { useBoardCardMenuRows } from './use-board-card-menu-rows';
+import { boardItemAccessibilityLabel, useBoardItemCopy } from './use-board-item-copy';
 
-/** The minimal board shape the card renders. UserBoard, PopularBoardConfig, and
- *  BLE-resolved boards all map onto this so one card serves every section. */
+/** The minimal board shape the card renders. Saved boards and BLE-resolved
+ *  boards both map onto this so one card serves every section. */
 export type DiscoveryBoardItem = {
   /** Stable key for the list. */
   key: string;
@@ -38,31 +48,40 @@ export type DiscoveryBoardItem = {
   setIds: string;
   title: string;
   subtitle?: string | null;
-  /** When set, renders the distance badge (metres from the user). */
+  /** When set, the subtitle line leads with the distance (metres from the user). */
   distanceMeters?: number | null;
   /** When true, marks this as the currently-active board. */
   isActive?: boolean;
   /**
    * Whether the signed-in user owns this board, stamped once per list build by
-   * `userBoardToItem`. `undefined` means "not resolvable here" — Near you /
-   * Popular, or a session with no identity — and suppresses the ownership badge
-   * entirely rather than guessing (offering to unfollow the user's own wall is
+   * `userBoardToItem`. `undefined` means "not resolvable here" — Near you, In
+   * range, or a session with no identity — and offers neither unfollow nor
+   * delete rather than guessing (offering to unfollow the user's own wall is
    * worse than offering nothing).
    */
   isViewerOwner?: boolean;
-  /**
-   * Whether the viewer pinned this board to the front of their list. Only the
-   * "Your boards" carousel renders a control for it; elsewhere it is unset and
-   * the slot stays empty.
-   */
+  /** Whether the viewer pinned this board to the front of their list. */
   isPinned?: boolean;
   /**
-   * Offline download state for this board's scope. Absent on cards that cannot
-   * be downloaded as a board (popular configs — see `popularConfigToItem`).
+   * Offline download state for this board's scope. Absent on cards that are not
+   * the climber's own or followed boards.
    */
   offlineState?: BoardDownloadState;
   sprayImport?: SprayWallImportProgress | null;
   importStatusStale?: boolean;
+};
+
+/**
+ * A card's menu, handed down by its carousel as ONE object so every card in the
+ * rail shares it and the carousel's `renderItem` depends on a single stable
+ * value.
+ */
+export type BoardCardMenu = {
+  /** What this surface allows; see `boardCardMenuEntries`. */
+  capabilities: BoardCardMenuCapabilities;
+  labels: BoardCardMenuLabels;
+  /** Runs a picked row. `via` is the way in the climber used, for `Board Card Action`. */
+  onAction: (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => void;
 };
 
 export const DISCOVERY_CARD_WIDTH = 168;
@@ -75,29 +94,9 @@ export const DISCOVERY_CARD_WIDTH = 168;
  * across the row.
  */
 const TITLE_LINES = 2;
-
-/**
- * Corner badge diameter, and the hitSlop that lifts it to the 44pt tap floor.
- * The inset matches the hitSlop on purpose: Android clips a child's hitSlop to
- * its parent's bounds, and these discs live inside `thumb` (which has
- * `overflow: 'hidden'`), so an 8pt inset would clamp the rect to 43pt. At 9 the
- * 44pt square starts exactly on the thumb's edge and survives on both platforms.
- */
-const CORNER_BADGE_SIZE = 26;
-const CORNER_BADGE_HIT_SLOP = 9;
-const CORNER_BADGE_INSET = CORNER_BADGE_HIT_SLOP;
-
-/** Custom accessibility action names for the card's nested buttons. */
-const BOARD_ACTION_NAME = 'boardAction';
-const DOWNLOAD_ACTION_NAME = 'download';
-const PIN_ACTION_NAME = 'pin';
-const DETAILS_ACTION_NAME = 'details';
-
-/** Distance badge copy: metres under 1km, one-decimal km above. */
-function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)}m`;
-  return `${(meters / 1000).toFixed(1)}km`;
-}
+// Both type scales (HIG and Material) give subheadline the same lineHeight, so
+// one read covers both UI variants — see textStylesByVariant.
+const TITLE_BOX_HEIGHT = TITLE_LINES * textStyles.subheadline.lineHeight;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -105,204 +104,105 @@ export type BoardDiscoveryCardViewProps = {
   boardImage?: ReactNode;
   item: DiscoveryBoardItem;
   onPress: (item: DiscoveryBoardItem) => void;
-  /** Open this spray wall's detail sheet without activating the board. */
-  onDetails?: (item: DiscoveryBoardItem) => void;
   /**
-   * Offer a one-tap download for an un-downloaded board. Passed only by the
-   * carousel that renders boards the user owns or follows; Nearby (other
-   * people's boards), Popular (no uuid) and the offline rows (already on the
-   * device, and there is no connection) never get one.
+   * The ⋯ menu, the hold on the card and the screen-reader actions, all from the
+   * same rows. Absent on a surface with no actions, which draws a plain card.
    */
-  onDownload?: (item: DiscoveryBoardItem) => void;
-  /** Accessibility label for the download glyph. */
-  downloadLabel?: string;
-  /**
-   * The board-ownership action this card offers: edit your own board, or stop
-   * following someone else's. `null`/absent renders no slot at all — Near you,
-   * Popular, the offline branch, and any card whose ownership did not resolve.
-   */
-  action?: BoardCardAction;
-  onAction?: (item: DiscoveryBoardItem) => void;
-  /** Screen-reader label for the action (editAria / unfollowAria / deleteAria). */
-  actionLabel?: string;
-  /** Visible label for the Edit-mode footer button ("Delete" / "Unfollow"). */
-  actionTitle?: string;
-  /**
-   * The "Your boards" section is in Edit mode: the corner badge is replaced by a
-   * labelled destructive button under the subtitle, and the card body stops
-   * activating the board. The label is the point — an unlabelled red glyph on an
-   * ungrouped carousel cannot say whether it deletes a wall or unfollows a gym.
-   */
-  isEditing?: boolean;
-  /** A delete/unfollow targeting THIS card is in flight. */
-  isActionPending?: boolean;
-  /**
-   * Toggle this board's pin. Passed only by the "Your boards" carousel — every
-   * other surface omits it, which is what suppresses the control entirely
-   * (Near you, Popular, onboarding, and the offline branch, where the mutation
-   * could not reach the server anyway).
-   */
-  onTogglePin?: (item: DiscoveryBoardItem) => void;
-  /** Screen-reader label for the pin toggle (pinAria / unpinAria). */
-  pinLabel?: string;
+  menu?: BoardCardMenu;
 };
 
 /**
- * One board in a carousel. Memoized: three carousels stacked on the Boards tab
- * re-render together whenever any of their queries settle, and each card resolves
- * board art. `isEditing` and `isActionPending` are scalars and the handlers are
- * host-memoized, so a mutation starting re-renders the carousel but flips
- * `isActionPending` on the one card that owns it.
+ * One board in Near you's carousel. Memoized: the picker re-renders whenever
+ * any of its queries settle, and each card resolves board art. The menu object
+ * is shared by the whole rail, so a card re-renders only when its own item
+ * changes.
+ *
+ * Nothing sits on the board art. State reads as small glyphs at the head of the
+ * subtitle line, in secondary label: none of it can be tapped, so none of it is
+ * violet, and every action lives in the menu.
  */
 export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
   boardImage,
   item,
   onPress,
-  onDetails,
-  onDownload,
-  downloadLabel,
-  action = null,
-  onAction,
-  actionLabel,
-  actionTitle,
-  isEditing = false,
-  isActionPending = false,
-  onTogglePin,
-  pinLabel,
+  menu,
 }: BoardDiscoveryCardViewProps) {
   const { t } = useTranslation('boards');
-  const importCopy = item.sprayImport ? sprayImportCopy(item.sprayImport, item.importStatusStale) : null;
-  const importLabel = importCopy ? t(importCopy.textI18nKey, importCopy.params) : null;
-  const { systemColors, brandColors, radii } = useTheme();
+  const { systemColors } = useTheme();
+  const copy = useBoardItemCopy(item);
+  const { rows, menuActions, runMenuRow, selectFromMenuButton, selectFromHold } = useBoardCardMenuRows(item, menu);
   const scale = useSharedValue(1);
+  const menuRef = useRef<AppMenuHandle | null>(null);
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-  const thumbStyle = {
-    backgroundColor: systemColors.tertiaryBackground,
-    borderColor: item.isActive ? brandColors.primary : systemColors.separator,
-    borderWidth: item.isActive ? 2 : StyleSheet.hairlineWidth,
-  };
-
-  // Resting, a pencil on your own board: a navigation, safe to fire from a corner
-  // glyph. Resting, a board you follow gets a NON-INTERACTIVE person-with-check —
-  // unfollow is destructive and unconfirmed, and a 26pt disc that reads like the
-  // download-status badge on the opposite corner must never remove a board in one
-  // tap. Unfollowing lives on Edit mode's labelled footer button instead, so the
-  // resting surface carries no destructive control at all.
-  const showEditBadge = !isEditing && action === 'edit' && onAction !== undefined;
-  const showFollowingBadge = !isEditing && action === 'unfollow';
-  const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
-  // An import is an unpublished wall: the card itself opens the wizard.
-  const canOpenDetails = !isEditing && item.boardName === 'spray' && onDetails !== undefined && !item.sprayImport;
-  const detailsLabel = t('mobile.boardDetail.detailsAria', { name: item.title });
-  const handleDetails = useCallback(() => onDetails?.(item), [onDetails, item]);
-  const canDownload = item.offlineState === 'off' && onDownload !== undefined;
-  // Mirrors the render guard below, so the rotor never publishes an action the
-  // touch surface does not offer.
-  const canPin = onTogglePin !== undefined && item.distanceMeters == null;
-
-  const handleAction = useCallback(() => {
-    onAction?.(item);
-  }, [onAction, item]);
-
-  const handleEditAction = useCallback(() => {
-    if (isActionPending) return;
-    hapticHeavy();
-    onAction?.(item);
-  }, [isActionPending, onAction, item]);
-
-  const handleDownload = useCallback(() => {
-    hapticLight();
-    onDownload?.(item);
-  }, [onDownload, item]);
+  const thumbStyle = { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator };
+  const hasMenuRows = rows.length > 0;
 
   const handlePress = useCallback(() => {
     hapticLight();
     onPress(item);
   }, [onPress, item]);
 
-  const handleTogglePin = useCallback(() => {
+  // iOS: the SwiftUI context menu owns the hold, and `open()` does nothing.
+  // Android: the card's own Pressable wins the touch, so the menu's wrapper never
+  // sees the hold; the card hands it over. The browser's wrapper listens to raw
+  // pointer events and needs no help.
+  const openMenuFromHold = useCallback(() => {
     hapticLight();
-    onTogglePin?.(item);
-  }, [onTogglePin, item]);
+    menuRef.current?.open();
+  }, []);
+  const onLongPress = hasMenuRows && Platform.OS === 'android' ? openMenuFromHold : undefined;
 
-  // The outer Pressable sets `accessible` by default, so on iOS UIKit treats the
-  // card as a leaf and VoiceOver never reaches the corner glyphs. Publish each
-  // nested button as a labelled custom action instead — the same shape
-  // ClimbListRow uses for its ⋮ button. Keyed on the resolved label strings,
-  // never on `t`, whose identity churns on plenty of renders.
-  // The following indicator is status, not an action, so it publishes nothing.
-  const hasBoardAction = showEditBadge || showEditAction;
+  // The card Pressable is `accessible`, so on iOS UIKit treats it as a leaf and
+  // VoiceOver never reaches inside it. Every menu row is published as a labelled
+  // custom action instead, the same rows the ⋯ and the hold show, so a
+  // screen-reader user needs neither. Climb here is left out: it is the card's
+  // own activation.
   const accessibilityActions = useMemo(() => {
-    const nested: AccessibilityActionInfo[] = [];
-    if (hasBoardAction && actionLabel !== undefined) nested.push({ name: BOARD_ACTION_NAME, label: actionLabel });
-    if (canDownload && downloadLabel !== undefined) nested.push({ name: DOWNLOAD_ACTION_NAME, label: downloadLabel });
-    if (canPin && pinLabel !== undefined) nested.push({ name: PIN_ACTION_NAME, label: pinLabel });
-    if (canOpenDetails) nested.push({ name: DETAILS_ACTION_NAME, label: detailsLabel });
+    const nested: AccessibilityActionInfo[] = rows
+      .filter((row) => row.action !== 'climb_here')
+      .map((row) => ({ name: row.action, label: row.label }));
     return nested.length > 0 ? rowAccessibilityActionsWith(...nested) : ACTIVATE_ACCESSIBILITY_ACTIONS;
-  }, [hasBoardAction, actionLabel, canDownload, downloadLabel, canPin, pinLabel, canOpenDetails, detailsLabel]);
+  }, [rows]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       const { actionName } = event.nativeEvent;
-      if (actionName === 'activate' && !isEditing) handlePress();
-      // Route to the same handler the touch path uses, so the destructive button
-      // keeps its haptic when it is reached from the rotor.
-      if (actionName === BOARD_ACTION_NAME) (showEditAction ? handleEditAction : handleAction)();
-      if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
-      if (actionName === PIN_ACTION_NAME) handleTogglePin();
-      if (actionName === DETAILS_ACTION_NAME && canOpenDetails) handleDetails();
+      if (actionName === 'activate') {
+        handlePress();
+        return;
+      }
+      const index = rows.findIndex((row) => row.action === actionName && row.action !== 'climb_here');
+      if (index >= 0) runMenuRow(index, 'accessibility');
     },
-    [
-      isEditing,
-      showEditAction,
-      handlePress,
-      handleAction,
-      handleEditAction,
-      handleDownload,
-      handleTogglePin,
-      canOpenDetails,
-      handleDetails,
-    ],
+    [rows, handlePress, runMenuRow],
   );
 
-  const activeLabel = t('mobile.discovery.activeBadge');
-  // Once the owned/followed grouping is gone from this surface the corner glyph
-  // is the ONLY owned-vs-followed signal, so the composed label has to carry it —
-  // otherwise a screen-reader user cannot tell which board the custom action
-  // removes.
-  const ownershipLabel =
-    item.isViewerOwner === undefined
-      ? null
-      : item.isViewerOwner
-        ? t('mobile.discovery.ownedBadgeAria')
-        : t('mobile.discovery.followingBadgeAria');
-  const pinnedLabel = canPin && item.isPinned ? t('mobile.discovery.pinnedBadgeAria') : null;
-  const accessibilityLabel = [
-    item.title,
-    item.subtitle,
-    item.isActive ? activeLabel : null,
-    ownershipLabel,
-    pinnedLabel,
-    importLabel,
-  ]
+  const isPinned = item.isPinned === true;
+  const { offlineGlyph, importLabel } = copy;
+  const detailText = [copy.distanceLabel, item.subtitle]
     .filter((part): part is string => typeof part === 'string' && part.length > 0)
-    .join(', ');
+    .join(' · ');
+  // The separator after "On it" only when something follows it on the line.
+  const onItText = isPinned || offlineGlyph !== null || detailText.length > 0 ? `${copy.onItLabel} ·` : copy.onItLabel;
+  const showSubtitleLine = item.isActive === true || isPinned || offlineGlyph !== null || detailText.length > 0;
+  const accessibilityLabel = boardItemAccessibilityLabel(item, copy);
 
-  return (
+  const card = (
     <AnimatedPressable
       onPress={handlePress}
+      onLongPress={onLongPress}
+      // The hold AppMenu.android and the browser menu use, so the card opens
+      // its menu as fast as every other hold menu.
+      delayLongPress={BOARD_MENU_LONG_PRESS_DELAY_MS}
       onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
       onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
-      // In Edit mode the body is not a target: dropping the role as well as the
-      // handler is what makes the card visibly (and audibly) stop being tappable.
-      disabled={isEditing}
-      accessibilityRole={isEditing ? undefined : 'button'}
+      accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
-      style={[animatedStyle, styles.container]}
+      style={[animatedStyle, styles.card]}
     >
       <View testID="board-card" style={[styles.thumb, thumbStyle]}>
         {boardImage ?? (
@@ -310,280 +210,183 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
             <Icon name="boards" size={36} color={systemColors.tertiaryLabel} />
           </View>
         )}
-
-        {/* At-a-glance "is this board on my phone". A downloaded or in-flight
-            board is a status badge with no press target; only 'off' is
-            actionable, and only where the host passed a handler. */}
-        {item.offlineState === 'downloaded' ? (
-          <View style={styles.offlineBadge}>
-            <Icon name="offline.downloaded" size={15} color={brandColors.primaryFill} />
-          </View>
-        ) : item.offlineState === 'downloading' ||
-          item.offlineState === 'finalizing' ||
-          item.offlineState === 'pending' ? (
-          <View style={styles.offlineBadge}>
-            <Icon name="offline.pending" size={15} color={systemColors.secondaryLabel} />
-          </View>
-        ) : canDownload ? (
-          <PressableSurface
-            onPress={handleDownload}
-            accessibilityRole="button"
-            accessibilityLabel={downloadLabel}
-            style={styles.offlineBadge}
-            // The glyph is a 26pt disc inside a 168pt card, so widen the touch
-            // area rather than the visual: 26 + 2 × 9 lands exactly on the 44pt
-            // floor. The three corner rects sit 80pt apart on each axis and
-            // never overlap.
-            hitSlop={CORNER_BADGE_HIT_SLOP}
-          >
-            <Icon name="offline.download" size={15} color={brandColors.primaryFill} />
-          </PressableSurface>
-        ) : null}
-
-        {showEditBadge ? (
-          <PressableSurface
-            onPress={handleAction}
-            accessibilityRole="button"
-            accessibilityLabel={actionLabel}
-            style={styles.actionBadge}
-            hitSlop={CORNER_BADGE_HIT_SLOP}
-          >
-            <Icon name="edit" size={15} color={brandColors.primaryFill} />
-          </PressableSurface>
-        ) : showFollowingBadge ? (
-          // No press target and no accessibility props of its own: the composed
-          // card label already announces "Following".
-          <View style={styles.actionBadge}>
-            <Icon name="person.check" size={15} color={brandColors.primaryFill} />
-          </View>
-        ) : null}
-
-        {/* "This is the board you're on" is the most important state on the card,
-            so it reads as a word rather than a bare tick — and it sits opposite
-            the distance pill, which an active Near-you board also carries. */}
-        {item.isActive ? (
-          <View style={styles.activeBadge}>
-            <Icon name="tick.fill" size={11} color={overlays.onScrim} />
-            <Text
-              variant="caption2"
-              color={overlays.onScrim}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            >
-              {activeLabel}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* The pin is a corner disc, not an overlay pill: it is a BUTTON, and the
-            two other buttons on this thumb are white discs. Pinned inverts the
-            same disc (violet fill, white glyph) rather than changing its shape,
-            so on/off reads without the control drifting out of the family.
-            It still yields the bottom-right slot to the distance pill — a board
-            can't be both a proximity result and one of yours to pin, but guard
-            anyway so the two can never stack. */}
-        {onTogglePin && item.distanceMeters == null ? (
-          <PressableSurface
-            onPress={handleTogglePin}
-            accessibilityRole="button"
-            accessibilityState={{ selected: item.isPinned === true }}
-            accessibilityLabel={pinLabel}
-            style={[styles.pinBadge, item.isPinned ? { backgroundColor: brandColors.primaryFill } : null]}
-            hitSlop={CORNER_BADGE_HIT_SLOP}
-          >
-            <Icon
-              name={item.isPinned ? 'pin.fill' : 'pin'}
-              size={15}
-              color={item.isPinned ? brandColors.onPrimary : brandColors.primaryFill}
-            />
-          </PressableSurface>
-        ) : null}
-
-        {item.distanceMeters != null ? (
-          <View style={styles.distanceBadge}>
-            <Icon name="location" size={11} color={overlays.onScrim} />
-            <Text
-              variant="caption2"
-              color={overlays.onScrim}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            >
-              {formatDistance(item.distanceMeters)}
-            </Text>
-          </View>
-        ) : null}
       </View>
 
-      <Text variant="subheadline" numberOfLines={TITLE_LINES} style={styles.title}>
+      <Text
+        variant="subheadline"
+        emphasized
+        numberOfLines={TITLE_LINES}
+        style={[styles.title, hasMenuRows ? styles.titleBesideMenuButton : null]}
+      >
         {item.title}
       </Text>
-      {item.subtitle ? (
-        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-          {item.subtitle}
-        </Text>
-      ) : null}
-
-      {canOpenDetails ? (
-        <PressableSurface
-          onPress={handleDetails}
-          accessibilityRole="button"
-          accessibilityLabel={detailsLabel}
-          style={styles.editAction}
-        >
-          <Text variant="subheadline" color={brandColors.primary}>
-            {t('mobile.boardDetail.details')}
-          </Text>
-        </PressableSurface>
+      {showSubtitleLine ? (
+        <View testID="board-card-subtitle" style={styles.subtitleLine}>
+          {item.isActive ? (
+            <>
+              <Icon name="tick.fill" size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
+              <Text
+                variant="caption1"
+                tone="secondary"
+                emphasized
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              >
+                {onItText}
+              </Text>
+            </>
+          ) : null}
+          {isPinned ? (
+            <Icon name="pin.fill" size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
+          ) : null}
+          {offlineGlyph !== null ? (
+            <Icon name={offlineGlyph} size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
+          ) : null}
+          {detailText.length > 0 ? (
+            <Text variant="caption1" tone="secondary" numberOfLines={1} style={styles.subtitleText}>
+              {detailText}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
 
       {importLabel ? (
-        <Text variant="caption1" color={brandColors.primary} accessibilityLiveRegion="polite">
-          {importLabel}
-        </Text>
-      ) : null}
-
-      {showEditAction ? (
-        <PressableSurface
-          onPress={handleEditAction}
-          disabled={isActionPending}
-          scaleTo={0.97}
-          rippleColor={brandColors.error}
-          accessibilityRole="button"
-          accessibilityLabel={actionLabel}
-          style={[
-            styles.editAction,
-            { backgroundColor: withAlpha(brandColors.error, 0.12), borderRadius: radii.button },
-          ]}
-        >
-          {isActionPending ? (
-            <ActivityIndicator size="small" color={brandColors.error} />
-          ) : (
-            <>
-              <Icon name="minus.circle" size={16} color={brandColors.error} />
-              <Text
-                variant="subheadline"
-                color={brandColors.error}
-                numberOfLines={1}
-                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.editActionLabel}
-              >
-                {actionTitle}
-              </Text>
-            </>
-          )}
-        </PressableSurface>
+        <View style={styles.importLine}>
+          <View style={[styles.importDot, { backgroundColor: systemColors.secondaryLabel }]} />
+          <Text variant="caption1" tone="secondary" accessibilityLiveRegion="polite">
+            {importLabel}
+          </Text>
+        </View>
       ) : null}
     </AnimatedPressable>
   );
+
+  // No menu on this surface: a plain card, with no anchor to pay for.
+  if (menu === undefined) return <View style={styles.container}>{card}</View>;
+
+  // The hold anchor stays mounted even when this board has no rows, so a
+  // recycled cell moving between a board with a menu and one without keeps its
+  // card (and its board art request) instead of remounting it.
+  return (
+    <View style={styles.container}>
+      <AppMenu
+        actions={menuActions}
+        onSelectIndex={selectFromHold}
+        trigger="longPress"
+        menuKey={item.key}
+        menuRef={menuRef}
+        // No `liftPreview`: on iOS it paints the screen background behind the
+        // card at rest, which in the picker modal is a grey slab behind the title.
+      >
+        {card}
+      </AppMenu>
+      {hasMenuRows ? (
+        // Outside the card's Pressable on purpose: nested inside it, the card
+        // took the tap and picked the board instead of opening the menu.
+        <View style={styles.menuButtonSlot}>
+          <AppMenu
+            // A recycled cell gets a fresh ⋯, which closes a menu drawn for the
+            // board that used to be here.
+            key={item.key}
+            iconName="more"
+            iconAppearance="plain"
+            anchorSize={BOARD_MENU_BUTTON_SIZE}
+            accessibilityLabel={t('mobile.discovery.cardActionsAria', { name: item.title })}
+            actions={menuActions}
+            onSelectIndex={selectFromMenuButton}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
 });
 
-// Shared geometry for the corner discs and the bottom overlay pills. Only the
-// edges differ, so every tappable glyph on the thumb is the same 26pt circle and
-// every status strip is the same pill — never a disc that is almost a disc.
-//
-// Discs are for BUTTONS (download, edit, pin); pills are for STATUS (active,
-// distance). That split is why the pin left the pill family in #5179: QA read a
-// wide dark pill sitting under two white circles as a different kind of thing.
-//
-// The bottom-right slot is shared, not duplicated: the distance pill takes it on
-// Near you, the pin disc in "Your boards" (#4884). Those two never coexist —
-// `distanceMeters` is only set by proximity queries, and the pin control is only
-// handed to the saved-boards carousel — and the card asserts it by rendering the
-// pin solely when distance is absent.
-const cornerBadge = {
-  position: 'absolute',
-  width: CORNER_BADGE_SIZE,
-  height: CORNER_BADGE_SIZE,
-  borderRadius: borderRadius.full,
-  backgroundColor: iosSystemColors.white,
-  alignItems: 'center',
-  justifyContent: 'center',
-  ...Platform.select({
-    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 },
-    android: { elevation: 2 },
-  }),
-} as const;
+/** Two empty lines: the placeholder's title box holds both at any text size. */
+const PLACEHOLDER_TITLE = ' \n ';
+const PLACEHOLDER_LINE = ' ';
 
-const overlayPill = {
-  position: 'absolute',
-  bottom: spacing[2],
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 2,
-  paddingHorizontal: spacing[2],
-  paddingVertical: 2,
-  borderRadius: borderRadius.full,
-  backgroundColor: overlays.scrim,
-} as const;
+/**
+ * A card while Near you's search runs: this card's own boxes (the art, the
+ * two-line title, the subtitle line) with nothing in them, so a row of them is
+ * as tall as the cards that replace it, at any text size. The empty art tile is
+ * all it draws. Hidden from screen readers; its row says what is happening.
+ */
+export function BoardDiscoveryCardPlaceholder() {
+  const { systemColors } = useTheme();
+  const thumbStyle = { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator };
+  return (
+    <View style={styles.container} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[styles.thumb, thumbStyle]} />
+      <Text variant="subheadline" emphasized numberOfLines={TITLE_LINES} style={styles.title}>
+        {PLACEHOLDER_TITLE}
+      </Text>
+      <View style={styles.subtitleLine}>
+        <Text variant="caption1" numberOfLines={1}>
+          {PLACEHOLDER_LINE}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {
+    width: DISCOVERY_CARD_WIDTH,
+  },
+  card: {
     width: DISCOVERY_CARD_WIDTH,
   },
   thumb: {
     width: DISCOVERY_CARD_WIDTH,
     height: DISCOVERY_CARD_WIDTH,
     borderRadius: borderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing[2],
-  },
-  boardImage: {
-    width: '100%',
-    height: '100%',
   },
   thumbFallback: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  offlineBadge: {
-    ...cornerBadge,
-    top: CORNER_BADGE_INSET,
-    left: CORNER_BADGE_INSET,
-  },
-  actionBadge: {
-    ...cornerBadge,
-    top: CORNER_BADGE_INSET,
-    right: CORNER_BADGE_INSET,
-  },
-  activeBadge: {
-    ...overlayPill,
-    left: spacing[2],
-  },
-  distanceBadge: {
-    ...overlayPill,
-    right: spacing[2],
-  },
-  // Same disc as the download and edit buttons, on the free bottom corner. The
-  // inset doubles as the hitSlop for the same reason it does up top: `thumb`
-  // clips a child's touch rect on Android, so 26 + 2 × 9 lands the 44pt square
-  // exactly on the bottom edge — 80pt clear of the edit disc's rect above it.
-  pinBadge: {
-    ...cornerBadge,
-    bottom: CORNER_BADGE_INSET,
-    right: CORNER_BADGE_INSET,
-  },
   title: {
-    fontWeight: '600',
-    // Both type scales (HIG and Material) give subheadline the same lineHeight,
-    // so one read covers both UI variants — see textStylesByVariant.
-    minHeight: TITLE_LINES * textStyles.subheadline.lineHeight,
+    minHeight: TITLE_BOX_HEIGHT,
   },
-  editAction: {
-    height: 44,
-    marginTop: spacing[2],
-    flexDirection: 'row',
+  // The ⋯ sits in this gap, level with the title, never over the art.
+  titleBesideMenuButton: {
+    marginRight: BOARD_MENU_BUTTON_FOOTPRINT,
+  },
+  menuButtonSlot: {
+    position: 'absolute',
+    right: 0,
+    // Starts where the art ends, so the tap target never reaches over it, and
+    // puts the glyph level with the title's first line.
+    top: DISCOVERY_CARD_WIDTH,
+    width: BOARD_MENU_BUTTON_FOOTPRINT,
+    height: BOARD_MENU_BUTTON_FOOTPRINT,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  subtitleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing[1],
   },
-  editActionLabel: {
-    fontWeight: '600',
-    // RN row children default to flexShrink: 0, so a label wider than the box
-    // overflows instead of ellipsising. German "Nicht mehr folgen" runs ~158dp at
-    // the 1.2 cap against 148dp of usable width.
+  subtitleText: {
+    // RN row children default to flexShrink: 0, so without this a long subtitle
+    // pushes past the card instead of ellipsising.
     flexShrink: 1,
+  },
+  importLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+  },
+  importDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });

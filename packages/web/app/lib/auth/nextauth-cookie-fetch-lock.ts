@@ -2,6 +2,7 @@
 
 import { getSession } from 'next-auth/react';
 import { beginWebSessionIntent, requestWebSessionRefresh } from './web-session-events';
+import { browserSessionGuard, type LocalChange } from './session-guard';
 
 export const NEXTAUTH_COOKIE_LOCK_NAME = 'boardsesh-nextauth-cookie-v1';
 
@@ -306,6 +307,9 @@ export async function guardedNextAuthSignOut(
   const callbackUrl = options.callbackUrl ?? window.location.href;
   const boundedSignal = createBoundedAuthSignal();
   let signOutStarted = false;
+  // Claimed when this tab sends its own sign-out, which navigates itself: the
+  // session guard must not reload the page for it.
+  let localChange: LocalChange | undefined;
   let signOutEpoch: number | undefined;
   let result: GuardedNextAuthSignOutResult;
   try {
@@ -345,6 +349,7 @@ export async function guardedNextAuthSignOut(
         const csrfToken = readCsrfToken(await readJson(csrfResponse));
         if (!csrfResponse.ok || !csrfToken) throw new Error('Unable to prepare sign out');
 
+        localChange = browserSessionGuard().expectLocalChange();
         const signOutResponse = await originalFetch.call(globalThis, NEXTAUTH_SIGNOUT_PATH, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -371,6 +376,8 @@ export async function guardedNextAuthSignOut(
     );
   } catch (error) {
     if (signOutStarted) {
+      // A sent POST may have cleared the cookie before the failure.
+      localChange?.extend();
       broadcastExpoAuthChange({ type: 'credential-rotation' });
       requestWebSessionRefresh(signOutEpoch);
       await getSession();
@@ -382,8 +389,13 @@ export async function guardedNextAuthSignOut(
 
   if (result.status === 'signed-out') {
     broadcastExpoAuthChange({ type: 'confirmed-signout', identity });
+    if (localChange) localChange.extend();
+    else browserSessionGuard().expectLocalChange();
   } else {
     broadcastExpoAuthChange({ type: 'credential-rotation' });
+    // The cookie names another login: that change came from elsewhere, and the
+    // refresh below retires this page.
+    localChange?.cancel();
   }
   // BroadcastChannel reaches Expo and the current NextAuth bridge. Always dual
   // publish NextAuth's storage refresh for already-open pre-deploy tabs and

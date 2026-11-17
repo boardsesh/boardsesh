@@ -244,6 +244,44 @@ redirect allow-list accepts only the configured app origin and numbered app
 previews, and the shared `.boardsesh.com` session cookie is available when the
 Expo export reloads.
 
+A browser page holds one account for its whole life (#7596). The first
+signed-in login a page confirms (user id plus auth session id) is latched in
+`browser-page-retirement.web.ts`. A later confirmed session that differs from
+it retires the page: another account, a new login of the same user, or a
+signed-out cookie, including this tab's own sign-out and another tab's
+confirmed sign-out. Signing in on a page that never had an account latches
+that login and retires nothing.
+
+A retired page refuses new requests before they reach the network, drops
+answers that arrive after the change, closes its WebSocket and opens no new
+one, and drops toasts. The auth provider runs the old account's cleanup, then
+calls `location.replace` with `EXPO_BASE_URL` (`/app` on www, `/` on
+`app.boardsesh.com`), so the next account starts in a fresh document and Back
+cannot bring the old one back. Signing out on Expo web therefore reloads the
+page.
+
+Every authenticated request goes through `browser-session-guard.web.ts`. A request is
+refused if the credential generation moves while it waits for its token, and
+checked once more for a retired page right before it is sent. An answer is
+delivered only while the page is live and still has the login the request was
+sent as. A generation change that keeps the same login (another tab's rotation
+hint, a sign-out that has only started) does not drop it, so a mutation the
+server committed does not report an error. A dropped answer has its body
+cancelled and rejects with `SessionSupersededError` (`name: 'AbortError'`,
+`code: 'superseded'`): error reporting ignores it, the connectivity store does
+not count it as a backend failure, and callers show nothing.
+
+The page re-reads who owns the cookie on window focus, at most once every 30
+seconds, and straight away when the back/forward cache restores it (`pageshow`
+with `persisted`). Both read `/api/internal/ws-auth`, which decodes the cookie
+without rewriting it, and ask for a full session read only when the login
+moved. A restored page that had already retired reloads. Returning to a hidden
+tab (`visibilitychange`, which react-native-web reports as AppState `active`)
+keeps the full `/api/auth/session` read it had before #7596, without a
+throttle: that read is also how a returning tab gets a fresh backend token,
+and changing it would mean changing the shared auth provider that ships to
+phones. NextAuth rewrites the session cookie on that read today.
+
 ### Signed-out read-only routes (the `?next=` return)
 
 The Next front door on `www` links every climb page into `app.boardsesh.com` at
@@ -480,3 +518,23 @@ CI recipe:
 - **`vp run build:expo-web`** — the same bake by hand.
 - **`vp run check:mobile-web-bundle`** — CI bundle check; exports to a temp dir
   via the same script.
+
+### Swipeable rows and browser touch scrolling
+
+The browser-only `ReanimatedSwipeable` adapter preserves vertical touch scrolling
+in climb and logbook rows. RNGH v3 can replace a gesture configuration after its
+detector sets `touchAction="pan-y"`; that replacement resets the DOM style to
+`none`. The adapter's scoped CSS keeps only the library's immediate pan/tap hosts
+at `pan-y`, including after rerenders. The adapter emits a React stylesheet
+resource, hoisted and deduplicated by its `href`, rather than importing CSS:
+Metro's `--no-dev` proxy extracts CSS imports without injecting them into the
+page. This keeps the same policy in the dev proxy and static export. Its wrapper uses `display: contents` and
+forwards the original props and ref. Nested controls retain their own policies;
+horizontal row gestures still reach RNGH.
+
+Metro redirects the exact Swipeable import only for web and bypasses the adapter's
+own upstream import. Native dependencies and resolution stay unchanged. Remove
+this adapter when the upstream web implementation preserves detector-owned DOM
+policies across gesture config updates, after verifying both real touch scrolling
+and horizontal action reveals. The Expo-web smoke uses CDP touch input, checks the
+computed hit-path policy for diagnostics, and still requires actual list movement.

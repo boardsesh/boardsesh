@@ -7,12 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const controls = vi.hoisted(() => ({
   platform: 'ios' as 'ios' | 'android',
   enabled: true,
+  apiVersion: 5,
   nativeAvailable: true,
   motionAvailable: true,
   reduceMotion: false,
   gpuStatus: 'ready' as 'loading' | 'ready',
   animatedWorklet: null as null | (() => { pagePosition: number }),
   hidden: false,
+  active: true,
   visibilityListeners: new Set<() => void>(),
   props: null as null | {
     requestId: string;
@@ -25,7 +27,9 @@ const controls = vi.hoisted(() => ({
     nextFrames?: string | null;
     centerPage?: number;
     onRenderReady: (event: { nativeEvent: { requestId: string } }) => void;
-    onRenderError: (event: { nativeEvent: { requestId: string } }) => void;
+    onRenderError: (event: {
+      nativeEvent: { requestId: string; reason?: string; failureScope?: 'frame' | 'static' | 'context' };
+    }) => void;
   },
   imageDisplays: [] as Array<() => void>,
   hookInputs: [] as Array<{
@@ -35,6 +39,9 @@ const controls = vi.hoisted(() => ({
     fieldColorOverride?: string;
   }>,
   pngMounted: vi.fn(),
+  recordFailure: vi.fn(),
+  recordTimeout: vi.fn(),
+  recordPresented: vi.fn(),
 }));
 vi.mock('react-native', () => ({
   Platform: {
@@ -54,6 +61,17 @@ vi.mock('expo-image', () => ({
   },
 }));
 vi.mock('../../lib/app-visibility', () => ({
+  isAppActiveNow: () => controls.active && !controls.hidden,
+  useIsAppActive: () =>
+    React.useSyncExternalStore(
+      (listener) => {
+        controls.visibilityListeners.add(listener);
+        return () => {
+          controls.visibilityListeners.delete(listener);
+        };
+      },
+      () => controls.active && !controls.hidden,
+    ),
   useIsAppBackgrounded: () =>
     React.useSyncExternalStore(
       (listener) => {
@@ -77,7 +95,13 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => controls.enabled }));
 vi.mock('../../hooks/use-board-accessibility-summary', () => ({ useBoardAccessibilitySummary: () => 'Board' }));
 vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null }));
+vi.mock('../../lib/board-render/gpu-native-capability', () => ({
+  get climbOverlayGpuApiVersion() {
+    return controls.apiVersion;
+  },
+}));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
+  climbOverlayGpuApiVersion: 5,
   get NativeMotionClimbOverlayGPU() {
     return controls.nativeAvailable && controls.motionAvailable ? NativeView : null;
   },
@@ -89,6 +113,11 @@ function NativeView(props: NonNullable<typeof controls.props>) {
   controls.props = props;
   return <div data-testid="native-gpu" />;
 }
+vi.mock('../../lib/board-render/gpu-failure-store', () => ({
+  recordGpuConfigFailure: controls.recordFailure,
+  recordGpuPresentationTimeout: controls.recordTimeout,
+  recordGpuPresented: controls.recordPresented,
+}));
 vi.mock('../../hooks/use-native-climb-render', () => ({
   useNativeClimbRender: (props: {
     frames: string;
@@ -148,20 +177,46 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
   beforeEach(() => {
     controls.platform = platform;
     controls.enabled = true;
+    controls.apiVersion = 5;
     controls.nativeAvailable = true;
     controls.motionAvailable = true;
     controls.reduceMotion = false;
     controls.gpuStatus = 'ready';
     controls.animatedWorklet = null;
     controls.hidden = false;
+    controls.active = true;
     controls.props = null;
     controls.imageDisplays = [];
     controls.hookInputs = [];
     controls.pngMounted.mockClear();
+    controls.recordFailure.mockClear();
+    controls.recordTimeout.mockClear();
+    controls.recordPresented.mockClear();
   });
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'] as const)(
+    'uses the catalogue capability and remote switch for %s',
+    (boardName) => {
+      const props = { ...BOARD, boardName, layoutId: 1 };
+      const { rerender } = render(<BoardImageNative {...props} />);
+      expect(screen.getByTestId('native-gpu')).toBeTruthy();
+      controls.enabled = false;
+      rerender(<BoardImageNative {...props} frames="p4131r43" />);
+      expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
+      expect(screen.queryByTestId('native-gpu')).toBeNull();
+    },
+  );
+
+  it.each([0, 2, 3, 4])('keeps catalogue rendering on PNG with API %s', (apiVersion) => {
+    controls.apiVersion = apiVersion;
+    const { rerender } = render(<BoardImageNative {...BOARD} boardName="tension" layoutId={1} />);
+    expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
+    rerender(<BoardImageNative {...BOARD} />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
   });
 
   it('forwards the host ground and rejects a full opening snapshot from another surface', () => {
@@ -443,5 +498,128 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     });
     expect(controls.hookInputs.at(-1)?.gpuFallbackConfigJson).toBe('static-config');
     expect(screen.queryByTestId('native-gpu')).toBeNull();
+  });
+
+  it('ignores cancelled native work and errors from a killed view', () => {
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    const old = controls.props!;
+    act(() => old.onRenderError({ nativeEvent: { requestId: old.requestId, reason: 'preparation cancelled' } }));
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    controls.enabled = false;
+    rerender(<BoardImageNative {...BOARD} style={{ opacity: 1 }} />);
+    act(() =>
+      old.onRenderError({ nativeEvent: { requestId: old.requestId, reason: 'atlas failed', failureScope: 'static' } }),
+    );
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+  });
+
+  it.each(['frame', 'context'] as const)('keeps %s errors local to the current frames', (failureScope) => {
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    const current = controls.props!;
+    act(() =>
+      current.onRenderError({ nativeEvent: { requestId: current.requestId, reason: 'render failed', failureScope } }),
+    );
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+  });
+
+  it('persists only a terminal static failure', () => {
+    render(<BoardImageNative {...BOARD} />);
+    const current = controls.props!;
+    act(() =>
+      current.onRenderError({
+        nativeEvent: { requestId: current.requestId, reason: 'GPU budget exceeded', failureScope: 'static' },
+      }),
+    );
+    expect(controls.recordFailure).toHaveBeenCalledExactlyOnceWith('static-config', 5);
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+  });
+
+  it('restarts the presentation deadline after an interruption without persisting a failure', () => {
+    vi.useFakeTimers();
+    render(<BoardImageNative {...BOARD} />);
+    act(() => {
+      controls.active = false;
+      controls.visibilityListeners.forEach((listener) => listener());
+      vi.advanceTimersByTime(11_000);
+    });
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    act(() => {
+      controls.active = true;
+      controls.visibilityListeners.forEach((listener) => listener());
+    });
+    act(() => {
+      vi.advanceTimersByTime(9_999);
+    });
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('keeps a presentation timeout on this mount and tries the GPU again for the next climb', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(controls.hookInputs.at(-1)?.gpuFallbackConfigJson).toBe('static-config');
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('counts a presentation timeout toward the session latch and clears the count on presentation', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(controls.recordTimeout).toHaveBeenCalledExactlyOnceWith('static-config');
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    const current = controls.props!;
+    act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
+    expect(controls.recordPresented).toHaveBeenCalledExactlyOnceWith('static-config');
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason: 'GPU command failed' } }));
+    expect(controls.recordTimeout).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    'GPU command encoding unavailable',
+    'GPU Timeout Error',
+    'Discarded (victim of GPU error/recovery)',
+    'GPU completion timed out',
+    'GPU atlas allocation failed',
+    'Unsupported GPU hold role',
+    undefined,
+  ])('keeps an unscoped older-binary error local to the current frames: %s', (reason) => {
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    const current = controls.props!;
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason } }));
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+  });
+
+  it.each([
+    'reason("Invalid render config")',
+    'Invalid atlas offset',
+    'GLES3.1 required',
+    'GPU atlas rejected config or exceeded budget',
+  ])('persists an unscoped older-binary error this binary always repeats: %s', (reason) => {
+    render(<BoardImageNative {...BOARD} />);
+    const current = controls.props!;
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason } }));
+    expect(controls.recordFailure).toHaveBeenCalledExactlyOnceWith('static-config', 5);
   });
 });

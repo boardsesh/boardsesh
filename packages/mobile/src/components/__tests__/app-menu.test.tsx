@@ -4,6 +4,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import {
   paletteRowCount,
+  androidAnchorIcon,
   anchorGlyphForIcon,
   isMenuActionSelectable,
   resolveMenuAction,
@@ -133,6 +134,22 @@ describe('AppMenu.logic — anchorGlyphForIcon', () => {
 
   it('falls back to the horizontal ellipsis for an icon with no text stand-in', () => {
     expect(anchorGlyphForIcon('settings')).toBe('⋯');
+  });
+
+  it('draws a + for the plus anchor', () => {
+    expect(anchorGlyphForIcon('plus')).toBe('+');
+  });
+});
+
+describe('AppMenu.logic — androidAnchorIcon', () => {
+  it.each([
+    { iconName: 'more', expected: 'more_vert' },
+    { iconName: 'more.actions', expected: 'more_vert' },
+    { iconName: 'more.vertical', expected: 'more_vert' },
+    { iconName: 'plus', expected: 'add' },
+    { iconName: 'settings', expected: null },
+  ] as const)('$iconName → $expected', ({ iconName, expected }) => {
+    expect(androidAnchorIcon(iconName)).toBe(expected);
   });
 });
 

@@ -249,7 +249,11 @@ describe('mobile consent privacy boundaries', () => {
     const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
     resetAnonymousInstallIdForTests();
     await removePreference('anonymousInstallId');
-    // No Web Crypto, and expo-crypto's native module is absent under node.
+    // Both secure sources are unavailable; never substitute Math.random.
+    const nativeCrypto = await import('expo-crypto');
+    vi.spyOn(nativeCrypto, 'getRandomBytes').mockImplementation(() => {
+      throw new Error('native entropy unavailable');
+    });
     vi.stubGlobal('crypto', undefined);
     try {
       const client = new ConsentPostHog('phc_test');

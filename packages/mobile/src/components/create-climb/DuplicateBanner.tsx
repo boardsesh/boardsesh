@@ -21,7 +21,7 @@ type DuplicateBannerProps = {
  */
 export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <View style={[styles.banner, { backgroundColor: systemColors.fill }]}>
       <View style={styles.bannerText}>
@@ -32,7 +32,7 @@ export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProp
         </Text>
         {onView ? (
           <PressableSurface onPress={onView} accessibilityRole="button">
-            <Text variant="footnote" color={brandColors.primary}>
+            <Text variant="footnote" color={systemColors.accent}>
               {t('createClimbForm.alerts.viewMatchingClimb')}
             </Text>
           </PressableSurface>

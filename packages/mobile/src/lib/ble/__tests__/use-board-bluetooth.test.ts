@@ -150,6 +150,16 @@ vi.mock('../known-board-devices-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../known-board-devices-store')>()),
   ...mockKnownBoardDevicesStore,
 }));
+// Which board a serial-less box is, for the board picker's in-range rows.
+const mockRecognizedBoardDevicesStore = vi.hoisted(() => ({
+  rememberRecognizedBoardDevice: vi.fn(async () => {}),
+  forgetRecognizedBoardDevice: vi.fn(async () => {}),
+  clearRecognizedBoardDevices: vi.fn(async () => {}),
+}));
+vi.mock('../recognized-board-devices-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../recognized-board-devices-store')>()),
+  ...mockRecognizedBoardDevicesStore,
+}));
 
 // Spy on reportHandledError (keep the real noise-policy/other exports) so a
 // connect failure's Sentry tags can be asserted (#3480).
@@ -7659,5 +7669,106 @@ describe('useBoardBluetooth remembers a serial-less Kilter-built box', () => {
       expect(result.current.pickerState).toMatchObject({ mode: 'list' });
       expect(result.current.pickerState?.targetBoard).toEqual({ boardUuid: 'wall-a', boardName: 'kilter' });
     });
+  });
+});
+
+// A MoonBoard or bare `Kilter Board` advertises no serial. A connect to one
+// from a board teaches this phone which board that box is, so the board
+// picker's in-range rows can name it (recognized-board-devices-store.ts).
+describe('useBoardBluetooth recognises serial-less boxes by Bluetooth id', () => {
+  type BluetoothProps = Parameters<typeof useBoardBluetooth>[0];
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    mockParseSerialNumber.mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+    const actualAurora = await vi.importActual<typeof import('@boardsesh/ble-protocol/aurora')>(
+      '@boardsesh/ble-protocol/aurora',
+    );
+    vi.mocked(parseBoardTypeFromDeviceName).mockImplementation(actualAurora.parseBoardTypeFromDeviceName);
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValue([]);
+    mockAppState.currentState = 'active';
+  });
+
+  afterEach(() => {
+    mockParseSerialNumber.mockReset();
+    vi.mocked(parseBoardTypeFromDeviceName).mockReset();
+  });
+
+  async function connectTo(props: BluetoothProps, connection: { deviceId: string; deviceName: string }) {
+    const requestAndConnect = vi.fn().mockResolvedValue(connection);
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      makeFakeAdapter({ requestAndConnect }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth(props));
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.isConnected).toBe(true);
+  }
+
+  it('remembers a MoonBoard as the board it was connected from', async () => {
+    await connectTo(
+      { boardName: 'moonboard', layoutId: 1, sizeId: 1, boardUuid: 'home-moon' },
+      { deviceId: 'moon-b', deviceName: 'MoonBoard A' },
+    );
+    expect(mockRecognizedBoardDevicesStore.rememberRecognizedBoardDevice).toHaveBeenCalledExactlyOnceWith('moon-b', {
+      uuid: 'home-moon',
+      boardType: 'moonboard',
+    });
+    expect(mockRecognizedBoardDevicesStore.forgetRecognizedBoardDevice).not.toHaveBeenCalled();
+  });
+
+  it('remembers a bare Kilter box as its board', async () => {
+    await connectTo(
+      { boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'gym-kilter' },
+      { deviceId: 'bare-kilter', deviceName: 'Kilter Board' },
+    );
+    expect(mockRecognizedBoardDevicesStore.rememberRecognizedBoardDevice).toHaveBeenCalledExactlyOnceWith(
+      'bare-kilter',
+      { uuid: 'gym-kilter', boardType: 'kilter' },
+    );
+  });
+
+  it('leaves a box with a serial to the serial lookup', async () => {
+    await connectTo(
+      { boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'gym-kilter' },
+      { deviceId: 'kilter-1', deviceName: 'Kilter Board#751737@3' },
+    );
+    expect(mockRecognizedBoardDevicesStore.rememberRecognizedBoardDevice).not.toHaveBeenCalled();
+  });
+
+  it('forgets, never remembers, a box the connect proved to be the wrong one ("Connect anyway")', async () => {
+    await connectTo(
+      {
+        boardName: 'moonboard',
+        layoutId: 1,
+        sizeId: 1,
+        boardUuid: 'home-moon',
+        getConnectedViaMismatchOverride: () => true,
+      },
+      { deviceId: 'moon-b', deviceName: 'MoonBoard A' },
+    );
+    expect(mockRecognizedBoardDevicesStore.forgetRecognizedBoardDevice).toHaveBeenCalledExactlyOnceWith(
+      'moon-b',
+      'home-moon',
+    );
+    expect(mockRecognizedBoardDevicesStore.rememberRecognizedBoardDevice).not.toHaveBeenCalled();
+  });
+
+  it('forgets a box advertising another board type', async () => {
+    await connectTo(
+      { boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'gym-kilter' },
+      { deviceId: 'bare-tension', deviceName: 'Tension Board' },
+    );
+    expect(mockRecognizedBoardDevicesStore.forgetRecognizedBoardDevice).toHaveBeenCalledExactlyOnceWith(
+      'bare-tension',
+      'gym-kilter',
+    );
+    expect(mockRecognizedBoardDevicesStore.rememberRecognizedBoardDevice).not.toHaveBeenCalled();
   });
 });

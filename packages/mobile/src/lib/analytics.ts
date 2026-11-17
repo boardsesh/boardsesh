@@ -17,6 +17,8 @@ import {
   isPosthogFlagResponseCurrent,
   isPosthogFlagBagCurrent,
   subscribePosthogFlagAuthority,
+  getPosthogFlagAuthority,
+  isPosthogFlagAuthorityCurrent,
 } from './posthog-flag-authority';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
@@ -30,6 +32,7 @@ type PosthogFeatureFlagClient = {
   reloadFeatureFlags?: () => unknown;
   onFeatureFlags?: (callback: () => void) => unknown;
   getFeatureFlagDetails?: () => { requestId?: unknown } | undefined;
+  getFeatureFlagPayload?: (key: string) => unknown;
 };
 
 // Lazily construct a single PostHog client. Returns null in dev / when unkeyed,
@@ -211,6 +214,37 @@ export function readPosthogFeatureFlags(
   }
 
   return flags;
+}
+
+/** Values and payloads must belong to the same account and flags response. */
+export function readPosthogFeatureFlagSnapshot(
+  definitions: readonly FeatureFlagDefinitionLike[],
+  payloadKeys: readonly string[],
+): { flags: Record<string, boolean | string>; payloads: Record<string, unknown> } {
+  const empty = { flags: {}, payloads: {} };
+  const authority = getPosthogFlagAuthority();
+  const posthog = getClient();
+  if (!posthog) return empty;
+  const requestId = readPosthogFeatureFlagsRequestId();
+  if (requestId === undefined && !isPosthogFlagBagCurrent(posthog)) return empty;
+  const flags = readPosthogFeatureFlags(definitions);
+  const featureFlagClient = asFeatureFlagClient(posthog);
+  const payloads: Record<string, unknown> = {};
+  for (const key of payloadKeys) {
+    try {
+      // The installed PostHog core explicitly suppresses exposure events here.
+      payloads[key] = featureFlagClient.getFeatureFlagPayload?.(key);
+    } catch {
+      // A bad payload must not hide an already resolved global kill switch.
+    }
+  }
+  if (
+    !isPosthogFlagAuthorityCurrent(authority) ||
+    readPosthogFeatureFlagsRequestId() !== requestId ||
+    (requestId === undefined && !isPosthogFlagBagCurrent(posthog))
+  )
+    return empty;
+  return { flags, payloads };
 }
 
 /**

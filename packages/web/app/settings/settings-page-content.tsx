@@ -17,11 +17,11 @@ import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import ControllersSection from '@/app/components/account/controllers-section';
 import SetPasswordSection from '@/app/components/account/set-password-section';
-import ProviderSettingsController from '@/app/components/account/provider-settings-controller';
 import ConnectedAppsSection from '@/app/components/account/connected-apps-section';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
+import { guardedFetch, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
@@ -64,13 +64,14 @@ export default function SettingsPageContent() {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const response = await fetch('/api/internal/profile');
+      const response = await guardedFetch('/api/internal/profile');
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
       const data = await response.json();
       setProfile(data);
     } catch (error) {
+      if (isSessionSuperseded(error)) return;
       console.error('Failed to fetch profile:', error);
       showMessage(t('loading.profileError'), 'error');
     } finally {
@@ -159,7 +160,6 @@ export default function SettingsPageContent() {
         }}
       >
         <ConsentSettingsCard />
-        <ProviderSettingsController session={session} />
         <MuiDivider sx={{ my: 2 }} />
         <Box id="password">
           <SetPasswordSection

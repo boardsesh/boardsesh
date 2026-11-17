@@ -45,7 +45,7 @@ export const FilterTappableRow = memo(function FilterTappableRow({
     >
       <Text variant="body">{label}</Text>
       <View style={styles.trailing}>
-        <Text variant="footnote" style={styles.value}>
+        <Text tone="secondary" variant="footnote">
           {value}
         </Text>
         <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
@@ -74,8 +74,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-  },
-  value: {
-    opacity: 0.55,
   },
 });

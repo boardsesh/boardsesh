@@ -1,5 +1,7 @@
 # Canonical browser to native handoff capability proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. The live equivalents are `native-transfer-integration-review.test.ts` and `native-session.test.ts` in `packages/backend/src/auth/authority/__tests__/`; run them with `vp run test:auth-authority`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This is a disposable BA-01 capability proof for [#6976](https://github.com/boardsesh/boardsesh/issues/6976), within [the accepted migration](better-auth-migration.md). No production callback, native endpoint, credential writer, client, or schema changes. The current released browser producer and legacy verifier remain unchanged.
 
 `packages/backend/src/auth/prototype/canonical-handoff.ts` exposes two explicitly named prototype POST endpoints. `/prototype-canonical-handoff/issue` requires a genuine canonical Better Auth cookie. `/prototype-canonical-handoff/exchange` accepts the released clients' body `{ "transferToken": "…" }` and returns the existing `{ userId, jwt, refreshToken, expiresAt }` native pair through `createPrototypeNativeFacade`. Clients treat the transfer token as an uninterpreted string. The new token is a signed JWT with readable claims, not an encrypted token. Its format changes; this does not make mixed old and new server deployments compatible.

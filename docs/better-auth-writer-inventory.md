@@ -27,6 +27,49 @@ production database audit or permission to change account ownership. The
 | `packages/location-sync/src/upsert.ts` → `ensureSystemUser` | Inserts a deterministic catalog owner with conflict ignored. This runs during scheduled location sync. | Include scheduled jobs in the writer fence. System-principal provisioning needs an explicit supported path, rather than an unnoticed bypass. |
 | `packages/db/scripts/create-test-user.ts`, `seed-social.ts`, `seed-ios-performance.ts`; `packages/backend/src/scripts/seed-instructional-video.ts` | Direct fixture user/credential inserts. Some scripts have independent connection resolution. | Keep explicit disposable-environment guards; fixture writers must not inherit a production identity-writing capability. |
 
+## Writer gate classification
+
+Swept on 2026-11-16 (BA-03 #6977): every direct insert, update or delete of an
+identity table under `packages/backend/src`, `packages/db` and
+`packages/location-sync`. Identity tables are `users`, `user_credentials`,
+provider `accounts`, `verificationTokens`, `mobile_refresh_tokens` and every
+`auth_*` table. `user_profiles` (display name, avatar) is product data. The
+auth `sessions` table has no writer: NextAuth issues JWTs, and the backend's
+`sessions` is board sessions. The web writers above belong to #7596.
+
+"Gated" means: the shared gate `pg_advisory_xact_lock_shared(6975, 2)`, then
+the manifest read, in the same transaction as the write and before it, held
+until commit; a manifest naming another writer refuses with `STALE_AUTHORITY`.
+The order is gate, then `users`, then the climber's other rows.
+
+| Writer | Where | Before | After |
+| --- | --- | --- | --- |
+| Native registration, legacy mode | `native-auth.ts:1056` preflight; write transaction `password-identity.ts:224` | Gated. The preflight before bcrypt only fails fast; the write transaction checks again before its first lock or write | Unchanged, comment added. Two-connection proof: `native-register-writer-gate.test.ts` |
+| Native Google/Apple sign-in, legacy mode | `native-auth.ts:1399` | Gated before the link read | Unchanged |
+| Native issuance, refresh, sign-out, refresh cleanup | `native-auth.ts:690`, `:1763`; `authority/native-revocation.ts:36`; `authority/native-refresh-retention.ts:45` | Shared gate, then `users`; no manifest refusal, by design: refresh is the long-lived native facade under either writer, and cutoff generations decide admission | Unchanged (session family) |
+| Account deletion, legacy mode | `users/mutations.ts:347`, delete at `:427` | Gate at the first statement; refuses once any manifest exists | Unchanged |
+| System board owner, legacy mode | `board-presence/shared.ts:1105`, insert at `:1107` | Gated | Unchanged |
+| Fixed system identities, legacy mode | `current-store/system-identities.ts:101` | Gated | Unchanged |
+| Account email resolution (BA-02 tool) | `email-resolution/resolution.ts:382`, update at `:425` | Shared gate but no manifest check: under a Better Auth manifest it still rewrote `users.email` and reservations | **Fixed.** `lockLegacyIdentityWriterManifest`; refuses with `STALE_AUTHORITY` (CLI code `STALE_AUTHORITY`); reuses that manifest for reservation bookkeeping |
+| Staged commands | `auth/current-store/*` | `lockEnforcedProjection` or an authority receipt (`captureIdentityAuthority`, `revalidateIdentityAuthority`) | Unchanged |
+| Authority module and its seams | `auth/authority/*` | Authority receipt, revalidated before commit | Unchanged |
+| Authority prepare and activation | `scripts/auth-authority.ts:71`, `authority/router.ts:101` | The gate exclusively: this is the switch | Unchanged |
+| Batch system users, legacy mode | `packages/db/src/jobs/system-user.ts:31` | No gate | Documented legacy branch: the worker login has no auth grants to read the manifest; `CURRENT_STORE_BATCH_SYSTEM_USERS_MODE=backend-staging` routes it through the backend. The real fence is the role cutover (#7430) |
+| Location sync owner, legacy mode | `packages/location-sync/src/upsert.ts:92` | No gate | Documented legacy branch, same reason; `CURRENT_STORE_LOCATION_SYNC_MODE` |
+| Fixtures | `db/scripts/create-test-user.ts`, `seed-social.ts`, `seed-ios-performance.ts`, `backend/src/scripts/seed-instructional-video.ts`, `db/src/testing/dedup-replay.ts` | Local-target guards | Out of scope: disposable databases only |
+| Expired replay-record cleanup | `current-store/command-context.ts`, `authority/*-maintenance.ts` | Deletes expired command and receipt records | Out of scope: no identity column |
+
+`scripts/__tests__/better-auth-boundary.test.ts` ("identity writer catalog")
+fails CI when a file outside `auth/authority/` and `auth/current-store/` gains
+a direct identity write, when a listed file's count changes, or when a listed
+legacy writer loses its gate call. It is a text scan: a reviewer still checks
+that the gate comes before the write in the same transaction.
+
+No manifest exists in production, so the only effect there is on the
+resolution tool, an operator CLI: one `SHOW transaction_isolation` and one
+manifest read after the gate it already took, instead of the manifest read it
+made later. Live native registration, sign-in and refresh are unchanged.
+
 The inspected application has no separate user-email change or provider-unlink
 UI endpoint. The NextAuth adapter still exposes account and user mutations, so
 absence of a current UI does not remove those methods from the fence inventory.
@@ -116,48 +159,7 @@ counts are assumed, copied from historical issues, or committed here.
    independent review can pass a gate; this inventory does not complete BA-02,
    BA-03, BA-04, or authorize production rollout.
 
-## Independent review evidence
-
-The inventory/audit implementation agent independently reviewed the other
-agents' prototype authority configuration, disposable database environment,
-generated schema, legacy bridge, native facade, OAuth transaction/family guards,
-and HTTPS browser test harness. The primary agent separately reviewed the audit;
-its author's own test run is not presented as independent audit review.
-
-| Finding | Resolution reviewed |
-| --- | --- |
-| Native password verification outside the issuance transaction could finish after a reset and manufacture a post-cutoff session from an old password. | Verification, canonical session creation, and native issuance now use a transaction-bound authority under the same mutation fence. A deliberately held bcrypt verifier races a reset in the regression test. |
-| Prototype revoke initially ended only one canonical native session, differing from current whole-account sign-out. | Account-wide first-party revocation now shares the cutoff helper while preserving approved partner connections. Stale removed ancestors cannot sign out a newer login. Acceptance of an unexpired consumed ancestor is explicitly a prototype policy extension, not shipped contract equivalence. |
-| OAuth consumed-token cleanup could affect independent grants and, through stock owner-check ordering, another public client's connection. | The authenticated guard checks actual token ownership before delegation and scopes reuse cleanup to immutable authorization-code lineage. Same-user public-client and independent-grant regressions cover both boundaries. |
-| Expired or decorated consumed tokens could bypass the guard and reach broad stock revocation. | Expired revocation is an idempotent no-op. The guard uses the provider's public normalization helper for whitespace/Bearer/DPoP and handles both supported type hints without bypassing ownership. |
-| Prototype lifetimes differed from the accepted contract; repeated consent insertion could conflict; a rollback test overstated its credential evidence. | Lifetimes are 90 days/60 seconds, immutable repeated interactions do not overwrite ownership, and the recreated-handler test now performs a real password reset and verifies both new and rejected old password bytes. |
-| The default web Vitest discovery would import the Playwright-only browser spec, while a browser-only follow-up could skip its backend CI job. | `packages/web/vite.config.ts` excludes `auth-prototype/**`; the dedicated Playwright task owns those tests. The backend change filter explicitly includes the browser fixture folder and Playwright config. |
-
-Independent execution on Node **22.22.2**, using disposable local Postgres:
-
-```sh
-vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  src/auth/prototype/__tests__/identity-native-facade.test.ts \
-  src/auth/prototype/__tests__/legacy-bridge.test.ts --reporter=agent
-# 2 files, 33 tests passed.
-
-vp test run --config packages/backend/vite.auth-prototype.config.ts \
-  src/auth/prototype/__tests__/oauth-provider.test.ts --reporter=agent
-# 1 file, 39 tests passed after the reviewed OAuth fixes.
-
-vp test list --project web auth-prototype --reporter=agent
-# No matching web Vitest tests; the Playwright-only file is excluded.
-
-vp test run --project web \
-  packages/web/app/lib/auth/__tests__/auth-options.test.ts \
-  packages/web/app/api/auth/register/__tests__/route.test.ts \
-  packages/web/app/api/auth/reset-password/__tests__/route.test.ts --reporter=agent
-# 3 existing auth test files, 85 tests passed.
-```
-
-The existing CI capacity, fork, web-fork parity, and location-sync workflow
-regressions also passed: **4 files, 50 tests** after the narrow browser-path
-filter change. Selected-file `vp check` passed, including type-aware lint.
+## Audit evidence
 
 The audit author's separate validation passed **19 pure/URL-policy tests** and
 **2 real-Postgres audit tests**. The latter reuse generated legacy migrations
@@ -167,19 +169,14 @@ The local database named `boardsesh_backend_test` did not exist during an initia
 CLI probe; the CLI returned its fixed failure message. Successful audit evidence
 comes from those isolated fixtures, not from an application or production audit.
 
-No unresolved actionable finding remained in the reviewed, isolated prototype
-scope after those fixes. This is not a first-party migration or partner-launch
-approval. The HTTPS tests were independently source-reviewed and executed by the
-primary agent: they exercise actual browser cookie transport, sibling-domain GET
-reads, a fixture OAuth redirect, discovery, and sign-out. Consent is deliberately
-skipped for that browser fixture. These were the initial evidence runs. The
-[HTTPS browser proof](./better-auth-browser-proof.md) now adds real credentialed
-www/app CORS and server cookie forwarding. Follow-up proofs cover
+This is not a first-party migration or partner-launch
+approval. The [HTTPS browser proof](./better-auth-browser-proof.md) adds real
+credentialed www/app CORS and server cookie forwarding. Follow-up proofs cover
 [genuine NextAuth cookies](./better-auth-legacy-web-proof.md),
 [purpose-bound old recovery links](./better-auth-legacy-recovery.md),
 [pre-cutover refresh](./better-auth-legacy-refresh-proof.md) and
-[actual process replacement](./better-auth-process-proof.md), with later counts
-and decisions in the implementation ledger. Consent UI, actual production
+actual process replacement (that page was deleted with the prototype in #7620), with later
+counts and decisions in the implementation ledger. Consent UI, actual production
 forwarding, Safari and device behavior remain unproved. Production writer
 fencing, normalized/provider uniqueness, every credential mutation, active
 WebSocket revocation, ownership resolution and restored-database rollback remain

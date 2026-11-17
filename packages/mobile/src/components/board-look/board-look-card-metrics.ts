@@ -1,4 +1,6 @@
-import { textStyles } from '../../theme/typography';
+import { Platform } from 'react-native';
+import { textStyles, type TextVariant } from '../../theme/typography';
+import { textFontScale } from '../../theme/dynamic-type';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -89,27 +91,40 @@ const TITLE_LINES = 1;
 const DESCRIPTION_LINES = 2;
 
 /**
- * The cap `Text` puts on Dynamic Type (`maxFontSizeMultiplier={1.5}`).
+ * Where the caption reservation stops growing: 1.5x.
  *
- * Reserving space needs the SAME cap the text itself honours: React Native
- * scales `lineHeight` by the effective multiplier on both platforms (iOS
- * `RCTAttributedTextUtils.mm`, Android `TextAttributes.kt`), so a reservation
- * computed from the unscaled lineHeight silently goes inert above fontScale 1 —
- * which is exactly the bug this replaces.
+ * `Text` itself is not capped (`maxFontSizeMultiplier={0}`), so from AX1 up a
+ * caption can outgrow this. Below it the reservation has to follow the text:
+ * React Native scales `lineHeight` by the effective multiplier on both platforms
+ * (iOS `RCTAttributedTextUtils.mm`, Android `TextAttributes.kt`), so a
+ * reservation computed from the unscaled lineHeight silently goes inert above
+ * fontScale 1. On iOS that multiplier is the style's Dynamic Type ramp, not
+ * `fontScale`: caption1 reaches 1.5x at xxxLarge, where `fontScale` is 1.353.
  */
 const MAX_FONT_SCALE = 1.5;
+
+/** A caption line's scale: its style's ramp, never below 1, never above the cap. */
+function captionLineScale(variant: TextVariant, fontScale: number): number {
+  return Math.min(Math.max(textFontScale(variant, fontScale, Platform.OS), 1), MAX_FONT_SCALE);
+}
 
 export type CaptionLineHeights = {
   /** Resolved `textStyles[titleVariant].lineHeight` for the active UI variant. */
   title: number;
   /** Resolved `textStyles[descriptionVariant].lineHeight` for the active variant. */
   description: number;
+  /** The title's text style, for its Dynamic Type ramp. Left out, the rail's `subheadline`. */
+  titleVariant?: TextVariant;
+  /** The description's text style. Left out, the rail's `caption1`. */
+  descriptionVariant?: TextVariant;
 };
 
 /** The rail caption's line heights. Identical in both UI variants (20 / 16). */
 export const RAIL_CAPTION_LINE_HEIGHTS: CaptionLineHeights = {
   title: textStyles.subheadline.lineHeight,
   description: textStyles.caption1.lineHeight,
+  titleVariant: 'subheadline',
+  descriptionVariant: 'caption1',
 };
 
 /**
@@ -131,14 +146,22 @@ export function captionBlockHeight(
   fontScale = 1,
   descriptionLines: number = DESCRIPTION_LINES,
 ): number {
-  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
-  return spacing[2] + TITLE_LINES * lineHeights.title * scale + descriptionLines * lineHeights.description * scale;
+  const titleScale = captionLineScale(lineHeights.titleVariant ?? 'subheadline', fontScale);
+  const descriptionScale = captionLineScale(lineHeights.descriptionVariant ?? 'caption1', fontScale);
+  return (
+    spacing[2] +
+    TITLE_LINES * lineHeights.title * titleScale +
+    descriptionLines * lineHeights.description * descriptionScale
+  );
 }
 
 /** Reserved height for a card's description, so every card's bottom edge lines up. */
-export function descriptionMinHeight(descriptionLineHeight: number, fontScale = 1): number {
-  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
-  return DESCRIPTION_LINES * descriptionLineHeight * scale;
+export function descriptionMinHeight(
+  descriptionLineHeight: number,
+  fontScale = 1,
+  descriptionVariant: TextVariant = 'caption1',
+): number {
+  return DESCRIPTION_LINES * descriptionLineHeight * captionLineScale(descriptionVariant, fontScale);
 }
 
 /**
@@ -322,5 +345,7 @@ export function captionLineHeights(
   return {
     title: resolved[style.titleVariant]?.lineHeight ?? RAIL_CAPTION_LINE_HEIGHTS.title,
     description: resolved[style.descriptionVariant]?.lineHeight ?? RAIL_CAPTION_LINE_HEIGHTS.description,
+    titleVariant: style.titleVariant,
+    descriptionVariant: style.descriptionVariant,
   };
 }

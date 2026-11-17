@@ -284,10 +284,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.errors.loadTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.errors.loadDescription')}
         </Text>
         <PressableSurface
@@ -296,7 +296,7 @@ export default function CommunityPlaylistsScreen() {
           accessibilityLabel={t('library.errors.tryAgain')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+          <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
             {t('library.errors.tryAgain')}
           </Text>
         </PressableSurface>
@@ -306,10 +306,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.emptyFollowing.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.emptyFollowing.description')}
         </Text>
       </View>
@@ -318,10 +318,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.noMatches.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.noMatches.description')}
         </Text>
         <PressableSurface
@@ -330,7 +330,7 @@ export default function CommunityPlaylistsScreen() {
           accessibilityLabel={t('library.community.noMatches.clearFilters')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+          <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
             {t('library.community.noMatches.clearFilters')}
           </Text>
         </PressableSurface>
@@ -340,10 +340,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.empty.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.empty.description')}
         </Text>
       </View>
@@ -392,7 +392,7 @@ export default function CommunityPlaylistsScreen() {
                 accessibilityState={{ expanded: gradeRailOpen }}
                 style={[styles.gradeChip, { backgroundColor: systemColors.tertiaryFill }]}
               >
-                <Text variant="subheadline" style={styles.gradeChipLabel}>
+                <Text emphasized variant="subheadline">
                   {t('library.community.gradeLabel')}
                 </Text>
                 <Text
@@ -457,7 +457,7 @@ export default function CommunityPlaylistsScreen() {
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                   {t('library.community.errors.loadTitle')}
                 </Text>
-                <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
+                <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
               </PressableSurface>
@@ -471,7 +471,7 @@ export default function CommunityPlaylistsScreen() {
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                   {t('library.community.loadMoreError')}
                 </Text>
-                <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
+                <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
               </PressableSurface>
@@ -518,9 +518,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: spacing[2],
   },
-  gradeChipLabel: {
-    fontWeight: '600',
-  },
   gradeChipValue: {
     flex: 1,
   },
@@ -531,16 +528,13 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.6,
     textAlign: 'center',
   },
   stateSubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
   stateCta: {
     marginTop: spacing[3],
-    fontWeight: '600',
   },
   footer: {
     paddingVertical: spacing[4],
@@ -551,6 +545,5 @@ const styles = StyleSheet.create({
   },
   footerRetry: {
     marginTop: spacing[1],
-    fontWeight: '600',
   },
 });

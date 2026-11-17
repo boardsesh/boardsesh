@@ -166,6 +166,23 @@ describe('MarqueeText', () => {
     expect(reanim.withRepeat).not.toHaveBeenCalled();
   });
 
+  // The widths the label picks from are a layout behind. When its room narrows
+  // (the play-drawer header gains its leading button after a swipe) it is still
+  // on the fallback for a frame, and two lines there made the header taller and
+  // the board under it resize and snap back.
+  it('keeps the fallback on one line while motion is on, whatever fallbackLines says', () => {
+    reduceMotion.value = false;
+    layout.clipWidth = 320;
+    layout.contentWidth = 300; // fits by the last measurement
+    const { container } = render(
+      <MarqueeText active fallbackLines={2} shrinkToFitScale={0.9}>
+        School Lunch Gulls 7x10
+      </MarqueeText>,
+    );
+
+    expect(container.querySelector('[data-ellipsize="tail"]')?.getAttribute('data-lines')).toBe('1');
+  });
+
   // #7017: a name a few points too long scrolled by those points, and at rest at
   // the far end its first glyph sat clipped ("ɹrain from the Brain").
   it('shrinks a name that fits at the shrink scale instead of scrolling it, first glyph and all', () => {

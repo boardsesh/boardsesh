@@ -67,6 +67,7 @@ export const HeaderLeadingButton = React.memo(function HeaderLeadingButton({
             color={look.labelColor}
             numberOfLines={1}
             maxFontSizeMultiplier={spec.labelMaxFontScale}
+            // text-dim-ok: a disabled button's label fades as a state, not a tone
             style={look.opacity < 1 ? { opacity: look.opacity } : null}
           >
             {label}
@@ -200,6 +201,7 @@ export const HeaderTrailingButton = React.memo(function HeaderTrailingButton({
             color={look.labelColor}
             numberOfLines={1}
             maxFontSizeMultiplier={spec.labelMaxFontScale}
+            // text-dim-ok: a disabled button's label fades as a state, not a tone
             style={[
               look.fontWeight ? { fontWeight: look.fontWeight } : null,
               !look.filled && look.opacity < 1 ? { opacity: look.opacity } : null,

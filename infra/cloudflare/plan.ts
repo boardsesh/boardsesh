@@ -450,7 +450,9 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
 
   const driftedFields: string[] = [];
   if (liveRecord.type !== desired.type) driftedFields.push(`type ${liveRecord.type} → ${desired.type}`);
-  if (liveRecord.content !== desired.content) driftedFields.push(`content ${liveRecord.content} → ${desired.content}`);
+  // Cloudflare returns TXT content wrapped in double quotes; the config holds the bare value.
+  const liveContent = desired.type === 'TXT' ? liveRecord.content.replace(/^"(.*)"$/, '$1') : liveRecord.content;
+  if (liveContent !== desired.content) driftedFields.push(`content ${liveContent} → ${desired.content}`);
   if (liveRecord.ttl !== desired.ttl) {
     driftedFields.push(`ttl ${describeDnsTtl(liveRecord.ttl)} → ${describeDnsTtl(desired.ttl)}`);
   }

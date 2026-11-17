@@ -40,7 +40,7 @@ Run the joined proof against an owned local PostgreSQL instance only:
 
 ```sh
 AUTH_PROTOTYPE_DATABASE_URL='<localhost disposable database admin URL ending in /postgres>' \
-  vp test run --config packages/web/auth-prototype/credential-proof.vite.config.ts \
+  vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts \
   --maxWorkers=1 --reporter=agent
 ```
 
@@ -55,6 +55,7 @@ This is synthetic local evidence. It does not identify every historical issuer,
 recover ancestry already discarded by older callback versions, qualify deployed
 instances or browsers, or authorize production rollout. Existing BA-04 writer,
 fence, rollback-floor, full rehearsal, and BA-05 browser gates remain in #7430.
+BA-05 is re-scoped by #7596; see [better-auth-browser-session.md](./better-auth-browser-session.md).
 The no-SID cutoff's selected-authority writer adoption is reviewed separately.
 
 The optional ancestry field preserves acceptance of earlier proof shapes, but

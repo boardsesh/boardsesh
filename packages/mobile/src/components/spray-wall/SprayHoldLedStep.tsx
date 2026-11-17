@@ -151,7 +151,7 @@ export function SprayHoldLedStep({
     const previous = history.at(-1);
     if (!history.length) return;
     setHistory((entries) => entries.slice(0, -1));
-    onChange({ holdLeds: previous });
+    onChange({ holdLeds: previous ?? [] });
   }
 
   const linked = mapping.holds.length - unmappedHoldIds.length;

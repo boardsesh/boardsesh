@@ -14,6 +14,14 @@ extern "C" {
         const uint8_t *config_json, uint32_t config_json_len,
         uint8_t **out_data, uint32_t *out_len
     );
+    int32_t board_renderer_prepare_gpu_atlas_owned(
+        const uint8_t *config_json, uint32_t config_json_len,
+        const uint8_t *asset_path, uint32_t asset_path_len,
+        const uint8_t *expected_sha, uint32_t expected_sha_len,
+        const uint8_t *generated_dir, uint32_t generated_dir_len,
+        uint8_t **out_manifest, uint32_t *out_manifest_len,
+        uint8_t **out_pixels, uint32_t *out_pixels_len
+    );
     void board_renderer_free(uint8_t *ptr, uint32_t len);
 }
 
@@ -76,6 +84,78 @@ Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativeRender(
 static std::mutex atlas_mutex;
 static std::unordered_map<void *, uint32_t> atlas_allocations;
 
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativePrepareOwnedAtlas(
+    JNIEnv *env, jobject, jbyteArray config, jbyteArray assetPath,
+    jbyteArray expectedSha, jbyteArray generatedDir
+) {
+    if (!config) return nullptr;
+    const jsize length = env->GetArrayLength(config);
+    const jsize path_length = assetPath ? env->GetArrayLength(assetPath) : 0;
+    const jsize sha_length = expectedSha ? env->GetArrayLength(expectedSha) : 0;
+    const jsize directory_length = generatedDir ? env->GetArrayLength(generatedDir) : 0;
+    if (length <= 0 || length > 8 * 1024 * 1024 || path_length > 4096 ||
+        sha_length > 64 || directory_length > 4096) return nullptr;
+    jbyte *bytes = env->GetByteArrayElements(config, nullptr);
+    if (!bytes) return nullptr;
+    jbyte *path_bytes = assetPath ? env->GetByteArrayElements(assetPath, nullptr) : nullptr;
+    if (assetPath && !path_bytes) {
+        env->ReleaseByteArrayElements(config, bytes, JNI_ABORT);
+        return nullptr;
+    }
+    jbyte *sha_bytes = expectedSha ? env->GetByteArrayElements(expectedSha, nullptr) : nullptr;
+    jbyte *directory_bytes = (!env->ExceptionCheck() && generatedDir)
+        ? env->GetByteArrayElements(generatedDir, nullptr) : nullptr;
+    if ((expectedSha && !sha_bytes) || (generatedDir && !directory_bytes)) {
+        if (assetPath) env->ReleaseByteArrayElements(assetPath, path_bytes, JNI_ABORT);
+        if (sha_bytes) env->ReleaseByteArrayElements(expectedSha, sha_bytes, JNI_ABORT);
+        env->ReleaseByteArrayElements(config, bytes, JNI_ABORT);
+        return nullptr;
+    }
+    uint8_t *manifest = nullptr;
+    uint8_t *pixels = nullptr;
+    uint32_t manifest_length = 0;
+    uint32_t pixels_length = 0;
+    const int32_t status = board_renderer_prepare_gpu_atlas_owned(
+        reinterpret_cast<const uint8_t *>(bytes), static_cast<uint32_t>(length),
+        reinterpret_cast<const uint8_t *>(path_bytes), static_cast<uint32_t>(path_length),
+        reinterpret_cast<const uint8_t *>(sha_bytes), static_cast<uint32_t>(sha_length),
+        reinterpret_cast<const uint8_t *>(directory_bytes), static_cast<uint32_t>(directory_length),
+        &manifest, &manifest_length, &pixels, &pixels_length);
+    if (assetPath) env->ReleaseByteArrayElements(assetPath, path_bytes, JNI_ABORT);
+    if (expectedSha) env->ReleaseByteArrayElements(expectedSha, sha_bytes, JNI_ABORT);
+    if (generatedDir) env->ReleaseByteArrayElements(generatedDir, directory_bytes, JNI_ABORT);
+    env->ReleaseByteArrayElements(config, bytes, JNI_ABORT);
+    if (status != 0 || !manifest || !pixels || manifest_length == 0 ||
+        manifest_length > 4 * 1024 * 1024 || pixels_length > 128 * 1024 * 1024) {
+        board_renderer_free(manifest, manifest_length);
+        board_renderer_free(pixels, pixels_length);
+        return nullptr;
+    }
+    jclass buffer_class = env->FindClass("java/nio/ByteBuffer");
+    jobjectArray result = buffer_class ? env->NewObjectArray(2, buffer_class, nullptr) : nullptr;
+    jobject manifest_buffer = result ? env->NewDirectByteBuffer(manifest, manifest_length) : nullptr;
+    jobject pixels_buffer = manifest_buffer ? env->NewDirectByteBuffer(pixels, pixels_length) : nullptr;
+    if (!pixels_buffer) {
+        board_renderer_free(manifest, manifest_length);
+        board_renderer_free(pixels, pixels_length);
+        return nullptr;
+    }
+    env->SetObjectArrayElement(result, 0, manifest_buffer);
+    env->SetObjectArrayElement(result, 1, pixels_buffer);
+    if (env->ExceptionCheck()) {
+        board_renderer_free(manifest, manifest_length);
+        board_renderer_free(pixels, pixels_length);
+        return nullptr;
+    }
+    {
+        std::lock_guard<std::mutex> lock(atlas_mutex);
+        atlas_allocations.emplace(manifest, manifest_length);
+        atlas_allocations.emplace(pixels, pixels_length);
+    }
+    return result;
+}
+
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativePrepareAtlas(
     JNIEnv *env, jobject, jbyteArray config
@@ -92,8 +172,8 @@ Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativePrepareAtlas(
         &output, &output_length);
     env->ReleaseByteArrayElements(config, bytes, JNI_ABORT);
     if (status != 0 || !output) return nullptr;
-    // 128 MiB pixels plus the bounded 2 MiB JSON manifest and length prefix.
-    if (output_length < 4 || output_length > 130 * 1024 * 1024 + 4) {
+    // 128 MiB pixels plus the bounded 4 MiB JSON manifest and length prefix.
+    if (output_length < 4 || output_length > 132 * 1024 * 1024 + 4) {
         board_renderer_free(output, output_length);
         return nullptr;
     }

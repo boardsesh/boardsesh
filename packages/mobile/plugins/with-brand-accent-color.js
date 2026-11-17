@@ -24,17 +24,17 @@ const { findIosApplicationTarget } = require('./with-ios-app-store-build-setting
  * load TypeScript workspace packages; `brand-accent-color-plugin.test.ts` fails
  * when the two disagree.
  */
-const ACCENT_LIGHT = '#6D28D9';
-const ACCENT_DARK = '#A78BFA';
+const ACCENT_LIGHT = '#5B22F2';
+const ACCENT_DARK = '#9784FF';
 // The iOS DynamicColorIOS accent variants in src/theme/colors.ts (HIG Contrast).
-const ACCENT_HIGH_CONTRAST_LIGHT = '#4C1D95';
-const ACCENT_HIGH_CONTRAST_DARK = '#C4B5FD';
+const ACCENT_HIGH_CONTRAST_LIGHT = '#5613EA';
+const ACCENT_HIGH_CONTRAST_DARK = '#B6AFFF';
 
 const IOS_ACCENT_COLOR_NAME = 'AccentColor';
 const IOS_ACCENT_BUILD_SETTING = 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME';
 const ANDROID_ACCENT_COLOR_NAME = 'colorAccent';
 
-/** `#6D28D9` -> the asset-catalog component map Xcode writes for an sRGB colour. */
+/** `#5B22F2` -> the asset-catalog component map Xcode writes for an sRGB colour. */
 function colorComponents(hexColor) {
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hexColor);
   if (!match) {

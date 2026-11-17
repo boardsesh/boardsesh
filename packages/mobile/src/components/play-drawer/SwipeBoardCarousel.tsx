@@ -17,12 +17,15 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { supportsAuraGpu } from '@boardsesh/board-look';
+import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
 import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
 import { StationaryBoardCarousel } from './StationaryBoardCarousel';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
+import { useGpuClimbOverlayEnabled } from '../../providers/feature-flags-provider';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
@@ -357,20 +360,47 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const { settings: renderSettings } = useBoardRenderSettings();
-  // A failed native scene stays on the image carousel for this board. Changing
-  // climb must not immediately retry the same failed layout on every swipe.
-  const stationaryIdentity = JSON.stringify([boardName, layoutId, sizeId, setIds, renderSettings]);
+  // Frame/context failures affect this window; another climb can use the atlas.
+  // Static failures are independently latched by binary and configuration.
+  const stationaryIdentity = JSON.stringify([
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    renderSettings,
+    currentFrames,
+    prevFrames,
+    nextFrames,
+    mirrored,
+  ]);
   const [failedStationaryIdentity, setFailedStationaryIdentity] = useState<string | null>(null);
   const handleStationaryUnavailable = useCallback(() => {
     setFailedStationaryIdentity(stationaryIdentity);
   }, [stationaryIdentity]);
+  const gpuEnabled = useGpuClimbOverlayEnabled(boardName, layoutId);
+  const gpuLookahead = useMemo(() => {
+    const knownFrames = new Set([currentFrames, prevFrames, nextFrames]);
+    const lookahead: string[] = [];
+    for (const frame of prefetchFrames.slice(0, 8)) {
+      if (!frame || frame.length > 16_384 || knownFrames.has(frame)) continue;
+      knownFrames.add(frame);
+      lookahead.push(frame);
+      if (lookahead.length === 2) break;
+    }
+    return lookahead.length > 0 ? lookahead : NO_PREFETCH_FRAMES;
+  }, [prefetchFrames, currentFrames, prevFrames, nextFrames]);
   const stationary =
+    gpuEnabled &&
     NativeMotionClimbOverlayGPU !== null &&
-    boardName === 'kilter' &&
-    layoutId === 8 &&
     !currentFrameOverride &&
-    renderSettings.mode !== 'classic' &&
-    !renderSettings.boardsesh.softDisc &&
+    supportsAuraGpu({
+      boardName,
+      layoutId,
+      catalogueNative: climbOverlayGpuApiVersion >= 5,
+      renderMode: renderSettings.mode,
+      softDisc: renderSettings.boardsesh.softDisc,
+      markStyle: renderSettings.boardsesh.markStyle,
+    }) &&
     failedStationaryIdentity !== stationaryIdentity;
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');
@@ -659,6 +689,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             }}
             previousFrames={prevFrames}
             nextFrames={nextFrames}
+            prefetchFrames={gpuLookahead}
             centerPage={centerPage}
             pager={pager}
             pageArt={pageArt}

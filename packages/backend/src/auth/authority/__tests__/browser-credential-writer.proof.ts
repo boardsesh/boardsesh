@@ -33,6 +33,10 @@ import {
   commitPreparedBrowserReplacementInTransaction,
   type BrowserSelectionCredential,
 } from '../browser-binding';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
 const jwt = requireWeb('next-auth/jwt') as {

@@ -226,12 +226,12 @@ export const ProgressView = memo(function ProgressView({
               accessibilityState={{ expanded: boardsExpanded }}
               style={styles.expand}
             >
-              <Text variant="footnote" color={brandColors.primary}>
+              <Text variant="footnote" color={systemColors.accent}>
                 {boardsExpanded
                   ? t('stats.boardOverview.showLess')
                   : t('stats.boardOverview.showAll', { count: data.statisticsSummary.layoutPercentages.length })}
               </Text>
-              <Icon name={boardsExpanded ? 'chevron.up' : 'chevron.down'} size={16} color={brandColors.primary} />
+              <Icon name={boardsExpanded ? 'chevron.up' : 'chevron.down'} size={16} color={systemColors.accent} />
             </PressableSurface>
           );
         case 'empty':
@@ -274,7 +274,7 @@ export const ProgressView = memo(function ProgressView({
                       size={20}
                       color={data.hasActiveFilters ? brandColors.primary : systemColors.label}
                     />
-                    <Text variant="footnote" color={brandColors.primary}>
+                    <Text variant="footnote" color={systemColors.accent}>
                       {tYou('mobile.filter.title')}
                     </Text>
                   </PressableSurface>

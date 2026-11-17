@@ -116,7 +116,7 @@ describe('SprayCornerMarker', () => {
     const { container, rerender } = render(createElement(SprayCornerMarker, props()));
     const strokes = () =>
       Array.from(container.querySelectorAll('path')).map((path) => path.getAttribute('data-stroke'));
-    expect(SPRAY_GUIDE_COLORS.valid).toBe('#A78BFA');
+    expect(SPRAY_GUIDE_COLORS.valid).toBe('#9784FF');
     expect(SPRAY_GUIDE_COLORS.invalid).toBe('#F87171');
     expect(strokes()).toEqual([SPRAY_GUIDE_COLORS.halo, SPRAY_GUIDE_COLORS.valid]);
     rerender(createElement(SprayCornerMarker, props({ invalid: true })));

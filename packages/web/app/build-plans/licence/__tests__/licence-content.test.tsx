@@ -48,11 +48,36 @@ function outboundHrefs(container: HTMLElement): (string | null)[] {
 
 describe('LicenceContent', () => {
   it('leads with the DRAFT banner', () => {
-    // First thing in the document flow on purpose: someone arriving from a
-    // purchase flow has to see "not lawyer-reviewed" before they read terms.
+    // Publication preparation keeps the current beta wording by default.
     renderLicence();
     expect(screen.getByText('Draft licence')).toBeTruthy();
     expect(screen.getByText(/pending review by an Australian IP lawyer/)).toBeTruthy();
+  });
+
+  it('removes only editorial draft wording for the public release', () => {
+    const { container, rerender } = renderLicence();
+    const originalClauses = new Map(
+      Array.from(container.querySelectorAll('article li[id]')).map((clause) => [clause.id, clause.textContent]),
+    );
+    const originalLinks = outboundHrefs(container);
+
+    rerender(<LicenceContent publicRelease />);
+
+    expect(screen.queryByText('Draft licence')).toBeNull();
+    expect(screen.queryByText(/pending review by an Australian IP lawyer/)).toBeNull();
+    expect(screen.queryByText(/Placeholder wording/)).toBeNull();
+    expect(
+      screen.getByText(
+        'This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('This page is provided for information and is not legal advice.')).toBeTruthy();
+    expect(outboundHrefs(container)).toEqual(originalLinks);
+    const publicClauses = Array.from(container.querySelectorAll('article li[id]'));
+    expect(publicClauses).toHaveLength(originalClauses.size);
+    for (const clause of publicClauses) {
+      if (clause.id !== 'governing-law') expect(clause.textContent).toBe(originalClauses.get(clause.id));
+    }
   });
 
   it('renders both licence tiers with their prices', () => {

@@ -1,5 +1,7 @@
 # Unmounted canonical-www proof cookie codec
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This BA05 prerequisite adds a server-only codec, not a public route or an
 authentication decision. The backend supplies the authoritative binding digest
 and selection version. The reader selects only that exact cookie family; it
@@ -7,10 +9,11 @@ never chooses the highest cookie version or falls back to a legacy cookie.
 Rollout remains tracked in #7430 and public bootstrap remains unqualified.
 
 The stable `__Host-boardsesh.browser-binding` correlation cookie has a constant
-relative 30-day Max-Age. Only a future qualified canonical-www coordinator may
-publish it. Ordinary proof candidates cannot emit or clear it. The dedicated
-builder validates an exact HTTPS serving/canonical origin and the digest of its
-32-byte opaque token. The pointer alone cannot authenticate or retrieve a proof.
+relative 30-day Max-Age. Only the canonical-www coordinator was meant to
+publish it; #7596 deleted that coordinator and its builder, so no code writes
+it now. Ordinary proof candidates cannot emit or clear it. The reader accepts
+one exact 32-byte opaque token and derives the binding digest from it. The
+pointer alone cannot authenticate or retrieve a proof.
 
 An actual source proof uses the name
 `__Host-boardsesh.browser-proof.<bindingId>.<selectionVersion>`, with numbered
@@ -91,29 +94,17 @@ characterization is evidence AGAINST claiming rolling renewal fixed. Credential
 revision names or canonical publication serialization must resolve it; binding
 metadata must never substitute for the missing/expired actual proof.
 
-The joined result-recovery fixture adds the shipping central reader and private
-browser/provider HTTP clients and handlers over an explicit disposable database.
-It uses the actual provider finalizer and ACK transaction for both selected
-authorities and source kinds. Chromium installs the real host-only proof and
-sealed operation cookies. A deliberately truncated body preserves the old actor
-and exact new candidate for the next request; dropped complete headers or an
-unknown finalizer reply cannot reconstruct the absent candidate. Delayed original
-headers remain inert after a later actual coordinator login. Header planning
-uses the complete actual incoming cookie header before the first mutation;
-oversized unrelated cookies or a missing actual actor leave credentials intact.
-Only owned accounts, loopback listeners and synthetic provider ownership are
-used. The private handlers receive the explicit fixture database; restricted
-LOGIN qualification remains separately proved by the credential-writer suite.
-This does not mount the application catch-all, prove real provider consoles,
-qualify whole-application browser publication, or close the complete-header-loss
-fresh-proof recovery gate. The required compatibility CI task runs after its
-existing Chromium installation, with a targeted web-auth source filter.
+The joined result-recovery fixture, which drove the provider finalizer and ACK
+through this codec, was deleted with the provider Settings web layer in #7596.
+B5 rebuilds that path on the shared-domain session. The compatibility CI task
+now runs only the proof-cookie fixture above, after its existing Chromium
+installation and behind a targeted web-auth source filter.
 
 ```sh
 vp test run --project web packages/web/app/lib/auth/__tests__/browser-proof-cookies.test.ts --reporter=agent
 AUTH_PROTOTYPE_DATABASE_URL='<explicit owned localhost admin URL ending /postgres>' \
-  vp test run --config packages/web/auth-prototype/browser-proof-cookies.vite.config.ts --reporter=agent
-vp exec tsc -p packages/web/auth-prototype/tsconfig.json --noEmit
+  vp test run --config packages/web/auth-proofs/browser-proof-cookies.vite.config.ts --reporter=agent
+vp exec tsc -p packages/web/auth-proofs/tsconfig.json --noEmit
 ```
 
 Only owned loopback www/app HTTPS origins and synthetic accounts are used.

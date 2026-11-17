@@ -20,13 +20,20 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  readPosthogFeatureFlags,
+  readPosthogFeatureFlagSnapshot,
   readPosthogFeatureFlagsRequestId,
   subscribePosthogFeatureFlags,
 } from '../lib/analytics';
 import { useFeatureFlagOverrides, type FeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isDevBuild } from '../lib/is-dev-build';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
+import {
+  AURA_GPU_FLAG,
+  DEFAULT_AURA_GPU_ROLLOUT,
+  parseAuraGpuRollout,
+  auraGpuRolloutEnabled,
+  type AuraGpuRollout,
+} from '../lib/board-render/gpu-rollout';
 
 export type FeatureFlags = Record<string, boolean | string | undefined>;
 
@@ -65,6 +72,13 @@ export type FeatureFlagDefinition = {
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
+  {
+    key: AURA_GPU_FLAG,
+    label: 'Aura GPU rendering',
+    description:
+      'Emergency switch: false uses PNG everywhere. Unresolved preserves Homewall. The versioned payload enables catalogue families individually; disabledFamilies overrides enabledFamilies.',
+    defaultEnabled: true,
+  },
   {
     key: 'privacy-consent-step-kill',
     label: 'Privacy step kill switch',
@@ -226,6 +240,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
   },
   {
+    key: 'picker-auto-scan-kill',
+    label: 'Stop the board picker scanning by itself',
+    description:
+      "Emergency kill switch for the board picker's In range slot scanning over Bluetooth on open. With it on, the slot waits for a tap on its Scan button instead; nothing else changes, and the Bluetooth question is still only asked from a tap. Unresolved reads as enabled.",
+  },
+  {
     key: 'first-connect-cta-kill',
     label: 'Disable the connect step',
     description:
@@ -349,9 +369,12 @@ const FeatureFlagsFreshContext = createContext<boolean>(false);
  */
 export const FEATURE_FLAG_RESOLUTION_TIMEOUT_MS = 2000;
 
+const AuraGpuRolloutContext = createContext<AuraGpuRollout>(DEFAULT_AURA_GPU_ROLLOUT);
+
 export function FeatureFlagsProvider({
   flags = DEFAULT_FEATURE_FLAGS,
   staticFlagsAreFinal = true,
+  payloads,
   children,
 }: {
   flags?: FeatureFlags;
@@ -363,9 +386,12 @@ export function FeatureFlagsProvider({
    * gate act before a switch flipped in PostHog could reach it.
    */
   staticFlagsAreFinal?: boolean;
+  /** Explicit local/test policy; remote policy otherwise shares flag authority. */
+  payloads?: Readonly<Record<string, unknown>>;
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const [posthogGpuRollout, setPosthogGpuRollout] = useState(DEFAULT_AURA_GPU_ROLLOUT);
   const [resolved, setResolved] = useState(false);
   const [fresh, setFresh] = useState(false);
   // The response the cached bag came from. Read during the first render, before
@@ -376,9 +402,17 @@ export function FeatureFlagsProvider({
   useEffect(() => {
     let mounted = true;
     const refreshFlags = () => {
-      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
+      const nextSnapshot = readPosthogFeatureFlagSnapshot(FEATURE_FLAG_DEFINITIONS, [AURA_GPU_FLAG]);
+      const nextFlags = nextSnapshot.flags;
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
+      const nextPolicy = parseAuraGpuRollout(nextSnapshot.payloads[AURA_GPU_FLAG]);
+      setPosthogGpuRollout((previousPolicy) =>
+        previousPolicy.enabledFamilies.join(',') === nextPolicy.enabledFamilies.join(',') &&
+        previousPolicy.disabledFamilies.join(',') === nextPolicy.disabledFamilies.join(',')
+          ? previousPolicy
+          : nextPolicy,
+      );
       const requestId = readPosthogFeatureFlagsRequestId();
       setFresh(requestId !== undefined && requestId !== cachedRequestIdRef.current);
     };
@@ -416,14 +450,27 @@ export function FeatureFlagsProvider({
     }
     // Local tester overrides win over the static env override, which wins over
     // the live PostHog value.
-    return { ...posthogFlags, ...flags, ...honouredOverrides };
+    const mergedFlags = { ...posthogFlags, ...flags, ...honouredOverrides };
+    // A tester may turn GPU rendering off locally, but cannot bypass a fleet
+    // emergency disable with an old forced-on preference.
+    if (posthogFlags[AURA_GPU_FLAG] === false) mergedFlags[AURA_GPU_FLAG] = false;
+    return mergedFlags;
   }, [posthogFlags, flags, overrides]);
+
+  const gpuRollout = useMemo(() => {
+    if (!payloads || !Object.prototype.hasOwnProperty.call(payloads, AURA_GPU_FLAG)) return posthogGpuRollout;
+    const explicitPolicy = parseAuraGpuRollout(payloads[AURA_GPU_FLAG]);
+    return {
+      ...explicitPolicy,
+      disabledFamilies: [...new Set([...posthogGpuRollout.disabledFamilies, ...explicitPolicy.disabledFamilies])],
+    };
+  }, [payloads, posthogGpuRollout]);
 
   return (
     <FeatureFlagsContext.Provider value={value}>
       <FeatureFlagsResolvedContext.Provider value={resolved || hasStaticFlags}>
         <FeatureFlagsFreshContext.Provider value={fresh || hasStaticFlags}>
-          {children}
+          <AuraGpuRolloutContext.Provider value={gpuRollout}>{children}</AuraGpuRolloutContext.Provider>
         </FeatureFlagsFreshContext.Provider>
       </FeatureFlagsResolvedContext.Provider>
     </FeatureFlagsContext.Provider>
@@ -573,6 +620,16 @@ export function useFirstBoardPickerEnabled(): boolean {
 }
 
 /**
+ * Kill switch for the board picker's In range slot scanning by itself on open.
+ * With it on the slot shows its Scan button and scans on a tap only. Unresolved
+ * reads as "not killed": the scan never prompts on open whatever this says
+ * (picker-scan-phase.ts), so the first frames can scan safely.
+ */
+export function usePickerAutoScanEnabled(): boolean {
+  return useFeatureFlag('picker-auto-scan-kill') !== true;
+}
+
+/**
  * Kill switch for the connect-step test (#5654, PR 7): the Climbs card and the
  * first-connect confirmation, plus new enrolments.
  * Unresolved reads as "not killed". The gate waits for
@@ -688,10 +745,13 @@ export function useWallFrostMotionEnabled(): boolean {
   return wallFrostMotionOffered(useFeatureFlag('wall-frost-motion'));
 }
 
-export function useGpuClimbOverlayEnabled(): boolean {
-  // Shipped on compatible native binaries. Surface and capability checks own
-  // eligibility; capture configuration does not change production rendering.
-  return true;
+export function useGpuClimbOverlayEnabled(boardName?: string, layoutId?: number): boolean {
+  return auraGpuRolloutEnabled({
+    flag: useFeatureFlag(AURA_GPU_FLAG),
+    policy: useContext(AuraGpuRolloutContext),
+    boardName,
+    layoutId,
+  });
 }
 
 /** The rule behind `useWallFrostMotionEnabled`, for tests. */

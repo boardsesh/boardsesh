@@ -4,7 +4,7 @@ Parent: [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975).
 Design: [Better Auth migration](./better-auth-migration.md).
 Started: 2026-11-04, from `origin/main` at `796746a5db`.
 
-Production migration remains gated. The user's password policy is to keep the
+Production migration remains gated. For what is merged, what is open and the order of switches, see the acceptance ledger below and [better-auth-rollout.md](./better-auth-rollout.md). The decision log and measurements further down are dated history, kept as written. The user's password policy is to keep the
 current device signed in, revoke other credentials, and revoke every session
 after forgotten-password reset.
 
@@ -28,7 +28,7 @@ test or an upstream feature description is not a passed acceptance criterion.
 | 2026-11-04 | Keep prototype dependencies development-only and its schema outside production exports. | The prototype must not mount endpoints, create production tables, issue production credentials or change installed-client behavior. |
 | 2026-11-04 | Use real Postgres with two independent Better Auth instances. | An in-memory adapter cannot prove database serialization, persistence or cross-instance races. Every run owns its disposable database. |
 | 2026-11-04 | Prepare a privacy-preserving read-only identity audit. | Existing duplicate figures are historical. No account merge, reassignment or deletion is authorized. |
-| 2026-11-04 | Use supported extension APIs with a transaction-bound authority. | Stock provider family invalidation and consent are insufficient for the partner contract. The [OAuth evidence](./better-auth-prototype.md) distinguishes provider behavior from tested custom guards. |
+| 2026-11-04 | Use supported extension APIs with a transaction-bound authority. | Stock provider family invalidation and consent are insufficient for the partner contract. |
 | 2026-11-04 | Treat a provider HTTP 500 as transaction failure. | The handler translates thrown exceptions into responses. The outer transaction must explicitly roll back a 500; protocol errors that intentionally revoke reused credentials still commit. Failure injection verifies this distinction. |
 | 2026-11-04 | Preserve unknown legacy age as non-fresh. | Historic native JWTs contain rolling `iat` without original authentication time. Their canonical session gets an epoch sentinel; ordinary use works while sensitive operations require real reauthentication. |
 | 2026-11-04 | Use account-wide legacy cutoffs where historic tokens lack session lineage. | Exact-token fingerprints support idempotency but cannot prove device-specific ownership of later rolling tokens. The prototype never claims otherwise. Ordinary logout preserves approved partner connections. |
@@ -77,44 +77,34 @@ test or an upstream feature description is not a passed acceptance criterion.
 
 ## Acceptance ledger
 
-| Child | Evidence/status |
-| --- | --- |
-| BA-01 #6976 | Prototype capability gate: GO for BA-03 implementation. Identity/native/session/OAuth/browser, legacy compatibility, recovery, explicit provider mutations, canonical handoff and configured Google browser-code transport are implemented and independently reviewed. Open pending review/merge; production source-provenance and operational acceptance remain separate. |
-| BA-03 #6977 | Implementation-only GO after independent capability audit. Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). Backend current-store service/reservations/fencing are next; no production writer activation or deployed role policy. |
-| BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
-| BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
-| BA-05 #6979 | Blocked on the authority and session bridge. |
-| BA-06 #6980 | Canonical native, pre-cutover refresh and both Redis watch formats pass. Pending source-less pairing requires an authenticated snapshot or fenced issuer; full HTTP behavior and device/offline QA remain acceptance work. |
-| BA-07 #6981 | Tested guards preserve family ancestry after expiry/pruning and offline access after browser-session expiry, alongside client ownership, consent binding and Disconnect. Production router, app-specific subjects and operational guards remain unimplemented. |
-| BA-08 #6982 | Blocked on first-party adoption and partner authority. |
-| BA-09 #6983 | Production rollout requires restored-database and real-device evidence. |
-| BA-10 #6984 | NextAuth remains until the migration readiness gate passes. |
+Checked against GitHub on 2026-11-16. Every switch named here is listed in [better-auth-rollout.md](./better-auth-rollout.md); none is on in production.
+
+| Child | State | Evidence and what is left |
+| --- | --- | --- |
+| BA-01 #6976 | **Closed** | The prototype proof (#7280) and the fully migrated catalog check (#7321) are merged. The prototype itself is deleted (#7620); live web proofs are in `packages/web/auth-proofs/`. Production acceptance is tracked in the later children. |
+| BA-03 #6977 | Open | The backend current-store service, reservations, fencing and the selected writers for password, recovery, registration, verification, provider ownership, account deletion and location owners are on main (#7323, #7350, #7438 to #7441, #7443, #7456 to #7459, #7462, #7467, #7471). They run only when their mode is on, and no mode is on. Left: deployed role fence, the two activation code gates, and every mode switch in the rollout doc. |
+| BA-02 #4847 | Open | Case-insensitive lookup (#7426), normalized new writes (#7429), the private resolution tool (#7433, #7448) and the read-only audit are merged. Left: the 17 contact emails, resolving approved groups, then the unique index and stored-form check in draft #7436. #7432 (read-only consolidation preview) and #7446 are open. #7444 is labelled do-not-merge because it merges accounts without ownership proof. |
+| BA-04 #6978 | Open | The dark legacy bridge and denials (#7439), the identity mirror and gated import and reconcile (#7438, #7437), and the authority module (#7471) are merged. `auth-authority activate` refuses on two code gates (#7626 closed the lock-order gate). Nothing has been fenced, prepared, imported or activated in production. #7591 is fixed (#7630): deletion keeps working after `prepare` and is unavailable only from `activate` until the staged deletion mode is on. The writer fence wiring is open as #7631. The email resolution tool refuses under another authority (#7649). |
+| BA-05 #6979 | Open, re-scoped | #7596 replaces the staged browser design with one shared-domain session cookie and one central client guard ([design](./better-auth-browser-session.md)). Removal has started: first-password web layer (#7617), renewal custody (#7618) and leases are gone. Binding, expired binding, browser password and proof cookies remain behind six readiness functions that return `false`. Client guards #7632 and #7634 are merged. #7588, #7592 and #7594 close with the removal. |
+| BA-06 #6980 | Open | Released-client contract replay (#7450), token-keyed refresh limits (#7447), ancestry through the native callback (#7463) and watch pairing and transfer ancestry (#7464) are merged, as is the Garmin owner-scoped outbox (#7442) and dead-lettering of refused ticks (#7633). Left: original-key installed watch, queued ticks, hardware and FIT QA, and downgrade. |
+| BA-07 #6981 | Open | The partner OAuth tables, authority, routes, `/v1` API, hourly sweep and launch suite are merged (#7361, #7393 to #7396, #7400, #7403, #7404). `PARTNER_OAUTH_MODE` is off in production. Left: stages A to D. |
+| BA-08 #6982 | Open | Developer console, consent screens, connected apps and the end-to-end journey are merged (#7406, #7408, #7411). The developer terms are a draft until the owner approves them. #7597 (consent every time for apps without a secret and for native apps) and nightly CI for the journey (#7605) are merged. #7598 (console changes need a recent sign-in) is open as PR #7652. |
+| BA-09 #6983 | Open | [better-auth-rollout.md](./better-auth-rollout.md) lists every switch and the order. Left: restored-database and real-device evidence, then the switches. |
+| BA-10 #6984 | Open | NextAuth remains. No removal until the migration readiness gate passes. |
 
 ## Reproduce the delivered proofs
 
-Install with `vp install --frozen-lockfile`. The Postgres administrator must be
-local; `AUTH_PROTOTYPE_DATABASE_URL` defaults to
-`postgresql://postgres:postgres@127.0.0.1:5433/postgres`. Each test owns a fresh
-randomly named `boardsesh_ba01_*` database, applies only the separate generated
-migration registry, and removes that owned database afterward. The factory
-rejects remote hosts, non-admin database paths and URL options. Nothing reads a
-production `DATABASE_URL` fallback.
+Install with `vp install --frozen-lockfile`.
 
-Run `vp run test:auth-prototype`. To run the real HTTPS browser proof, install
-Chromium with `vp exec playwright install chromium` from `packages/web`, then run
-`vp run test:auth-prototype:browser` from the root. OpenSSL creates a temporary
-self-signed fixture certificate; the test removes it afterward. CI runs both
-proofs in the backend job with its local Postgres service. The ordinary backend
-and web Vitest projects exclude the isolated proof files.
-
-The schema source is generated by
-`vp dlx auth@1.7.17 generate --config packages/backend/src/auth/prototype/schema-config.ts --output packages/db/src/auth-prototype/schema.ts --yes`.
-Its separate `index.ts` adds explicitly owned bridge, OAuth and native lifecycle
-tables. Generate migration changes from `packages/db` using
-`vp exec drizzle-kit generate --config auth-prototype.drizzle.config.ts`.
-The production schema and `packages/db/drizzle` journal never import this index.
-The generated provider schema's exact-email uniqueness and non-unique provider
-subject index are **not** BA-02's required final database invariants.
+The BA-01 prototype suites, their generated schema and migration registry,
+`vp run test:auth-prototype`, `vp run test:auth-prototype:browser` and the
+Playwright HTTPS browser proof were deleted in
+[#7620](https://github.com/boardsesh/boardsesh/pull/7620). What survives from
+them: the web credential and cookie proofs in `packages/web/auth-proofs/`
+(live NextAuth-route code, with their own `vp` tasks and CI steps) and the
+native JWT clock test `packages/backend/src/__tests__/native-jwt-clock.test.ts`.
+The per-proof pages linked below point to the live tests that cover the same
+behavior.
 
 The audit command is
 `vp exec tsx packages/backend/src/scripts/audit-auth-identities.ts`, with an
@@ -125,6 +115,10 @@ references. No raw emails, provider subjects, password hashes or tokens appear
 in its output. See the inventory for its scope and operational limits.
 
 ## Measured evidence
+
+These rows and combined runs record results from the BA-01 prototype suites
+as they stood when measured. Those suites and their `AUTH_PROTOTYPE_DATABASE_URL`
+setup were deleted in #7620. Treat the numbers as history, not as commands to rerun.
 
 | Evidence | Result |
 | --- | --- |
@@ -137,12 +131,12 @@ in its output. See the inventory for its scope and operational limits.
 | Explicit provider link/unlink and shared continuation | [51 provider cases](./better-auth-provider-link-proof.md) and 32 password cases passed independent security QA on PostgreSQL15/18 in27.05/27.35 seconds. Real provider verification, ownership/freshness, usable methods, callback intent, formPOST and late policy rollback are exercised. |
 | Canonical browser-to-native handoff | [43 cases](./better-auth-canonical-handoff-proof.md) passed two independent reviewers on both database versions. Source/session/generation binding, exact expiry, single use, account switching, mutation races, rollback and publication failures pass. Signed claims are readable; no production rollout claim. |
 | Configured Google browser callback | [9 cases](./better-auth-google-browser-callback-proof.md) independently pass on PostgreSQL15/18 in2.50/2.46 seconds. Actual public code exchange checks configured client/redirect/PKCE/state and subject ownership. This browser path trusts the authenticated token endpoint; separate native tests prove JWKS/signature/audience/nonce verification. |
-| Application process replacement and crash rollback | 18 cases passed independently, including actual SIGKILL at a pre-commit barrier, rejected-startup cleanup, persisted revocation, and unknown authentication age after replacement. See the [process proof](./better-auth-process-proof.md). |
+| Application process replacement and crash rollback | 18 cases passed independently, including actual SIGKILL at a pre-commit barrier, rejected-startup cleanup, persisted revocation, and unknown authentication age after replacement. |
 | Pre-cutover native/watch refresh import | 34 cases passed independently; preserve source ownership/hash/expiry, reject new admission after canonical signout while retaining known live bindings, and retain an immutable epoch through verification cleanup. See the [refresh proof](./better-auth-legacy-refresh-proof.md). |
 | Durable old recovery binding | 34 cases passed independently after cleanup, mutable-caller and cutover-extension fixes; canonical reset invalidates both imported purposes in the mutation transaction. |
 | Genuine legacy web credentials | 56 cases passed, including the real NextAuth encoder crossing a second boundary. Signed expiry, clock grace and cutoff accounting remain distinct. |
 | Browser-native legacy transfer | 71 cases passed independently, plus all 17 native facade regressions. Uses the actual web producer, preserves non-fresh age, rejects source tombstones and atomically consumes/mints. See the [transfer proof](./better-auth-transfer-proof.md) for the source-less returning-user compatibility gate. |
-| Configured Facebook callback | 22 cases passed independently with actual Better Auth handlers and synthetic Graph transport, including stock-state race characterization and guarded one-winner behavior. See the [Facebook proof](./better-auth-facebook-proof.md). |
+| Configured Facebook callback | 22 cases passed independently with actual Better Auth handlers and synthetic Graph transport, including stock-state race characterization and guarded one-winner behavior. |
 | Pending old Garmin codes | 40 cases passed independently with real Redis PTTL/GETDEL, fixed cutover, canonical-signout denial, sibling preservation, reset races and explicit SQL/Redis failure boundaries. See the [legacy watch proof](./better-auth-legacy-watch-proof.md). |
 | Final source-denial and explicit-origin review | 163 cases passed independently in 12.68 seconds: 6 origin, 12 web bridge, 71 transfer, 34 old refresh and 40 pending watch cases; selected lint clean and all findings re-reviewed. |
 | Trusted generation and transport follow-up | 61 cases passed independently in 6.64 seconds: 10 generation, 17 native, 18 legacy bridge and 16 real HTTP/WebSocket cases. See the [transport proof](./better-auth-transport-proof.md) for in-flight and product-integration limits. |
@@ -153,7 +147,7 @@ in its output. See the inventory for its scope and operational limits.
 | Actual legacy native issuer clocks | 17 new cases plus 18 bridge cases passed independently in 6.73 seconds. Actual exchange/signature output exercises encoder pauses, ahead clocks, signed expiry/grace and runtime subject validation. See the [native clock proof](./better-auth-native-clock-proof.md). |
 | Independent cross-reviews | Native/bridge 33 cases, identity/provider 41 cases, OAuth 39 cases, web auth regression 85 cases and CI guard 50 cases passed in independent runs. Findings were fixed and re-reviewed. |
 | Full repository typecheck | `vp run typecheck` passed; final change verification is recorded with the implementation PR. |
-| Separate Drizzle registry drift check | `vp exec drizzle-kit generate --config auth-prototype.drizzle.config.ts` reported no schema changes after generation. |
+| Separate Drizzle registry drift check | Generating from the separate prototype registry (since deleted) reported no schema changes. |
 
 **Initial combined proof: 9 files / 144 tests passed in 25.62 seconds**, including
 clean database teardown. This run used

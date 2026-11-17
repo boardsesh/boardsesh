@@ -103,13 +103,13 @@ function PositionIndicator({
   isCurrentClimb: boolean;
   position: number;
 }) {
-  const { brandColors, systemColors } = useTheme();
+  const { brandColors, systemColors, selection } = useTheme();
   if (isEditMode) {
     return (
       <Icon
         name={isSelected ? 'checkmark.circle.fill' : 'circle'}
         size={22}
-        color={isSelected ? brandColors.primary : systemColors.tertiaryLabel}
+        color={isSelected ? selection.checkmark : systemColors.tertiaryLabel}
       />
     );
   }

@@ -74,18 +74,22 @@ describe('Dynamic Type reservation', () => {
     // above fontScale 1 the natural height exceeded it and the prop went inert —
     // leaving one-line and two-line cards with ragged bottom edges.
     expect(descriptionMinHeight(16, 1)).toBe(32);
-    expect(descriptionMinHeight(16, 1.5)).toBe(48);
+    // xxxLarge (fontScale 1.353 on iOS): caption1 is 18pt, 18/12 = 1.5x, not 1.353x.
+    expect(descriptionMinHeight(16, 1.353)).toBe(2 * 16 * (18 / 12));
+    // The hero's subheadline description: 21/15 at xxxLarge.
+    expect(descriptionMinHeight(20, 1.353, 'subheadline')).toBeCloseTo(2 * 20 * (21 / 15), 6);
   });
 
-  it('honours the same 1.5 cap the Text primitive does, and never shrinks', () => {
-    expect(descriptionMinHeight(16, 3)).toBe(descriptionMinHeight(16, 1.5));
-    expect(descriptionMinHeight(16, 0.8)).toBe(descriptionMinHeight(16, 1));
+  it('stops the reservation at 1.5x, and never shrinks it', () => {
+    // AX3 (2.643): caption1 would be 32/12; the reservation holds at 1.5x.
+    expect(descriptionMinHeight(16, 2.643)).toBe(2 * 16 * 1.5);
+    expect(descriptionMinHeight(16, 0.823)).toBe(32);
   });
 
-  it('reports a taller card at accessibility text sizes', () => {
-    // The pre-existing 26pt under-report that clipped the pinned native row.
-    expect(boardLookCardHeight(1.5)).toBe(RAIL_THUMB_HEIGHT + captionBlockHeight({ title: 20, description: 16 }, 1.5));
-    expect(boardLookCardHeight(1.5)).toBeGreaterThan(boardLookCardHeight(1));
+  it('reports a taller card at larger text sizes, each caption line on its ramp', () => {
+    // xxxLarge: an 8pt gap, a subheadline title at 21/15 and two caption1 lines at 18/12.
+    expect(boardLookCardHeight(1.353)).toBeCloseTo(RAIL_THUMB_HEIGHT + 8 + 20 * (21 / 15) + 2 * 16 * (18 / 12), 6);
+    expect(boardLookCardHeight(1.353)).toBeGreaterThan(boardLookCardHeight(1));
   });
 
   it('reserves nothing for a description the card does not draw', () => {

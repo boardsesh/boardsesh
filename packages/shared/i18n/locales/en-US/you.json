@@ -9,7 +9,8 @@
     "sessions": "Sessions",
     "logbook": "Logbook",
     "social": "Social",
-    "climbs": "Climbs"
+    "climbs": "Climbs",
+    "created": "Created"
   },
   "mobile": {
     "unknownName": "Climber",

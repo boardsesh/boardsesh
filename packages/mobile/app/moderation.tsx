@@ -37,8 +37,8 @@ function ModerationRoute() {
   const { t } = useTranslation('common');
   const { t: tClimbs } = useTranslation('climbs');
   // Variant-aware header from the shared hook, the same way about/changelog/scout
-  // title themselves: a transparent blur header on Liquid Glass, an opaque M3 app
-  // bar on Material.
+  // title themselves: a transparent header on Liquid Glass, an opaque M3 app bar
+  // on Material.
   const screenOptions = useStackScreenOptions();
 
   return (

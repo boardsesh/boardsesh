@@ -9,6 +9,8 @@ import { Button } from '../src/components/Button';
 import { AppUpdatesCard } from '../src/components/AppUpdatesCard';
 import { Icon } from '../src/components/Icon';
 import { PressableSurface } from '../src/components/PressableSurface';
+import { changelogCategoryTone } from '../src/lib/changelog-category-tone';
+import { StatusPill } from '../src/components/StatusPill';
 import { Text } from '../src/components/Text';
 import { OfflineSpotlightCard } from '../src/components/offline/OfflineSpotlightCard';
 import { PreviewFirstSpotlightCard } from '../src/components/onboarding/PreviewFirstSpotlightCard';
@@ -81,17 +83,8 @@ const CurrentBuildDetails = memo(function CurrentBuildDetails() {
 
 const CategoryChip = memo(function CategoryChip({ category }: { category: ChangelogCategory }) {
   const { t } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
-  const tint =
-    category === 'new' ? brandColors.primaryFill : category === 'improved' ? brandColors.warning : brandColors.success;
-  return (
-    <View style={[styles.categoryChip, { backgroundColor: systemColors.fill }]}>
-      <Icon name={CATEGORY_ICONS[category]} size={12} color={tint} />
-      <Text variant="caption2" color={tint} style={styles.categoryChipLabel}>
-        {t(`mobile.changelog.category.${category}`)}
-      </Text>
-    </View>
-  );
+  const tone = changelogCategoryTone(category);
+  return <StatusPill tone={tone} icon={CATEGORY_ICONS[category]} label={t(`mobile.changelog.category.${category}`)} />;
 });
 
 type ChangelogEntryRowProps = { entry: ChangelogEntry; onPress: (entry: ChangelogEntry) => void };
@@ -112,7 +105,7 @@ const ChangelogEntryRow = memo(function ChangelogEntryRow({ entry, onPress }: Ch
         </Text>
         {pressable ? <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} /> : null}
       </View>
-      <Text variant="body" style={styles.cardTitle}>
+      <Text emphasized variant="body" style={styles.cardTitle}>
         {entry.title}
       </Text>
       {entry.body ? (
@@ -306,7 +299,7 @@ export default function ChangelogScreen() {
                   <CheckForUpdatesButton disabled={disabled} onBusyChange={onBusyChange} />
                 )}
               />
-              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.intro}>
+              <Text emphasized variant="footnote" color={systemColors.secondaryLabel} style={styles.intro}>
                 {t('mobile.changelog.intro')}
               </Text>
               {/* 2.7: climbs open as a preview. Pinned for the same reason,
@@ -350,7 +343,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   intro: {
-    fontWeight: '600',
     lineHeight: 20,
   },
   separator: {
@@ -369,20 +361,7 @@ const styles = StyleSheet.create({
   cardDate: {
     flex: 1,
   },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1],
-    borderRadius: borderRadius.full,
-  },
-  categoryChipLabel: {
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
   cardTitle: {
-    fontWeight: '600',
     lineHeight: 22,
   },
   cardBody: {

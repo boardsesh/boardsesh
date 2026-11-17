@@ -149,6 +149,10 @@ async function invoke(route: Route, command: unknown, options: { authorization?:
   let headers: Record<string, string> = {};
   const response = {
     destroyed: false,
+    // The routes listen for an early close; this caller never goes away.
+    once() {
+      return this;
+    },
     writeHead(code: number, sentHeaders: Record<string, string>) {
       status = code;
       headers = sentHeaders;

@@ -56,12 +56,12 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
         </View>
       ) : null}
       {method ? (
-        <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.method}>
+        <Text emphasized variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.method}>
           {method}
         </Text>
       ) : null}
       {extraLabels.length > 0 ? (
-        <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.method}>
+        <Text emphasized variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.method}>
           {extraLabels.join(' · ')}
         </Text>
       ) : null}
@@ -84,6 +84,5 @@ const styles = StyleSheet.create({
     marginStart: 6,
     flexShrink: 0,
     // Keep short attribute labels semibold while caption1 supplies size/line height.
-    fontWeight: '600',
   },
 });

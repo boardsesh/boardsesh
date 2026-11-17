@@ -29,6 +29,22 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     alias: [
+      // Binary-scoped GPU failure storage reads these native APIs. Node tests
+      // use a real SHA implementation and override identity explicitly as needed.
+      {
+        find: 'expo-application',
+        replacement: fileURLToPath(new URL('./test/expo-application-stub.ts', import.meta.url)),
+      },
+      {
+        find: 'expo-crypto',
+        replacement: fileURLToPath(new URL('./test/expo-crypto-stub.ts', import.meta.url)),
+      },
+      // The GPU failure latch is also scoped to the running OTA update. The real
+      // package loads react-native's Flow entry, which Node cannot parse.
+      {
+        find: 'expo-updates',
+        replacement: fileURLToPath(new URL('./test/expo-updates-stub.ts', import.meta.url)),
+      },
       // Gorhom is installed only in web-runtime so it stays outside the native
       // fingerprint graph. This resolver target lets adapter tests install a
       // hoisted module mock without making the real package visible to Vitest.

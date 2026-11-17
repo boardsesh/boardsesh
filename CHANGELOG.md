@@ -4,6 +4,58 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-17
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Set your Spraywall's LED brightness once for everyone at the wall. ([#7454](https://github.com/boardsesh/boardsesh/pull/7454))
+  Your Spraywall's LEDs can switch off by themselves after 15 minutes to 2 hours.
+  Find your Spraywall's WLED controller on your Wi-Fi in one tap.
+  Until every phone at a Spraywall has this update, a phone without it resets the brightness and cancels auto-off whenever it lights a climb.
+
+### Fixed
+
+- The board holds its size when you swipe between climbs. ([#7708](https://github.com/boardsesh/boardsesh/pull/7708))
+- Signing out no longer fails now and then while another phone opens the app. ([#7703](https://github.com/boardsesh/boardsesh/pull/7703))
+- Your board keeps the right holds lit through fast swipes. ([#7644](https://github.com/boardsesh/boardsesh/pull/7644))
+
+## 2026-11-16
+
+### New
+
+- Selected options across the app share one look: a soft purple wash, the same as the climb you're on ([#7677](https://github.com/boardsesh/boardsesh/pull/7677))
+- The Boards sheet lists your gym's walls together, with the one you're on marked ([#7643](https://github.com/boardsesh/boardsesh/pull/7643))
+  Your boards is a quick list, so every board you own is one tap away
+  Walking into another gym? The board in front of you is offered first
+- Text follows your iPhone's Larger Text setting the way Apple's own apps do ([#7635](https://github.com/boardsesh/boardsesh/pull/7635))
+- The browser app now reloads when your account changes in another tab, so you never see someone else's logbook. ([#7632](https://github.com/boardsesh/boardsesh/pull/7632))
+- On boardsesh.com, switching accounts in one tab now refreshes your other tabs, so they never show the last account's data. ([#7634](https://github.com/boardsesh/boardsesh/pull/7634))
+- Cleaner screens on iOS 26: the grey band behind the top bar is gone ([#7603](https://github.com/boardsesh/boardsesh/pull/7603))
+- The Boards list finds the board in front of you on its own ([#7580](https://github.com/boardsesh/boardsesh/pull/7580))
+  Add a board or a Spraywall from the + at the top of Boards
+  Walls at your gym sit right under the one you're on
+
+### Improved
+
+- A new profile photo now saves even if you leave Edit profile before it finishes. ([#7672](https://github.com/boardsesh/boardsesh/pull/7672))
+- A half-written comment is still there when you reopen the comments sheet. ([#7671](https://github.com/boardsesh/boardsesh/pull/7671))
+
+### Fixed
+
+- Session recaps keep grades and climb names clear of navigation controls. ([#7628](https://github.com/boardsesh/boardsesh/pull/7628))
+- Deleting your own climb from a list works again. ([#7599](https://github.com/boardsesh/boardsesh/pull/7599))
+  A name change, vote or report now finishes even if you leave the screen straight away.
+  A profile save with a new photo is still cancelled if you leave before it finishes.
+- Your set climbs get their own My climbs playlist in Discover. Pin it, play it, and find new saves straight away. ([#7602](https://github.com/boardsesh/boardsesh/pull/7602))
+- Dismiss the bottom-bar hint by tapping its text or the larger ×. ([#7601](https://github.com/boardsesh/boardsesh/pull/7601))
+- The Climbs list no longer goes blank after you pick a grade ([#7570](https://github.com/boardsesh/boardsesh/pull/7570))
+- Your wall's hold photos appear when Android opens the bundled app offline. ([#7573](https://github.com/boardsesh/boardsesh/pull/7573))
+- Board previews load more reliably, and browser climb lists support vertical touch scrolling. ([#7571](https://github.com/boardsesh/boardsesh/pull/7571))
+
 ## 2026-11-15
 
 ### App update

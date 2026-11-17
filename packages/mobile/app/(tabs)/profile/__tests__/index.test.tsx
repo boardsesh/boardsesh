@@ -8,12 +8,14 @@
 // on a revert of that wiring.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useSyncExternalStore, type ReactNode } from 'react';
 
 import type { ScrollEdgeBackdrop } from '../../../../src/hooks/use-scroll-edge-backdrop';
 
 const ctrl = vi.hoisted(() => ({
   profileId: 'user-own-123' as string | undefined,
+  tab: undefined as string | string[] | undefined,
+  paramListeners: new Set<() => void>(),
   measureProfile: undefined as ((height: number) => void) | undefined,
   measureLogbook: undefined as ((height: number) => void) | undefined,
   logbookHeightChange: vi.fn(),
@@ -42,8 +44,23 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 vi.mock('expo-router', () => ({
-  router: { push: vi.fn() },
-  useLocalSearchParams: () => ({ screenshotTab: undefined }),
+  router: {
+    setParams: ({ tab }: { tab: string }) => {
+      ctrl.tab = tab;
+      for (const listener of ctrl.paramListeners) listener();
+    },
+  },
+  useLocalSearchParams: () => ({
+    tab: useSyncExternalStore(
+      (listener) => {
+        ctrl.paramListeners.add(listener);
+        return () => {
+          ctrl.paramListeners.delete(listener);
+        };
+      },
+      () => ctrl.tab,
+    ),
+  }),
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useProfile: () => ({ data: ctrl.profileId ? { id: ctrl.profileId } : undefined }),
@@ -159,6 +176,7 @@ import YouScreen from '../index';
 describe('YouScreen (own profile)', () => {
   beforeEach(() => {
     ctrl.profileId = 'user-own-123';
+    ctrl.tab = undefined;
     ctrl.measureProfile = undefined;
     ctrl.measureLogbook = undefined;
     ctrl.logbookHeightChange.mockClear();
@@ -196,6 +214,27 @@ describe('YouScreen (own profile)', () => {
     expect(log).not.toHaveBeenCalled();
     expect(ctrl.snapToIndex).toHaveBeenCalledTimes(available ? 1 : 0);
     if (available) expect(ctrl.snapToIndex).toHaveBeenCalledWith(0);
+  });
+
+  it('opens the shortcut directly on created climbs, including after another subtab', () => {
+    ctrl.tab = 'climbs';
+    const { container } = render(<YouScreen />);
+    expect(container.querySelector('[data-tab="climbs"]')).not.toBeNull();
+    expect(container.querySelector('[data-tab="progress"]')).toBeNull();
+    fireEvent.click(container.querySelector('[data-select-tab="logbook"]')!);
+    expect(ctrl.tab).toBe('logbook');
+    act(() => {
+      ctrl.tab = 'climbs';
+      for (const listener of ctrl.paramListeners) listener();
+    });
+    expect(container.querySelector('[data-tab="climbs"]')).not.toBeNull();
+    expect(rendered.climbs.at(-1)?.userId).toBe('user-own-123');
+  });
+
+  it.each(['unknown', ['climbs']])('defaults unsupported tab parameters to progress: %s', (tab) => {
+    ctrl.tab = tab;
+    const { container } = render(<YouScreen />);
+    expect(container.querySelector('[data-tab="progress"]')).not.toBeNull();
   });
 
   it('offers a Climbs tab alongside progress/sessions/logbook/social', () => {

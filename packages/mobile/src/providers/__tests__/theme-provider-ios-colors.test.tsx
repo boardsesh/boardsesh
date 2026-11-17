@@ -34,6 +34,8 @@ vi.mock('expo-glass-effect', () => ({
 }));
 
 import { ThemeProvider, useTheme } from '../theme-provider';
+import { brandAccentDynamic } from '../../theme/colors';
+import { contrastRatioHex, oklch, parseHex } from '../../lib/color-contrast-oracle';
 
 const wrapper = ({ children }: { children: ReactNode }) => <ThemeProvider>{children}</ThemeProvider>;
 
@@ -59,13 +61,28 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
     const theme = await renderTheme('light');
     expect(theme.current.systemColors.accent).toEqual({
       dynamic: {
-        light: '#6D28D9',
-        dark: '#A78BFA',
-        highContrastLight: '#4C1D95',
-        highContrastDark: '#C4B5FD',
+        light: '#5B22F2',
+        dark: '#9784FF',
+        highContrastLight: '#5613EA',
+        highContrastDark: '#B6AFFF',
       },
     });
     expect(theme.current.systemColors.accent).not.toBe('link');
+  });
+
+  it('keeps the Increase Contrast accent at 7:1 on the grouped grounds, on the brand hue', () => {
+    // HIG Contrast: 7:1 under Increase Contrast. Light on #F2F2F7 (and white), dark
+    // on the elevated grouped card #2C2C2E (and #1C1C1E).
+    for (const ground of ['#F2F2F7', '#FFFFFF']) {
+      expect(contrastRatioHex(brandAccentDynamic.highContrastLight, ground), ground).toBeGreaterThanOrEqual(7);
+    }
+    for (const ground of ['#2C2C2E', '#1C1C1E', '#000000']) {
+      expect(contrastRatioHex(brandAccentDynamic.highContrastDark, ground), ground).toBeGreaterThanOrEqual(7);
+    }
+    // Same hue as the tint it stands in for (OKLCH, within a few degrees).
+    const hue = (hex: string) => oklch(parseHex(hex)).h;
+    expect(Math.abs(hue(brandAccentDynamic.highContrastLight) - hue(brandAccentDynamic.light))).toBeLessThan(3);
+    expect(Math.abs(hue(brandAccentDynamic.highContrastDark) - hue(brandAccentDynamic.dark))).toBeLessThan(3);
   });
 
   it('keeps the accent appearances on the brand tint of each scheme', async () => {
@@ -80,6 +97,37 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
     expect(theme.current.systemColors.fill).toBe('systemFill');
   });
 
+  it('builds the v2 page ladders from the adaptive iOS system backgrounds', async () => {
+    const theme = await renderTheme('dark');
+    expect(theme.current.surfaces).toEqual({
+      plain: {
+        page: 'systemBackground',
+        card: 'secondarySystemBackground',
+        tile: 'tertiarySystemBackground',
+      },
+      grouped: {
+        page: 'systemGroupedBackground',
+        card: 'secondarySystemGroupedBackground',
+        tile: 'tertiarySystemGroupedBackground',
+      },
+    });
+  });
+
+  it('resolves selection to label, accent and the brand wash, and status to the system fills', async () => {
+    const light = await renderTheme('light');
+    expect(light.current.selection.text).toBe('label');
+    expect(light.current.selection.checkmark).toBe(light.current.systemColors.accent);
+    // The current-climb wash in the Climbs list: the #5B22F2 fill at 13% in light...
+    expect(light.current.selection.fill).toBe('rgba(91, 34, 242, 0.13)');
+    expect(light.current.status).toEqual({ fill: 'tertiarySystemFill', label: 'secondaryLabel' });
+  });
+
+  it('mixes the dark selection wash from the dark fill, not the tint', async () => {
+    const dark = await renderTheme('dark');
+    // ...and the #6D33FF fill (never the #9784FF tint) at 20% in dark.
+    expect(dark.current.selection.fill).toBe('rgba(109, 51, 255, 0.2)');
+  });
+
   it('routes errors through the adaptive systemRed', async () => {
     const theme = await renderTheme('dark');
     expect(theme.current.systemColors.error).toBe('systemRed');
@@ -92,6 +140,6 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
     });
     await waitFor(() => expect(theme.current.variant).toBe('material'));
     expect(theme.current.systemColors.error).toBe('#C81E1E');
-    expect(theme.current.systemColors.accent).toBe('#6D28D9');
+    expect(theme.current.systemColors.accent).toBe('#5B22F2');
   });
 });

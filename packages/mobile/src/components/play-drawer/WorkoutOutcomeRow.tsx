@@ -174,6 +174,7 @@ function OutcomeButtonLabel({ label, savedLabel, color, onActivate }: OutcomeBut
         <Icon name="success" size={16} color={color} maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE} />
       ) : null}
       <Text
+        emphasized
         variant="subheadline"
         color={color}
         numberOfLines={1}
@@ -216,7 +217,6 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   label: {
-    fontWeight: '600',
     flexShrink: 1,
   },
   // The buttons' height, so a message in the row never moves the board.

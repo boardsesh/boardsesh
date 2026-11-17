@@ -1,6 +1,7 @@
+import type { Climb } from '@boardsesh/queue';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
   smartPlaylistGeometryKey,
@@ -15,6 +16,7 @@ import {
   type GetSmartPlaylistQueryResponse,
 } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../../src/components/Text';
+import { Button } from '../../../../src/components/Button';
 import { Icon } from '../../../../src/components/Icon';
 import { ClimbListRowSkeleton } from '../../../../src/components/ClimbListRowSkeleton';
 import {
@@ -55,6 +57,7 @@ import {
   type SmartListSelection,
 } from '../../../../src/lib/playlists/smart-list-view';
 import { usePlaylistActivation } from '../../../../src/lib/playlists/use-playlist-activation';
+import { resolvePlaylistClimbRenderBoard } from '../../../../src/lib/playlists/playlist-climb-render-board';
 import { usePlaylistRenderBoard } from '../../../../src/lib/playlists/use-playlist-render-board';
 import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import {
@@ -225,7 +228,7 @@ function SmartPlaylistBody({
   const { query, allClimbs, meta } = useSmartPlaylist({
     smartPlaylistType: smartType,
     userId,
-    tokenLoading: tokenLoading || !userId,
+    tokenLoading: tokenLoading || !userId || (smartType === 'CREATED_CLIMBS' && !isAuthenticated),
     view: viewInput,
     activeBoardInput,
   });
@@ -268,7 +271,7 @@ function SmartPlaylistBody({
     }: {
       page: number;
       pageSize: number;
-      board: { boardName: string };
+      board: { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number };
       signal: AbortSignal;
     }) => {
       // Under a view, the board the rows on screen were asked for: after a
@@ -283,6 +286,15 @@ function SmartPlaylistBody({
         boardName: settledBoardInput?.activeBoardName ?? board.boardName,
         page,
         pageSize,
+        ...(smartType === 'CREATED_CLIMBS'
+          ? {
+              activeBoardName: board.boardName,
+              activeLayoutId: board.layoutId,
+              activeSizeId: board.sizeId,
+              activeSetIds: board.setIds,
+              activeAngle: board.angle,
+            }
+          : {}),
         // The view on screen, so the drawer swipes and Play next / Play last walk the
         // same sorted, filtered rows the climber sees.
         ...(settledView.view ? { ...settledBoardInput, view: settledView.view } : {}),
@@ -306,8 +318,20 @@ function SmartPlaylistBody({
     [smartType, userId, settledView.view, settledView.activeBoardInput],
   );
 
+  const { renderBoard } = usePlaylistRenderBoard(null);
+  // Authored climbs span boards. A row that cannot fit the selected board
+  // previews on its own render board, including when no board is selected.
+  const createdPreviewBoard = useCallback(
+    (climb: Climb) => {
+      const resolved = resolvePlaylistClimbRenderBoard(climb, renderBoard);
+      return !renderBoard || resolved?.incompatible ? (resolved?.renderBoard ?? null) : null;
+    },
+    [renderBoard],
+  );
+
   const playlistActivation = usePlaylistActivation({
     sourceId: listSourceId(`smart:${smartType}:${userId}`, settledView.key),
+    viewOnlyBoard: smartType === 'CREATED_CLIMBS' ? createdPreviewBoard : undefined,
     allClimbs,
     fetchPage,
     // "From Projects · 4 of 23": the same name the list's own header shows.
@@ -321,10 +345,6 @@ function SmartPlaylistBody({
     honorPlaylistLoadSetting: true,
   });
 
-  // Smart playlists are computed relative to the active board, so they always
-  // render against it (no mismatch banner).
-  const { renderBoard } = usePlaylistRenderBoard(null);
-
   const hero = useMemo(
     () => ({
       name: preset ? t(preset.titleI18nKey) : (meta?.userName ?? ''),
@@ -333,6 +353,7 @@ function SmartPlaylistBody({
       color: preset?.color,
       icon: preset?.icon,
       subtitle: meta?.userName,
+      description: preset?.type === 'CREATED_CLIMBS' ? t('library.smart.createdClimbs.description') : undefined,
     }),
     [preset, meta, allClimbs.length, t],
   );
@@ -360,12 +381,21 @@ function SmartPlaylistBody({
       case 'noMatch':
         return t('detail.view.empty.noMatch');
       case null:
-        return t('library.smart.empty');
+        return preset?.type === 'CREATED_CLIMBS'
+          ? t('library.smart.createdClimbs.empty.title')
+          : t('library.smart.empty');
     }
-  }, [climbsFailed, emptyKind, queriedName, t]);
+  }, [climbsFailed, emptyKind, queriedName, preset, t]);
   const emptyState = useMemo<PlaylistDetailEmptyState | undefined>(() => {
     if (climbsFailed) return { icon: 'error', title: emptyMessage, supporting: t('detail.errors.loadDescription') };
     if (emptyKind) return { icon: 'filter', title: emptyMessage };
+    if (preset?.type === 'CREATED_CLIMBS') {
+      return {
+        icon: 'boards',
+        title: t('library.smart.createdClimbs.empty.title'),
+        supporting: t('library.smart.createdClimbs.empty.supporting'),
+      };
+    }
     // The liked-climbs surface gets a climber-voice empty state (heart prompt) on
     // the Material branch; other smart playlists fall back to the generic message.
     return preset?.type === 'LIKED_CLIMBS'
@@ -428,15 +458,30 @@ function SmartPlaylistBody({
     [unfilteredCount, totalCount, settledFitsBoard, hasNextPage, renderBoard, allClimbs],
   );
 
+  if (preset?.type === 'CREATED_CLIMBS' && !isAuthenticated) {
+    return (
+      <View style={styles.stateContainer}>
+        <PlaylistStateHeader />
+        <Text variant="headline" tone="secondary" style={styles.stateTitle}>
+          {t('library.signInBanner.title')}
+        </Text>
+        <Text variant="subheadline" tone="tertiary" style={styles.stateSubtitle}>
+          {t('library.signInBanner.description')}
+        </Text>
+        <Button title={t('library.signInBanner.cta')} onPress={() => router.push('/auth/login')} />
+      </View>
+    );
+  }
+
   if (!preset && !query.isLoading) {
     return (
       <View style={styles.stateContainer}>
         <PlaylistStateHeader />
         <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text variant="headline" tone="secondary" style={styles.stateTitle}>
           {t('library.smart.notFound.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text variant="subheadline" tone="tertiary" style={styles.stateSubtitle}>
           {t('library.smart.notFound.description')}
         </Text>
       </View>
@@ -501,10 +546,8 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: 12,
-    opacity: 0.6,
   },
   stateSubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
 });

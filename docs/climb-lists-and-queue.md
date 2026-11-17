@@ -49,6 +49,18 @@ Three fixes have already shipped against this, and the model below builds on the
 What is left is that each list still decides on its own what a tap means, and the queue
 still collects climbs nobody chose to queue.
 
+## Find climbs you created
+
+In Discover → For You, open **My climbs**. This generated playlist collects
+your published climbs across your boards and linked setter accounts. Pin it
+like the other generated playlists, play it, or add compatible climbs next or
+last in your queue. The Climbs options menu opens the same playlist.
+**You → Created** also keeps the authored list. Neither list inherits the
+active board's search filters. Saving,
+editing, or publishing refreshes that list so a recently opened empty list does
+not hide a new climb. Drafts remain in the create editor's draft picker; other
+climbers' public profiles keep the **Climbs** label.
+
 ## Words we use
 
 The current player uses the wall button and a back chip; the older pill names
@@ -303,7 +315,7 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
 On an Android phone the MiniPlayer is a card floating 8dp above the nav bar. Scrolling a tab's
 list down 24dp tucks the bar away and drops the card to 8dp above the gesture inset, controls
 intact; scrolling up 24dp, reaching the top or changing tab brings the bar back. Never with
-TalkBack on, the keyboard open, or on a pushed page (see `docs/ai-design-guidelines.md`, Android
+TalkBack on, the keyboard open, or on a pushed page (see `docs/mobile-chrome.md`, Android
 phones hide the bar on scroll).
 
 - **What counts as a pick.** Every open the player applies (a list row, a search result, a
@@ -751,7 +763,7 @@ preview note, the crossing cue) is described with the player.
   in 7 days and never on 2.7.x). Both controls run the same clear (`QueueListBody`
   `handleClearAll`): the queue and the current climb go, for the crew too, and an Undo shows for
   8 s. Neither asks first: Undo is the safety net on purpose ("Queue Undo" in
-  `docs/ai-design-guidelines.md`, #6246). The ⋯ shows exactly when the pencil does, so an empty
+  `docs/mobile-motion.md`, #6246). The ⋯ shows exactly when the pencil does, so an empty
   queue has neither and the people who can clear are the same. The pencil keeps reorder and
   remove. `Queue Cleared` carries `source: 'edit' | 'menu'`.
 - With three trailing buttons (pencil, ⋯, chevron) against one leading, the title sits about

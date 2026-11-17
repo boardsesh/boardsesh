@@ -10,25 +10,14 @@ import {
 } from '@/app/lib/auth/web-session-events';
 
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
-const coordinator = vi.hoisted(() => ({
-  ready: false,
-  renewReady: false,
-  read: vi.fn<() => Promise<void>>(),
-  renew: vi.fn<() => Promise<void>>(),
-}));
-vi.mock('@/app/lib/auth/browser-coordinator-readiness', () => ({
-  publicBrowserCoordinatorReady: () => coordinator.ready,
-}));
-vi.mock('@/app/lib/auth/browser-renewal-readiness', () => ({
-  publicBrowserRenewalReady: () => coordinator.renewReady,
-}));
-vi.mock('@/app/lib/auth/browser-coordinator-client', () => ({
-  readCanonicalBrowserCoordinator: coordinator.read,
-  renewCanonicalBrowserCoordinator: coordinator.renew,
-}));
+const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
+const reload = vi.hoisted(() => vi.fn<() => void>());
+vi.mock('@/app/lib/auth/reload-after-account-change', () => ({ reloadAfterAccountChange: reload }));
 
 function clearLockInstallation(): void {
   delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[LOCK_INSTALLATION_KEY];
+  delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[GUARD_KEY];
+  reload.mockReset();
 }
 
 class MockBroadcastChannel {
@@ -94,10 +83,6 @@ let serverSession: Session | null;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  coordinator.ready = false;
-  coordinator.renewReady = false;
-  coordinator.read.mockReset().mockResolvedValue(undefined);
-  coordinator.renew.mockReset().mockResolvedValue(undefined);
   window.history.replaceState({}, '', '/');
   clearLockInstallation();
   MockBroadcastChannel.instances = [];
@@ -112,91 +97,6 @@ beforeEach(() => {
   );
   vi.stubGlobal('fetch', fetchMock);
   window.localStorage.clear();
-});
-
-describe('canonical coordinator session preflight', () => {
-  it('waits for rolling coordination but authenticates only the later primary session', async () => {
-    coordinator.ready = true;
-    coordinator.renewReady = true;
-    let complete!: () => void;
-    coordinator.renew.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          complete = resolve;
-        }),
-    );
-    serverSession = session('owner-A', 'original-SID');
-    render(
-      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
-        <SessionState />
-      </SessionProviderWrapper>,
-    );
-    await waitFor(() => expect(coordinator.renew).toHaveBeenCalledOnce());
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(coordinator.read).not.toHaveBeenCalled();
-    expect(screen.getByText('loading:none:none')).toBeDefined();
-    await act(async () => complete());
-    await screen.findByText('authenticated:owner-A:original-SID');
-  });
-  it('refuses a partially enabled renewal without falling back to legacy cookie reads', async () => {
-    coordinator.renewReady = true;
-    render(
-      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
-        <SessionState />
-      </SessionProviderWrapper>,
-    );
-    await act(async () => {});
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(coordinator.read).not.toHaveBeenCalled();
-    expect(coordinator.renew).not.toHaveBeenCalled();
-    expect(screen.getByText('loading:none:none')).toBeDefined();
-  });
-  it('waits for coordination before the independent primary session request', async () => {
-    coordinator.ready = true;
-    let release!: () => void;
-    coordinator.read.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    );
-    serverSession = session('owner-A', 'original-SID');
-    render(
-      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
-        <SessionState />
-      </SessionProviderWrapper>,
-    );
-    await waitFor(() => expect(coordinator.read).toHaveBeenCalledTimes(1));
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByText('loading:none:none')).toBeDefined();
-    await act(async () => release());
-    await screen.findByText('authenticated:owner-A:original-SID');
-    expect(fetchMock).toHaveBeenCalledWith('/api/auth/session', expect.objectContaining({ cache: 'no-store' }));
-  });
-  it('keeps initial identity unknown when coordination is unavailable', async () => {
-    coordinator.ready = true;
-    coordinator.read.mockRejectedValue(new Error('COORDINATOR_UNAVAILABLE'));
-    render(
-      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
-        <SessionState />
-      </SessionProviderWrapper>,
-    );
-    await waitFor(() => expect(coordinator.read).toHaveBeenCalledTimes(1));
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByText('loading:none:none')).toBeDefined();
-  });
-  it('does not recursively coordinate or fetch a session in the utility frame', async () => {
-    coordinator.ready = true;
-    window.history.replaceState({}, '', '/auth/browser-coordinator');
-    render(
-      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
-        <SessionState />
-      </SessionProviderWrapper>,
-    );
-    await act(async () => {});
-    expect(coordinator.read).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });
 
 afterEach(() => {
@@ -534,8 +434,7 @@ describe('SessionProviderWrapper auth bridge', () => {
   it('waits for the shared cookie lock before refreshing the local NextAuth session', async () => {
     const requestLock = createNamedFifoLockRequest();
     vi.stubGlobal('navigator', { locks: { request: requestLock } });
-    serverSession = session('user-a', 'login-a');
-    await renderSettledSession('authenticated:user-a:login-a');
+    await renderSettledSession('unauthenticated:none:none');
     const channel = MockBroadcastChannel.instances[0];
     let releaseCookieMutation!: () => void;
     const cookieMutation = requestLock(
@@ -578,7 +477,7 @@ describe('SessionProviderWrapper auth bridge', () => {
     expect(channel?.listeners.size).toBe(0);
   });
 
-  it('refreshes the local NextAuth provider from the prior login to anonymous', async () => {
+  it('retires the page instead of publishing a sign-out made in the Expo app', async () => {
     serverSession = session('user-a', 'login-a');
     const { unmount } = await renderSettledSession('authenticated:user-a:login-a');
     const channel = MockBroadcastChannel.instances[0];
@@ -586,7 +485,8 @@ describe('SessionProviderWrapper auth bridge', () => {
     serverSession = null;
     act(() => channel?.emit({ type: 'auth-token-cleared', sourceId: 'expo-tab-a' }));
 
-    await waitFor(() => expect(screen.getByText('unauthenticated:none:none')).toBeTruthy());
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(screen.getByText('loading:none:none')).toBeTruthy();
 
     unmount();
     expect(channel?.close).toHaveBeenCalledOnce();

@@ -16,6 +16,19 @@ vi.mock('../sentry', () => ({
   addBreadcrumbToSentry: vi.fn(),
 }));
 
+/** The refusal shape the deleted Expo web selected mode threw. error-reporting
+ * still matches it by name and status, so the filter keeps its test.
+ * TODO(#7596): nothing in packages/mobile throws it any more. error-reporting.ts
+ * ships to phones by OTA, so the selected-mode deletion left its branch alone;
+ * the #7596 follow-up that removes the `BrowserBackendConsumerError` branch
+ * deletes this class and the test below with it. */
+class BrowserBackendConsumerError extends Error {
+  constructor(readonly status: 'superseded' | 'denied') {
+    super('Selected browser credential is unavailable');
+    this.name = 'BrowserBackendConsumerError';
+  }
+}
+
 const mockedCaptureToSentry = vi.mocked(captureToSentry);
 const mockedAddBreadcrumbToSentry = vi.mocked(addBreadcrumbToSentry);
 
@@ -47,6 +60,16 @@ describe('reportHandledError', () => {
     reportHandledError(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     reportHandledError(Object.assign(new Error('cancelled'), { name: 'CancelledError' }));
     expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+  });
+
+  it('drops a request the account or view retired, but reports other consumer refusals', () => {
+    // A write in flight at sign-out is refused with `superseded`: the app did
+    // what was asked. The query and mutation caches report through here.
+    reportHandledError(new BrowserBackendConsumerError('superseded'), { tags: { source: 'react-query' } });
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+
+    reportHandledError(new BrowserBackendConsumerError('denied'), { tags: { source: 'react-query' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledOnce();
   });
 
   it('drops expected auth-required GraphQL errors (a session-only query ran logged-out)', () => {

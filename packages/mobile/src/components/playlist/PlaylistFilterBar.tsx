@@ -43,7 +43,7 @@ export const PlaylistFilterBar = memo(function PlaylistFilterBar({
   editing,
 }: PlaylistFilterBarProps) {
   const { t } = useTranslation('playlists');
-  const { systemColors, brandColors, opacity } = useTheme();
+  const { systemColors, opacity } = useTheme();
 
   return (
     <View style={styles.container}>
@@ -69,7 +69,7 @@ export const PlaylistFilterBar = memo(function PlaylistFilterBar({
             {t('detail.view.status', { shown: status.shown, count: status.total })}
           </Text>
           <PressableSurface onPress={status.onClear} accessibilityRole="button" hitSlop={8}>
-            <Text variant="footnote" color={brandColors.primary} style={styles.clearLabel}>
+            <Text emphasized variant="footnote" color={systemColors.accent}>
               {t('detail.view.clearFilters')}
             </Text>
           </PressableSurface>
@@ -101,8 +101,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: spacing[3],
-  },
-  clearLabel: {
-    fontWeight: '600',
   },
 });

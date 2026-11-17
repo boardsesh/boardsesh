@@ -63,6 +63,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label, tone }: { label: string; tone?: string }) =>
+    createElement('span', { 'data-tone': tone ?? 'neutral' }, label),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));

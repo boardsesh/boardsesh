@@ -100,7 +100,7 @@ const SetterRow = memo(function SetterRow({
   followPending,
 }: SetterRowProps) {
   const { t } = useTranslation('climbs');
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const { setterUsername } = setter;
   return (
     <View style={styles.row}>
@@ -122,11 +122,11 @@ const SetterRow = memo(function SetterRow({
         accessibilityRole="button"
       >
         <Text variant="body">{setterUsername}</Text>
-        <Text variant="footnote" style={styles.count}>
+        <Text tone="secondary" variant="footnote" style={styles.count}>
           {countLabel}
         </Text>
         {viaUserFollow ? (
-          <Text variant="caption2" style={styles.count}>
+          <Text tone="secondary" variant="caption2" style={styles.count}>
             {t('authors.viaUserFollow')}
           </Text>
         ) : null}
@@ -140,7 +140,7 @@ const SetterRow = memo(function SetterRow({
           accessibilityRole="button"
           hitSlop={8}
         >
-          <Text variant="footnote" color={brandColors.primary}>
+          <Text variant="footnote" color={systemColors.accent}>
             {following ? t('authors.unfollow') : t('authors.follow')}
           </Text>
         </PressableSurface>
@@ -176,7 +176,7 @@ export function SetterPickerList({
   emptyLabel,
 }: SetterPickerListProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
 
   const [searchInput, setSearchInput] = useState('');
@@ -258,7 +258,7 @@ export function SetterPickerList({
 
       {headerAccessory ? <View style={styles.headerAccessory}>{headerAccessory}</View> : null}
       {hints?.map((hint) => (
-        <Text key={hint} variant="footnote" style={styles.pickerHint}>
+        <Text tone="secondary" key={hint} variant="footnote" style={styles.pickerHint}>
           {hint}
         </Text>
       ))}
@@ -271,11 +271,11 @@ export function SetterPickerList({
       ) : null}
       {selectedSet.size > 0 ? (
         <View style={styles.selectionBar}>
-          <Text variant="footnote" style={styles.selectionCount}>
+          <Text tone="secondary" variant="footnote">
             {t('authors.selectedCount', { count: selectedSet.size })}
           </Text>
           <PressableSurface onPress={clearAll} hitSlop={8} accessibilityRole="button">
-            <Text variant="subheadline" color={brandColors.primary}>
+            <Text variant="subheadline" color={systemColors.accent}>
               {t('mobile.filter.clearAll')}
             </Text>
           </PressableSurface>
@@ -311,7 +311,7 @@ export function SetterPickerList({
             }
             ListEmptyComponent={
               <View style={styles.empty}>
-                <Text variant="subheadline" style={styles.emptyText}>
+                <Text tone="secondary" variant="subheadline">
                   {debouncedSearch.length > 0 ? t('mobile.emptyState.noMatches.title') : emptyLabel}
                 </Text>
               </View>
@@ -379,10 +379,8 @@ const styles = StyleSheet.create({
   pickerHint: {
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
-    opacity: 0.6,
   },
   count: {
-    opacity: 0.6,
     marginTop: spacing[1],
   },
   separator: {
@@ -396,9 +394,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
   },
-  selectionCount: {
-    opacity: 0.6,
-  },
   loading: {
     flex: 1,
     alignItems: 'center',
@@ -411,8 +406,5 @@ const styles = StyleSheet.create({
   empty: {
     paddingTop: spacing[6],
     alignItems: 'center',
-  },
-  emptyText: {
-    opacity: 0.6,
   },
 });

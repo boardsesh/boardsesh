@@ -338,9 +338,9 @@ describe('private resolution workflow', () => {
     }
   });
 
-  it('reconciles a prepared reservation projection', async () => {
+  it.each(['prepared', 'enforced'])('reconciles a %s current-store reservation projection', async (phase) => {
     await client`INSERT INTO auth_email_projection(projection_id,normalizer_version,phase,writer_epoch,source_user_count,key_count,ambiguous_key_count,prepared_at)
-      VALUES ('synthetic-projection','js-trim-lower-v1','prepared',1,2,1,1,now())`;
+      VALUES ('synthetic-projection','js-trim-lower-v1',${phase},1,2,1,1,now())`;
     await client`INSERT INTO auth_email_reservations VALUES (${address}, 'synthetic-projection', 'blocked_ambiguous', NULL, now())`;
     await client`INSERT INTO auth_email_reservation_members(normalized_email,user_id) VALUES (${address}, ${identities[0]}), (${address}, ${identities[1]})`;
     expect((await applyResolutionPlan(drizzle(client), await plan())).applied).toBe(1);
@@ -352,6 +352,95 @@ describe('private resolution workflow', () => {
     expect((await applyResolutionPlan(drizzle(client), await plan(swapped, 'G01'))).applied).toBe(1);
     expect((await client`SELECT key_count FROM auth_email_projection`)[0].key_count).toBe(2);
     expect((await client`SELECT count(*)::int AS count FROM auth_email_reservations`)[0].count).toBe(2);
+  });
+
+  // BA-03 (#6977): apply is a legacy identity writer, so it takes the shared gate
+  // and the same manifest check as every other one before any key or row lock.
+  it('refuses with STALE_AUTHORITY once another authority owns writes, changing nothing', async () => {
+    const proposed = await plan();
+    await client`INSERT INTO auth_email_projection(projection_id,normalizer_version,phase,writer_epoch,writer_authority,prepared_at)
+      VALUES ('synthetic-switched','js-trim-lower-v1','enforced',2,'better-auth',now())`;
+    const before = await client`SELECT id, email, updated_at FROM users ORDER BY id`;
+    await expect(applyResolutionPlan(drizzle(client), proposed)).rejects.toMatchObject({ code: 'STALE_AUTHORITY' });
+    expect(await client`SELECT id, email, updated_at FROM users ORDER BY id`).toEqual(before);
+    expect((await client`SELECT count(*)::int AS count FROM auth_email_resolution_log`)[0].count).toBe(0);
+  });
+
+  it('waits behind a switch holding the gate, then sees it and refuses, changing nothing', async () => {
+    const proposed = await plan();
+    const before = await client`SELECT id, email, updated_at FROM users ORDER BY id`;
+    const switcher = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    let commitSwitch = () => {};
+    const mayCommit = new Promise<void>((resolveCommit) => {
+      commitSwitch = resolveCommit;
+    });
+    let signalHeld = () => {};
+    const held = new Promise<void>((resolveHeld) => {
+      signalHeld = resolveHeld;
+    });
+    const switching = switcher.begin(async (transaction) => {
+      await transaction`SELECT pg_advisory_xact_lock(6975, 2)`;
+      await transaction`INSERT INTO auth_email_projection(projection_id,normalizer_version,phase,writer_epoch,writer_authority,prepared_at)
+        VALUES ('synthetic-switching','js-trim-lower-v1','enforced',2,'better-auth',now())`;
+      signalHeld();
+      await mayCommit;
+    });
+    try {
+      await held;
+      const applying = applyResolutionPlan(drizzle(client), proposed);
+      applying.catch(() => {});
+      let observedWait = false;
+      for (let attempt = 0; attempt < 200 && !observedWait; attempt += 1) {
+        const [waiting] = await client`SELECT count(*)::int AS count FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted AND classid = 6975 AND objid = 2 AND objsubid = 2
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`;
+        observedWait = waiting.count > 0;
+        if (!observedWait) await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+      }
+      expect(observedWait).toBe(true);
+      commitSwitch();
+      await switching;
+      await expect(applying).rejects.toMatchObject({ code: 'STALE_AUTHORITY' });
+      expect(await client`SELECT id, email, updated_at FROM users ORDER BY id`).toEqual(before);
+      expect((await client`SELECT count(*)::int AS count FROM auth_email_resolution_log`)[0].count).toBe(0);
+    } finally {
+      commitSwitch();
+      await switching.catch(() => {});
+      await switcher.end();
+    }
+  });
+
+  it('reports STALE_AUTHORITY from the CLI with no database detail', async () => {
+    const connection = resolutionConnectionOptions(databaseUrl, undefined, new URL(databaseUrl).hostname, true);
+    const proposed = {
+      ...(await plan()),
+      targetFingerprint: digest(`${connection.host}:${connection.port}/${connection.database}`),
+    };
+    const path = join(folder, 'stale-authority-plan.json');
+    const contents = JSON.stringify(proposed);
+    writeFileSync(path, contents, { mode: 0o600, flag: 'wx' });
+    await client`INSERT INTO auth_email_projection(projection_id,normalizer_version,phase,writer_epoch,writer_authority,prepared_at)
+      VALUES ('synthetic-switched','js-trim-lower-v1','enforced',2,'better-auth',now())`;
+    let output = '';
+    expect(
+      await runResolutionCli(
+        [
+          '--apply',
+          '--plan-file',
+          path,
+          '--plan-sha256',
+          digest(contents),
+          '--confirm-host',
+          new URL(databaseUrl).hostname,
+        ],
+        { ACCOUNT_EMAIL_RESOLVE_DATABASE_URL: databaseUrl },
+        (text) => {
+          output += text;
+        },
+      ),
+    ).toBe(1);
+    expect(JSON.parse(output)).toEqual({ status: 'refused', code: 'STALE_AUTHORITY' });
+    expect((await client`SELECT count(*)::int AS count FROM auth_email_resolution_log`)[0].count).toBe(0);
   });
 
   it('normalizes standalone rows and defers their live verification link', async () => {

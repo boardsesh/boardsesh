@@ -9,10 +9,16 @@
 // in-memory record directly. It calls `forgetRememberedBoardsOnSignOut`, which
 // tells every mounted useBoardBluetooth (its in-memory record, its per-board
 // handles and the iOS native pairing) and clears both stores itself, so a
-// sign-out with no hook mounted still leaves nothing behind.
+// sign-out with no hook mounted still leaves nothing behind. The boxes this
+// phone recognises by Bluetooth id (recognized-board-devices-store.ts) were
+// bound by the same account, so they go too, and so does a box still waiting
+// for its board (pending-board-recognition.ts): the next account's first bind
+// must not name it.
 
+import { clearPendingBoardRecognition } from '../boards/pending-board-recognition';
 import { clearStoredLastConnectedBoard } from './last-connected-board-store';
 import { setStoredKnownBoardDevices } from './known-board-devices-store';
+import { clearRecognizedBoardDevices } from './recognized-board-devices-store';
 
 type SignOutListener = () => void;
 
@@ -28,6 +34,7 @@ export function subscribeRememberedBoardsSignOut(listener: SignOutListener): () 
 
 /** Called by AuthProvider's signed-out cleanup. Storage failures are swallowed: never a thrown sign-out. */
 export async function forgetRememberedBoardsOnSignOut(): Promise<void> {
+  clearPendingBoardRecognition();
   for (const listener of Array.from(signOutListeners)) {
     try {
       listener();
@@ -35,5 +42,9 @@ export async function forgetRememberedBoardsOnSignOut(): Promise<void> {
       // One listener's failure must not keep the others, or the stores, remembered.
     }
   }
-  await Promise.allSettled([clearStoredLastConnectedBoard(), setStoredKnownBoardDevices([])]);
+  await Promise.allSettled([
+    clearStoredLastConnectedBoard(),
+    setStoredKnownBoardDevices([]),
+    clearRecognizedBoardDevices(),
+  ]);
 }

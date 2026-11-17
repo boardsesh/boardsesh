@@ -84,6 +84,7 @@ type Step =
   | 'cableStart'
   | 'initialSkip'
   | 'wiring'
+  | 'skips'
   | 'lighting';
 
 /** Leaving these keeps the work on disk. Choosing a placement is not work yet, and stays discardable. */
@@ -94,6 +95,7 @@ const LED_WORK_STEPS: ReadonlySet<Step> = new Set<Step>([
   'cableStart',
   'initialSkip',
   'wiring',
+  'skips',
   'lighting',
 ]);
 
@@ -422,7 +424,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       // the current wiring before showing its field again, so Next preserves it.
       setInitialSkipText(String(layout.wiring?.initialSkip ?? 0));
       setStep('initialSkip');
-    } else if (step === 'lighting') setStep('wiring');
+    } else if (step === 'skips') setStep('wiring');
+    else if (step === 'lighting') setStep('skips');
     else router.back();
   }
 
@@ -480,7 +483,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       const rebuildLeds = () => {
         const ledPositions = generateLedPositions(layout);
         // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
-        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: undefined });
+        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: [], ledGroups: undefined });
         untouchedLeds.current = ledPositions;
         generatedLeds.current = signature;
         generatedWiring.current = null;
@@ -531,10 +534,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       setStep('wiring');
       return;
     }
-    if (step === 'wiring') {
+    if (step === 'wiring' || step === 'skips') {
       if (!layout.wiring || !layout.ledPositions?.length) return;
       saveWork(layout);
-      setStep('lighting');
+      setStep(step === 'wiring' ? 'skips' : 'lighting');
       return;
     }
     if (step === 'holes' || step === 'lighting') {
@@ -572,7 +575,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     (step !== 'holes' || layout.holes.length > 0) &&
     (step !== 'led' || Boolean(layout.ledPlacement)) &&
     (step !== 'initialSkip' || validInitialSkip) &&
-    ((step !== 'ledPositions' && step !== 'wiring') || Boolean(layout.ledPositions?.length));
+    ((step !== 'ledPositions' && step !== 'wiring' && step !== 'skips') || Boolean(layout.ledPositions?.length));
   useHeaderActions({
     leading: { kind: 'back', onPress: previousStep, accessibilityLabel: t('sprayLedSetup.back'), disabled: saving },
     trailing: {
@@ -652,7 +655,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                         ? t('sprayLedSetup.lightingTitle')
                         : step === 'holdLeds'
                           ? t('sprayLedSetup.holdLedsTitle')
-                          : t('sprayLedSetup.wiringTitle');
+                          : step === 'skips'
+                            ? t('sprayLedSetup.skipsTitle')
+                            : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -824,6 +829,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                 photoUri,
                 mode: mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
                 onTap: tapHole,
+                ignoreTapsOutsidePhoto: mode === 'add',
                 onMove: moveHole,
                 dragPoints: layout.holes,
                 draftColor: brandColors.warning,
@@ -898,10 +904,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             </Text>
           </>
         ) : null}
-        {step === 'ledPositions' || step === 'wiring' ? (
+        {step === 'ledPositions' || step === 'wiring' || step === 'skips' ? (
           <SprayLedMapEditor
             key={step}
-            kind={step === 'wiring' ? 'wiring' : 'positions'}
+            kind={step === 'ledPositions' ? 'positions' : step}
             layout={layout}
             wallUuid={wallUuid}
             onChange={changeLayout}
@@ -1036,7 +1042,7 @@ function ChoiceCard({
   onPress: () => void;
   children: ReactNode;
 }) {
-  const { systemColors, brandColors, spacing } = useTheme();
+  const { systemColors, selection, spacing } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -1047,8 +1053,8 @@ function ChoiceCard({
       style={[
         styles.card,
         {
-          borderColor: selected ? brandColors.primary : systemColors.separator,
-          backgroundColor: systemColors.secondaryGroupedBackground,
+          borderColor: selected ? selection.checkmark : systemColors.separator,
+          backgroundColor: selected ? selection.fill : systemColors.secondaryGroupedBackground,
           padding: spacing[2],
           gap: spacing[2],
         },

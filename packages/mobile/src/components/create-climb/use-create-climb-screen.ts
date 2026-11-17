@@ -1758,6 +1758,14 @@ export function useCreateClimbScreen({
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
+      // The You tab has its own authored-climbs feed, separate from board
+      // search. Refresh it after creating, editing, or publishing a draft so a
+      // recently viewed empty list cannot hide the climb for five minutes.
+      void Promise.resolve(queryClient.invalidateQueries({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] })).catch(
+        () => {},
+      );
+      void Promise.resolve(queryClient.invalidateQueries({ queryKey: ['mySmartPlaylistCounts'] })).catch(() => {});
+      void Promise.resolve(queryClient.invalidateQueries({ queryKey: ['userClimbs'] })).catch(() => {});
       // An admin's live heatmap counts the new climb at once; a downloaded board
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });

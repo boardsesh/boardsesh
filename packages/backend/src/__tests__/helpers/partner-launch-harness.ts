@@ -281,6 +281,17 @@ export async function signInOnWeb(
   return `${WWW_SESSION_COOKIE}=${credential}`;
 }
 
+/**
+ * The same sign-in as the bearer the developer console sends GraphQL: www hands
+ * the session cookie's value to the page (`/api/internal/ws-auth`). Rotating a
+ * secret, deleting an app or changing its redirect URIs needs one made in the
+ * last five minutes (#7598); an app token never counts.
+ */
+export async function webSessionBearer(userId: string, signIn: WebSignIn): Promise<string> {
+  const cookie = await signInOnWeb(userId, signIn);
+  return cookie.slice(`${WWW_SESSION_COOKIE}=`.length);
+}
+
 export interface RegisteredApp {
   clientId: string;
   clientSecret: string | null;

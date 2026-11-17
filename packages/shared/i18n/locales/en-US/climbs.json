@@ -252,7 +252,8 @@
       "viewOptions": "View options",
       "history": "Board history, {{board}}",
       "historyTitle": "Board history",
-      "historyHint": "See what has been lit on this wall"
+      "historyHint": "See what has been lit on this wall",
+      "myClimbs": "My climbs"
     },
     "moderation": {
       "title": "Moderation",
@@ -569,7 +570,6 @@
       "gradeAction": "Set grade range",
       "gradeOpenHint": "Opens the grade picker",
       "gradeCloseHint": "Closes the grade picker",
-      "allClimbs": "All climbs",
       "clearRecentSearches": "Clear recent searches",
       "chips": {
         "filtersWithCount": "Filters · {{count}}",

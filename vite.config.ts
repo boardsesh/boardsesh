@@ -248,6 +248,12 @@ export default defineConfig({
         command: 'tsx packages/backend/src/scripts/auth-reconcile-identities.ts',
         cache: false,
       },
+      // BA-04 web writer fence (docs/better-auth-writer-fence-proof.md). `plan` is the
+      // default and read-only; `verify` is read-only; `apply` needs the plan's SHA-256.
+      'auth:fence': {
+        command: 'tsx packages/backend/src/scripts/auth-fence.ts',
+        cache: false,
+      },
       'test:auth-identities': {
         command: 'vp test run --config packages/backend/vite.auth-identities.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
@@ -790,6 +796,16 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
+      // The token tables in docs/ai-design-guidelines.md, generated from the real
+      // token sources between `velvet-tokens` markers. `check:` is the drift gate.
+      'docs:velvet-tokens': {
+        command: 'node --import tsx scripts/generate-velvet-token-tables.ts',
+        cache: false,
+      },
+      'check:velvet-tokens': {
+        command: 'node --import tsx scripts/generate-velvet-token-tables.ts --check',
+        cache: false,
+      },
       // The public /v1 contract as a committed document, so a contract change is
       // a reviewable JSON diff. `check:` is the drift gate.
       'generate:public-api-openapi': {
@@ -900,9 +916,9 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/web run typecheck',
         dependsOn: ['build:web'],
       },
-      'typecheck:auth-prototype-browser': {
-        command: 'tsc -p packages/web/auth-prototype/tsconfig.json --noEmit',
-        // The proof imports both packages; always verify its explicit TS project.
+      'typecheck:auth-proofs': {
+        command: 'tsc -p packages/web/auth-proofs/tsconfig.json --noEmit',
+        // The proofs import both packages; always verify their explicit TS project.
         cache: false,
       },
       'typecheck:ble-protocol': {
@@ -1127,7 +1143,7 @@ export default defineConfig({
           'build:db',
           'build:backend',
           'typecheck:web',
-          'typecheck:auth-prototype-browser',
+          'typecheck:auth-proofs',
           'typecheck:ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
@@ -1211,6 +1227,13 @@ export default defineConfig({
           'BOARDSESH_MIRROR_PROOF_MODE=on vp test run --config packages/backend/vite.auth-mirror.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
       },
+      // BA-04 identity mirror boot and import preconditions, end to end on a copy
+      // of the fresh canonical proof database (docs/better-auth-identity-import.md).
+      'test:identity-import-proof': {
+        command:
+          'vp test run --config packages/backend/vite.identity-import-proof.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:credential-writer': {
         command:
           'vp test run --config packages/backend/vite.credential-writer-proof.config.ts --maxWorkers=1 --reporter=agent',
@@ -1236,34 +1259,26 @@ export default defineConfig({
           'vp test run --config packages/backend/vite.browser-renewal-proof.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
-      'test:browser-password-credential-writer': {
-        command:
-          'vp test run --config packages/backend/vite.browser-password-proof.config.ts --maxWorkers=1 --reporter=agent',
-        cache: false,
-      },
       'test:auth-authority': {
         command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
       },
-      'test:auth-prototype': {
-        command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
+      // The full-schema case needs AUTH_FENCE_TEST_SCHEMA_FILE and a loopback
+      // AUTH_FENCE_TEST_DATABASE_URL; without them only the unit cases run.
+      'test:auth-fence': {
+        command: 'vp test run --config packages/backend/vite.auth-fence.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
       'test:auth-web-credential-proof': {
         command:
-          'vp test run --config packages/web/auth-prototype/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
-        dependsOn: ['typecheck:auth-prototype-browser'],
-        cache: false,
-      },
-      'test:auth-prototype:browser': {
-        command: 'cd packages/web && vp exec playwright test --config=playwright.auth-prototype.config.ts',
-        dependsOn: ['typecheck:auth-prototype-browser'],
+          'vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-proofs'],
         cache: false,
       },
       'test:auth-browser-proof-cookies': {
         command:
-          'vp test run --config packages/web/auth-prototype/browser-proof-cookies.vite.config.ts --maxWorkers=1 --reporter=agent',
-        dependsOn: ['typecheck:auth-prototype-browser'],
+          'vp test run --config packages/web/auth-proofs/browser-proof-cookies.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-proofs'],
         cache: false,
       },
       // The offline-sync engine suites live in their own Vitest project
@@ -1622,6 +1637,12 @@ export default defineConfig({
       // --- Dev servers ---
       'dev:mobile': {
         command: 'tsx scripts/mobile-dev-start.ts',
+        cache: false,
+      },
+      // A fake WLED controller on this machine, for testing spray-wall LEDs
+      // without hardware. Pass `-- --leds 120 --port 8090` to change the strip.
+      'dev:wled-sim': {
+        command: 'tsx scripts/wled-simulator.ts',
         cache: false,
       },
       'dev:mobile:web': {

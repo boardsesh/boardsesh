@@ -9,6 +9,7 @@ vi.mock('react-native', () => ({
 }));
 
 import { heatRampByScheme, resolveHeatRamp } from '../variant-tokens';
+import { oklch, parseHex } from '../../../lib/color-contrast-oracle';
 
 /** WCAG relative luminance of a `#rrggbb` colour. */
 function relativeLuminance(hex: string): number {
@@ -43,6 +44,14 @@ describe('heatRamp', () => {
     const luminances = heatRampByScheme.light.map(relativeLuminance);
     for (let index = 1; index < luminances.length; index++) {
       expect(luminances[index]).toBeLessThan(luminances[index - 1]);
+    }
+  });
+
+  it('holds every stop on the brand Ultraviolet hue (OKLCH 287), so only lightness carries the order', () => {
+    for (const ramp of [heatRampByScheme.dark, heatRampByScheme.light]) {
+      for (const stop of ramp) {
+        expect(Math.abs(oklch(parseHex(stop)).h - 287), stop).toBeLessThan(1.5);
+      }
     }
   });
 

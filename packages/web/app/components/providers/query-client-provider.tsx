@@ -1,28 +1,22 @@
 'use client';
 
-import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  QueryClient,
-  QueryClientProvider as MemoryQueryClientProvider,
-  type Query,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { hydrate, QueryClient, type Query, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 import { removePreference } from '@/app/lib/user-preferences-db';
-import {
-  readBrowserBackendSessionScope,
-  browserBackendSessionKey,
-} from '@boardsesh/auth-protocol/browser-backend-session';
-import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
-import { publicBrowserConsumersReady } from '@/app/lib/auth/browser-consumer-readiness';
+import { browserSessionGuard, shouldRetryQuery } from '@/app/lib/auth/session-guard';
 
 type QueryClientProviderProps = {
   children: ReactNode;
 };
+
+// The persisted blob is tagged with the account that wrote it
+// (react-query-idb-persister.ts), so the buster stays constant.
+const PERSIST_BUSTER = '';
 
 export default function QueryClientProvider({ children }: QueryClientProviderProps) {
   const [queryClient] = useState(
@@ -32,45 +26,41 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
           queries: {
             staleTime: 60 * 1000,
             refetchOnWindowFocus: false,
+            // A request superseded by an account change is tried once more, not three times.
+            retry: shouldRetryQuery,
           },
         },
       }),
   );
 
-  const [persister] = useState(() => createIdbPersister());
-  // Reads useSession(), so this provider must mount inside SessionProviderWrapper.
-  // See app/layout.tsx for the nesting order.
-  const { data: session, status: sessionStatus } = useSession();
-  const sessionUserId = session?.user?.id ?? null;
-  const browserScope = readBrowserBackendSessionScope(session ?? null);
-  const persistenceScope =
-    browserScope.status === 'selected'
-      ? browserBackendSessionKey(browserScope.owner)
-      : browserBackendClient.isSelected()
-        ? 'selected-anonymous'
-        : '';
-
-  // Legacy loading retains its empty buster. Selected sessions remount this
-  // tree only after their exact central owner is confirmed, so the matching
-  // buster is installed before persisted queries can hydrate the new cache.
-  const persistOptions = useMemo(
-    () => ({
-      persister,
-      maxAge: PERSIST_MAX_AGE_MS,
-      // SessionProvider remounts this private client tree on every selected
-      // owner/cursor change. An older persisted blob cannot hydrate its cache.
-      buster: persistenceScope,
-      dehydrateOptions: {
-        shouldDehydrateQuery: (query: Query) => query.meta?.persist === true && query.state.status === 'success',
+  const [persister] = useState(() =>
+    createIdbPersister({
+      // The checks persistQueryClientRestore makes before it hydrates.
+      restoreLate: (persisted) => {
+        if (!persisted.timestamp || Date.now() - persisted.timestamp > PERSIST_MAX_AGE_MS) return;
+        if (persisted.buster !== PERSIST_BUSTER) return;
+        hydrate(queryClient, persisted.clientState);
       },
     }),
-    [persister, persistenceScope],
   );
+  // A page retiring after another tab's account change wipes before it reloads.
+  useEffect(
+    () => browserSessionGuard().registerCleanup(() => clearViewerState(queryClient, persister)),
+    [queryClient, persister],
+  );
+  // Reads useSession(), so this provider must mount inside SessionProviderWrapper.
+  // See app/layout.tsx for the nesting order.
+  const { data: session } = useSession();
+  const sessionUserId = session?.user?.id ?? null;
 
-  // Once selected consumers are qualified, an unconfirmed initial owner cannot
-  // restore or erase another scope's persisted cache during its session read.
-  if (publicBrowserConsumersReady() && sessionStatus === 'loading')
-    return <MemoryQueryClientProvider client={queryClient}>{children}</MemoryQueryClientProvider>;
+  const [persistOptions] = useState(() => ({
+    persister,
+    maxAge: PERSIST_MAX_AGE_MS,
+    buster: PERSIST_BUSTER,
+    dehydrateOptions: {
+      shouldDehydrateQuery: (query: Query) => query.meta?.persist === true && query.state.status === 'success',
+    },
+  }));
 
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
@@ -80,8 +70,32 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   );
 }
 
+type IdbPersister = ReturnType<typeof createIdbPersister>;
+
+/** Every query, the persisted blob and the build-plans draft belong to one account. */
+function clearViewerState(queryClient: QueryClient, persister: IdbPersister): Promise<unknown> {
+  // Every query may contain viewer-specific authorization, even when it is
+  // not persisted. Cancel before clearing to reject old-account responses.
+  const memory = queryClient.cancelQueries().then(() => {
+    void revokeWebPrivacySnapshots(queryClient);
+    queryClient.clear();
+  });
+  // The persister already swallows IDB errors internally, but log anything
+  // that escapes so a failed wipe is observable instead of silent.
+  // removeClient() is typed as Promisable<void>, so wrap to normalise.
+  const persisted = Promise.resolve(persister.removeClient()).catch((error: unknown) => {
+    console.error('Failed to clear persisted react-query cache on session change:', error);
+  });
+  // The in-progress build-plans draft (a buyer's name and email) lives in
+  // IndexedDB outside the React Query cache, but it is exactly the same kind
+  // of per-user state: it must not survive into the next signed-out visitor
+  // or the next account on this browser. `removePreference` swallows its own
+  // errors.
+  return Promise.all([memory, persisted, removePreference(CNC_CONFIGURATOR_DRAFT_KEY)]);
+}
+
 type SessionCacheBusterProps = {
-  persister: ReturnType<typeof createIdbPersister>;
+  persister: IdbPersister;
   sessionUserId: string | null;
 };
 
@@ -107,24 +121,7 @@ export function SessionCacheBuster({ persister, sessionUserId }: SessionCacheBus
     if (previous === sessionUserId) return;
     if (previous === null) return;
 
-    // Every query may contain viewer-specific authorization, even when it is
-    // not persisted. Cancel before clearing to reject old-account responses.
-    void queryClient.cancelQueries().then(() => {
-      void revokeWebPrivacySnapshots(queryClient);
-      queryClient.clear();
-    });
-    // The persister already swallows IDB errors internally, but log anything
-    // that escapes so a failed sign-out wipe is observable instead of silent.
-    // removeClient() is typed as Promisable<void>, so wrap to normalise.
-    Promise.resolve(persister.removeClient()).catch((error: unknown) => {
-      console.error('Failed to clear persisted react-query cache on session change:', error);
-    });
-    // The in-progress build-plans draft (a buyer's name and email) lives in
-    // IndexedDB outside the React Query cache, but it is exactly the same kind
-    // of per-user state: it must not survive into the next signed-out visitor
-    // or the next account on this browser. `removePreference` swallows its own
-    // errors, so this is fire-and-forget like the persister wipe above.
-    void removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
+    void clearViewerState(queryClient, persister);
   }, [queryClient, persister, sessionUserId]);
 
   return null;

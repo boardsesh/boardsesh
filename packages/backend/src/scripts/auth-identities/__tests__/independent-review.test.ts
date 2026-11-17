@@ -3,22 +3,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vite-plus/test';
 import { eq } from 'drizzle-orm';
-import { authAccount, userCredentials, users } from '@boardsesh/db/schema';
+import { authAccount, authEmailProjection, userCredentials, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../../auth/authority/__tests__/environment';
 import * as syncModule from '../../../auth/authority/sync-identity';
+import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../../auth/current-store/foundation-context';
 import { runReconcileIdentities } from '../../auth-reconcile-identities';
 import { runImportIdentities } from '../../auth-import-identities';
 import { checkpoints, digestKey, keyedDigest } from '../private-state';
 import type postgres from 'postgres';
 import { importIdentityBatch, reconcileIdentities } from '../operations';
 import { operatorConnectionOptions } from '../../auth-fence/operator';
-vi.mock('../../auth-authority', async (importOriginal) => ({
+
+const authority = Object.freeze({ projectionId: 'synthetic-review-projection', epoch: 1 });
+// This simplified schema has no credential LOGIN or web fence; the real
+// preconditions run end to end in identity-import.proof.ts. The per-user
+// manifest check inside the copy still runs against the row inserted below.
+vi.mock('../../../auth/authority/identity-copy-preconditions', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  qualifyIdentityImport: vi.fn(async () => authority),
+}));
+// The activation code gates stay open in this build; the import checks them after its preconditions.
+vi.mock('../../../auth/authority/activation-gates', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   assertAuthorityActivationGates: vi.fn(),
-}));
-vi.mock('../../../auth/authority/mirror-configuration', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  assertIdentityMirrorActivationConfiguration: vi.fn(),
 }));
 let environment: Awaited<ReturnType<typeof createEnvironment>>;
 const folder = realpathSync(mkdtempSync(join(tmpdir(), 'ba04-independent-')));
@@ -29,6 +36,14 @@ writeFileSync(keyFile, 'ab'.repeat(32), { mode: 0o600 });
 mkdirSync(journal, { mode: 0o700 });
 beforeAll(async () => {
   environment = await createEnvironment();
+  await environment.database.insert(authEmailProjection).values({
+    projectionId: authority.projectionId,
+    isCurrent: true,
+    normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+    writerEpoch: authority.epoch,
+    phase: 'enforced',
+    preparedAt: new Date(),
+  });
 });
 afterAll(async () => {
   vi.restoreAllMocks();
@@ -50,8 +65,9 @@ it('rolls back a semantic failure after second-user writes and resumes actual pr
     process.env.AUTH_PROTOTYPE_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',
   );
   url.pathname = `/${environment.client.options.database}`;
-  const settings = { AUTH_OPERATOR_DATABASE_URL: url.toString(), AUTH_IDENTITY_MIRROR: 'on' };
+  const settings = { AUTH_IDENTITY_DATABASE_URL: url.toString(), AUTH_IDENTITY_MIRROR: 'on' };
   const arguments_ = [
+    'import',
     '--confirm-host',
     url.hostname,
     '--key-file',
@@ -73,10 +89,16 @@ it('rolls back a semantic failure after second-user writes and resumes actual pr
   expect(complete).toHaveLength(3);
   expect(complete.find((row) => row.userId === ids[0])?.id).toBe(partial[0].id);
   expect(readdirSync(journal)).toHaveLength(2);
-  const connection = operatorConnectionOptions(settings, url.hostname, true);
+  const connection = operatorConnectionOptions(settings, url.hostname, true, 'identity-writer');
   const binding = keyedDigest(digestKey(keyFile), [connection.host, connection.port, connection.database]);
   expect(checkpoints(journal, binding).lastUserId).toBe(ids[2]);
   expect(await runImportIdentities(arguments_, settings)).toMatchObject({ processed: 0 });
+  // Without the verb nothing is written: the default is the read-only plan.
+  expect(await runImportIdentities(arguments_.slice(1), settings)).toMatchObject({
+    mode: 'plan',
+    status: 'ready',
+    remainingUsers: 0,
+  });
 });
 it('never overwrites a concurrently created checkpoint and keys every digest', () => {
   const privateFolder = join(folder, 'competing-journal');
@@ -130,7 +152,7 @@ it('skips a user deleted between batch selection and its locked source read', as
     await original(...arguments_);
   });
   try {
-    expect(await importIdentityBatch(environment.client, 'synthetic-review-03', 200)).toMatchObject({
+    expect(await importIdentityBatch(environment.client, 'synthetic-review-03', 200, authority)).toMatchObject({
       count: 1,
       lastUserId: userId,
     });
@@ -147,9 +169,14 @@ it('full reconciliation detects new users behind the completed import cursor', a
     process.env.AUTH_PROTOTYPE_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',
   );
   url.pathname = `/${environment.client.options.database}`;
-  const settings = { AUTH_OPERATOR_DATABASE_URL: url.toString(), AUTH_IDENTITY_MIRROR: 'on' };
+  const settings = {
+    AUTH_IDENTITY_DATABASE_URL: url.toString(),
+    AUTH_OPERATOR_DATABASE_URL: url.toString(),
+    AUTH_IDENTITY_MIRROR: 'on',
+  };
   try {
     const importing = [
+      'import',
       '--confirm-host',
       url.hostname,
       '--key-file',

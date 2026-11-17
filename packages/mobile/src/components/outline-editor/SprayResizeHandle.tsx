@@ -501,6 +501,7 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
       <Animated.View pointerEvents="none" style={[styles.pillBox, pillStyle]}>
         <View style={[styles.pill, { backgroundColor: overlays.scrim }]}>
           <Text
+            emphasized
             variant="footnote"
             color={overlays.onScrim}
             numberOfLines={1}
@@ -558,7 +559,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pillLabel: {
-    fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
 });

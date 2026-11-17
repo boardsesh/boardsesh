@@ -64,7 +64,7 @@ const keyExtractor = (row: QaPickRow) => row.branch;
 export function QaPickScreen({ presentation = 'prompt' }: { presentation?: 'prompt' | 'page' }) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { showToast } = useToast();
   const { data: profile } = useProfile();
   const params = useLocalSearchParams<{ prNumbers?: string; origin?: string }>();
@@ -309,7 +309,7 @@ export function QaPickScreen({ presentation = 'prompt' }: { presentation?: 'prom
             accessibilityRole="button"
             accessibilityLabel={t('qa.pick.skip')}
           >
-            <Text variant="subheadline" color={brandColors.primary}>
+            <Text variant="subheadline" color={systemColors.accent}>
               {t('qa.pick.skip')}
             </Text>
           </PressableSurface>
@@ -433,7 +433,7 @@ function TrySurfBlock({ prNumber, busy, onTrySurf, t }: TrySurfBlockProps) {
         {busy ? (
           <ActivityIndicator />
         ) : (
-          <Text variant="subheadline" color={brandColors.primary}>
+          <Text variant="subheadline" color={systemColors.accent}>
             {t('qa.pick.trySurfAction', { prNumber })}
           </Text>
         )}
@@ -512,14 +512,14 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
           </Text>
           {row.risk !== null ? (
             <View style={[styles.riskChip, { backgroundColor: riskColor }]}>
-              <Text variant="caption2" color={brandColors.onPrimary} style={styles.chipLabel}>
+              <Text emphasized variant="caption2" color={brandColors.onPrimary}>
                 {`${row.risk}/5`}
               </Text>
             </View>
           ) : null}
         </View>
 
-        <Text variant="body" numberOfLines={2} style={styles.rowTitle}>
+        <Text emphasized variant="body" numberOfLines={2}>
           {title}
         </Text>
 
@@ -557,7 +557,7 @@ function Chip({ label, tone }: ChipProps) {
   const { systemColors } = useTheme();
   return (
     <View style={[styles.chip, { borderColor: tone ?? systemColors.separator }]}>
-      <Text variant="caption2" color={tone ?? systemColors.secondaryLabel} style={styles.chipLabel}>
+      <Text emphasized variant="caption2" color={tone ?? systemColors.secondaryLabel}>
         {label}
       </Text>
     </View>
@@ -647,9 +647,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
   },
-  rowTitle: {
-    fontWeight: '600',
-  },
   riskChip: {
     paddingHorizontal: spacing[2],
     paddingVertical: 1,
@@ -665,8 +662,5 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     borderRadius: borderRadius.full,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
 });

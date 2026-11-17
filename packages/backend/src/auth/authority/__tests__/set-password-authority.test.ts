@@ -22,6 +22,11 @@ import { syncIdentity } from '../sync-identity';
 import { switchIdentityAuthority, type IdentityAuthorityName } from '../router';
 import * as reverseIdentity from '../reverse-identity';
 import type { IdentityGenerationMutationReceipt } from '../../current-store/security-mutation-core';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
+
 const hashPhase = vi.hoisted(() => ({ afterHash: undefined as (() => Promise<void>) | undefined }));
 vi.mock('bcryptjs', async (original) => {
   const actual = await original<typeof import('bcryptjs')>();

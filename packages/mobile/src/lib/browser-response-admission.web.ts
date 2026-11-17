@@ -1,13 +1,8 @@
-/** The selected request keeps its ORIGINAL lease receipt through every body
- * read. A later same-owner renewal cannot extend an earlier response. Callers
- * still recheck immediately before publishing decoded data after their awaits. */
+/** A response keeps the check it was admitted with through every body read,
+ * clone and stream reader (browser-session-guard.web.ts supplies the session
+ * check). Callers still recheck before publishing decoded data after their awaits. */
 const responses = new WeakMap<Response, () => void>();
 const bodyMethods = new Set<PropertyKey>(['arrayBuffer', 'blob', 'bytes', 'formData', 'json', 'text']);
-
-/** Capture once before a derived value escapes its original response. */
-export function captureBrowserResponseCurrent(response: Response): (() => void) | null {
-  return responses.get(response) ?? null;
-}
 
 export function assertBrowserResponseCurrent(response: Response): void {
   responses.get(response)?.();
@@ -65,7 +60,7 @@ function guardedBody(body: ReadableStream<Uint8Array>, assertCurrent: () => void
         return () => {
           // Existing authenticated consumers use explicit body/reader awaits.
           // A destination with independent queues needs its own owner barrier.
-          throw new Error('Selected response piping requires an explicit owner barrier');
+          throw new Error('Response piping requires an explicit owner barrier');
         };
       return member.bind(target);
     },

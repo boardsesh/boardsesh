@@ -112,7 +112,7 @@ import { claimJoinedBrowseNotice, claimSoloBrowseNotice } from './joined-browse-
 import { previewNeedsAngleReanchor, reanchorPreviewAtAngle } from './preview-angle-anchor';
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { DeferredSections } from './DeferredSections';
-import { PanePlaceholder } from './PanePlaceholder';
+import { EmptyState } from '../EmptyState';
 import { useRoutePlayerHandoff } from './use-route-player-handoff';
 import {
   computeDrawerFirstScreenHeight,
@@ -3184,11 +3184,12 @@ export function PlayCore({
         ) : null}
         {showPanePlaceholder ? (
           (paneEmptyState ?? (
-            <PanePlaceholder
+            <EmptyState
+              size="screen"
+              icon="search"
               title={t('playView.paneEmpty.title')}
-              subtitle={t('playView.paneEmpty.subtitle')}
-              paddingTop={(paneTopInset ? insets.top : 0) + spacing[8]}
-              paddingBottom={insets.bottom}
+              body={t('playView.paneEmpty.subtitle')}
+              style={{ paddingTop: (paneTopInset ? insets.top : 0) + spacing[8], paddingBottom: insets.bottom }}
             />
           ))
         ) : (

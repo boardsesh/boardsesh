@@ -173,7 +173,7 @@ beforeEach(() => {
   toast.showToast.mockClear();
   queue.setCurrentClimb.mockClear();
   router.push.mockClear();
-  reactQuery.invalidateQueries.mockClear();
+  reactQuery.invalidateQueries.mockReset();
   board.isAuthenticated = true;
   board.isDuplicateClimbError.mockReturnValue(false);
   board.saveClimb.mockReset();
@@ -213,6 +213,30 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['mySmartPlaylistCounts'] });
+  });
+
+  it('refreshes created climbs after publishing', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'published-climb', isDraft: false });
+    const { result } = renderScreen();
+    act(() => result.current.setIsDraft(false));
+    await nameAndSave(result);
+
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
+  });
+
+  it('keeps a successful save successful when refreshing created climbs fails', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'published-climb', isDraft: false });
+    reactQuery.invalidateQueries.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
+      queryKey[0] === 'userClimbs' ? Promise.reject(new Error('refresh failed')) : undefined,
+    );
+    const { result } = renderScreen();
+    await nameAndSave(result);
+
+    expect(result.current.saveState).toBe('justSaved');
+    expect(analytics.track).not.toHaveBeenCalledWith('Climb Create Failed', expect.anything());
   });
 
   it("seeds noKickboard/campus from an existing climb's characteristics in edit mode", async () => {
@@ -269,6 +293,9 @@ describe('useCreateClimbScreen analytics', () => {
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
     expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'CREATED_CLIMBS'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['mySmartPlaylistCounts'] });
   });
 
   it('fires "Climb Create Failed" with error_reason "duplicate" on a duplicate rejection', async () => {
@@ -303,5 +330,6 @@ describe('useCreateClimbScreen analytics', () => {
     );
     // The generic-error branch surfaces a fallback toast (duplicate does not).
     expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+    expect(reactQuery.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['userClimbs'] });
   });
 });

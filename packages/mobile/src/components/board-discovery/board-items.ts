@@ -1,8 +1,8 @@
-// Maps the various board shapes (saved UserBoard, popular config) onto the
-// single DiscoveryBoardItem the carousel renders. Keeps the screen free of
-// per-shape branching.
+// Maps saved boards (UserBoard, and the In range rows that carry one) onto the
+// single DiscoveryBoardItem the picker's cards and rows render. Keeps the
+// screen free of per-shape branching.
 
-import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   boardRowSubtitle,
   disambiguateBoardSubtitles,
@@ -11,7 +11,6 @@ import {
   type BoardLabelOptions,
 } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
-import { boardTypeLabel } from './board-builder-labels';
 import { boardIsOwnedBy } from './manage-items';
 import type { BoardDownloadState } from './board-offline-state';
 
@@ -20,9 +19,7 @@ export function userBoardToItem(
   activeUuid?: string | null,
   /**
    * Whether this board's catalog is on the device. Only owned/followed boards
-   * get one — a popular config has no `uuid`, so `rememberOfflineBoards` drops
-   * it (see settings/offline-boards.ts) and it could never appear in the offline
-   * picker even though its data would download.
+   * get one (see settings/offline-boards.ts).
    */
   offlineState?: BoardDownloadState,
   /**
@@ -120,19 +117,53 @@ export function userBoardsToItems(boards: UserBoard[], options: UserBoardItemsOp
   return rendered.map((entry, index) => ({ ...entry.item, subtitle: subtitles[index] }));
 }
 
-export function popularConfigToItem(config: PopularBoardConfig): DiscoveryBoardItem | null {
-  const boardName = toBoardName(config.boardType);
-  if (boardName === null) return null;
-  return {
-    // Configs have no uuid — key on the config tuple.
-    key: `popular:${config.boardType}:${config.layoutId}:${config.sizeId}:${config.setIds.join('-')}`,
-    boardName,
-    layoutId: config.layoutId,
-    sizeId: config.sizeId,
-    setIds: config.setIds.join(','),
-    title: config.displayName,
-    subtitle: config.sizeName ?? config.layoutName ?? boardTypeLabel(config.boardType),
-  };
+/**
+ * `userBoardsToItems` for rows that carry their own key (the In range rows,
+ * keyed by serial or config because a hidden board found by serial has no
+ * uuid, #6552). Each item keeps its row's key; a row the card cannot draw is
+ * left out.
+ */
+export function boardRowsToItems(
+  rows: readonly { key: string; board: UserBoard }[],
+  options: UserBoardItemsOptions = {},
+): DiscoveryBoardItem[] {
+  const drawable = rows.filter((row) => toBoardName(row.board.boardType) !== null);
+  const items = userBoardsToItems(
+    drawable.map((row) => row.board),
+    options,
+  );
+  return items.map((item, index) => ({ ...item, key: drawable[index]?.key ?? item.key }));
+}
+
+/**
+ * The top of the picker's boards (At {gym}'s rows, the hero) as card items.
+ * Each keeps the top's key, the name the top shows and the top's own say on
+ * which is the board you're on. Subtitles are pulled apart across the whole
+ * list as `userBoardsToItems` does; At {gym} passes the `within-gym` scope, so
+ * they lead with what each wall is rather than the gym its title names.
+ */
+export function pickerTopBoardsToItems(
+  boards: readonly { key: string; board: UserBoard; title: string; selected: boolean }[],
+  {
+    climbersBoardKeys,
+    ...options
+  }: Omit<UserBoardItemsOptions, 'activeUuid'> & {
+    /**
+     * The keys of the climber's own and followed boards. The rest of a gym's
+     * roster is someone else's: no ownership, pin or download state, so its
+     * accessibility label never says "Following" and its row draws no menu.
+     */
+    climbersBoardKeys?: ReadonlySet<string>;
+  } = {},
+): DiscoveryBoardItem[] {
+  const topBoardsByKey = new Map(boards.map((topBoard) => [topBoard.key, topBoard]));
+  return boardRowsToItems(boards, options).flatMap((item) => {
+    const topBoard = topBoardsByKey.get(item.key);
+    if (!topBoard) return [];
+    const placed = { ...item, title: topBoard.title, isActive: topBoard.selected };
+    if (climbersBoardKeys === undefined || climbersBoardKeys.has(item.key)) return [placed];
+    return [{ ...placed, isViewerOwner: undefined, isPinned: false, offlineState: undefined }];
+  });
 }
 
 /** A board config (the create/popular tuple), used to find an owned match. */

@@ -1,6 +1,6 @@
 import React, { useMemo, type MutableRefObject } from 'react';
 import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -15,6 +15,7 @@ import { useBoardseshGradesActive } from '../hooks/use-display-grade';
 import { usePersonalGradesActive } from '../hooks/use-personal-grades';
 import { climbStatsKnown, isProjectClimb } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
+import { textFontScale } from '../theme/dynamic-type';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
@@ -506,6 +507,7 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
           name={ASCENT_STATUS_ICON[status]}
           size={CLIMB_ROW_DIRECTION_STATUS.iconSize}
           color={systemColors.secondaryLabel}
+          textVariant="caption2"
         />
         <Text
           variant="caption2"
@@ -736,10 +738,11 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
     if (!communityGrade) return null;
     return (
       <Text
+        tone="secondary"
         variant="footnote"
         numberOfLines={1}
         accessibilityLabel={t('mobile.climbRow.communityGradeAria', { grade: communityGrade })}
-        style={[styles.subtitle, styles.dockedCommunityGrade]}
+        style={[styles.dockedCommunityGrade]}
       >
         {communityGrade}
       </Text>
@@ -759,7 +762,7 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   const nothingKnown = sends === null && rating === null && setter === null && !communityGrade && setAtAngle === null;
   if (showSends && nothingKnown) {
     return (
-      <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
+      <Text tone="secondary" variant="footnote" numberOfLines={1}>
         {t('mobile.climbRow.projectFallback')}
       </Text>
     );
@@ -794,6 +797,7 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
 
   return (
     <Text
+      tone="secondary"
       variant="footnote"
       numberOfLines={1}
       accessibilityLabel={
@@ -801,7 +805,6 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
           ? tokens.map((token) => token.spoken ?? token.drawn).join(' · ')
           : undefined
       }
-      style={styles.subtitle}
     >
       {tokens.map((token) => token.drawn).join(' · ')}
     </Text>
@@ -990,7 +993,10 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
   const { textStyles: rowTextStyles } = useTheme();
   const nameStyle =
     nameLines === 2
-      ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
+      ? [
+          styles.climbName,
+          { minHeight: (rowTextStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale, Platform.OS) * 2 },
+        ]
       : styles.climbName;
   const Thumbnail = leaves.Thumbnail;
   // 88×112 in a two-column Climbs list, 76×96 in every other host.
@@ -1183,12 +1189,12 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
         {subtitlePlace === 'detailLine' ? (
           subtitle
         ) : primarySubtitleOverride ? (
-          <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
+          <Text tone="secondary" variant="footnote" numberOfLines={1}>
             {primarySubtitleOverride}
           </Text>
         ) : null}
         {subtitleDetailText ? (
-          <Text variant="caption1" numberOfLines={1} style={styles.subtitle}>
+          <Text tone="secondary" variant="caption1" numberOfLines={1}>
             {subtitleDetailText}
           </Text>
         ) : null}
@@ -1267,9 +1273,6 @@ const styles = StyleSheet.create({
   // is only where a chip sits in the name row.
   nameRowChip: {
     marginStart: 6,
-  },
-  subtitle: {
-    opacity: 0.6,
   },
   // The community grade at the end of the name line. Like the chips there it
   // never absorbs the row's truncation: the climb name does.

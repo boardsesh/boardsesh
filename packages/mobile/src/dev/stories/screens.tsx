@@ -1,5 +1,5 @@
 import { Component, Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ErrorInfo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Redirect, router, Stack, useIsFocused, useLocalSearchParams, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/Text';
@@ -46,7 +46,9 @@ export function StoryScreen({
     locale?: string;
     renderMode?: string;
     shot?: string;
+    captureOrientation?: string;
   }>();
+  const { width, height } = useWindowDimensions();
   const id = firstParam(params.storyId) ?? firstParam(params.id) ?? defaultStoryId ?? '';
   const shot = firstParam(params.shot) ?? '';
   useStoryAppearance(firstParam(params.theme), firstParam(params.variant));
@@ -54,6 +56,14 @@ export function StoryScreen({
   const entry = loadStory(id);
   if (inTab && entry?.story.tab && entry.story.tab !== tab) return null;
   if (!entry) return <MissingStory id={id} shot={shot} />;
+  const captureOrientation = firstParam(params.captureOrientation);
+  // Navigation confirms the iOS system prompt in portrait. Do not mount content
+  // or collect its asset/layout readiness until the requested capture dimensions.
+  if (
+    captureOrientation &&
+    !((captureOrientation === 'portrait' && height > width) || (captureOrientation === 'landscape' && width > height))
+  )
+    return <View style={styles.fill} />;
   if (entry.story.tab && !inTab) {
     return (
       <Redirect
@@ -65,7 +75,7 @@ export function StoryScreen({
     );
   }
   return (
-    <StoryCaptureBoundary key={`${entry.id}:${shot}`} id={entry.id}>
+    <StoryCaptureBoundary key={`${entry.id}:${shot}:${captureOrientation ?? ''}`} id={entry.id}>
       <ComponentStoryCanvas entry={entry} story={entry.story} shot={shot} inTab={inTab} />
     </StoryCaptureBoundary>
   );

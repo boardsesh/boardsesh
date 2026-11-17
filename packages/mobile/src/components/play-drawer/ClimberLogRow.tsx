@@ -108,7 +108,7 @@ const EarlierButton = memo(function EarlierButton({
   /** Lines the label up with the text column beside a row's avatar. */
   inset?: boolean;
 }) {
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -118,10 +118,10 @@ const EarlierButton = memo(function EarlierButton({
       accessibilityState={{ expanded }}
       style={[styles.earlierButton, inset ? styles.earlierButtonInset : undefined]}
     >
-      <Text variant="footnote" color={brandColors.primary} style={styles.strong}>
+      <Text emphasized variant="footnote" color={systemColors.accent}>
         {label}
       </Text>
-      <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={14} color={brandColors.primary} />
+      <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={14} color={systemColors.accent} />
     </PressableSurface>
   );
 });
@@ -179,14 +179,14 @@ export const ClimberLogRow = memo(function ClimberLogRow({
           {/* One wrapping line, no columns: a long name, a German string or a
               large text size wraps instead of clipping. */}
           <Text variant="subheadline">
-            <Text variant="subheadline" style={styles.strong}>
+            <Text emphasized variant="subheadline">
               {name}
             </Text>
             {SEPARATOR}
             {result}
             {graded ? SEPARATOR : null}
             {graded ? (
-              <Text variant="subheadline" style={styles.strong}>
+              <Text emphasized variant="subheadline">
                 {graded}
               </Text>
             ) : null}
@@ -251,7 +251,7 @@ const BareCell = memo(function BareCell({ group, boardAngle, underTriedHeading, 
     >
       <Avatar uri={group.avatarUrl} name={name} size={BARE_AVATAR_SIZE} />
       <View style={styles.bareText}>
-        <Text variant="subheadline" numberOfLines={1} style={styles.strong}>
+        <Text emphasized variant="subheadline" numberOfLines={1}>
           {name}
         </Text>
         <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
@@ -344,7 +344,7 @@ export const ClimberLogEarlierRow = memo(function ClimberLogEarlierRow({
           {result}
           {graded ? SEPARATOR : null}
           {graded ? (
-            <Text variant="subheadline" style={styles.strong}>
+            <Text emphasized variant="subheadline">
               {graded}
             </Text>
           ) : null}
@@ -400,9 +400,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
-  },
-  strong: {
-    fontWeight: '600',
   },
   earlierButton: {
     minHeight: MIN_TARGET,

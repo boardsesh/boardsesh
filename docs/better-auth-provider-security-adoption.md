@@ -12,6 +12,27 @@ The [accepted migration](./better-auth-migration.md) owns the architecture.
 The [original provider proof](./better-auth-provider-link-proof.md) remains
 historical evidence rather than the mounted callback transaction design.
 
+## The web half is gone
+
+This doc describes the backend core: the private commands, their transaction
+and their receipts. #7596 deleted the www half that was built to call them.
+None of it ran in production, because its readiness gate
+(`publicProviderSecurityReady()`) returned `false`. The deleted pieces are the
+Settings link and unlink UI with its server routes, the Google
+reauthentication web seam, owned-account and anonymous Google/Apple sign-in,
+the sign-in ACK, and last the shared web core in `packages/web/app/lib/auth`:
+the server-only command client, the NextAuth candidate issuer, the sealed flow
+cookie, the actor selection, the Settings resume URL and the readiness gate
+itself. Nothing on www calls `/api/internal/auth/current-store/provider-security/v1`
+any more; Google and Apple sign-in on www run through the legacy NextAuth
+handler.
+
+The backend commands, their handler and the shared `provider-security-v1`
+protocol stay. B5 rebuilds the web layer on the shared-domain session
+([better-auth-browser-session.md](./better-auth-browser-session.md)). Where
+the sections below mention a broker, a publication factory, Settings wiring or
+a per-selection cookie reader on www, that code no longer exists.
+
 ## Actual reauthentication
 
 An operation-bound receipt requires a real comparison with the current selected
@@ -26,6 +47,8 @@ Its deadline is bounded by the signed authentication event plus five minutes,
 provider proof expiry, source credential expiry, browser binding and intent.
 Callback time, token `iat`, transfer/code issue time, refresh, navigation,
 `prompt=login` and `max_age` do not establish freshness.
+
+> **Partly superseded by #7596.** The browser binding/version and the binding deadline in this receipt, and the browser replacement steps in the next section, come from the browser binding design that is being removed. The five-minute reauthentication rule and the backend commands stay. B5 binds the receipt to the new session when it rebuilds the web layer. See [better-auth-browser-session.md](better-auth-browser-session.md).
 
 Google's signed session-age claim requires the applicable app configuration and
 does not make an ordinary OAuth continuation a reauthentication request.
@@ -81,6 +104,8 @@ minutes and the original proof/intent/source deadlines.
 
 ### Ordinary sign-in to an already-owned account
 
+> **Superseded by #7596.** Provider sign-in for an admitted browser selection belongs to the browser binding design. #7596 deleted the web layer that called these commands. The backend commands stay until B5 decides whether Google and Apple sign-in on the new session reuse them; there, a login revokes the session it arrived with. See [better-auth-browser-session.md](better-auth-browser-session.md).
+
 The separate `signin-intent`, `signin-prepare`, `signin-finalize` and
 `signin-abort` private commands handle an admitted browser selecting an existing
 Google/Apple account. Their purpose-separated initial/preparation capabilities
@@ -126,8 +151,9 @@ The source slice has 54 owned-login PostgreSQL/actual-RSA controls, the existing
 125 browser cases and four same-transaction composition cases. Twelve actual
 restricted-LOGIN provider HTTP cases include both authorities/source kinds,
 unknown-subject nonconsumption and post-commit primary-read outage/restored ACK.
-Public ordinary-login publication, broker and Settings integration remain
-separate gates; these backend commands do not enable them.
+These backend commands do not enable public sign-in. The www publication,
+broker and Settings integration that would have called them were deleted by
+#7596 and are rebuilt in B5.
 
 ### Checkpoint qualification
 
@@ -155,9 +181,10 @@ subject before legacy command claim or intent consumption. An earlier read-only
 preflight is rechecked under the authoritative resolve locks. Anonymous sign-in
 remains separate and cannot create an operation-bound fresh-auth receipt.
 
-The request-local NextAuth publication factory, qualified flow broker, current
-per-selection cookie reader, Settings wiring and whole mounted late-failure
-callback proof are separate composition gates. Framework JWT/encode/event,
+#7596 deleted the request-local NextAuth publication factory, the per-selection
+cookie reader and the Settings wiring before any of them was mounted. B5 builds
+the flow broker, its publication and the whole mounted late-failure callback
+proof on the shared-domain session. Framework JWT/encode/event,
 admission, body/redirect rewriting and cookie-capacity work must finish before the
 identity transaction commits. Any future publication may only return the already
 constructed bytes after finalize. Source qualification does not enable production

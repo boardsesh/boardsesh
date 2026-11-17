@@ -7,6 +7,7 @@ import {
   getAuthToken,
   isAuthCredentialGenerationCurrent,
   isTokenExpiringSoon,
+  retireRejectedCredential,
 } from './auth-store';
 import type { UserStorageOwner } from './user-storage-owner';
 
@@ -106,7 +107,12 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
   if (!isAuthCredentialGenerationCurrent(credentialGeneration) || refreshResult.status === 'superseded') {
     return { status: 'superseded' };
   }
-  if (refreshResult.status === 'rejected') return { status: 'anonymous', generation: credentialGeneration };
+  if (refreshResult.status === 'rejected') {
+    // A real logout: the provider clears the cache next. Retire the credential
+    // first so work it started cannot write into the cleared cache.
+    const generation = retireRejectedCredential(credentialGeneration);
+    return generation === null ? { status: 'superseded' } : { status: 'anonymous', generation };
+  }
   if (refreshResult.status === 'unavailable') {
     // `refreshTokens` owns telemetry for this original cause. Carry it to the
     // caller for provenance, but do not report a second generic exception there.

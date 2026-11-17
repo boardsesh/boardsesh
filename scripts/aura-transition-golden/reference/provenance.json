@@ -1,0 +1,8 @@
+{
+  "referenceCommit": "0ed8d77f15db45fd540c341b8ba4c63cdf56d599",
+  "metalSourceSha256": "90e4b24005b7ba81746663d7ddeace8e3d97cffa12e74db64ce99efc4722892e",
+  "glesKotlinSourceSha256": "be62843e37715a41de197cd5168b6519b1fd96296942694f50b1edafa0b93a82",
+  "glesVertexRuntimeSha256": "cfc608c382c0cc3fef0ef64d5492c83ef4e9bb02d978cb17cf9028d7ccb322df",
+  "glesFragmentRuntimeSha256": "c459792ab1f0d2a023feaf98a736adc6054f9cd20e7c11d5ce2379ee9ca93d85",
+  "method": "Metal source copied byte-for-byte before tile changes. GLES strings evaluated by the actual Kotlin compiler from the frozen pre-tile OverlayShader object; only its enclosing object name changed in the temporary exporter. These text fixtures preserve the full-scan reference independently of the current shader."
+}

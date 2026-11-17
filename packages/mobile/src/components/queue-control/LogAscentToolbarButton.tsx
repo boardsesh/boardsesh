@@ -41,7 +41,7 @@ export function LogAscentToolbarButton({
   placement,
   appearance = 'plain',
 }: LogAscentToolbarButtonProps) {
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { accessibilityLabel, disabled, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(
     climb,
     placement,
@@ -62,7 +62,7 @@ export function LogAscentToolbarButton({
         style={[styles.action, { width: size, height: size }, disabled ? styles.disabled : null]}
       >
         {appearance === 'hero' ? (
-          <Icon maxFontSizeMultiplier={1} name="checkmark.circle.fill" size={iconSize} color={brandColors.primary} />
+          <Icon maxFontSizeMultiplier={1} name="checkmark.circle.fill" size={iconSize} color={systemColors.accent} />
         ) : (
           <Icon maxFontSizeMultiplier={1} name="check.small" size={iconSize} color={iconColor} />
         )}

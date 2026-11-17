@@ -219,7 +219,7 @@ beforeEach(() => {
 });
 
 describe('Climb list angle, history and options', () => {
-  it('leads with the one-tap angle, then labelled history, then the two-row native menu', () => {
+  it('leads with the one-tap angle, then labelled history, then the native menu', () => {
     const openHistory = vi.fn();
     const { getByRole, container } = render(<ClimbListBoardActions onOpenHistory={openHistory} badge showcaseAnchor />);
     const angle = getByRole('button', { name: 'Board angle, 35°' });
@@ -239,15 +239,25 @@ describe('Climb list angle, history and options', () => {
     );
     expect(state.menu).toMatchObject({ iconName: 'more', iconAppearance: 'plain', anchorSize: 38 });
     expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
     expect(state.menu?.actions[0].dividerBefore).toBeUndefined();
-    expect(state.menu?.actions[1].dividerBefore).toBe(true);
+    expect(state.menu?.actions[2].dividerBefore).toBe(true);
     expect(state.iconSizes.history).toBe(20);
     fireEvent.click(history);
     expect(openHistory).toHaveBeenCalledOnce();
     expect(state.haptic).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('opens the My climbs generated playlist (material=%s)', (material) => {
+    const { getByRole } = render(<ClimbListBoardActions material={material} onOpenHistory={vi.fn()} />);
+    fireEvent.click(getByRole('button', { name: 'mobile.listOptions.myClimbs' }));
+    expect(state.push).toHaveBeenCalledExactlyOnceWith(
+      { pathname: '/(tabs)/discover/smart/[type]', params: { type: 'CREATED_CLIMBS', source: 'other' } },
+      { withAnchor: true },
+    );
   });
 
   it('shows the angle in the Large Content Viewer under its spoken label, and opens the picker from there', () => {
@@ -269,7 +279,7 @@ describe('Climb list angle, history and options', () => {
       const { getByRole, queryByRole, queryByText } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
       expect(queryByRole('button', { name: /Board angle/ })).toBeNull();
       expect(queryByText('35°')).toBeNull();
-      expect(state.menu?.actions).toHaveLength(2);
+      expect(state.menu?.actions).toHaveLength(3);
       fireEvent.click(getByRole('button', { name: 'mobile.listOptions.viewOptions' }));
       fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.switchBoard' }));
       expect(state.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
@@ -280,6 +290,7 @@ describe('Climb list angle, history and options', () => {
     for (const material of [false, true]) {
       const { unmount } = render(<ClimbListBoardActions material={material} onOpenHistory={vi.fn()} />);
       expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+        'mobile.listOptions.myClimbs',
         'mobile.listOptions.viewOptions',
         'mobile.boardPresence.switchBoard',
       ]);
@@ -292,11 +303,12 @@ describe('Climb list angle, history and options', () => {
     state.isTablet = true;
     render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
     expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
     // Switch board still opens its own group.
-    expect(state.menu?.actions[1].dividerBefore).toBe(true);
+    expect(state.menu?.actions[2].dividerBefore).toBe(true);
   });
 
   it('keeps Wall display between View options and Switch board on a tablet with no native MiniPlayer', () => {
@@ -305,6 +317,7 @@ describe('Climb list angle, history and options', () => {
     state.nativeAccessory = false;
     const { getByRole } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
     expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.wallDisplay.open',
       'mobile.boardPresence.switchBoard',
@@ -375,6 +388,7 @@ describe('Climb list angle, history and options', () => {
     expect(queryByRole('button', { name: /Board angle/ })).toBeNull();
     expect(state.menu?.actions.map(({ label }) => label)).toEqual([
       'Create a climb',
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
@@ -407,6 +421,7 @@ describe('Climb list angle, history and options', () => {
     );
     expect(state.menu?.actions.map(({ label }) => label)).toEqual([
       'Create a climb',
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);

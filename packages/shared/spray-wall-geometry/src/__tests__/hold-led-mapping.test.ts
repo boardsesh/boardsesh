@@ -185,6 +185,36 @@ describe('hold, hole and physical LED mapping', () => {
     expect(buildSprayLedMapping(configured, frame, []).holes[0].ledIds).toEqual([]);
   });
 
+  it('never lights a hole from a complementary slot above it, even with none below', () => {
+    for (const firstRowOffset of [false, true]) {
+      const configured = layout({
+        pattern: 'offset',
+        rows: 5,
+        columns: 5,
+        firstRowOffset,
+        ledPlacement: 'alternating',
+      });
+      configured.holes = generateTnutGrid({ ...configured, pattern: 'offset' });
+      configured.ledPositions = generateLedPositions(configured);
+      const byId = new Map(configured.ledPositions.map((led) => [led.id, led]));
+      const mapping = buildSprayLedMapping(configured, frame, []);
+      for (const hole of mapping.holes) {
+        for (const id of hole.ledIds) {
+          expect(byId.get(id)!.y).toBeGreaterThanOrEqual(configured.holes[hole.holeIndex].y - 1e-6);
+        }
+      }
+      // The bottom row has no slot under it, so it stays unlit rather than borrowing the one above.
+      const bottom = Math.max(...configured.holes.map((hole) => hole.y));
+      const below = configured.ledPositions.some((led) => led.y > bottom + 1e-6);
+      if (!below) {
+        for (const hole of mapping.holes) {
+          if (Math.abs(configured.holes[hole.holeIndex].y - bottom) > 1e-6) continue;
+          expect(hole.ledIds.every((id) => byId.get(id)!.y >= bottom - 1e-6)).toBe(true);
+        }
+      }
+    }
+  });
+
   it('retains a manual complementary slot association after it is moved and saved', () => {
     const configured = layout({ pattern: 'offset', columns: 5, ledPlacement: 'alternating' });
     configured.holes = generateTnutGrid({ ...configured, pattern: 'offset' });

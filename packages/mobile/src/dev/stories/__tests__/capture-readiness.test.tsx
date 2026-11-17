@@ -9,6 +9,9 @@ const fixture = vi.hoisted(() => ({
   shot: 'first',
   focused: true,
   rendererReady: true,
+  captureOrientation: undefined as string | undefined,
+  width: 400,
+  height: 800,
 }));
 vi.mock('../../fixtures/board-render-style', () => ({ useStoryRendererReady: () => fixture.rendererReady }));
 vi.mock('../registry', () => ({
@@ -17,6 +20,7 @@ vi.mock('../registry', () => ({
   storyModuleIds: () => [],
 }));
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ width: fixture.width, height: fixture.height }),
   Platform: { OS: 'android' },
   View: ({ children, onLayout }: { children: ReactNode; onLayout?: () => void }) => (
     <div data-testid={onLayout ? 'canvas' : undefined} onClick={onLayout}>
@@ -28,7 +32,11 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({ id: 'sample--loaded', shot: fixture.shot }),
+  useLocalSearchParams: () => ({
+    id: 'sample--loaded',
+    shot: fixture.shot,
+    captureOrientation: fixture.captureOrientation,
+  }),
   useFocusEffect: () => undefined,
   useIsFocused: () => fixture.focused,
   Redirect: () => <div data-testid="redirect" />,
@@ -66,6 +74,9 @@ beforeEach(() => {
   fixture.shot = 'first';
   fixture.focused = true;
   fixture.rendererReady = true;
+  fixture.captureOrientation = undefined;
+  fixture.width = 400;
+  fixture.height = 800;
   vi.useFakeTimers();
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => setTimeout(callback, 0));
   vi.stubGlobal('cancelAnimationFrame', (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer));
@@ -86,6 +97,44 @@ function flushPaints() {
 }
 
 describe('story capture readiness', () => {
+  it('mounts no content until final orientation, then requires assets and layout', () => {
+    installStory('explicit');
+    fixture.captureOrientation = 'landscape';
+    const renderContent = vi.spyOn(fixture.story!.story, 'render');
+    const screen = render(<StoryScreen />);
+    flushPaints();
+    expect(renderContent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('canvas')).toBeNull();
+    fixture.width = 800;
+    fixture.height = 400;
+    screen.rerender(<StoryScreen />);
+    fireEvent.click(screen.getByTestId('canvas'));
+    flushPaints();
+    expect(console.log).not.toHaveBeenCalled();
+    act(() => controls.onReady());
+    flushPaints();
+    expect(console.log).toHaveBeenCalledExactlyOnceWith('[stories] ready sample--loaded');
+  });
+
+  it('discards old readiness when orientation no longer matches and content remounts', () => {
+    installStory('explicit');
+    fixture.captureOrientation = 'portrait';
+    const screen = render(<StoryScreen />);
+    const oldControls = controls;
+    fixture.width = 800;
+    fixture.height = 400;
+    screen.rerender(<StoryScreen />);
+    act(() => oldControls.onReady());
+    fixture.width = 400;
+    fixture.height = 800;
+    screen.rerender(<StoryScreen />);
+    fireEvent.click(screen.getByTestId('canvas'));
+    flushPaints();
+    expect(console.log).not.toHaveBeenCalled();
+    act(() => controls.onReady());
+    flushPaints();
+    expect(console.log).toHaveBeenCalledExactlyOnceWith('[stories] ready sample--loaded');
+  });
   it('waits for the requested renderer even after content and layout are ready', () => {
     installStory('explicit');
     fixture.rendererReady = false;

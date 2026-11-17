@@ -164,7 +164,7 @@ direct UPDATE both reject with permission errors after the transfer.
 These fixture roles are `NOLOGIN` roles selected through `SET ROLE` on owned
 administrator connections. The tests prove the selected role's SQL permissions;
 they do not provision independent application logins or prevent an administrator
-from resetting its role. The separate prototype includes an application-login
+from resetting its role. The deleted BA-01 prototype (#7620) had an application-login
 role experiment; neither test establishes deployed production grants.
 
 The test writer can SELECT/INSERT events but cannot UPDATE, DELETE or TRUNCATE

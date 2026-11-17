@@ -127,6 +127,10 @@ vi.mock('../../lib/auth-session', async (importOriginal) => {
 
 beforeEach(() => {
   platformState.OS = 'ios';
+  pageRetirementState.retired = false;
+  pageRetirementState.isRetired.mockReset();
+  pageRetirementState.isRetired.mockImplementation(() => pageRetirementState.retired);
+  pageRetirementState.reload.mockReset();
   routerState.segments = [];
   appStateState.listener = null;
   redirectMock.mockReset();
@@ -186,6 +190,10 @@ vi.mock('../../lib/auth-store', () => ({
   getAuthToken: () => getAuthTokenMock(),
   isAuthCredentialGenerationCurrent: (...args: unknown[]) => isAuthCredentialGenerationCurrentMock(...args),
   isTokenExpiringSoon: () => isTokenExpiringSoonMock(),
+  // A rejected refresh retires its credential before sign-out cleans up. The
+  // generation itself is this file's mock, so the retired one stays current.
+  retireRejectedCredential: (generation: number) =>
+    isAuthCredentialGenerationCurrentMock(generation) ? generation : null,
 }));
 
 // checkAuth reports keychain read failures; record the calls so the
@@ -291,6 +299,19 @@ vi.mock('../../lib/user-storage-owner', () => ({
   setCurrentUserStorageOwner: (owner: { userId: string; authSessionId: string } | null) => {
     userStorageOwnerState.set(owner);
   },
+}));
+
+// The browser page latch (#7596). The real web store retires a page when its
+// confirmed login changes or signs out; tests that model that set `retired`.
+// Native never consults it, which the parity block below asserts.
+const pageRetirementState = vi.hoisted(() => ({
+  retired: false,
+  isRetired: vi.fn(),
+  reload: vi.fn(),
+}));
+vi.mock('../../lib/browser-page-retirement', () => ({
+  isBrowserPageRetired: () => pageRetirementState.isRetired(),
+  reloadRetiredBrowserPage: () => pageRetirementState.reload(),
 }));
 
 vi.mock('../../lib/auth-transport-revision', () => ({
@@ -823,7 +844,7 @@ describe('AuthProvider.signOut', () => {
     expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
   });
 
-  it('keeps a newer cross-tab login after the old owner sign-out is superseded in flight', async () => {
+  it('reloads instead of adopting a cross-tab login that lands while the old sign-out is in flight', async () => {
     platformState.OS = 'web';
     let currentGeneration = 1;
     captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
@@ -849,16 +870,18 @@ describe('AuthProvider.signOut', () => {
     currentGeneration = 2;
     webSessionIdentityState.userId = 'user-2';
     webSessionIdentityState.authSessionId = 'login-2';
+    pageRetirementState.retired = true;
     getAuthTokenMock.mockResolvedValue('new-owner-jwt');
     act(() => authTokenEventsState.listener?.(null, 'remote'));
-    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' }));
-    queryClient.setQueryData(['userPlaylists'], [{ id: 'new-owner-playlist' }]);
+    await waitFor(() => expect(pageRetirementState.reload).toHaveBeenCalledOnce());
 
     finishOldSignOut(false);
     await act(async () => pendingSignOut);
 
-    expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
-    expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });
+    // A's cleanup ran, then the page reloads; B is never published in it.
+    expect(clearStoredSessionIdMock).toHaveBeenCalledWith({ userId: 'user-1', authSessionId: 'login-1' });
+    expect(userStorageOwnerState.set).not.toHaveBeenCalledWith({ userId: 'user-2', authSessionId: 'login-2' });
+    expect(pageRetirementState.reload).toHaveBeenCalledOnce();
   });
 
   it('keeps a newer native login when the old owner credential clear finishes successfully', async () => {
@@ -2499,7 +2522,7 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(userStorageOwnerState.current).toEqual({ userId: 'user-1', authSessionId: 'login-1' });
   });
 
-  it('restarts session subscriptions after a same-user credential login rotates the login scope', async () => {
+  it('cleans the old login and reloads after a same-user credential login rotates the login scope', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>
@@ -2513,6 +2536,8 @@ describe('AuthProvider forced sign-out registration', () => {
 
     authSignInWithCredentialsMock.mockImplementation(async () => {
       webSessionIdentityState.authSessionId = 'login-2';
+      // The page's login changed: the real store retires it.
+      pageRetirementState.retired = true;
       authTokenEventsState.listener?.(null, 'local');
       return { success: true };
     });
@@ -2524,11 +2549,12 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(clearStoredSessionIdMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
-    expect(userStorageOwnerState.current).toEqual({ userId: 'user-1', authSessionId: 'login-2' });
-    expect(bumpAuthTransportRevisionMock).toHaveBeenCalledOnce();
+    expect(pageRetirementState.reload).toHaveBeenCalledOnce();
+    expect(userStorageOwnerState.set).not.toHaveBeenCalledWith({ userId: 'user-1', authSessionId: 'login-2' });
+    expect(bumpAuthTransportRevisionMock).not.toHaveBeenCalled();
   });
 
-  it('clears old-user state before adopting a different authenticated identity', async () => {
+  it('clears old-user state, then reloads instead of adopting a different authenticated identity', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData(['userPlaylists'], [{ id: 'user-1-playlist' }]);
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -2548,12 +2574,14 @@ describe('AuthProvider forced sign-out registration', () => {
     );
     webSessionIdentityState.userId = 'user-2';
     webSessionIdentityState.authSessionId = 'login-2';
+    pageRetirementState.retired = true;
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
     // B must remain unpublished while A's shared dismissal clear is pending.
     expect(userStorageOwnerState.current).toBeNull();
     expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(1);
+    expect(pageRetirementState.reload).not.toHaveBeenCalled();
     await act(async () => {
       finishDismissalClear();
     });
@@ -2562,9 +2590,11 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
     expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledOnce();
-    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' }));
+    // Only after A's cleanup: the page reloads from the root and B never mounts here.
+    await waitFor(() => expect(pageRetirementState.reload).toHaveBeenCalledOnce());
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
-    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(2);
+    expect(userStorageOwnerState.current).toBeNull();
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(1);
   });
 
   it('hides and cleans A when B is confirmed but the backend token bridge is unavailable', async () => {
@@ -2579,6 +2609,7 @@ describe('AuthProvider forced sign-out registration', () => {
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
 
     webSessionIdentityState.unavailableIdentity = { userId: 'user-2', authSessionId: 'login-2' };
+    pageRetirementState.retired = true;
     act(() => authTokenEventsState.listener?.(null, 'session'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
@@ -2586,6 +2617,7 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     expect(userStorageOwnerState.current).toBeNull();
+    await waitFor(() => expect(pageRetirementState.reload).toHaveBeenCalledOnce());
   });
 
   it('cleans user state only after remote revalidation confirms logout', async () => {
@@ -2622,6 +2654,8 @@ describe('AuthProvider forced sign-out registration', () => {
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
     const authReadsBeforeSignal = getAuthTokenMock.mock.calls.length;
 
+    // Another tab confirmed this login's sign-out: the real store retires the page.
+    pageRetirementState.retired = true;
     act(() => authTokenEventsState.listener?.(null, 'remote-signout'));
 
     expect(resetHttpClientMock).toHaveBeenCalled();
@@ -2630,6 +2664,7 @@ describe('AuthProvider forced sign-out registration', () => {
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
     expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeSignal);
     await waitFor(() => expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined());
+    await waitFor(() => expect(pageRetirementState.reload).toHaveBeenCalledOnce());
     expect(authSignOutMock).not.toHaveBeenCalled();
   });
 
@@ -3468,4 +3503,121 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
       setSetting('startupScreen', 'climbs');
     }
   });
+});
+
+describe('AuthProvider browser page retirement (#7596)', () => {
+  beforeEach(() => {
+    getAuthTokenMock.mockReset();
+    isTokenExpiringSoonMock.mockReset();
+    authSignOutMock.mockReset();
+    clearStoredSessionIdMock.mockReset();
+    clearStoredSessionIdMock.mockResolvedValue(undefined);
+    authSignInWithCredentialsMock.mockReset();
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+  });
+
+  function renderProvider() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'old-owner-playlist' }]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    return { queryClient, ...renderHook(() => useAuth(), { wrapper }) };
+  }
+
+  it('reloads a web page after its own confirmed sign-out has cleaned up', async () => {
+    platformState.OS = 'web';
+    const { result, queryClient } = renderProvider();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    authSignOutMock.mockImplementation(async () => {
+      // auth.web retires the page once www confirms the cookie is gone.
+      pageRetirementState.retired = true;
+      return true;
+    });
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearStoredSessionIdMock).toHaveBeenCalledWith({ userId: 'user-1', authSessionId: 'login-1' });
+    expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
+    expect(pageRetirementState.reload).toHaveBeenCalledOnce();
+  });
+
+  async function signInOnLoginScreen(retiredBeforeSignIn: boolean) {
+    platformState.OS = 'web';
+    // On the login route the signed-out provider still renders its children.
+    routerState.segments = ['auth', 'login'];
+    getAuthTokenMock.mockResolvedValue(null);
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current).not.toBeNull());
+    const signIn = result.current.signInWithCredentials;
+    pageRetirementState.retired = retiredBeforeSignIn;
+    getAuthTokenMock.mockResolvedValue('login-jwt');
+    authSignInWithCredentialsMock.mockResolvedValue({ success: true });
+    await act(async () => {
+      await signIn('climber@example.com', 'password');
+    });
+  }
+
+  it('never mounts a second login in a web page that went signed out without reloading', async () => {
+    await signInOnLoginScreen(true);
+
+    expect(pageRetirementState.reload).toHaveBeenCalledOnce();
+    expect(userStorageOwnerState.set).not.toHaveBeenCalledWith({ userId: 'user-1', authSessionId: 'login-1' });
+  });
+
+  it('signs in on a web page that never had an account without reloading', async () => {
+    await signInOnLoginScreen(false);
+
+    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-1', authSessionId: 'login-1' }));
+    expect(pageRetirementState.reload).not.toHaveBeenCalled();
+  });
+
+  it.each(['ios', 'android'] as const)(
+    'leaves an %s sign-out exactly as before: no latch read, no reload',
+    async (os) => {
+      platformState.OS = os;
+      // Even a latch that says "retired" cannot reach the native path.
+      pageRetirementState.retired = true;
+      const { result, queryClient } = renderProvider();
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      authSignOutMock.mockResolvedValue(true);
+
+      await act(async () => {
+        await result.current.signOut();
+      });
+
+      expect(authSignOutMock).toHaveBeenCalledOnce();
+      expect(clearStoredSessionIdMock).toHaveBeenCalledOnce();
+      expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
+      expect(pageRetirementState.isRetired).not.toHaveBeenCalled();
+      expect(pageRetirementState.reload).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['ios', 'android'] as const)(
+    'leaves an %s forced sign-out exactly as before: no latch read, no reload',
+    async (os) => {
+      platformState.OS = os;
+      pageRetirementState.retired = true;
+      const { result, queryClient } = renderProvider();
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+      getAuthTokenMock.mockResolvedValue(null);
+
+      await act(async () => {
+        forceSignOut?.();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+      await waitFor(() => expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined());
+      expect(pageRetirementState.isRetired).not.toHaveBeenCalled();
+      expect(pageRetirementState.reload).not.toHaveBeenCalled();
+    },
+  );
 });

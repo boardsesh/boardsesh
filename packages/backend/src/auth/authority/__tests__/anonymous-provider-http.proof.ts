@@ -28,6 +28,10 @@ import { providerSecurityConfiguration } from '../provider-security-configuratio
 import { createUnpublishedBrowserBinding } from '../browser-binding';
 import { providerTokenHash } from '../provider-security-context';
 import { handleAnonymousProvider } from '../../../handlers/anonymous-provider';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 vi.mock('../../../db/client', () => ({
   db: new Proxy(

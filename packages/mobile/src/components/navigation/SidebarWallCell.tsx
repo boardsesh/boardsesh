@@ -77,7 +77,7 @@ function SidebarWallCellComponent() {
         <Icon name="lightbulb" size={24} color={systemColors.tertiaryLabel} />
       )}
       {grade ? (
-        <Text variant="caption2" color={brandColors.live} numberOfLines={1} style={styles.grade}>
+        <Text emphasized variant="caption2" color={brandColors.live} numberOfLines={1}>
           {grade}
         </Text>
       ) : null}
@@ -106,5 +106,4 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     borderWidth: 2,
   },
-  grade: { fontWeight: '600' },
 });

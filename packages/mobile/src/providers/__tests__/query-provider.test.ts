@@ -1,26 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// These unit hosts exercise query policy and lifecycle, without REST reads.
-vi.mock('../../lib/rest-operation', () => {
-  const rejectUnusedRestRead = () => {
-    throw new Error('Unexpected REST read in query-provider unit fixture');
-  };
-  return {
-    captureRestReadView: rejectUnusedRestRead,
-    createRestOperation: rejectUnusedRestRead,
-    useRestView: rejectUnusedRestRead,
-  };
-});
-vi.mock('../../lib/aurora-credentials', () => {
-  const rejectUnusedCredentialRead = () => {
-    throw new Error('Unexpected credential read in query-provider unit fixture');
-  };
-  return {
-    getAuroraCredentialsWithReceipt: rejectUnusedCredentialRead,
-    getAuroraUnsyncedCountsWithReceipt: rejectUnusedCredentialRead,
-  };
-});
-
 // query-provider now wires React Query to RN connectivity/lifecycle, so it
 // imports `react-native` (AppState/Platform). The real entry is Flow source
 // Rolldown can't parse — stub the two members it touches. NetInfo is aliased to

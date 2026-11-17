@@ -111,10 +111,9 @@ type InspectedResponse = {
  * body validation and the existing interactive/offline request deadlines. */
 export function createGraphQLRequestGate(options: {
   readonly fetch: typeof fetch;
-  readonly composeSignal?: (caller: AbortSignal | null | undefined, deadline: AbortSignal) => AbortSignal;
   readonly ignoreFailure?: (error: unknown) => boolean;
 }) {
-  const { fetch: performFetch, composeSignal, ignoreFailure } = options;
+  const { fetch: performFetch, ignoreFailure } = options;
   async function fetchAndInspect(url: string | URL | Request, options: RequestInit): Promise<InspectedResponse> {
     const headers = new Headers(options.headers);
     headers.set(CLIENT_PLATFORM_HEADER, CLIENT_PLATFORM);
@@ -145,7 +144,6 @@ export function createGraphQLRequestGate(options: {
     if (timeoutMs === null) return fetchAndInspect(url, options);
 
     const requestController = new AbortController();
-    const requestSignal = composeSignal?.(callerSignal, requestController.signal) ?? requestController.signal;
     let rejectCancellation: (reason: unknown) => void = () => undefined;
     const cancellation = new Promise<never>((_resolve, reject) => {
       rejectCancellation = reject;
@@ -165,7 +163,7 @@ export function createGraphQLRequestGate(options: {
     }, timeoutMs);
 
     try {
-      return await Promise.race([fetchAndInspect(url, { ...options, signal: requestSignal }), cancellation]);
+      return await Promise.race([fetchAndInspect(url, { ...options, signal: requestController.signal }), cancellation]);
     } finally {
       clearTimeout(timeout);
       callerSignal?.removeEventListener('abort', abortFromCaller);

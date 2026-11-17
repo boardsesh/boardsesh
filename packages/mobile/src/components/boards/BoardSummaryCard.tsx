@@ -1,22 +1,18 @@
-import { memo, useMemo, type ReactNode } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { Card } from '../Card';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
-import { BoardImageNative } from '../BoardImageNative';
+import { ArtRow } from '../ArtRow';
+import { InsetGroupedList, insetGroupedRowStyles } from '../InsetGroupedList';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
-import { getBoardRenderData } from '../../lib/board-details';
-import { parseSetIds } from '../../lib/board-presence/parse-set-ids';
-import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
-import { borderRadius, spacing } from '../../theme/tokens';
-
-const BOARD_THUMB_WIDTH = 44;
-const BOARD_THUMB_HEIGHT = 56;
+import { spacing } from '../../theme/tokens';
+import { BoardThumbnail } from './BoardThumbnail';
 
 /** The board fields shown at a glance — a structural subset of the active board. */
 type BoardSummary = {
@@ -45,7 +41,10 @@ type BoardSummaryCardProps = {
  * row and long board names can wrap without shrinking either touch target.
  */
 export function BoardSummaryCard(props: BoardSummaryCardProps) {
-  return <BoardSummaryCardView {...props} thumbnail={props.board ? <BoardThumbnail board={props.board} /> : null} />;
+  const { board } = props;
+  // One element per board, so the Browse row's memo holds across re-renders.
+  const thumbnail = useMemo(() => (board ? <BoardThumbnail board={board} size="regular" /> : null), [board]);
+  return <BoardSummaryCardView {...props} thumbnail={thumbnail} />;
 }
 export function BoardSummaryCardView({
   thumbnail,
@@ -60,6 +59,14 @@ export function BoardSummaryCardView({
   const { t: tCommon } = useTranslation('common');
   const { t: tClimbs } = useTranslation('climbs');
   const { systemColors } = useTheme();
+  const browseClimbs = useCallback(() => {
+    hapticLight();
+    onBrowseClimbs();
+  }, [onBrowseClimbs]);
+  const changeBoard = useCallback(() => {
+    hapticLight();
+    onChangeBoard();
+  }, [onChangeBoard]);
 
   const summary = board
     ? [
@@ -72,53 +79,35 @@ export function BoardSummaryCardView({
     : null;
 
   if (board) {
+    const browseTitle = t('mobile.session.browseClimbs');
     return (
-      <Card style={styles.groupedCard}>
-        <View style={styles.groupedRows}>
-          <PressableSurface
-            onPress={() => {
-              hapticLight();
-              onBrowseClimbs();
-            }}
-            feedback="opacity"
-            rippleColor={systemColors.label as string}
-            accessibilityRole="button"
-            accessibilityLabel={[t('mobile.session.browseClimbs'), summary].filter(Boolean).join(', ')}
-            style={styles.navigationRow}
-          >
-            <View style={styles.iconColumn}>{thumbnail}</View>
-            <View style={styles.textColumn}>
-              <Text variant="headline" color={systemColors.label}>
-                {t('mobile.session.browseClimbs')}
-              </Text>
-              <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                {summary}
-              </Text>
-            </View>
-            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-          </PressableSurface>
-          <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
-          <PressableSurface
-            onPress={() => {
-              hapticLight();
-              onChangeBoard();
-            }}
-            feedback="opacity"
-            rippleColor={systemColors.label as string}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.session.changeBoard')}
-            style={styles.navigationRow}
-          >
-            <View style={styles.iconColumn}>
-              <Icon name="transfer" size={20} color={systemColors.secondaryLabel} />
-            </View>
-            <Text variant="body" color={systemColors.label} style={styles.actionLabel}>
-              {t('mobile.session.changeBoard')}
-            </Text>
-            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-          </PressableSurface>
-        </View>
-      </Card>
+      <InsetGroupedList>
+        <ArtRow
+          art={thumbnail}
+          artSize="regular"
+          title={browseTitle}
+          subtitle={summary ?? undefined}
+          accessory="chevron"
+          onPress={browseClimbs}
+          accessibilityLabel={[browseTitle, summary].filter(Boolean).join(', ')}
+        />
+        <PressableSurface
+          onPress={changeBoard}
+          feedback="opacity"
+          rippleColor={systemColors.label as string}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.session.changeBoard')}
+          style={insetGroupedRowStyles.row}
+        >
+          <View style={insetGroupedRowStyles.leading}>
+            <Icon name="transfer" size={20} color={systemColors.secondaryLabel} />
+          </View>
+          <Text variant="body" color={systemColors.label} style={insetGroupedRowStyles.text}>
+            {t('mobile.session.changeBoard')}
+          </Text>
+          <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+        </PressableSurface>
+      </InsetGroupedList>
     );
   }
 
@@ -155,90 +144,7 @@ export function BoardSummaryCardView({
   );
 }
 
-const BoardThumbnail = memo(function BoardThumbnail({ board }: { board: BoardSummary }) {
-  const { systemColors } = useTheme();
-  const { boardType, layoutId, sizeId, setIds } = board;
-  const boardName = toBoardName(boardType);
-  // Spray walls can arrive or reset after the saved board has been restored.
-  const sprayToken = useSprayWallToken(boardName, layoutId);
-  const renderData = useMemo(() => {
-    if (!boardName) return null;
-    const setIdValues = parseSetIds(setIds);
-    if (setIdValues.length === 0) return null;
-    return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
-  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
-  const thumbFit = useMemo(() => {
-    if (!renderData) return null;
-    const scale = Math.min(BOARD_THUMB_WIDTH / renderData.boardWidth, BOARD_THUMB_HEIGHT / renderData.boardHeight);
-    return { width: renderData.boardWidth * scale, height: renderData.boardHeight * scale };
-  }, [renderData]);
-
-  return (
-    <View
-      pointerEvents="none"
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={[
-        styles.thumbnail,
-        { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator },
-      ]}
-    >
-      {renderData && boardName && thumbFit ? (
-        <BoardImageNative
-          frames=""
-          boardName={boardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          boardWidth={renderData.boardWidth}
-          boardHeight={renderData.boardHeight}
-          // Share the bundled thumbnail and native raster cache with board discovery.
-          renderWidth={400}
-          style={thumbFit}
-        />
-      ) : (
-        <Icon name="boards" size={22} color={systemColors.secondaryLabel} />
-      )}
-    </View>
-  );
-});
-
 const styles = StyleSheet.create({
-  groupedCard: {
-    overflow: 'hidden',
-  },
-  groupedRows: {
-    // Both Card variants inset content by 16pt. Let each row own that gutter
-    // so the whole surface is tappable, including around the label and icon.
-    margin: -spacing[4],
-  },
-  navigationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    minHeight: spacing[12],
-  },
-  iconColumn: {
-    width: BOARD_THUMB_WIDTH,
-    flexShrink: 0,
-    alignItems: 'center',
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginStart: spacing[4] + BOARD_THUMB_WIDTH + spacing[3],
-  },
-  thumbnail: {
-    width: BOARD_THUMB_WIDTH,
-    height: BOARD_THUMB_HEIGHT,
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,10 +154,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: spacing[1],
-  },
-  actionLabel: {
-    flex: 1,
-    minWidth: 0,
   },
   actions: {
     gap: spacing[2],

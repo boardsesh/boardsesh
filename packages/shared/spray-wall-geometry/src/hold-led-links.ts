@@ -50,7 +50,5 @@ export function setHoldLedLink(layout: TnutLayout, holdId: number, ledIds: reado
 
 /** Give a hold back to the automatic assignment. */
 export function clearHoldLedLink(layout: TnutLayout, holdId: number): TnutLayout {
-  const remaining = (layout.holdLeds ?? []).filter((link) => link.holdId !== holdId);
-  const { holdLeds: _removed, ...rest } = layout;
-  return remaining.length ? { ...rest, holdLeds: remaining } : rest;
+  return { ...layout, holdLeds: (layout.holdLeds ?? []).filter((link) => link.holdId !== holdId) };
 }

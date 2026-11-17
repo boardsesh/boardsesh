@@ -49,7 +49,7 @@ vi.mock('../../providers/theme-provider', async () => {
   return { useTheme: () => theme };
 });
 vi.mock('../AppMenu', async () => import('../AppMenu.android'));
-vi.mock('../AppMenu.icons.android', () => ({ MORE_VERT_ICON: 1 }));
+vi.mock('../AppMenu.icons.android', () => ({ MORE_VERT_ICON: 1, ADD_ICON: 2 }));
 vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
 vi.mock('../PressableSurface', () => ({ PressableSurface: () => null }));
 vi.mock('../Icon', () => ({ Icon: () => null }));

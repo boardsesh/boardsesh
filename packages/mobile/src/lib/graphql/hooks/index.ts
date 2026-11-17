@@ -6,9 +6,12 @@ import type {
   Grade,
   MyBoardsInput,
   SearchBoardsInput,
+  PopularBoardConfigsInput,
   CreateBoardInput,
   UpdateBoardInput,
   SetterStatsInput,
+  PublicUserProfile,
+  UpdateProfileInput,
   SessionHealthExport,
   UpdateGymInput,
   GrantGymWriteAccessInput,
@@ -60,6 +63,8 @@ import {
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
 import {
   SEARCH_GYMS,
+  GET_GYM,
+  GET_MY_GYMS,
   UPDATE_GYM,
   GET_GYM_MEMBERS,
   GRANT_GYM_WRITE_ACCESS,
@@ -67,6 +72,8 @@ import {
   REQUEST_GYM_CLAIM,
   LINK_BOARD_TO_GYM,
   type SearchGymsQueryResponse,
+  type GetGymQueryResponse,
+  type GetMyGymsQueryResponse,
   type UpdateGymMutationResponse,
   type LinkBoardToGymMutationResponse,
   type GetGymMembersQueryResponse,
@@ -103,8 +110,12 @@ import { useGradeSourceSearchInput } from './search-grade-source';
 import type { AdvertisedBoardTypes } from '../../ble/advertised-board-type';
 import { fetchBoardsForObservedSerials } from '../../ble/observed-board-matches';
 import {
+  GET_PROFILE,
+  UPDATE_PROFILE,
   GET_MY_BOARDS,
+  GET_BOARD,
   GET_BOARDS_BY_SERIAL_NUMBERS,
+  GET_POPULAR_BOARD_CONFIGS,
   CREATE_BOARD,
   GET_GRADES,
   GET_ANGLES,
@@ -120,8 +131,12 @@ import {
   GET_SESSION_HEALTH_EXPORT,
   END_SESSION,
   TOGGLE_FAVORITE,
+  type GetProfileQueryResponse,
+  type UpdateProfileMutationResponse,
   type GetMyBoardsQueryResponse,
+  type GetBoardQueryResponse,
   type GetBoardsBySerialNumbersQueryResponse,
+  type GetPopularBoardConfigsQueryResponse,
   type CreateBoardMutationResponse,
   type GetGradesQueryResponse,
   type GetAnglesQueryResponse,
@@ -255,13 +270,49 @@ function scheduleDrain(
 // User Profile
 // ============================================
 
-export { useProfile, useUpdateProfile } from './use-profile';
+export function useProfile(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['profile'],
+    queryFn: () => getHttpClient().request<GetProfileQueryResponse>(GET_PROFILE),
+    select: (data) => data.profile,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * Update the current user's display name and/or avatar URL. The mutation result
+ * is written into the `['profile']` cache immediately, then invalidated so every
+ * current-user consumer refreshes against the backend. The avatar image itself
+ * is uploaded separately via `uploadAvatar` (REST), and its absolute URL is then
+ * persisted here.
+ */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateProfileInput) => {
+      const response = await getHttpClient().request<UpdateProfileMutationResponse>(UPDATE_PROFILE, { input });
+      return response.updateProfile;
+    },
+    onSuccess: (updatedProfile) => {
+      queryClient.setQueryData<GetProfileQueryResponse>(['profile'], { profile: updatedProfile });
+      queryClient.setQueryData<PublicUserProfile | null>(['publicProfile', updatedProfile.id], (cachedProfile) =>
+        cachedProfile
+          ? {
+              ...cachedProfile,
+              displayName: updatedProfile.displayName,
+              avatarUrl: updatedProfile.avatarUrl,
+            }
+          : cachedProfile,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
+      void queryClient.invalidateQueries({ queryKey: ['publicProfile', updatedProfile.id] });
+    },
+  });
+}
 
 // ============================================
 // Board Queries
 // ============================================
-
-export { useBoard, useGym, useMyGyms, useBoardBySlug, usePopularBoardConfigs } from './use-board-gym-details';
 
 // The key lives in `../query-keys` because `useCrossBoardAddGate` reads this
 // roster imperatively out of the cache; both sides import the one helper so the
@@ -274,6 +325,15 @@ export function useMyBoards(input?: MyBoardsInput, options?: { enabled?: boolean
     queryFn: () => getHttpClient().request<GetMyBoardsQueryResponse>(GET_MY_BOARDS, { input }),
     select: (data) => data.myBoards,
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useBoard(boardUuid: string | null) {
+  return useQuery({
+    queryKey: ['board', boardUuid],
+    queryFn: () => getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid }),
+    select: (data) => data.board,
+    enabled: !!boardUuid,
   });
 }
 
@@ -300,6 +360,39 @@ export { fetchAllMyBoards } from './fetch-all-my-boards';
 export { useGymBoards } from './use-gym-boards';
 
 /**
+ * A single gym by uuid, including the viewer's `canEdit` flag. Backs the
+ * gym-edit screen (moderators reach it from the wall finder's edit affordance).
+ * Disabled until a uuid resolves so the edit screen can pass `null` while routing.
+ */
+export function useGym(gymUuid: string | null) {
+  return useQuery({
+    queryKey: ['gym', gymUuid],
+    queryFn: () => getHttpClient().request<GetGymQueryResponse>(GET_GYM, { gymUuid }),
+    select: (data) => data.gym,
+    enabled: !!gymUuid,
+  });
+}
+
+/**
+ * The gyms the signed-in user owns (and, once the backend broadens it, gyms they
+ * help run). Backs the "My gyms" screen off the More tab. The `myGyms` query
+ * scopes to the caller server-side, so no owner filter is passed here. Disabled
+ * until signed in — an anonymous caller has no gyms and the query would 401.
+ *
+ * Requests the server-max page (50) in one shot rather than paginating: an owner
+ * runs a handful of gyms, so 50 clears every realistic case and keeps the screen a
+ * plain list instead of an `onEndReached` drain.
+ */
+export function useMyGyms(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['myGyms'],
+    queryFn: () => getHttpClient().request<GetMyGymsQueryResponse>(GET_MY_GYMS, { input: { limit: 50 } }),
+    select: (data) => data.myGyms,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
  * Resolve a named board by its URL slug (the `/b/{slug}` board-entity routes).
  * Returns the full shared board entity including its stored angle — used to turn
  * a session whose `boardPath` is a named-board shape into a usable board. The
@@ -310,6 +403,15 @@ export function fetchBoardBySlug(slug: string): Promise<UserBoard | null> {
   return getHttpClient()
     .request<GetBoardBySlugQueryResponse>(GET_BOARD_BY_SLUG, { slug })
     .then((data) => data.boardBySlug);
+}
+
+export function useBoardBySlug(slug: string | null, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['boardBySlug', slug],
+    queryFn: () => getHttpClient().request<GetBoardBySlugQueryResponse>(GET_BOARD_BY_SLUG, { slug }),
+    select: (data) => data.boardBySlug,
+    enabled: (options?.enabled ?? true) && !!slug,
+  });
 }
 
 export function useSearchBoards(input: SearchBoardsInput, enabled = true) {
@@ -360,6 +462,17 @@ export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedType
     queryKey: ['boardsBySerialNumbers', serialNumbers, advertisedTypeEntries],
     queryFn: () => fetchBoardsForObservedSerials(serialNumbers, advertisedTypes),
     enabled: serialNumbers.length > 0,
+  });
+}
+
+export function usePopularBoardConfigs(input?: PopularBoardConfigsInput, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['popularBoardConfigs', input],
+    queryFn: () => getHttpClient().request<GetPopularBoardConfigsQueryResponse>(GET_POPULAR_BOARD_CONFIGS, { input }),
+    select: (data) => data.popularBoardConfigs,
+    // The popular set is server-cached and changes rarely; avoid refetch churn.
+    staleTime: 60 * 60 * 1000,
+    enabled: options?.enabled ?? true,
   });
 }
 

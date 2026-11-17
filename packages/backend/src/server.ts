@@ -2,13 +2,8 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
-import { handleBrowserRenewal } from './handlers/browser-renewal';
-import { handleBrowserPassword } from './handlers/browser-password';
-import { handleExpiredBrowserBinding } from './handlers/expired-browser-binding';
-import { handleBrowserDelegation } from './handlers/browser-delegation';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
-import { handleNativeBrowserHandoffIssue } from './handlers/native-browser-handoff';
 import { handleFirstPassword } from './handlers/first-password';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
@@ -803,28 +798,8 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         await handleCurrentStoreLocationSync(req, res);
         return;
       }
-      if (pathname.startsWith('/api/internal/auth/native-browser-handoff/v1/')) {
-        await handleNativeBrowserHandoffIssue(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-delegation/v1/')) {
-        await handleBrowserDelegation(req, res);
-        return;
-      }
       if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {
         await handleBrowserBinding(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-password/v1/')) {
-        await handleBrowserPassword(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-renewal/v1/')) {
-        await handleBrowserRenewal(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/expired-browser-binding/v1/')) {
-        await handleExpiredBrowserBinding(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {

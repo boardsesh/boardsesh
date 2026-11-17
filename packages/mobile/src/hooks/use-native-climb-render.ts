@@ -35,6 +35,8 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
+import { auraGpuRenderWidth } from '../lib/board-render/gpu-render-size';
+import { useGpuFailureStatus } from '../lib/board-render/gpu-failure-store';
 import {
   activeSprayArt,
   ensureSprayWallLoaded,
@@ -83,7 +85,7 @@ import {
   type HoldColorOverrides,
   type HoldShapeOverrides,
 } from '../lib/hold-color-overrides';
-import { buildAuraRenderFields } from '@boardsesh/board-look';
+import { buildAuraRenderFields, supportsAuraGpu } from '@boardsesh/board-look';
 import {
   boardFieldColorForScheme,
   buildBoardRenderSignature,
@@ -199,9 +201,14 @@ type NativeClimbRenderParams = {
   playSurface?: boolean;
   /** Opt-in live GPU surface; callers gate native API compatibility and flag. */
   gpuSurface?: boolean;
+  /** Binary advertises exact packed fields, annotations and catalogue roles. */
+  gpuCatalogueNative?: boolean;
+  gpuApiVersion?: number;
   /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
   gpuAllowEmpty?: boolean;
   gpuFallbackConfigJson?: string | null;
+  /** Skip the cold PNG hedge only after this static configuration presented. */
+  gpuPresentedConfigJson?: string | null;
   /**
    * The play board's own view layer writes here whether its live stack is held
    * invisible under the opening-art bridge (`BoardImageNative`). Read only when
@@ -368,6 +375,7 @@ type NativeClimbRenderResult = {
    * be visible-broken to the user instead of invisibly-broken.
    */
   missingBackgroundCount: number;
+  backgroundsLoading: boolean;
   /**
    * Paint this under `backgroundPaths` (`LayeredClimbImage`'s `baseColor`), or
    * nothing when undefined. Set only for a spray wall drawn on its "Holds only"
@@ -1008,6 +1016,9 @@ function warmupRenderedOverlaysOnce(): void {
       // File and Directory instances; File has a .name like "<key>.png".
       const name = entry.name;
       if (!name || !name.endsWith('.png')) continue;
+      // The capability probe owns these files and may still be comparing them.
+      // Deleting its first PNG here permanently misclassifies Aura as unavailable.
+      if (name.startsWith('boardsesh-probe-')) continue;
       if (!name.startsWith(currentVersionPrefix) || !isSprayOverlayCurrent(name.slice(0, -'.png'.length))) {
         // Stale leftover from a prior RENDERER_VERSION. Best-effort delete;
         // any failure (permissions, race with another writer) is non-fatal
@@ -1865,8 +1876,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayFile = false,
     playSurface = false,
     gpuSurface = false,
+    gpuCatalogueNative = false,
+    gpuApiVersion = 0,
     gpuAllowEmpty = false,
     gpuFallbackConfigJson,
+    gpuPresentedConfigJson,
     paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
@@ -2152,15 +2166,17 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // background-paths effect. Kept in sync with the strings that feed the keys.
   const setIdsArray = useMemo(() => setIds.split(',').map(Number).filter(Boolean), [setIds]);
 
+  const gpuRenderWidth = auraGpuRenderWidth(gpuCatalogueNative, renderWidth);
   const gpuStaticConfig = useMemo(() => {
     if (
       !gpuSurface ||
       filledStyle ||
       prefetch ||
-      boardName !== 'kilter' ||
-      layoutId !== 8 ||
+      !supportsAuraGpu({ boardName, layoutId, catalogueNative: gpuCatalogueNative }) ||
       effectiveRenderSettings.mode !== 'aura' ||
       effectiveRenderSettings.boardsesh.softDisc ||
+      effectiveRenderSettings.boardsesh.markStyle === 'fill' ||
+      effectiveRenderSettings.boardsesh.markStyle === 'glow-fill' ||
       extraHoldStates ||
       boardArtChunkPending
     )
@@ -2173,7 +2189,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       sizeId,
       setIds,
       false,
-      renderWidth,
+      gpuRenderWidth,
       effectiveOverrides.colors,
       effectiveOverrides.shapes,
       effectiveOverrides.brushThickness,
@@ -2189,12 +2205,41 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     );
     if (!boardConfig) return null;
     const roleMap = boardConfig.configBase.hold_state_map as Record<number, unknown>;
-    // Homewall's four calibrated roles only. The general Kilter map includes
-    // other products that this layout never uses, wasting atlas role stamps.
-    const holdStateMap = Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
-    return { holdIds, json: JSON.stringify({ ...boardConfig.configBase, hold_state_map: holdStateMap, frames: '' }) };
+    const holdStateMap = gpuCatalogueNative
+      ? roleMap
+      : Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
+    const roleCodes = Object.keys(holdStateMap).map(Number);
+    const width = Number(boardConfig.configBase.output_width);
+    const height = Math.round(
+      (width * Number(boardConfig.configBase.board_height)) / Number(boardConfig.configBase.board_width),
+    );
+    if (
+      !supportsAuraGpu({
+        boardName,
+        layoutId,
+        catalogueNative: gpuCatalogueNative,
+        width,
+        height,
+        holdCount: holdIds.size,
+        roleCodes,
+        markStyle:
+          typeof boardConfig.configBase.mark_style === 'string' ? boardConfig.configBase.mark_style : undefined,
+      })
+    )
+      return null;
+    return {
+      holdIds,
+      roleCodes,
+      json: JSON.stringify({
+        ...boardConfig.configBase,
+        hold_state_map: holdStateMap,
+        frames: '',
+        geometry_cache_scope: `${boardName}/${layoutId}-${sizeId}`,
+      }),
+    };
   }, [
     gpuSurface,
+    gpuCatalogueNative,
     filledStyle,
     prefetch,
     boardName,
@@ -2202,7 +2247,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     sizeId,
     setIds,
     setIdsArray,
-    renderWidth,
+    gpuRenderWidth,
     effectiveRenderSettings,
     effectiveOverrides,
     configRenderSignature,
@@ -2211,17 +2256,36 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     extraHoldStates,
     boardArtChunkPending,
   ]);
+  const gpuFailureStatus = useGpuFailureStatus(gpuStaticConfig?.json ?? null, gpuApiVersion);
   const gpuConfigJson = useMemo(() => {
-    if ((!flatFrames && !gpuAllowEmpty) || !gpuStaticConfig || gpuStaticConfig.json === gpuFallbackConfigJson)
+    if (
+      gpuFailureStatus !== 'allowed' ||
+      (!flatFrames && !gpuAllowEmpty) ||
+      !gpuStaticConfig ||
+      gpuStaticConfig.json === gpuFallbackConfigJson
+    )
       return null;
-    const rolesSupported = [...flatFrames.matchAll(/r(\d+)/g)].every((match) =>
-      [42, 43, 44, 45].includes(Number(match[1])),
-    );
+    const rolesSupported = supportsAuraGpu({
+      boardName,
+      layoutId,
+      catalogueNative: gpuCatalogueNative,
+      roleCodes: gpuStaticConfig.roleCodes,
+      frames: flatFrames,
+    });
     if (!rolesSupported) return null;
     const litIds = parseLitHoldIds(flatFrames);
     if (litIds.size > 0 && ![...litIds].some((holdId) => gpuStaticConfig.holdIds.has(holdId))) return null;
     return gpuStaticConfig.json;
-  }, [gpuStaticConfig, flatFrames, gpuAllowEmpty, gpuFallbackConfigJson]);
+  }, [
+    gpuStaticConfig,
+    flatFrames,
+    gpuAllowEmpty,
+    gpuFallbackConfigJson,
+    boardName,
+    layoutId,
+    gpuCatalogueNative,
+    gpuFailureStatus,
+  ]);
 
   // A stationary carousel must wait for geometry/capability discovery rather
   // than permanently latching its PNG fallback during the first render.
@@ -2230,7 +2294,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     : gpuSurface &&
         (!!flatFrames || gpuAllowEmpty) &&
         requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
-        (boardArtChunkPending || getBoardseshRendererSupport() === null)
+        (boardArtChunkPending || getBoardseshRendererSupport() === null || gpuFailureStatus === 'loading')
       ? 'loading'
       : 'unavailable';
 
@@ -2298,6 +2362,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     key: string;
     paths: string[];
     missingCount: number;
+    settled: boolean;
   } | null>(() => {
     const sync = tryGetBackgroundPathsSync({
       boardName,
@@ -2308,7 +2373,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       colorScheme,
     });
     if (!sync) return null;
-    return { key: currentBoardKey, paths: sync.paths, missingCount: sync.missingCount };
+    return {
+      key: currentBoardKey,
+      paths: sync.paths,
+      missingCount: sync.missingCount,
+      settled: sync.missingCount === 0,
+    };
   });
 
   const mountedRef = useRef(true);
@@ -2394,6 +2464,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           key: currentBoardKey,
           paths: sync.paths,
           missingCount: sync.missingCount,
+          settled: sync.missingCount === 0,
         });
       }
     }
@@ -2423,6 +2494,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // + first-path comparison is sufficient.
         if (
           prev?.key === currentBoardKey &&
+          prev.settled &&
           prev.missingCount === resolved.missingCount &&
           prev.paths.length === resolved.paths.length &&
           prev.paths[0] === resolved.paths[0]
@@ -2433,6 +2505,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           key: currentBoardKey,
           paths: resolved.paths,
           missingCount: resolved.missingCount,
+          settled: true,
         };
       });
     })();
@@ -2465,7 +2538,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
-    if (gpuConfigJson) return;
+    // Prepare exact PNG artwork during a first GPU attempt. A broken device
+    // gets usable art while the watchdog runs; warm frames reuse the GPU scene.
+    if (gpuConfigJson && gpuConfigJson === gpuPresentedConfigJson) return;
     // A v2 GPU binary has Aura support, but the ordinary capability probe may
     // still be resolving on first mount. Do not launch a competing classic PNG.
     if (
@@ -2879,6 +2954,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   }, [
     currentCacheKey,
     gpuConfigJson,
+    gpuPresentedConfigJson,
     gpuSurface,
     // Redundant with `currentCacheKey`, which carries the `_geopending` token —
     // listed so the branch's own input is visible where the effect declares it.
@@ -3400,6 +3476,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayForNativeUse,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundsLoading: storedBackgrounds?.key !== currentBoardKey || !storedBackgrounds.settled,
     backgroundBaseColor,
     effectiveRenderSettings,
     boardseshRendererAvailable: getBoardseshRendererSupport(),

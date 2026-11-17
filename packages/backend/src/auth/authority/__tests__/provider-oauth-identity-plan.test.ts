@@ -21,6 +21,10 @@ import {
 } from '../../current-store/provider-oauth-identity';
 import { reserveEnforcedEmail, retiredEmailKey } from '../../current-store/email-reservations';
 import { createProviderSecurityEnvironment } from './provider-security-fixture';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 const policy = { actorUserId: null, storeProviderImage: true, emailVerification: 'unverified' } as const;

@@ -324,7 +324,7 @@ flat amber fallback; the label still says what the next press does.
   hold-colour frost; a connected non-driving holder, preview, crew relay or connect remains plain. The label
   says what the press does, and "You are driving the wall" says supported climb changes light the wall.
   The glow uses the displayed climb's holds (look F1b, `wall-glow.ts`, `WallGlow.tsx`, described in
-  `ai-design-guidelines.md`). Without hold geometry the old fallbacks remain: `live` amber while driving,
+  `mobile-chrome.md`). Without hold geometry the old fallbacks remain: `live` amber while driving,
   tonal violet for other actions, or the amber outline for unlinked wall presence. The tonal fill is 20% of the
   brand violet (`WALL_CONTROL_TONAL_ALPHA`), with at least 4.6:1 label contrast on every Liquid Glass and Material
   sheet (`wall-control-button-contrast.test.ts`). Lightbulb mode keeps its own fill rule (`resolveWallBulbLook`).
@@ -368,7 +368,7 @@ capsule. On iOS both show the climb's name over its grade and one fact: who lit 
 130pt capsule), its sends for your own or a held climb ("V6 · 683 sends", no face), or how long ago when there is no
 live link ("V6 · 20m ago"). The grade never cuts. The iPhone bar mirrors its sides to give the capsule the room (#7281):
 avatar and angle leading, history and ⋯ trailing, with + in ⋯ (see "Root header actions are native bar items" in
-`docs/ai-design-guidelines.md`). Either can be hidden with a left swipe or the screen-reader action Hide; the
+`docs/mobile-chrome.md`). Either can be hidden with a left swipe or the screen-reader action Hide; the
 Material band also ends in a 48 dp × icon button. The iOS capsules carry no ×: every point it took came out of the
 climb's name. A touch that swiped is never a tap, so a swipe on the held capsule never lets go of the board or opens
 its controls.

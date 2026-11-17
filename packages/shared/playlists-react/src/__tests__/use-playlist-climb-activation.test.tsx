@@ -92,6 +92,48 @@ describe('prepared climb activation', () => {
     unmount();
   });
 
+  // #7596 A4 reverts #7561: there is one activation path again. It takes the
+  // tapped climb and nothing else, and the screen that started it owns its
+  // refresh, so leaving that screen cancels the fuller-list fetch. The climb
+  // already committed stays where it is.
+  it('cancels its refresh when the screen that started it unmounts, and keeps the committed climb', async () => {
+    const climbs = [climb('a'), climb('b')];
+    const refresh = deferred<ActivationTrackLoad>();
+    const fetchClimbsForBoard = vi.fn((_request: { signal: AbortSignal }) => refresh.promise);
+    const queueApi = {
+      setCurrentClimb: vi.fn<PlaylistActivationQueueApi['setCurrentClimb']>(async (selected) => ({
+        uuid: selected.uuid,
+        climb: selected,
+      })),
+      refreshPlaylistSuggestionSource: vi.fn(),
+    };
+    const isClimbable = () => true;
+    const { result, unmount } = renderHook(() =>
+      usePlaylistClimbActivation({
+        queueApi,
+        sourceId: 'track',
+        allClimbs: climbs,
+        resolveTarget: () => ({ boardKey: 'board', boardName: 'kilter', angle: 40, isClimbable }),
+        fetchClimbsForBoard,
+        refreshErrorMessage: 'refresh failed',
+      }),
+    );
+    expect(result.current).toHaveLength(1);
+
+    await result.current(climbs[0]);
+    expect(queueApi.setCurrentClimb).toHaveBeenCalledTimes(1);
+    const { signal } = fetchClimbsForBoard.mock.calls[0][0];
+    expect(signal.aborted).toBe(false);
+
+    unmount();
+    expect(signal.aborted).toBe(true);
+    refresh.resolve({ climbs });
+    await refresh.promise;
+    await Promise.resolve();
+    expect(queueApi.refreshPlaylistSuggestionSource).not.toHaveBeenCalled();
+    expect(queueApi.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+
   it("names the track and carries the first load's count and continuation into the refresh (#6664)", async () => {
     const climbs = [climb('a'), climb('b'), climb('c')];
     const refresh = deferred<ActivationTrackLoad>();

@@ -154,7 +154,7 @@ export default function ConnectionsScreen() {
             ) : (
               <View style={styles.stateBlock}>
                 <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.stateTitle}>
+                <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                   {MODE_EMPTY_KEYS[mode](t)}
                 </Text>
               </View>
@@ -192,7 +192,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.65,
     textAlign: 'center',
   },
   footer: {

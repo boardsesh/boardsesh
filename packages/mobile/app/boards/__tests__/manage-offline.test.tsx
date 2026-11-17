@@ -13,7 +13,7 @@
 // the list stay flat.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { ScopeDownloadProgress } from '@boardsesh/offline-sync';
 
@@ -168,9 +168,34 @@ vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
   }),
 }));
 
+// The + menu rides the native header: `setOptions` records what the screen put
+// there, and `headerPlus()` renders it.
+const navigationMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
+  useNavigation: () => navigationMock,
 }));
+vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
+  AddBoardMenu: ({ onSelect }: { onSelect: (kind: string) => void }) =>
+    createElement(
+      'div',
+      null,
+      ['board', 'spraywall', 'gym_map'].map((kind) =>
+        createElement('button', { key: kind, type: 'button', onClick: () => onSelect(kind) }, `add ${kind}`),
+      ),
+    ),
+}));
+const trackAddSelectedMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/board-picker-add-analytics', () => ({
+  trackBoardPickerAddSelected: trackAddSelectedMock,
+}));
+
+/** The header's trailing item as the screen last set it, or null. */
+function headerPlus(): (() => ReactElement) | null {
+  const calls = navigationMock.setOptions.mock.calls;
+  const options = calls.at(-1)?.[0] as { headerRight?: () => ReactElement } | undefined;
+  return options?.headerRight ?? null;
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -1177,12 +1202,15 @@ describe('My Boards with no usable network list', () => {
     render(createElement(ManageBoards));
 
     expect(screen.queryByRole('button', { name: 'Create a board' })).toBeNull();
+    expect(headerPlus()).toBeNull();
     // The local offline toggle keeps working — its state comes off disk, not the wire.
     expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('downloaded');
     expect(screen.getByText('toggle-offline board-a')).toBeTruthy();
   });
 
-  it('leaves the owned/followed split and the Create button alone online', () => {
+  // The outlined Create board button over the list became the picker's + menu
+  // in the top bar.
+  it('leaves the owned/followed split alone online, with the + menu in the top bar', () => {
     state.profileId = 'me';
     state.myBoards = {
       data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
@@ -1196,9 +1224,22 @@ describe('My Boards with no usable network list', () => {
     render(createElement(ManageBoards));
 
     expect(screen.getByText('Your boards')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Create a board' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create a board' })).toBeNull();
     expect(screen.getByText('Network board')).toBeTruthy();
     expect(screen.queryByText('Marco garage')).toBeNull();
+
+    const plus = headerPlus();
+    expect(plus).not.toBeNull();
+    if (!plus) return;
+    render(createElement(plus));
+    fireEvent.click(screen.getByRole('button', { name: 'add spraywall' }));
+    expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'spraywall', surface: 'manage' });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/spray/new', params: {} });
+
+    // The gym map from here counts its own opening: no `from: 'picker'`.
+    fireEvent.click(screen.getByRole('button', { name: 'add gym_map' }));
+    expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'gym_map', surface: 'manage' });
+    expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/gyms', params: {} });
   });
 
   it('degrades to the downloaded list, not the error state, when the profile fails online', () => {
@@ -1571,7 +1612,7 @@ describe('My Boards while offline storage is paused', () => {
     expect(screen.getByText('mobile.settings.storage.downgradeTitle')).toBeTruthy();
     expect(screen.getByText('mobile.settings.storage.downgradeSubtitle')).toBeTruthy();
     // Creating a board needs no local database.
-    expect(screen.getByRole('button', { name: 'Create a board' })).toBeTruthy();
+    expect(headerPlus()).not.toBeNull();
   });
 });
 

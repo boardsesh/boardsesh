@@ -105,7 +105,8 @@ vi.mock('../../providers/theme-provider', () => ({
       tertiaryLabel: '#aaa',
       error: '#f00',
     },
-    brandColors: { primary: '#6D28D9', success: '#0a0', error: '#a00' },
+    colorScheme: 'light',
+    brandColors: { primary: '#5B22F2', primaryFill: '#5B22F2', success: '#0a0', error: '#a00' },
     opacity: { disabled: 0.5 },
     // The queue sheet's section headers (History, Up next, Suggestions).
     variant: 'liquidGlass',

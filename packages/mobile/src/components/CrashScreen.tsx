@@ -19,6 +19,11 @@ import {
   waitForOtaReloadReceipt,
 } from '../lib/qa/qa-surf';
 
+// Only the fallback (no explicit palette) dims; an explicit secondaryLabel is
+// already the muted tone and dimming it again drops it under 4.5:1. The fallback
+// renders before the theme provider, so it has no tone to reach for.
+const fallbackDimmedStyle = { opacity: 0.7 } as const; // text-dim-ok: renders before the theme provider, so no tone exists
+
 const errorStyles = StyleSheet.create({
   container: {
     flex: 1,
@@ -36,11 +41,6 @@ const errorStyles = StyleSheet.create({
   message: {
     textAlign: 'center',
     marginBottom: spacing[8],
-  },
-  // Only the fallback (no explicit palette) dims; an explicit secondaryLabel is
-  // already the muted tone and dimming it again drops it under 4.5:1.
-  dimmed: {
-    opacity: 0.7,
   },
   buttonRow: {
     gap: spacing[3],
@@ -210,7 +210,7 @@ export function CrashScreen({ error, retry }: ErrorBoundaryProps) {
       <Text
         variant="body"
         color={palette.secondaryLabel}
-        style={[errorStyles.message, !palette.secondaryLabel && errorStyles.dimmed]}
+        style={[errorStyles.message, !palette.secondaryLabel && fallbackDimmedStyle]}
       >
         The app hit an unexpected error. You can try again or head back home.
       </Text>
@@ -271,7 +271,7 @@ export function CrashScreen({ error, retry }: ErrorBoundaryProps) {
         <Text
           variant="footnote"
           color={palette.secondaryLabel}
-          style={[errorStyles.statusText, !palette.secondaryLabel && errorStyles.dimmed]}
+          style={[errorStyles.statusText, !palette.secondaryLabel && fallbackDimmedStyle]}
         >
           No fix available yet — try again in a few minutes.
         </Text>
@@ -280,7 +280,7 @@ export function CrashScreen({ error, retry }: ErrorBoundaryProps) {
         <Text
           variant="footnote"
           color={palette.secondaryLabel}
-          style={[errorStyles.statusText, !palette.secondaryLabel && errorStyles.dimmed]}
+          style={[errorStyles.statusText, !palette.secondaryLabel && fallbackDimmedStyle]}
         >
           Couldn&apos;t reach the update server. Check your connection and try again.
         </Text>

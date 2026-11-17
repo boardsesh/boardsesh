@@ -15,10 +15,11 @@ import {
 } from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
+  compareStoredPassword,
   matchCurrentStorePasswordCandidate,
   MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
   prepareCurrentStorePasswordRegistration,
@@ -158,7 +159,7 @@ export async function registerWebPassword(
   });
 }
 
-export interface WebPasswordCandidate {
+interface WebPasswordCandidate {
   readonly userId: string;
   readonly email: string;
   readonly name: string | null;
@@ -251,19 +252,38 @@ function sameCredentialMembers(before: readonly WebPasswordCandidate[], after: r
 }
 
 /** Private verifier state; never serialize the candidate hashes or password. */
-export interface PreparedWebPasswordAuthentication {
+interface PreparedWebPasswordAuthentication {
   readonly receipt: IdentityAuthorityReceipt;
   readonly email: string;
   readonly snapshot: readonly WebPasswordCandidate[];
   readonly matchedUserId: string | null;
 }
 
-/** Both ordinary login and browser publication use this one byte-preserving verifier. */
-export async function prepareWebPasswordAuthentication(
+/**
+ * Runs one sign-in's whole group of compares in a single turn. The staged
+ * password command passes its process-wide gate.
+ */
+export type PasswordCompareSlot = <Result>(compares: () => Promise<Result>) => Promise<Result>;
+
+type PasswordVerifier = (passwordHash: string, submittedPassword: string) => Promise<boolean>;
+
+/** The group's compares one after another, so a slot never stacks bcrypt slices. */
+function oneAtATime(verify: PasswordVerifier): PasswordVerifier {
+  let previous: Promise<unknown> = Promise.resolve();
+  return (passwordHash, submittedPassword) => {
+    const result = previous.then(() => verify(passwordHash, submittedPassword));
+    previous = result.catch(() => undefined);
+    return result;
+  };
+}
+
+/** Compares the password before any user lock is taken. */
+async function prepareWebPasswordAuthentication(
   database: DbInstance,
   authority: WebPasswordAuthority,
   email: string,
   password: string,
+  compareSlot?: PasswordCompareSlot,
 ): Promise<PreparedWebPasswordAuthentication> {
   const prepared = await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
@@ -275,37 +295,40 @@ export async function prepareWebPasswordAuthentication(
       ? []
       : [{ userId: candidate.userId, createdAt: candidate.createdAt, passwordHash: candidate.passwordHash }],
   );
-  const matched = await matchCurrentStorePasswordCandidate(
-    credentialCandidates,
-    password,
+  const authorityVerify: PasswordVerifier | undefined =
     prepared.receipt.authority === 'better-auth'
       ? (passwordHash, submittedPassword) =>
           verifyAuthorityPassword({ hash: passwordHash, password: submittedPassword })
-      : undefined,
-  );
+      : undefined;
+  // In a slot, the whole group (an address several accounts share, or the
+  // stand-in for an unknown one) takes one turn, so it is never partly shed and
+  // load cannot answer a shared address differently from an unknown one.
+  const matched = compareSlot
+    ? await compareSlot(() =>
+        matchCurrentStorePasswordCandidate(
+          credentialCandidates,
+          password,
+          oneAtATime(authorityVerify ?? compareStoredPassword),
+        ),
+      )
+    : await matchCurrentStorePasswordCandidate(credentialCandidates, password, authorityVerify);
   return { ...prepared, email, matchedUserId: matched?.userId ?? null };
 }
 
-/** Publication includes the observed source owner in the SAME ordered lock
- * statement, before any binding lock. A no-match request takes no user lock. */
-export async function lockWebPasswordAuthentication(
+/** A no-match request takes no user lock. */
+async function lockWebPasswordAuthentication(
   transaction: CurrentStoreTransaction,
   prepared: PreparedWebPasswordAuthentication,
-  publicationSourceUserIds?: readonly string[],
 ): Promise<WebPasswordCandidate | null> {
   if (prepared.matchedUserId === null) return null;
   await boundSignInLockWaits(transaction);
-  const additionalUserIds = [...new Set(publicationSourceUserIds ?? [])];
-  const predicate = additionalUserIds.length
-    ? or(accountEmailCandidates(prepared.email), inArray(users.id, additionalUserIds))
-    : accountEmailCandidates(prepared.email);
   const lockedUsers = await transaction
     .select({ id: users.id })
     .from(users)
-    .where(predicate)
+    .where(accountEmailCandidates(prepared.email))
     .orderBy(users.id)
-    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1 + additionalUserIds.length)
-    .for(publicationSourceUserIds === undefined ? 'key share' : 'update');
+    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1)
+    .for('key share');
   // A later statement sees a reset that committed while the lock was waiting.
   const current = lockedUsers.length
     ? await addressSnapshot(
@@ -319,28 +342,18 @@ export async function lockWebPasswordAuthentication(
   return selected && sameCredentialMembers(prepared.snapshot, current) && !selected.deleted ? selected : null;
 }
 
-/** Caller holds the target user lock; only its authoritative credential is read. */
-export async function readWebPasswordCandidateInTransaction(
-  transaction: CurrentStoreTransaction,
-  receipt: IdentityAuthorityReceipt,
-  userId: string,
-): Promise<WebPasswordCandidate | null> {
-  const [owner] = await transaction.select({ email: users.email }).from(users).where(eq(users.id, userId));
-  if (!owner) return null;
-  return (await addressSnapshot(transaction, owner.email, receipt, [userId]))[0] ?? null;
-}
-
 /** One-request password/UID verification snapshot, NOT a continuing credential. */
 export async function authenticateWebPassword(
   database: DbInstance,
   authorityInput: WebPasswordAuthority,
   input: PasswordCommand,
+  compareSlot?: PasswordCompareSlot,
 ): Promise<PasswordReply> {
   if (process.env.DEBUG_SQL === 'true') throw new Error('Web authentication unavailable');
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { email, password } = input.payload;
-  const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password);
+  const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password, compareSlot);
   const { receipt } = prepared;
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   return database.transaction(async (transaction): Promise<PasswordReply> => {

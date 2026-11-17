@@ -1,5 +1,7 @@
 # BA-01 Google browser authorization-code callback proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Google provider verification and reauthentication are tested by `provider-security-google.test.ts` and `provider-owned-signin.test.ts` in `packages/backend/src/auth/authority/__tests__/` and the browser proof `web-oauth-browser.proof.ts` in `packages/backend/src/auth/current-store/__tests__/`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This isolated [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976)
 proof closes the configured Google browser callback evidence gap. It adds only
 tests and this document. Existing provider/password/handoff implementations,
@@ -28,7 +30,7 @@ verification function. The test asserts that the only provider HTTP request is
 to the Google token endpoint; a signed fixture alone is not proof that the
 browser path checks that signature, audience, issuer, expiry or nonce.
 Those native-token checks are independently covered by the existing
-[identity](./better-auth-prototype.md) and
+identity (the prototype page was deleted in #7620) and
 [provider link](./better-auth-provider-link-proof.md) proofs. This document does
 not transfer native assurance claims to the browser branch.
 

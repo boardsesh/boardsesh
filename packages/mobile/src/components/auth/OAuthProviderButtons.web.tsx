@@ -122,7 +122,7 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           disabled={disabled}
           onPress={providers.retry}
         >
-          <Text style={[styles.retryLabel, { color: theme.systemColors.accent }]}>
+          <Text emphasized style={[styles.retryLabel, { color: theme.systemColors.accent }]}>
             {t('nativeStart.retryProviders')}
           </Text>
         </PressableSurface>
@@ -146,7 +146,9 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           ]}
         >
           <GoogleLogo />
-          <Text style={[styles.googleLabel, { color: googleColors.label }]}>{t('login.providers.google')}</Text>
+          <Text emphasized style={[styles.googleLabel, { color: googleColors.label }]}>
+            {t('login.providers.google')}
+          </Text>
         </PressableSurface>
       ) : null}
       {providers.apple ? (
@@ -163,7 +165,9 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           ]}
         >
           <AppleIcon color={appleForeground} />
-          <Text style={[styles.appleLabel, { color: appleForeground }]}>{t('login.providers.apple')}</Text>
+          <Text emphasized style={[styles.appleLabel, { color: appleForeground }]}>
+            {t('login.providers.apple')}
+          </Text>
         </PressableSurface>
       ) : null}
     </View>
@@ -186,11 +190,9 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     googleLabel: {
       fontSize: textStyles.subheadline.fontSize,
-      fontWeight: '600',
     },
     appleLabel: {
       fontSize: textStyles.subheadline.fontSize,
-      fontWeight: '600',
     },
     loadingButton: {
       width: '100%',
@@ -200,7 +202,7 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     discoveryError: { alignItems: 'center', gap: 8 },
     discoveryErrorText: { fontSize: textStyles.subheadline.fontSize, textAlign: 'center' },
-    retryLabel: { fontSize: textStyles.subheadline.fontSize, fontWeight: '600' },
+    retryLabel: { fontSize: textStyles.subheadline.fontSize },
     disabled: { opacity: opacity.disabled },
     pressed: { opacity: 0.8 },
   });

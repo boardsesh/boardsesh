@@ -24,39 +24,69 @@ internal object OverlayShader {
             uvec4 offsets;
             vec4 numbers;
             uvec4 identity;
+            uvec4 fillCrop;
+            uvec4 plateCrop;
+            uvec4 glyphCrop;
+            uvec4 extraOffsets;
+            uvec4 fillCrop1;
+            uvec4 fillCrop2;
+            uvec4 fillCrop3;
+            uvec4 glyphCrop1;
           };
           struct Uniforms {
             vec4 size; // output width, height, active count, draw glow
             vec4 veil;
             vec4 tuning; // merge, seam, max mix, sharpness
             vec4 tuning2; // fringe, core share, active max reach
-            uvec4 offsets; // LED covers
+            uvec4 offsets; // LED covers, active stamp-layer mask
             vec4 viewport;
             vec4 motion; // progress, reveal band width, reserved, editor reach scale
             vec4 other; // second count, second max reach, empty production source, display mirror
+            uvec4 coverCrop;
           };
-          layout(std430,binding=0) readonly buffer Atlas { uint atlas[]; };
-          layout(std430,binding=1) readonly buffer Lower { Hold lower[]; };
-          layout(std430,binding=2) readonly buffer Upper { Hold upper[]; };
-          layout(std430,binding=3) readonly buffer Falloff { float lut[]; };
-          layout(std140,binding=0) uniform Parameters { Uniforms uniforms; };
+          layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_PIXELS}) readonly buffer Atlas { uint atlas[]; };
+          layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_LOWER}) readonly buffer Lower { Hold lower[]; };
+          layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_UPPER}) readonly buffer Upper { Hold upper[]; };
+          layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_RESOURCES}) readonly buffer Resources { uint resources[]; };
+          layout(std140,binding=${OverlayPacketLayout.GLES_UNIFORM_BINDINGS_UNIFORMS}) uniform Parameters { Uniforms uniforms; };
           layout(location=0) out vec4 outputColor;
           vec4 quantize(vec4 pixel) { return round(clamp(pixel,0.0,1.0)*255.0)/255.0; }
           vec4 over(vec4 under, vec4 above) {
             return quantize(above + under * (1.0-above.a));
           }
+          // Match tiny-skia lowp source-over for byte stamps; glow retains
+          // the float compositor. Preserve rounding at every paint subpass.
+          vec4 stamp_over(vec4 under, vec4 above) {
+            uvec4 source=uvec4(round(clamp(above,0.0,1.0)*255.0));
+            uvec4 destination=uvec4(round(clamp(under,0.0,1.0)*255.0));
+            return vec4(min(source+((destination*(255u-source.a)+255u)>>8u),uvec4(255u)))/255.0;
+          }
           vec4 read_rgba(uint offset) {
             uint packedRgba = atlas[offset/4u];
             return vec4(packedRgba&255u,(packedRgba>>8u)&255u,(packedRgba>>16u)&255u,(packedRgba>>24u)&255u)/255.0;
           }
-          int index_at(uvec2 point, Hold hold) {
-            if (point.x < hold.crop.x || point.y < hold.crop.y ||
-                point.x >= hold.crop.x+hold.crop.z || point.y >= hold.crop.y+hold.crop.w) return -1;
-            return int((point.y-hold.crop.y)*hold.crop.z+point.x-hold.crop.x);
+          int crop_index(uvec2 point, uvec4 crop) {
+            if (point.x < crop.x || point.y < crop.y ||
+                point.x >= crop.x+crop.z || point.y >= crop.y+crop.w) return -1;
+            return int((point.y-crop.y)*crop.z+point.x-crop.x);
           }
+          int index_at(uvec2 point, Hold hold) { return crop_index(point,hold.crop); }
           Hold source_hold(uint index, uint lowerCount) {
             if(index<lowerCount) return lower[index];
             return upper[index-lowerCount];
+          }
+          uvec2 tile_range(uvec2 point, uint directory, uint count) {
+            if(count==0u || directory==0xffffffffu) return uvec2(0u);
+            if(directory<${OverlayPacketLayout.LUT_WORDS}u) return uvec2(0xffffffffu,count);
+            uint columns=(uint(uniforms.size.x)+${OverlayPacketLayout.TILE_EDGE}u-1u)/${OverlayPacketLayout.TILE_EDGE}u;
+            uint tile=(point.y/${OverlayPacketLayout.TILE_EDGE}u)*columns+point.x/${OverlayPacketLayout.TILE_EDGE}u;
+            return uvec2(resources[directory+tile*2u],resources[directory+tile*2u+1u]);
+          }
+          uint tile_index(uint ordinal, uvec2 lowerRange, uvec2 upperRange, uint lowerCount) {
+            bool isUpper=ordinal>=lowerRange.y;
+            uvec2 range=isUpper ? upperRange : lowerRange;
+            uint local=isUpper ? ordinal-lowerRange.y : ordinal;
+            return (isUpper ? lowerCount : 0u)+(range.x==0xffffffffu ? local : resources[range.x+local]);
           }
           float reveal_weight(Hold hold, bool upper) {
             float membership=upper ? hold.numbers.z : hold.numbers.w;
@@ -75,6 +105,9 @@ internal object OverlayShader {
           vec4 scene_pixel(uvec2 point,
               uint lowerCount, uint upperCount, float maxReach, bool transitioning, float reachScale) {
             uint count=lowerCount+upperCount;
+            uvec2 lowerRange=tile_range(point,uniforms.offsets.z,lowerCount);
+            uvec2 upperRange=tile_range(point,uniforms.offsets.w,upperCount);
+            uint candidates=lowerRange.y+upperRange.y;
             // Production empty frames show the bare board, matching the CPU host.
             // Legacy parity diagnostics retain their explicit veil-only empty image.
             if(count==0u && uniforms.other.z>0.0) return vec4(0.0);
@@ -85,15 +118,18 @@ internal object OverlayShader {
             float best = 1e20, second = 1e20;
             float bestScore=1e20, secondScore=1e20;
             int nearest = -1, runner = -1;
-            for (uint index=0u;index<count;index++) {
+            for (uint ordinal=0u;ordinal<candidates;ordinal++) {
+              uint index=tile_index(ordinal,lowerRange,upperRange,lowerCount);
               Hold hold = source_hold(index,lowerCount);
+              if(hold.identity.z>0u) continue; // Annotation: no silhouette coverage or glow.
               int local = index_at(point,hold);
               if(local < 0) continue;
               float weight=transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0;
               if(weight<=0.0) continue;
-              uint field = hold.offsets.x/4u+uint(local)*2u;
-              float dist2 = uintBitsToFloat(atlas[field]);
-              float alpha = uintBitsToFloat(atlas[field+1u])*weight;
+              uint field = atlas[hold.offsets.x/4u+uint(local)];
+              uint squared = field & 0x00ffffffu;
+              float dist2 = squared==0x00ffffffu ? 1e20 : float(squared);
+              float alpha = float(field>>24u)/255.0*weight;
               coverage = max(coverage,alpha);
               pixel = quantize(pixel*(1.0-alpha));
               float dilation = ceil(maxReach*(hold.numbers.y>0.0 ? reachScale : 1.0))+2.0;
@@ -115,7 +151,9 @@ internal object OverlayShader {
                 second=dist2;secondScore=score;runner=int(index);
               }
             }
-            pixel=over(pixel,read_rgba(uniforms.offsets.x+(point.y*uint(uniforms.size.x)+point.x)*4u)*ambient);
+            int coverLocal=crop_index(point,uniforms.coverCrop);
+            if(uniforms.offsets.x!=0xffffffffu && coverLocal>=0)
+              pixel=stamp_over(pixel,read_rgba(uniforms.offsets.x+uint(coverLocal)*4u)*ambient);
             if(uniforms.size.w > 0.0 && nearest>=0) {
               Hold hold=source_hold(uint(nearest),lowerCount);
               float weight=transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount) : 1.0;
@@ -145,7 +183,7 @@ internal object OverlayShader {
               if(fraction<1.0) {
                 float at=clamp(fraction,0.0,1.0)*256.0;
                 uint index=min(uint(at),255u);
-                float alpha=mix(lut[index],lut[index+1u],at-float(index));
+                float alpha=mix(uintBitsToFloat(resources[index]),uintBitsToFloat(resources[index+1u]),at-float(index));
                 float deepen=uniforms.tuning2.x*smoothstep(uniforms.tuning2.y,1.0,fraction);
                 vec3 deep=round(hold.color.rgb*255.0*0.35)/255.0;
                 color=round(mix(color,deep,deepen)*255.0)/255.0;
@@ -156,15 +194,33 @@ internal object OverlayShader {
             }
             // Preserve CPU layer order across holds: all fills, then all plates,
             // then all glyphs. Combining each hold's layers would change overlaps.
-            for(uint layer=1u;layer<4u;layer++) {
-              for(uint index=0u;index<count;index++) {
+            for(uint layer=1u;layer<5u;layer++) {
+              if((uniforms.offsets.y & (1u << (layer-1u)))==0u) continue;
+              for(uint ordinal=0u;ordinal<candidates;ordinal++) {
+                uint index=tile_index(ordinal,lowerRange,upperRange,lowerCount);
                 Hold hold=source_hold(index,lowerCount);
-                if(hold.offsets[layer]==0xffffffffu) continue;
-                int local=index_at(point,hold);
-                if(local<0) continue;
+                bool annotation=hold.identity.z>0u;
+                if((layer==4u)!=annotation) continue;
                 float weight=transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0;
-                if(weight>0.0)
-                  pixel=over(pixel,read_rgba(hold.offsets[layer]+uint(local)*4u)*weight);
+                if(weight<=0.0) continue;
+                uint passes=layer==1u ? 4u : (layer>=3u ? 2u : 1u);
+                for(uint pass=0u;pass<passes;pass++) {
+                  uint offset;
+                  uvec4 crop;
+                  if(layer==1u) {
+                    offset=pass==0u ? hold.offsets.y : hold.extraOffsets[pass-1u];
+                    crop=pass==0u ? hold.fillCrop : (pass==1u ? hold.fillCrop1 : (pass==2u ? hold.fillCrop2 : hold.fillCrop3));
+                  } else if(layer==2u) {
+                    offset=hold.offsets.z;
+                    crop=hold.plateCrop;
+                  } else {
+                    offset=pass==0u ? hold.offsets.w : hold.extraOffsets.w;
+                    crop=pass==0u ? hold.glyphCrop : hold.glyphCrop1;
+                  }
+                  if(offset==0xffffffffu) continue;
+                  int local=crop_index(point,crop);
+                  if(local>=0) pixel=stamp_over(pixel,read_rgba(offset+uint(local)*4u)*weight);
+                }
               }
             }
             return pixel;

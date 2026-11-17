@@ -65,7 +65,7 @@ const { FirstBoardChoice } = await import('../FirstBoardChoice');
 const callbacks = {
   onGym: vi.fn(),
   onOwn: vi.fn(),
-  onScan: vi.fn(),
+  onAddSprayWall: vi.fn(),
   onFindGymOnMap: vi.fn(),
   onOpenSettings: vi.fn(),
   onRetryNearby: vi.fn(),
@@ -101,41 +101,24 @@ describe('FirstBoardChoice', () => {
     ).toBeTruthy();
   });
 
-  it('offers the three ways to a board', () => {
+  // The board in front of them is the picker's In range slot, above this block,
+  // so there is no scan link here any more.
+  it('offers the three ways to a board, Spraywall included, and no scan link', () => {
     renderChoice();
     expect(screen.getByRole('button', { name: "At a gym. Pick your gym's board" })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'My own board. Set up the board you have at home' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Scan for the board in front of me' })).toBeTruthy();
-  });
-
-  // Climbs' no-board entry: the builder behind My
-  // own board cannot make a spray wall.
-  it('offers a spray wall only when the screen passes the path', () => {
-    renderChoice();
-    expect(screen.queryByRole('button', { name: 'Add my Spraywall' })).toBeNull();
-    cleanup();
-
-    const onAddSprayWall = vi.fn();
-    render(<FirstBoardChoice gymState="idle" nearbyResults={null} {...callbacks} onAddSprayWall={onAddSprayWall} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add my Spraywall' }));
-    expect(onAddSprayWall).toHaveBeenCalledTimes(1);
-  });
-
-  // The scan now lists MoonBoards and boxes with no serial, so the caveat that
-  // it couldn't see them is gone.
-  it('no longer warns that the scan misses MoonBoards', () => {
-    renderChoice();
-    expect(screen.queryByText(/MoonBoards and some Kilter boxes/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'My Spraywall. Photograph it and mark the holds' })).toBeTruthy();
+    expect(screen.queryByText(/Scan for the board/)).toBeNull();
   });
 
   it('hands each tap to its flow', () => {
     renderChoice();
     fireEvent.click(screen.getByRole('button', { name: "At a gym. Pick your gym's board" }));
     fireEvent.click(screen.getByRole('button', { name: 'My own board. Set up the board you have at home' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Scan for the board in front of me' }));
+    fireEvent.click(screen.getByRole('button', { name: 'My Spraywall. Photograph it and mark the holds' }));
     expect(callbacks.onGym).toHaveBeenCalledTimes(1);
     expect(callbacks.onOwn).toHaveBeenCalledTimes(1);
-    expect(callbacks.onScan).toHaveBeenCalledTimes(1);
+    expect(callbacks.onAddSprayWall).toHaveBeenCalledTimes(1);
   });
 
   it('shows nothing under "At a gym" until it is tapped', () => {
@@ -165,7 +148,7 @@ describe('FirstBoardChoice', () => {
     expect(callbacks.onFindGymOnMap).toHaveBeenCalledTimes(1);
   });
 
-  // The Bluetooth quickstart's "Find it at my gym" narrows the search to one
+  // The In range slot's "Use my location" narrows the search to one
   // type. "Nothing within 20 km" would then be false in a gym full of other
   // boards, so the line names the type and offers every board.
   it('names the type it found none of, and offers every board', () => {

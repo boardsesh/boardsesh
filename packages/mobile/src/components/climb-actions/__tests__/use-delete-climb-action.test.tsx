@@ -14,12 +14,7 @@ const ctrl = vi.hoisted(() => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../lib/graphql/hooks/use-delete-climb', () => ({
-  useDeleteClimb: () => ({
-    mutateWithReceipt: async (variables: unknown) => ({
-      result: await ctrl.mutateAsync(variables),
-      assertCurrent: () => {},
-    }),
-  }),
+  useDeleteClimb: () => ({ mutateAsync: ctrl.mutateAsync }),
 }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => ({ effectiveOffline: ctrl.offline }),
@@ -155,11 +150,72 @@ describe('useDeleteClimbAction (#5960)', () => {
     expect(ctrl.confirm).toHaveBeenCalledTimes(1);
     expect(ctrl.mutateAsync).toHaveBeenCalledTimes(1);
   });
-});
 
-// The native host keeps its existing credential policy; the real action hook
-// still owns layout cleanup and caller cancellation.
-vi.mock('../../../lib/graphql/use-http-query-scope', () => {
-  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
-  return { useHttpQueryScope: () => scope };
+  it('lets the same climb ask again once its dialog was cancelled', async () => {
+    ctrl.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const { result } = renderHook(() => useDeleteClimbAction());
+
+    await act(() => result.current(climb, 'spray'));
+    expect(ctrl.mutateAsync).not.toHaveBeenCalled();
+    await act(() => result.current(climb, 'spray'));
+
+    expect(ctrl.confirm).toHaveBeenCalledTimes(2);
+    expect(ctrl.mutateAsync).toHaveBeenCalledExactlyOnceWith({ uuid: 'climb-1', boardType: 'spray' });
+  });
+
+  it('asks again for a different climb while the first is still asking', async () => {
+    const answers: ((value: boolean) => void)[] = [];
+    ctrl.confirm.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const { result } = renderHook(() => useDeleteClimbAction());
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => {
+      first = result.current(climb, 'spray');
+      second = result.current({ uuid: 'climb-2' }, 'spray');
+      await result.current(climb, 'spray');
+    });
+    await act(async () => {
+      answers.forEach((answer) => answer(true));
+      await Promise.all([first, second]);
+    });
+
+    expect(ctrl.confirm).toHaveBeenCalledTimes(2);
+    expect(ctrl.mutateAsync.mock.calls.map(([variables]) => variables)).toEqual([
+      { uuid: 'climb-1', boardType: 'spray' },
+      { uuid: 'climb-2', boardType: 'spray' },
+    ]);
+  });
+
+  it('finishes, says so and closes the player even after the player unmounts', async () => {
+    let answer!: (value: boolean) => void;
+    ctrl.confirm.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const onDeleted = vi.fn();
+    const { result, unmount } = renderHook(() => useDeleteClimbAction());
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current(climb, 'spray', onDeleted);
+    });
+    unmount();
+    await act(async () => {
+      answer(true);
+      await pending;
+    });
+
+    expect(ctrl.mutateAsync).toHaveBeenCalledOnce();
+    expect(ctrl.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.success', 'success');
+    // As before #7547: the flow's follow-up runs whether or not the caller is mounted.
+    expect(onDeleted).toHaveBeenCalledOnce();
+  });
 });

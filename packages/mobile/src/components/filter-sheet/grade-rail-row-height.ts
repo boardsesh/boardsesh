@@ -1,5 +1,6 @@
 import { spacing } from '../../theme/tokens';
 import { GRADE_CHIP_HEIGHT } from '../grade/GradeChip';
+import { textFontScale } from '../../theme/dynamic-type';
 
 // The grade rail sits in a fixed-height row of the iOS Filters Form: an RN view
 // inside SwiftUI gets no height negotiation that holds up in a scrolling
@@ -12,6 +13,7 @@ const BASE_HEIGHT = GRADE_CHIP_HEIGHT + spacing[1] * 2;
 /** How much one step of font scale adds to a chip: about one label line. */
 const LABEL_LINE_HEIGHT = 22;
 
-export function gradeRailRowHeight(fontScale: number): number {
-  return Math.ceil(BASE_HEIGHT + Math.max(0, fontScale - 1) * LABEL_LINE_HEIGHT);
+/** `platform` is `Platform.OS`: on iOS the footnote chip labels grow on their own ramp. */
+export function gradeRailRowHeight(fontScale: number, platform: string): number {
+  return Math.ceil(BASE_HEIGHT + Math.max(0, textFontScale('footnote', fontScale, platform) - 1) * LABEL_LINE_HEIGHT);
 }

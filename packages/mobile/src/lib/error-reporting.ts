@@ -73,12 +73,19 @@ export function addErrorBreadcrumb(breadcrumb: {
 /**
  * A request the user (or an unmounting screen) cancelled. Not a failure — the
  * app did exactly what was asked — so it must never reach error tracking.
- * Covers our own AbortController signals and TanStack Query's CancelledError.
+ * Covers our own AbortController signals, TanStack Query's CancelledError, and
+ * the `superseded` refusal of a request whose account or view has changed (a
+ * sign-in or sign-out while it was in flight). The other consumer refusals
+ * (`denied`, `conflict`, `unavailable`) are real failures and still report.
  */
 function isCancellation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
-  const name = (error as { name?: unknown }).name;
-  return name === 'AbortError' || name === 'CancelledError';
+  const { name, status } = error as { name?: unknown; status?: unknown };
+  return (
+    name === 'AbortError' ||
+    name === 'CancelledError' ||
+    (name === 'BrowserBackendConsumerError' && status === 'superseded')
+  );
 }
 
 /**

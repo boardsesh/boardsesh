@@ -1,5 +1,23 @@
 ## Climb List
 
+### Mobile implementation boundaries
+
+The route composes board/query state, list chrome, and empty states. Lifecycle ownership lives
+under `packages/mobile/src/hooks/climbs/`:
+
+- `useClimbsSearchSession` owns sheet sessions and recent searches; `usePersistedClimbSearch`
+  gates queries and saves until the current board/login restore finishes.
+- `useClimbsFilterPresentation` derives chips, removable tokens, dimension locks, and grade controls.
+- `useClimbsListLifecycle` owns pagination and column-position restoration. A result-set change
+  resets both, and request generations prevent old completions from altering a newer fetch.
+- Activation captures the selected search for subsequent player pages; onboarding, analytics,
+  and prewarming each own their external synchronization separately.
+
+`useDebouncedSearchName` and `useGradeDisclosure` are also used by `useClimbFilterSession`,
+which serves playlist and setter screens. Callers retain their policies: Climbs persists grade-row
+visibility and flushes pending names on dismissal; playlist screens keep local visibility and
+clear an empty typed name immediately. Keep these policies outside the shared primitives.
+
 ### Mobile toolbar and board history
 
 The Climbs tab keeps the angle and history one tap away, apart from the list's options. On iOS its

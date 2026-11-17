@@ -1,5 +1,7 @@
 # BA-01 explicit provider link and unlink proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Provider link and unlink are tested by `provider-authority.test.ts`, `provider-security-reauthentication.test.ts` and `provider-security-policy.test.ts` in `packages/backend/src/auth/authority/__tests__/`; the web side by `packages/web/auth-proofs/provider-security-*.proof.ts`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This disposable [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976)
 proof adds no production endpoint, dependency, schema, identity import or
 credential writer. It uses pinned Better Auth **1.7.17**, the existing canonical

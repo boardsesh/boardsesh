@@ -64,8 +64,17 @@ export async function lockKeyReservation(transaction: CurrentStoreTransaction, k
  * becomes a digest row, so the address stays blocked without being kept; a
  * group it shared keeps its other members, still blocked, and elects nobody.
  * The empty key holds no address and is left alone.
+ *
+ * `blockAddress: false` is for a legacy deletion while the projection is only
+ * prepared (#7591): the key it alone held is removed with no digest, so the
+ * address is released exactly as legacy deletion released it before preparation
+ * and as activation's rebuild from current users would. It needs no digest key.
  */
-export async function retireDeletedSubjectEmails(transaction: CurrentStoreTransaction, userId: string): Promise<void> {
+export async function retireDeletedSubjectEmails(
+  transaction: CurrentStoreTransaction,
+  userId: string,
+  { blockAddress = true }: { readonly blockAddress?: boolean } = {},
+): Promise<void> {
   const memberships = await transaction
     .select({ normalizedEmail: authEmailReservationMembers.normalizedEmail })
     .from(authEmailReservationMembers)
@@ -97,6 +106,7 @@ export async function retireDeletedSubjectEmails(transaction: CurrentStoreTransa
         throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     } else if (remaining) continue;
     await transaction.delete(authEmailReservations).where(eq(authEmailReservations.normalizedEmail, key));
+    if (!blockAddress) continue;
     await transaction
       .insert(authEmailReservations)
       .values({

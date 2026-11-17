@@ -9,7 +9,7 @@ export default defineConfig({
     clearMocks: false,
     name: 'location-sync-proof',
     environment: 'node',
-    include: ['src/auth/prototype/location-sync.integration.proof.ts'],
+    include: ['src/auth/location-sync.integration.proof.ts'],
     testTimeout: 40_000,
     hookTimeout: 60_000,
     maxWorkers: 1,

@@ -19,10 +19,10 @@ function BeforeRecovery() {
   return (
     <View style={styles.beforeContainer}>
       <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
-      <Text variant="headline" style={styles.beforeTitle}>
+      <Text tone="secondary" variant="headline" style={styles.beforeTitle}>
         {t('mobile.emptyState.noMatches.title')}
       </Text>
-      <Text variant="subheadline" style={styles.beforeSubtitle}>
+      <Text tone="tertiary" variant="subheadline" style={styles.beforeSubtitle}>
         {t('mobile.emptyState.noMatches.description', { query: 'Moonage' })}
       </Text>
     </View>
@@ -74,6 +74,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 8,
   },
-  beforeTitle: { marginTop: 12, opacity: 0.6 },
-  beforeSubtitle: { opacity: 0.4, textAlign: 'center' },
+  beforeTitle: { marginTop: 12 },
+  beforeSubtitle: { textAlign: 'center' },
 });

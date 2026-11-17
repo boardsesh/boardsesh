@@ -221,7 +221,7 @@ export function PlaylistFormSheet({
           <PlaylistPreviewSquare color={color} icon={icon} size={56} />
         </View>
 
-        <Text variant="footnote" style={styles.label}>
+        <Text emphasized variant="footnote" style={styles.label}>
           {isEdit ? t('edit.fields.name') : t('create.fields.name')}
         </Text>
         <BottomSheetTextInput
@@ -237,7 +237,7 @@ export function PlaylistFormSheet({
           returnKeyType="done"
         />
 
-        <Text variant="footnote" style={styles.label}>
+        <Text emphasized variant="footnote" style={styles.label}>
           {isEdit ? t('edit.fields.description') : t('create.fields.description')}
         </Text>
         <BottomSheetTextInput
@@ -253,7 +253,7 @@ export function PlaylistFormSheet({
           style={[inputStyle, styles.multiline]}
         />
 
-        <Text variant="footnote" style={styles.label}>
+        <Text emphasized variant="footnote" style={styles.label}>
           {isEdit ? t('edit.fields.color') : t('create.fields.color')}
         </Text>
         <View style={styles.swatchRow}>
@@ -286,7 +286,7 @@ export function PlaylistFormSheet({
 
         {/* Emoji icon — a free-entry slot (system keyboard → any emoji) with a
             row of quick-pick suggestions. Shown for create + edit. */}
-        <Text variant="footnote" style={styles.label}>
+        <Text emphasized variant="footnote" style={styles.label}>
           {t('edit.fields.icon')}
         </Text>
         <View style={styles.iconRow}>
@@ -382,7 +382,6 @@ const createStyles = (textStyles: TypographyScale) =>
       marginBottom: spacing[2],
     },
     label: {
-      fontWeight: '600',
       opacity: 0.6,
       marginTop: spacing[2],
     },

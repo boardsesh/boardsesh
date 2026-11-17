@@ -17,7 +17,6 @@ import { buildAngleStatsMap, type AngleStats } from './community-utils';
 import { AngleBoardDiagram } from './AngleBoardDiagram';
 import { AngleSlider } from './AngleSlider';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { brandColors } from '../../theme/colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
@@ -45,7 +44,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   const sheetBackgroundStyle = useSheetBackgroundStyle();
   // The window's inset, not the mount point's: a sheet covers the tab bar (#3776).
   const windowInsetBottom = useWindowBottomInset();
@@ -134,7 +133,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
             accessibilityLabel={t('mobile.angleSelector.diagramAria', { angle: selectedAngle })}
           />
 
-          <Text variant="largeTitle" numeric style={[styles.angleValue, { color: systemColors.label }]}>
+          <Text emphasized variant="largeTitle" numeric style={[styles.angleValue, { color: systemColors.label }]}>
             {selectedAngle}°
           </Text>
 
@@ -184,14 +183,14 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
                     accessibilityLabel={t('mobile.angleSelector.snapToAngle', { angle })}
                     style={({ pressed }) => [
                       styles.snapButton,
-                      { backgroundColor: isSelected ? brandColors.primary : systemColors.fill },
+                      {
+                        backgroundColor: isSelected ? selection.fill : systemColors.fill,
+                        borderColor: isSelected ? selection.checkmark : 'transparent',
+                      },
                       pressed && styles.snapButtonPressed,
                     ]}
                   >
-                    <Text
-                      variant="headline"
-                      style={[styles.snapText, { color: isSelected ? iosSystemColors.white : systemColors.label }]}
-                    >
+                    <Text variant="headline" emphasized color={selection.text}>
                       {angle}°
                     </Text>
                   </PressableSurface>
@@ -217,7 +216,6 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
     },
     angleValue: {
-      fontWeight: '700',
       marginTop: spacing[2],
     },
     grade: {
@@ -247,14 +245,12 @@ const createStyles = (textStyles: TypographyScale) =>
       height: 44,
       paddingHorizontal: spacing[4],
       borderRadius: 22,
+      borderWidth: 2,
       alignItems: 'center',
       justifyContent: 'center',
     },
     snapButtonPressed: {
       opacity: 0.85,
-    },
-    snapText: {
-      fontWeight: '600',
     },
     sliderWrap: {
       width: '100%',

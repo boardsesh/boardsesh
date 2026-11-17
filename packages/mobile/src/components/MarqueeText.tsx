@@ -64,10 +64,11 @@ type MarqueeTextProps = {
   textStyle?: StyleProp<TextStyle>;
   maxFontSizeMultiplier?: number;
   /**
-   * Lines for the non-scrolling fallback (name fits, not active, or Reduce Motion).
+   * Lines for a label that will not scroll (not active, or Reduce Motion).
    * Defaults to 1 (tail-ellipsis) for the fixed-height bars. A roomy surface like
    * the play-drawer header passes 2 so a Reduce-Motion user still reads the whole
-   * name (wrapped) instead of a truncation.
+   * name (wrapped) instead of a truncation. An active label with motion on
+   * stays on one line: it scrolls or shrinks once measured.
    */
   fallbackLines?: number;
   /**
@@ -100,6 +101,12 @@ export const MarqueeText = memo(function MarqueeText({
   const shrinksToFit =
     shrinkToFitScale !== undefined && clipWidth > 0 && overflow > 0 && clipWidth / contentWidth >= shrinkToFitScale;
   const shouldScroll = active && !reduceMotion && clipWidth > 0 && overflow > MIN_OVERFLOW_PX && !shrinksToFit;
+  // The wrap is for a label that will never scroll. One that scrolls or shrinks
+  // still passes through the fallback for a frame whenever its room narrows,
+  // because the widths it picks from are a layout behind: wrapping there made
+  // the play-drawer header a line taller for that frame, and the board under
+  // it resized and snapped back after every swipe to a long name.
+  const fallbackNumberOfLines = active && !reduceMotion ? 1 : fallbackLines;
 
   const onClipLayout = useCallback((event: LayoutChangeEvent) => {
     const width = Math.round(event.nativeEvent.layout.width);
@@ -175,7 +182,7 @@ export const MarqueeText = memo(function MarqueeText({
         <Text
           variant={variant}
           color={color}
-          numberOfLines={fallbackLines}
+          numberOfLines={fallbackNumberOfLines}
           ellipsizeMode="tail"
           maxFontSizeMultiplier={maxFontSizeMultiplier}
           style={textStyle}

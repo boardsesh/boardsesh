@@ -21,6 +21,7 @@ import {
   sprayWallLedLayoutKey,
   sprayWallLedSettingsKey,
   sprayWallLedUnsentKey,
+  SPRAY_WALL_LED_FIELDS,
   subscribeSprayWallLedCacheErased,
   type SprayWallLedField,
   type SprayWallLedSettings,
@@ -122,7 +123,20 @@ function settingsFromServer(setup: SprayWallLedSetupData): SprayWallLedSettings 
       (setup.controllerUrl === '' || /^wled-ble:wled-[a-f0-9]{12}$/i.test(setup.controllerUrl))
         ? { type: 'wled-ble', url: setup.controllerUrl.toLowerCase() }
         : { type: 'wled', url: setup.controllerType === 'wled' ? localAddressOrEmpty(setup.controllerUrl) : '' },
+    // A server from before these settings sends neither; read them with the defaults.
+    ...readSprayWallLedLighting(setup),
   };
+}
+
+function readSprayWallLedLighting(setup: SprayWallLedSetupData) {
+  const { brightness, autoOffMinutes } = readSprayWallLedSettings({
+    version: 1,
+    enabled: false,
+    controller: { type: 'wled', url: '' },
+    brightness: setup.brightness ?? undefined,
+    autoOffMinutes: setup.autoOffMinutes ?? undefined,
+  });
+  return { brightness, autoOffMinutes };
 }
 
 function isUnsent(field: SprayWallLedField, wallUuid: string): Promise<boolean> {
@@ -130,6 +144,11 @@ function isUnsent(field: SprayWallLedField, wallUuid: string): Promise<boolean> 
     (stored) => stored === true,
     () => false,
   );
+}
+
+async function readUnsent(wallUuid: string): Promise<Unsent> {
+  const flags = await Promise.all(SPRAY_WALL_LED_FIELDS.map((field) => isUnsent(field, wallUuid)));
+  return Object.fromEntries(SPRAY_WALL_LED_FIELDS.map((field, index) => [field, flags[index]])) as Unsent;
 }
 
 async function readCachedSettings(wallUuid: string): Promise<SprayWallLedSettings | null> {
@@ -159,13 +178,28 @@ function sameSettings(left: SprayWallLedSettings, right: SprayWallLedSettings): 
   return (
     left.enabled === right.enabled &&
     left.controller.type === right.controller.type &&
-    left.controller.url === right.controller.url
+    left.controller.url === right.controller.url &&
+    left.brightness === right.brightness &&
+    left.autoOffMinutes === right.autoOffMinutes
   );
 }
 
-async function applyServerSettings(wallUuid: string, server: SprayWallLedSettings | null): Promise<boolean> {
+type Unsent = Record<SprayWallLedField, boolean>;
+
+/** Take the server's settings, except the fields this phone has yet to send. */
+async function applyServerSettings(
+  wallUuid: string,
+  server: SprayWallLedSettings | null,
+  unsent: Unsent,
+): Promise<boolean> {
   const cached = await readCachedSettings(wallUuid);
   const next = server ?? readSprayWallLedSettings(null);
+  if (cached && unsent.settings) {
+    next.enabled = cached.enabled;
+    next.controller = cached.controller;
+  }
+  if (cached && unsent.brightness) next.brightness = cached.brightness;
+  if (cached && unsent.autoOff) next.autoOffMinutes = cached.autoOffMinutes;
   if (cached?.wifiUrl) next.wifiUrl = cached.wifiUrl;
   else if (next.controller.type === 'wled-ble' && cached?.controller.type === 'wled' && cached.controller.url)
     next.wifiUrl = cached.controller.url;
@@ -197,7 +231,7 @@ async function adoptLocalSetup(wallUuid: string): Promise<void> {
   const [settings, layout] = await Promise.all([readCachedSettings(wallUuid), readCachedLayout(wallUuid)]);
   const hasSettings = settings !== null && (settings.enabled || settings.controller.url !== '');
   const fields: SprayWallLedField[] = [];
-  if (hasSettings) fields.push('settings');
+  if (hasSettings) fields.push('settings', 'brightness', 'autoOff');
   if (layout !== null) fields.push('layout');
   if (fields.length === 0) return;
   await Promise.all(fields.map((field) => setPreference(sprayWallLedUnsentKey(field, wallUuid), true)));
@@ -222,20 +256,20 @@ async function mergeServerAnswer(
   }
 
   const { setup, viewerCanEdit } = answer;
-  const [settingsUnsent, layoutUnsent] = await Promise.all([
-    isUnsent('settings', wallUuid),
-    isUnsent('layout', wallUuid),
-  ]);
+  const unsent = await readUnsent(wallUuid);
   if (setup === null && viewerCanEdit) {
-    if (!settingsUnsent && !layoutUnsent) await adoptLocalSetup(wallUuid);
+    if (!SPRAY_WALL_LED_FIELDS.some((field) => unsent[field])) await adoptLocalSetup(wallUuid);
     return;
   }
 
   const serverSettings = setup === null ? null : settingsFromServer(setup);
   const serverLayout = setup?.layout == null ? null : readTnutLayout(setup.layout);
   if (!isCurrent()) return;
-  const settingsChanged = settingsUnsent ? false : await applyServerSettings(wallUuid, serverSettings);
-  const layoutChanged = layoutUnsent ? false : await applyServerLayout(wallUuid, serverLayout);
+  const settingsChanged =
+    unsent.settings && unsent.brightness && unsent.autoOff
+      ? false
+      : await applyServerSettings(wallUuid, serverSettings, unsent);
+  const layoutChanged = unsent.layout ? false : await applyServerLayout(wallUuid, serverLayout);
   if (isCurrent() && (settingsChanged || layoutChanged)) publishServerChange(wallUuid);
 }
 
@@ -272,7 +306,7 @@ function refreshFromServer(wallUuid: string): Promise<void> {
 
 async function hasCachedCopy(field: SprayWallLedField, wallUuid: string): Promise<boolean> {
   const stored = await getPreference<unknown>(
-    field === 'settings' ? sprayWallLedSettingsKey(wallUuid) : sprayWallLedLayoutKey(wallUuid),
+    field === 'layout' ? sprayWallLedLayoutKey(wallUuid) : sprayWallLedSettingsKey(wallUuid),
   ).catch(() => null);
   return stored !== null;
 }
@@ -280,13 +314,8 @@ async function hasCachedCopy(field: SprayWallLedField, wallUuid: string): Promis
 async function retryUnsent(wallUuid: string): Promise<void> {
   const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
   if (uploads.has(wallUuid)) return;
-  const [settingsUnsent, layoutUnsent] = await Promise.all([
-    isUnsent('settings', wallUuid),
-    isUnsent('layout', wallUuid),
-  ]);
-  const fields: SprayWallLedField[] = [];
-  if (settingsUnsent) fields.push('settings');
-  if (layoutUnsent) fields.push('layout');
+  const unsent = await readUnsent(wallUuid);
+  const fields = SPRAY_WALL_LED_FIELDS.filter((field) => unsent[field]);
   if (fields.length > 0 && sprayWallLedCacheGeneration(wallUuid) === cacheGeneration) queueUpload(wallUuid, fields);
 }
 
@@ -320,10 +349,11 @@ export function recheckSprayWallLedAccess(wallUuid: string): void {
 /** Call before writing the copy: from here until the server has it, a read must not replace it. */
 export async function markSprayWallLedSaveStarted(
   wallUuid: string,
-  field: SprayWallLedField,
+  field: SprayWallLedField | readonly SprayWallLedField[],
   writeCopy: () => Promise<void> = async () => undefined,
 ): Promise<void> {
   if (isLocalOnlyWall(wallUuid)) return writeCopy();
+  const fields = typeof field === 'string' ? [field] : field;
   const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
   const assertCurrent = () => {
     if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED save withdrawn');
@@ -331,11 +361,11 @@ export async function markSprayWallLedSaveStarted(
   bumpGeneration(wallUuid);
   fieldGenerations.set(wallUuid, {
     ...fieldGenerations.get(wallUuid),
-    [field]: fieldGenerationOf(wallUuid, field) + 1,
+    ...Object.fromEntries(fields.map((name) => [name, fieldGenerationOf(wallUuid, name) + 1])),
   });
   await serializeCacheWrite(wallUuid, async () => {
     assertCurrent();
-    await setPreference(sprayWallLedUnsentKey(field, wallUuid), true);
+    for (const name of fields) await setPreference(sprayWallLedUnsentKey(name, wallUuid), true);
     assertCurrent();
     await writeCopy();
     assertCurrent();
@@ -344,10 +374,13 @@ export async function markSprayWallLedSaveStarted(
 }
 
 /** Call after the copy is written. */
-export function queueSprayWallLedUpload(wallUuid: string, field: SprayWallLedField): void {
+export function queueSprayWallLedUpload(
+  wallUuid: string,
+  field: SprayWallLedField | readonly SprayWallLedField[],
+): void {
   if (isLocalOnlyWall(wallUuid)) return;
   bumpGeneration(wallUuid);
-  queueUpload(wallUuid, [field]);
+  queueUpload(wallUuid, typeof field === 'string' ? [field] : [...field]);
 }
 
 function queueUpload(wallUuid: string, fields: SprayWallLedField[]): void {
@@ -366,21 +399,30 @@ async function buildUploadInput(
   fields: SprayWallLedField[],
 ): Promise<SaveSprayWallLedSetupMutationVariables['input'] | null> {
   const input: SaveSprayWallLedSetupMutationVariables['input'] = { boardUuid: wallUuid };
-  if (fields.includes('settings')) {
+  if (fields.some((field) => field !== 'layout')) {
     const stored = await getPreference<unknown>(sprayWallLedSettingsKey(wallUuid), { strictParsing: true });
     const settings = readSprayWallLedSettings(stored);
-    const url =
-      settings.controller.type === 'wled-ble' ? settings.controller.url : localAddressOrEmpty(settings.controller.url);
-    input.controllerType = settings.controller.type;
-    input.controllerUrl = url;
-    // Sent as stored: the switch can be on before an address exists.
-    input.enabled = settings.enabled;
+    if (fields.includes('settings')) {
+      const url =
+        settings.controller.type === 'wled-ble'
+          ? settings.controller.url
+          : localAddressOrEmpty(settings.controller.url);
+      input.controllerType = settings.controller.type;
+      input.controllerUrl = url;
+      // Sent as stored: the switch can be on before an address exists.
+      input.enabled = settings.enabled;
+    }
+    // Only a value this phone changed: the server keeps whatever is left out.
+    if (fields.includes('brightness')) input.brightness = settings.brightness;
+    if (fields.includes('autoOff')) input.autoOffMinutes = settings.autoOffMinutes;
   }
   if (fields.includes('layout')) {
     const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
     const layout = stored === null ? null : readTnutLayout(stored);
     if (!layout) throw new Error('Invalid saved T-nut layout');
-    input.layout = layout;
+    // Always name `ledGroups`, null for the default pairs: a layout without the key
+    // reads as an app from before LED pairs, and the server would keep the old list.
+    input.layout = layout.ledGroups === undefined ? { ...layout, ledGroups: null } : layout;
   }
   return fields.length > 0 ? input : null;
 }

@@ -9,6 +9,8 @@ import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineStateView } from '../OfflineStateView';
 import { Button } from '../Button';
+import { EmptyState } from '../EmptyState';
+import { TextAction } from '../TextAction';
 import { SectionHeader } from '../SectionHeader';
 import { useTheme } from '../../providers/theme-provider';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
@@ -95,14 +97,14 @@ export function DiscoverLibraryView({
             >
               <Icon name="person" size={26} color={systemColors.secondaryLabel} />
               <View style={styles.signInText}>
-                <Text variant="subheadline" style={styles.signInTitle}>
+                <Text emphasized variant="subheadline">
                   {t('library.signInBanner.title')}
                 </Text>
-                <Text variant="caption1" style={styles.signInDescription}>
+                <Text tone="secondary" variant="caption1">
                   {t('library.signInBanner.description')}
                 </Text>
               </View>
-              <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
+              <Text emphasized variant="subheadline" color={systemColors.accent}>
                 {t('library.signInBanner.cta')}
               </Text>
             </PressableSurface>
@@ -117,42 +119,27 @@ export function DiscoverLibraryView({
           {forYouShelf}
           {communityShelf}
           {emptyState === 'error' ? (
-            <View style={styles.emptyContainer}>
-              <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('library.errors.loadTitle')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {t('library.errors.loadDescription')}
-              </Text>
-              <PressableSurface
-                onPress={onRetry}
-                accessibilityRole="button"
-                accessibilityLabel={t('library.errors.tryAgain')}
-                hitSlop={8}
-              >
-                <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
-                  {t('library.errors.tryAgain')}
-                </Text>
-              </PressableSurface>
-            </View>
+            <EmptyState
+              size="section"
+              style={{ paddingTop: spacing[10] * 2 }}
+              icon="error"
+              title={t('library.errors.loadTitle')}
+              body={t('library.errors.loadDescription')}
+              actions={<TextAction label={t('library.errors.tryAgain')} onPress={onRetry} />}
+            />
           ) : null}
           {emptyState === 'offline' ? (
             <OfflineStateView reason={offlineReason} effectiveOffline={effectiveOffline} />
           ) : null}
           {emptyState === 'empty' ? (
-            <View style={styles.emptyContainer}>
-              <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('library.empty.title')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {t('library.empty.description')}
-              </Text>
-              <View style={styles.emptyCta}>
-                <Button title={t('library.empty.createCta')} icon="plus" onPress={onCreate} />
-              </View>
-            </View>
+            <EmptyState
+              size="section"
+              style={{ paddingTop: spacing[10] * 2 }}
+              icon="playlist"
+              title={t('library.empty.title')}
+              body={t('library.empty.description')}
+              actions={<Button title={t('library.empty.createCta')} icon="plus" onPress={onCreate} />}
+            />
           ) : null}
           {emptyState === 'loading' ? (
             <View style={styles.loadingContainer}>
@@ -214,37 +201,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
-  },
-  signInTitle: {
-    fontWeight: '600',
-  },
-  signInDescription: {
-    opacity: 0.6,
-  },
-  signInCta: {
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing[10] * 2,
-    paddingHorizontal: 32,
-    gap: 8,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    opacity: 0.6,
-  },
-  emptySubtitle: {
-    opacity: 0.4,
-    textAlign: 'center',
-  },
-  emptyCta: {
-    marginTop: spacing[4],
-  },
-  retryCta: {
-    marginTop: spacing[3],
-    fontWeight: '600',
   },
   loadingContainer: {
     paddingTop: spacing[10] * 3,

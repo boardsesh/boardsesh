@@ -42,7 +42,11 @@ The positive response-order gap remains. A final server check cannot make an
 already delayed `Set-Cookie` conditional on a later login. Origin-scoped locks
 and component epochs do not span www/app or top-level callbacks.
 
+> **Note for #7596.** This section stays. It is the real race, and acceptance item 1 of #7596 reruns this fixture on Chromium and WebKit. Under the re-scoped design in [better-auth-browser-session.md](better-auth-browser-session.md) only login and sign-out responses write the session cookie, so the renewal and set-password rows above can no longer restore an earlier account. The two Apple callback cases are a login racing a later login, which #7596 accepts: the browser keeps whichever login response arrived last, and no data crosses accounts. When the fixture is rerun, those two cases need the accepted outcome as their expectation instead of counting as failures. That last point is inferred from the spec, not run.
+
 ## Dark backend selection prerequisite
+
+> **Superseded by #7596.** This section describes the browser binding core, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). The section is deleted with that code; the section above stays.
 
 The dark `browser-binding` core in #7465 adds a digest-stored opaque correlation
 binding and versioned one-use intent records. It is stacked on the dedicated

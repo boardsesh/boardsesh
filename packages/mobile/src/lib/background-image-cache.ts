@@ -27,6 +27,8 @@ export type { BackgroundVariant, BackgroundColorScheme } from './bundled-board-a
  * materialize them to disk first).
  */
 const resolvedPaths = new Map<string, string>();
+const pendingPaths = new Map<string, Promise<string | null>>();
+const pendingDrawableCopies = new Map<string, Promise<Asset>>();
 
 /**
  * Manifest keys we've already warned about, so a missing bundle entry
@@ -86,10 +88,9 @@ function tryResolveBundledPathSync(manifestKey: string): string | null {
 }
 
 /**
- * Async resolve a single background. In production this is effectively
- * sync (Asset.localUri is pre-populated, downloadAsync is a no-op). In
- * dev mode this does the Metro HTTP fetch + disk write that turns an
- * http://localhost:8081 URL into a real file:// path.
+ * Resolve a single background to a file. Embedded Android drawables need a
+ * resource-to-file copy; development assets need a Metro HTTP fetch. Already
+ * materialized files keep the synchronous path.
  *
  * Returns null on manifest miss or resolution failure.
  */
@@ -97,6 +98,47 @@ async function resolveBundledPathAsync(manifestKey: string): Promise<string | nu
   const cached = resolvedPaths.get(manifestKey);
   if (cached) return cached;
 
+  const pending = pendingPaths.get(manifestKey);
+  if (pending) return pending;
+  const resolution = materializeBundledPath(manifestKey);
+  pendingPaths.set(manifestKey, resolution);
+  try {
+    return await resolution;
+  } finally {
+    pendingPaths.delete(manifestKey);
+  }
+}
+
+async function materializeAndroidDrawable(asset: Asset): Promise<Asset> {
+  const cacheIdentity = JSON.stringify(
+    asset.hash === null ? ['uri', asset.uri, asset.type] : ['hash', asset.hash, asset.type],
+  );
+  const pending = pendingDrawableCopies.get(cacheIdentity);
+  if (pending) return pending;
+  const copy = (async () => {
+    // Expo marks embedded drawables downloaded for Image compatibility, but
+    // native file consumers need a copy. Keep its hash/type so Expo uses the
+    // content cache; aliases of the same content must share this copy too.
+    const fileAsset = new Asset({
+      name: asset.name,
+      type: asset.type,
+      hash: asset.hash,
+      uri: asset.uri,
+      width: asset.width,
+      height: asset.height,
+    });
+    await fileAsset.downloadAsync();
+    return fileAsset;
+  })();
+  pendingDrawableCopies.set(cacheIdentity, copy);
+  try {
+    return await copy;
+  } finally {
+    pendingDrawableCopies.delete(cacheIdentity);
+  }
+}
+
+async function materializeBundledPath(manifestKey: string): Promise<string | null> {
   const moduleId = BOARD_BACKGROUND_ASSETS[manifestKey];
   if (moduleId === undefined) {
     warnMissing(manifestKey, 'no manifest entry');
@@ -104,7 +146,7 @@ async function resolveBundledPathAsync(manifestKey: string): Promise<string | nu
   }
 
   try {
-    const asset = Asset.fromModule(moduleId);
+    let asset = Asset.fromModule(moduleId);
     if (Platform.OS === 'web') {
       const webUrl = asset.localUri ?? asset.uri;
       if (webUrl) {
@@ -113,6 +155,9 @@ async function resolveBundledPathAsync(manifestKey: string): Promise<string | nu
       }
       warnMissing(manifestKey, 'web asset resolved to no URL');
       return null;
+    }
+    if (Platform.OS === 'android' && !asset.localUri?.startsWith('file://') && !asset.uri.includes(':')) {
+      asset = await materializeAndroidDrawable(asset);
     }
     if (!asset.localUri || !asset.localUri.startsWith('file://')) {
       await asset.downloadAsync();

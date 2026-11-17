@@ -5,7 +5,7 @@ import { useFrameSize, useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
-import { useGlassCapability } from '../../hooks/use-glass-capability';
+import { useHeaderBlurEffect } from '../../hooks/use-header-blur-effect';
 import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { glassSize } from '../../theme/layout';
@@ -78,7 +78,7 @@ export function NativeRootHeader({
   onHeightChange: (height: number) => void;
 }) {
   const { systemColors } = useTheme();
-  const glassCapability = useGlassCapability();
+  const headerBlurEffect = useHeaderBlurEffect();
   const headerHeight = useHeaderHeight();
   // The navigation stack's measured frame, including a tablet's local pane.
   // UIKit adds space around shared bar-item backgrounds that Yoga does not see.
@@ -130,7 +130,7 @@ export function NativeRootHeader({
           headerLargeTitle: !hasCenterContent && !titleHidden,
           headerTransparent: true,
           // iOS 26 owns the scroll-edge material; don't inherit the legacy blur.
-          headerBlurEffect: glassCapability ? undefined : 'systemMaterial',
+          headerBlurEffect,
           headerShadowVisible: false,
           headerLargeTitleShadowVisible: false,
           // Route layouts own the title even while a root modal is focused.

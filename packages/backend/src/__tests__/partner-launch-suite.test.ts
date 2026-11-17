@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import * as oauth from 'oauth4webapi';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
@@ -11,6 +11,7 @@ import {
   oauthAppPolicy,
   oauthClient,
   oauthConnections,
+  oauthConsent,
   oauthConsentInteractions,
   oauthGrants,
   oauthRefreshAncestors,
@@ -45,6 +46,7 @@ import {
   startRealServer,
   useDeployment,
   WEB_ORIGIN,
+  webSessionBearer,
   type RunningServer,
 } from './helpers/partner-launch-harness';
 import { getWorkerDatabaseUrl } from './worker-db';
@@ -69,7 +71,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
  * - Gate 10 (published scopes match shipped routes): "discovery", "codes".
  * - BA-07 done: "the journey", "codes", "refresh", "resource", "widening",
  *   "token revocation", "suspend, rotate and delete", "two instances".
- * - BA-08 done: "registration", "consent", "the journey" (Disconnect, reconnect,
+ * - BA-08 done: "registration", "consent", "remembered consent", "the journey" (Disconnect, reconnect,
  *   per-app subject), "suspend, rotate and delete", "switching modes".
  *
  * Needs REDIS_URL (CI sets it), like the other partner route suites. About 30 s
@@ -251,13 +253,19 @@ async function expectFirstPartyUnaffected(target: RunningServer): Promise<void> 
 // Partner OAuth on: one server for the journey, as production runs it.
 // ---------------------------------------------------------------------------
 
-type AppKind = 'confidential-basic' | 'confidential-post' | 'public-native' | 'public-web';
+/**
+ * `confidential-native`: a native app that registered a secret anyway, with a
+ * private-use scheme, a loopback and an https redirect. Registration allows it.
+ */
+type AppKind = 'confidential-basic' | 'confidential-post' | 'confidential-native' | 'public-native' | 'public-web';
 
 interface PartnerApp {
   kind: AppKind;
   clientId: string;
   clientSecret: string | null;
+  /** The first registered redirect URI, used unless a test names another. */
   redirectUri: string;
+  redirectUris: string[];
   /** An https origin the app registered, for browser CORS. */
   origin: string | null;
   client: oauth.Client;
@@ -292,7 +300,7 @@ let metadata: oauth.AuthorizationServer;
 let closeMainRuntime: (() => Promise<void>) | undefined;
 /** For barriers and writers outside the server: a session of our own. */
 let rawSql: ReturnType<typeof postgres>;
-const developerPool: string[] = Array.from({ length: 64 }, () => `developer-${randomUUID()}`);
+const developerPool: string[] = Array.from({ length: 80 }, () => `developer-${randomUUID()}`);
 const MAIN_DEPLOYMENT = {
   PARTNER_OAUTH_MODE: 'allowlist',
   PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
@@ -313,15 +321,20 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
     .values({ id: developerId, email: `${developerId}@example.invalid`, name: 'Developer', emailVerified: new Date() });
   appCounter += 1;
   const host = `app-${appCounter}.example.test`;
-  const native = kind === 'public-native';
+  const native = kind === 'public-native' || kind === 'confidential-native';
   const authMethod = {
     'confidential-basic': 'CLIENT_SECRET_BASIC',
     'confidential-post': 'CLIENT_SECRET_POST',
+    'confidential-native': 'CLIENT_SECRET_BASIC',
     'public-native': 'NONE',
     'public-web': 'NONE',
   }[kind];
   const redirectUris = native
-    ? [`com.example.app${appCounter}:/oauth/boardsesh`, 'http://127.0.0.1/callback']
+    ? [
+        `com.example.app${appCounter}:/oauth/boardsesh`,
+        'http://127.0.0.1/callback',
+        ...(kind === 'confidential-native' ? [`https://${host}/oauth/boardsesh`] : []),
+      ]
     : [`https://${host}/oauth/boardsesh`];
   const reply = await target.graphql(
     REGISTER_MUTATION,
@@ -351,7 +364,7 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
     remember(pair, Buffer.from(pair).toString('base64'));
   }
   const auth =
-    kind === 'confidential-basic'
+    kind === 'confidential-basic' || kind === 'confidential-native'
       ? oauth.ClientSecretBasic(created.clientSecret ?? '')
       : kind === 'confidential-post'
         ? oauth.ClientSecretPost(created.clientSecret ?? '')
@@ -361,12 +374,23 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
     clientId: created.client.clientId,
     clientSecret: created.clientSecret,
     redirectUri: created.client.redirectUris[0],
+    redirectUris: created.client.redirectUris,
     origin: native ? null : `https://${host}`,
     client: { client_id: created.client.clientId },
     auth,
     developerId,
     ip: freshClientIp(),
   };
+}
+
+/**
+ * The console's bearer from a www sign-in made just now: the only kind that may
+ * rotate a secret, delete an app or change its redirect URIs (#7598).
+ */
+async function freshDeveloperBearer(developerId: string): Promise<string> {
+  const bearer = await webSessionBearer(developerId, { webMode: 'allowlist' });
+  remember(bearer);
+  return bearer;
 }
 
 async function newClimber(label = 'climber', webMode = 'allowlist'): Promise<Climber> {
@@ -486,7 +510,10 @@ function expectErrorAtApp(
 ): void {
   expect(opened.reply.status).toBe(302);
   const target = new URL(opened.location);
-  expect(`${target.origin}${target.pathname}`).toBe(app.redirectUri);
+  // Compared without the query: a private-use scheme has no origin to compare.
+  const withoutQuery = new URL(target);
+  withoutQuery.search = '';
+  expect(withoutQuery.href).toBe(authorization.redirectUri);
   expect({
     error: target.searchParams.get('error'),
     state: target.searchParams.get('state'),
@@ -973,9 +1000,11 @@ describe('partner OAuth on, in the real server', () => {
           ),
         ).rejects.toMatchObject({ error: 'invalid_grant' });
 
-        // Consent is remembered now, so this goes straight back to the app.
+        // A confidential web app on https: consent is remembered now, so this goes
+        // straight back to the app. Every other app is asked every time ("remembered consent").
         const authorization = await startAuthorization(app);
         const callback = await callbackFor(authorization, climber);
+        expect(callback.startsWith(`${app.redirectUri}?`)).toBe(true);
         const tokens = await redeem(app, authorization, callback);
         expect((await callMe(app, tokens.access_token)).status).toBe(200);
         await expect(redeem(app, authorization, callback)).rejects.toMatchObject({
@@ -1072,8 +1101,18 @@ describe('partner OAuth on, in the real server', () => {
         const app = await registerApp();
         const climber = await newClimber();
         const phone = await connect(app, climber);
-        // A second device connects the same climber: remembered consent, no screen, a new family.
-        const tablet = await connect(app, climber);
+        // A second device connects the same climber: a confidential web app on
+        // https keeps the remembered consent, so no screen, and a new family.
+        const tabletAuthorization = await startAuthorization(app);
+        const tabletCallback = (await openAuthorize(tabletAuthorization.url, climber)).location;
+        expect(tabletCallback.startsWith(`${app.redirectUri}?`)).toBe(true);
+        const tabletTokens = await redeem(app, tabletAuthorization, tabletCallback);
+        if (!tabletTokens.refresh_token) throw new Error('No refresh token was issued.');
+        const tablet: Connection = {
+          app,
+          climber,
+          tokens: { ...tabletTokens, refresh_token: tabletTokens.refresh_token },
+        };
         expect(tablet.tokens.refresh_token).not.toBe(phone.tokens.refresh_token);
 
         const rotated = await refresh(app, phone.tokens.refresh_token);
@@ -1611,6 +1650,138 @@ describe('partner OAuth on, in the real server', () => {
         const refused = await approve(lateScreen.location, late);
         expect(new URL(refused.body.url as string).searchParams.get('error')).toBe('temporarily_unavailable');
         expect((await connectionRow({ app, climber: late }))?.connectedAt ?? null).toBeNull();
+      },
+      SUITE_DEADLINE_MS,
+    );
+  });
+
+  // Only a confidential web app on https is remembered (fence.ts,
+  // `requiresConsentEveryTime`). A public app's client_id proves nothing (RFC
+  // 6749 section 10.2), and another app on the climber's phone can claim a
+  // native app's scheme, port or link and pull out a secret it ships (RFC 8252
+  // section 8.6), then start authorize with the real app's client_id and its own
+  // PKCE verifier, in a browser that carries the climber's Boardsesh sign-in.
+  describe('remembered consent', () => {
+    /** Codes issued on this connection: every issued code gets a grant row. */
+    const grantCount = async (app: PartnerApp, climber: Climber) => {
+      const row = await connectionRow({ app, climber });
+      return row ? db.$count(oauthGrants, eq(oauthGrants.connectionId, row.id)) : 0;
+    };
+    /** The provider's own code rows for this climber: a refused code leaves none. */
+    const codeRows = (climber: Climber) =>
+      db.$count(
+        oauthVerification,
+        and(
+          like(oauthVerification.value, '%"type":"authorization_code"%'),
+          like(oauthVerification.value, `%"userId":"${climber.userId}"%`),
+        ),
+      );
+    const rememberedConsents = (app: PartnerApp, climber: Climber) =>
+      db.$count(oauthConsent, and(eq(oauthConsent.userId, climber.userId), eq(oauthConsent.clientId, app.clientId)));
+
+    /** prompt=none gets consent_required at the app, and neither a grant nor a code row survives. */
+    async function expectSilentRefused(app: PartnerApp, climber: Climber, redirectUri: string) {
+      const grantsBefore = await grantCount(app, climber);
+      const codesBefore = await codeRows(climber);
+      const silent = await startAuthorization(app, { redirectUri, extra: { prompt: 'none' } });
+      expectErrorAtApp(await openAuthorize(silent.url, climber), app, silent, 'consent_required');
+      expect({ redirectUri, grants: await grantCount(app, climber), codes: await codeRows(climber) }).toEqual({
+        redirectUri,
+        grants: grantsBefore,
+        codes: codesBefore,
+      });
+    }
+
+    it(
+      'shows a public app the consent screen on every authorization, and issues no code without an answer',
+      async () => {
+        const native = await registerApp('public-native');
+        const web = await registerApp('public-web');
+        const climber = await newClimber();
+        for (const [app, redirectUri] of [
+          [native, native.redirectUri],
+          [native, 'http://127.0.0.1:49152/callback'],
+          [web, web.redirectUri],
+        ] as const) {
+          await connect(app, climber, { redirectUri });
+          expect(await rememberedConsents(app, climber)).toBe(1);
+          const grantsBefore = await grantCount(app, climber);
+          const codesBefore = await codeRows(climber);
+
+          const again = await startAuthorization(app, { redirectUri });
+          const { location } = await openAuthorize(again.url, climber);
+          expect({ redirectUri, screen: location.startsWith(`${CONSENT_PAGE}?`) }).toEqual({
+            redirectUri,
+            screen: true,
+          });
+          expect([await grantCount(app, climber), await codeRows(climber)]).toEqual([grantsBefore, codesBefore]);
+
+          // The climber's answer on the screen is what sends the code.
+          const approved = await approve(location, climber);
+          expect(approved.reply.status).toBe(200);
+          const tokens = await redeem(app, again, approved.body.url as string);
+          expect((await callMe(app, tokens.access_token)).status).toBe(200);
+        }
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      'answers prompt=none from a public app with consent_required, keeps no code row, and leaves the connection alone',
+      async () => {
+        const app = await registerApp('public-native');
+        const climber = await newClimber();
+        const connection = await connect(app, climber);
+        for (const redirectUri of [app.redirectUri, 'http://127.0.0.1:49153/callback']) {
+          await expectSilentRefused(app, climber, redirectUri);
+        }
+        expect(await rememberedConsents(app, climber)).toBe(1);
+        await expectAlive(connection);
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      'keeps remembered consent for a confidential web app on https: no screen, and prompt=none gets a code',
+      async () => {
+        const app = await registerApp('confidential-basic');
+        const climber = await newClimber();
+        await connect(app, climber);
+        const requests: Array<Record<string, string>> = [{}, { prompt: 'none' }];
+        for (const extra of requests) {
+          const codesBefore = await codeRows(climber);
+          const again = await startAuthorization(app, { extra });
+          const { location } = await openAuthorize(again.url, climber);
+          expect({ extra, straightBack: location.startsWith(`${app.redirectUri}?`) }).toEqual({
+            extra,
+            straightBack: true,
+          });
+          // What the refusals are measured against: an issued code leaves its row.
+          expect(await codeRows(climber)).toBe(codesBefore + 1);
+          expect((await callMe(app, (await redeem(app, again, location)).access_token)).status).toBe(200);
+        }
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      'asks a confidential native app every time, on its https redirect as on its custom scheme and loopback',
+      async () => {
+        const app = await registerApp('confidential-native');
+        const httpsRedirect = app.redirectUris.find((uri) => uri.startsWith('https://')) ?? '';
+        const climber = await newClimber();
+        await connect(app, climber, { redirectUri: httpsRedirect });
+        expect(await rememberedConsents(app, climber)).toBe(1);
+
+        for (const redirectUri of [httpsRedirect, app.redirectUri, 'http://127.0.0.1:49154/callback']) {
+          const asked = await startAuthorization(app, { redirectUri });
+          const { location } = await openAuthorize(asked.url, climber);
+          expect({ redirectUri, screen: location.startsWith(`${CONSENT_PAGE}?`) }).toEqual({
+            redirectUri,
+            screen: true,
+          });
+          await expectSilentRefused(app, climber, redirectUri);
+        }
       },
       SUITE_DEADLINE_MS,
     );
@@ -2176,7 +2347,7 @@ describe('partner OAuth on, in the real server', () => {
         const wider = await startAuthorization(app);
         const { location } = await openAuthorize(wider.url, climber);
         expect(location.startsWith(`${CONSENT_PAGE}?`)).toBe(true);
-        const developerBearer = await firstPartyToken(app.developerId);
+        const developerBearer = await freshDeveloperBearer(app.developerId);
 
         // The gun: a key share on the app row, which any in-flight insert naming
         // the app holds. The delete takes every lock of its own, then waits here
@@ -2445,10 +2616,20 @@ describe('partner OAuth on, in the real server', () => {
       async () => {
         const app = await registerApp('confidential-basic');
         const connection = await connect(app, await newClimber());
-        const rotated = await server.graphql(
-          `mutation Rotate($clientId: ID!) { rotateOAuthClientSecret(clientId: $clientId) { clientSecret } }`,
+        const rotate = `mutation Rotate($clientId: ID!) { rotateOAuthClientSecret(clientId: $clientId) { clientSecret } }`;
+        // An app token proves no recent www sign-in (#7598): refused, and the secret stays.
+        const refused = await server.graphql(
+          rotate,
           { clientId: app.clientId },
           { bearer: await firstPartyToken(app.developerId) },
+        );
+        expect(refused.errors?.[0]?.extensions).toMatchObject({ code: 'FORBIDDEN', reason: 'RECENT_SIGN_IN_REQUIRED' });
+        // The old secret still authenticates: an unknown refresh token is a grant error, not a client one.
+        expect(await refresh(app, `unknown-${randomUUID()}`)).toMatchObject({ ok: false, error: 'invalid_grant' });
+        const rotated = await server.graphql(
+          rotate,
+          { clientId: app.clientId },
+          { bearer: await freshDeveloperBearer(app.developerId) },
         );
         expect(rotated.errors).toBeUndefined();
         const credentials = rotated.data?.rotateOAuthClientSecret as { clientSecret: string } | undefined;
@@ -2476,7 +2657,7 @@ describe('partner OAuth on, in the real server', () => {
         const deleted = await server.graphql(
           `mutation Delete($clientId: ID!) { deleteOAuthClient(clientId: $clientId) }`,
           { clientId: app.clientId },
-          { bearer: await firstPartyToken(app.developerId) },
+          { bearer: await freshDeveloperBearer(app.developerId) },
         );
         expect(deleted.data).toEqual({ deleteOAuthClient: true });
         expect(await callMe(app, doomed.tokens.access_token)).toEqual({

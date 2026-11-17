@@ -2,14 +2,19 @@ import { z } from 'zod';
 import { browserBindingCursorSchema } from './browser-coordinator-v1';
 
 /** Browser-visible control only. Credentials and private operation capabilities
- * stay in the canonical host's HttpOnly cookies and service transport. */
+ * stay in the canonical host's HttpOnly cookies and service transport.
+ * #7596 deleted the www routes below with renewal custody, and later the www
+ * /auth/browser-coordinator page that mounted the frame; all answer 404 now.
+ * Only the host half (mountCanonicalBrowserCoordinator in
+ * browser-coordinator-dom) fetches these paths, and nothing mounts it now. The
+ * gated Expo web `coordinateExpoBrowserSession` still sends a `renew` message
+ * through the frame client, but no host answers it. This module goes with the
+ * shared coordinator subpaths. */
 export const BROWSER_RENEWAL_BROWSER_PATHS = Object.freeze({
   prepare: '/api/internal/auth/browser-coordinator/renew/prepare',
   commit: '/api/internal/auth/browser-coordinator/renew/commit',
 });
 const operationKey = z.string().regex(/^[a-f0-9]{64}$/);
-export const browserRenewalBrowserPrepareSchema = z.object({ expectedCursor: browserBindingCursorSchema }).strict();
-export const browserRenewalBrowserCommitSchema = browserRenewalBrowserPrepareSchema.extend({ operationKey }).strict();
 const refusal = z.object({ status: z.enum(['conflict', 'proof-required', 'unavailable']) }).strict();
 export const browserRenewalBrowserPreparationReplySchema = z.union([
   z.object({ status: z.literal('prepared'), operationKey, cursor: browserBindingCursorSchema }).strict(),
@@ -29,4 +34,3 @@ export const browserRenewalBrowserResultSchema = z.union([
     .strict(),
   refusal,
 ]);
-export type BrowserRenewalBrowserResult = z.infer<typeof browserRenewalBrowserResultSchema>;

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { userBoardToItem, userBoardsToItems, popularConfigToItem, findOwnedBoardForConfig } from '../board-items';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import {
+  userBoardToItem,
+  userBoardsToItems,
+  boardRowsToItems,
+  findOwnedBoardForConfig,
+  pickerTopBoardsToItems,
+} from '../board-items';
 
 const board = {
   uuid: 'b-1',
@@ -13,20 +19,6 @@ const board = {
   angle: 40,
   distanceMeters: 250,
 } as unknown as UserBoard;
-
-const config = {
-  boardType: 'tension',
-  layoutId: 9,
-  sizeId: 8,
-  setIds: [7, 6],
-  setNames: ['A', 'B'],
-  layoutName: 'TB2',
-  sizeName: '8x10',
-  displayName: 'Tension 8x10',
-  climbCount: 100,
-  totalAscents: 50,
-  boardCount: 3,
-} as unknown as PopularBoardConfig;
 
 describe('userBoardToItem', () => {
   it('maps a UserBoard onto a discovery item', () => {
@@ -104,36 +96,70 @@ describe('userBoardsToItems', () => {
   });
 });
 
-describe('popularConfigToItem', () => {
-  it('maps a popular config, joining numeric setIds into the wire string', () => {
-    const item = popularConfigToItem(config);
-    expect(item).toMatchObject({
-      boardName: 'tension',
-      layoutId: 9,
-      sizeId: 8,
-      setIds: '7,6',
-      title: 'Tension 8x10',
+describe('boardRowsToItems', () => {
+  // A hidden board found by serial has no uuid (#6552), so In range rows key on
+  // their own row key, and each item must keep it.
+  it('keeps each row its own key, and marks the active board', () => {
+    const hidden = { ...board, uuid: '' } as unknown as UserBoard;
+    const items = boardRowsToItems(
+      [
+        { key: 'board:b-1', board },
+        { key: 'board:serial-751737', board: hidden },
+      ],
+      { activeUuid: 'b-1' },
+    );
+    expect(items.map((item) => item.key)).toEqual(['board:b-1', 'board:serial-751737']);
+    expect(items[0].isActive).toBe(true);
+  });
+
+  it('leaves out a board the card cannot draw, without shifting the keys of the rest', () => {
+    const unknownType = { ...board, uuid: 'x', boardType: 'not-a-board' } as unknown as UserBoard;
+    const tension = { ...board, uuid: 't', boardType: 'tension', name: 'Tension' } as unknown as UserBoard;
+    const items = boardRowsToItems([
+      { key: 'board:x', board: unknownType },
+      { key: 'board:t', board: tension },
+    ]);
+    expect(items.map((item) => [item.key, item.title])).toEqual([['board:t', 'Tension']]);
+  });
+});
+
+describe('pickerTopBoardsToItems', () => {
+  const gymBoard = { ...board, gymUuid: 'gym-crux', gymName: 'Crux', name: 'Crux - Cave' } as unknown as UserBoard;
+
+  it("keeps the top's key, shown name and selection", () => {
+    const items = pickerTopBoardsToItems([
+      { key: 'b-1', board: gymBoard, title: 'Cave', selected: true },
+      { key: 'other', board: { ...gymBoard, uuid: 'other', name: 'Arch' }, title: 'Arch', selected: false },
+    ]);
+    expect(items.map((item) => [item.key, item.title, item.isActive])).toEqual([
+      ['b-1', 'Cave', true],
+      ['other', 'Arch', false],
+    ]);
+  });
+
+  // At {gym} names the gym in its title: its rows lead with what the wall is.
+  it('drops the gym from the subtitles in the within-gym scope', () => {
+    const [global] = pickerTopBoardsToItems([{ key: 'b-1', board: gymBoard, title: 'Cave', selected: false }]);
+    const [withinGym] = pickerTopBoardsToItems([{ key: 'b-1', board: gymBoard, title: 'Cave', selected: false }], {
+      labelOptions: { scope: 'within-gym' },
     });
+    expect(global?.subtitle).toBe('Crux');
+    expect(withinGym?.subtitle).toBe('Original');
   });
 
-  it('builds a stable key from the config tuple (configs have no uuid)', () => {
-    expect(popularConfigToItem(config)?.key).toBe('popular:tension:9:8:7-6');
+  // Only At {gym} drops the gym: Your boards has no heading that names it.
+  it('keeps the gym and the full name for the same wall in Your boards', () => {
+    const [atGym] = pickerTopBoardsToItems([{ key: 'b-1', board: gymBoard, title: 'Cave', selected: false }], {
+      labelOptions: { scope: 'within-gym' },
+    });
+    const [yours] = userBoardsToItems([gymBoard]);
+    expect([atGym?.title, atGym?.subtitle]).toEqual(['Cave', 'Original']);
+    expect([yours?.title, yours?.subtitle]).toEqual(['Crux - Cave', 'Crux']);
   });
 
-  it('falls back to the brand name, never the raw lowercase board type', () => {
-    const bare = { ...config, sizeName: null, layoutName: null, boardType: 'kilter' } as unknown as PopularBoardConfig;
-    expect(popularConfigToItem(bare)?.subtitle).toBe('Kilter');
-  });
-
-  it('drops a config whose board type is unsupported', () => {
-    const bad = { ...config, boardType: 'xyz' } as unknown as PopularBoardConfig;
-    expect(popularConfigToItem(bad)).toBeNull();
-  });
-
-  // A popular setup is nobody's board yet, so it must never carry an ownership
-  // badge (and therefore never an unfollow).
-  it('never stamps ownership on a popular config', () => {
-    expect(popularConfigToItem(config)?.isViewerOwner).toBeUndefined();
+  it('leaves out a board the card cannot draw', () => {
+    const unknownType = { ...board, boardType: 'not-a-board' } as unknown as UserBoard;
+    expect(pickerTopBoardsToItems([{ key: 'b-1', board: unknownType, title: 'X', selected: true }])).toEqual([]);
   });
 });
 
@@ -193,21 +219,6 @@ describe('offline state on discovery items', () => {
     } as UserBoard;
     expect(userBoardToItem(board, null, 'downloaded')?.offlineState).toBe('downloaded');
     expect(userBoardToItem(board, null)?.offlineState).toBeUndefined();
-  });
-
-  // A popular config has no uuid, so rememberOfflineBoards filters it out
-  // (settings/offline-boards.ts): its data would download but the board could
-  // never appear in the offline picker. It must never carry a download state.
-  it('never gives a popular config a download state', () => {
-    const item = popularConfigToItem({
-      boardType: 'tension',
-      layoutId: 9,
-      sizeId: 8,
-      setIds: [1, 2],
-      displayName: 'Tension 8x10',
-    } as unknown as PopularBoardConfig);
-    expect(item?.offlineState).toBeUndefined();
-    expect(item?.key.startsWith('popular:')).toBe(true);
   });
 });
 

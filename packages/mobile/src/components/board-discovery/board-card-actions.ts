@@ -1,42 +1,9 @@
-// Which secondary action a board card offers, and the viewer-owned-first order
-// the picker shows them in. Pure, so the branch that decides between "delete this
-// wall forever" and "stop following this gym" is unit-testable without rendering.
+// The order the picker and onboarding list a climber's boards in, and which
+// boards a list leaves out. Pure, so the rules are unit-testable without
+// rendering. Which actions a card offers lives in `board-card-menu.ts`.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardIsOwnedBy } from './manage-items';
-
-/**
- * The card's single action slot. There is deliberately no `'follow'` member:
- * `myBoards` returns boards the viewer owns OR follows, so inside that list a
- * non-owned board is always one you already follow. Following someone else's
- * board happens on Near you / the gym finder, not here.
- */
-export type BoardCardAction = 'edit' | 'unfollow' | 'delete' | null;
-
-export type BoardCardActionInput = {
-  /**
-   * Whether the viewer owns this board. Stamped once per list build by
-   * `userBoardToItem`. The caller never passes it for an item whose ownership did
-   * not resolve — the screen's Edit gate suppresses the whole slot there rather
-   * than let "unknown" collapse into "followed".
-   */
-  isViewerOwner: boolean;
-  /** The "Your boards" section is in Edit mode. */
-  isEditing: boolean;
-};
-
-/**
- * There is no `readOnly` input: the surfaces that must offer nothing — the
- * offline branch, onboarding, a session with no resolvable identity — suppress
- * the slot by not handing the carousel an `actionFor` at all, which is a gate
- * this helper cannot be talked past.
- */
-export function boardCardAction({ isViewerOwner, isEditing }: BoardCardActionInput): BoardCardAction {
-  // Delete is owner-only server-side, so a followed board's Edit-mode control
-  // stays an unfollow rather than a delete the backend would reject.
-  if (isEditing) return isViewerOwner ? 'delete' : 'unfollow';
-  return isViewerOwner ? 'edit' : 'unfollow';
-}
 
 /**
  * Viewer-owned boards first, followed boards after, each group keeping its
@@ -63,16 +30,17 @@ export function sortViewerOwnedFirst(boards: readonly UserBoard[], currentUserId
 }
 
 /**
- * The active board first, everything else in the order the server gave.
+ * The boards not already shown higher up the picker, in the order given.
  *
- * The server cannot do this itself: the active board lives in AsyncStorage on
- * the device, so `myBoards` has never heard of it. Hoist-only — a board that is
- * not in the list is never injected, so a stale stored board cannot conjure a
- * card. Mirrors what the offline branch already does in `offline-board-items`.
+ * The board you're on and its gym's walls sit at the top of the picker (At
+ * {gym}, see picker-top-view.ts); Your boards and Near you leave out what the
+ * top already lists, so a board shows once. The board you're on keeps its
+ * place when the top does not list it: the server's order (pins, then last
+ * opened, #4884) is the one the climber learned.
  */
-export function hoistActiveBoard(boards: readonly UserBoard[], activeUuid: string | null | undefined): UserBoard[] {
-  if (activeUuid == null) return [...boards];
-  const active = boards.find((board) => board.uuid === activeUuid);
-  if (!active) return [...boards];
-  return [active, ...boards.filter((board) => board.uuid !== activeUuid)];
+export function withoutBoardsShown<Board extends { uuid: string }>(
+  boards: readonly Board[],
+  shownUuids: ReadonlySet<string>,
+): Board[] {
+  return shownUuids.size === 0 ? [...boards] : boards.filter((board) => !shownUuids.has(board.uuid));
 }

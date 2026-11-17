@@ -1,15 +1,24 @@
 # Staged browser GraphQL HTTP clients
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+>
+> The Expo web half is gone from `packages/mobile`: the selected HTTP factory, the opaque view facade and the required-dispatch path were deleted with the Expo web selected mode. The Expo sections below are history.
+
+The www half is gone: #7596 removed the www lease client and its
+`graphql-request` receipt adapter, and www now sends every GraphQL request
+through the session guard described in
+[better-auth-browser-session.md](better-auth-browser-session.md). What follows
+describes the shared HTTP core and the Expo web clients, which A4 removes.
+
 The HTTP continuation is based on the merged browser consumers, CNC and private
 views. The earlier composition compared 69 ending feature blobs before extracting
-the shared HTTP core. That source evidence is historical. Public browser and Expo
-readiness remain code-owned false.
+the shared HTTP core. That source evidence is historical. Public browser
+readiness remains code-owned false.
 
 ## Original delivery authority
 
 `@boardsesh/auth-protocol/browser-backend-http` owns HTTP delivery admission
-without depending on a GraphQL SDK. WWW keeps its existing `graphql-request`
-error and parsed-header adapter. An exact actual response-header object refers
+without depending on a GraphQL SDK. An exact actual response-header object refers
 to its original issued lease and request abort signal. Successful decoding
 registers only the original result object and at most 64 direct object-valued
 fields. A copied result or copied headers cannot create a receipt.
@@ -30,7 +39,6 @@ The cold-view creator preserves Expo's selected 401 policy: only a confirmed
 401 for the exact original, still-live lease and uncancelled request retires
 that scope. It throws without retrying the operation. Expired, aborted, disposed,
 superseded and changed-generation responses cannot invalidate a current scope.
-The existing fixed-scope WWW creator retains its released error behavior.
 
 Reachability reporting is separate from admission. Local view refusals and private
 source-issuer errors supply no GraphQL reachability sample. A trusted diagnostic
@@ -85,25 +93,10 @@ without requiring a loaded profile. Settings writes retain their existing viewer
 identity requirement. Browser follow and audience writes still require the
 original view and credential generation even when profile data has not loaded.
 
-## Required central dispatch
-
-A code-gated required-dispatch path checks actual central admission before a
-cached legacy credential may dispatch. A 503, malformed body or unqualified
-legacy reply leaves network dispatch unavailable while retaining the previous
-offline identity. An old anonymous observation cannot authorize a request after
-that failure. A newly admitted B cannot replay A's pending mutation.
-
-The required-mode refusal remains sticky after observation. A successful actual
-anonymous response is required for anonymous dispatch, and that request removes
-unrelated supplied authentication headers.
-
-This is an explicit dispatch contract for a future qualified selected deployment.
-A local registry cannot discover an unseen server account while central admission
-is unavailable. Legacy-permitted dispatch retains its separate activation and
-retirement gate; its earlier first-503 counterexample is not qualified by these
-required-mode tests. The public readiness function still returns literal false.
-
 ## Historical producer evidence
+
+The 24 WWW SDK cases cited in this section and the next were deleted with the
+www client by #7596. The shared and mobile cases remain.
 
 Independent extraction review passed 12 shared cases and the unchanged 24
 actual WWW SDK cases. The separate cold-view 401 change passed independent
@@ -223,6 +216,30 @@ it and immediately before its own state, navigation or cache publication.
 `mutateAsync` alone cannot qualify that later continuation. Signals cancel work
 before lookup and after actual body decoding without replaying mutations.
 
+Native and wholly legacy (unscoped) requests outlive the screen that started
+them and end with the account. This includes Expo web today, whose browser
+consumers are not yet selected; its account fence is the captured view in the
+web operation. Every native operation records the credential generation it
+started under. After a sign-in or sign-out it sends nothing more, and its
+delivery, cache facade and mutation callbacks refuse. A late response therefore
+cannot write the old account's data into the cache sign-out just cleared. A
+server-rejected refresh during the session check retires the credential the
+same way before its sign-out clears the cache; a token refresh does not. Error
+reporting treats the resulting `superseded` refusal as a cancellation.
+
+Screen unmount ends neither a native read nor a native write. The wrapper
+queries, and the bulk vote-summary and data-export status reads, leave
+TanStack's signal getter alone, so a read whose last observer unmounts finishes
+into the cache instead of being cancelled and reverted. A caller's signal only
+refuses to start a write for an action it already retired. A native UI action
+keeps two checks. `assertView` retires the screen's own state and navigation on
+unmount. `assertOwner` lets the write and its app-level toast finish after
+unmount, and ends only when the account changes, which is also the only thing
+that aborts the action's signal. Work that must not land after its screen is
+gone captures with `endsWithScreen`, which keeps the browser lifetime on native.
+Selected browser views keep the cancellation described above, and there
+`assertOwner` equals `assertView`.
+
 The actual profile and admin reads and profile-update cache effects now use these
 adapters. Profile updates refresh only their original view's cache. That
 query/cache slice did not adopt EditProfileScreen's later UI continuation or
@@ -257,8 +274,13 @@ and rolling-cookie publication retain their separate qualification gates.
 Each profile UI action captures its original view and mounted lifetime before
 opening the image picker or awaiting compression, local image bytes, upload or
 profile save. Selected forms use the opaque view key; native and legacy forms
-retain their existing key and credential policy. Unmount and Strict Mode cleanup
-abort owned pending actions. A later view or remount cannot revive one.
+retain their existing key and credential policy. In a selected form, unmount and
+Strict Mode cleanup abort owned pending actions. A later view or remount cannot
+revive one. A native name-only save and its toast finish after unmount and end
+only at an account change (see "Captured query and mutation callers"). A save
+with a new photo captures with `endsWithScreen`: leaving cancels the upload and
+the save, so a slow abandoned photo cannot land after a newer edit. A save sends
+only the fields the climber changed, never an unchanged name.
 
 The avatar uploader exposes a receipt alongside its derived URL. On web, that
 receipt comes only from the actual authenticated Response's private original

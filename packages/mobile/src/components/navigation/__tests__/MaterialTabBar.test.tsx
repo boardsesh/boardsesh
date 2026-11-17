@@ -161,7 +161,7 @@ vi.mock('../../../theme/tokens', () => ({
   material: {
     navBar: {
       surfaceElevation: 2,
-      overlaySurfaceAlpha: { light: 0.85, dark: 0.92 },
+      overlaySurfaceAlpha: { light: 0.85, dark: 0.94 },
       activeIndicatorWidth: 56,
       activeIndicatorHeight: 32,
       activeIndicatorRadius: 16,
@@ -478,8 +478,8 @@ describe('MaterialTabBar', () => {
       const style = barOf(container).getAttribute('data-style') ?? '';
       expect(style).toContain('"position":"absolute"');
       expect(style).toContain('"borderTopWidth":0');
-      // Dark covers more (0.92) so the violet active label clears 4.5:1 over white content.
-      expect(style).toContain('"backgroundColor":"#141218@0.92"');
+      // Dark covers more (0.94) so the violet active label clears 4.5:1 over white content.
+      expect(style).toContain('"backgroundColor":"#141218@0.94"');
       expect(style).not.toContain('#2C2C2E');
     });
 
@@ -495,7 +495,7 @@ describe('MaterialTabBar', () => {
       ctrl.overlay = true;
       const { getByTestId } = renderBar();
       const fade = getByTestId('fade');
-      expect(fade.getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.92']));
+      expect(fade.getAttribute('data-colors')).toBe(JSON.stringify(['#141218@0', '#141218@0.94']));
       expect(fade.getAttribute('data-pointer-events')).toBe('none');
       const fadeStyle = fade.getAttribute('data-style') ?? '';
       expect(fadeStyle).toContain('"top":-24');

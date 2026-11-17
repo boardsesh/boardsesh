@@ -41,11 +41,17 @@ import {
   resolveActionColors,
   resolveChartColors,
   resolveHeatRamp,
+  resolveSelectionColors,
+  resolveStatusColors,
+  resolveSurfaces,
   sectionCaptionByVariant,
   type ActionColors,
   type ChartColors,
   type HeatRamp,
   type SectionCaption,
+  type SelectionColors,
+  type StatusColors,
+  type Surfaces,
 } from '../theme/variants/variant-tokens';
 import { variantFeatures, type VariantFeatures } from '../theme/variants/variant-features';
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
@@ -95,7 +101,7 @@ type ResolvedSystemColors = {
   /**
    * Interactive-accent foreground (links, checkmarks, active tab, edit·copy·open).
    * The brand violet on every platform and variant — the same tint the @expo/ui
-   * controls use — lifted to #A78BFA in dark so it clears AA on near-black. HIG
+   * controls use — lifted to #9784FF in dark so it clears AA on near-black. HIG
    * Color: one tint for every interactive element.
    */
   accent: string | OpaqueColorValue;
@@ -176,6 +182,24 @@ type Theme = {
    * monochrome (`systemColors.label`) on Liquid Glass, tinted by role on Material.
    */
   actionColors: ActionColors;
+  /**
+   * Page grounds (Velvet Send v2): `plain` for a page of content, `grouped` for a
+   * page of inset-grouped rows, each `{ page, card, tile }`. iOS system
+   * backgrounds on Liquid Glass (they step up in a sheet on their own), the
+   * fallback or Graphite ladder elsewhere. See `Surfaces` in variant-tokens.ts.
+   */
+  surfaces: Surfaces;
+  /**
+   * The selected or current item (Velvet Send v2): `label` text, an `accent`
+   * checkmark, and the brand fill as the row wash (13% light, 20% dark: the
+   * Climbs list's current-climb look). Selection is never violet text.
+   */
+  selection: SelectionColors;
+  /**
+   * A status that can't be tapped (Velvet Send v2): a `tertiaryFill` pill with
+   * `secondaryLabel` text.
+   */
+  status: StatusColors;
   /**
    * Plain-string colour palette for chart libraries (gifted-charts) that reject
    * PlatformColor. Mirrors `systemColors` but is always hex/rgba.
@@ -440,6 +464,9 @@ export function ThemeProvider({
         brandPrimary: resolvedBrandColors.primary,
         error: resolvedSystemColors.error,
       }),
+      surfaces: resolveSurfaces(resolvedSystemColors),
+      selection: resolveSelectionColors(resolvedSystemColors, resolvedBrandColors.primaryFill, colorScheme),
+      status: resolveStatusColors(resolvedSystemColors),
       chartColors: resolvedChartColors,
       heatRamp: resolveHeatRamp(colorScheme),
       sheetSurface: resolvedChartColors.secondaryBackground,

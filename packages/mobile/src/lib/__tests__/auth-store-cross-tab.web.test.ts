@@ -272,6 +272,7 @@ describe('auth-store web cross-tab invalidation', () => {
       identity: { userId: 'user-1', authSessionId: 'login-1' },
     });
     resolveOldRequest(jsonResponse({ data: { privateForOldLogin: true } }));
+    // A sign-out that has only started is not an account change (#7596).
     await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 200 }));
 
     fetchMock

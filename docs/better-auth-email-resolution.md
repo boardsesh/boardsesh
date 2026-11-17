@@ -62,8 +62,10 @@ after the unique index is present. It preserves every account and login method.
 
 ## Transaction and delivery guarantees
 
-Apply takes the shared authority gate, sorted email advisory keys, sorted users
-row locks, then reservation locks. Changed/missing members or newly joined
+Apply takes the shared authority gate and reads the manifest, then sorted email
+advisory keys, sorted users row locks, then reservation locks. Once a manifest
+names another writer, a group refuses with `STALE_AUTHORITY` before any lock or
+write; groups applied earlier stay applied and the CLI reports that code. Changed/missing members or newly joined
 members are skipped. Live legacy email-keyed reset or verification links defer
 the entire group. Legacy forgot/resend issuance now locks its original users row
 and rechecks the stored address before saving a token: issuance either commits

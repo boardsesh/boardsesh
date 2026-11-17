@@ -1,5 +1,5 @@
 import { grantAnalyticsForTest } from '../../../test/consent-fixture';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getShareExtensionKeyMock = vi.fn();
 vi.mock('expo-share-intent', () => ({
@@ -8,6 +8,8 @@ vi.mock('expo-share-intent', () => ({
 
 import { redirectSystemPath } from '../../../app/+native-intent';
 import { setSetting } from '../../settings/hooks';
+import { updateConsentState } from '../consent-state';
+import { consumeConsentDestination } from '../consent-navigation';
 
 const JOIN_LINK = '/join/123e4567-e89b-12d3-a456-426614174000';
 
@@ -160,3 +162,41 @@ describe('redirectSystemPath', () => {
 });
 
 beforeEach(() => grantAnalyticsForTest());
+
+describe('isolated story deep links before consent', () => {
+  beforeEach(() => {
+    updateConsentState({ settled: false });
+    consumeConsentDestination();
+    vi.stubGlobal('__DEV__', true);
+  });
+  afterEach(() => {
+    consumeConsentDestination();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([true, false])('opens stories without the application consent provider (initial=%s)', (initial) => {
+    for (const path of [
+      'com.boardsesh.app://dev/stories/player--tension?theme=dark&shot=123',
+      'com.boardsesh.app:///dev/stories/player--kilter',
+      '/dev/stories',
+      '/dev/story-tabs/climbs?storyId=climbs--default',
+    ]) {
+      expect(redirectSystemPath({ path, initial })).toBe(path);
+      expect(consumeConsentDestination()).toBeNull();
+    }
+  });
+
+  it('still defers application routes and similarly named paths', () => {
+    for (const path of ['/join/session', '/dev/stories-other', '/dev/story-tabs-other']) {
+      expect(redirectSystemPath({ path, initial: false })).toBe('');
+      expect(consumeConsentDestination()).toBe(path);
+    }
+  });
+
+  it('does not bypass consent in production', () => {
+    vi.stubGlobal('__DEV__', false);
+    const path = '/dev/stories/player--kilter';
+    expect(redirectSystemPath({ path, initial: true })).toBe('/');
+    expect(consumeConsentDestination()).toBe(path);
+  });
+});

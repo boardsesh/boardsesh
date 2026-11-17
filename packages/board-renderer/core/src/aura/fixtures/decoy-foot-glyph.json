@@ -1,0 +1,50 @@
+{
+  "board_name": "decoy",
+  "board_width": 1080,
+  "board_height": 1144,
+  "output_width": 1080,
+  "frames": "p869r4",
+  "mirrored": false,
+  "thumbnail": false,
+  "stroke_width_multiplier": 1,
+  "shape_size_multiplier": 1,
+  "holds": [
+    {
+      "id": 869,
+      "mirroredHoldId": 877,
+      "cx": 381.1764705882353,
+      "cy": 317.7777777777777,
+      "r": 31.764705882352942,
+      "outline": [
+        -0.4436, -0.549, -0.163, -0.5323, 0.2463, -0.529, 0.4977, -0.5581, 0.6194, -0.4921, 0.6504, -0.3091, 0.5596,
+        -0.0882, 0.33, 0.2481, 0.0877, 0.443, -0.0312, 0.436, -0.186, 0.3134, -0.5013, -0.1229, -0.5628, -0.2787,
+        -0.5701, -0.4332, -0.4805, -0.5337
+      ],
+      "silhouette_lightness": 0.531
+    }
+  ],
+  "hold_state_map": {
+    "4": {
+      "color": "#FF00FF",
+      "role": "foot"
+    }
+  },
+  "render_mode": "aura",
+  "mark_style": "none",
+  "glow_falloff": "soft",
+  "glow": {
+    "reach_scale": 1,
+    "plateau_share": 0.4,
+    "disc_opacity": 0,
+    "small_hold_max_boost": 1.7,
+    "spread_fraction": 0.91,
+    "merge_softness": 0.6,
+    "seam_blend_fraction": 0.9,
+    "seam_sharpness": 3,
+    "fringe_deepen": 0.4
+  },
+  "fill": {
+    "opacity": 0.55
+  },
+  "glyphs": "role"
+}

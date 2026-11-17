@@ -1,9 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
+import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
-import { getLedControllerDriver, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  createWledDriver,
+  DEFAULT_LED_BRIGHTNESS,
+  discoverLedControllers,
+  getLedControllerDriver,
+  LedControllerError,
+  normalizeLocalControllerUrl,
+  SPRAY_WALL_LED_AUTO_OFF_CHOICES,
+  wledScanHosts,
+  type DiscoveredLedController,
+} from '@boardsesh/led-controller';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
@@ -12,9 +24,66 @@ import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SwitchRow } from '../SwitchRow';
+import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
+import { ValueSlider } from '../ValueSlider';
 import { WledBluetoothController } from './WledBluetoothController';
 import { WledBluetoothInstaller } from './WledBluetoothInstaller';
+
+// A short timeout per address: an empty address never answers, a WLED on the
+// same Wi-Fi answers in well under a second. 254 addresses, 32 at a time.
+const scanDriver = createWledDriver({ timeoutMs: 1500 });
+
+type ScanState =
+  | { kind: 'idle' }
+  | { kind: 'noWifi' }
+  // On Wi-Fi, but not a private IPv4 address the phone can sweep (IPv6 only, public, CGNAT or a VPN).
+  | { kind: 'notSearchable' }
+  | { kind: 'scanning'; checked: number; total: number; found: DiscoveredLedController[] }
+  | { kind: 'done'; found: DiscoveredLedController[] };
+
+const MIN_BRIGHTNESS_PERCENT = 5;
+// The slider shows a percentage; WLED stores brightness as 1–255.
+function brightnessPercent(brightness: number): number {
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round((brightness * 100) / 255 / 5) * 5));
+}
+function brightnessFromPercent(percent: number): number {
+  return Math.max(1, Math.min(255, Math.round((percent * 255) / 100)));
+}
+// The three below run inside the slider's gesture, so they must be worklets.
+function roundBrightnessPercent(raw: number): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round(raw / 5) * 5));
+}
+function brightnessNotch(percent: number): number {
+  'worklet';
+  return Math.round(percent / 25);
+}
+function adjustBrightnessPercent(percent: number, direction: 1 | -1): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, percent + direction * 5));
+}
+const foundKey = (found: DiscoveredLedController) => found.url;
+/** One controller the search found; tapping it checks and saves its address. */
+const FoundControllerRow = memo(function FoundControllerRow({
+  found,
+  disabled,
+  onSelect,
+}: {
+  found: DiscoveredLedController;
+  disabled: boolean;
+  onSelect: (found: DiscoveredLedController) => void;
+}) {
+  const { t } = useTranslation('boards');
+  return (
+    <Button
+      title={t('sprayLed.findResult', { name: found.name, address: found.url.replace('http://', '') })}
+      variant="outlined"
+      disabled={disabled}
+      onPress={() => onSelect(found)}
+    />
+  );
+});
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
@@ -62,10 +131,26 @@ function SprayWallLedEditor({
     setPending(null);
     void stop();
   }, [stop]);
-  useEffect(() => () => request.current?.abort(), [wallUuid]);
+  const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
+  const scanRequest = useRef<AbortController | null>(null);
+  const cancelScan = useCallback(() => {
+    scanRequest.current?.abort();
+    scanRequest.current = null;
+    setScan((current) => (current.kind === 'scanning' ? { kind: 'idle' } : current));
+  }, []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      scanRequest.current?.abort();
+    },
+    [wallUuid],
+  );
   useEffect(() => {
-    if (disabled) cancelRequest();
-  }, [disabled, cancelRequest]);
+    if (disabled) {
+      cancelRequest();
+      cancelScan();
+    }
+  }, [disabled, cancelRequest, cancelScan]);
 
   const url = draftUrl ?? settings?.controller.url ?? '';
   const locked = disabled || loading || saving || savingRef.current || !settings;
@@ -93,11 +178,59 @@ function SprayWallLedEditor({
     }
   }
 
-  async function confirmUrl() {
+  /** Brightness and auto-off save to the wall, so every phone lights it the same way. */
+  async function saveLighting(update: { brightness?: number; autoOffMinutes?: number }) {
+    if (locked || !settings || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await save({ ...settings, ...update });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  /** Probe every address on the phone's Wi-Fi (a private /24 only) and list the WLED controllers that answer. */
+  async function findOnWifi() {
+    if (locked || scanRequest.current || settings?.controller.type !== 'wled') return;
+    // Claim the scan before reading the network: a second press, Stop, typing an
+    // address, turning LEDs off or leaving the screen during the lookup all abort
+    // this controller, and then no scan starts.
+    const controller = new AbortController();
+    scanRequest.current = controller;
+    setScan({ kind: 'scanning', checked: 0, total: 0, found: [] });
+    try {
+      const network = await NetInfo.fetch().catch(() => null);
+      if (controller.signal.aborted) return;
+      const details = network?.type === 'wifi' ? network.details : null;
+      const hosts = details?.ipAddress ? wledScanHosts(details.ipAddress, details.subnet) : [];
+      if (!hosts.length) {
+        setScan({ kind: network?.type === 'wifi' ? 'notSearchable' : 'noWifi' });
+        return;
+      }
+      setScan({ kind: 'scanning', checked: 0, total: hosts.length, found: [] });
+      const found = await discoverLedControllers(hosts, {
+        probe: (candidate, signal) => scanDriver.probe(candidate, signal),
+        signal: controller.signal,
+        onProgress: (checked, total) =>
+          setScan((current) => (current.kind === 'scanning' ? { ...current, checked, total } : current)),
+        onFound: (entry) =>
+          setScan((current) =>
+            current.kind === 'scanning' ? { ...current, found: [...current.found, entry] } : current,
+          ),
+      });
+      if (scanRequest.current === controller && !controller.signal.aborted) setScan({ kind: 'done', found });
+    } catch {
+      // Cancelled: the climber typed, left or turned LEDs off.
+    } finally {
+      if (scanRequest.current === controller) scanRequest.current = null;
+    }
+  }
+
+  async function confirmUrl(candidate = url) {
     if (locked || !settings?.enabled || request.current || settings.controller.type !== 'wled') return;
     let normalized: string;
     try {
-      normalized = normalizeLocalControllerUrl(url);
+      normalized = normalizeLocalControllerUrl(candidate);
     } catch (urlError) {
       const notLocal = urlError instanceof LedControllerError && urlError.code === 'not-local';
       setResult({ kind: notLocal ? 'notLocal' : 'invalidUrl', url: null });
@@ -152,6 +285,23 @@ function SprayWallLedEditor({
       }
     }
   }
+
+  // Through a ref, so the rows keep one callback while the scan reports progress.
+  const chooseFoundRef = useRef<(found: DiscoveredLedController) => void>(() => undefined);
+  chooseFoundRef.current = (found) => {
+    cancelScan();
+    setScan({ kind: 'idle' });
+    setDraftUrl(found.url);
+    void confirmUrl(found.url);
+  };
+  const chooseFound = useCallback((found: DiscoveredLedController) => chooseFoundRef.current(found), []);
+  const foundDisabled = locked || pending !== null;
+  const renderFound = useCallback(
+    ({ item }: ListRenderItemInfo<DiscoveredLedController>) => (
+      <FoundControllerRow found={item} disabled={foundDisabled} onSelect={chooseFound} />
+    ),
+    [foundDisabled, chooseFound],
+  );
 
   const message =
     pending === 'probe'
@@ -213,6 +363,7 @@ function SprayWallLedEditor({
                   disabled={locked || pending !== null || settings.controller.type === 'wled'}
                   onPress={() => {
                     cancelRequest();
+                    cancelScan();
                     setResult(null);
                     setDraftUrl(null);
                     void save({ ...settings, controller: { type: 'wled', url: settings.wifiUrl ?? '' } });
@@ -224,6 +375,7 @@ function SprayWallLedEditor({
                   disabled={locked || pending !== null || settings.controller.type === 'wled-ble'}
                   onPress={() => {
                     cancelRequest();
+                    cancelScan();
                     setResult(null);
                     setDraftUrl(null);
                     void save({
@@ -254,6 +406,7 @@ function SprayWallLedEditor({
                         value={url}
                         onChangeText={(next) => {
                           cancelRequest();
+                          cancelScan();
                           setDraftUrl(next);
                           setResult(null);
                           setLighting(null);
@@ -276,6 +429,33 @@ function SprayWallLedEditor({
                       onPress={() => void confirmUrl()}
                     />
                   </View>
+                  <Button
+                    title={scan.kind === 'scanning' ? t('sprayLed.findStop') : t('sprayLed.find')}
+                    variant="text"
+                    disabled={locked || pending !== null}
+                    onPress={() => (scan.kind === 'scanning' ? cancelScan() : void findOnWifi())}
+                  />
+                  {scan.kind === 'noWifi' || scan.kind === 'notSearchable' ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {scan.kind === 'noWifi' ? t('sprayLed.findNoWifi') : t('sprayLed.findNotSearchable')}
+                    </Text>
+                  ) : null}
+                  {scan.kind === 'scanning' && scan.total > 0 ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.finding', { checked: scan.checked, total: scan.total })}
+                    </Text>
+                  ) : null}
+                  {scan.kind === 'done' && !scan.found.length ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.findNone')}
+                    </Text>
+                  ) : null}
+                  {(scan.kind === 'scanning' || scan.kind === 'done') && scan.found.length ? (
+                    // A list of its own, as the Bluetooth picker has: never mapped inside the form's ScrollView.
+                    <View style={{ height: 180 }}>
+                      <FlashList data={scan.found} renderItem={renderFound} keyExtractor={foundKey} />
+                    </View>
+                  ) : null}
                   {message ? (
                     <Text variant="footnote" accessibilityLiveRegion="polite">
                       {message}
@@ -331,6 +511,41 @@ function SprayWallLedEditor({
                   ) : null}
                 </>
               )}
+              <SectionLabel>{t('sprayLed.brightness')}</SectionLabel>
+              <ValueSlider
+                value={brightnessPercent(settings.brightness ?? DEFAULT_LED_BRIGHTNESS)}
+                min={MIN_BRIGHTNESS_PERCENT}
+                max={100}
+                round={roundBrightnessPercent}
+                notch={brightnessNotch}
+                format={(percent) => t('sprayLed.brightnessValue', { percent })}
+                accessibilityLabel={t('sprayLed.brightness')}
+                adjust={adjustBrightnessPercent}
+                disabled={locked}
+                onLiveChange={() => undefined}
+                onCommit={(percent) => void saveLighting({ brightness: brightnessFromPercent(percent) })}
+              />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {t('sprayLed.brightnessHint')}
+              </Text>
+              <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
+              <SegmentedControl
+                options={SPRAY_WALL_LED_AUTO_OFF_CHOICES.map((minutes) => ({
+                  key: String(minutes),
+                  label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
+                }))}
+                selectedKey={String(settings.autoOffMinutes)}
+                onSelect={(key) => void saveLighting({ autoOffMinutes: Number(key) })}
+                accessibilityLabel={t('sprayLed.autoOff')}
+              />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {t('sprayLed.autoOffHint')}
+              </Text>
+              {settings.controller.type === 'wled-ble' && settings.autoOffMinutes > 0 ? (
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('sprayLed.autoOffBluetooth')}
+                </Text>
+              ) : null}
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"

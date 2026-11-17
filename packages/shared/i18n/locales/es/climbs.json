@@ -252,7 +252,8 @@
       "viewOptions": "Opciones de vista",
       "history": "Historial del plafón, {{board}}",
       "historyTitle": "Historial del plafón",
-      "historyHint": "Mira los bloques que se han iluminado en este muro"
+      "historyHint": "Mira los bloques que se han iluminado en este muro",
+      "myClimbs": "Mis bloques"
     },
     "moderation": {
       "title": "Moderación",
@@ -569,7 +570,6 @@
       "gradeAction": "Ajustar el rango de grado",
       "gradeOpenHint": "Abre el selector de grado",
       "gradeCloseHint": "Cierra el selector de grado",
-      "allClimbs": "Todas las vías",
       "clearRecentSearches": "Borrar búsquedas recientes",
       "chips": {
         "filtersWithCount": "Filtros · {{count}}",

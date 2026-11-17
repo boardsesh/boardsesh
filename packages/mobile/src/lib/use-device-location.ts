@@ -9,17 +9,55 @@
 // `unavailable`, so the screen degrades gracefully on an older OTA build
 // instead of crashing.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 
 export type Coords = { latitude: number; longitude: number };
 
 export type LocationStatus = 'idle' | 'loading' | 'granted' | 'denied' | 'unavailable';
 
+/**
+ * Location permission as last read, without asking:
+ * - `unknown`: not read yet, or no location module to read it from.
+ * - `ask`: a prompt can still ask (never asked, or Android after one refusal).
+ * - `blocked`: refused for good (iOS after a refusal, Android "Don't ask
+ *   again", any refusal in a browser); only Settings can turn it on.
+ * - `granted`.
+ */
+export type LocationPermission = 'unknown' | 'ask' | 'blocked' | 'granted';
+
+/**
+ * expo-location's answer, as a `LocationPermission`. In a browser a refusal is
+ * final whatever `canAskAgain` says (expo-location's web answer is always
+ * true): the browser never shows its prompt again, so asking would be a dead
+ * button. Only the site's settings can undo it.
+ */
+export function locationPermissionFrom(
+  answer: { status: string; canAskAgain?: boolean },
+  platform: string = Platform.OS,
+): LocationPermission {
+  if (answer.status === 'granted') return 'granted';
+  if (answer.status !== 'denied') return 'ask';
+  return platform === 'web' || answer.canAskAgain === false ? 'blocked' : 'ask';
+}
+
 export type DeviceLocation = {
   status: LocationStatus;
+  /**
+   * The permission itself, read by `requestIfAllowed` and every `request`, so
+   * a screen can offer the right way to turn it on before anything is asked.
+   */
+  permission: LocationPermission;
   coords: Coords | null;
   /** Kick off the permission prompt + one-shot fix. Safe to call repeatedly. */
   request: () => Promise<void>;
+  /**
+   * `request`, but only when location is already allowed, so it never shows the
+   * permission prompt: a screen can search on open for a climber who said yes
+   * before, and ask the rest from a tap. Anything else (not asked, denied, no
+   * module) leaves `status` at `idle`.
+   */
+  requestIfAllowed: () => Promise<void>;
   /**
    * Take a fresh fix once location is granted, for a climber who has moved
    * since the first one. `request` never does: after a grant it is a no-op.
@@ -40,10 +78,20 @@ export type DeviceLocationOptions = {
    * their gyms from one more tap, not from reopening the screen.
    */
   retryAfterDenial?: boolean;
+  /**
+   * Run `requestIfAllowed` again whenever the app comes back to the
+   * foreground: a climber back from Settings with location turned on gets the
+   * search, and `permission` follows whatever they chose there. Off by default.
+   */
+  rereadWhenActive?: boolean;
 };
 
-export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOptions = {}): DeviceLocation {
+export function useDeviceLocation({
+  retryAfterDenial = false,
+  rereadWhenActive = false,
+}: DeviceLocationOptions = {}): DeviceLocation {
   const [status, setStatus] = useState<LocationStatus>('idle');
+  const [permission, setPermission] = useState<LocationPermission>('unknown');
   const [coords, setCoords] = useState<Coords | null>(null);
   // Once a request reaches a terminal state (granted / denied / unavailable),
   // or while one is in flight, further taps are no-ops — no redundant native
@@ -62,8 +110,9 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
 
     try {
       const Location = await import('expo-location');
-      const { status: permission } = await Location.requestForegroundPermissionsAsync();
-      if (permission !== 'granted') {
+      const answer = await Location.requestForegroundPermissionsAsync();
+      setPermission(locationPermissionFrom(answer));
+      if (answer.status !== 'granted') {
         if (retryAfterDenial) settledRef.current = false;
         setStatus('denied');
         return;
@@ -83,6 +132,27 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
       setStatus('unavailable');
     }
   }, [retryAfterDenial]);
+
+  const requestIfAllowed = useCallback(async () => {
+    if (settledRef.current) return;
+    try {
+      const Location = await import('expo-location');
+      const read = locationPermissionFrom(await Location.getForegroundPermissionsAsync());
+      setPermission(read);
+      if (read !== 'granted') return;
+    } catch {
+      return;
+    }
+    await request();
+  }, [request]);
+
+  useEffect(() => {
+    if (!rereadWhenActive) return undefined;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void requestIfAllowed();
+    });
+    return () => subscription.remove();
+  }, [rereadWhenActive, requestIfAllowed]);
 
   const refresh = useCallback(async () => {
     // `loading` covers both a first request and another refresh in flight.
@@ -109,5 +179,5 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
     }
   }, []);
 
-  return { status, coords, request, refresh };
+  return { status, permission, coords, request, requestIfAllowed, refresh };
 }

@@ -12,6 +12,7 @@ import { useBoardseshGrade, useBoardseshGradesForAngles, useClimbStatsHistory } 
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useTheme } from '../../providers/theme-provider';
+import { withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardCapabilities } from '@boardsesh/board-config';
@@ -105,7 +106,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
   boardName: string;
 }) {
   const { t } = useTranslation('climbs');
-  const { brandColors, systemColors } = useTheme();
+  const { systemColors } = useTheme();
   // Falls back to the device's own ticks table while the logbook is unresolved,
   // so the drawer shows the climber's grade offline too — the same grade the
   // on-device search placed this climb by.
@@ -118,8 +119,8 @@ const YourGradeBlock = memo(function YourGradeBlock({
     if (myGrade.status !== 'none') return null;
     return (
       <View style={styles.row}>
-        <Icon name="add.fill" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary} style={styles.flexText}>
+        <Icon name="add.fill" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent} style={styles.flexText}>
           {t('boardseshGrade.yours.emptyBody')}
         </Text>
       </View>
@@ -256,8 +257,8 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         accessibilityRole="button"
         accessibilityLabel={t('boardseshGrade.loadError')}
       >
-        <Icon name="refresh" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary}>
+        <Icon name="refresh" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent}>
           {t('boardseshGrade.loadError')}
         </Text>
       </PressableSurface>
@@ -276,7 +277,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.moonboardAngle.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text emphasized variant="title1" style={[styles.gradeValue, { color: withAlpha(view.grade.color, 0.75) }]}>
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -305,7 +306,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.moonboardWideAngle.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text emphasized variant="title1" style={[styles.gradeValue, { color: withAlpha(view.grade.color, 0.75) }]}>
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -364,7 +365,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.estimate.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text emphasized variant="title1" style={[styles.gradeValue, { color: withAlpha(view.grade.color, 0.75) }]}>
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -399,7 +400,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
             {t('boardseshGrade.setterCall')}
           </Text>
           {view.grade && (
-            <Text variant="title1" style={[styles.gradeValue, { color: systemColors.secondaryLabel }]}>
+            <Text emphasized variant="title1" style={[styles.gradeValue, { color: systemColors.secondaryLabel }]}>
               {view.grade.label}
             </Text>
           )}
@@ -457,7 +458,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.hero.thisBoardOnly')}
           </Text>
-          <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+          <Text emphasized variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
             {everywhereLabel}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
@@ -468,7 +469,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         // Crowd rounds equal to the cross-board grade: drop the comparison, say so.
         <View style={styles.singleHero}>
           <View style={styles.everywhereValue}>
-            <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+            <Text emphasized variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
               {everywhereLabel}
             </Text>
             {seal}
@@ -484,7 +485,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
             {t('boardseshGrade.hero.everywhere')}
           </Text>
           <View style={styles.everywhereValue}>
-            <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+            <Text emphasized variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
               {everywhereLabel}
             </Text>
             {seal}
@@ -498,7 +499,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
             <Text variant="caption1" color={systemColors.secondaryLabel}>
               {t('boardseshGrade.hero.thisBoard')}
             </Text>
-            <Text variant="title1" style={[styles.gradeValue, { color: systemColors.secondaryLabel }]}>
+            <Text emphasized variant="title1" style={[styles.gradeValue, { color: systemColors.secondaryLabel }]}>
               {correction.crowd.label}
             </Text>
           </View>
@@ -512,7 +513,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
               {t('boardseshGrade.hero.everywhere')}
             </Text>
             <View style={styles.everywhereValue}>
-              <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+              <Text emphasized variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
                 {everywhereLabel}
               </Text>
               {seal}
@@ -587,7 +588,6 @@ const styles = StyleSheet.create({
   },
   gradeValue: {
     fontVariant: ['tabular-nums'],
-    fontWeight: '700',
   },
   // YOUR GRADE — the vertical ladder above the hero
   ladder: {
@@ -651,9 +651,6 @@ const styles = StyleSheet.create({
   },
   // HERO — projected angle. Keeps the grade colour (colour is content) but sits
   // a size down from a measured grade and never carries the confirmed seal.
-  estimateGrade: {
-    opacity: 0.75,
-  },
   // PAYOFF
   payoffRow: {
     flexDirection: 'row',

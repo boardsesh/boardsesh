@@ -34,8 +34,10 @@ describe('released native source provenance', () => {
         Object.values(recording.modules).map((pointer) => pointer.sha256),
       ),
     );
-    expect(referenced.size).toBe(88);
-    expect(files).toHaveLength(113);
+    // 88 auth/provider blobs plus 5 for the phone's watch-pairing request and
+    // the shared pair-code parser it imports (recorded for the staged matrix).
+    expect(referenced.size).toBe(93);
+    expect(files).toHaveLength(118);
     expect(files.filter((file) => !referenced.has(file.replace(/\.txt$/, '')))).toHaveLength(25);
     for (const file of files) {
       expect(file).toMatch(/^[a-f0-9]{64}\.txt$/);

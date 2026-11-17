@@ -70,7 +70,7 @@ all-validator revocation authority is issued by these identity commands.
 5. **Password policy remains the user's decision.** Authenticated password
    set/change keeps the requesting device signed in and revokes other credentials,
    preserving its original proven authentication age. Forgotten-password reset
-   revokes every session. The isolated prototype proves that policy; this OAuth
+   revokes every session. The deleted BA-01 prototype (#7620) proved that policy; this OAuth
    identity slice does not adopt it into production password routes.
 
 ## Apple continuation and browser cookies
@@ -329,3 +329,5 @@ coordinate all browser tabs/origins or all existing session responses. Provider
 registration, deployed IAM, historical receipts, delivery, capable-reader
 retention and mutation-safe restored-database rollback remain launch gates.
 Partner OAuth acceptance is separate from first-party authority migration.
+
+> **Note for #7596.** The re-scoped design in [better-auth-browser-session.md](better-auth-browser-session.md) closes the delayed-response races by letting only login and sign-out responses write the session cookie, apart from the one read that bridges a legacy cookie, which is an open question there. It coordinates tabs and origins with one client guard and a reload on account change, not a cross-tab protocol. A login racing a later login remains, and #7596 accepts it.

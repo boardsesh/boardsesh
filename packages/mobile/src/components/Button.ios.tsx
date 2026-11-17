@@ -135,18 +135,19 @@ export function Button({
     ...(fills.height ? { maxHeight: Infinity } : {}),
   };
 
+  const labelFont = font({
+    textStyle: TEXT_STYLE[size],
+    weight: boldText
+      ? buttonLabelWeight(nativeStyle) === 'semibold'
+        ? 'bold'
+        : 'medium'
+      : buttonLabelWeight(nativeStyle),
+  });
   const modifiers: ModifierConfig[] = [
     styleModifier,
     buttonBorderShape('roundedRectangle', radii.button),
     controlSize(iosControlSize(size, style)),
-    font({
-      textStyle: TEXT_STYLE[size],
-      weight: boldText
-        ? buttonLabelWeight(nativeStyle) === 'semibold'
-          ? 'bold'
-          : 'medium'
-        : buttonLabelWeight(nativeStyle),
-    }),
+    labelFont,
     frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
@@ -198,7 +199,10 @@ export function Button({
           {loading ? (
             <ProgressView modifiers={[tint(spinnerColor)]} />
           ) : icon ? (
-            <Image systemName={iconMap[icon].ios} />
+            // The label's own font, so the symbol is sized by the button's size
+            // and Dynamic Type, as a SwiftUI Label is. Without one, @expo/ui
+            // draws every symbol at a fixed 24pt.
+            <Image systemName={iconMap[icon].ios} modifiers={[labelFont]} />
           ) : null}
           <Text>{title}</Text>
         </HStack>

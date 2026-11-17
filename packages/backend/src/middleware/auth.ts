@@ -4,7 +4,9 @@ import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
+import type { WebSignInProof } from '@boardsesh/shared-schema';
 import { decryptLegacyWebJwe } from '../auth/legacy-web-jwe';
+import { legacyWebSignIn } from '../auth/legacy-web-credentials';
 import {
   AuthAdmissionUnavailableError,
   AuthCredentialRefusedError,
@@ -12,10 +14,6 @@ import {
   readHumanSubjectState,
 } from '../auth/human-admission';
 import { decideCredential, type PresentedCredential } from '../auth/credential-cutoffs';
-import { admitBrowserDelegation, BROWSER_DELEGATION_PREFIX } from '../auth/authority/browser-delegation';
-import { getCredentialDatabase } from '../auth/credential-database';
-import { currentStoreAuthorityConfiguration } from '../auth/current-store/authority-configuration';
-import { runAuthAdmissionRead } from '../auth/admission-read-runner';
 
 export type AuthResult = {
   userId: string;
@@ -23,6 +21,11 @@ export type AuthResult = {
   credentialExpiresAt?: number;
   /** The stamps admission decided on, so the WebSocket sweep can decide again without decrypting. */
   credential: PresentedCredential;
+  /**
+   * When the climber behind a website credential signed in, for operations
+   * that need a recent sign-in. Unset for app tokens, which never count.
+   */
+  webSignIn?: WebSignInProof;
 };
 
 export type ControllerAuthResult = {
@@ -68,7 +71,11 @@ function secretDigest(secret: string): string {
 
 function cacheCryptoResult(token: string, result: AuthResult, format: TokenCacheEntry['format'], secret: string) {
   tokenCache.set(token, {
-    result: Object.freeze({ ...result, credential: Object.freeze(result.credential) }),
+    result: Object.freeze({
+      ...result,
+      credential: Object.freeze(result.credential),
+      ...(result.webSignIn ? { webSignIn: Object.freeze(result.webSignIn) } : {}),
+    }),
     format,
     secretDigest: secretDigest(secret),
     expiresAt: Math.min(Date.now() + TOKEN_CACHE_TTL_MS, (result.credentialExpiresAt ?? Infinity) + 60_000),
@@ -126,6 +133,8 @@ async function verifyNextAuthToken(token: string, secret: string): Promise<AuthR
       return null;
     }
 
+    // The same reading of `auth_time` and `link_guarded` the partner consent routes use.
+    const signIn = legacyWebSignIn(payload, new Date(now));
     const result: AuthResult = {
       userId,
       isAuthenticated: true,
@@ -136,6 +145,7 @@ async function verifyNextAuthToken(token: string, secret: string): Promise<AuthR
         sessionKeyClaim: payload.authSessionId,
         authTimeClaim: payload.auth_time,
       },
+      webSignIn: { authenticatedAtMs: signIn.authenticatedAt?.getTime() ?? null, linkGuarded: signIn.linkGuarded },
     };
     cacheCryptoResult(token, result, 'jwe', secret);
     return result;
@@ -217,37 +227,6 @@ export async function validateMobileJwt(token: string, options: ValidateTokenOpt
  * @returns Auth result with userId if valid, null if invalid
  */
 export async function validateToken(token: string, options: ValidateTokenOptions = {}): Promise<AuthResult | null> {
-  if (token.startsWith(BROWSER_DELEGATION_PREFIX)) {
-    let admission: Awaited<ReturnType<typeof admitBrowserDelegation>>;
-    try {
-      const authority = currentStoreAuthorityConfiguration(process.env);
-      admission = await runAuthAdmissionRead(async (markExecuting) => {
-        const database = await getCredentialDatabase('private-browser-v1');
-        markExecuting();
-        return admitBrowserDelegation(database, authority, token);
-      });
-    } catch {
-      throw new AuthAdmissionUnavailableError();
-    }
-    if (admission.status === 'unavailable') throw new AuthAdmissionUnavailableError();
-    if (admission.status !== 'admitted') {
-      // This is an exclusive new bearer family. A bad or expired lease must
-      // never silently downgrade an optional-auth operation to anonymous.
-      throw new AuthCredentialRefusedError();
-    }
-    const { session } = admission;
-    return {
-      userId: session.userId,
-      isAuthenticated: true,
-      credentialExpiresAt: admission.expiresAt.getTime(),
-      credential: {
-        kind: 'web-session',
-        generationClaim: session.generation,
-        sessionKeyClaim: session.authSessionId,
-        authTimeClaim: session.authenticatedAt ? session.authenticatedAt.getTime() / 1000 : null,
-      },
-    };
-  }
   // JWE tokens (NextAuth) have 5 dot-separated segments,
   // JWS tokens (mobile JWT) have 3 segments.
   const segments = token.split('.').length;

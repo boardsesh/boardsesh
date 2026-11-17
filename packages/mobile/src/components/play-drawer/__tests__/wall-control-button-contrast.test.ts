@@ -50,9 +50,13 @@ describe('wall button contrast', () => {
     expect(contrastRatioHex(brandColorsDark.onAccent, BOKEH_LIGHT_SURFACE.base)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('keeps the deeper violet for light only: dark keeps its lifted foreground', () => {
-    expect(brandColors.primaryStrong).toBe('#5B21B6');
-    expect(brandColorsDark.primaryStrong).toBe(brandColorsDark.primary);
+  it('moves the label one step further from the ground: deeper in light, lighter in dark', () => {
+    expect(brandColors.primaryStrong).toBe('#4A16CF');
+    expect(brandColorsDark.primaryStrong).toBe('#9C8CFF');
+    // Dark: the plain tint is under 4.5:1 on the wash over #2C2C2E, which is why strong lifts.
+    const darkWash = blendOpaque(brandColorsDark.primaryFill, '#2C2C2E', WALL_CONTROL_TONAL_ALPHA);
+    expect(contrastRatioHex(brandColorsDark.primary, darkWash)).toBeLessThan(4.5);
+    expect(contrastRatioHex(brandColorsDark.primaryStrong, darkWash)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('is stronger than the old 14% wash, so it no longer reads as disabled', () => {

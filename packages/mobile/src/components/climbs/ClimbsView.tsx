@@ -52,7 +52,12 @@ export function ClimbsView({
         {listReset}
         <ClimbListThumbnailSizeContext.Provider value={thumbnailSize}>
           {/* FlashList must remount when changing between its grid and linear layouts. */}
-          <FlashList key={`climb-list-${listProps.numColumns ?? 1}-columns`} ref={listRef} {...listProps} />
+          <FlashList
+            key={`climb-list-${listProps.numColumns ?? 1}-columns`}
+            ref={listRef}
+            testID="climb-list"
+            {...listProps}
+          />
           {listEffects}
         </ClimbListThumbnailSizeContext.Provider>
       </View>

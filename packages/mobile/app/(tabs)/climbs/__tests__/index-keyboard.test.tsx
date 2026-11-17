@@ -211,6 +211,7 @@ const mocks = vi.hoisted(() => ({
   // What the list was last rendered with, and how many times it mounted.
   listNumColumns: undefined as number | undefined,
   listMounts: 0,
+  listKeyExtractor: undefined as ((item: Climb) => string) | undefined,
   listOnLoad: undefined as (() => void) | undefined,
   listViewableItemsChanged: undefined as
     | ((info: { viewableItems: Array<{ index: number | null }> }) => void)
@@ -224,6 +225,7 @@ type FlashListProps<Item> = {
     scrollToIndex: (params: { index: number; animated?: boolean }) => void;
   }>;
   numColumns?: number;
+  keyExtractor?: (item: Item) => string;
   onLoad?: () => void;
   onViewableItemsChanged?: (info: { viewableItems: Array<{ index: number | null }> }) => void;
   scrollToOverflowEnabled?: boolean;
@@ -311,10 +313,12 @@ vi.mock('@shopify/flash-list', () => ({
     onCommitLayoutEffect,
     contentContainerStyle,
     numColumns,
+    keyExtractor,
     onLoad,
     onViewableItemsChanged,
   }: FlashListProps<Item>) => {
     mocks.listCommitLayout = onCommitLayoutEffect;
+    mocks.listKeyExtractor = keyExtractor as ((item: Climb) => string) | undefined;
     mocks.listNumColumns = numColumns;
     mocks.listOnLoad = onLoad;
     mocks.listViewableItemsChanged = onViewableItemsChanged;
@@ -1543,9 +1547,9 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
       await settle();
       expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
 
-      // After a drag, the screen's next settle check (here, the rerender) asks again.
+      // After a drag, the next report of rows on screen asks again.
       drag();
-      rerender(<ClimbList />);
+      everyRowOnScreen();
       await settle();
       expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
     });
@@ -3075,6 +3079,62 @@ describe('ClimbList scroll reset on a new search', () => {
     mocks.searchState = GRADED_SEARCH;
     rerender(<ClimbList />);
     expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 0, animated: false });
+  });
+});
+
+// FlashList 2 keeps its place across a data change by finding the key of the row
+// that was first on screen. A climb that is in both the old and the new results
+// then drags the new search's render window to where that climb sits in it (row
+// 7 of an 8B search: 2,751 px down) while the scroll stays at the top, and the
+// list shows nothing until a drag. Rows from a new search get new keys, so the
+// old first row is never found.
+describe('ClimbList row keys across a new search', () => {
+  const GRADED_SEARCH = { filters: { minGrade: 28, maxGrade: 28 }, boardFilters: {}, name: '' };
+  const rowKey = (climb: Climb) => {
+    if (!mocks.listKeyExtractor) throw new Error('Expected the list to be rendered');
+    return mocks.listKeyExtractor(climb);
+  };
+  const climbsBefore = () => [mocks.climb, mocks.secondClimb];
+  // The previous first row is still in the new results, further down.
+  const climbsAfter = () => {
+    const graded = Array.from({ length: 7 }, (_, index) => ({ ...mocks.climb, uuid: `graded-${index}` }));
+    return [...graded, mocks.climb] as unknown as Climb[];
+  };
+
+  beforeEach(() => {
+    mocks.listMounts = 0;
+  });
+
+  it("gives the new search's rows keys the previous first row cannot match", () => {
+    mocks.searchClimbs = climbsBefore();
+    const { rerender } = render(<ClimbList />);
+    const firstRowKey = rowKey(mocks.climb);
+    const mounts = mocks.listMounts;
+
+    // The filter changes; the previous rows stand in, keeping their keys so the
+    // stale rows are not re-keyed under the climber.
+    mocks.searchState = GRADED_SEARCH;
+    mocks.isPlaceholderData = true;
+    rerender(<ClimbList />);
+    expect(rowKey(mocks.climb)).toBe(firstRowKey);
+
+    // The new page lands with the same climb at row 7.
+    mocks.isPlaceholderData = false;
+    mocks.searchClimbs = climbsAfter();
+    rerender(<ClimbList />);
+    expect(rowKey(mocks.climb)).not.toBe(firstRowKey);
+    // Re-keyed in place: the list keeps its mounted rows to recycle.
+    expect(mocks.listMounts).toBe(mounts);
+  });
+
+  it('keeps row keys through a re-render of the same search', () => {
+    mocks.searchClimbs = climbsBefore();
+    const { rerender } = render(<ClimbList />);
+    const firstRowKey = rowKey(mocks.climb);
+
+    mocks.searchClimbs = [...climbsBefore(), { ...mocks.climb, uuid: 'climb-3' } as unknown as Climb];
+    rerender(<ClimbList />);
+    expect(rowKey(mocks.climb)).toBe(firstRowKey);
   });
 });
 

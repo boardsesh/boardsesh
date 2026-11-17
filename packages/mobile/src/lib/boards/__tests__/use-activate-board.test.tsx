@@ -55,6 +55,8 @@ vi.mock('../../integrations/use-board-account-credentials', () => ({
   useBoardAccountCredentials: () => ({ data: linkState.credentials }),
 }));
 vi.mock('../../onboarding/link-step-answered', () => ({ hasAnsweredLinkStep: readAnswered }));
+const consumePendingRecognitionMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../pending-board-recognition', () => ({ consumePendingBoardRecognition: consumePendingRecognitionMock }));
 
 import { useActivateBoard, type ActivateBoardOptions } from '../use-activate-board';
 
@@ -99,6 +101,26 @@ describe('useActivateBoard', () => {
     expect(dismissToMock).not.toHaveBeenCalled();
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
     expect(showToastMock).toHaveBeenCalledWith('mobile.boardSwitchError', 'error');
+    // Nothing bound, so nothing to name the waiting box after.
+    expect(consumePendingRecognitionMock).not.toHaveBeenCalled();
+  });
+
+  // The picker's In range slot may be holding a box the climber set off to
+  // find; every bind on every route is a chance to name it.
+  it('hands every bound board to the pending box recognition', async () => {
+    const result = activate();
+    await result.current(BOARD);
+
+    expect(consumePendingRecognitionMock).toHaveBeenCalledExactlyOnceWith(BOARD);
+  });
+
+  // Manage boards: a switch there says nothing about the box the climber stood at.
+  it('leaves the held box alone for a caller that opts out', async () => {
+    const result = activate({ recognizesHeldBox: false });
+    await result.current(BOARD);
+
+    expect(setActiveBoardMock).toHaveBeenCalledWith(BOARD);
+    expect(consumePendingRecognitionMock).not.toHaveBeenCalled();
   });
 
   // The builder renders its failure inline and has submit state to unwind — a

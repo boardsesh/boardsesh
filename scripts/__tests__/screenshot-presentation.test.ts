@@ -47,6 +47,44 @@ afterEach(() => {
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
+describe('wall showcase detail', () => {
+  it('magnifies the current-climb card rather than the empty presenting header', async () => {
+    const width = 400;
+    const height = 870;
+    const card = { left: 24, top: 245, width: 352, height: 84 };
+    const source = await sharp({ create: { width, height, channels: 3, background: '#000000' } })
+      .composite([
+        {
+          input: Buffer.from(
+            `<svg width="${card.width}" height="${card.height}"><rect width="100%" height="100%" fill="#00ff00"/></svg>`,
+          ),
+          left: card.left,
+          top: card.top,
+        },
+      ])
+      .png()
+      .toBuffer();
+    const framed = await frameComposition(
+      [source],
+      { headline: 'On the wall', description: 'Climb together' },
+      'store-wall',
+    );
+    const { data: pixels, info } = await sharp(framed).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    // The full phone is necessarily scaled down. A separate band at least 75%
+    // of the canvas width proves the actual card was also lifted into the detail.
+    let widestCardRow = 0;
+    for (let row = 0; row < info.height; row++) {
+      let greenPixels = 0;
+      for (let column = 0; column < info.width; column++) {
+        const offset = (row * info.width + column) * info.channels;
+        if (pixels[offset] < 10 && pixels[offset + 1] > 245 && pixels[offset + 2] < 10) greenPixels++;
+      }
+      widestCardRow = Math.max(widestCardRow, greenPixels);
+    }
+    expect(widestCardRow).toBeGreaterThan(width * 0.75);
+  });
+});
+
 describe('board-specific CPP openings', () => {
   const devices = Object.keys(ACCEPTED_SIZES);
   const headlineByTarget = {
@@ -581,10 +619,11 @@ describe('store screenshot presentation', () => {
   );
 
   it('enlarges only the captured wall rail and preserves the complete local selection screen', async () => {
+    // Match the current-climb content below the header in the 1080×1920 story capture.
     const raw = await sharp(
       Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
       <rect width="1080" height="1920" fill="#164c39"/>
-      <rect y="270" width="1080" height="148" fill="#e69a32"/>
+      <rect y="420" width="1080" height="170" fill="#e69a32"/>
       <rect y="1525" width="1080" height="125" fill="#ac3478"/>
       <rect y="1856" width="1080" height="64" fill="#3269e6"/>
     </svg>`),

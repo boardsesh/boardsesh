@@ -21,6 +21,8 @@ These are agent engineering decisions, not new account-selection policy:
 4. Do not claim backend validation makes browser `Set-Cookie` conditional.
 5. Keep source-schema/adoption work gated on actual reader and publication paths.
 
+> **Superseded by #7596.** These five rules were agent engineering decisions, and the browser binding design grew from them. #7596 replaces them with the design in [better-auth-browser-session.md](better-auth-browser-session.md). Rules 1 and 5 lapse, because the new design keeps no publication records or source schema. Rule 2 keeps the stable login SID; whether the 30-day lifetime stays rolling is an open question there. Rule 3 stays: a renewed token's `iat` or `jti` never supplies authentication age. Whether a bridged session can ever count as fresh is open question 2 there. Rule 4 is answered differently: session reads, renewal and set-password emit no `Set-Cookie`, apart from the one read that bridges a legacy cookie.
+
 No production migration, account backfill, owner reassignment, grant change or
 activation is part of this follow-up. Existing V2 commands remain unchanged.
 An eventual source API must derive authority from the actual password proof
@@ -121,6 +123,8 @@ deny a stale credential but cannot restore B's cookie after a delayed response
 overwrites or deletes it. A broker, coordinator or cookie-slot protocol must be
 reviewed against actual supported clients and origins before implementation;
 this follow-up silently changes none of those account behaviors.
+
+> **Superseded by #7596.** The broker, coordinator or cookie-slot protocol suggested above is not built. #7596 instead stops session reads from writing the cookie, makes a login revoke the session it arrived with, and puts one guard in each browser client that drops stale responses and reloads on an account change. See [better-auth-browser-session.md](better-auth-browser-session.md). The race characterization in this section stays.
 
 Turning off future fresh-source issuance must retain capable marked-cookie
 validation and rolling renewal. Rolling sessions have no guaranteed retirement

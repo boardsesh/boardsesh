@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { markWebDatabaseUrlProcess } from '@boardsesh/db/client/config';
 import { applyCanonicalAuthUrl, diagnoseCanonicalOrigin } from './app/lib/auth/canonical-auth-url';
 
 export async function register() {
@@ -13,8 +14,31 @@ export async function register() {
     // canonical origin instead of next-auth's localhost fallback (issue #4227).
     applyCanonicalAuthUrl();
 
+    // Before Sentry, whose environment reads the database hostname: once this
+    // process is marked as the web, that follows WEB_DATABASE_URL like the pool.
+    // Marking refuses a WEB_DATABASE_URL while the web still writes identity
+    // tables itself (WEB_DATABASE_LOGIN_BLOCKERS); that exits below.
+    let webDatabaseRefusal: Error | undefined;
+    try {
+      markWebDatabaseUrlProcess();
+    } catch (error) {
+      webDatabaseRefusal = error instanceof Error ? error : new Error('WEB_DATABASE_LOGIN_BLOCKED');
+    }
+
     // Sentry first, so the throw below is reported rather than only printed.
     await import('./sentry.server.config');
+
+    if (webDatabaseRefusal) {
+      // Same reasoning as the origin check below: a process left running would
+      // fail sign-up, password reset and email verification with 42501.
+      console.error(
+        `${webDatabaseRefusal.message}: WEB_DATABASE_URL is set, but the web still writes identity tables. ` +
+          'Unset it until runbook #7430 says otherwise (docs/better-auth-writer-fence-proof.md).',
+      );
+      Sentry.captureException(webDatabaseRefusal);
+      await Sentry.flush(2000).catch(() => {});
+      process.exit(1);
+    }
 
     if (canonicalOriginDiagnosis.level === 'warn') {
       console.warn(canonicalOriginDiagnosis.message);

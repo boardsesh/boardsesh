@@ -3,6 +3,10 @@ import { z } from 'zod';
 /** Control metadata only. No message is an authentication or identity assertion. */
 export const BROWSER_COORDINATOR_PROTOCOL_VERSION = 1;
 export const BROWSER_COORDINATOR_LOCK = 'boardsesh-browser-coordinator-v1';
+/** #7596 deleted this www frame page and the two routes below; all answer 404.
+ * The gated Expo web frame client still loads the frame page. Only the host
+ * half (mountCanonicalBrowserCoordinator) fetches the two routes, and nothing
+ * mounts it now. */
 export const BROWSER_COORDINATOR_FRAME_PATH = '/auth/browser-coordinator';
 export const BROWSER_COORDINATOR_PUBLIC_PATHS = Object.freeze({
   observe: '/api/internal/auth/browser-coordinator/observe',
@@ -14,7 +18,6 @@ export const browserBindingCursorSchema = z.object({ bindingId: z.string().regex
 export type BrowserBindingCursor = z.infer<typeof browserBindingCursorSchema>;
 export const browserCoordinatorCommandSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('read') }).strict(),
-  z.object({ operation: z.literal('signin') }).strict(),
   z
     .object({
       operation: z.literal('prepare'),
@@ -59,7 +62,7 @@ export const browserCoordinatorReplySchema = z
     ...envelope,
     type: z.literal('result'),
     requestId: identifier,
-    operation: z.enum(['read', 'prepare', 'renew', 'signin']),
+    operation: z.enum(['read', 'prepare', 'renew']),
     result: browserCoordinatorResultSchema,
   })
   .strict();

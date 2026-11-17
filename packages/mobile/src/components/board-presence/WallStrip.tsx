@@ -75,7 +75,7 @@ function WallStripComponent() {
         <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
           {t('boardPresence.open')}
         </Text>
-        <Text variant="subheadline" color={systemColors.label} numberOfLines={1} style={styles.name}>
+        <Text emphasized variant="subheadline" color={systemColors.label} numberOfLines={1}>
           {litClimb ? (litClimb.name ?? '') : t('boardPresence.railDark')}
         </Text>
       </View>
@@ -117,6 +117,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: { flex: 1, minWidth: 0 },
-  name: { fontWeight: '600' },
   grade: { fontWeight: '700' },
 });

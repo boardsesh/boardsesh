@@ -85,7 +85,8 @@ export interface RateLimitUsage {
 /** A paused Redis would otherwise hold the request until the socket gives up. */
 const REDIS_DEADLINE_MS = 100;
 
-function withRedisDeadline<Result>(command: Promise<Result>): Promise<Result> {
+/** Rejects when Redis has not answered within 100 ms. The command may still run later. */
+export function withRedisDeadline<Result>(command: Promise<Result>): Promise<Result> {
   let deadline: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<never>((_resolve, reject) => {
     deadline = setTimeout(() => reject(new Error('Redis did not answer in time')), REDIS_DEADLINE_MS);

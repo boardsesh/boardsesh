@@ -679,7 +679,11 @@ describe('ClimbTopChrome', () => {
     expect(history?.querySelector('[data-icon="history"]')).not.toBeNull();
     expect(angle?.compareDocumentPosition(history!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     const menuRows = [...container.querySelectorAll('[data-menu] button')].map((row) => row.textContent);
-    expect(menuRows).toEqual(['mobile.listOptions.viewOptions', 'mobile.boardPresence.switchBoard']);
+    expect(menuRows).toEqual([
+      'mobile.listOptions.myClimbs',
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.switchBoard',
+    ]);
   });
 
   it.each([

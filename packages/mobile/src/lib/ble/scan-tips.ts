@@ -1,14 +1,13 @@
 // The "Don't see your board?" tips: when a scan shows them, and in what order.
-// Shared by the device picker (DevicePickerSheet) and the /boards Bluetooth
-// quickstart (BluetoothQuickstartSheet), so both say the same thing at the same
-// moment.
+// Used by the device picker (DevicePickerSheet). The /boards Bluetooth
+// quickstart sheet shared them until the picker's In range slot replaced it.
 
 import { useEffect, useState } from 'react';
 
 /**
  * How long a scan runs with nothing to pick before the tips show. The picker's
- * scan runs 30 s (`SCAN_TIMEOUT_MS`) and the quickstart's 15 s; the tips used to
- * wait for either to end empty. A board that is on and in range is heard well
+ * scan runs 30 s (`SCAN_TIMEOUT_MS`); the tips used to wait for it to end
+ * empty. A board that is on and in range is heard well
  * inside 5 s, so by then an empty list is worth explaining while the scan goes on.
  */
 export const SCAN_TIPS_DELAY_MS = 5_000;

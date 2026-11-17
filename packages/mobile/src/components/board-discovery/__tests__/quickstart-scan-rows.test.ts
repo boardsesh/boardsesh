@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
-import { buildQuickstartRows, quickstartLookupState } from '../quickstart-scan-rows';
+import type { RecognizedBoardDevice } from '../../../lib/ble/recognized-board-devices-store';
+import {
+  buildQuickstartRows,
+  carryDrawnAnswer,
+  quickstartLookupState,
+  type QuickstartLookupState,
+} from '../quickstart-scan-rows';
 
 function serialDevice(
   serial: string,
@@ -97,6 +103,31 @@ describe('buildQuickstartRows', () => {
     expect(rows.map((row) => row.rssi)).toEqual([-40, -45, -65, -90]);
   });
 
+  // The picker binds the box to the board picked next, so it needs the box's
+  // id, and only when one box stands behind the row.
+  it.each([
+    { name: 'one MoonBoard', devices: [moonboard('mb-1', -60)], expected: 'mb-1' },
+    { name: 'two MoonBoards', devices: [moonboard('mb-1', -60), moonboard('mb-2', -50)], expected: null },
+    { name: 'one bare Kilter box', devices: [bareBox('kb-1', 'kilter', -60)], expected: 'kb-1' },
+    {
+      name: 'two bare Kilter boxes',
+      devices: [bareBox('kb-1', 'kilter', -60), bareBox('kb-2', 'kilter', -70)],
+      expected: null,
+    },
+  ])('carries the box id for $name: $expected', ({ devices, expected }) => {
+    const [row] = buildQuickstartRows({ devices, boards: [], lookup: 'none' });
+    expect(row.kind === 'moonboard' || row.kind === 'bare_name' ? row.deviceId : 'no id field').toBe(expected);
+  });
+
+  it('keeps the box ids of two board types apart', () => {
+    const rows = buildQuickstartRows({
+      devices: [bareBox('kb-1', 'kilter', -60), bareBox('tb-1', 'tension', -70)],
+      boards: [],
+      lookup: 'none',
+    });
+    expect(rows.map((row) => (row.kind === 'bare_name' ? row.deviceId : null))).toEqual(['kb-1', 'tb-1']);
+  });
+
   it('holds serial rows back while the lookup is pending, but not the boards with no serial', () => {
     const rows = buildQuickstartRows({
       devices: [serialDevice('1', 'kilter', -50), moonboard('mb-1', -70)],
@@ -114,6 +145,30 @@ describe('buildQuickstartRows', () => {
     });
     expect(kinds(rows)).toEqual(['lookup_failed', 'moonboard:moonboard']);
     expect(rows[0].rssi).toBe(-55);
+  });
+
+  // A serial heard after the answer was drawn: the answer's rows stay, and the
+  // new serial waits for its own answer instead of reading as unknown.
+  it('keeps the drawn answer while a serial heard since is looked up', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -40), serialDevice('3', 'kilter', -60)],
+      boards: [savedBoard('crux', '1')],
+      answeredSerials: ['1', '3'],
+      lookup: 'updating',
+    });
+    expect(kinds(rows)).toEqual(['board:crux', 'unknown_setup:kilter']);
+    expect(rows.map((row) => row.rssi)).toEqual([-50, -60]);
+  });
+
+  it('keeps the drawn answer and asks for signal only for the serials heard since', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -70), serialDevice('3', 'kilter', -65)],
+      boards: [savedBoard('crux', '1')],
+      answeredSerials: ['1'],
+      lookup: 'failed',
+    });
+    expect(kinds(rows)).toEqual(['board:crux', 'lookup_failed']);
+    expect(rows[1].rssi).toBe(-65);
   });
 
   it('sorts every row by signal, strongest first, unknown last', () => {
@@ -136,6 +191,172 @@ describe('buildQuickstartRows', () => {
 
   it('lists nothing when nothing was heard', () => {
     expect(buildQuickstartRows({ devices: [], boards: [], lookup: 'none' })).toEqual([]);
+  });
+
+  it('says a serial row is known by its serial', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50)],
+      boards: [savedBoard('crux', '1')],
+      lookup: 'resolved',
+    });
+    expect(rows[0]).toMatchObject({ kind: 'board', recognizedBy: 'serial' });
+  });
+});
+
+// A serial-less box this phone has bound to one of the climber's boards is
+// named by its Bluetooth id (recognized-board-devices-store.ts).
+describe('buildQuickstartRows with recognised Bluetooth ids', () => {
+  function ownBoard(uuid: string, boardType: string): UserBoard {
+    return { uuid, name: uuid, boardType, serialNumber: null } as unknown as UserBoard;
+  }
+
+  function recognized(deviceId: string, boardUuid: string, boardType: 'moonboard' | 'kilter'): RecognizedBoardDevice {
+    return { deviceId: deviceId.toUpperCase(), boardUuid, boardType, savedAt: 1 };
+  }
+
+  const homeMoon = ownBoard('home-moon', 'moonboard');
+  const gymKilter = ownBoard('gym-kilter', 'kilter');
+
+  type RecognitionCase = {
+    name: string;
+    devices: QuickstartScanDevice[];
+    recognizedDevices: RecognizedBoardDevice[];
+    knownBoards: UserBoard[];
+    boards?: UserBoard[];
+    lookup?: QuickstartLookupState;
+    expected: string[];
+    expectedRecognizedBy?: Array<'serial' | 'device_id' | null>;
+  };
+
+  const cases: RecognitionCase[] = [
+    {
+      name: 'names a recognised MoonBoard as the board it was bound to',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['board:home-moon'],
+      expectedRecognizedBy: ['device_id'],
+    },
+    {
+      name: 'names a recognised bare Kilter box',
+      devices: [bareBox('kb-1', 'kilter', -60)],
+      recognizedDevices: [recognized('kb-1', 'gym-kilter', 'kilter')],
+      knownBoards: [gymKilter],
+      expected: ['board:gym-kilter'],
+      expectedRecognizedBy: ['device_id'],
+    },
+    {
+      name: 'keeps the grouped row for the boxes it does not recognise, and not for the one it does',
+      devices: [moonboard('mb-1', -60), moonboard('mb-2', -50)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['moonboard:moonboard', 'board:home-moon'],
+      expectedRecognizedBy: [null, 'device_id'],
+    },
+    {
+      name: 'leaves a box unnamed when its board is no longer one of the known boards',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [gymKilter],
+      expected: ['moonboard:moonboard'],
+    },
+    {
+      name: 'leaves a box unnamed when its id was recognised as another type',
+      devices: [bareBox('mb-1', 'kilter', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['bare_name:kilter'],
+    },
+    {
+      name: 'leaves a box unnamed when the known board is of another type than the box',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'gym-kilter', 'moonboard')],
+      knownBoards: [gymKilter],
+      expected: ['moonboard:moonboard'],
+    },
+    {
+      name: 'matches the id whatever its case',
+      devices: [moonboard('aa:bb:cc', -60)],
+      recognizedDevices: [recognized('AA:BB:CC', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['board:home-moon'],
+    },
+    {
+      name: 'lists one row for two boxes recognised as one board, at the stronger signal',
+      devices: [moonboard('mb-1', -80), moonboard('mb-2', -40)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard'), recognized('mb-2', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      expected: ['board:home-moon'],
+    },
+    {
+      name: 'does not wait for the serial lookup',
+      devices: [moonboard('mb-1', -60), serialDevice('1', 'kilter', -50)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [homeMoon],
+      lookup: 'pending',
+      expected: ['board:home-moon'],
+    },
+    {
+      name: 'lists a board heard both ways once, by serial',
+      devices: [bareBox('kb-1', 'kilter', -40), serialDevice('7', 'kilter', -70)],
+      recognizedDevices: [recognized('kb-1', 'gym-kilter', 'kilter')],
+      knownBoards: [gymKilter],
+      boards: [{ ...gymKilter, serialNumber: '7' } as UserBoard],
+      lookup: 'resolved',
+      expected: ['board:gym-kilter'],
+      expectedRecognizedBy: ['serial'],
+    },
+    {
+      name: 'names nothing without known boards',
+      devices: [moonboard('mb-1', -60)],
+      recognizedDevices: [recognized('mb-1', 'home-moon', 'moonboard')],
+      knownBoards: [],
+      expected: ['moonboard:moonboard'],
+    },
+  ];
+
+  it.each(cases)(
+    '$name',
+    ({ devices, recognizedDevices, knownBoards, boards, lookup, expected, expectedRecognizedBy }) => {
+      const rows = buildQuickstartRows({
+        devices,
+        boards: boards ?? [],
+        lookup: lookup ?? 'none',
+        recognition: { devices: recognizedDevices, knownBoards },
+      });
+      expect(kinds(rows)).toEqual(expected);
+      if (expectedRecognizedBy) {
+        expect(rows.map((row) => (row.kind === 'board' ? row.recognizedBy : null))).toEqual(expectedRecognizedBy);
+      }
+    },
+  );
+
+  it('keeps the stronger signal when a board is heard both ways', () => {
+    const rows = buildQuickstartRows({
+      devices: [bareBox('kb-1', 'kilter', -40), serialDevice('7', 'kilter', -70)],
+      boards: [{ ...gymKilter, serialNumber: '7' } as UserBoard],
+      lookup: 'resolved',
+      recognition: { devices: [recognized('kb-1', 'gym-kilter', 'kilter')], knownBoards: [gymKilter] },
+    });
+    expect(rows[0].rssi).toBe(-40);
+  });
+
+  it('keys a recognised row like the serial row it may turn into', () => {
+    const recognition = { devices: [recognized('kb-1', 'gym-kilter', 'kilter')], knownBoards: [gymKilter] };
+    const devices = [bareBox('kb-1', 'kilter', -40), serialDevice('7', 'kilter', -70)];
+    const before = buildQuickstartRows({ devices, boards: [], lookup: 'pending', recognition });
+    const after = buildQuickstartRows({
+      devices,
+      boards: [{ ...gymKilter, serialNumber: '7' } as UserBoard],
+      lookup: 'resolved',
+      recognition,
+    });
+    expect(before[0].key).toBe(after[0].key);
+  });
+
+  it('recognises nothing when the caller passes no recognition, as the quickstart sheet does', () => {
+    const rows = buildQuickstartRows({ devices: [moonboard('mb-1', -60)], boards: [], lookup: 'none' });
+    expect(kinds(rows)).toEqual(['moonboard:moonboard']);
   });
 });
 
@@ -162,5 +383,82 @@ describe('quickstartLookupState', () => {
 
   it('waits for the saved serial choices before calling an answer resolved', () => {
     expect(quickstartLookupState({ ...base, hasResult: true, resolving: true })).toBe('pending');
+  });
+});
+
+describe('carryDrawnAnswer', () => {
+  const drawn = { serials: ['1'], boards: [savedBoard('crux', '1')] };
+
+  it.each<{
+    name: string;
+    lookup: QuickstartLookupState;
+    serials: string[];
+    /** Whether an answer for serial 1 was drawn earlier. */
+    drewBefore: boolean;
+    expected: QuickstartLookupState;
+    keepsAnswer: boolean;
+  }>([
+    {
+      name: 'first answer out',
+      lookup: 'pending',
+      serials: ['1'],
+      drewBefore: false,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new serial looked up',
+      lookup: 'pending',
+      serials: ['1', '2'],
+      drewBefore: true,
+      expected: 'updating',
+      keepsAnswer: true,
+    },
+    {
+      name: 'new serial failed',
+      lookup: 'failed',
+      serials: ['1', '2'],
+      drewBefore: true,
+      expected: 'failed',
+      keepsAnswer: true,
+    },
+    {
+      name: 'every serial answered',
+      lookup: 'resolved',
+      serials: ['1'],
+      drewBefore: true,
+      expected: 'resolved',
+      keepsAnswer: true,
+    },
+    // A new scan starts empty, and one that hears other serials never draws
+    // the last scan's boards, even once it hears that scan's serial again.
+    {
+      name: 'new scan, nothing heard',
+      lookup: 'none',
+      serials: [],
+      drewBefore: true,
+      expected: 'none',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new scan, other serials',
+      lookup: 'pending',
+      serials: ['2'],
+      drewBefore: true,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new scan, other serial then the old one',
+      lookup: 'pending',
+      serials: ['2', '1'],
+      drewBefore: true,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+  ])('$name: $expected', ({ lookup, serials, drewBefore, expected, keepsAnswer }) => {
+    const carried = carryDrawnAnswer({ lookup, serials, drawn: drewBefore ? drawn : null });
+    expect(carried.lookup).toBe(expected);
+    expect(carried.answer).toBe(keepsAnswer ? drawn : null);
   });
 });

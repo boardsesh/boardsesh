@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from 'expo-router';
@@ -16,7 +16,7 @@ import { notificationClimbRender } from './notification-climb-render';
 import { NotificationRow } from './NotificationRow';
 import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
 import {
-  useAnswerFollowRequestMutation,
+  useAnswerFollowRequest,
   useGroupedNotifications,
   useMarkAllAsRead,
   useUnreadNotificationCount,
@@ -24,7 +24,6 @@ import {
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useTheme } from '../../providers/theme-provider';
-import { useHttpActionScope, type HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { spacing } from '../../theme/tokens';
 
 // Module-level so the empty-list identity is stable across renders, and hoisted
@@ -56,12 +55,6 @@ type CommentThread = { entityType: SocialEntityType; entityId: string };
  * (type, entity_type, entity_id) in SQL, so the client only flattens pages.
  */
 export default function NotificationsScreen() {
-  const actionScope = useHttpActionScope();
-  return <OwnedNotificationsScreen key={actionScope.key} actionScope={actionScope} />;
-}
-
-function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScope }) {
-  const { capture: captureAction } = actionScope;
   const { t } = useTranslation('notifications');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -87,7 +80,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
   const unreadCount = useUnreadNotificationCount();
   const { mutate: markAllAsRead } = useMarkAllAsRead();
   // Stable (React Query's mutateAsync), so it can ride into every memoized row.
-  const { mutateWithReceipt: answerFollowRequest } = useAnswerFollowRequestMutation();
+  const answerFollowRequest = useAnswerFollowRequest();
 
   // The comment thread lives here rather than in the navigation hook so that
   // hook keeps returning ONE stable callback: `openCommentThread` is empty-dep
@@ -101,7 +94,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
   }, []);
   const closeCommentThread = useCallback(() => setCommentThread(null), []);
 
-  const handlePress = useNotificationNavigation(openCommentThread, captureAction);
+  const handlePress = useNotificationNavigation(openCommentThread);
 
   const groups = useMemo(() => data?.pages.flatMap((page) => page.groups) ?? EMPTY_GROUPS, [data]);
 
@@ -113,40 +106,12 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
   const showSpinner = !showOffline && isPending && groups.length === 0;
   const showError = !showOffline && isError && groups.length === 0;
 
-  const invokeCurrent = useCallback(
-    (invoke: () => void) => {
-      let action: ReturnType<HttpActionScope['capture']>;
-      try {
-        action = captureAction();
-      } catch {
-        return;
-      }
-      try {
-        action.assertView();
-        invoke();
-      } catch (error) {
-        if (action.isCurrent()) throw error;
-      } finally {
-        action.finish();
-      }
-    },
-    [captureAction],
-  );
-  const handleMarkAllAsRead = useCallback(() => invokeCurrent(() => markAllAsRead()), [markAllAsRead, invokeCurrent]);
-  const handleRefresh = useCallback(
-    () =>
-      invokeCurrent(() => {
-        void refetch();
-      }),
-    [refetch, invokeCurrent],
-  );
+  const handleMarkAllAsRead = useCallback(() => markAllAsRead(), [markAllAsRead]);
+  const handleRefresh = useCallback(() => void refetch(), [refetch]);
 
   const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage)
-      invokeCurrent(() => {
-        void fetchNextPage();
-      });
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, invokeCurrent]);
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // "Mark all as read" lives in the native header rather than the list body, so
   // it stays reachable while the list is scrolled (the `setters` / `zone` filter
@@ -154,7 +119,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
   // something on screen to mark it against — mirrors web's
   // `groupedNotifications.length > 0 && unreadCount > 0`, which keeps the action
   // off a first paint where the count query has resolved but the list has not.
-  useLayoutEffect(() => {
+  useEffect(() => {
     navigation.setOptions({
       headerRight:
         unreadCount > 0 && groups.length > 0
@@ -168,14 +133,9 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
 
   const renderItem = useCallback(
     ({ item }: { item: GroupedNotification }) => (
-      <NotificationRow
-        notification={item}
-        onPress={handlePress}
-        onAnswerFollowRequest={answerFollowRequest}
-        captureAction={captureAction}
-      />
+      <NotificationRow notification={item} onPress={handlePress} onAnswerFollowRequest={answerFollowRequest} />
     ),
-    [handlePress, answerFollowRequest, captureAction],
+    [handlePress, answerFollowRequest],
   );
 
   return (
@@ -202,7 +162,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
           ) : showError ? (
             <View style={styles.stateBlock}>
               <Icon name="error" size={32} color={systemColors.error} />
-              <Text variant="headline" style={styles.stateTitle}>
+              <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                 {t('errors.load')}
               </Text>
               <View style={styles.stateCta}>
@@ -212,7 +172,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
           ) : (
             <View style={styles.stateBlock}>
               <Icon name="notification" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.stateTitle}>
+              <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                 {t('empty')}
               </Text>
             </View>
@@ -261,7 +221,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.65,
     textAlign: 'center',
   },
   stateCta: {

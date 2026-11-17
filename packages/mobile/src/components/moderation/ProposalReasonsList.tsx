@@ -23,7 +23,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { useProposalReportReleaseContexts } from '../../lib/graphql/hooks/use-proposal-report-release-contexts';
-import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
 import { ReportReleaseContextDetails } from './ReportReleaseContextDetails';
 
 type ProposalReasonsListProps = {
@@ -37,18 +36,7 @@ type ProposalReasonsListProps = {
   canReadReleaseContext?: boolean;
 };
 
-export const ProposalReasonsList = memo(function ProposalReasonsList(props: ProposalReasonsListProps) {
-  const scope = useHttpQueryScope();
-  return (
-    <OwnedProposalReasonsList
-      key={scope.scoped ? (scope.scope ?? 'unavailable-browser-view') : 'native-legacy-view'}
-      {...props}
-      canReadReleaseContext={Boolean(props.canReadReleaseContext) && scope.isReady()}
-    />
-  );
-});
-
-function OwnedProposalReasonsList({
+export const ProposalReasonsList = memo(function ProposalReasonsList({
   proposalUuid,
   proposerId,
   reason,
@@ -124,7 +112,7 @@ function OwnedProposalReasonsList({
       ))}
     </View>
   );
-}
+});
 
 const ReasonRow = memo(function ReasonRow({
   comment,

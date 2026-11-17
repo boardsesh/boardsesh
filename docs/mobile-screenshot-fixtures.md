@@ -1441,3 +1441,19 @@ America/Los_Angeles and America/New_York. Each genuine response contains 20 feed
 items; this does not provide arbitrary timezone, pagination or mutation coverage.
 View-story captures use no replay backend; actual native ActivityKit capture is
 a separate dev setup that uses replay only for native thumbnail assets.
+
+The November 16, 2026 smoke overlay also records the exact default board's
+`ResolveBoardForUuid` and `RecordBoardOpened`, layout 62's `GetSprayWallByLayout`,
+and the first Kilter climb's `GetFollowingClimbAscents`. These are authenticated
+responses from the existing recorder, with other climbers pseudonymized. They
+add only the requests exercised by the native smoke; other variables still miss.
+
+The follow-up smoke overlay includes the same named board's four presence reads
+and layout 62's archive, stored look, render geometry and version 3 artwork.
+The existing Home feed's spray ticks identify layout 62; the genuine lookup and
+render responses agree on its public wall UUID, version 3 and 300 holds. Its stored
+`wall-crop` appearance requires the exact versioned artwork query. The real public
+photo and explicitly approved crop/cutout images and thumbnails are bundled;
+photo transport URLs are replaced with local asset references, and signed
+credentials are excluded. The base photo also serves its thumbnail transport,
+using the same original pixels. Archived baseline responses remain unchanged.

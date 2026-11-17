@@ -1,7 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
@@ -12,9 +12,6 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
 import { ClimbListRow } from '../ClimbListRow';
 import { useUserClimbs } from '../../lib/graphql/hooks';
-import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
-import { holdLoadedList } from '../../lib/playlists/loaded-list-pages';
-import type { CapturedRowsSource } from '../../lib/playlists/use-board-list-activation';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { useBoardListActivation, type BoardListRow } from '../../lib/playlists/use-board-list-activation';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -84,135 +81,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
 
   const feed = useUserClimbs(userId);
-  const httpView = useHttpQueryScope();
-  const lifetime = useRef({ mounted: true, epoch: 0 });
-  const renderedView = useRef({ userId, httpView, identity: Object.freeze({}) });
-  if (renderedView.current.userId !== userId || renderedView.current.httpView !== httpView) {
-    renderedView.current = { userId, httpView, identity: Object.freeze({}) };
-  }
-  const identity = renderedView.current.identity;
-  useLayoutEffect(() => {
-    lifetime.current.mounted = true;
-    return () => {
-      lifetime.current.mounted = false;
-      lifetime.current.epoch += 1;
-    };
-  }, []);
-  const assertUI = useCallback(() => {
-    if (!lifetime.current.mounted || renderedView.current.identity !== identity) throw holdLoadedList();
-    try {
-      httpView.assertView();
-    } catch {
-      throw holdLoadedList();
-    }
-  }, [httpView, identity]);
   const climbs = useMemo(() => feed.data?.pages.flatMap((page) => page.climbs) ?? [], [feed.data]);
-
-  const rowIdentities = useMemo(
-    () =>
-      new Map(
-        climbs.map((climb) => [
-          climb.uuid,
-          {
-            climb,
-            angle: climb.angle,
-            mirrored: climb.mirrored,
-            boardType: climb.boardType,
-            layoutId: climb.layoutId,
-            frames: climb.frames,
-            renderBoard: climb.renderBoard,
-          },
-        ]),
-      ),
-    [climbs],
-  );
-  const currentRows = useRef(rowIdentities);
-  currentRows.current = rowIdentities;
-  const assertRowCurrent = useCallback(
-    (climb: Climb) => {
-      assertUI();
-      const expected = rowIdentities.get(climb.uuid);
-      const current = currentRows.current.get(climb.uuid);
-      if (
-        !expected ||
-        !current ||
-        expected.climb !== climb ||
-        current.climb !== climb ||
-        expected.angle !== current.angle ||
-        expected.mirrored !== current.mirrored ||
-        expected.boardType !== current.boardType ||
-        expected.layoutId !== current.layoutId ||
-        expected.frames !== current.frames ||
-        expected.renderBoard !== current.renderBoard
-      )
-        throw holdLoadedList();
-    },
-    [assertUI, rowIdentities],
-  );
-  const captureRowsSource = useCallback((): CapturedRowsSource<Climb> => {
-    assertUI();
-    const source = feed.capturePageSource();
-    try {
-      assertUI();
-    } catch (error) {
-      source.dispose();
-      throw error;
-    }
-    const assertCurrent = () => {
-      try {
-        source.assertView();
-      } catch {
-        throw holdLoadedList();
-      }
-    };
-    return Object.freeze({
-      assertCurrent,
-      dispose: source.dispose,
-      holdOnNoProgress: source.kind === 'scoped',
-      read: () => {
-        assertCurrent();
-        let snapshot;
-        try {
-          snapshot = source.read();
-        } catch {
-          throw holdLoadedList();
-        }
-        const receipt = snapshot.retain();
-        try {
-          try {
-            receipt.assertCurrent();
-          } catch {
-            throw holdLoadedList();
-          }
-          return { rows: snapshot.data.pages.flatMap((page) => page.climbs), hasMore: snapshot.hasMore, receipt };
-        } catch (error) {
-          receipt.release();
-          throw error;
-        }
-      },
-      loadMore: async () => {
-        assertCurrent();
-        const loaded = await source.fetchNextPage();
-        if (loaded.status !== 'delivered') return { status: loaded.status };
-        try {
-          try {
-            loaded.consumer.assertCurrent();
-          } catch {
-            throw holdLoadedList();
-          }
-          assertCurrent();
-          return {
-            rows: loaded.data.pages.flatMap((page) => page.climbs),
-            hasMore: loaded.hasMore,
-            receipt: loaded.consumer,
-          };
-        } catch (error) {
-          loaded.consumer.release();
-          throw error;
-        }
-      },
-    });
-  }, [assertUI, feed.capturePageSource]);
 
   const progressTargets = useMemo<ClimbProgressTarget[]>(() => {
     const targets: ClimbProgressTarget[] = [];
@@ -237,8 +106,6 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
     sourceId: `profile-climbs:${userId ?? ''}`,
     label: tSession('playView.track.createdClimbs'),
     rows: climbs,
-    captureRowsSource,
-    assertRowCurrent,
     describeRow: describeProfileClimb,
     hasMore: feed.hasNextPage ?? false,
     loadMore: loadMoreClimbs,
@@ -248,58 +115,23 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
   // uses (the userClimbs payload carries no size/sets).
   const handleOpenActions = useCallback(
     (climb: Climb) => {
-      try {
-        assertRowCurrent(climb);
-      } catch {
-        return;
-      }
       if (!climb.boardType) return;
       const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
       if (!config) return;
-      try {
-        assertRowCurrent(climb);
-      } catch {
-        return;
-      }
-      const actions = getClimbActions(climb, {
+      return getClimbActions(climb, {
         boardName: config.boardName,
         layoutId: config.layoutId,
         sizeId: config.sizeId,
         setIds: config.setIds.join(','),
         angle: climb.angle,
       });
-      try {
-        assertRowCurrent(climb);
-      } catch {
-        return;
-      }
-      return actions;
     },
-    [assertRowCurrent, getClimbActions],
+    [getClimbActions],
   );
 
   const handleEndReached = useCallback(() => {
-    try {
-      assertUI();
-      if (!feed.hasNextPage || feed.isFetchingNextPage) return;
-      const source = feed.capturePageSource();
-      try {
-        assertUI();
-      } catch (error) {
-        source.dispose();
-        throw error;
-      }
-      void source
-        .fetchNextPage()
-        .then((outcome) => {
-          if (outcome.status === 'delivered') outcome.consumer.release();
-        })
-        .catch(() => {})
-        .finally(source.dispose);
-    } catch {
-      /* Retired end-reach callbacks cannot follow the observer's new target. */
-    }
-  }, [assertUI, feed.capturePageSource, feed.hasNextPage, feed.isFetchingNextPage]);
+    if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
+  }, [feed]);
 
   const renderItem = useCallback(
     ({ item }: { item: Climb }) => {
@@ -351,14 +183,14 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
             feed.isError ? (
               <View style={styles.stateBlock}>
                 <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.stateTitle}>
+                <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                   {t('mobile.profile.climbsError')}
                 </Text>
               </View>
             ) : (
               <View style={styles.stateBlock}>
                 <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.stateTitle}>
+                <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                   {t('mobile.profile.noClimbs')}
                 </Text>
               </View>
@@ -389,7 +221,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.65,
     textAlign: 'center',
   },
   footer: {

@@ -13,7 +13,6 @@ import { spacing } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { actorSummary, notificationCopy, notificationIconName } from './notification-copy';
 import { FollowRequestNotificationRow, type AnswerFollowRequest } from './FollowRequestNotificationRow';
-import type { HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 
 const AVATAR_SIZE = 40;
 const GROUP_AVATAR_SIZE = 28;
@@ -29,10 +28,8 @@ type NotificationRowProps = {
    * Only a `follow_request` row reads it; without one that row falls back to
    * the plain layout, which still opens the requester's profile.
    */
-} & (
-  | { onAnswerFollowRequest?: undefined; captureAction?: undefined }
-  | { onAnswerFollowRequest: AnswerFollowRequest; captureAction: HttpActionScope['capture'] }
-);
+  onAnswerFollowRequest?: AnswerFollowRequest;
+};
 
 /**
  * One grouped-notification row. Props are the group object plus a single stable
@@ -53,18 +50,12 @@ export const NotificationRow = memo(function NotificationRow({
   notification,
   onPress,
   onAnswerFollowRequest,
-  captureAction,
 }: NotificationRowProps) {
   // A follow request carries its own Approve / Decline buttons, so it cannot be
   // one tap target like the rest: it gets its own layout.
-  if (notification.type === 'follow_request' && onAnswerFollowRequest && captureAction) {
+  if (notification.type === 'follow_request' && onAnswerFollowRequest) {
     return (
-      <FollowRequestNotificationRow
-        notification={notification}
-        onPress={onPress}
-        onAnswer={onAnswerFollowRequest}
-        captureAction={captureAction}
-      />
+      <FollowRequestNotificationRow notification={notification} onPress={onPress} onAnswer={onAnswerFollowRequest} />
     );
   }
   return <ActivityNotificationRow notification={notification} onPress={onPress} />;

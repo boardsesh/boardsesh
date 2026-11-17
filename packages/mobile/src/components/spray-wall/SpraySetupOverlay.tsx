@@ -2,10 +2,13 @@ import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
-import type { LedPosition, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
+import type { LedPosition, SprayLedPair, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import type { SprayLiveDrag } from './SprayPhotoCanvas';
 import { cableEndpoints } from './spray-cable-endpoints';
+
+/** One empty list for every render without pairs, so `pairPoints` stays memoised. */
+const NO_LED_PAIRS: readonly SprayLedPair[] = [];
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 // Cable colour is separate from the orange holes and violet LEDs. Skipped LEDs are
 // small dots in the cable colour, so red stays for loose ends that need fixing.
@@ -47,6 +50,30 @@ function circles(
     const screen = screenPoint(point, width, height, zoom, panX, panY);
     if (screen.x < -radius || screen.y < -radius || screen.x > width + radius || screen.y > height + radius) continue;
     path += circlePath(screen.x, screen.y, radius);
+  }
+  return path;
+}
+/**
+ * A pair behind one hold (#7355 item 8) as two interlocking rings around its
+ * dots: each ring is just over half the gap wide, so they always overlap.
+ */
+function pairRings(
+  pairs: readonly (readonly [TnutPoint, TnutPoint])[],
+  width: number,
+  height: number,
+  zoom: number,
+  panX: number,
+  panY: number,
+): string {
+  'worklet';
+  let path = '';
+  for (let index = 0; index < pairs.length; index++) {
+    const first = screenPoint(pairs[index][0], width, height, zoom, panX, panY);
+    const second = screenPoint(pairs[index][1], width, height, zoom, panX, panY);
+    const radius = Math.max(6, Math.min(14, Math.hypot(second.x - first.x, second.y - first.y) * 0.65));
+    if (Math.max(first.x, second.x) < -radius || Math.min(first.x, second.x) > width + radius) continue;
+    if (Math.max(first.y, second.y) < -radius || Math.min(first.y, second.y) > height + radius) continue;
+    path += circlePath(first.x, first.y, radius) + circlePath(second.x, second.y, radius);
   }
   return path;
 }
@@ -104,6 +131,7 @@ export function SpraySetupOverlay({
   subtleLeds = false,
   unmappedHoles = [],
   unmappedHoldIds = [],
+  ledPairs = NO_LED_PAIRS,
   width,
   height,
   zoom,
@@ -117,6 +145,8 @@ export function SpraySetupOverlay({
   unmappedHoles?: TnutPoint[];
   /** Holds with no LED; their outline is drawn red. */
   unmappedHoldIds?: number[];
+  /** LED pairs behind one hold, drawn as interlocking rings. */
+  ledPairs?: readonly SprayLedPair[];
   /** Draw holes small and faded so the LEDs stay readable (LED and cable editors). */
   compactHoles?: boolean;
   /** A point being dragged right now; drawn at the finger until the move commits. */
@@ -219,6 +249,17 @@ export function SpraySetupOverlay({
       holeRadius,
       liveDragTarget === 'holes' ? (liveDrag?.value ?? null) : null,
     ),
+  }));
+  const pairPoints = useMemo(() => {
+    const byId = new Map(leds.map((led) => [led.id, led]));
+    return ledPairs.flatMap(([first, second]) => {
+      const firstLed = byId.get(first),
+        secondLed = byId.get(second);
+      return firstLed && secondLed ? [[firstLed, secondLed] as const] : [];
+    });
+  }, [leds, ledPairs]);
+  const pairProps = useAnimatedProps(() => ({
+    d: pairRings(pairPoints, width, height, zoom.value, panX.value, panY.value),
   }));
   const ledProps = useAnimatedProps(() => ({
     d: circles(
@@ -330,6 +371,15 @@ export function SpraySetupOverlay({
         strokeWidth={1.8}
         opacity={subtleLeds ? 0.4 : 1}
       />
+      {pairPoints.length ? (
+        <AnimatedPath
+          animatedProps={pairProps}
+          fill="none"
+          stroke={brandColors.primary}
+          strokeWidth={1.5}
+          opacity={subtleLeds ? 0.4 : 1}
+        />
+      ) : null}
       {unmappedHoles.length ? (
         <AnimatedPath
           animatedProps={unmappedHoleProps}

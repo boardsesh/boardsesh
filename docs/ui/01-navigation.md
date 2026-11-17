@@ -143,7 +143,7 @@ The bar itself depends on the device:
   end of a list never covers the last row. Root
   headers use native bar items, as on iPhone, so UIKit places them beside the
   sidebar button and the top tab bar (see "Root header actions are native bar
-  items" in `docs/ai-design-guidelines.md`).
+  items" in `docs/mobile-chrome.md`).
   In landscape the player puts the board on the left and Up next / Logbook /
   Beta in a 400 pt panel on the right (`resolvePlayerArrangement`); in portrait
   the board stays on top.
@@ -192,14 +192,39 @@ The bar itself depends on the device:
 
 The picker emits `Board Picker Opened` once after the active-board read settles
 and `Board Picker Selection Completed` after an existing-board selection is
-persisted. `sameBoard` compares UUIDs; `sameConfig` compares board type, layout,
-size and hold sets. A failed restoration records unknown (`null`) rather than
-claiming there was no board. `source` distinguishes onboarding, explicit Session
-returns, and other picker entries; `returnTo` records the destination.
-`pickSource` names the list the board was tapped in (`your_boards`, `nearby`,
-`offline`, `bluetooth` or `gym_finder`) and `followed` says whether the pick
-added it to Your boards. The gym finder binds through the same `useActivateBoard`
-path, so its picks report this event (and close out onboarding when the picker
+persisted. The opening carries `locationStatus` as known then (`idle`,
+`loading`, `granted`, `denied` or `unavailable`; mostly `idle`, since the
+"already allowed?" read is still out). The pick carries `nearbyResultCount`,
+how many boards the Near you search had returned by then (after a board-type
+filter, before boards shown elsewhere in the picker are left out): `0` for "Nothing
+within 20 km", `null` when the picker did not search (location not allowed, or
+first-board mode before "At a gym"), is still searching, or the search failed.
+`First Board Picker Skipped` carries the same count as it stood when the picker
+closed. Near you shows only once location is allowed, above Your boards; without
+it the foot of the picker has a banner instead, with Allow location while the
+system prompt can still ask and Open Settings once only Settings can (in a
+browser, a refusal is final: the line shows alone). Its button sends no event of
+its own: the opening's `locationStatus` and the picks' `section` tell the two
+layouts apart. While Near you searches, placeholder cards as tall as its cards
+hold its space, so Your boards never moves under a pick that lands as the search
+answers: cards keep at least that height, and a quiet line (nothing new within
+20 km, a failed search) keeps it too, centred, once the climber has touched the
+picker; before any touch it gives the space back. Under "Where do you climb?" location waits for "At a gym": it is
+not read on open or when the app comes back. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
+`sameConfig` compares board type, layout, size and hold sets. A failed
+restoration records unknown (`null`) rather than claiming there was no board.
+`source` distinguishes onboarding, explicit Session returns, and other picker
+entries; `returnTo` records the destination. `pickSource` names the list the
+board was tapped in (`your_boards`, `nearby`, `offline`, `bluetooth` for a board
+the scan put at the top, `gym_walls` for a wall At {gym} that came from the
+board you're on, or `gym_finder`) and `followed` says whether the pick added it
+to Your boards. `section` names where the board was drawn (`at_gym`, `hero` for
+the one board heard at another gym, `your_boards`, `near_you`, `offline`, or
+`map` on the gym finder) and `position` is its 0-based place in that section as
+drawn (At {gym} A to Z, Your boards in the server's order, Near you by
+distance). `position` is `null` for a wall on the map, and both are `null` for
+the active spray wall's own details row, which sits in no section. The gym
+finder binds through the same `useActivateBoard` path, so its picks report this event (and close out onboarding when the picker
 forwarded `source=onboarding`). Pushed from the picker's "Find gym" (which adds
 `from=picker`), it reports no opening of its own, because the picker already
 did, and its picks carry the picker's `source`. Opened on its own from Home or

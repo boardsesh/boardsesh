@@ -7,69 +7,56 @@ vi.mock('../../AccessibleTextInput', async () => {
   return { AccessibleTextInput: TextInput };
 });
 vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
-import type { DiscoveryBoardItem } from '../BoardDiscoveryCard';
+import { createElement, type ReactNode, type RefObject } from 'react';
+import type { AppMenuAction, AppMenuHandle } from '../../AppMenu.types';
+import type { BoardCardMenuCapabilities, BoardCardMenuLabels } from '../board-card-menu';
+import type { BoardCardMenu, DiscoveryBoardItem } from '../BoardDiscoveryCard';
 
 // Capture the props the card hands to BoardImageNative. The regression is that
 // the discovery card omitted renderWidth, so the native renderer resolved the
 // full-res board background (~1080-1461px) into a 168px cell on the main thread.
 const boardImageProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
-// The outer card Pressable, which is where the accessibility contract lives: on
-// iOS UIKit treats it as a leaf, so the corner glyphs are only reachable through
-// its custom actions.
+// The card Pressable, which is where the accessibility contract lives: on iOS
+// UIKit treats it as a leaf, so the menu rows are only reachable through its
+// custom actions.
 const cardRootProps = vi.hoisted(() => ({
   last: null as Record<string, unknown> | null,
   accessibilityActions: [] as unknown[],
 }));
+type CapturedMenu = {
+  actions: AppMenuAction[];
+  onSelectIndex: (index: number) => void;
+  trigger?: 'longPress';
+  menuKey?: string;
+  liftPreview?: boolean;
+  iconName?: string;
+  accessibilityLabel?: string;
+  menuRef?: RefObject<AppMenuHandle | null>;
+};
+const menus = vi.hoisted(() => ({
+  hold: null as CapturedMenu | null,
+  button: null as CapturedMenu | null,
+  open: vi.fn(),
+}));
+// Mutable, so one suite can render the Android path.
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 
-// `style` is forwarded onto a data attribute so corner placement can be asserted
-// by WHICH edge keys are present — never pixel values, since the spacing mock is
-// a constant. `disabled` too: a disabled control has to stop firing, not just
-// look different.
 function styleAttribute(style: unknown): string {
   return JSON.stringify(style);
 }
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  Platform: {
+    get OS() {
+      return platform.OS;
+    },
+    select: (spec: Record<string, unknown>) => spec[platform.OS] ?? spec.default,
+  },
   View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
     createElement('div', { 'data-style': styleAttribute(style), 'data-testid': testID }, children),
-  Pressable: ({
-    children,
-    onPress,
-    accessibilityLabel,
-    style,
-    disabled,
-  }: {
-    children?: ReactNode;
-    onPress?: () => void;
-    accessibilityLabel?: string;
-    style?: unknown;
-    disabled?: boolean;
-  }) =>
-    createElement(
-      'div',
-      {
-        // Nested-press exclusivity: RN's responder system grants the press to the
-        // deepest Pressable and the outer card's onPress never fires. jsdom
-        // bubbles instead, so stop it here or every corner-glyph tap would also
-        // read as a card tap.
-        onClick:
-          disabled === true
-            ? undefined
-            : (event: { stopPropagation: () => void }) => {
-                event.stopPropagation();
-                onPress?.();
-              },
-        'aria-label': accessibilityLabel,
-        'aria-disabled': disabled === true ? 'true' : undefined,
-        'data-style': styleAttribute(style),
-        role: 'button',
-      },
-      children,
-    ),
+  Pressable: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
@@ -79,7 +66,7 @@ vi.mock('react-native', () => ({
 
 // Reanimated host components: passthrough + no-op hooks so the card renders in
 // jsdom without the native runtime. The animated Pressable keeps its onPress, so
-// "the action fires onAction and NOT onPress" is actually falsifiable.
+// "a menu row fires onAction and NOT onPress" is actually falsifiable.
 vi.mock('react-native-reanimated', () => ({
   default: {
     createAnimatedComponent: () => (props: Record<string, unknown>) => {
@@ -88,7 +75,7 @@ vi.mock('react-native-reanimated', () => ({
       return createElement(
         'div',
         {
-          onClick: props.disabled === true ? undefined : (props.onPress as (() => void) | undefined),
+          onClick: props.onPress as (() => void) | undefined,
           'aria-label': props.accessibilityLabel as string | undefined,
           'data-role': (props.accessibilityRole as string | undefined) ?? '',
           'data-testid': 'card-root',
@@ -102,76 +89,65 @@ vi.mock('react-native-reanimated', () => ({
   withSpring: (toValue: unknown) => toValue,
 }));
 
+// One stub for both menus the card draws. The hold menu wraps the card; the ⋯
+// is a separate anchor. Their props are captured so a test can pick a row the
+// way the native menu would.
+vi.mock('../../AppMenu', () => ({
+  AppMenu: (props: CapturedMenu & { children?: ReactNode }) => {
+    if (props.trigger === 'longPress') {
+      menus.hold = props;
+      if (props.menuRef) props.menuRef.current = { open: menus.open };
+      return createElement('div', { 'data-testid': 'hold-menu' }, props.children);
+    }
+    menus.button = props;
+    return createElement('button', { 'data-testid': 'menu-button', 'aria-label': props.accessibilityLabel });
+  },
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) =>
-      ({
-        'mobile.discovery.activeBadge': 'Active',
-        'mobile.discovery.ownedBadgeAria': 'Your board',
-        'mobile.discovery.followingBadgeAria': 'Following',
-      })[key] ?? key,
+    t: (key: string, options?: { name?: string }) => {
+      const template =
+        {
+          'mobile.discovery.onIt': 'On it',
+          'mobile.discovery.ownedBadgeAria': 'Your board',
+          'mobile.discovery.followingBadgeAria': 'Following',
+          'mobile.discovery.pinnedBadgeAria': 'Pinned',
+          'mobile.discovery.cardActionsAria': 'Actions for {{name}}',
+          'mobile.offline.available': 'Available offline',
+          'mobile.offline.pending': 'Waiting to download',
+          'mobile.offline.bootstrapping': 'Downloading board…',
+          'mobile.offline.finalizing': 'Finishing download…',
+        }[key] ?? key;
+      return options?.name === undefined ? template : template.replace('{{name}}', options.name);
+    },
   }),
 }));
 
-vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticHeavy: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../theme/tokens', () => ({
-  opacity: { disabled: 0.5 },
   spacing: new Proxy({}, { get: () => 4 }),
   borderRadius: { lg: 12, md: 8, full: 999 },
-  overlays: { scrim: '#0008', onScrim: '#fff' },
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
-vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}/${alpha}` }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { tertiaryBackground: '#eee', separator: '#ccc', tertiaryLabel: '#999', secondaryLabel: '#888' },
+    systemColors: {
+      tertiaryBackground: '#eee',
+      separator: '#ccc',
+      tertiaryLabel: '#999',
+      secondaryLabel: '#888',
+    },
     brandColors: { primary: '#6D28D9', primaryFill: '#6D28D9', onPrimary: '#FFFFFF', error: '#C81E1E' },
-    radii: { button: 10 },
   }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color, style }: { children?: ReactNode; color?: string; style?: unknown }) =>
+    createElement('span', { 'data-color': color, 'data-style': styleAttribute(style) }, children),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
-}));
-vi.mock('../../ActivityIndicator', () => ({
-  ActivityIndicator: () => createElement('span', { 'data-testid': 'spinner' }),
-}));
-vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({
-    children,
-    onPress,
-    accessibilityLabel,
-    style,
-    disabled,
-  }: {
-    children?: ReactNode;
-    onPress?: () => void;
-    accessibilityLabel?: string;
-    style?: unknown;
-    disabled?: boolean;
-  }) =>
-    createElement(
-      'div',
-      {
-        onClick:
-          disabled === true
-            ? undefined
-            : (event: { stopPropagation: () => void }) => {
-                event.stopPropagation();
-                onPress?.();
-              },
-        'aria-label': accessibilityLabel,
-        'aria-disabled': disabled === true ? 'true' : undefined,
-        'data-testid': 'edit-action',
-        'data-style': styleAttribute(style),
-        role: 'button',
-      },
-      children,
-    ),
 }));
 
 // A non-null render keeps the card on the BoardImageNative branch.
@@ -189,35 +165,67 @@ vi.mock('../../BoardImageNative', () => ({
 import { BoardDiscoveryCard } from '../BoardDiscoveryCard';
 
 const item: DiscoveryBoardItem = {
-  key: 'popular:tension:9:8:1-2',
+  key: 'board-uuid',
   boardName: 'tension',
   layoutId: 9,
   sizeId: 8,
   setIds: '1,2',
   title: 'Tension 8x10',
+  subtitle: 'Original 12x12',
 };
+
+const LABELS: BoardCardMenuLabels = {
+  climbHere: 'Climb here',
+  pin: 'Pin',
+  unpin: 'Unpin',
+  download: 'Download for offline',
+  details: 'Details',
+  edit: 'Edit board',
+  editWall: 'Edit Spraywall',
+  unfollow: 'Unfollow',
+  delete: 'Delete',
+};
+const EVERYTHING: BoardCardMenuCapabilities = {
+  canPin: true,
+  canDownload: true,
+  canOpenDetails: true,
+  canManage: true,
+};
+const NEARBY: BoardCardMenuCapabilities = {
+  canPin: false,
+  canDownload: false,
+  canOpenDetails: true,
+  canManage: false,
+};
+
+function menuWith(capabilities: BoardCardMenuCapabilities = EVERYTHING): BoardCardMenu {
+  return { capabilities, labels: LABELS, onAction: vi.fn() };
+}
 
 function styleOf(element: Element | null): Record<string, unknown> {
   const raw = element?.getAttribute('data-style');
   if (raw === null || raw === undefined) return {};
   const parsed: unknown = JSON.parse(raw);
-  // A Pressable's style can be an array (base + a state override); flatten it the
-  // way RN would so an assertion reads the value that actually renders.
   return (Array.isArray(parsed) ? Object.assign({}, ...parsed.filter((entry) => entry !== null)) : parsed) as Record<
     string,
     unknown
   >;
 }
 
-function edgeKeys(element: Element | null): string[] {
-  const style = styleOf(element);
-  return ['top', 'bottom', 'left', 'right'].filter((edge) => style[edge] !== undefined);
+/** The subtitle line's glyphs and text, in the order they render. */
+function subtitleSequence(container: HTMLElement): string[] {
+  const line = container.querySelector('[data-testid="board-card-subtitle"]');
+  if (!line) return [];
+  return [...line.children].map((child) => child.getAttribute('data-icon') ?? child.textContent ?? '');
 }
 
-/** The disc geometry every tappable corner glyph shares (#5179). */
-function discShape(element: Element | null): Record<string, unknown> {
-  const { width, height, borderRadius } = styleOf(element);
-  return { width, height, borderRadius };
+function a11yActions(): { name: string; label?: string }[] {
+  return (cardRootProps.last?.accessibilityActions ?? []) as { name: string; label?: string }[];
+}
+
+function dispatchA11y(actionName: string) {
+  const handler = cardRootProps.last?.onAccessibilityAction as (event: { nativeEvent: { actionName: string } }) => void;
+  handler({ nativeEvent: { actionName } });
 }
 
 function resetCapture() {
@@ -225,6 +233,10 @@ function resetCapture() {
   boardImageProps.last = null;
   cardRootProps.last = null;
   cardRootProps.accessibilityActions = [];
+  menus.hold = null;
+  menus.button = null;
+  menus.open.mockReset();
+  platform.OS = 'ios';
 }
 
 describe('BoardDiscoveryCard', () => {
@@ -239,578 +251,364 @@ describe('BoardDiscoveryCard', () => {
     expect(boardImageProps.last?.renderWidth).toBe(400);
   });
 
-  // The badge answers "is this board on my phone" without leaving the picker.
+  it('activates the board from a tap', () => {
+    const onPress = vi.fn();
+    const { getByTestId } = render(createElement(BoardDiscoveryCard, { item, onPress, menu: menuWith() }));
+    fireEvent.click(getByTestId('card-root'));
+    expect(onPress).toHaveBeenCalledWith(item);
+  });
+});
+
+describe('BoardDiscoveryCard board art', () => {
+  afterEach(resetCapture);
+
+  // The whole point of the redesign: every state and every control used to sit
+  // on the art. Now the thumb holds the board image and nothing else.
+  it('draws nothing on the board art, whatever the board state', () => {
+    const { getByTestId } = render(
+      createElement(BoardDiscoveryCard, {
+        item: {
+          ...item,
+          isActive: true,
+          isPinned: true,
+          isViewerOwner: true,
+          offlineState: 'off',
+          distanceMeters: 1500,
+        },
+        onPress: vi.fn(),
+        menu: menuWith(),
+      }),
+    );
+    const thumb = getByTestId('board-card');
+    expect(thumb.querySelectorAll('[data-icon]')).toHaveLength(0);
+    expect(thumb.querySelectorAll('[data-testid="menu-button"]')).toHaveLength(0);
+    expect(thumb.textContent).toBe('');
+    expect(thumb.querySelector('[data-testid="board-image"]')).not.toBeNull();
+  });
+
+  // Selection is a state, not a link: no violet border, no violet title. "On it"
+  // in the subtitle says it, in secondary label.
+  it('draws the board you are on like any other card, with no violet', () => {
+    const { getByTestId, getByText } = render(
+      createElement(BoardDiscoveryCard, { item: { ...item, isActive: true }, onPress: vi.fn() }),
+    );
+    expect(styleOf(getByTestId('board-card'))).toMatchObject({ borderColor: '#ccc' });
+    expect(styleOf(getByTestId('board-card')).borderWidth).not.toBe(2);
+    expect(getByText('Tension 8x10').getAttribute('data-color')).toBeNull();
+    expect(getByText('On it ·').getAttribute('data-color')).not.toBe('#6D28D9');
+  });
+
+  it('leaves an inactive title in the default colour', () => {
+    const { getByText } = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn() }));
+    expect(getByText('Tension 8x10').getAttribute('data-color')).toBeNull();
+  });
+});
+
+describe('BoardDiscoveryCard subtitle line', () => {
+  afterEach(resetCapture);
+
+  it('leads with the state glyphs in order: on it, pinned, downloaded, then the distance and subtitle', () => {
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isActive: true, isPinned: true, offlineState: 'downloaded', distanceMeters: 2 },
+        onPress: vi.fn(),
+      }),
+    );
+    expect(subtitleSequence(container)).toEqual([
+      'tick.fill',
+      'On it ·',
+      'pin.fill',
+      'offline.downloaded',
+      '2 m · Original 12x12',
+    ]);
+  });
+
   it.each([
-    ['downloaded', 'offline.downloaded'],
     ['downloading', 'offline.pending'],
     ['finalizing', 'offline.pending'],
     ['pending', 'offline.pending'],
-  ] as const)('shows a status badge for a %s board', (offlineState, icon) => {
+    ['downloaded', 'offline.downloaded'],
+  ] as const)('shows a %s board with %s', (offlineState, icon) => {
     const { container } = render(
       createElement(BoardDiscoveryCard, { item: { ...item, offlineState }, onPress: vi.fn() }),
     );
-    expect(container.querySelector(`[data-icon="${icon}"]`)).not.toBeNull();
+    expect(subtitleSequence(container)).toEqual([icon, 'Original 12x12']);
   });
 
-  it('has no press target on a board that is already downloading', () => {
-    const onDownload = vi.fn();
+  // Not on the phone is the default, not a state worth a glyph. The download
+  // itself lives in the menu.
+  it('draws no offline glyph for a board that is not downloaded', () => {
     const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, offlineState: 'downloading' },
-        onPress: vi.fn(),
-        onDownload,
-      }),
+      createElement(BoardDiscoveryCard, { item: { ...item, offlineState: 'off' }, onPress: vi.fn(), menu: menuWith() }),
     );
-    fireEvent.click(container.querySelector('[data-icon="offline.pending"]')!.parentElement!);
-    expect(onDownload).not.toHaveBeenCalled();
-  });
-
-  it('offers a tappable download glyph only where the host wired one', () => {
-    const onDownload = vi.fn();
-    const downloadItem = { ...item, offlineState: 'off' as const };
-
-    const withoutHandler = render(createElement(BoardDiscoveryCard, { item: downloadItem, onPress: vi.fn() }));
-    expect(withoutHandler.container.querySelector('[data-icon="offline.download"]')).toBeNull();
-    cleanup();
-
-    const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: downloadItem,
-        onPress: vi.fn(),
-        onDownload,
-        downloadLabel: 'Make Tension 8x10 available offline',
-      }),
-    );
-    const glyph = container.querySelector('[data-icon="offline.download"]')!.parentElement!;
-    expect(glyph.getAttribute('aria-label')).toBe('Make Tension 8x10 available offline');
-    fireEvent.click(glyph);
-    expect(onDownload).toHaveBeenCalledWith(downloadItem);
-  });
-
-  // A popular config has no uuid, so rememberOfflineBoards drops it: its data
-  // would download but the board could never appear in the offline picker.
-  it('renders no offline affordance at all without an offlineState', () => {
-    const { container } = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), onDownload: vi.fn() }));
+    expect(subtitleSequence(container)).toEqual(['Original 12x12']);
     expect(container.querySelector('[data-icon="offline.download"]')).toBeNull();
-    expect(container.querySelector('[data-icon="offline.downloaded"]')).toBeNull();
   });
-});
-
-describe('BoardDiscoveryCard ownership action', () => {
-  afterEach(resetCapture);
 
   it.each([
-    ['edit', 'edit'],
-    ['unfollow', 'person.check'],
-  ] as const)('renders the %s glyph in the top-right slot', (action, icon) => {
+    [2.4, '2 m · Original 12x12'],
+    [999, '999 m · Original 12x12'],
+    [3240, '3.2 km · Original 12x12'],
+  ])('prints %s metres as "%s"', (distanceMeters, expected) => {
     const { container } = render(
-      createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), action, onAction: vi.fn() }),
+      createElement(BoardDiscoveryCard, { item: { ...item, distanceMeters }, onPress: vi.fn() }),
     );
-    expect(container.querySelector(`[data-icon="${icon}"]`)).not.toBeNull();
+    expect(subtitleSequence(container)).toEqual([expected]);
   });
 
-  it('renders no slot without an action, and no pencil without a handler', () => {
-    const withoutAction = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), onAction: vi.fn() }));
-    expect(withoutAction.container.querySelector('[data-icon="edit"]')).toBeNull();
-    expect(withoutAction.container.querySelector('[data-icon="person.check"]')).toBeNull();
-    cleanup();
-
-    const withoutHandler = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), action: 'edit' }));
-    expect(withoutHandler.container.querySelector('[data-icon="edit"]')).toBeNull();
-  });
-
-  // The whole point of B1: a 26pt disc that sits in the same white circle as the
-  // non-interactive download-status badge on the opposite corner must not remove
-  // a board in one unconfirmed tap. Unfollow lives on Edit mode's labelled
-  // button; the resting glyph is status only.
-  it('makes the Following glyph non-interactive — no press target, no button role', () => {
-    const onAction = vi.fn();
+  it('drops the separator after "On it" when nothing follows it', () => {
     const { container } = render(
+      createElement(BoardDiscoveryCard, { item: { ...item, subtitle: null, isActive: true }, onPress: vi.fn() }),
+    );
+    expect(subtitleSequence(container)).toEqual(['tick.fill', 'On it']);
+  });
+
+  it('renders no subtitle line for a board with nothing to say there', () => {
+    const { container } = render(
+      createElement(BoardDiscoveryCard, { item: { ...item, subtitle: null }, onPress: vi.fn() }),
+    );
+    expect(container.querySelector('[data-testid="board-card-subtitle"]')).toBeNull();
+  });
+});
+
+describe('BoardDiscoveryCard menu', () => {
+  beforeEach(resetCapture);
+  afterEach(resetCapture);
+
+  it('draws no menu at all where the carousel offers none', () => {
+    const { queryByTestId } = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn() }));
+    expect(queryByTestId('menu-button')).toBeNull();
+    expect(queryByTestId('hold-menu')).toBeNull();
+  });
+
+  it('puts the ⋯ beside the title, outside the card Pressable, labelled with the board', () => {
+    const { getByTestId } = render(
       createElement(BoardDiscoveryCard, {
-        item,
+        item: { ...item, isViewerOwner: true, offlineState: 'off' },
         onPress: vi.fn(),
-        action: 'unfollow',
-        onAction,
-        actionLabel: 'Unfollow Tension 8x10',
+        menu: menuWith(),
       }),
     );
-    const badge = container.querySelector('[data-icon="person.check"]')!.parentElement!;
-    expect(badge.getAttribute('role')).toBeNull();
-    expect(badge.getAttribute('aria-label')).toBeNull();
-    fireEvent.click(badge);
-    expect(onAction).not.toHaveBeenCalled();
+    const button = getByTestId('menu-button');
+    expect(button.getAttribute('aria-label')).toBe('Actions for Tension 8x10');
+    // Nested inside the Pressable, the card took the tap and picked the board.
+    expect(getByTestId('card-root').contains(button)).toBe(false);
+    expect(menus.button?.iconName).toBe('more');
   });
 
-  // ...and it publishes no custom action either, or VoiceOver would hand back the
-  // one-tap unfollow the touch surface just gave up.
-  it('publishes no board action for a resting followed board', () => {
+  it('hands both ways in the same rows, in menu order', () => {
     render(
       createElement(BoardDiscoveryCard, {
-        item,
+        item: { ...item, isViewerOwner: true, offlineState: 'off' },
         onPress: vi.fn(),
-        action: 'unfollow',
-        onAction: vi.fn(),
-        actionLabel: 'Unfollow Tension 8x10',
+        menu: menuWith(),
       }),
     );
-    const actions = (cardRootProps.last?.accessibilityActions ?? []) as { name: string }[];
-    expect(actions.map((entry) => entry.name)).not.toContain('boardAction');
+    const labels = ['Climb here', 'Pin', 'Download for offline', 'Details', 'Edit board', 'Delete'];
+    expect(menus.button?.actions.map((action) => action.label)).toEqual(labels);
+    expect(menus.hold?.actions).toBe(menus.button?.actions);
+    // No lifted preview: on iOS it paints a background behind the card at rest,
+    // a grey slab under the title inside the picker modal.
+    expect(menus.hold?.liftPreview).toBeUndefined();
+    expect(menus.hold?.menuKey).toBe('board-uuid');
+    const deleteRow = menus.button?.actions[5];
+    expect(deleteRow).toMatchObject({ destructive: true, dividerBefore: true, systemIcon: 'trash' });
   });
 
-  it('fires onAction and never onPress when the slot is tapped', () => {
-    const onPress = vi.fn();
-    const onAction = vi.fn();
-    const { container } = render(
+  it('calls a spray wall a Spraywall in its edit row', () => {
+    render(
       createElement(BoardDiscoveryCard, {
-        item,
-        onPress,
-        action: 'edit',
-        onAction,
-        actionLabel: 'Edit Tension 8x10',
-      }),
-    );
-    const badge = container.querySelector('[data-icon="edit"]')!.parentElement!;
-    expect(badge.getAttribute('aria-label')).toBe('Edit Tension 8x10');
-    fireEvent.click(badge);
-    expect(onAction).toHaveBeenCalledWith(item);
-    expect(onPress).not.toHaveBeenCalled();
-  });
-});
-
-describe('BoardDiscoveryCard edit mode', () => {
-  afterEach(resetCapture);
-
-  // The whole point of a footer button over a corner ⊖: the control says what it
-  // does. Unfollow has no confirm outside the active board, so an unlabelled red
-  // glyph on an ungrouped carousel would silently remove a gym.
-  it('replaces the corner badge with a labelled destructive button', () => {
-    const { container, getByTestId } = render(
-      createElement(BoardDiscoveryCard, {
-        item,
+        item: { ...item, boardName: 'spray', isViewerOwner: true, offlineState: 'downloaded' },
         onPress: vi.fn(),
-        action: 'delete',
-        onAction: vi.fn(),
-        actionLabel: 'Delete Tension 8x10',
-        actionTitle: 'Delete',
-        isEditing: true,
+        menu: menuWith(),
       }),
     );
-    expect(container.querySelector('[data-icon="edit"]')).toBeNull();
-    expect(container.querySelector('[data-icon="person.check"]')).toBeNull();
-    const footer = getByTestId('edit-action');
-    expect(footer.textContent).toContain('Delete');
-    expect(footer.getAttribute('aria-label')).toBe('Delete Tension 8x10');
+    expect(menus.button?.actions.map((action) => action.label)).toContain('Edit Spraywall');
   });
 
-  it('fires onAction from the footer button', () => {
-    const onAction = vi.fn();
-    const { getByTestId } = render(
-      createElement(BoardDiscoveryCard, {
-        item,
-        onPress: vi.fn(),
-        action: 'unfollow',
-        onAction,
-        actionTitle: 'Unfollow',
-        isEditing: true,
-      }),
-    );
-    fireEvent.click(getByTestId('edit-action'));
-    expect(onAction).toHaveBeenCalledWith(item);
+  it('offers only Climb here and Details on a Near you card', () => {
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu: menuWith(NEARBY) }));
+    expect(menus.button?.actions.map((action) => action.label)).toEqual(['Climb here', 'Details']);
   });
 
-  it('swaps the footer label for a spinner and stops firing while a mutation is in flight', () => {
-    const onAction = vi.fn();
-    const { container, getByTestId } = render(
-      createElement(BoardDiscoveryCard, {
-        item,
-        onPress: vi.fn(),
-        action: 'delete',
-        onAction,
-        actionTitle: 'Delete',
-        isEditing: true,
-        isActionPending: true,
-      }),
-    );
-    expect(container.querySelector('[data-icon="minus.circle"]')).toBeNull();
-    const footer = getByTestId('edit-action');
-    expect(footer.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(footer);
-    expect(onAction).not.toHaveBeenCalled();
-  });
-
-  it('stops the card body activating the board', () => {
-    const onPress = vi.fn();
-    const { getByTestId } = render(
-      createElement(BoardDiscoveryCard, {
-        item,
-        onPress,
-        action: 'delete',
-        onAction: vi.fn(),
-        actionTitle: 'Delete',
-        isEditing: true,
-      }),
-    );
-    const root = getByTestId('card-root');
-    // Not just an early-returning handler: the role goes too, so the card stops
-    // being announced as a button.
-    expect(root.getAttribute('data-role')).toBe('');
-    fireEvent.click(root);
-    expect(onPress).not.toHaveBeenCalled();
-  });
-});
-
-describe('BoardDiscoveryCard corner budget', () => {
-  afterEach(resetCapture);
-
-  // An active board can also be a Near-you board, so both bottom pills can land
-  // on one thumb. They sit at opposite corners and never stack.
-  it('puts the Active pill bottom-left and the distance pill bottom-right', () => {
-    const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, isActive: true, distanceMeters: 320 },
-        onPress: vi.fn(),
-      }),
-    );
-    const activePill = container.querySelector('[data-icon="tick.fill"]')!.parentElement;
-    const distancePill = container.querySelector('[data-icon="location"]')!.parentElement;
-    expect(edgeKeys(activePill)).toEqual(['bottom', 'left']);
-    expect(edgeKeys(distancePill)).toEqual(['bottom', 'right']);
-  });
-
-  it('puts the offline badge top-left and the ownership slot top-right', () => {
-    const { container } = render(
+  // A ⋯ whose only row repeats the tap adds nothing, so it is not drawn. The
+  // hold anchor stays mounted with no rows, so a recycled cell never remounts.
+  it('draws no ⋯ when the menu would only repeat the tap', () => {
+    const { queryByTestId, getByText } = render(
       createElement(BoardDiscoveryCard, {
         item: { ...item, offlineState: 'downloaded' },
         onPress: vi.fn(),
-        action: 'edit',
-        onAction: vi.fn(),
+        menu: menuWith({ canPin: false, canDownload: true, canOpenDetails: false, canManage: false }),
       }),
     );
-    const offlineBadge = container.querySelector('[data-icon="offline.downloaded"]')!.parentElement;
-    const actionBadge = container.querySelector('[data-icon="edit"]')!.parentElement;
-    expect(edgeKeys(offlineBadge)).toEqual(['top', 'left']);
-    expect(edgeKeys(actionBadge)).toEqual(['top', 'right']);
-  });
-});
-
-describe('BoardDiscoveryCard pin toggle', () => {
-  afterEach(resetCapture);
-
-  it('renders no pin control unless the host passes a handler', () => {
-    // Near you, Popular, onboarding and the offline branch all omit it; the
-    // absent handler is the gate, so there is nothing to talk past.
-    const { container } = render(
-      createElement(BoardDiscoveryCard, { item: { ...item, isPinned: false }, onPress: vi.fn() }),
-    );
-    expect(container.querySelector('[data-icon="pin"]')).toBeNull();
-    expect(container.querySelector('[data-icon="pin.fill"]')).toBeNull();
+    expect(queryByTestId('menu-button')).toBeNull();
+    expect(queryByTestId('hold-menu')).not.toBeNull();
+    expect(menus.hold?.actions).toEqual([]);
+    expect(a11yActions().map((action) => action.name)).toEqual([]);
+    // The title gets the full card width back.
+    expect(styleOf(getByText('Tension 8x10')).marginRight).toBeUndefined();
   });
 
-  it('shows an outline pin when unpinned and a filled one when pinned', () => {
-    const { container, rerender } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, isPinned: false },
-        onPress: vi.fn(),
-        onTogglePin: vi.fn(),
-        pinLabel: 'Pin Tension 8x10',
-      }),
-    );
-    expect(container.querySelector('[data-icon="pin"]')).not.toBeNull();
-    expect(container.querySelector('[data-icon="pin.fill"]')).toBeNull();
-
-    rerender(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, isPinned: true },
-        onPress: vi.fn(),
-        onTogglePin: vi.fn(),
-        pinLabel: 'Unpin Tension 8x10',
-      }),
-    );
-    expect(container.querySelector('[data-icon="pin.fill"]')).not.toBeNull();
+  it('reserves the ⋯ width beside the title only while the ⋯ is there', () => {
+    const { getByText } = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu: menuWith(NEARBY) }));
+    expect(styleOf(getByText('Tension 8x10')).marginRight).toBe(44);
   });
 
-  it('takes the bottom-right slot, and yields it to the distance pill', () => {
-    // The pin takes the bottom-right slot rather than adding a fifth corner, so a
-    // Near-you board must never render both it and the distance pill.
-    const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, isPinned: true },
-        onPress: vi.fn(),
-        onTogglePin: vi.fn(),
-        pinLabel: 'Unpin Tension 8x10',
-      }),
-    );
-    const pinDisc = container.querySelector('[data-icon="pin.fill"]')!.parentElement;
-    expect(edgeKeys(pinDisc)).toEqual(['bottom', 'right']);
-
-    resetCapture();
-    const withDistance = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, isPinned: true, distanceMeters: 320 },
-        onPress: vi.fn(),
-        onTogglePin: vi.fn(),
-        pinLabel: 'Unpin Tension 8x10',
-      }),
-    );
-    expect(withDistance.container.querySelector('[data-icon="pin.fill"]')).toBeNull();
-    expect(withDistance.container.querySelector('[data-icon="location"]')).not.toBeNull();
-  });
-
-  // QA declined #5179 on exactly this: a wide dark pill under two white circles
-  // reads as a different kind of control. The pin is a BUTTON, so it wears the
-  // button shape — and pinning inverts that disc instead of reshaping it.
-  it('wears the same disc as the download and edit buttons', () => {
-    const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, offlineState: 'off' },
-        onPress: vi.fn(),
-        onDownload: vi.fn(),
-        downloadLabel: 'Download Tension 8x10',
-        action: 'edit',
-        onAction: vi.fn(),
-        actionLabel: 'Edit Tension 8x10',
-        onTogglePin: vi.fn(),
-        pinLabel: 'Pin Tension 8x10',
-      }),
-    );
-    const downloadDisc = container.querySelector('[data-icon="offline.download"]')!.parentElement;
-    const editDisc = container.querySelector('[data-icon="edit"]')!.parentElement;
-    const pinDisc = container.querySelector('[data-icon="pin"]')!.parentElement;
-
-    expect(discShape(pinDisc)).toEqual(discShape(downloadDisc));
-    expect(discShape(pinDisc)).toEqual(discShape(editDisc));
-    // Unpinned it is indistinguishable from its two neighbours: same white fill.
-    expect(styleOf(pinDisc).backgroundColor).toBe(styleOf(editDisc).backgroundColor);
-  });
-
-  it('inverts the disc when pinned rather than changing its shape', () => {
-    const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, offlineState: 'off' },
-        onPress: vi.fn(),
-        onDownload: vi.fn(),
-        downloadLabel: 'Download Tension 8x10',
-        onTogglePin: vi.fn(),
-        pinLabel: 'Pin Tension 8x10',
-      }),
-    );
-    const restingFill = styleOf(container.querySelector('[data-icon="pin"]')!.parentElement).backgroundColor;
-
-    resetCapture();
-    const pinned = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, offlineState: 'off', isPinned: true },
-        onPress: vi.fn(),
-        onDownload: vi.fn(),
-        downloadLabel: 'Download Tension 8x10',
-        onTogglePin: vi.fn(),
-        pinLabel: 'Unpin Tension 8x10',
-      }),
-    );
-    const pinnedDisc = pinned.container.querySelector('[data-icon="pin.fill"]')!.parentElement;
-    const downloadDisc = pinned.container.querySelector('[data-icon="offline.download"]')!.parentElement;
-
-    // The fill flips, the geometry does not.
-    expect(styleOf(pinnedDisc).backgroundColor).not.toBe(restingFill);
-    expect(discShape(pinnedDisc)).toEqual(discShape(downloadDisc));
-  });
-
-  it('toggles from a tap and from the accessibility rotor', () => {
-    const onTogglePin = vi.fn();
+  it('runs a row from the ⋯ as menu_button and never activates the board', () => {
     const onPress = vi.fn();
-    const { container } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, isPinned: false },
-        onPress,
-        onTogglePin,
-        pinLabel: 'Pin Tension 8x10',
-      }),
-    );
+    const menu = menuWith();
+    const pinnedItem = { ...item, isViewerOwner: false, isPinned: true, offlineState: 'downloaded' as const };
+    render(createElement(BoardDiscoveryCard, { item: pinnedItem, onPress, menu }));
+    const labels = menus.button?.actions.map((action) => action.label) ?? [];
+    expect(labels).toEqual(['Climb here', 'Unpin', 'Details', 'Unfollow']);
 
-    fireEvent.click(container.querySelector('[data-icon="pin"]')!.parentElement!);
-    expect(onTogglePin).toHaveBeenCalledWith({ ...item, isPinned: false });
-    // Tapping the pin must not also activate the board underneath it.
+    menus.button?.onSelectIndex(1);
+    expect(menu.onAction).toHaveBeenCalledWith(pinnedItem, 'unpin', 'menu_button');
+    menus.button?.onSelectIndex(3);
+    expect(menu.onAction).toHaveBeenLastCalledWith(pinnedItem, 'unfollow', 'menu_button');
     expect(onPress).not.toHaveBeenCalled();
-
-    const dispatch = cardRootProps.last?.onAccessibilityAction as (event: {
-      nativeEvent: { actionName: string };
-    }) => void;
-    dispatch({ nativeEvent: { actionName: 'pin' } });
-    expect(onTogglePin).toHaveBeenCalledTimes(2);
   });
 
-  it('publishes the pin as a custom action, since the card is a leaf to VoiceOver', () => {
+  it('runs a row from the hold as long_press', () => {
+    const menu = menuWith(NEARBY);
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu }));
+    menus.hold?.onSelectIndex(0);
+    expect(menu.onAction).toHaveBeenCalledWith(item, 'climb_here', 'long_press');
+    menus.hold?.onSelectIndex(1);
+    expect(menu.onAction).toHaveBeenLastCalledWith(item, 'details', 'long_press');
+  });
+
+  // iOS: the SwiftUI context menu owns the hold, and the card adds nothing.
+  it('leaves the hold to the native context menu on iOS', () => {
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu: menuWith(NEARBY) }));
+    expect(cardRootProps.last?.onLongPress).toBeUndefined();
+  });
+
+  // Android: the card's own Pressable wins the touch, so the menu's wrapper
+  // never sees the hold. The card opens the menu itself.
+  it('opens the menu from a hold on Android', () => {
+    platform.OS = 'android';
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu: menuWith(NEARBY) }));
+    const onLongPress = cardRootProps.last?.onLongPress as (() => void) | undefined;
+    expect(onLongPress).toBeTypeOf('function');
+    // The same hold as AppMenu.android's own wrapper and the browser menu.
+    expect(cardRootProps.last?.delayLongPress).toBe(400);
+    onLongPress?.();
+    expect(menus.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the hold nothing to open on Android when there are no rows', () => {
+    platform.OS = 'android';
     render(
       createElement(BoardDiscoveryCard, {
-        item: { ...item, isPinned: false },
+        item,
         onPress: vi.fn(),
-        onTogglePin: vi.fn(),
-        pinLabel: 'Pin Tension 8x10',
+        menu: menuWith({ canPin: false, canDownload: false, canOpenDetails: false, canManage: false }),
       }),
     );
-    const actions = cardRootProps.last?.accessibilityActions as Array<{ name: string; label?: string }>;
-    expect(actions.some((action) => action.name === 'pin' && action.label === 'Pin Tension 8x10')).toBe(true);
+    expect(cardRootProps.last?.onLongPress).toBeUndefined();
   });
 });
 
 describe('BoardDiscoveryCard accessibility', () => {
   afterEach(resetCapture);
 
-  // Once the owned/followed grouping is gone from this surface the corner glyph
-  // is the only owned-vs-followed signal, so the label has to carry it.
+  // No glyph says owned or followed any more, so the label has to.
   it.each([
     [true, 'Your board'],
     [false, 'Following'],
   ])('announces ownership in the composed label (owner=%s)', (isViewerOwner, expected) => {
     const { getByTestId } = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, subtitle: 'Original 12x12', isViewerOwner },
-        onPress: vi.fn(),
-      }),
+      createElement(BoardDiscoveryCard, { item: { ...item, isViewerOwner }, onPress: vi.fn() }),
     );
     expect(getByTestId('card-root').getAttribute('aria-label')).toBe(`Tension 8x10, Original 12x12, ${expected}`);
   });
 
-  it('announces the active board and omits ownership it cannot resolve', () => {
+  it('announces every state the subtitle glyphs show, and omits ownership it cannot resolve', () => {
     const { getByTestId } = render(
-      createElement(BoardDiscoveryCard, { item: { ...item, isActive: true }, onPress: vi.fn() }),
-    );
-    expect(getByTestId('card-root').getAttribute('aria-label')).toBe('Tension 8x10, Active');
-  });
-
-  // The outer Pressable absorbs its children on iOS, so both nested glyphs have
-  // to be published as labelled custom actions or VoiceOver can never reach them.
-  it('publishes the board action and the download glyph as custom actions', () => {
-    render(
       createElement(BoardDiscoveryCard, {
-        item: { ...item, offlineState: 'off', isViewerOwner: true },
+        item: { ...item, isActive: true, isPinned: true, offlineState: 'downloaded', distanceMeters: 3240 },
         onPress: vi.fn(),
-        onDownload: vi.fn(),
-        downloadLabel: 'Make Tension 8x10 available offline',
-        action: 'edit',
-        onAction: vi.fn(),
-        actionLabel: 'Edit Tension 8x10',
       }),
     );
-    const actions = (cardRootProps.last?.accessibilityActions ?? []) as { name: string; label?: string }[];
-    expect(actions.map((entry) => entry.name)).toEqual(['boardAction', 'download']);
-    expect(actions[0]?.label).toBe('Edit Tension 8x10');
-    expect(actions[1]?.label).toBe('Make Tension 8x10 available offline');
+    expect(getByTestId('card-root').getAttribute('aria-label')).toBe(
+      'Tension 8x10, On it, 3.2 km, Original 12x12, Pinned, Available offline',
+    );
   });
 
-  // Publishing the array is half the contract; routing it is the other half, and
-  // it is the ONLY VoiceOver path to either nested glyph. A mis-wired actionName
-  // switch would otherwise ship green.
-  it('routes each custom action to its own handler', () => {
-    const onPress = vi.fn();
-    const onAction = vi.fn();
-    const onDownload = vi.fn();
-    render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, offlineState: 'off' },
-        onPress,
-        onDownload,
-        downloadLabel: 'Download',
-        action: 'edit',
-        onAction,
-        actionLabel: 'Edit Tension 8x10',
-      }),
+  it.each([
+    ['downloading', 'Downloading board…'],
+    ['finalizing', 'Finishing download…'],
+    ['pending', 'Waiting to download'],
+  ] as const)('announces a %s board', (offlineState, expected) => {
+    const { getByTestId } = render(
+      createElement(BoardDiscoveryCard, { item: { ...item, subtitle: null, offlineState }, onPress: vi.fn() }),
     );
-    const dispatch = cardRootProps.last?.onAccessibilityAction as (event: {
-      nativeEvent: { actionName: string };
-    }) => void;
-
-    dispatch({ nativeEvent: { actionName: 'boardAction' } });
-    expect(onAction).toHaveBeenCalledTimes(1);
-    expect(onDownload).not.toHaveBeenCalled();
-
-    dispatch({ nativeEvent: { actionName: 'download' } });
-    expect(onDownload).toHaveBeenCalledTimes(1);
-    expect(onAction).toHaveBeenCalledTimes(1);
-
-    dispatch({ nativeEvent: { actionName: 'activate' } });
-    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(getByTestId('card-root').getAttribute('aria-label')).toBe(`Tension 8x10, ${expected}`);
   });
 
-  it('leaves activate inert in edit mode, where the card body is not a target', () => {
-    const onPress = vi.fn();
-    const onAction = vi.fn();
+  // The card is a leaf to VoiceOver, so every menu row has to be a labelled
+  // custom action or a screen-reader user can only reach it with the hold.
+  it('publishes every menu row but Climb here as a custom action', () => {
     render(
       createElement(BoardDiscoveryCard, {
-        item,
-        onPress,
-        action: 'delete',
-        onAction,
-        actionTitle: 'Delete',
-        isEditing: true,
+        item: { ...item, isViewerOwner: true, offlineState: 'off' },
+        onPress: vi.fn(),
+        menu: menuWith(),
       }),
     );
-    const dispatch = cardRootProps.last?.onAccessibilityAction as (event: {
-      nativeEvent: { actionName: string };
-    }) => void;
+    expect(a11yActions()).toEqual([
+      { name: 'pin', label: 'Pin' },
+      { name: 'download', label: 'Download for offline' },
+      { name: 'details', label: 'Details' },
+      { name: 'edit', label: 'Edit board' },
+      { name: 'delete', label: 'Delete' },
+    ]);
+  });
 
-    dispatch({ nativeEvent: { actionName: 'activate' } });
+  it('routes each custom action to the menu as accessibility, and activate to the tap', () => {
+    const onPress = vi.fn();
+    const menu = menuWith();
+    const followedItem = { ...item, isViewerOwner: false, offlineState: 'off' as const };
+    render(createElement(BoardDiscoveryCard, { item: followedItem, onPress, menu }));
+
+    dispatchA11y('unfollow');
+    expect(menu.onAction).toHaveBeenCalledWith(followedItem, 'unfollow', 'accessibility');
+    dispatchA11y('download');
+    expect(menu.onAction).toHaveBeenLastCalledWith(followedItem, 'download', 'accessibility');
     expect(onPress).not.toHaveBeenCalled();
 
-    dispatch({ nativeEvent: { actionName: 'boardAction' } });
-    expect(onAction).toHaveBeenCalledWith(item);
+    dispatchA11y('activate');
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(menu.onAction).toHaveBeenCalledTimes(2);
+  });
+
+  // An action name the card did not publish (a stale rotor entry, or Climb
+  // here, which is the card's own activation) runs nothing.
+  it('ignores an action the card does not offer', () => {
+    const menu = menuWith(NEARBY);
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu }));
+    dispatchA11y('delete');
+    dispatchA11y('climb_here');
+    expect(menu.onAction).not.toHaveBeenCalled();
+  });
+
+  it('publishes no custom actions on a card with no menu', () => {
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn() }));
+    // ACTIVATE_ACCESSIBILITY_ACTIONS: undefined on iOS, where double-tap is enough.
+    expect(cardRootProps.last?.accessibilityActions).toBeUndefined();
   });
 
   it('keeps one accessibilityActions identity across re-renders', () => {
-    const props = {
-      onPress: vi.fn(),
-      action: 'edit' as const,
-      onAction: vi.fn(),
-      actionLabel: 'Edit Tension 8x10',
-    };
-    const { rerender } = render(createElement(BoardDiscoveryCard, { item: { ...item }, ...props }));
+    const menu = menuWith();
+    const onPress = vi.fn();
+    const ownedItem = { ...item, isViewerOwner: true };
+    const { rerender } = render(createElement(BoardDiscoveryCard, { item: { ...ownedItem }, onPress, menu }));
     // A fresh item object breaks the memo, so the component really does re-render;
     // the actions array must not churn with it.
-    rerender(createElement(BoardDiscoveryCard, { item: { ...item }, ...props }));
+    rerender(createElement(BoardDiscoveryCard, { item: { ...ownedItem }, onPress, menu }));
     expect(cardRootProps.accessibilityActions).toHaveLength(2);
     expect(cardRootProps.accessibilityActions[0]).toBe(cardRootProps.accessibilityActions[1]);
-  });
-});
-
-describe('spray wall Details action', () => {
-  it('opens details without activating the wall, including through accessibility actions', () => {
-    const wall = { ...item, key: 'wall-uuid', boardName: 'spray' as const };
-    const onPress = vi.fn();
-    const onDetails = vi.fn();
-    const { container } = render(createElement(BoardDiscoveryCard, { item: wall, onPress, onDetails }));
-    const details = container.querySelector('[data-testid="edit-action"]');
-    expect(details).not.toBeNull();
-    fireEvent.click(details!);
-    expect(onDetails).toHaveBeenCalledWith(wall);
-    expect(onPress).not.toHaveBeenCalled();
-    const actions = (cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>;
-    expect(actions.some((action) => action.name === 'details')).toBe(true);
-    const activate = cardRootProps.last?.onAccessibilityAction as (event: {
-      nativeEvent: { actionName: string };
-    }) => void;
-    activate({ nativeEvent: { actionName: 'details' } });
-    expect(onDetails).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not offer details on a catalogue board or during edit mode', () => {
-    const onDetails = vi.fn();
-    const catalogue = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), onDetails }));
-    expect(catalogue.container.querySelector('[data-testid="edit-action"]')).toBeNull();
-    catalogue.unmount();
-    const editing = render(
-      createElement(BoardDiscoveryCard, {
-        item: { ...item, boardName: 'spray' as const },
-        onPress: vi.fn(),
-        onDetails,
-        isEditing: true,
-      }),
-    );
-    expect(editing.container.querySelector('[data-testid="edit-action"]')).toBeNull();
-    expect(
-      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).some(
-        (action) => action.name === 'details',
-      ),
-    ).toBe(false);
   });
 });
 
@@ -829,39 +627,38 @@ describe('BoardDiscoveryCard import status', () => {
 
   it('hands the exact unfinished import to the picker and masks stale ranks', () => {
     const onPress = vi.fn();
-    const onDetails = vi.fn();
-    const importItem = { ...item, boardName: 'spray' as const, sprayImport: importProgress, importStatusStale: true };
-    const { getByText, getByTestId, queryByRole } = render(
-      createElement(BoardDiscoveryCard, { item: importItem, onPress, onDetails }),
+    const importItem = {
+      ...item,
+      boardName: 'spray' as const,
+      isViewerOwner: true,
+      sprayImport: importProgress,
+      importStatusStale: true,
+    };
+    const { getByText, getByTestId } = render(
+      createElement(BoardDiscoveryCard, { item: importItem, onPress, menu: menuWith() }),
     );
-    expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
-    expect(
-      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).some(
-        (action) => action.name === 'details',
-      ),
-    ).toBe(false);
     expect(getByText('sprayImport.offline')).toBeTruthy();
+    // Climbing, downloading and details do not apply to a wall still importing;
+    // pinning and removing it do.
+    expect(menus.button?.actions.map((action) => action.label)).toEqual(['Pin', 'Edit Spraywall', 'Delete']);
+    expect(a11yActions().map((action) => action.name)).not.toContain('details');
     fireEvent.click(getByTestId('card-root'));
     expect(onPress).toHaveBeenCalledWith(importItem);
   });
 
-  it('opens a reset clone like any import, with no Details or nested review action', () => {
+  it('opens a reset clone like any import, with no Details action', () => {
     const onPress = vi.fn();
     const resetItem = {
       ...item,
       boardName: 'spray' as const,
       sprayImport: { ...importProgress, resetOfWallUuid: 'old-wall', stage: 'ready' as const },
     };
-    const { getByTestId, queryByRole } = render(
-      createElement(BoardDiscoveryCard, { item: resetItem, onPress, onDetails: vi.fn() }),
+    const { getByTestId } = render(
+      createElement(BoardDiscoveryCard, { item: resetItem, onPress, menu: menuWith(NEARBY) }),
     );
-    expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
-    expect(queryByRole('button', { name: 'sprayImport.review' })).toBeNull();
-    const actionNames = ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).map(
-      (action) => action.name,
-    );
-    expect(actionNames).not.toContain('details');
-    expect(actionNames).not.toContain('import');
+    // Near you capabilities on an import leave nothing beyond the tap.
+    expect(menus.button).toBeNull();
+    expect(a11yActions().map((action) => action.name)).toEqual([]);
     fireEvent.click(getByTestId('card-root'));
     expect(onPress).toHaveBeenCalledWith(resetItem);
   });

@@ -5,6 +5,10 @@ import { createWledCommandDriver } from './wled-commands';
 export interface WledDriverOptions {
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
+  /** Waits for WLED's nightlight tick between auto-off writes; tests replace it. */
+  sleep?: (milliseconds: number) => Promise<void>;
+  /** Told when a lighting succeeded but its auto-off could not be armed; logs by default. */
+  onAutoOffNotSet?: (error: unknown) => void;
 }
 
 export function createWledDriver(options: WledDriverOptions = {}): LedControllerDriver {
@@ -65,7 +69,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     }
   }
 
-  return createWledCommandDriver(request);
+  return createWledCommandDriver(request, { sleep: options.sleep, onAutoOffNotSet: options.onAutoOffNotSet });
 }
 
 export const wledDriver = createWledDriver();

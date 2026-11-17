@@ -37,6 +37,10 @@ import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation
 import { bridgeLegacyCredential } from '../bridge';
 import { readFirstPartySession } from '../session-reader';
 import { readLockedWebSubjectState } from '../../current-store/web-credential-state';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 let environment: Awaited<ReturnType<typeof createEnvironment>>;
 vi.mock('../../../db/client', () => ({

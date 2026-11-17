@@ -141,7 +141,7 @@ export function connectBrowserCoordinatorClient(options: {
           pending.set(requestId, {
             operation: command.operation,
             order,
-            ...('expectedCursor' in command ? { expectedCursor: Object.freeze({ ...command.expectedCursor }) } : {}),
+            ...(command.operation === 'read' ? {} : { expectedCursor: Object.freeze({ ...command.expectedCursor }) }),
             finish: complete,
           });
           signal?.addEventListener('abort', abort, { once: true });
@@ -195,8 +195,7 @@ export function connectBrowserCoordinatorClient(options: {
           request.finish({ status: 'conflict' });
           return;
         }
-        const relation = compareBrowserBindingCursor(currentCursor, result.cursor);
-        if (relation === 'stale' || (relation === 'different-binding' && request.operation !== 'signin')) {
+        if (compareBrowserBindingCursor(currentCursor, result.cursor) !== 'current') {
           request.finish({ status: 'conflict' });
           return;
         }

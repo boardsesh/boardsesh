@@ -558,6 +558,20 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(_renderedOverlaysForTests.size).toBe(2);
   });
 
+  it('preserves capability probe PNGs while deleting stale overlays', () => {
+    const classicProbe = makeMockEntry('boardsesh-probe-classic-active.png');
+    const auraProbe = makeMockEntry('boardsesh-probe-veil-active.png');
+    const staleOverlay = makeMockEntry('v1_kilter_stale.png');
+    directoryListSpy.mockReturnValue([classicProbe, auraProbe, staleOverlay]);
+
+    _runWarmupForTests();
+
+    expect(classicProbe.delete).not.toHaveBeenCalled();
+    expect(auraProbe.delete).not.toHaveBeenCalled();
+    expect(staleOverlay.delete).toHaveBeenCalledOnce();
+    expect(_renderedOverlaysForTests.size).toBe(0);
+  });
+
   it('opportunistically deletes stale-version PNG files to reclaim disk', () => {
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');

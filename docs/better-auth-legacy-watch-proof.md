@@ -1,5 +1,7 @@
 # BA-01 pending legacy Garmin pairing proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Pending old Garmin codes are covered by `packages/backend/src/__tests__/native-contract/garmin.contract.ts` (`vp run test:native-contract`) and `watch-pairing-configuration.test.ts` in `packages/backend/src/auth/authority/__tests__/`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This disposable proof covers codes that were already pending when authentication moves to the canonical authority. No production router uses the adapter, no production Redis prefix is accepted, and no credential writer is switched.
 
 ## Actual released format

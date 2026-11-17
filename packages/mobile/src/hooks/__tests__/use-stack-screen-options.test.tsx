@@ -7,6 +7,7 @@ const ctrl = vi.hoisted(() => ({
   os: 'ios' as 'ios' | 'android',
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   systemColors: { background: '#F3EFFA', label: '#16111F' },
+  glassCapable: true,
 }));
 
 vi.mock('react-native', () => ({
@@ -21,6 +22,7 @@ vi.mock('react-native', () => ({
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({ variant: ctrl.variant, systemColors: ctrl.systemColors }),
 }));
+vi.mock('../use-glass-capability', () => ({ useGlassCapability: () => ctrl.glassCapable }));
 
 // `glassStackScreenOptions` reads `Platform.OS` at MODULE LOAD, so re-import the
 // hook per case (after setting `ctrl.os`) to exercise the iOS vs Android branch —
@@ -39,18 +41,29 @@ describe('useStackScreenOptions', () => {
   beforeEach(() => {
     ctrl.os = 'ios';
     ctrl.variant = 'liquidGlass';
+    ctrl.glassCapable = true;
   });
 
-  it('Liquid Glass on iOS → transparent blur header over transparent content', async () => {
+  it('Liquid Glass on iOS 26 → transparent header with no legacy blur, over transparent content', async () => {
     const opts = await readOptions();
     expect(opts.headerTransparent).toBe(true);
-    expect(opts.headerBlurEffect).toBe('systemMaterial');
+    // iOS 26 draws its own scroll edge effect under the bar. The legacy
+    // systemMaterial blur on top of it read as a grey band over a black page.
+    expect(opts.headerBlurEffect).toBeUndefined();
     expect(opts.headerBackButtonDisplayMode).toBe('minimal');
     // The blur header floats over TRANSPARENT content — if this regresses (e.g.
     // glassStackScreenOptions stops supplying it), content renders opaque under the
     // blur on iOS. The screens dropped their own `contentStyle` to rely on this.
     expect(opts.contentStyle).toEqual({ backgroundColor: 'transparent' });
     expect(opts.headerStyle).toBeUndefined();
+  });
+
+  it('Liquid Glass on iOS without glass keeps the systemMaterial blur under the transparent bar', async () => {
+    ctrl.glassCapable = false;
+    const opts = await readOptions();
+    expect(opts.headerTransparent).toBe(true);
+    // Without iOS 26 the bar has no material of its own, so content would show through.
+    expect(opts.headerBlurEffect).toBe('systemMaterial');
   });
 
   it('Liquid Glass tints the header in the label colour, not the default iOS blue', async () => {
@@ -73,6 +86,8 @@ describe('useStackScreenOptions', () => {
 
   it('Material → opaque M3 app bar (solid surface, onSurface tint, no blur)', async () => {
     ctrl.variant = 'material';
+    // Even on an iPhone without glass, where Liquid Glass would take the blur.
+    ctrl.glassCapable = false;
     const opts = await readOptions();
     expect(opts.headerTransparent).toBe(false);
     expect(opts.headerStyle).toEqual({ backgroundColor: '#F3EFFA' }); // systemColors.background

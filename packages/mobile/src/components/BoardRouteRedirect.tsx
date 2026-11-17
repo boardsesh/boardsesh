@@ -175,7 +175,7 @@ export function BoardRouteRedirect({
       ) : (
         <>
           <Icon name="error" size={48} color={systemColors.secondaryLabel} />
-          <Text variant="headline" style={styles.errorText}>
+          <Text tone="secondary" variant="headline">
             {subject === 'board' ? t('mobile.detail.boardNotFound') : t('mobile.detail.notFound')}
           </Text>
           {/* The one way out. These routes mount headerless at the ROOT stack, so
@@ -281,8 +281,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-  },
-  errorText: {
-    opacity: 0.6,
   },
 });

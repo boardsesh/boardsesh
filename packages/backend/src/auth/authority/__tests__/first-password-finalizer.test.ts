@@ -38,6 +38,10 @@ import { readBrowserBinding } from '../browser-binding';
 import { createProviderSecurityIntent } from '../provider-security-intents';
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { normalizeAccountEmail } from '../../normalize-email';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 type Owner = Awaited<ReturnType<typeof environment.actor>>;

@@ -29,6 +29,10 @@ import { assertLegacyIdentityWriterAllowed } from '../../current-store/identity-
 import { handleNativeAuthRegister, __resetNativeAuthStateForTests } from '../../../handlers/native-auth';
 import * as reverseIdentity from '../reverse-identity';
 import * as forwardIdentity from '../sync-identity';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 // Native registration receives this suite's transaction-aware database explicitly.
 // Any accidental fallback to the process singleton must fail without connecting.

@@ -104,6 +104,24 @@ describe('WLED individual preview', () => {
     expect(commands()[0]).toMatchObject({ seg: [{ id: 0, i: [10, '00000000', 12, '00000000', 11, 'FFFFFFFF'] }] });
   });
 
+  it('wakes the wall at the chosen brightness', async () => {
+    const { driver, commands } = fixture();
+    await driver.createPreview('bright.local', { brightness: 200 }).show([4]);
+    expect(commands()[0]).toMatchObject({ on: true, bri: 200, nl: { on: false } });
+    expect(commands()[1]).toEqual({
+      tt: 0,
+      udpn: { nn: true },
+      seg: [{ id: 0, i: [0, 1000, '00000000', 4, 'FFFFFFFF'] }],
+    });
+  });
+
+  it('clamps out-of-range lighting options to what WLED accepts', async () => {
+    const { driver, commands } = fixture();
+    await driver.createPreview('clamped.local', { brightness: 900, autoOffMinutes: -5 }).show([1]);
+    expect(commands()[0]).toMatchObject({ bri: 255, nl: { on: false } });
+    expect(commands()[1]).not.toHaveProperty('nl');
+  });
+
   it.each([-1, 1.5, NaN, 1000])('rejects invalid physical index %j before any write', async (index) => {
     const { driver, commands } = fixture();
     await expect(driver.createPreview('wall.local').show([index])).rejects.toMatchObject({ code: 'invalid-indices' });
@@ -168,6 +186,36 @@ describe('serialized LED preview ownership', () => {
       expect.objectContaining({ on: true }),
       expect.objectContaining({ seg: [{ id: 0, i: [0, 1000, '00000000', 2, 'FFFFFFFF'] }] }),
     ]);
+    await session.close();
+  });
+
+  it('wakes with the new brightness when a later session on the same controller changes it', async () => {
+    const { driver, commands, fetchController } = fixture();
+    const dim = createLedPreviewSession(driver, 'brightness-change.local', { brightness: 32 });
+    const keep = createLedPreviewSession(driver, 'brightness-change.local', { brightness: 32 });
+    await dim.show([1]);
+    expect(commands()[0]).toMatchObject({ bri: 32 });
+    await dim.close();
+    const bright = createLedPreviewSession(driver, 'brightness-change.local', { brightness: 255 });
+    fetchController.mockClear();
+    await bright.show([2]);
+    expect(commands()[0]).toMatchObject({ on: true, bri: 255 });
+    expect(commands().at(-1)).toMatchObject({ seg: [{ id: 0, i: [0, 1000, '00000000', 2, 'FFFFFFFF'] }] });
+    await bright.close();
+    await keep.close();
+  });
+
+  it('takes new lighting in an open session without switching the wall off', async () => {
+    const { driver, commands, fetchController } = fixture();
+    const session = createLedPreviewSession(driver, 'slider.local', { brightness: 32 });
+    await session.lightAll();
+    fetchController.mockClear();
+    session.setLighting({ brightness: 200 });
+    // Nothing is sent until the next lighting, and nothing turns the wall off.
+    expect(commands()).toEqual([]);
+    await session.lightAll();
+    expect(commands().some((command) => command.on === false)).toBe(false);
+    expect(commands()).toContainEqual(expect.objectContaining({ on: true, bri: 200 }));
     await session.close();
   });
 

@@ -95,7 +95,7 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
       onClose={onClose}
       header={
         <View style={[styles.header, { borderBottomColor: systemColors.separator }]}>
-          <Text variant="title3" accessibilityRole="header" style={styles.title} numberOfLines={1}>
+          <Text emphasized variant="title3" accessibilityRole="header" style={styles.title} numberOfLines={1}>
             {t('mobile.logbook.title')}
           </Text>
           {/* An xmark: the sheet only reads history, so closing loses nothing. */}
@@ -131,7 +131,6 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontWeight: '600',
   },
   list: {
     flex: 1,

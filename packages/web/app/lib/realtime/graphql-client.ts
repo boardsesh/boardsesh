@@ -4,14 +4,7 @@ import {
   type ExtendedClient,
 } from '@boardsesh/graphql-client';
 import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
-import type { FormattedExecutionResult, Sink, SubscribePayload } from 'graphql-ws';
-import {
-  browserSubscriptionReplayPolicy,
-  createBrowserBackendSocketController,
-} from '@boardsesh/auth-protocol/browser-backend-socket-controller';
-import { parse } from 'graphql';
-import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
-import { captureBrowserBackendRequestScope } from '@/app/lib/auth/browser-backend-graphql';
+import { browserSessionGuard } from '@/app/lib/auth/session-guard';
 import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
 import { connectionManager } from './websocket-connection-manager';
 
@@ -74,49 +67,22 @@ export function createGraphQLClient(
 
   const managerConnectionName = options.connectionName ?? 'primary';
   const { authToken, ...baseOptions } = options;
-  const scope = captureBrowserBackendRequestScope(authToken);
-  let createdClient: ExtendedClient | undefined;
-  const selectedController = scope
-    ? createBrowserBackendSocketController({
-        Socket: SafeWebSocket,
-        authority: {
-          isCurrent: () => browserBackendClient.isCurrent(scope),
-          assertCurrent: (lease) => browserBackendClient.assertCurrent(scope, lease),
-          acquire: () => browserBackendClient.acquireScope(scope),
-          invalidate: () => browserBackendClient.invalidate(scope),
-        },
-        closeEvent: (code, reason, wasClean) => new CloseEvent('close', { code, reason, wasClean }),
-        schedule(callback, milliseconds) {
-          const timer = setTimeout(callback, milliseconds);
-          return () => clearTimeout(timer);
-        },
-        terminate: () => createdClient?.terminate(),
-      })
-    : undefined;
 
-  const client = createSharedGraphQLClient({
+  return createSharedGraphQLClient({
     ...baseOptions,
-    // A cancelled pre-handshake operation releases before its internal close
-    // race is observed. Give that release a turn before the lazy socket closes.
-    ...(scope ? { lazyCloseTimeoutMs: baseOptions.lazyCloseTimeoutMs ?? 3000 } : {}),
     // Always a provider (rather than the shared client's static `authToken`)
     // so the handshake also carries the client identity. Browsers cannot set
     // headers on the upgrade, so connectionParams is the only channel.
     // `clientPlatform` puts a signed-in socket's day in `user_activity_days`
     // under `web`, as HTTP requests already are (docs/analytics-consent.md).
-    connectionParams: async () => {
-      let currentToken = authToken;
-      if (selectedController) currentToken = await selectedController.connectionToken();
-      return {
-        ...(currentToken ? { authToken: currentToken } : {}),
-        ...webClientIdentityConnectionParams(),
-        [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
-      };
-    },
-    webSocketImpl: selectedController?.Socket ?? SafeWebSocket,
+    connectionParams: async () => ({
+      ...(authToken ? { authToken } : {}),
+      ...webClientIdentityConnectionParams(),
+      [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
+    }),
+    webSocketImpl: SafeWebSocket,
     onClientCreated: (client) => {
-      createdClient = client;
-      if (!scope && typeof window === 'undefined') return;
+      if (typeof window === 'undefined') return;
       // graphql-ws dispose() is async and can reject with a raw DOM Event (ErrorEvent)
       // when the WebSocket was mid-connection or retrying at teardown time. All call
       // sites use fire-and-forget (no await), so an unhandled rejection with a DOM
@@ -124,44 +90,22 @@ export function createGraphQLClient(
       // captures as "Event `Event` (type=error) captured as promise rejection" on
       // iOS WKWebView. The shared `createGraphQLClient` wraps dispose() to suppress
       // these once `onClientCreated` returns a cleanup function.
-      const unregister =
-        typeof window === 'undefined' ? undefined : connectionManager.registerClient(client, managerConnectionName);
-      const unsubscribeOwner = scope
-        ? browserBackendClient.subscribe(() => {
-            if (!browserBackendClient.isCurrent(scope)) void client.dispose();
-          })
-        : undefined;
-      return () => {
-        selectedController?.dispose();
-        unsubscribeOwner?.();
-        unregister?.();
-      };
+      return connectionManager.registerClient(client, managerConnectionName);
     },
   });
-  if (selectedController) {
-    const subscribe = client.subscribe.bind(client);
-    client.subscribe = <Data = Record<string, unknown>, Extensions = unknown>(
-      payload: SubscribePayload,
-      sink: Sink<FormattedExecutionResult<Data, Extensions>>,
-    ) => {
-      const { query, operationName, variables, extensions } = payload;
-      const bufferedPayload = Object.freeze({ query, operationName, variables, extensions });
-      let replay: 'never' | 'subscription' = 'never';
-      try {
-        replay = browserSubscriptionReplayPolicy(parse(bufferedPayload.query), bufferedPayload.operationName);
-      } catch {
-        // Malformed/ambiguous documents never opt into transport replay.
-      }
-      return selectedController.subscribe((guarded) => subscribe<Data, Extensions>(bufferedPayload, guarded), sink, {
-        replay,
-      });
-    };
-  }
-  return client;
 }
 
-type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number };
+type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number; generation: number };
 let sharedRealtimeClient: SharedRealtimeClient | null = null;
+let watchingSessionGeneration = false;
+
+/** An account change closes the shared socket at once; holders reacquire with their new token. */
+function closeSupersededRealtimeClient(): void {
+  const entry = sharedRealtimeClient;
+  if (!entry || browserSessionGuard().isCurrent(entry.generation)) return;
+  sharedRealtimeClient = null;
+  void entry.client.dispose();
+}
 
 /**
  * The tab's one authenticated realtime socket. graphql-ws multiplexes every
@@ -174,9 +118,20 @@ export function acquireRealtimeClient({ url, authToken }: { url: string; authTok
   client: ExtendedClient;
   release: () => void;
 } {
+  const guard = browserSessionGuard();
+  if (!watchingSessionGeneration) {
+    watchingSessionGeneration = true;
+    guard.subscribe(closeSupersededRealtimeClient);
+  }
+  closeSupersededRealtimeClient();
   const key = `${url}\n${authToken ?? ''}`;
   if (sharedRealtimeClient?.key !== key) {
-    sharedRealtimeClient = { key, client: createGraphQLClient({ url, authToken }), holders: 0 };
+    sharedRealtimeClient = {
+      key,
+      client: createGraphQLClient({ url, authToken }),
+      holders: 0,
+      generation: guard.capture(),
+    };
   }
   const entry = sharedRealtimeClient;
   entry.holders += 1;

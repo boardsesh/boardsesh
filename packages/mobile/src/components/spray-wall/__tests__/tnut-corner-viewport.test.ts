@@ -42,6 +42,16 @@ describe('T-nut viewport coordinates', () => {
     expect(draggedCornerCoordinate(0.4, 10000, 300, 2)).toBe(1);
   });
 
+  it('lets the photo travel a minimum share of the frame even at 1×', () => {
+    expect(clampViewportPan(40, 300, 1, 0.25)).toBe(40);
+    expect(clampViewportPan(999, 300, 1, 0.25)).toBe(75);
+    expect(clampViewportPan(-999, 300, 1, 0.25)).toBe(-75);
+    // Once the zoomed photo allows more, the photo edge is the bound again.
+    expect(clampViewportPan(999, 300, 2, 0.25)).toBe(150);
+    expect(focalZoomPan(100, 50, 300, 3, 1, 150, 0.25)).toBeCloseTo(-100 / 3, 10);
+    expect(focalZoomPan(150, 0, 300, 1, 1, 0, 0.25)).toBe(-75);
+  });
+
   it('uses top endpoints for a row, left endpoints for a column, and TL for a single hole', () => {
     expect(activeTnutCorners(1, 8)).toEqual([0, 1]);
     expect(activeTnutCorners(8, 1)).toEqual([0, 3]);

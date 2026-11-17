@@ -270,14 +270,22 @@ const GymRow = memo(function GymRow({
   onEditBoard,
   onClaimGym,
 }: GymRowProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   const { t } = useTranslation('boards');
   const handlePress = useCallback(() => onPressGym(gym), [onPressGym, gym]);
   const handleEdit = useCallback(() => onEditGym(gym), [onEditGym, gym]);
   const handleClaim = useCallback(() => onClaimGym?.(gym), [onClaimGym, gym]);
   return (
-    <View style={[styles.gymBlock, { borderColor: selected ? brandColors.primary : systemColors.separator }]}>
-      {selected ? <View style={[styles.selectedAccent, { backgroundColor: brandColors.primary }]} /> : null}
+    <View
+      style={[
+        styles.gymBlock,
+        {
+          borderColor: selected ? selection.checkmark : systemColors.separator,
+          backgroundColor: selected ? selection.fill : undefined,
+        },
+      ]}
+    >
+      {selected ? <View style={[styles.selectedAccent, { backgroundColor: selection.checkmark }]} /> : null}
       <PressableSurface
         onPress={handlePress}
         accessibilityState={{ expanded }}
@@ -287,9 +295,11 @@ const GymRow = memo(function GymRow({
         onAccessibilityAction={gym.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
         style={styles.gymRow}
       >
-        <Icon name="pin" size={20} color={selected ? brandColors.primary : systemColors.label} />
+        <Icon name="pin" size={20} color={selection.text} />
         <View style={styles.rowText}>
-          <Text variant="headline">{gym.name}</Text>
+          <Text variant="headline" emphasized={selected}>
+            {gym.name}
+          </Text>
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {subtitle}
           </Text>
@@ -333,7 +343,7 @@ const GymRow = memo(function GymRow({
  * label is resolved by the caller (a literal `t(...)`) so the i18n key stays static.
  */
 const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => void; label: string }) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -341,8 +351,8 @@ const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => voi
       accessibilityLabel={label}
       style={[styles.claimRow, { borderTopColor: systemColors.separator }]}
     >
-      <Icon name="person.badge.plus" size={18} color={brandColors.primary} />
-      <Text variant="subheadline" color={brandColors.primary}>
+      <Icon name="person.badge.plus" size={18} color={systemColors.accent} />
+      <Text variant="subheadline" color={systemColors.accent}>
         {label}
       </Text>
     </PressableSurface>
@@ -398,13 +408,21 @@ const StandaloneRow = memo(function StandaloneRow({
   onActivateBoard: (board: UserBoard) => void;
   onEditBoard: (board: UserBoard) => void;
 }) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   const { t } = useTranslation('boards');
   const handlePress = useCallback(() => onActivateBoard(board), [onActivateBoard, board]);
   const handleEdit = useCallback(() => onEditBoard(board), [onEditBoard, board]);
   return (
-    <View style={[styles.gymBlock, { borderColor: selected ? brandColors.primary : systemColors.separator }]}>
-      {selected ? <View style={[styles.selectedAccent, { backgroundColor: brandColors.primary }]} /> : null}
+    <View
+      style={[
+        styles.gymBlock,
+        {
+          borderColor: selected ? selection.checkmark : systemColors.separator,
+          backgroundColor: selected ? selection.fill : undefined,
+        },
+      ]}
+    >
+      {selected ? <View style={[styles.selectedAccent, { backgroundColor: selection.checkmark }]} /> : null}
       <PressableSurface
         onPress={handlePress}
         accessibilityActions={
@@ -413,9 +431,11 @@ const StandaloneRow = memo(function StandaloneRow({
         onAccessibilityAction={board.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
         style={styles.standaloneRow}
       >
-        <Icon name="boards" size={20} color={selected ? brandColors.primary : systemColors.label} />
+        <Icon name="boards" size={20} color={selection.text} />
         <View style={styles.rowText}>
-          <Text variant="headline">{board.name}</Text>
+          <Text variant="headline" emphasized={selected}>
+            {board.name}
+          </Text>
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {subtitle}
           </Text>

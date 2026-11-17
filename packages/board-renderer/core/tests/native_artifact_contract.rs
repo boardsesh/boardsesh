@@ -1,8 +1,11 @@
 use std::{fs, path::Path};
 
-const AURA_CONTRACT_MARKERS: [&[u8]; 7] = [
+const AURA_CONTRACT_MARKERS: [&[u8]; 10] = [
     b"board_renderer_render",
-    b"struct RenderConfig with 20 elements",
+    b"board_renderer_prepare_gpu_atlas_owned",
+    b"geometry_cache_scope",
+    b"board_renderer_gpu_atlas_format_version",
+    b"struct RenderConfig with 21 elements",
     b"render_mode",
     b"glow_falloff",
     b"silhouette_lightness",
@@ -16,6 +19,21 @@ const AURA_CONTRACT_MARKERS: [&[u8]; 7] = [
     b"core/src/aura/",
 ];
 const STATIC_ARCHIVE_MAGIC: &[u8] = b"!<arch>\n";
+const PACKET_CONTRACT_MARKERS: [&[u8]; 13] = [
+    b"board_renderer_gpu_packet_api_version",
+    b"board_renderer_gpu_cancel_create",
+    b"board_renderer_gpu_cancel",
+    b"board_renderer_gpu_handle_close",
+    b"board_renderer_gpu_session_create",
+    b"board_renderer_gpu_session_set_cache_directory",
+    b"board_renderer_gpu_session_schedule_persist",
+    b"board_renderer_gpu_plan_create",
+    b"board_renderer_gpu_plan_prepare",
+    b"board_renderer_gpu_plan_encode",
+    b"board_renderer_gpu_packet_uniforms",
+    b"board_renderer_gpu_packet_contract",
+    b"board_renderer_gpu_packet_stats",
+];
 
 struct NativeArtifact {
     label: &'static str,
@@ -214,6 +232,13 @@ fn contains_marker(bytes: &[u8], marker: &[u8]) -> bool {
 }
 
 fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_bytes: &[u8]) {
+    for marker in PACKET_CONTRACT_MARKERS {
+        assert!(
+            contains_marker(artifact_bytes, marker),
+            "committed {artifact_label} renderer is missing lazy-packet export {}; rebuild all native archives",
+            String::from_utf8_lossy(marker)
+        );
+    }
     let contract_container = if artifact_bytes.starts_with(STATIC_ARCHIVE_MAGIC) {
         let archive_members =
             parse_static_archive_members(artifact_bytes).unwrap_or_else(|error| {

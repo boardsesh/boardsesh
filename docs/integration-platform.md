@@ -719,6 +719,40 @@ https://www.boardsesh.com`, exactly, whatever the cookies say. SameSite=Lax lets
 every `*.boardsesh.com` subdomain send the session cookie, so a cookie is no proof
 of where a request came from.
 
+**Only a confidential web app is remembered.** A remembered consent answers an
+authorization only from a web app (`application_type` `web`) that authenticates
+with a secret (`client_secret_basic` or `client_secret_post`) and redirects to
+`https://`. Every other app sees the consent screen on every authorization:
+
+- An app without a secret (`none`). Its `client_id` is public, and a browser app
+  cannot keep a secret (RFC 6749 section 10.2), so nothing shows who sent the
+  request.
+- Every native app, whatever its method or redirect (RFC 8252 section 8.6).
+  Registration lets a native app register a secret and an `https://` redirect,
+  but the secret ships in the binary, and another app on the device can claim
+  its private-use scheme, listen on its loopback port, or catch an https link the
+  system does not verify (Android 11 and older offer a chooser). An https page
+  that bounces to a custom scheme is common too. `application_type` is set at
+  registration and never changes.
+- Any redirect that is not `https://`, should one ever reach a web app.
+
+In each case another app can start authorize with the real `client_id` and its
+own PKCE verifier, and the browser (an `ASWebAuthenticationSession` shares
+Safari's cookies) carries the climber's Boardsesh sign-in.
+
+The fence (`auth/partner/fence.ts`, `requiresConsentEveryTime`) decides this from
+the stored app and the requested redirect URI, never from the request's own
+`prompt`. Before authorize it adds `prompt=consent`, so the provider shows the
+screen. After authorize, a code guard refuses any code for such a request that
+the climber did not approve in that same request: the code rolls back, its
+verification row with it, and the browser goes to the redirect URI with
+`error=consent_required`, the `state` and `iss`. Every redeemable code passes that
+guard, because the token endpoint only redeems a code the fence has bound to a
+connection, and the binding happens there. So `prompt=none` from such an app gets
+`consent_required`, never a code. An unknown app, type or auth method fails
+closed and is asked. `skip_consent` changes none of this: it can only spare a
+confidential web app on `https://` the screen, and registration never sets it.
+
 **Caps** (decision 22). An app holds at most `max_active_connections` (25)
 live, unrevoked connections and gains at most `max_new_connections_per_day` (20)
 in any 24 hours; a reconnect counts as new. A connection goes live, and
@@ -995,7 +1029,7 @@ which asks first. First-party GraphQL operations serve both, from
 
 | Operation | What it does |
 | --- | --- |
-| `myConnectedApps` | Every live connection of the signed-in climber (`connected_at` set, not revoked), most recently connected first: the app's name, the scopes from its remembered consent, `connectedAt`, `lastUsedAt`, and `suspended` (`oauth_client.disabled` or a policy suspension). `publisherName` is in the shape and null until apps carry one. `partnerAppsEnabled` is false while the mode is `off` |
+| `myConnectedApps` | Every live connection of the signed-in climber (`connected_at` set, not revoked), most recently connected first: the app's name, the scopes it can read (its remembered consent's together with those on its live tokens, so a narrower re-approval or a consent cleared by a redirect edit never hides a token's wider scopes), `connectedAt`, `lastUsedAt`, and `suspended` (`oauth_client.disabled` or a policy suspension). `publisherName` is in the shape and null until apps carry one. `partnerAppsEnabled` is false while the mode is `off` |
 | `disconnectApp(connectionId)` | Ends the connection through `endPartnerConnection`, the same path as `DELETE /v1/connection`, with reason `climber_disconnect`. `true` once ended, also when it already was |
 | `partnerAppsEnabled` | The same flag on its own, signed in or not, for screens that only need to know whether to mention connected apps. The app caches it for an hour, so the editor never asks per open |
 
@@ -1212,6 +1246,14 @@ Chromium, on the real www pages and the real backend:
    mutation with their own session. The app's next call gets `401 invalid_token`
    and its refresh `invalid_grant`.
 
+CI runs it in `.github/workflows/partner-oauth-e2e.yml`: nightly at 16:47 UTC
+(a red nightly posts to the Discord deploy channel), on a manual dispatch, and on
+a pull request only when partner OAuth code or this spec changes. The report and,
+on failure, the server logs are uploaded as artifacts. It covers the Chromium
+happy path with a public native app; the public browser app, confidential app,
+custom scheme, loopback variants and the readable 401/429 responses are not
+driven in a browser yet.
+
 Run it with `vp run db:up` once, then `vp run test:e2e:partner-oauth`. A warm run
 takes about 15 seconds; the first one waits for `next dev` to compile the pages
 (budget 5 minutes). It writes two accounts with `partner-e2e-` ids and
@@ -1349,7 +1391,13 @@ resource. `token_endpoint_auth_method` is `none`, `client_secret_basic` or
 be fetched inside the token transaction. After the provider writes the row, the
 same transaction reads it back and rolls back if any of those differ. Edits
 write only name, homepage, privacy policy and redirect URIs, never through the
-provider's update, which can also reach consent and PKCE. Each developer's
+provider's update, which can also reach consent and PKCE. An edit that adds a
+redirect URI the app did not have (a replacement counts) deletes every
+remembered consent for the app in the same transaction, so each climber sees the
+consent screen again before the next code goes anywhere. Tokens already issued
+keep working, and Connected apps still lists the scopes on the app's live tokens.
+Removing a URI, or editing the name, publisher, homepage or privacy policy, keeps
+consent. Each developer's
 writes take an advisory lock, so the 10-app cap holds under a race. Every new
 app gets an `oauth_app_policy` row with decision 22's launch caps: 25 active
 connections and 20 new a day. Consent enforces them (F13).
@@ -1359,6 +1407,73 @@ rotate and never readable again, and stored the way the authority stores every
 client secret: encrypted with `PARTNER_OAUTH_SECRETS` (`storeClientSecret:
 'encrypted'`). Rotation replaces it in one write, so the old secret stops at
 commit.
+
+**A recent sign-in for changes that decide where codes and tokens go** (#7598).
+Adding, replacing or removing a redirect URI, rotating the secret and deleting the
+app each need a www sign-in from the last
+`PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` (5 minutes, in
+`@boardsesh/auth-protocol/auth-time`): the window the owner set on 2026-11-13 for
+linking or unlinking Google and Apple. Without it, anyone holding a developer's
+session (a shared laptop, a copied cookie) could point the app at their own
+redirect and take its new secret. Editing the name, publisher, homepage or
+privacy policy is not gated: none of them changes where a code or token goes,
+and the name rules apply to them whoever edits. Registering a new app is not
+gated either: it touches no existing app, consent or connection, and starts with
+no climbers. Someone holding the session could still register apps in the
+developer's name, so a registration is emailed instead (below). The app type and client authentication method cannot change at all
+(no field takes them), so there is nothing to gate there. An edit that sends the
+same redirect URIs, reordered or not, is not a redirect change.
+
+The sign-in is the one partner consent already trusts: the www session cookie's
+`auth_time` and `link_guarded` claims, read by `legacyWebSignIn` in
+`auth/legacy-web-credentials.ts` (the same function `verifyLegacyNextAuthJwe`
+uses). GraphQL HTTP authentication puts it on `ConnectionContext.webSignIn`; nothing a
+request sends can set it. `requireRecentSignIn` in `auth/partner/registration.ts`
+applies `isSignInGoodForPartnerAppChange`: the consent rule (a known time, a
+guarded sign-in, clearly after the last password write) with the 5-minute
+window. It runs inside the change's transaction, after the developer's advisory
+lock and before any write, and takes the developer's `users` row FOR SHARE before
+reading the password write time, so a change queued behind a password reset reads
+the reset's time. A sign-in of unknown age is refused: a cookie without
+`auth_time`, an unguarded sign-in, an app token (no `webSignIn`), and any
+WebSocket call.
+
+A refusal is `FORBIDDEN` with `reason: RECENT_SIGN_IN_REQUIRED`
+(`PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED` in `@boardsesh/auth-protocol/partner-oauth`)
+and `maxAgeSeconds: 300`, never `UNAUTHENTICATED`: the session is valid, and a 401
+would sign the app out. Nothing is written. The check comes after input
+validation, ownership and suspension, so the developer fixes the form first and
+is never asked to sign in for an app that is gone or suspended. A change queued
+behind the developer's own account deletion finds no `users` row once it runs:
+the apps went with the account, so it answers `NOT_FOUND`, not a sign-in request.
+
+Known limits, all in first-party web auth and tracked with #7596's work:
+
+- A provider link on the legacy web path writes a fresh `auth_time`
+  (`oauth-link-guard.server.ts`, `auth-options.ts`), so a 30-day-old session
+  that links Google passes the 5-minute gate.
+- "Sign in again" goes through the plain sign-in page, where Google may sign the
+  developer in without asking for anything (no `prompt` or `max_age`).
+- With the backend-owned provider mode, an Apple-only developer's session
+  carries no sign-in time, so it cannot pass the gate.
+- A sign-in within 60 seconds after a password change does not count
+  (`PASSWORD_CHANGE_CLOCK_TOLERANCE_MS`), so the console can ask again for up to
+  a minute after a reset.
+
+**The change email** (#7598). Once a new app, a redirect URI change, a rotation or
+a deletion commits, the developer's `users.email` gets one email
+(`email/partner-app-emails.ts`, the SMTP transport in
+[backend-email.md](./backend-email.md)): the app's name and client ID, what
+happened and when, and what to do if it was not them. Only a verified address
+(`users.emailVerified` set) is sent to; an unverified one is skipped with a
+warning that names the change and the client ID, never the address. A redirect
+change is told as counts ("1 redirect URI added and 1 removed"), so the email
+carries no link someone else chose; no secret, old or new, is ever in it. It is
+sent after commit and never awaited: a notifier that throws at once or rejects
+later is logged (change, client ID and error name only) and reaches nothing, so a
+slow or failing mailer neither holds nor fails the change, and a rotation always
+returns its new secret. A retired `.invalid` address gets nothing. The
+registration takes the sender as `notifyDeveloper`, which the tests replace.
 
 **Changing a suspended app.** Refused, delete included: the record stays for ops
 and still counts toward the developer's 10.
@@ -1396,6 +1511,17 @@ climbers connected now, counted the way the caps count (`connected_at` set,
 `revoked_at` empty); the delete confirmation states it. A new or rotated secret
 is shown once in a dialog that closes only from its own button. It lives in
 component state only: never in the React Query cache, a URL or a log.
+When the backend answers `RECENT_SIGN_IN_REQUIRED`, the console says the change
+needs a sign-in from the last 5 minutes. A rotate or delete confirmation closes;
+an edit form stays open behind the message with what was typed, and the message
+says signing in again leaves the page and clears it, so Cancel goes back to the
+form and its values. Its
+"Sign in again" link (`signInAgainPath` in `app/lib/developer-apps/sign-in-again.ts`)
+goes through `/auth/signout`, then `/auth/login`, back to `/developers/apps` in
+the developer's language; the sign-in page sends a signed-in visitor straight on,
+which is why sign-out comes first. Both hops keep only a same-origin path
+(`safeCallbackUrl`), and every path in the link is a constant. The developer then
+makes the change again.
 Registering needs the developer terms box ticked; the form links to
 `/developers/terms` (same flag) and sends `acceptedTermsVersion`, the shared
 `PARTNER_DEVELOPER_TERMS_VERSION` from `@boardsesh/auth-protocol/partner-oauth`.
@@ -1405,8 +1531,8 @@ constant in production, so publishing terms is a reviewed code change and never
 an environment flip. Outside production (the backend's own test, the one its
 Sentry gate uses, since Railway leaves `NODE_ENV` unset) a
 `PARTNER_DEVELOPER_TERMS_VERSION` variable may name another version, which is how
-the tests and the end-to-end journey register apps while the shipped terms are a
-draft. While that version ends in `-draft` it refuses every registration with
+the tests and the end-to-end journey register apps under their own version. While
+that version ends in `-draft` (none ships; the refusal stays for a future draft) it refuses every registration with
 `BAD_USER_INPUT`, reason `TERMS_UNPUBLISHED`, "Developer terms are not published
 yet", in every mode that reaches registration. Otherwise it refuses any other
 accepted value with `BAD_USER_INPUT`, so a console left open across a terms change
@@ -2240,10 +2366,10 @@ What LEGAL.md implies:
   wording, not endorsement ("Works with Boardsesh"), and board brands only to
   name boards; and Boardsesh may suspend or delete an app that breaks them.
   Registration requires the current version (below), and **refuses every app
-  while that version is a draft**: the shipped `PARTNER_DEVELOPER_TERMS_VERSION`
-  ends in `-draft` until the owner approves the text, the page shows "Draft, not
-  in force", and the console's register form answers "Developer terms are not
-  published yet".
+  while that version is a draft** (a version ending in `-draft`; the shipped
+  `PARTNER_DEVELOPER_TERMS_VERSION` has been the dated `2026-11-17` since the
+  owner approved the text, and the console's register form would answer
+  "Developer terms are not published yet" for a draft).
 - **Privacy policy**: an "Apps you connect" section on www `/privacy`, shown
   only while the web's `PARTNER_OAUTH_MODE` is not `off`, in every locale. It
   says what an app can receive (display name and photo; every tick, "Only me"
@@ -2253,8 +2379,8 @@ What LEGAL.md implies:
   app's own policy governs the data afterwards, how to disconnect, that any
   password change (a reset, or setting one for the first time) disconnects
   every app, and that disconnecting or deleting the account does not delete
-  copies an app already holds. **Draft until the owner approves it**; it shows
-  only once partner apps are on, which itself waits for that approval (gate 9).
+  copies an app already holds. **Approved 2026-11-17**; it shows only while
+  partner apps are on.
 - **Trademarks**: the docs say "Kilter", "Tension", "MoonBoard" only to name
   board types, never to suggest the API is an official channel for them.
 
@@ -2371,7 +2497,7 @@ stays `off` until step 1 of stage A.
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
-| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | The terms page no longer says "Draft, not in force"; the console registers an app |
+| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | Done 2026-11-17 once deployed: the terms page has no "Draft, not in force" notice; the console registers an app |
 
 ### Turning it on and off
 

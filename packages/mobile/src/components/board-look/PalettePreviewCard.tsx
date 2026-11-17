@@ -59,7 +59,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
   onEnlarge,
 }: PalettePreviewCardProps) {
   const { t } = useTranslation('common');
-  const { systemColors, brandColors, textStyles: resolvedTextStyles } = useTheme();
+  const { systemColors, selection, textStyles: resolvedTextStyles } = useTheme();
   const { fontScale } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
   const reduceTransparency = useReduceTransparency();
@@ -89,7 +89,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
     height: RAIL_THUMB_HEIGHT,
     borderWidth: style.borderWidth,
     backgroundColor: systemColors.tertiaryBackground,
-    borderColor: selected ? brandColors.primary : systemColors.separator,
+    borderColor: selected ? selection.checkmark : systemColors.separator,
   };
 
   const scrimColor = reduceTransparency ? (systemColors.background as string) : overlays.scrim;
@@ -172,7 +172,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
           variant={style.descriptionVariant}
           color={systemColors.secondaryLabel}
           numberOfLines={2}
-          style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale) }}
+          style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale, style.descriptionVariant) }}
         >
           {description}
         </Text>

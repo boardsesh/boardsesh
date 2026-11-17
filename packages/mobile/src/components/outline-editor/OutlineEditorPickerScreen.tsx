@@ -31,7 +31,7 @@ type PickerRow = { key: string; id: number; label: string; detail?: string };
  */
 export function OutlineEditorPickerScreen() {
   const router = useRouter();
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, selection } = useTheme();
 
   const [boardName, setBoardName] = useState<BoardName | null>(null);
   const [layoutId, setLayoutId] = useState<number | null>(null);
@@ -109,8 +109,8 @@ export function OutlineEditorPickerScreen() {
           style={[
             styles.row,
             {
-              backgroundColor: systemColors.secondaryBackground,
-              borderColor: isSelected ? brandColors.primary : 'transparent',
+              backgroundColor: isSelected ? selection.fill : systemColors.secondaryBackground,
+              borderColor: isSelected ? selection.checkmark : 'transparent',
             },
           ]}
         >
@@ -145,8 +145,8 @@ export function OutlineEditorPickerScreen() {
               style={[
                 styles.row,
                 {
-                  backgroundColor: systemColors.secondaryBackground,
-                  borderColor: isSelected ? brandColors.primary : 'transparent',
+                  backgroundColor: isSelected ? selection.fill : systemColors.secondaryBackground,
+                  borderColor: isSelected ? selection.checkmark : 'transparent',
                 },
               ]}
             >

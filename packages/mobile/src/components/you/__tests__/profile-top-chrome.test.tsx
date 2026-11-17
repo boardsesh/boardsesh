@@ -51,6 +51,7 @@ const materialTabs = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   useWindowDimensions: () => ({ width: 402, height: 874, fontScale: ctrl.fontScale }),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
@@ -262,6 +263,7 @@ describe('ProfileTopChrome', () => {
         'climbs',
         'social',
       ]);
+      expect(segment.options.find((option) => option.key === 'climbs')?.label).toBe('tabs.created');
       expect(segment.selectedKey).toBe('sessions');
     });
 
@@ -357,6 +359,7 @@ describe('ProfileTopChrome', () => {
       render(<ProfileTopChrome {...makeProps({ activeTab: 'sessions' })} />);
       const tabs = materialTabs.entries.at(-1)!;
       expect(tabs.options.map((option) => option.key)).toEqual(['progress', 'sessions', 'logbook', 'climbs', 'social']);
+      expect(tabs.options.find((option) => option.key === 'climbs')?.label).toBe('tabs.created');
       expect(tabs.selectedKey).toBe('sessions');
     });
 

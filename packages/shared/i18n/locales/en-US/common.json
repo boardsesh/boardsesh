@@ -742,11 +742,10 @@
       "board": {
         "title": "Which board do you climb on?",
         "body": "Every board keeps its own history. Pick the one you climb on and you'll see what everyone else on it has been sending.",
-        "offlineHint": "Tap the arrow to keep a board on this phone. It opens instantly and still works when the gym wifi doesn't.",
+        "offlineHint": "Pick a board and we'll offer to keep it on this phone. It opens instantly and still works when the gym wifi doesn't.",
         "findAnother": "Find another board",
         "findFirst": "Find my board",
-        "offlineSkip": "Skip for now",
-        "downloadAria": "Keep {{name}} on this phone"
+        "offlineSkip": "Skip for now"
       },
       "boardRevealTip": "Tap the clock to see what's been lit on this wall.",
       "quickActionsTip": "Long-press a climb for quick actions like queue, tick and playlists.",

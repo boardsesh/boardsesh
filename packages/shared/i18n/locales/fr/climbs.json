@@ -252,7 +252,8 @@
       "viewOptions": "Options d’affichage",
       "history": "Historique de la board, {{board}}",
       "historyTitle": "Historique de la board",
-      "historyHint": "Voir les blocs qui ont été allumés sur ce mur"
+      "historyHint": "Voir les blocs qui ont été allumés sur ce mur",
+      "myClimbs": "Mes blocs"
     },
     "moderation": {
       "title": "Modération",
@@ -569,7 +570,6 @@
       "gradeAction": "Définir la plage de cotation",
       "gradeOpenHint": "Ouvre le sélecteur de cotation",
       "gradeCloseHint": "Ferme le sélecteur de cotation",
-      "allClimbs": "Toutes les voies",
       "clearRecentSearches": "Effacer les recherches récentes",
       "chips": {
         "filtersWithCount": "Filtres · {{count}}",

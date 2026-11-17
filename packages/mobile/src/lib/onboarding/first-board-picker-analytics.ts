@@ -22,13 +22,16 @@ export function trackFirstBoardPickerSkipped({
   secondsOpen,
   lastPath,
   entry,
+  nearbyResultCount,
 }: {
   method: FirstBoardSkipMethod;
   secondsOpen: number;
   lastPath: FirstBoardPath | null;
   entry: FirstBoardEntry;
+  /** Boards the Near you search returned by then; null when it had not answered. */
+  nearbyResultCount: number | null;
 }): void {
-  track(SHARED_EVENTS.FirstBoardPickerSkipped, { method, secondsOpen, lastPath, entry });
+  track(SHARED_EVENTS.FirstBoardPickerSkipped, { method, secondsOpen, lastPath, entry, nearbyResultCount });
 }
 
 // The header X ("Not now", or Close when Climbs opened the picker) lives in the

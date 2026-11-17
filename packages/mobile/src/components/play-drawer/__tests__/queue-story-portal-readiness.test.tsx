@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const portal = vi.hoisted(() => ({
   children: null as unknown,
   listeners: new Set<() => void>(),
+  queueState: null as { currentUuid?: string; historyCount: number; showHistory: boolean } | null,
 }));
 const artContext = await vi.hoisted(async () => {
   const { createContext } = await import('react');
@@ -53,13 +54,20 @@ vi.mock('../QueueListView', () => ({
     queue,
     ContentComponent,
     onViewableItemsChanged,
+    currentItem,
+    historyCount,
+    showHistory,
   }: {
     queue: { climb: { uuid: string } }[];
+    currentItem: { climb: { uuid: string } } | null;
+    historyCount: number;
+    showHistory: boolean;
     ContentComponent: React.ComponentType<{ climb: { uuid: string } }>;
     onViewableItemsChanged: (event: {
       viewableItems: { item: { type: string; item: { climb: { uuid: string } } } }[];
     }) => void;
   }) => {
+    portal.queueState = { currentUuid: currentItem?.climb.uuid, historyCount, showHistory };
     useEffect(() => {
       onViewableItemsChanged({ viewableItems: queue.map((item) => ({ item: { type: 'future-item', item } })) });
     }, [queue, onViewableItemsChanged]);
@@ -82,6 +90,7 @@ vi.mock('../QueueSheetView', () => ({
   },
 }));
 import stories from '../QueueSheet.stories';
+import { STORY_CLIMBS } from '../../../dev/fixtures/climbs';
 
 const subscribe = (listener: () => void) => {
   portal.listeners.add(listener);
@@ -111,6 +120,7 @@ it('waits for visible art inside a modal host outside the story subtree', async 
     ),
   );
   await waitFor(() => expect(onReady).toHaveBeenCalled());
-  expect(view.getAllByTestId('loaded-art')).toHaveLength(3);
+  expect(view.getAllByTestId('loaded-art')).toHaveLength(STORY_CLIMBS.length);
+  expect(portal.queueState).toEqual({ currentUuid: STORY_CLIMBS[0].uuid, historyCount: 0, showHistory: false });
   expect(onError).not.toHaveBeenCalled();
 });

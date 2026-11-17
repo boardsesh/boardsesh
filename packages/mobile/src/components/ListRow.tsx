@@ -67,7 +67,12 @@ export function ListRow({
             {title}
           </Text>
           {subtitle && (
-            <Text variant="subheadline" style={styles.subtitle} numberOfLines={wrapSubtitle ? undefined : 1}>
+            <Text
+              tone="secondary"
+              variant="subheadline"
+              style={styles.subtitle}
+              numberOfLines={wrapSubtitle ? undefined : 1}
+            >
               {subtitle}
             </Text>
           )}
@@ -138,7 +143,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   subtitle: {
-    opacity: 0.6,
     marginTop: 2,
   },
   trailing: {

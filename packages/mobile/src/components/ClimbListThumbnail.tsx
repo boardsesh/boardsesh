@@ -1,5 +1,5 @@
 import type { BoardRenderStyle } from '../lib/board-render-style';
-import React, { useEffect, useRef, type MutableRefObject } from 'react';
+import React, { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { PixelRatio, View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
@@ -122,6 +122,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     onOverlayError,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundsLoading,
     backgroundBaseColor,
     artworkIdentity,
     getReadyBoardArtSnapshot,
@@ -139,10 +140,12 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   });
 
   useEffect(() => {
-    if (missingBackgroundCount > 0 || (frames.length > 0 && overlayUnavailable)) {
-      onArtError?.(new Error('Board artwork unavailable'));
+    if (missingBackgroundCount > 0 && !backgroundsLoading) {
+      onArtError?.(new Error('Board background artwork unavailable'));
+    } else if (frames.length > 0 && overlayUnavailable) {
+      onArtError?.(new Error('Climb hold overlay unavailable'));
     }
-  }, [missingBackgroundCount, overlayUnavailable, frames, onArtError]);
+  }, [missingBackgroundCount, backgroundsLoading, overlayUnavailable, frames, onArtError]);
 
   // Rendered when the row took this climb (a revisit, or a row the list warmed
   // ahead of the scroll) is not enough on its own: on a hard flick the row can
@@ -156,17 +159,37 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     overlayUri,
     overlayLoadKey,
     backgroundPaths,
+    backgroundsLoading,
+    missingBackgroundCount,
+    overlayUnavailable,
   ]);
-  const displayedRef = useRef<{ identity: string; loadKey: string | null }>({
+  const displayedRef = useRef<{ identity: string; loadKey: string | null; notified: boolean }>({
     identity: displayIdentity,
     loadKey: null,
+    notified: false,
   });
   if (displayedRef.current.identity !== displayIdentity)
-    displayedRef.current = { identity: displayIdentity, loadKey: null };
+    displayedRef.current = { identity: displayIdentity, loadKey: null, notified: false };
+  const artworkAvailable =
+    !backgroundsLoading &&
+    missingBackgroundCount === 0 &&
+    backgroundPaths.length > 0 &&
+    (frames.length === 0 || (!!overlayUri && !overlayUnavailable));
+  // Layer display events alone can describe an empty or partial stack. Only
+  // the strict readiness signal confirms that all required layers painted.
+  const handleArtReadinessChange = useCallback(
+    (ready: boolean) => {
+      const displayed = displayedRef.current;
+      if (!ready || !artworkAvailable || displayed.identity !== displayIdentity || displayed.notified) return;
+      displayed.notified = true;
+      onArtDisplayed?.();
+    },
+    [artworkAvailable, displayIdentity, onArtDisplayed],
+  );
   if (readyBoardArtRef) {
     readyBoardArtRef.current = {
       read: () => {
-        if (!climbUuid || displayedRef.current.identity !== displayIdentity) return undefined;
+        if (!climbUuid || !artworkAvailable || displayedRef.current.identity !== displayIdentity) return undefined;
         return getReadyBoardArtSnapshot(climbUuid, mirrored ?? false, displayedRef.current.loadKey);
       },
     };
@@ -176,13 +199,14 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     <View style={[styles.container, cell]}>
       <LayeredClimbImage
         onArtError={onArtError}
+        onArtReadinessChange={handleArtReadinessChange}
+        overlayRequired={frames.length > 0}
         overlayUri={overlayUri}
         overlayLoadKey={overlayLoadKey}
         displayIdentity={displayIdentity}
         onArtDisplayed={(loadKey) => {
           if (displayedRef.current.identity === displayIdentity) {
             displayedRef.current.loadKey = loadKey;
-            onArtDisplayed?.();
           }
         }}
         onOverlayLoad={onOverlayLoad}

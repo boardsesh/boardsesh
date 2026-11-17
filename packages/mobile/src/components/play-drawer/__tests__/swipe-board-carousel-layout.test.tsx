@@ -22,6 +22,8 @@ type ViewProps = {
 
 const recorded = vi.hoisted(() => ({
   motionNative: false,
+  gpuEnabled: true,
+  apiVersion: 5,
   renderSettings: { mode: 'aura', boardsesh: { softDisc: false } },
   onLayout: undefined as ViewProps['onLayout'],
   prefetch: vi.fn(),
@@ -34,13 +36,22 @@ const recorded = vi.hoisted(() => ({
     | undefined,
 }));
 
+vi.mock('../../../lib/board-render/gpu-native-capability', () => ({
+  get climbOverlayGpuApiVersion() {
+    return recorded.apiVersion;
+  },
+}));
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
+  climbOverlayGpuApiVersion: 5,
   get NativeMotionClimbOverlayGPU() {
     return recorded.motionNative ? 'NativeMotionClimbOverlayGPU' : null;
   },
 }));
 vi.mock('../../../lib/board-render-settings', () => ({
   useBoardRenderSettings: () => ({ settings: recorded.renderSettings }),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useGpuClimbOverlayEnabled: () => recorded.gpuEnabled,
 }));
 
 const sharedThreads = vi.hoisted(() => ({
@@ -288,6 +299,8 @@ function readinessCallbackFor(frames: string): (readiness: BoardArtReadiness) =>
 
 beforeEach(() => {
   recorded.motionNative = false;
+  recorded.gpuEnabled = true;
+  recorded.apiVersion = 5;
   recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: false } };
   recorded.onLayout = undefined;
   _resetPlayBoardPrewarmForTests();
@@ -302,6 +315,44 @@ beforeEach(() => {
   sharedThreads.uiJobs.length = 0;
   sharedThreads.synchronizeJsReads.length = 0;
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+});
+
+it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'] as const)(
+  'releases stationary %s motion when the remote GPU switch turns off',
+  (boardName) => {
+    recorded.motionNative = true;
+    const pager = restingPager();
+    const props = {
+      ...baseProps,
+      boardName,
+      layoutId: 1,
+      pager,
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    };
+    const { rerender } = render(createElement(SwipeBoardCarousel, props));
+    expect(pager.stationaryMotion.value).toBe(true);
+    recorded.gpuEnabled = false;
+    rerender(createElement(SwipeBoardCarousel, { ...props, containerSize: { ...props.containerSize } }));
+    expect(pager.stationaryMotion.value).toBe(false);
+  },
+);
+
+it.each([0, 2, 3, 4])('keeps catalogue motion on PNG with API %s', (apiVersion) => {
+  recorded.motionNative = true;
+  recorded.apiVersion = apiVersion;
+  const pager = restingPager();
+  const props = {
+    ...baseProps,
+    boardName: 'tension' as const,
+    layoutId: 1,
+    pager,
+    containerSize: { width: 350, height: 500 },
+  };
+  const { rerender } = render(createElement(SwipeBoardCarousel, props));
+  expect(pager.stationaryMotion.value).toBe(false);
+  rerender(createElement(SwipeBoardCarousel, { ...props, boardName: 'kilter', layoutId: 8 }));
+  expect(pager.stationaryMotion.value).toBe(true);
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -386,6 +437,45 @@ it('keeps one photograph and feeds reversible absolute progress without a JS ren
   pager.translateX.value = 0;
   expect(board.gpuTransition?.pagePosition.value).toBe(1);
   expect(recorded.boardProps.mock.calls).toHaveLength(renderCount);
+});
+
+it.each([1, -1] as const)('keeps the incoming holds during the outgoing animation tail (%s)', (direction) => {
+  recorded.motionNative = true;
+  const pager = restingPager();
+  const props = {
+    ...baseProps,
+    layoutId: 8,
+    pager,
+    currentFrames: 'outgoing',
+    prevFrames: 'previous',
+    nextFrames: 'next',
+    containerSize: { width: 390, height: 500 },
+  };
+  const { rerender } = render(createElement(SwipeBoardCarousel, props));
+  pager.slideWidth.value = 250;
+  pager.isAnimating.value = true;
+  pager.flingDirection.value = direction;
+  // The header keeps travelling past the contained board to clear its margins.
+  pager.translateX.value = -direction * 414;
+  // Navigation publishes the new trio once the incoming board reaches center,
+  // before the UI thread lands the outgoing header and advances its anchor.
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: direction,
+      currentFrames: 'incoming',
+      prevFrames: direction === 1 ? 'outgoing' : 'unrelated-previous',
+      nextFrames: direction === 1 ? 'unrelated-next' : 'outgoing',
+    }),
+  );
+  const transition = latestStationaryBoard().gpuTransition!;
+  expect(transition.centerPage).toBe(direction);
+  expect(transition.pagePosition.value).toBe(direction);
+  expect(transition.pagePosition.value - transition.centerPage).toBe(0);
+  pager.anchorPage.value = direction;
+  pager.translateX.value = 0;
+  pager.flingDirection.value = 0;
+  expect(transition.pagePosition.value).toBe(direction);
 });
 
 it('waits for the photograph and prepared native neighbors before releasing a swipe', () => {
@@ -504,6 +594,38 @@ it('uses the existing carousel for Classic and retries stationary rendering afte
   expect(queryAllByTestId(/^board-/)).toHaveLength(3);
   recorded.renderSettings = { mode: 'default', boardsesh: { softDisc: false } };
   rerender(createElement(SwipeBoardCarousel, { ...props, onSwipeNext: vi.fn() }));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+});
+
+it('retries a new climb window after a frame failure without accepting old callbacks', async () => {
+  recorded.motionNative = true;
+  const props = {
+    ...baseProps,
+    pager: restingPager(),
+    layoutId: 8,
+    prevFrames: 'previous',
+    containerSize: { width: 350, height: 500 },
+  };
+  const { rerender, queryAllByTestId } = render(createElement(SwipeBoardCarousel, props));
+  const failedBoard = latestStationaryBoard();
+  act(() => failedBoard.onGpuTransitionStateChange('unavailable'));
+  await nextFrame();
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+  rerender(createElement(SwipeBoardCarousel, { ...props, onSwipeNext: vi.fn() }));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: 1,
+      prevFrames: 'current',
+      currentFrames: 'next',
+      nextFrames: 'later',
+    }),
+  );
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  expect(latestStationaryBoard().frames).toBe('next');
+  act(() => failedBoard.onGpuTransitionStateChange('unavailable'));
   expect(queryAllByTestId(/^board-/)).toHaveLength(1);
 });
 

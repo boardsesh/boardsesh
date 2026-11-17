@@ -274,7 +274,7 @@ describe('ThemeProvider', () => {
       expect(result.current.radii.button).toBe(10);
       expect(result.current.systemColors.background).toBe('#F4F1FB');
       // Liquid Glass off iOS keeps its violet tertiary fill.
-      expect(result.current.systemColors.tertiaryFill).toBe('rgba(109, 40, 217, 0.06)');
+      expect(result.current.systemColors.tertiaryFill).toBe('rgba(91, 34, 242, 0.06)');
       expect(setMock).toHaveBeenCalledWith(UI_VARIANT_KEY, 'liquidGlass');
     });
 
@@ -313,10 +313,10 @@ describe('ThemeProvider', () => {
       const { result } = renderHook(() => useTheme(), { wrapper });
       await waitFor(() => expect(getMock).toHaveBeenCalled());
       expect(result.current.colorScheme).toBe('light');
-      expect(result.current.brandColors.primary).toBe('#6D28D9');
+      expect(result.current.brandColors.primary).toBe('#5B22F2');
       expect(result.current.brandColors.success).toBe('#047857');
       // New scheme-aware interactive accent (replaces the static systemBlue).
-      expect(result.current.systemColors.accent).toBe('#6D28D9');
+      expect(result.current.systemColors.accent).toBe('#5B22F2');
     });
 
     it('dark scheme lifts brand foregrounds + the accent so they clear AA on near-black', async () => {
@@ -325,11 +325,11 @@ describe('ThemeProvider', () => {
       await waitFor(() => expect(getMock).toHaveBeenCalled());
       expect(result.current.colorScheme).toBe('dark');
       // The core #2583 fix: foreground brand + semantic tones lift in dark.
-      expect(result.current.brandColors.primary).toBe('#A78BFA');
+      expect(result.current.brandColors.primary).toBe('#9784FF');
       expect(result.current.brandColors.success).toBe('#34D399');
       expect(result.current.brandColors.warning).toBe('#FBBF24');
       expect(result.current.brandColors.error).toBe('#F87171');
-      expect(result.current.systemColors.accent).toBe('#A78BFA');
+      expect(result.current.systemColors.accent).toBe('#9784FF');
     });
 
     it('exposes the M3 error role as systemColors.error, scheme-aware', async () => {

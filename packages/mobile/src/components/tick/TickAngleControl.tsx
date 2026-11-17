@@ -8,7 +8,8 @@
 // print their own angles, so the number is dropped there rather than shown
 // twice. The glyph stays either way.
 import React, { useCallback, useMemo } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { textFontScale } from '../../theme/dynamic-type';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { SegmentedControl } from '../SegmentedControl';
@@ -90,7 +91,10 @@ export const TickAngleControl = React.memo(function TickAngleControl({
           numeric
           accessibilityElementsHidden
           importantForAccessibility="no"
-          style={{ marginStart: spacing[2], minWidth: NUMBER_MIN_WIDTH * Math.max(1, fontScale) }}
+          style={{
+            marginStart: spacing[2],
+            minWidth: NUMBER_MIN_WIDTH * Math.max(1, textFontScale('body', fontScale, Platform.OS)),
+          }}
         >
           {`${value}°`}
         </Text>

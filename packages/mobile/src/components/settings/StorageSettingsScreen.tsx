@@ -366,7 +366,7 @@ export function StorageSettingsScreen() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.downgradeTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="secondary" variant="subheadline" style={styles.stateSubtitle}>
           {t('mobile.settings.storage.downgradeSubtitle')}
         </Text>
       </View>
@@ -391,7 +391,7 @@ export function StorageSettingsScreen() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.errorTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="secondary" variant="subheadline" style={styles.stateSubtitle}>
           {t('mobile.settings.storage.errorSubtitle')}
         </Text>
         <Button
@@ -422,7 +422,7 @@ export function StorageSettingsScreen() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.emptyTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="secondary" variant="subheadline" style={styles.stateSubtitle}>
           {t('mobile.settings.storage.emptySubtitle')}
         </Text>
       </View>
@@ -446,7 +446,6 @@ const styles = StyleSheet.create({
   stateSubtitle: {
     marginTop: spacing[1],
     textAlign: 'center',
-    opacity: 0.6,
   },
   stateButton: {
     marginTop: spacing[4],

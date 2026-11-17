@@ -1,5 +1,7 @@
 # BA-01 browser-native transfer proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. Browser-to-native transfer is tested by `native-transfer-integration-review.test.ts` and `native-session.test.ts` in `packages/backend/src/auth/authority/__tests__/` and by `native-ancestry.contract.ts` under `packages/backend/src/__tests__/native-contract/`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This disposable proof covers the existing browser-fallback transfer exchange through the same canonical authority and native token issuer as the credential, social, refresh and watch proofs. No production route imports it. It does not switch a credential writer, use a production secret, change a client response, or establish rollout readiness.
 
 ## Released transport and retained behavior

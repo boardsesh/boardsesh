@@ -92,6 +92,7 @@ export function BoardHeldCapsuleView({
           means "board controls" here, so the lift opens them; it never lets go. */}
       <LargeContentViewer title={statusLabel} onActivate={handleLongPress} style={styles.labelViewer}>
         <Text
+          emphasized
           variant="caption1"
           color={plainGlow?.surface.label ?? systemColors.label}
           numberOfLines={1}
@@ -183,7 +184,6 @@ const styles = StyleSheet.create({
   label: {
     flexShrink: 1,
     minWidth: 0,
-    fontWeight: '600',
   },
   glowShadowDark: {
     textShadowColor: 'rgba(0, 0, 0, 0.6)',

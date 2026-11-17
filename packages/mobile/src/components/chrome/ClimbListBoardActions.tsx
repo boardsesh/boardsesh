@@ -7,6 +7,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
+import { smartPlaylistHref } from '../../lib/smart-playlists';
 import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle, type BoardAngleFields } from '../../lib/boards/can-adjust-board-angle';
@@ -31,7 +32,7 @@ type ClimbListBoardActionsProps = {
   createRow?: { label: string; onPress: () => void };
 };
 
-type ListMenuRow = AppMenuAction & { id: 'create' | 'viewOptions' | 'wallDisplay' | 'switchBoard' };
+type ListMenuRow = AppMenuAction & { id: 'create' | 'myClimbs' | 'viewOptions' | 'wallDisplay' | 'switchBoard' };
 
 type CountedBoard = NonNullable<Parameters<typeof formatActiveBoardLabel>[0]> & BoardAngleFields;
 
@@ -83,6 +84,7 @@ export function ClimbListBoardActions({
   const rows = useMemo<ListMenuRow[]>(
     () => [
       ...(createRow ? [{ id: 'create' as const, label: createRow.label, systemIcon: iconMap.plus.ios }] : []),
+      { id: 'myClimbs', label: t('mobile.listOptions.myClimbs'), systemIcon: 'person.crop.rectangle' },
       { id: 'viewOptions', label: t('mobile.listOptions.viewOptions'), systemIcon: iconMap['view.options'].ios },
       ...(wallDisplayInMenu
         ? [
@@ -159,6 +161,9 @@ export function ClimbListBoardActions({
             switch (rows[index]?.id) {
               case 'create':
                 createRow?.onPress();
+                break;
+              case 'myClimbs':
+                router.push(smartPlaylistHref('CREATED_CLIMBS', 'other'), { withAnchor: true });
                 break;
               case 'viewOptions':
                 router.push('/(tabs)/climbs/settings/climb-list');

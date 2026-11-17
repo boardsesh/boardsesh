@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { boardCardAction, sortViewerOwnedFirst, hoistActiveBoard, type BoardCardAction } from '../board-card-actions';
+import { sortViewerOwnedFirst, withoutBoardsShown } from '../board-card-actions';
 
 const board = (overrides: Partial<UserBoard> & { uuid: string }): UserBoard =>
   ({
@@ -14,42 +14,8 @@ const board = (overrides: Partial<UserBoard> & { uuid: string }): UserBoard =>
     ...overrides,
   }) as unknown as UserBoard;
 
-describe('boardCardAction', () => {
-  it('offers a pencil on your own board and Following on one you follow', () => {
-    expect(boardCardAction({ isViewerOwner: true, isEditing: false })).toBe('edit');
-    expect(boardCardAction({ isViewerOwner: false, isEditing: false })).toBe('unfollow');
-  });
-
-  it('turns the slot destructive in edit mode', () => {
-    expect(boardCardAction({ isViewerOwner: true, isEditing: true })).toBe('delete');
-  });
-
-  // Delete is owner-only server-side, so a followed board must never reach a
-  // mutation the backend is going to reject.
-  it('never offers delete on a board the viewer does not own, even in edit mode', () => {
-    expect(boardCardAction({ isViewerOwner: false, isEditing: true })).toBe('unfollow');
-  });
-
-  // Inside `myBoards` every non-owned board is one you already follow, so a
-  // "Follow" resting state is unreachable. The real work here is the suppression
-  // below: it fails the typecheck if anyone widens the union. The runtime half
-  // proves the helper never invents a fourth value — and never returns null,
-  // since suppressing the slot entirely is the caller's job, not this helper's.
-  it('only ever returns a member of the three-value union', () => {
-    // @ts-expect-error — 'follow' is deliberately not part of BoardCardAction.
-    const rejected: BoardCardAction = 'follow';
-    expect(rejected).toBe('follow');
-
-    const produced = new Set<BoardCardAction>();
-    for (const isViewerOwner of [true, false]) {
-      for (const isEditing of [true, false]) {
-        produced.add(boardCardAction({ isViewerOwner, isEditing }));
-      }
-    }
-    expect([...produced].sort()).toEqual(['delete', 'edit', 'unfollow']);
-  });
-});
-
+// Which actions a card offers moved to board-card-menu.ts, with its table test
+// in board-card-menu.test.ts. This file keeps the list ordering.
 describe('sortViewerOwnedFirst', () => {
   const mine = board({ uuid: 'mine', ownerId: 'me' });
   const alsoMine = board({ uuid: 'also-mine', ownerId: 'me' });
@@ -82,35 +48,30 @@ describe('sortViewerOwnedFirst', () => {
   });
 });
 
-describe('hoistActiveBoard', () => {
+describe('withoutBoardsShown', () => {
   const mine = board({ uuid: 'mine', ownerId: 'me' });
   const gym = board({ uuid: 'gym', ownerId: 'someone-else' });
   const otherGym = board({ uuid: 'other-gym', ownerId: 'someone-else' });
 
-  it('moves the active board to the front, keeping everything else in order', () => {
-    const hoisted = hoistActiveBoard([gym, mine, otherGym], 'mine');
-    expect(hoisted.map((entry) => entry.uuid)).toEqual(['mine', 'gym', 'other-gym']);
+  // The top of the picker lists the board you're on and its gym's walls.
+  it('leaves out the boards already shown, keeping the rest in order', () => {
+    const rest = withoutBoardsShown([gym, mine, otherGym], new Set(['gym']));
+    expect(rest.map((entry) => entry.uuid)).toEqual(['mine', 'other-gym']);
   });
 
-  it('leaves the order alone when the active board already leads', () => {
-    const hoisted = hoistActiveBoard([mine, gym], 'mine');
-    expect(hoisted.map((entry) => entry.uuid)).toEqual(['mine', 'gym']);
+  // No hoist: the board you're on keeps the server's place when nothing above lists it.
+  it('keeps the order the server sent when nothing is shown above', () => {
+    const rest = withoutBoardsShown([gym, mine, otherGym], new Set());
+    expect(rest.map((entry) => entry.uuid)).toEqual(['gym', 'mine', 'other-gym']);
   });
 
-  it('leaves the order alone with no active board', () => {
-    expect(hoistActiveBoard([gym, mine], undefined).map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
-    expect(hoistActiveBoard([gym, mine], null).map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
+  it('ignores shown boards the list does not hold', () => {
+    const rest = withoutBoardsShown([gym, mine], new Set(['deleted-board']));
+    expect(rest.map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
   });
 
-  // Hoist-only: a stored board the server no longer lists must not conjure a card.
-  it('injects nothing when the active board is not in the list', () => {
-    const hoisted = hoistActiveBoard([gym, mine], 'deleted-board');
-    expect(hoisted.map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
-  });
-
-  it('never duplicates the active board', () => {
-    const hoisted = hoistActiveBoard([gym, mine, otherGym], 'gym');
-    expect(hoisted.filter((entry) => entry.uuid === 'gym')).toHaveLength(1);
-    expect(hoisted).toHaveLength(3);
+  it('returns a copy, never the list it was given', () => {
+    const boards = [gym, mine];
+    expect(withoutBoardsShown(boards, new Set())).not.toBe(boards);
   });
 });

@@ -93,10 +93,18 @@ One more limit: the jobs check out the commit under test and run its copy of the
 flows, the orchestrator and the composite actions. The gate can only judge a
 commit that already contains the gate.
 
+Simulator launches pass Expo's native `--initialUrl` process argument with the
+local Metro URL. This avoids an OS deep-link confirmation and SDK 58's default
+launcher fallback, which can reset the React host immediately after starting its
+load. Every launch and retry still needs a fresh app readiness signal.
+
 ## Reading a red run
 
 Start at the run's summary page. The `verdict` job writes the table: one row per
 job with pass, fail, cancelled or not run, how long it took, and a note.
+
+Durations are optional. If GitHub's jobs API is unavailable or rate-limited,
+the table shows `n/a`; the verdict still uses the actual job results from `needs`.
 
 For a red smoke, the note is the failure class:
 

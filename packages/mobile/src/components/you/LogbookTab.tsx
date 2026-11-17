@@ -20,6 +20,7 @@ import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ShelfHeader } from '../ShelfHeader';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
@@ -43,10 +44,8 @@ import { useConfirm } from '../../providers/dialog-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
-import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, opacity, spacing } from '../../theme/tokens';
 import { ReadableColumn } from '../ReadableColumn';
-import { Text } from '../Text';
 import { FilterTokenRow } from '../search/FilterTokenRow';
 import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { LogbookChipRow } from './LogbookChipRow';
@@ -214,7 +213,6 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderH
   const scrollHeaderInset = hasComposedHeader && nativeRootHeader ? headerHeight : 0;
   const { t, i18n } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
-  const { systemColors } = useTheme();
   // One grade scale for the grade capsule's label, the inline rail and the sheet.
   const { data: grades } = useGrades(GRADE_SCALE_BOARD);
   const { gradeFormat } = useGradeFormat();
@@ -801,12 +799,10 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderH
             its scope line names the board when one is picked. */}
         {hasComposedHeader ? null : (
           <View style={styles.heading}>
-            <Text variant="title2" accessibilityRole="header">
-              {t('tabs.logbook')}
-            </Text>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {logbookBoardLabel(filters, boardOptions, t) ?? t('mobile.filter.allBoards')}
-            </Text>
+            <ShelfHeader
+              title={t('tabs.logbook')}
+              caption={logbookBoardLabel(filters, boardOptions, t) ?? t('mobile.filter.allBoards')}
+            />
           </View>
         )}
         <LogbookChipRow
@@ -911,12 +907,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[1],
   },
   heading: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
     paddingBottom: spacing[1],
   },

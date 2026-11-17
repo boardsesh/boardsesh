@@ -149,6 +149,13 @@
     "emailNotVerified": "Verifica il tuo indirizzo email prima di registrare un'app.",
     "generic": "Qualcosa è andato storto. Riprova."
   },
+  "signInAgain": {
+    "title": "Accedi di nuovo per fare questa modifica",
+    "body": "Per cambiare i redirect URI, creare un nuovo secret o eliminare un'app serve un accesso degli ultimi {{minutes}} minuti. Così nessun altro che usa il tuo accesso può prendersi la tua app.",
+    "next": "Uscirai, accederai di nuovo e tornerai subito qui. Poi rifai la modifica.",
+    "formKept": "Le tue modifiche restano nel modulo dietro questo messaggio. Accedendo di nuovo lasci questa pagina e vanno perse, quindi copia prima i redirect URI che hai scritto.",
+    "button": "Accedi di nuovo"
+  },
   "terms": {
     "metadata": {
       "title": "Developer terms | Boardsesh for developers",
@@ -156,10 +163,6 @@
     },
     "title": "Boardsesh developer terms",
     "version": "Version {{version}}",
-    "draftNotice": {
-      "title": "Draft, not in force",
-      "body": "The Boardsesh team has not approved these terms yet. They may change before any app connects to a real climber’s account."
-    },
     "intro": "These terms apply to anyone who registers an app that connects to Boardsesh accounts through the Boardsesh API. You accept them when you register an app, for yourself and for everyone who works on the app with you.",
     "data": {
       "title": "Climbers’ data",
@@ -202,5 +205,118 @@
       "body": "You can delete your app in the console at any time, and every climber’s connection to it ends at once. Then delete the Boardsesh data you hold, unless a climber asked you to keep theirs."
     },
     "contact": "Questions about these terms: legal@boardsesh.com"
+  },
+  "docs": {
+    "metadata": {
+      "title": "Leggi il diario di un climber con l'API di Boardsesh",
+      "description": "Registra un'app, manda il climber ad approvarla e leggi il suo diario: prima un download completo, poi solo ciò che è cambiato. Scope, limiti ed errori in una pagina."
+    },
+    "title": "Collega un'app al diario di un climber",
+    "lead": "Lascia che un pianificatore di allenamento, un diario o il tuo script legga le salite Boardsesh di un climber una volta che le ha approvate. Può scollegarla in qualsiasi momento.",
+    "access": {
+      "invitation": {
+        "title": "La registrazione è su invito",
+        "body": "L'accesso anticipato è aperto solo agli account sviluppatore che il team Boardsesh ha aggiunto. Ogni app può avere {{live}} climber collegati contemporaneamente e {{perDay}} nuovi in 24 ore. Per chiedere l'accesso, scrivi a {{email}} e racconta cosa fa la tua app."
+      },
+      "open": {
+        "title": "Registra la tua app",
+        "body": "Accedi come sviluppatore abilitato, accetta i termini per sviluppatori e crea un'app nella console. Ricevi subito un client ID, e un client secret se il tuo server scambia il codice. Se il tuo account non è ancora abilitato, la console te lo dice.",
+        "action": "Apri la console per sviluppatori"
+      }
+    },
+    "can": {
+      "title": "Cosa può fare un'app",
+      "items": {
+        "read": "Leggere ogni salita che il climber ha registrato, su ogni pannello, comprese quelle che tiene private su Boardsesh.",
+        "sync": "Scaricare tutto il diario una volta e poi chiedere solo ciò che è cambiato. Una modifica di solito compare entro un secondo.",
+        "profile": "Leggere il suo nome visualizzato e il suo avatar, se chiedi quello scope.",
+        "disconnect": "Il climber può scollegare la tua app in qualsiasi momento da Impostazioni, App collegate. La tua chiamata successiva fallisce e tu cancelli quello che avevi salvato.",
+        "notYet": "Oggi è attiva solo la lettura del diario. Allenamenti e webhook non sono ancora disponibili."
+      }
+    },
+    "steps": {
+      "title": "Come funziona",
+      "items": {
+        "register": "Registra un'app nella console per sviluppatori e conserva il client ID.",
+        "approve": "Manda il climber all'URL di autorizzazione nel browser di sistema. Accede e tocca Consenti.",
+        "exchange": "Scambia il codice che riceve il tuo redirect URI con un access token e un refresh token.",
+        "snapshot": "Chiama l'endpoint dei cambiamenti senza cursore e segui ogni pagina finché hasMore è false. Quello è il diario completo.",
+        "feed": "Da quel momento chiamalo con l'ultimo cursore per avere salite nuove, modificate ed eliminate."
+      }
+    },
+    "scopes": {
+      "title": "Scope",
+      "lead": "Chiedi il set più piccolo che ti serve. La schermata di consenso elenca ognuno in parole semplici.",
+      "items": {
+        "logbook": "Ogni salita su ogni pannello, comprese quelle che il climber tiene private.",
+        "profile": "Nome visualizzato e avatar.",
+        "offline": "Un refresh token, per continuare a leggere mentre il climber è assente. Da solo non apre alcun dato."
+      }
+    },
+    "rules": {
+      "title": "Le regole che sorprendono gli sviluppatori",
+      "items": {
+        "consent": "Un'app senza client secret, e ogni app nativa, mostra la schermata di consenso a ogni autorizzazione. prompt=none non restituisce mai un codice; restituisce error=consent_required. Conserva il refresh token invece di autorizzare di nuovo. Solo un'app web confidenziale con reindirizzamento https viene ricordata.",
+        "redirect": "I redirect URI si confrontano come stringhe esatte, fino a {{max}} per app. Usa https, un indirizzo loopback (http://127.0.0.1 o http://[::1], porta ignorata) o uno schema privato che contenga un punto. http://localhost e i caratteri jolly vengono rifiutati.",
+        "redirectChange": "Aggiungere o sostituire un redirect URI chiede a ogni climber che ha approvato la tua app di approvarla di nuovo. Toglierne uno, o modificare nome e link, no. I token che hai già continuano a funzionare finché al climber non viene chiesto di nuovo.",
+        "recentSignIn": "Aggiungere, sostituire o togliere un redirect URI, ruotare il client secret ed eliminare un'app richiedono ciascuno un accesso negli ultimi {{minutes}} minuti. Se il tuo è più vecchio, la console ti chiede di accedere di nuovo.",
+        "notice": "Ricevi un'email quando cambiano i redirect URI, il secret viene ruotato, un'app viene eliminata o una nuova app viene registrata sul tuo account.",
+        "pkce": "PKCE con S256 è obbligatorio per ogni app. Invia resource=https://api.boardsesh.com/v1 quando autorizzi, scambi un codice e rinnovi. L'API rifiuta i token emessi senza.",
+        "code": "Un codice dura {{seconds}} secondi e vale una volta sola. Inviarlo due volte chiude anche i token che ha emesso: riavvia l'autorizzazione invece di riprovare.",
+        "tokens": "Un access token dura 1 ora. Un refresh token dura {{days}} giorni e cambia a ogni uso: salva il nuovo prima di usare il nuovo access token e non rinnovare mai in parallelo per lo stesso climber.",
+        "signin": "Un climber che ha acceduto l'ultima volta più di 30 giorni fa, o prima dell'ultimo cambio di password, accede di nuovo prima della schermata di consenso.",
+        "disconnect": "Se un climber scollega l'app, reimposta la password o elimina l'account, l'API risponde 401 invalid_token e un rinnovo risponde invalid_grant. Mostra uno stato Ricollega Boardsesh, smetti di chiamare per quel climber e cancella quello che avevi salvato."
+      }
+    },
+    "requests": {
+      "title": "Una prima connessione",
+      "lead": "Apri l'URL di autorizzazione nel browser di sistema, mai in una webview incorporata. Sostituisci con il tuo client ID, redirect URI, state e codice.",
+      "authorize": "Manda il climber qui:",
+      "authorizeLabel": "Richiesta di autorizzazione",
+      "exchange": "Il tuo redirect URI riceve un codice. Scambialo:",
+      "exchangeLabel": "Richiesta del token",
+      "exchangeResponseLabel": "Risposta del token",
+      "sync": "Poi leggi il diario. La prima volta ometti cursor e segui il cursore di ogni risposta. Sincronizza quando il climber apre la tua app e, in background, al massimo ogni 15 minuti per climber.",
+      "syncLabel": "Richiesta e risposta dei cambiamenti del diario",
+      "confidential": "Un'app confidenziale, che tiene un client secret sul proprio server, invia anche client_secret nel corpo (client_secret_post) o come HTTP Basic (client_secret_basic), a seconda di quello che ha registrato. Un'app pubblica invia solo client_id."
+    },
+    "limits": {
+      "title": "Limiti",
+      "items": {
+        "api": "API: {{climber}} richieste al minuto per climber e {{app}} al minuto per app.",
+        "token": "Endpoint dei token: {{refresh}} rinnovi al minuto per climber, e {{exchange}} scambi di codice o revoche al minuto per app e per IP del client.",
+        "fullSync": "Avviare un download completo: 2 al minuto per climber. Un 503 con Retry-After su un download significa aspettare almeno quel tempo.",
+        "page": "limit va da 1 a 200 e vale 100 per default. Una pagina può essere vuota e avere comunque hasMore: true.",
+        "history": "I cambiamenti restano per 90 giorni. Un cursore più vecchio risponde 410 cursor_expired; avvia un download completo senza cursore.",
+        "body": "Un corpo della richiesta oltre 64 KB risponde 413.",
+        "caps": "Accesso anticipato: {{apps}} app per account sviluppatore e, per app, {{live}} climber collegati contemporaneamente e {{perDay}} nuovi in 24 ore.",
+        "headers": "Ogni risposta porta Boardsesh-Request-Id e gli header RateLimit. Un 429 porta Retry-After in secondi."
+      }
+    },
+    "errors": {
+      "title": "Errori",
+      "lead": "Gli errori sono JSON con error, message e requestId. Decidi prima dallo stato HTTP; possono comparire codici nuovi.",
+      "items": {
+        "invalidToken": "L'access token è scaduto o è stato revocato. Rinnova una volta e riprova. Se il rinnovo fallisce, chiedi al climber di ricollegarsi.",
+        "insufficientScope": "Il token non ha lo scope che questa chiamata richiede.",
+        "cursorExpired": "Il cursore è troppo vecchio o non più valido. Avvia un download completo senza cursore.",
+        "rateLimited": "Hai superato un limite. Aspetta i secondi indicati da Retry-After.",
+        "busy": "Boardsesh è occupato o ha messo in pausa l'accesso delle app per un momento. Aspetta Retry-After e riprova. Non significa mai che il climber si è scollegato."
+      }
+    },
+    "versioning": {
+      "title": "Versioni",
+      "body": "La versione sta nel percorso, /v1. Nuovi campi, route, scope e valori di enumerazione arrivano su v1 senza preavviso: leggi ciò che conosci e ignora il resto. Rimuovere o rinominare un campo diventa v2, e v1 resta attiva per almeno sei mesi con un header Sunset su ogni risposta.",
+      "openapi": "La descrizione OpenAPI 3.1 di ogni route:"
+    },
+    "related": {
+      "title": "Continua a leggere",
+      "items": {
+        "docs": "L'API pubblica di lettura di blocchi e gradi",
+        "privacy": "Come Boardsesh tratta i tuoi dati",
+        "legal": "Termini e uso dei marchi",
+        "support": "Scrivi al team Boardsesh"
+      }
+    }
   }
 }

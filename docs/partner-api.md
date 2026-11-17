@@ -56,8 +56,7 @@ Everything is HTTPS.
 Sign in at `https://www.boardsesh.com/developers/apps` with a Boardsesh
 account whose email is verified, accept the developer terms
 (`https://www.boardsesh.com/developers/terms`), and create an app. It is usable
-immediately. Registration opens once the terms are published; until then the
-console answers "Developer terms are not published yet".
+immediately.
 During early access the console only lets in developer accounts the Boardsesh
 team has invited; anyone else sees "App registration is invite-only for now".
 
@@ -70,10 +69,33 @@ team has invited; anyone else sees "App registration is invite-only for now".
 | Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code). Registration also records web versus native redirect behavior separately |
 | Redirect URIs | Up to 10, matched as exact strings. Allowed: any `https://` URL; and for a native app, loopback `http://127.0.0.1:{port}/…` or `http://[::1]:{port}/…` for tools running on the user's machine (the port is ignored when matching, so register it without one and pick any free port at runtime) and private-use schemes containing a dot, such as `com.example.app:/oauth/boardsesh`. Not allowed: other `http://` URLs including `http://localhost`, wildcards, fragments, user names or passwords, `boardsesh.com` hosts, and schemes containing `boardsesh`. Write each URI the way a URL parser prints it back (lower-case scheme and host, `https://example.com/` rather than `https://example.com`) |
 
+Adding a redirect URI, or replacing one, makes every climber who approved your
+app see the consent screen again at their next authorization. The tokens you
+already hold keep working. Removing a redirect URI, or editing the name,
+publisher, homepage or privacy policy, keeps every climber's approval.
+
 You get an opaque `client_id`, and for a confidential app a client secret,
 shown once. Never ship a client secret inside a mobile or desktop binary:
 make that app public instead. You can rotate the secret in the console; the
 old one stops working immediately. Coordinate the change with your token-exchange backend; there is no overlap window.
+
+Changing your redirect URIs (adding, replacing or removing one), making a new
+client secret and deleting an app each need a sign-in from the last 5 minutes.
+If yours is older, the console asks you to sign in again and brings you back to
+your apps; make the change again from there. This stops anyone else who has your
+session, on a shared computer for example, from pointing your app somewhere else
+or taking its secret. Registering an app and editing its name, publisher,
+homepage or privacy policy never ask.
+
+If the console asks you to sign in again while you are editing an app, what you
+typed stays in the form until you leave the page. Signing in again leaves it, so
+copy any redirect URIs you want to keep first.
+
+After each of those changes, and whenever an app is registered on your account,
+Boardsesh emails the address on your account once it is verified: which app,
+what happened and when. The email never contains a secret or a redirect URI. If
+you did not make the change, change your Boardsesh password, check your apps in
+the console, and reply to the email.
 
 Limits that apply to every app (see section 6 for request rates):
 
@@ -169,6 +191,25 @@ Check `state`, and check `iss` equals `https://api.boardsesh.com/api/auth` (RFC 
 it stops a mix-up if your app talks to several OAuth servers).
 
 If they decline: `?error=access_denied&state=...`.
+
+Whether the consent screen appears again depends on your app:
+
+- An app without a client secret, and every native app, can never
+  re-authorize silently. Every authorization shows the consent screen, even if
+  the climber approved a minute ago, and `prompt=none` never gets a code: the
+  browser comes back to your redirect URI with `error=consent_required` and
+  your `state`. Keep the refresh token instead of authorizing again.
+  A browser app cannot keep a secret, so its `client_id` alone proves nothing
+  about who sent the request (RFC 6749 section 10.2). A native app's secret
+  ships in the binary, and on a phone or a computer another app can claim its
+  scheme, its loopback port or an unverified link (RFC 8252 section 8.6). In
+  both cases the climber's tap is the check.
+- A confidential web app, which keeps its secret on a server and redirects to
+  `https://`, is remembered. Once a climber approves, the next authorization
+  goes straight back to you with a code, unless you ask for more scopes, the
+  climber disconnected your app, or you added a redirect URI since. `prompt=none`
+  gets a code when the approval is remembered, and `consent_required` when it is
+  not.
 
 The code lives for 60 seconds and works exactly once. Reusing it is rejected.
 Reuse also ends the tokens that code issued, including when a confidential

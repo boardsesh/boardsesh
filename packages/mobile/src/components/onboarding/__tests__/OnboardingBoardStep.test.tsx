@@ -9,8 +9,8 @@ const offlineStateCtrl = vi.hoisted(() => ({ state: 'off' as string }));
 const carouselCtrl = vi.hoisted(() => ({
   items: [] as { key: string; title: string }[],
   onSelect: null as ((item: { key: string }) => void) | null,
-  onDownload: null as ((item: { key: string }) => void) | null,
-  downloadLabelFor: null as ((item: { key: string; title: string }) => string) | null,
+  menuCapabilities: null as Record<string, boolean> | null,
+  onMenuAction: null as ((item: { key: string }, action: string, via: string) => void) | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -63,13 +63,13 @@ vi.mock('../../board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: {
     items: { key: string; title: string }[];
     onSelect: (item: { key: string }) => void;
-    onDownload?: (item: { key: string }) => void;
-    downloadLabelFor?: (item: { key: string; title: string }) => string;
+    menuCapabilities?: Record<string, boolean>;
+    onMenuAction?: (item: { key: string }, action: string, via: string) => void;
   }) => {
     carouselCtrl.items = props.items;
     carouselCtrl.onSelect = props.onSelect;
-    carouselCtrl.onDownload = props.onDownload ?? null;
-    carouselCtrl.downloadLabelFor = props.downloadLabelFor ?? null;
+    carouselCtrl.menuCapabilities = props.menuCapabilities ?? null;
+    carouselCtrl.onMenuAction = props.onMenuAction ?? null;
     return createElement('div', { 'data-testid': 'carousel' });
   },
 }));
@@ -90,7 +90,6 @@ vi.mock('../../../lib/onboarding/use-onboarding-copy', () => ({
     findAnother: 'Find another board',
     findFirst: 'Find my board',
     offlineSkip: 'Skip for now',
-    downloadLabelFor: (name: string) => `Keep ${name} on this phone`,
   }),
 }));
 
@@ -119,7 +118,6 @@ function renderStep(overrides: Partial<OnboardingBoardStepProps> = {}) {
     currentUserId: 'user-a',
     onSkipUnusable: null,
     onSelect: vi.fn(),
-    onDownload: vi.fn(),
     onFindBoard: vi.fn(),
     ...overrides,
   };
@@ -138,7 +136,8 @@ describe('OnboardingBoardStep', () => {
     offlineStateCtrl.state = 'off';
     carouselCtrl.items = [];
     carouselCtrl.onSelect = null;
-    carouselCtrl.onDownload = null;
+    carouselCtrl.menuCapabilities = null;
+    carouselCtrl.onMenuAction = null;
     cleanup();
   });
 
@@ -174,17 +173,23 @@ describe('OnboardingBoardStep', () => {
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
-  it('offers a per-card download, labelled with the board it would save', () => {
-    const { props } = renderStep();
+  // Onboarding cards carry no menu: no ⋯, no hold, no download before the pick.
+  // The download is offered once the board is bound (OnboardingBoardRoute).
+  it('draws plain cards with no menu', () => {
+    renderStep();
 
-    expect(carouselCtrl.downloadLabelFor?.({ key: 'board-1', title: 'Klimmuur' })).toBe('Keep Klimmuur on this phone');
-    carouselCtrl.onDownload?.({ key: 'board-1' });
-    expect(props.onDownload).toHaveBeenCalledWith(BOARDS[0]);
+    expect(carouselCtrl.menuCapabilities).toBeNull();
+    expect(carouselCtrl.onMenuAction).toBeNull();
   });
 
-  it('hides the download glyph where the engine cannot run', () => {
-    renderStep({ offlineDownloadsEnabled: false });
-    expect(carouselCtrl.onDownload).toBeNull();
+  it('says the download comes after the pick, where the engine can run', () => {
+    const { getByText } = renderStep();
+    expect(getByText('Keep it on your phone.')).toBeTruthy();
+  });
+
+  it('drops that line where the engine cannot run', () => {
+    const { queryByText } = renderStep({ offlineDownloadsEnabled: false });
+    expect(queryByText('Keep it on your phone.')).toBeNull();
   });
 
   describe('with boards to choose from', () => {

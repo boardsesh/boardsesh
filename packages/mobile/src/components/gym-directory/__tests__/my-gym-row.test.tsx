@@ -12,6 +12,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+vi.mock('../../StatusPill', () => ({
+  StatusPill: ({ label, icon, tone }: { label: string; icon?: string; tone?: string }) =>
+    createElement('span', { 'data-icon': icon, 'data-tone': tone ?? 'neutral' }, label),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
@@ -81,6 +85,7 @@ describe('MyGymRow', () => {
     const { getByText } = renderRow(makeGym({ myRole: 'editor' }), 'owner-1');
     // Owner beats a membership role even when both are present.
     expect(getByText('Owner')).toBeTruthy();
+    expect(getByText('Owner').getAttribute('data-icon')).toBe('crown.fill');
   });
 
   it('falls back to the membership role badge when the viewer is not the owner', () => {

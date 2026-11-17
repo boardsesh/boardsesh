@@ -6,10 +6,10 @@ import {
 import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
 import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
 import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -86,6 +86,9 @@ import type { ArchivedSprayWallSummary } from '../../src/components/board-discov
 import { useOpenSprayWall } from '../../src/lib/spray/use-open-spray-wall';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import { trackBoardPickerAddSelected, type BoardPickerAddKind } from '../../src/lib/boards/board-picker-add-analytics';
+import { addBoardRoute } from '../../src/components/board-discovery/add-board-route';
+import { AddBoardMenu } from '../../src/components/board-discovery/AddBoardMenu';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import { pickerNoticeKey } from '../../src/lib/boards/local-only';
@@ -435,7 +438,14 @@ export default function ManageBoards() {
   const archivedWalls = useMemo(() => archivedSprayWallSummaries(sprayWallLifecycle), [sprayWallLifecycle]);
   // `rethrow`: a failed write is said by `useOpenSprayWall`'s alert, not a toast
   // the modal route would draw over.
-  const activateBoard = useActivateBoard({ returnTo: MANAGE_RETURN_TO, isLocalOnly: true, writeFailure: 'rethrow' });
+  // A switch here, even with the picker open underneath, says nothing about a
+  // box the picker's In range slot is holding (pending-board-recognition.ts).
+  const activateBoard = useActivateBoard({
+    returnTo: MANAGE_RETURN_TO,
+    isLocalOnly: true,
+    writeFailure: 'rethrow',
+    recognizesHeldBox: false,
+  });
   const openSprayWall = useOpenSprayWall(activateBoard);
   const openArchivedWall = useCallback(
     (wallUuid: string) => {
@@ -586,8 +596,27 @@ export default function ManageBoards() {
   useRememberDownloadedBoards(boardConnection, archivedWallUuids);
 
   const onCreate = useCallback(() => {
-    router.push('/boards/create');
+    trackBoardPickerAddSelected({ kind: 'board', surface: 'manage' });
+    router.push(addBoardRoute('board', {}));
   }, [router]);
+
+  // The same + as the picker's top bar, in place of the outlined Create board
+  // button that sat over the list. Online and signed in only: every way behind
+  // it needs a connection and an account.
+  const onAddFromMenu = useCallback(
+    (kind: BoardPickerAddKind) => {
+      trackBoardPickerAddSelected({ kind, surface: 'manage' });
+      router.push(addBoardRoute(kind, {}));
+    },
+    [router],
+  );
+  const navigation = useNavigation();
+  const canAddBoards = isAuthenticated && !shouldUseOfflineList;
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: canAddBoards ? () => <AddBoardMenu onSelect={onAddFromMenu} /> : undefined,
+    });
+  }, [navigation, canAddBoards, onAddFromMenu]);
 
   const renderItem = useCallback(
     ({ item }: { item: ManageItem }) => {
@@ -726,7 +755,7 @@ export default function ManageBoards() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.signInTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="secondary" variant="subheadline" style={styles.stateSubtitle}>
           {t('mobile.signInSubtitle')}
         </Text>
         <Button title={t('mobile.signInCta')} onPress={() => router.push('/auth/login')} style={styles.stateButton} />
@@ -788,7 +817,7 @@ export default function ManageBoards() {
                   mode, a Boardsesh outage, the profile failure and the lying
                   connection each read differently. Literal `t()` keys: the i18n
                   linter rejects a computed one. */}
-              <Text variant="subheadline" style={styles.offlineNotice}>
+              <Text tone="secondary" variant="subheadline">
                 {noticeKey === 'pickerNoticeOfflineMode'
                   ? t('mobile.offline.pickerNoticeOfflineMode')
                   : noticeKey === 'pickerNoticeUnreachable'
@@ -796,27 +825,24 @@ export default function ManageBoards() {
                     : t('mobile.offline.pickerNotice')}
               </Text>
             </View>
-          ) : items.length > 0 ? (
+          ) : items.length > 0 && offlineStoragePaused && offlineDownloadsEnabled ? (
             <View style={styles.listHeader}>
-              {offlineStoragePaused && offlineDownloadsEnabled ? (
-                <View style={styles.pausedNotice}>
-                  <Text variant="headline">{tCommon('mobile.settings.storage.downgradeTitle')}</Text>
-                  <Text variant="subheadline" style={styles.offlineNotice}>
-                    {tCommon('mobile.settings.storage.downgradeSubtitle')}
-                  </Text>
-                </View>
-              ) : null}
-              <Button title={t('mobile.discovery.create')} variant="outlined" onPress={onCreate} />
+              <View style={styles.pausedNotice}>
+                <Text variant="headline">{tCommon('mobile.settings.storage.downgradeTitle')}</Text>
+                <Text tone="secondary" variant="subheadline">
+                  {tCommon('mobile.settings.storage.downgradeSubtitle')}
+                </Text>
+              </View>
             </View>
           ) : null
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-            <Text variant="headline" style={styles.emptyTitle}>
+            <Text tone="secondary" variant="headline" style={styles.emptyTitle}>
               {t('mobile.emptyTitle')}
             </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
+            <Text tone="tertiary" variant="subheadline" style={styles.emptySubtitle}>
               {t('mobile.emptySubtitle')}
             </Text>
             <Button title={t('mobile.discovery.create')} onPress={onCreate} style={styles.emptyCta} />
@@ -847,9 +873,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing[4],
     paddingBottom: spacing[2],
   },
-  offlineNotice: {
-    opacity: 0.7,
-  },
   pausedNotice: {
     gap: spacing[1],
     paddingBottom: spacing[3],
@@ -872,7 +895,6 @@ const styles = StyleSheet.create({
   stateSubtitle: {
     marginTop: spacing[1],
     textAlign: 'center',
-    opacity: 0.6,
   },
   stateButton: {
     marginTop: spacing[4],
@@ -885,10 +907,8 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: spacing[3],
-    opacity: 0.6,
   },
   emptySubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
   emptyCta: {

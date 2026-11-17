@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardConfigLabel, disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
@@ -24,6 +24,8 @@ export type GymWallSwitcherProps = {
   activeBoard: UserBoard | null;
   /** Hop to this board. The sheet stays open — see `useSwitchBoard`. */
   onSelectBoard: (board: UserBoard) => void;
+  /** Overrides the list's padding where a host draws its own heading (the board picker). */
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
@@ -46,9 +48,9 @@ export type GymWallSwitcherProps = {
  * an `@expo/ui` sheet cannot stack over the one this already lives in. Same
  * shape as InlinePlaylistPicker — see docs/mobile-sheets-vs-routes.md.
  */
-function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitcherProps) {
+function GymWallSwitcherComponent({ activeBoard, onSelectBoard, style }: GymWallSwitcherProps) {
   const { t } = useTranslation('session');
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const { data: gymBoards } = useGymBoards(activeBoard?.gymUuid ?? null);
 
@@ -80,7 +82,7 @@ function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitche
           ? t('mobile.boardPresence.gymWalls.header', { gym: gymName })
           : t('mobile.boardPresence.gymWalls.headerNoGym')
       }
-      style={styles.section}
+      style={[styles.section, style]}
     >
       {visibleSiblings.map((board, index) => (
         <GymWallRow
@@ -94,7 +96,7 @@ function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitche
 
       {hiddenCount > 0 ? (
         <PressableSurface onPress={handleExpand} accessibilityRole="button" style={styles.showAll}>
-          <Text variant="subheadline" color={brandColors.primary}>
+          <Text variant="subheadline" color={systemColors.accent}>
             {t('mobile.boardPresence.gymWalls.showAll', { count: siblings.length })}
           </Text>
         </PressableSurface>

@@ -78,7 +78,7 @@ function currentSiteOrigin(): string | null {
 }
 
 export function useCncFinalise(authToken: string | null): CncFinaliseResult {
-  const beginRequest = useCncRequestScope(authToken);
+  const beginRequest = useCncRequestScope();
   const [isFinalising, setIsFinalising] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
 
@@ -94,13 +94,7 @@ export function useCncFinalise(authToken: string | null): CncFinaliseResult {
           FINALISE_CNC_ORDER,
           { input },
         );
-        if (!isCurrent(response)) {
-          if (isCurrent()) {
-            setErrorKey('generic');
-            setIsFinalising(false);
-          }
-          return;
-        }
+        if (!isCurrent()) return;
         const { checkoutUrl } = response.finaliseCncOrder;
         if (!isCheckoutRedirectUrl(checkoutUrl)) {
           // Same generic error as any other failed finalise, and the draft is
@@ -115,11 +109,7 @@ export function useCncFinalise(authToken: string | null): CncFinaliseResult {
         // IndexedDB once the order carries them. `removePreference` swallows
         // its own errors, so a failed wipe never blocks the redirect.
         await removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
-        if (isCurrent(response)) window.location.assign(checkoutUrl);
-        else if (isCurrent()) {
-          setErrorKey('generic');
-          setIsFinalising(false);
-        }
+        if (isCurrent()) window.location.assign(checkoutUrl);
       } catch (error) {
         if (isCurrent()) setErrorKey(cncErrorKey(error));
         if (isCurrent()) setIsFinalising(false);

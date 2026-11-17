@@ -1,3 +1,4 @@
+import { captureMetroRuntimeEnv } from './lib/capture-metro-runtime';
 import { createCppStoryCapture, cppStorySourceSha256 } from './lib/cpp-story-provenance';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { CPP_MAESTRO_TIMEOUT_MS, IOS_MAESTRO_TIMEOUT_MS } from './mobile-screenshot-maestro';
@@ -78,6 +79,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
+  IOS_CAPTURE_LOG_PREDICATE,
+  recordIosProcessCommand,
   iosDiagnosticReportDirectories,
   preserveIosCaptureDiagnostics,
   snapshotIosDiagnosticReports,
@@ -131,7 +134,6 @@ import {
   waitForHomeReady,
   waitForMetro,
   metroLogOffset,
-  waitForMetroLogLine,
   waitForPortToClose,
 } from './lib/metro-dev-server';
 import {
@@ -189,7 +191,18 @@ import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from '.
 import { iosCampaignPhoneScene, iosCampaignDuoScene } from './lib/ios-campaign-phone-scenes';
 import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
-import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
+import {
+  buildDuoHingeLibrary,
+  captureDuoDisplay,
+  duoHingeLogPath,
+  installDuoHinge,
+  pngIsLit,
+  setDuoPose,
+} from './lib/ios-duo-hinge';
+import { launchIosCaptureReady, waitForIosCaptureReady } from './lib/ios-capture-ready';
+import { bootIosCaptureDevice } from './lib/ios-capture-boot';
+import { snapshotCaptureLogs, waitForCaptureLogLine, type CaptureLogBoundary } from './lib/capture-readiness-logs';
+import { iosStoryNavigationFlow } from './lib/ios-story-navigation';
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
@@ -998,7 +1011,7 @@ export function runIosScreenshotMaestro(
   );
 }
 
-function runCapture(
+export function runCapture(
   command: string,
   args: string[],
   env?: NodeJS.ProcessEnv,
@@ -1016,7 +1029,7 @@ function runCapture(
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? '',
-    stderr: result.stderr ?? result.error?.message ?? '',
+    stderr: [result.stderr, result.error?.message].filter(Boolean).join('\n'),
   };
 }
 
@@ -1033,6 +1046,11 @@ function runCapture(
  */
 function simulatorLaunchEnv(): NodeJS.ProcessEnv {
   return { ...process.env, SIMCTL_CHILD_TZ: 'UTC' };
+}
+
+/** Expo's explicit process URL avoids its default-launcher fallback resetting the React host. */
+export function iosSimulatorLaunchArgs(udid: string, metroPort = METRO_PORT): string[] {
+  return ['simctl', 'launch', udid, APP_ID, '--initialUrl', `http://localhost:${metroPort}`];
 }
 
 function readPlistString(plistPath: string, key: string): string | null {
@@ -1227,10 +1245,12 @@ export function resolveBootedIosDevice(name?: string): DeviceInfo | null {
 export function bootDevice(device: DeviceInfo): void {
   if (device.state !== 'Booted') {
     console.log(`${LOG} Booting ${device.name} (${device.udid})...`);
-    // `boot` errors if already booted; ignore that specific case.
-    runCapture('xcrun', ['simctl', 'boot', device.udid]);
   }
-  runCapture('xcrun', ['simctl', 'bootstatus', device.udid, '-b']);
+  bootIosCaptureDevice({
+    device,
+    debugDir: process.env.SCREENSHOT_DEBUG_DIR ?? join(tmpdir(), 'boardsesh-ios-boot'),
+    run: (args, timeoutMs) => runCapture('xcrun', args, undefined, timeoutMs),
+  });
   // Bring up the Simulator window so Maestro's iOS driver has a foreground app.
   spawnSync('open', ['-a', 'Simulator'], { stdio: 'ignore' });
 }
@@ -1942,10 +1962,10 @@ function readTextIfPresent(path: string): string {
 }
 
 /** The pings so far, waiting until every route has reported or the bound passes. */
-function waitForSmokePings(): SmokePing[] {
+function waitForSmokePings(baseline = 0): SmokePing[] {
   const deadline = Date.now() + SMOKE_PING_WAIT_SECONDS * 1000;
   for (;;) {
-    const pings = parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH));
+    const pings = parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH).slice(baseline));
     if (smokePingsSettled(pings, SMOKE_ROUTES) || Date.now() >= deadline) return pings;
     runCapture('sleep', ['1']);
   }
@@ -1986,6 +2006,8 @@ interface SmokeAttemptInput {
   readCaptureLog: () => string;
   backendSession: ScreenshotBackendSession | null;
   backendLogBaseline: number;
+  /** Ignore content emitted by a terminated app process, while retaining raw evidence. */
+  smokePingBaseline?: number;
 }
 
 /**
@@ -1995,8 +2017,8 @@ interface SmokeAttemptInput {
 function judgeSmokeAttempt(input: SmokeAttemptInput): number {
   const { nativeCrashes, pings, logStreamAlive } = collectSmokeObservations({
     ...input,
-    readPings: () => parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH)),
-    waitForPings: waitForSmokePings,
+    readPings: () => parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH).slice(input.smokePingBaseline ?? 0)),
+    waitForPings: () => waitForSmokePings(input.smokePingBaseline),
   });
   const pingProblems = findSmokePingProblems(pings, SMOKE_ROUTES);
 
@@ -2055,12 +2077,12 @@ function judgeSmokeAttempt(input: SmokeAttemptInput): number {
 }
 
 /** Stream the simulator's crash-relevant log lines to IOS_DEVICE_LOG_PATH until killed. */
-function startIosDeviceLogStream(udid: string): ChildProcess {
+function startIosDeviceLogStream(udid: string, predicate = IOS_CRASH_LOG_PREDICATE): ChildProcess {
   writeFileSync(IOS_DEVICE_LOG_PATH, '');
   const logFile = openSync(IOS_DEVICE_LOG_PATH, 'a');
   const stream = spawn(
     'xcrun',
-    ['simctl', 'spawn', udid, 'log', 'stream', '--style', 'compact', '--predicate', IOS_CRASH_LOG_PREDICATE],
+    ['simctl', 'spawn', udid, 'log', 'stream', '--style', 'compact', '--level', 'info', '--predicate', predicate],
     { stdio: ['ignore', logFile, 'ignore'] },
   );
   closeSync(logFile);
@@ -2920,7 +2942,7 @@ function normalizeCapturedIosScreenshots(captureDir: string, screenshotDevice: I
 
 /** Load the hinge library into the Duo's SpringBoard and start closed. Returns its log path. */
 function prepareDuoHinge(udid: string): string {
-  const logPath = join(tmpdir(), `boardsesh-duo-hinge-${udid}.log`);
+  const logPath = duoHingeLogPath(udid);
   console.log(`${LOG} Loading the Duo hinge helper into SpringBoard...`);
   installDuoHinge(udid, buildDuoHingeLibrary(join(tmpdir(), 'boardsesh-duo-hinge')), logPath);
   setDuoPose(udid, 'closed', logPath);
@@ -2953,7 +2975,13 @@ function captureIosDevice(
   // cannot see a return value — so the last statement of the try flips this.
   let captureSucceeded = false;
   // CPP failures also need live process evidence; post-job collection runs after shutdown.
-  const deviceLogStream = options.flow === 'smoke' || options.cpp ? startIosDeviceLogStream(device.udid) : null;
+  const deviceLogStream =
+    options.flow === 'smoke' || options.cpp
+      ? startIosDeviceLogStream(
+          device.udid,
+          options.flow === 'smoke' ? `(${IOS_CRASH_LOG_PREDICATE}) OR (${IOS_CAPTURE_LOG_PREDICATE})` : undefined,
+        )
+      : null;
   const diagnosticReportDirectories = options.cpp ? iosDiagnosticReportDirectories(device.udid) : [];
   const diagnosticReportBaseline = snapshotIosDiagnosticReports(diagnosticReportDirectories);
   const smokeCrashes = (): NativeCrash[] => findIosNativeCrashes(readTextIfPresent(IOS_DEVICE_LOG_PATH));
@@ -2971,54 +2999,53 @@ function captureIosDevice(
     // still in the log. Snapshot the current marker count and wait for it to
     // INCREASE (not merely be present), or device 2+ would skip the readiness wait
     // on a stale marker and capture a blank/loading frame.
-    const homeReadyBaseline = homeReadyMarkerCount();
+    let homeReadyBaseline = homeReadyMarkerCount();
     if (options.cpp || options.flow === 'app-store-campaign')
       runCapture('curl', ['--fail', '--silent', `http://localhost:${SCREENSHOT_READY_PORT}/cpp/set?scene=reset`]);
-    const readinessBaseline = screenshotReadinessCount();
+    let readinessBaseline = screenshotReadinessCount();
+    let smokePingBaseline = 0;
     // Snapshot before the app can talk to the backend, so the gate below judges
     // only this device's traffic (one backend serves the whole run).
     const backendLogBaseline = screenshotBackendLogLineCount();
 
-    // First try a plain launch — no `simctl openurl`. The screenshots build bakes
-    // DEV_CLIENT_DEFAULT_LAUNCHER_URL=http://localhost:${METRO_PORT} into
-    // Info.plist (see ./plugins/with-screenshot-dev-menu), so the dev-client
-    // auto-connects to Metro on a plain launch and — auto-signed-in (see auth-provider's
-    // SCREENSHOT_MODE branch) — lands straight on home, without ever opening the
-    // custom-scheme URL or showing a login screen. That matters because a fresh CI
-    // sim raises an "Open in Boardsesh?" confirmation for ANY openurl of the
-    // scheme, and Maestro can't dismiss it reliably. Dev-menu chrome is suppressed
-    // via the same plugin.
-    console.log(`${LOG} Launching the app (auto-loads Metro via DEV_CLIENT_DEFAULT_LAUNCHER_URL)...`);
-    runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
-
-    // The app auto-signs-in and boots straight to home, so wait for it to get
-    // there before Maestro runs — this is what login.yaml's readiness wait used to
-    // do (now deleted; there's no login screen to gate on).
-    console.log(`${LOG} Waiting for the app to auto-sign-in and reach home...`);
-    // The dev-client's auto-connect to Metro is intermittently flaky in CI — the app
-    // lands on the "Searching for development servers" launcher (or the "Failed to
-    // load app" error) instead of loading the JS. When that happens, re-launch and try
-    // again; each fresh launch re-attempts the connect, and a shard that never recovers
-    // fails hard (rather than capturing the launcher) so it can be re-run.
-    //
-    // Re-launch PLAINLY on BOTH devices — never `openurl`. A plain `simctl launch`
-    // re-triggers the dev-client's DEV_CLIENT_DEFAULT_LAUNCHER_URL auto-connect with no
-    // dialog. An openurl raises the "Open in 'Boardsesh'?" confirm which, undismissed
-    // here (this is BEFORE the flow's prime block), blocks the app from ever loading —
-    // that's exactly why the iPhone shards hung through every retry in CI while the iPad
-    // (already plain-relaunch) passed. The readiness ping + `$screen /home` marker then
-    // both register once the app actually reaches home.
-    //
-    // Generous per-wait budget: a CI cold bundle build alone is ~35-60s, on top of a
-    // slow simulator boot + auto-sign-in, so 45s (the old iPhone value) timed out before
-    // the app could ever get home.
-    let reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
-    for (let attempt = 1; attempt <= 3 && !reachedHome && !giveUpOnCrash?.(); attempt += 1) {
-      console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
-      runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-      runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
-      reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
-    }
+    // Pass Expo's native process argument, rather than a custom-scheme openurl:
+    // no OS confirmation dialog. SDK 58's default-launcher fallback starts loading
+    // then navigates back to its launcher, resetting the React host. Its explicit
+    // initial URL branch returns after loading and preserves the app host.
+    const checkedProcessCommand = (args: string[]): boolean => {
+      const result = recordIosProcessCommand(
+        process.env.SCREENSHOT_DEBUG_DIR ?? join(tmpdir(), 'boardsesh-ios-process'),
+        args,
+        () => runCapture('xcrun', args, simulatorLaunchEnv()),
+      );
+      if (result.status !== 0) {
+        console.error(`${LOG} FAILED: ${args.join(' ')} exited ${result.status}: ${result.stderr || result.stdout}`);
+      }
+      return result.status === 0;
+    };
+    const reachedHome = launchIosCaptureReady({
+      snapshot: () => {
+        // Termination may take long enough for the old process to emit readiness.
+        // Snapshot after it exits, before launching; retain full logs as evidence.
+        homeReadyBaseline = homeReadyMarkerCount();
+        readinessBaseline = screenshotReadinessCount();
+        smokePingBaseline = readTextIfPresent(SMOKE_PING_LOG_PATH).length;
+        return { homeReadyBaseline, readinessBaseline };
+      },
+      launch: () => {
+        console.log(`${LOG} Launching the app with Metro as its explicit initial URL...`);
+        return checkedProcessCommand(iosSimulatorLaunchArgs(device.udid));
+      },
+      terminate: () => checkedProcessCommand(['simctl', 'terminate', device.udid, APP_ID]),
+      waitReady: (baseline) => {
+        console.log(`${LOG} Waiting for the app to auto-sign-in and reach home...`);
+        return waitForHomeReady(baseline.homeReadyBaseline, baseline.readinessBaseline, 120, giveUpOnCrash);
+      },
+      beforeRetry: (attempt) => {
+        console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
+      },
+      giveUp: giveUpOnCrash,
+    });
     if (!reachedHome && options.flow === 'smoke') {
       dumpMetroLogTail();
       return judgeSmokeAttempt({
@@ -3030,6 +3057,7 @@ function captureIosDevice(
         logStreamAlive: () => deviceLogStreamAlive(deviceLogStream?.pid),
         backendSession,
         backendLogBaseline,
+        smokePingBaseline,
       });
     }
     if (!reachedHome) {
@@ -3121,6 +3149,7 @@ function captureIosDevice(
         logStreamAlive: () => deviceLogStreamAlive(deviceLogStream?.pid),
         backendSession,
         backendLogBaseline,
+        smokePingBaseline,
       });
       captureSucceeded = smokeStatus === 0;
       return smokeStatus;
@@ -3149,7 +3178,7 @@ function captureIosDevice(
           const markerBaseline = homeReadyMarkerCount();
           const readyBaseline = screenshotReadinessCount();
           runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-          runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
+          runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv());
           if (!waitForHomeReady(markerBaseline, readyBaseline, 120)) {
             console.error(`${LOG} FAILED: the app did not return home before Duo shot ${shot.name}.`);
             dumpMetroLogTail();
@@ -4404,7 +4433,10 @@ function runIosLocales(
       return 1;
     }
     const localeTarget = localeTargets[localeIndex];
-    const metroEnv = buildScreenshotSessionEnv(options, process.env, localeTarget.appLocale, backendSession);
+    const metroEnv = captureMetroRuntimeEnv(
+      buildScreenshotSessionEnv(options, process.env, localeTarget.appLocale, backendSession),
+      MOBILE_DIR,
+    );
     console.log(
       `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
     );
@@ -4540,24 +4572,26 @@ function endNativeActivityCapture(deviceId: string, captureDir: string): void {
     flow,
     `appId: ${APP_ID}\n---\n- openLink: com.boardsesh.app://dev/stories/native-live-activity?end=1&shot=${Date.now()}\n- tapOn:\n    text: Open\n    optional: true\n`,
   );
-  const offset = metroLogOffset(METRO_LOG_PATH);
+  const boundary = snapshotCaptureLogs([METRO_LOG_PATH, IOS_DEVICE_LOG_PATH], IOS_DEVICE_LOG_PATH);
   const status = runIosScreenshotMaestro(['--device', deviceId, 'test', flow], { deviceId, cpp: false, captureDir });
-  if (
-    status !== 0 ||
-    !waitForMetroLogLine((line) => line.includes('[stories] native ended'), offset, 15, METRO_LOG_PATH)
-  )
+  if (status !== 0 || !waitForCaptureLogLine((line) => line.includes('[stories] native ended'), boundary, 15))
     throw new Error('Native activity cleanup was not confirmed');
 }
 
 /** Wait for the real native thumbnail cache, then expand ActivityKit before capturing pixels. */
-function prepareNativeActivityCapture(deviceId: string, board: string, offset: number, captureDir: string): void {
-  const line = waitForMetroLogLine(
+function prepareNativeActivityCapture(
+  deviceId: string,
+  board: string,
+  offset: number,
+  captureDir: string,
+  nativeBoundary: readonly CaptureLogBoundary[],
+): void {
+  const line = waitForCaptureLogLine(
     (candidate) =>
       candidate.includes(`[stories] native started ${board} `) ||
       candidate.includes('[stories] error native-live-activity'),
-    offset,
+    [{ path: METRO_LOG_PATH, offset }, ...nativeBoundary],
     30,
-    METRO_LOG_PATH,
   );
   const filename = line?.match(/\[stories\] native started [a-z0-9-]+ ([A-Za-z0-9-]+-classic\.webp)/)?.[1];
   if (!filename) throw new Error(line ?? 'Native activity did not initialize');
@@ -4614,7 +4648,8 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
       : [{ appLocale: 'en-US' as const, appStoreLocales: [] }];
   const variant = (options.variant ?? (platform === 'ios' ? 'liquidGlass' : 'material')) as StoryVariant;
   const storySourceSha256 = options.cpp ? cppStorySourceSha256() : undefined;
-  const metroEnv = buildStoryEnv(process.env);
+  const storyEnv = buildStoryEnv(process.env);
+  const metroEnv = platform === 'ios' ? captureMetroRuntimeEnv(storyEnv, MOBILE_DIR) : storyEnv;
   const metro = startMetro(metroEnv);
   let nativeBackend: ScreenshotBackendSession | null = null;
   try {
@@ -4629,9 +4664,41 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
       let succeeded = false;
       let hingeLog: string | null = null;
       let nativeActivityStarted = false;
+      let deviceLogStream: ChildProcess | null = null;
+      const reportDirectories = descriptor ? iosDiagnosticReportDirectories(device.udid) : [];
+      const reportBaseline = snapshotIosDiagnosticReports(reportDirectories);
+      const preserveNativeFailure = () => {
+        // Collect while this simulator and app are still alive. Post-job log
+        // collection runs after shutdown and otherwise loses launch failures.
+        if (descriptor && process.env.SCREENSHOT_DEBUG_DIR) {
+          try {
+            const diagnosticDir = preserveIosCaptureDiagnostics({
+              udid: device.udid,
+              debugDir: process.env.SCREENSHOT_DEBUG_DIR,
+              nativeLogPath: IOS_DEVICE_LOG_PATH,
+              reportDirectories,
+              baseline: reportBaseline,
+              runCommand: (args) => runCapture('xcrun', args, undefined, 15000),
+            });
+            const launchLog = join(captureDir, 'ios-launch.json');
+            if (existsSync(launchLog)) copyFileSync(launchLog, join(diagnosticDir, 'ios-launch.json'));
+            runCapture(
+              'xcrun',
+              ['simctl', 'io', device.udid, 'screenshot', join(diagnosticDir, 'failure-screen.png')],
+              undefined,
+              15000,
+            );
+          } catch (error) {
+            console.error(
+              `${LOG} Story native diagnostic collection failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      };
       try {
         if (descriptor) {
           bootDevice(device);
+          deviceLogStream = startIosDeviceLogStream(device.udid, IOS_CAPTURE_LOG_PREDICATE);
           if (usesDuoStoreFlow(options, descriptor)) hingeLog = prepareDuoHinge(device.udid);
           applyCleanStatusBar(device.udid);
           if (runCapture('xcrun', ['simctl', 'install', device.udid, appPath]).status !== 0)
@@ -4642,13 +4709,36 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
           connectDevClient('adb', device.udid, []);
           applyCleanAndroidStatusBar(device.udid);
         }
-        const rootOffset = metroLogOffset(METRO_LOG_PATH);
-        if (descriptor) {
-          if (runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0)
-            throw new Error('Story app launch failed');
-        } else launchDevClient('adb', device.udid);
-        if (!waitForMetroLogLine(isStoryRootReadyLine, rootOffset, 120, METRO_LOG_PATH))
-          throw new Error('Isolated story root did not become ready within 120 seconds');
+        const readinessPaths = descriptor ? [METRO_LOG_PATH, IOS_DEVICE_LOG_PATH] : [METRO_LOG_PATH];
+        let rootBoundary = snapshotCaptureLogs(readinessPaths, descriptor ? IOS_DEVICE_LOG_PATH : undefined);
+        const launchStoryApp = () => {
+          const launchArgs = iosSimulatorLaunchArgs(device.udid);
+          const launchResult = runCapture('xcrun', launchArgs, simulatorLaunchEnv());
+          writeFileSync(
+            join(captureDir, 'ios-launch.json'),
+            JSON.stringify({ args: launchArgs, ...launchResult }, null, 2),
+          );
+          if (launchResult.status !== 0) throw new Error(`Story app launch failed: ${launchResult.stderr}`);
+        };
+        if (descriptor) launchStoryApp();
+        else launchDevClient('adb', device.udid);
+        const waitForRoot = () => waitForCaptureLogLine(isStoryRootReadyLine, rootBoundary, 120) !== null;
+        const rootReady = descriptor
+          ? waitForIosCaptureReady({
+              waitReady: waitForRoot,
+              beforeRetry: (attempt) => {
+                preserveNativeFailure();
+                console.log(`${LOG} Story root not ready; terminating and re-launching (attempt ${attempt}/3)...`);
+              },
+              relaunch: () => {
+                if (runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]).status !== 0)
+                  throw new Error('Could not stop the previous story process');
+                rootBoundary = snapshotCaptureLogs(readinessPaths, descriptor ? IOS_DEVICE_LOG_PATH : undefined);
+                launchStoryApp();
+              },
+            })
+          : waitForRoot();
+        if (!rootReady) throw new Error('Isolated story root did not become ready after bounded launch attempts');
         for (const localeTarget of localeTargets) {
           const passes: Array<{ captures: VisualStoryCapture[]; inner: boolean }> = [];
           if (options.cpp && options.cpp !== 'all') {
@@ -4697,10 +4787,13 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
                 if (container.status !== 0 || !container.stdout.trim())
                   throw new Error('Native activity app-group container unavailable');
                 clearNativeCaptureThumbnails(container.stdout.trim());
-                const restartOffset = metroLogOffset(METRO_LOG_PATH);
+                const restartBoundary = snapshotCaptureLogs(
+                  readinessPaths,
+                  descriptor ? IOS_DEVICE_LOG_PATH : undefined,
+                );
                 if (
-                  runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0 ||
-                  !waitForMetroLogLine(isStoryRootReadyLine, restartOffset, 120, METRO_LOG_PATH)
+                  runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv()).status !== 0 ||
+                  !waitForCaptureLogLine(isStoryRootReadyLine, restartBoundary, 120)
                 )
                   throw new Error('Story root did not restart for a fresh native capture');
               }
@@ -4710,19 +4803,23 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
               const flowFile = join(captureDir, 'navigate-story.yaml');
               writeFileSync(
                 flowFile,
-                [
-                  `appId: ${descriptor ? APP_ID : ANDROID_DEV_PACKAGE}`,
-                  '---',
-                  ...(descriptor
-                    ? [`- setOrientation: ${pass.inner ? 'LANDSCAPE_LEFT' : descriptor.orientation}`]
-                    : []),
-                  `- openLink: com.boardsesh.app://${route}`,
-                  '- tapOn:',
-                  '    text: Open',
-                  '    optional: true',
-                ].join('\n') + '\n',
+                descriptor
+                  ? iosStoryNavigationFlow(
+                      APP_ID,
+                      `com.boardsesh.app://${route}`,
+                      pass.inner ? 'LANDSCAPE_LEFT' : descriptor.orientation,
+                    )
+                  : [
+                      `appId: ${ANDROID_DEV_PACKAGE}`,
+                      '---',
+                      `- openLink: com.boardsesh.app://${route}`,
+                      '- tapOn:',
+                      '    text: Open',
+                      '    optional: true',
+                    ].join('\n') + '\n',
               );
               const offset = metroLogOffset(METRO_LOG_PATH);
+              const nativeBoundary = descriptor ? snapshotCaptureLogs([IOS_DEVICE_LOG_PATH], IOS_DEVICE_LOG_PATH) : [];
               const args = ['--device', device.udid, 'test', flowFile];
               const status = descriptor
                 ? runIosScreenshotMaestro(args, { deviceId: device.udid, cpp: false, captureDir })
@@ -4730,8 +4827,14 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
               if (status !== 0) throw new Error(`Story navigation failed for ${capture.storyId}`);
               if (capture.nativeActivityBoard) {
                 nativeActivityStarted = true;
-                prepareNativeActivityCapture(device.udid, capture.nativeActivityBoard, offset, captureDir);
-              } else settleAfterStory(capture.storyId, METRO_LOG_PATH, offset, 0, LOG);
+                prepareNativeActivityCapture(
+                  device.udid,
+                  capture.nativeActivityBoard,
+                  offset,
+                  captureDir,
+                  nativeBoundary,
+                );
+              } else settleAfterStory(capture.storyId, METRO_LOG_PATH, offset, 0, LOG, nativeBoundary);
               const path = join(captureDir, `${capture.name}.png`);
               if (descriptor) {
                 const captureStatus = hingeLog
@@ -4803,7 +4906,14 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
             console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
           }
         }
-        if (!succeeded) preserveFailedRunArtifacts(captureDir);
+        try {
+          if (!succeeded) {
+            preserveNativeFailure();
+            preserveFailedRunArtifacts(captureDir);
+          }
+        } finally {
+          deviceLogStream?.kill('SIGTERM');
+        }
         rmSync(captureDir, { recursive: true, force: true });
         if (descriptor) {
           if (hingeLog) setDuoPose(device.udid, 'closed', hingeLog);

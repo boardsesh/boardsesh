@@ -113,8 +113,9 @@ export const ClimbProgressView = memo(function ClimbProgressView({
       accessibilityRole="text"
       accessibilityLabel={wording.accessibilityLabel}
     >
-      <Icon name={ASCENT_STATUS_ICON[progress.status]} size={13} color={systemColors.label} />
+      <Icon name={ASCENT_STATUS_ICON[progress.status]} size={13} color={systemColors.label} textVariant="footnote" />
       <Text
+        emphasized
         variant="footnote"
         numberOfLines={1}
         maxFontSizeMultiplier={PROGRESS_MAX_FONT_SCALE}
@@ -159,7 +160,7 @@ export const ClimbProgressView = memo(function ClimbProgressView({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
-  outcome: { fontWeight: '600', flexShrink: 0 },
+  outcome: { flexShrink: 0 },
   directions: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1, minWidth: 0 },
   direction: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 1, minWidth: 0 },
   directionLabel: { flexShrink: 1 },

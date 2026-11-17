@@ -24,7 +24,7 @@ class ClimbOverlayGPUModule : Module() {
 
     override fun definition() = ModuleDefinition {
         Name("ClimbOverlayGPU")
-        Constants("apiVersion" to 3)
+        Constants("apiVersion" to OverlayPacketLayout.NATIVE_API_VERSION, "assetApiVersion" to 0)
         OnCreate {
             application = appContext.reactContext?.applicationContext
             application?.registerComponentCallbacks(callbacks)
@@ -36,24 +36,42 @@ class ClimbOverlayGPUModule : Module() {
         }
         OnActivityEntersBackground { ClimbOverlayGPUView.foregroundChanged(false) }
         OnActivityEntersForeground { ClimbOverlayGPUView.foregroundChanged(true) }
+        AsyncFunction("getResourceStats") { promise: Promise ->
+            OverlayRenderer.handler.post {
+                try { promise.resolve(OverlayRenderer.resourceStats()) }
+                catch(failure: Exception) { promise.reject("ERR_GPU_STATS","GPU resource statistics unavailable",failure) }
+            }
+        }
         AsyncFunction("compare") { config: String, promise: Promise ->
             val app = application
             if (app == null)
                 promise.reject("ERR_GPU_UNAVAILABLE", "GPU application unavailable", null)
-            else
+            else {
+                OverlayPacketMetrics.begin()
                 OverlayRenderer.handler.post {
                     try {
                         promise.resolve(OverlayRenderer.compare(app, config))
                     } catch (failure: Exception) {
                         promise.reject("ERR_GPU_COMPARE", failure.message, failure)
-                    }
+                    } finally { OverlayPacketMetrics.end() }
                 }
+            }
         }
         View(ClimbOverlayGPUView::class) {
             Events("onRenderReady", "onRenderError")
             Prop("configJson") { view: ClimbOverlayGPUView, value: String ->
                 view.configJson = value
             }
+            Prop("geometryAssetPath") { view: ClimbOverlayGPUView, value: String? ->
+                view.geometryAssetPath = value
+            }
+            Prop("geometryAssetSha256") { view: ClimbOverlayGPUView, value: String? ->
+                view.geometryAssetSha256 = value
+            }
+            Prop("generatedGeometryDirectory") { view: ClimbOverlayGPUView, value: String? ->
+                view.generatedGeometryDirectory = value
+            }
+            Prop("prefetchFrames") { view: ClimbOverlayGPUView, frames: List<String> -> view.prefetchFrames=frames.take(2) }
             Prop("frames") { view: ClimbOverlayGPUView, value: String? -> view.frames = value }
             Prop("previousFrames") { view: ClimbOverlayGPUView, value: String? ->
                 view.previousFrames = value

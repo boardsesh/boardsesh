@@ -4,16 +4,19 @@ import {
   isAuthCredentialGenerationCurrent,
   synchronizeWebSession,
   hasConfirmedAnonymousWebSession,
-  isRequiredBrowserDispatch,
 } from './auth-store.web';
 import { signOutForGeneration } from './auth.web';
 import { reportHandledError } from './error-reporting';
 import type { AuthRejectionResult } from './auth-rejection-result';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import { getClientIdentityHeaderValue } from './client-identity.web';
-import { expoBrowserBackendClient } from './browser-backend-client.web';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
-import { admitBrowserResponse } from './browser-response-admission.web';
+import { isBrowserPageRetired } from './browser-page-retirement.web';
+import {
+  admitSessionResponse,
+  assertBrowserPageLive,
+  captureSessionStamp,
+  SessionSupersededError,
+} from './browser-session-guard.web';
 
 let onForcedSignOut: (() => void) | null = null;
 type WebRefreshResult =
@@ -110,134 +113,58 @@ export async function ensureFreshToken(): Promise<boolean> {
   const generation = captureAuthCredentialGeneration();
   if (await getAuthToken()) return isAuthCredentialGenerationCurrent(generation);
   if (!isAuthCredentialGenerationCurrent(generation)) return false;
-  if (isRequiredBrowserDispatch() && hasConfirmedAnonymousWebSession()) return false;
   const session = await synchronizeWebSession();
   return session.status === 'authenticated' && isAuthCredentialGenerationCurrent(generation);
 }
 
-export function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
-  return authenticatedFetchInternal(url, options);
-}
-
-/** Original legacy intent can only veto a send. It cannot enter the selected
- * branch or replace the existing refresh/confirmed-anonymous cleanup policy. */
-export async function authenticatedFetchForOriginalLegacyRequest(
-  url: string | URL | Request,
-  options: RequestInit,
-  assertOriginalLegacy: () => void,
-): Promise<Response> {
-  const owned = new Set<Response>();
-  let returned: Response | undefined;
-  const assertDispatch = () => {
-    try {
-      if (isRequiredBrowserDispatch() || expoBrowserBackendClient.isSelected())
-        throw new BrowserBackendConsumerError('superseded');
-      assertOriginalLegacy();
-    } catch {
-      throw new BrowserBackendConsumerError('superseded');
-    }
-  };
-  try {
-    assertDispatch();
-    returned = await authenticatedFetchInternal(url, options, assertDispatch, owned);
-    return returned;
-  } finally {
-    // The outer operation owns the returned body before checking its view.
-    // Every internally discarded response remains ours until cancellation settles.
-    for (const response of owned) {
-      if (response === returned) continue;
-      try {
-        await response.body?.cancel();
-      } catch {
-        // A secondary disposal failure cannot replace the original outcome.
-      }
-    }
-  }
-}
-
-async function authenticatedFetchInternal(
-  url: string | URL | Request,
-  options: RequestInit = {},
-  assertOriginalLegacy?: () => void,
-  owned?: Set<Response>,
-): Promise<Response> {
-  const dispatch = assertOriginalLegacy
-    ? async (init: RequestInit): Promise<Response> => {
-        assertOriginalLegacy();
-        const response = await fetch(url, init);
-        owned?.add(response);
-        return response;
-      }
-    : (init: RequestInit) => fetch(url, init);
+export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
+  // A retired page belongs to an account that already left. Nothing it starts
+  // may go out, even after a local await such as an image compression.
+  assertBrowserPageLive();
   const requestGeneration = captureAuthCredentialGeneration();
-  const selectedRequest = isRequiredBrowserDispatch();
   const fresh = await ensureFreshToken();
-  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-    throw new Error('Authentication session changed before the request could be sent');
-  }
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) throw new SessionSupersededError();
   if (!fresh && !hasConfirmedAnonymousWebSession())
     throw new Error('Authentication session is unavailable before the request could be sent');
 
   const token = await getAuthToken();
-  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-    throw new Error('Authentication session changed before the request could be sent');
-  }
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) throw new SessionSupersededError();
   const headers = new Headers(options.headers);
   // Which app is calling (identification only). The 401 retry copies these
   // headers, so it carries the identity too.
   headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  assertOriginalLegacy?.();
-  if (isRequiredBrowserDispatch()) {
-    const scope = token ? expoBrowserBackendClient.capture(token) : null;
-    if (token && !scope) throw new BrowserBackendConsumerError('superseded');
-    const lease = scope ? await expoBrowserBackendClient.acquireScope(scope) : null;
-    const revision = expoBrowserBackendClient.getSnapshot().revision;
-    const assertCurrent = () => {
-      if (!isAuthCredentialGenerationCurrent(requestGeneration)) throw new BrowserBackendConsumerError('superseded');
-      if (scope && lease) expoBrowserBackendClient.assertCurrent(scope, lease);
-      else if (!hasConfirmedAnonymousWebSession() || revision !== expoBrowserBackendClient.getSnapshot().revision)
-        throw new BrowserBackendConsumerError('unavailable');
-    };
-    assertCurrent();
-    if (lease) headers.set('Authorization', `Bearer ${lease.token}`);
-    else headers.delete('Authorization');
-    const response = await dispatch({ ...options, headers });
-    assertCurrent();
-    if (scope && response.status === 401) {
-      // A confirmed refusal of THIS still-live lease retires only its scope.
-      // Neither an uncertain mutation nor an expired old response is replayed.
-      expoBrowserBackendClient.invalidate(scope);
-      throw new BrowserBackendConsumerError('denied');
-    }
-    return admitBrowserResponse(response, assertCurrent);
-  }
-
-  const response = await dispatch({ ...options, headers });
-  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-    if (selectedRequest || expoBrowserBackendClient.isSelected())
-      throw new Error('Authentication session changed before the response could be accepted');
-    return response;
-  }
-  if (response.status !== 401 || !token) return response;
+  // Again at the send itself: a session read inside the awaits above can retire
+  // the page without a new generation (a page that had lost its confirmed login
+  // confirms another one), and a retired page sends nothing.
+  assertBrowserPageLive();
+  // Captured after the token read: a cold page confirms its first login there
+  // without a generation change, and that login is who this request is sent as.
+  const stamp = captureSessionStamp();
+  const response = await fetch(url, { ...options, headers });
+  // Every answer leaves through this one gate: a response sent as an account
+  // this page no longer has is cancelled and becomes a SessionSupersededError,
+  // and its body reads keep checking after the caller receives it.
+  const deliver = (delivered: Response): Promise<Response> => admitSessionResponse(delivered, stamp);
+  if (response.status !== 401 || !token) return deliver(response);
 
   const refreshResult = await deduplicatedSessionRefresh();
   if (refreshResult.status === 'anonymous') {
     await forceSignOut(refreshResult.generation);
-    return response;
+    return deliver(response);
   }
   if (refreshResult.status === 'superseded' || refreshResult.generation !== requestGeneration) {
-    return response;
+    return deliver(response);
   }
 
   if (refreshResult.status === 'authenticated') {
     const refreshedToken = await getAuthToken();
-    if (!isAuthCredentialGenerationCurrent(requestGeneration)) return response;
+    if (!isAuthCredentialGenerationCurrent(requestGeneration) || isBrowserPageRetired()) return deliver(response);
     if (refreshedToken) {
       const retryHeaders = new Headers(headers);
       retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
-      const retryResponse = await dispatch({ ...options, headers: retryHeaders });
+      const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
       if (retryResponse.status === 401 && isAuthCredentialGenerationCurrent(requestGeneration)) {
         // The cookie and bridge endpoint both said authenticated, but the
         // backend rejected that freshly resolved token too. A 401 can mean the
@@ -248,9 +175,9 @@ async function authenticatedFetchInternal(
         const confirmation = await deduplicatedSessionRefresh();
         if (confirmation.status === 'anonymous') await forceSignOut(confirmation.generation);
       }
-      return retryResponse;
+      return deliver(retryResponse);
     }
   }
 
-  return response;
+  return deliver(response);
 }

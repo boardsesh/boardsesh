@@ -21,7 +21,7 @@ function findStravaStatus(statuses: IntegrationStatus[] | undefined): Integratio
 export function StravaCard() {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { data: statuses, isLoading, refetch } = useIntegrationStatuses();
@@ -91,7 +91,7 @@ export function StravaCard() {
   if (isLoading && !strava) {
     return (
       <View style={[styles.card, styles.loadingCard, cardBackground]}>
-        <ActivityIndicator color={brandColors.primary} />
+        <ActivityIndicator color={systemColors.accent} />
       </View>
     );
   }

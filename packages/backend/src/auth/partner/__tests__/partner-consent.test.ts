@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { createAuthMiddleware } from 'better-auth/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
+  oauthClient,
   oauthConnections,
   oauthConsent,
   oauthConsentInteractions,
@@ -797,6 +798,67 @@ describe('partner consent', () => {
           .from(oauthConnections)
           .where(and(eq(oauthConnections.clientId, client.clientId), sql`${oauthConnections.connectedAt} is not null`));
         expect(connected).toHaveLength(1);
+      },
+      TEST_DEADLINE_MS,
+    );
+  });
+
+  // fence.ts `requiresConsentEveryTime`: only a confidential web app on https is
+  // remembered, and anything the fence cannot place is asked.
+  describe('remembered consent', () => {
+    /** Where authorize sent the browser: the consent screen, or the app with a code or an error. */
+    function outcomeOf(location: string) {
+      if (location.startsWith(`${TEST_OAUTH_OPTIONS.consentPage}?`)) return 'consent screen';
+      const answer = new URL(location).searchParams;
+      return answer.get('code') ? 'code' : answer.get('error');
+    }
+
+    it.each([
+      ['no auth method', { tokenEndpointAuthMethod: null }],
+      ['an auth method it does not know', { tokenEndpointAuthMethod: 'private_key_jwt' }],
+      ['no application type', { applicationType: null }],
+      ['an application type it does not know', { applicationType: 'user-agent-based' }],
+    ])(
+      'asks again, and answers prompt=none with consent_required, for a stored app with %s',
+      async (_label, stored) => {
+        const client = await consentClient();
+        const climber = await webClimber();
+        expect((await connect(climber, client)).response.status).toBe(200);
+        expect(outcomeOf((await authorize(instance, client, climber.cookie)).location)).toBe('code');
+
+        await db.update(oauthClient).set(stored).where(eq(oauthClient.clientId, client.clientId));
+        const grantsBefore = (await grantsOf(climber, client)).length;
+        expect(outcomeOf((await authorize(instance, client, climber.cookie)).location)).toBe('consent screen');
+        expect(outcomeOf((await authorize(instance, client, climber.cookie, { prompt: 'none' })).location)).toBe(
+          'consent_required',
+        );
+        expect((await grantsOf(climber, client)).length).toBe(grantsBefore);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'asks a public app every time even with skip_consent set, and gives prompt=none no code',
+      async () => {
+        const client = await environment.createClient({ publicClient: true, skipConsent: true });
+        const climber = await webClimber();
+        expect((await connect(climber, client)).response.status).toBe(200);
+        const grantsBefore = (await grantsOf(climber, client)).length;
+        expect(outcomeOf((await authorize(instance, client, climber.cookie)).location)).toBe('consent screen');
+        expect(outcomeOf((await authorize(instance, client, climber.cookie, { prompt: 'none' })).location)).toBe(
+          'consent_required',
+        );
+        expect((await grantsOf(climber, client)).length).toBe(grantsBefore);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'lets skip_consent spare only a confidential web app on https the screen',
+      async () => {
+        const client = await environment.createClient({ skipConsent: true });
+        const climber = await webClimber();
+        expect(outcomeOf((await authorize(instance, client, climber.cookie)).location)).toBe('code');
       },
       TEST_DEADLINE_MS,
     );

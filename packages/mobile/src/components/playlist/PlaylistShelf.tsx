@@ -1,11 +1,19 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { View, StyleSheet, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import {
+  Platform,
+  View,
+  StyleSheet,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import { SectionHeader } from '../SectionHeader';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { textStyles as fallbackTextStyles } from '../../theme/typography';
+import { textFontScale } from '../../theme/dynamic-type';
 
 export type PlaylistShelfProps<PlaylistItem> = {
   title: string;
@@ -21,9 +29,18 @@ export type PlaylistShelfProps<PlaylistItem> = {
   onActionPress?: () => void;
 };
 
+/** The shelf stops growing here. PlaylistCard's `Text` has no cap, so from AX1 up its lines outgrow it. */
+const SHELF_MAX_TEXT_SCALE = 1.5;
+
 export function playlistShelfHeight(fontScale: number, nameLineHeight: number, metaLineHeight: number): number {
-  // Match PlaylistCard's fixed preview, two gaps and Text's 1.5 scaling cap.
-  return 120 + 2 * spacing[2] + Math.ceil((nameLineHeight + metaLineHeight) * Math.min(fontScale, 1.5));
+  // PlaylistCard's fixed preview, two gaps, and its two text lines: a subheadline
+  // name and a caption1 meta line, each on its own Dynamic Type ramp. Caption1
+  // grows faster than fontScale from xLarge to xxxLarge (1.5x at xxxLarge).
+  const lineScale = (variant: 'subheadline' | 'caption1') =>
+    Math.min(textFontScale(variant, fontScale, Platform.OS), SHELF_MAX_TEXT_SCALE);
+  return (
+    120 + 2 * spacing[2] + Math.ceil(nameLineHeight * lineScale('subheadline') + metaLineHeight * lineScale('caption1'))
+  );
 }
 
 const KEEP_SCROLL_OFFSET = { disabled: true };

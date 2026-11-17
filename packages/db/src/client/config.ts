@@ -15,11 +15,13 @@ export function isTestEnvironment(): boolean {
 
 /**
  * The Postgres hostname this process is configured to talk to, lowercased and
- * with IPv6 brackets stripped, or undefined when DATABASE_URL is unset or isn't
- * a parseable URL (a socket path, say). Callers treat "unknown" as "no signal".
+ * with IPv6 brackets stripped, or undefined when no connection string is set or
+ * it isn't a parseable URL (a socket path, say). Callers treat "unknown" as "no
+ * signal". The web reads WEB_DATABASE_URL first, like its pool (see below), so it
+ * keeps working once DATABASE_URL is removed from that service.
  */
 function getDatabaseHostname(): string | undefined {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = primaryConnectionString();
   if (!connectionString) return undefined;
 
   try {
@@ -155,8 +157,66 @@ export function isProductionSentryEnvironment(): boolean {
   return resolveSentryEnvironment() === 'production';
 }
 
+/**
+ * The web server's own connection string (BA-04, docs/better-auth-writer-fence-proof.md).
+ * It is meant for the restricted `boardsesh_web` LOGIN on the same database as
+ * DATABASE_URL. Unset or empty, the web keeps DATABASE_URL, so nothing changes
+ * until an operator sets it. Only a process that called `applyWebDatabaseUrl()`
+ * reads it: a copy left on the backend service changes nothing there.
+ */
+export const WEB_DATABASE_URL_VARIABLE = 'WEB_DATABASE_URL';
+
+/**
+ * Code gates for running the web on its fenced login. Neither an environment
+ * variable nor a flag closes one; reviewed code that removes the cause does.
+ *
+ * LEGACY_WEB_IDENTITY_WRITERS: Next still writes identity tables itself —
+ * registration, forgot/reset password, resend and verify email, set-password,
+ * the NextAuth DrizzleAdapter on users/accounts, and the sign-in callback that
+ * sets emailVerified (its failure is swallowed, so it would stop silently).
+ * On `boardsesh_web` every one of those fails with 42501. Full list with line
+ * numbers: docs/better-auth-writer-fence-proof.md, "Web connection string".
+ * The backend's identity mirror and import refuse on the same entry
+ * (packages/backend/src/auth/authority/identity-copy-gates.ts): one change
+ * removes it from both lists, and a backend test fails if only one has it.
+ */
+export const LEGACY_WEB_IDENTITY_WRITERS = 'LEGACY_WEB_IDENTITY_WRITERS';
+export const WEB_DATABASE_LOGIN_BLOCKERS: readonly string[] = Object.freeze([LEGACY_WEB_IDENTITY_WRITERS]);
+
+/** Throws `WEB_DATABASE_LOGIN_BLOCKED` when WEB_DATABASE_URL is set while a blocker remains. */
+export function assertWebDatabaseLoginAllowed(blockers: readonly string[] = WEB_DATABASE_LOGIN_BLOCKERS): void {
+  if (readWebDatabaseUrl() && blockers.length > 0) throw new Error('WEB_DATABASE_LOGIN_BLOCKED');
+}
+
+// On globalThis, like the pool cache, so a Next.js module re-evaluation keeps it.
+const globalForConfig = globalThis as unknown as { __boardseshWebDatabaseUrl?: boolean };
+
+/**
+ * Marks this process as the web server, after the blocker check. Import-free, so
+ * the web's instrumentation calls it at boot before Sentry reads the hostname.
+ * The pool side is `applyWebDatabaseUrl()` in ./postgres.
+ */
+export function markWebDatabaseUrlProcess(blockers: readonly string[] = WEB_DATABASE_LOGIN_BLOCKERS): void {
+  assertWebDatabaseLoginAllowed(blockers);
+  globalForConfig.__boardseshWebDatabaseUrl = true;
+}
+
+export function isWebDatabaseUrlProcess(): boolean {
+  return globalForConfig.__boardseshWebDatabaseUrl === true;
+}
+
+/** WEB_DATABASE_URL, trimmed, or undefined when it is unset or blank. */
+export function readWebDatabaseUrl(): string | undefined {
+  return process.env[WEB_DATABASE_URL_VARIABLE]?.trim() || undefined;
+}
+
+/** The primary connection string for this process, before the local-dev default. */
+function primaryConnectionString(): string | undefined {
+  return (isWebDatabaseUrlProcess() ? readWebDatabaseUrl() : undefined) ?? process.env.DATABASE_URL;
+}
+
 export function getConnectionConfig(): ConnectionConfig {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = primaryConnectionString();
   const readReplicaUrl = process.env.READ_REPLICA_URL || null;
   const isLocal = isLocalDevelopment();
   const isTest = isTestEnvironment();

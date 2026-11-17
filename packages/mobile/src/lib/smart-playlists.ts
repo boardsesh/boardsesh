@@ -7,6 +7,7 @@
 import type { SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 
 export type SmartPlaylistSlug =
+  | 'created-climbs'
   | 'five-stars'
   | 'most-repeated'
   | 'projects'
@@ -30,6 +31,14 @@ export type SmartPlaylistPresentation = {
 };
 
 export const SMART_PLAYLISTS: SmartPlaylistPresentation[] = [
+  {
+    type: 'CREATED_CLIMBS',
+    slug: 'created-climbs',
+    icon: '🛠️',
+    color: '#9C27B0',
+    titleI18nKey: 'library.smart.createdClimbs.title',
+    descriptionI18nKey: 'library.smart.createdClimbs.description',
+  },
   {
     type: 'RECOMMENDED_CROWD_FAVORITES',
     slug: 'crowd-favorites',

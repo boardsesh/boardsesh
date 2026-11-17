@@ -6,6 +6,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { StatusPill } from '../StatusPill';
 import { Text } from '../Text';
 
 type BoardDisambiguationSheetProps = {
@@ -76,13 +77,7 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
                   <View style={styles.rowText}>
                     <View style={styles.rowTitle}>
                       <Text variant="headline">{candidate.boardName}</Text>
-                      {candidate.isOwnedByMe ? (
-                        <View style={[styles.ownedPill, { backgroundColor: systemColors.fill }]}>
-                          <Text variant="caption2" color={systemColors.secondaryLabel}>
-                            {t('mobile.disambiguation.yourBoard')}
-                          </Text>
-                        </View>
-                      ) : null}
+                      {candidate.isOwnedByMe ? <StatusPill label={t('mobile.disambiguation.yourBoard')} /> : null}
                     </View>
                     <Text variant="subheadline" color={systemColors.secondaryLabel}>
                       {location ?? candidate.boardType}
@@ -144,11 +139,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-  },
-  ownedPill: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1],
-    borderRadius: borderRadius.full,
   },
   cancel: {
     marginTop: spacing[4],

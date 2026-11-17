@@ -35,9 +35,9 @@ import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { topBarByVariant } from '../theme/top-bar';
-import { anchorGlyphForIcon, isMenuActionSelectable, isOverflowAnchor, resolveMenuActions } from './AppMenu.logic';
+import { androidAnchorIcon, anchorGlyphForIcon, isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
-import { MORE_VERT_ICON } from './AppMenu.icons.android';
+import { ADD_ICON, MORE_VERT_ICON } from './AppMenu.icons.android';
 
 // Down-caret glyph: the Compose `Icon` needs a vector-drawable source and @expo/ui
 // bundles none for a chevron, so a muted glyph stands in (mirrors MoreForm's `›`).
@@ -88,6 +88,7 @@ export function AppMenu(props: AppMenuProps) {
 
   const showCaret = props.iconName == null && props.showCaret !== false;
   const headline = props.iconName == null ? props.headline : undefined;
+  const anchorIcon = props.iconName != null ? androidAnchorIcon(props.iconName) : null;
   // A text anchor over a ticked choice is a value picker (a settings row, the
   // board sheet's Keep lighting): TalkBack says "drop-down list" for it, as it
   // does for a Spinner. An action menu ("Review") stays a button.
@@ -164,13 +165,17 @@ export function AppMenu(props: AppMenuProps) {
     >
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
-          {props.iconName != null && isOverflowAnchor(props.iconName) ? (
-            // The M3 overflow button: an IconButton (a 48dp touch target) holding
-            // the 24dp more_vert icon in onSurfaceVariant, not a "⋯" set in
-            // titleLarge text. Its spoken name rides the Host's label above.
-            // `anchorSize` is not read: M3 keeps the 48dp target.
+          {anchorIcon != null ? (
+            // The M3 icon button: an IconButton (a 48dp touch target) holding
+            // the 24dp more_vert (or add) icon in onSurfaceVariant, not a "⋯"
+            // set in titleLarge text. Its spoken name rides the Host's label
+            // above. `anchorSize` is not read: M3 keeps the 48dp target.
             <IconButton onClick={open}>
-              <Icon source={MORE_VERT_ICON} size={topBarByVariant.material.glyphSize} tint={caretColor} />
+              <Icon
+                source={anchorIcon === 'add' ? ADD_ICON : MORE_VERT_ICON}
+                size={topBarByVariant.material.glyphSize}
+                tint={caretColor}
+              />
             </IconButton>
           ) : headline != null ? (
             // The M3 title-menu: titleLarge headline over a bodyMedium scope line,

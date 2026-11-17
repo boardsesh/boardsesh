@@ -204,6 +204,12 @@ type SprayWallWizardScreenProps = {
   /** Which tab the flow dismisses back to once the wall is bound. */
   returnTo: BoardReturnTo;
   /**
+   * `'onboarding'` when the first-run picker opened the flow: the wall's bind
+   * is then the activation bind (the event, the Climbs reveal banner, first
+   * run closed out), as the builder's is. See `useActivateBoard`.
+   */
+  source?: 'onboarding';
+  /**
    * The published wall this run replaces, or null for a brand new wall. Set,
    * the run builds that wall's reset clone instead of offering an unfinished
    * wall back.
@@ -222,6 +228,7 @@ function selectConnectivityReason(snapshot: ConnectivitySnapshot): ConnectivityS
 
 export function SprayWallWizardScreen({
   returnTo,
+  source,
   resetOfWallUuid = null,
   wallUuid,
   versionId,
@@ -409,6 +416,8 @@ export function SprayWallWizardScreen({
   // screen's own inline error, because the toast overlay draws behind this modal
   // route; the publish tap already buzzed.
   const finish = useActivateBoard({
+    // A reset's replacement is never a first board.
+    source: isReset ? undefined : source,
     returnTo,
     navigate: LEAVE_AFTER_BIND,
     isLocalOnly: true,

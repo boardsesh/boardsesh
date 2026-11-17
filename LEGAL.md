@@ -66,7 +66,7 @@ Boardsesh's code is open source under the Apache 2.0 licence. That licence cover
 
 The public API documented on the [API docs page](https://www.boardsesh.com/docs) is for integrations: tools that read climb data, or act on behalf of a signed-in climber from their own account, within the rate limits the service applies.
 
-The hosted service is not a backend for other apps. A publicly distributed app or fork that uses Boardsesh accounts, data or servers as its service needs our written permission, and we do not currently grant it. If you fork Boardsesh, run your own backend too. The code is there for exactly that. The development setup in [CONTRIBUTING.md](./CONTRIBUTING.md) is the starting point today; official self-hosting docs are still to come.
+The hosted service is not a backend for other apps. A publicly distributed app or fork whose accounts, climbing, board control or sessions run on Boardsesh's servers needs our written permission, and we do not currently grant it. Connecting a climber's Boardsesh account to your app with their permission is different: done through the OAuth API, within the scopes in the developer docs and under the developer terms you accept when you register the app, it is an integration and needs no further permission from us. If you fork Boardsesh, run your own backend too. The code is there for exactly that. The development setup in [CONTRIBUTING.md](./CONTRIBUTING.md) is the starting point today; official self-hosting docs are still to come.
 
 You do not have to start from an empty database either. The [nightly board snapshots](./docs/board-snapshots-dataset.md) are public SQLite files of the climb catalogs, cheap for us to serve, and you are welcome to use them. We are also happy to talk about syncing non-user data such as climbs and grades to an alternative service.
 
@@ -84,7 +84,7 @@ Each pack is generated individually for one order, carries its own licence id, a
 
 The plans are compatible with the Kilter Homewall hole pattern. That is a statement about hole positions, not a relationship: Boardsesh is not affiliated with, endorsed by, or sponsored by Aurora Climbing or any board manufacturer. Holds, LED kits and app access are not part of a pack and are bought from the manufacturer.
 
-The licence text is a draft pending review by an Australian IP lawyer, and build plans are not on sale until that review is done.
+Owner approval of the manufacturing licence and printed plans was recorded on 2026-11-14. This records owner approval, not independent lawyer review. Build plans remain in a restricted test-user beta until actual GST registration is confirmed; public sales start only after that confirmation and the live checkout cutover. The beta licence page retains its DRAFT notice until public release mode is selected.
 
 ---
 

@@ -4,6 +4,7 @@ import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provi
 import { and, eq, gt } from 'drizzle-orm';
 import {
   oauthAccessToken,
+  oauthClient,
   oauthConnections,
   oauthGrants,
   oauthRefreshToken,
@@ -45,6 +46,50 @@ function promptTokens(prompt: string): string[] {
     .split(' ')
     .map((token) => token.trim())
     .filter(Boolean);
+}
+
+/** The token endpoint methods that prove a client secret. Every other method is a public app's. */
+const SECRET_AUTH_METHODS: ReadonlySet<string> = new Set(['client_secret_basic', 'client_secret_post']);
+
+/**
+ * Whether a code may go out only after the climber answers the consent screen
+ * in this request, however recently they approved the app before. True for
+ * every app but a confidential web app redirecting to https.
+ *
+ * - No secret (`none`): the client_id is public, so anyone can send it. A
+ *   browser app cannot keep a secret (RFC 6749 section 10.2), and nothing
+ *   proves which app on a device opened authorize (RFC 8252 section 8.6).
+ * - Native, whatever its method or redirect: a secret it registered ships in
+ *   the binary and can be pulled out, and another app can claim its custom
+ *   scheme, listen on its loopback port, or catch an https link the system
+ *   does not verify. Registration lets a native app register a secret and an
+ *   https redirect, so neither proves anything. `application_type` is stored
+ *   at registration and never changes.
+ * - A redirect that is not https, should one ever reach a web app.
+ *
+ * In each case another app can start authorize with the real client_id and
+ * its own PKCE verifier, in a browser that carries the climber's Boardsesh
+ * sign-in. A remembered consent would hand it a code with no screen at all.
+ *
+ * `skip_consent` changes none of this: it can only spare a confidential web app
+ * on https the screen, and registration never sets it (`managedClientProblem`).
+ * Fails closed: an unknown app, type or method, or an unreadable redirect, asks.
+ */
+async function requiresConsentEveryTime(
+  transaction: PartnerDatabase,
+  clientId: string,
+  redirectUri: string | null | undefined,
+): Promise<boolean> {
+  const [client] = await transaction
+    .select({
+      applicationType: oauthClient.applicationType,
+      tokenEndpointAuthMethod: oauthClient.tokenEndpointAuthMethod,
+    })
+    .from(oauthClient)
+    .where(eq(oauthClient.clientId, clientId));
+  if (!client || client.applicationType !== 'web') return true;
+  if (!client.tokenEndpointAuthMethod || !SECRET_AUTH_METHODS.has(client.tokenEndpointAuthMethod)) return true;
+  return !redirectUri || !URL.canParse(redirectUri) || new URL(redirectUri).protocol !== 'https:';
 }
 
 /**
@@ -122,18 +167,23 @@ const CAP_DESCRIPTIONS: Record<ConnectionCapRefusal, { error: string; descriptio
   },
 };
 
+/** What the code guard answers when a code went out with no answer from the climber in this request. */
+const CONSENT_REQUIRED = {
+  error: 'consent_required',
+  description: 'The climber has to approve this app on the Boardsesh consent screen.',
+};
+
 /**
- * The app hears about a refused connection the way it hears a denial: an error
- * on its own redirect URI, as a 302 for a browser or `{ redirect, url }` for the
+ * The app hears about a refused code the way it hears a denial: an error on
+ * its own redirect URI, as a 302 for a browser or `{ redirect, url }` for the
  * consent page's fetch. Nothing from the request survives: the provider's
  * consent and code roll back with it, and the consent link stays unspent.
  */
-function connectionRefusal(
+function authorizeRefusal(
   context: { headers?: Headers; request?: Request; context: { baseURL: string } },
   owner: CodeOwner,
-  refusal: ConnectionCapRefusal,
+  { error, description }: { error: string; description: string },
 ): PartnerRefusal {
-  const { error, description } = CAP_DESCRIPTIONS[refusal];
   if (!owner.redirectUri || !URL.canParse(owner.redirectUri)) {
     return new PartnerRefusal(
       Response.json(
@@ -267,18 +317,25 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
               throw new APIError('BAD_REQUEST', { error: 'invalid_request', error_description: 'Account not found.' });
             }
             const connection = await selectConnectionForUpdate(transaction, session.user.id, clientId);
+            if (isConsent || state.consentApproved) return;
             // A reconnect always shows a new consent screen, even if the app would
-            // otherwise skip it.
-            if (connection?.revokedAt && !isConsent && !state.consentApproved) {
-              const prompt = parameters.prompt ?? '';
-              if (typeof prompt !== 'string') return;
-              const prompts = new Set(promptTokens(prompt));
-              // The provider refuses prompt=none combined with anything else, and
-              // answers consent_required by itself because Disconnect removed the consent.
-              if (prompts.has('none')) return;
-              prompts.add('consent');
-              return { context: { [source]: { ...parameters, prompt: [...prompts].join(' ') } } };
-            }
+            // otherwise skip it. So does every request a remembered consent must
+            // not answer: any app but a confidential web app on https. Decided
+            // here from the stored app, never from what the request asks for,
+            // and backed by the code guard after authorize.
+            const mustAsk =
+              Boolean(connection?.revokedAt) ||
+              (await requiresConsentEveryTime(transaction, clientId, stringParameter(parameters.redirect_uri)));
+            if (!mustAsk) return;
+            const prompt = parameters.prompt ?? '';
+            if (typeof prompt !== 'string') return;
+            const prompts = new Set(promptTokens(prompt));
+            // The provider refuses prompt=none combined with anything else. Alone,
+            // it gets consent_required: from the provider once Disconnect removed
+            // the consent, and from the code guard while a consent is remembered.
+            if (prompts.has('none')) return;
+            prompts.add('consent');
+            return { context: { [source]: { ...parameters, prompt: [...prompts].join(' ') } } };
           }),
         },
         // Redeeming a code: find the owner from the grant, then lock before the provider consumes it.
@@ -358,6 +415,17 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (!pending) return;
             const codeOwner = parseCodeOwner(pending.value);
             if (!codeOwner) throw new Error('Issued authorization code has no owner.');
+            // The code guard. Only a code bound below can be redeemed, so every
+            // code that could reach a token passes here. One the climber did not
+            // approve in this very request, for an app a remembered consent must
+            // not answer, goes nowhere: prompt=none from such an app lands here,
+            // and so would anything that slipped past the rewrite before authorize.
+            if (
+              !state.consentApproved &&
+              (await requiresConsentEveryTime(transaction, codeOwner.clientId, codeOwner.redirectUri))
+            ) {
+              throw authorizeRefusal(context, codeOwner, CONSENT_REQUIRED);
+            }
 
             const connection = await lockOrCreatePartnerConnection(transaction, codeOwner.userId, codeOwner.clientId);
             if (!connection) throw new Error('Authorization code issued for a missing account.');
@@ -385,7 +453,7 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
               // redeems a code. Checked now only so a full app turns the climber
               // away at once instead of after they approve.
               const capRefusal = await checkConnectionCaps(transaction, connection, issuedAt);
-              if (capRefusal) throw connectionRefusal(context, codeOwner, capRefusal);
+              if (capRefusal) throw authorizeRefusal(context, codeOwner, CAP_DESCRIPTIONS[capRefusal]);
               if (connection.revokedAt) {
                 // An approved reconnect: no longer revoked, but not live again
                 // (and not counted) until the app redeems a code. Its last use

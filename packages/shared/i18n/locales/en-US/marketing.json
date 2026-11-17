@@ -342,7 +342,7 @@
       "p2Start": "The public API documented on the",
       "p2Link": "API docs page",
       "p2End": "is for integrations: tools that read climb data, or act on behalf of a signed-in climber from their own account, within the rate limits the service applies.",
-      "p3": "The hosted service is not a backend for other apps. A publicly distributed app or fork that uses Boardsesh accounts, data or servers as its service needs our written permission, and we do not currently grant it. If you fork Boardsesh, run your own backend too. The code is there for exactly that. The development setup in CONTRIBUTING.md is the starting point today; official self-hosting docs are still to come.",
+      "p3": "The hosted service is not a backend for other apps. A publicly distributed app or fork whose accounts, climbing, board control or sessions run on Boardsesh's servers needs our written permission, and we do not currently grant it. Connecting a climber's Boardsesh account to your app with their permission is different: done through the OAuth API, within the scopes in the developer docs and under the developer terms you accept when you register the app, it is an integration and needs no further permission from us. If you fork Boardsesh, run your own backend too. The code is there for exactly that. The development setup in CONTRIBUTING.md is the starting point today; official self-hosting docs are still to come.",
       "p4Start": "You do not have to start from an empty database either. The",
       "p4Link": "nightly board snapshots",
       "p4End": "are public SQLite files of the climb catalogs, cheap for us to serve, and you are welcome to use them. We are also happy to talk about syncing non-user data such as climbs and grades to an alternative service.",
@@ -937,7 +937,7 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdated": "Last updated: November 3, 2026",
+    "lastUpdated": "Last updated: November 17, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, there are no ads in Boardsesh, and we do not share data with data brokers. We do advertise Boardsesh on Reddit and Instagram, and on our website analytics includes measuring those ads with Meta and Reddit, as described below.",
     "collect": {

@@ -24,10 +24,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Find the current PR and test artifacts
         id: inspect
         uses: actions/github-script@v7
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const run = context.payload.workflow_run;
             const repository = `${context.repo.owner}/${context.repo.repo}`;
@@ -87,6 +98,7 @@ jobs:
         env:
           PR_NUMBER: ${{ steps.inspect.outputs.pr-number }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { data: pullRequest } = await github.rest.pulls.get({
               ...context.repo, pull_number: Number(process.env.PR_NUMBER),
@@ -109,20 +121,97 @@ jobs:
           comment-message-override: |
             CI test results for [run #${{ github.event.workflow_run.run_number }}](${{ github.event.workflow_run.html_url }}).
 
-      - name: Publish CI test results
+      - name: Parse CI test results
+        id: report
         if: steps.current.outputs.publish == 'true'
-        uses: turing85/publish-report@v2
+        uses: phoenix-actions/test-reporting@f957cd93fc2d848d556fa0d03c57bc79127b6b5e # v15
         with:
-          comment-header: ci-tests
-          comment-enabled: 'true'
-          comment-message-pr-number: ${{ steps.inspect.outputs.pr-number }}
-          report-name: CI Tests
-          report-path: '${{ runner.temp }}/ci-test-results/**/*.xml'
-          report-reporter: java-junit
-          report-fail-on-error: false
-          # fail-on-error:false keeps this publisher advisory. The generated
-          # check still records failures; the comment must show truthful counts.
-          comment-message-success: |
-            {1} passed, {2} failed, {3} skipped. [Full test report]({4}).
-          comment-message-failure: |
-            Test report publication failed. [Inspect the report]({4}).
+          name: CI Tests Report
+          path: '${{ runner.temp }}/ci-test-results/**/*.xml'
+          reporter: java-junit
+          fail-on-error: 'false'
+          output-to: step-summary
+          list-suites: failed
+          list-tests: failed
+
+      # The upstream reporter creates an in-progress check, then PATCHes it.
+      # A failed PATCH leaves an orphan that never finishes. Parse first, then
+      # create one completed check whose conclusion comes from those results.
+      - name: Publish CI test results
+        id: publish
+        if: steps.current.outputs.publish == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.inspect.outputs.pr-number }}
+          REPORT_OUTCOME: ${{ steps.report.outcome }}
+          REPORT_CONCLUSION: ${{ steps.report.outputs.conclusion }}
+          REPORT_PASSED: ${{ steps.report.outputs.passed }}
+          REPORT_FAILED: ${{ steps.report.outputs.failed }}
+          REPORT_SKIPPED: ${{ steps.report.outputs.skipped }}
+        with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
+          script: |
+            if (process.env.REPORT_OUTCOME !== 'success') throw new Error('JUnit parsing did not succeed');
+            const count = (name) => {
+              const input = process.env[name] ?? '';
+              if (!/^(0|[1-9][0-9]{0,9})$/.test(input)) throw new Error(`Invalid JUnit count: ${name}`);
+              const result = Number(input);
+              if (!Number.isSafeInteger(result) || result > 1_000_000_000) throw new Error(`JUnit count exceeds bound: ${name}`);
+              return result;
+            };
+            const passed = count('REPORT_PASSED');
+            const failed = count('REPORT_FAILED');
+            const skipped = count('REPORT_SKIPPED');
+            const parserConclusion = failed > 0 ? 'failure' : 'success';
+            if (process.env.REPORT_CONCLUSION !== parserConclusion) throw new Error('JUnit conclusion/count mismatch');
+            const run = context.payload.workflow_run;
+            const noTests = passed + failed + skipped === 0;
+            if (noTests && run.conclusion !== 'success') throw new Error('Zero-test report requires successful source CI');
+            // Changed-file CI can upload valid, empty JUnit suites. Report that
+            // absence explicitly without claiming any tests passed.
+            const conclusion = noTests ? 'neutral' : parserConclusion;
+            const { data: pullRequest } = await github.rest.pulls.get({
+              ...context.repo, pull_number: Number(process.env.PR_NUMBER),
+            });
+            const current = pullRequest.state === 'open' &&
+              pullRequest.base.repo.full_name === `${context.repo.owner}/${context.repo.repo}` &&
+              pullRequest.head.sha === run.head_sha &&
+              pullRequest.head.ref === run.head_branch &&
+              pullRequest.head.repo?.full_name === run.head_repository?.full_name;
+            if (!current) {
+              core.notice('PR closed or advanced while parsing reports; skipping publication.');
+              return;
+            }
+            const reportUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const counts = `${passed} passed, ${failed} failed, ${skipped} skipped.`;
+            const summary = noTests ? `No tests ran. ${counts}` : counts;
+            const { data: check } = await github.rest.checks.create({
+              ...context.repo,
+              name: 'CI Tests Report',
+              head_sha: run.head_sha,
+              status: 'completed',
+              conclusion,
+              details_url: reportUrl,
+              output: { title: summary, summary: `${summary}\n\n[Full test report](${reportUrl}).` },
+            });
+            if (check.status !== 'completed' || check.conclusion !== conclusion || check.head_sha !== run.head_sha) {
+              throw new Error('GitHub did not confirm the completed test check');
+            }
+            core.setOutput('message', `${summary} [Full test report](${reportUrl}).`);
+
+      - name: Update the test-results comment
+        if: steps.publish.outputs.message != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ci-tests
+          number: ${{ steps.inspect.outputs.pr-number }}
+          message: ${{ steps.publish.outputs.message }}
+
+      - name: Report publication failure
+        if: failure() && steps.current.outputs.publish == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ci-tests
+          number: ${{ steps.inspect.outputs.pr-number }}
+          message: |
+            Test report publication failed. [Inspect this publisher run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).

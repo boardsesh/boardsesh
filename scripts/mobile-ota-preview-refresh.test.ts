@@ -910,8 +910,9 @@ describe('publisher reset marks the record it is about to invalidate', () => {
   const markScript = reset.steps[markIndex]?.with?.script ?? '';
 
   it('runs before the delete with deployments:write and no checkout', () => {
-    expect(markIndex).toBe(0);
-    expect(reset.steps[1].name).toBe('Reset preview branch before publish');
+    // Only the API-token mint (#7659) may run first; it touches no preview state.
+    expect(reset.steps.slice(0, markIndex).map((step) => step.name)).toEqual(['Mint API token']);
+    expect(reset.steps[markIndex + 1].name).toBe('Reset preview branch before publish');
     expect(reset.permissions).toEqual({ contents: 'read', deployments: 'write', 'pull-requests': 'read' });
     expect(reset.steps.some((step) => step.uses?.startsWith('actions/checkout@'))).toBe(false);
   });

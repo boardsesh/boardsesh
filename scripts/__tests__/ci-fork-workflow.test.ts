@@ -14,6 +14,7 @@ type WorkflowStep = {
   run?: string;
   'continue-on-error'?: boolean;
   with?: Record<string, string | boolean>;
+  env?: Record<string, string>;
 };
 type Workflow = {
   on: { workflow_run?: { workflows: string[]; types: string[] } };
@@ -23,6 +24,11 @@ type Workflow = {
 };
 const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
 const publisher = parse(readFileSync('.github/workflows/publish-test-reports.yml', 'utf8')) as Workflow;
+const { parseStringPromise } = require('xml2js') as {
+  parseStringPromise: (xml: string) => Promise<{
+    testsuites: { $: { tests: string; failures: string; errors: string }; testsuite?: unknown[] };
+  }>;
+};
 
 function publisherStep(idOrName: string): WorkflowStep {
   const step = publisher.jobs.publish.steps.find((entry) => entry.id === idOrName || entry.name === idOrName);
@@ -51,7 +57,7 @@ function fixture(headRepository = 'contributor/boardsesh') {
   const associated = [pullRequest];
   const artifacts = [{ name: 'test-results-default-1', expired: false }];
   const outputs = new Map<string, string | number | boolean>();
-  const context = { repo: { owner: 'boardsesh', repo: 'boardsesh' }, payload: { workflow_run: run } };
+  const context = { repo: { owner: 'boardsesh', repo: 'boardsesh' }, runId: 456, payload: { workflow_run: run } };
   const core = {
     notice: vi.fn(),
     setOutput: vi.fn((key: string, output: string | number | boolean) => outputs.set(key, output)),
@@ -61,6 +67,12 @@ function fixture(headRepository = 'contributor/boardsesh') {
       repos: { listPullRequestsAssociatedWithCommit: 'associated' },
       actions: { listWorkflowRunArtifacts: 'artifacts' },
       pulls: { get: vi.fn(async () => ({ data: pullRequest })) },
+      checks: {
+        create: vi.fn(async (input: { head_sha: string; status: string; conclusion: string }) => ({
+          data: { head_sha: input.head_sha, status: input.status, conclusion: input.conclusion },
+        })),
+        update: vi.fn(),
+      },
     },
     paginate: vi.fn(async (endpoint: string) => (endpoint === 'associated' ? associated : artifacts)),
   };
@@ -111,7 +123,7 @@ describe('fork-safe CI reporting', () => {
     await executeScript('inspect', inputs);
     expect(inputs.outputs.get('pr-number')).toBe(6255);
     expect(publisher.jobs.publish.if).not.toContain("conclusion == 'success'");
-    expect(publisherStep('Publish CI test results').with?.['comment-message-success']).toContain('{2} failed');
+    expect(publisherStep('Parse CI test results').with?.['fail-on-error']).toBe('false');
   });
 
   it.each(['sha', 'ref', 'repository', 'closed', 'base'])('rejects a PR with mismatched %s', async (mismatch) => {
@@ -199,11 +211,193 @@ describe('fork-safe CI reporting', () => {
     expect(download.with?.['run-id']).toBe('${{ github.event.workflow_run.id }}');
     expect(download.with?.path).toBe('${{ runner.temp }}/ci-test-results');
     expect(download.with?.pattern).toBe('test-results-*');
-    const report = publisherStep('Publish CI test results');
-    expect(report.with?.['comment-message-pr-number']).toBe('${{ steps.inspect.outputs.pr-number }}');
-    expect(report.with?.['report-path']).toBe('${{ runner.temp }}/ci-test-results/**/*.xml');
+    const report = publisherStep('Parse CI test results');
+    expect(report.with?.path).toBe('${{ runner.temp }}/ci-test-results/**/*.xml');
     expect(report.if).toBe("steps.current.outputs.publish == 'true'");
     expect(publisher.jobs.publish.steps.some((step) => step.run !== undefined)).toBe(false);
+  });
+});
+
+describe('completed test report publication', () => {
+  function reports(passed = '10', failed = '0', skipped = '2') {
+    vi.stubEnv('PR_NUMBER', '6255');
+    vi.stubEnv('REPORT_OUTCOME', 'success');
+    vi.stubEnv('REPORT_CONCLUSION', Number(failed) > 0 ? 'failure' : 'success');
+    vi.stubEnv('REPORT_PASSED', passed);
+    vi.stubEnv('REPORT_FAILED', failed);
+    vi.stubEnv('REPORT_SKIPPED', skipped);
+    return fixture();
+  }
+
+  it.each(['0', '3'])('creates one completed check with %s failures and actual counts', async (failed) => {
+    const inputs = reports('10', failed, '2');
+    await executeScript('publish', inputs);
+    expect(inputs.github.rest.checks.create).toHaveBeenCalledExactlyOnceWith({
+      owner: 'boardsesh',
+      repo: 'boardsesh',
+      name: 'CI Tests Report',
+      head_sha: 'tested-head',
+      status: 'completed',
+      conclusion: failed === '0' ? 'success' : 'failure',
+      details_url: 'https://github.com/boardsesh/boardsesh/actions/runs/456',
+      output: {
+        title: `10 passed, ${failed} failed, 2 skipped.`,
+        summary: `10 passed, ${failed} failed, 2 skipped.\n\n[Full test report](https://github.com/boardsesh/boardsesh/actions/runs/456).`,
+      },
+    });
+    expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.get('message')).toContain(`10 passed, ${failed} failed, 2 skipped.`);
+  });
+
+  it('accepts a report containing only skipped tests without inventing passes', async () => {
+    const inputs = reports('0', '0', '4');
+    await executeScript('publish', inputs);
+    expect(inputs.outputs.get('message')).toContain('0 passed, 0 failed, 4 skipped.');
+  });
+
+  it.each(['', '-1', '1.5', 'NaN', '1e2', '1000000001', '9007199254740992'])(
+    'rejects missing or malformed JUnit counts: %s',
+    async (count) => {
+      const inputs = reports(count);
+      await expect(executeScript('publish', inputs)).rejects.toThrow(/JUnit count/);
+      expect(inputs.github.rest.pulls.get).not.toHaveBeenCalled();
+      expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports the actual empty Vitest XML as neutral without inventing passing tests', async () => {
+    // Exact XML from both changed-file shards in CI run 43947606632.
+    const xml = readFileSync('scripts/__tests__/fixtures/ci-report-zero-tests.xml', 'utf8');
+    const { testsuites } = await parseStringPromise(xml);
+    expect(testsuites.$).toMatchObject({ tests: '0', failures: '0', errors: '0' });
+    expect(testsuites.testsuite).toBeUndefined();
+    const inputs = reports('0', '0', '0');
+    await executeScript('publish', inputs);
+    expect(inputs.github.rest.checks.create).toHaveBeenCalledExactlyOnceWith({
+      owner: 'boardsesh',
+      repo: 'boardsesh',
+      name: 'CI Tests Report',
+      head_sha: 'tested-head',
+      status: 'completed',
+      conclusion: 'neutral',
+      details_url: 'https://github.com/boardsesh/boardsesh/actions/runs/456',
+      output: {
+        title: 'No tests ran. 0 passed, 0 failed, 0 skipped.',
+        summary:
+          'No tests ran. 0 passed, 0 failed, 0 skipped.\n\n[Full test report](https://github.com/boardsesh/boardsesh/actions/runs/456).',
+      },
+    });
+    expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.get('message')).toContain('No tests ran. 0 passed, 0 failed, 0 skipped.');
+  });
+
+  it.each(['failure', 'timed_out', 'cancelled', 'skipped', 'neutral', ''])(
+    'rejects zero tests from %s source CI',
+    async (conclusion) => {
+      const inputs = reports('0', '0', '0');
+      inputs.run.conclusion = conclusion;
+      await expect(executeScript('publish', inputs)).rejects.toThrow('requires successful source CI');
+      expect(inputs.github.rest.pulls.get).not.toHaveBeenCalled();
+      expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['failure', 'neutral', ''])('rejects a zero-test parser conclusion of %s', async (conclusion) => {
+    const inputs = reports('0', '0', '0');
+    vi.stubEnv('REPORT_CONCLUSION', conclusion);
+    await expect(executeScript('publish', inputs)).rejects.toThrow('conclusion/count mismatch');
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+  });
+
+  it('does not turn malformed XML into a neutral report', async () => {
+    const inputs = reports('0', '0', '0');
+    await expect(parseStringPromise('<testsuites><broken></testsuites>')).rejects.toThrow();
+    vi.stubEnv('REPORT_OUTCOME', 'failure');
+    await expect(executeScript('publish', inputs)).rejects.toThrow('parsing did not succeed');
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['failure', 'skipped', 'cancelled'])('cannot publish after parser outcome %s', async (outcome) => {
+    const inputs = reports();
+    vi.stubEnv('REPORT_OUTCOME', outcome);
+    await expect(executeScript('publish', inputs)).rejects.toThrow('parsing did not succeed');
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['', 'success', 'neutral'])('rejects a conclusion inconsistent with failures: %s', async (conclusion) => {
+    const inputs = reports('4', '1', '0');
+    vi.stubEnv('REPORT_CONCLUSION', conclusion);
+    await expect(executeScript('publish', inputs)).rejects.toThrow('conclusion/count mismatch');
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['closed', 'advanced', 'other repository', 'other branch', 'other base'])(
+    'skips a PR that became %s while parsing reports',
+    async (state) => {
+      const inputs = reports();
+      if (state === 'closed') inputs.pullRequest.state = 'closed';
+      if (state === 'advanced') inputs.pullRequest.head.sha = 'new-head';
+      if (state === 'other repository') inputs.pullRequest.head.repo.full_name = 'other/boardsesh';
+      if (state === 'other branch') inputs.pullRequest.head.ref = 'other';
+      if (state === 'other base') inputs.pullRequest.base.repo.full_name = 'other/boardsesh';
+      await executeScript('publish', inputs);
+      expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+      expect(inputs.outputs.size).toBe(0);
+    },
+  );
+
+  it('propagates GitHub create failure without a fabricated conclusion or PATCH', async () => {
+    const inputs = reports();
+    inputs.github.rest.checks.create.mockRejectedValueOnce(new Error('Not Found'));
+    await expect(executeScript('publish', inputs)).rejects.toThrow('Not Found');
+    expect(inputs.github.rest.checks.create).toHaveBeenCalledTimes(1);
+    expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.size).toBe(0);
+  });
+
+  it('keeps zero-test GitHub errors as failures instead of inventing a passing check', async () => {
+    const inputs = reports('0', '0', '0');
+    inputs.github.rest.checks.create.mockRejectedValueOnce(new Error('Forbidden'));
+    await expect(executeScript('publish', inputs)).rejects.toThrow('Forbidden');
+    expect(inputs.github.rest.checks.create).toHaveBeenCalledTimes(1);
+    expect(inputs.github.rest.checks.create.mock.calls[0][0].conclusion).toBe('neutral');
+    expect(inputs.github.rest.checks.update).not.toHaveBeenCalled();
+    expect(inputs.outputs.size).toBe(0);
+  });
+
+  it('skips a superseded zero-test report before creating a neutral check', async () => {
+    const inputs = reports('0', '0', '0');
+    inputs.pullRequest.head.sha = 'new-head';
+    await executeScript('publish', inputs);
+    expect(inputs.github.rest.checks.create).not.toHaveBeenCalled();
+    expect(inputs.outputs.size).toBe(0);
+  });
+
+  it('requires GitHub to confirm the actual completed check before commenting', async () => {
+    const inputs = reports();
+    inputs.github.rest.checks.create.mockResolvedValueOnce({
+      data: { head_sha: 'tested-head', status: 'in_progress', conclusion: '' },
+    });
+    await expect(executeScript('publish', inputs)).rejects.toThrow('did not confirm');
+    expect(inputs.outputs.size).toBe(0);
+  });
+
+  it('parses trusted XML into a job summary and uses only its validated outputs', () => {
+    const parse = publisherStep('report');
+    expect(parse.uses).toBe('phoenix-actions/test-reporting@f957cd93fc2d848d556fa0d03c57bc79127b6b5e');
+    expect(parse.with?.reporter).toBe('java-junit');
+    expect(parse.with?.['output-to']).toBe('step-summary');
+    expect(parse['continue-on-error']).toBeUndefined();
+    expect(publisherStep('publish').env).toEqual({
+      PR_NUMBER: '${{ steps.inspect.outputs.pr-number }}',
+      REPORT_OUTCOME: '${{ steps.report.outcome }}',
+      REPORT_CONCLUSION: '${{ steps.report.outputs.conclusion }}',
+      REPORT_PASSED: '${{ steps.report.outputs.passed }}',
+      REPORT_FAILED: '${{ steps.report.outputs.failed }}',
+      REPORT_SKIPPED: '${{ steps.report.outputs.skipped }}',
+    });
+    expect(publisherStep('publish').if).toBe("steps.current.outputs.publish == 'true'");
+    expect(publisherStep('Report publication failure').if).toBe("failure() && steps.current.outputs.publish == 'true'");
   });
 });
 

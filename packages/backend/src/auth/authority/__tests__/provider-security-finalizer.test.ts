@@ -34,6 +34,10 @@ import type { FirstPartyCredential } from '../session-reader';
 import { readLockedWebSubjectState } from '../../current-store/web-credential-state';
 import { readBrowserBinding } from '../browser-binding';
 import * as browserAuthority from '../browser-binding';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 async function admit(credential: FirstPartyCredential) {

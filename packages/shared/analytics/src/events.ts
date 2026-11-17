@@ -612,9 +612,13 @@ export const SHARED_EVENTS = {
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started
-  // the radio. Props: { outcome, found_count, serialless_count, moonboard_count }.
+  // the radio. Props: { outcome, found_count, serialless_count, moonboard_count,
+  // trigger }.
   // `outcome`: 'completed' (the 15 s window ran out), 'stopped' (the sheet
-  // closed or a board was picked first), 'error' (the scan errored).
+  // closed, the picker left the screen or went to the background, or a board was
+  // picked first), 'error' (the scan errored), 'preempted' (2026-11, picker
+  // scans only: another Bluetooth scan, such as the rest timer's connect, took
+  // the radio).
   // `found_count` is the number of distinct board serials heard, before GraphQL
   // resolves them to boards. It stays serials-only so its series doesn't break.
   // `serialless_count` (2026-10) counts boards heard with no serial, one per BLE
@@ -623,6 +627,12 @@ export const SHARED_EVENTS = {
   // a controller rotating its private address mid-scan can count twice. A scan
   // that heard nothing has all three at zero; older events have no
   // `serialless_count`.
+  // `trigger` (2026-11) says who started the scan: 'picker_auto' (the board
+  // picker's In range slot scanning by itself on open) or 'picker_tap' (that
+  // slot's Continue, Scan and Scan again). 'sheet' was the Bluetooth quickstart
+  // sheet, until the picker layout OTA retired it; older events have no
+  // `trigger` and are all the sheet's. The picker scans on most opens, so
+  // filter on `trigger` to keep the sheet's series apart.
   BoardQuickstartScanFinished: 'Board Quickstart Scan Finished',
   // Fired once per device-picker session (on close) with tallies of how each
   // listed device's board preview resolved: saved board, recorded serial
@@ -877,15 +887,20 @@ export const SHARED_EVENTS = {
   //
   // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
   // 'own' | 'scan' | 'gym_map' | 'spray_wall', entry }. 'gym_map' is "Find your
-  // gym on the map", offered under At a gym. 'spray_wall' is "Add my spray
-  // wall", offered only on the 'no_board' entry. A
-  // climber can try several; each tap fires.
+  // gym on the map", offered under At a gym. 'spray_wall' is "My Spraywall",
+  // offered on both entries since 2026-11 (before that, 'no_board' only).
+  // 'scan' was the "Scan for the board in front of me" link until 2026-11; it
+  // now means a tap in the In range slot above the choices (Continue, Scan, a
+  // board, or a way forward for a board it can't name). A climber can try
+  // several; each tap fires.
   //
   // FirstBoardPickerSkipped: the picker closed with no board bound, which is
   // the skip rate the launch reads against. Props: { method: 'close_button' |
   // 'dismissed' ('close_button' is the header X, "Not now" from the launch
   // gate and Close from Climbs; 'dismissed' is a swipe down or Android back),
-  // secondsOpen, lastPath (the last choice tapped, or null), entry }. A bind
+  // secondsOpen, lastPath (the last choice tapped, or null), entry,
+  // nearbyResultCount (from 2026-11: boards "At a gym" had found when the picker
+  // closed, null when it had not searched or answered) }. A bind
   // from ANY path the picker leads to (the list, the builder, the gym map, the
   // Bluetooth scan) counts as not skipped.
   FirstBoardPathChosen: 'First Board Path Chosen',
@@ -990,7 +1005,8 @@ export const SHARED_EVENTS = {
   // Prompted >= ReusedExisting + Created{allowedDuplicate}: if prompts stop
   // converting, creation is silently dead-ending again.
   // Props: { boardType, source, hasLocation }. `source` names the surface AND the
-  // flow: 'popular_seed' / 'scratch' / 'web_drawer' are creates; 'mobile_edit' /
+  // flow: 'popular_seed' (a Popular setups card, retired 2026-11) / 'scratch' /
+  // 'web_drawer' are creates; 'mobile_edit' /
   // 'web_edit_drawer' are edits, where the choice is save-anyway vs keep-editing
   // (there is no existing board to switch to), so they never convert to
   // ReusedExisting — split on `source` before reading that ratio.
@@ -1001,7 +1017,8 @@ export const SHARED_EVENTS = {
   // create screen's unmount unless a board was created, reused or followed on
   // the way out.
   // Props: { boardType, hadLayout, hadSize (what was selected when they left),
-  //          source: 'popular_seed' | 'scratch' (as on Board Created),
+  //          source: 'scratch' ('popular_seed' until the Popular setups
+  //          cards went in 2026-11; as on Board Created),
   //          preset (opened from "My own board", which preselects the board
   //          type's most used setup when the popular list carries the type, so
   //          hadLayout/hadSize usually start true: split on it and boardType),
@@ -1090,18 +1107,48 @@ export const SHARED_EVENTS = {
   // gym map opened on its own, from Home or My gyms; the map pushed from the
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
+  // locationStatus (from 2026-11): idle | loading | granted | denied |
+  // unavailable, as known at the opening (mostly idle: the "already allowed?"
+  // read is still out). The gym finder's own opening carries none.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
   // source matches the opening that led here: a pick on the gym map pushed from
   // the picker carries the picker's source, a pick on a map opened on its own
-  // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth |
-  // gym_finder | null (the list the board was tapped in). followed: the pick
+  // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth
+  // (a board the picker's scan put at the top; the Bluetooth sheet before
+  // 2026-11) | gym_walls (a wall At {gym} because of the board you're on; the
+  // "Also at {gym}" rows before that) | gym_finder | null (the list the board
+  // was tapped in). section (from 2026-11): at_gym | hero | your_boards |
+  // near_you | offline | map | null (where it was drawn), with position, its
+  // 0-based place there (null when it has none). nearbyResultCount (from
+  // 2026-11): boards the Near you search had returned by the pick, 0 for
+  // nothing within 20 km, null when it did not search, was still searching or
+  // failed; absent on the gym finder. followed: the pick
   // added the board to Your boards (#5654); false when it was already theirs,
   // was someone else's private board, the viewer was signed out, or it came
   // from the on-device rows shown with no connection.
   // New-board creation/onboarding activation have their own existing events.
   BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
+  // Mobile only. A row picked from a board card's menu in the picker. Props:
+  // { action: climb_here | pin | unpin | download | details | edit | unfollow
+  // | delete, via: menu_button (the ⋯ beside the title) | long_press (a hold
+  // on the card or row) | accessibility (a VoiceOver or TalkBack action),
+  // section: your_boards | nearby | at_gym (from 2026-11: the climber's own and
+  // followed walls in the At {gym} list) }. Fires when the row is picked, before any confirm,
+  // so a delete counts even when the climber backs out of the dialog. A
+  // climb_here pick still sends its own Board Picker Selection Completed.
+  // Expected under 200 a week.
+  BoardCardAction: 'Board Card Action',
+  // Mobile only. A way to add a board picked in the board picker. Props:
+  // { kind: board (the builder) | spraywall (the add-a-wall wizard) | gym_map
+  // (the gym finder), surface: picker (the + in the picker's top bar) | manage
+  // (the + on Manage boards) | empty_state (the buttons under "No boards yet")
+  // | first_run ("Where do you climb?": My own board, My Spraywall, Find your
+  // gym on the map) }. Fires on the tap, before the route opens; what the route
+  // makes has its own events (Board Created, the spray funnel, Board Picker
+  // Selection Completed with gym_finder). Expected about 1 per 10 picker opens.
+  BoardPickerAddSelected: 'Board Picker Add Selected',
   // The launch follow heal (#5654): fired when the app follows the board it
   // launched on because the server says it is neither the climber's nor
   // followed. Repairs picks made before picks followed boards, and keeps
@@ -1708,6 +1755,8 @@ export const SHARED_EVENTS = {
   // without minting thousands of events; `failures_this_session` still counts
   // past the cap, so a truncated stream is legible as truncated.
   BoardRenderFailed: 'Board Render Failed',
+  AuraGpuFallback: 'Aura GPU Fallback',
+  AuraGpuPrepared: 'Aura GPU Prepared',
   // A saved render preset or CVD palette preset was applied (issue #2202,
   // settings-screen PR). No extra props beyond the common ones — the event IS
   // "the common props now carry a preset_id/palette_id".

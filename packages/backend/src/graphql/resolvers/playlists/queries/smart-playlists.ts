@@ -14,6 +14,12 @@ import {
   type RecommendationType,
 } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
+import {
+  fetchUserClimbs,
+  readUserClimbMappings,
+  userClimbsWhereCondition,
+  type UserClimbMapping,
+} from '../../shared/user-climbs';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceClimbExistsCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
@@ -40,7 +46,7 @@ import {
 export type LogbookPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
 // Catalog-derived recommendations (computed for the user's board) share the
 // same query envelope but a different candidate source.
-type SmartPlaylistType = LogbookPlaylistType | RecommendationType;
+type SmartPlaylistType = LogbookPlaylistType | RecommendationType | 'CREATED_CLIMBS';
 
 type SmartPlaylistInput = ActiveBoardFields & {
   type: SmartPlaylistType;
@@ -563,7 +569,7 @@ export const smartPlaylist = async (
   // Views are for the four logbook lists. A view on a recommendation is
   // rejected after the `smartPlaylist` charge above but before the view bucket
   // and any database work, as a client-input verdict the app can branch on.
-  if (view && isRecommendationType(parsedInput.type)) {
+  if (view && (isRecommendationType(parsedInput.type) || parsedInput.type === 'CREATED_CLIMBS')) {
     throw new GraphQLError('Sort and filters are only available on Liked, Five Stars, Projects and Most repeated', {
       extensions: { code: 'BAD_USER_INPUT' },
     });
@@ -577,6 +583,41 @@ export const smartPlaylist = async (
   const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
   const page = input.page ?? 0;
   const pageSize = input.pageSize ?? 20;
+
+  // An authored list includes the setter's unlisted and community-hidden work.
+  // Keep generated links owner-private, including their existence and counts.
+  if (input.type === 'CREATED_CLIMBS') {
+    const meta: SmartPlaylistMeta = {
+      type: input.type,
+      userId: input.userId,
+      userName: 'Climber',
+      userAvatar: null,
+      climbCount: 0,
+    };
+    if (!viewerUserId || viewerUserId !== input.userId) {
+      return { meta, climbs: [], totalCount: 0, hasMore: false };
+    }
+    const result = await fetchUserClimbs(
+      {
+        userId: input.userId,
+        boardName: parsedInput.boardName,
+        activeBoard: activeBoardFromFields(parsedInput),
+        limit: pageSize,
+        offset: page * pageSize,
+      },
+      ctx,
+    );
+    const owner = await fetchUserMeta(input.userId);
+    return {
+      ...result,
+      meta: {
+        ...meta,
+        userName: owner?.userName ?? meta.userName,
+        userAvatar: owner?.userAvatar ?? null,
+        climbCount: result.totalCount,
+      },
+    };
+  }
 
   // Catalog-derived recommendations are owner-private: they expose the user's
   // board config and (via AT_LEVEL) grade. Short-circuit BEFORE any user lookup
@@ -712,7 +753,7 @@ export const smartPlaylist = async (
  * no longer inflates the card. Exported for the EXPLAIN gate in
  * playlist-climbs-view-explain.test.ts.
  */
-export function smartPlaylistCountsSql(userId: string): SQL {
+export function smartPlaylistCountsSql(userId: string, linkedMappings: readonly UserClimbMapping[] = []): SQL {
   const ticks = dbSchema.boardseshTicks;
   const baseTicksSql = new QueryBuilder()
     .select({
@@ -727,6 +768,12 @@ export function smartPlaylistCountsSql(userId: string): SQL {
     .where(and(...smartBaseConditions(userId, undefined, userId)))
     .getSQL();
   const likedClimbsWhere = and(...favoriteConditions(userId, undefined, userId));
+  const createdClimbsWhere = userClimbsWhereCondition({
+    userId,
+    viewerUserId: userId,
+    isSelf: true,
+    linkedMappings,
+  });
 
   return sql`
     WITH base AS (${baseTicksSql}),
@@ -765,6 +812,11 @@ export function smartPlaylistCountsSql(userId: string): SQL {
       SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
       FROM ${dbSchema.userFavorites}
       WHERE ${likedClimbsWhere}
+    ),
+    created_climbs AS (
+      SELECT COUNT(*)::int AS count
+      FROM ${dbSchema.boardClimbs}
+      WHERE ${createdClimbsWhere}
     )
     SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
     UNION ALL
@@ -773,6 +825,8 @@ export function smartPlaylistCountsSql(userId: string): SQL {
     SELECT 'PROJECTS'::text, count FROM projects
     UNION ALL
     SELECT 'LIKED_CLIMBS'::text, count FROM liked_climbs
+    UNION ALL
+    SELECT 'CREATED_CLIMBS'::text, count FROM created_climbs
   `;
 }
 
@@ -795,7 +849,10 @@ export const mySmartPlaylistCounts = async (
   // hash joins that exhaust Postgres's dynamic shared memory (#4235, Sentry
   // BOARDSESH-AK).
   return withSerialPlan(db, async (tx) => {
-    const result = await tx.execute<{ type: SmartPlaylistType; count: number }>(smartPlaylistCountsSql(userId));
+    const linkedMappings = await readUserClimbMappings(userId, tx);
+    const result = await tx.execute<{ type: SmartPlaylistType; count: number }>(
+      smartPlaylistCountsSql(userId, linkedMappings),
+    );
 
     // db.execute returns either an iterable of rows directly or `{ rows }`
     // depending on the underlying postgres client; normalise here.
@@ -814,6 +871,7 @@ export const mySmartPlaylistCounts = async (
       { type: 'MOST_REPEATED', count: byType.get('MOST_REPEATED') ?? 0 },
       { type: 'PROJECTS', count: byType.get('PROJECTS') ?? 0 },
       { type: 'LIKED_CLIMBS', count: byType.get('LIKED_CLIMBS') ?? 0 },
+      { type: 'CREATED_CLIMBS', count: byType.get('CREATED_CLIMBS') ?? 0 },
     ];
 
     // Recommendation cards: scoped to the user's resolved board, and left out

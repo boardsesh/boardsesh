@@ -3,13 +3,12 @@ import type { Metadata } from 'next';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { PageShell } from '@/app/components/ui/page-shell';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { DEVELOPER_CONSOLE_PATH as CONSOLE_PATH } from '@/app/lib/developer-apps/sign-in-again';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { requireDeveloperConsoleAccess } from '../developer-console-access.server';
 import DeveloperAppsContent from './developer-apps-content';
 
 export const dynamic = 'force-dynamic';
-
-const CONSOLE_PATH = '/developers/apps';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t, locale } = await getServerTranslation('developers');

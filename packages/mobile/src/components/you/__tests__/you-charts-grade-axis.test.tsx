@@ -33,6 +33,8 @@ const frameLayout = vi.hoisted(() => ({ width: 320, onLayout: null as ((event: u
 // PixelRatio is needed because GroupedBarChart reads PixelRatio.getFontScale()
 // for its top-label rotation layout (#3779).
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   View: ({
     children,
     onLayout,

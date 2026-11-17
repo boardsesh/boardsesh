@@ -63,7 +63,7 @@ export function isBackendDownloadUrl(url: string): boolean {
 }
 
 export function useCncPreview(authToken: string | null): CncPreviewResult {
-  const beginRequest = useCncRequestScope(authToken);
+  const beginRequest = useCncRequestScope();
   const [isRequesting, setIsRequesting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
@@ -80,11 +80,7 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
           CREATE_CNC_PREVIEW,
           { config },
         );
-        if (!isCurrent(response)) {
-          if (isCurrent()) setErrorKey('generic');
-          return null;
-        }
-        return response.createCncPreview;
+        return isCurrent() ? response.createCncPreview : null;
       } catch (error) {
         if (isCurrent()) setErrorKey(cncErrorKey(error));
         return null;
@@ -107,10 +103,7 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
           CreateCncDownloadGrantMutationResponse,
           CreateCncDownloadGrantMutationVariables
         >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId, kind: 'PREVIEW' });
-        if (!isCurrent(response)) {
-          if (isCurrent()) setErrorKey('generic');
-          return;
-        }
+        if (!isCurrent()) return;
         const grantUrl = response.createCncDownloadGrant.url;
         if (!isBackendDownloadUrl(grantUrl)) {
           setErrorKey('generic');

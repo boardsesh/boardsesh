@@ -70,27 +70,11 @@ import { reportHandledError } from '../error-reporting';
 import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
-import {
-  createLoadedListTrackLoader,
-  combineLoadedListReceipts,
-  holdLoadedList,
-  isLoadedListHeld,
-  type LoadedList,
-  type LoadedListSource,
-  type LoadedListTrackLoader,
-} from './loaded-list-pages';
+import type { LoadedListTrackLoader } from './loaded-list-pages';
 import { getSetting } from '../../settings/hooks';
 import { isDrivingWall } from '../../components/play-drawer/use-climb-change-lights';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
-import {
-  bindTrackActivation,
-  bindTrackPageReceipt,
-  createTrackPublication,
-  isTrackPublicationSink,
-  registerPendingTrackLoader,
-  registerTrackPageLoader,
-  type TrackPageLoader,
-} from './track-pager';
+import { registerPendingTrackLoader, registerTrackPageLoader, type TrackPageLoader } from './track-pager';
 import { sourceIdForReports } from './playlist-view';
 import type { ReadyBoardArtSnapshot } from '../board-render/ready-board-art';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
@@ -312,21 +296,9 @@ export type PlaylistAddToQueueState = {
   pendingPlacement: QueueAddPlacement | null;
 };
 
-/** The list and board are captured before conversion or any external action. */
-export type CapturedBoardListActivation = Readonly<{
-  source: LoadedListSource;
-  initial: LoadedList;
-  board: BoardConfig;
-  assertLocal: () => void;
-}>;
-
 export type PlaylistActivationResult = {
   /** Callback shared by climb row taps and the header Play button. */
-  activate: (
-    climb: Climb,
-    readyBoardArt?: ReadyBoardArtSnapshot,
-    captured?: CapturedBoardListActivation,
-  ) => Promise<void>;
+  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => Promise<void>;
   /** Bulk additive queueing for the detail screen's Play next / Play last rows. */
   addToQueue: PlaylistAddToQueueState;
 };
@@ -1451,233 +1423,6 @@ export function usePlaylistActivation({
     [continuationAfterLoadedRows, registerPageLoader, loadedRowsArePages, loadedRowsAreTheList],
   );
 
-  // Accepted tracks own their fixed source beyond the origin screen. Only a
-  // later tap retires this pending refresh; registry ownership retires paging.
-  const capturedRefreshRef = useRef<AbortController | null>(null);
-  const activateCapturedList = useCallback(
-    (
-      climb: Climb,
-      tappedBoardArt: ReadyBoardArtSnapshot | undefined,
-      captured: CapturedBoardListActivation,
-    ): Promise<void> => {
-      const { source, initial, board, assertLocal } = captured;
-      const refreshController = new AbortController();
-      let dispatched = false;
-      const assertSource = () => {
-        try {
-          source.assertCurrent?.();
-        } catch {
-          throw holdLoadedList();
-        }
-      };
-      const assertCurrent = () => {
-        if (refreshController.signal.aborted) throw holdLoadedList();
-        assertSource();
-        if (!dispatched) assertLocal();
-        if (credentialGeneration !== getCredentialGeneration()) throw holdLoadedList();
-      };
-      let registered = false;
-      let transferred = false;
-      try {
-        assertCurrent();
-        capturedRefreshRef.current?.abort(holdLoadedList());
-        capturedRefreshRef.current = refreshController;
-        const identity = Object.freeze({});
-        const capturedClimbs = Object.freeze([...initial.climbs]);
-        const schemaClimb = toSchemaClimb(climb);
-        assertCurrent();
-        const target = resolveTarget(climb);
-        assertCurrent();
-        const wrongBoard =
-          !activeBoard || !(board.boardName === activeBoard.boardType && board.layoutId === activeBoard.layoutId);
-        const driving = isDrivingWall();
-        assertCurrent();
-        const preview = wrongBoard || !driving;
-        const predicate = preview ? acceptEveryClimb : (target?.isClimbable ?? acceptEveryClimb);
-        const checkedPredicate = (candidate: Climb) => {
-          assertSource();
-          const accepted = predicate(candidate);
-          assertSource();
-          return accepted;
-        };
-        const listLoader = createLoadedListTrackLoader(source);
-        const loaderId = registerTrackPageLoader(
-          async (offset, signal) => {
-            const load = await listLoader({ offset, count: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE, signal });
-            let published = false;
-            try {
-              assertSource();
-              load.receipt?.assertCurrent();
-              const climbs = load.climbs.filter(checkedPredicate);
-              const page = {
-                page: offset,
-                pageSize: 1,
-                climbs,
-                filteredOut: climbs.length !== load.climbs.length,
-                nextPage: load.nextOffset,
-              };
-              assertSource();
-              if (load.receipt) bindTrackPageReceipt(page, load.receipt);
-              published = true;
-              return page;
-            } finally {
-              if (!published) load.receipt?.release();
-            }
-          },
-          { assertCurrent: assertSource, dispose: source.dispose },
-        );
-        registered = true;
-        const continuation = initial.hasMore ? { loaderId, nextPage: initial.climbs.length } : undefined;
-        const decorate = (suggestion: PlaylistSuggestionSource | null) =>
-          suggestion && bindTrackActivation(suggestion, identity);
-        const item = climbToQueueItem(schemaClimb, { suggested: true });
-        assertCurrent();
-        const readyBoardArt =
-          tappedBoardArt?.climbUuid === climb.uuid && tappedBoardArt.frames === climb.frames
-            ? tappedBoardArt
-            : undefined;
-        const opening = { ...(readyBoardArt ? { readyBoardArt } : {}), boardConfig: board };
-        if (preview) {
-          const previewSource = decorate(
-            createPlaylistSuggestionSource({
-              playlistUuid: sourceId,
-              activatedClimb: climb,
-              climbs: [...capturedClimbs],
-              boardKey: wrongBoard
-                ? getQueueBoardKey({
-                    board_name: board.boardName,
-                    layout_id: board.layoutId,
-                    size_id: board.sizeId,
-                    set_ids: board.setIds,
-                  })
-                : target!.boardKey,
-              label,
-              continuation,
-            }),
-          );
-          assertCurrent();
-          openPlayDrawer(schemaClimb, { ...opening, previewQueueItem: item, playlistSuggestionSource: previewSource });
-          assertCurrent();
-          dispatched = true;
-          transferred = true;
-          initial.receipt?.release();
-          return Promise.resolve();
-        }
-        // Every callback and primitive below is invocation-local. The shared
-        // coordinator never reads loadedClimbsRef or a later screen loader.
-        const capturedQueue = {
-          setCurrentClimb: async (_climb: Climb, options: Parameters<typeof setCurrentClimb>[1]) => {
-            assertCurrent();
-            const snapshot = getQueueSnapshot();
-            assertCurrent();
-            if (snapshot.currentClimbQueueItem?.climb.uuid === climb.uuid) {
-              setPlaylistSuggestionSource(options?.playlistSuggestionSource ?? null);
-            } else {
-              setCurrentClimb(item, options);
-            }
-            // The local provider dispatch above is synchronous. Downstream
-            // already-admitted WS/BLE transport cancellation is separate work.
-            dispatched = true;
-            assertCurrent();
-            return item;
-          },
-          refreshPlaylistSuggestionSource: () => false,
-        };
-        const capture: NonNullable<Parameters<typeof activate>[1]> = () =>
-          Object.freeze({
-            signal: refreshController.signal,
-            assertCurrent,
-            decorateSource: decorate,
-            isHeld: isLoadedListHeld,
-            options: {
-              queueApi: capturedQueue,
-              sourceId,
-              allClimbs: [...capturedClimbs],
-              label,
-              resolveTarget: () => target,
-              pendingContinuation: (settled: Promise<boolean>) => {
-                // Installed before dispatch: a background refresh that never
-                // reaches publication still releases its initial handle.
-                void settled.then(() => initial.receipt?.release());
-                return {
-                  loaderId: registerPendingTrackLoader(settled, {
-                    assertCurrent,
-                    dispose: () => refreshController.abort(holdLoadedList()),
-                  }),
-                  nextPage: 0,
-                };
-              },
-              fetchClimbsForBoard: async () => {
-                assertCurrent();
-                return { climbs: [...capturedClimbs], continuation };
-              },
-              refreshErrorMessage,
-            },
-            publishRefresh: (suggestion: PlaylistSuggestionSource, expected: PlaylistSuggestionSource) =>
-              new Promise<boolean>((resolve) => {
-                let publication: ReturnType<typeof createTrackPublication> | undefined;
-                try {
-                  assertCurrent();
-                  if (!isTrackPublicationSink(refreshPlaylistSuggestionSource)) throw holdLoadedList();
-                  const consumer = combineLoadedListReceipts(initial.receipt ? [initial.receipt] : [], assertCurrent)!;
-                  publication = createTrackPublication(expected, consumer, assertCurrent, {
-                    onSettled: (outcome) => {
-                      if (outcome !== 'applied') refreshController.abort(holdLoadedList());
-                      resolve(outcome === 'applied');
-                    },
-                  });
-                  if (!refreshPlaylistSuggestionSource(suggestion, publication)) publication.settle(null);
-                } catch {
-                  publication?.settle(null);
-                  refreshController.abort(holdLoadedList());
-                  resolve(false);
-                }
-              }),
-          });
-        assertCurrent();
-        const openingSnapshot = getQueueSnapshot();
-        assertCurrent();
-        const alreadyCurrent = openingSnapshot.currentClimbQueueItem?.climb.uuid === climb.uuid;
-        openPlayDrawer(schemaClimb, alreadyCurrent ? opening : { ...opening, committedExternally: true });
-        assertCurrent();
-        transferred = true;
-        return activate(climb, capture).catch((error: unknown) => {
-          initial.receipt?.release();
-          if (isLoadedListHeld(error) || isAbortError(error)) return;
-          try {
-            assertCurrent();
-          } catch {
-            return;
-          }
-          console.error('Playlist climb activation failed:', error);
-          assertCurrent();
-          reportHandledError(error, { tags: { source: 'playlist', op: 'activate-climb' } });
-        });
-      } catch (error: unknown) {
-        refreshController.abort(holdLoadedList());
-        if (!isLoadedListHeld(error) && !isAbortError(error)) throw error;
-        return Promise.resolve();
-      } finally {
-        if (!transferred) initial.receipt?.release();
-        if (!registered) source.dispose?.();
-      }
-    },
-    [
-      activeBoard,
-      activate,
-      credentialGeneration,
-      getQueueSnapshot,
-      label,
-      openPlayDrawer,
-      refreshErrorMessage,
-      refreshPlaylistSuggestionSource,
-      resolveTarget,
-      setCurrentClimb,
-      setPlaylistSuggestionSource,
-      sourceId,
-    ],
-  );
-
   // Open the drawer immediately, then let the shared hook commit the climb. The
   // open and the synchronous setCurrentClimb dispatch land in the same React
   // batch, so the drawer (rendering from currentClimbQueueItem) paints the
@@ -1685,8 +1430,7 @@ export function usePlaylistActivation({
   // the caller already dispatched, so it doesn't re-commit or treat this as a
   // preview.
   const activatePlaylistClimb = useCallback(
-    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot, captured?: CapturedBoardListActivation) => {
-      if (captured) return activateCapturedList(requestedClimb, tappedBoardArt, captured);
+    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
       if (credentialGeneration !== getCredentialGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
       // details retained by a menu or native gesture callback. Not when it is
@@ -2050,7 +1794,6 @@ export function usePlaylistActivation({
     },
     [
       activate,
-      activateCapturedList,
       activeBoard,
       allClimbs,
       appendQueueItems,

@@ -23,7 +23,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => createElement('div', { 'data-testid': 'redirect' }, href),
 }));
 vi.mock('../../../../src/lib/analytics', () => ({
-  readPosthogFeatureFlags: () => accessState.posthogFlags,
+  readPosthogFeatureFlagSnapshot: () => ({ flags: accessState.posthogFlags, payloads: {} }),
   readPosthogFeatureFlagsRequestId: () => undefined,
   subscribePosthogFeatureFlags: () => () => undefined,
 }));

@@ -156,14 +156,14 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
             size={36}
           />
           <View style={styles.headerText}>
-            <Text variant="subheadline" style={styles.title} numberOfLines={1}>
+            <Text emphasized variant="subheadline" numberOfLines={1}>
               {lead.actorDisplayName ?? setterUsername ?? t('authors.newClimb')}
             </Text>
             {/* One line, count first: the count in a bolder secondary colour, the
                 time quieter — the same two-tier treatment the session card uses,
                 so the two cards read as one system. */}
             <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.metaLine}>
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.statEmphasis}>
+              <Text emphasized variant="caption1" color={systemColors.secondaryLabel}>
                 {t('authors.newClimbCount', { count: total })}
               </Text>
               {' · '}
@@ -323,9 +323,7 @@ const styles = StyleSheet.create({
   wrapper: { marginHorizontal: spacing[4], marginTop: spacing[3] },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
   headerText: { flex: 1 },
-  title: { fontWeight: '600' },
   metaLine: { marginTop: 2 },
-  statEmphasis: { fontWeight: '600' },
   heroSlot: { marginTop: spacing[2] },
   heroPressable: { margin: -spacing[1], padding: spacing[1], borderRadius: borderRadius.md },
   carouselContent: { paddingHorizontal: 0 },

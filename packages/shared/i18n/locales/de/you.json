@@ -9,7 +9,8 @@
     "sessions": "Sessions",
     "logbook": "Routenbuch",
     "social": "Social",
-    "climbs": "Boulder"
+    "climbs": "Boulder",
+    "created": "Erstellt"
   },
   "mobile": {
     "unknownName": "Kletterer*in",

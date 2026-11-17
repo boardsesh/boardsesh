@@ -13,6 +13,8 @@ These commands boot Metro with `EXPO_PUBLIC_STORY_MODE=1`. The root chooses the 
 
 The route `dev/stories/<id>` also selects that isolated root in a dev bundle. For a fresh capture, use the commands above so the production root cannot initialize before the router resolves the link. A production bundle does not load story modules.
 
+Native deep links to `dev/stories` and its internal `dev/story-tabs` routes bypass application consent deferral in dev bundles. The isolated root has no application consent flow to settle; ordinary app links and production bundles retain that gate.
+
 Visual capture runners preserve `--render-mode aura|classic|default` in the story deep link. Ad hoc links can use `?renderMode=classic`; the default is Aura. Requested Aura captures wait for renderer capability and fail if the installed binary would fall back to classic.
 
 Story IDs are `<filename>--<key>`, kebab-cased: `Climbs.stories.tsx` with `populated` becomes `climbs--populated`. A bare filename ID selects its first declared story. The index at `dev/stories` lists all stories. Only the requested module is evaluated for a direct story link.
@@ -49,6 +51,8 @@ export default stories;
 
 Set `tab` on fullscreen tab stories to mount the production tab navigator, native headers, tablet rail and foldable split shell. The public story URL redirects internally while retaining its story ID and capture readiness.
 
+Retain the production screen’s content wrappers as well as its chrome: climb lists apply `useHorizontalSafeArea` to their clip bounds, Profile uses `ReadableColumn`, and Session pads its tab content before marking `HorizontalSafeAreaApplied`. The player scene applies the same measured `playContentSideInsets` route policy as the live player. Shared session-detail presentation bounds its list header and rows together and marks that subtree inset; overlays remain outside those bounds. Native iPad sidebars and the Duo rail can otherwise cover successfully rendered content. Inspect the raw capture as well as the readiness result; asset readiness does not prove that navigation chrome leaves those assets visible.
+
 Use ordinary props and local state for interactions. A view can read theme, translations and layout; it must not require fake auth/query/board providers. Extract shared chrome into a view with explicit props too. Fixtures belong under `src/dev/fixtures` or in the story module, never in the production screen.
 
 ## Capture readiness
@@ -62,7 +66,15 @@ render: ({ onReady, onError }) => (
 readiness: 'explicit',
 ```
 
-Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay.
+Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay. iOS visual captures observe both Metro and the continuous native JavaScript log because Metro console forwarding can omit a ready message. Each launch/navigation takes fresh byte offsets; native events must also have an original event timestamp at or after that boundary, excluding buffered old-process messages. Relaunch boundaries are taken after successful termination. Errors from either stream still fail the capture.
+
+For iPhone Duo hinge failures, the capture debug artifact retains the latest image from each display and a `probes.jsonl` log with capture and conversion errors. Startup diagnostics also retain the hinge log before installation can fail (including C-only library-entry process names/PIDs before its C-only SpringBoard guard) and `startup.jsonl` stage timings, command exit status, signal, error code and output-presence flags without environment values. Cleanup failures trigger diagnostic-only `launchctl getenv` reads of both owned names and a unique never-set control (15 seconds each); these records do not infer absence from an exit code or turn a failed cleanup into success. Failed display reads are unknown, not proof of a dark screen; the runner waits for a known pose before toggling the hinge.
+
+The instrumented Duo run `43902351703` showed the hinge library entering `launchctl` in both failed attempts. After the timed-out first cleanup, `getenv DYLD_INSERT_LIBRARIES` returned nonempty output while the cleared log key and never-set control returned empty output (all exit 0). The constructor now rejects non-SpringBoard processes with exact `getprogname()`/`strcmp` before calling Foundation. Injection and failed removal are observed; Foundation initialization as the timeout cause remains a hypothesis until native validation. Cleanup failures remain fatal.
+
+Before an immutable iOS story or integration-smoke Metro session starts, the runner resolves the current iOS runtime version once with the capture environment (bounded to 120 seconds). It passes that exact value through the existing runtime override to avoid recalculating the fingerprint for each manifest request. Existing nonempty overrides are preserved; resolver failures stop capture. Native builds, OTA publishing, Android captures and watched development servers are unchanged.
+
+iOS capture and probe jobs allow 90 minutes for the complete shard, including the existing bounded cold-boot retry. In run `43867676396`, the first Pro Max attempt spent 22 minutes booting and exhausting launch retries; the second recovered and captured 13 stories between 13:47 and 14:07 UTC before the old 60-minute job limit interrupted it. The larger job budget leaves time for the remaining captures and artifact upload; individual boot, launch and story readiness deadlines are unchanged.
 
 `mobile:screenshots` uses the same isolated root for visual store/help captures. `scripts/lib/mobile-visual-stories.ts` maps established capture filenames to explicit stories, preserving the device and locale output directories. Board-family stories must use that board's real fixture geometry; a missing family must fail instead of substituting Kilter artwork.
 

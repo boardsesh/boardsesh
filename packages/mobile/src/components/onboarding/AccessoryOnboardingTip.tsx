@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ONBOARDING_TIP_ACCESSORY_KEY } from '@boardsesh/key-value-storage';
@@ -32,16 +32,17 @@ export function AccessoryOnboardingTip() {
   const hasCurrentClimb = useStickyAccessoryPresence();
   const bottomChrome = useBottomChromeMetrics();
   const [tipVisible, setTipVisible] = useState(false);
+  const dismissedRef = useRef(false);
 
   // Arm the tip the first time the accessory bar is on screen (a current climb
   // exists) AND it hasn't been seen. `hasSeenTip` returns true on a read error, so
   // a flaky store never nags. Re-checks whenever presence flips true so a climb
   // appearing later in the session still triggers it once.
   useEffect(() => {
-    if (!hasCurrentClimb) return;
+    if (!hasCurrentClimb || dismissedRef.current) return;
     let cancelled = false;
     void hasSeenTip(ONBOARDING_TIP_ACCESSORY_KEY).then((seen) => {
-      if (!cancelled && !seen) setTipVisible(true);
+      if (!cancelled && !dismissedRef.current && !seen) setTipVisible(true);
     });
     return () => {
       cancelled = true;
@@ -49,8 +50,10 @@ export function AccessoryOnboardingTip() {
   }, [hasCurrentClimb]);
 
   const dismissTip = useCallback(() => {
+    dismissedRef.current = true;
     setTipVisible(false);
-    void markTipSeen(ONBOARDING_TIP_ACCESSORY_KEY);
+    // A failed write must not restore the overlay during this app launch.
+    void markTipSeen(ONBOARDING_TIP_ACCESSORY_KEY).catch(() => undefined);
   }, []);
 
   // Tie the tip to the bar it points at: it floats only while a bar is actually on
@@ -72,6 +75,7 @@ export function AccessoryOnboardingTip() {
           text={t('mobile.onboarding.tips.accessory')}
           dismissLabel={t('actions.close')}
           onDismiss={dismissTip}
+          onPress={dismissTip}
           icon="chevron.down"
           solid
         />

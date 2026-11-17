@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -8,21 +8,25 @@ import { useCrewFeed } from '../use-crew-feed';
 
 const request = vi.hoisted(() => vi.fn());
 const identity = vi.hoisted(() => ({ userId: 'viewer' as string | undefined }));
+vi.hoisted(() => {
+  const resolved = Intl.DateTimeFormat().resolvedOptions();
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({ ...resolved, timeZone: 'GMT' });
+});
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../../../../hooks/use-current-user-id', () => ({ useStoredUserId: () => identity }));
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 beforeEach(() => {
+  queryClient.clear();
   request.mockReset();
   identity.userId = 'viewer';
 });
+afterAll(() => vi.restoreAllMocks());
 
-// The hook resolves the device zone once at module load; the test env's is
-// whatever TZ vitest runs under, so assert against the same source rather than
-// pinning a zone the CI box may not share.
-const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+// iOS reports GMT; the query and its cache key must use the same canonical zone.
+const timeZone = 'UTC';
 
 describe('useCrewFeed', () => {
   it('pages with the backend cursor, carrying the viewer zone and no board or gym filters', async () => {
@@ -30,6 +34,8 @@ describe('useCrewFeed', () => {
     request.mockResolvedValueOnce({ crewFeed: { items: [], cursor: null, hasMore: false } });
     const { result } = renderHook(() => useCrewFeed(true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(queryClient.getQueryState(['crewFeed', 'viewer', 'UTC'])).toBeDefined();
+    expect(queryClient.getQueryState(['crewFeed', 'viewer', 'GMT'])).toBeUndefined();
     expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, {
       input: { limit: 20, cursor: null, timeZone, groupClimbs: true },
     });

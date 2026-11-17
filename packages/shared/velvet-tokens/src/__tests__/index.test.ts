@@ -1,15 +1,88 @@
 import { describe, it, expect } from 'vitest';
 import { brandColors, brandColorsDark, marketingSurfaces, materialSurfaces, withAlpha, blendOpaque } from '../index';
 
+/** sRGB `#RRGGBB` channels, linearised. */
+function linearChannels(hex: string): [number, number, number] {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return [red, green, blue];
+}
+
+function contrastRatio(first: string, second: string): number {
+  const luminance = (hex: string) => {
+    const [red, green, blue] = linearChannels(hex);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((left, right) => right - left);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** OKLCH (Björn Ottosson's OKLab, polar), hue in degrees. */
+function toOklch(hex: string): { lightness: number; chroma: number; hue: number } {
+  const [red, green, blue] = linearChannels(hex);
+  const long = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+  const medium = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+  const short = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+  const lightness = 0.2104542553 * long + 0.793617785 * medium - 0.0040720468 * short;
+  const greenRed = 1.9779984951 * long - 2.428592205 * medium + 0.4505937099 * short;
+  const blueYellow = 0.0259040371 * long + 0.7827717662 * medium - 0.808675766 * short;
+  const hue = (Math.atan2(blueYellow, greenRed) * 180) / Math.PI;
+  return { lightness, chroma: Math.hypot(greenRed, blueYellow), hue: hue < 0 ? hue + 360 : hue };
+}
+
 describe('brand palette anchors', () => {
   it('holds the load-bearing Velvet values per scheme', () => {
     // Foreground vs fill diverge in dark; these are the values the whole web split rests on.
-    expect(brandColors.primary).toBe('#6D28D9');
-    expect(brandColors.primaryFill).toBe('#6D28D9');
+    expect(brandColors.tint).toBe('#5B22F2');
+    expect(brandColors.primary).toBe('#5B22F2');
+    expect(brandColors.primaryFill).toBe('#5B22F2');
+    expect(brandColors.primaryStrong).toBe('#4A16CF');
     expect(brandColors.accent).toBe('#FF8A3D');
     expect(brandColors.onPrimary).toBe('#FFFFFF');
-    expect(brandColorsDark.primary).toBe('#A78BFA'); // lifted foreground
-    expect(brandColorsDark.primaryFill).toBe('#7C3AED'); // fill stays dark for white text
+    expect(brandColorsDark.tint).toBe('#9784FF');
+    expect(brandColorsDark.primary).toBe('#9784FF'); // lifted foreground
+    expect(brandColorsDark.primaryFill).toBe('#6D33FF'); // fill stays dark for white text
+    expect(brandColorsDark.primaryStrong).toBe('#9C8CFF'); // a step lighter, for the wash
+  });
+
+  it('keeps tint and fill on one hue, differing only in lightness, with dark chroma at least light chroma', () => {
+    const light = toOklch(brandColors.primaryFill);
+    for (const color of [
+      brandColors.tint,
+      brandColors.primaryStrong,
+      brandColorsDark.tint,
+      brandColorsDark.primaryFill,
+    ]) {
+      expect(Math.abs(toOklch(color).hue - light.hue), color).toBeLessThan(7);
+    }
+    expect(toOklch(brandColorsDark.primaryFill).chroma).toBeGreaterThanOrEqual(light.chroma);
+    // Strong is the same violet one step further from the ground: darker in light, lighter in dark.
+    expect(toOklch(brandColors.primaryStrong).lightness).toBeLessThan(toOklch(brandColors.tint).lightness);
+    expect(toOklch(brandColorsDark.primaryStrong).lightness).toBeGreaterThan(toOklch(brandColorsDark.tint).lightness);
+  });
+
+  it('clears WCAG AA for the tint on its grounds and for white on the fill', () => {
+    for (const ground of ['#FFFFFF', '#F2F2F7']) {
+      expect(contrastRatio(brandColors.tint, ground), ground).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const ground of ['#000000', '#1C1C1E', '#2C2C2E']) {
+      expect(contrastRatio(brandColorsDark.tint, ground), ground).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrastRatio(brandColors.onPrimary, brandColors.primaryFill)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(brandColorsDark.onPrimary, brandColorsDark.primaryFill)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps primaryStrong at 4.5:1 on the 20% fill wash over every sheet', () => {
+    for (const ground of ['#FFFFFF', '#F2F2F7']) {
+      const wash = blendOpaque(brandColors.primaryFill, ground, 0.2);
+      expect(contrastRatio(brandColors.primaryStrong, wash), wash).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const ground of ['#1C1C1E', '#2C2C2E']) {
+      const wash = blendOpaque(brandColorsDark.primaryFill, ground, 0.2);
+      expect(contrastRatio(brandColorsDark.primaryStrong, wash), wash).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('pairs the amber accent with the same dark ink in both schemes', () => {

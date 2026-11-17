@@ -1,6 +1,150 @@
 {
-  "generatedAt": "2026-11-15T21:30:40.171Z",
+  "generatedAt": "2026-11-17T09:06:52.323Z",
   "entries": [
+    {
+      "prNumber": 7708,
+      "category": "fixed",
+      "title": "The board holds its size when you swipe between climbs.",
+      "mergedAt": "2026-11-17T08:55:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7708"
+    },
+    {
+      "prNumber": 7703,
+      "category": "fixed",
+      "title": "Signing out no longer fails now and then while another phone opens the app.",
+      "mergedAt": "2026-11-17T08:36:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7703"
+    },
+    {
+      "prNumber": 7454,
+      "category": "new",
+      "title": "Set your Spraywall's LED brightness once for everyone at the wall.",
+      "mergedAt": "2026-11-17T07:00:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7454",
+      "body": "Your Spraywall's LEDs can switch off by themselves after 15 minutes to 2 hours.\nFind your Spraywall's WLED controller on your Wi-Fi in one tap.\nUntil every phone at a Spraywall has this update, a phone without it resets the brightness and cancels auto-off whenever it lights a climb."
+    },
+    {
+      "prNumber": 7644,
+      "category": "fixed",
+      "title": "Your board keeps the right holds lit through fast swipes.",
+      "mergedAt": "2026-11-17T06:58:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7644"
+    },
+    {
+      "prNumber": 7672,
+      "category": "improved",
+      "title": "A new profile photo now saves even if you leave Edit profile before it finishes.",
+      "mergedAt": "2026-11-16T23:09:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7672"
+    },
+    {
+      "prNumber": 7677,
+      "category": "new",
+      "title": "Selected options across the app share one look: a soft purple wash, the same as the climb you're on",
+      "mergedAt": "2026-11-16T23:00:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7677"
+    },
+    {
+      "prNumber": 7671,
+      "category": "improved",
+      "title": "A half-written comment is still there when you reopen the comments sheet.",
+      "mergedAt": "2026-11-16T22:46:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7671"
+    },
+    {
+      "prNumber": 7643,
+      "category": "new",
+      "title": "The Boards sheet lists your gym's walls together, with the one you're on marked",
+      "mergedAt": "2026-11-16T20:25:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7643",
+      "body": "Your boards is a quick list, so every board you own is one tap away\nWalking into another gym? The board in front of you is offered first"
+    },
+    {
+      "prNumber": 7635,
+      "category": "new",
+      "title": "Text follows your iPhone's Larger Text setting the way Apple's own apps do",
+      "mergedAt": "2026-11-16T19:24:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7635"
+    },
+    {
+      "prNumber": 7628,
+      "category": "fixed",
+      "title": "Session recaps keep grades and climb names clear of navigation controls.",
+      "mergedAt": "2026-11-16T19:22:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7628"
+    },
+    {
+      "prNumber": 7599,
+      "category": "fixed",
+      "title": "Deleting your own climb from a list works again.",
+      "mergedAt": "2026-11-16T19:08:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7599",
+      "body": "A name change, vote or report now finishes even if you leave the screen straight away.\nA profile save with a new photo is still cancelled if you leave before it finishes."
+    },
+    {
+      "prNumber": 7602,
+      "category": "fixed",
+      "title": "Your set climbs get their own My climbs playlist in Discover. Pin it, play it, and find new saves straight away.",
+      "mergedAt": "2026-11-16T19:07:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7602"
+    },
+    {
+      "prNumber": 7632,
+      "category": "new",
+      "title": "The browser app now reloads when your account changes in another tab, so you never see someone else's logbook.",
+      "mergedAt": "2026-11-16T18:52:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7632"
+    },
+    {
+      "prNumber": 7634,
+      "category": "new",
+      "title": "On boardsesh.com, switching accounts in one tab now refreshes your other tabs, so they never show the last account's data.",
+      "mergedAt": "2026-11-16T18:52:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7634"
+    },
+    {
+      "prNumber": 7603,
+      "category": "new",
+      "title": "Cleaner screens on iOS 26: the grey band behind the top bar is gone",
+      "mergedAt": "2026-11-16T18:03:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7603"
+    },
+    {
+      "prNumber": 7601,
+      "category": "fixed",
+      "title": "Dismiss the bottom-bar hint by tapping its text or the larger ×.",
+      "mergedAt": "2026-11-16T17:04:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7601"
+    },
+    {
+      "prNumber": 7570,
+      "category": "fixed",
+      "title": "The Climbs list no longer goes blank after you pick a grade",
+      "mergedAt": "2026-11-16T15:48:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7570"
+    },
+    {
+      "prNumber": 7573,
+      "category": "fixed",
+      "title": "Your wall's hold photos appear when Android opens the bundled app offline.",
+      "mergedAt": "2026-11-16T14:26:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7573"
+    },
+    {
+      "prNumber": 7580,
+      "category": "new",
+      "title": "The Boards list finds the board in front of you on its own",
+      "mergedAt": "2026-11-16T14:26:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7580",
+      "body": "Add a board or a Spraywall from the + at the top of Boards\nWalls at your gym sit right under the one you're on"
+    },
+    {
+      "prNumber": 7571,
+      "category": "fixed",
+      "title": "Board previews load more reliably, and browser climb lists support vertical touch scrolling.",
+      "mergedAt": "2026-11-16T14:09:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7571"
+    },
     {
       "prNumber": 7556,
       "category": "new",
@@ -9642,6 +9786,30 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T07:00:48Z",
+      "sha": "f042c76c0ba3d6e4ff059a7d5b5aa77ee68e0a32",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "f331d5ced4d9327d7403df63042b45a4f66fe0e0",
+        "ios": "359878ab8f09c58a49f9e765f49b59ead11a84d9"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-11-15T21:23:36Z",
+      "sha": "1d078d8c3d3ef2f819b90e6f04df1f89dbfd35ae",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "a82c91338e2bc72b3e2fbb861f8890b4ffd75491"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-15T19:19:30Z",

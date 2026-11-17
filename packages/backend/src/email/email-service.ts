@@ -171,7 +171,16 @@ function shell(heading: string, body: string): string {
 // rather than each module growing its own near-identical copy. Exported as a
 // block at the end of the private helpers so the definitions above stay
 // unannotated and it is obvious in one place what leaves this module.
-export { colors as emailColors, escapeHtml, headerSafe, fromAddress, getTransporter, button, shell };
+export {
+  colors as emailColors,
+  emailSchema as deliverableEmailSchema,
+  escapeHtml,
+  headerSafe,
+  fromAddress,
+  getTransporter,
+  button,
+  shell,
+};
 
 /**
  * Send the domain-verification email for a gym claim. Clicking the link proves

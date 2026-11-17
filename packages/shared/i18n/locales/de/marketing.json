@@ -342,7 +342,7 @@
       "p2Start": "Die öffentliche API, die auf der",
       "p2Link": "API-Dokumentationsseite",
       "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder für angemeldete Kletterer*innen über deren eigenes Konto handeln, innerhalb der Ratenlimits, die der Dienst anwendet.",
-      "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, der Boardsesh-Konten, -Daten oder -Server als eigenen Dienst nutzt, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code ist genau dafür da. Das Entwicklungs-Setup in CONTRIBUTING.md ist heute der Einstieg; eine offizielle Self-Hosting-Doku kommt noch.",
+      "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, deren Konten, Klettern, Board-Steuerung oder Sessions auf den Servern von Boardsesh laufen, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Das Boardsesh-Konto von Kletterer*innen mit ihrer Erlaubnis mit deiner App zu verbinden, ist etwas anderes: Über die OAuth-API, innerhalb der Scopes aus der Entwicklerdoku und unter den Nutzungsbedingungen für Entwickler*innen, die du bei der Registrierung der App akzeptierst, ist das eine Integration und braucht keine weitere Erlaubnis von uns. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code ist genau dafür da. Das Entwicklungs-Setup in CONTRIBUTING.md ist heute der Einstieg; eine offizielle Self-Hosting-Doku kommt noch.",
       "p4Start": "Du musst auch nicht mit einer leeren Datenbank anfangen. Die",
       "p4Link": "nächtlichen Board-Snapshots",
       "p4End": "sind öffentliche SQLite-Dateien der Boulder-Kataloge, für uns günstig auszuliefern, und du darfst sie gern nutzen. Wir sprechen auch gern darüber, Daten ohne Personenbezug wie Boulder und Grade mit einem anderen Dienst zu synchronisieren.",
@@ -937,7 +937,7 @@
   },
   "privacy": {
     "title": "Datenschutzerklärung",
-    "lastUpdated": "Zuletzt aktualisiert: 3. November 2026",
+    "lastUpdated": "Zuletzt aktualisiert: 17. November 2026",
     "intro1": "Boardsesh ist eine quelloffene App, die Kletter-Trainingsboards (Kilter, Tension, MoonBoard) über Bluetooth steuert. Diese Erklärung sagt dir, welche Daten wir erheben, wozu, und was wir damit machen.",
     "intro2ProductAnalytics": "Kurz gesagt: Wir erheben nur, was die App zum Laufen braucht. Wir verkaufen deine Daten nicht, in Boardsesh gibt es keine Werbung, und wir geben nichts an Datenhändler weiter. Wir werben für Boardsesh auf Reddit und Instagram, und auf unserer Website umfassen Analysen die Messung dieser Anzeigen mit Meta und Reddit, wie unten beschrieben.",
     "collect": {

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch, recoverAuthRejection, setOnForcedSignOut } from '../auth-interceptor.web';
 import { clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
+import { isBrowserPageRetired, resetBrowserPageRetirementForTests } from '../browser-page-retirement.web';
+import { SessionSupersededError } from '../browser-session-guard.web';
 
 // The revalidation/sign-out fetches triggered here hit www's auth endpoints
 // cross-origin, so `webApiUrl` resolves them to the absolute web origin
@@ -42,7 +44,13 @@ beforeEach(async () => {
   setOnForcedSignOut(null);
   reportHandledErrorMock.mockReset();
   await clearTokens();
+  // One module instance serves every test; each test models a fresh page.
+  resetBrowserPageRetirementForTests();
 });
+
+function superseded(): unknown {
+  return expect.objectContaining({ name: 'AbortError', code: 'superseded' });
+}
 
 describe('authenticatedFetch on web', () => {
   it('revalidates one 401 and retries with the refreshed memory token', async () => {
@@ -76,10 +84,15 @@ describe('authenticatedFetch on web', () => {
       return Promise.resolve(new Response(null, { status: 401 }));
     });
 
-    const [first, second] = await Promise.all([authenticatedFetch('/graphql/a'), authenticatedFetch('/graphql/b')]);
+    const [first, second] = await Promise.allSettled([
+      authenticatedFetch('/graphql/a'),
+      authenticatedFetch('/graphql/b'),
+    ]);
 
-    expect(first.status).toBe(401);
-    expect(second.status).toBe(401);
+    // The account left, so the page retires and its callers show nothing.
+    expect(first).toEqual({ status: 'rejected', reason: superseded() });
+    expect(second).toEqual({ status: 'rejected', reason: superseded() });
+    expect(isBrowserPageRetired()).toBe(true);
     expect(fetchMock.mock.calls.filter(([url]) => url === `${WEB}/api/auth/session`)).toHaveLength(2);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
@@ -95,6 +108,7 @@ describe('authenticatedFetch on web', () => {
 
     expect(response.status).toBe(401);
     expect(forcedSignOut).not.toHaveBeenCalled();
+    expect(isBrowserPageRetired()).toBe(false);
     await expect(getAuthToken()).resolves.toBe('old-jwe');
   });
 
@@ -119,9 +133,8 @@ describe('authenticatedFetch on web', () => {
       return Promise.resolve(new Response(null, { status: 401 }));
     });
 
-    const response = await authenticatedFetch('/graphql');
+    await expect(authenticatedFetch('/graphql')).rejects.toEqual(superseded());
 
-    expect(response.status).toBe(401);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
   });
@@ -168,15 +181,14 @@ describe('authenticatedFetch on web', () => {
       return Promise.resolve(new Response(null, { status: 401 }));
     });
 
-    const response = await authenticatedFetch('/graphql');
+    await expect(authenticatedFetch('/graphql')).rejects.toEqual(superseded());
 
-    expect(response.status).toBe(401);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     expect(reportHandledErrorMock).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
-  it('returns an old-account response that was already sent before a browser account switch', async () => {
+  it('drops an old-account response that was already sent before a browser account switch', async () => {
     await primeToken();
     let resolveOldRequest!: (response: Response) => void;
     fetchMock.mockReturnValueOnce(
@@ -193,9 +205,15 @@ describe('authenticatedFetch on web', () => {
       .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
       .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
     await synchronizeWebSession();
-    resolveOldRequest(jsonResponse({ data: { privateForUserOne: true } }));
+    const heldResponse = jsonResponse({ data: { privateForUserOne: true } });
+    resolveOldRequest(heldResponse);
 
-    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 200 }));
+    const outcome = await oldRequest.catch((error: unknown) => error);
+    expect(outcome).toBeInstanceOf(SessionSupersededError);
+    expect(outcome).toEqual(superseded());
+    // The held body is cancelled, never handed to a caller.
+    expect(heldResponse.bodyUsed).toBe(true);
+    expect(isBrowserPageRetired()).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
@@ -230,12 +248,14 @@ describe('authenticatedFetch on web', () => {
     });
     resolveOldSession(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }));
 
+    // The sign-in's clear settles the old revalidation while the page still
+    // holds A, so A's own 401 reaches its caller, as before #7596.
     await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 401 }));
     expect(forcedSignOut).not.toHaveBeenCalled();
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
 
-  it('returns an in-flight A response when cookie revalidation discovers B without a broadcast', async () => {
+  it('drops an in-flight A response when cookie revalidation discovers B without a broadcast', async () => {
     await primeToken();
     let resolveOldRequest!: (response: Response) => void;
     fetchMock.mockReturnValueOnce(
@@ -258,8 +278,21 @@ describe('authenticatedFetch on web', () => {
     });
     resolveOldRequest(jsonResponse({ data: { privateForUserOne: true } }));
 
-    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 200 }));
+    await expect(oldRequest).rejects.toEqual(superseded());
+    expect(isBrowserPageRetired()).toBe(true);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
+  });
+
+  it('refuses a new send from a retired page before it reaches the network', async () => {
+    await primeToken();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
+    await synchronizeWebSession();
+    fetchMock.mockReset();
+
+    await expect(authenticatedFetch('/graphql', { method: 'POST' })).rejects.toEqual(superseded());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

@@ -197,10 +197,10 @@ export async function frameComposition(
     const panelWidth = Math.floor(width * scale);
     panels.push({ raw: sources[0], left: Math.floor((width - panelWidth) / 2), top: screenshotTop, width: panelWidth });
   } else if (layout === 'wall-status') {
-    // The actual Android rail occupies y270–418 in the 1080×1920 capture.
+    // The current-climb row occupies y390–620 in the 1080×1920 capture.
     // Enlarge those pixels separately; retain the complete native screen below
     // so the different locally selected climb remains visible in its context.
-    const crop = { top: 270 / 1920, height: 148 / 1920 };
+    const crop = { top: 390 / 1920, height: 230 / 1920 };
     const railHeight = Math.round((textWidth * height * crop.height) / width);
     const screenTop = screenshotTop + railHeight + Math.round(height * 0.028);
     const scale = Math.min(textWidth / width, (height * 0.96 - screenTop) / height);
@@ -519,8 +519,9 @@ export async function frameShowcaseComposition(
     }
   } else if (!wide && (layout === 'store-queue' || layout === 'store-wall')) {
     // These details are lifted from the same full native capture shown below.
-    // Queue: first two rows and their contributor avatars. Wall: native status chip.
-    const crop = layout === 'store-queue' ? { top: 0.195, height: 0.34 } : { top: 0.075, height: 0.06 };
+    // Queue: first two rows and their contributor avatars. Wall: the current-climb
+    // card in the expanded wall sheet (the presenting header is empty in this story).
+    const crop = layout === 'store-queue' ? { top: 0.195, height: 0.34 } : { top: 0.26, height: 0.125 };
     const detailWidth = region.width;
     const detailHeight = detailWidth * aspect * crop.height;
     const screenTop = region.top + detailHeight + height * 0.025;

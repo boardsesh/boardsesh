@@ -75,7 +75,9 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           ]}
         >
           <GoogleLogo />
-          <Text style={[styles.googleLabel, { color: googleColors.label }]}>{t('login.providers.google')}</Text>
+          <Text emphasized style={[styles.googleLabel, { color: googleColors.label }]}>
+            {t('login.providers.google')}
+          </Text>
         </PressableSurface>
       ) : null}
     </View>
@@ -99,7 +101,7 @@ const createStyles = (textStyles: TypographyScale) =>
       paddingHorizontal: 16,
       paddingVertical: 12,
     },
-    googleLabel: { fontSize: textStyles.body.fontSize, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
+    googleLabel: { fontSize: textStyles.body.fontSize, flexShrink: 1, textAlign: 'center' },
     disabled: { opacity: opacity.disabled },
     pressed: { opacity: 0.8 },
   });

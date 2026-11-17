@@ -17,9 +17,9 @@ export type HorizontalSafeAreaInputs = {
  * On iPhone Duo the system moves the tab bar and the status bar to the trailing edge
  * (HIG, "Designing for iPhone Duo": "Use safe areas to make sure controls don't cover
  * your content"), and a tab's safe area reports them: right 84 on the inner display
- * in landscape. A portrait-locked iPhone reports 0 on both sides, and so does an
- * iPad tab, which UIKit lays out beside its sidebar, so this is a no-op on
- * both.
+ * in landscape. A portrait-locked iPhone reports zero on both sides. An iPad
+ * sidebar can overlay content and report a leading inset; use the measured
+ * inset rather than assuming UIKit always resizes the tab beside its sidebar.
  *
  * Once one container pads, everything inside it is already clear, so a nested
  * container must not pad a second time.

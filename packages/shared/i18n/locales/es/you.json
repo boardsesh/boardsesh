@@ -9,7 +9,8 @@
     "sessions": "Sesiones",
     "logbook": "Historial",
     "social": "Social",
-    "climbs": "Bloques"
+    "climbs": "Bloques",
+    "created": "Creados"
   },
   "mobile": {
     "unknownName": "Escalador",

@@ -51,10 +51,7 @@ beforeEach(() => {
 });
 
 function mockCredentialsResponse(credentials: unknown[] = []) {
-  return {
-    ok: true,
-    json: () => Promise.resolve({ credentials }),
-  };
+  return Response.json({ credentials });
 }
 
 const tensionCredential = {
@@ -74,7 +71,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('renders card with Link and Import buttons when no credential exists', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="tension" />);
 
@@ -100,7 +97,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('renders card with Unlink button when credential exists', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([tensionCredential]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([tensionCredential]));
 
       render(<BoardImportPrompt boardType="tension" />);
 
@@ -113,7 +110,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('shows only Import for kilter (no Link button)', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="kilter" />);
 
@@ -132,7 +129,7 @@ describe('BoardImportPrompt', () => {
       ['tension', 'Tension'],
       ['soill', 'So iLL'],
     ] as const)('opens the %s link dialog with its canonical name', async (boardType, boardName) => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType={boardType} />);
 
@@ -150,7 +147,7 @@ describe('BoardImportPrompt', () => {
     it('submits credentials and shows success message', async () => {
       mockFetch
         .mockResolvedValueOnce(mockCredentialsResponse([]))
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) })
+        .mockResolvedValueOnce(Response.json({}))
         .mockResolvedValueOnce(mockCredentialsResponse([tensionCredential]));
 
       render(<BoardImportPrompt boardType="tension" />);
@@ -188,10 +185,9 @@ describe('BoardImportPrompt', () => {
     });
 
     it('shows error when link account fails', async () => {
-      mockFetch.mockResolvedValueOnce(mockCredentialsResponse([])).mockResolvedValueOnce({
-        ok: false,
-        json: () => Promise.resolve({ error: 'Invalid credentials' }),
-      });
+      mockFetch
+        .mockResolvedValueOnce(mockCredentialsResponse([]))
+        .mockResolvedValueOnce(Response.json({ error: 'Invalid credentials' }, { status: 400 }));
 
       render(<BoardImportPrompt boardType="tension" />);
 
@@ -217,7 +213,7 @@ describe('BoardImportPrompt', () => {
     it('calls DELETE endpoint when unlink is confirmed', async () => {
       mockFetch
         .mockResolvedValueOnce(mockCredentialsResponse([tensionCredential]))
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) })
+        .mockResolvedValueOnce(Response.json({}))
         .mockResolvedValueOnce(mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="tension" />);
@@ -251,10 +247,9 @@ describe('BoardImportPrompt', () => {
     });
 
     it('shows error when unlink fails', async () => {
-      mockFetch.mockResolvedValueOnce(mockCredentialsResponse([tensionCredential])).mockResolvedValueOnce({
-        ok: false,
-        json: () => Promise.resolve({ error: 'Server error' }),
-      });
+      mockFetch
+        .mockResolvedValueOnce(mockCredentialsResponse([tensionCredential]))
+        .mockResolvedValueOnce(Response.json({ error: 'Server error' }, { status: 500 }));
 
       render(<BoardImportPrompt boardType="tension" />);
 
@@ -277,7 +272,7 @@ describe('BoardImportPrompt', () => {
 
   describe('JSON file validation', () => {
     it('rejects files over 10MB', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="kilter" />);
 
@@ -299,7 +294,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('rejects files without user.username', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="kilter" />);
 
@@ -322,7 +317,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('warns when file layout does not match target board', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="tension" />);
 
@@ -348,7 +343,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('shows preview dialog with counts for valid file', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
 
       render(<BoardImportPrompt boardType="kilter" />);
 
@@ -388,7 +383,7 @@ describe('BoardImportPrompt', () => {
 
   describe('import flow', () => {
     it('calls streamImport on confirm and shows success', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
       mockStreamImport.mockImplementation(async (_board: string, _data: unknown, onEvent: (e: unknown) => void) => {
         onEvent({
           type: 'complete',
@@ -452,7 +447,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('prevents closing dialog while import is in progress', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
       // streamImport never resolves, simulating an in-progress import
       mockStreamImport.mockImplementation(() => new Promise(() => {}));
 
@@ -492,7 +487,7 @@ describe('BoardImportPrompt', () => {
     });
 
     it('shows error state when import fails', async () => {
-      mockFetch.mockResolvedValue(mockCredentialsResponse([]));
+      mockFetch.mockImplementation(async () => mockCredentialsResponse([]));
       mockStreamImport.mockRejectedValue(new Error('Network error'));
 
       render(<BoardImportPrompt boardType="kilter" />);

@@ -44,7 +44,7 @@ export const LogbookSession = memo(function LogbookSession({
   return (
     <View testID="logbook-session">
       <View accessible accessibilityLabel={triesLabel ? `${dayLabel}, ${triesLabel}` : dayLabel} style={styles.header}>
-        <Text variant="footnote" style={styles.day}>
+        <Text emphasized variant="footnote">
           {dayLabel}
         </Text>
         {triesLabel ? (
@@ -73,9 +73,6 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     columnGap: spacing[2],
-  },
-  day: {
-    fontWeight: '600',
   },
   more: {
     paddingTop: 6,

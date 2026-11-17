@@ -10,6 +10,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, opacity, spacing } from '../../theme/tokens';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Button } from '../Button';
+import { EmptyState } from '../EmptyState';
 import { Icon } from '../Icon';
 import { OfflineStateView } from '../OfflineStateView';
 import { PressableSurface } from '../PressableSurface';
@@ -107,7 +108,7 @@ export function LogbookView({
               <Text variant="headline" style={styles.errorTitle}>
                 {t('mobile.logbook.errorTitle')}
               </Text>
-              <Text variant="subheadline" style={styles.errorBody}>
+              <Text tone="secondary" variant="subheadline" style={styles.errorBody}>
                 {t('mobile.logbook.errorBody')}
               </Text>
               <PressableSurface
@@ -122,7 +123,7 @@ export function LogbookView({
                   pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
                 ]}
               >
-                <Text variant="footnote" color={brandColors.primary}>
+                <Text variant="footnote" color={systemColors.accent}>
                   {t('mobile.logbook.retry')}
                 </Text>
               </PressableSurface>
@@ -161,29 +162,33 @@ export function LogbookView({
                   ) : null
                 }
                 ListEmptyComponent={
-                  <View style={styles.empty}>
-                    <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {isFiltered
+                  <EmptyState
+                    size="section"
+                    style={{ paddingTop: 120 }}
+                    icon="tick.outline"
+                    title={
+                      isFiltered
                         ? t('mobile.logbook.emptyFiltered')
                         : viewerIsOwner
                           ? t('mobile.logbook.empty')
-                          : t('mobile.logbook.emptyOther')}
-                    </Text>
-                    {isFiltered ? (
-                      <View style={styles.emptyAction}>
-                        <Button
-                          title={t('mobile.logbook.clearFilters')}
-                          onPress={handleClearFilters}
-                          variant="tonal"
-                          size="medium"
-                        />
-                      </View>
-                    ) : null}
-                    {/* Unfiltered only: a logbook emptied by a filter says nothing about
+                          : t('mobile.logbook.emptyOther')
+                    }
+                    actions={
+                      <>
+                        {isFiltered ? (
+                          <Button
+                            title={t('mobile.logbook.clearFilters')}
+                            onPress={handleClearFilters}
+                            variant="tonal"
+                            size="medium"
+                          />
+                        ) : null}
+                        {/* Unfiltered only: a logbook emptied by a filter says nothing about
                   whether a board account is linked. */}
-                    {boardLinkPrompt}
-                  </View>
+                        {boardLinkPrompt}
+                      </>
+                    }
+                  />
                 }
               />
             </>
@@ -226,15 +231,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing[2],
     paddingBottom: spacing[1],
   },
-  empty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 120,
-    paddingHorizontal: spacing[8],
-    gap: spacing[2],
-  },
-  emptyTitle: { opacity: 0.6, marginTop: spacing[3], textAlign: 'center' },
-  emptyAction: { marginTop: spacing[3] },
   errorContainer: {
     flex: 1,
     alignItems: 'center',
@@ -243,7 +239,7 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   errorTitle: { marginTop: spacing[3], textAlign: 'center' },
-  errorBody: { opacity: 0.6, textAlign: 'center' },
+  errorBody: { textAlign: 'center' },
   retryButton: {
     marginTop: spacing[3],
     paddingHorizontal: spacing[4],

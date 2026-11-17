@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockStores = vi.hoisted(() => ({
   clearStoredLastConnectedBoard: vi.fn(async () => {}),
   setStoredKnownBoardDevices: vi.fn(async () => {}),
+  clearRecognizedBoardDevices: vi.fn(async () => {}),
 }));
 vi.mock('../last-connected-board-store', () => ({
   clearStoredLastConnectedBoard: mockStores.clearStoredLastConnectedBoard,
@@ -13,12 +14,21 @@ vi.mock('../last-connected-board-store', () => ({
 vi.mock('../known-board-devices-store', () => ({
   setStoredKnownBoardDevices: mockStores.setStoredKnownBoardDevices,
 }));
+vi.mock('../recognized-board-devices-store', () => ({
+  clearRecognizedBoardDevices: mockStores.clearRecognizedBoardDevices,
+}));
+const pendingRecognition = vi.hoisted(() => ({ clear: vi.fn() }));
+vi.mock('../../boards/pending-board-recognition', () => ({
+  clearPendingBoardRecognition: pendingRecognition.clear,
+}));
 
 import { forgetRememberedBoardsOnSignOut, subscribeRememberedBoardsSignOut } from '../remembered-boards-sign-out';
 
 beforeEach(() => {
+  pendingRecognition.clear.mockClear();
   mockStores.clearStoredLastConnectedBoard.mockReset().mockResolvedValue(undefined);
   mockStores.setStoredKnownBoardDevices.mockReset().mockResolvedValue(undefined);
+  mockStores.clearRecognizedBoardDevices.mockReset().mockResolvedValue(undefined);
 });
 
 describe('forgetRememberedBoardsOnSignOut', () => {
@@ -26,6 +36,10 @@ describe('forgetRememberedBoardsOnSignOut', () => {
     await forgetRememberedBoardsOnSignOut();
     expect(mockStores.clearStoredLastConnectedBoard).toHaveBeenCalledOnce();
     expect(mockStores.setStoredKnownBoardDevices).toHaveBeenCalledExactlyOnceWith([]);
+    // The boxes this phone names by Bluetooth id were bound by the same account.
+    expect(mockStores.clearRecognizedBoardDevices).toHaveBeenCalledOnce();
+    // A box still waiting for its board must not be named by the next account.
+    expect(pendingRecognition.clear).toHaveBeenCalledOnce();
   });
 
   it('tells every listener, even after one throws, and stops telling one that left', async () => {
@@ -51,6 +65,7 @@ describe('forgetRememberedBoardsOnSignOut', () => {
   it('never rejects when storage fails: a sign-out must not throw', async () => {
     mockStores.clearStoredLastConnectedBoard.mockRejectedValue(new Error('disk full'));
     mockStores.setStoredKnownBoardDevices.mockRejectedValue(new Error('disk full'));
+    mockStores.clearRecognizedBoardDevices.mockRejectedValue(new Error('disk full'));
     await expect(forgetRememberedBoardsOnSignOut()).resolves.toBeUndefined();
   });
 });

@@ -116,7 +116,7 @@ export default function AllPlaylistsScreen() {
             {t('library.signInBanner.title')}
           </Text>
           <PressableSurface onPress={() => router.push('/auth/login')} accessibilityRole="button" hitSlop={8}>
-            <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+            <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
               {t('library.signInBanner.cta')}
             </Text>
           </PressableSurface>
@@ -145,7 +145,7 @@ export default function AllPlaylistsScreen() {
             accessibilityLabel={t('library.errors.tryAgain')}
             hitSlop={8}
           >
-            <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+            <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
               {t('library.errors.tryAgain')}
             </Text>
           </PressableSurface>
@@ -235,7 +235,7 @@ export default function AllPlaylistsScreen() {
                   <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                     {t('library.allPlaylists.loadMoreError')}
                   </Text>
-                  <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
+                  <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                     {t('library.errors.tryAgain')}
                   </Text>
                 </PressableSurface>
@@ -300,7 +300,6 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     stateCta: {
       marginTop: spacing[3],
-      fontWeight: '600',
     },
     footer: {
       paddingVertical: spacing[4],
@@ -311,6 +310,5 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     footerRetry: {
       marginTop: spacing[1],
-      fontWeight: '600',
     },
   });

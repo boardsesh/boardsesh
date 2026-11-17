@@ -1,7 +1,15 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { Logger, SQLWrapper } from 'drizzle-orm';
 import postgres from 'postgres';
-import { getConnectionConfig, isLocalDevelopment } from './config';
+import {
+  assertWebDatabaseLoginAllowed,
+  getConnectionConfig,
+  isLocalDevelopment,
+  isWebDatabaseUrlProcess,
+  markWebDatabaseUrlProcess,
+  readWebDatabaseUrl,
+  WEB_DATABASE_LOGIN_BLOCKERS,
+} from './config';
 import { withConnectRetry } from './connect-retry';
 import * as schema from '../schema/index';
 import * as relations from '../relations/index';
@@ -257,6 +265,29 @@ export function applyRequestPoolDefaults(): void {
       );
     }
   }
+}
+
+/**
+ * Marks this process as the web server, so its shared primary pool reads
+ * WEB_DATABASE_URL and falls back to DATABASE_URL when that is unset or blank.
+ * The read replica (READ_REPLICA_URL) is unchanged. Call it before the first
+ * `createDb()`, like `applyRequestPoolDefaults()`; it throws instead of leaving
+ * an earlier pool on a different login. The backend never calls it.
+ *
+ * While `WEB_DATABASE_LOGIN_BLOCKERS` is non-empty, a set WEB_DATABASE_URL is
+ * refused with `WEB_DATABASE_LOGIN_BLOCKED` on every call: the web still writes
+ * identity tables, which that login cannot. `blockers` exists for tests only.
+ */
+export function applyWebDatabaseUrl(blockers: readonly string[] = WEB_DATABASE_LOGIN_BLOCKERS): void {
+  assertWebDatabaseLoginAllowed(blockers);
+  if (isWebDatabaseUrlProcess()) return;
+  const webDatabaseUrl = readWebDatabaseUrl();
+  if (cache.client && webDatabaseUrl && webDatabaseUrl !== process.env.DATABASE_URL) {
+    throw new Error(
+      'applyWebDatabaseUrl(): a shared Postgres pool already exists on DATABASE_URL. Call it before anything that calls createDb().',
+    );
+  }
+  markWebDatabaseUrlProcess(blockers);
 }
 
 const LOCAL_HOST_PATTERN = /@(localhost|127\.0\.0\.1|\[::1\]|postgres|postgres-test)(:|\/|$)/;

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTH_TIME_CLOCK_SKEW_SECONDS,
   isRecentSignIn,
+  isSignInGoodForPartnerAppChange,
+  PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS,
   PASSWORD_CHANGE_CLOCK_TOLERANCE_MS,
   readAuthTimeClaim,
   RECENT_SIGN_IN_MAX_AGE_SECONDS,
@@ -79,5 +81,52 @@ describe('signedInAfterPasswordChange', () => {
 
   it('accepts a sign-in more than the tolerance after the change', () => {
     expect(signedInAfterPasswordChange(changedAtSeconds + 61, changedAt)).toBe(true);
+  });
+});
+
+describe('isSignInGoodForPartnerAppChange', () => {
+  const guarded = (authTimeSeconds: number | null, passwordChangedAt: Date | null = null) => ({
+    authTimeSeconds,
+    linkGuarded: true,
+    passwordChangedAt,
+  });
+
+  it('is five minutes, the window set for linking or unlinking Google and Apple', () => {
+    expect(PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS).toBe(300);
+  });
+
+  it('accepts a guarded sign-in up to five minutes old', () => {
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS), NOW_MS)).toBe(true);
+    const fiveMinutesAgo = Math.ceil(NOW_MS / 1000) - PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS;
+    expect(isSignInGoodForPartnerAppChange(guarded(fiveMinutesAgo), NOW_MS)).toBe(true);
+  });
+
+  it('refuses a sign-in older than five minutes, however recent for consent', () => {
+    const justOver = Math.floor(NOW_MS / 1000) - PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS - 1;
+    expect(isSignInGoodForPartnerAppChange(guarded(justOver), NOW_MS)).toBe(false);
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS - 3600), NOW_MS)).toBe(false);
+  });
+
+  it('accepts a sign-in a clock skew ahead, and nothing further', () => {
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS + AUTH_TIME_CLOCK_SKEW_SECONDS), NOW_MS)).toBe(true);
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS + AUTH_TIME_CLOCK_SKEW_SECONDS + 1), NOW_MS)).toBe(
+      false,
+    );
+  });
+
+  it('refuses an unknown sign-in time, an unguarded one, and one from before a password change', () => {
+    expect(isSignInGoodForPartnerAppChange(guarded(null), NOW_MS)).toBe(false);
+    expect(
+      isSignInGoodForPartnerAppChange(
+        { authTimeSeconds: NOW_SECONDS, linkGuarded: false, passwordChangedAt: null },
+        NOW_MS,
+      ),
+    ).toBe(false);
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS - 120, new Date(NOW_MS - 30_000)), NOW_MS)).toBe(false);
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS - 60, new Date(NOW_MS - 240_000)), NOW_MS)).toBe(true);
+  });
+
+  it('refuses everything on a broken clock', () => {
+    expect(isSignInGoodForPartnerAppChange(guarded(NOW_SECONDS), Number.NaN)).toBe(false);
   });
 });

@@ -754,7 +754,7 @@ itself, `PlaylistDetailView` wraps it in `ownHeaderRight()`.
   Bug-report, rating and QA-verdict sheets use a leading `close`.
   Bug-report and rating sheets keep their unsaved-change guard; QA-verdict sheets dismiss directly.
   Climb-report and wall-report sheets keep the form-default dismissal controls.
-- **How the confirm looks.** One spec, in `docs/ai-design-guidelines.md`, "Top-bar buttons". Name the
+- **How the confirm looks.** One spec, in `docs/mobile-chrome.md`, "Top-bar buttons". Name the
   trailing action's `kind`: `confirm` when it saves or commits the climber's own edit (Save, Add, a Done
   that commits a value), `send` when it sends or reports to someone else (Submit, Report, Claim),
   `forward` when it moves on, applies, or closes a confirmation (Next, Apply, a post-submit Done). On
@@ -995,8 +995,12 @@ per sheet so an account change resets each draft.
   while the bar is still up.
 - **First-board picker** (#5654) — what the launch gate opens for a new account with no board. Not
   a new surface: the existing `boards` `modal` card with `?source=onboarding&firstBoard=1`, which
-  swaps the discovery tiles for "Where do you climb?". A card over the tabs, so rule 2 is not in
-  play.
+  swaps Your boards and Near you for "Where do you climb?" under the In range slot. A card over
+  the tabs, so rule 2 is not in play.
+- **Board picker** (`/boards`) — the top (At {gym}, or what the Bluetooth scan heard), Your
+  boards and Near you are sections of the one scrolling route, and the ways to add a board are a native menu off the + in
+  its top bar (`AddBoardMenu`), never a sheet. The Bluetooth quickstart sheet that the slot
+  replaced was the one sheet the picker presented besides the board details sheet.
 - **Crowdsourced-QA verdict sheet** (`QaVerdictSheet`) — opened from a user-drawer row, so it
   follows the same root-hosting rule as `FeedbackSheet`: mounted at the `UserDrawerProvider` root,
   **never** inside the `user-drawer` transparentModal route, and presented only through the route's

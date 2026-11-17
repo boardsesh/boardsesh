@@ -24,6 +24,9 @@ import {
   resolveActionColors,
   resolveChartColors,
   resolveHeatRamp,
+  resolveSelectionColors,
+  resolveStatusColors,
+  resolveSurfaces,
   sectionCaptionByVariant,
 } from '../theme/variants/variant-tokens';
 import { variantFeatures } from '../theme/variants/variant-features';
@@ -31,9 +34,9 @@ import { variantFeatures } from '../theme/variants/variant-features';
 /**
  * Build a complete `Theme` for unit tests. One factory so every test gets the
  * full shape — including the variant-resolved fields (`actionColors`,
- * `chartColors`, `sectionCaption`) — and a migration that relocates a colour
- * into a new token only updates this file, not the ~25 inline `vi.mock`s that
- * otherwise each hand-roll a partial theme.
+ * `chartColors`, `sectionCaption`, `surfaces`, `selection`, `status`) — and a
+ * migration that relocates a colour into a new token only updates this file,
+ * not the ~25 inline `vi.mock`s that otherwise each hand-roll a partial theme.
  *
  * Pass `{ variant }` / `{ colorScheme }` to resolve everything for that
  * combination the way the provider does, or override any field directly. Uses
@@ -89,6 +92,9 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
       brandPrimary: brand.primary,
       error: systemColors.error,
     }),
+    surfaces: resolveSurfaces(systemColors),
+    selection: resolveSelectionColors(systemColors, brand.primaryFill, colorScheme),
+    status: resolveStatusColors(systemColors),
     chartColors: resolvedChartColors,
     heatRamp: resolveHeatRamp(colorScheme),
     sheetSurface: resolvedChartColors.secondaryBackground,

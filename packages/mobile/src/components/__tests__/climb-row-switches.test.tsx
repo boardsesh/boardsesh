@@ -19,6 +19,8 @@ type StatusEntry = { status: 'flash' | 'send' | 'attempt'; is_ascent: boolean; t
 type Logbook = { logbookByClimbAngle: Map<string, StatusEntry[]> };
 
 const live = vi.hoisted(() => ({
+  // The suite runs as iOS; the Android-mode cases switch this.
+  platform: 'ios' as 'ios' | 'android',
   // Both stores count who is subscribed, so a test can ask what a row costs.
   logbook: { listeners: new Set<() => void>(), current: null as unknown },
   stats: { listeners: new Set<() => void>() },
@@ -64,7 +66,12 @@ vi.mock('react-native', async () => {
     );
   return {
     useWindowDimensions: () => ({ fontScale: live.fontScale }),
-    Platform: { OS: 'ios', select: () => undefined },
+    Platform: {
+      get OS() {
+        return live.platform;
+      },
+      select: () => undefined,
+    },
     PlatformColor: (name: string) => name,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     StyleSheet: { create: <Styles,>(styles: Styles): Styles => styles, flatten: flattenStyle, hairlineWidth: 0.5 },
@@ -195,7 +202,8 @@ vi.mock('../../providers/theme-provider', async () => {
       variant: 'liquidGlass',
       textStyles,
       systemColors: { background: '#fff', separator: '#ccc', secondaryLabel: '#8E8E93', fill: '#E5E5EA' },
-      brandColors: { primary: '#6D28D9', success: '#0a0' },
+      colorScheme: 'light',
+      brandColors: { primary: '#5B22F2', primaryFill: '#5B22F2', success: '#0a0' },
       m3: { surfaceVariant: '#333', onSurfaceVariant: '#ccc' },
     }),
   };
@@ -217,13 +225,23 @@ vi.mock('../Text', async () => {
     numberOfLines?: number;
     accessibilityLabel?: string;
     accessibilityElementsHidden?: boolean;
+    tone?: string;
   };
   return {
-    Text: ({ children, style, variant, numberOfLines, accessibilityLabel, accessibilityElementsHidden }: TextProps) =>
+    Text: ({
+      children,
+      style,
+      variant,
+      tone,
+      numberOfLines,
+      accessibilityLabel,
+      accessibilityElementsHidden,
+    }: TextProps) =>
       createElement(
         'span',
         {
           'data-variant': variant,
+          'data-tone': tone,
           'data-lines': numberOfLines,
           'aria-label': accessibilityLabel,
           'data-silent': accessibilityElementsHidden ? 'true' : undefined,
@@ -382,6 +400,7 @@ beforeEach(() => {
   live.myGrade = { status: 'unknown' };
   live.thumbnailMounts = 0;
   live.fontScale = 1;
+  live.platform = 'ios';
   live.playlistsById = new Map([['p1', { name: 'Project@30' }]]);
 });
 
@@ -684,7 +703,8 @@ describe('the detail line: sends, rating, setter and the community grade', () =>
     ]);
     const docked = container.querySelector('[data-variant="footnote"]');
     // The name gives way when the row is narrow, never the token.
-    expect(styleOf(docked)).toEqual({ opacity: 0.6, marginStart: 6, flexShrink: 0 });
+    expect(docked?.getAttribute('data-tone')).toBe('secondary');
+    expect(styleOf(docked)).toEqual({ marginStart: 6, flexShrink: 0 });
     expect(docked?.getAttribute('data-lines')).toBe('1');
   });
 
@@ -762,34 +782,56 @@ describe('the detail line: sends, rating, setter and the community grade', () =>
 describe('accessible names and drag-row geometry', () => {
   const textOnly = { ...DEFAULT_CLIMB_ROW_DISPLAY, thumbnail: false };
 
+  // This suite runs as iOS, so fontScale takes React Native's category values:
+  // 1.235 = xxLarge, 1.353 = xxxLarge, 2.643 = AX3. Two reserved name lines grow
+  // on the body ramp: 23/17 at xxxLarge, 40/17 at AX3.
   it.each([
-    { fontScale: 1, expectedLines: '1' },
-    { fontScale: 1.29, expectedLines: '1' },
-    { fontScale: 1.3, expectedLines: '2' },
-    { fontScale: 1.5, expectedLines: '2' },
-  ])('allows $expectedLines name lines at font scale $fontScale', ({ fontScale, expectedLines }) => {
+    { fontScale: 1, expectedLines: '1', minHeight: undefined },
+    { fontScale: 1.235, expectedLines: '1', minHeight: undefined },
+    { fontScale: 1.353, expectedLines: '2', minHeight: 22 * (23 / 17) * 2 },
+    { fontScale: 2.643, expectedLines: '2', minHeight: 22 * (40 / 17) * 2 },
+  ])('allows $expectedLines name lines at font scale $fontScale', ({ fontScale, expectedLines, minHeight }) => {
     live.fontScale = fontScale;
     const { container } = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
 
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe(expectedLines);
-    expect(styleOf(container.querySelector(NAME)).minHeight).toBe(
-      expectedLines === '2' ? 22 * fontScale * 2 : undefined,
-    );
+    const reserved = styleOf(container.querySelector(NAME)).minHeight;
+    if (minHeight === undefined) expect(reserved).toBeUndefined();
+    else expect(reserved).toBeCloseTo(minHeight, 6);
   });
+
+  // Android reports any fontScale, 1.3 included, and its Text has no ramp: the name
+  // wraps from the 1.3 threshold and the two reserved lines grow by fontScale itself.
+  it.each([
+    { fontScale: 1.29, expectedLines: '1', minHeight: undefined },
+    { fontScale: 1.3, expectedLines: '2', minHeight: 22 * 1.3 * 2 },
+  ])(
+    'on Android, allows $expectedLines name lines at font scale $fontScale',
+    ({ fontScale, expectedLines, minHeight }) => {
+      live.platform = 'android';
+      live.fontScale = fontScale;
+      const { container } = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
+
+      expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe(expectedLines);
+      const reserved = styleOf(container.querySelector(NAME)).minHeight;
+      if (minHeight === undefined) expect(reserved).toBeUndefined();
+      else expect(reserved).toBeCloseTo(minHeight, 6);
+    },
+  );
 
   it('changes the wrapping limit when system text size changes on a mounted row', () => {
     const row = <ClimbListItemContent climb={climb} {...kilter} display={textOnly} />;
     const { container, rerender } = render(row);
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('1');
 
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     rerender(<ClimbListItemContent climb={{ ...climb }} {...kilter} display={textOnly} />);
 
     expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('2');
   });
 
   it('keeps drag-host names on one line at large text sizes', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const { container } = render(
       <ClimbListItemContent climb={climb} {...kilter} display={textOnly} allowNameWrapping={false} />,
     );
@@ -799,18 +841,18 @@ describe('accessible names and drag-row geometry', () => {
   });
 
   it('reserves the same two name lines before an unresolved climb loads', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const unresolved = render(<ClimbListItemContent climb={null} {...kilter} display={textOnly} />);
     const resolved = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
 
     for (const { container } of [unresolved, resolved]) {
       expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe('2');
-      expect(styleOf(container.querySelector(NAME)).minHeight).toBe(66);
+      expect(styleOf(container.querySelector(NAME)).minHeight).toBeCloseTo(22 * (23 / 17) * 2, 6);
     }
   });
 
   it('keeps fixed warning badges on the name line in drag hosts', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const warningClimb = { ...climb, missingHoldCount: 2, is_draft: true, is_hidden: true };
     const { container } = render(
       <ClimbListItemContent climb={warningClimb} {...kilter} display={textOnly} allowNameWrapping={false} />,
@@ -892,7 +934,7 @@ describe('a row without a thumbnail', () => {
   });
 
   it('reserves a silent grade line before a compact large-text climb resolves', () => {
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const namesOnly = { ...CLIMB_ROW_PRESETS.namesOnly, quickActions: true };
     const { container, rerender } = render(
       <ClimbListItemContent climb={null} {...kilter} display={namesOnly} allowNameWrapping={false} />,
@@ -907,7 +949,7 @@ describe('a row without a thumbnail', () => {
 
   it('keeps drag-host direction labels on one line even with pictures', () => {
     loadTheRow();
-    live.fontScale = 1.5;
+    live.fontScale = 1.353;
     const { container } = render(<ClimbListItemContent climb={climb} {...tension} allowNameWrapping={false} />);
     for (const label of container.querySelectorAll('[data-variant="caption2"]')) {
       expect(label.getAttribute('data-lines')).toBe('1');

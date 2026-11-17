@@ -374,15 +374,15 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
   menu,
 }: ClimbListRowViewProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors: brand } = useTheme();
+  const { systemColors, brandColors: brand, colorScheme } = useTheme();
   // A host that draws its own content draws its own thumbnail too, so the row
   // around it keeps the geometry of a row that has one.
   const hasThumbnail = thumbnailEnabled;
   // 88pt in a two-column Climbs list, 76pt everywhere else: where the separator starts.
   const thumbnailSize = useClimbListThumbnailSize();
-  // Active-row highlight colours, derived from the scheme-aware brand so the wash
-  // + accent stay visible in dark (lifted #A78BFA) as well as light.
-  const highlight = useMemo(() => selectedRowColors(brand.primary), [brand.primary]);
+  // Active-row highlight colours, derived from the scheme-aware brand: the wash is
+  // the selection role (fill at the scheme's alpha), the accent bar the tint.
+  const highlight = useMemo(() => selectedRowColors(brand, colorScheme), [brand, colorScheme]);
 
   const swipeableRef = useRef<SwipeableMethods>(null);
 
@@ -705,10 +705,10 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
   },
   // Active-climb wash + left accent bar. The COLOUR is applied inline from the
-  // scheme-aware brand (see `highlight` / selectedRowColors) so dark mode uses the
-  // lifted #A78BFA tint instead of the near-invisible dark fill — only layout
-  // lives here. The 0.18 wash alpha reads on near-black OLED, where the accent bar
-  // scrolls off during a swipe and the wash is the only state cue left.
+  // scheme-aware brand (see `highlight` / selectedRowColors): the wash is the fill
+  // at the scheme's selection alpha (0.20 in dark, so it reads on near-black OLED,
+  // where the accent bar scrolls off during a swipe and the wash is the only state
+  // cue left) and the bar is the lifted tint — only layout lives here.
   selectedFill: {
     position: 'absolute',
     top: 0,

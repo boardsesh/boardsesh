@@ -354,6 +354,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             <View style={styles.gradeRow}>
               <Icon maxFontSizeMultiplier={1} name="people" size={11} color={systemColors.secondaryLabel} />
               <Text
+                emphasized
                 variant="caption2"
                 color={systemColors.secondaryLabel}
                 style={styles.secondaryGradeText}
@@ -407,7 +408,6 @@ const styles = StyleSheet.create({
   },
   secondaryGradeText: {
     fontVariant: ['tabular-nums'],
-    fontWeight: '600',
     marginTop: -2,
     textAlign: 'right',
   },

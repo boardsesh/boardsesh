@@ -24,7 +24,7 @@ type ProfileSection = 'progress' | 'sessions' | 'logbook' | 'climbs';
 export default function PublicProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { t } = useTranslation('you');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const navigation = useNavigation();
 
   const { data: currentProfile } = useProfile();

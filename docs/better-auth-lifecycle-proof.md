@@ -1,5 +1,7 @@
 # BA-01 authenticated password mutation proof
 
+> **Prototype removed (#7620).** The disposable BA-01 prototype this page was written against (`packages/backend/src/auth/prototype/`, `vite.auth-prototype.config.ts`) was deleted. The same behavior (authenticated set and change password, requesting-device continuation, revocation of other credentials) is tested by `set-password-authority.test.ts`, `web-password-authority.test.ts` and `revocation-authority.test.ts` in `packages/backend/src/auth/authority/__tests__/`. Names below that start with `prototype` or point into that directory describe the deleted code.
+
 This is an isolated proof for [BA-01 #6976](https://github.com/boardsesh/boardsesh/issues/6976),
 tracked in the [implementation ledger](./better-auth-implementation.md).
 It adds no production routes, credential writes or account migration.
@@ -124,9 +126,7 @@ state without restoring an old hash.
 Validation uses the repository's `vp` toolchain:
 
 ```sh
-vp check packages/backend/src/auth/prototype/lifecycle-mutations.ts packages/backend/src/auth/prototype/__tests__/lifecycle-mutations.test.ts
-AUTH_PROTOTYPE_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15475/postgres vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent lifecycle-mutations
-vp exec tsc --noEmit --project packages/backend/tsconfig.json
+vp test run --config packages/backend/vite.auth-authority.config.ts set-password-authority web-password-authority revocation-authority --reporter=agent
 ```
 
 Measured counts, final validation and independent review are recorded in the

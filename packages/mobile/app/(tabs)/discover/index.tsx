@@ -49,6 +49,7 @@ import { spacing } from '../../../src/theme/tokens';
 import { selectByVariant } from '../../../src/theme/variants';
 
 const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
+  'CREATED_CLIMBS',
   'LIKED_CLIMBS',
   'FIVE_STARS',
   'PROJECTS',

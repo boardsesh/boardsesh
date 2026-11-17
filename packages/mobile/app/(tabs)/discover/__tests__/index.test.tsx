@@ -235,7 +235,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { primary: '#6D28D9' },
-    variant: chromeState.variant,
+    variant: chromeState.variant ?? 'liquidGlass',
     features: variantFeatures[chromeState.variant ?? 'liquidGlass'],
     systemColors: {
       separator: 'theme-separator',
@@ -278,6 +278,13 @@ vi.mock('../../../../src/lib/smart-playlists', () => ({
     params: { type, source },
   }),
   SMART_PLAYLISTS: [
+    {
+      type: 'CREATED_CLIMBS',
+      slug: 'created-climbs',
+      icon: '🛠️',
+      color: '#9C27B0',
+      titleI18nKey: 'library.smart.createdClimbs.title',
+    },
     {
       type: 'RECOMMENDED_CROWD_FAVORITES',
       slug: 'crowd-favorites',
@@ -529,6 +536,7 @@ beforeEach(() => {
   exactForYouHook.hasError = false;
   exactForYouHook.refetch.mockClear();
   smartCountsHook.data = [
+    { type: 'CREATED_CLIMBS', count: 4 },
     { type: 'RECOMMENDED_CROWD_FAVORITES', count: 748 },
     { type: 'RECOMMENDED_HIDDEN_GEMS', count: 1178 },
     { type: 'RECOMMENDED_AT_LEVEL', count: 719 },
@@ -1128,6 +1136,76 @@ describe('DiscoverLibrary error handling', () => {
     expect(getByText('Pinned 1')).toBeTruthy();
     expect(getByText('Pinned 8')).toBeTruthy();
     expect(queryByText('Pinned 9')).toBeNull();
+  });
+});
+
+describe('DiscoverLibrary generated authored climbs', () => {
+  it.each([false, true])('opens My climbs without changing boards (no active board: %s)', async (withoutBoard) => {
+    if (withoutBoard) activeBoardState.data = null;
+    const boardBeforeOpen = activeBoardState.data;
+    const { getByLabelText, container } = renderHub();
+    await act(async () => {});
+    const shelf = container.querySelector('[data-scroll-section="library.sections.forYou"]');
+    expect(shelf?.querySelector('[data-card="library.smart.createdClimbs.title"]')?.getAttribute('data-count')).toBe(
+      '4',
+    );
+
+    vi.mocked(router.push).mockClear();
+    fireEvent.click(getByLabelText('open-library.smart.createdClimbs.title'));
+
+    expect(router.push).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/(tabs)/discover/smart/[type]',
+      params: { type: 'CREATED_CLIMBS', source: 'discover' },
+    });
+    expect(activeBoardState.data).toBe(boardBeforeOpen);
+  });
+
+  it('keeps My climbs discoverable before the first published climb', async () => {
+    smartCountsHook.data = [{ type: 'CREATED_CLIMBS', count: 0 }];
+    const { container } = renderHub();
+    await act(async () => {});
+    expect(container.querySelector('[data-card="library.smart.createdClimbs.title"]')?.getAttribute('data-count')).toBe(
+      '0',
+    );
+  });
+
+  it('hides the personal generated list when signed out', async () => {
+    authState.isAuthenticated = false;
+    const { queryByLabelText } = renderHub();
+    await act(async () => {});
+    expect(queryByLabelText('open-library.smart.createdClimbs.title')).toBeNull();
+  });
+
+  it('pins My climbs locally and restores the pin on the next visit', async () => {
+    const firstVisit = renderHub();
+    fireEvent.click(await firstVisit.findByLabelText('pin-library.smart.createdClimbs.title'));
+    await waitFor(() =>
+      expect(asyncStorage.setItem).toHaveBeenCalledWith(
+        'boardsesh_pinned_smart_playlists_v1_me',
+        JSON.stringify(['CREATED_CLIMBS']),
+      ),
+    );
+    expect(
+      firstVisit.container
+        .querySelector('[data-card="library.smart.createdClimbs.title"]')
+        ?.getAttribute('data-pinned'),
+    ).toBe('true');
+    expect(
+      firstVisit.container.querySelector('[data-scroll-section="library.sections.forYou"]')?.textContent,
+    ).not.toContain('library.smart.createdClimbs.title');
+    firstVisit.unmount();
+
+    const nextVisit = renderHub();
+    await waitFor(() =>
+      expect(
+        nextVisit.container
+          .querySelector('[data-card="library.smart.createdClimbs.title"]')
+          ?.getAttribute('data-pinned'),
+      ).toBe('true'),
+    );
+    expect(nextVisit.container.querySelectorAll('[data-card="library.smart.createdClimbs.title"]')).toHaveLength(1);
+    expect(pinPlaylist).not.toHaveBeenCalled();
+    expect(unpinPlaylist).not.toHaveBeenCalled();
   });
 });
 

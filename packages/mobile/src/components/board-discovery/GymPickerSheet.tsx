@@ -218,11 +218,11 @@ export function GymPickerSheet({
         ]}
       >
         <View style={styles.rowText}>
-          <Text variant="body" color={brandColors.primary}>
+          <Text variant="body" color={systemColors.accent}>
             {t('mobile.gymPicker.addNew')}
           </Text>
         </View>
-        <Icon name="plus" size={20} color={brandColors.primary} />
+        <Icon name="plus" size={20} color={systemColors.accent} />
       </PressableSurface>
 
       {needsLocation ? (
@@ -239,7 +239,7 @@ export function GymPickerSheet({
         </View>
       ) : isLoading ? (
         <View style={styles.centerState}>
-          <ActivityIndicator size="small" color={brandColors.primary} />
+          <ActivityIndicator size="small" color={systemColors.accent} />
         </View>
       ) : gyms.length === 0 ? (
         <View style={styles.centerState}>

@@ -52,6 +52,42 @@ export async function requestOptionalNotificationPermission(): Promise<void> {
   }
 }
 
+/**
+ * The Android runtime permissions a board scan needs. The API-31+ branch is only
+ * *complete* on a binary whose manifest declares BLUETOOTH_SCAN with
+ * android:usesPermissionFlags="neverForLocation" (Android versionCode 2000761
+ * onward). On older binaries Android silently drops every scan result for a
+ * caller without location permission — no error, no callback, just an empty
+ * list. See android-scan-location-gate.ts. The API<31 branch genuinely needs
+ * fine location; there is no way around it.
+ */
+function androidBleScanPermissions(): AndroidPermission[] {
+  return androidApiLevel() >= 31
+    ? [PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT]
+    : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+}
+
+/**
+ * Whether Android already holds every permission a board scan needs, read
+ * with `PermissionsAndroid.check`, which never shows a dialog. For the board
+ * picker's in-range slot, which may only scan by itself once the climber has
+ * already said yes. `false` cannot tell "never asked" from "denied once" (or
+ * from "blocked"): only `requestBleRuntimePermissionStatus` learns that, by
+ * asking. Null off Android (iOS reads bluetooth-authorization.ts instead), with
+ * an installed transport, or if the check throws.
+ */
+export async function hasAndroidBleScanPermissions(): Promise<boolean | null> {
+  if (bluetoothTransport() || Platform.OS !== 'android') return null;
+  try {
+    const grants = await Promise.all(
+      androidBleScanPermissions().map((permission) => PermissionsAndroid.check(permission)),
+    );
+    return grants.every(Boolean);
+  } catch {
+    return null;
+  }
+}
+
 export async function requestBleRuntimePermissions(options: BleRuntimePermissionOptions = {}): Promise<boolean> {
   return (await requestBleRuntimePermissionStatus(options)) === 'granted';
 }
@@ -73,16 +109,7 @@ export async function requestBleRuntimePermissionStatus({
     return 'granted';
   }
 
-  // The API-31+ branch is only *complete* on a binary whose manifest declares
-  // BLUETOOTH_SCAN with android:usesPermissionFlags="neverForLocation" (Android
-  // versionCode 2000761 onward). On older binaries Android silently drops every
-  // scan result for a caller without location permission — no error, no
-  // callback, just an empty list. See android-scan-location-gate.ts.
-  // The API<31 branch genuinely needs fine location; there is no way around it.
-  const requiredPermissions: AndroidPermission[] =
-    androidApiLevel() >= 31
-      ? [PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT]
-      : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+  const requiredPermissions = androidBleScanPermissions();
 
   try {
     const requestStartedAt = Date.now();

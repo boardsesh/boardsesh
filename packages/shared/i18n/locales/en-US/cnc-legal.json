@@ -94,13 +94,15 @@
     },
     "governingLaw": {
       "title": "11. Governing law",
-      "body": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction. Placeholder wording, pending legal review."
+      "body": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction. Placeholder wording, pending legal review.",
+      "publicBody": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction."
     },
     "contact": {
       "title": "12. Contact",
       "body": "Questions about the licence, or a licence you need reissued: <mail>legal@boardsesh.com</mail>."
     },
     "footer": "This page is a draft, is provided for information, and is not legal advice.",
+    "publicFooter": "This page is provided for information and is not legal advice.",
     "contents": "Contents"
   }
 }

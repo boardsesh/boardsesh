@@ -1,19 +1,11 @@
 import React from 'react';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { CncBoardConfigInput } from '@boardsesh/shared-schema';
 
-const state = vi.hoisted(() => ({ activeToken: 'buyer-a', compute: vi.fn() }));
+const state = vi.hoisted(() => ({ compute: vi.fn() }));
 vi.mock('../configurator/cnc-computation-client', () => ({ computeCnc: state.compute }));
-vi.mock('@/app/lib/auth/browser-backend-client', () => ({
-  browserBackendClient: {
-    isSelected: () => true,
-    capture: (token: string) => ({ token }),
-    isCurrent: (scope: { token: string }) => scope.token === state.activeToken,
-  },
-}));
-vi.mock('@/app/lib/auth/browser-backend-graphql', () => ({ isCurrentBrowserBackendGraphQLResult: () => true }));
 import { useCncLayout } from '../configurator/use-cnc-layout';
 import { useCncArtworkValidation } from '../configurator/use-cnc-artwork-validation';
 
@@ -59,7 +51,6 @@ async function tick(milliseconds = 0) {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  state.activeToken = 'buyer-a';
   state.compute.mockReset();
 });
 afterEach(() => {
@@ -78,7 +69,6 @@ describe('CNC layout request and cache ownership', () => {
     await tick();
     expect(first.result.current.summary?.wallWidthMm).toBe(2440);
     first.unmount();
-    state.activeToken = 'buyer-b';
     renderHook(() => useCncLayout(CONFIG, { includeHoles: true, authToken: 'buyer-b', cacheScope: 'b-session-2' }), {
       wrapper: Wrapper,
     });
@@ -103,7 +93,7 @@ describe('CNC layout request and cache ownership', () => {
     expect(client.getQueryCache().getAll().at(-1)?.queryKey[3]).toBe('public');
   });
 
-  it('rejects an old account result after admission changes during the final await', async () => {
+  it('keeps a private layout that lands after the configurator unmounts out of the cache', async () => {
     const pending = deferred();
     state.compute.mockReturnValue(pending.promise);
     const { client, Wrapper } = layoutWrapper();
@@ -112,13 +102,23 @@ describe('CNC layout request and cache ownership', () => {
       { wrapper: Wrapper },
     );
     await tick();
-    state.activeToken = 'buyer-b';
+    const [layoutQuery] = client.getQueryCache().getAll();
+    // A second subscriber stops react-query cancelling the fetch on unmount,
+    // so only the request scope's mount fence can refuse the late layout.
+    const stopObserving = new QueryObserver(client, { queryKey: layoutQuery.queryKey, enabled: false }).subscribe(
+      () => {},
+    );
+    const isCurrent = state.compute.mock.calls[0][2].isCurrent as () => boolean;
+    expect(isCurrent()).toBe(true);
+    mounted.unmount();
+    expect(isCurrent()).toBe(false);
     await act(async () => {
       pending.resolve(LAYOUT);
     });
     await tick();
-    expect(mounted.result.current.summary).toBeNull();
-    expect(client.getQueryCache().getAll()[0].state.data).toBeUndefined();
+    expect(layoutQuery.state.data).toBeUndefined();
+    expect(layoutQuery.state.error?.message).toBe('STALE_CNC_REQUEST');
+    stopObserving();
   });
 
   it('aborts an obsolete configuration when its debounced replacement starts', async () => {
@@ -176,19 +176,6 @@ describe('CNC artwork validation staleness', () => {
     });
     expect(mounted.result.current.ok).toBe(false);
     expect(mounted.result.current.collisions[0].kind).toBe('keepout');
-  });
-
-  it('keeps an answer from a superseded account out of the current UI', async () => {
-    const pending = deferred();
-    state.compute.mockReturnValue(pending.promise);
-    const mounted = renderHook(() => useCncArtworkValidation(ARTWORK_CONFIG, 'buyer-a'));
-    await tick(500);
-    state.activeToken = 'buyer-b';
-    await act(async () => {
-      pending.resolve({ ok: true, collisions: [] });
-    });
-    expect(mounted.result.current.ok).toBeNull();
-    expect(mounted.result.current.errorKey).toBeNull();
   });
 
   it('aborts polling and resets the verdict on sign out', async () => {

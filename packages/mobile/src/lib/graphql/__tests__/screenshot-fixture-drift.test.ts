@@ -669,6 +669,58 @@ describe('the recorded screenshot fixtures', () => {
   });
 });
 
+describe('native smoke request coverage', () => {
+  it('bundles every recorded smoke spray photo without expiring credentials', () => {
+    const operations = new Set(['GetSprayWallByLayout', 'GetSprayWallRenderData', 'GetSprayWallArt']);
+    const assetOrigin = 'https://screenshot-fixtures.boardsesh.invalid';
+    const references: string[] = [];
+    function inspect(node: unknown): void {
+      if (typeof node === 'string') {
+        expect(node).not.toMatch(/X-Amz-(?:Signature|Credential)|X-Goog-(?:Signature|Credential)/i);
+        if (node.startsWith(assetOrigin)) references.push(new URL(node).pathname);
+      } else if (Array.isArray(node)) node.forEach(inspect);
+      else if (node && typeof node === 'object') Object.values(node).forEach(inspect);
+    }
+    for (const entry of manifest.graphql.filter((entry) => operations.has(entry.operationName))) {
+      inspect(readFixture(entry.file).response);
+    }
+    expect(references.length).toBeGreaterThan(0);
+    for (const path of references) {
+      const asset = manifest.static.find((entry) => entry.path === path && entry.query === '');
+      expect(asset, `Missing bundled spray image ${path}`).toBeDefined();
+      expect(readFileSync(join(FIXTURES_DIR, asset!.file)).byteLength).toBe(asset!.bytes);
+    }
+  });
+
+  const requests: Array<[string, Record<string, unknown>]> = [
+    ['ResolveBoardForUuid', { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' }],
+    ['RecordBoardOpened', { input: { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' } }],
+    ['GetSprayWallByLayout', { layoutId: 62 }],
+    ...['BoardConnection', 'BoardRecentClimbs', 'BoardPresenceStats', 'BoardRecentHistory'].map(
+      (operationName): [string, Record<string, unknown>] => [
+        operationName,
+        { boardId: 4, boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' },
+      ],
+    ),
+    ...['GetSprayWallArchive', 'GetSprayWallLook', 'GetSprayWallRenderData'].map(
+      (operationName): [string, Record<string, unknown>] => [
+        operationName,
+        { uuid: 'edce28e6-9f7b-4af0-8f62-6dbd78cdd1de' },
+      ],
+    ),
+    ['GetSprayWallArt', { uuid: 'edce28e6-9f7b-4af0-8f62-6dbd78cdd1de', version: 3 }],
+    ['GetFollowingClimbAscents', { input: { boardType: 'kilter', climbUuid: 'A6E04278AE294E03AD9DD2A8E0CDE31F' } }],
+  ];
+  it.each(requests)('records the exact %s request made by the default navigation flow', (operationName, variables) => {
+    expect(
+      manifest.graphql.some((entry) => {
+        if (entry.operationName !== operationName) return false;
+        return canonicalJson(readFixture(entry.file).variables) === canonicalJson(variables);
+      }),
+    ).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // (d) The batched-replay table still describes the committed fixtures
 // ---------------------------------------------------------------------------

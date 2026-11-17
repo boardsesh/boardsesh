@@ -165,6 +165,18 @@ export type SubscriptionQueueEvent =
     }
   | PlaybackStateChangedEvent;
 
+/**
+ * When the climber behind a website credential signed in. Read from the
+ * session's `auth_time` and `link_guarded` claims, never from anything a
+ * request can choose.
+ */
+export type WebSignInProof = {
+  /** Epoch milliseconds of the sign-in; null when the credential does not prove one. */
+  readonly authenticatedAtMs: number | null;
+  /** The sign-in was made while the web guarded OAuth account links. */
+  readonly linkGuarded: boolean;
+};
+
 export type ConnectionContext = {
   connectionId: string;
   // Transport that produced this context. Resolvers branch on this for
@@ -180,6 +192,12 @@ export type ConnectionContext = {
   authCredentialProvided?: boolean;
   /** Verified bearer expiry in epoch milliseconds; never supplied by the client. */
   credentialExpiresAt?: number;
+  /**
+   * The sign-in behind a website credential (the www session cookie), as HTTP
+   * authentication verified it; never supplied by the client. Unset for app tokens and on WebSocket, which every
+   * reader treats as a sign-in of unknown age.
+   */
+  webSignIn?: WebSignInProof;
   // Set only by HTTP cron bearer authentication; never grants user access.
   isCronAuthenticated?: boolean;
   // Client IP for rate limiting anonymous callers on both transports: HTTP

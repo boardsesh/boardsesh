@@ -8,8 +8,7 @@
 // it. `mapCachedProposals` is the shared walker for that; it lives here because
 // this file is the one that decides what the cached documents look like.
 
-import type { QueryClient } from '@tanstack/react-query';
-import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
+import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
 import {
   BROWSE_PROPOSALS,
   GET_CLIMB_PROPOSALS,
@@ -19,6 +18,7 @@ import {
   type GetClimbProposalsVariables,
 } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal, ProposalConnection, ProposalStatus } from '@boardsesh/shared-schema';
+import { getHttpClient } from '../client';
 import { PROPOSALS_QUERY_KEY } from '../query-keys';
 
 /** Proposals per page. Matches the notifications feed's page size. */
@@ -65,11 +65,11 @@ export type UseBrowseProposalsInput = BrowseProposalsFilters & {
  * crew is deciding; only the vote and resolve buttons need an account.
  */
 export function useBrowseProposals({ boardType, status, enabled = true }: UseBrowseProposalsInput) {
-  return useHttpInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: browseProposalsKey({ boardType, status }),
     enabled,
     initialPageParam: 0,
-    queryFn: async ({ pageParam }, operation) => {
+    queryFn: async ({ pageParam }) => {
       // Null filters are omitted rather than sent as null: the resolver treats a
       // present key as a filter, so `{ boardType: null }` and "no boardType key"
       // are not the same request on every backend version.
@@ -81,7 +81,7 @@ export function useBrowseProposals({ boardType, status, enabled = true }: UseBro
           ...(status ? { status } : {}),
         },
       };
-      return operation.request<BrowseProposalsResponse, BrowseProposalsVariables>(BROWSE_PROPOSALS, variables);
+      return getHttpClient().request<BrowseProposalsResponse, BrowseProposalsVariables>(BROWSE_PROPOSALS, variables);
     },
     // Offset = proposals ALREADY HELD, not pages × page size. The resolver
     // derives `hasMore` from `offset + proposals.length < totalCount`, so a
@@ -108,16 +108,19 @@ export type UseClimbProposalsPinnedInput = {
  * paginating for.
  */
 export function useClimbProposalsPinned({ climbUuid, boardType, enabled }: UseClimbProposalsPinnedInput) {
-  return useHttpQuery({
+  return useQuery({
     queryKey: climbProposalsKey(climbUuid ?? ''),
-    queryFn: async (_context, operation) => {
+    queryFn: async () => {
       // Unreachable while `enabled` holds, but the compiler can't see that and a
       // silent request with an empty uuid would 400 in a way nobody could read.
       if (!climbUuid || !boardType) throw new Error('climbProposals needs a climb uuid and board type');
       const variables: GetClimbProposalsVariables = {
         input: { climbUuid, boardType, limit: PROPOSALS_PAGE_SIZE },
       };
-      return operation.request<GetClimbProposalsResponse, GetClimbProposalsVariables>(GET_CLIMB_PROPOSALS, variables);
+      return getHttpClient().request<GetClimbProposalsResponse, GetClimbProposalsVariables>(
+        GET_CLIMB_PROPOSALS,
+        variables,
+      );
     },
     enabled: enabled && !!climbUuid && !!boardType,
     staleTime: PROPOSALS_STALE_TIME_MS,
@@ -173,16 +176,13 @@ export function mapCachedProposals(cached: unknown, mapProposal: (proposal: Prop
 }
 
 /** Apply `mapProposal` to every proposal in every cache under the prefix. */
-export function mapProposalCaches(
-  queryClient: Pick<QueryClient, 'setQueriesData'>,
-  mapProposal: (proposal: Proposal) => Proposal,
-): void {
+export function mapProposalCaches(queryClient: QueryClient, mapProposal: (proposal: Proposal) => Proposal): void {
   queryClient.setQueriesData<unknown>({ queryKey: PROPOSALS_QUERY_KEY }, (cached: unknown) =>
     mapCachedProposals(cached, mapProposal),
   );
 }
 
 /** Replace one proposal, by uuid, everywhere it is cached. */
-export function writeProposalToCaches(queryClient: Pick<QueryClient, 'setQueriesData'>, proposal: Proposal): void {
+export function writeProposalToCaches(queryClient: QueryClient, proposal: Proposal): void {
   mapProposalCaches(queryClient, (cached) => (cached.uuid === proposal.uuid ? proposal : cached));
 }
