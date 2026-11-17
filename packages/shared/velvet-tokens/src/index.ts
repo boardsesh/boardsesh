@@ -112,6 +112,31 @@ export const brandColorsDark = {
 } as const;
 
 /**
+ * Brand hexes that climbers saved as data before a retune (a playlist colour picked
+ * from the brand swatch), mapped to the token that replaced each one. Keyed by
+ * uppercase `#RRGGBB`. Readers map a saved colour through `currentBrandColor` so an
+ * old playlist shows today's brand instead of a colour the app no longer uses.
+ */
+export const RETIRED_BRAND_COLORS: Readonly<Record<string, string>> = {
+  // Velvet violet, before Ultraviolet: the light tint and fill (the old brand swatch),
+  // the dark fill, the light strong and the dark tint.
+  '#6D28D9': brandColors.primaryFill,
+  '#7C3AED': brandColors.primaryFill,
+  '#5B21B6': brandColors.primaryFill,
+  '#A78BFA': brandColors.primaryFill,
+  // The amber spark, before mint.
+  '#FF8A3D': brandColors.accent,
+};
+
+/**
+ * The current brand colour for a saved colour: a retired brand hex maps to the token
+ * that replaced it (case-insensitive); any other colour comes back unchanged.
+ */
+export function currentBrandColor(color: string): string {
+  return RETIRED_BRAND_COLORS[color.toUpperCase()] ?? color;
+}
+
+/**
  * Material 3 surfaces for the Material UI variant of the React Native app (Android,
  * the Expo browser app, and a legacy saved choice on iOS), keyed by colour scheme.
  *

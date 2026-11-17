@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { blendOpaque, brandColors, brandColorsDark, marketingSurfaces, materialSurfaces, withAlpha } from '../index';
+import {
+  RETIRED_BRAND_COLORS,
+  blendOpaque,
+  brandColors,
+  brandColorsDark,
+  currentBrandColor,
+  marketingSurfaces,
+  materialSurfaces,
+  withAlpha,
+} from '../index';
 
 /** sRGB `#RRGGBB` channels, linearised. */
 function linearChannels(hex: string): [number, number, number] {
@@ -146,6 +155,31 @@ describe('marketingSurfaces', () => {
   it('carries the same roles as the app surfaces, so a render script can swap one for the other', () => {
     expect(Object.keys(marketingSurfaces.light).sort()).toEqual(Object.keys(materialSurfaces.light).sort());
     expect(Object.keys(marketingSurfaces.dark).sort()).toEqual(Object.keys(materialSurfaces.dark).sort());
+  });
+});
+
+describe('currentBrandColor', () => {
+  it('maps every retired brand violet to the current fill, in any case', () => {
+    for (const retired of ['#6D28D9', '#7C3AED', '#5B21B6', '#A78BFA', '#6d28d9']) {
+      expect(currentBrandColor(retired), retired).toBe(brandColors.primaryFill);
+    }
+  });
+
+  it('maps the retired amber spark to the current spark', () => {
+    expect(currentBrandColor('#FF8A3D')).toBe(brandColors.accent);
+    expect(currentBrandColor('#ff8a3d')).toBe('#0F9F86');
+  });
+
+  it('leaves any other colour alone, the current brand included', () => {
+    for (const color of ['#047857', '#5B22F2', '#0F9F86', '#8B5CF6', 'not-a-colour']) {
+      expect(currentBrandColor(color)).toBe(color);
+    }
+  });
+
+  it('never maps to a colour that is itself retired', () => {
+    for (const replacement of Object.values(RETIRED_BRAND_COLORS)) {
+      expect(RETIRED_BRAND_COLORS[replacement.toUpperCase()]).toBeUndefined();
+    }
   });
 });
 

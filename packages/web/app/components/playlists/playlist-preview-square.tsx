@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { LabelOutlined, FavoriteOutlined } from '@mui/icons-material';
 import { getBoardImageDetailsForPlaylist } from '@/app/lib/board-image-details';
+import { currentBrandColor } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '@/app/theme/theme-config';
 import BoardImageLayers from '../board-renderer/board-image-layers';
 import styles from './playlist-preview-square.module.css';
@@ -77,7 +78,8 @@ export default function PlaylistPreviewSquare({
   if (isLikedClimbs) {
     backgroundColor = undefined;
   } else if (color && isValidHexColor(color)) {
-    backgroundColor = color;
+    // A colour saved from a retired brand swatch reads as today’s brand token.
+    backgroundColor = currentBrandColor(color);
   } else {
     backgroundColor = PLAYLIST_COLORS[index % PLAYLIST_COLORS.length];
   }

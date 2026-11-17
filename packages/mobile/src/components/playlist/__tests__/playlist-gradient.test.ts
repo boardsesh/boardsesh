@@ -38,9 +38,9 @@ describe('shiftLightness', () => {
 
 describe('buildHeroGradient', () => {
   it('builds a 3-stop gradient with the true colour in the middle', () => {
-    const gradient = buildHeroGradient('#6D28D9');
+    const gradient = buildHeroGradient('#2563EB');
     expect(gradient.colors).toHaveLength(3);
-    expect(gradient.colors[1]).toBe('#6D28D9');
+    expect(gradient.colors[1]).toBe('#2563EB');
     expect(gradient.locations).toEqual([0, 0.55, 1]);
   });
 
