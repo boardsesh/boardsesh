@@ -51,6 +51,13 @@
           "lastWorkoutSends_one": "{{count}} ripetizione",
           "lastWorkoutSends_other": "{{count}} ripetizioni"
         },
+        "projects": {
+          "title": "Torna ai tuoi progetti",
+          "tries_one": "{{count}} tentativo",
+          "tries_other": "{{count}} tentativi",
+          "seeAll": "Vedi tutti",
+          "unknownClimb": "Blocco sconosciuto"
+        },
         "playlists": {
           "title": "Al tuo livello, non ancora chiusi",
           "all": "Tutte le playlist"

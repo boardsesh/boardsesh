@@ -51,6 +51,13 @@
           "lastWorkoutSends_one": "{{count}} encadene",
           "lastWorkoutSends_other": "{{count}} encadenes"
         },
+        "projects": {
+          "title": "Vuelve a tus proyectos",
+          "tries_one": "{{count}} intento",
+          "tries_other": "{{count}} intentos",
+          "seeAll": "Ver todos",
+          "unknownClimb": "Bloque desconocido"
+        },
         "playlists": {
           "title": "A tu nivel, sin encadenar",
           "all": "Todas las listas"

@@ -302,8 +302,8 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             // while offline — without this, an offline tick looks lost.
             void queryClient.invalidateQueries({ queryKey: ['localTicks', variables.input.climbUuid] });
             void queryClient.invalidateQueries({ queryKey: ['localTicks', 'list'] });
-            // Home's This week card reads the same rows; offline, nothing drains to refresh it.
-            void queryClient.invalidateQueries({ queryKey: ['localTicks', 'week'] });
+            // Home's This week card and projects shelf read the same rows; offline, nothing drains to refresh them.
+            void queryClient.invalidateQueries({ queryKey: ['localTicks', 'activity'] });
             startSyncCycle();
 
             return toSavedTickShape(variables.input, tickUuid);
