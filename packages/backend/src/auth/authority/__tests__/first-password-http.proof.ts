@@ -31,6 +31,7 @@ import { firstPasswordConfiguration } from '../first-password-configuration';
 import { firstPasswordTokenHash } from '../first-password-challenges';
 import { bindIdentityAuthority } from '../identity-authority';
 import { readBrowserBinding } from '../browser-binding';
+import { sessionTokenDigest } from '../session-token';
 import { closeCredentialDatabase, getCredentialDatabase } from '../../credential-database';
 import { handleFirstPassword } from '../../../handlers/first-password';
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
@@ -438,7 +439,7 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
         .select()
         .from(authSession)
         .where(eq(authSession.id, command.owner.sid));
-      expect(session.token).toBe(command.owner.actor.credential);
+      expect(session.token).toBe(sessionTokenDigest(command.owner.actor.credential));
     } finally {
       await environment.owner`GRANT EXECUTE ON FUNCTION public.partner_revoke_user(text) TO boardsesh_identity_writer`;
     }
