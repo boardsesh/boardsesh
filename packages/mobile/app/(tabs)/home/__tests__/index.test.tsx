@@ -136,6 +136,9 @@ vi.mock('../../../../src/components/home/HomeCustomizeSheet', () => ({
     return null;
   },
 }));
+vi.mock('../../../../src/components/home/HomeWeekSection', () => ({
+  HomeWeekSection: () => createElement('div', { 'data-testid': 'section-week' }),
+}));
 vi.mock('../../../../src/components/home/HomeBoardSection', () => ({
   HomeBoardSection: () => createElement('div', { 'data-testid': 'section-board' }),
 }));
@@ -251,9 +254,9 @@ afterEach(() => {
 });
 
 describe('Home sections', () => {
-  it("draws today's Home by default: Climbing now, then the feed", () => {
+  it('draws This week, Climbing now, then the feed by default', () => {
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-climbingNow']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow']);
     expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(true);
     expect(screen.getByText('mobile.home.feedTitle')).toBeTruthy();
     expect(screen.getByTestId('home-customize')).toBeTruthy();
@@ -263,10 +266,10 @@ describe('Home sections', () => {
     expect(lastChrome()?.scopeTitle).toBe('mobile.home.scope.myCrew');
   });
 
-  it('Focused mounts the three cards and asks for no feed and no Climbing now', () => {
+  it('Focused mounts your week and the three cards and asks for no feed and no Climbing now', () => {
     homeSectionsStore.apply(focusedHomeLayout(homeSectionsStore.getLayout()));
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-board', 'section-session', 'section-playlists']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-board', 'section-session', 'section-playlists']);
     expect(recorded.railProps).toEqual([]);
     expect(recorded.crewFeedEnabled.every((enabled) => !enabled)).toBe(true);
     expect(recorded.sessionFeedEnabled.every((enabled) => !enabled)).toBe(true);
@@ -281,13 +284,13 @@ describe('Home sections', () => {
       visible: { ...HOME_SECTIONS.defaults.visible, playlists: true, board: true },
     });
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-playlists', 'section-climbingNow', 'section-board']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-playlists', 'section-climbingNow', 'section-board']);
   });
 
   it('keeps Start out of Climbing now while the Session card shows', () => {
     homeSectionsStore.setVisible('session', true);
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-session', 'section-climbingNow']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-climbingNow']);
     expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(false);
   });
 
@@ -298,7 +301,7 @@ describe('Home sections', () => {
     expect(sectionOrder()).toEqual([]);
     focus.hasBeenFocused = true;
     rerender(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-board', 'section-session', 'section-playlists']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-board', 'section-session', 'section-playlists']);
   });
 
   it('shows the empty state with everything off, and Customize opens the sheet from there', () => {
@@ -323,7 +326,7 @@ describe('Home sections', () => {
     act(() => {
       homeSectionsStore.setVisible('board', true);
     });
-    expect(sectionOrder()).toEqual(['section-board', 'section-climbingNow']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-board', 'section-climbingNow']);
   });
 
   it('pull to refresh asks again only for what is on screen', () => {
@@ -380,7 +383,7 @@ describe('Home sections', () => {
     cleanup();
     homeSectionsStore.setVisible('beta', true);
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-climbingNow', 'section-beta']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow', 'section-beta']);
     // No home board resolved in this test, so the shelf is every board.
     expect(recorded.betaProps.at(-1)).toEqual({ boardType: null, layoutId: null, enabled: true });
     act(() => refresh.onRefresh?.());

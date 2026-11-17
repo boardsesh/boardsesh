@@ -24,6 +24,22 @@
         "hint": "Cambia de quién ves las vías"
       },
       "sections": {
+        "week": {
+          "title": "Esta semana",
+          "sessions_one": "{{count}} sesión",
+          "sessions_other": "{{count}} sesiones",
+          "sends_one": "{{count}} encadene",
+          "sends_other": "{{count}} encadenes",
+          "hardest": "Lo más duro esta semana: {{grade}}",
+          "weeksRunning_one": "{{count}} semana seguida",
+          "weeksRunning_other": "{{count}} semanas seguidas",
+          "recordFirstGrade": "Nuevo: tu primer {{grade}}",
+          "recordHardestFlash": "Nuevo: tu flash más duro, {{grade}}",
+          "recordClimb": "{{record}} · {{climb}}",
+          "empty": "Registra un encadene para empezar tu semana",
+          "dayClimbed": "{{day}}, escalaste",
+          "openRecord": "Abrir {{climb}}"
+        },
         "session": {
           "startTitle": "Empieza una sesión",
           "startBody": "Elige un entrenamiento o simplemente escala",

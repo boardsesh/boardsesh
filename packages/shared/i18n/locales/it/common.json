@@ -492,6 +492,7 @@
         "focused": "Essenziale",
         "restoreDefaults": "Ripristina i predefiniti",
         "sections": {
+          "week": "Questa settimana",
           "board": "Il tuo pannello",
           "session": "Session",
           "playlists": "Playlist",
@@ -500,6 +501,7 @@
           "feed": "Feed"
         },
         "descriptions": {
+          "week": "Session, ripetizioni e settimane di fila",
           "board": "Sfoglia i blocchi o cambia pannello",
           "session": "Avvia una session o guarda il suo timer",
           "playlists": "Blocchi preferiti e Progetti",

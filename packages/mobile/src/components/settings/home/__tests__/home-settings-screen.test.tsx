@@ -214,10 +214,11 @@ describe('HomeSettingsScreen', () => {
     homeSectionsStore.move('climbingNow', -1);
     render(createElement(HomeSettingsScreen));
     expect(hostedRow().fullBleed).toBe(true);
-    // A first guess until the list reports what it drew: five rows at the default text size.
-    expect(hostedRow().height).toBe(5 * 68);
+    // A first guess until the list reports what it drew: six rows at the default text size.
+    expect(hostedRow().height).toBe(6 * 68);
     const { container } = renderHostedRows();
     expect(switchLabels(container)).toEqual([
+      `${SECTION_KEY}.week`,
       `${SECTION_KEY}.board`,
       `${SECTION_KEY}.session`,
       `${SECTION_KEY}.climbingNow`,
@@ -235,7 +236,7 @@ describe('HomeSettingsScreen', () => {
     const reportLayout = captured.layoutHandlers.get('home-settings-sections');
     if (!reportLayout) throw new Error('hosted rows report no layout');
     act(() => reportLayout({ nativeEvent: { layout: { width: 0, height: 0 } } }));
-    expect(hostedRow().height).toBe(5 * 68);
+    expect(hostedRow().height).toBe(6 * 68);
     act(() => reportLayout({ nativeEvent: { layout: { width: 343, height: 321.4 } } }));
     expect(hostedRow().height).toBe(322);
   });
@@ -248,6 +249,7 @@ describe('HomeSettingsScreen', () => {
     });
     expect(settingChangedCalls()).toEqual([{ page: 'homeScreen', key: 'moveUp', value: 'beta' }]);
     expect(homeSectionsStore.getLayout().order).toEqual([
+      'week',
       'board',
       'session',
       'playlists',
@@ -260,11 +262,12 @@ describe('HomeSettingsScreen', () => {
       homeSectionsStore.setVisible('beta', true);
     });
     // Home draws the switched-on sections above the feed in the stored order.
-    expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual(['beta', 'climbingNow']);
+    expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual(['week', 'beta', 'climbingNow']);
 
     cleanup();
     render(createElement(HomeCustomizeSheet, { visible: true, onClose: vi.fn() }));
     expect(screen.getAllByRole('switch').map((element) => element.getAttribute('aria-label'))).toEqual([
+      `${SECTION_KEY}.week`,
       `${SECTION_KEY}.board`,
       `${SECTION_KEY}.session`,
       `${SECTION_KEY}.playlists`,
@@ -281,6 +284,7 @@ describe('HomeSettingsScreen', () => {
     const sectionRows = () =>
       (captured.model?.sections.find((section) => section.key === 'sections')?.rows ?? []) as MoreToggleRow[];
     expect(sectionRows().map((row) => [row.kind, row.key])).toEqual([
+      ['toggle', 'week'],
       ['toggle', 'board'],
       ['toggle', 'session'],
       ['toggle', 'climbingNow'],
@@ -294,6 +298,7 @@ describe('HomeSettingsScreen', () => {
       ['moveUp:true', 'moveDown:true'],
       ['moveUp:true', 'moveDown:true'],
       ['moveUp:true', 'moveDown:true'],
+      ['moveUp:true', 'moveDown:true'],
       ['moveUp:true', 'moveDown:false'],
     ]);
     expect(toggle('feed').actions).toBeUndefined();
@@ -301,15 +306,22 @@ describe('HomeSettingsScreen', () => {
     act(() => toggle('climbingNow').actions?.[0].onPress());
     expect(settingChangedCalls()).toEqual([{ page: 'homeScreen', key: 'moveUp', value: 'climbingNow' }]);
     expect(settings.values.get('homeSectionsV1')).toMatchObject({
-      order: ['board', 'climbingNow', 'session', 'playlists', 'beta', 'feed'],
+      order: ['week', 'board', 'climbingNow', 'session', 'playlists', 'beta', 'feed'],
     });
     expect(announce.announceQueued).toHaveBeenCalledWith(
-      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: `${SECTION_KEY}.climbingNow`, position: 2, count: 5 })}`,
+      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: `${SECTION_KEY}.climbingNow`, position: 3, count: 6 })}`,
     );
-    expect(sectionRows().map((row) => row.key)).toEqual(['board', 'climbingNow', 'session', 'playlists', 'beta']);
+    expect(sectionRows().map((row) => row.key)).toEqual([
+      'week',
+      'board',
+      'climbingNow',
+      'session',
+      'playlists',
+      'beta',
+    ]);
 
     // A disabled button does nothing.
-    act(() => toggle('board').actions?.[0].onPress());
+    act(() => toggle('week').actions?.[0].onPress());
     expect(settingChangedCalls()).toHaveLength(1);
 
     act(() => toggle('playlists').onValueChange(true));

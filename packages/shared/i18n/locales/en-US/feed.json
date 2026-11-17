@@ -24,6 +24,22 @@
         "hint": "Switches whose climbs you see"
       },
       "sections": {
+        "week": {
+          "title": "This week",
+          "sessions_one": "{{count}} session",
+          "sessions_other": "{{count}} sessions",
+          "sends_one": "{{count}} send",
+          "sends_other": "{{count}} sends",
+          "hardest": "Hardest this week {{grade}}",
+          "weeksRunning_one": "{{count}} week running",
+          "weeksRunning_other": "{{count}} weeks running",
+          "recordFirstGrade": "New: your first {{grade}}",
+          "recordHardestFlash": "New: your hardest flash, {{grade}}",
+          "recordClimb": "{{record}} · {{climb}}",
+          "empty": "Log a send to start your week",
+          "dayClimbed": "{{day}}, climbed",
+          "openRecord": "Open {{climb}}"
+        },
         "session": {
           "startTitle": "Start a session",
           "startBody": "Pick a workout or just climb",

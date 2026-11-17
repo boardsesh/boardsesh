@@ -29,12 +29,14 @@ export function useHomeSectionControls() {
   const showAllLabel = t('mobile.settings.homeSections.showAll');
   const focusedLabel = t('mobile.settings.homeSections.focused');
   const restoreDefaultsLabel = t('mobile.settings.homeSections.restoreDefaults');
+  const weekLabel = t('mobile.settings.homeSections.sections.week');
   const boardLabel = t('mobile.settings.homeSections.sections.board');
   const sessionLabel = t('mobile.settings.homeSections.sections.session');
   const playlistsLabel = t('mobile.settings.homeSections.sections.playlists');
   const climbingNowLabel = t('mobile.settings.homeSections.sections.climbingNow');
   const betaLabel = t('mobile.settings.homeSections.sections.beta');
   const feedLabel = t('mobile.settings.homeSections.sections.feed');
+  const weekDescription = t('mobile.settings.homeSections.descriptions.week');
   const boardDescription = t('mobile.settings.homeSections.descriptions.board');
   const sessionDescription = t('mobile.settings.homeSections.descriptions.session');
   const playlistsDescription = t('mobile.settings.homeSections.descriptions.playlists');
@@ -44,6 +46,7 @@ export function useHomeSectionControls() {
 
   const rows = useMemo<SectionLayoutRowModel<HomeSectionId>[]>(() => {
     const labels: Record<HomeSectionId, string> = {
+      week: weekLabel,
       board: boardLabel,
       session: sessionLabel,
       playlists: playlistsLabel,
@@ -52,6 +55,7 @@ export function useHomeSectionControls() {
       feed: feedLabel,
     };
     const descriptions: Record<HomeSectionId, string> = {
+      week: weekDescription,
       board: boardDescription,
       session: sessionDescription,
       playlists: playlistsDescription,
@@ -69,12 +73,14 @@ export function useHomeSectionControls() {
     }));
   }, [
     layout,
+    weekLabel,
     boardLabel,
     sessionLabel,
     playlistsLabel,
     climbingNowLabel,
     betaLabel,
     feedLabel,
+    weekDescription,
     boardDescription,
     sessionDescription,
     playlistsDescription,

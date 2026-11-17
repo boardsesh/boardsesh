@@ -760,6 +760,7 @@
         "focused": "Enfocado",
         "restoreDefaults": "Restablecer valores predeterminados",
         "sections": {
+          "week": "Esta semana",
           "board": "Tu plafón",
           "session": "Sesión",
           "playlists": "Listas",
@@ -768,6 +769,7 @@
           "feed": "Feed"
         },
         "descriptions": {
+          "week": "Sesiones, encadenes y semanas seguidas",
           "board": "Explora bloques o cambia de plafón",
           "session": "Empieza una sesión o mira su cronómetro",
           "playlists": "Bloques favoritos y Proyectos",

@@ -5,6 +5,7 @@ import { HomeBetaSection } from './HomeBetaSection';
 import { HomeBoardSection } from './HomeBoardSection';
 import { HomePlaylistsSection } from './HomePlaylistsSection';
 import { HomeSessionSection } from './HomeSessionSection';
+import { HomeWeekSection } from './HomeWeekSection';
 
 type HomeSectionsProps = {
   /** The switched-on sections above the feed, in the climber's order. */
@@ -42,6 +43,8 @@ export const HomeSections = memo(function HomeSections({
   const sessionCardShows = sectionIds.includes('session');
   return sectionIds.map((sectionId) => {
     switch (sectionId) {
+      case 'week':
+        return cardsReady ? <HomeWeekSection key={sectionId} /> : null;
       case 'board':
         return cardsReady ? <HomeBoardSection key={sectionId} /> : null;
       case 'session':

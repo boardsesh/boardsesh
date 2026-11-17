@@ -50,3 +50,12 @@ export {
   type LedgerTotals,
 } from './climb-ledger';
 export { deriveProfileViewModel, type DeriveProfileViewModelInput, type ProfileViewModel } from './derive-view-model';
+export {
+  buildWeekSummary,
+  type BuildWeekSummaryOptions,
+  type WeekActivityEntry,
+  type WeekDay,
+  type WeekRecord,
+  type WeekRecordKind,
+  type WeekSummary,
+} from './week-summary';

@@ -24,6 +24,22 @@
         "hint": "Scegli di chi vedere i blocchi"
       },
       "sections": {
+        "week": {
+          "title": "Questa settimana",
+          "sessions_one": "{{count}} session",
+          "sessions_other": "{{count}} session",
+          "sends_one": "{{count}} ripetizione",
+          "sends_other": "{{count}} ripetizioni",
+          "hardest": "Il più duro della settimana: {{grade}}",
+          "weeksRunning_one": "{{count}} settimana di fila",
+          "weeksRunning_other": "{{count}} settimane di fila",
+          "recordFirstGrade": "Novità: il tuo primo {{grade}}",
+          "recordHardestFlash": "Novità: il tuo flash più duro, {{grade}}",
+          "recordClimb": "{{record}} · {{climb}}",
+          "empty": "Registra una ripetizione per iniziare la settimana",
+          "dayClimbed": "{{day}}, hai scalato",
+          "openRecord": "Apri {{climb}}"
+        },
         "session": {
           "startTitle": "Inizia una session",
           "startBody": "Scegli un allenamento o scala e basta",

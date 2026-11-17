@@ -492,6 +492,7 @@
         "focused": "Essentiel",
         "restoreDefaults": "Rétablir les réglages par défaut",
         "sections": {
+          "week": "Cette semaine",
           "board": "Ta board",
           "session": "Session",
           "playlists": "Listes",
@@ -500,6 +501,7 @@
           "feed": "Fil"
         },
         "descriptions": {
+          "week": "Sessions, croix et semaines d’affilée",
           "board": "Parcourir les blocs ou changer de board",
           "session": "Démarrer une session ou voir son chrono",
           "playlists": "Voies aimées et Projets",
