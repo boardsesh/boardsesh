@@ -19,6 +19,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- The board holds its size when you swipe between climbs. ([#7708](https://github.com/boardsesh/boardsesh/pull/7708))
+- Signing out no longer fails now and then while another phone opens the app. ([#7703](https://github.com/boardsesh/boardsesh/pull/7703))
 - Your board keeps the right holds lit through fast swipes. ([#7644](https://github.com/boardsesh/boardsesh/pull/7644))
 
 ## 2026-11-16

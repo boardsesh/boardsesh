@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-17T07:57:01.609Z",
+  "generatedAt": "2026-11-17T09:06:52.323Z",
   "entries": [
+    {
+      "prNumber": 7708,
+      "category": "fixed",
+      "title": "The board holds its size when you swipe between climbs.",
+      "mergedAt": "2026-11-17T08:55:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7708"
+    },
+    {
+      "prNumber": 7703,
+      "category": "fixed",
+      "title": "Signing out no longer fails now and then while another phone opens the app.",
+      "mergedAt": "2026-11-17T08:36:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7703"
+    },
     {
       "prNumber": 7454,
       "category": "new",
