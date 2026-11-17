@@ -134,10 +134,45 @@ describe('useSwipeStaleContentStyle', () => {
     // Rendered: one fade back in, already about the new climb.
     pager.jsState.value = { ...pager.jsState.value, center: 1, processedStep: 1 };
     frame();
+    expect(timings).toEqual([{ toValue: 1, duration: 150 }]);
+    expect(style().opacity).toBe(1);
+  });
+
+  // A re-run while that fade was under way used to set the opacity outright,
+  // cancelling the fade: the lines popped to full strength.
+  it('carries a fade on through a re-run, to where the board now puts it, in the time it had left', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const pager = makePager();
+    renderHook(() => useSwipeStaleContentStyle(pager));
+    const reaction = reactions[reactions.length - 1];
+    let before: unknown = null;
+    const frame = () => {
+      const now = reaction.prepare();
+      reaction.react(now as never, before as never);
+      before = now;
+    };
+    frame();
+    // A step that landed before the JS thread rendered it, then rendered.
+    pager.uiSteps.value = 1;
+    frame();
+    pager.jsState.value = { ...pager.jsState.value, processedStep: 1 };
+    frame();
     expect(timings).toEqual([
       { toValue: 0, duration: 150 },
       { toValue: 1, duration: 150 },
     ]);
-    expect(style().opacity).toBe(1);
+
+    // 60 ms in, the next drag begins.
+    clock.mockReturnValue(1060);
+    pager.translateX.value = -8;
+    frame();
+    expect(timings.at(-1)).toEqual({ toValue: 0.95, duration: 90 });
+
+    // Once the fade is over, the drag is followed frame by frame again.
+    clock.mockReturnValue(1200);
+    pager.translateX.value = -16;
+    frame();
+    expect(timings).toHaveLength(3);
+    clock.mockRestore();
   });
 });

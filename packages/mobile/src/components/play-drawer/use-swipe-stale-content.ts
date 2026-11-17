@@ -52,6 +52,8 @@ export function staleContentFrame({
 export function useSwipeStaleContentStyle(pager: SwipePager): AnimatedStyle<ViewStyle> {
   const { translateX, slideWidth, flingDirection, jsState, uiSteps } = pager;
   const opacity = useSharedValue(1);
+  // When the fade under way ends (`Date.now()` on the UI thread); 0 for none.
+  const fadeEndsAt = useSharedValue(0);
   useAnimatedReaction(
     () =>
       staleContentFrame({
@@ -62,14 +64,24 @@ export function useSwipeStaleContentStyle(pager: SwipePager): AnimatedStyle<View
         uiSteps: uiSteps.value,
       }),
     (frame, previous) => {
-      if (previous === null || (frame.follows && previous.follows)) {
+      if (previous === null) {
         opacity.value = frame.opacity;
         return;
       }
-      // Only a change of target starts a fade: a fling moves every frame, and
+      const now = Date.now();
+      // A new target from a gate (the step landed, or rendered): fade to it.
+      // Only a change of target starts one: a fling moves every frame, and
       // restarting the fade on each one would never let it finish.
-      if (frame.opacity === previous.opacity && frame.follows === previous.follows) return;
-      opacity.value = withTiming(frame.opacity, { duration: timing.fast });
+      if ((!frame.follows || !previous.follows) && frame.opacity !== previous.opacity) {
+        fadeEndsAt.value = now + timing.fast;
+        opacity.value = withTiming(frame.opacity, { duration: timing.fast });
+        return;
+      }
+      if (!frame.follows) return;
+      // Following the board. A fade still under way carries on to where the
+      // board now puts it, in the time it had left, rather than jumping there.
+      const left = fadeEndsAt.value - now;
+      opacity.value = left > 0 ? withTiming(frame.opacity, { duration: left }) : frame.opacity;
     },
   );
   return useAnimatedStyle(() => ({ opacity: opacity.value }));

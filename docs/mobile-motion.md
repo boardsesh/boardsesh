@@ -24,21 +24,41 @@ The player's swipe between climbs settles with `pagingSpring(from, to, velocity)
 - **Where it lands.** At the content's real resting place: one board width along for a step, 0 for
   a swipe let go short. Never at a padded target the content is clamped short of: content that hits
   a clamp at speed stops dead in one frame.
-- **Critically damped, stiffness from the release.** k = max(400, (v / d)²), damping = 2√(k·m),
+- **Critically damped, stiffness from the release.** k = max(2025, (v / d)²), damping = 2√(k·m),
   where v is the release speed toward the target and d the distance left. At that stiffness the
-  spring starts at exactly the finger's speed and cannot pass its target. A speed pointing away
-  from the target is dropped.
-- **Timing.** A flick reaches 90% of the remaining distance in 40–75 ms (the iPhone 17 Pro
-  recording's releases: 71, 65 and 42 ms). A slow release or a standstill takes about 190 ms. A
-  swipe let go short comes back the same way, without the 8% overshoot `interactive` gave it.
-- **Landing.** It finishes within a quarter point of its target (`PAGING_LANDED_DISTANCE`), at
-  5–10 pt/s, rather than at Reanimated's default energy floor, which kept a flick creeping on below
-  a pixel until about 300 ms.
+  spring starts from the finger's speed and cannot pass its target. A speed pointing away from the
+  target is dropped.
+- **Timing.** Measured by stepping Reanimated 4.7's own `withSpring` at 120 Hz
+  (`theme/__tests__/paging-spring.test.ts`), on a 335 pt board:
+
+  | Release | 90% of the way | JS told (old spring) | Lands (old spring) |
+  | --- | --- | --- | --- |
+  | 244 pt at 2,950 pt/s | 67 ms | 33 ms (33) | 150 ms (117) |
+  | 263 pt at 2,550 pt/s | 67 ms | 25 ms (33) | 142 ms (125) |
+  | 292 pt at 2,350 pt/s | 50 ms | 8 ms (25) | 92 ms (117) |
+  | 233 pt at 2,900 pt/s | 75 ms | 42 ms (42) | 158 ms (125) |
+  | 170 pt, still | 92 ms | 67 ms (92) | 192 ms (192) |
+  | 85 pt at 300 pt/s | 92 ms | 83 ms (108) | 200 ms (183) |
+  | 200 pt at 500 pt/s | 92 ms | 58 ms (83) | 183 ms (183) |
+
+  The first four are the iPhone 17 Pro recording's releases. The old spring "landed" on an
+  invisible tail after the content had already stopped dead at the board's width. The floor is set
+  by the slow rows: at 400 a still release took about 450 ms to land, and the drawer's pull-down
+  and the next swipe waited on that. A swipe let go short comes back the same way, within 200 ms,
+  without the 8% overshoot `interactive` gave it.
+- **Landing.** It finishes within half a point of its target (`PAGING_LANDED_DISTANCE`): the last
+  frame moves about 0.5 pt where the one before moved about 0.2. Reanimated's default energy floor
+  keeps it creeping on below a pixel for 100 ms or more.
+- **Telling the JS thread.** The pager tells it once the incoming board is within 10% of the
+  middle (`TELL_JS_REMAINING`), never later than the old spring did. The anchored GPU board does
+  not care when: its native scene picks the same pages and progress either side of that change.
 - **Reduce Motion.** Reanimated skips the spring and the step lands at once.
 
 A board that must travel further than the swipe settles (the PNG board leaving a letterboxed
-frame) stretches its own path toward the ends of the swipe instead of extending the spring;
-see `pageOffset` in `use-swipe-pager.ts`.
+frame) stretches its own path toward the ends of the swipe instead of extending the spring, by
+at most 48 pt (`PAGE_MAX_STRETCH`). A wider margin, on an iPad or a phone on its side, would leave
+a large empty gap between the boards; there the boards fade out of, and in from, the margin over
+the outer 30% of the swipe instead. See `pageOffset` in `use-swipe-pager.ts`.
 
 **Variant-aware motion** (`theme.motion`, resolved from `motionByVariant`): for `withTiming`
 transitions that should follow the active design language. `theme.motion.standard` (utility:

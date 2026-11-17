@@ -266,7 +266,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     }
   }, [artIdentity, onCurrentArtReadinessChange]);
   const slotStyle = useAnimatedStyle(() => {
-    const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth, exitWidth);
+    const { visible, offset, opacity } = pageOffset(page, anchorPage.value, translateX.value, slideWidth, exitWidth);
     // Opacity and transform only, and never zIndex. Two pages that are both
     // drawn never overlap (the incoming one lands in the middle as the outgoing
     // one leaves the frame), so there is no order to keep. And a
@@ -274,7 +274,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     // the native view among its siblings, which cancels a touch that began on
     // it. A swipe that took over a fling was cut off that way, 3 ms after it
     // started, until this stopped animating zIndex.
-    return { opacity: visible ? 1 : 0, transform: [{ translateX: offset }] };
+    return { opacity: visible ? opacity : 0, transform: [{ translateX: offset }] };
   }, [page, slideWidth, exitWidth]);
 
   return (

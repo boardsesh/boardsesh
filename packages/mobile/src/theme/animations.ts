@@ -21,11 +21,11 @@ export const springs = {
 
   /**
    * A page settling after a swipe: critically damped, so it never overshoots.
-   * This is the floor (about 190 ms to 90% from a standstill). A release hands
-   * its speed over through `pagingSpring` (`theme/paging-spring.ts`), which
-   * stiffens it so a flick lands faster and still cannot overshoot.
+   * This is the floor: from a standstill it lands in about 200 ms. A release
+   * hands its speed over through `pagingSpring` (`theme/paging-spring.ts`),
+   * which stiffens it further for a flick and still cannot overshoot.
    */
-  paging: { damping: 40, stiffness: 400, mass: 1.0 },
+  paging: { damping: 90, stiffness: 2025, mass: 1.0 },
 } as const;
 
 /**

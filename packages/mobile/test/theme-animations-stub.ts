@@ -18,7 +18,7 @@ export const springs = {
   interactive: { damping: 20, stiffness: 250, mass: 1.0 },
   gentle: { damping: 15, stiffness: 150, mass: 1.0 },
   bouncy: { damping: 10, stiffness: 200, mass: 0.7 },
-  paging: { damping: 40, stiffness: 400, mass: 1.0 },
+  paging: { damping: 90, stiffness: 2025, mass: 1.0 },
 };
 
 export const timing = {
