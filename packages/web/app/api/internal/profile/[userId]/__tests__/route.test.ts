@@ -21,10 +21,13 @@ const profile = {
   followingCount: 3,
   isFollowedByMe: false,
 };
-function read(userId = 'owner-a') {
+function read(userId = 'owner-a', expectedViewer?: string) {
   return GET(
     new NextRequest(`https://www.boardsesh.test/api/internal/profile/${userId}`, {
-      headers: { cookie: 'next-auth.session-token=owner-a-cookie' },
+      headers: {
+        cookie: 'next-auth.session-token=owner-a-cookie',
+        ...(expectedViewer === undefined ? {} : { 'X-Boardsesh-Expected-Viewer': expectedViewer }),
+      },
     }),
     { params: Promise.resolve({ userId }) },
   );
@@ -73,5 +76,42 @@ describe('profile route', () => {
     const response = await read();
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to get profile' });
+  });
+
+  describe('expected viewer', () => {
+    beforeEach(() => {
+      control.session.mockResolvedValue({ user: { id: 'owner-a' }, authSessionId: 'login-a' });
+    });
+
+    it('serves the tab that names the cookie’s account', async () => {
+      const response = await read('climber-c', 'owner-a:login-a');
+      expect(response.status).toBe(200);
+      expect(control.profile).toHaveBeenCalledWith('climber-c', 'owner-a');
+    });
+
+    it.each([
+      ['another account', 'owner-b:login-b'],
+      ['a signed-out tab', 'anonymous'],
+    ])('answers 409 without reading the profile when the tab shows %s', async (_label, expected) => {
+      const response = await read('climber-c', expected);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(control.profile).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 when a signed-in tab meets a signed-out cookie', async () => {
+      control.session.mockResolvedValue(null);
+      const response = await read('climber-c', 'owner-a:login-a');
+      expect(response.status).toBe(409);
+      expect(control.profile).not.toHaveBeenCalled();
+    });
+
+    // The OpenAPI document lists this route for any caller, and an old tab sends no header.
+    it('still answers a request that names no viewer', async () => {
+      const response = await read('climber-c');
+      expect(response.status).toBe(200);
+      expect(control.profile).toHaveBeenCalledWith('climber-c', 'owner-a');
+    });
   });
 });

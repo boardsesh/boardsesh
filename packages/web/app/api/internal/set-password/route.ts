@@ -4,6 +4,7 @@ import { AuthBackendUnavailableError } from '@/app/lib/auth/password-command-cli
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { requireExpectedViewer } from '@/app/lib/auth/expected-viewer.server';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
@@ -37,6 +38,12 @@ export async function POST(request: NextRequest) {
       throw new AuthBackendUnavailableError();
     }
     const session = await getAdmittedServerSession();
+    // In `legacy` mode nothing below compares the body's expected identity with
+    // the cookie, so this is the only thing that stops a stale tab writing a
+    // password to the account the cookie names now. The settings card, through
+    // the www guard, is the one caller, so a missing header is refused.
+    const viewerChanged = requireExpectedViewer(request, session, 'reject');
+    if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

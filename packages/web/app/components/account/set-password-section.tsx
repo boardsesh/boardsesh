@@ -17,7 +17,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { applyLocale } from '@/app/lib/i18n/locale-href';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { guardedFetch } from '@/app/lib/auth/session-guard';
+import { guardedFetch, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 
 type SetPasswordSectionProps = {
   hasPassword: boolean;
@@ -132,6 +132,8 @@ export default function SetPasswordSection({
       setConfirmPassword('');
       onPasswordSet();
     } catch (error) {
+      // The account changed under this page; the guard re-checks the session.
+      if (isSessionSuperseded(error)) return;
       console.error('Set password error:', error);
       showMessage(t('password.validation.retryError'), 'error');
     } finally {

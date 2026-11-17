@@ -9,10 +9,11 @@
  * registering (which is the only place the API key is ever shown), and removing.
  */
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { ControllerInfo } from '@/app/api/internal/controllers/route';
+import { WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -228,5 +229,20 @@ describe('ControllersSection', () => {
     await waitFor(() => {
       expect(mockShowMessage).toHaveBeenCalledWith('Controller is in use', 'error');
     });
+  });
+
+  it('shows nothing when the cookie names another account, and asks for a session check', async () => {
+    respondWith([makeController()], () => Response.json({ code: 'viewer_changed' }, { status: 409 }));
+    const checks = vi.fn();
+    window.addEventListener(WEB_SESSION_CHECK_EVENT, checks);
+
+    render(<ControllersSection />);
+    fireEvent.click(await screen.findByText(t('controllers.card.delete')));
+    fireEvent.click(await screen.findByText(t('controllers.card.deleteConfirm.ok')));
+
+    await waitFor(() => expect(checks).toHaveBeenCalledOnce());
+    window.removeEventListener(WEB_SESSION_CHECK_EVENT, checks);
+    await act(async () => {});
+    expect(mockShowMessage).not.toHaveBeenCalled();
   });
 });

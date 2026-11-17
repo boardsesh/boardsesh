@@ -1,4 +1,5 @@
 import type { Session } from 'next-auth';
+import { EXPECTED_VIEWER_HEADER, isViewerChangedBody } from './expected-viewer';
 import { reloadAfterAccountChange } from './reload-after-account-change';
 
 /**
@@ -7,7 +8,10 @@ import { reloadAfterAccountChange } from './reload-after-account-change';
  * A response that lands after the account changed is never handed to its
  * caller: the caller gets a SessionSupersededError instead. A change made in
  * another tab or app retires the page: caches are cleared and it reloads.
- * Design: issue #7596.
+ * Same-origin requests name the account this page shows in
+ * `X-Boardsesh-Expected-Viewer`; a 409 `viewer_changed` answer means the cookie
+ * names another account, so it is superseded too and the session is re-checked
+ * at once. Design: issue #7596.
  */
 export const WEB_SESSION_CHECK_EVENT = 'boardsesh-web-session-check';
 const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
@@ -47,9 +51,27 @@ export function sessionViewerKey(viewer: SessionViewer): string {
   return viewer ? `${viewer.userId}:${viewer.authSessionId}` : 'anonymous';
 }
 
+/** The headers fetch will send: `init.headers` replaces a Request's own. */
+function outgoingHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
+  return new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+}
+
 function bearerToken(input: RequestInfo | URL, init?: RequestInit): string | undefined {
-  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-  return /^Bearer\s+(\S+)$/i.exec(headers.get('authorization') ?? '')?.[1];
+  return /^Bearer\s+(\S+)$/i.exec(outgoingHeaders(input, init).get('authorization') ?? '')?.[1];
+}
+
+function isSameOrigin(input: RequestInfo | URL, pageOrigin: string | undefined): boolean {
+  if (!pageOrigin) return false;
+  const target = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  try {
+    return new URL(target, pageOrigin).origin === pageOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function browserPageOrigin(): string | undefined {
+  return typeof location === 'undefined' ? undefined : location.origin;
 }
 
 /** This tab's own sign-in or sign-out. Cancel it when the flow changed nothing. */
@@ -63,6 +85,8 @@ export type SessionGuardDependencies = {
   readonly reloadPage: () => void;
   readonly requestSessionCheck: () => void;
   readonly send?: typeof fetch;
+  /** The page's origin; only requests to it carry the expected-viewer header. */
+  readonly pageOrigin?: () => string | undefined;
   readonly now?: () => number;
   readonly cleanupTimeoutMs?: number;
   readonly localChangeWindowMs?: number;
@@ -121,6 +145,17 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     }, dependencies.unauthorizedDelayMs ?? 1000);
   }
 
+  // Only this page's own origin hears who it shows; other origins never get the
+  // header (it would also force a CORS preflight). Before the first accepted
+  // read the page shows nobody, so it names nobody.
+  const pageOrigin = dependencies.pageOrigin ?? browserPageOrigin;
+  const withExpectedViewer = (input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined => {
+    if (viewer === undefined || !isSameOrigin(input, pageOrigin())) return init;
+    const headers = outgoingHeaders(input, init);
+    headers.set(EXPECTED_VIEWER_HEADER, sessionViewerKey(viewer));
+    return { ...init, headers };
+  };
+
   const guardedFetch: typeof fetch = async (input, init) => {
     if (retiring) throw new SessionSupersededError();
     const token = bearerToken(input, init);
@@ -129,10 +164,11 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     if (tokenOwner !== undefined && viewer !== undefined && tokenOwner !== sessionViewerKey(viewer))
       throw new SessionSupersededError();
     const sentGeneration = generation;
+    const sentInit = withExpectedViewer(input, init);
     let response: Response;
     let body: ArrayBuffer;
     try {
-      response = await send(input, init);
+      response = await send(input, sentInit);
       // Callers read the body after this resolves, so decide only once it is all here.
       body = await response.arrayBuffer();
     } catch (error) {
@@ -140,6 +176,12 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       throw error;
     }
     if (!isCurrent(sentGeneration)) throw new SessionSupersededError();
+    // The cookie names another account than this page shows, and the route read
+    // and wrote nothing. Ask now rather than at the next focus.
+    if (response.status === 409 && isViewerChangedBody(body)) {
+      dependencies.requestSessionCheck();
+      throw new SessionSupersededError();
+    }
     if (response.status === 401) noteUnauthorized();
     return new Response(NULL_BODY_STATUSES.has(response.status) ? null : body, {
       status: response.status,

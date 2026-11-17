@@ -14,7 +14,7 @@ import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionProviderWrapper from '../session-provider';
 import QueryClientProvider from '../query-client-provider';
-import { WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
+import { guardedFetch, isSessionSuperseded, WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
 import { guardedNextAuthSignOut } from '@/app/lib/auth/nextauth-cookie-fetch-lock';
 import { signInWithSessionIntent } from '@/app/lib/auth/web-session-events';
 
@@ -46,6 +46,10 @@ let probeStatus: number;
 let authRoute: ((endpoint: string) => Response | undefined) | undefined;
 /** Set by a test to hold the session read open. */
 let sessionRead: Promise<void> | undefined;
+/** Set by a test to hold the identity probe open after it read the cookie. */
+let probeRead: Promise<void> | undefined;
+/** The expected-viewer header each `/api/internal/controllers` request carried. */
+const namedViewers: (string | null)[] = [];
 let fetchMock: ReturnType<typeof vi.fn>;
 const calls = (path: string) =>
   fetchMock.mock.calls.filter(([input]) => String(input instanceof Request ? input.url : input).endsWith(path)).length;
@@ -61,6 +65,8 @@ beforeEach(async () => {
   probeStatus = 200;
   authRoute = undefined;
   sessionRead = undefined;
+  probeRead = undefined;
+  namedViewers.length = 0;
   const persistedCache = await openDB('boardsesh-react-query', 1, {
     upgrade(upgradeDb) {
       if (!upgradeDb.objectStoreNames.contains('cache')) upgradeDb.createObjectStore('cache');
@@ -69,7 +75,7 @@ beforeEach(async () => {
   await persistedCache.clear('cache');
   persistedCache.close();
   vi.stubGlobal('BroadcastChannel', undefined);
-  fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const endpoint = String(input instanceof Request ? input.url : input);
     const authReply = authRoute?.(endpoint);
     if (authReply) return authReply;
@@ -82,7 +88,17 @@ beforeEach(async () => {
             authSessionId: serverSession.authSessionId,
           }
         : { token: null, authenticated: false };
+      await probeRead;
       return Response.json(probe, { status: probeStatus });
+    }
+    if (endpoint.endsWith('/api/internal/controllers')) {
+      // The route's expected-viewer check, against the shared cookie.
+      const named = new Headers(init?.headers).get('X-Boardsesh-Expected-Viewer');
+      namedViewers.push(named);
+      const cookieViewer = serverSession ? `${serverSession.user.id}:${serverSession.authSessionId}` : 'anonymous';
+      return named === cookieViewer
+        ? Response.json({ controllers: [] })
+        : Response.json({ code: 'viewer_changed' }, { status: 409 });
     }
     await sessionRead;
     return Response.json(serverSession ?? {}, { status: sessionStatus });
@@ -221,6 +237,50 @@ describe('re-reading the session', () => {
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
     expect(calls('/api/internal/ws-auth')).toBe(1);
     expect(screen.getByText('loading:none:none')).toBeTruthy();
+  });
+
+  it('a request answered viewer_changed re-checks at once and retires a page whose cookie moved to B', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    // B signs in on the other origin. No storage event or broadcast reaches this tab.
+    serverSession = session('user-b', 'login-b');
+
+    let rejection: unknown;
+    await act(async () => {
+      rejection = await guardedFetch('/api/internal/controllers').catch((error: unknown) => error);
+    });
+
+    expect(isSessionSuperseded(rejection)).toBe(true);
+    expect(namedViewers).toEqual(['user-a:login-a']);
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(calls('/api/internal/ws-auth')).toBe(1);
+    expect(published.some((state) => state.includes('user-b'))).toBe(false);
+  });
+
+  it('a viewer_changed answer during a focus probe runs one more probe after it', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    let releaseProbe = () => {};
+    probeRead = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    // This probe reads the cookie while it still names A, then is held.
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(calls('/api/internal/ws-auth')).toBe(1));
+    serverSession = session('user-b', 'login-b');
+
+    await act(async () => {
+      await guardedFetch('/api/internal/controllers').catch(() => {});
+    });
+    expect(calls('/api/internal/ws-auth')).toBe(1);
+    act(() => releaseProbe());
+
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(calls('/api/internal/ws-auth')).toBe(2);
   });
 
   it('a matching probe never reads the session, so the cookie is not rewritten', async () => {

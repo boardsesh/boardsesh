@@ -33,7 +33,7 @@ import { getBoardSelectorOptions } from '@/app/lib/board-constants';
 import type { BoardName } from '@/app/lib/types';
 import styles from './controllers-section.module.css';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { guardedFetch } from '@/app/lib/auth/session-guard';
+import { guardedFetch, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 
 // Get board config data (synchronous - from generated data)
 const boardSelectorOptions = getBoardSelectorOptions();
@@ -341,6 +341,8 @@ export default function ControllersSection() {
 
       await fetchControllers();
     } catch (error) {
+      // The account changed under this page; the guard re-checks the session.
+      if (isSessionSuperseded(error)) return;
       showMessage(error instanceof Error ? error.message : t('controllers.register.registerError'), 'error');
     } finally {
       setIsSaving(false);
@@ -364,6 +366,7 @@ export default function ControllersSection() {
       showMessage(t('controllers.deleteSuccess'), 'success');
       await fetchControllers();
     } catch (error) {
+      if (isSessionSuperseded(error)) return;
       showMessage(error instanceof Error ? error.message : t('controllers.deleteError'), 'error');
     } finally {
       setRemovingId(null);

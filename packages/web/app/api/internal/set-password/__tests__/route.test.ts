@@ -56,10 +56,16 @@ vi.mock('@/app/lib/db/schema', () => ({
   users: { id: 'users.id', emailVerified: 'users.emailVerified' },
 }));
 
-function createRequest(body: Record<string, unknown>): NextRequest {
+// What the www guard sends for the mocked `{ user: { id: 'user-1' } }` session.
+const USER_1_VIEWER = 'user-1:pending-login-identity';
+
+function createRequest(body: Record<string, unknown>, expectedViewer: string | null = USER_1_VIEWER): NextRequest {
   return new NextRequest('http://localhost/api/internal/set-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(expectedViewer === null ? {} : { 'X-Boardsesh-Expected-Viewer': expectedViewer }),
+    },
     body: JSON.stringify(body),
   });
 }
@@ -80,7 +86,7 @@ describe('POST /api/internal/set-password', () => {
   it('returns 401 when not authenticated', async () => {
     mockGetServerSession.mockResolvedValue(null);
 
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
+    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }, null));
     expect(response.status).toBe(401);
 
     const data = await response.json();
@@ -199,7 +205,7 @@ describe('POST /api/internal/set-password', () => {
 
     const request = new NextRequest('http://localhost/api/internal/set-password', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Boardsesh-Expected-Viewer': USER_1_VIEWER },
       body: 'not valid json{{{',
     });
 
@@ -219,5 +225,48 @@ describe('POST /api/internal/set-password', () => {
 
     const data = await response.json();
     expect(data.error).toContain('less than 128 characters');
+  });
+
+  describe('expected viewer', () => {
+    const body = { password: 'testpass123', confirmPassword: 'testpass123' };
+    function expectNothingTouched() {
+      expect(mockCheckRateLimit).not.toHaveBeenCalled();
+      expect(mockSelect).not.toHaveBeenCalled();
+      expect(mockBcryptHash).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    }
+
+    it.each([
+      ['another account', 'user-2:login-2'],
+      ['another login of the same account', 'user-1:login-older'],
+      ['a signed-out tab', 'anonymous'],
+    ])('answers 409 viewer_changed and writes nothing when the tab shows %s', async (_label, expected) => {
+      mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
+
+      const response = await POST(createRequest(body, expected));
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expectNothingTouched();
+    });
+
+    it('refuses a signed-in cookie whose request names no viewer, since the guard always names one', async () => {
+      mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
+
+      const response = await POST(createRequest(body, null));
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: 'viewer_changed' });
+      expectNothingTouched();
+    });
+
+    it('answers 409 when the tab names an account and the cookie is signed out', async () => {
+      mockGetServerSession.mockResolvedValue(null);
+
+      const response = await POST(createRequest(body));
+
+      expect(response.status).toBe(409);
+      expectNothingTouched();
+    });
   });
 });

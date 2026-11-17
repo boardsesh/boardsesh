@@ -296,6 +296,82 @@ lock (`nextauth-cookie-fetch-lock.ts:255`), which stays until Phase B. On Expo
 web: `sessionGeneration`, the `boardsesh-expo-web-auth-v1` BroadcastChannel
 (`auth-store.web.ts:77,157`) and the storage owner key.
 
+### Expected viewer on cookie routes (owner decision 4)
+
+Some `/api/internal/*` routes on www know the caller only from the shared
+cookie. A tab that has not yet noticed a switch made on app.boardsesh.com can
+send one of them, and the cookie answers as the new account. Without a check,
+the old page shows that account's data or writes as it until the next re-read
+reloads it: up to 45 seconds after the climber comes back to the tab (the
+30-second focus throttle plus the 15-second probe deadline in
+`session-provider.tsx`).
+
+The www guard names the account its page shows on every request to its own
+origin, in `X-Boardsesh-Expected-Viewer`:
+
+- signed in: `<userId>:<authSessionId>`, the guard's own `sessionViewerKey`
+  of the accepted session (with `pending-login-identity` when the session has
+  no `authSessionId`);
+- signed out: `anonymous`, so a signed-out page cannot receive a signed-in
+  account's data either;
+- before the first session read is accepted: no header. The page shows no
+  account yet.
+
+Requests to another origin (the GraphQL backend, uploads, Aurora) never carry
+it, so no request gains a CORS preflight.
+
+`requireExpectedViewer` (`app/lib/auth/expected-viewer.server.ts`) runs right
+after the route reads the session and before any other read or write. It
+compares the header with the session the cookie resolved to, in the same key
+format. On a mismatch (another account, another login of the same account, a
+signed-out page against a signed-in cookie, the reverse, or an unreadable
+value) it answers 409 with `{ "code": "viewer_changed" }` and
+`Cache-Control: private, no-store`. The body names no account. The guard turns
+that answer into `SessionSupersededError`, so the caller shows nothing, and it
+asks for the session check at once, skipping the 30-second focus throttle. If a
+probe is already out, one more runs after it, because that probe may have read
+the cookie before it changed. The check then retires the page as in the table
+above. Other 409s, such as "Password already set.", reach the caller as before.
+
+| Route | Missing header | Why |
+| --- | --- | --- |
+| `controllers` GET, POST, DELETE | 409 when the cookie is signed in | Its only caller is the `/settings` controllers card, through the guard. |
+| `set-password` POST | 409 when the cookie is signed in | Its only caller is the `/settings` password card, through the guard. In `legacy` mode nothing else compares the body's `expectedUserId` with the cookie. |
+| `profile` GET | Served as before | The published OpenAPI document lists it for any session holder. |
+| `profile/[userId]` GET | Served as before | The OpenAPI document lists it for anonymous callers; what it returns depends on the viewer. |
+
+A request with neither the header nor a signed-in cookie goes on under both
+policies and gets the route's usual signed-out answer. The other
+`/api/internal/*` routes need no check: `ws-auth` echoes the viewer and the
+client compares; `climb-search-cache/revalidate` takes a cookie but only clears
+a board's public cache tag, the same for any account; `feature-flags` is an
+admin page opened by hand, never fetched by a page; `join/[sessionId]` is a
+top-level link that redirects, so the next page renders the current account;
+`cleanup`, `profile-percentiles`, `refresh-sitemap-climbs` and
+`revalidate-climb` take a bearer secret, not a cookie; `dev-metadata` answers
+only in development and holds no account data; `beta-link-thumbnail` is an
+unauthenticated image proxy. Expo web calls none of the four checked routes
+(none is in `cross-subdomain-cors.ts`), so neither its transport nor CORS
+changed.
+
+What stays open:
+
+1. A tab loaded before this shipped sends no header. Its controllers and
+   set-password requests get 409 until it reloads, which its old code shows as
+   the generic error. Its profile reads are served as before.
+2. Soft navigation. The App Router fetches server components with the cookie,
+   not through `guardedFetch`, and the guard cannot add a header to those
+   requests. A stale tab that follows a link to `/profile/<id>` gets that page
+   rendered for the new account (`profile/[user_id]/page.tsx` reads the
+   session and calls `getProfileData`, the same data as
+   `/api/internal/profile/[userId]`); other private server pages (playlists,
+   gym management, build-plan orders) behave the same. The four API routes are
+   not reachable that way. The next re-read still retires the page.
+3. No browser test drives two real origins. `viewer-switch-race.test.ts` runs
+   the real guard against the real controllers route with the cookie switched
+   underneath, and `session-provider-guard.test.tsx` runs the provider's
+   re-check and reload.
+
 ## How each race is handled
 
 | Race | What happens | Where |
@@ -308,6 +384,7 @@ web: `sessionGeneration`, the `boardsesh-expo-web-auth-v1` BroadcastChannel
 | Back/forward cache | `pageshow` with `persisted` re-reads the session. A changed identity reloads. | A2, A3 |
 | Next Router Cache (soft back and forward) | No `pageshow` fires. The reload on a change made elsewhere, or the full navigation of this tab's own sign-in or sign-out, drops the cache. | A2 |
 | Login on www while an app tab is open | Phase A: the app tab notices on focus, visibility or `pageshow`, because BroadcastChannel and `storage` events do not cross origins. Phase B: the login revokes A's session, so A's next request gets a 401 and the tab reloads as B. | A3, B1 |
+| Login on app.boardsesh.com while a www tab is open, which then calls a cookie-only `/api/internal/*` route | The route answers 409 `viewer_changed` before it reads or writes; the guard re-checks at once and the tab reloads as B. A soft navigation to a private server page is not covered (see "Expected viewer on cookie routes"). | Decision 4 |
 | A delayed session read or set-password response overwrites a later login's cookie | Remains in Phase A, because NextAuth writes on every read. In Phase B only the read that bridges a legacy cookie still writes, so the race stays for that read (open question 3). | B1, B2, B4 |
 | Two logins in two tabs at nearly the same moment | Accepted, see below. | none |
 | Backend or auth outage | No identity change, so no reload and no cleanup. | A2, A3 |
@@ -500,13 +577,11 @@ test in `packages/web/e2e/` today.
    Better-Auth-compatible `auth_session` rows and a signed cookie from our own
    login code, read through `readFirstPartySession` with a `canonical-token`
    (`authority/session-reader.ts:26-29`), avoids the adapter and the email gate.
-7. Cookie-authenticated `/api/internal/*` on www. A tab can send such a
-   request after the shared cookie changed to B elsewhere but before it
-   noticed, and B's data reaches A's screen until the next re-read reloads.
-   This exists today and stays in Phase B: the tab's generation has not moved,
-   and login revocation does not touch B's cookie. Closing it needs the server
-   to echo the viewer, or a 409 on an unexpected identity. The owner has not
-   accepted it.
+7. Answered (owner decision 4, 2026-11-17). Cookie-authenticated
+   `/api/internal/*` on www now answers 409 when the request names another
+   viewer than the cookie; see "Expected viewer on cookie routes" for the
+   header, the routes and what stays open (tabs from before the change, and
+   soft navigation to private server pages).
 8. Expo web navigation. Is unmounting the authenticated tree and reloading
    enough, or does a retired page need a central navigation gate?
 9. Under `better-auth`, what do the `CURRENT_STORE_WEB_AUTH_MODE`,

@@ -240,8 +240,15 @@ export default function SessionProviderWrapper({
     // first focus after the page settles always checks.
     let lastIdentityCheck = 0;
     let identityProbe: AbortController | null = null;
+    // A 401 or 409 that lands while a probe is out may have met a cookie that
+    // changed after that probe read it, so one more probe runs when it ends.
+    let recheckAfterProbe = false;
     const checkIdentity = async (throttled: boolean) => {
-      if (suspendedRef.current || !settledRef.current || identityProbe) return;
+      if (suspendedRef.current || !settledRef.current) return;
+      if (identityProbe) {
+        if (!throttled) recheckAfterProbe = true;
+        return;
+      }
       if (throttled && Date.now() - lastIdentityCheck < FOCUS_CHECK_INTERVAL_MS) return;
       lastIdentityCheck = Date.now();
       const probe = new AbortController();
@@ -255,13 +262,22 @@ export default function SessionProviderWrapper({
           probed !== undefined &&
           identityProbe === probe &&
           sessionViewerKey(probed) !== browserSessionGuard().viewerKey()
-        )
+        ) {
+          // The session read that follows answers the queued check too.
+          recheckAfterProbe = false;
           externalRefresh();
+        }
       } catch {
         /* Transport failure keeps the accepted session. */
       } finally {
         clearTimeout(deadline);
-        if (identityProbe === probe) identityProbe = null;
+        if (identityProbe === probe) {
+          identityProbe = null;
+          if (recheckAfterProbe) {
+            recheckAfterProbe = false;
+            void checkIdentity(false);
+          }
+        }
       }
     };
     const focusCheck = () => {

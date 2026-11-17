@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SetPasswordSection from '../set-password-section';
+import { WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -245,6 +246,34 @@ describe('SetPasswordSection', () => {
       await waitFor(() => {
         expect(mockShowMessage).toHaveBeenCalledWith('Failed to set password. Please try again.', 'error');
       });
+    });
+
+    it('shows nothing when the cookie names another account, and asks for a session check', async () => {
+      mockFetch.mockImplementation(async () => Response.json({ code: 'viewer_changed' }, { status: 409 }));
+      const checks = vi.fn();
+      window.addEventListener(WEB_SESSION_CHECK_EVENT, checks);
+      const onPasswordSet = vi.fn();
+
+      render(
+        <SetPasswordSection
+          hasPassword={false}
+          userEmail="user@example.com"
+          linkedProviders={[]}
+          onPasswordSet={onPasswordSet}
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'testpass123' } });
+      fireEvent.change(screen.getByLabelText('Confirm Password'), {
+        target: { value: 'testpass123' },
+      });
+      fireEvent.click(screen.getByText('Set Password'));
+
+      await waitFor(() => expect(checks).toHaveBeenCalledOnce());
+      await waitFor(() => expect(screen.getByText('Set Password').closest('button')?.disabled).toBe(false));
+      window.removeEventListener(WEB_SESSION_CHECK_EVENT, checks);
+      expect(mockShowMessage).not.toHaveBeenCalled();
+      expect(onPasswordSet).not.toHaveBeenCalled();
     });
 
     it('disables submit button while saving', async () => {
