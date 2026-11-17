@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- A brighter, richer violet across the app, with selected items easier to spot ([#7711](https://github.com/boardsesh/boardsesh/pull/7711))
 - Set your Spraywall's LED brightness once for everyone at the wall. ([#7454](https://github.com/boardsesh/boardsesh/pull/7454))
   Your Spraywall's LEDs can switch off by themselves after 15 minutes to 2 hours.
   Find your Spraywall's WLED controller on your Wi-Fi in one tap.
@@ -19,6 +20,9 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Swiping between climbs lands smoothly, and the name and grade stay in step. ([#7720](https://github.com/boardsesh/boardsesh/pull/7720))
+  VoiceOver reads each climb's name and grade as you swipe.
+- The board no longer flickers smaller after you swipe to a climb with a long name. ([#7716](https://github.com/boardsesh/boardsesh/pull/7716))
 - The board holds its size when you swipe between climbs. ([#7708](https://github.com/boardsesh/boardsesh/pull/7708))
 - Signing out no longer fails now and then while another phone opens the app. ([#7703](https://github.com/boardsesh/boardsesh/pull/7703))
 - Your board keeps the right holds lit through fast swipes. ([#7644](https://github.com/boardsesh/boardsesh/pull/7644))

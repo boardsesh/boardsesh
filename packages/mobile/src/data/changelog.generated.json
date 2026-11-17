@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-11-17T09:06:52.323Z",
+  "generatedAt": "2026-11-17T10:14:49.660Z",
   "entries": [
+    {
+      "prNumber": 7720,
+      "category": "fixed",
+      "title": "Swiping between climbs lands smoothly, and the name and grade stay in step.",
+      "mergedAt": "2026-11-17T09:57:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7720",
+      "body": "VoiceOver reads each climb's name and grade as you swipe."
+    },
+    {
+      "prNumber": 7716,
+      "category": "fixed",
+      "title": "The board no longer flickers smaller after you swipe to a climb with a long name.",
+      "mergedAt": "2026-11-17T09:39:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7716"
+    },
+    {
+      "prNumber": 7711,
+      "category": "new",
+      "title": "A brighter, richer violet across the app, with selected items easier to spot",
+      "mergedAt": "2026-11-17T09:25:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7711"
+    },
     {
       "prNumber": 7708,
       "category": "fixed",
@@ -9786,6 +9808,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T09:25:11Z",
+      "sha": "ce98979658af4ce0e653e45c52a6d6e1d5ec7fbf",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "1e61a150e955b973dc0c4aafeff36f7c34ac12e1"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-17T07:00:48Z",
