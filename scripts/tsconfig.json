@@ -206,6 +206,7 @@
     "__tests__/assert-screenshot-content.test.ts",
     "__tests__/mobile-screenshots-workflows.test.ts",
     "__tests__/screenshot-cache-recovery-workflow.test.ts",
+    "__tests__/final-ios-screenshot-recovery-workflow.test.ts",
     "__tests__/railway-config-inventory.test.ts",
     "__tests__/eoas-version-parity.test.ts",
     "lib/eoas.ts",

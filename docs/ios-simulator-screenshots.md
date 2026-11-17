@@ -34,3 +34,42 @@ If a capture retry fails at “Restore prebuilt simulator app,” retain the mis
 Dispatch `mobile-screenshot-cache-recovery.yml` from `main` with `source_sha` set to that full 40-character lowercase SHA and `expected_cache_key` set to the exact missing key. The workflow requires the commit to be an ancestor of `origin/main`, checks out both application and cache tooling from that commit, and requires the computed toolchain/native-input key to match before building or saving. It uses the existing simulator build and identity validation recipe and writes the cache in main's scope. It does not capture images, publish to a store, or delete caches. A different installed Xcode/SDK fails the key check; do not substitute a different key for an existing campaign.
 
 After the recovery job succeeds, retry only the unsuccessful capture jobs in the original campaign. Keep its successful artifacts and frozen source. A cache created by a temporary branch cannot be restored by the original main run.
+
+### Frozen d585 campaign recovery (November 2026)
+
+`final-ios-screenshot-recovery.yml` is limited to campaign `43938833365` at
+`d5855045ff8170e4e72f9f2edfd1a2d5d396390d`. Its original 220 reviewed PNGs are
+artifact `14317567067`, ZIP SHA256
+`84df9aaeccf8991c73781c777925b7b5332c5e822560432e92f1d803de19ba18`.
+Only the eight German Duo images are missing. Standard-runner diagnostics showed
+severe host pressure before helper installation; the identical historical helper
+and toolchain succeeded on `xcode-27-xlarge` in run `44068744445`. Recovery changes
+runner capacity, preserving original app, capture/framing tooling, fixtures,
+cache identity, readiness gates and bounded retries.
+
+1. Dispatch `phase=capture` on `main`, leaving `upload=false`. The existing exact
+   simulator cache must be present; use the separate cache recovery workflow if
+   it was evicted. The capture job retains original raw/framed artifacts plus
+   `recovered-de-duo-d585` with source and per-image checksums.
+2. Review all eight raw/framed images. Retain that successful run ID, immutable
+   recovery artifact ID and SHA256 of its downloaded ZIP. No listing is changed
+   by this phase.
+3. Dispatch `phase=finalize`, `upload=true`, supplying those three reviewed
+   identifiers. The verifier checks both runs' metadata, frozen source, ZIP
+   checksums, safe paths and exact inventories; it preserves every original byte.
+   The historical full dimension/content gates must pass for all 228 PNGs.
+4. Before upload, `recovered-complete-ios-d585` retains the complete tree and
+   provenance manifest. Publication holds both `mobile-screenshots-ios` and `mobile-store-draft` writer
+   locks, requires
+   the approved editable/manual 2.7.1 version and valid build 8 **record IDs**, then
+   invokes only the historical screenshots lane. The post-upload audit requires
+   228 COMPLETE assets with matching locale, display slot, position, filename and
+   MD5. Full pre/post audit comparison permits changes only to the default
+   screenshot sets and audit timestamp; CPPs, listing text, build and review
+   records must remain unchanged.
+
+The workflow never publishes a baseline, changes a binary or listing text,
+modifies CPPs, or submits review. `recovery-publication-evidence` retains audits
+and the manifest even when publication or readback fails. A failed readback is
+not success; inspect that evidence before considering further writes. This
+workflow deliberately cannot recover other campaigns or substitute other images.

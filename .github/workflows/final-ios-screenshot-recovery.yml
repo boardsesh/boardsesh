@@ -1,0 +1,260 @@
+name: Final iOS Screenshot Recovery
+
+# One frozen campaign: 220 reviewed images plus the missing German Duo eight.
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Capture eight images, then finalize after visual review
+        required: true
+        type: choice
+        options: [capture, finalize]
+      capture_run_id:
+        description: Successful capture-phase run ID (finalize only)
+        type: string
+      capture_artifact_id:
+        description: Immutable recovered-de-duo-d585 artifact ID (finalize only)
+        type: string
+      capture_archive_sha256:
+        description: SHA256 of the downloaded, visually reviewed artifact ZIP (finalize only)
+        type: string
+      upload:
+        description: Upload the verified complete set to the default listing (finalize requires true)
+        type: boolean
+        default: false
+
+concurrency:
+  # Hold the existing screenshot writer lock as well as the draft job lock.
+  group: ${{ inputs.phase == 'finalize' && 'mobile-screenshots-ios' || format('final-ios-recovery-capture-{0}', github.run_id) }}
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate frozen main source and inputs
+        env:
+          PHASE: ${{ inputs.phase }}
+          CAPTURE_RUN: ${{ inputs.capture_run_id }}
+          CAPTURE_ARTIFACT: ${{ inputs.capture_artifact_id }}
+          CAPTURE_SHA: ${{ inputs.capture_archive_sha256 }}
+          UPLOAD: ${{ inputs.upload }}
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor d5855045ff8170e4e72f9f2edfd1a2d5d396390d origin/main
+          if [ "$PHASE" = finalize ]; then
+            [[ "$CAPTURE_RUN" =~ ^[1-9][0-9]*$ ]]
+            [[ "$CAPTURE_ARTIFACT" =~ ^[1-9][0-9]*$ ]]
+            [[ "$CAPTURE_SHA" =~ ^[0-9a-f]{64}$ ]]
+            [ "$UPLOAD" = true ]
+          else
+            [ "$PHASE" = capture ] && [ "$UPLOAD" = false ]
+          fi
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - name: Test artifact and store identity guards
+        run: vp exec python3 scripts/__tests__/final_ios_screenshot_recovery_test.py
+
+  capture:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.phase == 'capture'
+    runs-on: xcode-27-xlarge
+    timeout-minutes: 90
+    env:
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      EXPO_PUBLIC_USE_RN_FETCH: '1'
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d5855045ff8170e4e72f9f2edfd1a2d5d396390d
+          persist-credentials: false
+      - name: Checkout original capture tooling
+        uses: actions/checkout@v4
+        with:
+          ref: d5855045ff8170e4e72f9f2edfd1a2d5d396390d
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Checkout recovery verifier
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/recovery-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: scripts/final-ios-screenshot-recovery.py
+      - name: Verify immutable checkouts
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = d5855045ff8170e4e72f9f2edfd1a2d5d396390d ]
+          [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" = d5855045ff8170e4e72f9f2edfd1a2d5d396390d ]
+          [ "$(git -C .boardsesh/recovery-tooling rev-parse HEAD)" = "$WORKFLOW_SHA" ]
+      - name: Capture original German Duo shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
+        with:
+          locale: de
+          device-name: iPhone Duo
+          device-slug: iphone-duo
+          flow: app-store
+          fixtures: replay
+          app-cache-key: macOS-ARM64-screenshot-sim-app-v2-Debug-27B52-27.2-24B8118-b24068e565a40dac5f688fd7c0316ebac49ef09d34fee203e2949c23c8380e9f
+      - name: Record eight-image provenance
+        run: python3 .boardsesh/recovery-tooling/scripts/final-ios-screenshot-recovery.py capture-manifest
+      - name: Retain reviewable recovery artifact
+        id: recovered
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovered-de-duo-d585
+          path: app-stores/apple/screenshots/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record immutable artifact ID
+        env:
+          ARTIFACT_ID: ${{ steps.recovered.outputs.artifact-id }}
+        run: printf 'Review recovered-de-duo-d585 artifact %s from this run before finalize.\n' "$ARTIFACT_ID" >> "$GITHUB_STEP_SUMMARY"
+
+  finalize:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.phase == 'finalize' && inputs.upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: Production
+    concurrency:
+      group: mobile-store-draft
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d5855045ff8170e4e72f9f2edfd1a2d5d396390d
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/recovery-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: scripts/final-ios-screenshot-recovery.py
+      - name: Verify immutable checkouts
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = d5855045ff8170e4e72f9f2edfd1a2d5d396390d ]
+          [ "$(git -C .boardsesh/recovery-tooling rev-parse HEAD)" = "$WORKFLOW_SHA" ]
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - run: vp install --frozen-lockfile
+      - name: Verify artifacts and merge 220 plus eight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAPTURE_RUN: ${{ inputs.capture_run_id }}
+          CAPTURE_ARTIFACT: ${{ inputs.capture_artifact_id }}
+          CAPTURE_SHA: ${{ inputs.capture_archive_sha256 }}
+        run: |
+          python3 .boardsesh/recovery-tooling/scripts/final-ios-screenshot-recovery.py merge \
+            --capture-run "$CAPTURE_RUN" --capture-artifact "$CAPTURE_ARTIFACT" --capture-sha "$CAPTURE_SHA"
+      - name: Assert all screenshot dimensions
+        run: vp run check:screenshot-dimensions -- --platform ios
+      - name: Fetch previous screenshot baseline
+        id: previous_baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: vp run screenshot:baseline -- fetch --platform ios --all --out "$RUNNER_TEMP/previous-baseline"
+      - name: Assert all screenshot content
+        env:
+          BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
+        run: |
+          set -euo pipefail
+          if [ "$BASELINE_FOUND" = true ]; then
+            vp run screenshot:assert-content -- --dir app-stores/apple/screenshots --baseline-dir "$RUNNER_TEMP/previous-baseline"
+          else
+            vp run screenshot:assert-content -- --dir app-stores/apple/screenshots
+          fi
+      - name: Retain complete images and manifest before publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovered-complete-ios-d585
+          path: |
+            app-stores/apple/screenshots/
+            recovery-evidence/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          working-directory: fastlane
+      - name: Install original Fastlane dependencies
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
+      - name: Preflight, upload screenshots only, and verify complete readback
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          RELEASE_VERSION: 2.7.1
+          IOS_BUILD_NUMBER: '8'
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+          FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: 'true'
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ]
+          umask 077
+          ASC_KEY_PATH="$(mktemp "$RUNNER_TEMP/recovery-asc-key.XXXXXX")"
+          export ASC_KEY_PATH
+          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$ASC_KEY_PATH"
+          grep -q 'BEGIN PRIVATE KEY' "$ASC_KEY_PATH"
+          export STORE_AUDIT_OUTPUT="$GITHUB_WORKSPACE/recovery-evidence/preflight.json"
+          bundle exec fastlane ios audit
+          python3 ../.boardsesh/recovery-tooling/scripts/final-ios-screenshot-recovery.py check-audit --audit "$STORE_AUDIT_OUTPUT"
+          upload_status=0
+          bundle exec fastlane ios screenshots || upload_status=$?
+          export STORE_AUDIT_OUTPUT="$GITHUB_WORKSPACE/recovery-evidence/readback.json"
+          readback_status=0
+          bundle exec fastlane ios audit || readback_status=$?
+          if [ "$readback_status" -eq 0 ]; then
+            python3 ../.boardsesh/recovery-tooling/scripts/final-ios-screenshot-recovery.py check-audit --audit "$STORE_AUDIT_OUTPUT" --manifest ../recovery-evidence/manifest.json --before ../recovery-evidence/preflight.json || readback_status=$?
+          fi
+          printf 'Upload status: %s; readback status: %s\n' "$upload_status" "$readback_status"
+          [ "$upload_status" -eq 0 ] && [ "$readback_status" -eq 0 ]
+      - name: Retain publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-publication-evidence
+          path: recovery-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 30
