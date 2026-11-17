@@ -697,5 +697,12 @@
     "publishLinkMessage": "Chiunque abbia il link può aprire questo pannello, anche se resta fuori da ricerca e mappa. Il link è costruito dal nome del pannello, quindi non è segreto. Tieni nascosta la posizione a meno che tu non scelga di condividerla.",
     "publishLink": "Condividi tramite link",
     "publishResourceMessage": "Chiunque può aprire questa session o questo pannello. Le altre tue attività private restano limitate alle persone che approvi."
+  },
+  "reloadRequired": {
+    "message": "Questa pagina non è aggiornata. Ricaricala per continuare.",
+    "action": "Ricarica"
+  },
+  "writeRefused": {
+    "tryAgain": "Non è andato a buon fine. Riprova."
   }
 }

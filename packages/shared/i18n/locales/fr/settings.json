@@ -697,5 +697,12 @@
     "publishLinkMessage": "Toute personne disposant du lien peut ouvrir cette board, même si elle n'apparaît ni dans la recherche ni sur la carte. Le lien reprend le nom de la board, il n'est donc pas secret. Garde son emplacement masqué si tu ne souhaites pas le partager.",
     "publishLink": "Partager le lien",
     "publishResourceMessage": "Tout le monde peut ouvrir cette séance ou cette board. Tes autres activités privées restent réservées aux personnes que tu approuves."
+  },
+  "reloadRequired": {
+    "message": "Cette page n’est plus à jour. Recharge-la pour continuer.",
+    "action": "Recharger"
+  },
+  "writeRefused": {
+    "tryAgain": "Ça n’a pas abouti. Réessaie."
   }
 }

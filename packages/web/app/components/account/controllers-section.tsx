@@ -33,7 +33,13 @@ import { getBoardSelectorOptions } from '@/app/lib/board-constants';
 import type { BoardName } from '@/app/lib/types';
 import styles from './controllers-section.module.css';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { guardedFetch } from '@/app/lib/auth/session-guard';
+import {
+  guardedActionFetch,
+  isReloadRequired,
+  isSessionSuperseded,
+  isWriteRefused,
+} from '@/app/lib/auth/session-guard';
+import ReloadPageAlert, { TryAgainAlert } from './reload-page-alert';
 
 // Get board config data (synchronous - from generated data)
 const boardSelectorOptions = getBoardSelectorOptions();
@@ -238,16 +244,22 @@ export default function ControllersSection() {
   // Success state for showing API key
   const [successApiKey, setSuccessApiKey] = useState<string | null>(null);
   const [successControllerName, setSuccessControllerName] = useState('');
+  // An action that still failed after the session re-check: say so instead of nothing.
+  const [reloadRequired, setReloadRequired] = useState(false);
+  // The same, for the open register form, which keeps what was typed.
+  const [registerNotice, setRegisterNotice] = useState<'tryAgain' | 'reload' | null>(null);
 
   const fetchControllers = async () => {
     try {
-      const response = await guardedFetch('/api/internal/controllers');
+      const response = await guardedActionFetch('/api/internal/controllers');
       if (response.ok) {
         const data = await response.json();
         setControllers(data.controllers);
       }
     } catch (error) {
-      console.error('Failed to fetch controllers:', error);
+      if (isReloadRequired(error)) setReloadRequired(true);
+      // The page is moving to another account and reloads.
+      else if (!isSessionSuperseded(error)) console.error('Failed to fetch controllers:', error);
     } finally {
       setLoading(false);
     }
@@ -263,6 +275,7 @@ export default function ControllersSection() {
     setSelectedLayout(undefined);
     setSelectedSize(undefined);
     setSelectedSets([]);
+    setRegisterNotice(null);
     setIsModalOpen(true);
   };
 
@@ -311,8 +324,9 @@ export default function ControllersSection() {
     setIds?: number[];
   }) => {
     setIsSaving(true);
+    setRegisterNotice(null);
     try {
-      const response = await guardedFetch('/api/internal/controllers', {
+      const response = await guardedActionFetch('/api/internal/controllers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -341,6 +355,19 @@ export default function ControllersSection() {
 
       await fetchControllers();
     } catch (error) {
+      // Refused once, nothing registered: the form stays open with what was typed.
+      if (isWriteRefused(error)) {
+        setRegisterNotice('tryAgain');
+        return;
+      }
+      // The page is moving to another account and reloads.
+      if (isSessionSuperseded(error)) return;
+      if (isReloadRequired(error)) {
+        setRegisterNotice('reload');
+        // A lost answer may have registered a controller whose key is gone, so show the list.
+        await fetchControllers();
+        return;
+      }
       showMessage(error instanceof Error ? error.message : t('controllers.register.registerError'), 'error');
     } finally {
       setIsSaving(false);
@@ -350,7 +377,7 @@ export default function ControllersSection() {
   const handleRemove = async (controllerId: string) => {
     setRemovingId(controllerId);
     try {
-      const response = await guardedFetch('/api/internal/controllers', {
+      const response = await guardedActionFetch('/api/internal/controllers', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ controllerId }),
@@ -364,6 +391,11 @@ export default function ControllersSection() {
       showMessage(t('controllers.deleteSuccess'), 'success');
       await fetchControllers();
     } catch (error) {
+      if (isSessionSuperseded(error)) return;
+      if (isReloadRequired(error)) {
+        setReloadRequired(true);
+        return;
+      }
       showMessage(error instanceof Error ? error.message : t('controllers.deleteError'), 'error');
     } finally {
       setRemovingId(null);
@@ -391,6 +423,7 @@ export default function ControllersSection() {
     <>
       <Card>
         <CardContent>
+          {reloadRequired && <ReloadPageAlert />}
           <Typography variant="h5">{t('controllers.title')}</Typography>
           <Typography variant="body2" component="span" color="text.secondary" className={styles.sectionDescription}>
             {t('controllers.subtitle')}
@@ -430,6 +463,8 @@ export default function ControllersSection() {
       <Dialog open={isModalOpen} onClose={handleModalCancel} maxWidth="sm" fullWidth>
         <DialogTitle>{t('controllers.register.title')}</DialogTitle>
         <DialogContent>
+          {registerNotice === 'tryAgain' && <TryAgainAlert />}
+          {registerNotice === 'reload' && <ReloadPageAlert />}
           <Typography variant="body2" component="span" color="text.secondary" className={styles.modalDescription}>
             {t('controllers.register.description')}
           </Typography>

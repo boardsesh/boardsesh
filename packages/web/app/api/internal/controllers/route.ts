@@ -1,6 +1,7 @@
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { requireExpectedViewer } from '@/app/lib/auth/expected-viewer.server';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
@@ -43,6 +44,11 @@ export type ControllerInfo = {
   createdAt: string;
 };
 
+// Every handler checks the expected viewer first. Its one caller is the
+// /settings controllers card through the www guard, which always names the
+// viewer, so a request without the header from a signed-in cookie is refused.
+const VIEWER_POLICY = { route: '/api/internal/controllers', missing: 'reject' } as const;
+
 // Consider controller online if seen within last 60 seconds
 const ONLINE_THRESHOLD_MS = 60 * 1000;
 
@@ -56,9 +62,11 @@ function generateApiKey(): string {
 /**
  * GET - Get all ESP32 controllers registered by the logged-in user
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getAdmittedServerSession();
+    const viewerChanged = requireExpectedViewer(request, session, VIEWER_POLICY);
+    if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -97,6 +105,8 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const session = await getAdmittedServerSession();
+    const viewerChanged = requireExpectedViewer(request, session, VIEWER_POLICY);
+    if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -158,6 +168,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const session = await getAdmittedServerSession();
+    const viewerChanged = requireExpectedViewer(request, session, VIEWER_POLICY);
+    if (viewerChanged) return viewerChanged;
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -337,7 +337,11 @@ describe('BA05 acceptance: later shared-domain login survives delayed cookie pub
                   ...(password
                     ? {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        // The www guard names the viewer; the route refuses a set-password without it.
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'X-Boardsesh-Expected-Viewer': `${accountA}:${originalSid}`,
+                        },
                         body: JSON.stringify({
                           password: newPassword,
                           confirmPassword: newPassword,

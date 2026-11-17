@@ -13,6 +13,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { ControllerInfo } from '@/app/api/internal/controllers/route';
+import { browserSessionGuard, WEB_SESSION_CHECK_EVENT } from '@/app/lib/auth/session-guard';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -84,8 +85,22 @@ async function chooseFirstOption(index: number) {
   await waitFor(() => expect(screen.queryAllByRole('option').length).toBe(0));
 }
 
+const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
+const VIEWER_CHANGED = () => Response.json({ code: 'viewer_changed', error: 'Reload this page.' }, { status: 409 });
+const deleteCalls = () => mockFetch.mock.calls.filter(([, init]) => init?.method === 'DELETE');
+
+/** The session provider's probe: it finds the page's own account, so nothing changes. */
+let checks: ReturnType<typeof vi.fn<() => void>>;
+function probeFindsNoChange() {
+  checks = vi.fn<() => void>(() => browserSessionGuard().sessionChecked(browserSessionGuard().sessionReadStarted()));
+  window.addEventListener(WEB_SESSION_CHECK_EVENT, checks);
+  return () => window.removeEventListener(WEB_SESSION_CHECK_EVENT, checks);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // A fresh guard per case: it counts refused writes.
+  delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[GUARD_KEY];
   respondWith([]);
 });
 
@@ -228,5 +243,67 @@ describe('ControllersSection', () => {
     await waitFor(() => {
       expect(mockShowMessage).toHaveBeenCalledWith('Controller is in use', 'error');
     });
+  });
+
+  it('sends a refused delete once more after the session check, and it goes through', async () => {
+    let refusals = 1;
+    respondWith([makeController()], () => (refusals-- > 0 ? VIEWER_CHANGED() : Response.json({ success: true })));
+    const stopProbe = probeFindsNoChange();
+
+    render(<ControllersSection />);
+    fireEvent.click(await screen.findByText(t('controllers.card.delete')));
+    fireEvent.click(await screen.findByText(t('controllers.card.deleteConfirm.ok')));
+
+    await waitFor(() => expect(mockShowMessage).toHaveBeenCalledWith(t('controllers.deleteSuccess'), 'success'));
+    stopProbe();
+    expect(deleteCalls()).toHaveLength(2);
+    expect(checks).toHaveBeenCalledOnce();
+    expect(screen.queryByText(t('reloadRequired.message'))).toBeNull();
+  });
+
+  it('asks for a reload, not a toast, when the delete is refused again after the session check', async () => {
+    respondWith([makeController()], VIEWER_CHANGED);
+    const stopProbe = probeFindsNoChange();
+
+    render(<ControllersSection />);
+    fireEvent.click(await screen.findByText(t('controllers.card.delete')));
+    fireEvent.click(await screen.findByText(t('controllers.card.deleteConfirm.ok')));
+
+    expect(await screen.findByText(t('reloadRequired.message'))).toBeTruthy();
+    stopProbe();
+    expect(screen.getByText(t('reloadRequired.action'))).toBeTruthy();
+    // One retry, never a loop.
+    expect(deleteCalls()).toHaveLength(2);
+    expect(mockShowMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the form and what was typed after a refused register: try again, then reload', async () => {
+    respondWith([], VIEWER_CHANGED);
+    const stopProbe = probeFindsNoChange();
+
+    render(<ControllersSection />);
+    fireEvent.click(await screen.findByText(t('controllers.add')));
+    await screen.findByText(t('controllers.register.title'));
+    fireEvent.change(screen.getByPlaceholderText(t('controllers.register.namePlaceholder')), {
+      target: { value: 'Projector' },
+    });
+    await chooseOption(0, t('controllers.register.boardSpray'));
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+    expect(await screen.findByText(t('writeRefused.tryAgain'))).toBeTruthy();
+    expect(checks).toHaveBeenCalledOnce();
+    expect(screen.queryByText(t('reloadRequired.message'))).toBeNull();
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+
+    expect(await screen.findByText(t('reloadRequired.message'))).toBeTruthy();
+    stopProbe();
+    expect(screen.queryByText(t('writeRefused.tryAgain'))).toBeNull();
+    // The dialog stays open with the typed name.
+    expect(screen.getByText(t('controllers.register.title'))).toBeTruthy();
+    expect(screen.getByDisplayValue('Projector')).toBeTruthy();
+    // Never sent twice per press.
+    expect(postCalls()).toHaveLength(2);
+    expect(mockShowMessage).not.toHaveBeenCalled();
   });
 });

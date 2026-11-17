@@ -73,10 +73,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
+    // A cookie from before the authSessionId claim gets its id from `jti` in the
+    // jwt callback on every session read (auth-options.ts, `legacy_no_sid`).
+    // Answer the same id, or the focus probe and the WebSocket token read this
+    // login as another one until the session read has rewritten the cookie.
     const authSessionId =
       typeof decodedToken.authSessionId === 'string' && decodedToken.authSessionId.trim()
         ? decodedToken.authSessionId
-        : undefined;
+        : typeof decodedToken.jti === 'string' && decodedToken.jti.trim()
+          ? decodedToken.jti
+          : undefined;
 
     return NextResponse.json(
       {
