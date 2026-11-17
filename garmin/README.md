@@ -182,14 +182,14 @@ before the first request and before FIT laps, counters or success feedback.
 Logical capacity and storage failures refuse new logs without evicting saved
 efforts. Each request owns an owner/scope/UUID lease. Nothing is ever deleted
 without either the server's acknowledgement, a copy in the dead-letter store,
-or the climber confirming Delete in the refused-ticks list.
+or the climber confirming a delete in the refused-ticks list.
 
 #### Where a tick can be
 
 | State | Storage value | Sent? | Leaves when |
 | --- | --- | --- | --- |
 | Queued under its owner | `bs.pendingTicks` `owners[<userId>]` | Only while that verified owner is signed in | The server acknowledges its exact UUID, or refuses it for good |
-| Refused (dead letter) | `bs.rejectedTicks` | Only after Retry, under the same owner | The signed-in owner picks Retry all (back to the end of their queue) or confirms Delete all |
+| Refused (dead letter) | `bs.rejectedTicks` | Only after Retry, under the same owner | The signed-in owner picks Retry all (back to the end of their queue) or confirms Delete all; while the store is full, another account's climber may confirm Delete others' ticks |
 | On hold (pre-G2, owner unproven) | `bs.pendingTicks` `unowned` | Never, until adopted | The adoption rule below proves its owner |
 
 #### Server replies
@@ -244,8 +244,11 @@ is ever evicted. When the store is full, the next refusal is treated as "retry
 later": the tick stays at the head of the queue and the drain stops there, as
 every refusal did before this change. The summary then says the store is full.
 The climber empties it from the watch: Session menu (MENU) → Refused ticks,
-shown only when the signed-in owner has any. The list has Retry all, Delete
-all, and one row per refused tick (status, local time, the server's reason).
+shown when the signed-in owner has any, or when the store is full with other
+accounts' entries (then the row's count reads "N from other accounts"). The
+list has Retry all and Delete all (when the owner has entries), Delete others'
+ticks (only while the store is full, below), and one row per refused tick of
+the owner (status, local time, the server's reason).
 
 - **Retry all** moves up to 5 of the owner's refused ticks (oldest first) back
   to the END of their queue, unchanged and with the same UUIDs, then starts a
@@ -266,6 +269,19 @@ Both act only on the signed-in owner's entries. Another account's refused
 ticks stay until that account signs in on the watch again, and they still
 count toward the 25-entry cap. The phone has no channel to the watch's
 storage, so neither action exists on the phone.
+
+- **Delete others' ticks** (#7636 decision 2) is the exit when other accounts'
+  entries keep the store full. A full store keeps the signed-in climber's next
+  refusal at the head of their queue, the drain stops there, and once the
+  queue holds 25 ticks new logs are refused; the only other way out is
+  reinstalling the app, which also wipes every account's queued ticks. The row
+  is offered only while the store holds `REJECTED_TICK_MAX` entries and other
+  accounts own some, and it names their count. It has its own confirmation
+  ("Delete other accounts' refused ticks? They can't be recovered."). Yes
+  removes only those accounts' already-refused entries from `bs.rejectedTicks`
+  and re-checks the cap at press time. It never touches `bs.pendingTicks` for
+  any account, and never the signed-in owner's entries. Delete all stays
+  owner-only.
 
 #### On-hold ticks from before G2 (#7445)
 

@@ -7,6 +7,9 @@ using Toybox.Lang;
 //                   again comes back to this list; one it already saved is
 //                   answered with the stored tick, never saved twice.
 //   * Delete all -> asks first, then drops them. They are not in the logbook.
+//   * Delete others' ticks -> only while the store is full: asks first, then
+//                   drops other accounts' refused ticks (#7636 decision 2).
+//                   The owner's entries and every queued tick stay.
 //   * an entry   -> nothing; the rows are for reading.
 class RefusedTicksDelegate extends WatchUi.Menu2InputDelegate {
     private var _context;
@@ -37,6 +40,13 @@ class RefusedTicksDelegate extends WatchUi.Menu2InputDelegate {
                 new RefusedDeleteConfirmDelegate(_context),
                 WatchUi.SLIDE_UP
             );
+        } else if (id == :deleteOthers) {
+            WatchUi.popView(WatchUi.SLIDE_DOWN);
+            WatchUi.pushView(
+                new WatchUi.Confirmation(WatchUi.loadResource(Rez.Strings.RefusedDeleteOthersConfirm) as Lang.String),
+                new RefusedDeleteOthersConfirmDelegate(_context),
+                WatchUi.SLIDE_UP
+            );
         }
     }
 
@@ -59,6 +69,26 @@ class RefusedDeleteConfirmDelegate extends WatchUi.ConfirmationDelegate {
         if (response == WatchUi.CONFIRM_YES && TokenStore.current(_context) &&
                 TickQueue.clearRefused(_context) > 0) {
             Toast.show(WatchUi.loadResource(Rez.Strings.RefusedDeleted) as Lang.String);
+        }
+        return true;
+    }
+}
+
+// Yes deletes other accounts' refused ticks, and only while the store is full
+// (TickQueue re-checks at press time); No keeps them. The signed-in owner's
+// entries and every account's queued ticks are never touched.
+class RefusedDeleteOthersConfirmDelegate extends WatchUi.ConfirmationDelegate {
+    private var _context;
+
+    function initialize(context) {
+        ConfirmationDelegate.initialize();
+        _context = context;
+    }
+
+    function onResponse(response as WatchUi.Confirm) as Lang.Boolean {
+        if (response == WatchUi.CONFIRM_YES && TokenStore.current(_context) &&
+                TickQueue.clearOtherOwnersRefused(_context) > 0) {
+            Toast.show(WatchUi.loadResource(Rez.Strings.RefusedOthersDeleted) as Lang.String);
         }
         return true;
     }
