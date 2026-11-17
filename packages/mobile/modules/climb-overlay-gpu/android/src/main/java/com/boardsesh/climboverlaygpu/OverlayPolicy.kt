@@ -29,6 +29,44 @@ internal object OverlayLifecycle {
 
     fun preparesInline(attempt: Int): Boolean = attempt >= OFF_THREAD_ATTEMPTS
 
+    enum class EncodeFailure {
+        /** The request's token was cancelled: drop the work quietly. */
+        WITHDRAW,
+        /** The loan went stale under the encode: encode again, inline once the attempts run out. */
+        RETRY,
+        /** The carried packet's pins left no room: release it, then encode again. */
+        RELEASE_CARRIED,
+        FAIL_RESOURCE,
+        /** A handle closed although the arena did not move and nothing cancelled: fail visibly, never hang. */
+        FAIL_CLOSED,
+        FAIL,
+    }
+
+    /**
+     * Why an encode failed, for a request still current. Rust maps a closed
+     * handle and a cancelled token to the same status, so the token decides:
+     * a cancelled token always withdraws, even when the arena also moved. A
+     * failure against a moved arena is a stale loan and retries. An inline
+     * encode never retries: nothing can move the arena under it, so a second
+     * failure there is real and the bound holds even if that ever changes.
+     */
+    fun encodeFailure(
+        tokenCancelled: Boolean,
+        inline: Boolean,
+        outOfMemory: Boolean,
+        cancelledStatus: Boolean,
+        moved: Boolean,
+        resourceFailure: Boolean,
+        carrying: Boolean,
+    ): EncodeFailure = when {
+        tokenCancelled -> EncodeFailure.WITHDRAW
+        outOfMemory -> EncodeFailure.FAIL_RESOURCE
+        !inline && (moved || cancelledStatus) -> EncodeFailure.RETRY
+        cancelledStatus -> EncodeFailure.FAIL_CLOSED
+        resourceFailure && carrying -> EncodeFailure.RELEASE_CARRIED
+        else -> EncodeFailure.FAIL
+    }
+
     /**
      * A swap-mode trio change with the same geometry keeps the packet on screen
      * drawing the running swap until its replacement is uploaded. The editor, the

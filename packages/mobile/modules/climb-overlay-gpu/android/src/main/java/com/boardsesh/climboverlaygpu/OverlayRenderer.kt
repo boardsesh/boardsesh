@@ -499,7 +499,7 @@ internal object OverlayRenderer {
             val onScreen=session.request.takeIf { session.packet!=null }
             // On a carry, the new trio cancelled the view's pending re-read; frames already in the ledger are now carried.
             if(!OverlayLifecycle.carriesPacket(onScreen,request,swap)) { clearFences(session);releaseScenes(session) }
-            else if(onScreen!=null &&OverlayConsumption.armsOwnObservation(presenter(session,onScreen)))requestConsumptionObservation(session)
+            else if(onScreen!=null && OverlayConsumption.armsOwnObservation(presenter(session,onScreen)))requestConsumptionObservation(session)
             val baseline=if(!request.animateEdits)null else if(session.baselineConfig==request.config)session.baseline else if(request.observedEmpty)emptyMap() else null
             work.source=packetSource(request.frames,request.previous,request.next,baseline)
             work.rust=OverlayPacketArena.session(session.view.context,request.config,cancel)
@@ -537,15 +537,18 @@ internal object OverlayRenderer {
             // A reset context or a superseded, hidden or destroyed view: drop the work quietly.
             if(work.context!=contextGeneration || !canPrepare(session,request)) { withdraw(work);return }
             val packet=encoded.getOrElse { failure ->
-                when {
-                    failure is OverlayWorkCancelled -> withdraw(work)
-                    failure is OutOfMemoryError -> abandon(work,OverlayResourceFailure())
-                    // Rust found a lent chunk handle closed: the arena moved, the request did not fail.
-                    OverlayPacketArena.moved(loan) -> retry(work)
+                if(failure !is Exception && failure !is OutOfMemoryError) throw failure
+                // Rust reports a lent chunk handle closed under it as cancelled: only the token says which.
+                when(OverlayLifecycle.encodeFailure(work.cancel.cancelled,OverlayLifecycle.preparesInline(work.attempt),
+                    failure is OutOfMemoryError,failure is OverlayWorkCancelled,OverlayPacketArena.moved(loan),
+                    failure is OverlayResourceFailure,session.packet!=null)) {
+                    OverlayLifecycle.EncodeFailure.WITHDRAW -> withdraw(work)
+                    OverlayLifecycle.EncodeFailure.RETRY -> retry(work)
                     // The carried packet's pins left no room in the arena.
-                    failure is OverlayResourceFailure && session.packet!=null -> { releaseCarried(session);retry(work) }
-                    failure is Exception -> abandon(work,failure)
-                    else -> throw failure
+                    OverlayLifecycle.EncodeFailure.RELEASE_CARRIED -> { releaseCarried(session);retry(work) }
+                    OverlayLifecycle.EncodeFailure.FAIL_RESOURCE -> abandon(work,OverlayResourceFailure())
+                    OverlayLifecycle.EncodeFailure.FAIL_CLOSED -> abandon(work,IllegalStateException("GPU packet handle closed"))
+                    OverlayLifecycle.EncodeFailure.FAIL -> abandon(work,failure as Exception)
                 }
                 return
             }

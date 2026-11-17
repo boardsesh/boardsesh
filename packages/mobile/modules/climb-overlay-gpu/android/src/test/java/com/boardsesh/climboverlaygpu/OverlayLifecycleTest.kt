@@ -105,6 +105,67 @@ class OverlayLifecycleTest {
         assertFalse(OverlayLifecycle.residencyUnchanged(lent, lent.keys) { emptyMap<String, Long>()[it] }) // trimmed
     }
 
+    private fun encodeFailure(
+        tokenCancelled: Boolean = false,
+        attempt: Int = 0,
+        outOfMemory: Boolean = false,
+        cancelledStatus: Boolean = false,
+        moved: Boolean = false,
+        resourceFailure: Boolean = false,
+        carrying: Boolean = false,
+    ) = OverlayLifecycle.encodeFailure(tokenCancelled, OverlayLifecycle.preparesInline(attempt), outOfMemory,
+        cancelledStatus, moved, resourceFailure, carrying)
+
+    @Test
+    fun aHandleClosedUnderTheWorkerRetriesTheStillCurrentRequest() {
+        // Rust reports the closed chunk handle with the cancelled status; the token was never cancelled.
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(cancelledStatus = true, moved = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(attempt = 1, cancelledStatus = true, moved = true))
+        // Any other failure against a moved arena is a stale loan too, as before.
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(moved = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(moved = true, resourceFailure = true, carrying = true))
+    }
+
+    @Test
+    fun aCancelledTokenWithdrawsEvenWhenTheArenaAlsoMoved() {
+        for (attempt in 0..OverlayLifecycle.OFF_THREAD_ATTEMPTS) for (moved in listOf(true, false)) {
+            assertEquals(OverlayLifecycle.EncodeFailure.WITHDRAW,
+                encodeFailure(tokenCancelled = true, attempt = attempt, cancelledStatus = true, moved = moved))
+            assertEquals(OverlayLifecycle.EncodeFailure.WITHDRAW,
+                encodeFailure(tokenCancelled = true, attempt = attempt, outOfMemory = true, moved = moved))
+        }
+    }
+
+    @Test
+    fun aClosedHandleWithUnchangedResidencyRetriesThenFailsVisiblyInline() {
+        // Not expected: lent sessions are retained and only resident chunk handles close. Retry
+        // off-thread, and if the inline encode against a fresh loan still sees it, fail instead of hanging.
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(cancelledStatus = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL_CLOSED,
+            encodeFailure(attempt = OverlayLifecycle.OFF_THREAD_ATTEMPTS, cancelledStatus = true))
+    }
+
+    @Test
+    fun exhaustedAttemptsEncodeInlineAndAnInlineFailureNeverRetries() {
+        var attempt = 0
+        while (encodeFailure(attempt = attempt, cancelledStatus = true, moved = true) ==
+            OverlayLifecycle.EncodeFailure.RETRY) {
+            attempt++
+            assertTrue(attempt <= OverlayLifecycle.OFF_THREAD_ATTEMPTS)
+        }
+        assertEquals(OverlayLifecycle.OFF_THREAD_ATTEMPTS, attempt)
+        assertTrue(OverlayLifecycle.preparesInline(attempt))
+        val inline = OverlayLifecycle.OFF_THREAD_ATTEMPTS
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL, encodeFailure(attempt = inline, moved = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL_RESOURCE, encodeFailure(attempt = inline, outOfMemory = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL_RESOURCE, encodeFailure(outOfMemory = true, moved = true))
+        // The carried packet's release is tried, then a second resource failure fails the request.
+        assertEquals(OverlayLifecycle.EncodeFailure.RELEASE_CARRIED,
+            encodeFailure(attempt = inline, resourceFailure = true, carrying = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL, encodeFailure(attempt = inline, resourceFailure = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL, encodeFailure())
+    }
+
     @Test
     fun anArenaThatKeepsMovingFallsBackToTheRenderThread() {
         assertFalse(OverlayLifecycle.preparesInline(0))
