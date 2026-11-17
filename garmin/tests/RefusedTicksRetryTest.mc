@@ -20,7 +20,7 @@ function refusedFixtureStore() {
 function testRequeueMovesOnlyThisOwnersTicksToTheEndWithinCapacity(logger as Test.Logger) as Lang.Boolean {
     var store = refusedFixtureStore();
     var envelope = OwnedTickOutbox.append(OwnedTickOutbox.load(null), "owner-a", { "uuid" => "queued" }, 25);
-    var result = RejectedTicks.requeue(envelope, store, "owner-a", 25);
+    var result = RejectedTicks.requeue(envelope, store, "owner-a", 25, 25);
     Test.assertEqual(result["moved"], 2);
     var queue = OwnedTickOutbox.forOwner(result["envelope"], "owner-a");
     Test.assertEqual(queue.size(), 3);
@@ -34,27 +34,36 @@ function testRequeueMovesOnlyThisOwnersTicksToTheEndWithinCapacity(logger as Tes
     Test.assertEqual(OwnedTickOutbox.forOwner(envelope, "owner-a").size(), 1);
 
     // Room for one more queued tick: the oldest moves, the other stays refused.
-    var tight = RejectedTicks.requeue(envelope, store, "owner-a", 2);
+    var tight = RejectedTicks.requeue(envelope, store, "owner-a", 2, 25);
     Test.assertEqual(tight["moved"], 1);
     Test.assertEqual(OwnedTickOutbox.forOwner(tight["envelope"], "owner-a")[1]["uuid"], "a-1");
     Test.assertEqual(RejectedTicks.forOwner(tight["store"], "owner-a").size(), 1);
     Test.assertEqual(RejectedTicks.forOwner(tight["store"], "owner-a")[0]["tick"]["uuid"], "a-2");
 
     // A full queue, an owner with nothing refused, or invalid input moves nothing.
-    Test.assertEqual(RejectedTicks.requeue(envelope, store, "owner-a", 1) == null, true);
-    Test.assertEqual(RejectedTicks.requeue(envelope, store, "owner-c", 25) == null, true);
-    Test.assertEqual(RejectedTicks.requeue(envelope, { "version" => 9, "entries" => [] }, "owner-a", 25) == null, true);
-    Test.assertEqual(RejectedTicks.requeue({ "version" => 9 }, store, "owner-a", 25) == null, true);
+    Test.assertEqual(RejectedTicks.requeue(envelope, store, "owner-a", 1, 25) == null, true);
+    Test.assertEqual(RejectedTicks.requeue(envelope, store, "owner-c", 25, 25) == null, true);
+    Test.assertEqual(RejectedTicks.requeue(envelope, { "version" => 9, "entries" => [] }, "owner-a", 25, 25) == null, true);
+    Test.assertEqual(RejectedTicks.requeue({ "version" => 9 }, store, "owner-a", 25, 25) == null, true);
 
     // A crash between the two writes left a-1 in both stores: it leaves the
     // store but is not queued a second time.
     var crashed = OwnedTickOutbox.append(envelope, "owner-a", { "uuid" => "a-1" }, 25);
-    var deduplicated = RejectedTicks.requeue(crashed, store, "owner-a", 25);
+    var deduplicated = RejectedTicks.requeue(crashed, store, "owner-a", 25, 25);
     queue = OwnedTickOutbox.forOwner(deduplicated["envelope"], "owner-a");
     Test.assertEqual(queue.size(), 3);
     Test.assertEqual(queue[1]["uuid"], "a-1");
     Test.assertEqual(queue[2]["uuid"], "a-2");
     Test.assertEqual(RejectedTicks.countFor(deduplicated["store"], "owner-a"), 0);
+
+    // At most `limit` per call: the oldest moves first.
+    var limited = RejectedTicks.requeue(envelope, store, "owner-a", 25, 1);
+    Test.assertEqual(limited["moved"], 1);
+    Test.assertEqual(RejectedTicks.forOwner(limited["store"], "owner-a")[0]["tick"]["uuid"], "a-2");
+    // Another account owns a conflicting UUID: retrying cannot help, it stays.
+    var conflict = RejectedTicks.add(RejectedTicks.empty(), "owner-a", { "uuid" => "taken" }, "TICK_UUID_CONFLICT", 25);
+    Test.assertEqual(RejectedTicks.requeue(envelope, conflict, "owner-a", 25, 25) == null, true);
+    Test.assertEqual(RejectedTicks.requeue(envelope, store, "owner-a", 25, 0) == null, true);
 
     var cleared = RejectedTicks.withoutOwner(store, "owner-a");
     Test.assertEqual(cleared["entries"].size(), 1);
@@ -220,6 +229,36 @@ function testFullStoreFreesUpAfterDeleteAndTheWaitingTickMovesOn(logger as Test.
     Test.assertEqual(rejectedEntries().size(), 1);
     Test.assertEqual(rejectedEntries()[0]["tick"]["uuid"], "waiting");
     Test.assertEqual(observer.calls, 1);
+    resetTickStores();
+    return true;
+}
+
+// Retry all moves a small batch and never into the last free queue slots, so
+// a batch the server still refuses cannot block new logs.
+(:test)
+function testRetryMovesABatchAndLeavesRoomForNewLogs(logger as Test.Logger) as Lang.Boolean {
+    var context = installAuthFixture("owner-a", 3060);
+    resetTickStores();
+    var store = RejectedTicks.empty();
+    for (var index = 0; index < 12; index += 1) {
+        store = RejectedTicks.add(store, "owner-a", { "uuid" => "gone-" + index.toString() }, "CLIMB_NOT_FOUND",
+            BuildConfig.REJECTED_TICK_MAX);
+    }
+    Application.Storage.setValue(TickQueue.REJECTED_KEY, store);
+    Test.assertEqual(TickQueue.retryRefused(context), BuildConfig.REFUSED_RETRY_BATCH);
+    Test.assertEqual(TickQueue.size(), BuildConfig.REFUSED_RETRY_BATCH);
+    Test.assertEqual(TickQueue.all()[0]["uuid"], "gone-0");
+    Test.assertEqual(rejectedEntries().size(), 12 - BuildConfig.REFUSED_RETRY_BATCH);
+
+    // Queue filled to the headroom line: Retry moves nothing, logging still works.
+    var limit = BuildConfig.TICK_QUEUE_MAX - BuildConfig.REFUSED_RETRY_HEADROOM;
+    for (var index = TickQueue.size(); index < limit; index += 1) {
+        Test.assert(TickQueue.enqueue({ "uuid" => "new-" + index.toString() }, context));
+    }
+    Test.assertEqual(TickQueue.retryRefused(context), 0);
+    Test.assertEqual(TickQueue.size(), limit);
+    Test.assertEqual(rejectedEntries().size(), 12 - BuildConfig.REFUSED_RETRY_BATCH);
+    Test.assert(TickQueue.enqueue({ "uuid" => "still-room" }, context));
     resetTickStores();
     return true;
 }

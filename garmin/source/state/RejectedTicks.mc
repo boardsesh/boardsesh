@@ -103,29 +103,35 @@ module RejectedTicks {
     }
 
     // Moves this owner's refused ticks back to the END of their outbox queue,
-    // oldest first, unchanged (same UUID), while the shared queue has room.
+    // oldest first, unchanged (same UUID): at most `limit` of them, and only
+    // while the shared queue stays within `capacity`. The caller passes a
+    // capacity below the real queue bound, so a batch the server refuses again
+    // can never fill the queue and block new logs (a drain dead-letters only
+    // one tick per reason). TICK_UUID_CONFLICT entries never move: another
+    // account owns that UUID, so a resend can only be refused again.
     // An entry whose UUID is already queued (a crash between the two writes
     // left a copy in each) only leaves the store. Returns
     // { "envelope", "store", "moved" }, or null when nothing moves or the
-    // input is invalid. Entries that do not fit stay here.
+    // input is invalid. Entries that do not move stay here.
     //
     // A resent UUID cannot become a second logbook entry: saveTick answers a
     // UUID the account already saved with the stored tick.
-    function requeue(envelope, store, owner, capacity as Lang.Number) {
+    function requeue(envelope, store, owner, capacity as Lang.Number, limit as Lang.Number) {
         if (!OwnedTickOutbox._validEnvelope(envelope) || !_valid(store) ||
-                !OwnedTickOutbox._validOwner(owner) || capacity < 1) {
+                !OwnedTickOutbox._validOwner(owner) || capacity < 1 || limit < 1) {
             return null;
         }
         // One validated copy of the owner's queue, not one per entry: the
         // watch's bytecode watchdog bounds work per event.
         var queue = OwnedTickOutbox.forOwner(envelope, owner);
         var room = capacity - OwnedTickOutbox.ownedCount(envelope);
+        if (room > limit) { room = limit; }
         var entries = store["entries"];
         var kept = [];
         var moved = 0;
         for (var index = 0; index < entries.size(); index += 1) {
             var entry = entries[index];
-            if (!entry["owner"].equals(owner)) {
+            if (!entry["owner"].equals(owner) || "TICK_UUID_CONFLICT".equals(entry["reason"])) {
                 kept.add(OwnedTickOutbox._copyTree(entry));
             } else if (OwnedTickOutbox._findIn(queue, entry["tick"]["uuid"]) != null) {
                 moved += 1;

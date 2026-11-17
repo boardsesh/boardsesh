@@ -247,9 +247,12 @@ The climber empties it from the watch: Session menu (MENU) → Refused ticks,
 shown only when the signed-in owner has any. The list has Retry all, Delete
 all, and one row per refused tick (status, local time, the server's reason).
 
-- **Retry all** moves the owner's refused ticks back to the END of their queue,
-  unchanged and with the same UUIDs, as many as the shared 25-tick queue has
-  room for, then starts a drain. The outbox write comes first, so a failure in
+- **Retry all** moves up to 5 of the owner's refused ticks (oldest first) back
+  to the END of their queue, unchanged and with the same UUIDs, then starts a
+  drain. It never fills the last 5 queue slots: a drain dead-letters only one
+  tick per refusal reason, so a batch the server still refuses must not block
+  new logs. `TICK_UUID_CONFLICT` entries never move, because another account
+  owns that UUID and a resend can only be refused again; Delete clears them. The outbox write comes first, so a failure in
   between leaves a copy in both stores; the next retry only drops the stale
   entry. A resent UUID cannot become a second logbook entry: `saveTick`
   answers a UUID the account already saved with the stored tick. A tick the

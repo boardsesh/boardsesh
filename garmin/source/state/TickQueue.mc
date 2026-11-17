@@ -213,8 +213,9 @@ module TickQueue {
         return activeContext(context) && store != null ? RejectedTicks.forOwner(store, context["owner"]) : [];
     }
 
-    // Retry: moves the owner's refused ticks back to the end of their queue,
-    // as many as the queue has room for. The outbox write comes FIRST: a
+    // Retry: moves up to REFUSED_RETRY_BATCH of the owner's refused ticks back
+    // to the end of their queue, keeping REFUSED_RETRY_HEADROOM slots free for
+    // new logs. The outbox write comes FIRST: a
     // failure after it leaves a copy in both stores, never in neither, and the
     // next retry only drops the stale entry. Returns how many left the store.
     function retryRefused(context) as Lang.Number {
@@ -222,7 +223,8 @@ module TickQueue {
         var envelope = loadEnvelope();
         var store = loadRejected();
         if (envelope == null || store == null) { return 0; }
-        var result = RejectedTicks.requeue(envelope, store, context["owner"], BuildConfig.TICK_QUEUE_MAX);
+        var result = RejectedTicks.requeue(envelope, store, context["owner"],
+            BuildConfig.TICK_QUEUE_MAX - BuildConfig.REFUSED_RETRY_HEADROOM, BuildConfig.REFUSED_RETRY_BATCH);
         if (result == null || !persist(result["envelope"])) { return 0; }
         persistRejected(result["store"]);
         return result["moved"];
