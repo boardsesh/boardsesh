@@ -71,6 +71,7 @@ enum ClimbOverlayShader {
       if(membership==2 && (upper ? own<=other : own<other)) return 0;
       return own;
     }
+    // End wall-swap amendment.
     float center=clamp((hold.bounds.x+hold.bounds.z)*0.5/uniforms.size.x,0.0,1.0);
     if(uniforms.other.w>0) center=1-center;
     float halfBand=uniforms.motion.y*0.5;

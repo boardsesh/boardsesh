@@ -230,6 +230,7 @@ try {
     samples: sampleRows,
     descriptorFiles: paths,
     proof: reference.proof,
+    swapClasses: reference.swapClasses,
     pixelFiles: { old: 'old-pixels.bin', new: 'new-pixels.bin' },
     resourceFiles: { old: 'old-resources.bin', new: 'new-resources.bin' },
     limits: fixture.limits,

@@ -37,10 +37,21 @@ wipe and nothing for the swap. Physical placement mirroring is separate
 native/unit coverage.
 
 The frozen full-scan references carry one reviewed amendment: the same swap
-branch in `reveal_weight`, recorded in `reference/provenance.json` with the
-pre-amendment hashes. The wipe path is untouched, so wipe samples still render
-the frozen pixels; the swap samples check the tiled compositor against a full
-scan, not the swap's arithmetic against an independent implementation.
+branch in `reveal_weight`, between `// Wall-swap amendment` and
+`// End wall-swap amendment.`, recorded in `reference/provenance.json` with the
+pre-amendment hashes. `guards.test.mjs` deletes that block and checks the
+pre-amendment bytes come back exactly, so nothing else in the oracle can change
+quietly. The wipe path is untouched, so wipe samples still render the frozen
+pixels. Because the block copies the production branch, the old/new comparison
+only checks the tiled compositor against a full scan for the swap samples.
+
+The swap's arithmetic is checked on its own, against the two Rust stills and the
+fixture's hold classes (`swapClassChecks` in `analyse.mjs`). Inside the bounds of
+holds only one side lights, away from every other hold's reach, a side at weight 0
+must match the other side's still within one byte, and a side at weight w must
+move the pixels from the other still toward its own by w, within 0.08. Shared
+holds, where the two stills agree exactly, must match within one byte. A shader
+that swapped the lower and upper weights fails these checks.
 
 ## Prepare and run
 

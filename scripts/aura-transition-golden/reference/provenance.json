@@ -1,16 +1,16 @@
 {
   "referenceCommit": "0ed8d77f15db45fd540c341b8ba4c63cdf56d599",
-  "metalSourceSha256": "09c1304b57ef370b51205d284294682141afe26ea247024b5aaf8f354b4547ea",
+  "metalSourceSha256": "27881e2aacfb6f9932b652e5e108139683b8ff4034d28c0b5f138e1ce880aa7a",
   "glesKotlinSourceSha256": "be62843e37715a41de197cd5168b6519b1fd96296942694f50b1edafa0b93a82",
   "glesVertexRuntimeSha256": "cfc608c382c0cc3fef0ef64d5492c83ef4e9bb02d978cb17cf9028d7ccb322df",
-  "glesFragmentRuntimeSha256": "a9d565d20cbc9f6589da77bcae140877cf719f8e8d5006ceb74ade747bff63a0",
+  "glesFragmentRuntimeSha256": "9bd22c2025ae5452570dd97e172f356c1a91048459f1cac692f20a80946ea534",
   "method": "Metal source copied byte-for-byte before tile changes. GLES strings evaluated by the actual Kotlin compiler from the frozen pre-tile OverlayShader object; only its enclosing object name changed in the temporary exporter. These text fixtures preserve the full-scan reference independently of the current shader.",
   "amendments": [
     {
       "change": "wall-swap",
       "preAmendmentMetalSourceSha256": "90e4b24005b7ba81746663d7ddeace8e3d97cffa12e74db64ce99efc4722892e",
       "preAmendmentGlesFragmentRuntimeSha256": "c459792ab1f0d2a023feaf98a736adc6054f9cd20e7c11d5ce2379ee9ca93d85",
-      "method": "Hand-added the same nine-line swap branch to reveal_weight in both full-scan references, reading the class weights from viewport.zw and the mode from motion.z. The wipe path, the uniform layout and every other line are unchanged, so wipe samples render the frozen pixels. It lets the swap samples compare the tiled compositor against a full scan; the branch itself is not independent of the production shaders and needs review like any oracle change."
+      "method": "Hand-added the same swap branch to reveal_weight in both full-scan references, between the lines '// Wall-swap amendment' and '// End wall-swap amendment.', reading the class weights from viewport.zw and the mode from motion.z. Deleting that block restores the pre-amendment bytes exactly (guards.test.mjs checks this), so the wipe path, the uniform layout and every other line are unchanged. The block copies the production branch, so it only lets the swap samples compare the tiled compositor against a full scan; analyse.mjs checks the swap's arithmetic separately against the Rust stills."
     }
   ]
 }

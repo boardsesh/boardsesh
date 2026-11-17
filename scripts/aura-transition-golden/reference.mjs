@@ -315,5 +315,22 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
     proof.currentOnly === 2 && proof.nextOnly === 3 && proof.sameCanonical === 3 && proof.changedCanonical === 1,
     'Rich fixture has lost required role/union cases',
   );
-  return { oldDescriptors, expectedNewDescriptors, lut, uniforms, proof };
+  // Hold classes between the current (A) and next (B) climbs, from the fixture
+  // and the full catalogue manifest alone. The swap's pixel checks use them
+  // with the Rust stills, never with either shader.
+  const holdBox = (id) => ({ bounds: holds.get(id).bounds, reach: holds.get(id).reach });
+  const swapClasses = {
+    width: manifest.width,
+    height: manifest.height,
+    currentOnly: [...currentIds].filter((id) => !nextIds.has(id)),
+    nextOnly: [...nextIds].filter((id) => !currentIds.has(id)),
+    shared: shared
+      .filter((selected) => selected.role.identity === membershipMaps[2].get(selected.hold))
+      .map((selected) => selected.hold),
+    changed: shared
+      .filter((selected) => selected.role.identity !== membershipMaps[2].get(selected.hold))
+      .map((selected) => selected.hold),
+    holds: Object.fromEntries([...new Set([...currentIds, ...nextIds])].map((id) => [id, holdBox(id)])),
+  };
+  return { oldDescriptors, expectedNewDescriptors, lut, uniforms, proof, swapClasses };
 }
