@@ -71,7 +71,9 @@ Springs (press/gesture feedback) stay variant-agnostic — these tokens cover th
 
 **Player wall swap** (`play-drawer/wall-swap.ts`, GPU boards on native API 6). Swiping
 between climbs keeps the wall still and hands the lit holds over in two steps. Holds lit
-the same way in both climbs never change. Dragging dims the holds only the old climb uses
+the same way in both climbs dip with the rest and never go dark: they follow the brighter
+of the old-only and new-only holds, never below 40% (native API 7; API 6 keeps them fully
+lit). Dragging dims the holds only the old climb uses
 from 100% to 40% by the pager's commit distance (80 points), and holds them there; a
 cancelled drag follows the pager's spring back. A commit runs one 200 ms swap on its own
 clock: old-only holds fade out over 0–120 ms with ease-in, new-only holds fade in over
@@ -80,7 +82,8 @@ Catching the board mid-swap lets the swap run on; pulling it back toward the old
 (4 points past where it was caught) eases from what is on screen over 120 ms. A second
 commit ends the first swap at once. A commit toward the other side of a pulled-back board
 first eases that board's climb back to whole over 120 ms, then swaps. Reduce Motion: no
-drag dim, and the swap is one 120 ms dissolve. The PNG fallback still slides the whole board.
+drag dim, and the swap is one 120 ms dissolve that leaves shared holds fully lit. The PNG
+fallback still slides the whole board.
 
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual
 press feedback is separate (that's `PressableSurface`); fire haptics from the handler:
