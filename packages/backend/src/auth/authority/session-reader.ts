@@ -93,7 +93,8 @@ export async function readFirstPartySession(
         expiresAt: canonical.expiresAt,
         // Rows without a lineage come from sign-ins this system verified
         // (`issueWebSession`, the staged provider sign-ins). The bridge and
-        // the native refresh binding always record one.
+        // the native refresh binding always record one, and a `carried`
+        // web session records a `carried:` id that names no lineage row.
         source: canonical.legacyLineageId === null ? 'login' : 'bridge',
       };
     }

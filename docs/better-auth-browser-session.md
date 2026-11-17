@@ -201,11 +201,17 @@ writes and rolls `auth_session` rows, and B1 owns the cookie. The backend half
 is `packages/backend/src/auth/authority/web-session.ts`. No route mounts it
 directly, and it sets no cookie or header.
 
-`issueWebSession(transaction, { userId, authenticatedAt, presented?, now, authority })`
+`issueWebSession(transaction, { userId, authenticatedAt, freshness?, presented?, now, authority })`
 returns `{ sessionId, token, expiresAt, generation }`.
 
-- It runs inside the transaction that verified the credential, under the user
-  lock that verification took. It verifies nothing itself.
+- It runs inside the transaction that verified the credential. It verifies
+  nothing itself. A caller that takes `users` row locks before calling must
+  take the signing-in account's row and the presented account's row in one
+  pass, in `users.id` order, with the exported `lockWebSessionAccounts`
+  (FOR KEY SHARE and FOR UPDATE). A caller that holds only KEY SHARE on its own
+  row and then calls deadlocks against a crossed login: each holds its own row
+  and waits FOR UPDATE on the other's. The staged password command uses the
+  helper.
 - `authority` is the receipt the caller captured before bcrypt. A writer switch
   since then is refused with `STALE_AUTHORITY`, as the staged password command
   refuses it. So it works only once the manifest is `enforced`, like every
@@ -221,17 +227,25 @@ returns `{ sessionId, token, expiresAt, generation }`.
   `canonical-token` and looks the digest up), and the raw token goes back only
   in this call's return value; `expires_at` =
   `now` + 30 days; `original_authenticated_at` = `authenticatedAt`; no
-  `legacy_lineage_id`; and `revocation_generation` = the account's generation,
-  read after the revocation below.
-- `presented`, of any account, legacy cookie or canonical row, is revoked in
-  the same transaction by `denyFirstPartySessionInTransaction`. A session with
-  an SID loses its row and gets a denial, so every reader refuses it. A no-SID
-  legacy cookie ends every credential of its account, phones included, and the
-  new session then carries the moved generation. Whether B1 passes such a
-  cookie at all is open question 5.
-- It refuses a deleted or missing account with `AuthSubjectDeniedError`, as
-  native issuance does, and a sign-in time later than `now` with
-  `INVALID_COMMAND`.
+  `legacy_lineage_id` for `freshness: 'login'` (the default); and
+  `revocation_generation` = the account's generation.
+- `freshness: 'carried'` is for a sign-in made elsewhere (a native transfer, a
+  provider sign-in without a verified `auth_time`). The row keeps the sign-in
+  time for the 30-day rules but stores `legacy_lineage_id = 'carried:<id>'`,
+  which names no lineage row, so it reads as `bridge` and never passes a
+  five-minute freshness check. No new column.
+- `presented`, of any account, legacy cookie or canonical row, must be the
+  session `readFirstPartySession` admitted in this transaction. One with its
+  own session id is revoked in the same transaction by
+  `denyFirstPartySessionInTransaction`: it loses its row and gets a denial, so
+  every reader refuses it. One that `requiresAccountCutoff` (a no-SID legacy
+  cookie, or the bridged row of one) is left alone: ending it would cut off the
+  whole account, phones included, so a login never does that and never moves
+  the generation.
+- It refuses before writing anything: a deleted or missing account with
+  `AuthSubjectDeniedError`, as native issuance does, and a sign-in time later
+  than `now` or an unknown `freshness` with `INVALID_COMMAND`. So a caller that
+  catches the refusal inside its transaction still commits nothing.
 
 `rollWebSession(database, sessionId, now)` returns `{ rolled: true, expiresAt }`
 or `{ rolled: false }`. It is one conditional UPDATE that sets `expires_at` to
@@ -243,7 +257,11 @@ cookie's expiry (`bridge.ts:92`); the first roll lifts that, and re-bridging
 never shortens a row (`bridge.ts:102`). A revoked lineage stops the roll, and
 sign-out still deletes the row and writes the denial. Rows bound to a native
 refresh token keep that token's expiry and never roll. A roll never makes a row
-readable: every reader checks the same conditions itself.
+readable: every reader checks the same conditions itself. `rolled: true` is not
+proof the session is live: a roll queued behind an account cutoff re-checks
+only the row it waited on, so it can extend the expiry of a row the cutoff just
+ended, which the reader then refuses by its generation. B3 relies on the
+reader, never on the roll's result.
 
 Constants, in `@boardsesh/auth-protocol`: `WEB_SESSION_LIFETIME_SECONDS`
 (2,592,000, 30 days) and `WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS` (2,505,600,

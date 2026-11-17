@@ -251,16 +251,89 @@ describe('issueWebSession', () => {
     expect((await admitted(canonical(issued.token))).userId).toBe(signingIn);
   });
 
-  it('ends every credential of the account for a presented no-SID cookie and stamps the moved generation', async () => {
+  it('never cuts off an account: a presented no-SID cookie or its bridged row is left alone', async () => {
     const userId = await account();
     const cookie = await legacyCookie(userId, { legacy_no_sid: true });
     const legacy: FirstPartyCredential = { kind: 'legacy-jwe', credential: cookie, secret };
     const other = await issue({ userId });
-    const issued = await issue({ userId, presented: await admitted(legacy) });
-    expect(issued.generation).toBe(1);
-    expect((await read(legacy)).status).toBe('denied');
-    expect((await read(canonical(other.token))).status).toBe('denied');
-    expect((await admitted(canonical(issued.token))).generation).toBe(1);
+    const bridgedCookie = await legacyCookie(userId, {});
+    const bridged = await bridgeLegacyCredential(environment.database, bridgedCookie, secret, 'on', now);
+    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Synthetic bridge failed');
+    const bridgedSession = await admitted(canonical(bridged.token));
+    expect(bridgedSession.requiresAccountCutoff).toBe(true);
+    for (const presented of [await admitted(legacy), bridgedSession]) {
+      const issued = await issue({ userId, presented });
+      expect(issued.generation).toBe(0);
+      expect((await admitted(canonical(issued.token))).generation).toBe(0);
+    }
+    expect((await read(legacy)).status).toBe('admitted');
+    expect((await read(canonical(bridged.token))).status).toBe('admitted');
+    expect((await read(canonical(other.token))).status).toBe('admitted');
+    expect(
+      await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
+    ).toEqual([]);
+  });
+
+  it('refuses a deleted account before revoking the presented session, even if the caller commits', async () => {
+    const [presentedOwner, deleted] = [await account(), await account()];
+    await environment.database
+      .insert(authSubjectCutoffs)
+      .values({ userId: deleted, generation: 1, revokedThrough: now, deletedAt: now, lastOperationId: randomUUID() });
+    const presentedSession = await issue({ userId: presentedOwner });
+    const presented = await admitted(canonical(presentedSession.token));
+    const authority = await receipt();
+    // A careless caller that swallows the refusal still commits nothing.
+    const refusal = await environment.database.transaction(async (transaction) =>
+      issueWebSession(transaction, { userId: deleted, presented, authority, now, authenticatedAt: now }).catch(
+        (error: unknown) => error,
+      ),
+    );
+    expect(refusal).toBeInstanceOf(AuthSubjectDeniedError);
+    expect((await read(canonical(presentedSession.token))).status).toBe('admitted');
+    expect(
+      await environment.database
+        .select()
+        .from(authSessionDenials)
+        .where(eq(authSessionDenials.sessionId, presentedSession.sessionId)),
+    ).toEqual([]);
+  });
+
+  it('writes a carried session that keeps its sign-in time but is never fresh', async () => {
+    const userId = await account();
+    const signedInElsewhere = new Date(now.getTime() - 60_000);
+    const authority = await receipt();
+    const issued = await environment.database.transaction((transaction) =>
+      issueWebSession(transaction, {
+        userId,
+        authority,
+        now,
+        authenticatedAt: signedInElsewhere,
+        freshness: 'carried',
+      }),
+    );
+    const session = await admitted(canonical(issued.token));
+    expect(session).toMatchObject({
+      source: 'bridge',
+      authenticatedAt: signedInElsewhere,
+      requiresAccountCutoff: false,
+    });
+    expect(requireFreshAuthentication(session, now)).toBe(false);
+    expect(webSignInProof(session).authenticatedAtMs).toBeNull();
+    // It rolls like any web row.
+    const rollAt = new Date(now.getTime() + 2 * DAY_MS);
+    expect((await rollWebSession(environment.database, issued.sessionId, rollAt)).rolled).toBe(true);
+    // And an unknown freshness is refused.
+    await expect(
+      environment.database.transaction((transaction) =>
+        issueWebSession(transaction, {
+          userId,
+          authority,
+          now,
+          authenticatedAt: now,
+          freshness: 'fresh' as unknown as 'login',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_COMMAND' });
   });
 });
 
