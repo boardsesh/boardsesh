@@ -174,26 +174,27 @@ int32_t board_renderer_gpu_plan_encode(uint64_t plan,
 
 /**
  * Allocation-free frame path. Slot0=current,1=previous,2=next.
- * `reveal_mode` 0 wipes with `progress`; 1 swaps, weighting lower-only and
- * upper-only holds by `swap_lower` and `swap_upper`. Each mode ignores the
- * other's values.
+ * `reveal_mode` 0 wipes with `progress`; 1 swaps, weighting lower-only,
+ * upper-only and shared same-role holds by `swap_lower`, `swap_upper` and
+ * `swap_shared`. Each mode ignores the other's values.
  * # Safety
  * Output identifies exactly144 writable bytes; length must be144.
  */
-int32_t board_renderer_gpu_packet_reveal_uniforms(uint64_t packet,
-                                                  uint32_t lower,
-                                                  uint32_t upper,
-                                                  uint32_t reveal_mode,
-                                                  float progress,
-                                                  float swap_lower,
-                                                  float swap_upper,
-                                                  float pulse,
-                                                  float viewport_width,
-                                                  float viewport_height,
-                                                  uint32_t production_empty,
-                                                  uint32_t mirrored,
-                                                  uint8_t *output,
-                                                  uint32_t length);
+int32_t board_renderer_gpu_packet_shared_reveal_uniforms(uint64_t packet,
+                                                         uint32_t lower,
+                                                         uint32_t upper,
+                                                         uint32_t reveal_mode,
+                                                         float progress,
+                                                         float swap_lower,
+                                                         float swap_upper,
+                                                         float swap_shared,
+                                                         float pulse,
+                                                         float viewport_width,
+                                                         float viewport_height,
+                                                         uint32_t production_empty,
+                                                         uint32_t mirrored,
+                                                         uint8_t *output,
+                                                         uint32_t length);
 
 /**
  * # Safety

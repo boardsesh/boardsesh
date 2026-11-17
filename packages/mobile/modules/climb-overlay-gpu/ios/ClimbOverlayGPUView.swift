@@ -153,6 +153,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var revealMode = ClimbOverlayMotion.revealModeWipe
   private var outgoingWeight: Float = 1
   private var incomingWeight: Float = 0
+  private var sharedWeight: Float = 1
   /// The packet on screen when a new trio started preparing, kept drawing the
   /// running swap until the replacement is ready. Same layout revision only.
   private struct CarryOver {
@@ -277,16 +278,18 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     requestDraw()
   }
 
-  /// The swap's animated prop: its pair and both weights, applied together.
+  /// The swap's animated prop: its pair and weights, applied together.
   /// The timing lives in the app.
   func setSwapFrame(_ values: [Double]) {
     guard let frame = ClimbOverlayMotion.swapFrame(values),
       frame.pagePosition != pagePosition || frame.outgoing != outgoingWeight || frame.incoming != incomingWeight
+        || frame.shared != sharedWeight
     else { return }
     if frame.pagePosition != pagePosition { cancelPrefetch() }
     pagePosition = frame.pagePosition
     outgoingWeight = frame.outgoing
     incomingWeight = frame.incoming
+    sharedWeight = frame.shared
     requestDraw()
   }
 
@@ -503,7 +506,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       carry.configRevision == configRevision, let position = pagePosition,
       let carried = ClimbOverlayMotion.carryOverSwap(pagePosition: position,
         centerPage: carry.centerPage,hasPrevious: carry.packet.header.present[1],
-        hasNext: carry.packet.header.present[2],outgoing: outgoingWeight,incoming: incomingWeight),
+        hasNext: carry.packet.header.present[2],outgoing: outgoingWeight,incoming: incomingWeight,
+        shared: sharedWeight),
       let pipeline = ClimbOverlayMetalPackets.pipeline else { return }
     let (selection, weights) = carried
     let packet = carry.packet
@@ -558,7 +562,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     let (selection, weights) = swap
       ? ClimbOverlayMotion.selectSwap(pagePosition: pagePosition ?? submittedCenterPage,
         centerPage: submittedCenterPage,hasPrevious: packet.header.present[1],hasNext: packet.header.present[2],
-        outgoing: outgoingWeight,incoming: incomingWeight)
+        outgoing: outgoingWeight,incoming: incomingWeight,shared: sharedWeight)
       : (ClimbOverlayMotion.select(pagePosition: pagePosition ?? submittedCenterPage,
         centerPage: submittedCenterPage,hasPrevious: packet.header.present[1],hasNext: packet.header.present[2],
         reduceMotion: suppressMotion), ClimbOverlayMotion.SwapWeights(lower: 1,upper: 0))
