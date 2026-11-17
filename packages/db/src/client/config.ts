@@ -176,8 +176,12 @@ export const WEB_DATABASE_URL_VARIABLE = 'WEB_DATABASE_URL';
  * sets emailVerified (its failure is swallowed, so it would stop silently).
  * On `boardsesh_web` every one of those fails with 42501. Full list with line
  * numbers: docs/better-auth-writer-fence-proof.md, "Web connection string".
+ * The backend's identity mirror and import refuse on the same entry
+ * (packages/backend/src/auth/authority/identity-copy-gates.ts): one change
+ * removes it from both lists, and a backend test fails if only one has it.
  */
-export const WEB_DATABASE_LOGIN_BLOCKERS: readonly string[] = Object.freeze(['LEGACY_WEB_IDENTITY_WRITERS']);
+export const LEGACY_WEB_IDENTITY_WRITERS = 'LEGACY_WEB_IDENTITY_WRITERS';
+export const WEB_DATABASE_LOGIN_BLOCKERS: readonly string[] = Object.freeze([LEGACY_WEB_IDENTITY_WRITERS]);
 
 /** Throws `WEB_DATABASE_LOGIN_BLOCKED` when WEB_DATABASE_URL is set while a blocker remains. */
 export function assertWebDatabaseLoginAllowed(blockers: readonly string[] = WEB_DATABASE_LOGIN_BLOCKERS): void {

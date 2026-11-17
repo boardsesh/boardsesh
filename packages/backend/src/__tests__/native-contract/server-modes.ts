@@ -50,8 +50,14 @@ const CANONICAL_BRIDGE = {
   CURRENT_STORE_WEB_SIGNOUT_MODE: 'backend-staging',
   CURRENT_STORE_AUTH_RPC_SECRET: 'native-contract-server-modes-private-rpc-secret',
 };
-const MIRROR_BLOCKED =
-  'AUTH_IDENTITY_MIRROR activation blocked: complete writer/fence proof and remaining activation gates required';
+/**
+ * The real mirror startup check, run on the cell's selectors and epoch. The cells
+ * carry no dedicated credential LOGIN, so it stops there. With one, it would go
+ * on to the database checks and then refuse on the code gates
+ * (IDENTITY_COPY_CODE_GATES_OPEN, ACTIVATION_CODE_GATES_OPEN); identity-import.proof.ts
+ * runs that whole path on a real LOGIN and fence.
+ */
+const MIRROR_BLOCKED = 'CREDENTIAL_WRITER_UNQUALIFIED';
 
 /**
  * Every selector a native endpoint reads (handlers/native-auth.ts and what it
@@ -192,26 +198,37 @@ export const MODE_SELECTORS = [
  * the guards refuse is reported as such and still exercised below them.
  */
 export async function startupRefusals(selectors: Environment): Promise<string[]> {
-  const environment = { NEXTAUTH_SECRET: 'native-contract-only-synthetic-signing-key', ...selectors };
+  const environment = {
+    NEXTAUTH_SECRET: 'native-contract-only-synthetic-signing-key',
+    // The epoch the cell's manifest reached, which the mirror check compares.
+    ...(process.env.CURRENT_STORE_AUTH_WRITER_EPOCH
+      ? { CURRENT_STORE_AUTH_WRITER_EPOCH: process.env.CURRENT_STORE_AUTH_WRITER_EPOCH }
+      : {}),
+    ...selectors,
+  };
   const [{ assertCutoffEnforcementConfiguration }, mirror, revocation, webSession] = await Promise.all([
     import('../../auth/current-store/authority-configuration'),
-    import('../../auth/authority/mirror-configuration'),
+    import('../../auth/authority/mirror-activation'),
     import('../../auth/authority/native-revocation-configuration'),
     import('../../auth/current-store/web-session-configuration'),
   ]);
   const refusals: string[] = [];
+  // In index.ts order; the mirror's is the one that reads the database, so it is awaited.
   for (const guard of [
-    assertCutoffEnforcementConfiguration,
-    mirror.assertIdentityMirrorActivationConfiguration,
-    revocation.assertNativeRevocationActivationConfiguration,
-    webSession.assertWebSessionWriterActivationConfiguration,
+    async () => assertCutoffEnforcementConfiguration(environment),
+    () => mirror.qualifyIdentityMirrorAtStartup(environment),
+    async () => revocation.assertNativeRevocationActivationConfiguration(environment),
+    async () => webSession.assertWebSessionWriterActivationConfiguration(environment),
   ]) {
     try {
-      guard(environment);
+      await guard();
     } catch (error) {
       refusals.push(error instanceof Error ? error.message : String(error));
     }
   }
+  // The startup check clears this process's mirror record. The cell's flows then
+  // run writers with the mirror selected and no backend boot (function-level mirror).
+  mirror.recordFunctionLevelIdentityMirrorForTests();
   return refusals;
 }
 

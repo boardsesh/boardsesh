@@ -1695,6 +1695,12 @@ jobs:
           test -s packages/backend/test-results/junit-credential-writer.xml
       - name: Bootstrap the fresh owned credential proof database
         run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh
+      # Before any other proof connects: the suite template-copies this database.
+      - name: Run identity mirror boot and import preconditions end to end
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:identity-import-proof --reporter=junit --outputFile.junit=./test-results/junit-identity-import-proof.xml
+          test -s packages/backend/test-results/junit-identity-import-proof.xml
       - name: Run complete canonical0313 provider catalog and mounted HTTP proofs serially
         run: |
           mkdir -p packages/backend/test-results
@@ -1722,6 +1728,7 @@ jobs:
           name: test-results-credential-writer
           path: |
             packages/backend/test-results/junit-credential-writer.xml
+            packages/backend/test-results/junit-identity-import-proof.xml
             packages/backend/test-results/junit-provider-credential-writer.xml
             packages/backend/test-results/junit-first-password-credential-writer.xml
             packages/backend/test-results/junit-native-handoff-credential-writer.xml

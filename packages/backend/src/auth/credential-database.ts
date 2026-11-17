@@ -1,4 +1,4 @@
-import { createDbOnPool, createDedicatedPoolFromUrl, type DbInstance } from '@boardsesh/db/client';
+import { createDbOnPool, createDedicatedPoolFromUrl, type DbInstance, type PoolInstance } from '@boardsesh/db/client';
 import type { CredentialWriterContract, CredentialWriterReceipt } from '@boardsesh/db/credential-writer-acl';
 
 import {
@@ -14,13 +14,14 @@ export interface CredentialDatabase {
   close(): Promise<void>;
 }
 
-/** A distinct authenticated principal; SET ROLE and the content pool are never used. */
-export async function createCredentialDatabase(
-  environment: CredentialDatabaseEnvironment,
-): Promise<CredentialDatabase> {
-  const configuration = credentialDatabaseConfiguration(environment);
-  const { qualifyCredentialWriter } = await import('@boardsesh/db/credential-writer-acl');
-  const pool = createDedicatedPoolFromUrl(configuration.connectionString, 2, {
+type CredentialDatabaseConfiguration = ReturnType<typeof credentialDatabaseConfiguration>;
+
+/** Unqualified until {@link qualifyCredentialPool} passes. The caller owns and closes it. */
+export function openCredentialPool(
+  configuration: CredentialDatabaseConfiguration,
+  maxConnections: number,
+): PoolInstance {
+  return createDedicatedPoolFromUrl(configuration.connectionString, maxConnections, {
     connect_timeout: 2,
     connection: {
       application_name: 'boardsesh-credential-writer',
@@ -28,21 +29,39 @@ export async function createCredentialDatabase(
       idle_in_transaction_session_timeout: 10_000,
     },
   });
+}
+
+/** The authenticated LOGIN's grants match its contract, on the same server and database as the content pool. */
+export async function qualifyCredentialPool(
+  pool: PoolInstance,
+  configuration: CredentialDatabaseConfiguration,
+): Promise<CredentialWriterReceipt> {
+  const { qualifyCredentialWriter } = await import('@boardsesh/db/credential-writer-acl');
+  const receipt = await qualifyCredentialWriter(pool, {
+    expectedRole: CREDENTIAL_WRITER_ROLE,
+    expectedDatabase: configuration.databaseName,
+    contract: configuration.contract,
+  });
+  if (receipt.contract !== configuration.contract) throw new Error('CREDENTIAL_DATABASE_CONTRACT_MISMATCH');
+  await assertSameCredentialDatabaseTarget(pool, configuration.contentConnectionString, {
+    writerRole: CREDENTIAL_WRITER_ROLE,
+    contentRole: configuration.contentRole,
+    database: configuration.databaseName,
+  });
+  return receipt;
+}
+
+/** A distinct authenticated principal; SET ROLE and the content pool are never used. */
+export async function createCredentialDatabase(
+  environment: CredentialDatabaseEnvironment,
+): Promise<CredentialDatabase> {
+  const configuration = credentialDatabaseConfiguration(environment);
+  const pool = openCredentialPool(configuration, 2);
   try {
     // Auth statements contain passwords, recovery links and opaque credentials.
     // They must remain private even when the content pool's DEBUG_SQL is enabled.
     const database = createDbOnPool(pool, { logger: false });
-    const receipt = await qualifyCredentialWriter(pool, {
-      expectedRole: CREDENTIAL_WRITER_ROLE,
-      expectedDatabase: configuration.databaseName,
-      contract: configuration.contract,
-    });
-    if (receipt.contract !== configuration.contract) throw new Error('CREDENTIAL_DATABASE_CONTRACT_MISMATCH');
-    await assertSameCredentialDatabaseTarget(pool, configuration.contentConnectionString, {
-      writerRole: CREDENTIAL_WRITER_ROLE,
-      contentRole: configuration.contentRole,
-      database: configuration.databaseName,
-    });
+    const receipt = await qualifyCredentialPool(pool, configuration);
     return Object.freeze({ database, receipt, close: () => pool.end({ timeout: 5 }) });
   } catch (error) {
     await pool.end({ timeout: 5 });

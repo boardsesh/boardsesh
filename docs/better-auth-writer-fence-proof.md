@@ -275,9 +275,15 @@ vp run auth:fence -- verify --confirm-host <host>
 The leading `--` is optional; the operator parser drops exactly one. Every
 tool on that parser names its write modes, and a write mode is never the
 default: with no verb, `auth:fence` plans, `auth-authority` reports status and
-`auth:revoke-sessions` plans. `auth:import-identities` has only a write mode, so
-it now needs the verb (`vp run auth:import-identities -- import --confirm-host …`)
-and refuses `WRITE_COMMAND_REQUIRED` without it.
+`auth:revoke-sessions` plans. `auth:import-identities` plans too (read-only
+precondition checks and a user count); its one write mode needs the verb
+(`vp run auth:import-identities -- import --confirm-host …`), and the shared
+parser refuses `WRITE_COMMAND_REQUIRED` for any write mode left unnamed.
+
+Neither the identity mirror's startup nor the import takes the fence lock
+`(6975, 3)`: they only read the fence, with `verifyFence` inside one read-only
+snapshot, and an `apply` commits atomically, so the check sees the catalog
+before or after it and never waits on or blocks a migration's reconcile.
 
 ### Web connection string
 

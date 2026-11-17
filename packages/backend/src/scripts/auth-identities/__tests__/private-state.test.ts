@@ -25,18 +25,20 @@ describe('private operator state', () => {
     state.save('next');
     expect(checkpoints(path, 'binding').lastUserId).toBe('next');
   });
-  it('cannot connect or import until activation code gates close', async () => {
+  it('refuses without the live-mirror statement, and says so when it could not reach the LOGIN', async () => {
     const path = folder();
     const key = join(path, 'key');
     writeFileSync(key, 'ab'.repeat(32), { mode: 0o600 });
     const cursor = join(path, 'checkpoints');
     mkdirSync(cursor, { mode: 0o700 });
-    await expect(
-      runImportIdentities(['import', '--confirm-host', '127.0.0.1', '--key-file', key, '--checkpoint', cursor], {
-        AUTH_OPERATOR_DATABASE_URL: 'postgresql://synthetic:synthetic@127.0.0.1:1/synthetic',
-        AUTH_IDENTITY_MIRROR: 'on',
-      }),
-    ).rejects.toThrow('ACTIVATION_CODE_GATES_OPEN');
+    const unreachable = { AUTH_IDENTITY_DATABASE_URL: 'postgresql://synthetic:synthetic@127.0.0.1:1/synthetic' };
+    for (const command of ['plan', 'import']) {
+      const arguments_ = [command, '--confirm-host', '127.0.0.1', '--key-file', key, '--checkpoint', cursor];
+      await expect(runImportIdentities(arguments_, unreachable)).rejects.toThrow('IDENTITY_MIRROR_REQUIRED');
+      await expect(
+        runImportIdentities(arguments_, { ...unreachable, AUTH_IDENTITY_MIRROR: 'on' }),
+      ).rejects.toMatchObject({ code: 'PRECONDITION_CHECK_UNAVAILABLE', message: 'PRECONDITION_CHECK_UNAVAILABLE' });
+    }
   });
   it('rejects symlinks, nonprivate permissions, git worktrees, and malformed journals', () => {
     const path = folder();

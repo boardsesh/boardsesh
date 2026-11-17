@@ -28,6 +28,10 @@ import { recordSecurityMutation } from '../../backend/src/auth/current-store/sec
 import { lockEnforcedProjection } from '../../backend/src/auth/current-store/foundation-context';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { bridgeLegacyCredential } from '../../backend/src/auth/authority/bridge';
+import { recordFunctionLevelIdentityMirrorForTests } from '../../backend/src/auth/authority/mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 const holder = vi.hoisted(() => {
   process.env.NEXTAUTH_SECRET = 'synthetic-web-backend-proof-secret';

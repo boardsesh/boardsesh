@@ -139,7 +139,13 @@ export async function grantOwnedCredentialWriterCapabilities(
         );
 }
 
-export async function createCredentialWriterEnvironment(contract: CredentialWriterContract = 'private-web-v1') {
+/** A suite-owned template copy of the fresh canonical database, made before anything else connects to it. */
+export const OWNED_CREDENTIAL_PROOF_COPY = /^epic6975_identity_import_[0-9a-f]{32}$/;
+
+export async function createCredentialWriterEnvironment(
+  contract: CredentialWriterContract = 'private-web-v1',
+  options: { readonly copyDatabase?: string } = {},
+) {
   if (
     ![
       'private-web-v1',
@@ -163,6 +169,12 @@ export async function createCredentialWriterEnvironment(contract: CredentialWrit
         : '/epic6975_credential_historical_ci')
   )
     throw new Error('OWNED_CREDENTIAL_PROOF_PROFILE_DATABASE_MISMATCH');
+  if (options.copyDatabase !== undefined) {
+    // Same owned server and credentials; only the suite's own copy, never another database.
+    if (!OWNED_CREDENTIAL_PROOF_COPY.test(options.copyDatabase))
+      throw new Error('OWNED_CREDENTIAL_PROOF_COPY_REQUIRED');
+    target.pathname = `/${options.copyDatabase}`;
+  }
   const databaseName = target.pathname.slice(1);
   const owner = postgres(target.toString(), { max: 2, onnotice: () => undefined });
   try {

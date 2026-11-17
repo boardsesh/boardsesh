@@ -20,6 +20,10 @@ import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-
 import { closeCredentialDatabase, getCredentialDatabase } from '../../credential-database';
 import { switchIdentityAuthority } from '../router';
 import { handleBrowserBinding } from '../../../handlers/browser-binding';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 vi.mock('../../../db/client', () => ({
   db: new Proxy(

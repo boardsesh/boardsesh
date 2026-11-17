@@ -39,6 +39,7 @@ const rootSource = readFileSync('vite.config.ts', 'utf8');
 const proofConfigPath = 'packages/backend/vite.credential-writer-proof.config.ts';
 const proofConfiguration = readFileSync(proofConfigPath, 'utf8');
 const providerConfigPath = 'packages/backend/vite.provider-credential-writer-proof.config.ts';
+const identityImportConfigPath = 'packages/backend/vite.identity-import-proof.config.ts';
 const firstPasswordConfigPath = 'packages/backend/vite.first-password-proof.config.ts';
 const firstPasswordConfiguration = readFileSync(firstPasswordConfigPath, 'utf8');
 const nativeHandoffConfigPath = 'packages/backend/vite.native-handoff-proof.config.ts';
@@ -273,11 +274,44 @@ describe('owned credential writer CI boundary', () => {
     expect(upload?.if).toBe('always()');
     expect(String(upload?.with?.path).trim().split('\n')).toEqual([
       'packages/backend/test-results/junit-credential-writer.xml',
+      'packages/backend/test-results/junit-identity-import-proof.xml',
       'packages/backend/test-results/junit-provider-credential-writer.xml',
       'packages/backend/test-results/junit-first-password-credential-writer.xml',
       'packages/backend/test-results/junit-native-handoff-credential-writer.xml',
       'packages/backend/test-results/junit-browser-renewal-credential-writer.xml',
     ]);
+  });
+
+  it('copies the fresh canonical database for the identity import proof before any other proof connects', () => {
+    const bootstrapIndex = proof.steps.findIndex((step) => step.run === `bash ${bootstrapPath}`);
+    const importIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:identity-import-proof'));
+    const providerIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:provider-credential-writer'));
+    // A template copy needs the source idle: the step sits right after the bootstrap.
+    expect(importIndex).toBe(bootstrapIndex + 1);
+    expect(providerIndex).toBeGreaterThan(importIndex);
+    const step = proof.steps[importIndex];
+    expect(step.env).toBeUndefined();
+    expect(step.if).toBeUndefined();
+    expect(step['continue-on-error']).toBeUndefined();
+    expect(step.run).toContain('--outputFile.junit=./test-results/junit-identity-import-proof.xml');
+    expect(step.run).toContain('test -s packages/backend/test-results/junit-identity-import-proof.xml');
+    expect(step.run).not.toMatch(/--changed|--shard|\.proof\.ts/);
+    const configuration = readFileSync(identityImportConfigPath, 'utf8');
+    expect(configuration).toContain("include: ['src/scripts/auth-identities/__tests__/identity-import.proof.ts']");
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    const task = rootSource.slice(
+      rootSource.indexOf("'test:identity-import-proof': {"),
+      rootSource.indexOf("'test:credential-writer': {"),
+    );
+    expect(task).toContain(`vp test run --config ${identityImportConfigPath} --maxWorkers=1 --reporter=agent`);
+    expect(task).toContain('cache: false');
+    expect(rootSource.slice(rootSource.indexOf('projects:'), rootSource.indexOf('projects:') + 10_000)).not.toContain(
+      `'./${identityImportConfigPath}'`,
+    );
+    expect(selectTestDefaultProjects(rootSource, (path) => readFileSync(path, 'utf8'))).not.toContain(
+      'identity-import-proof',
+    );
   });
 
   it.each(['failure', 'cancelled'])('propagates %s to the required aggregate', (result) => {

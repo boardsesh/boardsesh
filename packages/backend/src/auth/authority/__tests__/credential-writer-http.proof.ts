@@ -25,6 +25,10 @@ import { handleCurrentStoreWebOAuth } from '../../../handlers/current-store-web-
 import { handleCurrentStoreWebSignOut } from '../../../handlers/current-store-web-signout';
 import * as passwordCommands from '../../current-store/web-password';
 import { assertWebSessionWriterConfiguration } from '../../current-store/web-session-configuration';
+import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+
+// These writers run with the mirror on and no backend boot (function-level mirror).
+recordFunctionLevelIdentityMirrorForTests();
 
 // Production defaults must obtain the qualified pool, never an imported shared handle.
 vi.mock('../../../db/client', () => {

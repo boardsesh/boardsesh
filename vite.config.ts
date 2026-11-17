@@ -1227,6 +1227,13 @@ export default defineConfig({
           'BOARDSESH_MIRROR_PROOF_MODE=on vp test run --config packages/backend/vite.auth-mirror.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
       },
+      // BA-04 identity mirror boot and import preconditions, end to end on a copy
+      // of the fresh canonical proof database (docs/better-auth-identity-import.md).
+      'test:identity-import-proof': {
+        command:
+          'vp test run --config packages/backend/vite.identity-import-proof.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:credential-writer': {
         command:
           'vp test run --config packages/backend/vite.credential-writer-proof.config.ts --maxWorkers=1 --reporter=agent',

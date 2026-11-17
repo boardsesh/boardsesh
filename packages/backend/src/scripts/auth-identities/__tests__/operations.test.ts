@@ -2,21 +2,40 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as pause } from 'node:timers/promises';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { accounts, authAccount, authSession, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
+import {
+  accounts,
+  authAccount,
+  authEmailProjection,
+  authSession,
+  authSubjectCutoffs,
+  userCredentials,
+  users,
+} from '@boardsesh/db/schema';
 import { createEnvironment } from '../../../auth/authority/__tests__/environment';
-import { importIdentityBatch, reconcileIdentities } from '../operations';
-import { identityArguments, runImportIdentities } from '../../auth-import-identities';
+import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../../auth/current-store/foundation-context';
+import { countUsersAfter, importIdentityBatch, reconcileIdentities } from '../operations';
+import { identityArguments, identityRefusalCode, runImportIdentities } from '../../auth-import-identities';
 
 const key = Buffer.alloc(32, 7);
+const authority = Object.freeze({ projectionId: randomUUID(), epoch: 1 });
 describe('identity import and reconcile', () => {
   let environment: Awaited<ReturnType<typeof createEnvironment>>;
   beforeAll(async () => {
     environment = await createEnvironment();
+    // The enforced current-store manifest every copy below is checked against.
+    await environment.database.insert(authEmailProjection).values({
+      projectionId: authority.projectionId,
+      isCurrent: true,
+      normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+      writerEpoch: authority.epoch,
+      phase: 'enforced',
+      preparedAt: new Date(),
+    });
   });
   afterAll(async () => environment?.close());
-  it('bounds batches and requires private cursor rather than a user ID argument', () => {
+  it('defaults to the read-only plan, names the write, bounds batches and keeps the cursor private', () => {
+    // No verb: each case below names one, or shows what naming none selects.
     const arguments_ = [
-      'import',
       '--confirm-host',
       'localhost',
       '--key-file',
@@ -24,21 +43,26 @@ describe('identity import and reconcile', () => {
       '--checkpoint',
       '/private/checkpoints',
     ];
-    expect(identityArguments(arguments_, true).batch).toBe(200);
-    // Import writes, so the verb is never defaulted, with or without the `--` vp forwards.
-    for (const unnamed of [arguments_.slice(1), ['--', ...arguments_.slice(1)]])
-      expect(() => identityArguments(unnamed, true)).toThrow('WRITE_COMMAND_REQUIRED');
-    expect(identityArguments(['--', ...arguments_], true).batch).toBe(200);
+    expect(identityArguments(arguments_, true)).toMatchObject({ command: 'plan', batch: 200, pauseMs: 100 });
+    expect(identityArguments(['plan', ...arguments_], true).command).toBe('plan');
+    expect(identityArguments(['import', ...arguments_], true).command).toBe('import');
+    expect(() => identityArguments(['apply', ...arguments_], true)).toThrow('INVALID_ARGUMENTS');
+    expect(() => identityArguments(['reconcile', ...arguments_], true)).toThrow('INVALID_ARGUMENTS');
+    // The `--` vp forwards changes nothing: no verb is still the read-only plan,
+    // and the write is selected only by name.
+    expect(identityArguments(['--', ...arguments_], true).command).toBe('plan');
+    expect(identityArguments(['--', 'import', ...arguments_], true)).toMatchObject({ command: 'import', batch: 200 });
     // Read-only reconcile keeps its verb-free default.
     expect(identityArguments(['--', '--confirm-host', 'localhost', '--key-file', '/private/key'], false).keyFile).toBe(
       '/private/key',
     );
     for (const invalid of [
       ['--batch', '201'],
+      ['--batch', '0'],
       ['--pause-ms', '-1'],
       ['--last-user-id', randomUUID()],
     ])
-      expect(() => identityArguments([...arguments_, ...invalid], true)).toThrow();
+      expect(() => identityArguments(['import', ...arguments_, ...invalid], true)).toThrow();
     expect(() =>
       identityArguments(
         ['--confirm-host', 'localhost', '--key-file', '/private/key', '--checkpoint', '/private/cursor'],
@@ -46,13 +70,28 @@ describe('identity import and reconcile', () => {
       ),
     ).toThrow();
   });
-  it('never falls back to DATABASE_URL', async () => {
-    await expect(
-      runImportIdentities(
-        ['import', '--confirm-host', 'localhost', '--key-file', '/private/key', '--checkpoint', '/private/checkpoints'],
-        { DATABASE_URL: 'postgresql://postgres:postgres@localhost/postgres' },
-      ),
-    ).rejects.toThrow();
+  it('never falls back to DATABASE_URL or the operator login, and prints only fixed codes', async () => {
+    for (const command of ['plan', 'import'])
+      for (const variable of ['DATABASE_URL', 'AUTH_OPERATOR_DATABASE_URL'])
+        await expect(
+          runImportIdentities(
+            [
+              command,
+              '--confirm-host',
+              'localhost',
+              '--key-file',
+              '/private/key',
+              '--checkpoint',
+              '/private/checkpoints',
+            ],
+            { [variable]: 'postgresql://postgres:postgres@localhost/postgres', AUTH_IDENTITY_MIRROR: 'on' },
+          ).catch((error: unknown) => identityRefusalCode(error)),
+        ).resolves.toBe('CONNECTION_CONFIGURATION_REJECTED');
+    expect(identityRefusalCode(Object.assign(new Error('permission denied for table users'), { code: '42501' }))).toBe(
+      'SQLSTATE_42501',
+    );
+    expect(identityRefusalCode(new Error('password authentication failed for user "writer"'))).toBe('UNEXPECTED_ERROR');
+    expect(identityRefusalCode('postgres://writer:secret@db.example/x')).toBe('UNEXPECTED_ERROR');
   });
   it('waits for a reset and provider link, then reads the committed source under its user lock', async () => {
     const userId = '00000000-0000-0000-0000-000000000001';
@@ -83,7 +122,7 @@ describe('identity import and reconcile', () => {
     });
     await locked;
     let completed = false;
-    const importing = importIdentityBatch(environment.client, undefined, 1).finally(() => {
+    const importing = importIdentityBatch(environment.client, undefined, 1, authority).finally(() => {
       completed = true;
     });
     await pause(50);
@@ -120,13 +159,15 @@ describe('identity import and reconcile', () => {
     });
     const before = await reconcileIdentities(environment.client, key);
     expect(before.missing).toBe(4);
-    const first = await importIdentityBatch(environment.client, undefined, 1);
+    expect(await countUsersAfter(environment.client, undefined)).toBe(3);
+    const first = await importIdentityBatch(environment.client, undefined, 1, authority);
     expect(first.count).toBe(1);
+    expect(await countUsersAfter(environment.client, first.lastUserId)).toBe(2);
     // Process death after commit before checkpoint causes harmless replay.
-    await importIdentityBatch(environment.client, undefined, 1);
-    await importIdentityBatch(environment.client, first.lastUserId, 200);
+    await importIdentityBatch(environment.client, undefined, 1, authority);
+    await importIdentityBatch(environment.client, first.lastUserId, 200, authority);
     const stored = await environment.database.select().from(authAccount);
-    await importIdentityBatch(environment.client, undefined, 200);
+    await importIdentityBatch(environment.client, undefined, 200, authority);
     expect(await environment.database.select().from(authAccount)).toEqual(stored);
     const result = await reconcileIdentities(environment.client, key);
     expect(result).toMatchObject({ missing: 0, different: 0, unexpected: 0, sourceRows: 4, targetRows: 4 });
