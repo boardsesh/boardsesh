@@ -211,6 +211,50 @@ that `users` row, and once released both finish: new password set, every refresh
 row revoked, the cutoff generation advanced so older web and app credentials are
 refused. A control that locks a refresh row before the `users` row gets a real
 `40P01` deadlock against the same reset, so the harness can see the failure.
+
+Push-device registration follows the same rule (#7645). It is not a credential
+writer and takes no gate, but sign-out retires the climber's push devices last:
+
+- Registration (`saveNotificationDevice`): a 1 s lock timeout, the push
+  token's advisory lock, then `users` FOR KEY SHARE in id order for the climber
+  and for each climber that owned a touched row when that statement ran, then
+  the touched device rows FOR NO KEY UPDATE in installation id order, in the
+  statement that retires the other installations, then the upsert of its own
+  row, which takes no stronger lock. Touched rows are the live rows holding the
+  token (a token can arrive from another climber's account) and the climber's
+  own installation. Inactive rows are left alone, so the locks grow with live
+  rows only.
+
+KEY SHARE conflicts with the FOR UPDATE that sign-out, reset and the
+generation writers take and with an account deletion, so whichever of them
+arrives second queues on the `users` row. Sign-in, refresh and foreign-key
+checks also take KEY SHARE, so they never wait for a registration. The token
+lock is only ever taken first, by registrations, and it keeps the live token
+rows and their owners fixed until commit. The climber's own row is the one
+exception: a registration of the same installation with another token can hand
+it to a third climber after the owner read, so registration may lock it
+without that climber's `users` row. That closes no cycle: after taking it,
+registration waits only for later device rows, whose owners' `users` rows it
+holds, and the third climber's sign-out just waits for it to commit.
+
+Registration gives up after 1 s on any one lock (55P03). The app registers on
+every launch and retries a failed registration on the next foreground, while a
+waiting registration holds a pool connection and KEY SHARE on its climber.
+Without the limit, a registration stuck behind a long account deletion of the
+token's previous owner would hold its own climber's row past the 4 s a
+sign-out waits, and that sign-out would fail.
+
+Before #7645 registration locked the device rows first and reached `users`
+last, through its insert's foreign key, the reverse of sign-out. Two
+registrations whose installations trade tokens also locked each other's rows
+crosswise. `notification-device-signout-lock-order.test.ts` runs registration
+against sign-out in both start orders and both revocation modes, for the same
+climber and for a token moving from the climber signing out to another,
+against an account deletion in both orders, and two registrations trading
+tokens. It also covers the lock timeout, inactive rows, a delivery holding
+the climber's own row, and the own row changing hands. Its controls replay the
+old order and get `40P01` against sign-out and between the two registrations.
+
 `CURRENT_STORE_DELETED_EMAIL_KEY` must separately be provisioned before any
 staged writer and must never rotate. Neither command enables a writer mode,
 partner mode, mirror or Better Auth module. The owner-only production sequence
