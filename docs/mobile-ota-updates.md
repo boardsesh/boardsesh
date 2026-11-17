@@ -668,6 +668,38 @@ roll back a platform that already published. A single eoas invocation can still 
 before its server-row write fails; making that internal PUT/database operation atomic requires an
 upstream expo-open-ota change.
 
+### Preview Metro transform cache
+
+Automatic same-repository PR previews reuse a Metro transform store from an earlier
+successful preview run of the **same PR**. The first run builds cold and saves the
+store; subsequent JS-only revisions can reuse unchanged transforms. Fork, manual,
+and sandbox-dispatch previews continue to build cold. Production caching below is
+unchanged and never consumes preview stores. No production HMAC secret is exposed
+to preview code.
+
+`scripts/ci/metro-preview-cache.ts` hashes the **replayed candidate's** build inputs
+(lockfile, workspace/package manifests, Metro/Babel/app configuration and patches),
+its generated mobile `.env`, every sorted `EXPO_PUBLIC_*` value, and the runner/Node
+identity. A source commit SHA is deliberately absent: Metro keys each transformed
+module by its contents. Build-input or public-environment changes start a new cache.
+The artifact name is `metro-preview-pr-<number>-<hash>`.
+
+The selector searches a bounded set of prior successful `mobile-ota-preview.yml`
+PR runs on the source branch. Both repository identity and PR number must match;
+forks, other workflow events, the current run, expired artifacts and oversized
+artifacts are rejected. Downloads use the vetted run and artifact IDs. Before any
+extraction, the helper validates archive paths, entry types and expanded size;
+links and paths outside Metro's hexadecimal store layout are rejected. The limit
+is 1 GiB. A missing or rejected store starts empty, and any cache infrastructure
+failure leaves publishing free to build cold.
+
+Only the publish step receives the prepared store through `TMPDIR`; it remains
+outside the watched workspace and never changes the compatibility environment.
+After a successful publication, the helper validates and packs the store for a
+seven-day artifact. Cache steps are optional and the Actions summary reports their
+outcome. Compare successive **actual publishes** with matching keys to measure the
+speedup; a green run with no compatible preview is not a cache benchmark.
+
 ### Metro transform cache
 
 Before this cache, every OTA export started cold. The iOS export alone logged `Bundled 141682ms`
