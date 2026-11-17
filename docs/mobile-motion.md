@@ -56,9 +56,11 @@ from 100% to 40% by the pager's commit distance (80 points), and holds them ther
 cancelled drag follows the pager's spring back. A commit runs one 200 ms swap on its own
 clock: old-only holds fade out over 0–120 ms with ease-in, new-only holds fade in over
 60–200 ms with ease-out, and the new holds wait until the old ones are down to 40%.
-Catching the board mid-swap and pulling it back eases from what is on screen; a second
-commit ends the first swap at once. Reduce Motion: no drag dim, and the swap is one
-120 ms dissolve. The PNG fallback still slides the whole board.
+Catching the board mid-swap lets the swap run on; pulling it back toward the old climb
+(4 points past where it was caught) eases from what is on screen over 120 ms. A second
+commit ends the first swap at once. A commit toward the other side of a pulled-back board
+first eases that board's climb back to whole over 120 ms, then swaps. Reduce Motion: no
+drag dim, and the swap is one 120 ms dissolve. The PNG fallback still slides the whole board.
 
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual
 press feedback is separate (that's `PressableSurface`); fire haptics from the handler:
