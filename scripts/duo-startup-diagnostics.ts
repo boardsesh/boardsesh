@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { availableParallelism, freemem, loadavg } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const SAMPLE_TIMEOUT_MS = 5_000;
@@ -48,7 +49,8 @@ export function sampleArgs(pid: number, output: string): string[] {
   if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error('Invalid sample PID');
   return [String(pid), '1', '10', '-file', output];
 }
-function command(program: string, args: string[], timeout: number) {
+export function command(program: string, args: string[], timeout: number) {
+  const startedAt = Date.now();
   const result = spawnSync(program, args, {
     encoding: 'utf8',
     timeout,
@@ -57,10 +59,61 @@ function command(program: string, args: string[], timeout: number) {
   });
   return {
     status: result.status ?? 1,
+    rawStatus: result.status,
+    timeoutMs: timeout,
+    elapsedMs: Date.now() - startedAt,
+    errorCode: result.error && 'code' in result.error ? result.error.code : null,
     stdout: result.stdout ?? '',
     stderr: [result.stderr, result.error?.message].filter(Boolean).join('\n'),
     signal: result.signal,
   };
+}
+export interface MarkerProcess {
+  pid: number;
+  name: 'SpringBoard' | 'launchctl';
+  observedAt: number;
+}
+export function rememberMarkers(contents: string, observedAt: number, owned: Map<number, MarkerProcess>): void {
+  for (const match of contents.matchAll(/^entry process=(SpringBoard|launchctl) pid=(\d+)$/gm)) {
+    const pid = Number(match[2]);
+    if (pid > 1 && !owned.has(pid)) owned.set(pid, { pid, name: match[1] as MarkerProcess['name'], observedAt });
+  }
+}
+type DiagnosticCommand = typeof command;
+export function sampleOwnedMarker(
+  marker: MarkerProcess,
+  udid: string,
+  now: number,
+  path: string,
+  run: DiagnosticCommand = command,
+): { sampled: boolean; evidence: Record<string, unknown> } {
+  // Marker age belongs to the native observation, never to global discovery success.
+  if (now - marker.observedAt < 20_000 || now - marker.observedAt > 120_000) {
+    return { sampled: false, evidence: { reason: 'marker outside sampling age' } };
+  }
+  const identity = run('/bin/ps', ['-p', String(marker.pid), '-o', 'lstart=,comm='], 3_000);
+  const match = identity.stdout.trim().match(/^(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$/);
+  const born = match ? Date.parse(match[1]) : NaN;
+  if (
+    identity.status !== 0 ||
+    !match ||
+    basename(match[2]) !== marker.name ||
+    !Number.isFinite(born) ||
+    born > marker.observedAt
+  ) {
+    return { sampled: false, evidence: { reason: 'target identity unavailable or changed', identity } };
+  }
+  // A matching executable alone cannot exclude a recycled PID on another simulator.
+  const ownership = run('/bin/ps', ['eww', '-p', String(marker.pid), '-o', 'command='], 3_000);
+  const { stdout: _privateStdout, stderr: _privateStderr, ...ownershipResult } = ownership;
+  if (ownership.status !== 0 || !belongsToSimulator(ownership.stdout, udid)) {
+    return {
+      sampled: false,
+      evidence: { reason: 'simulator ownership unavailable or changed', identity, ownership: ownershipResult },
+    };
+  }
+  const result = run('/usr/bin/sample', sampleArgs(marker.pid, path), SAMPLE_TIMEOUT_MS);
+  return { sampled: true, evidence: { identity, ownership: ownershipResult, result } };
 }
 async function worker(source: string, output: string): Promise<void> {
   const mark = (stage: string) =>
@@ -156,16 +209,22 @@ async function observe(source: string, output: string): Promise<number> {
   const seen = new Map<number, number>();
   const counts = new Map<number, number>();
   const markers = new Map<string, string>();
+  const markerProcesses = new Map<number, MarkerProcess>();
+  let previousPollAt = Date.now();
   let samples = 0;
   const startedAt = Date.now();
   while (!finished && Date.now() - startedAt < WORKER_TIMEOUT_MS) {
     try {
+      const pollAt = Date.now();
+      const intervalMs = pollAt - previousPollAt;
+      previousPollAt = pollAt;
       const snapshot = command('/bin/ps', ['-axo', 'pid=,ppid=,comm='], 3_000);
       const springBoards = new Set<number>();
       for (const name of readdirSync(output).filter(
         (name) => name.startsWith('boardsesh-duo-hinge-') && name.endsWith('.log'),
       )) {
         const contents = readFileSync(join(output, name), 'utf8');
+        rememberMarkers(contents, Date.now(), markerProcesses);
         for (const match of contents.matchAll(/entry process=SpringBoard pid=(\d+)/g))
           springBoards.add(Number(match[1]));
         if (markers.get(name) !== contents) {
@@ -178,6 +237,22 @@ async function observe(source: string, output: string): Promise<number> {
         }
       }
       const rows = parseProcessRows(snapshot.stdout);
+      const children = command('/usr/bin/pgrep', ['-P', String(child.pid ?? -1)], 3_000);
+      const childPids = children.stdout
+        .trim()
+        .split(/\s+/)
+        .filter((pid) => /^\d+$/.test(pid));
+      let directChildSnapshot: ReturnType<typeof command> | undefined;
+      if (children.status === 0 && childPids.length > 0 && child.pid) {
+        directChildSnapshot = command('/bin/ps', ['-p', childPids.join(','), '-o', 'pid=,ppid=,comm='], 3_000);
+        for (const row of parseProcessRows(directChildSnapshot.stdout)) {
+          if (row.parent === child.pid && !rows.some((existing) => existing.pid === row.pid)) rows.push(row);
+        }
+      }
+      retain(
+        join(output, 'direct-children.jsonl'),
+        JSON.stringify({ at: new Date().toISOString(), children, directChildSnapshot }) + '\n',
+      );
       const simulatorLaunchctlPids = new Set<number>();
       let udid = '';
       try {
@@ -191,10 +266,36 @@ async function observe(source: string, output: string): Promise<number> {
         const ownership = command('/bin/ps', ['eww', '-p', String(row.pid), '-o', 'command='], 3_000);
         if (ownership.status === 0 && belongsToSimulator(ownership.stdout, udid)) simulatorLaunchctlPids.add(row.pid);
       }
-      const targets = sampleTargets(rows, child.pid ?? -1, springBoards, simulatorLaunchctlPids);
+      // Native marker candidates do not depend on any successful global snapshot.
+      for (const marker of markerProcesses.values()) {
+        if (Date.now() - startedAt >= WORKER_TIMEOUT_MS) break;
+        if ((counts.get(marker.pid) ?? 0) >= 2 || samples >= MAX_SAMPLES) continue;
+        const path = join(output, `sample-${samples}-${marker.pid}.txt`);
+        const attempt = sampleOwnedMarker(marker, udid, Date.now(), path);
+        retain(
+          join(output, 'marker-samples.jsonl'),
+          JSON.stringify({ at: new Date().toISOString(), marker, path, ...attempt }) + '\n',
+        );
+        if (attempt.sampled) {
+          samples++;
+          counts.set(marker.pid, (counts.get(marker.pid) ?? 0) + 1);
+        }
+      }
+      const targets = sampleTargets(rows, child.pid ?? -1, springBoards, simulatorLaunchctlPids).filter(
+        (row) => !markerProcesses.has(row.pid),
+      );
       retain(
         join(output, 'processes.jsonl'),
-        JSON.stringify({ at: new Date().toISOString(), status: snapshot.status, targets }) + '\n',
+        JSON.stringify({
+          at: new Date().toISOString(),
+          ...snapshot,
+          stdout: undefined,
+          targets,
+          intervalMs,
+          loadAverage: loadavg(),
+          availableParallelism: availableParallelism(),
+          freeMemoryBytes: freemem(),
+        }) + '\n',
       );
       for (const target of targets) {
         if (Date.now() - startedAt >= WORKER_TIMEOUT_MS) break;

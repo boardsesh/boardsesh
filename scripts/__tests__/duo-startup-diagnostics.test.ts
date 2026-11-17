@@ -10,6 +10,10 @@ import {
   parseProcessRows,
   sampleArgs,
   sampleTargets,
+  rememberMarkers,
+  sampleOwnedMarker,
+  command,
+  type MarkerProcess,
 } from '../duo-startup-diagnostics';
 
 interface Workflow {
@@ -22,6 +26,77 @@ const workflow = parse(readFileSync('.github/workflows/duo-startup-diagnostics.y
 const recovery = parse(readFileSync('.github/workflows/mobile-screenshot-cache-recovery.yml', 'utf8')) as Workflow;
 
 describe('Duo startup observation', () => {
+  it('samples an owned marker despite failed global discovery and preserves its original observation age', () => {
+    const now = Date.parse('2026-11-17T10:06:30Z');
+    const markers = new Map<number, MarkerProcess>();
+    rememberMarkers('entry process=SpringBoard pid=8025\nentry process=unrelated pid=44', now - 30_000, markers);
+    rememberMarkers('entry process=SpringBoard pid=8025', now, markers);
+    expect(markers.size).toBe(1);
+    const calls: string[] = [];
+    const run: typeof command = (program, args, timeoutMs) => {
+      calls.push(`${program} ${args.join(' ')}`);
+      return {
+        status: 0,
+        rawStatus: 0,
+        timeoutMs,
+        elapsedMs: 1,
+        errorCode: null,
+        signal: null,
+        stderr: '',
+        stdout: args.includes('lstart=,comm=')
+          ? 'Tue Nov 17 10:05:38 2026 /System/SpringBoard'
+          : args.includes('eww')
+            ? 'SECRET=never-retain SIMULATOR_UDID=C898E3E4-5033-4085-B886-963EE2D0C478'
+            : '',
+      };
+    };
+    expect(sampleTargets(parseProcessRows(''), 10, new Set(), new Set())).toEqual([]);
+    const result = sampleOwnedMarker(
+      markers.get(8025)!,
+      'C898E3E4-5033-4085-B886-963EE2D0C478',
+      now,
+      '/tmp/sample',
+      run,
+    );
+    expect(result.sampled).toBe(true);
+    expect(calls.at(-1)).toBe('/usr/bin/sample 8025 1 10 -file /tmp/sample');
+    expect(JSON.stringify(result)).not.toContain('SECRET');
+  });
+  it('rejects recycled marker PIDs and foreign simulator ownership before sampling', () => {
+    const now = Date.parse('2026-11-17T10:06:30Z');
+    const marker: MarkerProcess = { pid: 8025, name: 'SpringBoard', observedAt: now - 30_000 };
+    for (const identity of [
+      'Tue Nov 17 10:06:15 2026 /System/SpringBoard',
+      'Tue Nov 17 10:05:38 2026 /System/Other',
+      'Tue Nov 17 10:05:38 2026 /System/SpringBoard',
+    ]) {
+      const run: typeof command = (program, args, timeoutMs) => {
+        expect(program).not.toBe('/usr/bin/sample');
+        return {
+          status: 0,
+          rawStatus: 0,
+          signal: null,
+          errorCode: null,
+          elapsedMs: 1,
+          timeoutMs,
+          stderr: '',
+          stdout: args.includes('eww') ? 'SIMULATOR_UDID=another-device' : identity,
+        };
+      };
+      expect(sampleOwnedMarker(marker, 'C898E3E4-5033-4085-B886-963EE2D0C478', now, '/tmp/sample', run).sampled).toBe(
+        false,
+      );
+    }
+  });
+  it('retains actual timeout, signal, raw status and elapsed evidence', () => {
+    const result = command(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], 50);
+    expect(result.status).toBe(1);
+    expect(result.rawStatus).toBeNull();
+    expect(result.signal).toBe('SIGKILL');
+    expect(result.errorCode).toBe('ETIMEDOUT');
+    expect(result.timeoutMs).toBe(50);
+    expect(result.elapsedMs).toBeGreaterThanOrEqual(40);
+  });
   it('samples only owned command descendants and explicitly identified SpringBoard processes', () => {
     const rows = parseProcessRows(
       '10 1 node\n11 10 /usr/bin/xcrun\n12 11 /path/simctl\n13 12 /bin/launchctl\n14 1 /SpringBoard\n15 1 /SpringBoard\n16 1 /bin/launchctl\n17 10 /usr/bin/unrelated',
