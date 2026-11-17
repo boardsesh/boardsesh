@@ -60,6 +60,7 @@ def read_archive(path, expected, expected_sha=None):
     if expected_sha:
         require(digest(path.read_bytes()) == expected_sha, 'Archive checksum mismatch')
     images = {}
+    presentations = {}
     provenance = None
     seen = set()
     with zipfile.ZipFile(path) as archive:
@@ -79,10 +80,31 @@ def read_archive(path, expected, expected_sha=None):
             elif name.endswith('.png'):
                 require(name in expected, 'Unexpected image or overlap')
                 images[name] = archive.read(item)
+            elif name.endswith('/presentation.json'):
+                require(name.rsplit('/', 1)[0] in {image.rsplit('/', 1)[0] for image in expected}, 'Unexpected presentation directory')
+                presentations[name] = archive.read(item)
             else:
                 require(len(parts) == 3 and parts[0] in LOCALES and parts[1] in DEVICES and parts[2] in ('contact-sheet.jpg', 'presentation.json'), 'Unexpected archive file')
     require(set(images) == expected, 'Incomplete image inventory')
-    return images, provenance
+    validate_presentations(images, presentations)
+    return images, provenance, presentations
+
+
+def validate_presentations(images, presentations):
+    directories = {name.rsplit('/', 1)[0] for name in images}
+    require(set(presentations) == {directory + '/presentation.json' for directory in directories}, 'Missing presentation metadata')
+    for name, content in presentations.items():
+        directory = name.rsplit('/', 1)[0]
+        locale = directory.split('/')[0]
+        caption_locale = {'es-ES': 'es', 'es-MX': 'es', 'fr-FR': 'fr', 'de-DE': 'de'}.get(locale, locale)
+        manifest = json.loads(content)
+        require(manifest['version'] == 1 and manifest['locale'] == caption_locale, 'Presentation identity mismatch')
+        expected = {path.rsplit('/', 1)[1]: image for path, image in images.items() if path.rsplit('/', 1)[0] == directory}
+        require(set(manifest['files']) == set(expected), 'Presentation image inventory mismatch')
+        for filename, entry in manifest['files'].items():
+            require(type(entry['rawBytes']) is int and 0 < entry['rawBytes'] <= 9007199254740991, 'Invalid presentation raw byte count')
+            require(isinstance(entry['rawSha256'], str) and re.fullmatch('[a-f0-9]{64}', entry['rawSha256']), 'Invalid presentation raw checksum')
+            require(entry['framedSha256'] == digest(expected[filename]), 'Presentation frame checksum mismatch')
 
 
 def capture_manifest(root):
@@ -106,19 +128,20 @@ def merge(root, evidence, capture_run, capture_artifact, capture_sha):
     base_zip, new_zip = evidence / 'base.zip', evidence / 'recovery.zip'
     download(BASE_ARTIFACT, base_zip)
     download(capture_artifact, new_zip)
-    base, _ = read_archive(base_zip, ALL - MISSING, BASE_SHA)
-    recovery, provenance = read_archive(new_zip, MISSING, capture_sha)
+    base, _, base_presentations = read_archive(base_zip, ALL - MISSING, BASE_SHA)
+    recovery, provenance, new_presentations = read_archive(new_zip, MISSING, capture_sha)
     require(provenance is not None and provenance['source'] == SOURCE and provenance['baseRun'] == BASE_RUN and provenance['captureRun'] == capture_run, 'Capture provenance mismatch')
     require(provenance['files'] == {name: digest(content) for name, content in recovery.items()}, 'Capture file checksums mismatch')
     require(not root.exists() or not any(root.iterdir()), 'Refusing to overwrite existing screenshot tree')
     merged = base | recovery
     require(set(merged) == ALL and len(merged) == 228, 'Full inventory mismatch')
-    for name, content in merged.items():
+    presentations = base_presentations | new_presentations
+    for name, content in (merged | presentations).items():
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
     require(all(digest((root / name).read_bytes()) == digest(content) for name, content in base.items()), 'Original 220 changed')
-    report = {'source': SOURCE, 'baseRun': BASE_RUN, 'baseArtifact': BASE_ARTIFACT, 'baseArchiveSha256': BASE_SHA, 'captureRun': capture_run, 'captureArtifact': capture_artifact, 'captureArchiveSha256': capture_sha, 'captureProvenance': provenance, 'files': {name: {'sha256': digest(content), 'md5': hashlib.md5(content).hexdigest()} for name, content in sorted(merged.items())}}
+    report = {'source': SOURCE, 'baseRun': BASE_RUN, 'baseArtifact': BASE_ARTIFACT, 'baseArchiveSha256': BASE_SHA, 'captureRun': capture_run, 'captureArtifact': capture_artifact, 'captureArchiveSha256': capture_sha, 'captureProvenance': provenance, 'presentations': {name: digest(content) for name, content in sorted(presentations.items())}, 'files': {name: {'sha256': digest(content), 'md5': hashlib.md5(content).hexdigest()} for name, content in sorted(merged.items())}}
     (evidence / 'manifest.json').write_text(json.dumps(report, indent=2) + '\n')
 
 

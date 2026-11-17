@@ -105,7 +105,10 @@ jobs:
           path: .boardsesh/recovery-tooling
           persist-credentials: false
           sparse-checkout-cone-mode: false
-          sparse-checkout: scripts/final-ios-screenshot-recovery.py
+          sparse-checkout: |
+            scripts/final-ios-screenshot-recovery.py
+            scripts/final-ios-content-transition.ts
+            scripts/final-ios-content-transition.json
       - name: Verify immutable checkouts
         env:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -159,7 +162,10 @@ jobs:
           path: .boardsesh/recovery-tooling
           persist-credentials: false
           sparse-checkout-cone-mode: false
-          sparse-checkout: scripts/final-ios-screenshot-recovery.py
+          sparse-checkout: |
+            scripts/final-ios-screenshot-recovery.py
+            scripts/final-ios-content-transition.ts
+            scripts/final-ios-content-transition.json
       - name: Verify immutable checkouts
         env:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -193,11 +199,8 @@ jobs:
           BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
         run: |
           set -euo pipefail
-          if [ "$BASELINE_FOUND" = true ]; then
-            vp run screenshot:assert-content -- --dir app-stores/apple/screenshots --baseline-dir "$RUNNER_TEMP/previous-baseline"
-          else
-            vp run screenshot:assert-content -- --dir app-stores/apple/screenshots
-          fi
+          [ "$BASELINE_FOUND" = true ] || { echo '::error::Reviewed transition requires the authenticated complete baseline.'; exit 1; }
+          vp exec tsx .boardsesh/recovery-tooling/scripts/final-ios-content-transition.ts app-stores/apple/screenshots "$RUNNER_TEMP/previous-baseline"
       - name: Retain complete images and manifest before publication
         uses: actions/upload-artifact@v4
         with:

@@ -36,7 +36,7 @@ describe('frozen final screenshot recovery', () => {
     });
     expect(result.error, result.stderr).toBeUndefined();
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain('Ran 6 tests');
+    expect(result.stderr).toContain('Ran 7 tests');
   });
 
   it('limits dispatch to main, keeps capture secret-free, and serializes store publication', () => {

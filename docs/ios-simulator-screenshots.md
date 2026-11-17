@@ -57,7 +57,9 @@ cache identity, readiness gates and bounded retries.
 3. Dispatch `phase=finalize`, `upload=true`, supplying those three reviewed
    identifiers. The verifier checks both runs' metadata, frozen source, ZIP
    checksums, safe paths and exact inventories; it preserves every original byte.
-   The historical full dimension/content gates must pass for all 228 PNGs.
+   All 228 PNGs must pass the historical dimension gate and absolute content floor.
+   The recovery-specific transition check described below handles only the 40
+   reviewed baseline-ratio differences.
 4. Before upload, `recovered-complete-ios-d585` retains the complete tree and
    provenance manifest. Publication holds both `mobile-screenshots-ios` and `mobile-store-draft` writer
    locks, requires
@@ -73,3 +75,30 @@ modifies CPPs, or submits review. `recovery-publication-evidence` retains audits
 and the manifest even when publication or readback fails. A failed readback is
 not success; inspect that evidence before considering further writes. This
 workflow deliberately cannot recover other campaigns or substitute other images.
+
+#### Reviewed October-to-November content transition
+
+The October 30 baseline (`c080874f59b59f222c162e8936ad93f06019e73d`, run
+`40985850650`) predates the isolated story layouts. The first recovery merge
+omitted `presentation.json`, so the content gate compared framed PNG sizes with
+baseline raw-capture sizes. Recovery now requires all 30 original presentation
+sidecars, validates their exact image inventories and framed checksums, and copies
+the authenticated bytes unchanged. Their checksums are retained in the complete
+artifact manifest. This corrects 52 of the 92 reported failures.
+
+The remaining 40 are reviewed changes in the pictured content: board-focused
+player versus player/browser, unselected left panes in Home/Climbs, three fixture
+rows versus six live rows, the dedicated wall sheet versus climb-list capsule,
+and the darker reviewed physical Live Activity wallpaper. They are recorded in
+`scripts/final-ios-content-transition.json` with exact current/baseline PNG
+checksums, raw byte measurements and per-path reasons.
+
+Only this recovery workflow uses `final-ios-content-transition.ts`. It loads the
+original content classifier from the verified d585 checkout, requires the same
+complete 228-image current and baseline inventories, and applies the unchanged
+absolute floor first. It then requires **exactly** those 40 original ratio
+failures, with both images and measurements matching their reviewed records.
+Missing baselines, changed bytes, changed measurements, duplicate records, new
+failures and floor failures stop publication. The general screenshot gate and
+40% threshold are unchanged; no baseline is republished. These records cannot
+approve a future capture or a different baseline.

@@ -34,6 +34,16 @@ def run(run_id, source, workflow):
     return {'id': run_id, 'head_sha': source, 'head_branch': 'main', 'event': 'workflow_dispatch', 'path': workflow, 'status': 'completed', 'conclusion': 'success'}
 
 
+def presentations(images):
+    manifests = {}
+    for path, content in images.items():
+        directory, name = path.rsplit('/', 1)
+        locale = {'es-ES': 'es', 'es-MX': 'es', 'fr-FR': 'fr', 'de-DE': 'de'}.get(directory.split('/')[0], directory.split('/')[0])
+        manifest = manifests.setdefault(directory + '/presentation.json', {'version': 1, 'locale': locale, 'files': {}})
+        manifest['files'][name] = {'rawBytes': 1000000, 'rawSha256': 'a' * 64, 'framedSha256': recovery.digest(content)}
+    return {name: json.dumps(manifest).encode() for name, manifest in manifests.items()}
+
+
 class RecoveryTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -57,13 +67,30 @@ class RecoveryTest(unittest.TestCase):
 
     def test_archive_requires_exact_inventory_and_digest(self):
         entries = [(name, name.encode()) for name in recovery.MISSING]
-        path = self.archive(entries)
-        images, _ = recovery.read_archive(path, recovery.MISSING, recovery.digest(path.read_bytes()))
+        path = self.archive(entries + list(presentations(dict(entries)).items()))
+        images, _, sidecars = recovery.read_archive(path, recovery.MISSING, recovery.digest(path.read_bytes()))
         self.assertEqual(set(images), recovery.MISSING)
+        self.assertEqual(sidecars, presentations(dict(entries)))
         with self.assertRaises(ValueError):
             recovery.read_archive(path, recovery.MISSING, '0' * 64)
         with self.assertRaises(ValueError):
             recovery.read_archive(self.archive(entries[:-1]), recovery.MISSING)
+
+    def test_archive_rejects_missing_mismatched_or_forged_presentation(self):
+        images = {name: name.encode() for name in recovery.MISSING}
+        valid = presentations(images)
+        with self.assertRaises(ValueError):
+            recovery.read_archive(self.archive(list(images.items())), recovery.MISSING)
+        name = next(iter(valid))
+        for field, replacement in [('rawBytes', 0), ('rawSha256', 'invalid'), ('framedSha256', 'a' * 64)]:
+            manifest = json.loads(valid[name])
+            manifest['files'][next(iter(manifest['files']))][field] = replacement
+            with self.assertRaises(ValueError):
+                recovery.read_archive(self.archive(list(images.items()) + [(name, json.dumps(manifest))]), recovery.MISSING)
+        manifest = json.loads(valid[name])
+        manifest['files'].pop(next(iter(manifest['files'])))
+        with self.assertRaises(ValueError):
+            recovery.read_archive(self.archive(list(images.items()) + [(name, json.dumps(manifest))]), recovery.MISSING)
 
     def test_artifact_metadata_rejects_wrong_source_run_workflow_and_expiry(self):
         meta = metadata(1, 2, recovery.RECOVERED_NAME, 'a' * 40)
@@ -88,7 +115,7 @@ class RecoveryTest(unittest.TestCase):
             if tampered:
                 proof['source'] = 'b' * 40
             output = self.root / str(tampered)
-            with patch.object(recovery, 'api', side_effect=records), patch.object(recovery, 'download'), patch.object(recovery, 'read_archive', side_effect=[(base, None), (fresh, proof)]):
+            with patch.object(recovery, 'api', side_effect=records), patch.object(recovery, 'download'), patch.object(recovery, 'read_archive', side_effect=[(base, None, presentations(base)), (fresh, proof, presentations(fresh))]):
                 if tampered:
                     with self.assertRaises(ValueError):
                         recovery.merge(output, self.root / 'evidence', 2, 1, 'a' * 64)
@@ -96,7 +123,7 @@ class RecoveryTest(unittest.TestCase):
                 else:
                     recovery.merge(output, self.root / 'evidence', 2, 1, 'a' * 64)
                     self.assertEqual(len(list(output.rglob('*.png'))), 228)
-                    for name, content in base.items():
+                    for name, content in (base | presentations(base) | presentations(fresh)).items():
                         self.assertEqual((output / name).read_bytes(), content)
 
     def test_preflight_pins_approved_records_and_rejects_invalid_readiness(self):
