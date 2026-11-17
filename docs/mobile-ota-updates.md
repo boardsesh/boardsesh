@@ -2726,11 +2726,11 @@ TestFlight/Play build?** It runs on every non-`main` push touching mobile code a
 comment plus a neutral **"OTA compatibility"** check-run. It is informational only — a native change
 is legitimate, so it never blocks merge.
 
-The verdict is a **fingerprint diff of the branch versus `origin/main`**, resolved in one job under
-identical env (`scripts/mobile-ota-compat-check.ts`, run via `vp run check:mobile-ota-compat`): the
-job checks out the PR, materializes `origin/main` as a sibling `git worktree` with its own
-`vp install`, then resolves both per platform and compares — equal fingerprint → ships OTA,
-different → needs a native build.
+The verdict compares **the PR's target branch at a pinned commit with the result of merging the
+PR into that same commit**. Both trees get their own `vp install` and resolve fingerprints per platform
+under identical env in one job. This isolates the PR's fingerprint delta even when the target branch
+has gained native changes since the PR diverged. A merge conflict reports unknown and leaves the
+label untouched. The check-run is attached to the PR head commit.
 
 It diffs against `main` rather than looking up a shipped `fingerprint-<platform>-<hash>` tag on
 purpose: the equality verdict is invariant to env imperfections. `GOOGLE_MAPS_API_KEY` is a
@@ -2742,10 +2742,11 @@ whose tag was built with the maps key the branch push lacks).
 
 The workflow's fingerprint-affecting env is held byte-identical to the native builds + OTA publish by
 `scripts/mobile-ci-env-parity.test.ts` (which now guards four workflows, and asserts this one
-intentionally omits `GOOGLE_MAPS_API_KEY`). Reproduce a verdict locally:
+intentionally omits `GOOGLE_MAPS_API_KEY`). To reproduce a verdict, work from a checkout of the
+merged tree with its dependencies installed. Use the base SHA printed in the workflow log:
 
 ```bash
-git worktree add /tmp/main-baseline origin/main
+git worktree add --detach /tmp/main-baseline <base-sha>
 (cd /tmp/main-baseline && vp install --frozen-lockfile)
 vp run check:mobile-ota-compat -- --write-env --base-dir /tmp/main-baseline
 ```

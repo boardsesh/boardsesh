@@ -105,7 +105,7 @@ describe('renderComment', () => {
     expect(comment.startsWith(STICKY_MARKER)).toBe(true);
     expect(comment).toContain('feat/x');
     expect(comment).toContain('deadbee'); // 7-char short SHA
-    expect(comment).toContain('Ships over-the-air');
+    expect(comment).toContain('No native fingerprint change');
   });
 
   it('shows pr → base hashes for a native change', () => {

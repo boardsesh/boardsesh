@@ -99,8 +99,8 @@ const ALLOWED: Record<string, string> = {
   // Run steps whose git checkout arguments come from a variable (`file::job::step`).
   'mobile-ota-backport.yml::backport::Locate the release anchor and prepare the hotfix tree':
     'Checks out a release/* anchor tag (only the release App may create one), then cherry-picks fix_commits only after each resolves to a single commit that is an ancestor of origin/main (mobile-ota-backport-fix-commits.test.ts).',
-  'mobile-ota-check.yml::ota-check::Materialize the base-branch baseline':
-    "BASE_REF is the PR's base branch on a pull_request run (PR scope) and main on a push run; the variable path is RUNNER_TEMP.",
+  'mobile-ota-check.yml::ota-check::Prepare the baseline and merge trees':
+    'Runs on branch pushes and same-repository PRs. Compares the selected base commit with its merge of the already-checked-out head.',
   'mobile-store-submit.yml::submit-ios::Take the listing text from the selected release commit':
     'Copies only fastlane/metadata text from the release merge commit on main; nothing from it is executed.',
   'ota-image-bump.yml::bump::Open or update the bump PRs':
