@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import Animated, { runOnUI, useDerivedValue, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import { BoardImageNative } from '../BoardImageNative';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import type { SwipePager } from './use-swipe-pager';
@@ -56,7 +56,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
     return anchorPage.value + Math.max(-1, Math.min(1, offset));
   });
   // The wall swap keeps its own clock and weights; see wall-swap.ts.
-  const revealMode = playerRevealMode(climbOverlayGpuApiVersion);
+  const revealMode = playerRevealMode(climbOverlayGpuApiVersion, Platform.OS);
   const swapFrame = useWallSwap(pager, centerPage, revealMode === 'swap');
   const transition = useMemo(
     () => ({ previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames, revealMode, swapFrame }),

@@ -415,10 +415,15 @@ describe('wall swap under Reduce Motion', () => {
 });
 
 describe('player reveal', () => {
-  it('swaps on API 6 binaries and keeps the wipe on older ones', () => {
-    expect(playerRevealMode(6)).toBe('swap');
-    expect(playerRevealMode(7)).toBe('swap');
-    expect(playerRevealMode(5)).toBe('wipe');
-    expect(playerRevealMode(0)).toBe('wipe');
+  it('swaps on API 6 iOS binaries and keeps the wipe on older ones', () => {
+    expect(playerRevealMode(6, 'ios')).toBe('swap');
+    expect(playerRevealMode(7, 'ios')).toBe('swap');
+    expect(playerRevealMode(5, 'ios')).toBe('wipe');
+    expect(playerRevealMode(0, 'ios')).toBe('wipe');
+  });
+
+  it('keeps the wipe on Android until the GLES swap is verified on a phone', () => {
+    expect(playerRevealMode(6, 'android')).toBe('wipe');
+    expect(playerRevealMode(7, 'android')).toBe('wipe');
   });
 });

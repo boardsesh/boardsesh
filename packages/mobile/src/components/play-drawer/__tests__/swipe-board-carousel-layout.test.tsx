@@ -447,7 +447,24 @@ it('keeps one photograph and feeds reversible absolute progress without a JS ren
   expect(recorded.boardProps.mock.calls).toHaveLength(renderCount);
 });
 
-it('hands an API 6 board the wall swap frame alongside the wipe progress', () => {
+it('keeps the wipe for an API 6 board on Android', () => {
+  recorded.motionNative = true;
+  recorded.apiVersion = 6;
+  render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      layoutId: 8,
+      pager: restingPager(),
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    }),
+  );
+  const transition = latestStationaryBoard().gpuTransition as unknown as { revealMode: string };
+  expect(transition.revealMode).toBe('wipe');
+});
+
+it('hands an API 6 iOS board the wall swap frame alongside the wipe progress', () => {
+  platform.OS = 'ios';
   recorded.motionNative = true;
   recorded.apiVersion = 6;
   const pager = restingPager();

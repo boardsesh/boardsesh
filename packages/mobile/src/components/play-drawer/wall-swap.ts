@@ -44,8 +44,14 @@ export const WALL_SWAP_NATIVE_API = 6;
 /** The player's reveal. A "reveal style" setting can choose another over the air. */
 export const PLAYER_REVEAL_MODE: RevealMode = 'swap';
 
-/** The player's reveal on this binary: older native builds only know the wipe. */
-export function playerRevealMode(apiVersion: number): RevealMode {
+/**
+ * The player's reveal on this binary: older native builds only know the wipe.
+ * Android keeps the wipe too: on a Galaxy S26 Ultra (Adreno) the swap left the
+ * board unlit at rest, with holds showing only mid-swap. The GLES swap was only
+ * checked on the emulator. Drop the platform check once it is verified on a phone.
+ */
+export function playerRevealMode(apiVersion: number, platform: string): RevealMode {
+  if (platform === 'android') return 'wipe';
   return apiVersion >= WALL_SWAP_NATIVE_API ? PLAYER_REVEAL_MODE : 'wipe';
 }
 

@@ -69,7 +69,7 @@ config at the call site with `timingFor` (it stays out of the token modules so t
 reanimated-free for `makeThemeMock`): `value.value = withTiming(target, timingFor(theme.motion.emphasized))`.
 Springs (press/gesture feedback) stay variant-agnostic — these tokens cover the shared `withTiming` moves.
 
-**Player wall swap** (`play-drawer/wall-swap.ts`, GPU boards on native API 6). Swiping
+**Player wall swap** (`play-drawer/wall-swap.ts`, GPU boards on native API 6, iOS only for now: Android keeps the wipe until the GLES swap is verified on a phone, after a Galaxy S26 Ultra showed an unlit board at rest). Swiping
 between climbs keeps the wall still and hands the lit holds over in two steps. Holds lit
 the same way in both climbs never change. Dragging dims the holds only the old climb uses
 from 100% to 40% by the pager's commit distance (80 points), and holds them there; a
