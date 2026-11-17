@@ -224,6 +224,10 @@
           "title": "MoonBoard",
           "gridLabels": "Grid letters and numbers",
           "footer": "Shows A to K and the row numbers around the board, so you can call holds like F5."
+        },
+        "gpuAcceleration": {
+          "title": "GPU acceleration",
+          "description": "Draws lit holds with your phone's graphics chip. Turn off if the board flickers or stutters."
         }
       },
       "accessibility": {

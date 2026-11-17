@@ -28,6 +28,7 @@ function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModel
     onDismissSuggestion: vi.fn(),
     sprayWalls: null,
     moonboardGridLabels: null,
+    gpuAcceleration: null,
     lightingSections: LIGHTING_SECTIONS,
     ...overrides,
   };
@@ -163,6 +164,36 @@ describe('buildBoardLookModel — MoonBoard grid letters and numbers', () => {
     if (row?.kind !== 'toggle') throw new Error('no MoonBoard grid labels toggle');
     expect(row.key).toBe('moonboardGridLabels');
     expect(row.label).toBe('mobile.settings.boardLook.moonboard.gridLabels');
+    expect(row.value).toBe(true);
+    row.onValueChange(false);
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('buildBoardLookModel — GPU acceleration', () => {
+  it('leaves the row out when the switch would do nothing', () => {
+    expect(sectionKeys(makeInput())).not.toContain('gpuAcceleration');
+  });
+
+  it('sits after the MoonBoard section and before the lighting, and flips the setting', () => {
+    const onChange = vi.fn();
+    const input = makeInput({
+      moonboardGridLabels: { enabled: true, onChange: vi.fn() },
+      gpuAcceleration: { enabled: true, onChange },
+    });
+    expect(sectionKeys(input)).toEqual([
+      'presets',
+      'destinations',
+      'moonboard',
+      'gpuAcceleration',
+      'lighting',
+      'bluetooth',
+    ]);
+
+    const row = buildBoardLookModel(input).sections.find((candidate) => candidate.key === 'gpuAcceleration')?.rows[0];
+    if (row?.kind !== 'toggle') throw new Error('no GPU acceleration toggle');
+    expect(row.label).toBe('mobile.settings.boardLook.gpuAcceleration.title');
+    expect(row.subtitle).toBe('mobile.settings.boardLook.gpuAcceleration.description');
     expect(row.value).toBe(true);
     row.onValueChange(false);
     expect(onChange).toHaveBeenCalledWith(false);

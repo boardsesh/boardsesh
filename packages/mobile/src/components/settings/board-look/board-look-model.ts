@@ -51,6 +51,12 @@ export type BoardLookModelInput = {
    * out (the active board is not a MoonBoard).
    */
   moonboardGridLabels: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
+  /**
+   * The GPU acceleration switch, or `null` to leave it out (this binary has no
+   * native overlay module, or the remote kill switch is off: the row would do
+   * nothing).
+   */
+  gpuAcceleration: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
   /** What lights the board and when the phone lets go of it (`useBoardLightingSections`), last on the page. */
   lightingSections: readonly MoreSection[];
   /**
@@ -202,6 +208,24 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
         },
       ],
       footer: t('mobile.settings.boardLook.moonboard.footer'),
+    });
+  }
+
+  if (input.gpuAcceleration) {
+    const { enabled, onChange } = input.gpuAcceleration;
+    sections.push({
+      key: 'gpuAcceleration',
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'gpuAcceleration',
+          label: t('mobile.settings.boardLook.gpuAcceleration.title'),
+          // Rides as the switch's accessibility hint on iOS.
+          subtitle: t('mobile.settings.boardLook.gpuAcceleration.description'),
+          value: enabled,
+          onValueChange: onChange,
+        },
+      ],
     });
   }
 

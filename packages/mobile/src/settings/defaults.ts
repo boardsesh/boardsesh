@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoConnectBle: true,
   moonboardLightAdjacentHolds: false,
   moonboardGridLabels: true,
+  gpuAcceleration: true,
   alwaysDrive: false,
   putOnBoardKeepsLighting: DEFAULT_KEEP_LIGHTING,
   putOnBoardDrivesInSession: true,

@@ -7,27 +7,50 @@ const policy = (enabledFamilies: readonly string[] = [], disabledFamilies: reado
 describe('Aura GPU rollout', () => {
   it('fails open for the shipped Homewall path only', () => {
     const unresolved = parseAuraGpuRollout(undefined);
-    expect(auraGpuRolloutEnabled({ flag: undefined, policy: unresolved, boardName: 'kilter', layoutId: 8 })).toBe(true);
+    expect(
+      auraGpuRolloutEnabled({
+        userEnabled: true,
+        flag: undefined,
+        policy: unresolved,
+        boardName: 'kilter',
+        layoutId: 8,
+      }),
+    ).toBe(true);
     for (const boardName of AURA_GPU_FAMILIES) {
-      expect(auraGpuRolloutEnabled({ flag: true, policy: unresolved, boardName, layoutId: 1 })).toBe(false);
+      expect(auraGpuRolloutEnabled({ userEnabled: true, flag: true, policy: unresolved, boardName, layoutId: 1 })).toBe(
+        false,
+      );
     }
   });
 
   it.each(AURA_GPU_FAMILIES)('enables %s independently while the global switch wins', (boardName) => {
     const selected = policy([boardName]);
-    expect(auraGpuRolloutEnabled({ flag: true, policy: selected, boardName, layoutId: 1 })).toBe(true);
-    expect(auraGpuRolloutEnabled({ flag: false, policy: selected, boardName, layoutId: 1 })).toBe(false);
+    expect(auraGpuRolloutEnabled({ userEnabled: true, flag: true, policy: selected, boardName, layoutId: 1 })).toBe(
+      true,
+    );
+    expect(auraGpuRolloutEnabled({ userEnabled: true, flag: false, policy: selected, boardName, layoutId: 1 })).toBe(
+      false,
+    );
     for (const other of AURA_GPU_FAMILIES.filter((family) => family !== boardName)) {
-      expect(auraGpuRolloutEnabled({ flag: true, policy: selected, boardName: other, layoutId: 1 })).toBe(false);
+      expect(
+        auraGpuRolloutEnabled({ userEnabled: true, flag: true, policy: selected, boardName: other, layoutId: 1 }),
+      ).toBe(false);
     }
   });
 
   it('lets a family disable override both legacy availability and explicit enables', () => {
     expect(
-      auraGpuRolloutEnabled({ flag: true, policy: policy(['kilter'], ['kilter']), boardName: 'kilter', layoutId: 8 }),
+      auraGpuRolloutEnabled({
+        userEnabled: true,
+        flag: true,
+        policy: policy(['kilter'], ['kilter']),
+        boardName: 'kilter',
+        layoutId: 8,
+      }),
     ).toBe(false);
     expect(
       auraGpuRolloutEnabled({
+        userEnabled: true,
         flag: true,
         policy: policy(['tension'], ['tension']),
         boardName: 'tension',
@@ -38,10 +61,24 @@ describe('Aura GPU rollout', () => {
 
   it('does not use an allowlist without a resolved positive global value', () => {
     for (const flag of [undefined, 'unknown-variant']) {
-      expect(auraGpuRolloutEnabled({ flag, policy: policy(['tension']), boardName: 'tension', layoutId: 1 })).toBe(
-        false,
-      );
-      expect(auraGpuRolloutEnabled({ flag, policy: policy(['tension']), boardName: 'kilter', layoutId: 8 })).toBe(true);
+      expect(
+        auraGpuRolloutEnabled({
+          userEnabled: true,
+          flag,
+          policy: policy(['tension']),
+          boardName: 'tension',
+          layoutId: 1,
+        }),
+      ).toBe(false);
+      expect(
+        auraGpuRolloutEnabled({
+          userEnabled: true,
+          flag,
+          policy: policy(['tension']),
+          boardName: 'kilter',
+          layoutId: 8,
+        }),
+      ).toBe(true);
     }
   });
 
@@ -69,7 +106,69 @@ describe('Aura GPU rollout', () => {
 
   it('never enables custom or unknown wall families', () => {
     expect(
-      auraGpuRolloutEnabled({ flag: true, policy: policy(AURA_GPU_FAMILIES), boardName: 'spray', layoutId: 8 }),
+      auraGpuRolloutEnabled({
+        userEnabled: true,
+        flag: true,
+        policy: policy(AURA_GPU_FAMILIES),
+        boardName: 'spray',
+        layoutId: 8,
+      }),
     ).toBe(false);
+  });
+
+  describe('climber GPU acceleration switch', () => {
+    const everyBoard = [...AURA_GPU_FAMILIES, 'spray', 'unknown'];
+
+    it('turns every board off even when the flag and family are enabled', () => {
+      const allEnabled = policy([...AURA_GPU_FAMILIES]);
+      for (const boardName of everyBoard) {
+        for (const layoutId of [1, 8, undefined]) {
+          expect(
+            auraGpuRolloutEnabled({ flag: true, policy: allEnabled, userEnabled: false, boardName, layoutId }),
+          ).toBe(false);
+        }
+      }
+      expect(auraGpuRolloutEnabled({ flag: undefined, policy: allEnabled, userEnabled: false })).toBe(false);
+      expect(
+        auraGpuRolloutEnabled({
+          flag: undefined,
+          policy: allEnabled,
+          userEnabled: false,
+          boardName: 'kilter',
+          layoutId: 8,
+        }),
+      ).toBe(false);
+    });
+
+    it('leaves the rollout result unchanged when on', () => {
+      const selected = policy(['tension']);
+      expect(
+        auraGpuRolloutEnabled({ flag: true, policy: selected, userEnabled: true, boardName: 'tension', layoutId: 1 }),
+      ).toBe(true);
+      expect(
+        auraGpuRolloutEnabled({ flag: true, policy: selected, userEnabled: true, boardName: 'woods', layoutId: 1 }),
+      ).toBe(false);
+      expect(
+        auraGpuRolloutEnabled({
+          flag: undefined,
+          policy: selected,
+          userEnabled: true,
+          boardName: 'kilter',
+          layoutId: 8,
+        }),
+      ).toBe(true);
+      expect(auraGpuRolloutEnabled({ flag: true, policy: selected, userEnabled: true })).toBe(true);
+    });
+
+    it('never forces the GPU on: the remote kill switch still wins', () => {
+      const selected = policy(['tension']);
+      expect(
+        auraGpuRolloutEnabled({ flag: false, policy: selected, userEnabled: true, boardName: 'tension', layoutId: 1 }),
+      ).toBe(false);
+      expect(auraGpuRolloutEnabled({ flag: false, policy: selected, userEnabled: true })).toBe(false);
+      expect(
+        auraGpuRolloutEnabled({ flag: true, policy: policy(), userEnabled: true, boardName: 'tension', layoutId: 1 }),
+      ).toBe(false);
+    });
   });
 });

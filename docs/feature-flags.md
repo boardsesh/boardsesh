@@ -146,7 +146,7 @@ What this means for targeting:
 
 ## Mobile flags
 
-Aura GPU rendering uses `aura-gpu-enabled`. Keep the flag active: **an active 0% release condition disables every GPU surface**, including the stationary swipe carousel, without changing the selected appearance. PNG supplies the same Aura artwork. Missing flags preserve the existing Kilter Homewall path; they do not enable additional catalogue layouts.
+Aura GPU rendering uses `aura-gpu-enabled`. Keep the flag active: **an active 0% release condition disables every GPU surface**, including the stationary swipe carousel, without changing the selected appearance. PNG supplies the same Aura artwork. Missing flags preserve the existing Kilter Homewall path; they do not enable additional catalogue layouts. The climber's own **GPU acceleration** switch (Settings > Board, MMKV key `gpuAcceleration`, on by default) sits between the two: precedence is remote kill switch (`aura-gpu-enabled` = false), then the user switch, then the rollout. The switch can only turn the GPU off, never force it on. `useGpuClimbOverlayEnabled` is the single gate (`auraGpuRolloutEnabled` takes `userEnabled` as an explicit input), so every surface follows it. See [GPU climb overlay](gpu-climb-overlay-experiment.md#climber-switch).
 
 The boolean flag carries a versioned JSON payload under `true`:
 

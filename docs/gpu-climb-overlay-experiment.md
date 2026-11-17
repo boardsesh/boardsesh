@@ -8,6 +8,10 @@ The CDN cache PR is parked and excluded from the shipping stack. There is no ass
 
 A matching full-size PNG stays above an incoming GPU surface until the native drawable and board photographs are ready. Row thumbnails cannot bridge this transition: their filled-hold appearance can differ from the full board. A missing module, unsupported configuration, rendering error or ten-second readiness timeout restores normal PNG rendering. Empty player selections remove the live overlay immediately. The v3 editor retains a transparent empty scene so the very first hold receives the same feedback as later edits. GPU readiness is never written into the PNG cache or snapshot contract. Native rendering pauses while inactive or detached.
 
+## Climber switch
+
+Settings > Board has a **GPU acceleration** switch (MMKV key `gpuAcceleration`, on by default, read synchronously so a board never mounts on the GPU and then drops to PNG). Off sends every surface (player, swipe carousel, Create Climb editor, any other caller of `useGpuClimbOverlayEnabled`) to the PNG renderer at once, mounted boards included; no restart. Precedence is remote kill switch, then this switch, then the rollout: the switch can only turn the GPU off, so a family the rollout has not enabled stays on PNG when it is on. The row is hidden when the binary has no native overlay module (`climbOverlayGpuApiVersion` is 0) or `aura-gpu-enabled` is false, because it would do nothing. A change reports the usual `Setting Changed { page: 'board', key: 'gpuAcceleration', value }`.
+
 ## Swipe and edit feedback
 
 Native API v3 supports the stationary play-drawer wall. The photograph stays in one zoomable surface while the existing pager slides the title continuously with the finger and supplies an absolute page position directly from its UI-thread shared values. Current, previous and next hold lists share one atlas. Moving the finger only changes a numeric native property; it does not parse the layout, upload geometry or update React state per frame.

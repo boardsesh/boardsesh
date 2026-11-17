@@ -68,6 +68,10 @@ The mobile Settings screen contains appearance and UI-style controls that have n
 - **Material**: JS `MaterialTabBar` + opaque M3 surfaces.
 - All three options are always **selectable** on every platform — any phone can opt into Liquid Glass, falling back to JS buttons where the native iOS 26 chrome can't render. An explanatory footnote switches between `mobile.settings.uiStyle.description` (glass-capable), `mobile.settings.uiStyle.glassFallback` (iOS < 26), and `mobile.settings.uiStyle.glassFallbackAndroid` (Android) based on capability and platform.
 
+**Board** (Settings › Board; `BoardLookScreen`, `board-look-model.ts`): the look rail and its two leaves, then, in this order, the Spraywalls look switch, the MoonBoard grid letters switch (MoonBoard active only), **GPU acceleration**, then the lighting groups.
+
+- **GPU acceleration** is a switch with a hint ("Draws lit holds with your phone's graphics chip. Turn off if the board flickers or stutters."), on by default, stored as `gpuAcceleration` in the MMKV settings store. Off sends every board surface to the PNG renderer at once. It can only turn the GPU off: the remote `aura-gpu-enabled` switch outranks it and the rollout still decides when it is on. The row is hidden when the binary has no native overlay module or the remote switch is off. A change reports `Setting Changed { page: 'board', key: 'gpuAcceleration' }`. See `docs/gpu-climb-overlay-experiment.md`.
+
 **Home** (its own page in the root's second group, after Board and Climbs & grades; the row's value is the matching preset: Default, Focused or Custom):
 
 - **Open the app on** (Climbs / Home) first: a segmented row persisted as `startupScreen` in the MMKV settings store, Climbs by default, read through `normaliseStartupScreen()`. Applies from the next start and never navigates. Links, notification taps, onboarding and a post-login return still open where they point. See `01-navigation.md` → "Mobile: library entry and tab variants". A change reports one `Setting Changed { page: 'homeScreen', key: 'startupScreen' }`.
