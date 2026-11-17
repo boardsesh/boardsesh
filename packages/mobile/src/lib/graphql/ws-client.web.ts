@@ -6,7 +6,6 @@ import type {
   Sink,
   SubscribePayload,
 } from 'graphql-ws';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import {
   captureAuthCredentialGeneration,
   getAuthToken,
@@ -18,24 +17,19 @@ import { ensureFreshToken, recoverAuthRejection } from '../auth-interceptor.web'
 import { isBrowserPageRetired, subscribeBrowserPageRetired } from '../browser-page-retirement.web';
 import { SessionSupersededError } from '../browser-session-guard.web';
 import { getClientIdentityHeaderValue } from '../client-identity.web';
-import { expoBrowserBackendClient } from '../browser-backend-client.web';
-import { BACKEND_URL } from '../env';
 import { createWsClientModule } from './ws-client-core';
-import { notifyWsClientDisposed, notifyWsConnectionEnded } from './ws-client-lifecycle';
-import { createSelectedBrowserWsClient, unavailableSelectedBrowserIterator } from './selected-ws-client.web';
 
-const legacy = createWsClientModule({
+const transport = createWsClientModule({
   // Browsers only support the standard two-argument WebSocket constructor. The
   // native client has a separate fork that suppresses its Origin header.
   createSocket: (url, protocols) => new WebSocket(url, protocols),
   captureAuthCredentialGeneration,
   async getAuthToken() {
-    // A legacy socket created before first selected admission cannot acquire
-    // that later account through this module's current-token getter.
-    if (expoBrowserBackendClient.isSelected()) throw new BrowserBackendConsumerError('superseded');
     const token = await getAuthToken();
-    if (expoBrowserBackendClient.isSelected()) throw new BrowserBackendConsumerError('superseded');
-    if (!token && !hasConfirmedAnonymousWebSession()) throw new BrowserBackendConsumerError('unavailable');
+    // A page that has not read its session yet, or lost it to an outage, is
+    // not signed out: no anonymous handshake goes out on its behalf.
+    if (!token && !hasConfirmedAnonymousWebSession())
+      throw new Error('The browser session is not known yet, so the WebSocket stays closed');
     return token;
   },
   isAuthCredentialGenerationCurrent,
@@ -47,17 +41,21 @@ const legacy = createWsClientModule({
   getClientIdentity: getClientIdentityHeaderValue,
 });
 
+function supersededIterator<Result = Record<string, unknown>, Extensions = unknown>() {
+  const iterator: AsyncIterableIterator<FormattedExecutionResult<Result, Extensions>> = {
+    next: () => Promise.reject(new SessionSupersededError()),
+    return: () => Promise.resolve({ done: true, value: undefined }),
+    [Symbol.asyncIterator]: () => iterator,
+  };
+  return iterator;
+}
+
 const fencedClients = new WeakSet<Client>();
 
-/** Preserve the actual client identity used by lifecycle listeners. A client
- * from the legacy/anonymous view must not publish data or adopt another view
- * when a previously unresolved central observation becomes selected. */
-function fenceClient(
-  client: Client,
-  isCurrent: () => boolean,
-  allowIteration: boolean,
-  superseded: () => Error = () => new BrowserBackendConsumerError('superseded'),
-): Client {
+/** Preserve the actual client identity used by lifecycle listeners. Once the
+ * login the client was handed out under is gone, it publishes nothing more:
+ * every operation it still carries ends superseded. */
+function fenceClient(client: Client, isCurrent: () => boolean): Client {
   if (fencedClients.has(client)) return client;
   fencedClients.add(client);
   let retired = false;
@@ -71,7 +69,7 @@ function fenceClient(
     sink: Sink<FormattedExecutionResult<Result, Extensions>>,
   ) => {
     if (!current()) {
-      sink.error(superseded());
+      sink.error(new SessionSupersededError());
       return () => {};
     }
     let stopped = false;
@@ -80,7 +78,7 @@ function fenceClient(
       if (stopped) return;
       stopped = true;
       release();
-      sink.error(superseded());
+      sink.error(new SessionSupersededError());
     };
     release = originalSubscribe<Result, Extensions>(payload, {
       next(result) {
@@ -91,7 +89,7 @@ function fenceClient(
       error(error) {
         if (stopped) return;
         stopped = true;
-        sink.error(current() ? error : superseded());
+        sink.error(current() ? error : new SessionSupersededError());
       },
       complete() {
         if (stopped) return;
@@ -108,15 +106,15 @@ function fenceClient(
   };
   const originalIterate = client.iterate.bind(client);
   client.iterate = <Result = Record<string, unknown>, Extensions = unknown>(payload: SubscribePayload) => {
-    if (!allowIteration || !current()) return unavailableSelectedBrowserIterator<Result, Extensions>();
+    if (!current()) return supersededIterator<Result, Extensions>();
     const source = originalIterate<Result, Extensions>(payload);
     const iterator: AsyncIterableIterator<FormattedExecutionResult<Result, Extensions>> = {
       async next() {
-        if (!current()) throw superseded();
+        if (!current()) throw new SessionSupersededError();
         const next = await source.next();
         if (!current()) {
           await source.return?.();
-          throw superseded();
+          throw new SessionSupersededError();
         }
         return next;
       },
@@ -136,26 +134,6 @@ function fenceClient(
   return client;
 }
 
-const unavailable: Client = {
-  on: () => () => {},
-  subscribe: (_payload, sink) => {
-    sink.error(new BrowserBackendConsumerError('unavailable'));
-    return () => {};
-  },
-  iterate: () => unavailableSelectedBrowserIterator(),
-  terminate: () => {},
-  dispose: () => {},
-};
-
-function retiredPageIterator<Result = Record<string, unknown>, Extensions = unknown>() {
-  const iterator: AsyncIterableIterator<FormattedExecutionResult<Result, Extensions>> = {
-    next: () => Promise.reject(new SessionSupersededError()),
-    return: () => Promise.resolve({ done: true, value: undefined }),
-    [Symbol.asyncIterator]: () => iterator,
-  };
-  return iterator;
-}
-
 /** A retired page opens no socket; every operation, pushed or pulled, ends superseded. */
 const retiredPageClient: Client = {
   on: () => () => {},
@@ -163,164 +141,41 @@ const retiredPageClient: Client = {
     sink.error(new SessionSupersededError());
     return () => {};
   },
-  iterate: () => retiredPageIterator(),
+  iterate: () => supersededIterator(),
   terminate: () => {},
   dispose: () => {},
 };
 
-// The generation the current legacy socket was opened under. A socket belongs
-// to one browser login: a generation change disposes it, so the next caller
+// The generation the current socket was opened under. A socket belongs to one
+// browser login: a generation change disposes it, so the next caller
 // reconnects with the new credential and the old socket's late events are fenced.
-let legacyGeneration: number | undefined;
+let socketGeneration: number | undefined;
 
-function disposeLegacyClient(): void {
-  legacyGeneration = undefined;
-  legacy.disposeWsClient();
+export function disposeWsClient(): void {
+  socketGeneration = undefined;
+  transport.disposeWsClient();
 }
 
 subscribeAuthCredentialGenerationChanges((generation) => {
-  if (legacyGeneration !== undefined && legacyGeneration !== generation) disposeLegacyClient();
+  if (socketGeneration !== undefined && socketGeneration !== generation) disposeWsClient();
 });
-subscribeBrowserPageRetired(disposeLegacyClient);
+subscribeBrowserPageRetired(disposeWsClient);
 
-function getLegacyWsClient(): Client {
+export function getWsClient(): Client {
   // A retired page opens no socket, so a rate-limit retry inside
   // execute(getWsClient, ...) cannot go out as the account that replaced the
   // page's own. A sign-in on a page that had no account retires nothing
   // (#7596 D4): a retry held across it goes out as the new login, like
   // everything else the page sends after it.
   if (isBrowserPageRetired()) {
-    disposeLegacyClient();
+    disposeWsClient();
     return retiredPageClient;
   }
   const generation = captureAuthCredentialGeneration();
-  if (legacyGeneration !== undefined && legacyGeneration !== generation) legacy.disposeWsClient();
-  legacyGeneration = generation;
+  if (socketGeneration !== undefined && socketGeneration !== generation) transport.disposeWsClient();
+  socketGeneration = generation;
   return fenceClient(
-    legacy.getWsClient(),
-    () =>
-      !expoBrowserBackendClient.isSelected() &&
-      !isBrowserPageRetired() &&
-      isAuthCredentialGenerationCurrent(generation),
-    true,
-    // Selection keeps its own refusal until the selected mode is deleted.
-    () =>
-      expoBrowserBackendClient.isSelected()
-        ? new BrowserBackendConsumerError('superseded')
-        : new SessionSupersededError(),
+    transport.getWsClient(),
+    () => !isBrowserPageRetired() && isAuthCredentialGenerationCurrent(generation),
   );
-}
-
-let selected: ReturnType<typeof createSelectedBrowserWsClient> | null = null;
-type AnonymousClient = { client: Client; isCurrent: () => boolean; dispose: () => void };
-let anonymous: AnonymousClient | null = null;
-
-function createAnonymousClient(): AnonymousClient {
-  const generation = captureAuthCredentialGeneration();
-  const revision = expoBrowserBackendClient.getSnapshot().revision;
-  let disposed = false;
-  const isCurrent = () =>
-    !disposed &&
-    !expoBrowserBackendClient.getSnapshot().closed &&
-    isAuthCredentialGenerationCurrent(generation) &&
-    expoBrowserBackendClient.getSnapshot().revision === revision &&
-    expoBrowserBackendClient.isAnonymous() &&
-    hasConfirmedAnonymousWebSession();
-  const assertCurrent = () => {
-    if (!isCurrent()) throw new BrowserBackendConsumerError('superseded');
-  };
-  const anonymousTransport = createWsClientModule({
-    createSocket: (url, protocols) => new WebSocket(url, protocols),
-    captureAuthCredentialGeneration: () => generation,
-    isAuthCredentialGenerationCurrent: (expected) => expected === generation && isCurrent(),
-    async ensureFreshToken() {
-      assertCurrent();
-      return false;
-    },
-    async getAuthToken() {
-      assertCurrent();
-      return null;
-    },
-    recoverAuthRejection: async () => (isCurrent() ? 'anonymous' : 'superseded'),
-    isOfflineModeOn: () => false,
-    getClientIdentity: getClientIdentityHeaderValue,
-  });
-  const client = fenceClient(anonymousTransport.getWsClient(), isCurrent, false);
-  let unsubscribeOwner = () => {};
-  let unsubscribeGeneration = () => {};
-  const dispose = () => {
-    if (disposed) return;
-    disposed = true;
-    if (anonymous?.client === client) anonymous = null;
-    unsubscribeOwner();
-    unsubscribeGeneration();
-    anonymousTransport.disposeWsClient();
-  };
-  const retire = () => {
-    if (!isCurrent()) dispose();
-  };
-  unsubscribeOwner = expoBrowserBackendClient.subscribe(retire);
-  unsubscribeGeneration = subscribeAuthCredentialGenerationChanges(retire);
-  if (!isCurrent()) dispose();
-  return { client, isCurrent, dispose };
-}
-
-export function getWsClient(): Client {
-  if (!expoBrowserBackendClient.isSelected()) return getLegacyWsClient();
-
-  // Selection uncertainty is exclusive: neither an old legacy token nor a
-  // missing proof is evidence that a public anonymous socket may be opened.
-  disposeLegacyClient();
-  if (expoBrowserBackendClient.getSnapshot().closed) return unavailable;
-  if (!expoBrowserBackendClient.getSnapshot().owner) {
-    if (!expoBrowserBackendClient.isAnonymous() || !hasConfirmedAnonymousWebSession()) return unavailable;
-    if (anonymous?.isCurrent()) return anonymous.client;
-    anonymous?.dispose();
-    anonymous = createAnonymousClient();
-    return anonymous.isCurrent() ? anonymous.client : unavailable;
-  }
-  anonymous?.dispose();
-  if (selected?.isCurrent()) return selected.client;
-  const previous = selected;
-  selected = null;
-  previous?.dispose();
-  try {
-    const entry = createSelectedBrowserWsClient({
-      backendClient: expoBrowserBackendClient,
-      url: process.env.EXPO_PUBLIC_WS_URL ?? BACKEND_URL.replace(/^http(s?):\/\//, 'ws$1://') + '/graphql',
-      Socket: WebSocket,
-      clientIdentity: getClientIdentityHeaderValue,
-      captureGeneration: captureAuthCredentialGeneration,
-      isGenerationCurrent: isAuthCredentialGenerationCurrent,
-      subscribeGeneration: (listener) => subscribeAuthCredentialGenerationChanges(listener),
-      closeEvent: (code, reason, wasClean) => new CloseEvent('close', { code, reason, wasClean }),
-      schedule(callback, milliseconds) {
-        const timer = setTimeout(callback, milliseconds);
-        return () => clearTimeout(timer);
-      },
-      onRetiring(client) {
-        if (selected?.client === client) selected = null;
-      },
-      onConnectionEnded: notifyWsConnectionEnded,
-      onDisposed: notifyWsClientDisposed,
-    });
-    if (!entry.isCurrent()) {
-      entry.dispose();
-      return unavailable;
-    }
-    selected = entry;
-    return entry.client;
-  } catch {
-    return unavailable;
-  }
-}
-
-export function disposeWsClient(): void {
-  const previousSelected = selected;
-  const previousAnonymous = anonymous;
-  selected = null;
-  anonymous = null;
-  disposeLegacyClient();
-  previousSelected?.dispose();
-  previousAnonymous?.dispose();
 }

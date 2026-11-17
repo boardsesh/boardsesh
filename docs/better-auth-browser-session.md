@@ -27,7 +27,7 @@ Phase A is in progress. It works against today's NextAuth sessions:
 | A1 | This doc. Banners on the superseded docs, notes on the partly superseded ones. No code. |
 | A2, A3 | The central guard on www (A2) and on Expo web at app.boardsesh.com (A3). |
 | A4 | Remove the per-site wrappers and scopes from `packages/mobile` and `packages/shared` and restore the plain hooks. Remove the selected outbox drain ([#7592](https://github.com/boardsesh/boardsesh/issues/7592)) and restore the #6302 comments in `invalidation-batch.ts`. The native climb-delete fix, draft [#7599](https://github.com/boardsesh/boardsesh/pull/7599), merges first or A4 rebases on it. |
-| A5 (several PRs) | Delete the browser binding design listed under "What is removed", except the backend binding core, which stays until B5. The last A5 PR replaces the eight readiness gates with the one switch. |
+| A5 (several PRs) | Delete the browser binding design listed under "What is removed", except the backend binding core, which stays until B5. The last A5 PR replaces the remaining readiness gates with the one switch. The Expo web gate needs no switch and is already gone (see "The switch"). |
 
 Phase B is blocked. #7596 says to stop after Phase A if the BA-04 authority
 cannot issue sessions yet, and on main it cannot. Nothing at runtime calls
@@ -337,7 +337,10 @@ It replaces the eight code-owned gates, each a literal `return false`: the
 seven `packages/web/app/lib/auth/*-readiness.ts` files and
 `packages/mobile/src/lib/browser-consumer-readiness.web.ts`
 (`scripts/lib/expo-web-readiness.ts` is the dev server's Metro prewarm helper,
-not a gate). The last A5 PR adds the switch and deletes those gates. Until B1
+not a gate). The Expo web gate went first, in A5, with the selected mode it
+guarded: the lease client, the iframe coordinator client and the selected
+WebSocket client. Expo web has no flag, so nothing replaces it. The last A5 PR
+adds the switch and deletes the web gates that remain. Until B1
 lands, `better-auth` has nothing to turn on.
 
 Turn it on in the backend first, then web. Roll back web first, then backend.

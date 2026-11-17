@@ -84,10 +84,9 @@ Each moves one kind of credential write from the old path into the backend's cur
 | --- | --- | --- | --- | --- |
 | `CURRENT_STORE_BROWSER_BINDING_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Writes a server row and host-only cookies per browser. | Deleted by #7596. Bugs #7588 (locks the users row on every request) and #7594 (rollback leaves cookies that break legacy sign-in) are closed by deleting it. |
 | `CURRENT_STORE_BROWSER_RENEWAL_MODE`, `BROWSER_DELEGATION_SECRET` | Gone | | Removed from main (#7618 and the lease removal). Do not set them. | Nothing reads them. |
-| `CURRENT_STORE_EXPIRED_BROWSER_BINDING_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Recovers a browser whose binding expired. | Still on main; #7596 deletes it. Needs binding. |
-| `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Publishes password credentials through the binding. | Still on main; #7596 deletes it. Needs binding. |
+| `CURRENT_STORE_EXPIRED_BROWSER_BINDING_MODE`, `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Gone | | Removed from main (#7627 and #7624). Do not set them. | Nothing reads them. |
 | Proof cookies (`BROWSER_PROOF_COOKIE_PREFIX`, no env switch) | Web | Active only under binding | Carry browser proofs in cookies. | Still on main (`browser-proof-cookies.server.ts`); #7596 deletes it. |
-| Six readiness functions that return `false` in code | Web (five), Expo web (one) | No variable changes them | Open the public pages. In `packages/web/app/lib/auth/`: `browser-consumer-readiness.ts`, `browser-coordinator-readiness.ts`, `browser-password-readiness.ts`, `expired-browser-binding-readiness.ts` and `provider-security-readiness.ts`; plus `packages/mobile/src/lib/browser-consumer-readiness.web.ts`. The renewal and first-password files are deleted. | The four browser ones are replaced by #7596's single mode switch. Provider security is **kept**, with its publication layer rewritten. |
+| Three readiness functions that return `false` in code | Web | No variable changes them | Open the public pages. In `packages/web/app/lib/auth/`: `browser-consumer-readiness.ts`, `browser-coordinator-readiness.ts` and `provider-security-readiness.ts`. The renewal, first-password, password (#7624) and expired-binding (#7627) files are deleted, and so is the Expo web one (`browser-consumer-readiness.web.ts`), with the selected mode it guarded. | The two browser ones are replaced by #7596's single mode switch. Provider security is **kept**, with its publication layer rewritten. |
 
 ## Code gates
 

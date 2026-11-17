@@ -1,11 +1,13 @@
 # Staged browser GraphQL HTTP clients
 
 > **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+>
+> The Expo web half is gone from `packages/mobile`: the selected HTTP factory, the opaque view facade and the required-dispatch path were deleted with the Expo web selected mode. The Expo sections below are history.
 
 The HTTP continuation is based on the merged browser consumers, CNC and private
 views. The earlier composition compared 69 ending feature blobs before extracting
-the shared HTTP core. That source evidence is historical. Public browser and Expo
-readiness remain code-owned false.
+the shared HTTP core. That source evidence is historical. Public browser
+readiness remains code-owned false.
 
 ## Original delivery authority
 
@@ -86,24 +88,6 @@ Native follow and audience writes retain their connection-only preconditions
 without requiring a loaded profile. Settings writes retain their existing viewer
 identity requirement. Browser follow and audience writes still require the
 original view and credential generation even when profile data has not loaded.
-
-## Required central dispatch
-
-A code-gated required-dispatch path checks actual central admission before a
-cached legacy credential may dispatch. A 503, malformed body or unqualified
-legacy reply leaves network dispatch unavailable while retaining the previous
-offline identity. An old anonymous observation cannot authorize a request after
-that failure. A newly admitted B cannot replay A's pending mutation.
-
-The required-mode refusal remains sticky after observation. A successful actual
-anonymous response is required for anonymous dispatch, and that request removes
-unrelated supplied authentication headers.
-
-This is an explicit dispatch contract for a future qualified selected deployment.
-A local registry cannot discover an unseen server account while central admission
-is unavailable. Legacy-permitted dispatch retains its separate activation and
-retirement gate; its earlier first-503 counterexample is not qualified by these
-required-mode tests. The public readiness function still returns literal false.
 
 ## Historical producer evidence
 
