@@ -6,6 +6,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal class OverlayWorkCancelled : RuntimeException()
 
+/** The arena changed under an off-thread encode, so its descriptors may name the wrong ranges. */
+internal class OverlayArenaMoved : RuntimeException()
+
 internal class AtlasFrameFailure(val reasonCode: String) : IllegalArgumentException(reasonCode)
 
 internal class OverlayResourceFailure : IllegalArgumentException("gpu-resource-limit")
@@ -20,6 +23,64 @@ internal object OverlayLifecycle {
         surface()
         return current()
     }
+
+    /** Off-thread encodes a preparation tries before running on the render thread, where the arena cannot move. */
+    const val OFF_THREAD_ATTEMPTS = 2
+
+    fun preparesInline(attempt: Int): Boolean = attempt >= OFF_THREAD_ATTEMPTS
+
+    enum class EncodeFailure {
+        /** The request's token was cancelled: drop the work quietly. */
+        WITHDRAW,
+        /** The loan went stale under the encode: encode again, inline once the attempts run out. */
+        RETRY,
+        /** The carried packet's pins left no room: release it, then encode again. */
+        RELEASE_CARRIED,
+        FAIL_RESOURCE,
+        /** A handle closed although the arena did not move and nothing cancelled: fail visibly, never hang. */
+        FAIL_CLOSED,
+        FAIL,
+    }
+
+    /**
+     * Why an encode failed, for a request still current. Rust maps a closed
+     * handle and a cancelled token to the same status, so the token decides:
+     * a cancelled token always withdraws, even when the arena also moved. A
+     * failure against a moved arena is a stale loan and retries. An inline
+     * encode never retries: nothing can move the arena under it, so a second
+     * failure there is real and the bound holds even if that ever changes.
+     */
+    fun encodeFailure(
+        tokenCancelled: Boolean,
+        inline: Boolean,
+        outOfMemory: Boolean,
+        cancelledStatus: Boolean,
+        moved: Boolean,
+        resourceFailure: Boolean,
+        carrying: Boolean,
+    ): EncodeFailure = when {
+        tokenCancelled -> EncodeFailure.WITHDRAW
+        outOfMemory -> EncodeFailure.FAIL_RESOURCE
+        !inline && (moved || cancelledStatus) -> EncodeFailure.RETRY
+        cancelledStatus -> EncodeFailure.FAIL_CLOSED
+        resourceFailure && carrying -> EncodeFailure.RELEASE_CARRIED
+        else -> EncodeFailure.FAIL
+    }
+
+    /**
+     * A swap-mode trio change with the same geometry keeps the packet on screen
+     * drawing the running swap until its replacement is uploaded. The editor, the
+     * wipe and a first presentation release it before preparing, as before.
+     */
+    fun carriesPacket(onScreen: OverlayRequest?, next: OverlayRequest, swap: Boolean): Boolean =
+        swap && onScreen != null && !onScreen.animateEdits && !next.animateEdits && onScreen.sameGeometry(next)
+
+    /**
+     * Chunk residency is what a worker encoded against when every key still has
+     * the handle it was lent: resident keys the same open handle, missing keys none.
+     */
+    fun residencyUnchanged(lent: Map<String, Long>, keys: Collection<String>, live: (String) -> Long?): Boolean =
+        keys.all { live(it) == lent[it] }
 
     fun retainGeometry(frameFailure: Boolean, cancelled: Boolean, sameGeometry: Boolean): Boolean =
         frameFailure || (cancelled && sameGeometry)
@@ -295,6 +356,82 @@ internal class PresentationLedger {
     fun clear() {
         frames.clear()
     }
+}
+
+/**
+ * What the render thread does about pending frames, by who drew them. TextureView's
+ * update listener runs before HWUI latches the buffer, so its timestamp is usually
+ * the previous frame's; a delayed re-read is what drains the ledger once frames stop.
+ * A carried frame (the old request still drawing the swap while the next trio
+ * prepares) is re-read too, but it can never report ready or fail the board.
+ */
+internal object OverlayConsumption {
+    enum class Presenter {
+        /** The view's current request: it reports ready and fails the board. */
+        CURRENT,
+        /** The old request drawing the running swap until its replacement installs. */
+        CARRIED,
+        /** Neither: superseded, hidden or destroyed. Nothing is observed. */
+        NONE,
+    }
+
+    enum class Observation {
+        NONE,
+        /** Re-read the texture timestamp shortly; the frame may be latched already. */
+        OBSERVE,
+        /** The current request's frame was never consumed: fail the board. */
+        FAIL,
+        /** A carried frame was never consumed: let the carried packet go, report nothing. */
+        STOP_CARRY,
+    }
+
+    enum class Accepted {
+        /** The frame left the ledger; nothing more to do. */
+        DROPPED,
+        /** A carried frame left the ledger: draw the next one, never report it. */
+        RESUME,
+        /** A current frame was presented: report ready once, then draw on. */
+        PRESENTED,
+    }
+
+    fun presenter(eligible: Boolean, carrying: Boolean): Presenter =
+        if (eligible) Presenter.CURRENT else if (carrying) Presenter.CARRIED else Presenter.NONE
+
+    fun observation(presenter: Presenter, wait: PresentationLedger.ConsumptionWait): Observation =
+        when {
+            presenter == Presenter.NONE || wait == PresentationLedger.ConsumptionWait.NONE -> Observation.NONE
+            wait == PresentationLedger.ConsumptionWait.RETRY -> Observation.OBSERVE
+            presenter == Presenter.CURRENT -> Observation.FAIL
+            else -> Observation.STOP_CARRY
+        }
+
+    /** [left] is whether the ledger released the frame as one of the presenting request's. */
+    fun accepted(presenter: Presenter, left: Boolean): Accepted =
+        when {
+            !left || presenter == Presenter.NONE -> Accepted.DROPPED
+            presenter == Presenter.CARRIED -> Accepted.RESUME
+            else -> Accepted.PRESENTED
+        }
+
+    /**
+     * A carry arms its re-read itself, when it starts and whenever a draw is
+     * refused for a full ledger: no later frame will arrive to do it. The current
+     * request keeps arming it from fence completion and update callbacks, as before.
+     */
+    fun armsOwnObservation(presenter: Presenter): Boolean = presenter == Presenter.CARRIED
+
+    /** The view's delayed re-read still applies: the current request, or a carry the view still allows. */
+    fun observationCurrent(matches: Boolean, carried: Boolean, matchesGeometry: Boolean): Boolean =
+        matches || (carried && matchesGeometry)
+
+    /**
+     * The view holds one pending re-read. A new one takes the slot when it is
+     * empty, or when the pending one is a carry's and the new one is the current
+     * request's (or a later carry's): a late carried re-read never displaces the
+     * request that replaced it, and the current request's never waits behind one.
+     */
+    fun <T> takesSlot(pending: T?, pendingCarried: Boolean, request: T, carried: Boolean): Boolean =
+        pending == null || (pendingCarried && (!carried || pending != request))
 }
 
 /** Aggregate residency; pinned entries cannot be evicted to hide excess use. */

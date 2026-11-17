@@ -66,6 +66,8 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private val drawing = AtomicBoolean(false)
     private val needsFrame = AtomicBoolean(false)
     private var consumptionObservation: Runnable? = null
+    private var consumptionObserved: OverlayRequest? = null
+    private var consumptionObservedCarried = false
     private var animationScheduled = false
     private var lastAnimationFrameNanos = 0L
     private var registered = false
@@ -319,14 +321,14 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         OverlayPacketMetrics.begin()
         OverlayRenderer.handler.post {
             preparationQueue.started()
-            try {
-                if(target.generation==request.generation)OverlayRenderer.prepare(target,request,cancel)
-            } finally {
+            // Runs once on the render thread, after any off-thread encode has returned.
+            val finished: ()->Unit={
                 if(activePreparation===cancel)activePreparation=null
                 cancel.close();OverlayPacketMetrics.end()
                 val retry=preparationQueue.finish(latest!=null && latest!=request)
                 if(latest!=null && retry)schedulePrepare()
             }
+            if(target.generation==request.generation)OverlayRenderer.prepare(target,request,cancel,finished) else finished()
         }
     }
 
@@ -402,26 +404,42 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         animationScheduled = false
     }
 
-    internal fun observeConsumption(target: OverlaySession, request: OverlayRequest) {
+    /**
+     * [carried]: [request] is the old request still drawing the swap while the
+     * next trio prepares. Its re-read runs while this view still allows that
+     * carry, and gives way to the current request's.
+     */
+    internal fun observeConsumption(target: OverlaySession, request: OverlayRequest, carried: Boolean = false) {
         main.post {
-            if (!matches(request) || session !== target || consumptionObservation != null)
+            if (session !== target || !observationCurrent(request, carried)) return@post
+            if (!OverlayConsumption.takesSlot(consumptionObserved, consumptionObservedCarried, request, carried))
                 return@post
+            cancelConsumptionObservation()
             // HWUI consumes the layer on RenderThread after TextureView's
             // synchronous update listener. Do not redraw; reread its timestamp.
             val observation = Runnable {
                 consumptionObservation = null
-                if (matches(request) && session === target) {
+                consumptionObserved = null
+                consumptionObservedCarried = false
+                if (session === target && observationCurrent(request, carried)) {
                     OverlayRenderer.consumed(target, target.texture.timestamp, request)
                 }
             }
             consumptionObservation = observation
+            consumptionObserved = request
+            consumptionObservedCarried = carried
             main.postDelayed(observation, 16)
         }
     }
 
+    private fun observationCurrent(request: OverlayRequest, carried: Boolean) =
+        OverlayConsumption.observationCurrent(matches(request), carried, matchesGeometry(request))
+
     private fun cancelConsumptionObservation() {
         consumptionObservation?.let { main.removeCallbacks(it) }
         consumptionObservation = null
+        consumptionObserved = null
+        consumptionObservedCarried = false
     }
 
     internal fun ready(request: OverlayRequest, metrics: RenderMetrics) {

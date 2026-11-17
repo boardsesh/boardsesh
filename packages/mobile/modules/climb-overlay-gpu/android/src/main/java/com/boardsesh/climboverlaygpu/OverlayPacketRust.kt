@@ -44,7 +44,10 @@ internal class PacketCancellation: Closeable {
     private val handle=PacketHandle(0)
     init { val result = GpuPacketBridge.createCancel();packetStatus(result[0].toInt());handle.id=result[1] }
     val id get() = handle.id
-    fun cancel() = GpuPacketBridge.cancel(id)
+    /** Set before Rust is told, so a CANCELLED status always finds it set. CLOSED never sets it. */
+    @Volatile var cancelled=false
+        private set
+    fun cancel() { cancelled=true;GpuPacketBridge.cancel(id) }
     override fun close() = handle.close()
 }
 internal object PacketContract {

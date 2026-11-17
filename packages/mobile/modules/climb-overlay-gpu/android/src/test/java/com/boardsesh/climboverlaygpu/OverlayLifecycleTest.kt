@@ -80,6 +80,100 @@ class OverlayLifecycleTest {
     }
 
     @Test
+    fun onlyASwapTrioChangeWithTheSameGeometryCarriesThePacketOnScreen() {
+        val onScreen = OverlayRequest("layout", "p1r13", "p0r13", "p2r13", 1.0, "first", 7, 3, false, false)
+        val swipe = onScreen.copy(frames = "p2r13", previous = "p1r13", next = "p3r43", center = 2.0,
+            requestId = "next", revision = 8)
+        assertTrue(OverlayLifecycle.carriesPacket(onScreen, swipe, swap = true))
+        assertFalse(OverlayLifecycle.carriesPacket(onScreen, swipe, swap = false))
+        assertFalse(OverlayLifecycle.carriesPacket(null, swipe, swap = true))
+        assertFalse(OverlayLifecycle.carriesPacket(onScreen.copy(animateEdits = true), swipe, swap = true))
+        assertFalse(OverlayLifecycle.carriesPacket(onScreen, swipe.copy(animateEdits = true), swap = true))
+        assertFalse(OverlayLifecycle.carriesPacket(onScreen, swipe.copy(config = "other-layout"), swap = true))
+        assertFalse(OverlayLifecycle.carriesPacket(onScreen, swipe.copy(generation = 4), swap = true))
+    }
+
+    @Test
+    fun anEncodeIsCurrentOnlyWhileEveryKeyKeepsTheHandleItWasLent() {
+        val lent = mapOf("a" to 1L, "b" to 2L)
+        val keys = listOf("a", "b", "c") // "c" was missing when lent.
+        assertTrue(OverlayLifecycle.residencyUnchanged(lent, keys) { lent[it] })
+        assertTrue(OverlayLifecycle.residencyUnchanged(lent, keys) { (lent + ("other" to 9L))[it] })
+        assertFalse(OverlayLifecycle.residencyUnchanged(lent, keys) { mapOf("a" to 1L)[it] }) // "b" evicted
+        assertFalse(OverlayLifecycle.residencyUnchanged(lent, keys) { (lent + ("b" to 5L))[it] }) // re-uploaded
+        assertFalse(OverlayLifecycle.residencyUnchanged(lent, keys) { (lent + ("c" to 7L))[it] }) // uploaded elsewhere
+        assertFalse(OverlayLifecycle.residencyUnchanged(lent, lent.keys) { emptyMap<String, Long>()[it] }) // trimmed
+    }
+
+    private fun encodeFailure(
+        tokenCancelled: Boolean = false,
+        attempt: Int = 0,
+        outOfMemory: Boolean = false,
+        cancelledStatus: Boolean = false,
+        moved: Boolean = false,
+        resourceFailure: Boolean = false,
+        carrying: Boolean = false,
+    ) = OverlayLifecycle.encodeFailure(tokenCancelled, OverlayLifecycle.preparesInline(attempt), outOfMemory,
+        cancelledStatus, moved, resourceFailure, carrying)
+
+    @Test
+    fun aHandleClosedUnderTheWorkerRetriesTheStillCurrentRequest() {
+        // Rust reports the closed chunk handle with the cancelled status; the token was never cancelled.
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(cancelledStatus = true, moved = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(attempt = 1, cancelledStatus = true, moved = true))
+        // Any other failure against a moved arena is a stale loan too, as before.
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(moved = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(moved = true, resourceFailure = true, carrying = true))
+    }
+
+    @Test
+    fun aCancelledTokenWithdrawsEvenWhenTheArenaAlsoMoved() {
+        for (attempt in 0..OverlayLifecycle.OFF_THREAD_ATTEMPTS) for (moved in listOf(true, false)) {
+            assertEquals(OverlayLifecycle.EncodeFailure.WITHDRAW,
+                encodeFailure(tokenCancelled = true, attempt = attempt, cancelledStatus = true, moved = moved))
+            assertEquals(OverlayLifecycle.EncodeFailure.WITHDRAW,
+                encodeFailure(tokenCancelled = true, attempt = attempt, outOfMemory = true, moved = moved))
+        }
+    }
+
+    @Test
+    fun aClosedHandleWithUnchangedResidencyRetriesThenFailsVisiblyInline() {
+        // Not expected: lent sessions are retained and only resident chunk handles close. Retry
+        // off-thread, and if the inline encode against a fresh loan still sees it, fail instead of hanging.
+        assertEquals(OverlayLifecycle.EncodeFailure.RETRY, encodeFailure(cancelledStatus = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL_CLOSED,
+            encodeFailure(attempt = OverlayLifecycle.OFF_THREAD_ATTEMPTS, cancelledStatus = true))
+    }
+
+    @Test
+    fun exhaustedAttemptsEncodeInlineAndAnInlineFailureNeverRetries() {
+        var attempt = 0
+        while (encodeFailure(attempt = attempt, cancelledStatus = true, moved = true) ==
+            OverlayLifecycle.EncodeFailure.RETRY) {
+            attempt++
+            assertTrue(attempt <= OverlayLifecycle.OFF_THREAD_ATTEMPTS)
+        }
+        assertEquals(OverlayLifecycle.OFF_THREAD_ATTEMPTS, attempt)
+        assertTrue(OverlayLifecycle.preparesInline(attempt))
+        val inline = OverlayLifecycle.OFF_THREAD_ATTEMPTS
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL, encodeFailure(attempt = inline, moved = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL_RESOURCE, encodeFailure(attempt = inline, outOfMemory = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL_RESOURCE, encodeFailure(outOfMemory = true, moved = true))
+        // The carried packet's release is tried, then a second resource failure fails the request.
+        assertEquals(OverlayLifecycle.EncodeFailure.RELEASE_CARRIED,
+            encodeFailure(attempt = inline, resourceFailure = true, carrying = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL, encodeFailure(attempt = inline, resourceFailure = true))
+        assertEquals(OverlayLifecycle.EncodeFailure.FAIL, encodeFailure())
+    }
+
+    @Test
+    fun anArenaThatKeepsMovingFallsBackToTheRenderThread() {
+        assertFalse(OverlayLifecycle.preparesInline(0))
+        assertFalse(OverlayLifecycle.preparesInline(OverlayLifecycle.OFF_THREAD_ATTEMPTS - 1))
+        assertTrue(OverlayLifecycle.preparesInline(OverlayLifecycle.OFF_THREAD_ATTEMPTS))
+    }
+
+    @Test
     fun aMemoryTrimKeepsTheArenaAPresentingBoardDrawsFrom() {
         var released = 0
         assertFalse(OverlayLifecycle.trim(presenting = true, release = { released++ }, recover = { fail("$it") }))
