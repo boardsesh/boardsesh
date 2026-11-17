@@ -4,6 +4,7 @@ import {
   StyleSheet,
   useWindowDimensions,
   PixelRatio,
+  Platform,
   type LayoutChangeEvent,
   type ViewProps,
   type ViewStyle,
@@ -97,8 +98,9 @@ type SwipeBoardCarouselProps = {
   onSwipeNext: () => void;
   onSwipePrevious: () => void;
   /**
-   * The board's spoken value, as the then-signposts word it on a climb that
-   * plays Up next: "Up next, 4 of 4, then Projects". Absent everywhere else.
+   * The board's spoken value: the climb on screen and where it sits, "Yoshi's
+   * Island, V5, 5 of 40", then Up next's stretch or the preview note. Used on
+   * Android only; see `boardAccessibility`.
    */
   accessibilityValueText?: string;
   /** The adjust actions' names when a step crosses into the list ("Next in Projects"); the plain ones otherwise. */
@@ -423,7 +425,14 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       accessibilityLabel: accessibilitySummary,
       accessibilityHint: t('mobile.boardAccessibility.adjustHint'),
       accessibilityState: { disabled: !enabled },
-      ...(accessibilityValueText ? { accessibilityValue: { text: accessibilityValueText } } : null),
+      // Not on iOS. VoiceOver reads an adjustable element's value the moment its
+      // increment returns, before the JS thread has changed the climb, and
+      // Fabric tells it nothing when the value changes after: it would say the
+      // climb that left, then the player's announcement of the new one. There
+      // the announcement alone says where a step went.
+      ...(accessibilityValueText && Platform.OS !== 'ios'
+        ? { accessibilityValue: { text: accessibilityValueText } }
+        : null),
       accessibilityActions: [
         ...(enabled && canSwipeNext
           ? [{ name: 'increment', label: nextActionLabel ?? t('mobile.boardAccessibility.next') }]

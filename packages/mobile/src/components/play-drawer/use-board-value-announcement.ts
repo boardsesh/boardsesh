@@ -5,7 +5,9 @@ import { announceQueued } from '../../lib/announce-queued';
  * Announces the board's value ("Yoshi's Island, V5, 5 of 40") once a step the
  * climber took has landed on its climb, so a swipe, an adjust or Next says
  * where it went wherever focus is. Queued, so it never cuts off what VoiceOver
- * is reading (a crossing's "Now in Projects" goes first).
+ * is reading (a crossing's "Now in Projects" goes first). On iOS this is the
+ * only place the value is said: the board carries none there, since VoiceOver
+ * would read it before the step had changed it (see `SwipeBoardCarousel`).
  *
  * Returns what to call with each step, before its landing renders. A step that
  * lands anywhere else (the queue refused it, a crewmate moved the climb) drops
