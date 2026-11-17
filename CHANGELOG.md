@@ -12,6 +12,8 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- See your week on Home: the days you climbed, your sends, and how many weeks you've kept it going ([#7714](https://github.com/boardsesh/boardsesh/pull/7714))
+  New personal bests show up on Home, one tap from the climb
 - Swiping between climbs, holds both climbs share now dim and return with the rest ([#7740](https://github.com/boardsesh/boardsesh/pull/7740))
 - New GPU acceleration switch in Settings > Board. Turn it off if the board flickers or stutters on your phone. ([#7744](https://github.com/boardsesh/boardsesh/pull/7744))
 - Swiping to the next climb now swaps only the holds that change, just like your wall. ([#7725](https://github.com/boardsesh/boardsesh/pull/7725))
@@ -28,6 +30,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Lit holds show again on the Aura board look on some Android phones, including the Galaxy S26 Ultra. ([#7753](https://github.com/boardsesh/boardsesh/pull/7753))
+- Swiping to the next climb fades its holds in smoothly, without the mid-fade stutter ([#7742](https://github.com/boardsesh/boardsesh/pull/7742))
 - Flicking back and forth through climbs no longer flashes the wall at full brightness ([#7750](https://github.com/boardsesh/boardsesh/pull/7750))
   Flick back mid-swipe and the wall fades straight back to your climb
   Flick past a climb and it stays dim on the wall as you go by

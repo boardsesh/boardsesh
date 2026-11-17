@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-11-17T20:00:35.587Z",
+  "generatedAt": "2026-11-17T21:21:21.920Z",
   "entries": [
+    {
+      "prNumber": 7753,
+      "category": "fixed",
+      "title": "Lit holds show again on the Aura board look on some Android phones, including the Galaxy S26 Ultra.",
+      "mergedAt": "2026-11-17T20:19:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7753"
+    },
+    {
+      "prNumber": 7714,
+      "category": "new",
+      "title": "See your week on Home: the days you climbed, your sends, and how many weeks you've kept it going",
+      "mergedAt": "2026-11-17T20:08:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7714",
+      "body": "New personal bests show up on Home, one tap from the climb"
+    },
+    {
+      "prNumber": 7742,
+      "category": "fixed",
+      "title": "Swiping to the next climb fades its holds in smoothly, without the mid-fade stutter",
+      "mergedAt": "2026-11-17T20:04:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7742"
+    },
     {
       "prNumber": 7750,
       "category": "fixed",
@@ -9858,6 +9880,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T20:19:49Z",
+      "sha": "1a52595646180af74fefc2fc3bebc9f4e5c4ffaa",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "4e92c0d05830fa462184294c5df41845ae452f7f"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-17T19:10:40Z",
