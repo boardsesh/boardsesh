@@ -448,7 +448,15 @@ readers the kept provider-security and first-password cores use,
 imports it since the private route went; B5 deletes it with the backend core),
 the `private-browser-v1` database profile, and
 `CURRENT_STORE_BROWSER_BINDING_MODE`, which the startup check for staged
-writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads.
+writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads. One dead branch
+also stays on phones: `isCancellation` in
+`packages/mobile/src/lib/error-reporting.ts` still drops a
+`BrowserBackendConsumerError` whose status is `superseded`, and
+`src/lib/__tests__/error-reporting.test.ts` keeps a stand-in class for it.
+A5 deleted the `browser-backend-consumer` module that defined the error, so
+nothing throws it, but the file has no `.web` suffix and ships to phones by
+OTA, so Phase A leaves it alone. B5 deletes the branch, the stand-in class and
+the test case that uses it.
 
 Kept, per #7596: BA-04 cutoffs, SID denials and the legacy bridge; BA-06
 native and Garmin work; the backend provider and first-password cores. Some
