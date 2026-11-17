@@ -39,6 +39,7 @@ vi.mock('@boardsesh/led-controller', async (original) => ({
 }));
 
 import { useSprayLedPreview } from '../use-spray-led-preview';
+import { LedControllerError } from '@boardsesh/led-controller';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -64,6 +65,48 @@ afterEach(() => {
 });
 
 describe('spray LED preview lifecycle', () => {
+  it('acknowledges consecutive physical indices together for a paired assignment', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showPair(4)).toBe('pair'));
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([4, 5]);
+    expect(result.current.state).toBe('lit');
+  });
+
+  it('restores the current single LED when a pair exceeds the strip', async () => {
+    mocks.show.mockRejectedValueOnce(new LedControllerError('invalid-indices'));
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showPair(4)).toBe('single'));
+    expect(mocks.show.mock.calls).toEqual([[[4, 5]], [[4]]]);
+    expect(result.current.state).toBe('lit');
+  });
+
+  it('rejects a late pair acknowledgement after a background transition', async () => {
+    let acknowledge!: (completed: boolean) => void;
+    mocks.show.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    let pending!: Promise<string>;
+    act(() => {
+      pending = result.current.showPair(4);
+    });
+    await act(async () => mocks.background?.('background'));
+    await act(async () => acknowledge(true));
+    expect(await pending).toBe('unavailable');
+    expect(result.current.state).toBe('idle');
+  });
+
+  it('does not restore a failed pair after another preview owns the wall', async () => {
+    mocks.isOwner.mockReturnValue(false);
+    mocks.show.mockRejectedValueOnce(new LedControllerError('invalid-indices'));
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showPair(4)).toBe('unavailable'));
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
   it('never attaches old settings when credentials change during driver loading', async () => {
     let finishLoading!: (driver: object) => void;
     mocks.loadDriver.mockReturnValueOnce(

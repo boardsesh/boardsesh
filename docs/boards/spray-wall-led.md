@@ -96,8 +96,11 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    lighting. An LED linked by hand leaves the hold the geometry gave it.
    **Next hold without LEDs** steps through the red holds top to bottom.
    LEDs that belong to no hold get a red dashed ring, and **Next LED without a
-   hold** picks them one by one, the same way; tapping a hold then adds the
-   picked LED to it. The hold count and picker include holds whose centers appear
+   hold** steps through the unassigned LEDs in the same order. A pair counts
+   as one stop. Both members are circled, and its wired LEDs light together.
+   Tap a hold to link the unassigned members of the selection to it. Any
+   existing link on the other member of a pair is kept.
+   The hold count and picker include holds whose centers appear
    in the rectified photo. **Back to automatic** drops a hold's link, and Undo
    reverts link edits. Before
    the cable exists the LEDs have no physical index, so the wall cannot light
@@ -122,10 +125,15 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    LED does not branch, reverse or create another start. After an explicit cut,
    drawing extends the last cable section. **Lay cable** stays available with
    a complete route. To reroute already wired LEDs, choose **Select two LEDs**
-   to cut a connection or reconnect free endpoints. **Light and tap** is
-   available while some LEDs are still unwired. It assigns a marker only after the
-   controller acknowledges that physical LED; pending or failed writes cannot
-   change the cable. Skip respects both the remaining gap and total skip limits.
+   to cut the connection between two selections or reconnect free endpoints.
+   Either member selects both LEDs of a pair, and the pair counts as one selection.
+   The editor uses physical connections at the boundaries between selections.
+   **Light and tap** is available while some LEDs are still unwired. Tapping a
+   pair adds its unwired LEDs in sequence after the controller confirms their
+   physical numbers. The lit number advances by one per added LED. Skips
+   count before the first added LED and respect the gap and total limits.
+   If the controller cannot light both LEDs of an unwired pair, the current
+   number stays available. Undo removes the entire addition together.
    A cut keeps every LED on a section. Purple dots mark LEDs and faint orange
    rings mark holes. Turquoise lines show the cable and arrows show its direction.
    When both members of a pair follow one another on the cable without a skip

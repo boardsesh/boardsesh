@@ -296,6 +296,52 @@ describe('holds and LEDs step', () => {
     expect(preview.show).toHaveBeenLastCalledWith([2, 3]);
   });
 
+  const pairAndSingle: TnutLayout = {
+    ...initial,
+    ledPositions: [
+      ...initial.ledPositions!,
+      { id: 'd', x: 0.4, y: 0.6 },
+      { id: 'e', x: 0.5, y: 0.6 },
+      { id: 'f', x: 0.6, y: 0.6 },
+    ],
+    ledGroups: [
+      ['a', 'b'],
+      ['d', 'e'],
+    ],
+    wiring: { direction: 'custom', startCorner: 'tl', paths: [['a', 'b', 'c', 'd', 'e', 'f']], skips: [] },
+  };
+
+  it('cycles a free pair once, lights both LEDs and assigns both in one edit', () => {
+    render(<Harness start={pairAndSingle} />);
+    fireEvent.click(button('holdLedsNextFreeLed'));
+    expect(overlay().selected).toEqual(['d', 'e']);
+    expect(preview.show).toHaveBeenLastCalledWith([3, 4]);
+    expect(screen.getByText('sprayLedSetup.holdLedsFreePairSelected')).toBeTruthy();
+
+    fireEvent.click(button('holdLedsNextFreeLed'));
+    expect(overlay().selected).toEqual(['f']);
+    fireEvent.click(button('holdLedsNextFreeLed'));
+    expect(overlay().selected).toEqual(['d', 'e']);
+
+    tap(right);
+    expect(changes).toEqual([{ holdLeds: [{ holdId: 20, ledIds: ['c', 'd', 'e'] }] }]);
+    expect(overlay().unmappedHoles.map((led) => led.id)).toEqual(['f']);
+  });
+
+  it('finds a partly linked pair without transferring the already assigned LED', () => {
+    render(<Harness start={{ ...pairAndSingle, holdLeds: [{ holdId: 10, ledIds: ['a', 'b', 'd'] }] }} />);
+    fireEvent.click(button('holdLedsNextFreeLed'));
+    expect(overlay().selected).toEqual(['d', 'e']);
+    expect(preview.show).toHaveBeenLastCalledWith([3, 4]);
+    tap(right);
+    expect(changes.at(-1)).toEqual({
+      holdLeds: [
+        { holdId: 10, ledIds: ['a', 'b', 'd'] },
+        { holdId: 20, ledIds: ['c', 'e'] },
+      ],
+    });
+  });
+
   it('picks another hold when a tap in LED mode misses every LED', () => {
     render(<Harness />);
     tap(left);

@@ -71,6 +71,7 @@ const preview = vi.hoisted(() => ({
   state: 'idle',
   error: null,
   show: vi.fn(),
+  showPair: vi.fn(),
   stop: vi.fn(),
   lightAll: vi.fn(),
   chase: vi.fn(),
@@ -364,6 +365,7 @@ beforeEach(() => {
       }),
   );
   preview.show.mockReset().mockResolvedValue(true);
+  preview.showPair.mockReset().mockResolvedValue('pair');
   preview.available = true;
   preview.state = 'lit';
   preview.error = null;

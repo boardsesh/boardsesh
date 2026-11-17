@@ -133,11 +133,10 @@ export function useSprayLedPreviewForSettings(
       setChaseIndex(null);
       try {
         const completed = await operation(current, generation);
-        if (current.active && current.generation === generation) {
-          setState(completed ? finishedState : 'idle');
-          // A finished or interrupted row test no longer lights one LED.
-          setChaseIndex(null);
-        }
+        if (!current.active || current.generation !== generation) return false;
+        setState(completed ? finishedState : 'idle');
+        // A finished or interrupted row test no longer lights one LED.
+        setChaseIndex(null);
         return completed;
       } catch (failure) {
         if (current.active && current.generation === generation) {
@@ -153,6 +152,28 @@ export function useSprayLedPreviewForSettings(
   const show = useCallback(
     (indices: readonly number[]) =>
       run('sending', (current) => current.session.show(indices), indices.length ? 'lit' : 'idle'),
+    [run],
+  );
+  /** Confirm consecutive pair indices, restoring the known single LED if the pair exceeds the strip. */
+  const showPair = useCallback(
+    async (firstIndex: number): Promise<'pair' | 'single' | 'unavailable'> => {
+      let restoredSingle = false;
+      const completed = await run(
+        'sending',
+        async (current, generation) => {
+          try {
+            return await current.session.show([firstIndex, firstIndex + 1]);
+          } catch (failure) {
+            if (!(failure instanceof LedControllerError) || failure.code !== 'invalid-indices') throw failure;
+            if (!current.active || current.generation !== generation || !current.session.isOwner()) return false;
+            restoredSingle = await current.session.show([firstIndex]);
+            return restoredSingle;
+          }
+        },
+        'lit',
+      );
+      return !completed ? 'unavailable' : restoredSingle ? 'single' : 'pair';
+    },
     [run],
   );
   /** Without indices, test the entire controller strip. The editor supplies its wired photo LEDs. */
@@ -207,5 +228,5 @@ export function useSprayLedPreviewForSettings(
     [run],
   );
 
-  return { available, state, error, allLit, chaseIndex, show, lightAll, clear, stop, chase };
+  return { available, state, error, allLit, chaseIndex, show, showPair, lightAll, clear, stop, chase };
 }

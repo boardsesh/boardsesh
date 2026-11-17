@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, useState, type ReactElement, type ReactNode } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, ledPairs, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
@@ -11,7 +11,7 @@ const controls = vi.hoisted(() => ({
   confirm: vi.fn(),
   changed: vi.fn(),
   layout: null as TnutLayout | null,
-  preview: { available: false, show: vi.fn(), stop: vi.fn(), error: null },
+  preview: { available: false, state: 'lit', show: vi.fn(), showPair: vi.fn(), stop: vi.fn(), error: null },
 }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -30,17 +30,17 @@ vi.mock('../../../lib/spray/use-spray-led-preview', () => ({
   useSprayLedPreview: () => controls.preview,
 }));
 vi.mock('../SprayPhotoStage', () => ({
-  SprayPhotoStage: ({ canvas }: { canvas: typeof controls.canvas }) => {
+  SprayPhotoStage: ({ canvas, overlayTools }: { canvas: typeof controls.canvas; overlayTools?: ReactNode }) => {
     controls.canvas = canvas;
-    return null;
+    return createElement('div', null, overlayTools);
   },
 }));
 vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null, SPRAY_CABLE_COLOR: '' }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../PressableSurface', () => ({ PressableSurface: () => null }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
+  Button: ({ title, onPress, disabled }: { title: string; onPress?: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: onPress, disabled }, title),
 }));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BuilderTextInput: ({ value, onChangeText }: { value: string; onChangeText: (text: string) => void }) =>
@@ -55,7 +55,8 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../SprayPointToolbar', () => ({
   SprayPhotoToolButton: () => null,
-  SprayUndoButton: () => null,
+  SprayUndoButton: ({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: onPress, disabled }, 'overlay undo'),
   SprayPointToolbar: ({
     onModeChange,
     onUndo,
@@ -98,7 +99,13 @@ const original: TnutLayout = {
     skips: [{ from: 'a', to: 'b', count: 4 }],
   },
 };
-function Editor({ initial = original, kind = 'positions' }: { initial?: TnutLayout; kind?: 'positions' | 'skips' }) {
+function Editor({
+  initial = original,
+  kind = 'positions',
+}: {
+  initial?: TnutLayout;
+  kind?: 'positions' | 'wiring' | 'skips';
+}) {
   const [layout, setLayout] = useState(initial);
   controls.layout = layout;
   return (
@@ -123,6 +130,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   controls.canvas = null;
   controls.preview.available = false;
+  controls.preview.state = 'lit';
+  controls.preview.show.mockReset().mockResolvedValue(true);
+  controls.preview.showPair.mockReset().mockResolvedValue('pair');
 });
 describe('LED position edits with cable work', () => {
   it('does not transfer a removed manual LED link when Add reuses its id, and Undo restores it', () => {
@@ -305,6 +315,109 @@ describe('LED pairs behind a hold', () => {
     expect(controls.layout?.ledGroups).toEqual([['e', 'f']]);
     const saved = readTnutLayout(JSON.parse(JSON.stringify(controls.layout)));
     expect(saved?.ledGroups).toEqual([['e', 'f']]);
+  });
+});
+
+describe('paired cable actions', () => {
+  const grouped: TnutLayout = {
+    ...original,
+    ledPositions: [
+      { id: 'a', x: 0.2, y: 0.2 },
+      { id: 'b', x: 0.4, y: 0.2 },
+      { id: 'c', x: 0.2, y: 0.7 },
+      { id: 'd', x: 0.4, y: 0.7 },
+      { id: 'e', x: 0.8, y: 0.8 },
+    ],
+    ledGroups: [
+      ['a', 'b'],
+      ['c', 'd'],
+    ],
+    wiring: {
+      ...original.wiring!,
+      paths: [['b', 'a', 'd', 'c', 'e']],
+      skips: [{ from: 'a', to: 'd', count: 2 }],
+    },
+  };
+  const tap = (x: number, y: number) => act(() => controls.canvas?.onTap?.({ x, y }, 400, 400));
+  const selected = () => {
+    const overlay = controls.canvas?.renderOverlay?.(
+      400,
+      400,
+      { value: 1 } as never,
+      { value: 0 } as never,
+      { value: 0 } as never,
+      { value: null } as never,
+    ) as ReactElement<{ selected: string[] }>;
+    return overlay.props.selected;
+  };
+
+  it('selects two pairs and cuts only the real boundary between their units', () => {
+    render(<Editor initial={grouped} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectLeds'));
+    tap(0.4, 0.2);
+    expect(selected()).toEqual(['a', 'b']);
+    tap(0.2, 0.2);
+    expect(selected()).toEqual([]);
+    tap(0.4, 0.2);
+    tap(0.2, 0.7);
+    expect(selected()).toEqual(['a', 'b', 'c', 'd']);
+    fireEvent.click(screen.getByText('sprayLedSetup.cutCable'));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['b', 'a'],
+      ['d', 'c', 'e'],
+    ]);
+    fireEvent.click(screen.getByText('sprayLedSetup.connectCable'));
+    expect(controls.layout?.wiring?.paths).toEqual(grouped.wiring?.paths);
+  });
+
+  it('wires a pair atomically, skips before it, advances twice and undoes both LEDs', async () => {
+    controls.preview.available = true;
+    render(<Editor initial={{ ...grouped, wiring: { ...original.wiring!, paths: [], skips: [] } }} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await act(async () => {});
+    tap(0.4, 0.2);
+    await waitFor(() => expect(controls.layout?.wiring?.paths).toEqual([['b', 'a']]));
+    expect(controls.preview.showPair).toHaveBeenCalledExactlyOnceWith(4);
+    expect(controls.layout?.wiring?.initialSkip).toBe(4);
+    expect(controls.preview.show).toHaveBeenLastCalledWith([6]);
+    expect(controls.changed).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([]);
+    expect(controls.layout?.wiring?.initialSkip).toBe(3);
+  });
+
+  it('discards a delayed pair acknowledgement after changing the cable tool', async () => {
+    controls.preview.available = true;
+    let acknowledge!: (result: string) => void;
+    controls.preview.showPair.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    render(<Editor initial={{ ...grouped, wiring: { ...original.wiring!, paths: [], skips: [] } }} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await act(async () => {});
+    tap(0.2, 0.2);
+    expect(controls.preview.showPair).toHaveBeenCalledWith(3);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectLeds'));
+    await act(async () => acknowledge('pair'));
+    expect(controls.changed).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cable after a rejected pair and accepts a valid single assignment', async () => {
+    controls.preview.available = true;
+    controls.preview.showPair.mockResolvedValueOnce('single');
+    render(<Editor initial={{ ...grouped, wiring: { ...original.wiring!, paths: [], skips: [] } }} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await act(async () => {});
+    tap(0.2, 0.2);
+    await screen.findByText('sprayLedSetup.lightAndTapPairFailed');
+    expect(controls.changed).not.toHaveBeenCalled();
+    tap(0.8, 0.8);
+    expect(controls.layout?.wiring?.paths).toEqual([['e']]);
   });
 });
 
