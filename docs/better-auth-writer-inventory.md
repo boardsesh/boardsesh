@@ -57,6 +57,7 @@ The order is gate, then `users`, then the climber's other rows.
 | Batch system users, legacy mode | `packages/db/src/jobs/system-user.ts:31` | No gate | Documented legacy branch: the worker login has no auth grants to read the manifest; `CURRENT_STORE_BATCH_SYSTEM_USERS_MODE=backend-staging` routes it through the backend. The real fence is the role cutover (#7430) |
 | Location sync owner, legacy mode | `packages/location-sync/src/upsert.ts:92` | No gate | Documented legacy branch, same reason; `CURRENT_STORE_LOCATION_SYNC_MODE` |
 | Fixtures | `db/scripts/create-test-user.ts`, `seed-social.ts`, `seed-ios-performance.ts`, `backend/src/scripts/seed-instructional-video.ts`, `db/src/testing/dedup-replay.ts` | Local-target guards | Out of scope: disposable databases only |
+| Password guess counter (#7656) | `auth/password-guess-windows.ts` (reserve, give back, clear, prune of `auth_password_guess_windows`) | No gate | Out of scope: counts rejected passwords by keyed email digest or device token id; no identity, credential or user id. It fails open after 250 ms, so it must never wait on the gate |
 | Expired replay-record cleanup | `current-store/command-context.ts`, `authority/*-maintenance.ts` | Deletes expired command and receipt records | Out of scope: no identity column |
 
 `scripts/__tests__/better-auth-boundary.test.ts` ("identity writer catalog")
