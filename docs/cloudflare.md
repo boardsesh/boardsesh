@@ -343,15 +343,9 @@ and a hostname mismatch exits 0 too. With the flag both exit 1.
 
 ## api.boardsesh.com, the partner API host
 
-This name is reserved for the partner API (#6981) and is not live. `API_HOSTNAME` in
-`infra/cloudflare/config.ts` names it, but it is deliberately absent from `dnsRecords`, so `cf:apply` neither creates
-nor requires it. `deploy-cloudflare` applies the config on every merge that touches it, which rules out both record
-shapes for now:
-
-- A `proxied-only` entry makes the apply throw while the record is missing, and a failed `deploy-cloudflare` holds
-  back the web deploy.
-- A `full` entry needs the CNAME target Railway prints when the custom domain is registered, and would create the
-  record on merge.
+The partner API host (#6981). `API_HOSTNAME` in `infra/cloudflare/config.ts` names it, and `dnsRecords` holds it as a
+fully managed proxied CNAME to `API_RAILWAY_CNAME_TARGET`, the target Railway printed when the owner registered the
+custom domain on `boardsesh-backend` on 2026-11-17.
 
 The backend already guards the name. For `Host: api.boardsesh.com` it answers `GET /health` and returns 404 for every
 other request, and it refuses WebSocket upgrades (`packages/backend/src/handlers/api-host.ts`). The partner OAuth routes
@@ -359,7 +353,7 @@ other request, and it refuses WebSocket upgrades (`packages/backend/src/handlers
 that filter, and only when `PARTNER_OAUTH_MODE` is not `off`. See
 [Routes and the mode switch](./integration-platform.md#routes-and-the-mode-switch).
 
-To turn it on, as the owner:
+How it was turned on, and how to redo it after re-registering the domain:
 
 1. Add `api.boardsesh.com` as a custom domain on the backend service in Railway. Railway prints the CNAME target.
 2. Create the TXT record `_railway-verify.api.boardsesh.com` in the Cloudflare dashboard, because `cf:apply` does not
