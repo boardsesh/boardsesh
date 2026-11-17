@@ -242,6 +242,42 @@ describe('public NextAuth App Router password delegation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(legacyAuthorize).not.toHaveBeenCalled();
   });
+  describe('the client address sent to the backend', () => {
+    async function sentClientAddress(response: Promise<Response>, fetchMock: ReturnType<typeof backendResponse>) {
+      expect((await response).status).toBe(401);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const init = fetchMock.mock.calls[0][1];
+      if (typeof init?.body !== 'string') throw new Error('Expected serialized command');
+      return (JSON.parse(init.body) as { clientAddress?: string }).clientAddress;
+    }
+
+    it('is the visitor a Cloudflare edge vouches for', async () => {
+      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+      vi.stubGlobal('fetch', fetchMock);
+      expect(await sentClientAddress(passwordFromVisitor(), fetchMock)).toBe(clientAddress);
+    });
+
+    it('is the whole IPv6 visitor address; the backend groups it by /64', async () => {
+      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+      vi.stubGlobal('fetch', fetchMock);
+      expect(await sentClientAddress(passwordFromVisitor('2001:db8:7:8::42'), fetchMock)).toBe('2001:db8:7:8::42');
+    });
+
+    it('is left out for a direct caller that forges a Cloudflare hop and visitor header', async () => {
+      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+      vi.stubGlobal('fetch', fetchMock);
+      const spoofed = password(`${CLOUDFLARE_EDGE}, ${clientAddress}`, selected.email, {
+        'CF-Connecting-IP': '203.0.113.200',
+      });
+      expect(await sentClientAddress(spoofed, fetchMock)).toBeUndefined();
+    });
+
+    it('is left out when the request carries no forwarding headers', async () => {
+      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+      vi.stubGlobal('fetch', fetchMock);
+      expect(await sentClientAddress(password(''), fetchMock)).toBeUndefined();
+    });
+  });
   // Legacy sign-in runs bcrypt on the web process for every address, unknown ones
   // included, so one client must not be able to fill its event loop.
   it('never limits right passwords in legacy mode: 20 sign-ins from one visitor all succeed', async () => {

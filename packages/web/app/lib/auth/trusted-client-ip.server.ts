@@ -54,9 +54,31 @@ export function trustedClientRateLimitKey(request: Request): string {
 }
 
 /**
- * The visitor's own address, but only when a Cloudflare edge vouches for it:
- * the last `X-Forwarded-For` hop is a Cloudflare edge and `CF-Connecting-IP`
- * holds a usable address. Otherwise null.
+ * The visitor's address, exactly as Cloudflare reported it, when a Cloudflare
+ * edge vouches for it: the last `X-Forwarded-For` hop is a Cloudflare edge and
+ * `CF-Connecting-IP` holds a usable address. Otherwise null. Not grouped: an
+ * IPv6 visitor keeps its whole address, for a caller that groups by `/64` itself.
+ *
+ * Production reaches us as browser, Cloudflare (www is a proxied record in
+ * infra/cloudflare/config.ts), the Railway edge, then this server. A caller
+ * can also skip Cloudflare and hit the Railway domain directly. Railway's edge
+ * appends the peer it saw as the last hop. That was checked for the backend
+ * service on 2026-11-10, not yet for this one (docs/better-auth-web-password-delegation.md).
+ * Each way that check can come out fails closed here:
+ * - Railway appends the peer: a direct caller's last hop is its own address, so
+ *   no `CF-Connecting-IP` it writes is believed.
+ * - Railway appends its own address instead: no last hop is ever a Cloudflare
+ *   edge, so this is always null.
+ * Only an ingress that appends nothing would let a caller choose the last hop.
+ */
+export function cloudflareVouchedVisitorAddress(request: Request): string | null {
+  const lastHop = normalizeIpAddress(request.headers.get('x-forwarded-for')?.split(',').at(-1));
+  if (!lastHop || !isCloudflareEdgeAddress(lastHop)) return null;
+  return normalizeIpAddress(request.headers.get('cf-connecting-ip') ?? undefined) ?? null;
+}
+
+/**
+ * The bucket of the visitor {@link cloudflareVouchedVisitorAddress} returns, or null.
  *
  * `trustedClientRateLimitKey` falls back to values every caller can share: the
  * constant `unknown` with no forwarded hop, one fixed bucket for an edge request
@@ -67,9 +89,7 @@ export function trustedClientRateLimitKey(request: Request): string {
  * every visitor in one bucket keys on this instead and skips when it is null.
  */
 export function cloudflareVisitorRateLimitKey(request: Request): string | null {
-  const lastHop = normalizeIpAddress(request.headers.get('x-forwarded-for')?.split(',').at(-1));
-  if (!lastHop || !isCloudflareEdgeAddress(lastHop)) return null;
-  const visitor = normalizeIpAddress(request.headers.get('cf-connecting-ip') ?? undefined);
+  const visitor = cloudflareVouchedVisitorAddress(request);
   return visitor ? clientBucket(visitor) : null;
 }
 

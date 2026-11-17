@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
-import { stagedPasswordClientKey, trustedClientRateLimitKey } from '../trusted-client-ip.server';
+import {
+  cloudflareVouchedVisitorAddress,
+  stagedPasswordClientKey,
+  trustedClientRateLimitKey,
+} from '../trusted-client-ip.server';
 
 const CLOUDFLARE_EDGE = '172.70.1.2';
 const OTHER_CLOUDFLARE_EDGE = '162.158.4.5';
@@ -86,6 +90,55 @@ describe('trustedClientRateLimitKey', () => {
   ];
   it.each(unreadableForwardedFor)('shares one bucket when no last hop can be read: %j', (headers) => {
     expect(trustedClientRateLimitKey(requestWith(headers))).toBe('unknown');
+  });
+});
+
+describe('cloudflareVouchedVisitorAddress', () => {
+  it('returns the visitor a Cloudflare edge reports, ignoring caller-written earlier hops', () => {
+    const address = cloudflareVouchedVisitorAddress(
+      requestWith({
+        'X-Forwarded-For': `${FORGED}, ${OTHER_CLOUDFLARE_EDGE}, ${CLOUDFLARE_EDGE}`,
+        'CF-Connecting-IP': VISITOR,
+      }),
+    );
+    expect(address).toBe(VISITOR);
+  });
+
+  it('never trusts a direct-origin caller, whatever Cloudflare header or earlier edge hop it forged', () => {
+    const address = cloudflareVouchedVisitorAddress(
+      requestWith({
+        'X-Forwarded-For': `${CLOUDFLARE_EDGE}, ${VISITOR}`,
+        'CF-Connecting-IP': FORGED,
+      }),
+    );
+    expect(address).toBeNull();
+  });
+
+  it('keeps the whole IPv6 address, so the backend can group it by /64 itself', () => {
+    const address = cloudflareVouchedVisitorAddress(
+      requestWith({ 'X-Forwarded-For': CLOUDFLARE_EDGE, 'CF-Connecting-IP': '2001:0DB8:1:2:AAAA::1' }),
+    );
+    expect(address).toBe('2001:0db8:1:2:aaaa::1');
+  });
+
+  it('reads an IPv4-mapped visitor as the dotted address', () => {
+    expect(
+      cloudflareVouchedVisitorAddress(
+        requestWith({ 'X-Forwarded-For': CLOUDFLARE_EDGE, 'CF-Connecting-IP': `::ffff:${VISITOR}` }),
+      ),
+    ).toBe(VISITOR);
+  });
+
+  const noVouchedVisitor: Record<string, string>[] = [
+    {},
+    { 'CF-Connecting-IP': VISITOR },
+    { 'X-Forwarded-For': CLOUDFLARE_EDGE },
+    { 'X-Forwarded-For': CLOUDFLARE_EDGE, 'CF-Connecting-IP': 'not-an-ip' },
+    { 'X-Forwarded-For': `${CLOUDFLARE_EDGE}, `, 'CF-Connecting-IP': VISITOR },
+    { 'X-Forwarded-For': 'fd12:3456::1', 'CF-Connecting-IP': VISITOR },
+  ];
+  it.each(noVouchedVisitor)('returns null without a Cloudflare-vouched visitor: %j', (headers) => {
+    expect(cloudflareVouchedVisitorAddress(requestWith(headers))).toBeNull();
   });
 });
 
