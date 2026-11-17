@@ -80,17 +80,16 @@ function mountHeaderFrames() {
   });
   const { getByTestId, rerender } = render(createElement(SwipeableHeader, props(0)));
   return {
-    frame(anchor: number, offset: number, centerPage = 0) {
+    frame: (anchor: number, offset: number, centerPage = 0) => {
       pager.anchorPage.value = anchor;
       pager.translateX.value = offset;
       rerender(createElement(SwipeableHeader, props(centerPage)));
     },
-    style(page: number) {
-      return JSON.parse(getByTestId(`header-${page}`).parentElement!.dataset.style!)[1] as {
+    style: (page: number) =>
+      JSON.parse(getByTestId(`header-${page}`).parentElement!.dataset.style!)[1] as {
         opacity: number;
         transform: { translateX: number }[];
-      };
-    },
+      },
   };
 }
 
