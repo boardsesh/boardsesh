@@ -20,6 +20,7 @@ vi.mock('../SprayPhotoStage', () => ({
   },
 }));
 vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null }));
+vi.mock('../SprayPointToolbar', () => ({ SprayPhotoToolButton: () => null, SprayUndoButton: () => null }));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({
     options,
@@ -42,7 +43,10 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { count?: number }) => (options?.count === undefined ? key : `${key}:${options.count}`),
+    t: (key: string, options?: { count?: number; linked?: number; total?: number }) => {
+      if (options?.total !== undefined) return `${key}:${options.linked}/${options.total}`;
+      return options?.count === undefined ? key : `${key}:${options.count}`;
+    },
   }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -93,13 +97,13 @@ const holds = [
   { id: 20, cx: 400, cy: 210, r: 35 },
 ];
 const changes: Partial<TnutLayout>[] = [];
-function Harness({ start = initial }: { start?: TnutLayout }) {
+function Harness({ start = initial, wallHolds = holds }: { start?: TnutLayout; wallHolds?: typeof holds }) {
   const [layout, setLayout] = useState(start);
   return (
     <SprayHoldLedStep
       wallUuid="wall"
       layout={layout}
-      holds={holds}
+      holds={wallHolds}
       source={source}
       photoUri="file:///photo"
       width={400}
@@ -127,6 +131,7 @@ function overlay() {
   ) as ReactElement<{
     selected: string[];
     selectedHoldIds: number[];
+    holdRings: { id: number }[];
     unmappedHoldIds: number[];
     unmappedHoles: { id: string }[];
   }>;
@@ -143,6 +148,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('holds and LEDs step', () => {
+  it('counts and cycles holds that appear at least partly in the rectified photo', () => {
+    render(
+      <Harness wallHolds={[...holds, { id: 30, cx: -20, cy: 500, r: 30 }, { id: 40, cx: -50, cy: 100, r: 20 }]} />,
+    );
+    expect(overlay().holdRings.map((ring) => ring.id)).toEqual([10, 20, 30]);
+    expect(screen.getByText('sprayLedSetup.holdLedsSummary:2/3')).toBeTruthy();
+    fireEvent.click(button('holdLedsNextUnmapped'));
+    expect(overlay().selectedHoldIds).toEqual([30]);
+  });
+
   it('shows a lighting error and retries only on an explicit selection or retry press', () => {
     const rendered = render(<Harness />);
     expect(preview.show).not.toHaveBeenCalled();

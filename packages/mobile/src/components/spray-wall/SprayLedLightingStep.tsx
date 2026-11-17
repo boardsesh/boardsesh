@@ -16,6 +16,7 @@ import { Button } from '../Button';
 import { Text } from '../Text';
 import { SegmentedControl } from '../SegmentedControl';
 import { SprayPhotoStage } from './SprayPhotoStage';
+import { SprayPhotoToolButton } from './SprayPointToolbar';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { sprayHoldRings } from './spray-hold-rings';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
@@ -44,8 +45,11 @@ export function SprayLedLightingStep({
   const preview = useSprayLedPreview(wallUuid);
   const [kind, setKind] = useState<'holes' | 'holds'>('holes');
   const [selected, setSelected] = useState<number[]>([]);
+  const [selectionLighting, setSelectionLighting] = useState(true);
   const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
   const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
+  const visibleIds = useMemo(() => new Set(rings.map((ring) => ring.id)), [rings]);
+  const visibleHolds = useMemo(() => holds.filter((hold) => visibleIds.has(hold.id)), [holds, visibleIds]);
   const entries = kind === 'holes' ? mapping.holes : mapping.holds;
   const selection = new Set(selected);
   const chosen = entries.filter((entry) => selection.has('holeIndex' in entry ? entry.holeIndex : entry.holdId));
@@ -61,7 +65,7 @@ export function SprayLedLightingStep({
     [mapping, layout.holes],
   );
   // Selecting holds or holes lights them straight away; clearing the selection turns them off.
-  const indicesKey = indices.join(',');
+  const indicesKey = selectionLighting ? indices.join(',') : '';
   const lastLit = useRef('');
   const { available, show, stop } = preview;
   useEffect(() => {
@@ -77,6 +81,7 @@ export function SprayLedLightingStep({
     [layout.wiring],
   );
   const chasing = typeof preview.chaseIndex === 'number';
+  const testingStrip = preview.allLit || preview.state === 'chasing';
   const chaseLedId = typeof preview.chaseIndex === 'number' ? ledIdByIndex.get(preview.chaseIndex) : undefined;
   const litLedIds = preview.allLit
     ? (layout.ledPositions ?? []).map((led) => led.id)
@@ -84,7 +89,9 @@ export function SprayLedLightingStep({
       ? chaseLedId === undefined
         ? []
         : [chaseLedId]
-      : selectedLedIds;
+      : selectionLighting
+        ? selectedLedIds
+        : [];
   /** Light all and the row test replace the selection on the wall, so they clear it on screen too. */
   function clearSelection() {
     setSelected([]);
@@ -96,41 +103,51 @@ export function SprayLedLightingStep({
     { key: 'holds' as const, label: t('sprayLedSetup.selectHolds') },
   ];
   function selectKind(next: 'holes' | 'holds') {
+    if (next === kind) return;
     setKind(next);
     setSelected([]);
     lastLit.current = '';
     void preview.stop();
   }
+  function toggleLighting() {
+    if (selectionLighting || testingStrip) {
+      lastLit.current = '';
+      void preview.stop();
+      setSelectionLighting(false);
+    } else {
+      setSelectionLighting(true);
+    }
+  }
   function tap(point: TnutPoint, photoWidth: number, photoHeight: number) {
     const id =
       kind === 'holds'
-        ? findSprayHoldAtPoint(holds, point, source.frame)
+        ? findSprayHoldAtPoint(visibleHolds, point, source.frame)
         : nearestPhotoPointIndex(layout.holes, point, photoWidth, photoHeight, 18);
     if (id === null || id < 0) return;
     setSelected((previous) =>
       previous.includes(id) ? previous.filter((selectedId) => selectedId !== id) : [...previous, id],
     );
   }
+  const bulbOn = selectionLighting || testingStrip;
+  const lightbulb = (
+    <SprayPhotoToolButton
+      icon={bulbOn ? 'lightbulb.fill' : 'lightbulb.slash'}
+      label={t(bulbOn ? 'sprayLedSetup.lightingStop' : 'sprayLedSetup.lightSelection')}
+      selected={bulbOn}
+      onPress={toggleLighting}
+    />
+  );
   const tools = (
-    <View style={{ gap: spacing[2] }}>
-      <SegmentedControl
-        options={options}
-        selectedKey={kind}
-        onSelect={selectKind}
-        accessibilityLabel={t('sprayLedSetup.selectionKind')}
-      />
-      <Button
-        title={t('sprayLedSetup.lightSelection')}
-        variant="outlined"
-        disabled={!preview.available || !indices.length}
-        onPress={() => void preview.show(indices)}
-      />
-      <Button
-        title={t('sprayLedSetup.lightingStop')}
-        variant="text"
-        disabled={!preview.available}
-        onPress={() => void preview.stop()}
-      />
+    <View style={{ gap: spacing[2], flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ flex: 1 }}>
+        <SegmentedControl
+          options={options}
+          selectedKey={kind}
+          onSelect={selectKind}
+          accessibilityLabel={t('sprayLedSetup.selectionKind')}
+        />
+      </View>
+      {lightbulb}
     </View>
   );
   return (
@@ -138,14 +155,24 @@ export function SprayLedLightingStep({
       <Text variant="footnote">{t('sprayLedSetup.mappingHint')}</Text>
       <Text variant="footnote">
         {t('sprayLedSetup.mappingSummary', {
-          mapped: mapping.holds.filter((hold) => hold.indices.length).length,
-          total: holds.length,
+          mapped: mapping.holds.filter((hold) => visibleIds.has(hold.holdId) && hold.indices.length).length,
+          total: visibleHolds.length,
         })}
       </Text>
       {tools}
       <SprayPhotoStage
         width={width}
         tools={tools}
+        fullScreenRail={
+          <>
+            <SprayPhotoToolButton
+              icon={kind === 'holes' ? 'hand.raised' : 'circle'}
+              label={t(kind === 'holes' ? 'sprayLedSetup.selectHolds' : 'sprayLedSetup.selectHoles')}
+              onPress={() => selectKind(kind === 'holes' ? 'holds' : 'holes')}
+            />
+            {lightbulb}
+          </>
+        }
         canvas={{
           source,
           photoUri,

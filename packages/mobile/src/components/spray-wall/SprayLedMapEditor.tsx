@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -25,16 +25,15 @@ import {
   type TnutWiring,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
+import { useConfirm } from '../../providers/dialog-provider';
 import type { SprayLookPreviewSource } from '../../lib/spray/spray-look-preview';
 import { useSprayLedPreview } from '../../lib/spray/use-spray-led-preview';
 import { Button } from '../Button';
-import { Icon } from '../Icon';
-import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { BuilderTextInput } from '../board-discovery/BoardMetaFields';
 import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay, SPRAY_CABLE_COLOR } from './SpraySetupOverlay';
-import { SprayPointToolbar, SprayUndoButton, type SprayPointMode } from './SprayPointToolbar';
+import { SprayPhotoToolButton, SprayPointToolbar, SprayUndoButton, type SprayPointMode } from './SprayPointToolbar';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 const NO_LEDS: LedPosition[] = [];
@@ -88,6 +87,7 @@ function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange
 
 function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInteractionChange }: MapEditorProps) {
   const { t } = useTranslation('boards');
+  const confirm = useConfirm();
   const { brandColors, spacing } = useTheme();
   const [mode, setMode] = useState<SprayPointMode | null>(null);
   // Pair LEDs (#7355 item 8): tap a pair to separate it, or two single LEDs to group them.
@@ -96,13 +96,22 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   const { change, undo, canUndo } = useEditorHistory(layout, onChange);
   const leds = layout.ledPositions ?? NO_LEDS;
   const pairs = useMemo(() => ledPairs(layout), [layout]);
+  const pendingClear = useRef(false);
+  const liveLayout = useRef<TnutLayout | null>(layout);
+  liveLayout.current = layout;
+  useEffect(() => {
+    liveLayout.current = layout;
+    return () => {
+      liveLayout.current = null;
+    };
+  }, [layout]);
   function chooseMode(next: SprayPointMode | null) {
     setPairing(false);
     setPendingPair(null);
     setMode(next);
   }
 
-  function changePositions(ledPositions: LedPosition[]) {
+  async function changePositions(ledPositions: LedPosition[]) {
     const apply = () => {
       const retainedIds = new Set(ledPositions.map((led) => led.id));
       // Prune immediately: a subsequent Add can reuse a removed manual LED id.
@@ -119,10 +128,20 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       apply();
       return;
     }
-    Alert.alert(t('sprayLedSetup.clearCableTitle'), t('sprayLedSetup.clearCableBody'), [
-      { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
-      { text: t('sprayLedSetup.clearCable'), style: 'destructive', onPress: apply },
-    ]);
+    if (pendingClear.current) return;
+    pendingClear.current = true;
+    try {
+      const accepted = await confirm({
+        title: t('sprayLedSetup.clearCableTitle'),
+        message: t('sprayLedSetup.clearCableBody'),
+        cancelLabel: t('sprayLedSetup.keepEditing'),
+        confirmLabel: t('sprayLedSetup.clearCable'),
+        destructive: true,
+      });
+      if (accepted && liveLayout.current === layout) apply();
+    } finally {
+      pendingClear.current = false;
+    }
   }
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
@@ -143,7 +162,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
       // A pair goes as one unit.
       const partner = index >= 0 ? ledPartner(pairs, leds[index].id) : null;
-      if (index >= 0) changePositions(leds.filter((led, entry) => entry !== index && led.id !== partner));
+      if (index >= 0) void changePositions(leds.filter((led, entry) => entry !== index && led.id !== partner));
     } else if (
       mode === 'add' &&
       leds.length < MAX_LED_POSITIONS &&
@@ -152,7 +171,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       const ids = new Set(leds.map((led) => led.id));
       let serial = 0;
       while (ids.has(`manual-${serial}`)) serial++;
-      changePositions([...leds, { ...point, id: `manual-${serial}` }]);
+      void changePositions([...leds, { ...point, id: `manual-${serial}` }]);
     }
   }
 
@@ -262,7 +281,6 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   // "Light and tap": physical LEDs counted as not on the photo since the last tap.
   const [pendingSkip, setPendingSkip] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
-  const [highlight, setHighlight] = useState(false);
   const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
   const pairs = useMemo(() => ledPairs(layout), [layout]);
   const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
@@ -278,21 +296,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   // the sections, so rerouting is Cut and Connect under "Select two LEDs".
   const cableComplete = leds.length > 0 && leds.every((point) => indices.has(point.id));
   const mode = cableComplete && (chosenMode === 'draw' || chosenMode === 'light') ? null : chosenMode;
-  const physicalSelection = useMemo(
-    () =>
-      selected.flatMap((id) => {
-        const index = indices.get(id);
-        return index === undefined ? [] : [index];
-      }),
-    [selected, indices],
-  );
   const preview = useSprayLedPreview(wallUuid);
   const { available, show, stop } = preview;
-  useEffect(() => {
-    if (!available || !highlight || mode === 'light') return;
-    if (mode === 'select' && physicalSelection.length) void show(physicalSelection);
-    else void stop();
-  }, [available, highlight, mode, physicalSelection, show, stop]);
 
   // The physical LED "Light and tap" asks about: the one after the last wired LED,
   // plus any the climber said are not on the wall.
@@ -327,7 +332,6 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   function chooseMode(next: typeof mode) {
     if (mode === 'light' && next !== 'light') void stop();
-    if (next === 'light') setHighlight(false);
     setPendingSkip(0);
     setMode(next);
   }
@@ -464,28 +468,6 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       {mode === 'select' ? (
         <>
           <Text variant="footnote">{t('sprayLedSetup.wiringHint')}</Text>
-          <PressableSurface
-            accessibilityRole="checkbox"
-            accessibilityLabel={t('sprayLedSetup.lightSelected')}
-            accessibilityState={{ checked: highlight }}
-            disabled={!available}
-            onPress={() => {
-              if (highlight) void stop();
-              setHighlight(!highlight);
-            }}
-            style={[styles.row, { alignItems: 'center', minHeight: 44, gap: spacing[2] }]}
-          >
-            <View style={[styles.checkbox, { borderColor: brandColors.primary }]}>
-              {highlight ? <Icon name="check.small" size={18} color={brandColors.primary} /> : null}
-            </View>
-            <Text>{t('sprayLedSetup.lightSelected')}</Text>
-          </PressableSurface>
-          {!available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
-          {preview.error ? (
-            <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
-              {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightingRangeError') : t('sprayLed.lightFailed')}
-            </Text>
-          ) : null}
           {selected.length ? (
             <Text accessibilityLiveRegion="polite">
               {t('sprayLedSetup.selectedLeds', { ids: selected.map((id) => indices.get(id) ?? '—').join(' → ') })}
@@ -515,6 +497,86 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       ) : null}
     </View>
   );
+  const rail = (
+    <>
+      {!cableComplete ? (
+        <>
+          <SprayPhotoToolButton
+            icon="pencil.tip"
+            label={t('sprayLedSetup.drawCable')}
+            selected={mode === 'draw'}
+            onPress={() => chooseMode(mode === 'draw' ? null : 'draw')}
+          />
+          <SprayPhotoToolButton
+            icon="lightbulb"
+            label={t('sprayLedSetup.lightAndTap')}
+            selected={mode === 'light'}
+            onPress={() => chooseMode(mode === 'light' ? null : 'light')}
+          />
+        </>
+      ) : null}
+      <SprayPhotoToolButton
+        icon="crop.free"
+        label={t('sprayLedSetup.selectLeds')}
+        selected={mode === 'select'}
+        onPress={() => chooseMode(mode === 'select' ? null : 'select')}
+      />
+      {mode === 'light' ? (
+        <>
+          {!available || preview.error ? (
+            <Text
+              variant="caption2"
+              color={brandColors.error}
+              accessibilityLiveRegion="polite"
+              style={styles.railStatus}
+            >
+              {!available
+                ? t('sprayLedSetup.lightingUnavailable')
+                : preview.error === 'invalid-indices'
+                  ? t('sprayLedSetup.lightAndTapEnd')
+                  : t('sprayLed.lightFailed')}
+            </Text>
+          ) : (
+            <Text variant="footnote" accessibilityLabel={t('sprayLedSetup.lightAndTapHint', { index: litIndex })}>
+              {litIndex}
+            </Text>
+          )}
+          <SprayPhotoToolButton
+            icon="plus"
+            label={t('sprayLedSetup.lightAndTapSkip')}
+            disabled={!available || pendingSkip >= skipBudget}
+            onPress={() => setPendingSkip((count) => count + 1)}
+          />
+          <SprayPhotoToolButton
+            icon="minus"
+            label={t('sprayLedSetup.lightAndTapUnskip')}
+            disabled={!pendingSkip}
+            onPress={() => setPendingSkip((count) => Math.max(0, count - 1))}
+          />
+        </>
+      ) : null}
+      {pair ? (
+        <>
+          <SprayPhotoToolButton
+            icon="scissors"
+            label={t('sprayLedSetup.cutCable')}
+            disabled={!edge}
+            onPress={() => {
+              if (cut && edge) change({ wiring: cut });
+            }}
+          />
+          <SprayPhotoToolButton
+            icon="link"
+            label={t('sprayLedSetup.connectCable')}
+            disabled={joined === wiring}
+            onPress={() => {
+              if (joined && joined !== wiring) change({ wiring: joined });
+            }}
+          />
+        </>
+      ) : null}
+    </>
+  );
   return (
     <>
       {/* Lay cable is hidden once every LED is wired, so its hint gives way to how to reroute. */}
@@ -523,7 +585,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       <SprayPhotoStage
         width={width}
         tools={tools}
-        accessoryTools={accessoryTools}
+        lockOrientationToWall
+        fullScreenRail={rail}
         overlayTools={
           <SprayUndoButton
             disabled={!canUndo}
@@ -593,6 +656,7 @@ type Connection = { from: string; to: string };
  */
 function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
   const { t } = useTranslation('boards');
+  const isFocused = useIsFocused();
   const { spacing, brandColors } = useTheme();
   const { change, undo, canUndo } = useEditorHistory(layout, onChange);
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -633,6 +697,23 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const validSkip = skipText !== null && /^\d+$/.test(skipText) && newSkip <= MAX_WIRING_SKIP;
   const skipped = wiring && selected && validSkip ? setWiringSkip(wiring, selected.from, selected.to, newSkip) : wiring;
   const canApplySkip = Boolean(selected) && validSkip && (newSkip === gapCount || skipped !== wiring);
+  const dialog =
+    skipText === null ? null : (
+      <SkipCountDialog
+        value={skipText}
+        onChange={setSkipText}
+        onClose={() => setSkipText(null)}
+        canApply={canApplySkip}
+        onApply={() => {
+          if (!canApplySkip) return;
+          if (skipped && newSkip !== gapCount) change({ wiring: skipped });
+          setSkipText(null);
+        }}
+      />
+    );
+  const insertSkips = () => setSkipText(String(gapCount || 1));
+  const toggleEnds = () => setEndsLit((lit) => !lit);
+  const endsLabel = t(endsLit ? 'sprayLedSetup.skipsEndsOff' : 'sprayLedSetup.skipsLightEnds');
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
     let best: Connection | null = null;
@@ -652,17 +733,12 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   const tools = (
     <View style={[styles.row, { gap: spacing[2] }]}>
+      <Button title={t('sprayLedSetup.insertSkips')} variant="outlined" disabled={!selected} onPress={insertSkips} />
       <Button
-        title={t('sprayLedSetup.insertSkips')}
-        variant="outlined"
-        disabled={!selected}
-        onPress={() => setSkipText(String(gapCount || 1))}
-      />
-      <Button
-        title={t(endsLit ? 'sprayLedSetup.skipsEndsOff' : 'sprayLedSetup.skipsLightEnds')}
+        title={endsLabel}
         variant={endsLit ? 'filled' : 'outlined'}
         disabled={!available || !selected}
-        onPress={() => setEndsLit((lit) => !lit)}
+        onPress={toggleEnds}
       />
     </View>
   );
@@ -673,6 +749,24 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       <SprayPhotoStage
         width={width}
         tools={tools}
+        fullScreenDialog={dialog}
+        fullScreenRail={
+          <>
+            <SprayPhotoToolButton
+              icon="add"
+              label={t('sprayLedSetup.insertSkips')}
+              disabled={!selected}
+              onPress={insertSkips}
+            />
+            <SprayPhotoToolButton
+              icon={endsLit ? 'lightbulb.fill' : 'lightbulb'}
+              label={endsLabel}
+              selected={endsLit}
+              disabled={!available || !selected}
+              onPress={toggleEnds}
+            />
+          </>
+        }
         overlayTools={<SprayUndoButton disabled={!canUndo} onPress={undo} />}
         canvas={{
           source,
@@ -686,6 +780,7 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               compactHoles
               leds={leds}
               wiring={wiring}
+              distinguishSkips
               selected={selected ? [selected.from, selected.to] : []}
               width={renderWidth}
               height={renderHeight}
@@ -713,19 +808,7 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
           {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightingRangeError') : t('sprayLed.lightFailed')}
         </Text>
       ) : null}
-      {skipText !== null ? (
-        <SkipCountDialog
-          value={skipText}
-          onChange={setSkipText}
-          onClose={() => setSkipText(null)}
-          canApply={canApplySkip}
-          onApply={() => {
-            if (!canApplySkip) return;
-            if (skipped && newSkip !== gapCount) change({ wiring: skipped });
-            setSkipText(null);
-          }}
-        />
-      ) : null}
+      {isFocused ? dialog : null}
     </>
   );
 }
@@ -743,7 +826,6 @@ function SkipCountDialog({
   onApply: () => void;
   canApply: boolean;
 }) {
-  const focused = useIsFocused();
   const { t } = useTranslation('boards');
   const { systemColors, spacing } = useTheme();
   const count = /^\d+$/.test(value) ? Number(value) : 0;
@@ -751,7 +833,6 @@ function SkipCountDialog({
     <Modal
       transparent
       animationType="fade"
-      visible={focused}
       onRequestClose={onClose}
       supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}
     >
@@ -800,7 +881,7 @@ function SkipCountDialog({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap' },
-  checkbox: { width: 22, height: 22, borderWidth: 2, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
+  railStatus: { width: 96, textAlign: 'center' },
   scrim: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.5)' },
   dialog: { width: '100%', maxWidth: 360, borderRadius: 16 },
   skipInput: { flex: 1 },

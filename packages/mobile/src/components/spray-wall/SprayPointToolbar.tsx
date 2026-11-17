@@ -2,25 +2,49 @@ import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { Icon } from '../Icon';
+import type { IconName } from '../icon-map';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 
 export type SprayPointMode = 'add' | 'move' | 'remove';
 
-export function SprayUndoButton({ onPress, disabled }: { onPress: () => void; disabled: boolean }) {
-  const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
+export function SprayPhotoToolButton({
+  icon,
+  label,
+  onPress,
+  disabled = false,
+  selected,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  selected?: boolean;
+}) {
+  const { systemColors, brandColors } = useTheme();
   return (
     <PressableSurface
       accessibilityRole="button"
-      accessibilityLabel={t('sprayLedSetup.undo')}
+      accessibilityLabel={label}
+      accessibilityState={{ selected, disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.icon, { backgroundColor: systemColors.secondaryGroupedBackground, opacity: disabled ? 0.45 : 1 }]}
+      style={[
+        styles.icon,
+        {
+          backgroundColor: selected ? brandColors.primary : systemColors.secondaryGroupedBackground,
+          opacity: disabled ? 0.45 : 1,
+        },
+      ]}
     >
-      <Icon name="undo" size={20} color={systemColors.label} />
+      <Icon name={icon} size={20} color={selected ? brandColors.onPrimary : systemColors.label} />
     </PressableSurface>
   );
+}
+
+export function SprayUndoButton({ onPress, disabled }: { onPress: () => void; disabled: boolean }) {
+  const { t } = useTranslation('boards');
+  return <SprayPhotoToolButton icon="undo" label={t('sprayLedSetup.undo')} disabled={disabled} onPress={onPress} />;
 }
 
 export function SprayPointToolbar({

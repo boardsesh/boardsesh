@@ -2,13 +2,14 @@
 import { createElement, memo, useSyncExternalStore, type ReactNode } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { closeSprayPhotoSession, createSprayPhotoSession } from '../../../lib/spray/spray-photo-session';
 
 const route = vi.hoisted(() => ({
   pathname: '/boards',
+  photoSessionId: undefined as string | undefined,
   listeners: new Set<() => void>(),
   orientation: undefined as string | undefined,
-  headerBlurEffect: undefined as string | undefined,
-  glassCapable: false,
+  barsHidden: false,
   platformOS: 'android',
   isPad: false,
   width: 400,
@@ -27,6 +28,7 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: route.width, height: route.height }),
 }));
 vi.mock('expo-router', () => ({
+  useGlobalSearchParams: () => ({ photoSessionId: route.photoSessionId }),
   usePathname: () =>
     useSyncExternalStore(
       (listener) => {
@@ -41,16 +43,15 @@ vi.mock('expo-router', () => ({
     screenOptions,
     children,
   }: {
-    screenOptions: { orientation?: string; headerBlurEffect?: string };
+    screenOptions: { orientation?: string; statusBarHidden?: boolean; navigationBarHidden?: boolean };
     children: ReactNode;
   }) => {
     route.orientation = screenOptions.orientation;
-    route.headerBlurEffect = screenOptions.headerBlurEffect;
+    route.barsHidden = Boolean(screenOptions.statusBarHidden && screenOptions.navigationBarHidden);
     return createElement('div', null, children);
   },
 }));
 vi.mock('../../../theme/navigation', () => ({ glassStackScreenOptions: {} }));
-vi.mock('../../../hooks/use-glass-capability', () => ({ useGlassCapability: () => route.glassCapable }));
 import { RootNavigationStack } from '../RootNavigationStack';
 const FrozenProvider = memo(
   ({ children }: { children: ReactNode }) => children,
@@ -65,25 +66,11 @@ function navigate(pathname: string) {
 afterEach(() => {
   cleanup();
   route.pathname = '/boards';
+  route.photoSessionId = undefined;
   route.platformOS = 'android';
   route.isPad = false;
   route.width = 400;
   route.height = 800;
-  route.glassCapable = false;
-});
-describe('root header blur', () => {
-  it('gives root-level pushed screens no legacy blur on iOS 26 glass', () => {
-    route.platformOS = 'ios';
-    route.glassCapable = true;
-    render(createElement(RootNavigationStack, null, 'screen'));
-    expect(route.headerBlurEffect).toBeUndefined();
-  });
-  it('keeps the systemMaterial blur on iOS without glass', () => {
-    route.platformOS = 'ios';
-    route.glassCapable = false;
-    render(createElement(RootNavigationStack, null, 'screen'));
-    expect(route.headerBlurEffect).toBe('systemMaterial');
-  });
 });
 describe('fullscreen native orientation', () => {
   it('unlocks attached screens below a frozen provider and restores portrait on exit', () => {
@@ -91,8 +78,49 @@ describe('fullscreen native orientation', () => {
     expect(route.orientation).toBe('portrait');
     navigate('/spray-led-fullscreen');
     expect(route.orientation).toBe('all');
+    expect(route.barsHidden).toBe(true);
     route.width = 800;
     route.height = 400;
+    navigate('/boards');
+    expect(route.orientation).toBe('portrait');
+    expect(route.barsHidden).toBe(false);
+  });
+
+  it.each([
+    [1200, 800, 'landscape_right'],
+    [800, 1200, 'portrait_up'],
+  ])('locks cable for a %s by %s wall through window changes and session cleanup', (width, height, orientation) => {
+    const id = createSprayPhotoSession(
+      {
+        viewerId: 'viewer',
+        lockOrientationToWall: true,
+        tools: null,
+        canvas: {
+          source: {
+            layoutId: 1,
+            versionId: 2,
+            photoUrl: 'https://example.invalid/wall.jpg',
+            photoExpiresAt: '2030-01-01',
+            photo: { width, height },
+            frame: { width, height },
+            homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            holds: [],
+          },
+          photoUri: 'file:///wall.jpg',
+        },
+      },
+      vi.fn(),
+    );
+    route.photoSessionId = id;
+    const { rerender } = render(createElement(RootNavigationStack, null, 'screen'));
+    navigate('/spray-led-fullscreen');
+    expect(route.orientation).toBe(orientation);
+    route.width = 800;
+    route.height = 400;
+    rerender(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.orientation).toBe(orientation);
+    act(() => closeSprayPhotoSession(id));
+    expect(route.orientation).toBe(orientation);
     navigate('/boards');
     expect(route.orientation).toBe('portrait');
   });

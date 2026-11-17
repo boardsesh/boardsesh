@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Keyboard, Platform, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { Keyboard, Platform, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,6 +8,8 @@ import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
   generateLedPositions,
+  expandLedGrid,
+  hasStaleLedGrid,
   bindLedPositionsToHoles,
   migrateTnutLayoutColumns,
   createWiring,
@@ -33,6 +35,7 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
 import { useAndroidKeyboardScroll } from '../../hooks/use-android-keyboard-scroll';
 import { useAuth } from '../../providers/auth-provider';
+import { useConfirm, type ConfirmOptions } from '../../providers/dialog-provider';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { fetchSprayWallRenderData, sprayWallPublishedRenderDataQueryKey } from '../../lib/spray/spray-wall-loader';
 import { sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
@@ -228,6 +231,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, spacing } = useTheme();
   const router = useRouter();
+  const confirm = useConfirm();
   const viewerId = useViewerUserId();
   const fullscreenSession = useRef<string | null>(null);
   useEffect(
@@ -263,6 +267,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const persisted = useRef<TnutLayout | null>(layout);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [expansionTooLarge, setExpansionTooLarge] = useState(false);
   useEffect(
     () =>
       // The save lands on the phone first, so this is the only place a failed upload shows up.
@@ -300,8 +305,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       draft.columnConvention,
       draft.firstRowOffset,
     ]);
-  const generatedLeds = useRef(layout.ledPositions ? ledSignature(layout) : null);
-  const untouchedLeds = useRef<readonly LedPosition[] | null>(null);
+  const [initialLedSignature] = useState(() =>
+    layout.ledPositions && !hasStaleLedGrid(layout) ? ledSignature(layout) : null,
+  );
+  const generatedLeds = useRef(initialLedSignature);
+  const ledBasis = useRef(layout.ledPositions ? layout : null);
   const wiringSignature = (draft: TnutLayout, axis: CableDirection, corner: CableStartCorner) =>
     JSON.stringify([draft.ledPositions?.map(({ id }) => id), axis, corner]);
   const generatedWiring = useRef(
@@ -346,6 +354,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (busy.current) return;
     setLayout((previous) => withUpdate(previous, update));
     setSaveFailed(false);
+    setExpansionTooLarge(false);
   }
 
   /** Next stays instant: the store queues each wall's writes, so the newest always lands last. */
@@ -364,8 +373,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (layout.wiring?.paths.length) return true;
     // Rebuilding clears hand-made hold links too (the new LEDs reuse the old ids).
     if (layout.holdLeds?.length) return true;
-    if (!layout.ledPositions?.length) return false;
-    const untouched = untouchedLeds.current ?? (matchingSaved ? generateLedPositions(matchingSaved) : []);
+    if (layout.ledGroups !== undefined) return true;
+    if (!layout.ledPositions) return false;
+    const untouched = ledBasis.current ? generateLedPositions(ledBasis.current) : [];
     return !sameLedPositions(layout.ledPositions, untouched);
   }
 
@@ -429,6 +439,15 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else router.back();
   }
 
+  async function confirmAction(options: ConfirmOptions, action: () => void) {
+    busy.current = true;
+    try {
+      if ((await confirm(options)) && mounted.current) action();
+    } finally {
+      busy.current = false;
+    }
+  }
+
   useSprayWizardLeaveGuard((leave) => {
     if (finished.current) {
       leave();
@@ -443,10 +462,16 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       leave();
       return;
     }
-    Alert.alert(t('sprayLedSetup.discardTitle'), t('sprayLedSetup.discardBody'), [
-      { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
-      { text: t('sprayLedSetup.discard'), style: 'destructive', onPress: leave },
-    ]);
+    void confirmAction(
+      {
+        title: t('sprayLedSetup.discardTitle'),
+        message: t('sprayLedSetup.discardBody'),
+        cancelLabel: t('sprayLedSetup.keepEditing'),
+        confirmLabel: t('sprayLedSetup.discard'),
+        destructive: true,
+      },
+      leave,
+    );
   });
 
   async function next() {
@@ -480,22 +505,60 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         setStep('ledPositions');
         return;
       }
-      const rebuildLeds = () => {
-        const ledPositions = generateLedPositions(layout);
-        // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
-        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: [], ledGroups: undefined });
-        untouchedLeds.current = ledPositions;
+      const finishRebuild = (draft: TnutLayout) => {
         generatedLeds.current = signature;
-        generatedWiring.current = null;
+        ledBasis.current = draft;
+        generatedWiring.current = draft.wiring
+          ? wiringSignature(draft, draft.wiring.direction, draft.wiring.startCorner)
+          : null;
         setLayout(draft);
         saveWork(draft);
         setStep('ledPositions');
       };
+      const expanded = ledBasis.current && expandLedGrid(ledBasis.current, layout);
+      if (expanded === 'capacity') {
+        setExpansionTooLarge(true);
+        return;
+      }
+      if (expanded) {
+        const applyExpansion = () => finishRebuild(expanded.layout);
+        if (expanded.needsReview) {
+          await confirmAction(
+            {
+              title: t('sprayLedSetup.expandLedsTitle'),
+              message: t('sprayLedSetup.expandLedsBody'),
+              cancelLabel: t('sprayLedSetup.keepEditing'),
+              confirmLabel: t('sprayLedSetup.next'),
+            },
+            applyExpansion,
+          );
+        } else {
+          applyExpansion();
+        }
+        return;
+      }
+      const rebuildLeds = () => {
+        // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
+        finishRebuild(
+          withUpdate(layout, {
+            ledPositions: generateLedPositions(layout),
+            wiring: undefined,
+            holdLeds: [],
+            ledGroups: undefined,
+          }),
+        );
+      };
       if (wouldDiscardHandWork()) {
-        Alert.alert(t('sprayLedSetup.rebuildLedsTitle'), t('sprayLedSetup.rebuildLedsBody'), [
-          { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
-          { text: t('sprayLedSetup.rebuildLeds'), style: 'destructive', onPress: rebuildLeds },
-        ]);
+        await confirmAction(
+          {
+            title: t('sprayLedSetup.rebuildLedsTitle'),
+            message: t('sprayLedSetup.rebuildLedsBody'),
+            cancelLabel: t('sprayLedSetup.keepEditing'),
+            confirmLabel: t('sprayLedSetup.rebuildLeds'),
+            destructive: true,
+          },
+          rebuildLeds,
+        );
       } else {
         rebuildLeds();
       }
@@ -543,6 +606,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (step === 'holes' || step === 'lighting') {
       if (!layout.holes.length) return;
       if (step === 'lighting' && (!layout.ledPositions?.length || !layout.wiring)) return;
+      if (step === 'holes' && ledBasis.current && generatedLeds.current !== ledSignature(layout)) {
+        // Keep the saved hole and LED geometry in agreement if the wizard is
+        // closed here. The next step saves them together once reconciled.
+        setStep('led');
+        return;
+      }
       busy.current = true;
       setSaving(true);
       setSaveFailed(false);
@@ -864,6 +933,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         {step === 'led' ? (
           <>
             <Text>{t('sprayLedSetup.ledHint')}</Text>
+            {expansionTooLarge ? <Text color={brandColors.error}>{t('sprayLedSetup.expandLedsCapacity')}</Text> : null}
             <View style={[styles.row, { gap: spacing[2] }]}>
               {(['center', 'sides', 'below'] as const).map((placement) => (
                 <ChoiceCard

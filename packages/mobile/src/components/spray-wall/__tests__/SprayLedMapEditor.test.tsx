@@ -8,12 +8,11 @@ import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-previ
 
 const controls = vi.hoisted(() => ({
   canvas: null as Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'> | null,
-  alert: vi.fn(),
+  confirm: vi.fn(),
   changed: vi.fn(),
   layout: null as TnutLayout | null,
 }));
 vi.mock('react-native', () => ({
-  Alert: { alert: controls.alert },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Modal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -21,6 +20,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('expo-router', () => ({ useIsFocused: () => true }));
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => controls.confirm }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: {}, systemColors: {}, spacing: [0, 4, 8, 12, 16] }),
@@ -53,6 +53,7 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../SprayPointToolbar', () => ({
+  SprayPhotoToolButton: () => null,
   SprayUndoButton: () => null,
   SprayPointToolbar: ({
     onModeChange,
@@ -145,19 +146,21 @@ describe('LED position edits with cable work', () => {
 
   it.each(['add', 'remove'] as const)(
     'requires confirmation before %s discards a cable and undo restores it',
-    (mode) => {
+    async (mode) => {
+      let accept: (answer: boolean) => void = () => undefined;
+      controls.confirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => (accept = resolve)));
       render(<Editor />);
       fireEvent.click(screen.getByText(mode));
       act(() => controls.canvas?.onTap?.(mode === 'add' ? { x: 0.5, y: 0.5 } : { x: 0.2, y: 0.2 }, 400, 400));
       expect(controls.changed).not.toHaveBeenCalled();
-      expect(controls.alert).toHaveBeenCalledWith(
-        'sprayLedSetup.clearCableTitle',
-        'sprayLedSetup.clearCableBody',
-        expect.any(Array),
-      );
-      const buttons = controls.alert.mock.calls[0][2] as { style: string; onPress?: () => void }[];
-      expect(buttons[0].style).toBe('cancel');
-      act(() => buttons[1].onPress?.());
+      expect(controls.confirm).toHaveBeenCalledWith({
+        title: 'sprayLedSetup.clearCableTitle',
+        message: 'sprayLedSetup.clearCableBody',
+        cancelLabel: 'sprayLedSetup.keepEditing',
+        confirmLabel: 'sprayLedSetup.clearCable',
+        destructive: true,
+      });
+      await act(async () => accept(true));
       expect(controls.changed.mock.lastCall?.[0].wiring).toBeUndefined();
       expect(controls.changed.mock.lastCall?.[0].ledPositions).toHaveLength(mode === 'add' ? 3 : 1);
       fireEvent.click(screen.getByText('undo'));
@@ -168,14 +171,14 @@ describe('LED position edits with cable work', () => {
     render(<Editor />);
     fireEvent.click(screen.getByText('move'));
     act(() => controls.canvas?.onMove?.({ x: 0.2, y: 0.2 }, { x: 0.3, y: 0.3 }, 400, 400));
-    expect(controls.alert).not.toHaveBeenCalled();
+    expect(controls.confirm).not.toHaveBeenCalled();
     expect(controls.changed.mock.lastCall?.[0]).not.toHaveProperty('wiring');
   });
   it('adds immediately when no cable has been laid', () => {
     render(<Editor initial={{ ...original, wiring: { ...original.wiring!, paths: [], skips: [] } }} />);
     fireEvent.click(screen.getByText('add'));
     act(() => controls.canvas?.onTap?.({ x: 0.5, y: 0.5 }, 400, 400));
-    expect(controls.alert).not.toHaveBeenCalled();
+    expect(controls.confirm).not.toHaveBeenCalled();
     expect(controls.changed).toHaveBeenCalledOnce();
   });
 });

@@ -50,6 +50,7 @@ type OverlayProps = {
   holdRings?: { id: number; points: TnutPoint[] }[];
   selectedHoldIds?: number[];
   selectedHoles?: TnutPoint[];
+  distinguishSkips?: boolean;
 };
 const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
@@ -254,6 +255,15 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(updated[3].d).toBe('');
     expect(updated[4].d).toContain('M117 200a3 3');
     expect(updated[9].d).toContain('M200 400a10 10');
+  });
+
+  it('draws skipped segments and dots in red only when highlighted', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    render(React.createElement(Component, { ...props(), distinguishSkips: true }));
+    const paths = evaluated(shapes);
+    expect(paths[0].stroke).toBe('#0891B2');
+    expect(paths[1]).toMatchObject({ stroke: palette.error, d: 'M180 150L180 400' });
+    expect(paths[3].fill).toBe(palette.error);
   });
 
   it('rings the ends a cut left unconnected in red, and only the real start in green', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Platform, StatusBar, StyleSheet, View, ScrollView } from 'react-native';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,12 +51,15 @@ function SprayLedFullscreen() {
   const { t } = useTranslation('boards');
   const { systemColors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
-  const [box, setBox] = useState({ width: 0, height: 0 });
   const [available, setAvailable] = useState({ width: 0, height: 0 });
   const [toolsHeight, setToolsHeight] = useState(0);
   const [accessoryHeight, setAccessoryHeight] = useState(0);
   const [dragging, setDragging] = useState(false);
   const closing = useRef(false);
+  const measureViewport = useCallback((width: number, height: number) => {
+    if (width <= 0 || height <= 0) return;
+    setAvailable((previous) => (previous.width === width && previous.height === height ? previous : { width, height }));
+  }, []);
   // Info.plist keeps UIViewControllerBasedStatusBarAppearance false, so only this
   // app-level call moves the iOS status bar. Android hides it through the stack.
   useEffect(() => {
@@ -88,58 +91,67 @@ function SprayLedFullscreen() {
     const { frame } = photoSnapshot.canvas.source;
     const rail =
       Boolean(photoSnapshot.fullScreenRail) &&
-      shouldUseSprayPhotoRail(available.width, available.height, frame.width, frame.height);
+      (photoSnapshot.lockOrientationToWall ||
+        shouldUseSprayPhotoRail(
+          available.width,
+          available.height,
+          frame.width,
+          frame.height,
+          (toolsHeight || 96) + accessoryHeight + insets.bottom,
+        ));
+    const accessoryTools = rail && photoSnapshot.lockOrientationToWall ? null : photoSnapshot.accessoryTools;
     return (
       <View
         testID="spray-fullscreen-layout"
         style={{
           flex: 1,
           backgroundColor: systemColors.background,
-          paddingLeft: insets.left,
-          paddingRight: insets.right,
-          paddingBottom: insets.bottom,
-          paddingTop: insets.top,
         }}
-        onLayout={({ nativeEvent }) => setAvailable(nativeEvent.layout)}
+        onLayout={({ nativeEvent }) => measureViewport(nativeEvent.layout.width, nativeEvent.layout.height)}
       >
-        <View
-          testID="spray-fullscreen-canvas"
-          style={styles.canvas}
-          onLayout={({ nativeEvent }) => setBox(nativeEvent.layout)}
-        >
+        <View testID="spray-fullscreen-canvas" style={styles.canvas}>
           <SprayPhotoCanvas
             {...photoSnapshot.canvas}
-            maxWidth={box.width}
-            maxHeight={box.height}
-            onInteractionChange={setDragging}
+            maxWidth={available.width}
+            maxHeight={available.height}
+            onInteractionChange={(active) => {
+              setDragging(active);
+              photoSnapshot.canvas.onInteractionChange?.(active);
+            }}
           />
         </View>
-        {!rail && (
-          <ScrollView
-            testID="spray-fullscreen-bottom-tools"
-            style={{
-              height: Math.min(toolsHeight, available.height * 0.35),
-              flexGrow: 0,
-              paddingHorizontal: spacing[4],
-            }}
-            onContentSizeChange={(_width, height) => setToolsHeight(height)}
-            scrollEnabled={!dragging}
+        {((!rail && photoSnapshot.tools) || accessoryTools) && (
+          <View
+            style={[
+              styles.bottomOverlay,
+              {
+                bottom: insets.bottom,
+                left: insets.left,
+                right: insets.right,
+                backgroundColor: systemColors.background,
+              },
+            ]}
           >
-            {photoSnapshot.tools}
-          </ScrollView>
-        )}
-        {photoSnapshot.accessoryTools && (
-          <ScrollView
-            style={{
-              height: Math.min(accessoryHeight, available.height * 0.25),
-              flexGrow: 0,
-              paddingHorizontal: spacing[4],
-            }}
-            onContentSizeChange={(_width, height) => setAccessoryHeight(height)}
-            scrollEnabled={!dragging}
-          >
-            {photoSnapshot.accessoryTools}
-          </ScrollView>
+            {!rail && photoSnapshot.tools && (
+              <ScrollView
+                testID="spray-fullscreen-bottom-tools"
+                style={{ maxHeight: available.height * 0.35, flexGrow: 0, paddingHorizontal: spacing[4] }}
+                onContentSizeChange={(_width, height) => setToolsHeight(height)}
+                scrollEnabled={!dragging}
+              >
+                {photoSnapshot.tools}
+              </ScrollView>
+            )}
+            {accessoryTools && (
+              <ScrollView
+                style={{ maxHeight: available.height * 0.25, flexGrow: 0, paddingHorizontal: spacing[4] }}
+                onContentSizeChange={(_width, height) => setAccessoryHeight(height)}
+                scrollEnabled={!dragging}
+              >
+                {accessoryTools}
+              </ScrollView>
+            )}
+          </View>
         )}
         <View
           style={[
@@ -156,7 +168,7 @@ function SprayLedFullscreen() {
           {rail && (
             <ScrollView
               testID="spray-fullscreen-rail"
-              style={{ flexGrow: 0 }}
+              style={{ flexGrow: 0, flexShrink: 1 }}
               scrollEnabled={!dragging}
               contentContainerStyle={{ gap: 8, alignItems: 'center' }}
             >
@@ -164,6 +176,7 @@ function SprayLedFullscreen() {
             </ScrollView>
           )}
         </View>
+        {photoSnapshot.fullScreenDialog}
       </View>
     );
   }
@@ -178,13 +191,13 @@ function SprayLedFullscreen() {
   return (
     <View
       style={[styles.canvas, { backgroundColor: systemColors.background }]}
-      onLayout={({ nativeEvent }) => setBox(nativeEvent.layout)}
+      onLayout={({ nativeEvent }) => measureViewport(nativeEvent.layout.width, nativeEvent.layout.height)}
     >
       <SprayCornerMarker
         photo={{ uri: photoUri, width: source.frame.width, height: source.frame.height }}
         value={quad}
-        maxWidth={box.width}
-        maxHeight={box.height}
+        maxWidth={available.width}
+        maxHeight={available.height}
         enableZoom
         edgeToEdge
         tnutGrid={grid}
@@ -226,6 +239,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   overlay: { position: 'absolute', gap: 8, alignItems: 'center' },
+  bottomOverlay: { position: 'absolute' },
 });
 
 export default holdUntilLaunchReady(SprayLedFullscreen);
