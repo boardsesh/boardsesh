@@ -103,11 +103,21 @@ describe('the mobile-store-draft lock', () => {
     expect(concurrency['group']).toContain('mobile-store-draft');
   });
 
+  it('queues the final screenshot recovery upload with store drafts', () => {
+    const recovery = load('final-ios-screenshot-recovery.yml');
+    expect(recovery.jobs['finalize']?.concurrency).toEqual({
+      group: 'mobile-store-draft',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+  });
+
   it('finds every member of the group, so none is left without queue: max', () => {
     const members = readdirSync('.github/workflows').filter(
       (name) => read(name).includes("'mobile-store-draft'") || /group: mobile-store-draft$/m.test(read(name)),
     );
     expect(members.sort()).toEqual([
+      'final-ios-screenshot-recovery.yml',
       'mobile-store-audit.yml',
       'mobile-store-draft.yml',
       'mobile-store-metadata.yml',
