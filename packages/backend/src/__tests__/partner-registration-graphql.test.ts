@@ -748,7 +748,7 @@ describe('the other modes', () => {
     expect(await oauthClientQueries.myOAuthClients(undefined, {}, context(invited))).toEqual([]);
   });
 
-  it('lets a developer in with FEATURE_FLAG_OVERRIDES outside production, without PostHog', async () => {
+  it('lets a developer in with FEATURE_FLAG_OVERRIDES on a local database, without PostHog', async () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
     vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
     vi.stubEnv('POSTHOG_PROJECT_KEY', '');

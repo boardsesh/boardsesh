@@ -291,6 +291,13 @@ whatever a climber's consent and still identify nobody. Live Activity events
 and `Tick Climb Not In Catalog` no longer carry a user id; count distinct
 `climbUuid` for the latter.
 
+The developer console's flag check is a request, not an event. On each
+developer console operation the backend sends the account's `users.id` to
+PostHog `/flags` for the `developer-console` flag, whatever the consent answer,
+as www's server flags do. It creates no event and no person, and carries no
+other person data and no GeoIP
+([integration-platform.md](./integration-platform.md#what-the-backend-does-today-f12)).
+
 Live Activity events (and their `... Attribution Gap` twins) carry
 `sessionHash` instead of the party-session id, and widget navigation adds
 `boundSessionHash`: an HMAC-SHA256 of the id keyed with

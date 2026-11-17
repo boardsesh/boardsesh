@@ -7,7 +7,8 @@ import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner
  * A stand-in for PostHog's `/flags` endpoint on 127.0.0.1, so a real server in
  * a test asks the `developer-console` question over HTTP, the way production
  * does, and gets "yes" for exactly the accounts the test invites. Point the
- * backend at it with `environment`.
+ * backend at it with `environment`. Like the backend's contract, it answers 400
+ * unless the request pins the `distinct_id` person property to the distinct id.
  */
 export interface FakePosthogFlags {
   /** `POSTHOG_PROJECT_KEY` and `POSTHOG_HOST` for the deployment under test. */
@@ -37,14 +38,26 @@ export async function startFakePosthogFlags(): Promise<FakePosthogFlags> {
     void readBody(incoming).then((text) => {
       let distinctId = '';
       let token = '';
+      let pinnedId: unknown;
       try {
-        const parsed = JSON.parse(text) as { distinct_id?: unknown; token?: unknown };
+        const parsed = JSON.parse(text) as {
+          distinct_id?: unknown;
+          token?: unknown;
+          person_properties?: { distinct_id?: unknown };
+        };
         distinctId = typeof parsed.distinct_id === 'string' ? parsed.distinct_id : '';
         token = typeof parsed.token === 'string' ? parsed.token : '';
+        pinnedId = parsed.person_properties?.distinct_id;
       } catch {
         // Answered 400 below.
       }
-      if (incoming.method !== 'POST' || !incoming.url?.startsWith('/flags/') || !distinctId || token !== PROJECT_KEY) {
+      if (
+        incoming.method !== 'POST' ||
+        !incoming.url?.startsWith('/flags/') ||
+        !distinctId ||
+        pinnedId !== distinctId ||
+        token !== PROJECT_KEY
+      ) {
         outgoing.writeHead(400).end();
         return;
       }

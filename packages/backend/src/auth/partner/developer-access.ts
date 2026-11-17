@@ -1,6 +1,6 @@
 import { FEATURE_FLAG_OVERRIDES_ENV, parseFeatureFlagOverrides } from '@boardsesh/analytics';
 import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner-oauth';
-import { isProductionSentryEnvironment } from '@boardsesh/db/client/config';
+import { isPrivateDatabaseTarget } from '@boardsesh/db/client/config';
 import { logger } from '../../utils/logger';
 
 /**
@@ -13,24 +13,38 @@ import { logger } from '../../utils/logger';
  * working after its developer leaves the flag; the developer just cannot
  * manage it until they are back in.
  *
+ * "Not production" below means provably so: `DATABASE_URL` names this machine,
+ * a container or a private network (`isPrivateDatabaseTarget`, the check that
+ * also keeps a laptop out of production Sentry). That covers tests, CI, the
+ * e2e journey and `vp run dev`. A label such as `SENTRY_ENVIRONMENT` or
+ * `NODE_ENV` is not enough: a production deploy with a wrong label would then
+ * open the console to every account.
+ *
  * In order:
  *
- * 1. Outside production, `FEATURE_FLAG_OVERRIDES` decides when it names the
- *    flag, in www's syntax: `developer-console` lets every account in,
- *    `developer-console=false` none. Tests, the e2e journey and a laptop use it
- *    instead of PostHog. Production ignores it and logs that once: there it
- *    would open registration to every account, and `PARTNER_OAUTH_MODE=hold`
- *    is the switch that stops the console.
+ * 1. `FEATURE_FLAG_OVERRIDES`, in www's syntax, when it names the flag.
+ *    `developer-console=false` refuses everyone, everywhere: www uses it as a
+ *    kill switch, so the operations close with the page. `developer-console`
+ *    (on) lets every account in, but only when this process is not production;
+ *    tests, the e2e journey and a laptop use it instead of PostHog. Anywhere
+ *    else it is ignored and logged once, and PostHog decides.
  * 2. No PostHog key. Outside production that is normal, so the answer is no.
- *    In production it is a broken deploy, so the answer is "could not check".
+ *    Anywhere else it is a broken deploy, so the answer is "could not check".
  * 3. A PostHog answer for this account from the last 60 seconds. Both yes and
  *    no are kept, per replica; failures are not.
  * 4. `POST {POSTHOG_HOST}/flags/?v=2` for this one flag, under a 1.5 s
- *    deadline. Only the account id travels: no email, no person properties, no
- *    GeoIP. A flags request creates no PostHog person and no
+ *    deadline, over https (plain http only to this machine), following no
+ *    redirect. Only the account id travels, as the distinct id and as the
+ *    `distinct_id` person property, so a `distinct_id` someone stored on their
+ *    own person cannot match the flag for them. No email, no other person
+ *    data, no GeoIP. A flags request creates no PostHog person and no
  *    `$feature_flag_called` event (those come from the SDKs, not the endpoint).
- * 5. Anything else, such as a timeout, a non-2xx, an unreadable body, a quota
- *    limit, the flag missing or failing to compute, means "could not check".
+ *    Target the flag by `distinct_id` only: anyone holding the public project
+ *    token can set other person properties, such as an email, on their own
+ *    person.
+ * 5. Anything else, such as a timeout, a redirect, a non-2xx, an unreadable
+ *    body, a quota limit, the flag missing or failing to compute, means "could
+ *    not check".
  *
  * Fails closed. Only an override or PostHog naming this account lets it in.
  * "Could not check" keeps the console shut as well; the console says so
@@ -40,10 +54,12 @@ import { logger } from '../../utils/logger';
  */
 
 export type PartnerDeveloperAccessReason =
-  /** `FEATURE_FLAG_OVERRIDES` decided it. Never in production. */
+  /** `FEATURE_FLAG_OVERRIDES` decided it: a refusal anywhere, a yes only outside production. */
   | 'override'
   /** No `POSTHOG_PROJECT_KEY` or `NEXT_PUBLIC_POSTHOG_KEY`. */
   | 'no-api-key'
+  /** `POSTHOG_HOST` is not https (plain http is allowed only to this machine) or not a URL. */
+  | 'invalid-host'
   /** PostHog evaluated the flag and this account is in it. */
   | 'posthog-enabled'
   /** PostHog evaluated the flag and this account is not in it. */
@@ -72,8 +88,11 @@ type Environment = Record<string, string | undefined>;
 
 export interface PartnerDeveloperAccessOptions {
   environment?: Environment;
-  /** The backend's own production test, the one its Sentry gate uses. */
-  production?: boolean;
+  /**
+   * True only when this process provably cannot be production. Defaults to
+   * `isPrivateDatabaseTarget()`; tests pass it to skip that wiring.
+   */
+  notProduction?: boolean;
 }
 
 /** PostHog's US host, the default the backend's analytics client and www use. */
@@ -86,10 +105,12 @@ export const PARTNER_DEVELOPER_ACCESS_TIMEOUT_MS = 1_500;
 export const PARTNER_DEVELOPER_ACCESS_CACHE_MS = 60_000;
 /** Any signed-in account can ask, so the cache has a ceiling. The oldest answer goes first. */
 const CACHE_MAX_ENTRIES = 1_000;
+/** Hosts a flag request may reach over plain http: this machine (tests, a local stand-in). */
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 const answers = new Map<string, { enabled: boolean; expiresAt: number }>();
 let outageLogged = false;
-let productionOverrideLogged = false;
+let ignoredOverrideLogged = false;
 
 function readVariable(environment: Environment, name: string): string | null {
   const value = environment[name]?.trim();
@@ -102,6 +123,19 @@ function readApiKey(environment: Environment): string | null {
     if (key) return key;
   }
   return null;
+}
+
+/** The flags endpoint on `POSTHOG_HOST`, or null when the host is not https and not this machine. */
+function flagsUrl(environment: Environment): URL | null {
+  const host = readVariable(environment, 'POSTHOG_HOST') ?? DEFAULT_POSTHOG_HOST;
+  let url: URL;
+  try {
+    url = new URL(`${host.replace(/\/+$/, '')}/flags/?v=2`);
+  } catch {
+    return null;
+  }
+  if (url.protocol === 'https:') return url;
+  return url.protocol === 'http:' && LOOPBACK_HOSTNAMES.has(url.hostname) ? url : null;
 }
 
 function decisionFor(reason: PartnerDeveloperAccessReason, detail: string | null = null): PartnerDeveloperAccess {
@@ -162,20 +196,25 @@ function readAnswer(payload: unknown): PartnerDeveloperAccess {
   return decisionFor('flag-missing');
 }
 
-async function askPosthog(userId: string, apiKey: string, host: string): Promise<PartnerDeveloperAccess> {
+async function askPosthog(userId: string, apiKey: string, url: URL): Promise<PartnerDeveloperAccess> {
   const controller = new AbortController();
   // Covers the body as well as the headers: the timer is cleared only after parsing.
   const timer = setTimeout(() => controller.abort(), PARTNER_DEVELOPER_ACCESS_TIMEOUT_MS);
   try {
-    const response = await fetch(`${host}/flags/?v=2`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token: apiKey,
         distinct_id: userId,
+        // A property sent with the request beats one stored on the person, so a
+        // `distinct_id` property someone set on their own person cannot match.
+        person_properties: { distinct_id: userId },
         flag_keys_to_evaluate: [PARTNER_DEVELOPER_CONSOLE_FLAG],
         geoip_disable: true,
       }),
+      // A redirect could carry the project token somewhere else.
+      redirect: 'error',
       signal: controller.signal,
     });
     if (!response.ok) return decisionFor('http-error', String(response.status));
@@ -199,15 +238,17 @@ function remember(userId: string, enabled: boolean): void {
 /** Whether `userId` may use the developer console. Never throws. */
 export async function checkPartnerDeveloperAccess(
   userId: string,
-  { environment = process.env, production = isProductionSentryEnvironment() }: PartnerDeveloperAccessOptions = {},
+  { environment = process.env, notProduction = isPrivateDatabaseTarget() }: PartnerDeveloperAccessOptions = {},
 ): Promise<PartnerDeveloperAccess> {
   const override = parseFeatureFlagOverrides(environment[FEATURE_FLAG_OVERRIDES_ENV])[PARTNER_DEVELOPER_CONSOLE_FLAG];
-  if (override !== undefined) {
-    if (!production) return { decision: override ? 'allowed' : 'refused', reason: 'override', detail: null };
-    if (!productionOverrideLogged) {
-      productionOverrideLogged = true;
+  // A refusal is safe anywhere, and it is www's kill switch for the same pages.
+  if (override === false) return { decision: 'refused', reason: 'override', detail: null };
+  if (override === true) {
+    if (notProduction) return { decision: 'allowed', reason: 'override', detail: null };
+    if (!ignoredOverrideLogged) {
+      ignoredOverrideLogged = true;
       logger.warn(
-        `[PartnerDeveloperAccess] ${FEATURE_FLAG_OVERRIDES_ENV} names ${PARTNER_DEVELOPER_CONSOLE_FLAG}; production ignores it and asks PostHog`,
+        `[PartnerDeveloperAccess] ${FEATURE_FLAG_OVERRIDES_ENV} turns ${PARTNER_DEVELOPER_CONSOLE_FLAG} on, but this process may be production; ignoring it and asking PostHog`,
       );
     }
   }
@@ -215,7 +256,7 @@ export async function checkPartnerDeveloperAccess(
   const apiKey = readApiKey(environment);
   if (!apiKey) {
     const missing = decisionFor('no-api-key');
-    return production ? noteOutcome(missing) : { ...missing, decision: 'refused' };
+    return notProduction ? { ...missing, decision: 'refused' } : noteOutcome(missing);
   }
 
   const cached = answers.get(userId);
@@ -223,8 +264,9 @@ export async function checkPartnerDeveloperAccess(
     return decisionFor(cached.enabled ? 'posthog-enabled' : 'posthog-disabled');
   }
 
-  const host = (readVariable(environment, 'POSTHOG_HOST') ?? DEFAULT_POSTHOG_HOST).replace(/\/+$/, '');
-  const access = await askPosthog(userId, apiKey, host);
+  const url = flagsUrl(environment);
+  if (!url) return noteOutcome(decisionFor('invalid-host'));
+  const access = await askPosthog(userId, apiKey, url);
   if (access.decision !== 'unavailable') remember(userId, access.decision === 'allowed');
   return noteOutcome(access);
 }
@@ -232,5 +274,5 @@ export async function checkPartnerDeveloperAccess(
 export function __resetPartnerDeveloperAccessForTests(): void {
   answers.clear();
   outageLogged = false;
-  productionOverrideLogged = false;
+  ignoredOverrideLogged = false;
 }

@@ -1374,9 +1374,18 @@ both). Inviting a developer is one PostHog edit, with no variable and no deploy.
 work:
 
 - `POST {POSTHOG_HOST}/flags/?v=2` for this one flag, with the backend's
-  `POSTHOG_PROJECT_KEY` (or `NEXT_PUBLIC_POSTHOG_KEY`), the account's user id as
-  the distinct id and GeoIP off. No email or other person data is sent. A flags
-  request creates no PostHog person and no `$feature_flag_called` event.
+  `POSTHOG_PROJECT_KEY` (or `NEXT_PUBLIC_POSTHOG_KEY`) and GeoIP off. The
+  account's user id goes as the distinct id and as the `distinct_id` person
+  property: a property sent with the request beats one stored on the person, so
+  nobody can match the flag by storing someone else's id on their own person.
+  No email or other person data is sent. A flags request creates no PostHog
+  person and no `$feature_flag_called` event.
+- `POSTHOG_HOST` must be https (plain http only to this machine, for tests),
+  and a redirect is a failure, never followed: the project token goes nowhere
+  else.
+- **Target the flag by `distinct_id` only**, the user ids, never by email, a
+  cohort or another person property. Anyone holding the public project token
+  can set those properties on their own person.
 - 1.5 s deadline, the same as www's. A slow PostHog costs a console request at
   most that long and never holds a database connection.
 - A yes or a no is kept for 60 seconds per account, in each replica's memory
@@ -1384,17 +1393,23 @@ work:
   minute; until then the two can disagree. Failures are never kept.
 - Yes: the operation goes on. No: `FORBIDDEN` with reason `NOT_ALLOWLISTED`, and
   the console says "App registration is invite-only for now".
-- No answer (timeout, non-2xx, unreadable body, quota limit, the flag missing or
-  failing to compute, or no PostHog key in production): `SERVICE_UNAVAILABLE`
+- No answer (timeout, redirect, non-2xx, unreadable body, quota limit, the flag
+  missing or failing to compute, a host that is not https, or no PostHog key
+  outside a local database): `SERVICE_UNAVAILABLE`
   with reason `ALLOWLIST_UNAVAILABLE`. Nobody gets in, and the console says "We
   couldn't check your invite" with a retry button instead of "invite-only". The
   backend logs one error per outage, which reaches Sentry.
-- Outside production, `FEATURE_FLAG_OVERRIDES` (www's syntax) decides first:
-  `developer-console` lets every account in, `developer-console=false` nobody.
-  Tests, the partner e2e journey and a laptop use it instead of PostHog. With
-  neither an override nor a key, nobody gets in. Production ignores the
-  override and logs a warning once: there it would open registration to every
-  account. `PARTNER_OAUTH_MODE=hold` is the switch that stops the console.
+- `FEATURE_FLAG_OVERRIDES` (www's syntax) decides first when it names the flag.
+  `developer-console=false` refuses everyone in every environment, production
+  included: it is www's kill switch for the same pages, so the operations close
+  with them. `developer-console` (on) lets every account in, but only when the
+  backend's `DATABASE_URL` is on this machine, a container or a private network
+  (`isPrivateDatabaseTarget`), which covers tests, CI, the partner e2e journey
+  and a laptop. A label such as `SENTRY_ENVIRONMENT` does not count, so a
+  production deploy with a wrong label still asks PostHog; the backend ignores
+  the "on" and logs a warning once. With a local database and neither an
+  override nor a key, nobody gets in. `PARTNER_OAUTH_MODE=hold` stops the
+  console too.
 
 Only the console asks. Consent, the token endpoint and `/v1` never call
 PostHog, so taking a developer out of the flag stops them listing, editing,
@@ -2530,7 +2545,7 @@ stays `off` until step 1 of stage A.
 | 4 | The connection budget is decided and deployed ([below](#the-connection-budget)) | |
 | 5 | The backend and web deploys send `idle_in_transaction_session_timeout` (code since #7415, nothing to set), and the oldest-write-transaction alert exists ([below](#idle-transactions)) | The query in [Idle transactions](#idle-transactions) |
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt), and `POSTHOG_PROJECT_KEY`, which the backend already sends analytics with and now also asks the `developer-console` flag with | Railway backend service variables |
-| 7 | The PostHog flag `developer-console` exists, targeted at the developers' user ids. www shows the console to them and the backend lets them register; nothing else names who is invited | Signed in as one of them, `https://www.boardsesh.com/api/internal/feature-flags?key=developer-console` reports `posthog-enabled` for you |
+| 7 | The PostHog flag `developer-console` exists, targeted at the developers' user ids by `distinct_id` only (never email, a cohort or another person property). www shows the console to them and the backend lets them register; nothing else names who is invited | Signed in as one of them, `https://www.boardsesh.com/api/internal/feature-flags?key=developer-console` reports `posthog-enabled` for you (www's answer). Then open `https://www.boardsesh.com/developers/apps`: the app list loads (the backend's answer). A missing or wrong backend key shows only as "We couldn't check your invite" there |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
 | 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | Done 2026-11-17 once deployed: the terms page has no "Draft, not in force" notice; the console registers an app |
 

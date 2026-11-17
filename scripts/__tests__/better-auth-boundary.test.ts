@@ -35,6 +35,7 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   ],
   // The developer console's GraphQL operations (F12).
   'packages/backend/src/graphql/resolvers/oauth-clients/partner-registration.ts': [
+    '../../../auth/partner/developer-access',
     '../../../auth/partner/load-authority',
     '../../../auth/partner/mode',
     '../../../auth/partner/registration-rules',
@@ -66,7 +67,7 @@ const CONNECTED_APPS_PARTNER_CLOSURE = ['connected-apps.ts', 'connection.ts', 'l
  * the authority is dynamic (checked below). They import no Better Auth and no
  * other partner module but `mode`.
  */
-const PARTNER_ENTRY_TARGETS = ['mode.ts', 'routes.ts', 'registration-rules.ts', 'locks.ts'];
+const PARTNER_ENTRY_TARGETS = ['mode.ts', 'routes.ts', 'registration-rules.ts', 'locks.ts', 'developer-access.ts'];
 
 interface Manifest {
   dependencies?: Record<string, string>;
