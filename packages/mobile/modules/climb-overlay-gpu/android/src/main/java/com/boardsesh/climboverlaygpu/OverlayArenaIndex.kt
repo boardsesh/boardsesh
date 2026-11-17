@@ -20,7 +20,15 @@ internal data class ArenaPlan(
     val records: Map<String, ArenaChunk>,
     val removed: List<ArenaChunk>,
     val copies: List<ArenaCopy>,
-)
+) {
+    /** Encoded descriptors depend only on the arena size and these keys' ranges. */
+    fun placesLike(other: ArenaPlan, keys: List<String>): Boolean =
+        capacity == other.capacity && keys.all { key ->
+            val mine = records[key]
+            val theirs = other.records[key]
+            mine != null && theirs != null && mine.offset == theirs.offset && mine.bytes == theirs.bytes
+        }
+}
 
 internal class OverlayArenaIndex(
     private val limit: Int = OverlayPacketLayout.MAX_GPU_BYTES,
@@ -35,6 +43,19 @@ internal class OverlayArenaIndex(
     private var clock = 0L
     var records: Map<String, ArenaChunk> = emptyMap()
         private set
+
+    /**
+     * A detached copy a worker can plan against while the render thread keeps
+     * changing this one. Record maps are replaced, never mutated, so it shares them.
+     */
+    fun lend(): OverlayArenaIndex =
+        OverlayArenaIndex(limit, target, entryTarget).also { copy ->
+            copy.capacity = capacity
+            copy.epoch = epoch
+            copy.revision = revision
+            copy.clock = clock
+            copy.records = records
+        }
 
     fun prepare(required: List<String>, missing: List<ArenaChunk>): ArenaPlan {
         val protected = required.toSet()

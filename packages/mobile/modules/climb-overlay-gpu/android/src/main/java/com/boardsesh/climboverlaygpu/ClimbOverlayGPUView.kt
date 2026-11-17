@@ -316,14 +316,14 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         OverlayPacketMetrics.begin()
         OverlayRenderer.handler.post {
             preparationQueue.started()
-            try {
-                if(target.generation==request.generation)OverlayRenderer.prepare(target,request,cancel)
-            } finally {
+            // Runs once on the render thread, after any off-thread encode has returned.
+            val finished: ()->Unit={
                 if(activePreparation===cancel)activePreparation=null
                 cancel.close();OverlayPacketMetrics.end()
                 val retry=preparationQueue.finish(latest!=null && latest!=request)
                 if(latest!=null && retry)schedulePrepare()
             }
+            if(target.generation==request.generation)OverlayRenderer.prepare(target,request,cancel,finished) else finished()
         }
     }
 

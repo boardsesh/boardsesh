@@ -103,10 +103,38 @@ internal class OverlaySession(
     var destroyed = false
 }
 
-/** All EGL, cache, native allocations and GL handles belong to this one thread. */
+/** One request's preparation as it moves between the render thread and the preparer. */
+internal class Preparation(
+    val session: OverlaySession,
+    val request: OverlayRequest,
+    val cancel: PacketCancellation,
+    private val finished: () -> Unit,
+) {
+    val started = System.nanoTime()
+    var source = ""
+    var rust: PacketRustSession? = null
+    var context = 0L
+    var attempt = 0
+    private var done = false
+
+    /** Render thread, exactly once: drops the Rust session and lets the view prepare its next request. */
+    fun complete() {
+        if (done) return
+        done = true
+        rust?.close()
+        rust = null
+        finished()
+    }
+}
+
+/**
+ * All EGL, cache, native allocations and GL handles belong to this one thread.
+ * The preparer thread runs only the Rust CPU phases, against an [ArenaLoan].
+ */
 internal object OverlayRenderer {
     private val thread = HandlerThread("BoardseshClimbGPU").apply { start() }
     val handler = Handler(thread.looper)
+    private val preparer = Handler(HandlerThread("BoardseshClimbPrepare").apply { start() }.looper)
     private var display: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var context: EGLContext = EGL14.EGL_NO_CONTEXT
     private var config: EGLConfig? = null
@@ -457,26 +485,121 @@ internal object OverlayRenderer {
         session.ledger.clear()
     }
 
-    fun prepare(session: OverlaySession, request: OverlayRequest,cancel: PacketCancellation) {
+    /**
+     * Prepares [request] for [session] and calls [finished] once on this thread.
+     * Lending the arena, upload and hand-over run here; the Rust plan, chunk and
+     * encode phases run on [preparer], so frames keep drawing meanwhile. A
+     * swap-mode trio change keeps drawing the packet on screen until then.
+     */
+    fun prepare(session: OverlaySession, request: OverlayRequest,cancel: PacketCancellation,finished: ()->Unit) {
+        val work=Preparation(session,request,cancel,finished)
         try {
-            if (!OverlayLifecycle.beginPreparation({ canPrepare(session,request) },{ initialize() },{ ensureWindowSurface(session) })) return
-            clearFences(session);releaseScenes(session)
+            if (!OverlayLifecycle.beginPreparation({ canPrepare(session,request) },{ initialize() },{ ensureWindowSurface(session) })) { work.complete();return }
+            val swap=session.view.controls.revealMode==OverlayPolicy.REVEAL_MODE_SWAP
+            if(!OverlayLifecycle.carriesPacket(session.request.takeIf { session.packet!=null },request,swap)) { clearFences(session);releaseScenes(session) }
             val baseline=if(!request.animateEdits)null else if(session.baselineConfig==request.config)session.baseline else if(request.observedEmpty)emptyMap() else null
-            OverlayPacketArena.session(session.view.context,request.config,cancel).use { cpu ->
-                val packet=OverlayPacketArena.prepare(cpu,packetSource(request.frames,request.previous,request.next,baseline),cancel,
-                    { canPrepare(session,request) }) ?: throw OverlayWorkCancelled()
-                if(!eligible(session,request)) { OverlayPacketArena.retire(packet);return }
-                session.packet=packet;session.request=request;session.reported=false
-                if(request.animateEdits) { session.baseline=packet.header.roles;session.baselineConfig=request.config }
-                val controls=session.view.controls
-                session.editPending=request.animateEdits && packet.header.changed>0 && !controls.reduced && !controls.lowPower
-                session.metrics=RenderMetrics(packet.prepareMs,packet.uploadMs,packet.selectedBytes,packet.hit,packet.header.changed,
-                    if(session.editPending)OverlayPolicy.EDIT_DURATION_NS/1e6 else 0.0,packet.uploadBytes,packet.header.scenes[0].count)
-                ensureSurfaceSize(session,packet.header.width,packet.header.height)
-                if(eligible(session,request))session.view.requestDraw()
+            work.source=packetSource(request.frames,request.previous,request.next,baseline)
+            work.rust=OverlayPacketArena.session(session.view.context,request.config,cancel)
+            work.context=contextGeneration
+            lend(work)
+        } catch(failure: OutOfMemoryError) { abandon(work,OverlayResourceFailure()) }
+        catch(failure: Exception) { abandon(work,failure) }
+    }
+
+    /** Lends the arena, then encodes on [preparer], or here once the arena has kept moving. */
+    private fun lend(work: Preparation) {
+        val rust=work.rust ?: error("Preparation has no Rust session")
+        val loan=OverlayPacketArena.lend(work.cancel) { canPrepare(work.session,work.request) }
+        if(OverlayLifecycle.preparesInline(work.attempt)) {
+            land(work,loan,runCatching { OverlayPacketArena.encode(rust,work.source,work.cancel,loan) })
+            return
+        }
+        preparer.post {
+            val encoded=runCatching { OverlayPacketArena.encode(rust,work.source,work.cancel,loan) }
+            handler.post { land(work,loan,encoded) }
+        }
+    }
+
+    private fun retry(work: Preparation) {
+        work.attempt++
+        try { lend(work) }
+        catch(failure: OutOfMemoryError) { abandon(work,OverlayResourceFailure()) }
+        catch(failure: Exception) { abandon(work,failure) }
+    }
+
+    /** Back on this thread with the encoded packet: upload it against the live arena and hand over. */
+    private fun land(work: Preparation,loan: ArenaLoan,encoded: Result<EncodedPacket>) {
+        val session=work.session;val request=work.request
+        try {
+            // A reset context or a superseded, hidden or destroyed view: drop the work quietly.
+            if(work.context!=contextGeneration || !canPrepare(session,request)) { withdraw(work);return }
+            val packet=encoded.getOrElse { failure ->
+                when {
+                    failure is OverlayWorkCancelled -> withdraw(work)
+                    failure is OutOfMemoryError -> abandon(work,OverlayResourceFailure())
+                    // Rust found a lent chunk handle closed: the arena moved, the request did not fail.
+                    OverlayPacketArena.moved(loan) -> retry(work)
+                    // The carried packet's pins left no room in the arena.
+                    failure is OverlayResourceFailure && session.packet!=null -> { releaseCarried(session);retry(work) }
+                    failure is Exception -> abandon(work,failure)
+                    else -> throw failure
+                }
+                return
             }
-        } catch(failure: OutOfMemoryError) { fail(session,OverlayResourceFailure(),request) }
-        catch(failure: Exception) { fail(session,failure,request) }
+            park()
+            val uploaded=try { upload(work,loan,packet) } catch(exhausted: OverlayResourceFailure) {
+                if(session.packet==null) throw exhausted
+                releaseCarried(session)
+                upload(work,loan,packet)
+            }
+            install(work,uploaded)
+        } catch(moved: OverlayArenaMoved) { retry(work) }
+        catch(failure: OutOfMemoryError) { abandon(work,OverlayResourceFailure()) }
+        catch(failure: Exception) { abandon(work,failure) }
+        finally { encoded.getOrNull()?.close() }
+    }
+
+    /**
+     * The carried packet and its replacement together exceed the budget: let the
+     * carried one go and settle its retirement now, as before carry-over.
+     */
+    private fun releaseCarried(session: OverlaySession) {
+        clearFences(session);releaseScenes(session)
+        GLES31.glFinish();OverlayPacketArena.collect()
+    }
+
+    private fun upload(work: Preparation,loan: ArenaLoan,packet: EncodedPacket): UploadedPacket =
+        OverlayPacketArena.upload(work.rust ?: error("Preparation has no Rust session"),packet,loan,work.cancel,
+            { canPrepare(work.session,work.request) },false,work.started) ?: throw OverlayWorkCancelled()
+
+    /** The hand-over: the carried packet retires behind the fence of its last frame. */
+    private fun install(work: Preparation,packet: UploadedPacket) {
+        val session=work.session;val request=work.request
+        if(!eligible(session,request)) { OverlayPacketArena.retire(packet);withdraw(work);return }
+        if(session.packet!=null) { clearFences(session);releaseScenes(session) }
+        session.packet=packet;session.request=request;session.reported=false
+        if(request.animateEdits) { session.baseline=packet.header.roles;session.baselineConfig=request.config }
+        val controls=session.view.controls
+        session.editPending=request.animateEdits && packet.header.changed>0 && !controls.reduced && !controls.lowPower
+        session.metrics=RenderMetrics(packet.prepareMs,packet.uploadMs,packet.selectedBytes,packet.hit,packet.header.changed,
+            if(session.editPending)OverlayPolicy.EDIT_DURATION_NS/1e6 else 0.0,packet.uploadBytes,packet.header.scenes[0].count)
+        ensureSurfaceSize(session,packet.header.width,packet.header.height)
+        if(eligible(session,request))session.view.requestDraw()
+        work.complete()
+    }
+
+    /**
+     * Cancelled or superseded: a carried packet keeps drawing for the next trio,
+     * which detach, deactivation, backgrounding or that trio's own preparation releases.
+     */
+    private fun withdraw(work: Preparation) {
+        if(work.session.packet==null)fail(work.session,OverlayWorkCancelled(),work.request)
+        work.complete()
+    }
+
+    private fun abandon(work: Preparation,failure: Exception) {
+        if(failure is OverlayWorkCancelled || !canPrepare(work.session,work.request))withdraw(work)
+        else { fail(work.session,failure,work.request);work.complete() }
     }
 
     fun resized(session: OverlaySession) {
@@ -560,9 +683,9 @@ internal object OverlayRenderer {
     }
 
     /**
-     * A newer trio is waiting to prepare: keep the running swap moving from the
-     * packet on screen when it holds every climb the frame shows. It submits
-     * the old request's frame, which can never report the new one ready.
+     * A newer trio is preparing: keep the running swap moving from the packet
+     * on screen when it holds every climb the frame shows. It submits the old
+     * request's frame, which can never report the new one ready.
      */
     private fun carryOver(session: OverlaySession, request: OverlayRequest, controls: OverlayControls) =
         controls.revealMode == OverlayPolicy.REVEAL_MODE_SWAP &&

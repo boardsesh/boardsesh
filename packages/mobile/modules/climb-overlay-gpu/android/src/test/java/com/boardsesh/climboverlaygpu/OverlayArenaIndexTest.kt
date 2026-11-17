@@ -88,6 +88,42 @@ class OverlayArenaIndexTest {
         assertTrue("zero-999" in index.records)
     }
 
+    @Test fun aLentCopyPlansLikeTheLiveIndexUntilAnotherCommitTakesItsRange() {
+        val index = OverlayArenaIndex(2*1024*1024,256*1024)
+        index.commit(index.prepare(listOf("a","b"),listOf(chunk("a",1,64*1024),chunk("b",2,64*1024))))
+        val onScreen = index.retain(listOf("a","b"))
+        val lent = index.lend()
+        val keys = listOf("b","c")
+        val offThread = lent.prepare(keys,listOf(chunk("c",3,64*1024)))
+        // The packet on screen retires while the worker encodes: pins change, ranges do not.
+        index.release(listOf("a","b"),onScreen)
+        val live = index.prepare(keys,listOf(chunk("c",3,64*1024)))
+        assertTrue(live.placesLike(offThread,keys))
+        assertThrows(IllegalStateException::class.java) { index.commit(offThread) }
+        index.commit(live)
+        assertTrue("c" in index.records)
+        assertFalse("c" in lent.records)
+
+        // Another preparation commits into the gap the worker placed "c" in.
+        val moved = OverlayArenaIndex(2*1024*1024,256*1024)
+        moved.commit(moved.prepare(listOf("a","b"),listOf(chunk("a",1,64*1024),chunk("b",2,64*1024))))
+        val lentBeforeCommit = moved.lend()
+        val encoded = lentBeforeCommit.prepare(keys,listOf(chunk("c",3,64*1024)))
+        moved.commit(moved.prepare(listOf("d"),listOf(chunk("d",4,64*1024))))
+        assertFalse(moved.prepare(keys,listOf(chunk("c",3,64*1024))).placesLike(encoded,keys))
+        assertFalse("d" in lentBeforeCommit.records)
+    }
+
+    @Test fun placementsDifferWhenTheArenaSizeOrAKeysRangeDiffers() {
+        val plan = OverlayArenaIndex().prepare(listOf("a","b"),listOf(chunk("a",1,64),chunk("b",2,64)))
+        val keys = listOf("a","b")
+        assertTrue(plan.placesLike(plan.copy(removed=listOf(chunk("z",9,4)),copies=emptyList()),keys))
+        assertFalse(plan.placesLike(plan.copy(capacity=plan.capacity*2),keys))
+        val shifted = plan.records.getValue("b").let { it.copy(offset=it.offset+64) }
+        assertFalse(plan.placesLike(plan.copy(records=plan.records+("b" to shifted)),keys))
+        assertFalse(plan.placesLike(plan.copy(records=plan.records-"b"),keys))
+    }
+
     @Test fun anUnpinnedOversizedSetDoesNotLeaveAnOversizedAllocationRetained() {
         val index=OverlayArenaIndex(2*1024*1024,64*1024)
         index.commit(index.prepare(listOf("large"),listOf(chunk("large",40,128*1024))))

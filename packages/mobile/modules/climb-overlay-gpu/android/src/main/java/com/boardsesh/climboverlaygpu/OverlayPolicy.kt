@@ -6,6 +6,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal class OverlayWorkCancelled : RuntimeException()
 
+/** The arena changed under an off-thread encode, so its descriptors may name the wrong ranges. */
+internal class OverlayArenaMoved : RuntimeException()
+
 internal class AtlasFrameFailure(val reasonCode: String) : IllegalArgumentException(reasonCode)
 
 internal class OverlayResourceFailure : IllegalArgumentException("gpu-resource-limit")
@@ -20,6 +23,26 @@ internal object OverlayLifecycle {
         surface()
         return current()
     }
+
+    /** Off-thread encodes a preparation tries before running on the render thread, where the arena cannot move. */
+    const val OFF_THREAD_ATTEMPTS = 2
+
+    fun preparesInline(attempt: Int): Boolean = attempt >= OFF_THREAD_ATTEMPTS
+
+    /**
+     * A swap-mode trio change with the same geometry keeps the packet on screen
+     * drawing the running swap until its replacement is uploaded. The editor, the
+     * wipe and a first presentation release it before preparing, as before.
+     */
+    fun carriesPacket(onScreen: OverlayRequest?, next: OverlayRequest, swap: Boolean): Boolean =
+        swap && onScreen != null && !onScreen.animateEdits && !next.animateEdits && onScreen.sameGeometry(next)
+
+    /**
+     * Chunk residency is what a worker encoded against when every key still has
+     * the handle it was lent: resident keys the same open handle, missing keys none.
+     */
+    fun residencyUnchanged(lent: Map<String, Long>, keys: Collection<String>, live: (String) -> Long?): Boolean =
+        keys.all { live(it) == lent[it] }
 
     fun retainGeometry(frameFailure: Boolean, cancelled: Boolean, sameGeometry: Boolean): Boolean =
         frameFailure || (cancelled && sameGeometry)
