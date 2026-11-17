@@ -83,11 +83,11 @@ Each moves one kind of credential write from the old path into the backend's cur
 
 | Switch | Where | Values (default) | What it would do | Why it stays off |
 | --- | --- | --- | --- | --- |
-| `CURRENT_STORE_BROWSER_BINDING_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Writes a server row and host-only cookies per browser. | Deleted by #7596. Bugs #7588 (locks the users row on every request) and #7594 (rollback leaves cookies that break legacy sign-in) are closed by deleting it. |
+| `CURRENT_STORE_BROWSER_BINDING_MODE` | Backend | `legacy`, `backend-staging` (`legacy`) | Nothing. #7596 deleted every reader that acted on it (the www client and the backend's private binding route). Only the startup check for `AUTH_CUTOFF_ENFORCEMENT=observe` still reads it. | Leave it unset. The name stays in `STAGED_WRITER_MODE_ENV` until B5 deletes the backend binding core. Bugs #7588 (locks the users row on every request) and #7594 (rollback leaves cookies that break legacy sign-in) are closed by the deletion. |
 | `CURRENT_STORE_BROWSER_RENEWAL_MODE`, `BROWSER_DELEGATION_SECRET` | Gone | | Removed from main (#7618 and the lease removal). Do not set them. | Nothing reads them. |
 | `CURRENT_STORE_EXPIRED_BROWSER_BINDING_MODE`, `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Gone | | Removed from main (#7627 and #7624). Do not set them. | Nothing reads them. |
-| Proof cookies (`BROWSER_PROOF_COOKIE_PREFIX`, no env switch) | Web | Active only under binding | Carry browser proofs in cookies. | Still on main (`browser-proof-cookies.server.ts`); #7596 deletes it. |
-| One readiness function that returns `false` in code | Web | No variable changes it | Open the public pages. `packages/web/app/lib/auth/browser-consumer-readiness.ts`. The coordinator (#7676), provider-security (#7686), renewal, first-password, password (#7624) and expired-binding (#7627) files are deleted, and so is the Expo web one (`browser-consumer-readiness.web.ts`), with the selected mode it guarded. | Replaced by #7596's single mode switch. Provider security is **kept**: its backend core stays, and its web publication layer is rebuilt in B5. |
+| Proof cookies (`__Host-boardsesh.browser-proof.*`, no env switch) | Gone | | Removed from main with the binding web core (#7596). Nothing on www reads or writes them. | A leftover cookie expires within 30 days. Until then it only counts toward the Cookie-header limits on Google and Apple sign-in. |
+| The eight readiness functions that returned `false` in code | Gone | | Every one is deleted with the code it guarded, the last (`browser-consumer-readiness.ts`) with the binding web core. | Nothing replaces them until B1. Provider security is **kept** in the backend, and B5 rebuilds its web layer. |
 
 ## Code gates
 

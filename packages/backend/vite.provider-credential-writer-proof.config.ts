@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
 // Current canonical0313 fixture; the selected provider profile also runs the
-// real existing web/browser HTTP drivers. No shared backend setup or fallback.
+// real existing web HTTP driver. No shared backend setup or fallback.
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   test: {
@@ -12,7 +12,6 @@ export default defineConfig({
     include: [
       'src/auth/authority/__tests__/provider-credential-writer.proof.ts',
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',
-      'src/auth/authority/__tests__/browser-credential-writer-http.proof.ts',
       'src/auth/authority/__tests__/provider-security-http.proof.ts',
       'src/auth/authority/__tests__/anonymous-provider-http.proof.ts',
     ],

@@ -2,10 +2,11 @@
 
 > **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
 
-Epic #6975 rollout remains tracked in #7430. Public selected-browser consumer
-readiness is a code-owned function returning `false`. An environment selector
-cannot enable these public readers. Bootstrap, recovery, ordinary rolling
-publication and whole-client/browser qualification remain open.
+Epic #6975 rollout remains tracked in #7430. The readiness function that kept
+the public selected-browser readers shut (`publicBrowserConsumersReady()`,
+always `false`) went in #7596 with the last of those readers. What is left is
+the memory lease holder below, in `@boardsesh/auth-protocol`, which nothing
+outside that package imports.
 
 ## Server facade
 
@@ -58,12 +59,8 @@ The server slice and its tests went with its code in #7596. The
 separate backend PostgreSQL, restricted-role and real HTTP/WebSocket proofs do
 not by themselves establish a joined public consumer qualification.
 
-Expo-web consumers still require complete adoption of owner-bound results and
-memory freshness. The actual cross-origin bootstrap, authenticated
-distinct-binding controls, rolling-proof expiry, cookie-family GC,
-supported-engine matrix and recovery protocol also remain required. The
-readiness function stays false until the complete browser contract is reviewed
-and qualified.
+The Expo web consumers went with the Expo web selected mode in #7596, and the
+www readers went with the binding web core.
 
 The first-observation gate recorded here for the WWW selected client went with
 that client in #7596. Expo web's legacy-permitted dispatch keeps the same open

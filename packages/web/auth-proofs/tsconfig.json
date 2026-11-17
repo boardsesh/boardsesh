@@ -7,9 +7,7 @@
   "include": [
     "web-credential-proof.integration.proof.ts",
     "credential-proof.vite.config.ts",
-    "../app/lib/auth/types.ts",
-    "browser-proof-cookies.proof.ts",
-    "browser-proof-cookies.vite.config.ts"
+    "../app/lib/auth/types.ts"
   ],
   "exclude": []
 }

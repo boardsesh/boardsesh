@@ -29,7 +29,6 @@ const proofs = [
   'test:auth-authority',
   'test:auth-identities',
   'test:auth-web-credential-proof',
-  'test:auth-browser-proof-cookies',
 ];
 
 describe('auth compatibility CI has an independent complete budget', () => {
@@ -61,25 +60,11 @@ describe('auth compatibility CI has an independent complete budget', () => {
     ).toHaveLength(1);
     expect(backend.steps.some((step) => step.run === command)).toBe(false);
   });
-  it('retains serial backend execution, full-install fallback and browser installation', () => {
+  it('retains serial backend execution and the full-install fallback', () => {
     const commands = backend.steps.map((step) => step.run ?? '').join('\n');
     expect(commands).toContain('vp test run --project backend $selection');
     expect(commands).toContain('vp test run --project backend-serial');
     expect(commands).toContain('install inputs changed; running the whole backend project');
-    expect(
-      compatibility.steps.filter((step) => step.run === 'vp exec playwright install --with-deps chromium'),
-    ).toHaveLength(1);
-  });
-  it('runs the versioned proof-cookie proof after Chromium against the owned database', () => {
-    const install = compatibility.steps.findIndex(
-      (step) => step.run === 'vp exec playwright install --with-deps chromium',
-    );
-    const proof = compatibility.steps.findIndex((step) => step.run === 'vp run test:auth-browser-proof-cookies');
-    expect(install).toBeGreaterThanOrEqual(0);
-    expect(proof).toBeGreaterThan(install);
-    expect(compatibility.steps[proof].env).toEqual({
-      AUTH_PROTOTYPE_DATABASE_URL: 'postgresql://postgres:postgres@localhost:5433/postgres',
-    });
   });
   it('targets web auth/proof inputs without widening the baseline backend trigger', () => {
     const source = readFileSync('.github/workflows/ci.yml', 'utf8');

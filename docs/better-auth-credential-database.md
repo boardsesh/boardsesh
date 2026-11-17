@@ -61,23 +61,28 @@ signing keys remains a separate issuer gate.
 
 ## Private browser commands
 
-> **Partly superseded by #7596.** The browser-binding service in this section belongs to the browser binding design that is being removed. A5 deletes its web callers. The backend binding core and the binding-table readers that the kept provider-security and first-password cores use stay until B5 rebuilds those flows on the new session. The `private-native-handoff-v1` paragraph describes the `bsnh1_` handoff, which A5 deletes. See [better-auth-browser-session.md](better-auth-browser-session.md).
+#7596 deleted the private browser-binding service: the backend handler under
+`/api/internal/auth/browser-binding/v1/`, its route, the www command client that
+called it and the owned HTTP proof that drove it. That path now gets the
+backend's ordinary 404. Nothing called the service in production: its only
+caller was the www binding client, which was dark behind a readiness gate that
+returned `false`. See [better-auth-browser-session.md](better-auth-browser-session.md).
 
-The default-off browser service uses
-`/api/internal/auth/browser-binding/v1/{bootstrap,describe,read,intent,login,logout}`.
-Only `CURRENT_STORE_BROWSER_BINDING_MODE=backend-staging` enables it. Each command
-requires the private service bearer, exact versioned DTO/path and a fresh request
-before obtaining the credential pool. Browser cookies do not authorize this
-service. Its startup selector also requires enforced cutoff readers.
+What stays until B5 rebuilds provider sign-in, provider security and first
+password on the new browser session: the backend binding core
+(`auth/authority/browser-binding.ts`) and the binding-table readers those
+cores use, the `@boardsesh/auth-protocol/browser-binding-v1` contract,
+`CURRENT_STORE_BROWSER_BINDING_MODE` in the startup check for staged writers,
+and the `private-browser-v1` database profile below. `browser-credential-writer.proof.ts`
+still runs the binding core on the restricted LOGIN.
 
 `AUTH_IDENTITY_DATABASE_CONTRACT` defaults to the unchanged `private-web-v1`
-profile. Browser commands explicitly require `private-browser-v1`, including its
-reviewed browser-binding/intent table closure. A pool qualified for that profile
-can also serve the existing web commands. The narrower default profile cannot
-serve browser commands. Unknown profiles, a mismatched qualification receipt or
-contract changes while the pool is cached refuse without a content-pool fallback.
-The connection budget remains two retained writer connections and one transient
-content-target probe per backend process.
+profile. `private-browser-v1` adds the reviewed browser-binding/intent table
+closure that the kept cores read. A pool qualified for that profile can also
+serve the existing web commands. Unknown profiles, a mismatched qualification
+receipt or contract changes while the pool is cached refuse without a
+content-pool fallback. The connection budget remains two retained writer
+connections and one transient content-target probe per backend process.
 
 The explicit `private-native-handoff-v1` profile extends the reviewed
 first-password profile with native refresh-token insertion. Earlier profiles
@@ -96,39 +101,9 @@ grant on that table. No backend command has needed these extra grants since
 and CI still runs the compatible HTTP handler proofs serially under that LOGIN
 (`test:browser-renewal-credential-writer`). B5 removes the profile.
 
-Bootstrap chooses its 30-day correlation deadline from the database clock; the
-caller cannot select it. Describe returns only the authoritative binding cursor,
-selection state and credential kind. It cannot retrieve identity or raw proof.
-Read and authenticated transitions require actual current-version client-held
-source bytes. The backend alone attaches the legacy decryption secret; callers
-cannot submit a secret or substitute a canonical token for a JWE. Read obtains
-the profile in the same admitted transaction, and its UID must match the session.
-
-Each raw legacy proof is capped at 16 KiB of UTF8, and the entire JSON request is
-capped at 64 KiB. Two maximal actual ASCII proofs fit that envelope. JSON escaping
-can increase wire size; the overall body cap still applies before database work.
-Replies are measured as serialized UTF8 before headers and capped at 64 KiB.
-Oversized profiles produce a sanitized unavailable reply without partial identity
-or truncation. No browser cookie is emitted by this service.
-
 Shared transport defaults remain 16 KiB request / 64 KiB reply. Trusted facade
 budgets retain the already merged 1 MiB ceiling, including location sync's
-512 KiB request / 1 MiB reply. HTTP fields cannot choose these budgets. The
-browser staging service has aggregate per-operation limits of 180 mutations or
-600 read/describe requests per minute; public deployment throughput and fairness
-remain an explicit qualification gate.
-
-The owned full-schema HTTP proof covers both selected authorities and source
-kinds with the actual restricted LOGIN and default pool factory. It verifies
-correlation-only refusal, exact-candidate retries, logout denial, shortened
-canonical primary expiry, wrong or unavailable legacy keys, request/reply limits,
-profile identity and the absence of cookies or leaked source material.
-
-Public bootstrap remains disabled. Canonical www/app coordination, CSRF/Origin
-adapters, version-named host-only proof cookies, every authoritative reader,
-ordinary renewal, missing-proof recovery and final Chromium/WebKit application
-replay are still required. These private commands do not close those gates or
-authorize production schema, role, configuration or mode changes.
+512 KiB request / 1 MiB reply. HTTP fields cannot choose these budgets.
 
 ## Verification
 
@@ -157,7 +132,7 @@ both the normalized journal and every SQL byte are pinned by fixed SHA256
 provenance. Only the fixed `--historical-private-browser-v1` bootstrap option can
 materialize that prefix. It is never called current-canonical. Provider proofs
 use the full current canonical journal, including 0313, and rerun the actual
-private web/browser HTTP commands through `private-provider-v1` alongside the
+private web HTTP commands through `private-provider-v1` alongside the
 provider command proofs. Both JUnit artifacts are required. There is no generic
 migration cutoff, schema CHECK rewrite or permissive old-profile fallback.
 

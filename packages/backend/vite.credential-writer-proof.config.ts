@@ -12,7 +12,6 @@ export default defineConfig({
       'src/auth/authority/__tests__/credential-writer-acl.proof.ts',
       'src/auth/authority/__tests__/browser-credential-writer.proof.ts',
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',
-      'src/auth/authority/__tests__/browser-credential-writer-http.proof.ts',
     ],
     testTimeout: 30000,
     hookTimeout: 60000,

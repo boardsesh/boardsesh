@@ -1,7 +1,6 @@
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
-import { handleBrowserBinding } from './handlers/browser-binding';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
 import { handleFirstPassword } from './handlers/first-password';
@@ -796,10 +795,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // Default-off service commands. Browser cookies do not authorize them.
       if (pathname.startsWith('/api/internal/auth/current-store/location-sync/v1/')) {
         await handleCurrentStoreLocationSync(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {
-        await handleBrowserBinding(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {
