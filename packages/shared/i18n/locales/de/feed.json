@@ -24,6 +24,22 @@
         "hint": "Legt fest, wessen Boulder du siehst"
       },
       "sections": {
+        "week": {
+          "title": "Diese Woche",
+          "sessions_one": "{{count}} Session",
+          "sessions_other": "{{count}} Sessions",
+          "sends_one": "{{count}} Begehung",
+          "sends_other": "{{count}} Begehungen",
+          "hardest": "Am schwersten diese Woche: {{grade}}",
+          "weeksRunning_one": "{{count}} Woche am Stück",
+          "weeksRunning_other": "{{count}} Wochen am Stück",
+          "recordFirstGrade": "Neu: dein erster {{grade}}",
+          "recordHardestFlash": "Neu: dein schwerster Flash, {{grade}}",
+          "recordClimb": "{{record}} · {{climb}}",
+          "empty": "Trag eine Begehung ein, um deine Woche zu starten",
+          "dayClimbed": "{{day}}, geklettert",
+          "openRecord": "{{climb}} öffnen"
+        },
         "session": {
           "startTitle": "Starte eine Session",
           "startBody": "Wähl ein Workout oder kletter einfach",

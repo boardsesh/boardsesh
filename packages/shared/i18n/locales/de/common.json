@@ -488,6 +488,7 @@
         "focused": "Fokus",
         "restoreDefaults": "Standard wiederherstellen",
         "sections": {
+          "week": "Diese Woche",
           "board": "Dein Board",
           "session": "Session",
           "playlists": "Playlists",
@@ -496,6 +497,7 @@
           "feed": "Feed"
         },
         "descriptions": {
+          "week": "Sessions, Begehungen und Wochen am Stück",
           "board": "Boulder durchsuchen oder Board wechseln",
           "session": "Session starten oder ihre Zeit sehen",
           "playlists": "Gelikte Boulder und Projekte",

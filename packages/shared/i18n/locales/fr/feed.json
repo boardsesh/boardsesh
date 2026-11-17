@@ -24,6 +24,22 @@
         "hint": "Change les voies que vous voyez"
       },
       "sections": {
+        "week": {
+          "title": "Cette semaine",
+          "sessions_one": "{{count}} session",
+          "sessions_other": "{{count}} sessions",
+          "sends_one": "{{count}} croix",
+          "sends_other": "{{count}} croix",
+          "hardest": "Le plus dur cette semaine : {{grade}}",
+          "weeksRunning_one": "{{count}} semaine d’affilée",
+          "weeksRunning_other": "{{count}} semaines d’affilée",
+          "recordFirstGrade": "Nouveau : ton premier {{grade}}",
+          "recordHardestFlash": "Nouveau : ton flash le plus dur, {{grade}}",
+          "recordClimb": "{{record}} · {{climb}}",
+          "empty": "Fais une croix pour lancer ta semaine",
+          "dayClimbed": "{{day}}, grimpé",
+          "openRecord": "Ouvrir {{climb}}"
+        },
         "session": {
           "startTitle": "Démarre une session",
           "startBody": "Choisis un entraînement ou grimpe librement",

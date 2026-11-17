@@ -488,6 +488,7 @@
         "focused": "Focused",
         "restoreDefaults": "Restore defaults",
         "sections": {
+          "week": "This week",
           "board": "Your board",
           "session": "Session",
           "playlists": "Playlists",
@@ -496,6 +497,7 @@
           "feed": "Feed"
         },
         "descriptions": {
+          "week": "Sessions, sends and weeks running",
           "board": "Browse climbs or change board",
           "session": "Start a session or see its timer",
           "playlists": "Liked climbs and Projects",

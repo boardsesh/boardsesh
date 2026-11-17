@@ -1,14 +1,18 @@
 import { isSameSectionLayout, type SectionLayout, type SectionLayoutSpec } from './section-layout';
 import { createSectionLayoutStore, settingsLayoutStorage, useSectionLayout } from './section-layout-store';
 
-// The sections Home shows, and in what order (#6289). The default is today's
-// Home: Climbing now, then the feed. The three Boardz-style cards and Fresh beta
-// (the beta shelf Home had until #5518) start hidden, so nobody's Home changes
-// on an update, and "Focused" is one tap away.
+// The sections Home shows, and in what order (#6289). The default is This week
+// (#7690), Climbing now, then the feed. The three Boardz-style cards and Fresh
+// beta (the beta shelf Home had until #5518) start hidden, and "Focused" is one
+// tap away.
+//
+// A section added in a later release takes its default place and switch, also
+// for a climber who customised Home: their own order and switches stay as they
+// were around it.
 //
 // The feed stays last: it scrolls forever, so nothing could sit under it.
 
-export const HOME_SECTION_IDS = ['board', 'session', 'playlists', 'climbingNow', 'beta', 'feed'] as const;
+export const HOME_SECTION_IDS = ['week', 'board', 'session', 'playlists', 'climbingNow', 'beta', 'feed'] as const;
 export type HomeSectionId = (typeof HOME_SECTION_IDS)[number];
 /** The sections drawn above the feed; the feed is the list itself. */
 export type HomeTopSectionId = Exclude<HomeSectionId, 'feed'>;
@@ -21,13 +25,14 @@ export const HOME_SECTIONS: SectionLayoutSpec<HomeSectionId> = {
   ids: HOME_SECTION_IDS,
   defaults: {
     order: HOME_SECTION_IDS,
-    visible: { board: false, session: false, playlists: false, climbingNow: true, beta: false, feed: true },
+    visible: { week: true, board: false, session: false, playlists: false, climbingNow: true, beta: false, feed: true },
   },
   lockedLast: 'feed',
 };
 
-/** What "Focused" shows: the three cards, without the feed and Climbing now. */
+/** What "Focused" shows: your week and the three cards, without the feed and Climbing now. */
 const FOCUSED_VISIBILITY: Readonly<Record<HomeSectionId, boolean>> = {
+  week: true,
   board: true,
   session: true,
   playlists: true,

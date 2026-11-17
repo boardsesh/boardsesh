@@ -149,6 +149,7 @@ describe('HomeCustomizeSheet', () => {
   it("lists today's Home with the feed last and without arrows", () => {
     renderSheet();
     expect(switchLabels()).toEqual([
+      `${SECTION_KEY}.week`,
       `${SECTION_KEY}.board`,
       `${SECTION_KEY}.session`,
       `${SECTION_KEY}.playlists`,
@@ -157,6 +158,7 @@ describe('HomeCustomizeSheet', () => {
       `${SECTION_KEY}.feed`,
     ]);
     expect(screen.getAllByRole('switch').map((element) => (element as HTMLInputElement).checked)).toEqual([
+      true,
       false,
       false,
       false,
@@ -187,6 +189,7 @@ describe('HomeCustomizeSheet', () => {
       fireEvent.click(screen.getByTestId('section-layout-move-up-climbingNow'));
     });
     expect(homeSectionsStore.getLayout().order).toEqual([
+      'week',
       'board',
       'session',
       'climbingNow',
@@ -194,7 +197,7 @@ describe('HomeCustomizeSheet', () => {
       'beta',
       'feed',
     ]);
-    expect(switchLabels()[2]).toBe(`${SECTION_KEY}.climbingNow`);
+    expect(switchLabels()[3]).toBe(`${SECTION_KEY}.climbingNow`);
     expect(analytics.trackSettingChanged).toHaveBeenCalledWith('homeScreen', 'moveUp', 'climbingNow');
   });
 
@@ -225,6 +228,7 @@ describe('HomeCustomizeSheet', () => {
     });
     expect(moved).toBe(true);
     expect(homeSectionsStore.getLayout().order).toEqual([
+      'week',
       'session',
       'board',
       'playlists',
