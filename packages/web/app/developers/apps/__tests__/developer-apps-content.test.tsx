@@ -122,6 +122,18 @@ describe('DeveloperAppsContent', () => {
     expect(screen.queryByRole('button', { name: 'Register an app' })).toBeNull();
   });
 
+  it('offers a retry, not "invite-only", when the backend could not check the invite', async () => {
+    mocks.request.mockRejectedValueOnce(
+      graphQLRefusal({ code: 'SERVICE_UNAVAILABLE', reason: 'ALLOWLIST_UNAVAILABLE', retryAfterSeconds: 60 }),
+    );
+    renderConsole();
+    expect(await screen.findByText("We couldn't check your invite")).toBeTruthy();
+    expect(screen.queryByText('App registration is invite-only for now')).toBeNull();
+    serve({ MyOAuthClients: () => ({ myOAuthClients: [] }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('No apps yet')).toBeTruthy();
+  });
+
   it('shows a new secret once, warns it will not be shown again, and keeps it out of the query cache', async () => {
     let createdInput: Record<string, unknown> | undefined;
     serve({

@@ -5,13 +5,18 @@ import type { AddressInfo } from 'node:net';
 import { eq } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED } from '@boardsesh/auth-protocol/partner-oauth';
+import {
+  PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE,
+  PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED,
+  PARTNER_DEVELOPER_CONSOLE_FLAG,
+} from '@boardsesh/auth-protocol/partner-oauth';
 import type { ConnectionContext, CreateOAuthClientInput } from '@boardsesh/shared-schema';
 import { oauthClient, users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { API_HOSTNAME } from '../handlers/api-host';
 import { redisClientManager } from '../redis/client';
 import { createPartnerTestEnvironment } from '../auth/partner/__tests__/partner-fixture';
+import { startFakePosthogFlags, type FakePosthogFlags } from './helpers/fake-posthog-flags';
 import { webSessionBearer } from './helpers/partner-launch-harness';
 import {
   __resetPartnerRegistrationDeploymentForTests,
@@ -204,11 +209,16 @@ function errorOf(reply: GraphQLReply) {
   return reply.body.errors?.[0];
 }
 
+/** Who is invited: the `developer-console` flag, answered over HTTP like PostHog. */
+let posthog: FakePosthogFlags;
+
 beforeAll(async () => {
   await redisClientManager.connect();
+  posthog = await startFakePosthogFlags();
 });
 
 afterAll(async () => {
+  await posthog?.close();
   await redisClientManager.disconnect();
   // The one partner authority this process built, for the allowlist and open
   // tests. Building it here instead would fail without secrets, which is fine.
@@ -239,9 +249,10 @@ describe('with PARTNER_OAUTH_MODE off, in the real server', () => {
         return { getPartnerAuthorityRuntime: () => Promise.reject(new Error('must not load')) };
       });
       const developerId = await createDeveloper();
+      posthog.invite(developerId);
       const server = await startRealServer({
+        ...posthog.environment,
         PARTNER_OAUTH_MODE: 'off',
-        PARTNER_OAUTH_DEVELOPER_ALLOWLIST: developerId,
         PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
       });
       try {
@@ -270,6 +281,7 @@ describe('with PARTNER_OAUTH_MODE off, in the real server', () => {
         expect(await limiterCount(`oauth-client-ip:${clientIp}`, 'oauthClientWrite')).toBeNull();
         expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
         expect(authorityLoaded).toBe(false);
+        expect(posthog.asked(developerId)).toBe(0);
         // And the API host still serves nothing but /health.
         expect((await server.graphql({ query: LIST_QUERY }, { bearer, host: API_HOSTNAME })).status).toBe(404);
       } finally {
@@ -295,9 +307,10 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
     secondDeveloperId = await createDeveloper();
     addressDeveloperId = await createDeveloper();
     signInDeveloperId = await createDeveloper();
+    posthog.invite('someone-else', developerId, secondDeveloperId, addressDeveloperId, signInDeveloperId);
     server = await startRealServer({
+      ...posthog.environment,
       PARTNER_OAUTH_MODE: 'allowlist',
-      PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId},${addressDeveloperId},${signInDeveloperId}`,
       PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
       PARTNER_DEVELOPER_TERMS_VERSION: TERMS_VERSION,
     });
@@ -660,16 +673,23 @@ describe('the other modes', () => {
     userId,
   });
 
+  /** The fake PostHog answers the `developer-console` question for these accounts. */
+  function stubInvited(...userIds: string[]): void {
+    for (const [name, value] of Object.entries(posthog.environment)) vi.stubEnv(name, value);
+    posthog.invite(...userIds);
+  }
+
   it('pauses every operation in hold, before anything else', async () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'hold');
     const developerId = await createDeveloper();
-    vi.stubEnv('PARTNER_OAUTH_DEVELOPER_ALLOWLIST', developerId);
+    stubInvited(developerId);
     await expect(
       oauthClientQueries.myOAuthClients(undefined, {}, { connectionId: 'anonymous', isAuthenticated: false }),
     ).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE', retryAfterSeconds: 60 } });
     await expect(
       oauthClientMutations.deleteOAuthClient(undefined, { clientId: 'x' }, context(developerId)),
     ).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
+    expect(posthog.asked(developerId)).toBe(0);
   });
 
   it('still registers only allowlisted developers in open, until developer email has a real proof', async () => {
@@ -677,7 +697,7 @@ describe('the other modes', () => {
     vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
     const listed = await createDeveloper();
     const verifiedOutsider = await createDeveloper();
-    vi.stubEnv('PARTNER_OAUTH_DEVELOPER_ALLOWLIST', listed);
+    stubInvited(listed);
     await expect(
       oauthClientMutations.createOAuthClient(
         undefined,
@@ -698,9 +718,48 @@ describe('the other modes', () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
     vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
     const unverified = await createDeveloper(false);
-    vi.stubEnv('PARTNER_OAUTH_DEVELOPER_ALLOWLIST', unverified);
+    stubInvited(unverified);
     await expect(
       oauthClientMutations.createOAuthClient(undefined, { input: APP_INPUT }, context(unverified)),
     ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' } });
+  });
+
+  it('says it could not check the invite while PostHog is down, and lets no one in', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
+    const invited = await createDeveloper();
+    stubInvited(invited);
+    posthog.setOutage(true);
+    try {
+      for (const call of [
+        () => oauthClientQueries.myOAuthClients(undefined, {}, context(invited)),
+        () => oauthClientMutations.createOAuthClient(undefined, { input: APP_INPUT }, context(invited)),
+      ]) {
+        await expect(call()).rejects.toMatchObject({
+          message: "Developer apps couldn't check your invite. Try again in a minute.",
+          extensions: { code: 'SERVICE_UNAVAILABLE', reason: PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE },
+        });
+      }
+      expect(await db.$count(oauthClient, eq(oauthClient.userId, invited))).toBe(0);
+    } finally {
+      posthog.setOutage(false);
+    }
+    // A failure is never cached: the next request after PostHog recovers goes through.
+    expect(await oauthClientQueries.myOAuthClients(undefined, {}, context(invited))).toEqual([]);
+  });
+
+  it('lets a developer in with FEATURE_FLAG_OVERRIDES on a local database, without PostHog', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
+    vi.stubEnv('POSTHOG_PROJECT_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '');
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', PARTNER_DEVELOPER_CONSOLE_FLAG);
+    const developerId = await createDeveloper();
+    expect(await oauthClientQueries.myOAuthClients(undefined, {}, context(developerId))).toEqual([]);
+    expect(posthog.asked(developerId)).toBe(0);
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', `${PARTNER_DEVELOPER_CONSOLE_FLAG}=false`);
+    await expect(oauthClientQueries.myOAuthClients(undefined, {}, context(developerId))).rejects.toMatchObject({
+      extensions: { code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' },
+    });
   });
 });

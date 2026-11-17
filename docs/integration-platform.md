@@ -470,7 +470,7 @@ a time, and the backend is inventory-only there.
 | --- | --- |
 | `off` (default, and any unrecognised value) | Every partner route is `404`, every developer console operation answers `NOT_FOUND`, and Better Auth is never loaded |
 | `hold` | Every partner route answers `503` with `Retry-After: 60`, and every console operation `SERVICE_UNAVAILABLE`, without loading Better Auth |
-| `allowlist`, `open` | The routes below are served. The two modes are meant to differ only in who can register an app; for now both register only developers in `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (see below) |
+| `allowlist`, `open` | The routes below are served. The two modes are meant to differ only in who can register an app; for now both register only developers the PostHog flag `developer-console` names (see below) |
 
 Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
 `GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
@@ -1334,7 +1334,7 @@ Rules enforced without a human:
 
 | Rule | Value | Why |
 | --- | --- | --- |
-| Developer account | Signed in, email verified, and listed in `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` until stage D | Accountability without paperwork |
+| Developer account | Signed in, email verified, and named by the PostHog flag `developer-console` until stage D | Accountability without paperwork |
 | Apps per developer | 10 | Bounds a single bad actor |
 | Redirect URIs per app | 10 | |
 | Redirect URI forms | `https://…` (any host); `http://127.0.0.1:{any port}/…` and `http://[::1]…` (loopback, RFC 8252 §7.3, port ignored when matching); private-use schemes with a dot, `com.example.app:/…` (RFC 8252 §7.1). Rejected: `http://` elsewhere, `javascript:`, `data:`, `file:`, fragments, wildcards, any URI on a `boardsesh.com` host, and the schemes `boardsesh` and `com.boardsesh*` (our own app's) | Loopback lets scripts and local AI-built tools integrate with no hosting |
@@ -1363,18 +1363,68 @@ served by `graphql/resolvers/oauth-clients/partner-registration.ts` on the
 ordinary GraphQL pool. Each checks, in this order: the mode (`off` answers
 `NOT_FOUND`, `hold` answers `SERVICE_UNAVAILABLE`, before anything else); a
 signed-in Boardsesh account (first-party credentials only: a partner token is
-opaque and never authenticates GraphQL); the developer's own rate limit;
-`PARTNER_OAUTH_DEVELOPER_ALLOWLIST`, comma-separated user ids, empty meaning
-nobody; then the per-address limit. Creating an app also needs `emailVerified`.
+opaque and never authenticates GraphQL); the developer's own rate limit; the
+PostHog flag `developer-console` for the account's user id (below); then the
+per-address limit. Creating an app also needs `emailVerified`.
+
+**Who is invited.** The same PostHog flag that shows www `/developers/apps`
+(`PARTNER_DEVELOPER_CONSOLE_FLAG` in `@boardsesh/auth-protocol`, one key for
+both). Inviting a developer is one PostHog edit, with no variable and no deploy.
+`auth/partner/developer-access.ts` asks it before any transaction or Better Auth
+work:
+
+- `POST {POSTHOG_HOST}/flags/?v=2` for this one flag, with the backend's
+  `POSTHOG_PROJECT_KEY` (or `NEXT_PUBLIC_POSTHOG_KEY`) and GeoIP off. The
+  account's user id goes as the distinct id and as the `distinct_id` person
+  property: a property sent with the request beats one stored on the person, so
+  nobody can match the flag by storing someone else's id on their own person.
+  No email or other person data is sent. A flags request creates no PostHog
+  person and no `$feature_flag_called` event.
+- `POSTHOG_HOST` must be https (plain http only to this machine, for tests),
+  and a redirect is a failure, never followed: the project token goes nowhere
+  else.
+- **Target the flag by `distinct_id` only**, the user ids, never by email, a
+  cohort or another person property. Anyone holding the public project token
+  can set those properties on their own person.
+- 1.5 s deadline, the same as www's. A slow PostHog costs a console request at
+  most that long and never holds a database connection.
+- A yes or a no is kept for 60 seconds per account, in each replica's memory
+  (at most 1,000 accounts). A change in PostHog reaches both replicas within a
+  minute; until then the two can disagree. Failures are never kept.
+- Yes: the operation goes on. No: `FORBIDDEN` with reason `NOT_ALLOWLISTED`, and
+  the console says "App registration is invite-only for now".
+- No answer (timeout, redirect, non-2xx, unreadable body, quota limit, the flag
+  missing or failing to compute, a host that is not https, or no PostHog key
+  outside a local database): `SERVICE_UNAVAILABLE`
+  with reason `ALLOWLIST_UNAVAILABLE`. Nobody gets in, and the console says "We
+  couldn't check your invite" with a retry button instead of "invite-only". The
+  backend logs one error per outage, which reaches Sentry.
+- `FEATURE_FLAG_OVERRIDES` (www's syntax) decides first when it names the flag.
+  `developer-console=false` refuses everyone in every environment, production
+  included: it is www's kill switch for the same pages, so the operations close
+  with them. `developer-console` (on) lets every account in, but only when the
+  backend's `DATABASE_URL` is on this machine, a container or a private network
+  (`isPrivateDatabaseTarget`), which covers tests, CI, the partner e2e journey
+  and a laptop. A label such as `SENTRY_ENVIRONMENT` does not count, so a
+  production deploy with a wrong label still asks PostHog; the backend ignores
+  the "on" and logs a warning once. With a local database and neither an
+  override nor a key, nobody gets in. `PARTNER_OAUTH_MODE=hold` stops the
+  console too.
+
+Only the console asks. Consent, the token endpoint and `/v1` never call
+PostHog, so taking a developer out of the flag stops them listing, editing,
+rotating or deleting their apps, while those apps keep connecting climbers and
+serving `/v1`. To stop an app, suspend it ([admin commands](#admin-commands)).
 
 **`open` still means the allowlist.** `emailVerified` was stamped without proof
 while verification was off (BA-02 D3), so the fast path keeps open registration
 closed until BA-02 ships or registration sends its own email proof. Until one of
-those lands, `open` registers the same allowlisted developers as `allowlist`.
+those lands, `open` registers the same developers as `allowlist`: the ones the
+flag names.
 
 **Rate limits.** Writes: 10 a minute per developer and 30 per address. Reads:
 60 and 120. The developer's bucket is charged once the account is known, so only
-that account can spend it. The address bucket is charged only for an allowlisted
+that account can spend it. The address bucket is charged only for an invited
 developer, so throwaway accounts behind the same address cannot fill it and lock
 a listed developer out. It is keyed by `ConnectionContext.trustedClientIp`
 (`getTrustedClientIp`, the key the partner OAuth routes use): `cf-connecting-ip`
@@ -2494,8 +2544,8 @@ stays `off` until step 1 of stage A.
 | 3 | AASA has excluded `/oauth` and `/developers` for at least 7 days, so installed iPhones have refreshed it | `curl -sS https://www.boardsesh.com/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*` |
 | 4 | The connection budget is decided and deployed ([below](#the-connection-budget)) | |
 | 5 | The backend and web deploys send `idle_in_transaction_session_timeout` (code since #7415, nothing to set), and the oldest-write-transaction alert exists ([below](#idle-transactions)) | The query in [Idle transactions](#idle-transactions) |
-| 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
-| 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
+| 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt), and `POSTHOG_PROJECT_KEY`, which the backend already sends analytics with and now also asks the `developer-console` flag with | Railway backend service variables |
+| 7 | The PostHog flag `developer-console` exists, targeted at the developers' user ids by `distinct_id` only (never email, a cohort or another person property). www shows the console to them and the backend lets them register; nothing else names who is invited | Signed in as one of them, `https://www.boardsesh.com/api/internal/feature-flags?key=developer-console` reports `posthog-enabled` for you (www's answer). Then open `https://www.boardsesh.com/developers/apps`: the app list loads (the backend's answer). A missing or wrong backend key shows only as "We couldn't check your invite" there |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
 | 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | Done 2026-11-17 once deployed: the terms page has no "Draft, not in force" notice; the console registers an app |
 
@@ -2545,13 +2595,13 @@ a sign-in older than 30 days never counts.
 | C | `allowlist` | Real climbers | 25 live, 20 new in 24 hours | Stage B clean | Until stage D |
 | D | `open` | Any developer with a verified email | The stage D default, still open (200 new a day was the proposal) | BA-02 ships or registration proves the email itself; milestone 2 docs; a second independent agent review; emailing climbers when an app connects (decision 8) | |
 
-Until stage D's email proof exists, `open` registers only the allowlisted
-developers ([What the backend does today](#what-the-backend-does-today-f12)).
+Until stage D's email proof exists, `open` registers only the developers the
+flag names ([What the backend does today](#what-the-backend-does-today-f12)).
 
 **Stage A.**
 
 1. Web `allowlist`, then backend `allowlist`, with the owner's test account in
-   `PARTNER_OAUTH_DEVELOPER_ALLOWLIST`.
+   the `developer-console` flag.
 2. Check the client address the backend sees. Production flag requests that
    resolve to real countries, not `XX`, mean Railway's ingress peer is in a
    private range. If they resolve to `XX`, every client shares one rate-limit
@@ -2571,8 +2621,8 @@ developers ([What the backend does today](#what-the-backend-does-today-f12)).
 Worker-hosted partner reaches us from one `CF-Connecting-IP`, and without them
 they would share one bucket. Many separate /48s can still fill the shared `/v1`
 lane; that needs a Cloudflare rule, which is the owner's. Then add
-the two developers' ids to `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` and to the
-`developer-console` flag, send them [partner-api.md](./partner-api.md), ask them
+the two developers' user ids to the `developer-console` flag (one PostHog edit,
+nothing to deploy), send them [partner-api.md](./partner-api.md), ask them
 to connect only their own accounts, and turn every question into a doc fix.
 
 **Stage C.** The caps stay at 25 live and 20 new a day. Emailing climbers when

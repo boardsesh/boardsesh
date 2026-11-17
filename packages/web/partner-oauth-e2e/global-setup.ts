@@ -6,6 +6,8 @@ import { request } from 'node:http';
 import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { FEATURE_FLAG_OVERRIDES_ENV, parseFeatureFlagOverrides } from '@boardsesh/analytics';
+import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner-oauth';
 import { startEdge, type Edge } from './edge';
 import {
   assertLocalOnly,
@@ -278,7 +280,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         ...shared,
         PORT: String(backendPort),
         PARTNER_OAUTH_SECRETS: `1:${randomBytes(32).toString('base64url')}`,
-        PARTNER_OAUTH_DEVELOPER_ALLOWLIST: seeded.developer.userId,
+        // Lets accounts into the developer console without PostHog. The backend
+        // honours an "on" only with a local database, which assertLocalOnly enforces.
+        [FEATURE_FLAG_OVERRIDES_ENV]: PARTNER_DEVELOPER_CONSOLE_FLAG,
         PARTNER_DEVELOPER_TERMS_VERSION: E2E_DEVELOPER_TERMS_VERSION,
         BOARDSESH_WEB_URL: `http://127.0.0.1:${webPort}`,
         // As in packages/backend/.env.development: no background job families on a test run.
@@ -314,6 +318,17 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     );
     assertLocalOnly('backend', backendEnvironment);
     assertLocalOnly('web server', webEnvironment);
+    // The backend loads `.env.development.local` over its environment at startup
+    // (src/instrument.ts), so a FEATURE_FLAG_OVERRIDES line there replaces the one
+    // above and nothing set here can win. Stop now, rather than at registration
+    // with NOT_ALLOWLISTED.
+    const backendOverrides = parseFeatureFlagOverrides(backendEnvironment.environment[FEATURE_FLAG_OVERRIDES_ENV]);
+    if (backendOverrides[PARTNER_DEVELOPER_CONSOLE_FLAG] !== true) {
+      throw new Error(
+        `packages/backend/.env.development.local sets ${FEATURE_FLAG_OVERRIDES_ENV} without ${PARTNER_DEVELOPER_CONSOLE_FLAG}, ` +
+          `and the backend loads it over the e2e's value. Add ${PARTNER_DEVELOPER_CONSOLE_FLAG} to that line or remove it.`,
+      );
+    }
 
     processes.push(
       startProcess('backend', 'vp', ['exec', 'tsx', 'src/index.ts'], BACKEND_DIRECTORY, backendEnvironment.environment),

@@ -25,6 +25,10 @@
       "title": "Per ora la registrazione delle app è solo su invito",
       "body": "Il tuo account non è nella lista degli inviti. Chiedi l'accesso al team di Boardsesh."
     },
+    "inviteCheckFailed": {
+      "title": "Non siamo riusciti a verificare il tuo invito",
+      "body": "Boardsesh non è riuscito a consultare la lista degli inviti. Riprova tra un minuto."
+    },
     "paused": {
       "title": "La registrazione delle app è in pausa",
       "body": "Boardsesh ha messo in pausa le app partner per un momento. Riprova tra un minuto."

@@ -30,6 +30,7 @@ import { redisClientManager } from '../redis/client';
 import { revokePartnerUser, suspendPartnerApp, unsuspendPartnerApp } from '../scripts/partner-app-admin';
 import { runPartnerOAuthSweep } from '../services/partner-oauth-sweep';
 import { logger } from '../utils/logger';
+import { startFakePosthogFlags, type FakePosthogFlags } from './helpers/fake-posthog-flags';
 import {
   CONSENT_PAGE,
   createAccount,
@@ -118,7 +119,12 @@ function remember(...values: Array<string | null | undefined>): void {
   for (const value of values) if (value && value.length >= 16) credentialsSeen.add(value);
 }
 
+/** Who is invited: the `developer-console` flag, answered over HTTP like PostHog. */
+let posthog: FakePosthogFlags;
+
 beforeAll(async () => {
+  posthog = await startFakePosthogFlags();
+  posthog.invite(...developerPool);
   logger.on('data', captureLogEntry);
   for (const method of ['log', 'info', 'warn', 'error'] as const) {
     const original = console[method].bind(console);
@@ -136,6 +142,7 @@ afterAll(async () => {
   logger.off('data', captureLogEntry);
   vi.restoreAllMocks();
   await redisClientManager.disconnect();
+  await posthog?.close();
 });
 
 // ---------------------------------------------------------------------------
@@ -158,10 +165,11 @@ describe('mode off, in the real server', () => {
         return { getPartnerAuthorityRuntime: () => Promise.reject(new Error('must not load')) };
       });
       const developerId = await createAccount('developer');
+      posthog.invite(developerId);
       const hiddenServer = await startRealServer({
+        ...posthog.environment,
         PARTNER_OAUTH_MODE: 'off',
         PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
-        PARTNER_OAUTH_DEVELOPER_ALLOWLIST: developerId,
       });
       try {
         for (const [method, path] of PARTNER_SURFACES) {
@@ -176,6 +184,7 @@ describe('mode off, in the real server', () => {
         expect(developerConsole.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
         await expectFirstPartyUnaffected(hiddenServer);
         expect(authorityLoaded).toBe(false);
+        expect(posthog.asked(developerId)).toBe(0);
       } finally {
         await hiddenServer.stop();
       }
@@ -199,10 +208,11 @@ describe('mode hold, in the real server', () => {
         return { getPartnerAuthorityRuntime: () => Promise.reject(new Error('must not load')) };
       });
       const developerId = await createAccount('developer');
+      posthog.invite(developerId);
       const heldServer = await startRealServer({
+        ...posthog.environment,
         PARTNER_OAUTH_MODE: 'hold',
         PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
-        PARTNER_OAUTH_DEVELOPER_ALLOWLIST: developerId,
       });
       try {
         for (const [method, path] of PARTNER_SURFACES) {
@@ -222,6 +232,7 @@ describe('mode hold, in the real server', () => {
         expect(developerConsole.errors?.[0]?.extensions?.code).toBe('SERVICE_UNAVAILABLE');
         await expectFirstPartyUnaffected(heldServer);
         expect(authorityLoaded).toBe(false);
+        expect(posthog.asked(developerId)).toBe(0);
       } finally {
         await heldServer.stop();
       }
@@ -300,13 +311,16 @@ let metadata: oauth.AuthorizationServer;
 let closeMainRuntime: (() => Promise<void>) | undefined;
 /** For barriers and writers outside the server: a session of our own. */
 let rawSql: ReturnType<typeof postgres>;
+/** Every one of them is in the `developer-console` flag (the fake PostHog, above). */
 const developerPool: string[] = Array.from({ length: 80 }, () => `developer-${randomUUID()}`);
-const MAIN_DEPLOYMENT = {
-  PARTNER_OAUTH_MODE: 'allowlist',
-  PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
-  PARTNER_OAUTH_DEVELOPER_ALLOWLIST: developerPool.join(','),
-  PARTNER_DEVELOPER_TERMS_VERSION: LAUNCH_TERMS_VERSION,
-};
+function mainDeployment(): Record<string, string> {
+  return {
+    ...posthog.environment,
+    PARTNER_OAUTH_MODE: 'allowlist',
+    PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
+    PARTNER_DEVELOPER_TERMS_VERSION: LAUNCH_TERMS_VERSION,
+  };
+}
 let appCounter = 0;
 
 function oauthOptions(ip: string) {
@@ -650,7 +664,7 @@ async function expectAlive(connection: Connection): Promise<Connection> {
 describe('partner OAuth on, in the real server', () => {
   beforeAll(async () => {
     rawSql = postgres(getWorkerDatabaseUrl(), { max: 4, onnotice: () => {} });
-    server = await startRealServer(MAIN_DEPLOYMENT);
+    server = await startRealServer(mainDeployment());
     // Taken now, from this module graph: "two instances" later loads a second one.
     const { getPartnerAuthorityRuntime } = await import('../auth/partner/authority');
     closeMainRuntime = async () => (await getPartnerAuthorityRuntime()).close();
@@ -721,6 +735,30 @@ describe('partner OAuth on, in the real server', () => {
         { bearer: await firstPartyToken(outsider) },
       );
       expect(refused.errors?.[0]?.extensions).toMatchObject({ code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' });
+    });
+
+    it('keeps an app connecting and serving after its developer leaves the flag; only the console closes', async () => {
+      const app = await registerApp('confidential-basic');
+      const before = await connect(app, await newClimber());
+      posthog.uninvite(app.developerId);
+      // The console's cached answer, forgotten as it would be a minute later.
+      await useDeployment(mainDeployment());
+      try {
+        const developerConsole = await server.graphql(`query { myOAuthClients { clientId } }`, undefined, {
+          bearer: await firstPartyToken(app.developerId),
+        });
+        expect(developerConsole.errors?.[0]?.extensions).toMatchObject({
+          code: 'FORBIDDEN',
+          reason: 'NOT_ALLOWLISTED',
+        });
+        // Consent, the token endpoint and /v1 never ask PostHog.
+        const flagRequests = posthog.asked();
+        await expectAlive(before);
+        await expectAlive(await connect(app, await newClimber()));
+        expect(posthog.asked()).toBe(flagRequests);
+      } finally {
+        posthog.invite(app.developerId);
+      }
     });
   });
 
@@ -2679,12 +2717,12 @@ describe('partner OAuth on, in the real server', () => {
   describe('switching modes', () => {
     /** Another deployment beside the main one, then back to the main one's settings. */
     async function withDeployment(mode: string, work: (other: RunningServer) => Promise<void>): Promise<void> {
-      const other = await startRealServer({ ...MAIN_DEPLOYMENT, PARTNER_OAUTH_MODE: mode });
+      const other = await startRealServer({ ...mainDeployment(), PARTNER_OAUTH_MODE: mode });
       try {
         await work(other);
       } finally {
         await other.stop();
-        await useDeployment(MAIN_DEPLOYMENT);
+        await useDeployment(mainDeployment());
       }
     }
 
@@ -2798,7 +2836,7 @@ describe('partner OAuth on, in the real server', () => {
       vi.resetModules();
       const secondLogger = (await import('../utils/logger')).logger;
       secondLogger.on('data', captureLogEntry);
-      second = await startRealServer(MAIN_DEPLOYMENT);
+      second = await startRealServer(mainDeployment());
       const { getPartnerAuthorityRuntime } = await import('../auth/partner/authority');
       const secondRedis = (await import('../redis/client')).redisClientManager;
       const { closePool } = await import('@boardsesh/db/client');

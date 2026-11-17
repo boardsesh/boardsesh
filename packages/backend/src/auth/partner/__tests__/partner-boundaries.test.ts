@@ -30,6 +30,7 @@ const PARTNER_MODULES = [
   '../configuration',
   '../connected-apps',
   '../connection',
+  '../developer-access',
   '../family-guard',
   '../fence',
   '../load-authority',
@@ -75,6 +76,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.resetModules();
   vi.doUnmock('@boardsesh/db/client');
   vi.doUnmock('../authority');
@@ -273,7 +275,10 @@ describe('the F12 entry point', () => {
       return { getPartnerAuthorityRuntime: () => 'runtime' };
     });
     vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
-    vi.stubEnv('PARTNER_OAUTH_DEVELOPER_ALLOWLIST', 'developer-1');
+    // Invited, and asking PostHog would say yes: the mode still answers first.
+    vi.stubEnv('POSTHOG_PROJECT_KEY', 'phc_partner_boundaries');
+    const flagRequests = vi.fn(async () => new Response('{}'));
+    vi.stubGlobal('fetch', flagRequests);
     callCounts.betterAuth = 0;
     callCounts.createDedicatedPool = 0;
     const { oauthClientMutations, oauthClientQueries, __resetPartnerRegistrationDeploymentForTests } =
@@ -308,6 +313,7 @@ describe('the F12 entry point', () => {
     expect(authorityLoaded).toBe(false);
     expect(callCounts.betterAuth).toBe(0);
     expect(callCounts.createDedicatedPool).toBe(0);
+    expect(flagRequests).not.toHaveBeenCalled();
   });
 
   it('reads the mode once, from the environment', async () => {

@@ -11,8 +11,8 @@ import { localeHref } from '@/app/lib/i18n/locale-href';
  * `/developers/terms`): the server flag `developer-console`, which fails
  * closed. Signing in comes first, because a flag can only be asked about a
  * person; with the flag off, or PostHog unreachable, the page is a 404. The
- * backend gates every operation again (PARTNER_OAUTH_MODE and its developer
- * allowlist).
+ * backend gates every operation again: PARTNER_OAUTH_MODE, then this same flag
+ * for the same `users.id`.
  *
  * The session is read directly rather than through `getPosthogDistinctId`,
  * which reads a credential-authority outage as "signed out": here that would

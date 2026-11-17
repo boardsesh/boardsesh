@@ -45,3 +45,21 @@ export type PartnerConsentError = (typeof PARTNER_CONSENT_ERRORS)[keyof typeof P
  * in again and brings them back to retry.
  */
 export const PARTNER_CONSOLE_RECENT_SIGN_IN_REQUIRED = 'RECENT_SIGN_IN_REQUIRED';
+
+/**
+ * The PostHog flag that says who may use the developer console. www asks it
+ * before it renders `/developers/apps`; the backend asks it again before every
+ * console operation and refuses anyone it does not name (`NOT_ALLOWLISTED`).
+ * One key for both, so the page and the operations cannot disagree on who is
+ * invited. Evaluated for the account's `users.id`.
+ */
+export const PARTNER_DEVELOPER_CONSOLE_FLAG = 'developer-console';
+
+/**
+ * The `extensions.reason` of a console operation the backend could not check:
+ * PostHog did not answer the `developer-console` question (down, slow, or the
+ * flag missing). The code is `SERVICE_UNAVAILABLE`. The console says it could
+ * not check the invite and offers a retry, rather than calling the developer
+ * uninvited.
+ */
+export const PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE = 'ALLOWLIST_UNAVAILABLE';

@@ -6,7 +6,6 @@ import {
   normalizePartnerAppInput,
   normalizePartnerAppPatch,
   PARTNER_APP_NAME_DENYLIST,
-  parsePartnerDeveloperAllowlist,
   partnerRedirectUriProblem,
   PartnerRegistrationError,
   validatePartnerAppLink,
@@ -393,14 +392,5 @@ describe('a registration request', () => {
     );
     expect(normalizePartnerAppPatch({ homepageUrl: null }, 'web')).toEqual({ homepageUrl: null });
     expect(refusalMessage(() => normalizePartnerAppPatch({ name: null }, 'web'))).toMatch(/at least one field/);
-  });
-});
-
-describe('PARTNER_OAUTH_DEVELOPER_ALLOWLIST', () => {
-  it('reads comma-separated ids, and fails closed when unset', () => {
-    expect([...parsePartnerDeveloperAllowlist(' user-1, user-2 ,,user-3')]).toEqual(['user-1', 'user-2', 'user-3']);
-    expect(parsePartnerDeveloperAllowlist(undefined).size).toBe(0);
-    expect(parsePartnerDeveloperAllowlist('').size).toBe(0);
-    expect(parsePartnerDeveloperAllowlist('*').has('anyone')).toBe(false);
   });
 });

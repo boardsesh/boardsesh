@@ -123,6 +123,8 @@ export default function DeveloperAppsContent() {
           return t('states.notAllowlisted.title');
         case 'paused':
           return t('states.paused.body');
+        case 'invite-check-failed':
+          return t('states.inviteCheckFailed.body');
         default:
           return t('errors.generic');
       }
@@ -263,12 +265,14 @@ export default function DeveloperAppsContent() {
           />
         );
       }
+      // Nobody refused the developer, so this is a retry, not a gate.
+      const inviteCheckFailed = listProblem.kind === 'invite-check-failed';
       return (
         <StatePanel
           tone="warning"
           icon={<ReplayOutlined />}
-          title={t('states.failed.title')}
-          body={t('states.failed.body')}
+          title={inviteCheckFailed ? t('states.inviteCheckFailed.title') : t('states.failed.title')}
+          body={inviteCheckFailed ? t('states.inviteCheckFailed.body') : t('states.failed.body')}
           actions={
             <Button variant="outlined" onClick={() => void appsQuery.refetch()}>
               {t('states.failed.retry')}

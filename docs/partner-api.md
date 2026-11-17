@@ -59,6 +59,8 @@ account whose email is verified, accept the developer terms
 immediately.
 During early access the console only lets in developer accounts the Boardsesh
 team has invited; anyone else sees "App registration is invite-only for now".
+"We couldn't check your invite" means Boardsesh could not look you up just
+then; try again in a minute.
 
 | Field | Notes |
 | --- | --- |
