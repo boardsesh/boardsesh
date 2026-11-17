@@ -40,8 +40,18 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
   previousFrames: string | null;
   nextFrames: string | null;
   centerPage: number;
-  /** Absolute pager position, updated directly from a UI-thread worklet. */
+  /**
+   * Updated directly from a UI-thread worklet. The wipe reads the absolute pager
+   * position. The swap reads a pair: the nearest page is the climb being left,
+   * and the side the position leans to holds the arriving one.
+   */
   pagePosition?: number;
+  /** API6 only: 'swap' weights hold classes over time; 'wipe' (the default) sweeps by position. */
+  revealMode?: 'wipe' | 'swap';
+  /** API6 swap only: weight of holds lit only in the climb being left, 0 to 1. */
+  outgoingWeight?: number;
+  /** API6 swap only: weight of holds lit only in the arriving climb, 0 to 1. */
+  incomingWeight?: number;
   animateEdits: boolean;
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;

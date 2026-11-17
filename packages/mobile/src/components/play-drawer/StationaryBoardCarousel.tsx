@@ -5,6 +5,9 @@ import { BoardImageNative } from '../BoardImageNative';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import type { SwipePager } from './use-swipe-pager';
 import { CAROUSEL_LAYER_Z } from './play-drawer-layout';
+import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
+import { useWallSwap } from './use-wall-swap';
+import { playerRevealMode } from './wall-swap';
 
 type Props = {
   boardProps: React.ComponentProps<typeof BoardImageNative>;
@@ -52,9 +55,35 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
     const offset = slideWidth.value > 0 ? -translateX.value / slideWidth.value : 0;
     return anchorPage.value + Math.max(-1, Math.min(1, offset));
   });
+  // The wall swap keeps its own clock and weights; see wall-swap.ts.
+  const revealMode = playerRevealMode(climbOverlayGpuApiVersion);
+  const {
+    pagePosition: swapPair,
+    outgoingWeight,
+    incomingWeight,
+  } = useWallSwap(pager, centerPage, revealMode === 'swap');
   const transition = useMemo(
-    () => ({ previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames }),
-    [previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames],
+    () => ({
+      previousFrames,
+      nextFrames,
+      centerPage,
+      pagePosition: revealMode === 'swap' ? swapPair : pagePosition,
+      prefetchFrames,
+      revealMode,
+      outgoingWeight,
+      incomingWeight,
+    }),
+    [
+      previousFrames,
+      nextFrames,
+      centerPage,
+      pagePosition,
+      prefetchFrames,
+      revealMode,
+      swapPair,
+      outgoingWeight,
+      incomingWeight,
+    ],
   );
   const identity = JSON.stringify([
     centerPage,
