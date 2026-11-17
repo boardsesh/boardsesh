@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StyleSheet, View } from 'react-native';
 import type { StoryModule } from '../../dev/stories/types';
 import type { WallGlowInput } from '../play-drawer/use-wall-glow';
@@ -6,6 +7,8 @@ import { spacing } from '../../theme/tokens';
 import { PlayerPreviewTip } from './PlayerPreviewTip';
 
 const noop = () => {};
+// The sample wall button reads a few queries; a private client keeps the story offline.
+const storyQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } });
 const GLOW: WallGlowInput = {
   key: 'player-preview-tip-story',
   boardWidth: 100,
@@ -22,7 +25,11 @@ const GLOW: WallGlowInput = {
 };
 
 function Frame({ children }: { children: ReactNode }) {
-  return <View style={styles.screen}>{children}</View>;
+  return (
+    <QueryClientProvider client={storyQueryClient}>
+      <View style={styles.screen}>{children}</View>
+    </QueryClientProvider>
+  );
 }
 
 const stories: StoryModule = {
