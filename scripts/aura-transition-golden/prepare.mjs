@@ -166,8 +166,21 @@ try {
     writeFileSync(join(inputs, `new-uniforms-${sample.name}.bin`), actualUniform);
     writeFileSync(join(inputs, `old-uniforms-${sample.name}.bin`), reference.uniforms(sample, false));
     let oracle = null;
-    if (sample.editorAllChanged || sample.progress === 0 || sample.progress === 1) {
-      const slot = sample.progress === 1 ? sample.upper : sample.lower;
+    // A still endpoint: a wipe at 0 or 1, or a swap with one side whole and the other dark.
+    const [lowerWeight, upperWeight] = sample.swap ?? [];
+    const stillSlot = sample.swap
+      ? lowerWeight === 1 && upperWeight === 0
+        ? sample.lower
+        : lowerWeight === 0 && upperWeight === 1
+          ? sample.upper
+          : null
+      : sample.progress === 0
+        ? sample.lower
+        : sample.progress === 1
+          ? sample.upper
+          : null;
+    if (sample.editorAllChanged || stillSlot !== null) {
+      const slot = sample.editorAllChanged ? sample.lower : stillSlot;
       const frame = [source.current, source.previous, source.next][slot];
       const pulse = sample.editorAllChanged ? sample.pulse : 1;
       const key = `${frame}/${pulse}`;
@@ -217,6 +230,7 @@ try {
     samples: sampleRows,
     descriptorFiles: paths,
     proof: reference.proof,
+    swapClasses: reference.swapClasses,
     pixelFiles: { old: 'old-pixels.bin', new: 'new-pixels.bin' },
     resourceFiles: { old: 'old-resources.bin', new: 'new-resources.bin' },
     limits: fixture.limits,
@@ -231,6 +245,7 @@ try {
       'Display mirror affects reveal direction; physical mirror placement is separate unit coverage.',
       'Editor still variant marks all current holds changed; this makes the production Rust global reach oracle valid.',
       'Interior frames compare the old full union to the new compositor; Rust does not render weighted animation unions.',
+      'Wall-swap samples weight hold classes with uniform viewport.zw/motion.z; their still endpoints use the Rust oracle.',
     ],
   };
   save(join(inputs, 'inputs.json'), metadata);
@@ -259,7 +274,7 @@ try {
   ])
     files.set(`inputs/${name}`, fileSha256(join(inputs, name)));
   save(join(output, 'prepared.json'), {
-    status: 'PREPARED_ONE_RICH_30_NOT_EXECUTED',
+    status: 'PREPARED_ONE_RICH_38_NOT_EXECUTED',
     fixtureSha256: fileSha256(join(here, 'fixture.json')),
     controlsSha256: fileSha256(join(here, 'controls.json')),
     hostHelpers: Object.fromEntries(
@@ -277,7 +292,7 @@ try {
   });
   console.log(
     JSON.stringify({
-      status: 'PREPARED_ONE_RICH_30_NOT_EXECUTED',
+      status: 'PREPARED_ONE_RICH_38_NOT_EXECUTED',
       output,
       proof: reference.proof,
       oracleCount: oracleFiles.size,

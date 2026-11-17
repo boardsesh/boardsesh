@@ -24,7 +24,7 @@ include = [
   "board_renderer_gpu_plan_create",
   "board_renderer_gpu_plan_prepare",
   "board_renderer_gpu_plan_encode",
-  "board_renderer_gpu_packet_uniforms",
+  "board_renderer_gpu_packet_reveal_uniforms",
   "board_renderer_gpu_packet_contract",
   "board_renderer_gpu_packet_stats",
 ]

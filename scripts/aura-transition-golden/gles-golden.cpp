@@ -82,7 +82,7 @@ std::vector<Sample> samples() {
   while (std::getline(stream, line)) { if (line.empty()) continue; std::istringstream fields(line); Sample sample; std::string extra; check(static_cast<bool>(fields >> sample.name >> sample.lower >> sample.upper >> sample.editor) && !(fields >> extra), "Invalid sample row");
     check(safeName(sample.name) && sample.lower >= 0 && sample.lower < 3 && sample.upper >= 0 && sample.upper < 3 && (sample.editor == 0 || sample.editor == 1), "Invalid sample source");
     check(std::none_of(output.begin(), output.end(), [&](const Sample& prior) { return prior.name == sample.name; }), "Duplicate sample"); output.push_back(sample); }
-  check(output.size() == 30, "Exactly thirty samples"); return output;
+  check(output.size() == 38, "Exactly thirty-eight samples"); return output;
 }
 void save(const std::string& path, const Bytes& bytes) {
   std::ofstream stream(path, std::ios::binary); check(stream.good(), "Output open failed"); stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())); stream.close(); check(stream.good(), "Output write failed");
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
       check(localMaximum <= 1 && overOne == 0, "First shader mismatch; raw images retained");
     }
     std::ofstream report(output + "/result.json"); check(report.good(), "Report open failed");
-    report << "{\"status\":\"PASS_ACTUAL_GLES_RICH_30\",\"compiledContractSha256\":\"" << AURA_GPU_CONTRACT_SHA256 << "\",\"processId\":" << getpid() << ",\"renderer\":\"" << escape(renderer) << "\",\"vendor\":\"" << escape(vendor) << "\",\"version\":\"" << escape(version) << "\",\"width\":" << width << ",\"height\":" << height << ",\"commandsCompleted\":60,\"maximumChannelError\":" << maximumError << ",\"pixelsOverOne\":" << totalOverOne << ",\"trackedOwnedAllocationBytes\":" << ownedBytes << ",\"samples\":[" << rows.str() << "]}"; report.close(); check(report.good(), "Report write failed");
+    report << "{\"status\":\"PASS_ACTUAL_GLES_RICH_38\",\"compiledContractSha256\":\"" << AURA_GPU_CONTRACT_SHA256 << "\",\"processId\":" << getpid() << ",\"renderer\":\"" << escape(renderer) << "\",\"vendor\":\"" << escape(vendor) << "\",\"version\":\"" << escape(version) << "\",\"width\":" << width << ",\"height\":" << height << ",\"commandsCompleted\":76,\"maximumChannelError\":" << maximumError << ",\"pixelsOverOne\":" << totalOverOne << ",\"trackedOwnedAllocationBytes\":" << ownedBytes << ",\"samples\":[" << rows.str() << "]}"; report.close(); check(report.good(), "Report write failed");
     glFinish(); eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); eglDestroyContext(display, context); eglDestroySurface(display, surface); eglTerminate(display); return 0;
   } catch (const std::exception& error) { std::cerr << error.what() << std::endl; return 1; }
 }

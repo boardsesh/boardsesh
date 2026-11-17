@@ -246,6 +246,78 @@
       "progress": 0.75,
       "pulse": 1,
       "mirrored": true
+    },
+    {
+      "name": "swap-0-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [1, 0]
+    },
+    {
+      "name": "swap-1-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0.4, 0]
+    },
+    {
+      "name": "swap-2-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0.25, 0.3]
+    },
+    {
+      "name": "swap-3-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0, 0.6]
+    },
+    {
+      "name": "swap-4-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0, 1]
+    },
+    {
+      "name": "swap-2-m1",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": true,
+      "swap": [0.25, 0.3]
+    },
+    {
+      "name": "swap-previous-0-m0",
+      "lower": 1,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0.2, 0.4]
+    },
+    {
+      "name": "swap-previous-1-m0",
+      "lower": 1,
+      "upper": 0,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0, 0.6]
     }
   ]
 }

@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::gpu_atlas::{AtlasSelection, prepare_subset, prepare_subset_checked};
-use super::gpu_constants::{EDIT_DURATION_MS, EDIT_PEAK_REACH, EDIT_PEAK_TIME_MS, REVEAL_BAND};
+use super::gpu_constants::{
+    EDIT_DURATION_MS, EDIT_PEAK_REACH, EDIT_PEAK_TIME_MS, REVEAL_BAND, REVEAL_MODE_SWAP,
+    REVEAL_MODE_WIPE,
+};
 use crate::types::{Color, HoldRenderStyle, RenderConfig};
 
 pub const PACKET_VERSION: u32 = 1;
@@ -1201,6 +1204,54 @@ fn put_float(bytes: &mut Vec<u8>, number: f32) {
     bytes.extend_from_slice(&number.to_le_bytes());
 }
 
+/// What a player frame shows between its lower and upper scene.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Reveal {
+    /// A soft band sweeps across the wall: 0 shows the lower scene, 1 the upper.
+    Wipe { progress: f32 },
+    /// The wall swap. Holds lit only in the lower scene (or a changed hold's
+    /// lower role) take `lower`, those only in the upper scene take `upper`, and
+    /// holds lit with the same role in both stay fully lit. Position plays no part.
+    Swap { lower: f32, upper: f32 },
+}
+impl Reveal {
+    /// The flat native arguments: `mode` is `REVEAL_MODE_WIPE` or `REVEAL_MODE_SWAP`.
+    pub fn from_native(mode: u32, progress: f32, lower: f32, upper: f32) -> Result<Self, String> {
+        let reveal = match mode {
+            REVEAL_MODE_WIPE => Self::Wipe { progress },
+            REVEAL_MODE_SWAP => Self::Swap { lower, upper },
+            _ => return Err("invalid dynamic uniform input".into()),
+        };
+        if reveal.is_valid() {
+            Ok(reveal)
+        } else {
+            Err("invalid dynamic uniform input".into())
+        }
+    }
+    fn is_valid(&self) -> bool {
+        let unit = |number: f32| number.is_finite() && (0.0..=1.0).contains(&number);
+        match *self {
+            Self::Wipe { progress } => unit(progress),
+            Self::Swap { lower, upper } => unit(lower) && unit(upper),
+        }
+    }
+    /// The shader's `motion.x`. It picks the still compositor at 0 (lower) and 1
+    /// (upper), the stamp layers, and how much veil an empty side keeps. A swap
+    /// reaches 0 or 1 only when one side is fully lit and the other fully gone,
+    /// and an empty side's veil follows the other side's weight.
+    pub fn progress(&self, same_scene: bool, lower_count: usize, upper_count: usize) -> f32 {
+        match *self {
+            Self::Wipe { progress } => progress,
+            Self::Swap { .. } if same_scene => 0.0,
+            Self::Swap { lower, upper } => match (lower_count > 0, upper_count > 0) {
+                (true, false) => 1.0 - lower,
+                (false, true) => upper,
+                _ => (1.0 - lower + upper) * 0.5,
+            },
+        }
+    }
+}
+
 impl Packet {
     pub fn describe(&self) -> Value {
         let prepare_source = if self.sources.generated_misses > 0 {
@@ -1223,7 +1274,7 @@ impl Packet {
         &self,
         lower: usize,
         upper: usize,
-        progress: f32,
+        reveal: Reveal,
         pulse: f32,
         viewport: [f32; 2],
         production_empty: bool,
@@ -1234,8 +1285,7 @@ impl Packet {
             || upper >= 3
             || !self.present[lower]
             || !self.present[upper]
-            || !progress.is_finite()
-            || !(0.0..=1.0).contains(&progress)
+            || !reveal.is_valid()
             || !pulse.is_finite()
             || !(1.0..=EDIT_PEAK_REACH).contains(&pulse)
             || viewport
@@ -1244,6 +1294,11 @@ impl Packet {
         {
             return Err("invalid dynamic uniform input".into());
         }
+        let progress = reveal.progress(
+            lower == upper,
+            self.scenes[lower].count,
+            self.scenes[upper].count,
+        );
         let lower = self.scenes[lower];
         let upper = self.scenes[upper];
         let mut words = [0_u32; 36];
@@ -1305,6 +1360,16 @@ impl Packet {
         words[19] = upper.tile_directory;
         words[20] = viewport[0].to_bits();
         words[21] = viewport[1].to_bits();
+        // The wipe leaves the swap slots zero, so its bytes match earlier builds.
+        if let Reveal::Swap {
+            lower: lower_weight,
+            upper: upper_weight,
+        } = reveal
+        {
+            words[22] = lower_weight.to_bits();
+            words[23] = upper_weight.to_bits();
+            words[26] = (REVEAL_MODE_SWAP as f32).to_bits();
+        }
         words[24] = progress.to_bits();
         words[25] = REVEAL_BAND.to_bits();
         words[27] = pulse.to_bits();
@@ -1330,14 +1395,15 @@ impl Packet {
 }
 
 pub fn contract_manifest() -> Value {
-    json!({"packetVersion":PACKET_VERSION,"nativeApiVersion":5,"statsVersion":1,"descriptorBytes":DESCRIPTOR_BYTES,"uniformBytes":UNIFORM_BYTES,
+    json!({"packetVersion":PACKET_VERSION,"nativeApiVersion":6,"statsVersion":1,"descriptorBytes":DESCRIPTOR_BYTES,"uniformBytes":UNIFORM_BYTES,
         "editDurationMs":EDIT_DURATION_MS,"editPeakTimeMs":EDIT_PEAK_TIME_MS,"editPeakReachBits":EDIT_PEAK_REACH.to_bits(),"revealBandBits":REVEAL_BAND.to_bits(),
+        "revealModeWipe":REVEAL_MODE_WIPE,"revealModeSwap":REVEAL_MODE_SWAP,
         "tileEdge":TILE_EDGE,"lutWords":LUT_WORDS,"maxGpuBytes":MAX_GPU_BYTES,"maxActivePerSource":128,
         "metalBindings":{"pixels":0,"lower":1,"uniforms":2,"resources":3,"upper":4},
         "glesStorageBindings":{"pixels":0,"lower":1,"upper":2,"resources":3},"glesUniformBindings":{"uniforms":0},
         "statuses":{"success":0,"invalid":-1,"unsupported":-2,"cancelled":-3,"closed":-4,"resourcePressure":-5,"internalPanic":-6},
         "descriptorOffsets":{"color":0,"bounds":16,"crop":32,"offsets":48,"numbers":64,"identity":80,"fillCrop":96,"plateCrop":112,"glyphCrop":128,"extraOffsets":144,"fillCrop1":160,"fillCrop2":176,"fillCrop3":192,"glyphCrop1":208},
-        "uniformOffsets":{"size":0,"veil":16,"tuning":32,"tuning2":48,"offsets":64,"viewport":80,"motion":96,"other":112,"coverCrop":128}})
+        "uniformOffsets":{"size":0,"veil":16,"tuning":32,"tuning2":48,"offsets":64,"viewport":80,"swapWeights":88,"motion":96,"other":112,"coverCrop":128}})
 }
 pub fn contract_sha256() -> &'static str {
     static HASH: LazyLock<String> = LazyLock::new(|| {
@@ -1573,18 +1639,31 @@ mod tests {
         }
         let mut uniforms = [0; UNIFORM_BYTES];
         packet
-            .encode_uniforms(0, 2, 0.5, 1.35, [100.0, 100.0], true, true, &mut uniforms)
+            .encode_uniforms(
+                0,
+                2,
+                Reveal::Wipe { progress: 0.5 },
+                1.35,
+                [100.0, 100.0],
+                true,
+                true,
+                &mut uniforms,
+            )
             .unwrap();
         assert_eq!(word(&uniforms, 96), 0.5_f32.to_bits());
         assert_eq!(word(&uniforms, 108), 1.35_f32.to_bits());
         assert_eq!(word(&uniforms, 72), packet.scenes[0].tile_directory);
         assert_eq!(word(&uniforms, 76), packet.scenes[2].tile_directory);
+        // The wipe leaves the swap weights and mode zero: earlier bytes, unchanged.
+        for offset in [88, 92, 104] {
+            assert_eq!(word(&uniforms, offset), 0);
+        }
         assert!(
             packet
                 .encode_uniforms(
                     0,
                     2,
-                    f32::NAN,
+                    Reveal::Wipe { progress: f32::NAN },
                     1.0,
                     [100.0, 100.0],
                     false,
@@ -1592,6 +1671,130 @@ mod tests {
                     &mut uniforms
                 )
                 .is_err()
+        );
+    }
+    fn swap_uniforms(packet: &Packet, lower: usize, upper: usize, weights: [f32; 2]) -> [u8; 144] {
+        let mut uniforms = [0; UNIFORM_BYTES];
+        packet
+            .encode_uniforms(
+                lower,
+                upper,
+                Reveal::Swap {
+                    lower: weights[0],
+                    upper: weights[1],
+                },
+                1.0,
+                [100.0, 100.0],
+                true,
+                false,
+                &mut uniforms,
+            )
+            .unwrap();
+        uniforms
+    }
+    #[test]
+    fn swap_carries_class_weights_and_reaches_a_still_only_when_settled() {
+        let _serial = TEST_LOCK.lock().unwrap();
+        let cancel = Cancellation::default();
+        let mut plan = Plan::new(
+            session(),
+            request("p2r42p1r44", Some("p1r42"), Some("p2r13")),
+            &cancel,
+        )
+        .unwrap();
+        plan.prepare(&[], &cancel).unwrap();
+        let packet = plan.encode(placements(&plan), &cancel).unwrap();
+        let (lower_layers, upper_layers) =
+            (packet.scenes[0].stamp_layers, packet.scenes[2].stamp_layers);
+        // Dimmed outgoing-only holds at the commit point; nothing incoming yet.
+        let dimmed = swap_uniforms(&packet, 0, 2, [0.4, 0.0]);
+        assert_eq!(word(&dimmed, 88), 0.4_f32.to_bits());
+        assert_eq!(word(&dimmed, 92), 0);
+        assert_eq!(word(&dimmed, 104), 1_f32.to_bits());
+        assert_eq!(word(&dimmed, 100), REVEAL_BAND.to_bits());
+        let progress = f32::from_bits(word(&dimmed, 96));
+        assert!(
+            progress > 0.0 && progress < 1.0,
+            "a dimmed wall is mid-transition"
+        );
+        assert_eq!(word(&dimmed, 68), lower_layers | upper_layers);
+        // Only a settled side uses the still compositor and its own layers.
+        let settled_lower = swap_uniforms(&packet, 0, 2, [1.0, 0.0]);
+        assert_eq!(word(&settled_lower, 96), 0);
+        assert_eq!(word(&settled_lower, 68), lower_layers);
+        let settled_upper = swap_uniforms(&packet, 0, 2, [0.0, 1.0]);
+        assert_eq!(word(&settled_upper, 96), 1_f32.to_bits());
+        assert_eq!(word(&settled_upper, 68), upper_layers);
+        for weights in [
+            [0.0, 0.0],
+            [1.0, 1.0],
+            [0.2, 0.3],
+            [1.0, 0.0001],
+            [0.9999, 0.0],
+        ] {
+            let progress = f32::from_bits(word(&swap_uniforms(&packet, 0, 2, weights), 96));
+            assert!(
+                progress > 0.0 && progress < 1.0,
+                "{weights:?} is not settled"
+            );
+        }
+        // One scene twice is that scene's still, whatever the weights say.
+        assert_eq!(word(&swap_uniforms(&packet, 0, 0, [0.4, 0.2]), 96), 0);
+        // The pair is position-independent: display mirroring changes nothing else.
+        let mut mirrored = [0; UNIFORM_BYTES];
+        packet
+            .encode_uniforms(
+                0,
+                2,
+                Reveal::Swap {
+                    lower: 0.4,
+                    upper: 0.0,
+                },
+                1.0,
+                [100.0, 100.0],
+                true,
+                true,
+                &mut mirrored,
+            )
+            .unwrap();
+        assert_eq!(dimmed[..124], mirrored[..124]);
+        assert_eq!(dimmed[128..], mirrored[128..]);
+        for (mode, lower, upper) in [
+            (REVEAL_MODE_SWAP, f32::NAN, 0.0),
+            (REVEAL_MODE_SWAP, 0.0, 1.5),
+            (REVEAL_MODE_SWAP, -0.1, 0.0),
+            (2, 0.0, 0.0),
+        ] {
+            assert!(Reveal::from_native(mode, 0.0, lower, upper).is_err());
+        }
+        assert_eq!(
+            Reveal::from_native(REVEAL_MODE_WIPE, 0.25, f32::NAN, 9.0),
+            Ok(Reveal::Wipe { progress: 0.25 }),
+            "the wipe ignores the swap slots"
+        );
+    }
+    #[test]
+    fn swap_toward_an_empty_climb_fades_the_veil_with_the_lit_side() {
+        let _serial = TEST_LOCK.lock().unwrap();
+        let cancel = Cancellation::default();
+        let mut plan = Plan::new(session(), request("p1r42", Some(""), Some("")), &cancel).unwrap();
+        plan.prepare(&[], &cancel).unwrap();
+        let packet = plan.encode(placements(&plan), &cancel).unwrap();
+        assert_eq!(packet.scenes[2].count, 0);
+        // Lit lower, empty upper: veil = mix(1, 0, progress) = the lower weight.
+        let leaving = swap_uniforms(&packet, 0, 2, [0.4, 0.0]);
+        assert_eq!(f32::from_bits(word(&leaving, 96)), 0.6);
+        assert_eq!(word(&swap_uniforms(&packet, 0, 2, [1.0, 0.7]), 96), 0);
+        assert_eq!(
+            word(&swap_uniforms(&packet, 0, 2, [0.0, 0.0]), 96),
+            1_f32.to_bits()
+        );
+        // Empty lower, lit upper: veil = mix(0, 1, progress) = the upper weight.
+        let arriving = swap_uniforms(&packet, 1, 0, [0.0, 0.25]);
+        assert_eq!(f32::from_bits(word(&arriving, 96)), 0.25);
+        assert_eq!(
+            word(&swap_uniforms(&packet, 1, 0, [1.0, 1.0]), 96),
+            1_f32.to_bits()
         );
     }
     #[test]

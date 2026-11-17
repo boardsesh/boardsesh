@@ -47,6 +47,7 @@ vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
     return recorded.motionNative ? 'NativeMotionClimbOverlayGPU' : null;
   },
 }));
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 vi.mock('../../../lib/board-render-settings', () => ({
   useBoardRenderSettings: () => ({ settings: recorded.renderSettings }),
 }));
@@ -116,6 +117,8 @@ vi.mock('react-native-reanimated', async () => {
   return {
     default: { View },
     useAnimatedStyle: (factory: () => unknown) => factory(),
+    // The wall swap's UI-thread reaction; its step is covered by wall-swap.test.ts.
+    useAnimatedReaction: () => {},
     useDerivedValue: (factory: () => unknown) => ({
       get value() {
         return factory();
@@ -442,6 +445,33 @@ it('keeps one photograph and feeds reversible absolute progress without a JS ren
   pager.translateX.value = 0;
   expect(board.gpuTransition?.pagePosition.value).toBe(1);
   expect(recorded.boardProps.mock.calls).toHaveLength(renderCount);
+});
+
+it('hands an API 6 board the wall swap frame alongside the wipe progress', () => {
+  recorded.motionNative = true;
+  recorded.apiVersion = 6;
+  const pager = restingPager();
+  render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      layoutId: 8,
+      pager,
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    }),
+  );
+  const transition = latestStationaryBoard().gpuTransition as unknown as {
+    revealMode: string;
+    pagePosition: { value: number };
+    swapFrame: { value: readonly number[] };
+  };
+  expect(transition.revealMode).toBe('swap');
+  expect(transition.swapFrame.value).toEqual([0, 1, 0]);
+  // The swap's frame moves only on the UI thread, never with the pager's raw offset.
+  pager.slideWidth.value = 250;
+  pager.translateX.value = -125;
+  expect(transition.swapFrame.value).toEqual([0, 1, 0]);
+  expect(transition.pagePosition.value).toBe(0.5);
 });
 
 it.each([1, -1] as const)('keeps the incoming holds during the outgoing animation tail (%s)', (direction) => {

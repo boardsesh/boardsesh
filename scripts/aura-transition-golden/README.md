@@ -11,11 +11,15 @@ this directory. The fixture has two outgoing holds, three incoming holds, three
 shared canonical roles and one changed canonical role. Its sources are
 previous=B, current=A, next=B, at native 1080 × 1504 pixels.
 
-`controls.json` contains exactly 30 ordered samples:
+`controls.json` contains exactly 38 ordered samples:
 
 - Twenty forward/reverse samples: progress 0, .25, .5, .75, 1 and back, both display mirrors.
 - Six editor stills: reaches 1, 1.175 and 1.35, both display mirrors.
 - Four previous/current interiors: progress .25 and .75, both display mirrors.
+- Eight wall-swap samples. Current/next at lower/upper weights (1, 0), (.4, 0),
+  (.25, .3), (0, .6) and (0, 1); (.25, .3) again with the display mirrored; and
+  previous/current at (.2, .4) and (0, .6). The swap's weights live in uniform
+  `viewport.zw` and its mode in `motion.z`.
 
 The transition packet retains the mixed edit baseline. The editor subcase uses a
 second real Rust Plan with every current hold marked changed. It must reuse the
@@ -25,10 +29,29 @@ reach represents a mixed changed-hold mask. The independent byte encoder and Rus
 unit guards cover the mixed mask. Interior transition reach stays at 1.
 
 Four production Rust images cover the still endpoints and editor reaches.
-Fourteen sampled controls each check both old and new GPU output against a Rust
-image. Interior animation images compare the old weighted union against the new
-weighted union; they are not called Rust animation parity. Display mirror changes
-reveal direction. Physical placement mirroring is separate native/unit coverage.
+Sixteen sampled controls each check both old and new GPU output against a Rust
+image, including the swap's settled (1, 0) and (0, 1) samples. Interior animation
+images compare the old weighted union against the new weighted union; they are
+not called Rust animation parity. Display mirror changes reveal direction for the
+wipe and nothing for the swap. Physical placement mirroring is separate
+native/unit coverage.
+
+The frozen full-scan references carry one reviewed amendment: the same swap
+branch in `reveal_weight`, between `// Wall-swap amendment` and
+`// End wall-swap amendment.`, recorded in `reference/provenance.json` with the
+pre-amendment hashes. `guards.test.mjs` deletes that block and checks the
+pre-amendment bytes come back exactly, so nothing else in the oracle can change
+quietly. The wipe path is untouched, so wipe samples still render the frozen
+pixels. Because the block copies the production branch, the old/new comparison
+only checks the tiled compositor against a full scan for the swap samples.
+
+The swap's arithmetic is checked on its own, against the two Rust stills and the
+fixture's hold classes (`swapClassChecks` in `analyse.mjs`). Inside the bounds of
+holds only one side lights, away from every other hold's reach, a side at weight 0
+must match the other side's still within one byte, and a side at weight w must
+move the pixels from the other still toward its own by w, within 0.08. Shared
+holds, where the two stills agree exactly, must match within one byte. A shader
+that swapped the lower and upper weights fails these checks.
 
 ## Prepare and run
 
@@ -111,7 +134,7 @@ Signing, exact executable/resources, source and device identity must be reviewed
 before installation. Preserve the existing profile app/data and restore the
 proper primary artifact after extracting only this owned output folder. The
 physical collector copies the prepared host oracles and uses `analyse.mjs` to
-rehash every raw image and check all 30 old/new pairs and 14 oracle-linked controls.
+rehash every raw image and check all 38 old/new pairs and 16 oracle-linked controls.
 Host Metal is useful preflight; it never substitutes for physical iPhone evidence.
 `EmitMetalShaders.swift` can independently evaluate and hash the exact compiled
 Swift shader strings for comparison with each run's reported runtime hashes.
@@ -119,12 +142,14 @@ Swift shader strings for comparison with each run's reported runtime hashes.
 ## Acceptance and evidence
 
 Maximum channel error remains 1, with zero pixels over 1, at unchanged native
-resolution and the existing 128 MiB application-owned GPU ceiling. Retain all 60
+resolution and the existing 128 MiB application-owned GPU ceiling. Retain all 76
 raw GPU images and their hashes, native source/runtime hashes, PID, contract,
 input/build receipts, temperatures and failures. The host independently recomputes
 the native diffs. Progress, both intermediate/peak editor reaches, mirror and
 previous/current selection must change pixels. Replaying the reverse controls
-must reproduce the corresponding forward images.
+must reproduce the corresponding forward images. The swap's settled samples must
+reproduce the wipe's still endpoints, its mirrored sample must equal the unmirrored
+one, and each change of weight must change pixels.
 
 This fixture proves offscreen image correctness. It does not measure gesture
 cadence, cancellation/lifecycle, warm geometry reuse, scanout, whole-UI frame

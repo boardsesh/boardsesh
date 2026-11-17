@@ -62,6 +62,93 @@ class OverlayPolicyTest {
         )
     }
 
+    private fun swapAt(
+        position: Double,
+        outgoing: Float,
+        incoming: Float,
+        center: Double = 12.0,
+        previous: Boolean = true,
+        next: Boolean = true,
+    ): Triple<Int, Int, OverlayPolicy.SwapWeights> {
+        val (selection, weights) =
+            OverlayPolicy.selectSwap(position, center, previous, next, outgoing, incoming)
+        return Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
+    }
+
+    @Test
+    fun wallSwapPairsFollowTheOutgoingClimbAcrossARenderAndNeverReachAThird() {
+        assertEquals(0 to 1, OverlayPolicy.REVEAL_MODE_WIPE to OverlayPolicy.REVEAL_MODE_SWAP)
+        assertEquals(OverlayPolicy.REVEAL_MODE_SWAP, OverlayPolicy.revealMode("swap"))
+        for (name in listOf("wipe", null, "", "Swap", "fade")) {
+            assertEquals(OverlayPolicy.REVEAL_MODE_WIPE, OverlayPolicy.revealMode(name))
+        }
+        // Leaving 12 for 13, before and after the app renders 13 as its centre.
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(.4f, 0f)), swapAt(12.25, .4f, 0f))
+        assertEquals(Triple(1, 0, OverlayPolicy.SwapWeights(.4f, 0f)), swapAt(12.25, .4f, 0f, center = 13.0))
+        // Leaving 13 for 12: the outgoing climb is the upper one, either way round.
+        assertEquals(OverlayPolicy.SwapWeights(.6f, .2f), swapAt(12.75, .2f, .6f).third)
+        assertEquals(OverlayPolicy.SwapWeights(.6f, .2f), swapAt(12.75, .2f, .6f, center = 13.0).third)
+        // Weights ignore position; Reduce Motion is the app's to apply.
+        assertEquals(swapAt(12.1, .3f, .5f).third, swapAt(12.4, .3f, .5f).third)
+        assertEquals(Triple(0, 0, OverlayPolicy.SwapWeights(1f, 0f)), swapAt(12.0, .4f, .9f))
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, .4f, .5f, next = false).third)
+        // A pair beyond the prepared trio shows its nearest prepared climb alone.
+        assertEquals(Triple(2, 2, OverlayPolicy.SwapWeights(1f, 0f)), swapAt(13.25, .4f, .6f))
+        assertEquals(Triple(1, 1, OverlayPolicy.SwapWeights(1f, 0f)), swapAt(10.75, .4f, .6f))
+        assertEquals(0, swapAt(13.25, .4f, .6f, next = false).first)
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, Float.NaN, Float.POSITIVE_INFINITY).third)
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, 2f, -1f).third)
+    }
+
+    private fun shown(controls: OverlayControls, center: Double = 12.0): Triple<Int, Int, OverlayPolicy.SwapWeights> {
+        val (selection, weights) =
+            OverlayPolicy.selectSwap(controls.position!!, center, true, true, controls.outgoing, controls.incoming)
+        return Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
+    }
+
+    @Test
+    fun aSwapFrameReachesTheRenderThreadAsOneSnapshot() {
+        val swapping =
+            OverlayControls(null, false, false, false, OverlayPolicy.REVEAL_MODE_SWAP)
+                .withSwapFrame(listOf(12.25, 0.0, 0.97))!!
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(0f, .97f)), shown(swapping))
+        // The swap ends: the pair, the leaving climb and the arriving one change in
+        // one assignment. Split props once let the render thread read the new
+        // position with the old weights: the climb just left, fully lit.
+        val arrived = swapping.withSwapFrame(listOf(13.0, 1.0, 0.0))!!
+        assertEquals(Triple(13.0, 1f, 0f), Triple(arrived.position, arrived.outgoing, arrived.incoming))
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(0f, 1f)), shown(arrived))
+        assertEquals(swapping.copy(position = 13.0, outgoing = 1f, incoming = 0f), arrived)
+        assertEquals(OverlayPolicy.REVEAL_MODE_SWAP, arrived.revealMode)
+        assertEquals(1f to 0f, swapping.withSwapFrame(listOf(12.25, 2.0, -1.0))!!.let { it.outgoing to it.incoming })
+        for (malformed in listOf(null, listOf(12.25, .4), listOf(12.25, .4, 0.0, 1.0), listOf(Double.NaN, .4, 0.0),
+            listOf(12.0, .4, Double.POSITIVE_INFINITY), emptyList())) {
+            assertNull(swapping.withSwapFrame(malformed))
+        }
+    }
+
+    @Test
+    fun theOldTrioKeepsTheRunningSwapUntilItsReplacementIsReady() {
+        fun carried(position: Double, center: Double, next: Boolean = true, outgoing: Float, incoming: Float) =
+            OverlayPolicy.carryOverSwap(position, center, true, next, outgoing, incoming)?.let { (selection, weights) ->
+                Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
+            }
+        // Leaving 12 for 13 after the app rendered 13: the old trio (11, 12, 13)
+        // draws the same pages and weights the new trio (12, 13, 14) will.
+        val old = carried(12.25, 12.0, outgoing = .1f, incoming = .5f)!!
+        val new = swapAt(12.25, .1f, .5f, center = 13.0)
+        assertEquals(0 to 2, old.first to old.second)
+        assertEquals(1 to 0, new.first to new.second)
+        assertEquals(new.third, old.third)
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(0f, 1f)), carried(13.0, 12.0, outgoing = 1f, incoming = 0f))
+        assertEquals(Triple(0, 0, OverlayPolicy.SwapWeights(1f, 0f)), carried(12.0, 12.0, outgoing = 1f, incoming = 0f))
+        // A frame the old trio cannot draw holds the last one instead of guessing.
+        assertNull(carried(13.25, 12.0, outgoing = .1f, incoming = .5f))
+        assertNull(carried(12.25, 12.0, next = false, outgoing = .1f, incoming = .5f))
+        assertNull(carried(13.0, 12.0, next = false, outgoing = 1f, incoming = 0f))
+        assertNull(carried(Double.NaN, 12.0, outgoing = 1f, incoming = 0f))
+    }
+
     @Test
     fun readinessRequiresMatchingConsumedAndCompletedFrame() {
         val ledger = PresentationLedger()

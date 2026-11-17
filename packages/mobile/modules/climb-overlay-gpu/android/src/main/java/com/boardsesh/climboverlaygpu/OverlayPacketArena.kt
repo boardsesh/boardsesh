@@ -15,9 +15,11 @@ internal class UploadedPacket(val handle: PacketHandle,val session: PacketRustSe
     private val uniformBytes=directBytes(OverlayPacketLayout.UNIFORM_BYTES)
     var retired=false
     val hit get()=uploadBytes==0 && copyBytes==0
-    fun uniforms(lower: Int,upper: Int,progress: Float,pulse: Float,production: Boolean,mirrored: Boolean): ByteBuffer {
+    fun uniforms(lower: Int,upper: Int,progress: Float,pulse: Float,production: Boolean,mirrored: Boolean,
+        revealMode: Int=OverlayPolicy.REVEAL_MODE_WIPE,swap: OverlayPolicy.SwapWeights=OverlayPolicy.SwapWeights(1f,0f)): ByteBuffer {
         val bytes=uniformBytes.apply { clear() }
-        packetStatus(GpuPacketBridge.encodeUniforms(handle.id,lower,upper,progress,pulse,header.width.toFloat(),header.height.toFloat(),production,mirrored,bytes,bytes.capacity()))
+        packetStatus(GpuPacketBridge.encodeUniforms(handle.id,lower,upper,revealMode,progress,swap.lower,swap.upper,pulse,
+            header.width.toFloat(),header.height.toFloat(),production,mirrored,bytes,bytes.capacity()))
         return bytes
     }
 }

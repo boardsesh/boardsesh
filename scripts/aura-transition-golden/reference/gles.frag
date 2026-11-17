@@ -63,6 +63,15 @@ precision highp int;
     float membership=upper ? hold.numbers.z : hold.numbers.w;
     // A shared same-role hold stays fully lit, and appears only once.
     if(membership==1.0) return upper ? 0.0 : 1.0;
+    // Wall-swap amendment (see provenance.json): viewport.zw carry the lower
+    // and upper class weights when motion.z selects the swap.
+    if(uniforms.motion.z>0.5) {
+      float own=upper ? uniforms.viewport.w : uniforms.viewport.z;
+      float other=upper ? uniforms.viewport.z : uniforms.viewport.w;
+      if(membership==2.0 && (upper ? own<=other : own<other)) return 0.0;
+      return own;
+    }
+    // End wall-swap amendment.
     float center=clamp((hold.bounds.x+hold.bounds.z)*0.5/uniforms.size.x,0.0,1.0);
     if(uniforms.other.w>0.0) center=1.0-center;
     float halfBand=uniforms.motion.y*0.5;
