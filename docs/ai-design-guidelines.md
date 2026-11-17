@@ -217,8 +217,8 @@ level2 (the MiniPlayer ground), `high` level3, `level4`, `highest` level5. The M
 **The violet budget.** On Material violet is spent only on: (1) accent foreground (links, active nav
 label, focus ring, spinners); (2) one filled `primaryFill` CTA per region, plus switch, radio and
 checkbox on-states; (3) opaque tonal containers for a selected or current state (nav pill and Stepper
-`secondaryContainer` `#E6DAF8` / `#3C2467`, selected chips and segments, tonal buttons, the connected
-MiniPlayer; `primaryContainer` `#EADDFF` / `#4F378B`, ink `#21005D` / `#EADDFF`); (4) the selected
+`secondaryContainer` `#DEDDFC` / `#34276B`, selected chips and segments, tonal buttons, the connected
+MiniPlayer; `primaryContainer` `#E1E0FF` / `#483A8E`, ink `#21005D` / `#E1E0FF`, all on hue 287); (4) the selected
 climb-row wash; (5) data (heat ramp, grade colours, holds, playlist swatch). Everything else is grey.
 
 **Tertiary-label placement.** `tertiaryLabel` clears 4.5:1 only on the lower steps. Dark: page, card,

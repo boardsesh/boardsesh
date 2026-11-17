@@ -69,7 +69,7 @@ export type MaterialControlRoles = {
   surfaceVariant: string;
   /** Muted foreground on a surface (an unselected chip's label). */
   onSurfaceVariant: string;
-  /** Tonal button fill: opaque brand-violet container (#E6DAF8 / #3C2467). */
+  /** Tonal button fill: opaque brand-violet container (#DEDDFC / #34276B). */
   secondaryContainer: string;
   /** Ink on `secondaryContainer`. */
   onSecondaryContainer: string;

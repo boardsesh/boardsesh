@@ -15,6 +15,7 @@ vi.mock('react-native-paper', () => ({
 }));
 
 import { blendOpaque } from '@boardsesh/velvet-tokens';
+import { oklch, parseHex } from '../../lib/color-contrast-oracle';
 import {
   materialFloatingBarSurface,
   materialSurfaceContainers,
@@ -170,6 +171,12 @@ describe.each(SCHEMES)('Graphite Material theme (%s)', (scheme) => {
     expect(contrast(m3.onError, m3.error)).toBeGreaterThanOrEqual(AA_TEXT);
     expect(m3.primaryContainer).toBe(materialTonalContainers[scheme].primaryContainer);
     expect(m3.secondaryContainer).toBe(materialTonalContainers[scheme].secondaryContainer);
+  });
+
+  it('keeps the tonal containers and their ink on the brand Ultraviolet hue (OKLCH ~287)', () => {
+    for (const [role, color] of Object.entries(materialTonalContainers[scheme])) {
+      expect(Math.abs(oklch(parseHex(color)).h - 287), `${role} ${color}`).toBeLessThan(1.5);
+    }
   });
 
   it('moves the container ladder one way only: rising in dark, falling in light', () => {

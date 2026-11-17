@@ -44,8 +44,8 @@ describe('buildPaperTheme', () => {
       level5: '#D9D9D9',
     });
     // Opaque violet tonal containers: the selected/current state keeps the brand.
-    expect(theme.colors.primaryContainer).toBe('#EADDFF');
-    expect(theme.colors.secondaryContainer).toBe('#E6DAF8');
+    expect(theme.colors.primaryContainer).toBe('#E1E0FF');
+    expect(theme.colors.secondaryContainer).toBe('#DEDDFC');
     // Container ink is an explicit dark violet, not the grey `onSurface`.
     expect(theme.colors.onPrimaryContainer).toBe('#21005D');
     expect(theme.colors.onSecondaryContainer).toBe('#21005D');
@@ -92,10 +92,10 @@ describe('buildPaperTheme', () => {
     expect(theme.colors.secondary).toBe('#9784FF');
     expect(theme.colors.onSecondary).toBe('#2E0077');
     // Opaque tonal containers with a light violet ink.
-    expect(theme.colors.primaryContainer).toBe('#4F378B');
-    expect(theme.colors.secondaryContainer).toBe('#3C2467');
-    expect(theme.colors.onPrimaryContainer).toBe('#EADDFF');
-    expect(theme.colors.onSecondaryContainer).toBe('#EADDFF');
+    expect(theme.colors.primaryContainer).toBe('#483A8E');
+    expect(theme.colors.secondaryContainer).toBe('#34276B');
+    expect(theme.colors.onPrimaryContainer).toBe('#E1E0FF');
+    expect(theme.colors.onSecondaryContainer).toBe('#E1E0FF');
   });
 
   // The Climbs bar's wall pill fills with tertiaryContainer, so it must be the
