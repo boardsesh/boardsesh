@@ -117,3 +117,24 @@ export function reportGpuPreparation(context: Context, ready: ClimbOverlayGPURea
     atlas_bytes: Number.isSafeInteger(ready.atlasBytes) && ready.atlasBytes >= 0 ? ready.atlasBytes : null,
   });
 }
+
+export type GpuFirstHoldsSource = 'gpu' | 'cached-png-bridge' | 'hedged-png';
+
+/**
+ * How a cold GPU request first showed its holds: the GPU frame itself, a PNG
+ * that was already in the cache, or the PNG rendered after the GPU missed its
+ * grace period. One sampling decision per request; nothing runs per frame.
+ */
+export function reportGpuFirstHolds(
+  context: Context,
+  requestId: string,
+  source: GpuFirstHoldsSource,
+  firstHoldsMs: number,
+): void {
+  if (!sampled(`first-holds:${requestId}`)) return;
+  emitDiagnostic(SHARED_EVENTS.AuraGpuFirstHolds, {
+    ...properties(context),
+    source,
+    first_holds_ms: Number.isFinite(firstHoldsMs) ? Math.round(Math.max(0, Math.min(firstHoldsMs, 60_000))) : null,
+  });
+}

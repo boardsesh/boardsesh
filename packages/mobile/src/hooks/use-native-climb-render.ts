@@ -207,8 +207,22 @@ type NativeClimbRenderParams = {
   /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
   gpuAllowEmpty?: boolean;
   gpuFallbackConfigJson?: string | null;
-  /** Skip the cold PNG hedge only after this static configuration presented. */
+  /** Once this static configuration presented, the board keeps its GPU drawable: no PNG work at all. */
   gpuPresentedConfigJson?: string | null;
+  /**
+   * GPU first. While a live GPU request is pending (`gpuSurface`, and a config
+   * that is ready or still loading), this hook still adopts a PNG already in the
+   * overlay cache, which costs nothing, but never schedules a render for one.
+   * The caller releases a render for exactly one cache key (`overlayCacheKey`)
+   * once the GPU has missed its grace period; see `BoardImageNative`.
+   */
+  gpuHedgeCacheKey?: string | null;
+  /**
+   * Adopt an overlay that is already in the cache, never render one. The tap
+   * prewarm for a board the player draws on the live GPU: it still decodes the
+   * photo and any cached PNG, without a render nobody will look at.
+   */
+  cachedOverlayOnly?: boolean;
   /**
    * The play board's own view layer writes here whether its live stack is held
    * invisible under the opening-art bridge (`BoardImageNative`). Read only when
@@ -324,6 +338,8 @@ type NativeClimbRenderResult = {
    * Expo Go). Consumers stack this on top of `backgroundPaths`.
    */
   overlayUri: string | null;
+  /** The PNG cache key this surface asks for now; names the climb a GPU hedge releases. */
+  overlayCacheKey: string;
   /** Stable full-layout config for a live GPU view; frames travel separately. */
   gpuConfigJson?: string | null;
   gpuStatus?: 'loading' | 'unavailable' | 'ready';
@@ -1881,6 +1897,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     gpuAllowEmpty = false,
     gpuFallbackConfigJson,
     gpuPresentedConfigJson,
+    gpuHedgeCacheKey = null,
+    cachedOverlayOnly = false,
     paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
@@ -2538,8 +2556,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
-    // Prepare exact PNG artwork during a first GPU attempt. A broken device
-    // gets usable art while the watchdog runs; warm frames reuse the GPU scene.
+    // The board already shows this configuration's GPU drawable: it stays on
+    // screen until the next frame presents, so there is nothing for a PNG to do.
     if (gpuConfigJson && gpuConfigJson === gpuPresentedConfigJson) return;
     // A v2 GPU binary has Aura support, but the ordinary capability probe may
     // still be resolving on first mount. Do not launch a competing classic PNG.
@@ -2689,6 +2707,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       });
       return;
     }
+
+    // GPU first: a pending GPU request is the first and only overlay. The cache
+    // read above is a free bridge; a render is not, so it waits until the caller
+    // hedges this exact key (the GPU missed its grace period). A native failure
+    // drops `gpuConfigJson` and the status leaves `loading`, so the PNG path
+    // starts on the very next run.
+    if (gpuSurface && (gpuConfigJson !== null || gpuStatus === 'loading') && gpuHedgeCacheKey !== currentCacheKey)
+      return;
+    if (cachedOverlayOnly) return;
 
     const nativeModule = getNativeModule();
     if (!nativeModule) {
@@ -2956,6 +2983,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     gpuConfigJson,
     gpuPresentedConfigJson,
     gpuSurface,
+    gpuStatus,
+    gpuHedgeCacheKey,
+    cachedOverlayOnly,
     // Redundant with `currentCacheKey`, which carries the `_geopending` token —
     // listed so the branch's own input is visible where the effect declares it.
     boardArtChunkPending,
@@ -3463,6 +3493,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     gpuFrames: flatFrames,
     getReadyBoardArtSnapshot,
     overlayUri,
+    overlayCacheKey: currentCacheKey,
     overlayLoadKey,
     overlayFailed: failedOverlayKey === currentCacheKey,
     overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,

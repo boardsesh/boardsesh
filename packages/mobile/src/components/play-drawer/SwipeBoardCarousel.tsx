@@ -18,15 +18,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { supportsAuraGpu } from '@boardsesh/board-look';
-import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
-import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
 import { StationaryBoardCarousel } from './StationaryBoardCarousel';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
-import { useGpuClimbOverlayEnabled } from '../../providers/feature-flags-provider';
+import { usePlayerGpuBoard } from './use-player-gpu-board';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
@@ -382,7 +379,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const handleStationaryUnavailable = useCallback(() => {
     setFailedStationaryIdentity(stationaryIdentity);
   }, [stationaryIdentity]);
-  const gpuEnabled = useGpuClimbOverlayEnabled(boardName, layoutId);
+  const playerGpuBoard = usePlayerGpuBoard(boardName, layoutId);
   const gpuLookahead = useMemo(() => {
     const knownFrames = new Set([currentFrames, prevFrames, nextFrames]);
     const lookahead: string[] = [];
@@ -394,19 +391,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     }
     return lookahead.length > 0 ? lookahead : NO_PREFETCH_FRAMES;
   }, [prefetchFrames, currentFrames, prevFrames, nextFrames]);
-  const stationary =
-    gpuEnabled &&
-    NativeMotionClimbOverlayGPU !== null &&
-    !currentFrameOverride &&
-    supportsAuraGpu({
-      boardName,
-      layoutId,
-      catalogueNative: climbOverlayGpuApiVersion >= 5,
-      renderMode: renderSettings.mode,
-      softDisc: renderSettings.boardsesh.softDisc,
-      markStyle: renderSettings.boardsesh.markStyle,
-    }) &&
-    failedStationaryIdentity !== stationaryIdentity;
+  const stationary = playerGpuBoard && !currentFrameOverride && failedStationaryIdentity !== stationaryIdentity;
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, currentFrameOverride ?? currentFrames);
@@ -721,8 +706,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
         )}
 
         {/* Draws nothing: warms the renders for the climbs a few swipes ahead
-            while the renderer is idle, so those swipes are cache hits. */}
-        {!boardMeasured ? null : (
+            while the renderer is idle, so those swipes are cache hits. Not on
+            the stationary GPU board: its swipes never show a PNG, and the GPU
+            prepares its own two climbs ahead (`gpuLookahead`). */}
+        {!boardMeasured || stationary ? null : (
           <UpcomingBoardPrefetch
             frames={prefetchFrames}
             boardName={boardName}

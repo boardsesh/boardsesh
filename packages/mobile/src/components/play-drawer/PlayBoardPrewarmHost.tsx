@@ -3,6 +3,7 @@ import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { usePlayDrawerSurface } from '../../hooks/use-play-drawer-surface';
 import { backgroundImageUri } from '../LayeredClimbImage';
 import { warmBoardArtMemory } from '../../lib/board-render/warm-board-art-memory';
+import { usePlayerGpuBoard } from './use-player-gpu-board';
 import {
   clearPlayBoardPrewarm,
   getPlayBoardPrewarmTarget,
@@ -29,7 +30,8 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
   sizeId,
   setIds,
   renderWidth,
-}: PlayBoardPrewarmTarget) {
+  cachedOverlayOnly,
+}: PlayBoardPrewarmTarget & { cachedOverlayOnly: boolean }) {
   const { fieldColor } = usePlayDrawerSurface();
   const { overlayUri, overlayLoadKey, backgroundPaths } = useNativeClimbRender({
     frames,
@@ -43,6 +45,7 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
     renderWidth,
     backgroundVariant: 'full',
     fieldColorOverride: fieldColor,
+    cachedOverlayOnly,
   });
   // Decode what the drawer is about to show, so its images come out of memory
   // on the frame they mount.
@@ -61,14 +64,22 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
  */
 export function PlayBoardPrewarmHost() {
   const target = useSyncExternalStore(subscribeToPlayBoardPrewarm, getPlayBoardPrewarmTarget);
+  return target ? <PlayBoardPrewarm target={target} /> : null;
+}
+
+/**
+ * The live GPU draws the player's first holds itself (docs/gpu-climb-overlay-
+ * experiment.md), so a board it covers gets no new PNG at the tap. The photo,
+ * and a PNG that is already cached (a free bridge), are still decoded ahead.
+ */
+function PlayBoardPrewarm({ target }: { target: PlayBoardPrewarmTarget }) {
+  const playerGpuBoard = usePlayerGpuBoard(target.boardName, target.layoutId);
   // The carousel drops the target when it has measured. A tap that never gets
   // that far (the drawer dismissed mid-open) would leave the hidden render
   // mounted until the next tap, so let go of it after a while regardless.
   useEffect(() => {
-    if (!target) return;
     const timer = setTimeout(clearPlayBoardPrewarm, ABANDONED_TARGET_MS);
     return () => clearTimeout(timer);
   }, [target]);
-  if (!target) return null;
-  return <TappedBoardRender {...target} />;
+  return <TappedBoardRender {...target} cachedOverlayOnly={playerGpuBoard} />;
 }

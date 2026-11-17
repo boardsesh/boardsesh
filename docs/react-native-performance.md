@@ -341,7 +341,10 @@ The play board gets the same treatment from the tap: `requestPlayBoardPrewarm`
 (`lib/board-render/play-board-prewarm.ts`) starts the play-size render in `handleClimbPress`, using
 the overlay width the carousel measured on its last open, so the render runs during the ~110 ms
 the drawer needs to mount and measure. `PlayBoardPrewarmHost` ranks it `full` — somebody is about
-to look at it — not `prefetch`.
+to look at it — not `prefetch`. A board the player draws on the stationary GPU carousel
+(`usePlayerGpuBoard`) renders no PNG here (`cachedOverlayOnly`): the GPU draws its first holds, and
+the prewarm only decodes the photo and any PNG already cached. The carousel's upcoming-climb
+prefetch is off on that board for the same reason; see `docs/gpu-climb-overlay-experiment.md`.
 
 **Cache key shape (`buildCacheKey` in `use-native-climb-render.ts`):**
 `v<RENDERER_VERSION>_<style>_w<width>_<board>_<layout>_<size>_<setIds>_<framesHash>`. Each token is

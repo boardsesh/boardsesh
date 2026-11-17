@@ -1757,6 +1757,10 @@ export const SHARED_EVENTS = {
   BoardRenderFailed: 'Board Render Failed',
   AuraGpuFallback: 'Aura GPU Fallback',
   AuraGpuPrepared: 'Aura GPU Prepared',
+  // How a cold live-GPU request first put holds on the board (GPU frame, an
+  // already-cached PNG, or the PNG hedge after the grace period) and how long it
+  // took. Sampled like the two above; docs/board-render-analytics.md.
+  AuraGpuFirstHolds: 'Aura GPU First Holds',
   // A saved render preset or CVD palette preset was applied (issue #2202,
   // settings-screen PR). No extra props beyond the common ones — the event IS
   // "the common props now carry a preset_id/palette_id".

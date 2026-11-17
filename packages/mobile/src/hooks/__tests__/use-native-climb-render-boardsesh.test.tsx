@@ -1312,11 +1312,25 @@ describe('live Homewall GPU render selection', () => {
 
   it('uses the host ground for GPU and PNG fallback, and invalidates opening artwork on a surface change', async () => {
     const { result, rerender } = renderHook(
-      ({ fieldColorOverride, fallback }) =>
-        useNativeClimbRender({ ...board, frames: 'p4131r42', fieldColorOverride, gpuFallbackConfigJson: fallback }),
-      { initialProps: { fieldColorOverride: '#1C1C1E' as string | undefined, fallback: null as string | null } },
+      ({ fieldColorOverride, fallback, hedge }) =>
+        useNativeClimbRender({
+          ...board,
+          frames: 'p4131r42',
+          fieldColorOverride,
+          gpuFallbackConfigJson: fallback,
+          gpuHedgeCacheKey: hedge,
+        }),
+      {
+        initialProps: {
+          fieldColorOverride: '#1C1C1E' as string | undefined,
+          fallback: null as string | null,
+          hedge: null as string | null,
+        },
+      },
     );
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    rerender({ fieldColorOverride: '#1C1C1E', fallback: null, hedge: result.current.overlayCacheKey });
     const firstConfig = result.current.gpuConfigJson!;
     const firstIdentity = result.current.artworkIdentity;
     const firstKey = buildCacheKey(
@@ -1331,11 +1345,13 @@ describe('live Homewall GPU render selection', () => {
     );
     await waitFor(() => expect(_renderedOverlaysForTests.has(firstKey)).toBe(true));
     expect(JSON.parse(firstConfig).veil.color).toBe('#1C1C1E');
-    rerender({ fieldColorOverride: '#15131a', fallback: null });
+    rerender({ fieldColorOverride: '#15131a', fallback: null, hedge: null });
     await waitFor(() => {
       expect(result.current.gpuStatus).toBe('ready');
       expect(result.current.gpuConfigJson).not.toBe(firstConfig);
     });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    rerender({ fieldColorOverride: '#15131a', fallback: null, hedge: result.current.overlayCacheKey });
     const nextConfig = result.current.gpuConfigJson!;
     const nextKey = buildCacheKey(
       board.boardName,
@@ -1355,20 +1371,20 @@ describe('live Homewall GPU render selection', () => {
     const [fallbackConfig, fallbackKey] = nativeModule.renderHoldsOverlay.mock.calls.at(-1)!;
     expect(fallbackKey).toBe(nextKey);
     expect(JSON.parse(fallbackConfig).veil.color).toBe('#15131a');
-    rerender({ fieldColorOverride: '#15131a', fallback: nextConfig });
+    rerender({ fieldColorOverride: '#15131a', fallback: nextConfig, hedge: null });
     expect(result.current.gpuConfigJson).toBeNull();
     expect(result.current.overlayUri).toBe(_renderedOverlaysForTests.get(nextKey)?.uri);
     expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
-    rerender({ fieldColorOverride: '#1C1C1E', fallback: nextConfig });
+    rerender({ fieldColorOverride: '#1C1C1E', fallback: nextConfig, hedge: null });
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
     const restoredConfig = result.current.gpuConfigJson!;
-    rerender({ fieldColorOverride: '#1C1C1E', fallback: restoredConfig });
+    rerender({ fieldColorOverride: '#1C1C1E', fallback: restoredConfig, hedge: null });
     expect(result.current.gpuConfigJson).toBeNull();
     expect(result.current.artworkIdentity.renderSignature).toBe(firstIdentity.renderSignature);
     expect(result.current.overlayUri).toBe(_renderedOverlaysForTests.get(firstKey)?.uri);
     expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
     // A list/editor/share caller without the override keeps its existing palette.
-    rerender({ fieldColorOverride: undefined, fallback: null });
+    rerender({ fieldColorOverride: undefined, fallback: null, hedge: null });
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
     expect(JSON.parse(result.current.gpuConfigJson!).veil.color).toBe(DARK_FIELD);
   });
@@ -1394,26 +1410,42 @@ describe('live Homewall GPU render selection', () => {
           resolveSupport = resolve;
         }),
     );
-    const { result } = renderHook(() => useNativeClimbRender({ ...board, frames: 'p4131r42' }));
+    const { result, rerender } = renderHook(
+      ({ hedge }) => useNativeClimbRender({ ...board, frames: 'p4131r42', gpuHedgeCacheKey: hedge }),
+      { initialProps: { hedge: null as string | null } },
+    );
     expect(result.current.gpuConfigJson).toBeNull();
     expect(result.current.gpuStatus).toBe('loading');
     act(() => resolveSupport(true));
     await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    // GPU first: neither a classic PNG while the probe ran nor an Aura one now.
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    rerender({ hedge: result.current.overlayCacheKey });
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
     expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0])).toMatchObject({
       render_mode: 'aura',
       frames: 'p4131r42',
     });
   });
 
-  it('hedges one cold GPU attempt with exact PNG art and renders no new PNG after presentation', async () => {
+  it('renders no PNG for a cold GPU attempt until it is hedged, and none after presentation', async () => {
     const { result, rerender } = renderHook(
-      ({ frames, presented }) => useNativeClimbRender({ ...board, frames, gpuPresentedConfigJson: presented }),
+      ({ frames, presented, hedge }) =>
+        useNativeClimbRender({ ...board, frames, gpuPresentedConfigJson: presented, gpuHedgeCacheKey: hedge }),
       {
-        initialProps: { frames: 'p4131r42', presented: null as string | null },
+        initialProps: { frames: 'p4131r42', presented: null as string | null, hedge: null as string | null },
       },
     );
     await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    expect(result.current.overlayUri).toBeNull();
+    // A hedge for another climb releases nothing here.
+    rerender({ frames: 'p4131r42', presented: null, hedge: 'another-climb' });
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    rerender({ frames: 'p4131r42', presented: null, hedge: result.current.overlayCacheKey });
     await waitFor(() => expect(result.current.overlayUri).toBe('file:///gpu-fallback.png'));
     const initialConfig = result.current.gpuConfigJson!;
     const parsed = JSON.parse(initialConfig) as {
@@ -1431,12 +1463,13 @@ describe('live Homewall GPU render selection', () => {
       render_mode: 'aura',
       frames: 'p4131r42',
     });
-    rerender({ frames: 'p4131r42', presented: initialConfig });
-    rerender({ frames: 'p4306r43', presented: initialConfig });
+    const hedged = result.current.overlayCacheKey;
+    rerender({ frames: 'p4131r42', presented: initialConfig, hedge: hedged });
+    rerender({ frames: 'p4306r43', presented: initialConfig, hedge: hedged });
     expect(result.current.gpuConfigJson).toBe(initialConfig);
     expect(result.current.gpuFrames).toBe('p4306r43');
     expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
-    rerender({ frames: '', presented: initialConfig });
+    rerender({ frames: '', presented: initialConfig, hedge: hedged });
     expect(result.current.gpuConfigJson).toBeNull();
     expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
   });
@@ -1472,14 +1505,10 @@ describe('live Homewall GPU render selection', () => {
     );
     await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
     expect(JSON.parse(result.current.gpuConfigJson!).output_width).toBe(936);
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
     rerender({ renderWidth: 720 });
     await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
     expect(JSON.parse(result.current.gpuConfigJson!).output_width).toBe(720);
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
-    expect(nativeModule.renderHoldsOverlay.mock.calls.map(([config]) => JSON.parse(config).output_width)).toEqual([
-      936, 720,
-    ]);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('falls back for a failed static config across later taps, with editor veil preserved', async () => {
@@ -1527,6 +1556,57 @@ describe('live Homewall GPU render selection', () => {
     boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
     rerender({ frames: 'p4131r12' });
     expect(result.current.gpuConfigJson).toBeNull();
+  });
+
+  it('adopts an already-cached PNG for a pending GPU request without rendering', async () => {
+    const probe = renderHook(() => useNativeClimbRender({ ...board, frames: 'p4131r42' }));
+    await waitFor(() => expect(probe.result.current.gpuConfigJson).toBeTruthy());
+    const cacheKey = probe.result.current.overlayCacheKey;
+    probe.unmount();
+    _renderedOverlaysForTests.set(cacheKey, { uri: 'file:///already-cached.png', generation: 41 });
+    const { result } = renderHook(() => useNativeClimbRender({ ...board, frames: 'p4131r42' }));
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    expect(result.current.overlayUri).toBe('file:///already-cached.png');
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it('withdraws a hedge that belonged to the previous climb', async () => {
+    const { result, rerender } = renderHook(
+      ({ frames, hedge }) => useNativeClimbRender({ ...board, frames, gpuHedgeCacheKey: hedge }),
+      { initialProps: { frames: 'p4131r42', hedge: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const firstClimbKey = result.current.overlayCacheKey;
+    rerender({ frames: 'p4306r43', hedge: firstClimbKey });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(result.current.overlayCacheKey).not.toBe(firstClimbKey);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it('renders at once, without a hedge, when the GPU is not selected', async () => {
+    renderHook(() => useNativeClimbRender({ ...board, gpuSurface: false, frames: 'p4131r42' }));
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
+  });
+
+  it('reads the cache but never renders for a cache-only consumer', async () => {
+    const { result, unmount } = renderHook(() =>
+      useNativeClimbRender({ ...board, gpuSurface: false, frames: 'p4131r42', cachedOverlayOnly: true }),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(result.current.overlayUri).toBeNull();
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    const cacheKey = result.current.overlayCacheKey;
+    unmount();
+    _renderedOverlaysForTests.set(cacheKey, { uri: 'file:///warm-me.png', generation: 42 });
+    const cached = renderHook(() =>
+      useNativeClimbRender({ ...board, gpuSurface: false, frames: 'p4131r42', cachedOverlayOnly: true }),
+    );
+    expect(cached.result.current.overlayUri).toBe('file:///warm-me.png');
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 });
 
@@ -1589,13 +1669,12 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
     await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
     const initialJson = result.current.gpuConfigJson!;
     expect(gpuConfig(initialJson)).toMatchObject({ output_width: 1080, board_width: 1080, board_height: 1504 });
-    const coldPngCount = surface.frames ? 1 : 0;
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(coldPngCount);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
     rerender({ renderWidth: 936, frames: surface.frames, presented: initialJson });
     rerender({ renderWidth: 720, frames: 'p2r2', presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
     expect(result.current.gpuFrames).toBe('p2r2');
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(coldPngCount);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('uses the requested PNG size when native-resolution GPU geometry exceeds its limit', async () => {
@@ -1632,8 +1711,7 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
       expect.objectContaining({ id: 1, mirroredHoldId: 2 }),
       expect.objectContaining({ id: 2, mirroredHoldId: 1 }),
     ]);
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0]).frames).toBe(firstFrames);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
     rerender({ frames: firstFrames, presented: initialJson });
     rerender({ frames: `p2r${board.role}`, presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
@@ -1641,7 +1719,7 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
     rerender({ frames: '', presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
     expect(result.current.gpuFrames).toBe('');
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('keeps all thirty Kilter state codes, Original roles and colour-mode aliases', async () => {
@@ -1660,13 +1738,13 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
     expect(states[15]).toEqual({ color: '#FFAA00', role: 'foot' });
     expect(states[37]).toEqual({ color: '#FF00FF', role: 'hand' });
     expect(states[41]).toEqual({ color: '#0000FF', role: 'hand' });
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
     rerender({ frames: 'p1r12p2r13', presented: initialJson });
     rerender({ frames: 'p1r14p2r15', presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
     rerender({ frames: 'p1r37p2r41', presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('keeps Tension alternate role codes and includes the catalogue Spray layout', async () => {
@@ -1682,11 +1760,11 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
     expect(Object.keys(states)).toHaveLength(8);
     for (const code of [1, 2, 3, 4]) expect(states[code + 4]).toEqual(states[code]);
     expect(states[6]).toEqual({ color: '#4DF5FD', role: 'hand' });
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
     rerender({ frames: 'p1r5p2r6', presented: initialJson });
     rerender({ frames: 'p1r7p2r8', presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('preserves MoonBoard annotations and its purple and pink preview colours', async () => {
@@ -1701,12 +1779,12 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
     expect(states[46]).toEqual({ color: '#FFE066', render_style: 'above-marker' });
     expect(states[47]).toEqual({ color: '#C084FC', role: 'hand' });
     expect(states[48]).toEqual({ color: '#FF7DBB', role: 'hand' });
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
     rerender({ frames: 'p1r46p2r47', presented: initialJson });
     rerender({ frames: 'p1r48p2r46', presented: initialJson });
     expect(result.current.gpuConfigJson).toBe(initialJson);
     expect(result.current.gpuFrames).toBe('p1r48p2r46');
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('retains Woods placement zero and its own start and foot roles', async () => {
@@ -1722,8 +1800,7 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
     expect(states[1]).toEqual({ color: '#FF00FF', role: 'foot' });
     expect(states[4]).toEqual({ color: '#00DD00', role: 'starting' });
     expect(result.current.gpuFrames).toBe('p0r2p2r4');
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0]).frames).toBe('p0r2p2r4');
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('uses local PNG rendering for custom spray walls', async () => {
@@ -1772,12 +1849,17 @@ describe('catalogue Aura GPU render selection on API v5 binaries', () => {
 
   it('accepts the tallest native output without reducing resolution', async () => {
     getBoardRenderDataMock.mockReturnValue({ ...twoHolds, boardHeight: 2304 });
-    const { result } = renderHook(() =>
-      useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2' }),
+    const { result, rerender } = renderHook(
+      ({ hedge }) =>
+        useNativeClimbRender({ ...TENSION_ORIGINAL, ...nativeSurface, frames: 'p1r2', gpuHedgeCacheKey: hedge }),
+      { initialProps: { hedge: null as string | null } },
     );
     await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
     expect(gpuConfig(result.current.gpuConfigJson)).toMatchObject({ output_width: 1080, board_height: 2304 });
-    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    // The hedge renders the same full-resolution PNG the fallback would.
+    rerender({ hedge: result.current.overlayCacheKey });
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
     expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls[0][0])).toMatchObject({
       output_width: 1080,
       board_height: 2304,
