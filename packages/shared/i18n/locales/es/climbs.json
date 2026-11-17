@@ -570,7 +570,6 @@
       "gradeAction": "Ajustar el rango de grado",
       "gradeOpenHint": "Abre el selector de grado",
       "gradeCloseHint": "Cierra el selector de grado",
-      "allClimbs": "Todas las vías",
       "clearRecentSearches": "Borrar búsquedas recientes",
       "chips": {
         "filtersWithCount": "Filtros · {{count}}",

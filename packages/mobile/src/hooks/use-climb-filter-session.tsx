@@ -64,18 +64,16 @@ import { buildNameFilterToken, getActiveFilterTokens, type FilterToken } from '.
 import { buildGradeRailStops } from '../lib/grade-stops';
 import { chipKindToTokenKeys, type FilterChipKind } from '../lib/pinnable-chips';
 import type { PinnedChipsStore } from '../lib/pinned-chips-store';
-import { normalizeSearchName } from '../lib/search-name';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
 import { useGrades } from '../lib/graphql/hooks';
 import type { GradeBound } from '../providers/climb-search-provider';
 import { useAuth } from '../providers/auth-provider';
-import { useDeviceLayout } from './use-device-layout';
+import { useDebouncedSearchName } from './use-debounced-search-name';
+import { useGradeDisclosure } from './use-grade-disclosure';
 import { useGradeFormat } from './use-grade-format';
 import { useLastUsedGrade } from './use-last-used-grade';
 import { useLiveClimbFilters } from './use-live-climb-filters';
 
-/** Same wait as the Climbs list before a typed name reaches the query. */
-const NAME_DEBOUNCE_MS = 300;
 const NO_DIMENSION_CHIPS: DimensionChip[] = [];
 const NO_HIDDEN_CHIPS: readonly FilterChipKind[] = [];
 const noop = () => {};
@@ -278,32 +276,12 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     [],
   );
 
-  // The name: a typed term waits out the debounce; clearing it does not.
-  const nameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelPendingName = useCallback(() => {
-    if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
-    nameTimerRef.current = null;
-  }, []);
-  useEffect(() => cancelPendingName, [cancelPendingName]);
-  const handleNameChange = useCallback(
-    (text: string) => {
-      cancelPendingName();
-      const nextName = normalizeSearchName(text);
-      if (nextName === '') {
-        dispatch({ type: 'setName', name: '' });
-        return;
-      }
-      nameTimerRef.current = setTimeout(() => {
-        nameTimerRef.current = null;
-        dispatch({ type: 'setName', name: nextName });
-      }, NAME_DEBOUNCE_MS);
-    },
-    [cancelPendingName],
-  );
-  const handleClearName = useCallback(() => {
-    cancelPendingName();
-    dispatch({ type: 'setName', name: '' });
-  }, [cancelPendingName]);
+  const commitName = useCallback((name: string) => dispatch({ type: 'setName', name }), []);
+  const {
+    schedule: handleNameChange,
+    cancel: cancelPendingName,
+    clear: handleClearName,
+  } = useDebouncedSearchName({ scopeKey, name: session.name, onCommit: commitName, commitEmptyImmediately: true });
 
   const clearFilters = useCallback(() => {
     cancelPendingName();
@@ -354,45 +332,30 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     querySelection: debouncedSelection,
   } = useLiveClimbFilters({ scopeKey, selection: liveSelection, onSelectionChange: replaceSelection, onDismiss: noop });
 
-  // Grade rail: a row under the chips, or a popover on a regular-width iPad. An
-  // open popover stays one until dismissed, even if the window narrows.
-  const { isPad, widthClass } = useDeviceLayout();
-  const isRegularWidthPad = isPad && widthClass === 'regular';
-  const isRegularWidthPadRef = useRef(isRegularWidthPad);
-  isRegularWidthPadRef.current = isRegularWidthPad;
   const [gradeRowShown, setGradeRowShown] = useState(false);
-  const [gradePopoverOpen, setGradePopoverOpen] = useState(false);
-  const gradeUsesPopover = gradePopoverOpen || isRegularWidthPad;
-  const gradeUsesPopoverRef = useRef(gradeUsesPopover);
-  gradeUsesPopoverRef.current = gradeUsesPopover;
-
+  const {
+    usesPopover: gradeUsesPopover,
+    popoverOpen: gradePopoverOpen,
+    open: handleOpenGrade,
+    close: handleCloseGrade,
+    dismissPopover,
+  } = useGradeDisclosure({
+    rowShown: gradeRowShown,
+    onRowShownChange: setGradeRowShown,
+    beforeOpenPopover: hideFilters,
+  });
   const openFilters = useCallback(() => {
     if (disabledRef.current) return;
-    setGradePopoverOpen(false);
+    dismissPopover();
     openLiveFilters();
-  }, [openLiveFilters]);
-  const handleOpenGrade = useCallback(() => {
-    if (isRegularWidthPadRef.current) {
-      hideFilters();
-      setGradePopoverOpen(true);
-      return;
-    }
-    setGradeRowShown(true);
-  }, [hideFilters]);
-  const handleCloseGrade = useCallback(() => {
-    if (gradeUsesPopoverRef.current) {
-      setGradePopoverOpen(false);
-      return;
-    }
-    setGradeRowShown(false);
-  }, []);
+  }, [openLiveFilters, dismissPopover]);
 
   // Edit mode (or anything else that disables the list) shuts the sheet and the popover.
   useEffect(() => {
     if (!disabled) return;
     hideFilters();
-    setGradePopoverOpen(false);
-  }, [disabled, hideFilters]);
+    dismissPopover();
+  }, [disabled, hideFilters, dismissPopover]);
 
   const querySelection = useMemo<ClimbFilterSessionSelection<K>>(
     () => ({ ...debouncedSelection, name: session.name }),

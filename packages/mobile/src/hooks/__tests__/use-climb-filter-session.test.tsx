@@ -152,6 +152,18 @@ describe('useClimbFilterSession', () => {
     expect(result.current.state.querySelection.name).toBe('');
   });
 
+  it('does not commit a pending name into a different board or login scope', () => {
+    const { result, rerender, initialProps } = renderSession();
+    act(() => result.current.actions.openFilters());
+    act(() => result.current.state.sheetProps?.onNameChange('old board'));
+    rerender({ ...initialProps, scopeKey: 'playlist:p-1|tension|false' });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(result.current.state.querySelection.name).toBe('');
+    expect(result.current.state.sheetProps).toBeNull();
+  });
+
   it('drops the signed-in filters when signed out', () => {
     const { result, rerender, initialProps } = renderSession();
     act(() => result.current.state.chipRowProps.onChangeProgress('unsent'));
