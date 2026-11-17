@@ -58,11 +58,19 @@ export const API_HOSTNAME = 'api.boardsesh.com';
  * Railway's required CNAME target for the `api.boardsesh.com` custom domain on
  * the `boardsesh-backend` service (domain id
  * `26e644c0-64dc-4c9d-8eab-f4d9f1c23546`). Railway printed it when the domain
- * was added; it is not derivable from the service name. The matching
- * `_railway-verify.api` TXT record is created by hand in the Cloudflare
- * dashboard, because `cf:apply` does not manage TXT records.
+ * was added; it is not derivable from the service name.
  */
 export const API_RAILWAY_CNAME_TARGET = 'eas9szb6.up.railway.app';
+
+/** Where Railway looks for proof that we own API_HOSTNAME. */
+export const API_RAILWAY_VERIFY_HOSTNAME = `_railway-verify.${API_HOSTNAME}`;
+
+/**
+ * The ownership proof Railway printed with the CNAME target. Not a secret: it
+ * is published in DNS. Railway serves the host only once it has read this.
+ */
+export const API_RAILWAY_VERIFY_VALUE =
+  'railway-verify=ac3ca8cf7b95bfc99345da28df8f5e44483418ce23d064ce705f370cd66357b7';
 
 /** Public custom domain for the content-addressed static-assets bucket. */
 export const ASSETS_HOSTNAME = 'assets.boardsesh.com';
@@ -293,9 +301,11 @@ export interface FullyManagedDnsRecordDesired extends DnsRecordDesiredBase {
    * `A`/`AAAA` are here for the originless apex, which points at a reserved
    * placeholder address rather than a hostname — see APEX_ORIGINLESS_ADDRESS.
    * `AAAA` stays in the union because Cloudflare documents both placeholder
-   * forms; nothing declares one today.
+   * forms; nothing declares one today. `TXT` is for Railway's
+   * `_railway-verify.<host>` ownership proofs: `content` is the bare value
+   * (the tool adds the quotes Cloudflare stores), and `proxied` must be false.
    */
-  type: 'A' | 'AAAA' | 'CNAME';
+  type: 'A' | 'AAAA' | 'CNAME' | 'TXT';
   content: string;
   /** Cloudflare API value 1 means automatic TTL. */
   ttl: number;
@@ -1229,6 +1239,16 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       content: WWW_RAILWAY_CNAME_TARGET,
       ttl: 1,
       proxied: true,
+    },
+    // Railway's ownership proof for the partner API host. Listed before the
+    // CNAME so one apply creates the proof first.
+    {
+      management: 'full',
+      name: API_RAILWAY_VERIFY_HOSTNAME,
+      type: 'TXT',
+      content: API_RAILWAY_VERIFY_VALUE,
+      ttl: 1,
+      proxied: false,
     },
     // The partner API host (#6981) points at the backend service. Proxied, so
     // Cloudflare terminates TLS and the backend sees CF-Connecting-IP. No

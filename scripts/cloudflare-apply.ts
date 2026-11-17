@@ -210,18 +210,29 @@ async function resolveZoneId(token: string, zoneName: string): Promise<string> {
  */
 export const MANAGED_DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME'] as const;
 
-/** Pick the one address record at `name`, or null. Throws when the name carries more than one. */
-export function selectManagedDnsRecord(records: LiveDnsRecord[], name: string): LiveDnsRecord | null {
-  const addressRecords = records.filter(
-    (candidate) => candidate.name === name && (MANAGED_DNS_RECORD_TYPES as readonly string[]).includes(candidate.type),
-  );
-  if (addressRecords.length > 1) {
+/**
+ * Pick the one record at `name` this tool would own, or null. Throws when the
+ * name carries more than one candidate.
+ *
+ * A desired TXT record (a Railway `_railway-verify.<host>` ownership proof)
+ * matches TXT records only; everything else matches the address types. The two
+ * never mix, so the SPF and verification TXT records beside an address record
+ * stay invisible to it.
+ */
+export function selectManagedDnsRecord(
+  records: LiveDnsRecord[],
+  name: string,
+  desiredType?: FullyManagedDnsRecordDesired['type'],
+): LiveDnsRecord | null {
+  const candidateTypes: readonly string[] = desiredType === 'TXT' ? ['TXT'] : MANAGED_DNS_RECORD_TYPES;
+  const candidates = records.filter((candidate) => candidate.name === name && candidateTypes.includes(candidate.type));
+  if (candidates.length > 1) {
     throw new Error(
-      `DNS name "${name}" is ambiguous: Cloudflare returned ${addressRecords.length} address records ` +
-        `(${addressRecords.map((record) => record.type).join(', ')}). Resolve it in the Cloudflare dashboard first.`,
+      `DNS name "${name}" is ambiguous: Cloudflare returned ${candidates.length} ${desiredType === 'TXT' ? 'TXT' : 'address'} records ` +
+        `(${candidates.map((record) => record.type).join(', ')}). Resolve it in the Cloudflare dashboard first.`,
     );
   }
-  return addressRecords[0] ?? null;
+  return candidates[0] ?? null;
 }
 
 /** One entry from `GET /accounts/:id/r2/buckets`. */
@@ -553,13 +564,18 @@ async function applyR2Bucket(
   return lifecycleBlocked;
 }
 
-async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
+async function fetchDnsRecord(
+  token: string,
+  zoneId: string,
+  name: string,
+  desiredType?: FullyManagedDnsRecordDesired['type'],
+): Promise<LiveDnsRecord | null> {
   const records = await cfRequest<LiveDnsRecord[]>(
     token,
     'GET',
     `/zones/${zoneId}/dns_records?name=${encodeURIComponent(name)}`,
   );
-  return selectManagedDnsRecord(records, name);
+  return selectManagedDnsRecord(records, name, desiredType);
 }
 
 /** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
@@ -610,7 +626,16 @@ async function fetchLiveState(
   const [fetchedDnsRecords, phaseRules, sslMode, flattenAllCnames] = await Promise.all([
     Promise.all(
       desiredDnsRecords.map(
-        async (desiredRecord) => [desiredRecord, await fetchDnsRecord(token, zoneId, desiredRecord.name)] as const,
+        async (desiredRecord) =>
+          [
+            desiredRecord,
+            await fetchDnsRecord(
+              token,
+              zoneId,
+              desiredRecord.name,
+              desiredRecord.management === 'full' ? desiredRecord.type : undefined,
+            ),
+          ] as const,
       ),
     ),
     // One read per registered phase: adding a phase to the registry cannot leave
@@ -657,7 +682,8 @@ export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Reco
   return {
     type: desired.type,
     name: desired.name,
-    content: desired.content,
+    // Cloudflare stores TXT content inside double quotes and warns on a bare value.
+    content: desired.type === 'TXT' ? `"${desired.content}"` : desired.content,
     ttl: desired.ttl,
     proxied: desired.proxied,
     // Left out entirely when we do not own it. `settings: undefined` would

@@ -356,14 +356,15 @@ that filter, and only when `PARTNER_OAUTH_MODE` is not `off`. See
 How it was turned on, and how to redo it after re-registering the domain:
 
 1. Add `api.boardsesh.com` as a custom domain on the backend service in Railway. Railway prints the CNAME target.
-2. Create the TXT record `_railway-verify.api.boardsesh.com` in the Cloudflare dashboard, because `cf:apply` does not
-   manage TXT records. Its value appears only in Railway's domain panel. Wait for the domain to show `verified: true`
-   before merging the CNAME change in the next two steps. Without it Railway's edge answers `Application not found`
-   for the host. See "Railway custom-domain verification" in `docs/production-deploy.md`.
+2. Add Railway's ownership proof to `dnsRecords` as a `management: 'full'`, `type: 'TXT'`, `ttl: 1`,
+   `proxied: false` entry named `_railway-verify.api.boardsesh.com`, with the bare `railway-verify=…` value as
+   `content`. List it before the CNAME so one apply creates the proof first. Adding the same record by hand in the
+   dashboard first is fine and gets Railway verifying sooner: the apply then reports no drift. Until Railway shows
+   `verified: true` its edge answers `Application not found` for the host. See "Railway custom-domain verification"
+   in `docs/production-deploy.md`.
 3. Add a `management: 'full'`, `type: 'CNAME'`, `ttl: 1`, `proxied: true` entry for `API_HOSTNAME` to `dnsRecords`,
-   with that target as `content`, and no `settings` block (same as `www` below). Update the test in
-   `scripts/cloudflare-apply.test.ts` that pins the record as absent.
-4. Merge. `deploy-cloudflare` creates the record.
+   with that target as `content`, and no `settings` block (same as `www` below).
+4. Merge. `deploy-cloudflare` creates both records.
 
 To roll back, remove the entry and delete the CNAME in the dashboard: the tool never deletes DNS records. Keep the TXT
 record.
@@ -561,9 +562,10 @@ What it manages (and nothing else on the zone):
     shown above, so the redirect rule can answer it.
 
   The lookup is by name, and Cloudflare's list endpoint returns every record type
-  at that name. Only `A`, `AAAA` and `CNAME` are considered, so the MX, TXT and
+  at that name. For an address record only `A`, `AAAA` and `CNAME` are considered, so the MX, TXT and
   CAA records a hostname (especially the apex) carries alongside its address
-  record do not make it look ambiguous. Two _address_ records at one name still
+  record do not make it look ambiguous. A declared `TXT` record (Railway's `_railway-verify.<host>` proof) is matched
+  against TXT records only, and its content is compared without the double quotes Cloudflare stores. Two _address_ records at one name still
   fail closed: that is a real conflict and the tool must not pick one.
 - **Cache** — two rules in the `http_request_cache_settings` phase, one for
   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
