@@ -18,6 +18,7 @@ import {
   recordGpuPresented,
 } from '../lib/board-render/gpu-failure-store';
 import { reportGpuFirstHolds, type GpuFallbackReason } from '../lib/board-render/gpu-telemetry';
+import { markGpuConfigWarm } from '../lib/board-render/gpu-warm-configs';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { useBoardArtVisible } from './board-art-visibility-context';
 import { useGpuClimbOverlayEnabled } from '../providers/feature-flags-provider';
@@ -276,6 +277,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
     gpuConfigJson = null,
     gpuStatus = gpuConfigJson ? 'ready' : 'unavailable',
     gpuFrames = frames,
+    gpuWarmKey = null,
+    gpuProcessCold = false,
   } = useNativeClimbRender({
     frames,
     boardName,
@@ -360,11 +363,15 @@ const BoardImageNative = React.memo(function BoardImageNative({
     cacheKey: string;
     requestId: string;
     startedAtMs: number;
+    /** The drawing was not yet warm in this process: its PNG rendered at once. */
+    cold: boolean;
+    /** This climb's PNG was already cached when the wait began. */
+    cachedAtStart: boolean;
     reported: boolean;
   } | null>(null);
   const firstHoldsSerialRef = useRef(0);
-  const firstHoldsContextRef = useRef({ boardName, editorSurface, gpuHedgeCacheKey });
-  firstHoldsContextRef.current = { boardName, editorSurface, gpuHedgeCacheKey };
+  const firstHoldsContextRef = useRef({ boardName, editorSurface, gpuWarmKey });
+  firstHoldsContextRef.current = { boardName, editorSurface, gpuWarmKey };
   const reportFirstHolds = useCallback((shownBy: 'gpu' | 'png') => {
     const wait = firstHoldsWaitRef.current;
     if (!wait || wait.reported) return;
@@ -377,14 +384,18 @@ const BoardImageNative = React.memo(function BoardImageNative({
         surface: context.editorSurface ? 'editor' : 'player',
       },
       wait.requestId,
-      shownBy === 'gpu' ? 'gpu' : context.gpuHedgeCacheKey === wait.cacheKey ? 'hedged-png' : 'cached-png-bridge',
+      shownBy === 'gpu' ? 'gpu' : wait.cachedAtStart ? 'cached-png-bridge' : 'hedged-png',
       Date.now() - wait.startedAtMs,
+      wait.cold,
     );
   }, []);
   const handleGpuPresented = useCallback(
     (requestId: string, configJson: string) => {
       if (currentGpuRequest.current !== requestId) return;
       reportFirstHolds('gpu');
+      // From here this drawing is warm for every board in this process.
+      const { gpuWarmKey: presentedWarmKey } = firstHoldsContextRef.current;
+      if (presentedWarmKey !== null) markGpuConfigWarm(presentedWarmKey);
       setGpuPresented(requestId);
       recordGpuPresented(configJson);
     },
@@ -456,12 +467,14 @@ const BoardImageNative = React.memo(function BoardImageNative({
     );
   }, [hasGpuTransition, gpuSurface, gpuConfigJson, gpuStatus, gpuPresented, gpuRequestId, onGpuTransitionStateChange]);
 
-  // GPU first. A cold GPU request (nothing of this configuration on screen yet;
-  // a warm board keeps its last drawable instead) renders no PNG. One already in
-  // the cache still shows for free. Past the grace period the board hedges: the
-  // PNG for exactly this climb renders through the normal scheduler and shows
-  // until the GPU presents. The native 10-second deadline still decides a
-  // failure; the hedge never counts as one.
+  // GPU first, once the drawing is warm in this process (`gpu-warm-configs`). A
+  // GPU request with nothing of its configuration on this board yet renders no
+  // PNG (a board that shows a frame keeps that drawable instead). One already
+  // in the cache still shows for free. Past the grace period the board hedges:
+  // the PNG for exactly this climb renders through the normal scheduler and
+  // shows until the GPU presents. While the drawing is process-cold the hook
+  // renders the PNG at once and no timer is needed. The native 10-second
+  // deadline still decides a failure; neither PNG counts as one.
   const appForeground = !useIsAppBackgrounded();
   const boardArtVisible = useBoardArtVisible();
   const gpuFirstFramePending =
@@ -472,6 +485,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       : gpuStatus === 'loading');
   const gpuHedgeArmed =
     gpuFirstFramePending &&
+    !gpuProcessCold &&
     appForeground &&
     boardArtVisible &&
     overlayUri === null &&
@@ -500,8 +514,13 @@ const BoardImageNative = React.memo(function BoardImageNative({
       cacheKey: firstHoldsWaitKey,
       requestId: `${gpuInstanceId}:first-holds:${firstHoldsSerialRef.current}`,
       startedAtMs: Date.now(),
+      cold: gpuProcessCold,
+      cachedAtStart: overlayUri !== null,
       reported: false,
     };
+    // `gpuProcessCold` and `overlayUri` are read as they stand when this wait
+    // begins; a later change to either is not a new wait.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstHoldsWaitKey, gpuInstanceId]);
   const handlePngBridgeDisplayed = useCallback(() => reportFirstHolds('png'), [reportFirstHolds]);
 
@@ -551,8 +570,14 @@ const BoardImageNative = React.memo(function BoardImageNative({
   // this climb's holds over its photo is a board the climber can read. The
   // stationary carousel still waits for the GPU itself (its neighbours have no
   // PNG), through `onGpuTransitionStateChange`.
+  //
+  // The bridge's word is scoped to the art identity it was given for (climb,
+  // overlay, photos and GPU request). A new identity starts from "loading"
+  // whatever the previous request's bridge said.
   const liveArtReadyRef = useRef(false);
-  const pngBridgeReadyRef = useRef(false);
+  const pngBridgeReadyForRef = useRef<string | null>(null);
+  const shownArtIdentityRef = useRef(currentArtIdentity);
+  shownArtIdentityRef.current = currentArtIdentity;
   const gpuDisplayedRef = useRef(false);
   gpuDisplayedRef.current = liveOverlay?.displayed ?? false;
   const publishArtReadiness = useCallback(() => {
@@ -560,7 +585,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
       (missingBackgroundCount > 0 && !backgroundsLoading) ||
         (!liveOverlay && (overlayFailed || (frames.length > 0 && rendererUnavailable)))
         ? 'failed'
-        : (liveArtReadyRef.current || pngBridgeReadyRef.current) && !bridging && !backgroundsLoading
+        : (liveArtReadyRef.current || pngBridgeReadyForRef.current === shownArtIdentityRef.current) &&
+            !bridging &&
+            !backgroundsLoading
           ? 'ready'
           : 'loading',
     );
@@ -581,16 +608,16 @@ const BoardImageNative = React.memo(function BoardImageNative({
       // passive effect). The bridge's last word stands until then, so the board
       // never blips to "loading" in between.
       if (!ready && gpuDisplayedRef.current) return;
-      pngBridgeReadyRef.current = ready;
+      pngBridgeReadyForRef.current = ready ? currentArtIdentity : null;
       publishArtReadiness();
     },
-    [publishArtReadiness],
+    [publishArtReadiness, currentArtIdentity],
   );
   const handleArtReadinessChange = useCallback(
     (ready: boolean) => {
       liveArtReadyRef.current = ready;
       // A live board that is ready has taken over from any bridge.
-      if (ready) pngBridgeReadyRef.current = false;
+      if (ready) pngBridgeReadyForRef.current = null;
       if (liveOverlay && ready) {
         setGpuPaintedConfig(gpuConfigJson);
         if (bridging) setDisplayedArtIdentity(currentArtIdentity);

@@ -143,8 +143,8 @@ describe('GPU diagnostics', () => {
     (source) => {
       const random = vi.spyOn(Math, 'random').mockReturnValue(0);
       const request = requestId();
-      reportGpuFirstHolds(context, request, source, 312.6);
-      reportGpuFirstHolds(context, request, 'gpu', 900);
+      reportGpuFirstHolds(context, request, source, 312.6, source === 'hedged-png');
+      reportGpuFirstHolds(context, request, 'gpu', 900, false);
       expect(random).toHaveBeenCalledTimes(1);
       expect(controls.track).toHaveBeenCalledExactlyOnceWith('Aura GPU First Holds', {
         board_name: 'kilter',
@@ -152,6 +152,7 @@ describe('GPU diagnostics', () => {
         surface: 'player',
         sample_rate: 0.1,
         source,
+        cold: source === 'hedged-png',
         first_holds_ms: 313,
       });
     },
@@ -160,11 +161,11 @@ describe('GPU diagnostics', () => {
   it('bounds the first-holds time and follows consent', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     controls.granted = false;
-    reportGpuFirstHolds(context, requestId(), 'gpu', 40);
+    reportGpuFirstHolds(context, requestId(), 'gpu', 40, false);
     expect(controls.track).not.toHaveBeenCalled();
     controls.granted = true;
-    reportGpuFirstHolds(context, requestId(), 'gpu', 3_600_000);
-    reportGpuFirstHolds(context, requestId(), 'gpu', Number.NaN);
+    reportGpuFirstHolds(context, requestId(), 'gpu', 3_600_000, true);
+    reportGpuFirstHolds(context, requestId(), 'gpu', Number.NaN, false);
     expect(controls.track.mock.calls.map(([, props]) => props.first_holds_ms)).toEqual([60_000, null]);
   });
 });

@@ -58,6 +58,11 @@ const boardRenderSettingsRef = vi.hoisted(() => ({
     },
   },
 }));
+// Process warmth: the GPU-first cases run warm unless a test says otherwise.
+const gpuWarmth = vi.hoisted(() => ({ allWarm: true, warmKeys: new Set<string>() }));
+vi.mock('../../lib/board-render/gpu-warm-configs', () => ({
+  isGpuConfigWarm: (gpuWarmKey: string) => gpuWarmth.allWarm || gpuWarmth.warmKeys.has(gpuWarmKey),
+}));
 vi.mock('../../lib/board-render-settings', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/board-render-settings')>();
   return {
@@ -218,6 +223,8 @@ function stateInfoByColorRole(
 }
 
 beforeEach(() => {
+  gpuWarmth.allWarm = true;
+  gpuWarmth.warmKeys.clear();
   _resetBoardConfigCacheForTests();
   _resetBoardHoldIdsCacheForTests();
   _resetWarmupForTests();
@@ -1590,23 +1597,89 @@ describe('live Homewall GPU render selection', () => {
     await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1));
   });
 
-  it('reads the cache but never renders for a cache-only consumer', async () => {
-    const { result, unmount } = renderHook(() =>
-      useNativeClimbRender({ ...board, gpuSurface: false, frames: 'p4131r42', cachedOverlayOnly: true }),
+  it('lets the tap prewarm render while the drawing is cold, and only read the cache once warm', async () => {
+    gpuWarmth.allWarm = false;
+    const prewarm = { ...board, gpuSurface: false, gpuCatalogueNative: false, cachedOnlyOnceGpuWarm: true };
+    const cold = renderHook(() => useNativeClimbRender({ ...prewarm, frames: 'p4131r42' }));
+    await waitFor(() => expect(cold.result.current.boardseshRendererAvailable).toBe(true));
+    await waitFor(() =>
+      expect(
+        nativeModule.renderHoldsOverlay.mock.calls.some(([config]) => JSON.parse(config).render_mode === 'aura'),
+      ).toBe(true),
     );
+    const gpuWarmKey = cold.result.current.gpuWarmKey!;
+    cold.unmount();
+    const coldRenders = nativeModule.renderHoldsOverlay.mock.calls.length;
+    gpuWarmth.warmKeys.add(gpuWarmKey);
+    const warm = renderHook(() => useNativeClimbRender({ ...prewarm, frames: 'p4306r43' }));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
-    expect(result.current.overlayUri).toBeNull();
-    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
-    const cacheKey = result.current.overlayCacheKey;
-    unmount();
+    expect(warm.result.current.overlayUri).toBeNull();
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(coldRenders);
+    const cacheKey = warm.result.current.overlayCacheKey;
+    warm.unmount();
     _renderedOverlaysForTests.set(cacheKey, { uri: 'file:///warm-me.png', generation: 42 });
-    const cached = renderHook(() =>
-      useNativeClimbRender({ ...board, gpuSurface: false, frames: 'p4131r42', cachedOverlayOnly: true }),
-    );
+    const cached = renderHook(() => useNativeClimbRender({ ...prewarm, frames: 'p4306r43' }));
     expect(cached.result.current.overlayUri).toBe('file:///warm-me.png');
-    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(coldRenders);
+  });
+
+  it('names the same drawing for the play board and the tap prewarm', async () => {
+    const playBoard = renderHook(() => useNativeClimbRender({ ...board, renderWidth: 750, frames: 'p4131r42' }));
+    const prewarm = renderHook(() =>
+      useNativeClimbRender({
+        ...board,
+        gpuSurface: false,
+        cachedOnlyOnceGpuWarm: true,
+        renderWidth: 750,
+        frames: 'p4306r43',
+      }),
+    );
+    await waitFor(() => expect(playBoard.result.current.gpuConfigJson).toBeTruthy());
+    expect(prewarm.result.current.gpuWarmKey).toBe(playBoard.result.current.gpuWarmKey);
+    const editor = renderHook(() =>
+      useNativeClimbRender({ ...board, renderWidth: 750, maxVeilOpacity: 0, gpuAllowEmpty: true, frames: 'p4131r42' }),
+    );
+    expect(editor.result.current.gpuWarmKey).not.toBe(playBoard.result.current.gpuWarmKey);
+  });
+
+  it('renders the PNG at once for a process-cold drawing and keeps it when the drawing warms', async () => {
+    gpuWarmth.allWarm = false;
+    const { result, rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...board, frames }), {
+      initialProps: { frames: 'p4131r42' },
+    });
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    expect(result.current.gpuProcessCold).toBe(true);
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///gpu-fallback.png'));
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    // Another board presents the drawing: this board's wait began cold and stays so.
+    gpuWarmth.warmKeys.add(result.current.gpuWarmKey!);
+    rerender({ frames: 'p4131r42' });
+    expect(result.current.gpuProcessCold).toBe(true);
+    // Its next climb begins a new wait, now warm: GPU first.
+    rerender({ frames: 'p4306r43' });
+    expect(result.current.gpuProcessCold).toBe(false);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(nativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads warmth afresh after the board showed the drawing, as on a return from the background', async () => {
+    gpuWarmth.allWarm = false;
+    const { result, rerender } = renderHook(
+      ({ presented }) => useNativeClimbRender({ ...board, frames: 'p4131r42', gpuPresentedConfigJson: presented }),
+      { initialProps: { presented: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    expect(result.current.gpuProcessCold).toBe(true);
+    gpuWarmth.warmKeys.add(result.current.gpuWarmKey!);
+    rerender({ presented: result.current.gpuConfigJson! });
+    expect(result.current.gpuProcessCold).toBe(false);
+    // Backgrounding released the drawable: the same climb waits again, warm.
+    rerender({ presented: null });
+    expect(result.current.gpuProcessCold).toBe(false);
   });
 });
 

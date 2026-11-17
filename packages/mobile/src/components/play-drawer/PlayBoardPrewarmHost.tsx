@@ -4,6 +4,7 @@ import { usePlayDrawerSurface } from '../../hooks/use-play-drawer-surface';
 import { backgroundImageUri } from '../LayeredClimbImage';
 import { warmBoardArtMemory } from '../../lib/board-render/warm-board-art-memory';
 import { usePlayerGpuBoard } from './use-player-gpu-board';
+import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import {
   clearPlayBoardPrewarm,
   getPlayBoardPrewarmTarget,
@@ -30,8 +31,8 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
   sizeId,
   setIds,
   renderWidth,
-  cachedOverlayOnly,
-}: PlayBoardPrewarmTarget & { cachedOverlayOnly: boolean }) {
+  playerGpuBoard,
+}: PlayBoardPrewarmTarget & { playerGpuBoard: boolean }) {
   const { fieldColor } = usePlayDrawerSurface();
   const { overlayUri, overlayLoadKey, backgroundPaths } = useNativeClimbRender({
     frames,
@@ -45,7 +46,10 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
     renderWidth,
     backgroundVariant: 'full',
     fieldColorOverride: fieldColor,
-    cachedOverlayOnly,
+    // Names the play board's GPU drawing exactly as the board does, so the
+    // render is skipped only once that drawing is warm in this process.
+    gpuCatalogueNative: climbOverlayGpuApiVersion >= 5,
+    cachedOnlyOnceGpuWarm: playerGpuBoard,
   });
   // Decode what the drawer is about to show, so its images come out of memory
   // on the frame they mount.
@@ -68,9 +72,10 @@ export function PlayBoardPrewarmHost() {
 }
 
 /**
- * The live GPU draws the player's first holds itself (docs/gpu-climb-overlay-
- * experiment.md), so a board it covers gets no new PNG at the tap. The photo,
- * and a PNG that is already cached (a free bridge), are still decoded ahead.
+ * Once the live GPU drawing is warm in this process it draws the player's first
+ * holds itself (docs/gpu-climb-overlay-experiment.md), so the tap renders no new
+ * PNG; the photo and any cached PNG are still decoded ahead. While it is cold
+ * (the first open after a launch) the tap renders the PNG as it always did.
  */
 function PlayBoardPrewarm({ target }: { target: PlayBoardPrewarmTarget }) {
   const playerGpuBoard = usePlayerGpuBoard(target.boardName, target.layoutId);
@@ -81,5 +86,5 @@ function PlayBoardPrewarm({ target }: { target: PlayBoardPrewarmTarget }) {
     const timer = setTimeout(clearPlayBoardPrewarm, ABANDONED_TARGET_MS);
     return () => clearTimeout(timer);
   }, [target]);
-  return <TappedBoardRender {...target} cachedOverlayOnly={playerGpuBoard} />;
+  return <TappedBoardRender {...target} playerGpuBoard={playerGpuBoard} />;
 }

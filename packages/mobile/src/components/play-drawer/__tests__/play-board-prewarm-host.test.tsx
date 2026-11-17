@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
 // The tap prewarm renders the tapped climb's play-size PNG before the drawer
-// mounts. On a board the player draws on the live GPU that PNG is never shown,
-// so the host keeps decoding what is already cached and renders nothing new.
+// mounts. On a board the player draws on the live GPU, once that drawing is warm
+// in this process (the hook decides), the PNG is never shown, so the host only
+// decodes what is already cached.
 import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,11 +12,21 @@ import { DEFAULT_BOARD_RENDER_SETTINGS } from '../../../lib/board-render-setting
 const controls = vi.hoisted(() => ({
   gpuEnabled: true,
   motionNative: true,
-  hookInputs: [] as Array<{ frames: string; cachedOverlayOnly?: boolean; renderWidth?: number }>,
+  hookInputs: [] as Array<{
+    frames: string;
+    cachedOnlyOnceGpuWarm?: boolean;
+    gpuCatalogueNative?: boolean;
+    renderWidth?: number;
+  }>,
 }));
 
 vi.mock('../../../hooks/use-native-climb-render', () => ({
-  useNativeClimbRender: (params: { frames: string; cachedOverlayOnly?: boolean; renderWidth?: number }) => {
+  useNativeClimbRender: (params: {
+    frames: string;
+    cachedOnlyOnceGpuWarm?: boolean;
+    gpuCatalogueNative?: boolean;
+    renderWidth?: number;
+  }) => {
     controls.hookInputs.push(params);
     return { overlayUri: null, overlayLoadKey: null, backgroundPaths: [] };
   },
@@ -56,10 +67,15 @@ describe('PlayBoardPrewarmHost', () => {
   });
   afterEach(cleanup);
 
-  it('only reads the cache for a board the player draws on the GPU', () => {
+  it('skips the render once warm for a board the player draws on the GPU, naming its drawing', () => {
     render(<PlayBoardPrewarmHost />);
     act(() => requestPlayBoardPrewarm(HOMEWALL, 'p4131r42'));
-    expect(controls.hookInputs.at(-1)).toMatchObject({ frames: 'p4131r42', renderWidth: 750, cachedOverlayOnly: true });
+    expect(controls.hookInputs.at(-1)).toMatchObject({
+      frames: 'p4131r42',
+      renderWidth: 750,
+      cachedOnlyOnceGpuWarm: true,
+      gpuCatalogueNative: true,
+    });
   });
 
   it.each(['flag', 'binary'] as const)('renders the PNG ahead when the %s keeps the player on PNG', (reason) => {
@@ -67,6 +83,6 @@ describe('PlayBoardPrewarmHost', () => {
     controls.motionNative = reason !== 'binary';
     render(<PlayBoardPrewarmHost />);
     act(() => requestPlayBoardPrewarm(HOMEWALL, 'p4131r42'));
-    expect(controls.hookInputs.at(-1)).toMatchObject({ frames: 'p4131r42', cachedOverlayOnly: false });
+    expect(controls.hookInputs.at(-1)).toMatchObject({ frames: 'p4131r42', cachedOnlyOnceGpuWarm: false });
   });
 });

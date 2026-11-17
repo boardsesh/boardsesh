@@ -43,6 +43,9 @@ const controls = vi.hoisted(() => ({
   }>,
   /** Frames whose PNG is already in the overlay cache: a free bridge. */
   cachedFrames: null as Set<string> | null,
+  /** Read process warmth from the real registry; off, every drawing is warm. */
+  coldRegistry: false,
+  isWarm: (_gpuWarmKey: string): boolean => true,
   firstHolds: vi.fn(),
   pngMounted: vi.fn(),
   recordFailure: vi.fn(),
@@ -136,9 +139,14 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
     gpuFallbackConfigJson?: string | null;
     gpuHedgeCacheKey?: string | null;
     fieldColorOverride?: string;
+    maxVeilOpacity?: number;
   }) => {
     controls.hookInputs.push(props);
     const overlayCacheKey = `png-key:${props.frames}`;
+    const gpuWarmKey = props.gpuSurface
+      ? `drawing:${props.maxVeilOpacity ?? 'player'}:${props.fieldColorOverride ?? 'default'}`
+      : null;
+    const gpuProcessCold = gpuWarmKey !== null && controls.coldRegistry && !controls.isWarm(gpuWarmKey);
     const gpu =
       props.gpuSurface &&
       props.gpuFallbackConfigJson !== 'static-config' &&
@@ -152,11 +160,14 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
       (controls.cachedFrames === null ||
         controls.cachedFrames.has(props.frames) ||
         !gpuPending ||
+        gpuProcessCold ||
         props.gpuHedgeCacheKey === overlayCacheKey);
     return {
       gpuConfigJson: gpu ? 'static-config' : null,
       gpuStatus: controls.gpuStatus === 'loading' ? 'loading' : gpu ? 'ready' : 'unavailable',
       gpuFrames: props.frames,
+      gpuWarmKey,
+      gpuProcessCold,
       overlayUri: overlayAvailable ? 'file:///cached-overlay.png' : null,
       overlayCacheKey,
       overlayLoadKey: overlayAvailable ? 'cached' : null,
@@ -182,6 +193,7 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
   },
 }));
 import { BoardImageNative, GPU_PNG_HEDGE_DELAY_MS } from '../BoardImageNative';
+import { _resetGpuWarmConfigsForTests, isGpuConfigWarm } from '../../lib/board-render/gpu-warm-configs';
 import { cacheRenderedOverlay } from '../../lib/overlay-index';
 import { captureReadyBoardArt } from '../../lib/board-render/ready-board-art';
 const BOARD = {
@@ -211,6 +223,9 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     controls.imageDisplays = [];
     controls.hookInputs = [];
     controls.cachedFrames = null;
+    controls.coldRegistry = false;
+    controls.isWarm = isGpuConfigWarm;
+    _resetGpuWarmConfigsForTests();
     controls.firstHolds.mockClear();
     controls.pngMounted.mockClear();
     controls.recordFailure.mockClear();
@@ -694,6 +709,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
         expect.any(String),
         'gpu',
         GPU_PNG_HEDGE_DELAY_MS - 1,
+        false,
       );
     });
 
@@ -713,6 +729,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
         expect.any(String),
         'cached-png-bridge',
         0,
+        false,
       );
       const current = controls.props!;
       act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
@@ -741,6 +758,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
         expect.any(String),
         'hedged-png',
         GPU_PNG_HEDGE_DELAY_MS,
+        false,
       );
       act(() => {
         vi.advanceTimersByTime(2_000);
@@ -871,7 +889,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
       expect(document.querySelector(PNG)).not.toBeNull();
       displayAll();
       expect(readiness).toHaveBeenLastCalledWith('ready');
-      expect(controls.firstHolds).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'hedged-png', 300);
+      expect(controls.firstHolds).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'hedged-png', 300, false);
     });
 
     it('keeps a stationary page loading on a hedged PNG until the GPU presents', () => {
@@ -896,6 +914,84 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
       const current = controls.props!;
       act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
       expect(state).toHaveBeenLastCalledWith('ready');
+    });
+
+    it('renders the PNG at once while the drawing is process-cold, then goes GPU first', () => {
+      controls.coldRegistry = true;
+      const readiness = vi.fn();
+      const { unmount } = render(<BoardImageNative {...BOARD} onArtReadinessChange={readiness} />);
+      // As before GPU first: the PNG is asked for straight away, no timer.
+      expect(document.querySelector(PNG)).not.toBeNull();
+      expect(hedgedKeys().size).toBe(0);
+      expect(screen.getByTestId('native-gpu')).toBeTruthy();
+      displayAll();
+      expect(readiness).toHaveBeenLastCalledWith('ready');
+      // This mock lands a render in the same commit, so the source reads as a
+      // cached PNG here; what this checks is the cold flag and the timing.
+      expect(controls.firstHolds).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.any(String),
+        expect.stringMatching(/png/),
+        0,
+        true,
+      );
+      expect(isGpuConfigWarm('drawing:player:default')).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(800);
+      });
+      const current = controls.props!;
+      act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
+      expect(document.querySelector(PNG)).toBeNull();
+      expect(isGpuConfigWarm('drawing:player:default')).toBe(true);
+      expect(controls.recordFailure).not.toHaveBeenCalled();
+      expect(controls.recordTimeout).not.toHaveBeenCalled();
+      unmount();
+
+      // The next board on the same drawing is process-warm: GPU first.
+      controls.firstHolds.mockClear();
+      render(<BoardImageNative {...BOARD} frames="p4306r43" />);
+      expect(document.querySelector(PNG)).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(GPU_PNG_HEDGE_DELAY_MS);
+      });
+      expect([...hedgedKeys()]).toEqual(['png-key:p4306r43']);
+      displayAll();
+      expect(controls.firstHolds).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'hedged-png', 300, false);
+    });
+
+    it('keeps warmth per drawing: a warm player leaves the editor drawing cold', () => {
+      controls.coldRegistry = true;
+      const player = render(<BoardImageNative {...BOARD} />);
+      const current = controls.props!;
+      act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
+      player.unmount();
+      expect(isGpuConfigWarm('drawing:player:default')).toBe(true);
+      // The editor draws without the veil: another drawing, still cold, so a
+      // non-empty draft shows its holds as fast as it always did.
+      render(<BoardImageNative {...BOARD} playSurface={false} editorSurface maxVeilOpacity={0} />);
+      expect(screen.getByTestId('native-gpu')).toBeTruthy();
+      expect(document.querySelector(PNG)).not.toBeNull();
+      expect(hedgedKeys().size).toBe(0);
+      expect(isGpuConfigWarm('drawing:0:default')).toBe(false);
+    });
+
+    it('starts a new climb from loading even inside the GPU takeover window', () => {
+      controls.cachedFrames = new Set([BOARD.frames]);
+      const readiness = vi.fn();
+      const { rerender } = render(<BoardImageNative {...BOARD} onArtReadinessChange={readiness} />);
+      // Display only the bridge's photo and holds; the live stack's photo stays
+      // undisplayed, so the live board cannot report ready after the takeover.
+      act(() => {
+        controls.imageDisplays.slice(0, 2).forEach((display) => display());
+      });
+      expect(readiness).toHaveBeenLastCalledWith('ready');
+      const current = controls.props!;
+      act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
+      expect(document.querySelector(PNG)).toBeNull();
+      // The bridge's word stands for the climb it showed.
+      expect(readiness).toHaveBeenLastCalledWith('ready');
+      rerender(<BoardImageNative {...BOARD} frames="p4306r43" onArtReadinessChange={readiness} />);
+      expect(readiness).toHaveBeenLastCalledWith('loading');
     });
 
     it.each(['flag', 'binary', 'thumbnail', 'inactive'] as const)('never holds or hedges a %s board', (reason) => {
