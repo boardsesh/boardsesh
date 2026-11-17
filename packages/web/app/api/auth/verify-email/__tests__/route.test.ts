@@ -296,15 +296,60 @@ describe('UID verification public reader', () => {
       vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     });
 
-    it.each([
-      ['exactly as stored', 'Mixed.Case@Example.test'],
-      ['in lowercase', 'mixed.case@example.test'],
-    ])('verifies only the mixed-case account when the link carries its address %s', async (_case, linkEmail) => {
+    it('verifies only the mixed-case account when the link carries its address exactly as stored', async () => {
       lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
       live();
-      const response = await GET(request(legacyToken, linkEmail));
+      const response = await GET(request(legacyToken, 'Mixed.Case@Example.test'));
       expect(response.headers.get('Location')).toBe(`${origin}/auth/login?verified=true`);
       expect(verifiedUserIds()).toEqual([['mixed']]);
+    });
+
+    // Every issuer writes the account's stored address into the link, so a link
+    // in other capitals was issued for another row.
+    it('refuses a link whose address no account stores exactly, even when one account has it in other capitals', async () => {
+      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
+      live();
+      const response = await GET(request(legacyToken, 'mixed.case@example.test'));
+      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
+      expect(mocks.transaction).not.toHaveBeenCalled();
+      expect(mocks.updateWhere).not.toHaveBeenCalled();
+    });
+
+    it("never verifies B with A's link once A is gone, though their addresses differ only in capitals", async () => {
+      const accountA = { id: 'account-a', email: 'Shared@Example.test' };
+      const accountB = { id: 'account-b', email: 'shared@example.test' };
+
+      lookup.stored = [accountA, accountB];
+      live();
+      await GET(request(legacyToken, accountA.email));
+      expect(verifiedUserIds()).toEqual([['account-a']]);
+
+      vi.clearAllMocks();
+      lookup.stored = [accountB];
+      live();
+      const response = await GET(request(legacyToken, accountA.email));
+      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
+      expect(mocks.updateWhere).not.toHaveBeenCalled();
+    });
+
+    it('refuses an account created after the link was issued, even at the exact address', async () => {
+      // A 24-hour link with an hour left was issued 23 hours ago.
+      mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 60 * 60_000) }]);
+      lookup.stored = [
+        { id: 'new-holder', email: 'reused@example.test', createdAt: new Date(Date.now() - 60 * 60_000) },
+      ];
+      const response = await GET(request(legacyToken, 'reused@example.test'));
+      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
+      expect(mocks.updateWhere).not.toHaveBeenCalled();
+      expect(mocks.deleteWhere).not.toHaveBeenCalled();
+    });
+
+    it('verifies an account whose creation the database stamped just after the link, as registration does', async () => {
+      mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 24 * 60 * 60_000) }]);
+      lookup.stored = [{ id: 'just-registered', email: 'fresh@example.test', createdAt: new Date(Date.now() + 2_000) }];
+      const response = await GET(request(legacyToken, 'fresh@example.test'));
+      expect(response.headers.get('Location')).toBe(`${origin}/auth/login?verified=true`);
+      expect(verifiedUserIds()).toEqual([['just-registered']]);
     });
 
     it('verifies the group member the link names exactly, never its sibling', async () => {
