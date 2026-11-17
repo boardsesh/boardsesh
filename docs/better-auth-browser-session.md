@@ -162,7 +162,9 @@ to epoch 0 otherwise (`bridge.ts:82`). With `freshAge` at 300 seconds
 (`authority.ts:47`, compared at `session.mjs:337-340`), a bridged cookie from a
 sign-in under five minutes old counts as fresh. That follows
 [the accepted migration](./better-auth-migration.md) at lines 207-213 ("preserve
-trustworthy age"). The owner decides before B2 (open question 2).
+trustworthy age"). The owner decided on 2026-11-17 (decision 3): a bridged
+session keeps that time for the 30-day rules and fails every five-minute check.
+The reader now carries that as `source` (see "The backend session interface").
 
 ## Login revokes the session it arrived with
 
@@ -191,6 +193,79 @@ database delete failed (`api/routes/sign-out.mjs:49-54`), checks no expected
 identity and writes no denial row. Neither is used as is. B4 keeps today's
 guarded sign-out, which answers 409 when the cookie no longer belongs to the
 identity the tab expected (`[...nextauth]/route.ts:243`).
+
+## The backend session interface
+
+Owner decision 1 (2026-11-17) splits issuance at the session row: the backend
+writes and rolls `auth_session` rows, and B1 owns the cookie. The backend half
+is `packages/backend/src/auth/authority/web-session.ts`. No route mounts it
+directly, and it sets no cookie or header.
+
+`issueWebSession(transaction, { userId, authenticatedAt, presented?, now, authority })`
+returns `{ sessionId, token, expiresAt, generation }`.
+
+- It runs inside the transaction that verified the credential, under the user
+  lock that verification took. It verifies nothing itself.
+- `authority` is the receipt the caller captured before bcrypt. A writer switch
+  since then is refused with `STALE_AUTHORITY`, as the staged password command
+  refuses it. So it works only once the manifest is `enforced`, like every
+  staged writer.
+- Locks: the shared (6975, 2) gate and a manifest re-check, then the `users`
+  rows in `users.id` order (FOR KEY SHARE for the account signing in, FOR UPDATE
+  for the presented session's account), then the presented session's rows,
+  then the new row. Two logins that present each other's sessions queue on the
+  first `users` row instead of deadlocking.
+- It writes one row: a random UUID id; a token of 32 random bytes in base64url,
+  stored as is, because the reader looks a `canonical-token` up by equality (the
+  bridge and the native binding store theirs the same way); `expires_at` =
+  `now` + 30 days; `original_authenticated_at` = `authenticatedAt`; no
+  `legacy_lineage_id`; and `revocation_generation` = the account's generation,
+  read after the revocation below.
+- `presented`, of any account, legacy cookie or canonical row, is revoked in
+  the same transaction by `denyFirstPartySessionInTransaction`. A session with
+  an SID loses its row and gets a denial, so every reader refuses it. A no-SID
+  legacy cookie ends every credential of its account, phones included, and the
+  new session then carries the moved generation. Whether B1 passes such a
+  cookie at all is open question 5.
+- It refuses a deleted or missing account with `AuthSubjectDeniedError`, as
+  native issuance does, and a sign-in time later than `now` with
+  `INVALID_COMMAND`.
+
+`rollWebSession(database, sessionId, now)` returns `{ rolled: true, expiresAt }`
+or `{ rolled: false }`. It is one conditional UPDATE that sets `expires_at` to
+`now` + 30 days when fewer than 29 days remain and the row is live: unexpired,
+no denial, a generation equal to the account's, an account not deleted, and a
+lineage (if any) that is unrevoked and names this row. It writes no cookie.
+Bridged web rows roll too. The bridge still caps a new row at the legacy
+cookie's expiry (`bridge.ts:81`); the first roll lifts that, and re-bridging
+never shortens a row (`bridge.ts:91`). A revoked lineage stops the roll, and
+sign-out still deletes the row and writes the denial. Rows bound to a native
+refresh token keep that token's expiry and never roll. A roll never makes a row
+readable: every reader checks the same conditions itself.
+
+Constants, in `@boardsesh/auth-protocol`: `WEB_SESSION_LIFETIME_SECONDS`
+(2,592,000, 30 days) and `WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS` (2,505,600,
+29 days).
+
+Session source. `readFirstPartySession` returns `source: 'login' | 'bridge'`,
+derived from the row (`login` when `legacy_lineage_id` is null) with no new
+column. A NextAuth cookie read directly is `login`, as it is the legacy login
+itself. `requireFreshAuthentication` passes only for `login`.
+`webSignInProof(session)` is the `webSignIn` value B3 must set when a canonical
+session authenticates a request; it carries no sign-in time for a `bridge`, so
+partner app changes refuse it. The 30-day partner-consent rule reads
+`authenticatedAt`, which a bridged row keeps. Provider link and unlink need
+their own reauthentication receipt (`provider-reauthentication-evidence.ts`),
+never the session's age, so they did not change. Provider security and first
+password compare the actor session's expiry exactly
+(`provider-security-context.ts:114`, `provider-security-finalizer.ts:208`,
+`first-password-challenges.ts:98`), so a flow that spans a roll is refused.
+B5 drops those comparisons when it rebuilds the flows.
+
+What B1 does with the token: put it in the signed session cookie, Max-Age
+34,560,000 (decision 2), only after the command answers; never log it or hand
+it to page JavaScript. Reads present it back as a `canonical-token` after the
+cookie signature check.
 
 ## One guard in each browser client
 
@@ -649,16 +724,10 @@ test in `packages/web/e2e/` today.
 
 ## Open questions
 
-1. Session lifetime. With no cookie writes on reads, Max-Age is fixed at login
-   (`cookies/index.mjs:169-178`), and nothing rolls `expires_at` (above).
-   NextAuth extends the cookie to 30 days on every read today, so an active
-   climber is never signed out. Keeping that means a long Max-Age at login and
-   B1 rolling `auth_session.expires_at` itself; a 30-day absolute lifetime
-   changes account behaviour. Better Auth defaults to 7 days
-   (`context/create-context.mjs:148`), and `createAuthority` sets no
-   `expiresIn`.
-2. Bridged freshness. Never fresh (#7596) or keep trustworthy age
-   (`better-auth-migration.md:207-213`, `bridge.ts:82`)?
+1. Session lifetime. Decided 2026-11-17 (decision 2): 30-day rolling, a
+   400-day cookie and `rollWebSession` (see "The backend session interface").
+2. Bridged freshness. Decided 2026-11-17 (decision 3): never fresh for the
+   five-minute checks; the legacy sign-in time still serves the 30-day rules.
 3. The bridging read's cookie write. Options: bridge only from a POST the
    guard owns, or skip the `Set-Cookie` when the request's legacy session is
    already denied. Neither has been checked against the cookie-order fixture.

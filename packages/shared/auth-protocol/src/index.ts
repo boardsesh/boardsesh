@@ -8,6 +8,7 @@ export * from './provider-security-v1';
 export * from './anonymous-provider-v1';
 export * from './first-password-v1';
 export * from './batch-system-user-v1';
+export * from './web-session';
 
 export const AUTH_PROTOCOL_VERSION = 2;
 export const AUTH_COMMAND_PATHS = {
