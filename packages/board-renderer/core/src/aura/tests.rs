@@ -49,6 +49,7 @@ fn config(frames: &str) -> RenderConfig {
     hold_state_map.insert(44, state("#FF00FF", HoldRole::Finish));
     hold_state_map.insert(45, state("#FFAA00", HoldRole::Foot));
     RenderConfig {
+        geometry_cache_scope: None,
         board_width: SIZE as f32,
         board_height: SIZE as f32,
         output_width: SIZE,

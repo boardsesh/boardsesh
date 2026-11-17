@@ -381,6 +381,9 @@ fn default_shape_size_multiplier() -> f32 {
 
 #[derive(Deserialize)]
 pub struct RenderConfig {
+    /// Acceleration-cache retention scope; never changes rendered pixels.
+    #[serde(default)]
+    pub geometry_cache_scope: Option<String>,
     pub board_width: f32,
     pub board_height: f32,
     pub output_width: u32,
@@ -424,7 +427,7 @@ pub struct RenderConfig {
 #[derive(Deserialize, Clone, Default)]
 pub struct HoldData {
     pub id: u32,
-    #[serde(rename = "mirroredHoldId")]
+    #[serde(rename = "mirroredHoldId", alias = "mirrored_hold_id")]
     pub mirrored_hold_id: Option<u32>,
     pub cx: f32,
     pub cy: f32,

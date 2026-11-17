@@ -6,16 +6,21 @@ public class ClimbOverlayGPUModule: Module {
     #if targetEnvironment(simulator)
     // The simulator SDK omits MTLDrawable.addPresentedHandler. Keep the
     // diagnostic story available, but do not promise live presentation fences.
-    Constants(["apiVersion": 1])
+    Constants(["apiVersion": 1, "assetApiVersion": 0])
     #else
-    Constants(["apiVersion": 3])
+    Constants(["apiVersion": ClimbOverlayPacketLayout.nativeApiVersion, "assetApiVersion": 0])
     #endif
+    AsyncFunction("getResourceStats") { () throws -> [String: Any] in try climbOverlayPacketResourceStats() }
     AsyncFunction("compare") { (configJson: String) throws -> [String: Any] in
       try compareClimbOverlayGPU(configJson)
     }.runOnQueue(climbOverlayGPUWorkQueue)
     View(ClimbOverlayGPUView.self) {
       Events("onRenderReady", "onRenderError")
       Prop("configJson") { (view: ClimbOverlayGPUView, config: String) in view.configJson = config }
+      Prop("geometryAssetPath") { (view: ClimbOverlayGPUView, path: String?) in view.geometryAssetPath = path }
+      Prop("geometryAssetSha256") { (view: ClimbOverlayGPUView, hash: String?) in view.geometryAssetSha256 = hash }
+      Prop("generatedGeometryDirectory") { (view: ClimbOverlayGPUView, path: String?) in view.generatedGeometryDirectory = path }
+      Prop("prefetchFrames") { (view: ClimbOverlayGPUView, frames: [String]) in view.prefetchFrames=Array(frames.prefix(2)) }
       Prop("frames") { (view: ClimbOverlayGPUView, frames: String?) in view.frames = frames }
       Prop("previousFrames") { (view: ClimbOverlayGPUView, frames: String?) in view.previousFrames = frames }
       Prop("nextFrames") { (view: ClimbOverlayGPUView, frames: String?) in view.nextFrames = frames }

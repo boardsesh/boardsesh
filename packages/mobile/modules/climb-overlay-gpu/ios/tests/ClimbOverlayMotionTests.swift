@@ -3,6 +3,40 @@ import Foundation
 /// Run with swiftc plus ../ClimbOverlayMotion.swift. No Expo runtime needed.
 @main enum ClimbOverlayMotionTests {
   static func main() {
+    let absent = SIMD4<UInt32>(repeating: .max)
+    var offsets = absent
+    offsets.x = 0 // The distance-field offset is not a stamp layer.
+    precondition(ClimbOverlayMotion.stampLayers(offsets: offsets,extraOffsets: absent,annotation: false)==0)
+    for pass in 0..<4 {
+      var fillOffsets = offsets
+      var extra = absent
+      if pass == 0 { fillOffsets.y = 0 } else { extra[pass-1] = 0 }
+      precondition(ClimbOverlayMotion.stampLayers(offsets: fillOffsets,extraOffsets: extra,annotation: false)==1,
+        "Every fill pass, including a later-only pass, keeps the fill layer")
+      precondition(ClimbOverlayMotion.stampLayers(offsets: fillOffsets,extraOffsets: extra,annotation: true)==0,
+        "Annotation fills never enter the normal mark layers")
+    }
+    for pass in 0..<2 {
+      var glyphOffsets = offsets
+      var extra = absent
+      if pass == 0 { glyphOffsets.w = 0 } else { extra.w = 0 }
+      precondition(ClimbOverlayMotion.stampLayers(offsets: glyphOffsets,extraOffsets: extra,annotation: false)==4)
+      precondition(ClimbOverlayMotion.stampLayers(offsets: glyphOffsets,extraOffsets: extra,annotation: true)==8,
+        "An annotation's later-only stroke must remain visible")
+    }
+    var plateOffsets = offsets
+    plateOffsets.z = 0
+    precondition(ClimbOverlayMotion.stampLayers(offsets: plateOffsets,extraOffsets: absent,annotation: false)==2)
+    precondition(ClimbOverlayMotion.stampLayers(offsets: .zero,extraOffsets: .zero,annotation: false)==7)
+    precondition(ClimbOverlayMotion.stampLayers(offsets: .zero,extraOffsets: .zero,annotation: true)==8)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 0,upper: 0,progress: 0.5)==0)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 1,upper: 8,progress: 0)==1)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 1,upper: 8,progress: 1)==8)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 1,upper: 8,progress: 0.5)==9)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 0,upper: 4,progress: 0)==0)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 0,upper: 4,progress: 0.5)==4)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 2,upper: 0,progress: 0.5)==2)
+    precondition(ClimbOverlayMotion.selectStampLayers(lower: 2,upper: 0,progress: 1)==0)
     for step in 0...1000 {
       let progress = Float(step)/1000
       for center in [Float(0),0.2,0.5,0.8,1] {

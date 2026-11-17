@@ -24,3 +24,18 @@ internal constructor(
         release(buffer)
     }
 }
+
+/** Manifest and pixels never share an allocation or a payload-sized copy. */
+class OwnedAtlasBuffers internal constructor(
+    private val manifest: OwnedAtlasBuffer,
+    private val pixels: OwnedAtlasBuffer,
+) : Closeable {
+    fun <T> useBuffers(block: (ByteBuffer, ByteBuffer) -> T): T =
+        manifest.useBuffer { manifestBytes ->
+            pixels.useBuffer { pixelBytes -> block(manifestBytes, pixelBytes) }
+        }
+
+    override fun close() {
+        try { manifest.close() } finally { pixels.close() }
+    }
+}

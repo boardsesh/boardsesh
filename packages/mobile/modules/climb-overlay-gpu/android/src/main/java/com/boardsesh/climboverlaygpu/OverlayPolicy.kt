@@ -1,19 +1,115 @@
 package com.boardsesh.climboverlaygpu
 
 import kotlin.math.max
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal class OverlayWorkCancelled : RuntimeException()
+
+internal class AtlasFrameFailure(val reasonCode: String) : IllegalArgumentException(reasonCode)
+
+internal class OverlayResourceFailure : IllegalArgumentException("gpu-resource-limit")
+
+/** A GPU feature or pipeline this phone lacks: it fails the same way every time. */
+internal class OverlayUnsupportedFailure(val reasonCode: String) : IllegalStateException(reasonCode)
+
+internal object OverlayLifecycle {
+    fun beginPreparation(current: () -> Boolean, initialize: () -> Unit, surface: () -> Unit): Boolean {
+        if (!current()) return false
+        initialize()
+        surface()
+        return current()
+    }
+
+    fun retainGeometry(frameFailure: Boolean, cancelled: Boolean, sameGeometry: Boolean): Boolean =
+        frameFailure || (cancelled && sameGeometry)
+
+    /**
+     * Reason and scope for the JS fallback. Only "static" is remembered across
+     * launches, so it is reserved for failures that repeat for this binary, phone
+     * and config. GL errors, fence waits and surface loss retry on the next frames.
+     */
+    fun failureEvent(failure: Exception, resourceExhausted: Boolean): Pair<String, String> = when {
+        failure is PacketFailure -> failure.reason to failure.scope
+        failure is AtlasFrameFailure -> failure.reasonCode to "frame"
+        failure is OverlayUnsupportedFailure -> failure.reasonCode to "static"
+        failure is OverlayResourceFailure || resourceExhausted -> "gpu-resource-limit" to "context"
+        else -> "gpu-preparation-failed" to "context"
+    }
+
+    /**
+     * Memory callbacks arrive while a climb is on screen. Shared GPU residency is
+     * released only when no overlay presents from it, and nothing escapes onto
+     * the render thread: a failed release is handled as a lost context.
+     */
+    fun trim(presenting: Boolean, release: () -> Unit, recover: (Exception) -> Unit): Boolean {
+        if (presenting) return false
+        try {
+            release()
+            return true
+        } catch (failure: Exception) {
+            try {
+                recover(failure)
+            } catch (_: Exception) {
+                // The next preparation initializes a fresh context.
+            }
+            return false
+        }
+    }
+}
+
+/** Coalesces recovery with queued work without losing a reset during preparation. */
+internal class OverlayPreparationQueue {
+    private val preparing = AtomicBoolean(false)
+    private val recovery = AtomicBoolean(false)
+    val needsRecovery get() = recovery.get()
+    fun begin(): Boolean = preparing.compareAndSet(false, true)
+    fun started() { recovery.set(false) }
+    fun requestRecovery() { recovery.set(true) }
+    fun finish(newerRequest: Boolean): Boolean {
+        preparing.set(false)
+        return newerRequest || recovery.get()
+    }
+}
+
+/** One transparent context recovery per logical request; failed retries terminate. */
+internal class ContextRecoveryGate {
+    private var attempted: Pair<Long, Long>? = null
+
+    fun retry(revision: Long, generation: Long): Boolean {
+        val request = revision to generation
+        if (attempted == request) return false
+        attempted = request
+        return true
+    }
+}
 
 /** Platform-independent contracts, mirrored by the iOS motion tests. */
 internal object OverlayPolicy {
-    const val ATLAS_LIMIT = 128 * 1024 * 1024
-    // Rust final packing temporarily holds storage+packed bytes, plus growth,
-    // EDT/masks and the GPU upload. This is admission, not a peak-RSS claim.
-    const val PREPARE_HEADROOM = 4L * ATLAS_LIMIT + 64L * 1024 * 1024
-    const val EDIT_DURATION_NS = 350_000_000L
-    const val EDIT_PEAK_NS = 100_000_000L
-    const val EDIT_PEAK_REACH = 1.35f
-    const val REVEAL_BAND = .22f
+    const val ATLAS_LIMIT = OverlayPacketLayout.MAX_GPU_BYTES
+    // Separate owned pixels avoid the payload-sized final packing copy.
+    // Allow atlas growth, EDT/masks and GPU upload; not a peak-RSS claim.
+    const val PREPARE_HEADROOM = 3L * ATLAS_LIMIT + 64L * 1024 * 1024
+    const val EDIT_DURATION_NS = OverlayPacketLayout.EDIT_DURATION_NS
+    const val EDIT_PEAK_NS = OverlayPacketLayout.EDIT_PEAK_NS
+    val EDIT_PEAK_REACH = OverlayPacketLayout.EDIT_PEAK_REACH
+    val REVEAL_BAND = OverlayPacketLayout.REVEAL_BAND
     const val MAX_ACTIVE = 128
     const val MAX_PENDING = 2
+
+    /** Bits follow fill, plate, glyph and annotation shader-layer order. */
+    fun stampLayers(annotation: Boolean, offsets: IntArray, extraOffsets: IntArray): Int {
+        require(offsets.size == 3 && extraOffsets.size == 4)
+        val glyph = offsets[2] != -1 || extraOffsets[3] != -1
+        if (annotation) return if (glyph) 8 else 0
+        val fill = offsets[0] != -1 || (0..2).any { extraOffsets[it] != -1 }
+        return (if (fill) 1 else 0) or (if (offsets[1] != -1) 2 else 0) or (if (glyph) 4 else 0)
+    }
+
+    fun selectStampLayers(lower: Int, upper: Int, progress: Float): Int {
+        if (progress <= 0f) return lower
+        if (progress >= 1f) return upper
+        return lower or upper
+    }
 
     fun canSubmit(ledgerCount: Int, fenceCount: Int) =
         ledgerCount < MAX_PENDING && fenceCount < MAX_PENDING
@@ -22,7 +118,7 @@ internal object OverlayPolicy {
         previous == 0L || current - previous >= 15_666_667L
 
     fun comparisonHeadroom(width: Int, height: Int): Long {
-        require(width in 1..1536 && height in 1..2048)
+        require(width in 1..1536 && height in 1..2304)
         // FBO, readback, row-flipped bytes, JNI/reference copies and PNG bitmap.
         return width.toLong() * height * 4 * 8 + 64L * 1024 * 1024
     }
@@ -136,9 +232,7 @@ internal class AtlasBudget {
         private set
 
     fun reserve(amount: Int) {
-        require(amount > 0 && bytes + amount <= OverlayPolicy.ATLAS_LIMIT) {
-            "GPU atlas residency exceeds 128 MiB"
-        }
+        if (amount <= 0 || bytes + amount > OverlayPolicy.ATLAS_LIMIT) throw OverlayResourceFailure()
         bytes += amount
     }
 

@@ -23,4 +23,6 @@ if (rendererProject == null) throw new GradleException('Board renderer native de
 dependencies {
   implementation project(rendererProject.path)
   testImplementation 'junit:junit:4.13.2'
+  // Exercise the real JSON types; Android's local-test stubs do not parse JSON.
+  testImplementation 'org.json:json:20240303'
 }

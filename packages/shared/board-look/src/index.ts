@@ -38,3 +38,4 @@ export type {
   VeilConfig,
 } from './aura-fields';
 export { buildAuraRenderFields } from './aura-fields';
+export { supportsAuraGpu } from './gpu-capability';

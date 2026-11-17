@@ -50,3 +50,14 @@ dependencies {
   // `vp` flow has no Kotlin test runner.
   testImplementation 'junit:junit:4.13.2'
 }
+
+// Exercise the actual production DTO through R8, including its JNI-only constructor.
+// These tests run in the existing native unit-test CI task, without building an app.
+tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+  systemProperty 'boardsesh.packet.r8.jar', new File(android.sdkDirectory,
+    "build-tools/${android.buildToolsVersion}/lib/d8.jar").absolutePath
+  systemProperty 'boardsesh.packet.android.jar', android.bootClasspath.find {
+    it.name == 'android.jar'
+  }.absolutePath
+  systemProperty 'boardsesh.packet.r8.reports', layout.buildDirectory.dir('reports/gpu-packet-r8').get().asFile.absolutePath
+}

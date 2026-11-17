@@ -27,6 +27,10 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private val onRenderReady by EventDispatcher<Map<String, Any?>>()
     private val onRenderError by EventDispatcher()
     var configJson = ""
+    var geometryAssetPath: String? = null
+    var geometryAssetSha256: String? = null
+    var generatedGeometryDirectory: String? = null
+    var prefetchFrames: List<String> = emptyList()
     var frames: String? = null
     var previousFrames: String? = null
     var nextFrames: String? = null
@@ -54,7 +58,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     @Volatile private var session: OverlaySession? = null
     private var revision = 0L
     private var observedEmptyConfig: String? = null
-    private val preparing = AtomicBoolean(false)
+    private val preparationQueue = OverlayPreparationQueue()
     private val drawing = AtomicBoolean(false)
     private val needsFrame = AtomicBoolean(false)
     private var consumptionObservation: Runnable? = null
@@ -64,6 +68,12 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var systemLowPower = false
     private var systemReduced = false
     private var lastErrorRevision: Long? = null
+    @Volatile private var activePreparation: PacketCancellation? = null
+    @Volatile private var idlePreparation: PacketCancellation? = null
+    private var idleTask: Runnable? = null
+    private var idleJob: OverlayPacketJob? = null
+    private var idleFrames: List<String> = emptyList()
+
     private val frameCallback = Choreographer.FrameCallback { frameTime ->
         animationScheduled = false
         if (allowed && animateEdits && !controls.reduced && !controls.lowPower) {
@@ -121,6 +131,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     override fun onDetachedFromWindow() {
         attached = false
         allowed = false
+        activePreparation?.cancel();cancelPrefetch()
         latest = null
         revision++
         cancelAnimation()
@@ -147,6 +158,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     fun setPagePosition(position: Double?) {
         if (position == null || !position.isFinite() || position == pagePosition) return
         pagePosition = position
+        cancelPrefetch()
         controls = controls.copy(position = position)
         requestDraw()
     }
@@ -180,6 +192,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 windowVisibility == VISIBLE &&
                 OverlayRenderer.foreground
         if (!allowed) {
+            activePreparation?.cancel();cancelPrefetch()
             cancelAnimation()
             cancelConsumptionObservation()
             needsFrame.set(false)
@@ -199,6 +212,9 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         val same =
             old != null &&
                 old.config == configJson &&
+                old.geometryAssetPath == geometryAssetPath &&
+                old.geometryAssetSha256 == geometryAssetSha256 &&
+                old.generatedGeometryDirectory == generatedGeometryDirectory &&
                 old.frames == frames &&
                 old.previous == previousFrames &&
                 old.next == nextFrames &&
@@ -207,6 +223,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 old.animateEdits == animateEdits &&
                 old.generation == generation
         if (!same) {
+            activePreparation?.cancel();cancelPrefetch()
             cancelAnimation()
             cancelConsumptionObservation()
             revision++
@@ -223,9 +240,12 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                     generation,
                     animateEdits,
                     observedEmptyConfig == configJson,
+                    geometryAssetPath,
+                    geometryAssetSha256,
+                    generatedGeometryDirectory,
                 )
             schedulePrepare()
-        } else requestDraw()
+        } else { schedulePrefetch();requestDraw() }
     }
 
     internal fun matchesGeneration(expected: Long) = generation == expected && attached
@@ -233,18 +253,71 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     internal fun matches(request: OverlayRequest) =
         allowed && generation == request.generation && latest?.revision == request.revision
 
+    internal fun matchesGeometry(request: OverlayRequest): Boolean =
+        allowed && generation == request.generation && latest?.sameGeometry(request) == true
+
+    internal fun currentRequest(): OverlayRequest? = latest
+
+    internal fun retryAfterContextLoss() {
+        preparationQueue.requestRecovery()
+        main.post {
+            if (!preparationQueue.needsRecovery) return@post
+            cancelAnimation()
+            cancelConsumptionObservation()
+            if (allowed && latest != null) schedulePrepare()
+        }
+    }
+
     internal fun schedulePrepare() {
-        val target = session ?: return
-        if (!preparing.compareAndSet(false, true)) return
+        val target=session ?: return
+        val request=latest ?: return
+        if(!preparationQueue.begin())return
+        val cancel=try { PacketCancellation() } catch(failure: Exception) {
+            preparationQueue.started();preparationQueue.finish(false)
+            failed(request,"gpu-resource-limit","context");return
+        }
+        activePreparation=cancel
+        OverlayPacketMetrics.begin()
         OverlayRenderer.handler.post {
-            val request = latest
+            preparationQueue.started()
             try {
-                if (request != null && target.generation == request.generation)
-                    OverlayRenderer.prepare(target, request)
+                if(target.generation==request.generation)OverlayRenderer.prepare(target,request,cancel)
             } finally {
-                preparing.set(false)
-                if (latest != null && latest != request) schedulePrepare()
+                if(activePreparation===cancel)activePreparation=null
+                cancel.close();OverlayPacketMetrics.end()
+                val retry=preparationQueue.finish(latest!=null && latest!=request)
+                if(latest!=null && retry)schedulePrepare()
             }
+        }
+    }
+
+    private fun cancelPrefetch() {
+        idleTask?.let { main.removeCallbacks(it) };idleTask=null
+        idleJob?.cancel();idleJob=null
+        idlePreparation?.cancel();idlePreparation=null;idleFrames=emptyList()
+    }
+
+    internal fun schedulePrefetch() {
+        main.post {
+            val request=latest ?: return@post
+            if(!allowed || kotlin.math.abs((controls.position?:request.center)-request.center)>0.0001)return@post
+            val frames=prefetchFrames.filter { it.toByteArray(Charsets.UTF_8).size<=32768 }.take(2)
+            if(frames==idleFrames)return@post
+            cancelPrefetch();idleFrames=frames
+            if(frames.isEmpty())return@post
+            OverlayPacketMetrics.begin()
+            val job=OverlayPacketJob(OverlayPacketMetrics::end);idleJob=job
+            val task=Runnable {
+                if(!job.start())return@Runnable
+                if(!matches(request)) { job.finish();return@Runnable }
+                val cancel=try { PacketCancellation() } catch(_: Exception) { job.finish();return@Runnable }
+                idlePreparation=cancel
+                OverlayRenderer.handler.post {
+                    try { OverlayRenderer.prefetch(context,request,frames,cancel) { matches(request) && idlePreparation===cancel } }
+                    finally { cancel.close();job.finish() }
+                }
+            }
+            idleTask=task;main.postDelayed(task,150)
         }
     }
 
@@ -323,6 +396,8 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                     "gpuMs" to null,
                     "atlasBytes" to metrics.atlasBytes,
                     "atlasCacheHit" to metrics.cacheHit,
+                    "uploadBytes" to metrics.uploadBytes,
+                    "litHoldCount" to metrics.litHoldCount,
                     "editChangedHoldCount" to metrics.changed,
                     "editDurationMs" to metrics.editDurationMs,
                     "lowPowerMode" to controls.lowPower,
@@ -331,14 +406,14 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         }
     }
 
-    internal fun failed(request: OverlayRequest?, reason: String) {
+    internal fun failed(request: OverlayRequest?, reason: String, scope: String) {
         main.post {
             val accepted = request ?: latest ?: return@post
             if (!matches(accepted) || lastErrorRevision == accepted.revision) return@post
             lastErrorRevision = accepted.revision
             cancelAnimation()
             cancelConsumptionObservation()
-            onRenderError(mapOf("requestId" to accepted.requestId, "reason" to reason))
+            onRenderError(mapOf("requestId" to accepted.requestId, "reason" to reason, "failureScope" to scope))
         }
     }
 

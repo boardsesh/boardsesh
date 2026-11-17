@@ -1,0 +1,138 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { load, validateControls, imageDifference, fileSha256 } from './lib.mjs';
+import { buildCatalogueGpuConfig } from '../gpu-atlas-census.ts';
+import { listCatalogueEntries } from '../../packages/shared/board-render/src/render-version-projection.ts';
+const here = dirname(fileURLToPath(import.meta.url));
+const controls = () => structuredClone(load(join(here, 'controls.json')));
+
+await test('one real catalogue fixture retains its native dimensions, aliases and rich union', () => {
+  const fixture = load(join(here, 'fixture.json'));
+  const entry = listCatalogueEntries().find(
+    (candidate) => candidate.boardName === 'kilter' && candidate.layoutId === 8 && candidate.sizeId === 25,
+  );
+  const config = buildCatalogueGpuConfig(entry);
+  assert.deepEqual(
+    [config.board_width, config.board_height, config.output_width, config.holds.length],
+    [1080, 1504, 1080, 499],
+  );
+  const parse = (frames) => [...frames.matchAll(/p(\d+)r(\d+)/g)].map((token) => [Number(token[1]), Number(token[2])]);
+  const current = parse(fixture.current),
+    next = parse(fixture.next);
+  assert.deepEqual([current.length, parse(fixture.previous).length, next.length], [6, 7, 7]);
+  const currentIds = new Set(current.map(([id]) => id)),
+    nextIds = new Set(next.map(([id]) => id));
+  assert.equal([...currentIds].filter((id) => !nextIds.has(id)).length, 2);
+  assert.equal([...nextIds].filter((id) => !currentIds.has(id)).length, 3);
+  for (const [id, state] of [...current, ...next]) {
+    assert.ok(config.holds.some((hold) => hold.id === id));
+    assert.ok(config.hold_state_map[state]);
+  }
+  assert.deepEqual(config.hold_state_map[42], config.hold_state_map[12]);
+  assert.deepEqual(config.hold_state_map[43], config.hold_state_map[13]);
+  assert.deepEqual(config.hold_state_map[44], config.hold_state_map[14]);
+});
+await test('thirty controls include forward and reverse sequences, both source pairs and truthful editor pulses', () => {
+  assert.equal(validateControls(controls()).samples.length, 30);
+  assert.equal(controls().samples.filter((sample) => sample.editorAllChanged).length, 6);
+});
+for (const [name, mutate] of [
+  ['missing sample', (record) => record.samples.pop()],
+  [
+    'duplicate name',
+    (record) => {
+      record.samples[1].name = record.samples[0].name;
+    },
+  ],
+  [
+    'unsafe name',
+    (record) => {
+      record.samples[0].name = '../pixels';
+    },
+  ],
+  ['wrong order', (record) => record.samples.reverse()],
+  [
+    'unregistered progress',
+    (record) => {
+      record.samples[1].progress = 0.1;
+    },
+  ],
+  [
+    'missing previous selector',
+    (record) => {
+      record.samples[29].lower = 0;
+    },
+  ],
+  [
+    'editor interior',
+    (record) => {
+      record.samples[21].progress = 0.5;
+    },
+  ],
+  [
+    'nonfinite pulse',
+    (record) => {
+      record.samples[21].pulse = NaN;
+    },
+  ],
+  [
+    'wrong editor mask',
+    (record) => {
+      record.samples[21].editorAllChanged = false;
+    },
+  ],
+  [
+    'unknown field',
+    (record) => {
+      record.samples[0].unused = 0;
+    },
+  ],
+])
+  await test('rejects ' + String(name) + ' before execution', () => {
+    const record = controls();
+    mutate(record);
+    assert.throws(() => validateControls(record));
+  });
+await test('byte comparison retains errors over one and never changes the threshold', () => {
+  const reference = Buffer.from([1, 2, 3, 4, 10, 20, 30, 40]);
+  const actual = Buffer.from([2, 2, 3, 4, 10, 22, 30, 40]);
+  const result = imageDifference(reference, actual);
+  assert.equal(result.maxChannelError, 2);
+  assert.equal(result.pixelsOverOne, 1);
+  assert.equal(result.changedPixels, 2);
+  assert.throws(() => imageDifference(reference, actual.subarray(4)));
+});
+await test('frozen full-scan shader fixtures match their source/runtime provenance', () => {
+  const provenance = load(join(here, 'reference/provenance.json'));
+  assert.equal(fileSha256(join(here, 'reference/metal.swift')), provenance.metalSourceSha256);
+  assert.equal(fileSha256(join(here, 'reference/gles.vert')), provenance.glesVertexRuntimeSha256);
+  assert.equal(fileSha256(join(here, 'reference/gles.frag')), provenance.glesFragmentRuntimeSha256);
+  assert.match(readFileSync(join(here, 'reference/metal.swift'), 'utf8'), /enum ClimbOverlayShader/);
+});
+
+await test('cleanup never mistakes an offline device or denied proc read for an exited process', async () => {
+  const { ownedProcessState } = await import('./lib.mjs');
+  const command = '/data/local/tmp/owned-helper\0owned-root\0';
+  assert.equal(ownedProcessState({ status: 0, stdout: Buffer.from(command) }, '123', command), 'same');
+  assert.equal(ownedProcessState({ status: 0, stdout: Buffer.from('another-process\0') }, '123', command), 'different');
+  assert.equal(
+    ownedProcessState(
+      { status: 1, stderr: Buffer.from('cat: /proc/123/cmdline: No such file or directory') },
+      '123',
+      command,
+    ),
+    'gone',
+  );
+  assert.equal(ownedProcessState({ status: 1, stderr: Buffer.from('device offline') }, '123', command), 'unknown');
+  assert.equal(
+    ownedProcessState({ status: 1, stderr: Buffer.from('cat: /proc/123/cmdline: Permission denied') }, '123', command),
+    'unknown',
+  );
+  assert.equal(
+    ownedProcessState({ status: null, error: new Error('timeout'), stderr: Buffer.alloc(0) }, '123', command),
+    'unknown',
+  );
+});

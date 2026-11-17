@@ -295,6 +295,7 @@ mod tests {
         );
 
         RenderConfig {
+            geometry_cache_scope: None,
             board_width: 1080.0,
             board_height: 1350.0,
             output_width: 300,

@@ -26,7 +26,10 @@ export type GpuClimbTransition = {
   nextFrames: string | null;
   centerPage: number;
   pagePosition: SharedValue<number>;
+  prefetchFrames?: readonly string[];
 };
+
+const NO_GPU_PREFETCH_FRAMES: readonly string[] = [];
 
 const AnimatedMotionOverlay = NativeMotionClimbOverlayGPU
   ? Animated.createAnimatedComponent(NativeMotionClimbOverlayGPU)
@@ -187,6 +190,9 @@ export function GpuClimbOverlay({
         frames={frames}
         previousFrames={transition?.previousFrames ?? null}
         nextFrames={transition?.nextFrames ?? null}
+        {...(climbOverlayGpuApiVersion >= 5
+          ? { prefetchFrames: transition?.prefetchFrames ?? NO_GPU_PREFETCH_FRAMES }
+          : {})}
         centerPage={centerPage}
         animatedProps={animatedProps}
         animateEdits={animateEdits && !transition}

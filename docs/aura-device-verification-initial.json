@@ -1,0 +1,1280 @@
+{
+  "schemaVersion": 1,
+  "status": "INITIAL_REJECTED_CANDIDATE",
+  "recordedAt": "2026-11-16T11:52:33.580741+00:00",
+  "decision": "Do not accept the initial candidate performance. Preserve these qualified measurements as rejected-source evidence; optimize without lowering resolution, memory budget or pixel tolerance, then run newly preregistered paired verification.",
+  "commonProvenance": {
+    "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+    "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+    "originalMainBaseline": "8c5fe49c07956c64b06d7fd94781bf420ba24e36",
+    "derivedBaseline": "f4d12c848e7eca71cf1b612228d732458422fc36",
+    "androidMeasuredCandidate": "d0f4816a0c7afb16f33652bdd8e8173bf6b03b7a",
+    "iosCorrectedCandidate": "29375f1c5c7fcbbf3621342266e7705cea587a08",
+    "identicalPhotoCorrectionGitBlob": "028b9d4e8950de281ed61c348568896369c2bfb4",
+    "androidRuntimeEquivalenceProofSha256": "d1956e87a56e59819d8d709e883609176c968b2d20e7456c6c291f8b4b5afb99"
+  },
+  "registeredMeasuredPrimary": {
+    "membersPerDevice": 6,
+    "alternatingPairsPerDevice": 3,
+    "memberOrder": ["A1", "B1", "A2", "B2", "A3", "B3"],
+    "measuredSwipesPerMember": 10,
+    "measuredEditorChangesPerMember": 8,
+    "perBuildPerDevice": {
+      "members": 3,
+      "swipes": 30,
+      "editorChanges": 24,
+      "warmAtlasHits": 54,
+      "warmAtlasMisses": 0,
+      "warmAtlasUploads": 0,
+      "fullArtLiveReadyEvents": 54
+    },
+    "allDevicesAllBuildsMeasured": {
+      "members": 12,
+      "swipes": 120,
+      "editorChanges": 96,
+      "warmAtlasHits": 216,
+      "warmAtlasMisses": 0,
+      "warmAtlasUploads": 0
+    },
+    "scope": "Measured counts only. Platform-specific excluded conditioning/setup actions and diagnostic attempts are separate."
+  },
+  "catalogScope": {
+    "family": "Kilter",
+    "layoutId": 8,
+    "sizeId": 25,
+    "setIds": [26, 27, 28, 29],
+    "angle": 35,
+    "nativeBoardPixels": [1080, 1504],
+    "holds": 499
+  },
+  "devices": {
+    "android": {
+      "model": "Google Pixel 8 Pro",
+      "os": "Android16/API36",
+      "provenance": {
+        "A": {
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "e20cdbfd28a1fb34b039b85691b6edda6c7d600f750515d864327a9f1d1bcc1d",
+          "embeddedBundleSha256": "9523bbfd330758a6d41f9523e3705b04f6370950bf641d48488725d64b9384eb",
+          "buildId": "b8fef950dd048a6e841545dee8d9cc27e0d20df6d81e914fa325131f21e90455",
+          "primaryFlowSha256": "30f1d41b577d34c728764ad656f6ccab20697bd50b6bd49f89aa920321eeadcb",
+          "registrationDocumentSha256": "0e554ca36379ae676f2d548a700ca6b4bae98cbd70488d441b54e77acc4fc40b"
+        },
+        "B": {
+          "sourceCommit": "d0f4816a0c7afb16f33652bdd8e8173bf6b03b7a",
+          "artifactSha256": "2517f896d7f5a67cad76f95bc68d404453d3968ac8087b0bbbdbfe4d6df90d11",
+          "embeddedBundleSha256": "835acb0f8018f5bb4a4c20acac38914cb951500e1786d5a088b37b97a26cb935",
+          "buildId": "2ae964554cb96a5a319425652e0bc41dd4fb288ae88577f5d38399d163087d57",
+          "primaryFlowSha256": "30f1d41b577d34c728764ad656f6ccab20697bd50b6bd49f89aa920321eeadcb",
+          "registrationDocumentSha256": "0e554ca36379ae676f2d548a700ca6b4bae98cbd70488d441b54e77acc4fc40b"
+        }
+      },
+      "members": [
+        {
+          "member": "A1",
+          "build": "A",
+          "provenanceRef": "A",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "523b67e47e143da70c52e30d7dd5200024e15f21ee22c09a8eacbb6f6da5d506",
+          "peakRssBytes": 956743680,
+          "peakRssMiB": 912.421875,
+          "openGpuCallbackMs": 639.113,
+          "openFullArtLiveReadyMs": 695.674,
+          "openPrepareMs": 546.013,
+          "openUploadMs": 23.895,
+          "swipeCpuSeconds": 34.609,
+          "editorCpuSeconds": 12.41,
+          "wholeCycleCpuSeconds": 70.934,
+          "swipeGpuCallbackMeanMs": 78.7676,
+          "editorGpuCallbackMeanMs": 50.225625,
+          "swipeFullArtLiveReadyMeanMs": 105.94860000000001,
+          "editorFullArtLiveReadyMeanMs": 82.86675,
+          "swipeReadyCommandGpuMeanMs": null,
+          "editorReadyCommandGpuMeanMs": null,
+          "playerAtlasPixelPayloadBytes": 91002920,
+          "editorAtlasPixelPayloadBytes": 81054780.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [24.8, null]
+        },
+        {
+          "member": "B1",
+          "build": "B",
+          "provenanceRef": "B",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "c77936cdd12a63a4c40565f035e5a9c3a9957ab720e297f340e3811416b1a9d4",
+          "peakRssBytes": 875712512,
+          "peakRssMiB": 835.14453125,
+          "openGpuCallbackMs": 740.13,
+          "openFullArtLiveReadyMs": 786.12,
+          "openPrepareMs": 593.235,
+          "openUploadMs": 15.661,
+          "swipeCpuSeconds": 33.801,
+          "editorCpuSeconds": 11.77,
+          "wholeCycleCpuSeconds": 67.992,
+          "swipeGpuCallbackMeanMs": 89.9111,
+          "editorGpuCallbackMeanMs": 85.38175,
+          "swipeFullArtLiveReadyMeanMs": 119.3726,
+          "editorFullArtLiveReadyMeanMs": 112.434625,
+          "swipeReadyCommandGpuMeanMs": null,
+          "editorReadyCommandGpuMeanMs": null,
+          "playerAtlasPixelPayloadBytes": 56822920,
+          "editorAtlasPixelPayloadBytes": 56822920.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [24.5, 25.3]
+        },
+        {
+          "member": "A2",
+          "build": "A",
+          "provenanceRef": "A",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "99f68ac32850e943e751aae5ffae64e017e7917e5cb3364273a92e621afde3db",
+          "peakRssBytes": 998592512,
+          "peakRssMiB": 952.33203125,
+          "openGpuCallbackMs": 646.985,
+          "openFullArtLiveReadyMs": 705.864,
+          "openPrepareMs": 533.536,
+          "openUploadMs": 23.402,
+          "swipeCpuSeconds": 35.447,
+          "editorCpuSeconds": 12.063,
+          "wholeCycleCpuSeconds": 68.746,
+          "swipeGpuCallbackMeanMs": 74.3241,
+          "editorGpuCallbackMeanMs": 52.62075,
+          "swipeFullArtLiveReadyMeanMs": 101.125,
+          "editorFullArtLiveReadyMeanMs": 82.598375,
+          "swipeReadyCommandGpuMeanMs": null,
+          "editorReadyCommandGpuMeanMs": null,
+          "playerAtlasPixelPayloadBytes": 91002920,
+          "editorAtlasPixelPayloadBytes": 81054780.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [25.3, 25.9]
+        },
+        {
+          "member": "B2",
+          "build": "B",
+          "provenanceRef": "B",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "0bd7c807bf04c88ca34fc14482f86534daba7b6adc02b3d42c175cd1784803e1",
+          "peakRssBytes": 896180224,
+          "peakRssMiB": 854.6640625,
+          "openGpuCallbackMs": 752.486,
+          "openFullArtLiveReadyMs": 813.684,
+          "openPrepareMs": 583.304,
+          "openUploadMs": 15.751,
+          "swipeCpuSeconds": 34.145,
+          "editorCpuSeconds": 12.168,
+          "wholeCycleCpuSeconds": 70.379,
+          "swipeGpuCallbackMeanMs": 89.35499999999999,
+          "editorGpuCallbackMeanMs": 87.381125,
+          "swipeFullArtLiveReadyMeanMs": 118.11099999999999,
+          "editorFullArtLiveReadyMeanMs": 114.82775,
+          "swipeReadyCommandGpuMeanMs": null,
+          "editorReadyCommandGpuMeanMs": null,
+          "playerAtlasPixelPayloadBytes": 56822920,
+          "editorAtlasPixelPayloadBytes": 56822920.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [25.9, 26.2]
+        },
+        {
+          "member": "A3",
+          "build": "A",
+          "provenanceRef": "A",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "6b9b05a516c748340c4bcfef0df65910c8fcfaa16ed9efa8d7c0ae5d4b536354",
+          "peakRssBytes": 969547776,
+          "peakRssMiB": 924.6328125,
+          "openGpuCallbackMs": 669.262,
+          "openFullArtLiveReadyMs": 719.142,
+          "openPrepareMs": 553.822,
+          "openUploadMs": 23.794,
+          "swipeCpuSeconds": 36.915,
+          "editorCpuSeconds": 12.104,
+          "wholeCycleCpuSeconds": 72.82,
+          "swipeGpuCallbackMeanMs": 75.0894,
+          "editorGpuCallbackMeanMs": 48.607875,
+          "swipeFullArtLiveReadyMeanMs": 103.4378,
+          "editorFullArtLiveReadyMeanMs": 78.901375,
+          "swipeReadyCommandGpuMeanMs": null,
+          "editorReadyCommandGpuMeanMs": null,
+          "playerAtlasPixelPayloadBytes": 91002920,
+          "editorAtlasPixelPayloadBytes": 81054780.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [26.2, 26.4]
+        },
+        {
+          "member": "B3",
+          "build": "B",
+          "provenanceRef": "B",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "78161690070c9b9eb97f26b2754e272181517c66b6f691e570a979986af01a54",
+          "peakRssBytes": 860471296,
+          "peakRssMiB": 820.609375,
+          "openGpuCallbackMs": 727.179,
+          "openFullArtLiveReadyMs": 776.611,
+          "openPrepareMs": 568.777,
+          "openUploadMs": 15.557,
+          "swipeCpuSeconds": 34.07,
+          "editorCpuSeconds": 11.123,
+          "wholeCycleCpuSeconds": 66.812,
+          "swipeGpuCallbackMeanMs": 85.0176,
+          "editorGpuCallbackMeanMs": 82.872625,
+          "swipeFullArtLiveReadyMeanMs": 115.2508,
+          "editorFullArtLiveReadyMeanMs": 113.1445,
+          "swipeReadyCommandGpuMeanMs": null,
+          "editorReadyCommandGpuMeanMs": null,
+          "playerAtlasPixelPayloadBytes": 56822920,
+          "editorAtlasPixelPayloadBytes": 56822920.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [26.4, 26.6]
+        }
+      ],
+      "statistics": {
+        "peakRssMiB": {
+          "baseline": {
+            "values": [912.421875, 952.33203125, 924.6328125],
+            "median": 924.6328125,
+            "range": [912.421875, 952.33203125]
+          },
+          "candidate": {
+            "values": [835.14453125, 854.6640625, 820.609375],
+            "median": 835.14453125,
+            "range": [820.609375, 854.6640625]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-77.27734375, -97.66796875, -104.0234375],
+            "median": -97.66796875,
+            "range": [-104.0234375, -77.27734375]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-8.469475126295055, -10.255663523341141, -11.250242917374297],
+            "median": -10.255663523341141,
+            "range": [-11.250242917374297, -8.469475126295055]
+          }
+        },
+        "openGpuCallbackMs": {
+          "baseline": {
+            "values": [639.113, 646.985, 669.262],
+            "median": 646.985,
+            "range": [639.113, 669.262]
+          },
+          "candidate": {
+            "values": [740.13, 752.486, 727.179],
+            "median": 740.13,
+            "range": [727.179, 752.486]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [101.01699999999994, 105.50099999999998, 57.91700000000003],
+            "median": 101.01699999999994,
+            "range": [57.91700000000003, 105.50099999999998]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [15.80581211773191, 16.30656043030363, 8.653860520991774],
+            "median": 15.80581211773191,
+            "range": [8.653860520991774, 16.30656043030363]
+          }
+        },
+        "openFullArtLiveReadyMs": {
+          "baseline": {
+            "values": [695.674, 705.864, 719.142],
+            "median": 705.864,
+            "range": [695.674, 719.142]
+          },
+          "candidate": {
+            "values": [786.12, 813.684, 776.611],
+            "median": 786.12,
+            "range": [776.611, 813.684]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [90.44600000000003, 107.81999999999994, 57.46899999999994],
+            "median": 90.44600000000003,
+            "range": [57.46899999999994, 107.81999999999994]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [13.001204587206082, 15.274897147325817, 7.991328555417421],
+            "median": 13.001204587206082,
+            "range": [7.991328555417421, 15.274897147325817]
+          }
+        },
+        "openPrepareMs": {
+          "baseline": {
+            "values": [546.013, 533.536, 553.822],
+            "median": 546.013,
+            "range": [533.536, 553.822]
+          },
+          "candidate": {
+            "values": [593.235, 583.304, 568.777],
+            "median": 583.304,
+            "range": [568.777, 593.235]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [47.22199999999998, 49.76800000000003, 14.955000000000041],
+            "median": 47.22199999999998,
+            "range": [14.955000000000041, 49.76800000000003]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [8.648512031764799, 9.327955376956766, 2.700326097554817],
+            "median": 8.648512031764799,
+            "range": [2.700326097554817, 9.327955376956766]
+          }
+        },
+        "openUploadMs": {
+          "baseline": {
+            "values": [23.895, 23.402, 23.794],
+            "median": 23.794,
+            "range": [23.402, 23.895]
+          },
+          "candidate": {
+            "values": [15.661, 15.751, 15.557],
+            "median": 15.661,
+            "range": [15.557, 15.751]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-8.234, -7.651000000000002, -8.237],
+            "median": -8.234,
+            "range": [-8.237, -7.651000000000002]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-34.459091860221804, -32.69378685582429, -34.61797091703791],
+            "median": -34.459091860221804,
+            "range": [-34.61797091703791, -32.69378685582429]
+          }
+        },
+        "swipeCpuSeconds": {
+          "baseline": {
+            "values": [34.609, 35.447, 36.915],
+            "median": 35.447,
+            "range": [34.609, 36.915]
+          },
+          "candidate": {
+            "values": [33.801, 34.145, 34.07],
+            "median": 34.07,
+            "range": [33.801, 34.145]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-0.8079999999999998, -1.3019999999999996, -2.844999999999999],
+            "median": -1.3019999999999996,
+            "range": [-2.844999999999999, -0.8079999999999998]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-2.334652835967521, -3.673089401077667, -7.706894216443172],
+            "median": -3.673089401077667,
+            "range": [-7.706894216443172, -2.334652835967521]
+          }
+        },
+        "editorCpuSeconds": {
+          "baseline": {
+            "values": [12.41, 12.063, 12.104],
+            "median": 12.104,
+            "range": [12.063, 12.41]
+          },
+          "candidate": {
+            "values": [11.77, 12.168, 11.123],
+            "median": 11.77,
+            "range": [11.123, 12.168]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-0.6400000000000006, 0.10499999999999865, -0.9809999999999999],
+            "median": -0.6400000000000006,
+            "range": [-0.9809999999999999, 0.10499999999999865]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-5.1571313456889705, 0.8704302412335219, -8.10475875743556],
+            "median": -5.1571313456889705,
+            "range": [-8.10475875743556, 0.8704302412335219]
+          }
+        },
+        "swipeGpuCallbackMeanMs": {
+          "baseline": {
+            "values": [78.7676, 74.3241, 75.0894],
+            "median": 75.0894,
+            "range": [74.3241, 78.7676]
+          },
+          "candidate": {
+            "values": [89.9111, 89.35499999999999, 85.0176],
+            "median": 89.35499999999999,
+            "range": [85.0176, 89.9111]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [11.143500000000003, 15.030899999999988, 9.928200000000004],
+            "median": 11.143500000000003,
+            "range": [9.928200000000004, 15.030899999999988]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [14.147314377992991, 20.223453765333165, 13.221839567235861],
+            "median": 14.147314377992991,
+            "range": [13.221839567235861, 20.223453765333165]
+          }
+        },
+        "editorGpuCallbackMeanMs": {
+          "baseline": {
+            "values": [50.225625, 52.62075, 48.607875],
+            "median": 50.225625,
+            "range": [48.607875, 52.62075]
+          },
+          "candidate": {
+            "values": [85.38175, 87.381125, 82.872625],
+            "median": 85.38175,
+            "range": [82.872625, 87.381125]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [35.156124999999996, 34.760374999999996, 34.26475],
+            "median": 34.760374999999996,
+            "range": [34.26475, 35.156124999999996]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [69.99639128432946, 66.05830399604717, 70.4921784793102],
+            "median": 69.99639128432946,
+            "range": [66.05830399604717, 70.4921784793102]
+          }
+        },
+        "swipeFullArtLiveReadyMeanMs": {
+          "baseline": {
+            "values": [105.94860000000001, 101.125, 103.4378],
+            "median": 103.4378,
+            "range": [101.125, 105.94860000000001]
+          },
+          "candidate": {
+            "values": [119.3726, 118.11099999999999, 115.2508],
+            "median": 118.11099999999999,
+            "range": [115.2508, 119.3726]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [13.423999999999992, 16.98599999999999, 11.813000000000002],
+            "median": 13.423999999999992,
+            "range": [11.813000000000002, 16.98599999999999]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [12.670294841083308, 16.79703337453646, 11.420389838144285],
+            "median": 12.670294841083308,
+            "range": [11.420389838144285, 16.79703337453646]
+          }
+        },
+        "editorFullArtLiveReadyMeanMs": {
+          "baseline": {
+            "values": [82.86675, 82.598375, 78.901375],
+            "median": 82.598375,
+            "range": [78.901375, 82.86675]
+          },
+          "candidate": {
+            "values": [112.434625, 114.82775, 113.1445],
+            "median": 113.1445,
+            "range": [112.434625, 114.82775]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [29.567875, 32.22937499999999, 34.24312499999999],
+            "median": 32.22937499999999,
+            "range": [29.567875, 34.24312499999999]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [35.6812292023037, 39.01938143456212, 43.39990906368867],
+            "median": 39.01938143456212,
+            "range": [35.6812292023037, 43.39990906368867]
+          }
+        },
+        "wholeCycleCpuSeconds": {
+          "baseline": {
+            "values": [70.934, 68.746, 72.82],
+            "median": 70.934,
+            "range": [68.746, 72.82]
+          },
+          "candidate": {
+            "values": [67.992, 70.379, 66.812],
+            "median": 67.992,
+            "range": [66.812, 70.379]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-2.941999999999993, 1.6330000000000098, -6.007999999999996],
+            "median": -2.941999999999993,
+            "range": [-6.007999999999996, 1.6330000000000098]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-4.1475174105506385, 2.3754109329997553, -8.250480637187586],
+            "median": -4.1475174105506385,
+            "range": [-8.250480637187586, 2.3754109329997553]
+          }
+        }
+      },
+      "conditioning": "One excluded complete swipe/editor tour per process, followed by one measured tour.",
+      "geometryPixels": {
+        "baselinePlayer": [936, 1303],
+        "candidatePlayer": [1080, 1504],
+        "baselineEditor": "Viewport-sized; actual payload recorded",
+        "candidateEditor": [1080, 1504]
+      },
+      "temperatureQualification": "A1 has its before sample only; other members have before/after samples. These are not continuous measurements.",
+      "frameEvidence": {
+        "schemaVersion": 1,
+        "status": "rejected-performance-candidate",
+        "captureQualification": "Both captures retain valid source, identity, clock and recorded-workload evidence. This is not performance acceptance.",
+        "device": {
+          "model": "Google Pixel 8 Pro",
+          "os": "Android16/API36",
+          "physical": true,
+          "configuration": "Release, isolated profiling clone, OTAoff"
+        },
+        "workload": {
+          "catalogFamily": "Kilter",
+          "layoutId": 8,
+          "sizeId": 25,
+          "setIds": [26, 27, 28, 29],
+          "angle": 35,
+          "registeredSwipesPerBuild": 10,
+          "conditioningSwipeTours": 0,
+          "firstPhotoAndGpuReadyOpenExcluded": true,
+          "finalSettleMs": 2000,
+          "traceDurationMs": 120000,
+          "baselineGeometryPixels": [936, 1303],
+          "candidateGeometryPixels": [1080, 1504],
+          "displayScreenshotPixels": [1008, 2244]
+        },
+        "sources": {
+          "baseline": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "candidateMeasuredAndroid": "d0f4816a0c7afb16f33652bdd8e8173bf6b03b7a",
+          "equivalentAndroidRuntimeInInitialShippingCandidate": "29375f1c5c7fcbbf3621342266e7705cea587a08",
+          "commonPhotoFixGitBlob": "028b9d4e8950de281ed61c348568896369c2bfb4"
+        },
+        "provenance": {
+          "A": {
+            "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+            "artifactSha256": "e20cdbfd28a1fb34b039b85691b6edda6c7d600f750515d864327a9f1d1bcc1d",
+            "embeddedBundleSha256": "9523bbfd330758a6d41f9523e3705b04f6370950bf641d48488725d64b9384eb",
+            "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+            "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+            "frameProtocolSha256": "f825b8c5c323332e27fbaf7af602cc2a82cfdfe5c46f71f511c4fdd129dfc546",
+            "traceSha256": "64bdc54e855263a50b5e41dce0353054956ceb8ef54dfd94bf35b3e86ab693eb",
+            "frameFlowSha256": "e1c4d1c83bdc0e0e822dd2df4540e8e702fd6442150e3e06666dd9e72a8ed51d",
+            "openFlowSha256": "054d2323e56e650d5d83253e9f60bad6af3d37faedb2f0555dfefb9e78b9b740",
+            "traceConfigSha256": "9ab6f7c3814a6346ecc7503c7deebc4a666a01c5c31598709616f706395f0f4b",
+            "exactNativePidAndMainActivitySurfaceVerified": true,
+            "clock": {
+              "name": "BOOTTIME",
+              "nativeSource": "SystemClock.elapsedRealtime",
+              "traceMinusNativeClockOffsetNs": 0,
+              "snapshots": 2
+            },
+            "traceAnalysisTool": "Perfetto v59.1-1e9c61e98",
+            "traceAnalysisToolSha256": "8488edbefadfc4be152cda1d42d9bfcede8b47638295eb85eb3bad8cd148fdf4"
+          },
+          "B": {
+            "sourceCommit": "d0f4816a0c7afb16f33652bdd8e8173bf6b03b7a",
+            "artifactSha256": "2517f896d7f5a67cad76f95bc68d404453d3968ac8087b0bbbdbfe4d6df90d11",
+            "embeddedBundleSha256": "835acb0f8018f5bb4a4c20acac38914cb951500e1786d5a088b37b97a26cb935",
+            "instrumentationSha256": "433827c3c4798674537db053c17966aae283d1f310a33a5fcb722dcab253e276",
+            "fixtureManifestSha256": "5dcf9ab9e545fab56b9049ccc6052e2cc25ff20ea55d17297ebf580fd64ee686",
+            "frameProtocolSha256": "f825b8c5c323332e27fbaf7af602cc2a82cfdfe5c46f71f511c4fdd129dfc546",
+            "traceSha256": "af661eb8bd3815d921c3b2b49e31569dbe6ddc4dc300dd06a0e9d17adc488d92",
+            "frameFlowSha256": "e1c4d1c83bdc0e0e822dd2df4540e8e702fd6442150e3e06666dd9e72a8ed51d",
+            "openFlowSha256": "054d2323e56e650d5d83253e9f60bad6af3d37faedb2f0555dfefb9e78b9b740",
+            "traceConfigSha256": "9ab6f7c3814a6346ecc7503c7deebc4a666a01c5c31598709616f706395f0f4b",
+            "exactNativePidAndMainActivitySurfaceVerified": true,
+            "clock": {
+              "name": "BOOTTIME",
+              "nativeSource": "SystemClock.elapsedRealtime",
+              "traceMinusNativeClockOffsetNs": 0,
+              "snapshots": 2
+            },
+            "traceAnalysisTool": "Perfetto v59.1-1e9c61e98",
+            "traceAnalysisToolSha256": "8488edbefadfc4be152cda1d42d9bfcede8b47638295eb85eb3bad8cd148fdf4"
+          }
+        },
+        "results": {
+          "A": {
+            "appFrames": 787,
+            "appDeadlineMissedFrames": 86,
+            "appDeadlineMissedPercent": 10.927573062261754,
+            "latePresentFrames": 407,
+            "onTimePresentFrames": 380,
+            "appFrameDurationMs": {
+              "p50": 7.799724,
+              "p90": 18.173429799999994,
+              "p95": 24.4082595,
+              "p99": 42.518242719999975,
+              "mean": 10.28255847141042,
+              "range": [2.2476, 60.867879]
+            },
+            "onTimeFinishFalse": 101,
+            "frameTimelineBufferOverwrittenBytes": 0,
+            "ftraceBufferOverwrittenBytes": 16351232,
+            "gestureWindowSeconds": 57.507,
+            "allSurfaceFramesInsideNativeWindow": true,
+            "uniqueSurfaceFrames": 787,
+            "frameTimelineDataLossStats": 0,
+            "warmAtlasHits": 10,
+            "warmAtlasMisses": 0,
+            "warmAtlasUploadUs": 0
+          },
+          "B": {
+            "appFrames": 419,
+            "appDeadlineMissedFrames": 134,
+            "appDeadlineMissedPercent": 31.980906921241047,
+            "latePresentFrames": 354,
+            "onTimePresentFrames": 65,
+            "appFrameDurationMs": {
+              "p50": 8.775268,
+              "p90": 64.472697,
+              "p95": 79.73677519999997,
+              "p99": 99.31523979999997,
+              "mean": 21.48263134367542,
+              "range": [2.242879, 149.614054]
+            },
+            "onTimeFinishFalse": 137,
+            "frameTimelineBufferOverwrittenBytes": 0,
+            "ftraceBufferOverwrittenBytes": 32768,
+            "gestureWindowSeconds": 60.354,
+            "allSurfaceFramesInsideNativeWindow": true,
+            "uniqueSurfaceFrames": 419,
+            "frameTimelineDataLossStats": 0,
+            "warmAtlasHits": 10,
+            "warmAtlasMisses": 0,
+            "warmAtlasUploadUs": 0
+          }
+        },
+        "decision": "Fix the frame regression before accepting this candidate. Preserve these initial-source measurements; a shader change needs newly preregistered paired verification.",
+        "qualifications": [
+          "One instrumented ten-swipe trace per build, no A/A noise distribution or population inference.",
+          "Durations are individual FrameTimeline app-frame slices, not physical scanout, average FPS or isolated shader cost.",
+          "The candidate uses larger native geometry; this comparison measures product behavior rather than packing alone.",
+          "FrameTimeline buffer0 retained all data; scheduling ringbuffer1 overwrote older chunks, limiting full scheduling attribution.",
+          "The printed4,950ms GPU histogram entry is an overflow bucket, not an exact GPU duration; no exact GPU percentile is inferred from it.",
+          "No resolution, memory budget or pixel-tolerance reduction was used."
+        ]
+      },
+      "firstPreparationSeparate": {
+        "A0": {
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "gpuReadyCount": 1,
+          "fullArtReadyCount": 1,
+          "prepareMsMean": 540.99,
+          "uploadMsMean": 24.364,
+          "gpuNativeReadyCallbackMsMean": 674.447,
+          "fullArtIdentityToReadyMsMean": 750.631,
+          "atlasBytes": 91002920,
+          "peakRssBytes": 865124352
+        },
+        "B0": {
+          "sourceCommit": "d0f4816a0c7afb16f33652bdd8e8173bf6b03b7a",
+          "gpuReadyCount": 1,
+          "fullArtReadyCount": 1,
+          "prepareMsMean": 3019.595,
+          "uploadMsMean": 16.575,
+          "gpuNativeReadyCallbackMsMean": 3301.722,
+          "fullArtIdentityToReadyMsMean": 3353.578,
+          "atlasBytes": 56822920,
+          "peakRssBytes": 800497664
+        }
+      }
+    },
+    "ios": {
+      "model": "iPhone13Pro",
+      "os": "iOS26.6.1",
+      "provenance": {
+        "A": {
+          "sourceCommit": "f4d12c848e7eca71cf1b612228d732458422fc36",
+          "artifactSha256": "0059f6246ffe7684632b14c04bf9364a1450a573e1c6ed5f3b36e1b1d17401aa",
+          "embeddedBundleSha256": "c00024a1fb74a5cd5eab40c84c11ba612e6a84b8300605e2046ab9b6d6114aac",
+          "buildId": "1d48fbf9d803fd56a4ef5183777b146204468696e54a4046747ccc0fb132f1cc",
+          "primaryFlowSha256": "036e95de7c3479defb629910a509d2a07408081700a2beacb2c2f2b419d47c25",
+          "registrationDocumentSha256": "a7b7688483d5fdb7ef8475908aaab641d1c142d3f7d94bd453a23f106f88767b"
+        },
+        "B": {
+          "sourceCommit": "29375f1c5c7fcbbf3621342266e7705cea587a08",
+          "artifactSha256": "6cf7d8ca72a83a38494e9b0d2032ee0ab359d9b3f2b1eeaec2b52b083f63df74",
+          "embeddedBundleSha256": "904929bca207a5426174fac7e6f8a68f4902c08ac2a088d003b0667902545ce1",
+          "buildId": "cd1493c8697fa544a62470f1d1124f7d17fac1cecf82acd0807a43605e058e48",
+          "primaryFlowSha256": "036e95de7c3479defb629910a509d2a07408081700a2beacb2c2f2b419d47c25",
+          "registrationDocumentSha256": "a7b7688483d5fdb7ef8475908aaab641d1c142d3f7d94bd453a23f106f88767b"
+        }
+      },
+      "members": [
+        {
+          "member": "A1",
+          "build": "A",
+          "provenanceRef": "A",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "12a8d2608fcfcd22e1f876bbab6fea9c8a8d30f5213955c659a728f03806892c",
+          "peakRssBytes": 826867712,
+          "peakRssMiB": 788.5625,
+          "openGpuCallbackMs": 1066.101,
+          "openFullArtLiveReadyMs": 1087.235,
+          "openPrepareMs": 427.949,
+          "openUploadMs": 28.76,
+          "swipeCpuSeconds": 14.652121,
+          "editorCpuSeconds": 9.295778999999998,
+          "wholeCycleCpuSeconds": 40.230122,
+          "swipeGpuCallbackMeanMs": 71.1332,
+          "editorGpuCallbackMeanMs": 31.906,
+          "swipeFullArtLiveReadyMeanMs": 94.506,
+          "editorFullArtLiveReadyMeanMs": 51.78725,
+          "swipeReadyCommandGpuMeanMs": 6.2573,
+          "editorReadyCommandGpuMeanMs": 11.483375,
+          "playerAtlasPixelPayloadBytes": 112790176.0,
+          "editorAtlasPixelPayloadBytes": 87627168.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [26.59, 26.89]
+        },
+        {
+          "member": "B1",
+          "build": "B",
+          "provenanceRef": "B",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "d899c25116db23f25bb2919e03dcb6e2c03e5ce7b90eb57090b879bf3eda0350",
+          "peakRssBytes": 535429120,
+          "peakRssMiB": 510.625,
+          "openGpuCallbackMs": 1099.461,
+          "openFullArtLiveReadyMs": 1112.674,
+          "openPrepareMs": 450.223,
+          "openUploadMs": 5.161,
+          "swipeCpuSeconds": 14.071571,
+          "editorCpuSeconds": 9.167720000000001,
+          "wholeCycleCpuSeconds": 39.370412,
+          "swipeGpuCallbackMeanMs": 79.2812,
+          "editorGpuCallbackMeanMs": 45.32125,
+          "swipeFullArtLiveReadyMeanMs": 100.827,
+          "editorFullArtLiveReadyMeanMs": 64.211125,
+          "swipeReadyCommandGpuMeanMs": 27.1685,
+          "editorReadyCommandGpuMeanMs": 25.985,
+          "playerAtlasPixelPayloadBytes": 56822920.0,
+          "editorAtlasPixelPayloadBytes": 56822920.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [27.09, 27.29]
+        },
+        {
+          "member": "A2",
+          "build": "A",
+          "provenanceRef": "A",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "6c8b89bb6ca48ab9cb77847ea39c9935144322c492a316208fa2c87fb420646c",
+          "peakRssBytes": 848396288,
+          "peakRssMiB": 809.09375,
+          "openGpuCallbackMs": 1029.596,
+          "openFullArtLiveReadyMs": 1043.969,
+          "openPrepareMs": 418.655,
+          "openUploadMs": 18.4,
+          "swipeCpuSeconds": 14.73343,
+          "editorCpuSeconds": 9.266883000000005,
+          "wholeCycleCpuSeconds": 40.583228,
+          "swipeGpuCallbackMeanMs": 65.3187,
+          "editorGpuCallbackMeanMs": 30.07125,
+          "swipeFullArtLiveReadyMeanMs": 89.8931,
+          "editorFullArtLiveReadyMeanMs": 47.8355,
+          "swipeReadyCommandGpuMeanMs": 7.0158000000000005,
+          "editorReadyCommandGpuMeanMs": 11.005125,
+          "playerAtlasPixelPayloadBytes": 112790176.0,
+          "editorAtlasPixelPayloadBytes": 87627168.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [27.5, 27.69]
+        },
+        {
+          "member": "B2",
+          "build": "B",
+          "provenanceRef": "B",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "be792e7b3c0c79ebc2010af9083966c575971660e05f681a1b23d69b18584055",
+          "peakRssBytes": 556040192,
+          "peakRssMiB": 530.28125,
+          "openGpuCallbackMs": 1057.055,
+          "openFullArtLiveReadyMs": 1078.739,
+          "openPrepareMs": 452.568,
+          "openUploadMs": 7.141,
+          "swipeCpuSeconds": 14.089832,
+          "editorCpuSeconds": 9.229485999999998,
+          "wholeCycleCpuSeconds": 39.308436,
+          "swipeGpuCallbackMeanMs": 84.743,
+          "editorGpuCallbackMeanMs": 44.128125,
+          "swipeFullArtLiveReadyMeanMs": 106.51669999999999,
+          "editorFullArtLiveReadyMeanMs": 61.310375,
+          "swipeReadyCommandGpuMeanMs": 30.2986,
+          "editorReadyCommandGpuMeanMs": 26.39175,
+          "playerAtlasPixelPayloadBytes": 56822920.0,
+          "editorAtlasPixelPayloadBytes": 56822920.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [27.89, 28.09]
+        },
+        {
+          "member": "A3",
+          "build": "A",
+          "provenanceRef": "A",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "668f873671fed8a6596b93f1c6003d3a8d8aeb0bcdc72470dad93c74abd50e23",
+          "peakRssBytes": 808910848,
+          "peakRssMiB": 771.4375,
+          "openGpuCallbackMs": 993.364,
+          "openFullArtLiveReadyMs": 1009.733,
+          "openPrepareMs": 417.788,
+          "openUploadMs": 17.038,
+          "swipeCpuSeconds": 14.767179,
+          "editorCpuSeconds": 9.207866000000001,
+          "wholeCycleCpuSeconds": 39.94793000000001,
+          "swipeGpuCallbackMeanMs": 66.28540000000001,
+          "editorGpuCallbackMeanMs": 28.656125,
+          "swipeFullArtLiveReadyMeanMs": 91.9011,
+          "editorFullArtLiveReadyMeanMs": 47.640125,
+          "swipeReadyCommandGpuMeanMs": 5.4653,
+          "editorReadyCommandGpuMeanMs": 10.959875,
+          "playerAtlasPixelPayloadBytes": 112790176.0,
+          "editorAtlasPixelPayloadBytes": 87627168.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [28.29, 28.39]
+        },
+        {
+          "member": "B3",
+          "build": "B",
+          "provenanceRef": "B",
+          "captureQualified": true,
+          "rawMeasurementsSha256": "fcba44ef41c4d0248fa5a98a90b52f231d902947c9f2bf33c8a3998e1118d047",
+          "peakRssBytes": 557236224,
+          "peakRssMiB": 531.421875,
+          "openGpuCallbackMs": 1083.578,
+          "openFullArtLiveReadyMs": 1098.052,
+          "openPrepareMs": 452.51,
+          "openUploadMs": 6.796,
+          "swipeCpuSeconds": 14.055631000000002,
+          "editorCpuSeconds": 9.183584999999999,
+          "wholeCycleCpuSeconds": 39.311269,
+          "swipeGpuCallbackMeanMs": 84.79740000000001,
+          "editorGpuCallbackMeanMs": 44.1315,
+          "swipeFullArtLiveReadyMeanMs": 108.9049,
+          "editorFullArtLiveReadyMeanMs": 65.0035,
+          "swipeReadyCommandGpuMeanMs": 31.0286,
+          "editorReadyCommandGpuMeanMs": 24.58875,
+          "playerAtlasPixelPayloadBytes": 56822920.0,
+          "editorAtlasPixelPayloadBytes": 56822920.0,
+          "measuredSwipes": 10,
+          "measuredEditorChanges": 8,
+          "warmAtlasHits": 18,
+          "warmAtlasMisses": 0,
+          "warmAtlasUploadEvents": 0,
+          "warmAtlasUploadUs": 0,
+          "fullArtLiveReadyEvents": 18,
+          "temperatureBeforeAfterC": [28.59, 28.79]
+        }
+      ],
+      "statistics": {
+        "peakRssMiB": {
+          "baseline": {
+            "values": [788.5625, 809.09375, 771.4375],
+            "median": 788.5625,
+            "range": [771.4375, 809.09375]
+          },
+          "candidate": {
+            "values": [510.625, 530.28125, 531.421875],
+            "median": 530.28125,
+            "range": [510.625, 531.421875]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-277.9375, -278.8125, -240.015625],
+            "median": -277.9375,
+            "range": [-278.8125, -240.015625]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-35.24609653641912, -34.459850913444825, -31.11277647249453],
+            "median": -34.459850913444825,
+            "range": [-35.24609653641912, -31.11277647249453]
+          }
+        },
+        "openGpuCallbackMs": {
+          "baseline": {
+            "values": [1066.101, 1029.596, 993.364],
+            "median": 1029.596,
+            "range": [993.364, 1066.101]
+          },
+          "candidate": {
+            "values": [1099.461, 1057.055, 1083.578],
+            "median": 1083.578,
+            "range": [1057.055, 1099.461]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [33.3599999999999, 27.45900000000006, 90.21399999999994],
+            "median": 33.3599999999999,
+            "range": [27.45900000000006, 90.21399999999994]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [3.1291594323614724, 2.666968403140646, 9.081665935145612],
+            "median": 3.1291594323614724,
+            "range": [2.666968403140646, 9.081665935145612]
+          }
+        },
+        "openFullArtLiveReadyMs": {
+          "baseline": {
+            "values": [1087.235, 1043.969, 1009.733],
+            "median": 1043.969,
+            "range": [1009.733, 1087.235]
+          },
+          "candidate": {
+            "values": [1112.674, 1078.739, 1098.052],
+            "median": 1098.052,
+            "range": [1078.739, 1112.674]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [25.439000000000078, 34.76999999999998, 88.31899999999996],
+            "median": 34.76999999999998,
+            "range": [25.439000000000078, 88.31899999999996]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [2.3397885461744705, 3.3305586660140163, 8.746767709879745],
+            "median": 3.3305586660140163,
+            "range": [2.3397885461744705, 8.746767709879745]
+          }
+        },
+        "openPrepareMs": {
+          "baseline": {
+            "values": [427.949, 418.655, 417.788],
+            "median": 418.655,
+            "range": [417.788, 427.949]
+          },
+          "candidate": {
+            "values": [450.223, 452.568, 452.51],
+            "median": 452.51,
+            "range": [450.223, 452.568]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [22.274, 33.91300000000001, 34.72199999999998],
+            "median": 33.91300000000001,
+            "range": [22.274, 34.72199999999998]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [5.2048258086828, 8.100464583009881, 8.310913669133612],
+            "median": 8.100464583009881,
+            "range": [5.2048258086828, 8.310913669133612]
+          }
+        },
+        "openUploadMs": {
+          "baseline": {
+            "values": [28.76, 18.4, 17.038],
+            "median": 18.4,
+            "range": [17.038, 28.76]
+          },
+          "candidate": {
+            "values": [5.161, 7.141, 6.796],
+            "median": 6.796,
+            "range": [5.161, 7.141]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-23.599000000000004, -11.258999999999999, -10.242],
+            "median": -11.258999999999999,
+            "range": [-23.599000000000004, -10.242]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-82.05493741307372, -61.190217391304344, -60.11268928277966],
+            "median": -61.190217391304344,
+            "range": [-82.05493741307372, -60.11268928277966]
+          }
+        },
+        "swipeCpuSeconds": {
+          "baseline": {
+            "values": [14.652121, 14.73343, 14.767179],
+            "median": 14.73343,
+            "range": [14.652121, 14.767179]
+          },
+          "candidate": {
+            "values": [14.071571, 14.089832, 14.055631000000002],
+            "median": 14.071571,
+            "range": [14.055631000000002, 14.089832]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-0.5805499999999988, -0.6435980000000008, -0.7115479999999987],
+            "median": -0.6435980000000008,
+            "range": [-0.7115479999999987, -0.5805499999999988]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-3.962224991180452, -4.36828355651061, -4.818442303706072],
+            "median": -4.36828355651061,
+            "range": [-4.818442303706072, -3.962224991180452]
+          }
+        },
+        "editorCpuSeconds": {
+          "baseline": {
+            "values": [9.295778999999998, 9.266883000000005, 9.207866000000001],
+            "median": 9.266883000000005,
+            "range": [9.207866000000001, 9.295778999999998]
+          },
+          "candidate": {
+            "values": [9.167720000000001, 9.229485999999998, 9.183584999999999],
+            "median": 9.183584999999999,
+            "range": [9.167720000000001, 9.229485999999998]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-0.12805899999999681, -0.03739700000000745, -0.024281000000001995],
+            "median": -0.03739700000000745,
+            "range": [-0.12805899999999681, -0.024281000000001995]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-1.3776037489703352, -0.40355532707175845, -0.2636984508680107],
+            "median": -0.40355532707175845,
+            "range": [-1.3776037489703352, -0.2636984508680107]
+          }
+        },
+        "swipeGpuCallbackMeanMs": {
+          "baseline": {
+            "values": [71.1332, 65.3187, 66.28540000000001],
+            "median": 66.28540000000001,
+            "range": [65.3187, 71.1332]
+          },
+          "candidate": {
+            "values": [79.2812, 84.743, 84.79740000000001],
+            "median": 84.743,
+            "range": [79.2812, 84.79740000000001]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [8.147999999999996, 19.424299999999988, 18.512],
+            "median": 18.512,
+            "range": [8.147999999999996, 19.424299999999988]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [11.454566925148878, 29.737732073663416, 27.92771862280381],
+            "median": 27.92771862280381,
+            "range": [11.454566925148878, 29.737732073663416]
+          }
+        },
+        "editorGpuCallbackMeanMs": {
+          "baseline": {
+            "values": [31.906, 30.07125, 28.656125],
+            "median": 30.07125,
+            "range": [28.656125, 31.906]
+          },
+          "candidate": {
+            "values": [45.32125, 44.128125, 44.1315],
+            "median": 44.1315,
+            "range": [44.128125, 45.32125]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [13.41525, 14.056874999999998, 15.475375000000003],
+            "median": 14.056874999999998,
+            "range": [13.41525, 15.475375000000003]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [42.04616686516643, 46.74523007856342, 54.003725207089246],
+            "median": 46.74523007856342,
+            "range": [42.04616686516643, 54.003725207089246]
+          }
+        },
+        "swipeFullArtLiveReadyMeanMs": {
+          "baseline": {
+            "values": [94.506, 89.8931, 91.9011],
+            "median": 91.9011,
+            "range": [89.8931, 94.506]
+          },
+          "candidate": {
+            "values": [100.827, 106.51669999999999, 108.9049],
+            "median": 106.51669999999999,
+            "range": [100.827, 108.9049]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [6.320999999999998, 16.623599999999982, 17.0038],
+            "median": 16.623599999999982,
+            "range": [6.320999999999998, 17.0038]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [6.688464224493673, 18.492631803775804, 18.502281256698772],
+            "median": 18.492631803775804,
+            "range": [6.688464224493673, 18.502281256698772]
+          }
+        },
+        "editorFullArtLiveReadyMeanMs": {
+          "baseline": {
+            "values": [51.78725, 47.8355, 47.640125],
+            "median": 47.8355,
+            "range": [47.640125, 51.78725]
+          },
+          "candidate": {
+            "values": [64.211125, 61.310375, 65.0035],
+            "median": 64.211125,
+            "range": [61.310375, 65.0035]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [12.423874999999995, 13.474874999999997, 17.363375000000005],
+            "median": 13.474874999999997,
+            "range": [12.423874999999995, 17.363375000000005]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [23.990219600384254, 28.16919442673327, 36.44695516646945],
+            "median": 28.16919442673327,
+            "range": [23.990219600384254, 36.44695516646945]
+          }
+        },
+        "wholeCycleCpuSeconds": {
+          "baseline": {
+            "values": [40.230122, 40.583228, 39.94793000000001],
+            "median": 40.230122,
+            "range": [39.94793000000001, 40.583228]
+          },
+          "candidate": {
+            "values": [39.370412, 39.308436, 39.311269],
+            "median": 39.311269,
+            "range": [39.308436, 39.370412]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [-0.8597099999999998, -1.274791999999998, -0.6366610000000037],
+            "median": -0.8597099999999998,
+            "range": [-1.274791999999998, -0.6366610000000037]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [-2.136980842364833, -3.141179405443051, -1.593727134297085],
+            "median": -2.136980842364833,
+            "range": [-3.141179405443051, -1.593727134297085]
+          }
+        },
+        "swipeReadyCommandGpuMeanMs": {
+          "baseline": {
+            "values": [6.2573, 7.0158000000000005, 5.4653],
+            "median": 6.2573,
+            "range": [5.4653, 7.0158000000000005]
+          },
+          "candidate": {
+            "values": [27.1685, 30.2986, 31.0286],
+            "median": 30.2986,
+            "range": [27.1685, 31.0286]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [20.9112, 23.2828, 25.5633],
+            "median": 23.2828,
+            "range": [20.9112, 25.5633]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [334.1888674028735, 331.8623677983979, 467.73827603242273],
+            "median": 334.1888674028735,
+            "range": [331.8623677983979, 467.73827603242273]
+          }
+        },
+        "editorReadyCommandGpuMeanMs": {
+          "baseline": {
+            "values": [11.483375, 11.005125, 10.959875],
+            "median": 11.005125,
+            "range": [10.959875, 11.483375]
+          },
+          "candidate": {
+            "values": [25.985, 26.39175, 24.58875],
+            "median": 25.985,
+            "range": [24.58875, 26.39175]
+          },
+          "pairedCandidateMinusBaseline": {
+            "values": [14.501624999999999, 15.386624999999999, 13.628875],
+            "median": 14.501624999999999,
+            "range": [13.628875, 15.386624999999999]
+          },
+          "pairedCandidateMinusBaselinePercent": {
+            "values": [126.28364918850075, 139.8132688179371, 124.35246752358036],
+            "median": 126.28364918850075,
+            "range": [124.35246752358036, 139.8132688179371]
+          }
+        }
+      },
+      "conditioning": "No separate harness warmup cycle. The fixed WDA flow settles player/editor before warm segments; one setup swipe to the editor climb is outside the measured swipe segment.",
+      "geometryPixels": "API3 viewport-sized baseline versus API4 native1080x1504 candidate; exact payload bytes per surface recorded.",
+      "frameEvidence": {
+        "status": "UNAVAILABLE",
+        "formalFrameRecorderAttempts": 2,
+        "additionalAttachmentDiagnostics": 1,
+        "recordingStarted": false,
+        "appFrameSamples": 0,
+        "classification": "Two sandboxed pre-recording attachment failures plus one escalated attachment diagnostic; recording-tool failure, not an observed app failure.",
+        "failedRecorderProvenance": [
+          {
+            "invalidReceiptSha256": "dd359c06e1a84a66c2dd1ed22bcc35b6e2a69910005442305dc4fc2f8ec6a63a",
+            "recorderLogSha256": "4713f4d0a03b9477cfa579b5d1e41637c06ab7497eccada6adb2d432f30da479"
+          },
+          {
+            "invalidReceiptSha256": "019cf2721fd95a4444714365e4e7d9f1a5021c6a509a6956ffa512db72eba2f0",
+            "recorderLogSha256": "07e599566adb0ef4712a5e42c46fd80210f2a61b293b8f5a5a10d49b91c1e4ba"
+          }
+        ],
+        "attachmentDiagnosticReceiptSha256": "bf588b2814b64670e0d44dbf2358ec67b380eb5d110c14e9c95be67472d1f863",
+        "attachmentDiagnosticLogSha256": "3af0d4bdaa55cc47da9557e5dda44ba6eebee4b0af10ef91b62fd1f268482b7f",
+        "notClaims": [
+          "No Instruments Animation Hitches result",
+          "No iPhone presented-frame/FPS result",
+          "Ready-command GPU durations are not all animation frames or deadline evidence"
+        ]
+      },
+      "separateGenerationMiss": "Corrected B0 used a fresh scoped generated directory; not pooled into primary restart observations."
+    }
+  },
+  "coverageAndNonClaims": {
+    "hostEvidence": "Host single-scene still/pulse checks and semantic reveal/role/mirror coverage exist.",
+    "oldNewUnionAnimationRustPixelParity": "NOT established here; pending the native worker old/new union comparison.",
+    "physicalStaticCatalogueOracle": "Not run against the known-slow source; no claim of 211-case physical parity.",
+    "localPrebuiltAndReducedMotionSecondary": "Not completed in this report. No CDN hit claim.",
+    "iPhonePresentedFrameOrHitchEvidence": "Unavailable; no presented-frame/FPS/hitch inference from ready-command GPU samples."
+  },
+  "qualifications": [
+    "Three sequential pairs per device, without an A/A noise distribution; no population performance or thermal-stability inference.",
+    "Analyze within each phone. Android uses Maestro and one excluded full conditioning tour; iPhone uses WDA with settled player/editor setup and one excluded setup swipe. Do not pool cross-device CPU or absolute latencies.",
+    "Peak RSS is an absolute process lifetime high-water value including setup/conditioning, not RSS growth or total GPU-driver footprint. Android uses VmHWM; iPhone uses Darwin ru_maxrss.",
+    "GPU-ready callback and guarded full-art RAF values are proxies, not physical scanout, gesture completion, or first PNG-bridge visibility. Warm callback figures are means over 10 swipe or 8 editor ready events; they are not P95.",
+    "CPU segments include the driven UI, accessibility and settling workload, not isolated rendering CPU.",
+    "Baseline API3 fields retain viewport size; API4 candidate fields use native resolution. Atlas pixel payloads exclude native alignment and other allocations, and are not aggregate GPU residency.",
+    "Ordinary primary preparation is not a verified prebuilt source. No forced geometry probe ran in the primary members.",
+    "Startup/photo diagnostic failures, the iOS allocation failure, the stopped Android sourceRef admission, and recorder failures are excluded and retained separately."
+  ],
+  "sourceSummaryHashes": {
+    "pixelPrimarySummarySha256": "74c11f343cd7b2ebaa943fcb1daa3a8515d05e934458f9f1388ea36e6e9bf852",
+    "iphonePrimarySummarySha256": "33502dc252ea2194927ca4d53a8b2d0afd7bdab38593f8bff0cece1a9d6fc9b6",
+    "pixelFrameReportSha256": "5e6691ff6ab44d89c29a347b8f9abe1e34135ec2cfc01ed3bfe4c428b11210e3"
+  },
+  "instrumentationAndFixtureScope": "Identical primary instrumentation433 and frozen synthetic replay357 fixture5dc on both sources; each platform has its own matched signed artifact and UI driver. No raw identifiers or account data are included."
+}

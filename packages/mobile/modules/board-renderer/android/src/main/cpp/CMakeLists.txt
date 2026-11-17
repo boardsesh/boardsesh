@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 project(board_renderer_jni)
 
-add_library(board_renderer_jni SHARED jni_bridge.cpp)
+add_library(board_renderer_jni SHARED jni_bridge.cpp gpu_packet_bridge.cpp)
 
 # Link by library name so Android records DT_NEEDED as
 # libboard_renderer_ffi.so, not this machine's absolute source path.

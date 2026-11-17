@@ -269,6 +269,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     filledStyle,
     playSurface,
     gpuSurface,
+    gpuCatalogueNative: climbOverlayGpuApiVersion >= 5,
     gpuApiVersion: climbOverlayGpuApiVersion,
     gpuAllowEmpty: editorSurface && NativeMotionClimbOverlayGPU !== null,
     gpuFallbackConfigJson,
@@ -291,6 +292,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
             previousFrames:
               gpuTransition.previousFrames === null ? null : toFlatFrames(gpuTransition.previousFrames, boardName),
             nextFrames: gpuTransition.nextFrames === null ? null : toFlatFrames(gpuTransition.nextFrames, boardName),
+            prefetchFrames: gpuTransition.prefetchFrames
+              ?.slice(0, 2)
+              .map((prefetch) => toFlatFrames(prefetch, boardName)),
           }
         : undefined,
     [gpuTransition, boardName],
