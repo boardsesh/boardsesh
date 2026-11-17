@@ -315,37 +315,6 @@ export async function createUnpublishedBrowserBinding(
   });
 }
 
-export type BrowserBindingDescriptorResult =
-  | {
-      readonly status: 'known';
-      readonly state: 'anonymous' | 'selected';
-      readonly cursor: BrowserBindingCursor;
-      readonly credentialKind: FirstPartyCredential['kind'] | null;
-    }
-  | Refusal;
-
-/** Correlation metadata is not authenticated identity. It only lets the thin
- * server adapter choose the exact version-named cookie for actual admission. */
-export async function describeBrowserBinding(
-  database: AuthorityDatabase,
-  qualification: IdentityAuthorityQualification,
-  token: string,
-): Promise<BrowserBindingDescriptorResult> {
-  if (!tokenPattern.test(token)) return { status: 'denied' };
-  return withAuthority(database, qualification, async (transaction) => {
-    const binding = await findBinding(transaction, token);
-    const now = await databaseNow(transaction);
-    if (!binding || binding.expiresAt.getTime() <= now.getTime()) return { status: 'denied' as const };
-    const selected = selectedSession(binding);
-    return {
-      status: 'known' as const,
-      state: selected ? ('selected' as const) : ('anonymous' as const),
-      cursor: cursor(binding),
-      credentialKind: selected ? (binding.credentialKind as FirstPartyCredential['kind']) : null,
-    };
-  });
-}
-
 /** Primary admission is repeated on every read. Presence of a refused binding
  * must never cause a reader to fall through to an older legacy cookie. */
 export async function readBrowserBinding(
