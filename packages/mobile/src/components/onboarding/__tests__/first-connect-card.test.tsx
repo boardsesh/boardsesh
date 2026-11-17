@@ -221,9 +221,7 @@ describe('FirstConnectCard', () => {
     renderCard();
 
     expect(screen.getByRole('heading').textContent).toBe('Light climbs on Kilter at Blocs');
-    expect(
-      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Connect this phone, tap a climb, then tap Put on board.')).toBeTruthy();
     expect(screen.getByText('Connect')).toBeTruthy();
     expect(screen.getByText('This wall has no lights')).toBeTruthy();
     expect(screen.getByLabelText('Not now')).toBeTruthy();
@@ -236,9 +234,7 @@ describe('FirstConnectCard', () => {
     settingsCtrl.alwaysDrive = true;
     renderCard();
 
-    expect(
-      screen.getByText('Connect this phone to the board and you drive the wall: every climb you pick lights.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Connect this phone to the board and every climb you pick lights.')).toBeTruthy();
     expect(screen.queryByText(/Put on board/)).toBeNull();
   });
 
@@ -248,15 +244,13 @@ describe('FirstConnectCard', () => {
     flagsCtrl.swipeToDrive = false;
     renderCard();
 
-    expect(
-      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Connect this phone, tap a climb, then tap Put on board.')).toBeTruthy();
   });
 
   // In a crew Always drive the wall drives only with In a session too on.
   it.each([
-    [false, 'Connect this phone to the board, then tap a climb and Put on board to light it.'],
-    [true, 'Connect this phone to the board and you drive the wall: every climb you pick lights.'],
+    [false, 'Connect this phone, tap a climb, then tap Put on board.'],
+    [true, 'Connect this phone to the board and every climb you pick lights.'],
   ])('in a crew with In a session too %s, says what lights', (drivesInSession, body) => {
     settingsCtrl.alwaysDrive = true;
     settingsCtrl.drivesInSession = drivesInSession;
@@ -273,9 +267,7 @@ describe('FirstConnectCard', () => {
     sessionCtrl.crew = true;
     render(<FirstConnectCard boardName="MoonBoard at home" boardHasLights />);
 
-    expect(
-      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Connect this phone, tap a climb, then tap Put on board.')).toBeTruthy();
   });
 
   // The card can mount while Climbs is scrolled, and an iOS button host that
@@ -358,7 +350,7 @@ describe('FirstConnectCard', () => {
 
     // Outcome-neutral: a false covers a dismissed picker and a denied
     // permission as well as a board out of range, so no "move closer".
-    expect(screen.getByText("Not connected to Kilter at Blocs yet. Try again when you're ready.")).toBeTruthy();
+    expect(screen.getByText('Not connected to Kilter at Blocs yet. Try again.')).toBeTruthy();
     expect(screen.queryByText(/closer/i)).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByText('Try again'));

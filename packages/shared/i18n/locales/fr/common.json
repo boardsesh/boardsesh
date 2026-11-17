@@ -741,35 +741,35 @@
       "replayError": "Impossible de rouvrir le tutoriel. Réessaie.",
       "prompt": {
         "title": "Vois ce qui est allumé sur ton mur, en direct",
-        "body": "Suis la board de ta salle et Boardsesh te montre ce qui est allumé en ce moment : qui l'a allumé, la cotation, qui l'a ouvert, et les croix récentes. Tu ne lances rien ; c'est juste là.",
-        "footnote": "En plus : les séances avec ta crew, le générateur d'entraînement et le suivi de tes croix, une fois sur un mur.",
+        "body": "Suis la board de ta salle pour voir ce qui est allumé en ce moment, qui l'a ouvert et les croix récentes.",
+        "footnote": "Sessions en crew, entraînements et suivi des croix arrivent une fois que tu es sur un mur.",
         "continue": "Choisir ma board"
       },
       "board": {
         "title": "Sur quelle board tu grimpes ?",
-        "body": "Chaque board garde son propre historique. Choisis celle que tu grimpes et tu verras les croix de tous les autres qui y passent.",
-        "offlineHint": "Choisis une board et on te proposera de la garder sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
+        "body": "Chaque board garde son historique. Choisis la tienne pour voir les croix de tout le monde.",
+        "offlineHint": "Choisis une board et on te proposera de la garder sur ce téléphone. Elle marche sans le Wi-Fi de la salle.",
         "findAnother": "Trouver une autre board",
         "findFirst": "Trouver ma board",
         "offlineSkip": "Plus tard"
       },
-      "boardRevealTip": "Touche l’horloge pour voir les blocs allumés sur ce mur.",
-      "quickActionsTip": "Appuie longuement sur un bloc pour des actions rapides : file, croix, listes.",
+      "boardRevealTip": "Touche l’horloge pour voir ce qui a été allumé ici.",
+      "quickActionsTip": "Appuie longuement sur un bloc pour le mettre dans la file, le cocher ou l'ajouter à une playlist.",
       "tips": {
-        "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
-        "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
-        "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas garde le dernier bloc que tu as ouvert, jusqu'à ce que ta file passe à un autre. Touche-la pour le rouvrir ; son ampoule l'allume sur la board et ✓ fait la croix. Le bloc allumé au mur reste en haut de Blocs.",
+        "workout": "Monte un entraînement : choisis un style et une cotation, puis grimpe.",
+        "crew": "Tu grimpes à plusieurs ? Lance une session et partage une seule file.",
+        "record": "Progression affiche tes croix en graphiques. Importe ton carnet Kilter ou Tension pour la remplir.",
+        "accessory": "La barre du bas garde le dernier bloc ouvert. Touche-la pour le rouvrir.",
         "previewFirst": {
-          "title": "Toucher un bloc ouvre un aperçu. Touche Allumer sur la board pour l'allumer.",
-          "windowSeconds": "Ensuite, tu pilotes la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
-          "windowMinute": "Ensuite, tu pilotes la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
-          "windowMinutes": "Ensuite, tu pilotes la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
-          "untilStop": "Ensuite, tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
-          "frost": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après (Paramètres › Board) : un chrono défile à côté du libellé et le givre rétrécit à mesure que le temps passe. Fais glisser le bouton vers la gauche pour piloter sans limite (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc). Touche-le pour arrêter.",
-          "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après, dans Paramètres › Board. Utilise l'action Allumer chaque bloc pour piloter sans limite. Touche le bouton pour arrêter.",
-          "frostOpenEnded": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu le touches pour arrêter. Fais glisser le bouton vers la gauche pour piloter (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc).",
-          "frostOpenEndedScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter. Utilise l'action Allumer chaque bloc pour piloter.",
+          "title": "Touche un bloc pour l'aperçu. Allumer sur la board l'allume.",
+          "windowSeconds": "Pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
+          "windowMinute": "Pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
+          "windowMinutes": "Pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
+          "untilStop": "Ensuite, chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
+          "frost": "Le bouton givré veut dire que chaque bloc que tu choisis s'allume. Fais-le glisser vers la gauche pour continuer jusqu'à ce que tu arrêtes. Touche-le pour arrêter.",
+          "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Utilise l'action Allumer chaque bloc pour continuer jusqu'à ce que tu arrêtes. Touche le bouton pour arrêter.",
+          "frostOpenEnded": "Le bouton givré veut dire que chaque bloc que tu choisis s'allume. Fais-le glisser vers la gauche pour commencer. Touche-le pour arrêter.",
+          "frostOpenEndedScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Utilise l'action Allumer chaque bloc pour commencer. Touche le bouton pour arrêter.",
           "settings": "Paramètres d'éclairage",
           "done": "C'est noté",
           "close": "Fermer l'astuce"
@@ -777,11 +777,11 @@
       },
       "link": {
         "title": "Emporte tes croix {{boardName}} avec toi",
-        "body": "Ton compte {{boardName}} et Boardsesh sont distincts, même si tu utilises le même e-mail. Lie ton compte pour synchroniser les croix disponibles avec ton carnet. Le délai de synchronisation et l’historique disponible varient.",
-        "footnote": "Pour lier ton compte, utilise ton identifiant {{boardName}}, pas ton e-mail.",
+        "body": "Ton compte {{boardName}} est distinct de Boardsesh. Lie-le pour ajouter tes croix à ton carnet.",
+        "footnote": "Pour le lier, utilise ton identifiant {{boardName}}, pas ton e-mail.",
         "continue": "Lier mon compte {{boardName}}",
         "skip": "Pas maintenant",
-        "skipHint": "Tu peux le faire à tout moment dans Réglages › Apps connectées."
+        "skipHint": "Fais-le quand tu veux dans Paramètres › Applications connectées."
       }
     },
     "nav": {
@@ -845,9 +845,9 @@
       },
       "previewFirstSpotlight": {
         "title": "Parcours les blocs sans allumer la board",
-        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, puis tu pilotes la board : les blocs que tu choisis s'allument aussi, jusqu'à la fin de la durée choisie (45 secondes par défaut). Change-la dans Arrêter de piloter après, dans Paramètres › Board.",
-        "swipe": "Fais glisser le bouton du mur vers la gauche pour piloter la board jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume. Touche-le pour arrêter. Quand le pilotage a une durée limite, un chrono s'affiche à côté du libellé et le givre rétrécit à mesure que le temps passe.",
-        "back": "La flèche en haut à gauche ferme l'aperçu et te ramène à ton bloc, ou au bloc allumé au mur. La barre du bas garde le dernier bloc que tu as ouvert.",
+        "tap": "Touche un bloc pour l'aperçu. Allumer sur la board l'allume, et tes choix suivants aussi. Règle la durée dans Paramètres › Board.",
+        "swipe": "Fais glisser le bouton du mur vers la gauche pour allumer chaque bloc que tu choisis. Touche-le pour arrêter.",
+        "back": "Touche la flèche en haut à gauche pour fermer l'aperçu.",
         "cta": "Voir comment ça marche",
         "dismiss": "C'est noté"
       }
