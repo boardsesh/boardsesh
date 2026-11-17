@@ -769,7 +769,7 @@ Read tokens at the top of the component and compose with `StyleSheet`. Brand col
 
 ```tsx
 const { radii, brandColors: brand } = useTheme();
-const fillColor = tintColor ?? brand.primaryFill; // #5B22F2 light · #6D33FF dark
+const fillColor = tintColor ?? brand.primaryFill; // #5B22F2 light · #7855FF dark
 const accentColor = tintColor ?? brand.primary; // #5B22F2 light · #9784FF dark
 const containerStyle = {
   borderRadius: radii.button, // 10 glass · 20 material

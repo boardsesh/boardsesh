@@ -23,8 +23,11 @@ const isDev = process.env.NODE_ENV !== 'production';
  * 1. Tint and fill share one hue (~287) and differ only in lightness.
  * 2. A selection wash mixes from the FILL, never the tint: fill at 0.13 in light,
  *    fill at 0.20 in dark (`SELECTION_WASH_ALPHA` in the mobile app).
- * 3. Dark fill chroma ≥ light fill chroma: dark mode lifts the violet, it never
- *    greys it.
+ * 3. Every dark violet sits on the sRGB gamut edge (blue channel at FF): the most
+ *    chroma the screen has at its lightness, so dark mode lifts the violet and
+ *    never greys it. (This replaced "dark fill chroma ≥ light fill chroma", which
+ *    no fill light enough for a 3:1 edge on #2C2C2E can meet: sRGB tops out at
+ *    C 0.239 there, against the light fill's 0.271.)
  *
  * `brandColors` holds the LIGHT-scheme values (and the scheme-agnostic anchors);
  * `brandColorsDark` overrides the few roles that need a different value in dark
@@ -76,21 +79,23 @@ export const brandColors = {
 /**
  * Dark-scheme brand overrides. The light violet is too low-contrast as a
  * foreground on near-black, so the tint lifts to #9784FF; filled buttons use a
- * brighter #6D33FF so white text still clears AA (5.89:1). Semantic tones brighten
- * for legibility on dark surfaces. Same keys as `brandColors`.
+ * brighter #7855FF, light enough that the fill's own edge clears 3:1 on every dark
+ * card (3.76:1 on #1A1A1A, 3.68:1 on #1C1C1E, 3.01:1 on #2C2C2E) and dark enough
+ * that white text still clears AA (4.62:1). Semantic tones brighten for legibility
+ * on dark surfaces. Same keys as `brandColors`.
  *
  * Contrast (WCAG, dark): #9784FF tint 7.06:1 on #000000, 5.72:1 on #1C1C1E and
  * 4.69:1 on the iOS elevated grouped card (#2C2C2E) — legible for text and
- * controls drawn on a card. #6D33FF is a FILL only: white-on-#6D33FF = 5.89:1, but
- * #6D33FF itself is 2.37:1 on #2C2C2E, so never use it as a control tint or text
- * on a dark card. `primaryStrong` #9C8CFF is the tint's hue lifted until it clears
- * 4.5:1 on the 20% fill wash over #2C2C2E (4.50:1; 5.33:1 over #1C1C1E).
+ * controls drawn on a card. #7855FF is a FILL only: at 3.01:1 on #2C2C2E it is
+ * under the 4.5:1 text needs, so never use it as a control tint or text on a dark
+ * card. `primaryStrong` #A294FF is the tint's hue lifted until it clears 4.5:1 on
+ * the 20% fill wash over #2C2C2E (4.52:1; 5.45:1 over #1C1C1E).
  */
 export const brandColorsDark = {
   tint: '#9784FF',
   primary: '#9784FF',
-  primaryFill: '#6D33FF',
-  primaryStrong: '#9C8CFF',
+  primaryFill: '#7855FF',
+  primaryStrong: '#A294FF',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
   onAccent: '#16111F',

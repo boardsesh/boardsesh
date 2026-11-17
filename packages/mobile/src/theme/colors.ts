@@ -185,8 +185,7 @@ export const playDrawerMaterialTint = {
  * `low`↔level1, `base`↔level2, `high`↔level3, `level4`↔level4, `highest`↔level5.
  *
  * `base` is the MiniPlayer ground. It stays at #1A1A1A in dark so the filled
- * #6D33FF play button keeps the strongest edge it can: 2.96:1, just under 3:1
- * (the white glyph on it, 5.89:1, is what identifies it); a lighter base drops lower.
+ * #7855FF play button keeps a 3:1 edge on it (3.76:1); a lighter base erodes it.
  * `material-theme-contrast.test.ts` pins every label, outline and accent pairing.
  */
 export const materialSurfaceContainers = {

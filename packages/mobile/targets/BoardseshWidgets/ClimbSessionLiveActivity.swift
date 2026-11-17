@@ -64,7 +64,7 @@ enum VelvetSend {
             // enum's static members by unqualified name.
             return Palette(
                 tint: dark ? VelvetSend.hex(0x97, 0x84, 0xFF) : VelvetSend.hex(0x5B, 0x22, 0xF2),
-                primaryFill: dark ? VelvetSend.hex(0x6D, 0x33, 0xFF) : VelvetSend.hex(0x5B, 0x22, 0xF2),
+                primaryFill: dark ? VelvetSend.hex(0x78, 0x55, 0xFF) : VelvetSend.hex(0x5B, 0x22, 0xF2),
                 onPrimary: VelvetSend.hex(0xFF, 0xFF, 0xFF),
                 accent: VelvetSend.hex(0xFF, 0x8A, 0x3D),
                 onAccent: VelvetSend.hex(0x16, 0x11, 0x1F),

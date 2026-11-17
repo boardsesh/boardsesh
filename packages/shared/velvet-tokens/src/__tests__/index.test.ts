@@ -43,11 +43,11 @@ describe('brand palette anchors', () => {
     expect(brandColors.onPrimary).toBe('#FFFFFF');
     expect(brandColorsDark.tint).toBe('#9784FF');
     expect(brandColorsDark.primary).toBe('#9784FF'); // lifted foreground
-    expect(brandColorsDark.primaryFill).toBe('#6D33FF'); // fill stays dark for white text
-    expect(brandColorsDark.primaryStrong).toBe('#9C8CFF'); // a step lighter, for the wash
+    expect(brandColorsDark.primaryFill).toBe('#7855FF'); // dark enough for white text, light enough for a 3:1 edge
+    expect(brandColorsDark.primaryStrong).toBe('#A294FF'); // a step lighter, for the wash
   });
 
-  it('keeps tint and fill on one hue, differing only in lightness, with dark chroma at least light chroma', () => {
+  it('keeps tint and fill on one hue, differing only in lightness, with every dark violet on the gamut edge', () => {
     const light = toOklch(brandColors.primaryFill);
     for (const color of [
       brandColors.tint,
@@ -57,7 +57,11 @@ describe('brand palette anchors', () => {
     ]) {
       expect(Math.abs(toOklch(color).hue - light.hue), color).toBeLessThan(7);
     }
-    expect(toOklch(brandColorsDark.primaryFill).chroma).toBeGreaterThanOrEqual(light.chroma);
+    // Dark mode never greys the violet: each dark violet has its blue channel at FF, the
+    // sRGB edge for this hue at these lightnesses, so it carries all the chroma it can.
+    for (const color of [brandColorsDark.tint, brandColorsDark.primaryFill, brandColorsDark.primaryStrong]) {
+      expect(color.slice(5, 7).toUpperCase(), color).toBe('FF');
+    }
     // Strong is the same violet one step further from the ground: darker in light, lighter in dark.
     expect(toOklch(brandColors.primaryStrong).lightness).toBeLessThan(toOklch(brandColors.tint).lightness);
     expect(toOklch(brandColorsDark.primaryStrong).lightness).toBeGreaterThan(toOklch(brandColorsDark.tint).lightness);
@@ -72,6 +76,13 @@ describe('brand palette anchors', () => {
     }
     expect(contrastRatio(brandColors.onPrimary, brandColors.primaryFill)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(brandColorsDark.onPrimary, brandColorsDark.primaryFill)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('gives the dark fill a 3:1 edge on every dark card a filled button sits on', () => {
+    // The MiniPlayer's play button on #1A1A1A, iOS cards #1C1C1E and #2C2C2E (WCAG 1.4.11).
+    for (const ground of ['#1A1A1A', '#1C1C1E', '#2C2C2E']) {
+      expect(contrastRatio(brandColorsDark.primaryFill, ground), ground).toBeGreaterThanOrEqual(3);
+    }
   });
 
   it('keeps primaryStrong at 4.5:1 on the 20% fill wash over every sheet', () => {

@@ -53,7 +53,7 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
   const tonal = materialTonalContainers[colorScheme];
   // M3 `primary` is a FOREGROUND role (selected tab label, text buttons, focused
   // field outline), so it takes the brand foreground tint — `#9784FF` in dark
-  // (5.60:1 on the `#1E1E1E` surface), not the fill-only `#6D33FF`. A
+  // (5.60:1 on the `#1E1E1E` surface), not the fill-only `#7855FF`. A
   // light `primary` then needs dark ink on top: `#2E0077`, the dark end of the
   // brand's light heat ramp, same hue (5.11:1 on `#9784FF`). Light is unchanged:
   // there `primary` and `primaryFill` are both `#5B22F2` under white. Filled brand

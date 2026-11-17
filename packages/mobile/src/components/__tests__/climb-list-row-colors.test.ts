@@ -16,10 +16,10 @@ describe('selectedRowColors', () => {
   });
 
   it('mixes the dark wash from the fill at 20%, and keeps the lifted tint as the accent bar', () => {
-    // Dark scheme: the wash is the #6D33FF FILL (rgb(109, 51, 255)), never the
+    // Dark scheme: the wash is the #7855FF FILL (rgb(120, 85, 255)), never the
     // #9784FF tint; the bar is the tint, so it stays visible on near-black.
     expect(selectedRowColors(brandColorsDark, 'dark')).toEqual({
-      fill: 'rgba(109, 51, 255, 0.2)',
+      fill: 'rgba(120, 85, 255, 0.2)',
       accent: '#9784FF',
     });
   });

@@ -28,9 +28,10 @@
 //   WHITE text or a white glyph: a filled button, a selected segment, a badge.
 // - `brandControlTint` (the theme's `primary`) is for a control's on-state drawn
 //   straight on a card: a Toggle / Switch track, a Slider, a menu Picker's value,
-//   a plain text button. In dark mode `primaryFill` #6D33FF is 2.37:1 on the iOS
-//   grouped card #2C2C2E, under the 3:1 minimum for a control; `primary` #9784FF
-//   is 4.69:1 there. Light mode is the same violet (#5B22F2) either way.
+//   a plain text button. In dark mode `primaryFill` #7855FF is 3.01:1 on the iOS
+//   grouped card #2C2C2E, a hair over the 3:1 a control needs and well under the
+//   4.5:1 a text button's label does; `primary` #9784FF is 4.69:1 there. Light
+//   mode is the same violet (#5B22F2) either way.
 // Add control-specific Android colour mappers here as more primitives land, each
 // reading one of those two so they can't drift.
 
@@ -49,7 +50,7 @@ export type BrandControlColors = {
   primary: string;
   /**
    * Brand colour for a FILLED surface — the on-track / selected-fill accent.
-   * Scheme-aware (`#5B22F2` light, brighter `#6D33FF` dark) so white thumbs and
+   * Scheme-aware (`#5B22F2` light, brighter `#7855FF` dark) so white thumbs and
    * labels sitting on top clear WCAG AA.
    */
   primaryFill: string;

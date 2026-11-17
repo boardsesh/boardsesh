@@ -124,8 +124,8 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
 
   it('mixes the dark selection wash from the dark fill, not the tint', async () => {
     const dark = await renderTheme('dark');
-    // ...and the #6D33FF fill (never the #9784FF tint) at 20% in dark.
-    expect(dark.current.selection.fill).toBe('rgba(109, 51, 255, 0.2)');
+    // ...and the #7855FF fill (never the #9784FF tint) at 20% in dark.
+    expect(dark.current.selection.fill).toBe('rgba(120, 85, 255, 0.2)');
   });
 
   it('routes errors through the adaptive systemRed', async () => {

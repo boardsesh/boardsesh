@@ -35,7 +35,7 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
   the parity test enforces it, plus the MUI split and WCAG contrast.
 - **Foreground/fill split — load-bearing forever.** MUI `palette.primary.main` is the FOREGROUND violet
   `#9784FF` (links, text/outlined buttons, selection controls); the FILL ships through an augmented
-  `primaryFill` channel (`#6D33FF`) used only by filled buttons/FAB. **Never collapse them**: white on
+  `primaryFill` channel (`#7855FF`) used only by filled buttons/FAB. **Never collapse them**: white on
   `#9784FF` is 2.97:1. `primary.contrastText` is the DARK ink (`#16111F`) for the same reason. A dedicated
   test asserts the two are different colours, because with one scheme nothing else says so.
 - **Input fields.** The `--input-*` family in `index.css` (bg / bg-hover / bg-focused / text / placeholder

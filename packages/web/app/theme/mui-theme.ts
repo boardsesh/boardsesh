@@ -5,7 +5,7 @@ import { themeTokens } from './theme-config';
 // - `primaryFill`: the FILLED-surface violet (button bg + white text). Kept separate
 //   from `primary` (the FOREGROUND violet that MUI reads via palette.primary.main for
 //   links, text/outlined buttons, and selection controls) because in dark mode the
-//   two diverge — foreground #9784FF vs fill #6D33FF.
+//   two diverge — foreground #9784FF vs fill #7855FF.
 // - `accent`: the amber spark (#FF8A3D), fill-only with dark text.
 declare module '@mui/material/styles' {
   interface Palette {

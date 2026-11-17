@@ -16,7 +16,7 @@
 //
 // `primary` is the FOREGROUND violet (links, indicators, borders, focus) at
 // #9784FF; `primaryFill` is the FILLED-surface violet (button bg + white text) at
-// #6D33FF. The two are NOT interchangeable and must never be collapsed into one:
+// #7855FF. The two are NOT interchangeable and must never be collapsed into one:
 // white on #9784FF is 2.97:1. The parity test fences this. Hover and active are
 // the same Ultraviolet hue (OKLCH ~287) one lightness step either side.
 
@@ -33,7 +33,7 @@ export const themeTokens = {
     primary: brandColorsDark.primary, // #9784FF — FOREGROUND violet (text, icons, links, borders, focus)
     primaryHover: '#B6AFFF', // Lighter step, 9.71:1 on the page
     primaryActive: '#8360FF', // Darker step, 4.67:1 on the page
-    primaryFill: brandColorsDark.primaryFill, // #6D33FF — FILLED bg; white text clears 5.89:1
+    primaryFill: brandColorsDark.primaryFill, // #7855FF — FILLED bg; white text clears 4.62:1
     primaryFillHover: '#5B22F2', // Darker than the fill so white text stays AA on hover (7.10:1)
     onPrimary: brandColorsDark.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
     accent: brandColorsDark.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text

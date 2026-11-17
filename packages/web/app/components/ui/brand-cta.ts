@@ -12,7 +12,7 @@ import { themeTokens } from '@/app/theme/theme-config';
  *
  * Colour comes from the scheme-aware CSS vars, not `themeTokens.colors.*`, so
  * the fill and its hover stay in one place: `--color-primary-fill` is the FILLED
- * violet (`#6D33FF`). It is NOT `--color-primary` (`#9784FF`), which is the
+ * violet (`#7855FF`). It is NOT `--color-primary` (`#9784FF`), which is the
  * foreground violet — white on that is 2.97:1.
  */
 export type BrandCtaSize = 'small' | 'medium' | 'large';

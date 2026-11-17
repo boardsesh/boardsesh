@@ -34,7 +34,7 @@ const LIGHT_M3 = {
 describe('brand control colours', () => {
   it('tints controls with the foreground violet and keeps the fill for white-text surfaces', () => {
     expect(brandControlTint(brandColorsDark)).toBe('#9784FF');
-    expect(brandAccentColor(brandColorsDark)).toBe('#6D33FF');
+    expect(brandAccentColor(brandColorsDark)).toBe('#7855FF');
     expect(brandControlTint(brandColors)).toBe('#5B22F2');
   });
 
@@ -59,7 +59,7 @@ describe('brand control colours', () => {
   });
 
   it('seeds every Compose Host from the brand fill', () => {
-    expect(composeSeedColor(brandColorsDark)).toBe('#6D33FF');
+    expect(composeSeedColor(brandColorsDark)).toBe('#7855FF');
     expect(composeSeedColor(brandColors)).toBe('#5B22F2');
   });
 
@@ -74,7 +74,7 @@ describe('brand control colours', () => {
     expect(filterChipBrandColors(brandColorsDark, DARK_M3)).toEqual({
       labelColor: '#B0B0B0',
       iconColor: '#9784FF',
-      selectedContainerColor: '#6D33FF',
+      selectedContainerColor: '#7855FF',
       selectedLabelColor: '#FFFFFF',
       selectedLeadingIconColor: '#FFFFFF',
     });

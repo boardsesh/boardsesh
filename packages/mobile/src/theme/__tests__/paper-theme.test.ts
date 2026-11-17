@@ -85,7 +85,7 @@ describe('buildPaperTheme', () => {
 
   it('uses the foreground tint for dark primary, with dark ink on top', () => {
     const theme = buildPaperTheme('dark');
-    // Not the fill-only #6D33FF: primary colours text (tab labels, text buttons).
+    // Not the fill-only #7855FF: primary colours text (tab labels, text buttons).
     expect(theme.colors.primary).toBe('#9784FF');
     expect(theme.colors.onPrimary).toBe('#2E0077');
     // `secondary` stays violet: it is the active nav label.

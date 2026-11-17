@@ -16,7 +16,7 @@
      2.97:1, so a filled button must use the darker fill. */
   --color-primary: #9784ff;
   --color-primary-hover: #b6afff;
-  --color-primary-fill: #6d33ff;
+  --color-primary-fill: #7855ff;
   --color-primary-fill-hover: #5b22f2;
   --color-on-primary: #ffffff;
 
@@ -99,8 +99,8 @@
      card does — this site (brand), the app (amber spark), community/help (info)
      — replacing six tints keyed to V-grade purples that had nothing to do with
      what the card was for. ~10-12% alpha over the card surface. The brand wash
-     mixes from the FILL (#6d33ff), never the tint, like every violet wash. */
-  --home-accent-brand-surface: rgba(109, 51, 255, 0.12);
+     mixes from the FILL (#7855ff), never the tint, like every violet wash. */
+  --home-accent-brand-surface: rgba(120, 85, 255, 0.12);
   --home-accent-spark-surface: rgba(255, 138, 61, 0.12);
   --home-accent-info-surface: rgba(165, 171, 214, 0.12);
 
