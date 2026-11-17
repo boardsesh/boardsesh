@@ -61,6 +61,10 @@ enum ClimbOverlayShader {
   }
   float reveal_weight(Hold hold, bool upper, constant Uniforms& uniforms) {
     float membership=upper ? hold.numbers.z : hold.numbers.w;
+    // Shared-dip amendment (see provenance.json): in the swap, tuning2.w weights
+    // a shared same-role hold, still drawn once on the lower side.
+    if(membership==1 && uniforms.motion.z>0.5) return upper ? 0 : uniforms.tuning2.w;
+    // End shared-dip amendment.
     // A shared same-role hold stays fully lit, and appears only once.
     if(membership==1) return upper ? 0 : 1;
     // Wall-swap amendment (see provenance.json): viewport.zw carry the lower

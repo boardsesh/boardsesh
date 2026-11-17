@@ -36,11 +36,11 @@ await test('one real catalogue fixture retains its native dimensions, aliases an
   assert.deepEqual(config.hold_state_map[43], config.hold_state_map[13]);
   assert.deepEqual(config.hold_state_map[44], config.hold_state_map[14]);
 });
-await test('thirty-eight controls include forward and reverse sequences, both source pairs, truthful editor pulses and the wall swap', () => {
-  assert.equal(validateControls(controls()).samples.length, 38);
+await test('forty-two controls include forward and reverse sequences, both source pairs, truthful editor pulses and the wall swap', () => {
+  assert.equal(validateControls(controls()).samples.length, 42);
   assert.equal(controls().samples.filter((sample) => sample.editorAllChanged).length, 6);
   const swaps = controls().samples.filter((sample) => sample.swap);
-  assert.equal(swaps.length, 8);
+  assert.equal(swaps.length, 12);
   assert.ok(swaps.every((sample) => sample.progress === 0 && sample.pulse === 1));
   assert.deepEqual(
     swaps.map((sample) => sample.swap),
@@ -53,6 +53,10 @@ await test('thirty-eight controls include forward and reverse sequences, both so
       [0.25, 0.3],
       [0.2, 0.4],
       [0, 0.6],
+      [0.4, 0, 0.4],
+      [0.25, 0.3, 0.4],
+      [0, 0.6, 0.6],
+      [1, 0, 0],
     ],
   );
 });
@@ -137,6 +141,24 @@ for (const [name, mutate] of [
       delete record.samples[33].swap;
     },
   ],
+  [
+    'shared weight out of range',
+    (record) => {
+      record.samples[38].swap = [0.4, 0, 1.2];
+    },
+  ],
+  [
+    'four swap weights',
+    (record) => {
+      record.samples[38].swap = [0.4, 0, 0.4, 0.4];
+    },
+  ],
+  [
+    'changed shared weight',
+    (record) => {
+      record.samples[39].swap = [0.25, 0.3];
+    },
+  ],
 ])
   await test('rejects ' + String(name) + ' before execution', () => {
     const record = controls();
@@ -160,18 +182,34 @@ await test('frozen full-scan shader fixtures match their source/runtime provenan
   assert.match(readFileSync(join(here, 'reference/metal.swift'), 'utf8'), /enum ClimbOverlayShader/);
 });
 
-await test('deleting the marked swap amendment restores the frozen pre-amendment shader bytes', () => {
+await test('deleting the marked amendments, newest first, restores each pre-amendment shader', () => {
   const provenance = load(join(here, 'reference/provenance.json'));
-  const [amendment] = provenance.amendments;
-  const strip = (text) =>
-    text.replace(/[ \t]*\/\/ Wall-swap amendment[^\n]*\n(?:.*\n)*?[ \t]*\/\/ End wall-swap amendment\.\n/g, '');
-  for (const [name, expected] of [
-    ['reference/metal.swift', amendment.preAmendmentMetalSourceSha256],
-    ['reference/gles.frag', amendment.preAmendmentGlesFragmentRuntimeSha256],
+  /** Each amendment's block markers, in the order the amendments were made. */
+  const markers = {
+    'wall-swap': ['Wall-swap amendment', 'End wall-swap amendment.'],
+    'shared-dip': ['Shared-dip amendment', 'End shared-dip amendment.'],
+  };
+  assert.deepEqual(
+    provenance.amendments.map((amendment) => amendment.change),
+    Object.keys(markers),
+  );
+  const strip = (text, [start, end]) =>
+    text.replace(new RegExp(`[ \\t]*// ${start}[^\\n]*\\n(?:.*\\n)*?[ \\t]*// ${end.replace('.', '\\.')}\\n`, 'g'), '');
+  for (const [name, field] of [
+    ['reference/metal.swift', 'preAmendmentMetalSourceSha256'],
+    ['reference/gles.frag', 'preAmendmentGlesFragmentRuntimeSha256'],
   ]) {
-    const text = readFileSync(join(here, name), 'utf8');
-    assert.equal((text.match(/Wall-swap amendment/g) ?? []).length, 1, `${name} has one amendment block`);
-    assert.equal(sha256(Buffer.from(strip(text))), expected, `${name} differs outside its amendment`);
+    let text = readFileSync(join(here, name), 'utf8');
+    for (const amendment of [...provenance.amendments].reverse()) {
+      const marker = markers[amendment.change];
+      assert.equal(text.split(`// ${marker[0]}`).length, 2, `${name} has one ${amendment.change} block`);
+      text = strip(text, marker);
+      assert.equal(
+        sha256(Buffer.from(text)),
+        amendment[field],
+        `${name} differs outside its ${amendment.change} block`,
+      );
+    }
   }
 });
 
@@ -220,6 +258,57 @@ await test('swap class checks fail a shader that swaps the lower and upper weigh
   // The lower and upper weights swapped: A-only holds dark, B-only holds lit.
   assert.throws(() => swapClassChecks(classes, stills, frame(0, 0.4), sample), /A-only holds at 0\.000/);
   assert.throws(() => swapClassChecks(classes, stills, frame(0.4, 0.4), sample), /B-only holds are lit/);
+});
+
+await test('swap class checks measure dimmed shared holds from the veil and fail a shader that ignores them', () => {
+  // The same one-row board, with the bare veil at 10 and shared holds lit at 160.
+  const width = 4000;
+  const strip = (lit) => {
+    const bytes = Buffer.alloc(width * 4, 10);
+    for (const [from, to, value] of lit) bytes.fill(value, from * 4, to * 4);
+    return bytes;
+  };
+  const stills = {
+    A: strip([
+      [0, 1000, 210],
+      [2000, 3000, 160],
+    ]),
+    B: strip([
+      [2000, 3000, 160],
+      [3000, 4000, 110],
+    ]),
+  };
+  const classes = {
+    width,
+    height: 1,
+    veil: [10, 10, 10, 10],
+    currentOnly: [1],
+    nextOnly: [3],
+    shared: [2],
+    changed: [],
+    holds: {
+      1: { bounds: [0, 0, 1000, 1], reach: 0 },
+      2: { bounds: [2000, 0, 3000, 1], reach: 0 },
+      3: { bounds: [3002, 0, 4000, 1], reach: 0 },
+    },
+  };
+  // A compositor that scales each class's own pixels by its weight.
+  const frame = (currentWeight, nextWeight, sharedWeight) =>
+    strip([
+      [0, 1000, Math.round(10 + 200 * currentWeight)],
+      [2000, 3000, Math.round(10 + 150 * sharedWeight)],
+      [3000, 4000, Math.round(10 + 100 * nextWeight)],
+    ]);
+  const sample = { name: 'swap-shared-1-m0', lower: 0, upper: 2, swap: [0.25, 0.3, 0.4] };
+  const result = swapClassChecks(classes, stills, frame(0.25, 0.3, 0.4), sample);
+  assert.ok(Math.abs(result.sharedMeasured - 0.4) < 0.01);
+  // Shared holds left whole (native API 6), or given the lower-only weight: both fail.
+  assert.throws(() => swapClassChecks(classes, stills, frame(0.25, 0.3, 1), sample), /shared holds at 1\.000/);
+  assert.throws(() => swapClassChecks(classes, stills, frame(0.25, 0.3, 0.25), sample), /shared holds at 0\.25/);
+  // Weight 0 must leave exactly the veil.
+  const dark = { name: 'swap-shared-3-m0', lower: 0, upper: 2, swap: [1, 0, 0] };
+  assert.equal(swapClassChecks(classes, stills, frame(1, 0, 0), dark).sharedWorstAgainstVeil, 0);
+  assert.throws(() => swapClassChecks(classes, stills, frame(1, 0, 0.1), dark), /shared holds are lit at weight 0/);
 });
 
 await test('cleanup never mistakes an offline device or denied proc read for an exited process', async () => {

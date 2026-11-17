@@ -11,7 +11,7 @@ this directory. The fixture has two outgoing holds, three incoming holds, three
 shared canonical roles and one changed canonical role. Its sources are
 previous=B, current=A, next=B, at native 1080 × 1504 pixels.
 
-`controls.json` contains exactly 38 ordered samples:
+`controls.json` contains exactly 42 ordered samples:
 
 - Twenty forward/reverse samples: progress 0, .25, .5, .75, 1 and back, both display mirrors.
 - Six editor stills: reaches 1, 1.175 and 1.35, both display mirrors.
@@ -20,6 +20,9 @@ previous=B, current=A, next=B, at native 1080 × 1504 pixels.
   (.25, .3), (0, .6) and (0, 1); (.25, .3) again with the display mirrored; and
   previous/current at (.2, .4) and (0, .6). The swap's weights live in uniform
   `viewport.zw` and its mode in `motion.z`.
+- Four shared-hold samples (native API 7), current/next at lower/upper/shared
+  weights (.4, 0, .4), (.25, .3, .4), (0, .6, .6) and (1, 0, 0). The shared weight
+  lives in uniform `tuning2.w`; the other swap samples leave it at 1.
 
 The transition packet retains the mixed edit baseline. The editor subcase uses a
 second real Rust Plan with every current hold marked changed. It must reuse the
@@ -36,12 +39,14 @@ not called Rust animation parity. Display mirror changes reveal direction for th
 wipe and nothing for the swap. Physical placement mirroring is separate
 native/unit coverage.
 
-The frozen full-scan references carry one reviewed amendment: the same swap
+The frozen full-scan references carry two reviewed amendments: the same swap
 branch in `reveal_weight`, between `// Wall-swap amendment` and
-`// End wall-swap amendment.`, recorded in `reference/provenance.json` with the
-pre-amendment hashes. `guards.test.mjs` deletes that block and checks the
-pre-amendment bytes come back exactly, so nothing else in the oracle can change
-quietly. The wipe path is untouched, so wipe samples still render the frozen
+`// End wall-swap amendment.`, and the shared-hold weight just above the
+shared-hold line, between `// Shared-dip amendment` and
+`// End shared-dip amendment.`. Each is recorded in `reference/provenance.json`
+with its pre-amendment hashes. `guards.test.mjs` deletes the blocks newest first
+and checks each pre-amendment file comes back exactly, so nothing else in the
+oracle can change quietly. The wipe path is untouched, so wipe samples still render the frozen
 pixels. Because the block copies the production branch, the old/new comparison
 only checks the tiled compositor against a full scan for the swap samples.
 
@@ -50,8 +55,12 @@ fixture's hold classes (`swapClassChecks` in `analyse.mjs`). Inside the bounds o
 holds only one side lights, away from every other hold's reach, a side at weight 0
 must match the other side's still within one byte, and a side at weight w must
 move the pixels from the other still toward its own by w, within 0.08. Shared
-holds, where the two stills agree exactly, must match within one byte. A shader
-that swapped the lower and upper weights fails these checks.
+holds, where the two stills agree exactly, must match within one byte when whole.
+At a shared weight w below 1 they are measured the same way inside their own
+bounds, away from other holds' reach: from the bare veil (all a hold at weight 0
+leaves) toward the stills by w, and at 0 within one byte of the veil. A shader
+that swapped the lower and upper weights, left shared holds whole or gave them a
+side's weight fails these checks.
 
 ## Prepare and run
 
@@ -134,7 +143,7 @@ Signing, exact executable/resources, source and device identity must be reviewed
 before installation. Preserve the existing profile app/data and restore the
 proper primary artifact after extracting only this owned output folder. The
 physical collector copies the prepared host oracles and uses `analyse.mjs` to
-rehash every raw image and check all 38 old/new pairs and 16 oracle-linked controls.
+rehash every raw image and check all 42 old/new pairs and 16 oracle-linked controls.
 Host Metal is useful preflight; it never substitutes for physical iPhone evidence.
 `EmitMetalShaders.swift` can independently evaluate and hash the exact compiled
 Swift shader strings for comparison with each run's reported runtime hashes.
@@ -142,7 +151,7 @@ Swift shader strings for comparison with each run's reported runtime hashes.
 ## Acceptance and evidence
 
 Maximum channel error remains 1, with zero pixels over 1, at unchanged native
-resolution and the existing 128 MiB application-owned GPU ceiling. Retain all 76
+resolution and the existing 128 MiB application-owned GPU ceiling. Retain all 84
 raw GPU images and their hashes, native source/runtime hashes, PID, contract,
 input/build receipts, temperatures and failures. The host independently recomputes
 the native diffs. Progress, both intermediate/peak editor reaches, mirror and
