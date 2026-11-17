@@ -46,8 +46,8 @@ const accentSurface: Record<OnboardingCardAccent, string> = {
 function resolveAccentIconColor(accent: OnboardingCardAccent): string {
   switch (accent) {
     case 'spark':
-      // Amber is fill-only in Velvet Send, so on a tint it is the GLYPH that
-      // carries it, never a filled chip with amber behind pale text.
+      // The spark is fill-only in Velvet Send, so on a tint it is the GLYPH that
+      // carries it, never a filled chip with the spark behind pale text.
       return 'var(--color-accent)';
     case 'info':
       return 'var(--color-info)';

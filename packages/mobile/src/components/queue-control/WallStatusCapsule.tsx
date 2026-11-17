@@ -19,12 +19,12 @@ import { WallStatusCapsuleView, type WallStatusCapsuleProps } from './WallStatus
 //     devices and Reduce Transparency retain the opaque pill.
 //   - Material 3 (the Android Climbs bar): the same content in M3 dress, plus
 //     the climb's board art. A 48dp full-radius pill in the amber
-//     `tertiaryContainer` (the "lit" tone, as the iOS capsule's warm tint) that
+//     `live` fill (the "lit" amber, as the iOS capsule's warm tint) that
 //     fills the app bar's title slot (up to 280dp). It leads with the MiniPlayer's
 //     board-art thumbnail (from a 130dp pill), then the sender's face where glass
 //     would show it (from a 180dp pill beside the thumbnail), then the name in
 //     titleSmall over the same "grade · one fact" byline as glass, in
-//     labelMedium, all in `onTertiaryContainer`.
+//     labelMedium, all in `onLive`.
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.

@@ -56,6 +56,7 @@ export const BRAND_ROLE_USE: Record<string, string> = {
   warning: 'Warnings',
   error: 'Destructive actions',
   live: 'This climb is lit / now on the wall',
+  onLive: 'Text/icon on a `live` fill: white in light, the dark ink in dark',
   historyFill: 'The wall kiosk\'s "viewing history" bar',
 };
 

@@ -98,8 +98,8 @@ describe('buildPaperTheme', () => {
     expect(theme.colors.onSecondaryContainer).toBe('#E1E0FF');
   });
 
-  // The Climbs bar's wall pill fills with tertiaryContainer, so it must be the
-  // mint spark's container (not Paper's baseline pink) with AA-legible ink.
+  // Material's tertiary is the mint spark's own container (not Paper's baseline
+  // pink) with AA-legible ink. "Lit" never reads it: the wall pill fills with `live`.
   it.each([
     ['light', '#0F9F86', '#C5EEE2', '#00231C'],
     ['dark', '#3EE6C1', '#005747', '#C5EEE2'],

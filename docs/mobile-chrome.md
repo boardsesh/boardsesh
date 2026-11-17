@@ -430,14 +430,14 @@ their titled bars.
   spoken label is "Climbs", so TalkBack still names the screen. Boards are switched from ⋮ → Switch board.
 - **The climb on the wall** fills the title slot as a compact M3 pill (`WallStatusCapsule`'s
   Material skin) that says what the iOS capsule says, plus the climb's board art. It is 48dp
-  tall, full radius, filled with the mint `tertiaryContainer` so it stands out against the
-  bar (`#C5EEE2` light, `#005747` dark; `paper-theme.ts` sets it from the mint spark, since
-  Paper's default is a pink). It leads with the MiniPlayer's `AccessoryClimbThumbnail` (40dp
+  tall, full radius, filled with the `live` amber so it reads as "lit" against the
+  bar (`#B45309` light, `#FBBF24` dark: the lit-bulb hue, not the mint spark and not Material's
+  `tertiary`, which is the spark). It leads with the MiniPlayer's `AccessoryClimbThumbnail` (40dp
   slot, drawn through the shared render scheduler), then the sender's 24dp face where iOS would
   show it. The name sits in titleSmall over the iOS byline, "grade · one fact" in labelMedium:
   who lit it, your own or an unnamed climb's sends, or how long ago. All text is
-  `onTertiaryContainer` (13.29:1 light, 6.81:1 dark), so the grade never sits in its own hue on
-  the mint. The grade is never cut in the byline; only the fact gives way. Width rules, from
+  `onLive` (white at 5.02:1 in light, `#16111F` at 11.09:1 in dark), so the grade never sits in its own hue on
+  the amber. The grade is never cut in the byline; only the fact gives way. Width rules, from
   the pill's measured width (nothing leads before the first layout): under 130dp neither the
   thumbnail nor the face; from 130dp the thumbnail; from 180dp the face beside it (the byline
   names the sender either way). The pill stops at 280dp. Tap opens the wall preview; a left

@@ -82,8 +82,9 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
       onTertiary: brand.onAccent,
       // The spark's own tonal container: M3's tone-90 / tone-30 containers and their
       // tone-10 / tone-90 ink, on mint's hue (OKLCH ~175). Paper's default here is a
-      // pink from its baseline palette. The Climbs bar's wall pill fills with it:
-      // ink contrast 13.29:1 in light, 6.81:1 in dark.
+      // pink from its baseline palette. Ink contrast 13.29:1 in light, 6.81:1 in dark.
+      // Not for "lit": the Climbs bar's wall pill fills with `brandColors.live`, the
+      // amber, so the spark never stands in for a climb on the wall.
       tertiaryContainer: isDark ? '#005747' : '#C5EEE2',
       onTertiaryContainer: isDark ? '#C5EEE2' : '#00231C',
       background: surfaces.background as string,

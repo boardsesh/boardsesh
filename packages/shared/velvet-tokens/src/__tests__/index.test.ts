@@ -87,6 +87,18 @@ describe('brand palette anchors', () => {
     expect(contrastRatio(brandColorsDark.onPrimary, brandColorsDark.primaryFill)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('keeps "lit" amber, whatever the spark is, with its own ink at AA in both schemes', () => {
+    expect(brandColors.live).toBe('#B45309');
+    expect(brandColorsDark.live).toBe('#FBBF24');
+    expect(brandColors.live).not.toBe(brandColors.accent);
+    expect(brandColorsDark.live).not.toBe(brandColorsDark.accent);
+    // The same ink the lit wall button has always drawn: onPrimary in light, onAccent in dark.
+    expect(brandColors.onLive).toBe(brandColors.onPrimary);
+    expect(brandColorsDark.onLive).toBe(brandColorsDark.onAccent);
+    expect(contrastRatio(brandColors.onLive, brandColors.live)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(brandColorsDark.onLive, brandColorsDark.live)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('gives the dark fill a 3:1 edge on every dark card a filled button sits on', () => {
     // The MiniPlayer's play button on #1A1A1A, iOS cards #1C1C1E and #2C2C2E (WCAG 1.4.11).
     for (const ground of ['#1A1A1A', '#1C1C1E', '#2C2C2E']) {

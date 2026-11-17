@@ -217,7 +217,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     variant: spies.variant,
     colorScheme: spies.colorScheme,
     systemColors: { label: '#111', secondaryBackground: '#222' },
-    brandColors: { warning: '#FBBF24' },
+    brandColors: { warning: '#FBBF24', live: '#FBBF24', onLive: '#16111F', accent: '#3EE6C1' },
     m3: {
       tertiary: '#FF8A3D',
       onTertiary: '#3A1D00',
@@ -894,7 +894,7 @@ describe('WallStatusCapsule', () => {
       [...root.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
     const litClimb = (over: Partial<BoardPresenceClimb> = {}) => makeClimb({ frames: 'p1r12p2r13', ...over });
 
-    it('is one 48dp full-radius pill in the amber tertiary container, filling the slot up to 280dp', () => {
+    it('is one 48dp full-radius pill in the live amber, filling the slot up to 280dp', () => {
       const { container } = render(<WallStatusCapsule climb={litClimb()} />);
       expect(styleOf(pill(container))).toMatchObject({
         height: 48,
@@ -902,27 +902,29 @@ describe('WallStatusCapsule', () => {
         maxWidth: 280,
         borderRadius: 9999,
         overflow: 'hidden',
-        backgroundColor: '#FFDBCA',
+        backgroundColor: '#FBBF24',
       });
+      // "Lit" is the live amber, never the spark or Material's tertiary (both mint now).
+      expect(container.querySelector('[data-style*="#3EE6C1"]')).toBeNull();
+      expect(container.querySelector('[data-style*="#FFDBCA"]')).toBeNull();
       // The fill carries "lit": no accent rail, no overline.
-      expect(container.querySelector('[data-style*="#FF8A3D"]')).toBeNull();
       expect(container.textContent).not.toContain('stripOverlineWithSender');
       expect(container.querySelectorAll('button')).toHaveLength(1);
-      // The M3 state layer is the container's ink, so the ripple shows on amber.
-      expect(container.querySelector('[data-pressable-surface]')?.getAttribute('data-ripple')).toBe('#341100');
+      // The M3 state layer is the fill's ink, so the ripple shows on amber.
+      expect(container.querySelector('[data-pressable-surface]')?.getAttribute('data-ripple')).toBe('#16111F');
     });
 
-    it('puts the name in titleSmall over grade · who lit it in labelMedium, all in onTertiaryContainer', () => {
+    it('puts the name in titleSmall over grade · who lit it in labelMedium, all in onLive', () => {
       const { container, getByText } = render(<WallStatusCapsule climb={litClimb()} />);
       expect(lines(container)).toEqual(['Wax On', 'V5 6C', ' · Casey']);
       expect(getByText('Wax On').getAttribute('data-variant')).toBe('label');
       expect(styleOf(getByText('Wax On'))).toMatchObject({ fontWeight: '500' });
       expect(getByText('V5 6C').getAttribute('data-variant')).toBe('footnote');
       expect(styleOf(getByText('V5 6C'))).toMatchObject({ fontWeight: '500' });
-      // The grade reads in the container's ink, never its own hue on the amber fill.
+      // The grade reads in the fill's ink, never its own hue on the amber.
       for (const text of ['Wax On', 'V5 6C', ' · Casey']) {
         const node = [...container.querySelectorAll('[data-text]')].find((line) => line.textContent === text);
-        expect(node?.getAttribute('data-color')).toBe('#341100');
+        expect(node?.getAttribute('data-color')).toBe('#16111F');
       }
       // Someone else's climb reads no stats, as on glass.
       expect(spies.statsArgs).toMatchObject({ statsEnabled: false });

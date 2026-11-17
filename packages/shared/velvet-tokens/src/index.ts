@@ -56,7 +56,11 @@ const isDev = process.env.NODE_ENV !== 'production';
  *   5.58:1 on the light mint, 11.72:1 on the dark one.
  * - `live`: the "this climb is physically lit / now on the wall" status hue. A
  *   dedicated role (not `warning`) so a future warning retune can't silently shift
- *   the board-presence affordance. Resolves to the warm amber per scheme.
+ *   the board-presence affordance. Resolves to the warm amber per scheme. It is not
+ *   the spark: "lit" stays amber whatever the spark is.
+ * - `onLive`: text/icon on a `live` fill: white on the light amber (5.02:1), the
+ *   dark ink on the dark amber (11.09:1). The lit wall button, the bar bulb and the
+ *   Material wall pill all draw it.
  * - `historyFill`: the FILLED slate bar behind the wall kiosk's "viewing history"
  *   state — a positive, distinct-from-amber signal, not an absence-of-amber wash.
  *   White text clears AA on both schemes.
@@ -77,6 +81,7 @@ export const brandColors = {
   warning: '#B45309',
   error: '#C81E1E',
   live: '#B45309',
+  onLive: '#FFFFFF',
   historyFill: '#475569',
 } as const;
 
@@ -108,6 +113,7 @@ export const brandColorsDark = {
   warning: '#FBBF24',
   error: '#F87171',
   live: '#FBBF24',
+  onLive: '#16111F',
   historyFill: '#64748B',
 } as const;
 

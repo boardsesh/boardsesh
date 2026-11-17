@@ -71,6 +71,7 @@ on near-black. `tint` aliases `primary`.
 | `warning`       | `#B45309` | `#FBBF24` | Warnings                                                                                   |
 | `error`         | `#C81E1E` | `#F87171` | Destructive actions                                                                        |
 | `live`          | `#B45309` | `#FBBF24` | This climb is lit / now on the wall                                                        |
+| `onLive`        | `#FFFFFF` | `#16111F` | Text/icon on a `live` fill: white in light, the dark ink in dark                           |
 | `historyFill`   | `#475569` | `#64748B` | The wall kiosk's "viewing history" bar                                                     |
 
 <!-- velvet-tokens:brand:end -->
@@ -113,7 +114,8 @@ oranges. Mint (OKLCH hue ~175) sits about 33° from the green start-hold LED and
 LED, and pairs with Ultraviolet. Use it as a fill or a stroke only (outlines, dots, a filled chip under
 `onAccent` ink), never as text: the light mint is 3.32:1 on white and 2.98:1 on `#F2F2F7`, enough for a 3:1
 outline or dot, not for words. `onAccent` `#16111F` is one ink for both: 5.58:1 on the light mint, 11.72:1
-on the dark. The amber that stays is `live` (`#B45309` / `#FBBF24`), the lit-bulb hue; it is not the spark.
+on the dark. The amber that stays is `live` (`#B45309` / `#FBBF24`, ink `onLive`), the lit-bulb hue; it is not the spark,
+and every "lit / on the wall" surface reads it, never `accent` or Material's `tertiary` (both mint).
 
 **Settings rows and controls.** Row titles, values and chevrons use `label` / `secondaryLabel` /
 `tertiaryLabel`, never the accent. On iOS that means fixed `PlatformColor` styles
