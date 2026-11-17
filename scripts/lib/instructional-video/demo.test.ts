@@ -2,12 +2,33 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { startTutorialDemo, tutorialDemoEnvironment } from './demo';
+import { createServer } from 'node:net';
+import { startTutorialDemo, tutorialDemoEnvironment, unusedPorts } from './demo';
 import { resolveMediaBinary } from '../help-clips';
 
 const ports = { postgres: 15433, redis: 16380, s3: 15001, backend: 18089 };
 
 describe('isolated instructional demo environment', () => {
+  it('reserves distinct free ports and releases them', async () => {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const reserved = await unusedPorts(4);
+      expect(new Set(reserved).size).toBe(4);
+      expect(() =>
+        tutorialDemoEnvironment(
+          { postgres: reserved[0], redis: reserved[1], s3: reserved[2], backend: reserved[3] },
+          {},
+        ),
+      ).not.toThrow();
+    }
+    const [released] = await unusedPorts(1);
+    const probe = createServer();
+    await new Promise<void>((accept, reject) => {
+      probe.once('error', reject);
+      probe.listen(released, '127.0.0.1', accept);
+    });
+    await new Promise<void>((accept) => probe.close(() => accept()));
+  });
+
   it('rejects pre-cancelled startup without creating a workspace or owning a lock', async () => {
     const workRoot = resolve('.boardsesh/tutorial-videos/cancellation-tests', `pre-cancelled-${randomUUID()}`);
     const controller = new AbortController();

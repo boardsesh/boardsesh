@@ -99,16 +99,34 @@ export function tutorialDemoEnvironment(
   };
 }
 
-async function unusedPort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((accept, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', accept);
-  });
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Cannot allocate tutorial port');
-  await new Promise<void>((accept, reject) => server.close((error) => (error ? reject(error) : accept())));
-  return address.port;
+/**
+ * Reserve `count` free loopback ports at once. Every listener stays open until all
+ * ports are read, so the kernel cannot hand the same just-released port out twice.
+ */
+export async function unusedPorts(count: number): Promise<number[]> {
+  const servers = Array.from({ length: count }, () => createServer());
+  try {
+    await Promise.all(
+      servers.map(
+        (server) =>
+          new Promise<void>((accept, reject) => {
+            server.once('error', reject);
+            server.listen(0, '127.0.0.1', accept);
+          }),
+      ),
+    );
+    return servers.map((server) => {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Cannot allocate tutorial port');
+      return address.port;
+    });
+  } finally {
+    await Promise.all(
+      servers
+        .filter((server) => server.listening)
+        .map((server) => new Promise<void>((accept) => server.close(() => accept()))),
+    );
+  }
 }
 
 /** Stop the exact owned command group before rejecting cancellation; cleanup callers omit the signal. */
@@ -213,12 +231,8 @@ export async function startTutorialDemo(workRoot: string, signal?: AbortSignal):
   try {
     ports = JSON.parse(await readFile(portsPath, 'utf8')) as TutorialDemoPorts;
   } catch {
-    ports = {
-      postgres: await unusedPort(),
-      redis: await unusedPort(),
-      s3: await unusedPort(),
-      backend: await unusedPort(),
-    };
+    const [postgres, redis, s3, backend] = await unusedPorts(4);
+    ports = { postgres, redis, s3, backend };
     await writeFile(portsPath, `${JSON.stringify(ports)}\n`);
   }
   const env = tutorialDemoEnvironment(ports);
