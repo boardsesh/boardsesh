@@ -39,6 +39,8 @@ const controls = vi.hoisted(() => ({
   }>,
   pngMounted: vi.fn(),
   recordFailure: vi.fn(),
+  recordTimeout: vi.fn(),
+  recordPresented: vi.fn(),
 }));
 vi.mock('react-native', () => ({
   Platform: {
@@ -106,7 +108,11 @@ function NativeView(props: NonNullable<typeof controls.props>) {
   controls.props = props;
   return <div data-testid="native-gpu" />;
 }
-vi.mock('../../lib/board-render/gpu-failure-store', () => ({ recordGpuConfigFailure: controls.recordFailure }));
+vi.mock('../../lib/board-render/gpu-failure-store', () => ({
+  recordGpuConfigFailure: controls.recordFailure,
+  recordGpuPresentationTimeout: controls.recordTimeout,
+  recordGpuPresented: controls.recordPresented,
+}));
 vi.mock('../../hooks/use-native-climb-render', () => ({
   useNativeClimbRender: (props: {
     frames: string;
@@ -178,6 +184,8 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     controls.hookInputs = [];
     controls.pngMounted.mockClear();
     controls.recordFailure.mockClear();
+    controls.recordTimeout.mockClear();
+    controls.recordPresented.mockClear();
   });
   afterEach(() => {
     cleanup();
@@ -541,6 +549,21 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
     expect(screen.getByTestId('native-gpu')).toBeTruthy();
     expect(controls.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('counts a presentation timeout toward the session latch and clears the count on presentation', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(controls.recordTimeout).toHaveBeenCalledExactlyOnceWith('static-config');
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    const current = controls.props!;
+    act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
+    expect(controls.recordPresented).toHaveBeenCalledExactlyOnceWith('static-config');
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason: 'GPU command failed' } }));
+    expect(controls.recordTimeout).toHaveBeenCalledOnce();
   });
 
   it.each([

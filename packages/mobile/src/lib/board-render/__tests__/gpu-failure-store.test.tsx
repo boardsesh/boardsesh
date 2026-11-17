@@ -222,6 +222,41 @@ describe('GPU failure wrapper integration', () => {
     await waitFor(() => expect(storage.record).toEqual(persisted([secondHash])));
   });
 
+  it('uses PNG for the rest of the session after two presentation timeouts in a row, without saving it', async () => {
+    const first = await loadGate();
+    render(<first.Gate configJson={firstConfig} />);
+    await waitFor(() => expect(first.attempted).toHaveBeenCalledTimes(1));
+    await act(async () => first.recordGpuPresentationTimeout(firstConfig));
+    expect(screen.getByTestId('gpu-status').textContent).toBe('allowed');
+    await act(async () => first.recordGpuPresentationTimeout(firstConfig));
+    expect(screen.getByTestId('gpu-status').textContent).toBe('blocked');
+    expect(screen.queryByTestId('gpu-attempt')).toBeNull();
+    expect(setPreference).not.toHaveBeenCalled();
+    cleanup();
+    // A relaunch (or an OTA) starts a fresh JS runtime and tries the GPU again.
+    vi.resetModules();
+    const relaunched = await loadGate();
+    render(<relaunched.Gate configJson={firstConfig} />);
+    await waitFor(() => expect(screen.getByTestId('gpu-status').textContent).toBe('allowed'));
+    expect(relaunched.attempted).toHaveBeenCalledExactlyOnceWith(firstConfig);
+  });
+
+  it('starts the timeout count over after the config presents', async () => {
+    const { Gate, attempted, recordGpuPresentationTimeout, recordGpuPresented } = await loadGate();
+    render(<Gate configJson={firstConfig} />);
+    await waitFor(() => expect(attempted).toHaveBeenCalledTimes(1));
+    await act(async () => recordGpuPresentationTimeout(firstConfig));
+    await act(async () => recordGpuPresented(firstConfig));
+    await act(async () => recordGpuPresentationTimeout(firstConfig));
+    expect(screen.getByTestId('gpu-status').textContent).toBe('allowed');
+    // Another config's timeouts never count against this one.
+    await act(async () => recordGpuPresentationTimeout(secondConfig));
+    expect(screen.getByTestId('gpu-status').textContent).toBe('allowed');
+    await act(async () => recordGpuPresentationTimeout(firstConfig));
+    expect(screen.getByTestId('gpu-status').textContent).toBe('blocked');
+    expect(setPreference).not.toHaveBeenCalled();
+  });
+
   it('keeps GPU unavailable when saved latches cannot be read, including on remount', async () => {
     getPreference.mockRejectedValue(new Error('Storage locked'));
     const { Gate, attempted, recordGpuConfigFailure } = await loadGate();

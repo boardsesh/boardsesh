@@ -40,7 +40,7 @@ type Props = {
   transition?: GpuClimbTransition;
   animateEdits?: boolean;
   displayMirrored?: boolean;
-  onPresented: (requestId: string) => void;
+  onPresented: (requestId: string, configJson: string) => void;
   onFailure: (
     requestId: string,
     configJson: string,
@@ -151,9 +151,9 @@ export function GpuClimbOverlay({
           }),
         );
       }
-      onPresented(nativeEvent.requestId);
+      onPresented(nativeEvent.requestId, configJson);
     },
-    [onPresented, animateEdits, reduceMotion, boardName],
+    [onPresented, configJson, animateEdits, reduceMotion, boardName],
   );
   const failed = useCallback(
     ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUFailure>) => {

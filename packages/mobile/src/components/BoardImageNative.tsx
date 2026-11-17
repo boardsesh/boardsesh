@@ -12,7 +12,11 @@ import React, {
 } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { NativeFrameClimbOverlayGPU, NativeMotionClimbOverlayGPU } from '../../modules/climb-overlay-gpu/src';
-import { recordGpuConfigFailure } from '../lib/board-render/gpu-failure-store';
+import {
+  recordGpuConfigFailure,
+  recordGpuPresentationTimeout,
+  recordGpuPresented,
+} from '../lib/board-render/gpu-failure-store';
 import type { GpuFallbackReason } from '../lib/board-render/gpu-telemetry';
 import { useGpuClimbOverlayEnabled } from '../providers/feature-flags-provider';
 import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
@@ -328,8 +332,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
       currentGpuRequest.current = null;
     };
   }, [gpuConfigJson, gpuRequestId]);
-  const handleGpuPresented = useCallback((requestId: string) => {
-    if (currentGpuRequest.current === requestId) setGpuPresented(requestId);
+  const handleGpuPresented = useCallback((requestId: string, configJson: string) => {
+    if (currentGpuRequest.current !== requestId) return;
+    setGpuPresented(requestId);
+    recordGpuPresented(configJson);
   }, []);
   const handleGpuRelease = useCallback(() => setGpuPaintedConfig(null), []);
   const handleGpuFailure = useCallback(
@@ -339,6 +345,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       const frameOnly = failureScope !== 'static';
       setGpuFailure({ configJson, frames: frameOnly ? frames : null });
       if (!frameOnly) recordGpuConfigFailure(configJson, climbOverlayGpuApiVersion);
+      else if (reason === 'presentation-timeout') recordGpuPresentationTimeout(configJson);
     },
     [frames],
   );

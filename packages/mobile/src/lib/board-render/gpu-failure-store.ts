@@ -56,12 +56,62 @@ function configHash(configJson: string): Promise<string> {
   return entry.pending;
 }
 
+function withConfigHash(configJson: string, action: (hash: string) => void): void {
+  const resolved = hashes.get(configJson)?.resolved;
+  if (resolved) {
+    action(resolved);
+    return;
+  }
+  void configHash(configJson).then(action, () => {});
+}
+
+// A missed presentation deadline never reaches storage: it can be a slow phone
+// or a view that left the screen. Two in a row for one config still mean every
+// climb change waits out another deadline, so that config uses PNG until the
+// JS runtime restarts. A relaunch or an OTA tries the GPU again.
+const SESSION_TIMEOUT_STRIKES = 2;
+const MAX_SESSION_ENTRIES = 64;
+const timeoutStrikes = new Map<string, number>();
+let sessionBlocked: ReadonlySet<string> = new Set();
+const sessionListeners = new Set<() => void>();
+function subscribeSessionBlocked(listener: () => void) {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+const getSessionBlocked = () => sessionBlocked;
+
+export function recordGpuPresentationTimeout(configJson: string): void {
+  withConfigHash(configJson, (hash) => {
+    if (sessionBlocked.has(hash)) return;
+    const strikes = (timeoutStrikes.get(hash) ?? 0) + 1;
+    timeoutStrikes.delete(hash);
+    if (strikes < SESSION_TIMEOUT_STRIKES) {
+      timeoutStrikes.set(hash, strikes);
+      if (timeoutStrikes.size > MAX_SESSION_ENTRIES) timeoutStrikes.delete(timeoutStrikes.keys().next().value!);
+      return;
+    }
+    const blocked = new Set(sessionBlocked).add(hash);
+    if (blocked.size > MAX_SESSION_ENTRIES) blocked.delete(blocked.values().next().value!);
+    sessionBlocked = blocked;
+    for (const listener of sessionListeners) listener();
+  });
+}
+
+/** A presented frame proves the config can draw; its timeout count starts over. */
+export function recordGpuPresented(configJson: string): void {
+  if (timeoutStrikes.size === 0) return;
+  withConfigHash(configJson, (hash) => timeoutStrikes.delete(hash));
+}
+
 export type GpuFailureStatus = 'loading' | 'allowed' | 'blocked' | 'unavailable';
 
 /** Do not retry a known broken configuration while its saved latch is loading. */
 export function useGpuFailureStatus(configJson: string | null, apiVersion: number): GpuFailureStatus {
   const store = failureStore(apiVersion);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const blockedThisSession = useSyncExternalStore(subscribeSessionBlocked, getSessionBlocked, getSessionBlocked);
   const [checked, setChecked] = useState<{ configJson: string; hash: string | null } | null>(null);
   useEffect(() => {
     if (!configJson) return;
@@ -82,18 +132,10 @@ export function useGpuFailureStatus(configJson: string | null, apiVersion: numbe
   const hash = hashes.get(configJson)?.resolved ?? (checked?.configJson === configJson ? checked.hash : undefined);
   if (!snapshot.hydrated || hash === undefined) return 'loading';
   if (snapshot.unavailable || hash === null) return 'unavailable';
-  return snapshot.keys.has(hash) ? 'blocked' : 'allowed';
+  return snapshot.keys.has(hash) || blockedThisSession.has(hash) ? 'blocked' : 'allowed';
 }
 
 export function recordGpuConfigFailure(configJson: string, apiVersion: number): void {
   const store = failureStore(apiVersion);
-  const resolved = hashes.get(configJson)?.resolved;
-  if (resolved) {
-    store.record(resolved);
-    return;
-  }
-  void configHash(configJson).then(
-    (hash) => store.record(hash),
-    () => {},
-  );
+  withConfigHash(configJson, (hash) => store.record(hash));
 }
