@@ -77,7 +77,7 @@ function WallStateStripViewComponent({
   const liveName = liveClimb?.name?.trim() || null;
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
   // back to the legacy label + colour — lights up once the backend stamps them.
-  const liveGrade = liveClimb?.grade ? liveResolvedGrade.label : null;
+  const liveGrade = liveClimb?.grade || liveClimb?.source === 'aurora' ? liveResolvedGrade.label : null;
   const liveGradeColor = liveResolvedGrade.color;
 
   return (

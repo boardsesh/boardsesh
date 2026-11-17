@@ -1276,7 +1276,7 @@ export const schemaSQL = `
     "external_occurrence_key" text,
     "external_display_name" text,
     "climb_uuid" text NOT NULL,
-    "angle" integer NOT NULL,
+    "angle" integer,
     "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
     "session_id" text REFERENCES "board_sessions"("id") ON DELETE SET NULL,
     "seq" bigint NOT NULL,
@@ -1313,6 +1313,24 @@ CREATE TABLE "kilter_wall_sources" (
 
 ALTER TABLE "kilter_wall_sources" ADD CONSTRAINT "kilter_wall_sources_source_board_uuid_user_boards_uuid_fk" FOREIGN KEY ("source_board_uuid") REFERENCES "public"."user_boards"("uuid") ON DELETE cascade ON UPDATE no action;
 CREATE INDEX "kilter_wall_sources_board_idx" ON "kilter_wall_sources" USING btree ("source_board_uuid");
+DROP TABLE IF EXISTS "aurora_wall_sources";
+CREATE TABLE "aurora_wall_sources" (
+  "source_key" text PRIMARY KEY,
+  "source_board_uuid" text REFERENCES "user_boards"("uuid") ON DELETE CASCADE,
+  "board_type" text NOT NULL,
+  "gym_user_id" integer NOT NULL,
+  "wall_uuid" text NOT NULL,
+  "serial_number" text NOT NULL,
+  "layout_id" integer NOT NULL,
+  "size_id" integer NOT NULL,
+  "set_ids" text NOT NULL,
+  "is_listed" boolean NOT NULL DEFAULT true,
+  "updated_at" timestamp NOT NULL DEFAULT now()
+);
+CREATE INDEX "aurora_wall_sources_board_idx" ON "aurora_wall_sources"("source_board_uuid");
+CREATE INDEX "aurora_wall_sources_serial_idx" ON "aurora_wall_sources"("board_type", "serial_number");
+CREATE INDEX "aurora_wall_sources_gym_idx" ON "aurora_wall_sources"("board_type", "gym_user_id");
+
 CREATE UNIQUE INDEX "board_climb_events_external_occurrence_unique" ON "board_climb_events" USING btree ("source","external_occurrence_key");
 CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USING btree ("board_id","confirmed_at","seq");
 

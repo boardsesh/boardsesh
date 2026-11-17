@@ -1,3 +1,4 @@
+import { useAuroraPresenceClimb } from '../../hooks/use-aurora-presence-grades';
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
@@ -31,9 +32,10 @@ function WallStripComponent() {
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   // The strip always mirrors whatever's lit on the wall.
-  const litClimb = useLiveWallClimb();
+  const sourceClimb = useLiveWallClimb();
   const { openBoardSheet, boardPanelProps } = useDrawerHost();
   const boardConfig = boardPanelProps?.boardConfig ?? null;
+  const { climb: litClimb, grade: auroraGrade } = useAuroraPresenceClimb(sourceClimb, boardConfig);
 
   const handlePress = useCallback(() => {
     hapticSelection();
@@ -44,7 +46,9 @@ function WallStripComponent() {
   // `resolveGrade` falls back to the legacy label — the strip lights up the
   // Boardsesh grade once the backend stamps presence climbs. The colour stays the
   // warm live accent, so only the label matters here.
-  const grade = litClimb ? resolveGrade({ difficulty: litClimb.grade ?? '' }, boardConfig?.boardName).label : null;
+  const grade = litClimb
+    ? resolveGrade(auroraGrade ?? { difficulty: litClimb.grade ?? '' }, boardConfig?.boardName).label
+    : null;
 
   return (
     <PressableSurface

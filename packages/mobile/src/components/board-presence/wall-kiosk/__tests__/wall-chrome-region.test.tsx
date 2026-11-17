@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock('../../../../hooks/use-aurora-presence-grades', () => ({
+  useAuroraPresenceClimb: (climb: unknown) => ({ climb, grade: undefined }),
+}));
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';

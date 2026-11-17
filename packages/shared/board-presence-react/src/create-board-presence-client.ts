@@ -159,20 +159,20 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
     async fetchRecentHistory(boardId, boardUuid) {
       const response = await transport.execute<{ boardRecentHistory: BoardPresenceClimb[] }>({
         query: BOARD_RECENT_HISTORY,
-        variables: boardReadVariables(boardId, boardUuid),
+        variables: { ...boardReadVariables(boardId, boardUuid), includeAurora: true },
       });
       return response.boardRecentHistory;
     },
     async fetchHistoryPage(boardId, opts) {
       const response = await transport.execute<{ boardHistoryPage: BoardHistoryPage }>({
         query: BOARD_HISTORY_PAGE,
-        variables: { boardId, ...opts },
+        variables: { boardId, ...opts, includeAurora: true },
       });
       return response.boardHistoryPage;
     },
     subscribeNowPlaying(boardId, onEvent, onError, onComplete, boardUuid) {
       return transport.subscribe<BoardNowPlayingData>(
-        { query: BOARD_NOW_PLAYING, variables: boardReadVariables(boardId, boardUuid) },
+        { query: BOARD_NOW_PLAYING, variables: { ...boardReadVariables(boardId, boardUuid), includeAurora: true } },
         {
           next: (data) => {
             if (data?.boardNowPlaying) {

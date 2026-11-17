@@ -76,6 +76,8 @@ export type WallStatusCapsuleProps = {
   boardName?: string | null;
   /** History: `ageLabel` ("20m") is spoken, `ageByline` ("20m ago") shows under the name. */
   presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string; ageByline: string };
+  /** Physical wall owning this occurrence, retained while header content settles. */
+  boardId?: number;
   occurrenceKey?: string;
   onDismiss?: (occurrenceKey: string) => void;
 };
@@ -88,6 +90,7 @@ export type WallStatusCapsuleViewProps = WallStatusCapsuleProps & {
   thumbnail?: ReactNode;
   avatar: ReactNode;
   onPress: () => void;
+  previewEnabled?: boolean;
 };
 export function WallStatusCapsuleView({
   climb,
@@ -101,6 +104,7 @@ export function WallStatusCapsuleView({
   thumbnail,
   avatar,
   onPress,
+  previewEnabled = true,
 }: WallStatusCapsuleViewProps) {
   const { t } = useTranslation('session');
   const { variant, brandColors } = useTheme();
@@ -224,7 +228,8 @@ export function WallStatusCapsuleView({
         style={[styles.appBarPill, { backgroundColor: brandColors.live }]}
       >
         <PressableSurface
-          onPress={handlePress}
+          onPress={previewEnabled ? handlePress : undefined}
+          disabled={!previewEnabled}
           // Android rides its native ripple, clipped by the pill's radius: the
           // M3 state layer is the fill's own ink.
           feedback="none"
@@ -254,7 +259,7 @@ export function WallStatusCapsuleView({
             byline={byline}
             compact={!showThumbnail && !showFace}
             largeContentTitle={a11yLabel}
-            onActivate={handlePress}
+            onActivate={previewEnabled ? handlePress : undefined}
           />
         </PressableSurface>
       </Animated.View>
@@ -264,7 +269,7 @@ export function WallStatusCapsuleView({
       <HeaderStatusCapsule
         tintColor={brandColors.warning}
         entryKey={climbUuid}
-        onPress={handlePress}
+        onPress={previewEnabled ? handlePress : undefined}
         accessibilityLabel={a11yLabel}
         accessibilityHint={accessibilityHint}
         accessibilityActions={accessibilityActions}

@@ -198,6 +198,7 @@ export type PlayDrawerPaneProps = {
  *  rendered inline. Mirrors the BoardSheet props passed below; null while no board
  *  is resolved. Consumed by `IpadWallColumn`. */
 export type NowOnTheWallColumnProps = {
+  getCurrentMirrored?: () => boolean;
   boardLabel: string | null;
   boardConfig: BoardConfig | null;
   onSwitchBoard: () => void;
@@ -1278,6 +1279,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const getCurrentWallActionMirrored = useCallback(
+    () => getQueueSnapshot().currentClimbQueueItem?.climb.mirrored === true,
+    [getQueueSnapshot],
+  );
+
   // Props for the iPad "Now on the wall" column — the same handlers passed to the
   // BoardSheet modal below, surfaced via context so the inline column renders the
   // identical wall feed. Mirrors playDrawerPaneProps; null while no board resolved.
@@ -1285,6 +1291,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     () =>
       storedActiveBoardConfig
         ? {
+            getCurrentMirrored: getCurrentWallActionMirrored,
             boardLabel: boardSheetLabel,
             boardConfig: storedActiveBoardConfig,
             onSwitchBoard: handleSwitchBoardFromSheet,
@@ -1302,6 +1309,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       handleBoardSheetPlayNext,
       handleBoardSheetOpenPlaylist,
       handleBoardPanelOpenActions,
+      getCurrentWallActionMirrored,
     ],
   );
 
@@ -1466,6 +1474,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               onShareSprayWall={sprayWallActions.openShare}
               viewerUserId={sprayViewerUserId}
               onSelectGymWall={handleSelectGymWall}
+              getCurrentMirrored={getCurrentWallActionMirrored}
               onClimbPress={handleBoardSheetClimbPress}
               onPlayNext={handleBoardSheetPlayNext}
               onOpenPlaylist={handleBoardSheetOpenPlaylist}

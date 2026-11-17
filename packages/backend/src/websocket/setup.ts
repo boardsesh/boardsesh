@@ -9,6 +9,7 @@ import { createContext, removeContext, getContext } from '../graphql/context';
 import { validateQueryDepth } from '../graphql/query-depth';
 import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
+import { auroraLiveSync } from '../services/aurora-live-sync';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import {
@@ -439,7 +440,10 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         }
 
         await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
-        ctx.extra.socket.once('close', () => kilterLiveSync.releaseConnection(context.connectionId));
+        ctx.extra.socket.once('close', () => {
+          kilterLiveSync.releaseConnection(context.connectionId);
+          auroraLiveSync.releaseConnection(context.connectionId);
+        });
 
         // The socket can die while any of the awaits above are in flight, and
         // graphql-ws only runs onDisconnect once the connection is acknowledged

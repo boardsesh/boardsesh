@@ -4,20 +4,29 @@ import { mergeBoardHistory } from '../history';
 import { boardPresenceReducer, initialBoardPresenceState } from '../reducer';
 
 const native: BoardPresenceClimb = { climbUuid: 'native', seq: 1, sentAt: '2026-09-18T10:00:00.123Z' };
-const imported: BoardPresenceClimb = {
-  climbUuid: 'imported',
-  seq: 10,
-  source: 'kilter',
-  sentAt: '2026-09-18T10:00:00.122999Z',
-};
-const newerImport: BoardPresenceClimb = { ...imported, sentAt: '2026-09-18T10:00:00.123001Z' };
 
 const merge = (state: typeof initialBoardPresenceState, climbs: BoardPresenceClimb[]) =>
   boardPresenceReducer(state, { type: 'MERGE_HISTORY', payload: climbs });
 const clear = (state: typeof initialBoardPresenceState, clearedAt = '2026-09-18T10:01:00Z') =>
   boardPresenceReducer(state, { type: 'APPLY_CLIMB_CLEARED', payload: { seq: 2, clearedAt } });
 
-describe('mixed-source current climb', () => {
+describe.each(['kilter', 'aurora'] as const)('mixed-source current climb (%s)', (source) => {
+  const imported: BoardPresenceClimb = {
+    climbUuid: 'imported',
+    seq: 10,
+    source,
+    sentAt: '2026-09-18T10:00:00.122999Z',
+  };
+  const newerImport: BoardPresenceClimb = { ...imported, sentAt: '2026-09-18T10:00:00.123001Z' };
+
+  it('never advances native sequence when an imported set envelope arrives', () => {
+    const state = merge(initialBoardPresenceState, [native]);
+    const next = boardPresenceReducer(state, { type: 'APPLY_CLIMB_SET', payload: newerImport });
+    expect(next.currentClimb).toBe(newerImport);
+    expect(next.lastSeq).toBe(native.seq);
+    expect(next.holder).toBe(state.holder);
+  });
+
   it('sorts by microsecond display time and retains richer existing entries', () => {
     const history = mergeBoardHistory([native], [imported, { ...native, name: 'different' }]);
     expect(history).toEqual([native, imported]);
@@ -161,5 +170,24 @@ describe('mixed-source current climb', () => {
   it('resets the imported display and clear timestamp when switching boards', () => {
     const state = clear(merge(initialBoardPresenceState, [newerImport]));
     expect(boardPresenceReducer(state, { type: 'RESET' })).toBe(initialBoardPresenceState);
+  });
+});
+
+describe('unsupported wire provenance', () => {
+  const unknown = {
+    climbUuid: 'future',
+    source: 'future-provider',
+    seq: 999,
+    sentAt: '2026-09-18T10:01:00Z',
+  } as unknown as BoardPresenceClimb;
+  it('cannot advance native cursors or suppress later native sets and clears', () => {
+    const state = merge(initialBoardPresenceState, [native]);
+    expect(merge(state, [unknown])).toBe(state);
+    expect(boardPresenceReducer(state, { type: 'APPLY_CLIMB_SET', payload: unknown })).toBe(state);
+    expect(boardPresenceReducer(state, { type: 'BACKFILL_HISTORY', payload: [unknown] })).toBe(state);
+    const nextNative = { ...native, seq: 2, sentAt: '2026-09-18T10:02:00Z' };
+    const next = boardPresenceReducer(merge(state, [unknown]), { type: 'APPLY_CLIMB_SET', payload: nextNative });
+    expect(next.currentClimb).toBe(nextNative);
+    expect(next.lastSeq).toBe(2);
   });
 });

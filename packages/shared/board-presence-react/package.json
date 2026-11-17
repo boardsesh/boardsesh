@@ -9,6 +9,11 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./presentation": {
+      "types": "./src/presentation.ts",
+      "import": "./src/presentation.ts",
+      "default": "./src/presentation.ts"
     }
   },
   "scripts": {

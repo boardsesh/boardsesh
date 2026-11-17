@@ -30,6 +30,9 @@ import { WallStatusCapsuleView, type WallStatusCapsuleProps } from './WallStatus
 // Compact by design — the name truncates.
 
 import { memo, useCallback, useMemo } from 'react';
+import { useAuroraPresenceGrades } from '../../hooks/use-aurora-presence-grades';
+import { presentAuroraClimb, withAuroraActionOrientation } from '@boardsesh/board-presence-react/presentation';
+import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
@@ -46,28 +49,59 @@ function WallStatusCapsuleImpl(props: WallStatusCapsuleProps) {
   const openWallPreview = useOpenWallPreview();
   const { isAuthenticated } = useAuth();
   const viewerUserId = useViewerUserId();
-  const { boardConfig } = useDrawerHost();
+  const { boardConfig, boardPanelProps } = useDrawerHost();
+  const { boardId, boardUuid } = useBoardPresenceControls();
+  const canPreview =
+    climb.source !== 'aurora' ||
+    (boardConfig !== null && props.boardId != null && props.boardId === boardId && boardConfig.boardName === boardName);
   const history = presentation?.kind === 'history';
   const senderName = climb.sentByDisplayName?.trim() || null;
   const senderIsYou = climb.sentByUserId != null && climb.sentByUserId === viewerUserId;
   const senderPending = isAuthenticated && viewerUserId == null && climb.sentByUserId != null;
   const namedOther = senderName != null && !senderIsYou && !senderPending;
-  const resolvedGrade = resolveGrade({ difficulty: climb.grade ?? '' }, boardName);
-  const previewClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
-  const statsDetail = useClimbStatsDetail(previewClimb, boardConfig, {
-    statsEnabled: !history && !namedOther && !senderPending && climb.angle != null,
+  const gradeClimbs = useMemo(() => [climb], [climb]);
+  const auroraGrades = useAuroraPresenceGrades(gradeClimbs, canPreview ? boardConfig : null, {
+    boardId: canPreview ? boardId : null,
+    boardUuid,
   });
-  const onPress = useCallback(() => openWallPreview(previewClimb), [openWallPreview, previewClimb]);
+  const gradeFields = climb.source === 'aurora' ? auroraGrades.get(climb.climbUuid) : undefined;
+  const resolvedGrade = resolveGrade(gradeFields ?? { difficulty: climb.grade ?? '' }, boardName);
+  const previewClimb = useMemo(
+    () =>
+      !canPreview
+        ? null
+        : {
+            ...boardPresenceClimbToClimb(
+              boardConfig ? presentAuroraClimb(climb, boardConfig.angle, gradeFields?.difficulty ?? null) : climb,
+              boardConfig?.angle,
+            ),
+            ...(gradeFields ? { ...gradeFields, difficulty: gradeFields.difficulty ?? '' } : {}),
+          },
+    [climb, boardConfig, gradeFields, canPreview],
+  );
+  const statsDetail = useClimbStatsDetail(previewClimb, boardConfig, {
+    statsEnabled:
+      canPreview && !history && !namedOther && !senderPending && (climb.angle != null || climb.source === 'aurora'),
+  });
+  const onPress = useCallback(() => {
+    if (!previewClimb || !canPreview) return;
+    openWallPreview(
+      withAuroraActionOrientation(previewClimb, climb.source, boardPanelProps?.getCurrentMirrored?.() ?? false),
+    );
+  }, [openWallPreview, previewClimb, canPreview, climb.source, boardPanelProps]);
   return (
     <WallStatusCapsuleView
       {...props}
-      formattedGrade={climb.grade ? resolvedGrade.label : null}
+      formattedGrade={
+        climb.grade || gradeFields?.difficulty || gradeFields?.boardseshDifficulty != null ? resolvedGrade.label : null
+      }
       senderIsYou={senderIsYou}
       senderPending={senderPending}
       statsDetail={statsDetail}
       onPress={onPress}
+      previewEnabled={canPreview}
       thumbnail={
-        climb.frames && boardConfig ? (
+        climb.frames && boardConfig && canPreview ? (
           <AccessoryClimbThumbnail
             climb={{ frames: climb.frames, mirrored: climb.mirrored }}
             boardConfig={boardConfig}
