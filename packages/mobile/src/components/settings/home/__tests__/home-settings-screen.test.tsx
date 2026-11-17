@@ -214,14 +214,15 @@ describe('HomeSettingsScreen', () => {
     homeSectionsStore.move('playlists', -1);
     render(createElement(HomeSettingsScreen));
     expect(hostedRow().fullBleed).toBe(true);
-    // A first guess until the list reports what it drew: six rows at the default text size.
-    expect(hostedRow().height).toBe(6 * 68);
+    // A first guess until the list reports what it drew: seven rows at the default text size.
+    expect(hostedRow().height).toBe(7 * 68);
     const { container } = renderHostedRows();
     expect(switchLabels(container)).toEqual([
       `${SECTION_KEY}.week`,
       `${SECTION_KEY}.session`,
-      `${SECTION_KEY}.playlists`,
       `${SECTION_KEY}.climbingNow`,
+      `${SECTION_KEY}.playlists`,
+      `${SECTION_KEY}.projects`,
       `${SECTION_KEY}.board`,
       `${SECTION_KEY}.beta`,
     ]);
@@ -236,7 +237,7 @@ describe('HomeSettingsScreen', () => {
     const reportLayout = captured.layoutHandlers.get('home-settings-sections');
     if (!reportLayout) throw new Error('hosted rows report no layout');
     act(() => reportLayout({ nativeEvent: { layout: { width: 0, height: 0 } } }));
-    expect(hostedRow().height).toBe(6 * 68);
+    expect(hostedRow().height).toBe(7 * 68);
     act(() => reportLayout({ nativeEvent: { layout: { width: 343, height: 321.4 } } }));
     expect(hostedRow().height).toBe(322);
   });
@@ -252,6 +253,7 @@ describe('HomeSettingsScreen', () => {
       'week',
       'session',
       'climbingNow',
+      'projects',
       'playlists',
       'beta',
       'board',
@@ -266,6 +268,7 @@ describe('HomeSettingsScreen', () => {
       'week',
       'session',
       'climbingNow',
+      'projects',
       'playlists',
       'beta',
     ]);
@@ -276,6 +279,7 @@ describe('HomeSettingsScreen', () => {
       `${SECTION_KEY}.week`,
       `${SECTION_KEY}.session`,
       `${SECTION_KEY}.climbingNow`,
+      `${SECTION_KEY}.projects`,
       `${SECTION_KEY}.playlists`,
       `${SECTION_KEY}.beta`,
       `${SECTION_KEY}.board`,
@@ -292,8 +296,9 @@ describe('HomeSettingsScreen', () => {
     expect(sectionRows().map((row) => [row.kind, row.key])).toEqual([
       ['toggle', 'week'],
       ['toggle', 'session'],
-      ['toggle', 'playlists'],
       ['toggle', 'climbingNow'],
+      ['toggle', 'playlists'],
+      ['toggle', 'projects'],
       ['toggle', 'board'],
       ['toggle', 'beta'],
     ]);
@@ -305,6 +310,7 @@ describe('HomeSettingsScreen', () => {
       ['moveUp:true', 'moveDown:true'],
       ['moveUp:true', 'moveDown:true'],
       ['moveUp:true', 'moveDown:true'],
+      ['moveUp:true', 'moveDown:true'],
       ['moveUp:true', 'moveDown:false'],
     ]);
     expect(toggle('feed').actions).toBeUndefined();
@@ -312,17 +318,18 @@ describe('HomeSettingsScreen', () => {
     act(() => toggle('board').actions?.[0].onPress());
     expect(settingChangedCalls()).toEqual([{ page: 'homeScreen', key: 'moveUp', value: 'board' }]);
     expect(settings.values.get('homeSectionsV1')).toMatchObject({
-      order: ['week', 'session', 'playlists', 'board', 'climbingNow', 'beta', 'feed'],
+      order: ['week', 'session', 'climbingNow', 'playlists', 'board', 'projects', 'beta', 'feed'],
     });
     expect(announce.announceQueued).toHaveBeenCalledWith(
-      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: `${SECTION_KEY}.board`, position: 4, count: 6 })}`,
+      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: `${SECTION_KEY}.board`, position: 5, count: 7 })}`,
     );
     expect(sectionRows().map((row) => row.key)).toEqual([
       'week',
       'session',
+      'climbingNow',
       'playlists',
       'board',
-      'climbingNow',
+      'projects',
       'beta',
     ]);
 
