@@ -39,7 +39,7 @@
 //      is lit with the LIVE climb.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as renderInitial, act, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { configKey, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
@@ -3842,6 +3842,35 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       view.rerender(openSearch(2));
       swipeNext();
       expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
+    });
+
+    // The commit turns the next climb's header into the current one. The two
+    // must be the same component, or React remounts the header at the commit.
+    it('draws the current and neighbouring headers with one component', () => {
+      const searchA = climb('climb-search-a', 'Sloper Town');
+      const searchB = climb('climb-search-b', 'B');
+      const search = {
+        playlistUuid: 'search',
+        activatedClimbUuid: searchA.uuid,
+        boardKey: 'kilter:1:10:1,20',
+        climbs: [searchA, searchB],
+        label: 'Search results',
+        total: 2,
+      } as unknown as PlaylistSuggestionSource;
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst];
+      session.currentItem = itemFirst;
+      render(
+        drawerElement('member', {
+          climb: searchA,
+          options: { previewQueueItem: { uuid: 'preview-a', climb: searchA }, playlistSuggestionSource: search },
+          nonce: 1,
+        } as unknown as Parameters<typeof drawerElement>[1]),
+      );
+      const { current, next } = recorded.swipeableHeader.at(-1) as { current: ReactElement; next: ReactElement };
+      expect(next).toBeTruthy();
+      expect(current.type).toBe(next.type);
     });
 
     // The board's value used to be set only in Up next, so a swipe from Search
