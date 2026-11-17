@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-17T21:21:21.920Z",
+  "generatedAt": "2026-11-17T21:44:33.944Z",
   "entries": [
+    {
+      "prNumber": 7755,
+      "category": "fixed",
+      "title": "Closing the player with a swipe no longer makes your climb list jump in size",
+      "mergedAt": "2026-11-17T21:40:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7755"
+    },
     {
       "prNumber": 7753,
       "category": "fixed",

@@ -30,6 +30,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Closing the player with a swipe no longer makes your climb list jump in size ([#7755](https://github.com/boardsesh/boardsesh/pull/7755))
 - Lit holds show again on the Aura board look on some Android phones, including the Galaxy S26 Ultra. ([#7753](https://github.com/boardsesh/boardsesh/pull/7753))
 - Swiping to the next climb fades its holds in smoothly, without the mid-fade stutter ([#7742](https://github.com/boardsesh/boardsesh/pull/7742))
 - Flicking back and forth through climbs no longer flashes the wall at full brightness ([#7750](https://github.com/boardsesh/boardsesh/pull/7750))
