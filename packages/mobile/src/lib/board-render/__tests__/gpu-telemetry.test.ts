@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const controls = vi.hoisted(() => ({ granted: true, track: vi.fn() }));
 vi.mock('../../analytics', () => ({ track: controls.track }));
 vi.mock('../../consent-state', () => ({ isProductAnalyticsGranted: () => controls.granted }));
-import { classifyGpuFallback, reportGpuFallback, reportGpuPreparation, resolveGpuFailureScope } from '../gpu-telemetry';
+import {
+  classifyGpuFallback,
+  reportGpuFallback,
+  reportGpuFirstHolds,
+  reportGpuPreparation,
+  resolveGpuFailureScope,
+} from '../gpu-telemetry';
 
 let requestSequence = 0;
 const context = { boardName: 'kilter', apiVersion: 5, surface: 'player' as const };
@@ -130,5 +136,36 @@ describe('GPU diagnostics', () => {
       upload_ms: 2,
       atlas_bytes: 2048,
     });
+  });
+
+  it.each(['gpu', 'cached-png-bridge', 'hedged-png'] as const)(
+    'reports how a cold request first showed holds: %s, once per request',
+    (source) => {
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+      const request = requestId();
+      reportGpuFirstHolds(context, request, source, 312.6, source === 'hedged-png');
+      reportGpuFirstHolds(context, request, 'gpu', 900, false);
+      expect(random).toHaveBeenCalledTimes(1);
+      expect(controls.track).toHaveBeenCalledExactlyOnceWith('Aura GPU First Holds', {
+        board_name: 'kilter',
+        api_version: 5,
+        surface: 'player',
+        sample_rate: 0.1,
+        source,
+        cold: source === 'hedged-png',
+        first_holds_ms: 313,
+      });
+    },
+  );
+
+  it('bounds the first-holds time and follows consent', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    controls.granted = false;
+    reportGpuFirstHolds(context, requestId(), 'gpu', 40, false);
+    expect(controls.track).not.toHaveBeenCalled();
+    controls.granted = true;
+    reportGpuFirstHolds(context, requestId(), 'gpu', 3_600_000, true);
+    reportGpuFirstHolds(context, requestId(), 'gpu', Number.NaN, false);
+    expect(controls.track.mock.calls.map(([, props]) => props.first_holds_ms)).toEqual([60_000, null]);
   });
 });

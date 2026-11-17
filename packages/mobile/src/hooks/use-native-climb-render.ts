@@ -37,6 +37,7 @@ import {
 import { getBoardRenderData } from '../lib/board-details';
 import { auraGpuRenderWidth } from '../lib/board-render/gpu-render-size';
 import { useGpuFailureStatus } from '../lib/board-render/gpu-failure-store';
+import { isGpuConfigWarm } from '../lib/board-render/gpu-warm-configs';
 import {
   activeSprayArt,
   ensureSprayWallLoaded,
@@ -207,8 +208,24 @@ type NativeClimbRenderParams = {
   /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
   gpuAllowEmpty?: boolean;
   gpuFallbackConfigJson?: string | null;
-  /** Skip the cold PNG hedge only after this static configuration presented. */
+  /** Once this static configuration presented, the board keeps its GPU drawable: no PNG work at all. */
   gpuPresentedConfigJson?: string | null;
+  /**
+   * GPU first. While a live GPU request is pending (`gpuSurface`, and a config
+   * that is ready or still loading), this hook still adopts a PNG already in the
+   * overlay cache, which costs nothing, but never schedules a render for one.
+   * The caller releases a render for exactly one cache key (`overlayCacheKey`)
+   * once the GPU has missed its grace period; see `BoardImageNative`.
+   */
+  gpuHedgeCacheKey?: string | null;
+  /**
+   * The tap prewarm for a board the player draws on the live GPU. Once that
+   * drawing is warm in this process (`gpu-warm-configs`), adopt an overlay that
+   * is already cached but never render one: the GPU draws the first holds. While
+   * it is cold the prewarm renders as it always did. Pass `gpuCatalogueNative`
+   * as the play board does, so both name the same drawing.
+   */
+  cachedOnlyOnceGpuWarm?: boolean;
   /**
    * The play board's own view layer writes here whether its live stack is held
    * invisible under the opening-art bridge (`BoardImageNative`). Read only when
@@ -324,6 +341,12 @@ type NativeClimbRenderResult = {
    * Expo Go). Consumers stack this on top of `backgroundPaths`.
    */
   overlayUri: string | null;
+  /** The PNG cache key this surface asks for now; names the climb a GPU hedge releases. */
+  overlayCacheKey: string;
+  /** Short name of the live GPU drawing, for `markGpuConfigWarm` on its first presentation. */
+  gpuWarmKey?: string | null;
+  /** This board's current GPU wait began before its drawing was warm in this process. */
+  gpuProcessCold?: boolean;
   /** Stable full-layout config for a live GPU view; frames travel separately. */
   gpuConfigJson?: string | null;
   gpuStatus?: 'loading' | 'unavailable' | 'ready';
@@ -1881,6 +1904,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     gpuAllowEmpty = false,
     gpuFallbackConfigJson,
     gpuPresentedConfigJson,
+    gpuHedgeCacheKey = null,
+    cachedOnlyOnceGpuWarm = false,
     paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
@@ -2298,6 +2323,30 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       ? 'loading'
       : 'unavailable';
 
+  // Names the live GPU drawing (everything `gpuStaticConfig` is built from) in
+  // a short string, for the process-warm registry: O(1) to look up, unlike the
+  // config JSON itself.
+  const gpuWarmKey = useMemo(
+    () =>
+      gpuSurface || cachedOnlyOnceGpuWarm
+        ? [boardName, layoutId, sizeId, setIds, gpuRenderWidth, configRenderSignature].join('|')
+        : null,
+    [gpuSurface, cachedOnlyOnceGpuWarm, boardName, layoutId, sizeId, setIds, gpuRenderWidth, configRenderSignature],
+  );
+  // Whether this board's current wait for a GPU frame began before the drawing
+  // was warm in this process. Read once per climb and drawing, then held: a
+  // board that started cold keeps rendering its PNG even if a frame presents
+  // meanwhile, so a state change never withdraws a render already asked for.
+  // Cleared once this board shows the drawing, so the next wait (a return from
+  // the background) reads the registry afresh.
+  const gpuColdLatchRef = useRef<{ cacheKey: string; warmKey: string; cold: boolean } | null>(null);
+  if (!gpuSurface || gpuWarmKey === null || (gpuConfigJson !== null && gpuConfigJson === gpuPresentedConfigJson)) {
+    gpuColdLatchRef.current = null;
+  } else if (gpuColdLatchRef.current?.cacheKey !== currentCacheKey || gpuColdLatchRef.current.warmKey !== gpuWarmKey) {
+    gpuColdLatchRef.current = { cacheKey: currentCacheKey, warmKey: gpuWarmKey, cold: !isGpuConfigWarm(gpuWarmKey) };
+  }
+  const gpuProcessCold = gpuColdLatchRef.current?.cold ?? false;
+
   // Seed both pieces of state synchronously so the first paint already
   // shows whatever's available. Backgrounds in production are usually
   // available on the first frame (Asset.localUri pre-populated); the
@@ -2538,8 +2587,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
-    // Prepare exact PNG artwork during a first GPU attempt. A broken device
-    // gets usable art while the watchdog runs; warm frames reuse the GPU scene.
+    // The board already shows this configuration's GPU drawable: it stays on
+    // screen until the next frame presents, so there is nothing for a PNG to do.
     if (gpuConfigJson && gpuConfigJson === gpuPresentedConfigJson) return;
     // A v2 GPU binary has Aura support, but the ordinary capability probe may
     // still be resolving on first mount. Do not launch a competing classic PNG.
@@ -2689,6 +2738,22 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       });
       return;
     }
+
+    // GPU first: once the drawing is warm in this process, a pending GPU request
+    // is the first and only overlay. The cache read above is a free bridge; a
+    // render is not, so it waits until the caller hedges this exact key (the
+    // GPU missed its grace period). While the drawing is process-cold the PNG
+    // renders at once, as it always did: a first presentation takes most of a
+    // second. A native failure drops `gpuConfigJson` and the status leaves
+    // `loading`, so the PNG path starts on the very next run.
+    if (
+      gpuSurface &&
+      (gpuConfigJson !== null || gpuStatus === 'loading') &&
+      !gpuProcessCold &&
+      gpuHedgeCacheKey !== currentCacheKey
+    )
+      return;
+    if (cachedOnlyOnceGpuWarm && gpuWarmKey !== null && isGpuConfigWarm(gpuWarmKey)) return;
 
     const nativeModule = getNativeModule();
     if (!nativeModule) {
@@ -2956,6 +3021,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     gpuConfigJson,
     gpuPresentedConfigJson,
     gpuSurface,
+    gpuStatus,
+    gpuHedgeCacheKey,
+    gpuProcessCold,
+    cachedOnlyOnceGpuWarm,
+    gpuWarmKey,
     // Redundant with `currentCacheKey`, which carries the `_geopending` token —
     // listed so the branch's own input is visible where the effect declares it.
     boardArtChunkPending,
@@ -3460,9 +3530,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     artworkIdentity,
     gpuConfigJson,
     gpuStatus,
+    gpuWarmKey,
+    gpuProcessCold,
     gpuFrames: flatFrames,
     getReadyBoardArtSnapshot,
     overlayUri,
+    overlayCacheKey: currentCacheKey,
     overlayLoadKey,
     overlayFailed: failedOverlayKey === currentCacheKey,
     overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,

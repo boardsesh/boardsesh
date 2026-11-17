@@ -1156,25 +1156,33 @@ describe('SwipeBoardCarousel pages', () => {
   });
 });
 
-it.each([false, true])('passes the host ground to all displayed boards and prefetches, GPU %s', async (native) => {
-  recorded.motionNative = native;
-  render(
-    createElement(SwipeBoardCarousel, {
-      ...baseProps,
-      layoutId: 8,
-      sizeId: 25,
-      fieldColorOverride: '#1C1C1E',
-      prefetchFrames: ['later'],
-    }),
-  );
-  measure(390, 700);
-  await nextFrame();
-  expect(recorded.boardProps).toHaveBeenCalled();
-  for (const [props] of recorded.boardProps.mock.calls) {
-    expect(props.fieldColorOverride).toBe('#1C1C1E');
-  }
-  expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ fieldColorOverride: '#1C1C1E' }));
-});
+it.each([false, true])(
+  'passes the host ground to all displayed boards, and prefetches PNGs only off the GPU, GPU %s',
+  async (native) => {
+    recorded.motionNative = native;
+    render(
+      createElement(SwipeBoardCarousel, {
+        ...baseProps,
+        layoutId: 8,
+        sizeId: 25,
+        fieldColorOverride: '#1C1C1E',
+        prefetchFrames: ['later'],
+      }),
+    );
+    measure(390, 700);
+    await nextFrame();
+    expect(recorded.boardProps).toHaveBeenCalled();
+    for (const [props] of recorded.boardProps.mock.calls) {
+      expect(props.fieldColorOverride).toBe('#1C1C1E');
+    }
+    if (native) {
+      // The stationary GPU board shows no PNG on a swipe; the GPU looks ahead itself.
+      expect(recorded.prefetch).not.toHaveBeenCalled();
+    } else {
+      expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ fieldColorOverride: '#1C1C1E' }));
+    }
+  },
+);
 
 it('exposes a smoke marker outside hidden artwork only after the current holds paint', () => {
   const props = { ...baseProps, currentFrames: 'p1145r15', containerSize: { width: 350, height: 500 } };

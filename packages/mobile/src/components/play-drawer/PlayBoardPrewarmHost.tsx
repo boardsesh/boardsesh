@@ -3,6 +3,8 @@ import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { usePlayDrawerSurface } from '../../hooks/use-play-drawer-surface';
 import { backgroundImageUri } from '../LayeredClimbImage';
 import { warmBoardArtMemory } from '../../lib/board-render/warm-board-art-memory';
+import { usePlayerGpuBoard } from './use-player-gpu-board';
+import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import {
   clearPlayBoardPrewarm,
   getPlayBoardPrewarmTarget,
@@ -29,7 +31,8 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
   sizeId,
   setIds,
   renderWidth,
-}: PlayBoardPrewarmTarget) {
+  playerGpuBoard,
+}: PlayBoardPrewarmTarget & { playerGpuBoard: boolean }) {
   const { fieldColor } = usePlayDrawerSurface();
   const { overlayUri, overlayLoadKey, backgroundPaths } = useNativeClimbRender({
     frames,
@@ -43,6 +46,10 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
     renderWidth,
     backgroundVariant: 'full',
     fieldColorOverride: fieldColor,
+    // Names the play board's GPU drawing exactly as the board does, so the
+    // render is skipped only once that drawing is warm in this process.
+    gpuCatalogueNative: climbOverlayGpuApiVersion >= 5,
+    cachedOnlyOnceGpuWarm: playerGpuBoard,
   });
   // Decode what the drawer is about to show, so its images come out of memory
   // on the frame they mount.
@@ -61,14 +68,23 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
  */
 export function PlayBoardPrewarmHost() {
   const target = useSyncExternalStore(subscribeToPlayBoardPrewarm, getPlayBoardPrewarmTarget);
+  return target ? <PlayBoardPrewarm target={target} /> : null;
+}
+
+/**
+ * Once the live GPU drawing is warm in this process it draws the player's first
+ * holds itself (docs/gpu-climb-overlay-experiment.md), so the tap renders no new
+ * PNG; the photo and any cached PNG are still decoded ahead. While it is cold
+ * (the first open after a launch) the tap renders the PNG as it always did.
+ */
+function PlayBoardPrewarm({ target }: { target: PlayBoardPrewarmTarget }) {
+  const playerGpuBoard = usePlayerGpuBoard(target.boardName, target.layoutId);
   // The carousel drops the target when it has measured. A tap that never gets
   // that far (the drawer dismissed mid-open) would leave the hidden render
   // mounted until the next tap, so let go of it after a while regardless.
   useEffect(() => {
-    if (!target) return;
     const timer = setTimeout(clearPlayBoardPrewarm, ABANDONED_TARGET_MS);
     return () => clearTimeout(timer);
   }, [target]);
-  if (!target) return null;
-  return <TappedBoardRender {...target} />;
+  return <TappedBoardRender {...target} playerGpuBoard={playerGpuBoard} />;
 }
