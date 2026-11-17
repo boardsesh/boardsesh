@@ -56,8 +56,12 @@ canonical row. Reconciliation cannot close that gap while the web keeps writing.
 `verifyFence` proves only that the restricted `boardsesh_web` LOGIN cannot write
 identity tables; no database state proves the web process connects as it. A
 reviewed code change removes the entry once those writers have moved behind the
-backend. Open PR #7631 adds the web-side list `WEB_DATABASE_LOGIN_BLOCKERS` with
-the same entry; both lists must be emptied by the same change.
+backend. The web's own list `WEB_DATABASE_LOGIN_BLOCKERS`
+(`packages/db/src/client/config.ts`, #7631) keeps the web off its fenced login
+for the same reason. Both lists hold the one `LEGACY_WEB_IDENTITY_WRITERS`
+constant defined there, the backend imports it from the import-free
+`@boardsesh/db/client/config` (the web bundle gains no backend code), and
+`sync-identity.test.ts` fails if only one list contains it.
 
 ### After an authority switch
 

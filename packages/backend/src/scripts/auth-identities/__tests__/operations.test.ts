@@ -34,8 +34,8 @@ describe('identity import and reconcile', () => {
   });
   afterAll(async () => environment?.close());
   it('defaults to the read-only plan, names the write, bounds batches and keeps the cursor private', () => {
+    // No verb: each case below names one, or shows what naming none selects.
     const arguments_ = [
-      'import',
       '--confirm-host',
       'localhost',
       '--key-file',

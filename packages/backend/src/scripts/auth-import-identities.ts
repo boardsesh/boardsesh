@@ -12,16 +12,15 @@ import { countUsersAfter, importIdentityBatch } from './auth-identities/operatio
 
 /**
  * `plan` (the default) is read-only: it checks every precondition and counts the
- * users the next pass would visit. Only the named `import` verb writes. A missing
- * verb can never select it, because `plan` is listed first.
+ * users the next pass would visit. Only the named `import` verb writes; the
+ * shared parser never defaults a write mode.
  */
 export function identityArguments(arguments_: readonly string[], importing: boolean) {
   const parsed = parseOperatorArguments(
     arguments_,
     importing ? ['plan', 'import'] : ['reconcile'],
     importing ? ['--batch', '--pause-ms', '--checkpoint', '--key-file'] : ['--key-file'],
-    // Import writes: it must be named (`vp run auth:import-identities -- import …`).
-    // Reconcile is read-only and stays the default of its own command.
+    // `vp run auth:import-identities -- import …` writes; reconcile is read-only.
     importing ? ['import'] : [],
   );
   if (parsed.projectionId || parsed.planSha256) throw new Error('INVALID_ARGUMENTS');

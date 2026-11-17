@@ -18,7 +18,6 @@ import {
 import { prepareProjectionUnderUsersTableLock, rebuildLiveProjection } from '../auth/current-store/email-reservations';
 import { operatorClient, parseOperatorArguments } from './auth-fence/operator';
 import { verifyFence } from './auth-fence/catalog';
-
 import { AUTHORITY_ACTIVATION_BLOCKERS, assertAuthorityActivationGates } from '../auth/authority/activation-gates';
 
 // The code gates live with the authority module so the identity mirror's startup checks them too.

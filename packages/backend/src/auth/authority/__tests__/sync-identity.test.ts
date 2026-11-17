@@ -34,6 +34,7 @@ import {
   writerQualificationRefusal,
 } from '../identity-copy-preconditions';
 import { IDENTITY_COPY_BLOCKERS, assertIdentityCopyGates } from '../identity-copy-gates';
+import { LEGACY_WEB_IDENTITY_WRITERS, WEB_DATABASE_LOGIN_BLOCKERS } from '@boardsesh/db/client/config';
 import { insertCurrentStorePasswordIdentity } from '../../current-store/password-identity';
 import {
   currentStoreNativeOAuthConfiguration,
@@ -184,6 +185,14 @@ describe('same-transaction identity mirror', () => {
     expect(callers).toEqual(['auth/authority/mirror-activation.ts']);
     expect(IDENTITY_COPY_BLOCKERS).toEqual(['LEGACY_WEB_IDENTITY_WRITERS']);
     expect(() => assertIdentityCopyGates()).toThrow('IDENTITY_COPY_CODE_GATES_OPEN');
+  });
+
+  it('closes the legacy web writer gate for identity copies and the fenced web login together', () => {
+    // The web may not move to its fenced login while it writes identity tables, and
+    // nothing may copy identities while it does: one cause, one change for both lists.
+    expect(WEB_DATABASE_LOGIN_BLOCKERS.includes(LEGACY_WEB_IDENTITY_WRITERS)).toBe(
+      IDENTITY_COPY_BLOCKERS.includes(LEGACY_WEB_IDENTITY_WRITERS),
+    );
   });
 
   it('qualifies the mirror in main() before the job queue or the server can run a writer', () => {
