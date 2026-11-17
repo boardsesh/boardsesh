@@ -86,11 +86,8 @@ class ClimbOverlayGPUModule : Module() {
                 view.setPagePosition(value)
             }
             Prop("revealMode") { view: ClimbOverlayGPUView, value: String? -> view.setRevealMode(value) }
-            Prop("outgoingWeight") { view: ClimbOverlayGPUView, value: Double? ->
-                view.setSwapWeights(outgoing = value)
-            }
-            Prop("incomingWeight") { view: ClimbOverlayGPUView, value: Double? ->
-                view.setSwapWeights(incoming = value)
+            Prop("swapFrame") { view: ClimbOverlayGPUView, value: List<Double>? ->
+                view.setSwapFrame(value)
             }
             Prop("requestId") { view: ClimbOverlayGPUView, value: String -> view.requestId = value }
             Prop("active") { view: ClimbOverlayGPUView, value: Boolean -> view.active = value }

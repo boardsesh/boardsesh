@@ -100,20 +100,53 @@ class OverlayPolicyTest {
         assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, 2f, -1f).third)
     }
 
+    private fun shown(controls: OverlayControls, center: Double = 12.0): Triple<Int, Int, OverlayPolicy.SwapWeights> {
+        val (selection, weights) =
+            OverlayPolicy.selectSwap(controls.position!!, center, true, true, controls.outgoing, controls.incoming)
+        return Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
+    }
+
     @Test
-    fun wallSwapHoldWeightsKeepSharedHoldsAndOneRoleAtATime() {
-        val mid = OverlayPolicy.SwapWeights(.3f, .6f)
-        assertEquals(1f, OverlayPolicy.swapWeight(mid, 1, false), 0f)
-        assertEquals(0f, OverlayPolicy.swapWeight(mid, 1, true), 0f)
-        assertEquals(.3f, OverlayPolicy.swapWeight(mid, 0, false), 0f)
-        assertEquals(.6f, OverlayPolicy.swapWeight(mid, 0, true), 0f)
-        for (lowerStep in 0..20) for (upperStep in 0..20) {
-            val weights = OverlayPolicy.SwapWeights(lowerStep / 20f, upperStep / 20f)
-            val oldRole = OverlayPolicy.swapWeight(weights, 2, false)
-            val newRole = OverlayPolicy.swapWeight(weights, 2, true)
-            assertEquals(0f, oldRole * newRole, 0f)
-            assertEquals(maxOf(weights.lower, weights.upper), maxOf(oldRole, newRole), 0f)
+    fun aSwapFrameReachesTheRenderThreadAsOneSnapshot() {
+        val swapping =
+            OverlayControls(null, false, false, false, OverlayPolicy.REVEAL_MODE_SWAP)
+                .withSwapFrame(listOf(12.25, 0.0, 0.97))!!
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(0f, .97f)), shown(swapping))
+        // The swap ends: the pair, the leaving climb and the arriving one change in
+        // one assignment. Split props once let the render thread read the new
+        // position with the old weights: the climb just left, fully lit.
+        val arrived = swapping.withSwapFrame(listOf(13.0, 1.0, 0.0))!!
+        assertEquals(Triple(13.0, 1f, 0f), Triple(arrived.position, arrived.outgoing, arrived.incoming))
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(0f, 1f)), shown(arrived))
+        assertEquals(swapping.copy(position = 13.0, outgoing = 1f, incoming = 0f), arrived)
+        assertEquals(OverlayPolicy.REVEAL_MODE_SWAP, arrived.revealMode)
+        assertEquals(1f to 0f, swapping.withSwapFrame(listOf(12.25, 2.0, -1.0))!!.let { it.outgoing to it.incoming })
+        for (malformed in listOf(null, listOf(12.25, .4), listOf(12.25, .4, 0.0, 1.0), listOf(Double.NaN, .4, 0.0),
+            listOf(12.0, .4, Double.POSITIVE_INFINITY), emptyList())) {
+            assertNull(swapping.withSwapFrame(malformed))
         }
+    }
+
+    @Test
+    fun theOldTrioKeepsTheRunningSwapUntilItsReplacementIsReady() {
+        fun carried(position: Double, center: Double, next: Boolean = true, outgoing: Float, incoming: Float) =
+            OverlayPolicy.carryOverSwap(position, center, true, next, outgoing, incoming)?.let { (selection, weights) ->
+                Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
+            }
+        // Leaving 12 for 13 after the app rendered 13: the old trio (11, 12, 13)
+        // draws the same pages and weights the new trio (12, 13, 14) will.
+        val old = carried(12.25, 12.0, outgoing = .1f, incoming = .5f)!!
+        val new = swapAt(12.25, .1f, .5f, center = 13.0)
+        assertEquals(0 to 2, old.first to old.second)
+        assertEquals(1 to 0, new.first to new.second)
+        assertEquals(new.third, old.third)
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(0f, 1f)), carried(13.0, 12.0, outgoing = 1f, incoming = 0f))
+        assertEquals(Triple(0, 0, OverlayPolicy.SwapWeights(1f, 0f)), carried(12.0, 12.0, outgoing = 1f, incoming = 0f))
+        // A frame the old trio cannot draw holds the last one instead of guessing.
+        assertNull(carried(13.25, 12.0, outgoing = .1f, incoming = .5f))
+        assertNull(carried(12.25, 12.0, next = false, outgoing = .1f, incoming = .5f))
+        assertNull(carried(13.0, 12.0, next = false, outgoing = 1f, incoming = 0f))
+        assertNull(carried(Double.NaN, 12.0, outgoing = 1f, incoming = 0f))
     }
 
     @Test

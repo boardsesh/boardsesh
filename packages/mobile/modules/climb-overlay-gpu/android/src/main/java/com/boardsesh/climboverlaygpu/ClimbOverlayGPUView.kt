@@ -175,14 +175,19 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         requestDraw()
     }
 
-    /** UI-thread animated props: the swap's timing lives in the app. */
-    fun setSwapWeights(outgoing: Double? = null, incoming: Double? = null) {
-        val before = outgoingWeight to incomingWeight
-        if (outgoing != null && outgoing.isFinite()) outgoingWeight = outgoing.toFloat().coerceIn(0f, 1f)
-        if (incoming != null && incoming.isFinite()) incomingWeight = incoming.toFloat().coerceIn(0f, 1f)
-        if (before == (outgoingWeight to incomingWeight)) return
-        controls = controls.copy(outgoing = outgoingWeight, incoming = incomingWeight)
-        if (revealMode == OverlayPolicy.REVEAL_MODE_SWAP) requestDraw()
+    /**
+     * The swap's animated prop: its pair and both weights, published to the
+     * render thread as one controls snapshot. The timing lives in the app.
+     */
+    fun setSwapFrame(frame: List<Double>?) {
+        val next = controls.withSwapFrame(frame) ?: return
+        if (next == controls) return
+        if (next.position != pagePosition) cancelPrefetch()
+        pagePosition = next.position
+        outgoingWeight = next.outgoing
+        incomingWeight = next.incoming
+        controls = next
+        requestDraw()
     }
 
     private fun refreshMotionPolicy() {

@@ -184,15 +184,22 @@ internal object OverlayPolicy {
     }
 
     /**
-     * The shader's per-hold swap weight. Same-role shared holds stay lit once;
-     * a changed hold shows only its stronger role, the lower one on a tie.
+     * While the next trio prepares, the packet on screen keeps drawing the
+     * running swap if it holds every climb the frame shows: then the frame is the
+     * one the new packet will draw, and the hand-over changes nothing. Null
+     * means hold the last frame instead of showing a different climb.
      */
-    fun swapWeight(weights: SwapWeights, membership: Int, upper: Boolean): Float {
-        if (membership == 1) return if (upper) 0f else 1f
-        val own = if (upper) weights.upper else weights.lower
-        val other = if (upper) weights.lower else weights.upper
-        if (membership == 2 && (if (upper) own <= other else own < other)) return 0f
-        return own
+    fun carryOverSwap(
+        position: Double,
+        center: Double,
+        previous: Boolean,
+        next: Boolean,
+        outgoing: Float,
+        incoming: Float,
+    ): Pair<Selection, SwapWeights>? {
+        if (!position.isFinite() || !center.isFinite() || abs(position - center) > 1) return null
+        val carried = selectSwap(position, center, previous, next, outgoing, incoming)
+        return if (position == center || carried.first.lower != carried.first.upper) carried else null
     }
 
     fun reach(elapsed: Long): Float {

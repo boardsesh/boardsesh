@@ -53,7 +53,21 @@ internal data class OverlayControls(
     val revealMode: Int = OverlayPolicy.REVEAL_MODE_WIPE,
     val outgoing: Float = 1f,
     val incoming: Float = 0f,
-)
+) {
+    /**
+     * The swap's animated prop: its pair and both weights in one snapshot, so
+     * the render thread never pairs a new position with old weights. Null
+     * unless it is three finite numbers; the weights clamp to 0..1.
+     */
+    fun withSwapFrame(frame: List<Double>?): OverlayControls? {
+        if (frame == null || frame.size != 3 || frame.any { !it.isFinite() }) return null
+        return copy(
+            position = frame[0],
+            outgoing = frame[1].toFloat().coerceIn(0f, 1f),
+            incoming = frame[2].toFloat().coerceIn(0f, 1f),
+        )
+    }
+}
 
 internal data class RenderMetrics(
     val prepareMs: Double,
@@ -545,9 +559,23 @@ internal object OverlayRenderer {
         GLES31.glDrawArrays(GLES31.GL_TRIANGLES,0,3);checked("GPU draw")
     }
 
+    /**
+     * A newer trio is waiting to prepare: keep the running swap moving from the
+     * packet on screen when it holds every climb the frame shows. It submits
+     * the old request's frame, which can never report the new one ready.
+     */
+    private fun carryOver(session: OverlaySession, request: OverlayRequest, controls: OverlayControls) =
+        controls.revealMode == OverlayPolicy.REVEAL_MODE_SWAP &&
+            !request.animateEdits &&
+            foreground &&
+            !session.destroyed &&
+            session.eglSurface != EGL14.EGL_NO_SURFACE &&
+            session.view.matchesGeometry(request)
+
     fun draw(session: OverlaySession): Boolean {
         val request = session.request ?: return false
-        if (!eligible(session, request)) return false
+        val carrying = !eligible(session, request) && carryOver(session, request, session.view.controls)
+        if (!carrying && !eligible(session, request)) return false
         try {
             val packet = session.packet ?: return false
             ensureSurfaceSize(session,packet.header.width,packet.header.height)
@@ -564,7 +592,16 @@ internal object OverlayRenderer {
             // only the position-driven wipe is switched off here.
             val swap = controls.revealMode == OverlayPolicy.REVEAL_MODE_SWAP
             val (selection, weights) =
-                if (swap)
+                if (carrying)
+                    OverlayPolicy.carryOverSwap(
+                        controls.position ?: request.center,
+                        request.center,
+                        packet.header.present[1],
+                        packet.header.present[2],
+                        controls.outgoing,
+                        controls.incoming,
+                    ) ?: return false
+                else if (swap)
                     OverlayPolicy.selectSwap(
                         controls.position ?: request.center,
                         request.center,
@@ -585,7 +622,7 @@ internal object OverlayRenderer {
             val upper = OverlayPolicy.slot(selection.upper)
             val now = System.nanoTime()
             val reach = session.editStart?.let { OverlayPolicy.reach(now - it) } ?: 1f
-            if (!eligible(session, request)) return false
+            if (!carrying && !eligible(session, request)) return false
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
             encode(packet,lower,upper,packet.uniforms(lower,upper,selection.progress,reach,
                 request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored,
