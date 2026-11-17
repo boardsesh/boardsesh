@@ -15,6 +15,8 @@ import { PlayDrawerHeader } from '../../components/play-drawer/PlayDrawerHeaderV
 import { PlayDrawerActionBar } from '../../components/play-drawer/PlayDrawerActionBar';
 import { WallStatePillView } from '../../components/play-drawer/WallStatePillView';
 import { resolveWallControl } from '../../components/play-drawer/wall-control';
+import { wallControlUsesFrost } from '../../components/play-drawer/wall-control-frost';
+import { useStoryWallGlow } from './use-story-wall-glow';
 import { resolveBusyWallQuestion } from '../../components/play-drawer/busy-wall-question';
 import { useTheme } from '../../providers/theme-provider';
 import { STORY_BOARD, STORY_CLIMBS } from '../fixtures/climbs';
@@ -77,6 +79,14 @@ export function PlayerScene({
     otherClimbLit: preview,
     writing: false,
     navigationCommits: !preview,
+  });
+  // Driving draws the frost from the climb's lit holds, as the real player
+  // does; a spray wall has no lights, so it never frosts.
+  const wallGlow = useStoryWallGlow({
+    board,
+    climb,
+    mirrored,
+    shown: !fixture.spray && wallControlUsesFrost(wallControl),
   });
   return (
     <View
@@ -153,6 +163,7 @@ export function PlayerScene({
             isFavorited={favorite}
             remainingQueueCount={climbs.length - index - 1}
             wallControl={wallControl}
+            wallGlow={wallGlow}
             boardControl={boardControl}
             onWallControlPress={() => setLit((current) => !current)}
             currentAngle={board.angle}
