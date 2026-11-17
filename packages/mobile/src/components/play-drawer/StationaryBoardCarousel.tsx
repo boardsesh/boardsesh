@@ -8,6 +8,7 @@ import { CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { useWallSwap } from './use-wall-swap';
 import { playerRevealMode } from './wall-swap';
+import { encodeSwapLook } from './swap-look';
 import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
 
 type Props = {
@@ -66,6 +67,8 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   const revealMode = playerRevealMode(climbOverlayGpuApiVersion, boardTransition?.revealMode);
   const swapFrame = useWallSwap(pager, centerPage, revealMode === 'swap', boardTransition);
   const reduceMotion = boardTransition?.reduceMotion;
+  const look = boardTransition?.look;
+  const swapLook = useMemo(() => (look ? encodeSwapLook(look) : undefined), [look]);
   const onRenderReady = diagnostics?.onGpuReady;
   const onRenderError = diagnostics?.onGpuError;
   const transition = useMemo(
@@ -77,6 +80,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
       prefetchFrames,
       revealMode,
       swapFrame,
+      swapLook,
       reduceMotion,
       onRenderReady,
       onRenderError,
@@ -89,6 +93,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
       prefetchFrames,
       revealMode,
       swapFrame,
+      swapLook,
       reduceMotion,
       onRenderReady,
       onRenderError,

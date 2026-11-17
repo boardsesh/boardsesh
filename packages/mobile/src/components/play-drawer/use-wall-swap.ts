@@ -11,7 +11,8 @@ import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import type { SwipePager } from './use-swipe-pager';
 import type { BoardTransition, BoardTransitionState } from './board-transition';
-import { wallSwapDriver, type WallSwapFrame } from './wall-swap';
+import type { BoardSwapFrame } from './swap-look';
+import { wallSwapDriver } from './wall-swap';
 
 /** The player's own transition: the shipped wall swap. */
 const SHIPPED_DRIVER = wallSwapDriver();
@@ -44,7 +45,7 @@ export function useWallSwap(
   centerPage: number,
   enabled: boolean,
   transition?: BoardTransition,
-): SharedValue<WallSwapFrame> {
+): SharedValue<BoardSwapFrame> {
   const { anchorPage, translateX, flingDirection, uiSteps, resetGeneration } = pager;
   const systemReduceMotion = useReduceMotion();
   const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
@@ -58,7 +59,7 @@ export function useWallSwap(
   useEffect(() => {
     reduceMotionValue.value = reduceMotion;
   }, [reduceMotion, reduceMotionValue]);
-  const frame = useSharedValue<WallSwapFrame>([centerPage, 1, 0, 1]);
+  const frame = useSharedValue<BoardSwapFrame>([centerPage, 1, 0, 1]);
   const swapClock = useSharedValue(0);
   const settleClock = useSharedValue(0);
   const state = useSharedValue<BoardTransitionState | null>(null);

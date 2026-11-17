@@ -28,5 +28,15 @@ describe('status text', () => {
     expect(variantAvailability({ ...variant, requiresNativeApi: 7 }, 1).available).toBe(false);
     expect(variantAvailability({ ...variant, requiresNativeApi: 7 }, 7).available).toBe(true);
     expect(variantAvailability({ ...variant, requiresNativeLab: 'x' }, 9).available).toBe(false);
+    expect(variantAvailability({ ...variant, requiresNativeLab: 'x' }, 9, 1).available).toBe(false);
+  });
+  it('greys out swap-look variants unless the binary draws the look (iOS swapLookVersion 1)', () => {
+    const look = { ...variant, requiresNativeApi: 7, requiresNativeLab: 'swap-look' };
+    expect(variantAvailability(look, 7)).toEqual({
+      available: false,
+      reason: 'needs the native swap look (iOS, swapLookVersion 1); this build has 0',
+    });
+    expect(variantAvailability(look, 7, 1)).toEqual({ available: true });
+    expect(variantAvailability(look, 6, 1).available).toBe(false);
   });
 });

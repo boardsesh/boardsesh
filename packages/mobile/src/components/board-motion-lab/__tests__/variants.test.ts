@@ -42,8 +42,18 @@ function dragAndCommit(driver: BoardTransitionDriver) {
 }
 
 describe('board motion variants', () => {
-  it('are lettered A, B, C with unique kebab-case ids and slider keys', () => {
-    expect(BOARD_MOTION_VARIANTS.map((candidate) => candidate.letter)).toEqual(['A', 'B', 'C']);
+  it('are lettered A to H with unique kebab-case ids and slider keys', () => {
+    expect(BOARD_MOTION_VARIANTS.map((candidate) => candidate.letter)).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+      'F',
+      'G',
+      'H',
+    ]);
+    expect(new Set(BOARD_MOTION_VARIANTS.map((candidate) => candidate.id)).size).toBe(BOARD_MOTION_VARIANTS.length);
     for (const candidate of BOARD_MOTION_VARIANTS) {
       expect(candidate.id).toMatch(/^[a-z]+(-[a-z]+)*$/);
       const keys = candidate.params.map((spec) => spec.key);

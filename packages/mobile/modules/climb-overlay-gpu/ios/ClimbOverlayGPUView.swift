@@ -154,6 +154,10 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var outgoingWeight: Float = 1
   private var incomingWeight: Float = 0
   private var sharedWeight: Float = 1
+  /// Board motion lab only: the swap look and which climbs arrive this frame.
+  /// Nil (the player) draws API 7's swap.
+  private var swapLook: ClimbOverlaySwapLook.Look?
+  private var arrivals = ClimbOverlayMotion.SwapArrivals()
   /// The newest swap frame this view has applied, by the app's sequence.
   private var swapSequence = ClimbOverlayMotion.SwapFrameSequenceGate()
   /// The packet on screen when a new trio started preparing, kept drawing the
@@ -289,14 +293,47 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     else { return }
     let frame = sequenced.frame
     guard frame.pagePosition != pagePosition || frame.outgoing != outgoingWeight || frame.incoming != incomingWeight
-      || frame.shared != sharedWeight
+      || frame.shared != sharedWeight || sequenced.arrivals != arrivals
     else { return }
     if frame.pagePosition != pagePosition { cancelPrefetch() }
     pagePosition = frame.pagePosition
     outgoingWeight = frame.outgoing
     incomingWeight = frame.incoming
     sharedWeight = frame.shared
+    arrivals = sequenced.arrivals
     requestDraw()
+  }
+
+  /// Board motion lab only: the swap look's numbers (`ClimbOverlaySwapLook.Look`),
+  /// set when a slider is released. Nil or malformed turns the look off.
+  func setSwapLook(_ values: [Double]?) {
+    let look = values.flatMap { ClimbOverlaySwapLook.Look($0) }
+    guard look != swapLook else { return }
+    swapLook = look
+    requestDraw()
+  }
+
+  /// Glow reach stays at 1 in Low Power Mode and on a hot phone, as the editor pulse stops there.
+  private var swapLookReachAllowed: Bool {
+    !ProcessInfo.processInfo.isLowPowerModeEnabled
+      && ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue
+  }
+
+  /// This frame's swap-look buffer, or its zero header (API 7's swap): no look,
+  /// the wipe, a single climb on show, or Reduce Motion, which turns the look
+  /// off here whatever the app sends.
+  private func swapLookWords(_ packet: ClimbOverlayMetalPacket,selection: ClimbOverlayMotion.Selection,
+                             weights: ClimbOverlayMotion.SwapWeights) -> [UInt16] {
+    guard let look = swapLook, revealMode == ClimbOverlayMotion.revealModeSwap, !suppressMotion,
+      selection.lowerOffset != selection.upperOffset else { return ClimbOverlaySwapLook.off }
+    let arriving = ClimbOverlaySwapLook.sides(progress: selection.progress,
+      outgoingArrives: arrivals.outgoing,incomingArrives: arrivals.incoming)
+    return ClimbOverlaySwapLook.encode(
+      lower: packet.swapLookScene(slot: ClimbOverlayMotion.slot(selection.lowerOffset),upper: false),
+      upper: packet.swapLookScene(slot: ClimbOverlayMotion.slot(selection.upperOffset),upper: true),
+      lowerSide: ClimbOverlaySwapLook.Side(weight: weights.lower,arriving: arriving.lower),
+      upperSide: ClimbOverlaySwapLook.Side(weight: weights.upper,arriving: arriving.upper),
+      sharedFloor: weights.shared,look: look,mirrored: displayMirrored,allowReach: swapLookReachAllowed)
   }
 
   /// Fabric view commands. Reanimated's `dispatchCommand` reaches here through
@@ -551,6 +588,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     needsFrame = false
     let lower = ClimbOverlayMotion.slot(selection.lowerOffset)
     let upper = ClimbOverlayMotion.slot(selection.upperOffset)
+    let look = swapLookWords(packet,selection: selection,weights: weights)
     do {
       try packet.uniforms(slot: uniformSlot,lower: lower,upper: upper,revealMode: revealMode,
         progress: selection.progress,swap: weights,pulse: 1,
@@ -558,7 +596,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         productionEmpty: carry.productionEmpty,mirrored: displayMirrored)
     } catch { packet.releaseUniforms(uniformSlot);encoder.endEncoding();carryOver = nil;return }
     encoder.setRenderPipelineState(pipeline)
-    encodeClimbOverlayPacket(packet,encoder: encoder,lower: lower,upper: upper,uniformSlot: uniformSlot)
+    encodeClimbOverlayPacket(packet,encoder: encoder,lower: lower,upper: upper,uniformSlot: uniformSlot,look: look)
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
     command.addCompletedHandler { [packet] _ in
@@ -598,6 +636,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         reduceMotion: suppressMotion), ClimbOverlayMotion.SwapWeights(lower: 1,upper: 0))
     let lower = ClimbOverlayMotion.slot(selection.lowerOffset)
     let upper = ClimbOverlayMotion.slot(selection.upperOffset)
+    let look = swap ? swapLookWords(packet,selection: selection,weights: weights) : ClimbOverlaySwapLook.off
     do {
       try packet.uniforms(slot: uniformSlot,lower: lower,upper: upper,revealMode: revealMode,
         progress: selection.progress,swap: weights,
@@ -607,7 +646,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         mirrored: displayMirrored)
     } catch { packet.releaseUniforms(uniformSlot);encoder.endEncoding();reportFailure(error,request: requestId);return }
     encoder.setRenderPipelineState(pipeline)
-    encodeClimbOverlayPacket(packet,encoder: encoder,lower: lower,upper: upper,uniformSlot: uniformSlot)
+    encodeClimbOverlayPacket(packet,encoder: encoder,lower: lower,upper: upper,uniformSlot: uniformSlot,look: look)
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
     let generation = revision

@@ -5,7 +5,8 @@
  * (`src/components/board-motion-lab/`) passes its own to compare alternatives.
  */
 import type { ClimbOverlayGPUReady } from '../../../modules/climb-overlay-gpu/src';
-import type { RevealMode, WallSwapFrame, WallSwapInput } from './wall-swap';
+import type { BoardSwapFrame, SwapLook } from './swap-look';
+import type { RevealMode, WallSwapInput } from './wall-swap';
 
 /** What a transition sees each UI frame: the pager plus its own two clocks. */
 export type BoardTransitionInput = WallSwapInput;
@@ -15,8 +16,8 @@ export type BoardTransitionState = Readonly<Record<string, number | boolean>>;
 
 export type BoardTransitionStep = {
   state: BoardTransitionState;
-  /** What the native view draws this frame. */
-  frame: WallSwapFrame;
+  /** What the native view draws this frame: six numbers only for a transition with a `look`. */
+  frame: BoardSwapFrame;
   /** Restart the swap clock from 0, to run this many milliseconds; null leaves it alone. */
   startSwapMs: number | null;
   /** Restart the settle clock from 0, to run this many milliseconds; null leaves it alone. */
@@ -34,6 +35,12 @@ export type BoardTransition = {
   revealMode: RevealMode;
   /** Swap mode only. Absent: the shipped wall swap. */
   driver?: BoardTransitionDriver;
+  /**
+   * Swap mode only, board motion lab only: the native swap look its driver's
+   * six-number frames are drawn with (`swap-look.ts`). Not sent under Reduce
+   * Motion, nor to a binary without `swapLookVersion`; absent, API 7's swap.
+   */
+  look?: SwapLook;
   /** Real milliseconds per clock millisecond (4 = quarter speed). 1 when absent. */
   slowdown?: number;
   /**

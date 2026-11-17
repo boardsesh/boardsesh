@@ -117,6 +117,15 @@ enum ClimbOverlayMotion {
   /// an unknown command without a word, so the app checks this first.
   static let swapCommandApi = 1
 
+  /// Swap look only (`swapLookVersion` 1): whether the climb being left and
+  /// the arriving one each use the look's arriving rules this frame. The app
+  /// flips a climb's flag only while its weight is 0 or 1, so a relabelled pair
+  /// keeps its pixels.
+  struct SwapArrivals: Equatable {
+    var outgoing = false
+    var incoming = false
+  }
+
   /// A swap frame and the app's sequence number for it. A frame reaches the
   /// view twice, as the command and later as the animated prop; the sequence
   /// tells the late copy from a newer frame.
@@ -124,13 +133,18 @@ enum ClimbOverlayMotion {
     let frame: SwapFrame
     /// Nil for an app that sends no sequence: that frame always applies.
     let sequence: Double?
+    var arrivals = SwapArrivals()
   }
   /// Five numbers: the four-number frame, then its sequence, which must be
-  /// finite. Three or four numbers: a frame from an app without sequences.
+  /// finite. Seven (swap look): those five, then the outgoing and incoming
+  /// arrival flags (0 or 1), both finite; the fourth number is then the look's
+  /// shared floor. Three or four numbers: a frame from an app without sequences.
   static func sequencedSwapFrame(_ values: [Double]) -> SequencedSwapFrame? {
-    if values.count == 5 {
-      guard values[4].isFinite, let frame = swapFrame(Array(values.prefix(4))) else { return nil }
-      return SequencedSwapFrame(frame: frame,sequence: values[4])
+    if values.count == 5 || values.count == 7 {
+      guard values[4].isFinite, values.suffix(from: 5).allSatisfy({ $0.isFinite }),
+        let frame = swapFrame(Array(values.prefix(4))) else { return nil }
+      let arrivals = values.count == 7 ? SwapArrivals(outgoing: values[5] >= 0.5,incoming: values[6] >= 0.5) : SwapArrivals()
+      return SequencedSwapFrame(frame: frame,sequence: values[4],arrivals: arrivals)
     }
     guard let frame = swapFrame(values) else { return nil }
     return SequencedSwapFrame(frame: frame,sequence: nil)

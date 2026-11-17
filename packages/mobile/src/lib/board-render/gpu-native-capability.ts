@@ -42,3 +42,20 @@ function readSwapCommandApi(): number {
 }
 
 export const climbOverlaySwapCommandApi = readSwapCommandApi();
+
+/**
+ * The board motion lab's native swap look (`swapLookVersion`): 1 on iOS
+ * binaries that draw it, 0 on Android and on older binaries, which would
+ * reject its longer swap frames. The player never sends a look.
+ */
+function readSwapLookVersion(): number {
+  try {
+    const { requireOptionalNativeModule } = require('expo-modules-core') as typeof import('expo-modules-core');
+    const version = requireOptionalNativeModule<{ swapLookVersion?: unknown }>('ClimbOverlayGPU')?.swapLookVersion;
+    return typeof version === 'number' && Number.isSafeInteger(version) && version > 0 ? version : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export const climbOverlaySwapLookVersion = readSwapLookVersion();

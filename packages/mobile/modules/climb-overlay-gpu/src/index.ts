@@ -54,7 +54,10 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
    * A binary with the module constant `swapCommandApi` also takes five: the
    * four, then the frame's sequence; it drops a frame whose sequence is not
    * above the newest it applied. The same frame arrives first as the
-   * `swapFrame` view command (#7737).
+   * `swapFrame` view command (#7737). A binary with `swapLookVersion` 1 also
+   * takes seven: the five, then 1 or 0 for whether the climb being left and
+   * the arriving one use the swap look's arriving rules; the fourth number is
+   * then the look's shared floor.
    */
   swapFrame?:
     | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number]
@@ -65,7 +68,23 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
         incomingWeight: number,
         sharedWeight: number,
         sequence: number,
+      ]
+    | readonly [
+        pagePosition: number,
+        outgoingWeight: number,
+        incomingWeight: number,
+        sharedFloor: number,
+        sequence: number,
+        outgoingArrives: number,
+        incomingArrives: number,
       ];
+  /**
+   * `swapLookVersion` 1 (iOS) only, board motion lab only: the swap look
+   * (`encodeSwapLook` in play-drawer/swap-look.ts), set when a slider is
+   * released. Null or absent draws the API 7 swap; Reduce Motion turns it off
+   * natively. Android takes the prop and ignores it.
+   */
+  swapLook?: readonly number[] | null;
   animateEdits: boolean;
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;

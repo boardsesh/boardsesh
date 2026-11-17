@@ -10,7 +10,7 @@ import * as Clipboard from 'expo-clipboard';
 import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { getBoardRenderData } from '../../lib/board-details';
-import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
+import { climbOverlayGpuApiVersion, climbOverlaySwapLookVersion } from '../../lib/board-render/gpu-native-capability';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
@@ -60,7 +60,9 @@ export default function BoardMotionLabScreen() {
 
   const availableVariants = useMemo(
     () =>
-      BOARD_MOTION_VARIANTS.filter((candidate) => variantAvailability(candidate, climbOverlayGpuApiVersion).available),
+      BOARD_MOTION_VARIANTS.filter(
+        (candidate) => variantAvailability(candidate, climbOverlayGpuApiVersion, climbOverlaySwapLookVersion).available,
+      ),
     [],
   );
   const firstVariant = availableVariants[0] ?? BOARD_MOTION_VARIANTS[0];
@@ -223,7 +225,7 @@ export default function BoardMotionLabScreen() {
   }, [variant.id, params]);
 
   const variantOptions = BOARD_MOTION_VARIANTS.map((candidate) => {
-    const availability = variantAvailability(candidate, climbOverlayGpuApiVersion);
+    const availability = variantAvailability(candidate, climbOverlayGpuApiVersion, climbOverlaySwapLookVersion);
     return {
       key: candidate.id,
       label: `${candidate.letter} · ${candidate.name}`,

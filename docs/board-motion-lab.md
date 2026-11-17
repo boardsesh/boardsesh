@@ -22,6 +22,16 @@ Caption bar (letter, variant name, speed, board), the board, a status line (`GPU
 
 One file in `src/components/board-motion-lab/variants/` exporting a `BoardMotionVariant` (see `types.ts`), plus one line in `variants/index.ts`. Its `params` become sliders; `createTransition(params)` returns the transition the carousel uses.
 
+## The swap look (D to H)
+
+A to C change only the three per-kind weights. D (Sideways cascade), E (Ghost peek), F (Climb-up), G (LED strike) and H (Focus in) also send a native swap look, which gives each hold its own timing and glow. iOS only: the module constant `swapLookVersion` is 1 on iOS and 0 on Android, and the lab greys D to H out where it is 0. The player sends no look and draws the shipped swap.
+
+- The wall swap's state machine still decides one weight per side, so cancels, re-flicks, reversals and pull-backs behave as in the player. The native side (`ClimbOverlaySwapLook.swift`) turns a side's weight into each hold's weight with a front: holds change in order of a key (distance from the edge that climb enters from, or bottom to top for F's arriving climb), each over its own window. At weight 1, at the drag floor and at 0 every hold of a side looks the same, so a relabelled pair or a re-flick never jumps.
+- Per hold it also splits the mark from the glow (E's ghosts, G's afterglow) and changes the glow reach between 0.6× and 1.35× (D, F and G swell an arriving hold, H focuses it from wide, G and H pull a leaving hold's glow in). Reach stays at 1 in Low Power Mode and on a hot phone. Reduce Motion turns the look off natively, whatever the app sends.
+- Swift computes this once per frame for at most 2 × 128 holds and binds it as fragment buffer 5; the shader reads one `ushort4` per candidate hold. With no look the shader takes API 7's path, byte-identical to before (checked by `scripts/board-motion-preview`).
+- The look's numbers are the `swapLook` view prop, set when a slider is released. Each frame adds two numbers to the swap frame (seven with the sequence): whether the climb being left and the arriving one use the arriving rules. A climb takes them when it shows up as the incoming climb and drops them only at weight 0 or 1. The fourth number is then the floor below which shared holds never go; a commit within the flick-run window eases it to 1.
+- To see a variant without a phone, `scripts/board-motion-preview/README.md` renders ten frames of each on the Mac's GPU with the real shader.
+
 ## Scripts and Play all
 
 `scripts.ts` holds the scripted swipes (`FINGER_SCRIPTS`) and the one `SHOWCASE_SCRIPT` that Play all runs. Play all is a hands-free demo: for each available variant it selects the variant (the caption switches), puts the board back on the set's first climb, waits up to 2 s for the board to report GPU or PNG, holds 800 ms, plays the showcase script, then rests 600 ms before the next. A script that never finishes is stopped at its length (at the chosen speed) plus 2 s. Every variant swipes the same climbs. Stop cancels it, or ends a single script.
