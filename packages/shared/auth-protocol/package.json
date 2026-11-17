@@ -92,6 +92,11 @@
       "import": "./src/partner-oauth-mode.ts",
       "default": "./src/partner-oauth-mode.ts"
     },
+    "./browser-session-mode": {
+      "types": "./src/browser-session-mode.ts",
+      "import": "./src/browser-session-mode.ts",
+      "default": "./src/browser-session-mode.ts"
+    },
     "./client-errors": {
       "types": "./src/client-errors.ts",
       "import": "./src/client-errors.ts",

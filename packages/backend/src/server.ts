@@ -1,5 +1,6 @@
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
+import { assertBrowserSessionModeConfiguration } from './auth/authority/browser-session-mode';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
@@ -152,6 +153,7 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
   assertNativeRevocationActivationConfiguration();
   assertWebSessionWriterActivationConfiguration();
+  assertBrowserSessionModeConfiguration();
   // A typo in this mode would otherwise turn every adopted writer (account
   // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
   // request at a time. Refuse to serve instead, so the deploy fails visibly.
