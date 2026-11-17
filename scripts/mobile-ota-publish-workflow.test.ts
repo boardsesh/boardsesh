@@ -1220,3 +1220,65 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     expect(order).toEqual([...order].sort((left, right) => left - right));
   });
 });
+
+describe('preview OTA Metro transform cache', () => {
+  type PreviewStep = {
+    id?: string;
+    if?: string;
+    run?: string;
+    uses?: string;
+    env?: Record<string, string>;
+    with?: Record<string, string | number>;
+    'continue-on-error'?: boolean;
+  };
+  const workflow = parse(preview) as {
+    env: Record<string, string>;
+    jobs: Record<string, { permissions: Record<string, string>; steps: PreviewStep[] }>;
+  };
+  const publish = workflow.jobs.publish;
+  const step = (id: string) => publish.steps.find((entry) => entry.id === id)!;
+
+  it('isolates cache eligibility to automatic same-repository previews', () => {
+    expect(step('metro_preview_key').if).toBe(
+      "github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository",
+    );
+    expect(step('metro_preview_key').run).toContain('$RUNNER_TEMP/preview-candidates/candidates/main');
+    expect(publish.permissions.actions).toBe('read');
+    expect(step('metro_preview_find').env?.GH_TOKEN).toBe('${{ github.token }}');
+    expect(preview).not.toContain('METRO_CACHE_HMAC_KEY');
+    expect(preview).not.toContain('actions/cache@');
+  });
+
+  it('downloads by vetted artifact identity and only exposes a prepared store to publishing', () => {
+    expect(step('metro_preview_download').with).toMatchObject({
+      'artifact-ids': '${{ steps.metro_preview_find.outputs.artifact_id }}',
+      'run-id': '${{ steps.metro_preview_find.outputs.run_id }}',
+      path: '${{ runner.temp }}/metro-preview-download',
+    });
+    expect(step('metro_preview_unpack').if).toBe("steps.metro_preview_key.outputs.store_artifact != ''");
+    expect(step('candidates').env?.TMPDIR).toBe(
+      "${{ steps.metro_preview_unpack.outputs.store_ready == 'true' && format('{0}/metro-preview', runner.temp) || runner.temp }}",
+    );
+    expect(workflow.env.TMPDIR).toBeUndefined();
+    expect(step('metro_preview_pack').if).toContain("steps.candidates.outputs.published == 'true'");
+    expect(step('metro_preview_pack').if).toContain("steps.metro_preview_unpack.outputs.store_ready == 'true'");
+  });
+
+  it('keeps every cache operation optional and never gives it the publisher credential', () => {
+    const cacheSteps = publish.steps.filter(
+      (entry) =>
+        entry.id?.startsWith('metro_preview_') ||
+        entry.with?.name === '${{ steps.metro_preview_key.outputs.store_artifact }}',
+    );
+    expect(cacheSteps).toHaveLength(6);
+    for (const entry of cacheSteps) {
+      expect(entry['continue-on-error'], entry.id).toBe(true);
+      expect(entry.env?.EOO_TOKEN).toBeUndefined();
+      expect(entry.env?.GOOGLE_MAPS_API_KEY).toBeUndefined();
+    }
+    const save = cacheSteps.find((entry) => entry.uses?.startsWith('actions/upload-artifact@'))!;
+    expect(save.if).toBe("steps.metro_preview_pack.outputs.archive_ready == 'true'");
+    expect(save.with?.['retention-days']).toBe(7);
+    expect(save.with?.path).toBe('${{ runner.temp }}/metro-preview-upload/metro-cache.tar');
+  });
+});

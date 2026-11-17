@@ -713,6 +713,7 @@ jobs:
     # NO issues / pull-requests write — those stay on trusted announce / cleanup.
     permissions:
       contents: read
+      actions: read
       deployments: write
       pull-requests: read
     environment: ota-preview
@@ -874,9 +875,53 @@ jobs:
               core.setFailed('Prepared preview is stale: the PR closed or its head changed while candidates built.');
             }
 
+      # Only automatic, same-repository PR runs share a store, and only with
+      # earlier successful runs of this same PR. Fork/manual/sandbox runs stay
+      # cold. Production never selects these artifacts; its HMAC key stays there.
+      # Hash the replayed candidate (not the tooling checkout) and its .env.
+      - name: Key the preview Metro cache
+        id: metro_preview_key
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        run: >-
+          node --experimental-strip-types tooling/scripts/ci/metro-preview-cache.ts key
+          "$RUNNER_TEMP/preview-candidates/candidates/main"
+
+      - name: Find this PR's previous Metro cache
+        id: metro_preview_find
+        if: steps.metro_preview_key.outputs.store_artifact != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          METRO_STORE_ARTIFACT: ${{ steps.metro_preview_key.outputs.store_artifact }}
+        run: node --experimental-strip-types tooling/scripts/ci/metro-preview-cache.ts select
+
+      - name: Download the preview Metro cache
+        id: metro_preview_download
+        if: steps.metro_preview_find.outputs.artifact_id != '' && steps.metro_preview_find.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.metro_preview_find.outputs.artifact_id }}
+          run-id: ${{ steps.metro_preview_find.outputs.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/metro-preview-download
+
+      - name: Prepare the preview Metro store
+        id: metro_preview_unpack
+        if: steps.metro_preview_key.outputs.store_artifact != ''
+        continue-on-error: true
+        run: >-
+          node --experimental-strip-types tooling/scripts/ci/metro-preview-cache.ts unpack
+          "$RUNNER_TEMP/metro-preview-download/metro-cache.tar" "$RUNNER_TEMP/metro-preview"
+
       - name: Publish compatible preview runtime variants
         id: candidates
         env:
+          # Only validated files (or a newly initialized empty store) reach Metro.
+          # Keep TMPDIR step-local so compatibility/native environments stay intact.
+          TMPDIR: ${{ steps.metro_preview_unpack.outputs.store_ready == 'true' && format('{0}/metro-preview', runner.temp) || runner.temp }}
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
@@ -887,6 +932,25 @@ jobs:
         run: |
           node --experimental-strip-types tooling/scripts/mobile-ota-preview-candidates.ts publish \
             "$GITHUB_WORKSPACE/source" "$RUNNER_TEMP/preview-candidates" "$RUNNER_TEMP/preview-artifacts"
+
+      - name: Pack the preview Metro cache
+        id: metro_preview_pack
+        if: steps.candidates.outputs.published == 'true' && steps.metro_preview_unpack.outputs.store_ready == 'true'
+        continue-on-error: true
+        run: >-
+          node --experimental-strip-types tooling/scripts/ci/metro-preview-cache.ts pack
+          "$RUNNER_TEMP/metro-preview" "$RUNNER_TEMP/metro-preview-upload/metro-cache.tar"
+
+      - name: Save this PR's Metro cache
+        if: steps.metro_preview_pack.outputs.archive_ready == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.metro_preview_key.outputs.store_artifact }}
+          path: ${{ runner.temp }}/metro-preview-upload/metro-cache.tar
+          retention-days: 7
+          compression-level: 1
+          if-no-files-found: error
 
       - name: Archive the frozen preview receipt
         if: always() && steps.candidates.outputs.published == 'true'
