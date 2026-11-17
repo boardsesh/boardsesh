@@ -2,6 +2,7 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { assertBrowserSessionModeConfiguration } from './auth/authority/browser-session-mode';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
+import { handleCurrentStoreWebSession } from './handlers/current-store-web-session';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
 import { handleFirstPassword } from './handlers/first-password';
@@ -817,6 +818,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname === '/api/internal/auth/current-store/signout') {
         await handleCurrentStoreWebSignOut(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/current-store/web-session/v1/')) {
+        await handleCurrentStoreWebSession(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/web-oauth/v1/')) {
