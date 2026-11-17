@@ -342,6 +342,19 @@ describe('public NextAuth App Router password delegation', () => {
     expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
     warn.mockRestore();
   });
+  // A path the zone's rule misses, or a Worker on the Railway domain, carries no proof.
+  it('limits a legacy sign-in without the proof once the proof secret is set, never skipping it', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', 'origin-proof-fixture-secret-at-least-32-bytes');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    legacyAuthorize.mockResolvedValue(null);
+    vi.stubGlobal('fetch', vi.fn());
+    const unproven = () => password('172.70.9.9', selected.email, { 'CF-Connecting-IP': clientAddress });
+    for (let attempt = 0; attempt < 10; attempt += 1) expect((await unproven()).status).toBe(401);
+    expect((await unproven()).status).toBe(429);
+    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
+    warn.mockRestore();
+  });
   it('uses the exact original credentials path in legacy mode without RPC configuration', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', '');

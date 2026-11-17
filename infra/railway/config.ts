@@ -817,6 +817,13 @@ export const desiredRailwayState: RailwayDesiredState = {
             'auth limiters behave as before and staged sign-in sends no client address. Add the Cloudflare rule ' +
             'first, then this: docs/better-auth-web-password-delegation.md, "Turning on the origin proof".',
         },
+        {
+          name: 'CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT',
+          reason:
+            'A second accepted origin proof value, set only during a rotation so www visitors are never ' +
+            'unproven: set this to the new value, change the Cloudflare rule, then move it to ' +
+            'CLOUDFLARE_ORIGIN_PROOF_SECRET and unset this. Same 32-byte rule.',
+        },
       ],
       optionalConstrainedVars: [
         {

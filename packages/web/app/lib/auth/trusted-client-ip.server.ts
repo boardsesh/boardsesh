@@ -2,6 +2,7 @@ import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIPv6 } from 'node:net';
 import { isCloudflareEdgeAddress, normalizeIpAddress } from '@boardsesh/consent/edge-country';
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from './origin-proof-header';
 import { webPasswordMode } from './password-command-client.server';
 
 /** One bucket for edge requests with no usable visitor, whichever edge address carried them. */
@@ -36,18 +37,18 @@ function clientBucket(address: string): string {
   return `${networkGroups.join(':')}::/64`;
 }
 
-/**
- * The request header a transform rule on our Cloudflare zone sets on www
- * `/api/auth/` requests, holding {@link CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV}. A
- * Cloudflare last hop alone proves only that the request crossed some Cloudflare
- * edge: a Worker on any account that fetches our Railway domain leaves from a
- * Cloudflare address, and Cloudflare lets it set `CF-Connecting-IP` itself
- * because that domain is not a Cloudflare zone. Only our zone can add this header.
- */
-export const CLOUDFLARE_ORIGIN_PROOF_HEADER = 'X-Boardsesh-Origin-Proof';
+export { CLOUDFLARE_ORIGIN_PROOF_HEADER };
 /** The web env var holding the proof our zone's transform adds. At least 32 bytes, or it counts as unset. */
 export const CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV = 'CLOUDFLARE_ORIGIN_PROOF_SECRET';
+/**
+ * A second accepted value, so a rotation has no gap: set this to the new value,
+ * change the Cloudflare rule, then move it to the primary and unset this. Same
+ * 32-byte rule.
+ */
+export const CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV = 'CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT';
 const MIN_ORIGIN_PROOF_SECRET_BYTES = 32;
+/** How often the log may say a Cloudflare request arrived without our zone's proof. */
+const UNPROVEN_WARNING_INTERVAL_MS = 60_000;
 
 type OriginProof = 'unconfigured' | 'proven' | 'unproven';
 
@@ -55,14 +56,52 @@ function sha256(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
 }
 
-/** Whether our zone added this request's proof. `unconfigured` while the secret is unset or short. */
+function usableSecret(name: string): string | null {
+  const secret = process.env[name]?.trim();
+  return secret && Buffer.byteLength(secret, 'utf8') >= MIN_ORIGIN_PROOF_SECRET_BYTES ? secret : null;
+}
+
+let lastUnprovenWarningAt = Number.NEGATIVE_INFINITY;
+let unprovenSinceLastWarning = 0;
+
+/**
+ * A Cloudflare last hop without our zone's proof is either a caller that skipped
+ * our zone or a sign that the transform rule is missing or holds another value.
+ * The owner's turn-on check is that this never appears for real sign-ins.
+ */
+function warnUnprovenEdgeRequest(request: Request): void {
+  unprovenSinceLastWarning += 1;
+  const now = Date.now();
+  if (now - lastUnprovenWarningAt < UNPROVEN_WARNING_INTERVAL_MS) return;
+  lastUnprovenWarningAt = now;
+  console.warn(
+    JSON.stringify({
+      event: 'cloudflare_origin_proof_missing',
+      path: new URL(request.url).pathname,
+      unprovenSinceLastWarning,
+    }),
+  );
+  unprovenSinceLastWarning = 0;
+}
+
+/**
+ * Whether our zone added this request's proof. `unconfigured` while neither
+ * secret is set to at least 32 bytes. Call once per helper call: an unproven
+ * request with a Cloudflare last hop is counted toward the warning.
+ */
 function originProof(request: Request): OriginProof {
-  const secret = process.env[CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV]?.trim();
-  if (!secret || Buffer.byteLength(secret, 'utf8') < MIN_ORIGIN_PROOF_SECRET_BYTES) return 'unconfigured';
+  const secrets = [CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV, CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV]
+    .map(usableSecret)
+    .filter((secret): secret is string => secret !== null);
+  if (secrets.length === 0) return 'unconfigured';
   const presented = request.headers.get(CLOUDFLARE_ORIGIN_PROOF_HEADER)?.trim();
-  if (!presented) return 'unproven';
-  // Digests have one length, so the comparison time says nothing about the secret.
-  return timingSafeEqual(sha256(presented), sha256(secret)) ? 'proven' : 'unproven';
+  // Digests have one length, so the comparison time says nothing about a secret.
+  // Every secret is compared, so the time does not say which one matched either.
+  const presentedDigest = presented ? sha256(presented) : null;
+  const matches = secrets.map((secret) => presentedDigest !== null && timingSafeEqual(presentedDigest, sha256(secret)));
+  if (matches.includes(true)) return 'proven';
+  if (isCloudflareEdgeAddress(lastForwardedHop(request))) warnUnprovenEdgeRequest(request);
+  return 'unproven';
 }
 
 function lastForwardedHop(request: Request): string | undefined {
@@ -134,11 +173,15 @@ export function cloudflareVouchedVisitorAddress(request: Request): string | null
  *
  * While the origin proof secret is unset this behaves exactly as before: any
  * Cloudflare last hop is believed, which a Worker can exploit (#7766). Once it
- * is set, only a request carrying our zone's proof gets a key.
+ * is set, a request without our zone's proof is keyed on its last hop (or
+ * `unknown`), never null, so the legacy sign-in limit cannot be skipped by
+ * leaving the proof out or using a path the rule misses.
  */
 export function cloudflareVisitorRateLimitKey(request: Request): string | null {
-  if (originProof(request) === 'unproven') return null;
   const lastHop = lastForwardedHop(request);
+  // Configured and unproven: not our zone's traffic, since real visitors carry
+  // the proof. Limit it on the hop our ingress saw; never skip it.
+  if (originProof(request) === 'unproven') return lastHop ? clientBucket(lastHop) : 'unknown';
   if (!lastHop || !isCloudflareEdgeAddress(lastHop)) return null;
   const visitor = reportedVisitor(request);
   return visitor ? clientBucket(visitor) : null;
