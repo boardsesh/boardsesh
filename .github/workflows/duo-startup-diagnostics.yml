@@ -1,0 +1,110 @@
+name: Duo Startup Diagnostics
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Historical main commit whose unchanged hinge helper should run
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: duo-startup-diagnostics
+  cancel-in-progress: false
+jobs:
+  validate-source:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source-sha: ${{ steps.validate.outputs.source-sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate historical main source
+        id: validate
+        env:
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$REQUESTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Recovery requires a full lowercase 40-character commit SHA.'
+            exit 1
+          fi
+          git cat-file -e "$REQUESTED_SOURCE_SHA^{commit}"
+          git merge-base --is-ancestor "$REQUESTED_SOURCE_SHA" origin/main
+          printf 'source-sha=%s\n' "$REQUESTED_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+  diagnose:
+    needs: validate-source
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - name: Checkout diagnostic tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Checkout frozen source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-source.outputs.source-sha }}
+          path: historical
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Verify sources
+        env:
+          SOURCE_SHA: ${{ needs.validate-source.outputs.source-sha }}
+          TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TOOLING_SHA"
+          test "$(git -C historical rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir -p duo-diagnostics
+          printf 'source=%s\ntooling=%s\n' "$SOURCE_SHA" "$TOOLING_SHA" > duo-diagnostics/provenance.txt
+      - name: Select historical screenshot toolchain
+        run: bash historical/scripts/select-screenshot-xcode.sh
+      - name: Require original toolchain identity
+        run: |
+          set -euo pipefail
+          xcodebuild -version > duo-diagnostics/xcode-version.txt
+          xcrun --sdk iphonesimulator --show-sdk-version > duo-diagnostics/sdk-version.txt
+          xcrun --sdk iphonesimulator --show-sdk-build-version > duo-diagnostics/sdk-build.txt
+          grep -qx 'Build version 27B52' duo-diagnostics/xcode-version.txt
+          test "$(cat duo-diagnostics/sdk-version.txt)" = 27.2
+          test "$(cat duo-diagnostics/sdk-build.txt)" = 24B8118
+      - name: Observe unchanged helper startup
+        run: node --experimental-strip-types scripts/duo-startup-diagnostics.ts historical duo-diagnostics
+      - name: Shut down owned diagnostic simulator
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+          const path = 'duo-diagnostics/simulator-udid.txt';
+          if (existsSync(path)) {
+            const udid = readFileSync(path, 'utf8').trim();
+            if (!/^[A-F0-9-]{36}$/i.test(udid)) throw new Error('Invalid diagnostic simulator ID');
+            const result = spawnSync('xcrun', ['simctl', 'shutdown', udid], {
+              encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL',
+            });
+            writeFileSync('duo-diagnostics/workflow-shutdown.json', JSON.stringify({
+              status: result.status, signal: result.signal, stderr: result.stderr,
+              error: result.error?.message,
+            }));
+          }
+          NODE
+      - name: Retain startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duo-startup-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: duo-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
