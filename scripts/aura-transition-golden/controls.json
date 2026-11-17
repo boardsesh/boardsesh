@@ -318,6 +318,42 @@
       "pulse": 1,
       "mirrored": false,
       "swap": [0, 0.6]
+    },
+    {
+      "name": "swap-shared-0-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0.4, 0, 0.4]
+    },
+    {
+      "name": "swap-shared-1-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0.25, 0.3, 0.4]
+    },
+    {
+      "name": "swap-shared-2-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [0, 0.6, 0.6]
+    },
+    {
+      "name": "swap-shared-3-m0",
+      "lower": 0,
+      "upper": 2,
+      "progress": 0,
+      "pulse": 1,
+      "mirrored": false,
+      "swap": [1, 0, 0]
     }
   ]
 }

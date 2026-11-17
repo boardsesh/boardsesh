@@ -107,6 +107,7 @@ describe('iOS Release launch workflow', () => {
       'ClimbOverlayAtlas.swift',
       'tests/ClimbOverlayAtlasTests.swift',
     ],
+    ['motion', 'ClimbOverlayPacketLayout.swift', 'ClimbOverlayMotion.swift', 'tests/ClimbOverlayMotionTests.swift'],
     ['budget', 'ClimbOverlayPacketLayout.swift', 'ClimbOverlayBudget.swift', 'tests/ClimbOverlayBudgetTests.swift'],
     ['arena', 'ClimbOverlayPacketLayout.swift', 'ClimbOverlayArenaIndex.swift', 'tests/ClimbOverlayArenaTests.swift'],
     ['job', 'ClimbOverlayPacketJob.swift', 'tests/ClimbOverlayPacketJobTests.swift'],

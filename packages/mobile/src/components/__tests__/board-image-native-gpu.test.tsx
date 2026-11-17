@@ -412,7 +412,9 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
   it('hands an API 6 overlay the wall swap as one frame, whose dissolve outlives Reduce Motion', () => {
     controls.apiVersion = 6;
     const pagePosition = { value: 4.6 } as SharedValue<number>;
-    const swapFrame = { value: [4.25, 0.4, 0] } as unknown as SharedValue<readonly [number, number, number]>;
+    const swapFrame = { value: [4.25, 0.4, 0, 0.4] } as unknown as SharedValue<
+      readonly [number, number, number, number]
+    >;
     const transition = {
       previousFrames: 'p4131r43',
       nextFrames: 'p4306r43',
@@ -424,8 +426,9 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     const { rerender } = render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
     expect(controls.props?.revealMode).toBe('swap');
     // The pair and both weights travel together; the pager's position does not.
+    // API 6 takes exactly three numbers, so the shared weight stays behind.
     expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.4, 0] });
-    swapFrame.value = [4.25, 0.1, 0.5];
+    swapFrame.value = [4.25, 0.1, 0.5, 0.5];
     expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.1, 0.5] });
     controls.reduceMotion = true;
     rerender(<BoardImageNative {...BOARD} frames="p4131r43" gpuTransition={transition} />);
@@ -440,6 +443,26 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     rerender(<BoardImageNative {...BOARD} frames="p4306r43" gpuTransition={transition} />);
     expect(controls.props?.revealMode).toBeUndefined();
     expect(controls.animatedWorklet?.()).toEqual({ pagePosition: 4.6 });
+  });
+
+  it('hands an API 7 overlay the shared-hold weight as the frame’s fourth number', () => {
+    controls.apiVersion = 7;
+    const swapFrame = { value: [4.25, 0.4, 0, 0.4] } as unknown as SharedValue<
+      readonly [number, number, number, number]
+    >;
+    const transition = {
+      previousFrames: 'p4131r43',
+      nextFrames: 'p4306r43',
+      centerPage: 4,
+      pagePosition: { value: 4.6 } as SharedValue<number>,
+      revealMode: 'swap' as const,
+      swapFrame,
+    };
+    render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    expect(controls.props?.revealMode).toBe('swap');
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.4, 0, 0.4] });
+    swapFrame.value = [4.25, 0, 0.7, 0.7];
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0, 0.7, 0.7] });
   });
 
   it('flattens multi-frame neighboring climbs just like the current climb', () => {

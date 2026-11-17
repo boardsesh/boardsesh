@@ -52,7 +52,11 @@ export function ownedProcessState(result, pid, expectedCommand) {
     return 'gone';
   return 'unknown';
 }
-/** Wall-swap controls after the thirty wipe/editor controls: name, slots, weights, mirror. */
+/**
+ * Wall-swap controls after the thirty wipe/editor controls: name, slots, weights,
+ * mirror. Weights are lower-only, upper-only and, when given, shared same-role
+ * holds (default 1, fully lit, as native API 6 drew them).
+ */
 export const SWAP_CONTROLS = [
   ['swap-0-m0', 0, 2, [1, 0], false],
   ['swap-1-m0', 0, 2, [0.4, 0], false],
@@ -62,12 +66,20 @@ export const SWAP_CONTROLS = [
   ['swap-2-m1', 0, 2, [0.25, 0.3], true],
   ['swap-previous-0-m0', 1, 0, [0.2, 0.4], false],
   ['swap-previous-1-m0', 1, 0, [0, 0.6], false],
+  // Shared holds dipping with the rest (native API 7): at the drag's commit
+  // point, mid-swap below the floor, and back with the incoming holds. The last
+  // is no state the app produces: shared holds dark at an otherwise settled pair,
+  // which must still take the weighted compositor.
+  ['swap-shared-0-m0', 0, 2, [0.4, 0, 0.4], false],
+  ['swap-shared-1-m0', 0, 2, [0.25, 0.3, 0.4], false],
+  ['swap-shared-2-m0', 0, 2, [0, 0.6, 0.6], false],
+  ['swap-shared-3-m0', 0, 2, [1, 0, 0], false],
 ];
 export const CONTROL_COUNT = 30 + SWAP_CONTROLS.length;
 export function validateControls(controls) {
   requireCondition(
     controls?.version === 1 && Array.isArray(controls.samples) && controls.samples.length === CONTROL_COUNT,
-    'Exactly thirty-eight controls required',
+    'Exactly forty-two controls required',
   );
   requireCondition(
     Object.keys(controls).every((key) => ['version', 'samples'].includes(key)),
@@ -114,7 +126,7 @@ export function validateControls(controls) {
     requireCondition(
       sample.swap === undefined ||
         (Array.isArray(sample.swap) &&
-          sample.swap.length === 2 &&
+          (sample.swap.length === 2 || sample.swap.length === 3) &&
           sample.swap.every((weight) => Number.isFinite(weight) && weight >= 0 && weight <= 1) &&
           sample.progress === 0 &&
           !sample.editorAllChanged),

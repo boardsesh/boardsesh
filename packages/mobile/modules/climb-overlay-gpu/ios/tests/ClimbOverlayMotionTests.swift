@@ -87,9 +87,9 @@ import Foundation
       precondition(ClimbOverlayMotion.revealMode(named: name) == ClimbOverlayMotion.revealModeWipe)
     }
     func swapAt(_ position: Double, center: Double = 12, previous: Bool = true, next: Bool = true,
-                _ outgoing: Float, _ incoming: Float) -> (Int, Int, ClimbOverlayMotion.SwapWeights) {
+                _ outgoing: Float, _ incoming: Float, shared: Float = 1) -> (Int, Int, ClimbOverlayMotion.SwapWeights) {
       let (selection, weights) = ClimbOverlayMotion.selectSwap(pagePosition: position,centerPage: center,
-        hasPrevious: previous,hasNext: next,outgoing: outgoing,incoming: incoming)
+        hasPrevious: previous,hasNext: next,outgoing: outgoing,incoming: incoming,shared: shared)
       return (ClimbOverlayMotion.slot(selection.lowerOffset), ClimbOverlayMotion.slot(selection.upperOffset), weights)
     }
     // Leaving 12 for 13 before and after the app renders 13 as its centre.
@@ -114,19 +114,35 @@ import Foundation
     precondition(swapAt(13.25,next: false,0.4,0.6).0 == 0)
     precondition(swapAt(12.25,.nan,.infinity).2 == .init(lower: 1,upper: 0),"Non-finite weights settle")
     precondition(swapAt(12.25,2,-1).2 == .init(lower: 1,upper: 0),"Weights clamp to 0...1")
-    // The pair and both weights arrive as one prop: never half of an update.
+    // Shared holds take one weight whichever side is outgoing; a still keeps them whole.
+    precondition(swapAt(12.25,0.4,0,shared: 0.4).2 == .init(lower: 0.4,upper: 0,shared: 0.4))
+    precondition(swapAt(12.75,0.2,0.6,shared: 0.6).2 == .init(lower: 0.6,upper: 0.2,shared: 0.6))
+    precondition(swapAt(12,0.4,0,shared: 0.4).2 == .init(lower: 1,upper: 0,shared: 1),"A still draws shared holds whole")
+    precondition(swapAt(13.25,0.4,0.6,shared: 0.4).2.shared == 1)
+    precondition(swapAt(12.25,0.4,0,shared: .nan).2.shared == 1,"A non-finite shared weight is whole")
+    precondition(swapAt(12.25,0.4,0,shared: -1).2.shared == 0 && swapAt(12.25,0.4,0,shared: 2).2.shared == 1)
+    precondition(swapAt(12.25,0.4,0).2.shared == 1,"Without a shared weight, shared holds stay whole")
+    // The pair and its weights arrive as one prop: never half of an update.
     precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0]) == .init(pagePosition: 12.25,outgoing: 0.4,incoming: 0))
     precondition(ClimbOverlayMotion.swapFrame([12.25,2,-1]) == .init(pagePosition: 12.25,outgoing: 1,incoming: 0))
-    for malformed in [[12.25,0.4], [12.25,0.4,0,1], [.nan,0.4,0], [12,0.4,.infinity], []] {
+    // API 7: a fourth number weights shared holds; three numbers (an older app) keep them whole.
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0,0.4])
+      == .init(pagePosition: 12.25,outgoing: 0.4,incoming: 0,shared: 0.4))
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0])?.shared == 1)
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0,.nan])?.shared == 1,"An invalid shared weight is whole")
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0,.infinity])?.shared == 1)
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0,-3])?.shared == 0)
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0,7])?.shared == 1)
+    for malformed in [[12.25,0.4], [12.25,0.4,0,1,1], [.nan,0.4,0], [12,0.4,.infinity], [.nan,0.4,0,1], []] {
       precondition(ClimbOverlayMotion.swapFrame(malformed) == nil,"Malformed swap frames are ignored whole")
     }
     // While the next trio prepares, the old one keeps the running swap moving:
     // leaving 12 for 13 after the app rendered 13, the old trio (11, 12, 13)
     // draws the same pair and weights the new trio (12, 13, 14) will.
     func carried(_ position: Double, center: Double, previous: Bool = true, next: Bool = true,
-                 _ outgoing: Float, _ incoming: Float) -> (Int, Int, ClimbOverlayMotion.SwapWeights)? {
+                 _ outgoing: Float, _ incoming: Float, shared: Float = 1) -> (Int, Int, ClimbOverlayMotion.SwapWeights)? {
       ClimbOverlayMotion.carryOverSwap(pagePosition: position,centerPage: center,hasPrevious: previous,
-        hasNext: next,outgoing: outgoing,incoming: incoming).map {
+        hasNext: next,outgoing: outgoing,incoming: incoming,shared: shared).map {
         (ClimbOverlayMotion.slot($0.0.lowerOffset), ClimbOverlayMotion.slot($0.0.upperOffset), $0.1)
       }
     }
@@ -134,6 +150,8 @@ import Foundation
     let newTrio = swapAt(12.25,center: 13,0.1,0.5)
     precondition(oldTrio.0 == 0 && oldTrio.1 == 2 && newTrio.0 == 1 && newTrio.1 == 0,"Same pages, other slots")
     precondition(oldTrio.2 == newTrio.2,"The hand-over keeps the weights")
+    precondition(carried(12.25,center: 12,0,0.6,shared: 0.6)!.2
+      == swapAt(12.25,center: 13,0,0.6,shared: 0.6).2,"The hand-over keeps the shared weight")
     precondition(carried(13,center: 12,1,0)! == (0, 2, .init(lower: 0,upper: 1)),"An arrived climb is its next slot")
     precondition(carried(12,center: 12,1,0)! == (0, 0, .init(lower: 1,upper: 0)))
     // A frame the old trio cannot draw holds the last one instead of guessing.

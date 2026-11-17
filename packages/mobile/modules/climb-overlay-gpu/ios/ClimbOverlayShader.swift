@@ -24,7 +24,7 @@ enum ClimbOverlayShader {
     float4 size; // output width, height, active count, draw glow
     float4 veil;
     float4 tuning; // merge, seam, max mix, sharpness
-    float4 tuning2; // fringe, core share, active max reach
+    float4 tuning2; // fringe, core share, active max reach, wall-swap shared-hold weight
     uint4 offsets; // LED covers, active stamp-layer mask
     float2 viewport;
     float2 swapWeights; // wall swap: lower-only and upper-only hold weights
@@ -81,8 +81,9 @@ enum ClimbOverlayShader {
   }
   float reveal_weight(Hold hold, bool upper, constant Uniforms& uniforms) {
     float membership=upper ? hold.numbers.z : hold.numbers.w;
-    // A shared same-role hold stays fully lit, and appears only once.
-    if(membership==1) return upper ? 0 : 1;
+    // A shared same-role hold appears only once, on the lower side. The wipe
+    // keeps it fully lit; the wall swap gives it the app's shared weight.
+    if(membership==1) return upper ? 0 : (uniforms.motion.z>0.5 ? uniforms.tuning2.w : 1);
     // Wall swap: one weight per side, wherever the hold is. A changed hold
     // shows only its stronger role (the lower one on a tie), never two marks.
     if(uniforms.motion.z>0.5) {

@@ -1211,15 +1211,27 @@ pub enum Reveal {
     Wipe { progress: f32 },
     /// The wall swap. Holds lit only in the lower scene (or a changed hold's
     /// lower role) take `lower`, those only in the upper scene take `upper`, and
-    /// holds lit with the same role in both stay fully lit. Position plays no part.
-    Swap { lower: f32, upper: f32 },
+    /// holds lit with the same role in both take `shared`, drawn once. Position
+    /// plays no part. A `shared` of 1 keeps shared holds fully lit, as native
+    /// API 6 drew them; the app decides how far they dip.
+    Swap { lower: f32, upper: f32, shared: f32 },
 }
 impl Reveal {
     /// The flat native arguments: `mode` is `REVEAL_MODE_WIPE` or `REVEAL_MODE_SWAP`.
-    pub fn from_native(mode: u32, progress: f32, lower: f32, upper: f32) -> Result<Self, String> {
+    pub fn from_native(
+        mode: u32,
+        progress: f32,
+        lower: f32,
+        upper: f32,
+        shared: f32,
+    ) -> Result<Self, String> {
         let reveal = match mode {
             REVEAL_MODE_WIPE => Self::Wipe { progress },
-            REVEAL_MODE_SWAP => Self::Swap { lower, upper },
+            REVEAL_MODE_SWAP => Self::Swap {
+                lower,
+                upper,
+                shared,
+            },
             _ => return Err("invalid dynamic uniform input".into()),
         };
         if reveal.is_valid() {
@@ -1232,22 +1244,49 @@ impl Reveal {
         let unit = |number: f32| number.is_finite() && (0.0..=1.0).contains(&number);
         match *self {
             Self::Wipe { progress } => unit(progress),
-            Self::Swap { lower, upper } => unit(lower) && unit(upper),
+            Self::Swap {
+                lower,
+                upper,
+                shared,
+            } => unit(lower) && unit(upper) && unit(shared),
         }
     }
     /// The shader's `motion.x`. It picks the still compositor at 0 (lower) and 1
-    /// (upper), the stamp layers, and how much veil an empty side keeps. A swap
-    /// reaches 0 or 1 only when one side is fully lit and the other fully gone,
-    /// and an empty side's veil follows the other side's weight.
+    /// (upper), the stamp layers, and how much veil an empty side keeps. The
+    /// still compositor draws every hold whole, so a swap reaches 0 or 1 only
+    /// when one side is fully lit, the other fully gone and shared holds fully
+    /// lit. An empty side's veil follows the other side's weight.
     pub fn progress(&self, same_scene: bool, lower_count: usize, upper_count: usize) -> f32 {
         match *self {
             Self::Wipe { progress } => progress,
             Self::Swap { .. } if same_scene => 0.0,
-            Self::Swap { lower, upper } => match (lower_count > 0, upper_count > 0) {
+            Self::Swap {
+                lower,
+                upper,
+                shared,
+            } => match (lower_count > 0, upper_count > 0) {
+                // With one side empty no hold is in both climbs: `shared`
+                // weights nothing.
                 (true, false) => 1.0 - lower,
                 (false, true) => upper,
+                _ if shared < 1.0 => {
+                    // Dimmed shared holds need the weighted compositor. With both
+                    // sides lit the veil is whole at any interior value, so this
+                    // only selects it.
+                    ((1.0 - lower + upper) * 0.5).clamp(f32::EPSILON, 1.0 - f32::EPSILON)
+                }
                 _ => (1.0 - lower + upper) * 0.5,
             },
+        }
+    }
+    /// Uniform `tuning2.w` (word 15, byte 60): the shared same-role hold weight.
+    /// Only the weighted swap compositor reads it, so every other frame (the
+    /// wipe, and any frame that selects a still) leaves the word zero, exactly
+    /// as native API 6 did.
+    fn shared_weight_bits(&self, progress: f32) -> u32 {
+        match *self {
+            Self::Swap { shared, .. } if progress > 0.0 && progress < 1.0 => shared.to_bits(),
+            _ => 0,
         }
     }
 }
@@ -1344,6 +1383,7 @@ impl Packet {
             words[8 + index] = scalar(name).to_bits();
         }
         words[14] = lower.max_reach.to_bits();
+        words[15] = reveal.shared_weight_bits(progress);
         words[16] = self
             .covers
             .as_ref()
@@ -1364,6 +1404,7 @@ impl Packet {
         if let Reveal::Swap {
             lower: lower_weight,
             upper: upper_weight,
+            ..
         } = reveal
         {
             words[22] = lower_weight.to_bits();
@@ -1395,7 +1436,7 @@ impl Packet {
 }
 
 pub fn contract_manifest() -> Value {
-    json!({"packetVersion":PACKET_VERSION,"nativeApiVersion":6,"statsVersion":1,"descriptorBytes":DESCRIPTOR_BYTES,"uniformBytes":UNIFORM_BYTES,
+    json!({"packetVersion":PACKET_VERSION,"nativeApiVersion":7,"statsVersion":1,"descriptorBytes":DESCRIPTOR_BYTES,"uniformBytes":UNIFORM_BYTES,
         "editDurationMs":EDIT_DURATION_MS,"editPeakTimeMs":EDIT_PEAK_TIME_MS,"editPeakReachBits":EDIT_PEAK_REACH.to_bits(),"revealBandBits":REVEAL_BAND.to_bits(),
         "revealModeWipe":REVEAL_MODE_WIPE,"revealModeSwap":REVEAL_MODE_SWAP,
         "tileEdge":TILE_EDGE,"lutWords":LUT_WORDS,"maxGpuBytes":MAX_GPU_BYTES,"maxActivePerSource":128,
@@ -1403,7 +1444,7 @@ pub fn contract_manifest() -> Value {
         "glesStorageBindings":{"pixels":0,"lower":1,"upper":2,"resources":3},"glesUniformBindings":{"uniforms":0},
         "statuses":{"success":0,"invalid":-1,"unsupported":-2,"cancelled":-3,"closed":-4,"resourcePressure":-5,"internalPanic":-6},
         "descriptorOffsets":{"color":0,"bounds":16,"crop":32,"offsets":48,"numbers":64,"identity":80,"fillCrop":96,"plateCrop":112,"glyphCrop":128,"extraOffsets":144,"fillCrop1":160,"fillCrop2":176,"fillCrop3":192,"glyphCrop1":208},
-        "uniformOffsets":{"size":0,"veil":16,"tuning":32,"tuning2":48,"offsets":64,"viewport":80,"swapWeights":88,"motion":96,"other":112,"coverCrop":128}})
+        "uniformOffsets":{"size":0,"veil":16,"tuning":32,"tuning2":48,"sharedWeight":60,"offsets":64,"viewport":80,"swapWeights":88,"motion":96,"other":112,"coverCrop":128}})
 }
 pub fn contract_sha256() -> &'static str {
     static HASH: LazyLock<String> = LazyLock::new(|| {
@@ -1654,8 +1695,9 @@ mod tests {
         assert_eq!(word(&uniforms, 108), 1.35_f32.to_bits());
         assert_eq!(word(&uniforms, 72), packet.scenes[0].tile_directory);
         assert_eq!(word(&uniforms, 76), packet.scenes[2].tile_directory);
-        // The wipe leaves the swap weights and mode zero: earlier bytes, unchanged.
-        for offset in [88, 92, 104] {
+        // The wipe leaves the swap weights, shared weight and mode zero: earlier
+        // bytes, unchanged.
+        for offset in [60, 88, 92, 104] {
             assert_eq!(word(&uniforms, offset), 0);
         }
         assert!(
@@ -1673,7 +1715,8 @@ mod tests {
                 .is_err()
         );
     }
-    fn swap_uniforms(packet: &Packet, lower: usize, upper: usize, weights: [f32; 2]) -> [u8; 144] {
+    /// `weights` are the lower-only, upper-only and shared hold weights.
+    fn swap_uniforms(packet: &Packet, lower: usize, upper: usize, weights: [f32; 3]) -> [u8; 144] {
         let mut uniforms = [0; UNIFORM_BYTES];
         packet
             .encode_uniforms(
@@ -1682,6 +1725,7 @@ mod tests {
                 Reveal::Swap {
                     lower: weights[0],
                     upper: weights[1],
+                    shared: weights[2],
                 },
                 1.0,
                 [100.0, 100.0],
@@ -1707,7 +1751,7 @@ mod tests {
         let (lower_layers, upper_layers) =
             (packet.scenes[0].stamp_layers, packet.scenes[2].stamp_layers);
         // Dimmed outgoing-only holds at the commit point; nothing incoming yet.
-        let dimmed = swap_uniforms(&packet, 0, 2, [0.4, 0.0]);
+        let dimmed = swap_uniforms(&packet, 0, 2, [0.4, 0.0, 1.0]);
         assert_eq!(word(&dimmed, 88), 0.4_f32.to_bits());
         assert_eq!(word(&dimmed, 92), 0);
         assert_eq!(word(&dimmed, 104), 1_f32.to_bits());
@@ -1719,10 +1763,10 @@ mod tests {
         );
         assert_eq!(word(&dimmed, 68), lower_layers | upper_layers);
         // Only a settled side uses the still compositor and its own layers.
-        let settled_lower = swap_uniforms(&packet, 0, 2, [1.0, 0.0]);
+        let settled_lower = swap_uniforms(&packet, 0, 2, [1.0, 0.0, 1.0]);
         assert_eq!(word(&settled_lower, 96), 0);
         assert_eq!(word(&settled_lower, 68), lower_layers);
-        let settled_upper = swap_uniforms(&packet, 0, 2, [0.0, 1.0]);
+        let settled_upper = swap_uniforms(&packet, 0, 2, [0.0, 1.0, 1.0]);
         assert_eq!(word(&settled_upper, 96), 1_f32.to_bits());
         assert_eq!(word(&settled_upper, 68), upper_layers);
         for weights in [
@@ -1732,14 +1776,16 @@ mod tests {
             [1.0, 0.0001],
             [0.9999, 0.0],
         ] {
-            let progress = f32::from_bits(word(&swap_uniforms(&packet, 0, 2, weights), 96));
+            let [lower, upper] = weights;
+            let progress =
+                f32::from_bits(word(&swap_uniforms(&packet, 0, 2, [lower, upper, 1.0]), 96));
             assert!(
                 progress > 0.0 && progress < 1.0,
                 "{weights:?} is not settled"
             );
         }
         // One scene twice is that scene's still, whatever the weights say.
-        assert_eq!(word(&swap_uniforms(&packet, 0, 0, [0.4, 0.2]), 96), 0);
+        assert_eq!(word(&swap_uniforms(&packet, 0, 0, [0.4, 0.2, 1.0]), 96), 0);
         // The pair is position-independent: display mirroring changes nothing else.
         let mut mirrored = [0; UNIFORM_BYTES];
         packet
@@ -1749,6 +1795,7 @@ mod tests {
                 Reveal::Swap {
                     lower: 0.4,
                     upper: 0.0,
+                    shared: 1.0,
                 },
                 1.0,
                 [100.0, 100.0],
@@ -1759,18 +1806,77 @@ mod tests {
             .unwrap();
         assert_eq!(dimmed[..124], mirrored[..124]);
         assert_eq!(dimmed[128..], mirrored[128..]);
-        for (mode, lower, upper) in [
-            (REVEAL_MODE_SWAP, f32::NAN, 0.0),
-            (REVEAL_MODE_SWAP, 0.0, 1.5),
-            (REVEAL_MODE_SWAP, -0.1, 0.0),
-            (2, 0.0, 0.0),
+        for (mode, lower, upper, shared) in [
+            (REVEAL_MODE_SWAP, f32::NAN, 0.0, 1.0),
+            (REVEAL_MODE_SWAP, 0.0, 1.5, 1.0),
+            (REVEAL_MODE_SWAP, -0.1, 0.0, 1.0),
+            (REVEAL_MODE_SWAP, 0.4, 0.0, f32::NAN),
+            (REVEAL_MODE_SWAP, 0.4, 0.0, 1.01),
+            (REVEAL_MODE_SWAP, 0.4, 0.0, -0.01),
+            (2, 0.0, 0.0, 1.0),
         ] {
-            assert!(Reveal::from_native(mode, 0.0, lower, upper).is_err());
+            assert!(Reveal::from_native(mode, 0.0, lower, upper, shared).is_err());
         }
         assert_eq!(
-            Reveal::from_native(REVEAL_MODE_WIPE, 0.25, f32::NAN, 9.0),
+            Reveal::from_native(REVEAL_MODE_WIPE, 0.25, f32::NAN, 9.0, -3.0),
             Ok(Reveal::Wipe { progress: 0.25 }),
             "the wipe ignores the swap slots"
+        );
+    }
+    #[test]
+    fn swap_weights_shared_holds_only_in_the_weighted_compositor() {
+        let _serial = TEST_LOCK.lock().unwrap();
+        let cancel = Cancellation::default();
+        let mut plan = Plan::new(
+            session(),
+            request("p2r42p1r44", Some("p1r42"), Some("p2r13")),
+            &cancel,
+        )
+        .unwrap();
+        plan.prepare(&[], &cancel).unwrap();
+        let packet = plan.encode(placements(&plan), &cancel).unwrap();
+        // Dragging at the commit point: shared holds dip with the outgoing ones.
+        let dipped = swap_uniforms(&packet, 0, 2, [0.4, 0.0, 0.4]);
+        assert_eq!(word(&dipped, 60), 0.4_f32.to_bits());
+        // Native API 6 bytes plus one word: shared holds whole fill tuning2.w.
+        let whole = swap_uniforms(&packet, 0, 2, [0.4, 0.0, 1.0]);
+        assert_eq!(word(&whole, 60), 1_f32.to_bits());
+        assert_eq!(dipped[..60], whole[..60]);
+        assert_eq!(dipped[64..], whole[64..]);
+        // A settled side with shared holds whole is a still: API 6's bytes, word 15 zero.
+        for weights in [[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]] {
+            let still = swap_uniforms(&packet, 0, 2, weights);
+            let progress = f32::from_bits(word(&still, 96));
+            assert!(progress == 0.0 || progress == 1.0);
+            assert_eq!(word(&still, 60), 0);
+        }
+        assert_eq!(word(&swap_uniforms(&packet, 0, 0, [0.4, 0.2, 0.4]), 60), 0);
+        // Dimmed shared holds never take the still compositor, which draws them whole.
+        let (lower_layers, upper_layers) =
+            (packet.scenes[0].stamp_layers, packet.scenes[2].stamp_layers);
+        for weights in [[1.0, 0.0, 0.9], [0.0, 1.0, 0.4], [1.0, 0.0, 0.0]] {
+            let uniforms = swap_uniforms(&packet, 0, 2, weights);
+            let progress = f32::from_bits(word(&uniforms, 96));
+            assert!(progress > 0.0 && progress < 1.0, "{weights:?} took a still");
+            assert_eq!(word(&uniforms, 60), weights[2].to_bits());
+            assert_eq!(word(&uniforms, 68), lower_layers | upper_layers);
+        }
+        // Toward an empty climb no hold is shared: the veil still follows the lit side.
+        let mut plan = Plan::new(session(), request("p1r42", Some(""), Some("")), &cancel).unwrap();
+        plan.prepare(&[], &cancel).unwrap();
+        let empty = plan.encode(placements(&plan), &cancel).unwrap();
+        assert_eq!(word(&swap_uniforms(&empty, 0, 2, [1.0, 0.0, 0.4]), 96), 0);
+        assert_eq!(
+            f32::from_bits(word(&swap_uniforms(&empty, 0, 2, [0.4, 0.0, 0.4]), 96)),
+            0.6
+        );
+        assert_eq!(
+            Reveal::from_native(REVEAL_MODE_SWAP, 0.0, 0.4, 0.0, 0.4),
+            Ok(Reveal::Swap {
+                lower: 0.4,
+                upper: 0.0,
+                shared: 0.4
+            })
         );
     }
     #[test]
@@ -1782,18 +1888,18 @@ mod tests {
         let packet = plan.encode(placements(&plan), &cancel).unwrap();
         assert_eq!(packet.scenes[2].count, 0);
         // Lit lower, empty upper: veil = mix(1, 0, progress) = the lower weight.
-        let leaving = swap_uniforms(&packet, 0, 2, [0.4, 0.0]);
+        let leaving = swap_uniforms(&packet, 0, 2, [0.4, 0.0, 1.0]);
         assert_eq!(f32::from_bits(word(&leaving, 96)), 0.6);
-        assert_eq!(word(&swap_uniforms(&packet, 0, 2, [1.0, 0.7]), 96), 0);
+        assert_eq!(word(&swap_uniforms(&packet, 0, 2, [1.0, 0.7, 1.0]), 96), 0);
         assert_eq!(
-            word(&swap_uniforms(&packet, 0, 2, [0.0, 0.0]), 96),
+            word(&swap_uniforms(&packet, 0, 2, [0.0, 0.0, 1.0]), 96),
             1_f32.to_bits()
         );
         // Empty lower, lit upper: veil = mix(0, 1, progress) = the upper weight.
-        let arriving = swap_uniforms(&packet, 1, 0, [0.0, 0.25]);
+        let arriving = swap_uniforms(&packet, 1, 0, [0.0, 0.25, 1.0]);
         assert_eq!(f32::from_bits(word(&arriving, 96)), 0.25);
         assert_eq!(
-            word(&swap_uniforms(&packet, 1, 0, [1.0, 1.0]), 96),
+            word(&swap_uniforms(&packet, 1, 0, [1.0, 1.0, 1.0]), 96),
             1_f32.to_bits()
         );
     }

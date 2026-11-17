@@ -69,9 +69,10 @@ class OverlayPolicyTest {
         center: Double = 12.0,
         previous: Boolean = true,
         next: Boolean = true,
+        shared: Float = 1f,
     ): Triple<Int, Int, OverlayPolicy.SwapWeights> {
         val (selection, weights) =
-            OverlayPolicy.selectSwap(position, center, previous, next, outgoing, incoming)
+            OverlayPolicy.selectSwap(position, center, previous, next, outgoing, incoming, shared)
         return Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
     }
 
@@ -100,9 +101,24 @@ class OverlayPolicyTest {
         assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, 2f, -1f).third)
     }
 
+    @Test
+    fun sharedHoldsTakeOneWeightWhicheverSideIsOutgoingAndAStillKeepsThemWhole() {
+        assertEquals(OverlayPolicy.SwapWeights(.4f, 0f, .4f), swapAt(12.25, .4f, 0f, shared = .4f).third)
+        assertEquals(OverlayPolicy.SwapWeights(.6f, .2f, .6f), swapAt(12.75, .2f, .6f, shared = .6f).third)
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f, 1f), swapAt(12.0, .4f, 0f, shared = .4f).third)
+        assertEquals(1f, swapAt(13.25, .4f, .6f, shared = .4f).third.shared)
+        // Without a shared weight (API 6's look) shared holds stay whole.
+        assertEquals(1f, swapAt(12.25, .4f, 0f).third.shared)
+        assertEquals(1f, swapAt(12.25, .4f, 0f, shared = Float.NaN).third.shared)
+        assertEquals(0f, swapAt(12.25, .4f, 0f, shared = -1f).third.shared)
+        assertEquals(1f, swapAt(12.25, .4f, 0f, shared = 2f).third.shared)
+    }
+
     private fun shown(controls: OverlayControls, center: Double = 12.0): Triple<Int, Int, OverlayPolicy.SwapWeights> {
         val (selection, weights) =
-            OverlayPolicy.selectSwap(controls.position!!, center, true, true, controls.outgoing, controls.incoming)
+            OverlayPolicy.selectSwap(
+                controls.position!!, center, true, true, controls.outgoing, controls.incoming, controls.shared,
+            )
         return Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
     }
 
@@ -121,10 +137,28 @@ class OverlayPolicyTest {
         assertEquals(swapping.copy(position = 13.0, outgoing = 1f, incoming = 0f), arrived)
         assertEquals(OverlayPolicy.REVEAL_MODE_SWAP, arrived.revealMode)
         assertEquals(1f to 0f, swapping.withSwapFrame(listOf(12.25, 2.0, -1.0))!!.let { it.outgoing to it.incoming })
-        for (malformed in listOf(null, listOf(12.25, .4), listOf(12.25, .4, 0.0, 1.0), listOf(Double.NaN, .4, 0.0),
-            listOf(12.0, .4, Double.POSITIVE_INFINITY), emptyList())) {
+        for (malformed in listOf(null, listOf(12.25, .4), listOf(12.25, .4, 0.0, 1.0, 1.0), listOf(Double.NaN, .4, 0.0),
+            listOf(12.0, .4, Double.POSITIVE_INFINITY), listOf(Double.NaN, .4, 0.0, 1.0), emptyList())) {
             assertNull(swapping.withSwapFrame(malformed))
         }
+    }
+
+    @Test
+    fun anApi7SwapFrameCarriesTheSharedHoldWeightAndThreeNumbersKeepThemWhole() {
+        val controls = OverlayControls(null, false, false, false, OverlayPolicy.REVEAL_MODE_SWAP)
+        val dipped = controls.withSwapFrame(listOf(12.25, .4, 0.0, .4))!!
+        assertEquals(.4f, dipped.shared)
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(.4f, 0f, .4f)), shown(dipped))
+        assertEquals(1f, controls.withSwapFrame(listOf(12.25, .4, 0.0))!!.shared)
+        assertEquals(1f, dipped.withSwapFrame(listOf(12.25, .4, 0.0))!!.shared)
+        for (invalid in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            assertEquals(1f, controls.withSwapFrame(listOf(12.25, .4, 0.0, invalid))!!.shared)
+        }
+        assertEquals(0f, controls.withSwapFrame(listOf(12.25, .4, 0.0, -3.0))!!.shared)
+        assertEquals(1f, controls.withSwapFrame(listOf(12.25, .4, 0.0, 7.0))!!.shared)
+        // The carried-over frame from the old trio keeps the shared weight too.
+        val carried = OverlayPolicy.carryOverSwap(12.25, 12.0, true, true, 0f, .6f, .6f)!!
+        assertEquals(swapAt(12.25, 0f, .6f, center = 13.0, shared = .6f).third, carried.second)
     }
 
     @Test

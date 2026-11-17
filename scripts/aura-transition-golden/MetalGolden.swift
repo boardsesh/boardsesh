@@ -43,7 +43,7 @@ enum MetalGolden {
     }
     let inputs = try JSONDecoder().decode(AuraGoldenInputs.self, from: Data(contentsOf: inputURL))
     try require(inputs.version == 1 && inputs.width == 1080 && inputs.height == 1504, "Fixture dimensions/version changed")
-    try require(inputs.scenes.map { $0.count } == [6, 7, 7] && inputs.samples.count == 38, "Fixture scenes/controls changed")
+    try require(inputs.scenes.map { $0.count } == [6, 7, 7] && inputs.samples.count == 42, "Fixture scenes/controls changed")
     try require(inputs.contractSha256 == ClimbOverlayPacketLayout.contractSha256, "Compiled contract differs from input")
     try require(!FileManager.default.fileExists(atPath: outputURL.path), "Preserve existing output folder")
     try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
@@ -145,10 +145,12 @@ enum MetalGolden {
         && hashes["swap-2-m0-\(mode)"] == hashes["swap-2-m1-\(mode)"]
         && hashes["swap-1-m0-\(mode)"] != hashes["swap-0-m0-\(mode)"]
         && hashes["swap-2-m0-\(mode)"] != hashes["swap-3-m0-\(mode)"]
+        && hashes["swap-shared-1-m0-\(mode)"] != hashes["swap-2-m0-\(mode)"]
+        && hashes["swap-shared-3-m0-\(mode)"] != hashes["swap-0-m0-\(mode)"]
     }
-    let passed = maximumError <= 1 && pixelsOverOne == 0 && commands == 76 && progressChanges && pulseChanges && mirrorChanges && reversalStable && swapStable
+    let passed = maximumError <= 1 && pixelsOverOne == 0 && commands == 84 && progressChanges && pulseChanges && mirrorChanges && reversalStable && swapStable
     let executableHash = try Bundle.main.executableURL.map { hash(try Data(contentsOf: $0)) } ?? "unavailable"
-    let report: [String: Any] = ["status": passed ? "PASS_ACTUAL_METAL_RICH_38" : "FAIL_ACTUAL_METAL_RICH_38", "device": device.name, "processId": ProcessInfo.processInfo.processIdentifier, "bundleId": Bundle.main.bundleIdentifier ?? "host-helper", "executableSha256": executableHash, "compiledContractSha256": ClimbOverlayPacketLayout.contractSha256, "beforeRuntimeShaderSha256": hash(Data(ReferenceShader.source.utf8)), "afterRuntimeShaderSha256": hash(Data(ClimbOverlayShader.source.utf8)), "width": inputs.width, "height": inputs.height, "commandsCompleted": commands, "maximumChannelError": maximumError, "pixelsOverOne": pixelsOverOne, "progressChangesPixels": progressChanges, "editingPulseChangesPixels": pulseChanges, "displayMirrorChangesPixels": mirrorChanges, "reversalStable": reversalStable, "swapStable": swapStable, "trackedOwnedAllocationBytes": allocations, "samples": rows, "qualification": "Offscreen actual Metal shader images. Host and physical iPhone runs are separately identified; no gesture cadence, scanout, frame performance or driver-private allocation claim. Rust endpoint/pulse comparisons are independently checked by the host collector."]
+    let report: [String: Any] = ["status": passed ? "PASS_ACTUAL_METAL_RICH_42" : "FAIL_ACTUAL_METAL_RICH_42", "device": device.name, "processId": ProcessInfo.processInfo.processIdentifier, "bundleId": Bundle.main.bundleIdentifier ?? "host-helper", "executableSha256": executableHash, "compiledContractSha256": ClimbOverlayPacketLayout.contractSha256, "beforeRuntimeShaderSha256": hash(Data(ReferenceShader.source.utf8)), "afterRuntimeShaderSha256": hash(Data(ClimbOverlayShader.source.utf8)), "width": inputs.width, "height": inputs.height, "commandsCompleted": commands, "maximumChannelError": maximumError, "pixelsOverOne": pixelsOverOne, "progressChangesPixels": progressChanges, "editingPulseChangesPixels": pulseChanges, "displayMirrorChangesPixels": mirrorChanges, "reversalStable": reversalStable, "swapStable": swapStable, "trackedOwnedAllocationBytes": allocations, "samples": rows, "qualification": "Offscreen actual Metal shader images. Host and physical iPhone runs are separately identified; no gesture cadence, scanout, frame performance or driver-private allocation claim. Rust endpoint/pulse comparisons are independently checked by the host collector."]
     try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: outputURL.appendingPathComponent("result.json"), options: .atomic)
     try require(passed, "Metal comparison failed; all raw outputs retained")
   }

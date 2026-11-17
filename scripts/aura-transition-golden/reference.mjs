@@ -247,18 +247,26 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
       ranges.every((range, index) => index === 0 || ranges[index - 1][1] === range[0]),
     'Resource ranges overlap or leave unreferenced bytes',
   );
+  /** f32::EPSILON and 1 - f32::EPSILON, both exact in f32. */
+  const F32_EPSILON = 2 ** -23;
+  const BELOW_ONE = Math.fround(1 - F32_EPSILON);
+  /** The shared same-role hold weight: the third swap weight, 1 when absent. */
+  const sharedOf = (sample) => Math.fround(sample.swap?.[2] ?? 1);
   /**
    * Independent of the Rust encoder: the swap's still endpoints and veil follow
-   * Reveal::progress, step by step in f32 as Rust evaluates it.
+   * Reveal::progress, step by step in f32 as Rust evaluates it. Dimmed shared
+   * holds keep a pair of lit climbs off the still compositor.
    */
   function progressOf(sample) {
     if (!sample.swap) return sample.progress;
     if (sample.lower === sample.upper) return 0;
-    const [lowerWeight, upperWeight] = sample.swap.map(Math.fround);
+    const [lowerWeight, upperWeight] = sample.swap.slice(0, 2).map(Math.fround);
     const lit = [counts[sample.lower] > 0, counts[sample.upper] > 0];
     if (lit[0] && !lit[1]) return Math.fround(1 - lowerWeight);
     if (!lit[0] && lit[1]) return upperWeight;
-    return Math.fround(Math.fround(Math.fround(1 - lowerWeight) + upperWeight) * 0.5);
+    const progress = Math.fround(Math.fround(Math.fround(1 - lowerWeight) + upperWeight) * 0.5);
+    if (sharedOf(sample) >= 1) return progress;
+    return progress < F32_EPSILON ? F32_EPSILON : progress > BELOW_ONE ? BELOW_ONE : progress;
   }
   function uniforms(sample, tiled) {
     const output = Buffer.alloc(144),
@@ -273,7 +281,8 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
       ...manifest.veil.map((channel) => channel / 255),
       ...['merge', 'seam', 'seamMix', 'seamSharpness', 'fringe', 'coreShare'].map((name) => manifest[name]),
       reaches[lower],
-      0,
+      // tuning2.w: the swap's shared-hold weight, only when the weighted compositor runs.
+      sample.swap && progress > 0 && progress < 1 ? sharedOf(sample) : 0,
     ];
     floats.forEach((number, index) => output.writeFloatLE(number, index * 4));
     [
@@ -285,7 +294,7 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
     [
       manifest.width,
       manifest.height,
-      ...(sample.swap ?? [0, 0]),
+      ...(sample.swap ? sample.swap.slice(0, 2) : [0, 0]),
       progress,
       0.22,
       sample.swap ? 1 : 0,
@@ -322,6 +331,8 @@ export function referencePacket(manifest, request, packet, chunks, oldPixels, ne
   const swapClasses = {
     width: manifest.width,
     height: manifest.height,
+    // The bare veil, as the compositor quantizes it: what a hold at weight 0 leaves.
+    veil: manifest.veil.map((channel) => Math.round(Math.min(Math.max(channel / 255, 0), 1) * 255)),
     currentOnly: [...currentIds].filter((id) => !nextIds.has(id)),
     nextOnly: [...nextIds].filter((id) => !currentIds.has(id)),
     shared: shared

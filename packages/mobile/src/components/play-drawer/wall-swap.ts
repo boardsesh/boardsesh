@@ -3,12 +3,11 @@
  * one climb to the next during a swipe.
  *
  * Between the climb being left and the one arriving, every hold is one of three
- * kinds. Shared holds are lit with the same role in both and stay fully lit.
- * Outgoing-only holds are lit only in the old climb, or show a changed hold's
- * old role. Incoming-only holds are lit only in the new climb, or show its new
- * role. The native compositor sorts the holds; this module decides the two
- * weights it gives the outgoing-only and incoming-only holds, every frame, on
- * the UI thread, so the timing can change over the air.
+ * kinds. Shared holds are lit with the same role in both. Outgoing-only holds
+ * are lit only in the old climb, or show a changed hold's old role.
+ * Incoming-only holds are lit only in the new climb, or show its new role. The
+ * native compositor sorts the holds; this module decides the weight of each
+ * kind, every frame, on the UI thread, so the timing can change over the air.
  *
  * - Dragging dims outgoing-only holds from 100% to 40% as the board travels to
  *   the pager's commit distance (`SWIPE_THRESHOLD`), and keeps them at 40% past
@@ -28,7 +27,12 @@
  *   then flicked toward the other) first eases that pair to its leaving climb,
  *   whole, over 120 ms, and only then swaps: changing pairs any earlier would
  *   change which holds count as outgoing-only in one frame.
- * - Reduce Motion: no dim while dragging, and the swap is one 120 ms dissolve.
+ * - Shared holds dip with the rest and never go dark: they follow whichever of
+ *   the other two kinds is brighter, never below 40% (`wallSwapSharedWeight`).
+ *   Dragging takes them down with the outgoing-only holds; a swap holds them at
+ *   40% until the incoming-only holds pass it, then brings them back with them.
+ * - Reduce Motion: no dim while dragging, the swap is one 120 ms dissolve, and
+ *   shared holds stay fully lit.
  *
  * The native view is told which pair it is showing through its page position:
  * the nearest page is the climb being left, and the side the position leans to
@@ -41,6 +45,13 @@ export type RevealMode = 'wipe' | 'swap';
 /** The native overlay API that understands the swap's weights. */
 export const WALL_SWAP_NATIVE_API = 6;
 
+/**
+ * The native overlay API that weights shared holds from the swap frame's fourth
+ * number. API 6 draws them fully lit, and rejects any frame that is not exactly
+ * three numbers.
+ */
+export const WALL_SWAP_SHARED_NATIVE_API = 7;
+
 /** The player's reveal. A "reveal style" setting can choose another over the air. */
 export const PLAYER_REVEAL_MODE: RevealMode = 'swap';
 
@@ -50,7 +61,7 @@ export function playerRevealMode(apiVersion: number): RevealMode {
 }
 
 export const WALL_SWAP = {
-  /** Outgoing-only weight at the pager's commit distance, and past it. */
+  /** Outgoing-only weight at the pager's commit distance, and past it; shared holds never go below it. */
   dimFloor: 0.4,
   /** The whole swap after a commit. */
   durationMs: 200,
@@ -291,6 +302,53 @@ export function wallSwapRest(page: number, seen: Pick<WallSwapState, 'anchor' | 
 export function wallSwapPagePosition(state: WallSwapState): number {
   'worklet';
   return state.from + state.dir * WALL_SWAP.pairLean;
+}
+
+/**
+ * The weight of shared holds, lit with the same role in both climbs: the
+ * brighter of the outgoing-only and incoming-only weights on screen, never below
+ * `dimFloor`. At rest that is 1; dragging, it is the outgoing weight; in a swap
+ * it holds at the floor until the incoming weight passes it. Symmetric in the
+ * two weights, so a pulled-back pair, which swaps them, shows the same shared
+ * holds; and continuous wherever they are. Reduce Motion keeps shared holds
+ * whole: its dissolve must not blink a hold that does not change.
+ */
+export function wallSwapSharedWeight(
+  state: Pick<WallSwapState, 'outgoing' | 'incoming'>,
+  reduceMotion: boolean,
+): number {
+  'worklet';
+  if (reduceMotion) return 1;
+  const brighter = state.outgoing > state.incoming ? state.outgoing : state.incoming;
+  // Written so a non-finite weight lands on the floor, never on NaN.
+  return brighter > WALL_SWAP.dimFloor ? (brighter < 1 ? brighter : 1) : WALL_SWAP.dimFloor;
+}
+
+/**
+ * One frame of the swap: the pair on show (the nearest page is the climb being
+ * left), then the outgoing-only, incoming-only and shared weights. One value, so
+ * the native view never applies a new pair with old weights.
+ */
+export type WallSwapFrame = readonly [
+  pagePosition: number,
+  outgoingWeight: number,
+  incomingWeight: number,
+  sharedWeight: number,
+];
+
+/** The swap frame as a binary of `apiVersion` takes it. */
+export type NativeWallSwapFrame =
+  | WallSwapFrame
+  | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number];
+
+/**
+ * API 7 takes all four numbers. API 6 takes exactly three and freezes the swap
+ * on anything else, so it gets the frame without the shared weight and keeps
+ * shared holds fully lit.
+ */
+export function nativeWallSwapFrame(frame: WallSwapFrame, apiVersion: number): NativeWallSwapFrame {
+  'worklet';
+  return apiVersion >= WALL_SWAP_SHARED_NATIVE_API ? frame : [frame[0], frame[1], frame[2]];
 }
 
 /** The side the board has been pulled toward: 1 the next climb, -1 the previous, 0 centred. */

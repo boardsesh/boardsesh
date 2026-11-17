@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { load, fileSha256, sha256, imageDifference, requireCondition as check, save } from './lib.mjs';
 export function verifyPrepared(work) {
   const prepared = load(join(work, 'prepared.json'));
-  check(prepared.status === 'PREPARED_ONE_RICH_38_NOT_EXECUTED', 'Invalid preparation');
+  check(prepared.status === 'PREPARED_ONE_RICH_42_NOT_EXECUTED', 'Invalid preparation');
   for (const [path, expected] of Object.entries(prepared.files))
     check(fileSha256(join(work, path)) === expected, `Prepared file changed: ${path}`);
   return prepared;
@@ -18,7 +18,11 @@ export const SWAP_WEIGHT_TOLERANCE = 0.08;
  * from every other hold's reach, a side at weight 0 must match the other
  * side's still within one byte, and any other weight w must move the pixels
  * from the other still toward its own by w (within the tolerance). Shared
- * holds, where the two stills agree exactly, must match within one byte.
+ * holds, where the two stills agree exactly, must match within one byte when
+ * whole (the third swap weight absent or 1). At a shared weight w below 1 they
+ * are measured the same way inside their own bounds, away from other holds'
+ * reach: from the bare veil, which is all a hold at weight 0 leaves, toward the
+ * stills by w; at 0 they must match the veil within one byte.
  */
 export function swapClassChecks(classes, stills, image, sample) {
   const { width, height } = classes;
@@ -86,27 +90,63 @@ export function swapClassChecks(classes, stills, image, sample) {
       );
     rows.push({ climb, weight, measured, pixels, worstAgainstOtherStill: worst });
   }
-  const shared = new Uint8Array(width * height);
-  for (const id of classes.shared) paint(shared, id, 0, 1);
-  let sharedPixels = 0,
-    sharedWorst = 0;
-  for (let pixel = 0; pixel < shared.length; pixel++) {
-    if (!shared[pixel] || largest(stills.A, stills.B, pixel) !== 0) continue;
-    sharedPixels++;
-    sharedWorst = Math.max(sharedWorst, largest(image, stills.A, pixel));
+  const sharedWeight = sample.swap[2] ?? 1;
+  if (sharedWeight === 1) {
+    const shared = new Uint8Array(width * height);
+    for (const id of classes.shared) paint(shared, id, 0, 1);
+    let sharedPixels = 0,
+      sharedWorst = 0;
+    for (let pixel = 0; pixel < shared.length; pixel++) {
+      if (!shared[pixel] || largest(stills.A, stills.B, pixel) !== 0) continue;
+      sharedPixels++;
+      sharedWorst = Math.max(sharedWorst, largest(image, stills.A, pixel));
+    }
+    check(sharedPixels >= 1000, 'Too few shared-hold pixels to judge the swap');
+    check(sharedWorst <= 1, `${sample.name}: shared holds differ from both stills`);
+    return { classes: rows, sharedWeight, sharedPixels, sharedWorst };
   }
-  check(sharedPixels >= 1000, 'Too few shared-hold pixels to judge the swap');
-  check(sharedWorst <= 1, `${sample.name}: shared holds differ from both stills`);
-  return { classes: rows, sharedPixels, sharedWorst };
+  /** Summed and largest channel distance of one pixel from the bare veil. */
+  const fromVeil = (source, pixel) => {
+    let sum = 0,
+      maximum = 0;
+    for (let channel = 0; channel < 4; channel++) {
+      const error = Math.abs(source[pixel * 4 + channel] - classes.veil[channel]);
+      sum += error;
+      maximum = Math.max(maximum, error);
+    }
+    return [sum, maximum];
+  };
+  const mask = region(classes.shared);
+  let sharedPixels = 0,
+    sharedWorst = 0,
+    moved = 0,
+    span = 0;
+  for (let pixel = 0; pixel < mask.length; pixel++) {
+    if (!mask[pixel] || largest(stills.A, stills.B, pixel) !== 0) continue;
+    const [imageSum, imageWorst] = fromVeil(image, pixel);
+    sharedPixels++;
+    sharedWorst = Math.max(sharedWorst, imageWorst);
+    moved += imageSum;
+    span += fromVeil(stills.A, pixel)[0];
+  }
+  check(sharedPixels >= 500 && span > 0, 'Too few shared-hold pixels to judge the shared weight');
+  const sharedMeasured = moved / span;
+  if (sharedWeight === 0) check(sharedWorst <= 1, `${sample.name}: shared holds are lit at weight 0`);
+  else
+    check(
+      Math.abs(sharedMeasured - sharedWeight) <= SWAP_WEIGHT_TOLERANCE,
+      `${sample.name}: shared holds at ${sharedMeasured.toFixed(3)}, not ${sharedWeight}`,
+    );
+  return { classes: rows, sharedWeight, sharedPixels, sharedWorstAgainstVeil: sharedWorst, sharedMeasured };
 }
 
 export function analyse(work, renders, backend) {
   verifyPrepared(work);
   const metadata = load(join(work, 'inputs/inputs.json'));
   const native = load(join(renders, 'result.json'));
-  check(native.status === `PASS_ACTUAL_${backend}_RICH_38`, 'Native comparison did not pass');
+  check(native.status === `PASS_ACTUAL_${backend}_RICH_42`, 'Native comparison did not pass');
   check(
-    native.width === 1080 && native.height === 1504 && native.commandsCompleted === 76,
+    native.width === 1080 && native.height === 1504 && native.commandsCompleted === 84,
     'Native dimensions/counts changed',
   );
   check(native.compiledContractSha256 === metadata.contractSha256, 'Native compiled contract changed');
@@ -205,6 +245,10 @@ export function analyse(work, renders, backend) {
       ['swap-2-m0', 'swap-3-m0'],
       ['swap-3-m0', 'swap-4-m0'],
       ['swap-previous-0-m0', 'swap-previous-1-m0'],
+      // The shared weight shows, and dark shared holds keep a settled pair off the still.
+      ['swap-shared-1-m0', 'swap-2-m0'],
+      ['swap-shared-0-m0', 'swap-1-m0'],
+      ['swap-shared-3-m0', 'swap-0-m0'],
     ])
       check(hashes.get(`${first}-${mode}`) !== hashes.get(`${second}-${mode}`), 'Swap weights are vacuous');
   }
@@ -226,20 +270,20 @@ export function analyse(work, renders, backend) {
       );
   verifyPrepared(work);
   return {
-    status: `PASS_INDEPENDENT_${backend}_RICH_38`,
+    status: `PASS_INDEPENDENT_${backend}_RICH_42`,
     backend,
     nativeResultSha256: fileSha256(join(renders, 'result.json')),
     preparedSha256: fileSha256(join(work, 'prepared.json')),
     fixtureSha256: fileSha256(join(work, 'config.json')),
-    samples: 38,
-    commands: 76,
+    samples: 42,
+    commands: 84,
     rustStillComparisons: rows.filter((row) => row.rustOracle).length,
     maximumChannelError: Math.max(...rows.map((row) => row.maxChannelError)),
     pixelsOverOne: rows.reduce((sum, row) => sum + row.pixelsOverOne, 0),
     rows,
     swapClasses,
     qualification:
-      'One offscreen fixture. Old/new weighted union comparison; independent production Rust still/pulse endpoints; swap hold classes measured against the two Rust stills (zero weights within one byte, other weights within the tolerance, agreeing shared holds within one byte). Host Metal, physical iPhone Metal and Pixel GLES are separately identified. No Rust weighted-union, gesture-cadence, scanout, full-UI frame-time or population claim.',
+      'One offscreen fixture. Old/new weighted union comparison; independent production Rust still/pulse endpoints; swap hold classes measured against the two Rust stills (zero weights within one byte, other weights within the tolerance, whole shared holds within one byte of the stills, dimmed shared holds measured from the bare veil toward the stills). Host Metal, physical iPhone Metal and Pixel GLES are separately identified. No Rust weighted-union, gesture-cadence, scanout, full-UI frame-time or population claim.',
   };
 }
 export function saveAnalysis(work, renders, backend, path) {

@@ -148,16 +148,20 @@ beforeEach(() => {
 });
 
 describe('useWallSwap', () => {
-  it('turns the pager into one frame: the pair, then both weights', () => {
+  it('turns the pager into one frame: the pair, then the three weights', () => {
     const { swipe, frame } = mount();
-    expect(frame()).toEqual([0, 1, 0]);
+    expect(frame()).toEqual([0, 1, 0, 1]);
     swipe.translateX.value = -SWIPE_THRESHOLD / 2;
     runtime.frame();
-    expect(frame()).toEqual([0.25, 0.7, 0]);
+    // Shared holds dip with the outgoing ones while dragging.
+    expect(frame()).toEqual([0.25, 0.7, 0, 0.7]);
+    swipe.translateX.value = -SWIPE_THRESHOLD * 2;
+    runtime.frame();
+    expect(frame()).toEqual([0.25, 0.4, 0, 0.4]);
     swipe.translateX.value = SWIPE_THRESHOLD * 2;
     swipe.translateX.value = 0;
     runtime.frame();
-    expect(frame()).toEqual([0, 1, 0]);
+    expect(frame()).toEqual([0, 1, 0, 1]);
   });
 
   it('runs a commit on its own clock until the arriving climb stands alone', () => {
@@ -185,17 +189,20 @@ describe('useWallSwap', () => {
     }
     expect(seen[0][1]).toBeCloseTo(0.4, 10);
     expect(seen.slice(0, -1).every(([position]) => position === 0.25)).toBe(true);
-    expect(seen.at(-1)).toEqual([1, 1, 0]);
+    expect(seen.at(-1)).toEqual([1, 1, 0, 1]);
     for (const [, outgoing, incoming] of seen) if (incoming > 0) expect(outgoing).toBeLessThanOrEqual(0.4);
+    // Shared holds hold 40% until the incoming ones pass it, then follow them back.
+    for (const [, outgoing, incoming, shared] of seen) expect(shared).toBe(Math.max(0.4, outgoing, incoming));
+    expect(seen.some(([, , incoming, shared]) => incoming > 0.4 && incoming < 1 && shared === incoming)).toBe(true);
     expect(runtime.clocks).toHaveLength(0);
   });
 
-  it('under Reduce Motion skips the dim and dissolves in 120 ms', () => {
+  it('under Reduce Motion skips the dim, dissolves in 120 ms and keeps shared holds whole', () => {
     runtime.reduceMotion = true;
     const { swipe, frame } = mount();
     swipe.translateX.value = -SWIPE_THRESHOLD * 2;
     runtime.frame();
-    expect(frame()).toEqual([0.25, 1, 0]);
+    expect(frame()).toEqual([0.25, 1, 0, 1]);
     swipe.uiSteps.value = 1;
     swipe.flingDirection.value = 1;
     runtime.frame();
@@ -203,8 +210,13 @@ describe('useWallSwap', () => {
     swipe.anchorPage.value = 1;
     swipe.flingDirection.value = 0;
     swipe.translateX.value = 0;
-    for (let elapsed = 0; elapsed < 120; elapsed += 16) runtime.advance(16);
-    expect(frame()).toEqual([1, 1, 0]);
+    const shared: number[] = [];
+    for (let elapsed = 0; elapsed < 120; elapsed += 16) {
+      runtime.advance(16);
+      shared.push(frame()[3]);
+    }
+    expect(frame()).toEqual([1, 1, 0, 1]);
+    expect(shared.every((weight) => weight === 1)).toBe(true);
   });
 
   it('stays at rest for the wipe', () => {
@@ -213,7 +225,7 @@ describe('useWallSwap', () => {
     swipe.uiSteps.value = 1;
     swipe.flingDirection.value = 1;
     runtime.frame();
-    expect(frame()).toEqual([0, 1, 0]);
+    expect(frame()).toEqual([0, 1, 0, 1]);
     expect(runtime.clocks).toHaveLength(0);
   });
 });

@@ -44,6 +44,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var revealMode = OverlayPolicy.REVEAL_MODE_WIPE
     private var outgoingWeight = 1f
     private var incomingWeight = 0f
+    private var sharedWeight = 1f
     private val main = Handler(Looper.getMainLooper())
     private val texture =
         TextureView(context).apply {
@@ -176,7 +177,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     }
 
     /**
-     * The swap's animated prop: its pair and both weights, published to the
+     * The swap's animated prop: its pair and weights, published to the
      * render thread as one controls snapshot. The timing lives in the app.
      */
     fun setSwapFrame(frame: List<Double>?) {
@@ -186,6 +187,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         pagePosition = next.position
         outgoingWeight = next.outgoing
         incomingWeight = next.incoming
+        sharedWeight = next.shared
         controls = next
         requestDraw()
     }
@@ -219,6 +221,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 revealMode,
                 outgoingWeight,
                 incomingWeight,
+                sharedWeight,
             )
         val wasAllowed = allowed
         allowed =

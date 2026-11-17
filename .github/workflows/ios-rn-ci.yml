@@ -361,6 +361,14 @@ jobs:
             packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayAtlasTests.swift \
             -o "$RUNNER_TEMP/aura-atlas-tests"
           vp exec "$RUNNER_TEMP/aura-atlas-tests"
+          # The wall swap's pair selection, frame parsing and carry-over.
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayMotionTests.swift \
+            -o "$RUNNER_TEMP/aura-motion-tests"
+          vp exec "$RUNNER_TEMP/aura-motion-tests"
           vp exec swiftc \
             -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
             packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \

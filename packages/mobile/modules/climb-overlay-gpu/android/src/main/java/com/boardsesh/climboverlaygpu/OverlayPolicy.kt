@@ -148,15 +148,18 @@ internal object OverlayPolicy {
     /** Scene slot for a page offset from the centre: 0 current, 1 previous, 2 next. */
     fun slot(offset: Int): Int = if (offset == -1) 1 else if (offset == 1) 2 else 0
 
-    /** The wall swap's lower and upper class weights. */
-    data class SwapWeights(val lower: Float, val upper: Float)
+    /**
+     * The wall swap's lower and upper class weights, and the weight of holds lit
+     * with the same role in both (1 keeps them whole, as API 6 drew them).
+     */
+    data class SwapWeights(val lower: Float, val upper: Float, val shared: Float = 1f)
 
     private val STILL = SwapWeights(1f, 0f)
 
     /**
      * In swap mode the app's page position names a pair, not a progress: the
      * nearest page is the climb being left, and the side it leans to is the
-     * arriving one. The timing lives in the app; only two weights arrive here.
+     * arriving one. The timing lives in the app; only the weights arrive here.
      * A pair beyond the prepared neighbours shows the nearest prepared climb on
      * its own, so a lagging scene can never light a third climb.
      */
@@ -167,6 +170,7 @@ internal object OverlayPolicy {
         next: Boolean,
         outgoing: Float,
         incoming: Float,
+        shared: Float = 1f,
     ): Pair<Selection, SwapWeights> {
         if (!position.isFinite() || !center.isFinite()) return Selection(0, 0, 0f) to STILL
         val delta = position - center
@@ -178,9 +182,12 @@ internal object OverlayPolicy {
         if (selection.lower == selection.upper) return selection to STILL
         val leaving = if (outgoing.isFinite()) outgoing.coerceIn(0f, 1f) else 1f
         val arriving = if (incoming.isFinite()) incoming.coerceIn(0f, 1f) else 0f
+        val both = if (shared.isFinite()) shared.coerceIn(0f, 1f) else 1f
         // Progress below one half: the lower page is the nearer one, so it is outgoing.
+        // Shared holds are the same either way round.
         return selection to
-            if (selection.progress < .5f) SwapWeights(leaving, arriving) else SwapWeights(arriving, leaving)
+            if (selection.progress < .5f) SwapWeights(leaving, arriving, both)
+            else SwapWeights(arriving, leaving, both)
     }
 
     /**
@@ -196,9 +203,10 @@ internal object OverlayPolicy {
         next: Boolean,
         outgoing: Float,
         incoming: Float,
+        shared: Float = 1f,
     ): Pair<Selection, SwapWeights>? {
         if (!position.isFinite() || !center.isFinite() || abs(position - center) > 1) return null
-        val carried = selectSwap(position, center, previous, next, outgoing, incoming)
+        val carried = selectSwap(position, center, previous, next, outgoing, incoming, shared)
         return if (position == center || carried.first.lower != carried.first.upper) carried else null
     }
 

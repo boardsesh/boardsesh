@@ -45,12 +45,16 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
   /** API6 only: 'swap' weights hold classes over time; 'wipe' (the default) sweeps by position. */
   revealMode?: 'wipe' | 'swap';
   /**
-   * API6 swap only, updated from a UI-thread worklet as one value: the pair (the
+   * API6+ swap only, updated from a UI-thread worklet as one value: the pair (the
    * nearest page is the climb being left, and the side the position leans to
    * holds the arriving one), then the weights of holds lit only in the climb
-   * being left and only in the arriving one, each 0 to 1.
+   * being left and only in the arriving one, each 0 to 1. API7 adds a fourth
+   * number, the weight of holds lit the same way in both (missing or not
+   * finite: 1). API6 rejects any frame that is not exactly three numbers.
    */
-  swapFrame?: readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number];
+  swapFrame?:
+    | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number]
+    | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number, sharedWeight: number];
   animateEdits: boolean;
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;

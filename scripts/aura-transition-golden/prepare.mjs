@@ -166,12 +166,13 @@ try {
     writeFileSync(join(inputs, `new-uniforms-${sample.name}.bin`), actualUniform);
     writeFileSync(join(inputs, `old-uniforms-${sample.name}.bin`), reference.uniforms(sample, false));
     let oracle = null;
-    // A still endpoint: a wipe at 0 or 1, or a swap with one side whole and the other dark.
-    const [lowerWeight, upperWeight] = sample.swap ?? [];
+    // A still endpoint: a wipe at 0 or 1, or a swap with one side whole, the
+    // other dark and shared holds whole.
+    const [lowerWeight, upperWeight, sharedWeight = 1] = sample.swap ?? [];
     const stillSlot = sample.swap
-      ? lowerWeight === 1 && upperWeight === 0
+      ? sharedWeight === 1 && lowerWeight === 1 && upperWeight === 0
         ? sample.lower
-        : lowerWeight === 0 && upperWeight === 1
+        : sharedWeight === 1 && lowerWeight === 0 && upperWeight === 1
           ? sample.upper
           : null
       : sample.progress === 0
@@ -245,7 +246,7 @@ try {
       'Display mirror affects reveal direction; physical mirror placement is separate unit coverage.',
       'Editor still variant marks all current holds changed; this makes the production Rust global reach oracle valid.',
       'Interior frames compare the old full union to the new compositor; Rust does not render weighted animation unions.',
-      'Wall-swap samples weight hold classes with uniform viewport.zw/motion.z; their still endpoints use the Rust oracle.',
+      'Wall-swap samples weight hold classes with uniform viewport.zw/motion.z and shared holds with tuning2.w; their still endpoints use the Rust oracle.',
     ],
   };
   save(join(inputs, 'inputs.json'), metadata);
@@ -274,7 +275,7 @@ try {
   ])
     files.set(`inputs/${name}`, fileSha256(join(inputs, name)));
   save(join(output, 'prepared.json'), {
-    status: 'PREPARED_ONE_RICH_38_NOT_EXECUTED',
+    status: 'PREPARED_ONE_RICH_42_NOT_EXECUTED',
     fixtureSha256: fileSha256(join(here, 'fixture.json')),
     controlsSha256: fileSha256(join(here, 'controls.json')),
     hostHelpers: Object.fromEntries(
@@ -292,7 +293,7 @@ try {
   });
   console.log(
     JSON.stringify({
-      status: 'PREPARED_ONE_RICH_38_NOT_EXECUTED',
+      status: 'PREPARED_ONE_RICH_42_NOT_EXECUTED',
       output,
       proof: reference.proof,
       oracleCount: oracleFiles.size,

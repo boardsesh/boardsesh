@@ -54,8 +54,8 @@ final class ClimbOverlayMetalPacket {
   func uniforms(slot: Int,lower: Int,upper: Int,revealMode: Int = ClimbOverlayMotion.revealModeWipe,progress: Float,
                 swap: ClimbOverlayMotion.SwapWeights = .init(lower: 1,upper: 0),pulse: Float,viewport: SIMD2<Float>,
                 productionEmpty: Bool,mirrored: Bool) throws {
-    let status = board_renderer_gpu_packet_reveal_uniforms(rust.id,UInt32(lower),UInt32(upper),UInt32(revealMode),progress,
-      swap.lower,swap.upper,pulse,viewport.x,viewport.y,productionEmpty ? 1 : 0,mirrored ? 1 : 0,
+    let status = board_renderer_gpu_packet_shared_reveal_uniforms(rust.id,UInt32(lower),UInt32(upper),UInt32(revealMode),
+      progress,swap.lower,swap.upper,swap.shared,pulse,viewport.x,viewport.y,productionEmpty ? 1 : 0,mirrored ? 1 : 0,
       uniformBuffers[slot].contents().assumingMemoryBound(to: UInt8.self),UInt32(ClimbOverlayPacketLayout.uniformBytes))
     try checkClimbOverlayPacketStatus(status)
   }

@@ -54,19 +54,21 @@ enum ClimbOverlayMotion {
   /// Scene slot for a page offset from the centre: 0 current, 1 previous, 2 next.
   static func slot(_ offset: Int) -> Int { offset == -1 ? 1 : (offset == 1 ? 2 : 0) }
 
-  /// The wall swap's lower and upper class weights.
+  /// The wall swap's lower and upper class weights, and the weight of holds lit
+  /// with the same role in both (1 keeps them whole, as API 6 drew them).
   struct SwapWeights: Equatable {
     let lower: Float
     let upper: Float
+    var shared: Float = 1
   }
 
   /// In swap mode the app's page position names a pair, not a progress: the
   /// nearest page is the climb being left, and the side it leans to is the
-  /// arriving one. The timing lives in the app; only two weights arrive here.
+  /// arriving one. The timing lives in the app; only the weights arrive here.
   /// A pair beyond the prepared neighbours shows the nearest prepared climb on
   /// its own, so a lagging scene can never light a third climb.
   static func selectSwap(pagePosition: Double, centerPage: Double, hasPrevious: Bool, hasNext: Bool,
-                         outgoing: Float, incoming: Float) -> (Selection, SwapWeights) {
+                         outgoing: Float, incoming: Float, shared: Float = 1) -> (Selection, SwapWeights) {
     let still = SwapWeights(lower: 1, upper: 0)
     guard pagePosition.isFinite, centerPage.isFinite else {
       return (Selection(lowerOffset: 0,upperOffset: 0,progress: 0), still)
@@ -81,24 +83,31 @@ enum ClimbOverlayMotion {
     guard selection.lowerOffset != selection.upperOffset else { return (selection, still) }
     let outgoing = min(1,max(0,outgoing.isFinite ? outgoing : 1))
     let incoming = min(1,max(0,incoming.isFinite ? incoming : 0))
+    let shared = min(1,max(0,shared.isFinite ? shared : 1))
     // Progress below one half: the lower page is the nearer one, so it is outgoing.
+    // Shared holds are the same either way round.
     return (selection, selection.progress < 0.5
-      ? SwapWeights(lower: outgoing,upper: incoming)
-      : SwapWeights(lower: incoming,upper: outgoing))
+      ? SwapWeights(lower: outgoing,upper: incoming,shared: shared)
+      : SwapWeights(lower: incoming,upper: outgoing,shared: shared))
   }
 
-  /// One animated prop carries the swap's pair and both weights, so a frame can
-  /// never pair a new position with old weights. Nil unless it is three finite
-  /// numbers; the weights clamp to 0...1.
+  /// One animated prop carries the swap's pair and its weights, so a frame can
+  /// never pair a new position with old weights: the page position, the
+  /// outgoing-only and incoming-only weights and, from API 7, the shared-hold
+  /// weight. Nil unless the first three are finite numbers and nothing follows
+  /// the fourth; the weights clamp to 0...1, and a missing or non-finite shared
+  /// weight is 1, so an app that sends three numbers keeps shared holds whole.
   struct SwapFrame: Equatable {
     let pagePosition: Double
     let outgoing: Float
     let incoming: Float
+    var shared: Float = 1
   }
   static func swapFrame(_ values: [Double]) -> SwapFrame? {
-    guard values.count == 3, values.allSatisfy({ $0.isFinite }) else { return nil }
+    guard values.count == 3 || values.count == 4, values.prefix(3).allSatisfy({ $0.isFinite }) else { return nil }
+    let shared = values.count == 4 && values[3].isFinite ? Float(min(1,max(0,values[3]))) : 1
     return SwapFrame(pagePosition: values[0],outgoing: Float(min(1,max(0,values[1]))),
-      incoming: Float(min(1,max(0,values[2]))))
+      incoming: Float(min(1,max(0,values[2]))),shared: shared)
   }
 
   /// While the next trio prepares, the packet already on screen keeps drawing
@@ -106,10 +115,10 @@ enum ClimbOverlayMotion {
   /// is the one the new packet will draw, and the hand-over changes nothing.
   /// Nil means hold the last frame instead of showing a different climb.
   static func carryOverSwap(pagePosition: Double, centerPage: Double, hasPrevious: Bool, hasNext: Bool,
-                            outgoing: Float, incoming: Float) -> (Selection, SwapWeights)? {
+                            outgoing: Float, incoming: Float, shared: Float = 1) -> (Selection, SwapWeights)? {
     guard pagePosition.isFinite, centerPage.isFinite, abs(pagePosition-centerPage) <= 1 else { return nil }
     let (selection, weights) = selectSwap(pagePosition: pagePosition,centerPage: centerPage,
-      hasPrevious: hasPrevious,hasNext: hasNext,outgoing: outgoing,incoming: incoming)
+      hasPrevious: hasPrevious,hasNext: hasNext,outgoing: outgoing,incoming: incoming,shared: shared)
     return pagePosition == centerPage || selection.lowerOffset != selection.upperOffset ? (selection, weights) : nil
   }
 
