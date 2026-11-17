@@ -11,6 +11,8 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const state = vi.hoisted(() => ({
   ticks: undefined as unknown[] | undefined,
   art: undefined as unknown[] | undefined,
+  attempts: undefined as unknown[] | undefined,
+  queriedKeys: [] as string[],
 }));
 
 vi.mock('react-native', () => ({
@@ -28,7 +30,14 @@ vi.mock('react-i18next', () => ({
     i18n: { language: 'en-US' },
   }),
 }));
-vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: state.art }) }));
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: ({ queryKey, enabled }: { queryKey: readonly unknown[]; enabled?: boolean }) => {
+    if (enabled) state.queriedKeys.push(String(queryKey[0]));
+    if (queryKey[0] === 'localClimbArt') return { data: enabled ? (state.art ?? []) : undefined };
+    return { data: enabled ? state.attempts : undefined };
+  },
+}));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
   getBoardConfigForClimb: (_boardType: string, layoutId: number) => ({
     boardName: 'kilter',
@@ -128,6 +137,8 @@ function tick(
 beforeEach(() => {
   state.ticks = undefined;
   state.art = undefined;
+  state.attempts = undefined;
+  state.queriedKeys = [];
   router.push.mockClear();
   drawer.openClimb.mockClear();
   analytics.track.mockClear();
@@ -204,7 +215,36 @@ describe('HomeProjectsSection', () => {
     });
   });
 
-  it('does not open a climb whose board is not on this phone', () => {
+  it("names, draws and opens a climb whose board is not downloaded from the server's latest attempts", () => {
+    state.ticks = [tick('a', '2026-11-01T18:00:00Z', 'attempt', { climbName: null })];
+    state.attempts = [
+      {
+        climbUuid: 'a',
+        boardType: 'kilter',
+        climbName: 'Jolly Roger',
+        layoutId: 1,
+        frames: 'p1r12',
+        renderBoard: { layoutId: 1, sizeId: 7, setIds: [1, 20] },
+      },
+    ];
+    render(createElement(HomeProjectsSection));
+    expect(state.queriedKeys).toContain('homeProjectAttempts');
+    expect(screen.getByTestId('home-project-a-title').textContent).toBe('Jolly Roger');
+    fireEvent.click(screen.getByTestId('home-project-a'));
+    expect(drawer.openClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climbUuid: 'a', layoutId: 1, sizeId: 7, setIds: '1,20' }),
+      { openPlayDrawer: drawer.openPlayDrawer, router },
+    );
+  });
+
+  it('does not ask the server when the phone knows every row', () => {
+    state.ticks = [tick('a', '2026-11-01T18:00:00Z', 'attempt')];
+    state.art = [{ boardType: 'kilter', climbUuid: 'a', frames: 'p1r12', layoutId: 8, compatibleSizeIds: [10] }];
+    render(createElement(HomeProjectsSection));
+    expect(state.queriedKeys).not.toContain('homeProjectAttempts');
+  });
+
+  it('does not open a climb whose board neither the phone nor the server knows', () => {
     state.ticks = [tick('a', '2026-11-01T18:00:00Z', 'attempt')];
     render(createElement(HomeProjectsSection));
     fireEvent.click(screen.getByTestId('home-project-a'));
