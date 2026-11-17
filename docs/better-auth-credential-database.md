@@ -65,8 +65,8 @@ signing keys remains a separate issuer gate.
 `/api/internal/auth/browser-binding/v1/`, its route, the www command client that
 called it and the owned HTTP proof that drove it. That path now gets the
 backend's ordinary 404. Nothing called the service in production: its only
-caller was the www binding client, which was dark behind a readiness gate that
-returned `false`. See [better-auth-browser-session.md](better-auth-browser-session.md).
+caller was the www binding client, which no live www code imported. See
+[better-auth-browser-session.md](better-auth-browser-session.md).
 
 What stays until B5 rebuilds provider sign-in, provider security and first
 password on the new browser session: the backend binding core
