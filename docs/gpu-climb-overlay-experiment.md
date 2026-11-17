@@ -140,6 +140,10 @@ The final APK without diagnostic tracing also reported API v3 readiness in the n
 | --- | --- |
 | ![Android player swipes recording](images/gpu-climb-overlay/android-player-swipes.gif) | ![Android editor pulse recording](images/gpu-climb-overlay/android-editor-pulse.gif) |
 
+## Physical Adreno: lower scene dropped (#7749)
+
+On a Galaxy S26 Ultra (Adreno 840, driver 0842.19.13) the compositor drew nothing from the lower scene: no lit holds at rest, and no outgoing climb during a swap. The emulator never showed it. A diagnostic build proved the inputs were right: the hold count, the descriptors read back from the GPU, and the tile lookup. Drawing the same still frame through the upper scene lit every hold. The driver dropped the `Hold` that `source_hold` returned straight from `lower[index]`. Copying it into a local before returning fixed both cases on the phone. `scripts/check-android-gpu-shaders.ts` now rejects any `return` that ends on a whole `lower[...]` or `upper[...]` element, because `glslc` compiles that form without complaint.
+
 ## Catalogue expansion evidence
 
 The [transition golden](../scripts/aura-transition-golden/README.md) adds eight wall-swap samples to the 30 wipe and editor samples. On 2026-11-17 the host Metal run (Apple M5 Max) matched the tiled compositor to the amended full-scan reference with a maximum channel error of 0 across all 38 samples; the swap's settled samples reproduced the wipe's still images and stayed within one byte of the Rust still oracle, and the mirrored swap sample equalled the unmirrored one. Because the amended reference copies the production swap branch, the swap's arithmetic is checked separately against the two Rust stills: a side at weight 0 matched the other still within one byte, sides at 0.2–0.6 measured within 0.045 of their weight, and 4,812 shared-hold pixels matched within one byte. Swapping the lower and upper weights in the shader fails that check. Pixel GLES and physical iPhone runs of the swap samples are still owed.
