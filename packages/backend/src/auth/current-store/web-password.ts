@@ -472,7 +472,8 @@ export async function authenticateWebPassword(
           })
         : undefined;
     await revalidateIdentityAuthority(transaction, receipt);
-    assertFresh(issuedAt);
+    // Past the command's age limit nobody waits for the token: roll the new session back.
+    if (webSession) assertFresh(issuedAt);
     return {
       protocolVersion: AUTH_PROTOCOL_VERSION,
       operation: 'password',
