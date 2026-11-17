@@ -452,7 +452,8 @@ writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads. One dead branch
 also stays on phones: `isCancellation` in
 `packages/mobile/src/lib/error-reporting.ts` still drops a
 `BrowserBackendConsumerError` whose status is `superseded`, and
-`src/lib/__tests__/error-reporting.test.ts` keeps a stand-in class for it.
+`packages/mobile/src/lib/__tests__/error-reporting.test.ts` keeps a stand-in
+class for it.
 A5 deleted the `browser-backend-consumer` module that defined the error, so
 nothing throws it, but the file has no `.web` suffix and ships to phones by
 OTA, so Phase A leaves it alone. B5 deletes the branch, the stand-in class and
