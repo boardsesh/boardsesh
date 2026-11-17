@@ -310,7 +310,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       forwardViewCommand(commandName, args: args)
       return
     }
-    guard let values = ClimbOverlayMotion.commandValues(args as [Any]) else { return }
+    guard let values = ClimbOverlayMotion.commandValues(args) else { return }
     setSwapFrame(values)
   }
 

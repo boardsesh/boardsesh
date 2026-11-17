@@ -149,8 +149,10 @@ import Foundation
     // Command arguments arrive as NSNumbers; anything else rejects the command.
     precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 12.25),NSNumber(value: 0.4),NSNumber(value: 0),
       NSNumber(value: 1),NSNumber(value: 3)]) == [12.25,0.4,0,1,3])
-    precondition(ClimbOverlayMotion.commandValues([]) == [])
-    precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 1),"2"]) == nil)
+    precondition(ClimbOverlayMotion.commandValues([Any]()) == [])
+    precondition(ClimbOverlayMotion.commandValues(NSArray(array: [NSNumber(value: 2.5),NSNumber(value: 7)])) == [2.5,7],
+      "Fabric's NSArray reads without bridging")
+    precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 1),"2"] as [Any]) == nil)
     precondition(ClimbOverlayMotion.commandValues([NSNumber(value: 1),NSNull()]) == nil)
     precondition(ClimbOverlayMotion.commandValues([NSNumber(value: true)]) == nil,"A boolean is not a frame number")
     // The sequence gate: the command lands first, the same frame's prop later is dropped,

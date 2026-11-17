@@ -136,10 +136,10 @@ enum ClimbOverlayMotion {
     return SequencedSwapFrame(frame: frame,sequence: nil)
   }
 
-  /// A command's arguments as numbers; nil if any argument is not a number.
-  static func commandValues(_ args: [Any]) -> [Double]? {
+  /// A command's arguments (the NSArray Fabric hands over) as numbers; nil if
+  /// any argument is not a number.
+  static func commandValues<Arguments: Sequence>(_ args: Arguments) -> [Double]? {
     var values: [Double] = []
-    values.reserveCapacity(args.count)
     for arg in args {
       guard let number = arg as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
       values.append(number.doubleValue)
