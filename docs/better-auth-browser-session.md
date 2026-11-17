@@ -215,9 +215,11 @@ returns `{ sessionId, token, expiresAt, generation }`.
   for the presented session's account), then the presented session's rows,
   then the new row. Two logins that present each other's sessions queue on the
   first `users` row instead of deadlocking.
-- It writes one row: a random UUID id; a token of 32 random bytes in base64url,
-  stored as is, because the reader looks a `canonical-token` up by equality (the
-  bridge and the native binding store theirs the same way); `expires_at` =
+- It writes one row: a random UUID id; a token of 32 random bytes in base64url
+  from `newSessionToken()`, of which the row stores only the SHA-256 digest, as
+  every first-party writer does (the reader hashes a presented
+  `canonical-token` and looks the digest up), and the raw token goes back only
+  in this call's return value; `expires_at` =
   `now` + 30 days; `original_authenticated_at` = `authenticatedAt`; no
   `legacy_lineage_id`; and `revocation_generation` = the account's generation,
   read after the revocation below.
@@ -237,8 +239,8 @@ or `{ rolled: false }`. It is one conditional UPDATE that sets `expires_at` to
 no denial, a generation equal to the account's, an account not deleted, and a
 lineage (if any) that is unrevoked and names this row. It writes no cookie.
 Bridged web rows roll too. The bridge still caps a new row at the legacy
-cookie's expiry (`bridge.ts:81`); the first roll lifts that, and re-bridging
-never shortens a row (`bridge.ts:91`). A revoked lineage stops the roll, and
+cookie's expiry (`bridge.ts:92`); the first roll lifts that, and re-bridging
+never shortens a row (`bridge.ts:102`). A revoked lineage stops the roll, and
 sign-out still deletes the row and writes the denial. Rows bound to a native
 refresh token keep that token's expiry and never roll. A roll never makes a row
 readable: every reader checks the same conditions itself.

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, notExists, notLike, or, sql } from 'drizzle-orm';
 import { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS } from '@boardsesh/auth-protocol';
 import {
@@ -14,6 +14,7 @@ import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { denyFirstPartySessionInTransaction } from './lineage';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import type { FirstPartySession } from './session-reader';
+import { newSessionToken } from './session-token';
 
 export { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS };
 
@@ -37,7 +38,7 @@ export interface WebSessionIssue {
 
 export interface IssuedWebSession {
   readonly sessionId: string;
-  /** The raw opaque token, returned this once. The row stores it as the session reader looks it up. */
+  /** The raw opaque token, returned this once. The row stores only its digest, so nothing can hand it out again. */
   readonly token: string;
   readonly expiresAt: Date;
   readonly generation: number;
@@ -129,11 +130,11 @@ export async function issueWebSession(
   // its generation, and the new session must carry the moved one.
   const subject = await requireHumanSubjectForIssuance(transaction, request.userId);
   const sessionId = randomUUID();
-  const token = randomBytes(32).toString('base64url');
+  const issued = newSessionToken();
   const expiresAt = new Date(request.now.getTime() + WEB_SESSION_LIFETIME_MS);
   await transaction.insert(authSession).values({
     id: sessionId,
-    token,
+    token: issued.stored,
     userId: request.userId,
     expiresAt,
     // Not a freshness input: readers use originalAuthenticatedAt.
@@ -144,7 +145,7 @@ export async function issueWebSession(
     legacyLineageId: null,
     revocationGeneration: subject.generation,
   });
-  return { sessionId, token, expiresAt, generation: subject.generation };
+  return { sessionId, token: issued.token, expiresAt, generation: subject.generation };
 }
 
 export type WebSessionRoll = { readonly rolled: true; readonly expiresAt: Date } | { readonly rolled: false };
