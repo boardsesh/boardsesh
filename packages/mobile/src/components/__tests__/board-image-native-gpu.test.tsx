@@ -561,13 +561,15 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     expect(screen.getByTestId('native-gpu')).toBeTruthy();
   });
 
-  it.each(['reason("Invalid render config")', 'Invalid atlas offset', 'GLES3.1 required'])(
-    'persists an unscoped older-binary error this binary always repeats: %s',
-    (reason) => {
-      render(<BoardImageNative {...BOARD} />);
-      const current = controls.props!;
-      act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason } }));
-      expect(controls.recordFailure).toHaveBeenCalledExactlyOnceWith('static-config', 5);
-    },
-  );
+  it.each([
+    'reason("Invalid render config")',
+    'Invalid atlas offset',
+    'GLES3.1 required',
+    'GPU atlas rejected config or exceeded budget',
+  ])('persists an unscoped older-binary error this binary always repeats: %s', (reason) => {
+    render(<BoardImageNative {...BOARD} />);
+    const current = controls.props!;
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason } }));
+    expect(controls.recordFailure).toHaveBeenCalledExactlyOnceWith('static-config', 5);
+  });
 });

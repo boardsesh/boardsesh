@@ -60,6 +60,14 @@ describe('GPU diagnostics', () => {
     ['GLES3.1 required', 'static'],
     ['Fragment storage buffers unavailable', 'static'],
     ['Frame timestamp extension unavailable', 'static'],
+    // Exact Android API 3 (store 2.7.1) messages.
+    ['GPU atlas rejected config or exceeded budget', 'static'],
+    ['Failed requirement.', 'static'],
+    ['Insufficient memory headroom for GPU atlas preparation', 'context'],
+    ['Another layout occupies the GPU atlas budget', 'context'],
+    ['GPU atlas residency exceeds 128 MiB', 'context'],
+    ['GPU texture consumption timestamp unavailable', 'context'],
+    ['Check failed.', 'context'],
   ] as const)('remembers an unscoped older-binary error %s only when it always repeats', (raw, expected) => {
     expect(resolveGpuFailureScope(undefined, raw, classifyGpuFallback(raw))).toBe(expected);
   });

@@ -35,6 +35,11 @@ export function classifyGpuFallback(reason: unknown): GpuFallbackReason {
 const DETERMINISTIC_UNSCOPED_REASONS = [
   'invalid render config',
   'atlas preparation rejected config',
+  // Android API 3: Rust rejected the config (BoardRendererBridge.prepareAtlas).
+  'gpu atlas rejected config',
+  // Android API 3: Kotlin's default require() message. That build only uses a
+  // bare require() to validate the atlas Rust produced for the config.
+  'failed requirement.',
   'invalid atlas header',
   'invalid atlas manifest size',
   'invalid atlas layout',
