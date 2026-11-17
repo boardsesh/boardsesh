@@ -1069,6 +1069,8 @@
       "previousInQueue": "Anterior en tu cola",
       "nowIn": "Ahora en la lista {{name}}",
       "nowInPosition": "Ahora en la lista {{name}}, {{position}} de {{total}}",
+      "climbAria": "{{name}}, {{grade}}",
+      "climbPositionAria": "{{name}}, {{grade}}, {{position}} de {{total}}",
       "searchResults": "Resultados de búsqueda",
       "setterClimbs": "Bloques de {{name}}",
       "logbook": "Historial",

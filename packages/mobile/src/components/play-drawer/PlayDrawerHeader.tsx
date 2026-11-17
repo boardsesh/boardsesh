@@ -1,5 +1,10 @@
 import { PlayDrawerHeader, type PreparedHeaderProps } from './PlayDrawerHeaderView';
-export { PlayDrawerHeader, describePlayDrawerHeader, NAME_SHRINK_TO_FIT_SCALE } from './PlayDrawerHeaderView';
+export {
+  PlayDrawerHeader,
+  describePlayDrawerGrade,
+  describePlayDrawerHeader,
+  NAME_SHRINK_TO_FIT_SCALE,
+} from './PlayDrawerHeaderView';
 export type { PreparedHeaderProps } from './PlayDrawerHeaderView';
 import { memo, useMemo, type ReactNode } from 'react';
 import { type BoardName, type Climb } from '@boardsesh/shared-schema';

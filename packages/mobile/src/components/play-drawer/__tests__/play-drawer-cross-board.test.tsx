@@ -374,6 +374,7 @@ vi.mock('../PlayDrawerHeader', () => ({
           layoutFingerprint: JSON.stringify(props.climb),
         }
       : null,
+  describePlayDrawerGrade: () => 'V5',
   PreparedPlayDrawerHeader: ({ model, ...props }: { model: { headerProps: Props } } & Props) => {
     recorded.headers.push({ ...model.headerProps, ...props });
     return null;

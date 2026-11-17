@@ -178,19 +178,28 @@ function deriveHeaderFacts(
 }
 
 /**
+ * The grade the header shows, as words: the grade itself, whole, or "Project"
+ * when nobody has graded the climb. For the board's spoken value, which names
+ * the climb by name and grade.
+ */
+export function describePlayDrawerGrade(headerProps: PreparedHeaderProps, t: TFunction<'climbs'>): string {
+  return deriveHeaderFacts(headerProps, t).showsProject ? t('mobile.project.chip') : headerProps.difficulty;
+}
+
+/**
  * Everything the header shows, as one sentence for a screen reader: the play
  * drawer reads the header from one fixed stand-in (see `SwipeableHeader`), so
  * this is the only way the name, grade and stats reach VoiceOver or TalkBack.
  */
 export function describePlayDrawerHeader(headerProps: PreparedHeaderProps, t: TFunction<'climbs'>): string {
-  const { name, difficulty, secondaryGrade, setterUsername, isHidden, isDraft, statsAngle } = headerProps;
-  const { statsParts, ruleLabels, attributes, showsProject, showsSetAngleMarker } = deriveHeaderFacts(headerProps, t);
+  const { name, secondaryGrade, setterUsername, isHidden, isDraft, statsAngle } = headerProps;
+  const { statsParts, ruleLabels, attributes, showsSetAngleMarker } = deriveHeaderFacts(headerProps, t);
   return [
     name,
     // The glyphs and badges drawn right after the name.
     ...describeClimbAttributes(attributes, t),
     isDraft ? t('createClimbForm.draftBadge') : null,
-    showsProject ? t('mobile.project.chip') : difficulty,
+    describePlayDrawerGrade(headerProps, t),
     secondaryGrade,
     ...statsParts,
     setterUsername,

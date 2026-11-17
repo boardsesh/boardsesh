@@ -40,8 +40,13 @@ import {
   sessionBoardPathNamesBoard,
 } from '../../lib/boards/gym-board-for-climb';
 import { useSessionBoardPath } from '../../providers/queue/queue-contexts';
-import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, wallControlPreviewReason, type DriveModeStartedBy } from '@boardsesh/analytics';
+import type { ActiveSubDrawer, TrackLabelModel } from '@boardsesh/play-view';
+import {
+  SHARED_EVENTS,
+  wallControlPreviewReason,
+  type DriveModeStartedBy,
+  type QueueNavigationDirection,
+} from '@boardsesh/analytics';
 import { buildOpeningLayoutKey } from './opening-layout-cache';
 import { usePlayNavigationModel } from './use-play-navigation-model';
 import { usePlayLayoutMeasurements, usePlayOpeningLayout } from './use-play-opening-layout';
@@ -61,7 +66,9 @@ import { useDeferredUntilFrame } from '../../hooks/use-deferred-until-frame';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
-import { LivePlayDrawerHeader, useLivePlayDrawerHeaderModel } from './PlayDrawerHeader';
+import { LivePlayDrawerHeader, describePlayDrawerGrade, useLivePlayDrawerHeaderModel } from './PlayDrawerHeader';
+import { formatBoardClimbValue } from './board-climb-value';
+import { useBoardValueAnnouncement } from './use-board-value-announcement';
 import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
@@ -222,6 +229,8 @@ import { wallControlFrostHasLeds, wallControlUsesFrost } from './wall-control-fr
 import { boardHasLights, litByWallDevice } from '../../lib/boards/board-lighting';
 
 const EMPTY_HOLD_PLACEMENTS: HoldPlacement[] = [];
+/** A workout stage holds the top bar: the board's value names no list position then. */
+const NO_TRACK_LABEL: TrackLabelModel = { kind: 'hidden' };
 import { useWallHolderIdentity } from './use-wall-holder-name';
 import { track } from '../../lib/analytics';
 import { spacing } from '../../theme/tokens';
@@ -1911,9 +1920,13 @@ export function PlayCore({
   // the latch the preview decision reads (`browseByDefault`), not the live
   // roster: after a peer leaves mid-browse the latch still makes a step a preview.
   // Each step also runs the then-signposts (the note, the crossing tick), which
-  // say which walk it took for the event.
+  // say which walk it took for the event, and queues the board's value to be
+  // announced where it lands.
+  // Set on every render below, once the value it announces is known.
+  const noteBoardValueStepRef = useRef<((direction: QueueNavigationDirection) => void) | null>(null);
   const handleNavigationStep = useCallback(
-    (step: PlayNavigationStep) =>
+    (step: PlayNavigationStep) => {
+      noteBoardValueStepRef.current?.(step.direction);
       trackQueueNavigation(
         {
           ...step,
@@ -1927,7 +1940,8 @@ export function PlayCore({
           walk: noteSignpostStep(step),
         },
         actionsAnalytics,
-      ),
+      );
+    },
     [
       browseByDefault,
       alwaysDrive,
@@ -2327,7 +2341,7 @@ export function PlayCore({
   useEffect(() => {
     if (previewNoteOnLine !== null) markPreviewNoteShown();
   }, [previewNoteOnLine, markPreviewNoteShown]);
-  const boardValueText = previewNoteOnLine !== null ? spokenCaption(previewNoteOnLine) : boardSignposts.valueText;
+  const boardExtraValueText = previewNoteOnLine !== null ? spokenCaption(previewNoteOnLine) : boardSignposts.valueText;
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
@@ -2745,6 +2759,24 @@ export function PlayCore({
     }),
   });
   wallControlAnswersRef.current = wallControlHandlers;
+  // The board's spoken value: the climb on screen by name and grade, and its
+  // place in the list the top bar names ("Yoshi's Island, V5, 5 of 40"), then
+  // Up next's stretch or the preview note. Every adjust reads it, and a step
+  // the climber took announces it where it lands.
+  const boardValueText = formatBoardClimbValue({
+    climbName: currentHeaderModel?.headerProps.name,
+    grade: currentHeaderModel ? describePlayDrawerGrade(currentHeaderModel.headerProps, tClimbs) : null,
+    trackLabel: workoutStageParts === null ? currentTrackLabel : NO_TRACK_LABEL,
+    extra: boardExtraValueText,
+    t,
+    locale: trackLocale,
+  });
+  noteBoardValueStepRef.current = useBoardValueAnnouncement({
+    displayedClimbUuid: displayedClimb?.uuid ?? null,
+    nextClimbUuid: navigationState.nextItem?.climb?.uuid ?? null,
+    previousClimbUuid: navigationState.prevItem?.climb?.uuid ?? null,
+    value: boardValueText,
+  });
   // The MiniPlayer's bulb on an unlit last pick (owner decision A): the preview
   // it opened has landed, so press Put on board for it through this handler,
   // the wall button's own path. In a crew it waits for the browse latch, so

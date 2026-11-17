@@ -1069,6 +1069,8 @@
       "previousInQueue": "Previous in your queue",
       "nowIn": "Now in {{name}}",
       "nowInPosition": "Now in {{name}}, {{position}} of {{total}}",
+      "climbAria": "{{name}}, {{grade}}",
+      "climbPositionAria": "{{name}}, {{grade}}, {{position}} of {{total}}",
       "searchResults": "Search results",
       "setterClimbs": "{{name}}'s climbs",
       "logbook": "Logbook",

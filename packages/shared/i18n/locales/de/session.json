@@ -1069,6 +1069,8 @@
       "previousInQueue": "Vorheriger in deiner Warteschlange",
       "nowIn": "Jetzt in der Liste {{name}}",
       "nowInPosition": "Jetzt in der Liste {{name}}, {{position}} von {{total}}",
+      "climbAria": "{{name}}, {{grade}}",
+      "climbPositionAria": "{{name}}, {{grade}}, {{position}} von {{total}}",
       "searchResults": "Suchergebnisse",
       "setterClimbs": "Boulder von {{name}}",
       "logbook": "Routenbuch",
