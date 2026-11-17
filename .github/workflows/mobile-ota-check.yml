@@ -2,8 +2,8 @@ name: Mobile OTA Compatibility (PR Signal)
 
 # A fast, reliable PR signal: does this mobile change ride over-the-air on
 # existing app binaries, or does it force a new TestFlight/Play build? It resolves
-# the Expo runtimeVersion `fingerprint` for iOS + Android on the branch AND on
-# its PR's BASE branch (in one job, under identical env), then compares per
+# the Expo runtimeVersion `fingerprint` for iOS + Android on a pinned base
+# commit and on the result of merging the PR into that commit, then compares per
 # platform — equal = JS-only (ships OTA), different = native change (needs a new
 # binary). Informational: the verdict lands as a sticky PR comment and an
 # "OTA compatibility" check-run. Version-stamped main commits automatically build
@@ -34,18 +34,10 @@ on:
       - '.github/workflows/mobile-ota-check.yml'
       # The check's own logic — so changes to it re-run and self-validate.
       - 'scripts/mobile-ota-compat-check.ts'
-  # The verdict depends on the PR's base branch and its labels, neither of which
-  # a push changes — so the two remediations this check prints (retarget the PR,
-  # or add the allow-native-on-main label) would otherwise leave a stale red
-  # check-run behind, with no way to re-run it but an empty commit. `edited` is
-  # the event a base change raises; `labeled`/`unlabeled` cover the waiver.
-  #
-  # The paths filter applies to label events too, so labelling a PR that touches
-  # none of these files does NOT re-run the check. That is correct rather than a
-  # gap: a PR with no mobile paths has no fingerprint verdict to revise, and can
-  # never have been failed by this check in the first place.
+  # Opening, reopening, or retargeting a PR can change the comparison base
+  # without a push. The informational verdict no longer depends on labels.
   pull_request:
-    types: [opened, reopened, edited, labeled, unlabeled]
+    types: [opened, reopened, edited]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -136,22 +128,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # The PR's HEAD commit, not the synthetic merge ref a pull_request event
-          # checks out by default: the fingerprint must be resolved from the tree
-          # the author actually pushed, the same one the push path sees.
+          # Start from the same immutable head on both event paths. Below we
+          # merge it with the exact commit used for the baseline.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           # Need the base branch reachable for the baseline worktree, and the tags
           # for the secondary "already on a released build" lookup.
           fetch-depth: 0
           fetch-tags: true
-
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: false
-
-      - name: Install dependencies (PR tree)
-        run: vp install --frozen-lockfile
 
       # One PR lookup for the whole job, over both event paths. The baseline is
       # the branch this PR will actually merge into — comparing a release-train PR
@@ -178,45 +161,82 @@ jobs:
               ).data[0];
             core.setOutput('number', pr?.number ?? '');
             core.setOutput('ref', pr?.base?.ref ?? 'main');
-            core.setOutput(
-              'allow_native_on_main',
-              pr?.labels?.some((label) => label.name === 'allow-native-on-main') ? 'true' : '',
-            );
 
-      # Materialize origin/main as a sibling worktree with its OWN node_modules so
-      # the baseline resolves against main's exact dependency tree. The verdict is
-      # the PR-vs-main fingerprint diff; resolving both here, same job + same env,
-      # is what makes that diff robust to env imperfections.
-      - name: Materialize the base-branch baseline
+      # Include base-branch changes in both trees so they cancel out of the diff.
+      - name: Prepare the baseline and merge trees
+        id: trees
         env:
           BASE_REF: ${{ steps.base.outputs.ref }}
         run: |
           set -euo pipefail
-          git fetch origin "$BASE_REF" --depth=1
-          git worktree add "$RUNNER_TEMP/base-baseline" "origin/$BASE_REF"
+          head_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin "refs/heads/$BASE_REF"
+          base_sha="$(git rev-parse FETCH_HEAD)"
+          echo "Comparing merge of $head_sha into $base_sha ($BASE_REF) with $base_sha."
+
+          if merged_tree="$(git merge-tree --write-tree "$base_sha" "$head_sha")"; then
+            merged_sha="$(git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit-tree "$merged_tree" -p "$base_sha" -p "$head_sha" -m 'OTA compatibility comparison')"
+            git switch --detach "$merged_sha"
+            git worktree add --detach "$RUNNER_TEMP/base-baseline" "$base_sha"
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            merge_status=$?
+            if [ "$merge_status" -ne 1 ]; then exit "$merge_status"; fi
+            echo "::warning::The PR conflicts with $BASE_REF. OTA compatibility is unknown."
+            echo 'conflict=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: voidzero-dev/setup-vp@v1
+        if: steps.trees.outputs.ready == 'true'
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Install dependencies (merged tree)
+        if: steps.trees.outputs.ready == 'true'
+        run: vp install --frozen-lockfile
 
       - name: Install dependencies (base baseline)
+        if: steps.trees.outputs.ready == 'true'
         working-directory: ${{ runner.temp }}/base-baseline
         run: vp install --frozen-lockfile
 
       - name: Resolve fingerprints and compare vs the base branch
         id: ota
+        if: steps.trees.outputs.ready == 'true'
         env:
           BASE_REF: ${{ steps.base.outputs.ref }}
-          ALLOW_NATIVE_ON_MAIN: ${{ steps.base.outputs.allow_native_on_main }}
-          # On a pull_request event the ambient values describe the merge ref
-          # (`<n>/merge`, a synthetic sha). The comment must name the branch and
-          # commit the author pushed, so override both.
-          GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          OTA_COMPAT_HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          OTA_COMPAT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          args=(--write-env --check-shipped-tags --base-dir "$RUNNER_TEMP/base-baseline" --base-branch "$BASE_REF")
-          if [ -n "$ALLOW_NATIVE_ON_MAIN" ]; then args+=(--allow-native-on-main); fi
-          vp run check:mobile-ota-compat -- "${args[@]}"
+          vp run check:mobile-ota-compat -- --write-env --check-shipped-tags \
+            --base-dir "$RUNNER_TEMP/base-baseline" --base-branch "$BASE_REF"
+
+      - name: Verify the verdict is for the current PR
+        id: current
+        if: ${{ !cancelled() && steps.base.outputs.number != '' }}
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.base.outputs.number }}
+          BASE_REF: ${{ steps.base.outputs.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            });
+            // Re-runs can carry an old head or base. A retargeted PR can have
+            // the same head, so verify the base before publishing checks too.
+            const matches = pr.state === 'open' &&
+              pr.head.sha === process.env.HEAD_SHA && pr.base.ref === process.env.BASE_REF;
+            core.setOutput('matches', matches);
+            core.setOutput('has_native_label', pr.labels.some((label) => label.name === 'native-fingerprint'));
 
       - name: Comment OTA compatibility on the PR
-        if: steps.base.outputs.number != '' && steps.ota.outputs.comment_b64 != ''
+        if: steps.current.outputs.matches == 'true' && steps.ota.outputs.comment_b64 != ''
         uses: actions/github-script@v7
         env:
           COMMENT_B64: ${{ steps.ota.outputs.comment_b64 }}
@@ -257,25 +277,18 @@ jobs:
       # non-deterministic (see MAX_DIFF_CONFIRMATIONS in the check script), and a
       # flake must not flip a label either way.
       - name: Label native fingerprint changes
-        if: steps.base.outputs.number != '' && steps.ota.outputs.overall != 'unknown' && steps.ota.outputs.overall != ''
+        if: steps.current.outputs.matches == 'true' && steps.ota.outputs.overall != 'unknown' && steps.ota.outputs.overall != ''
         uses: actions/github-script@v7
         env:
           OVERALL: ${{ steps.ota.outputs.overall }}
           PR_NUMBER: ${{ steps.base.outputs.number }}
+          HAS_NATIVE_LABEL: ${{ steps.current.outputs.has_native_label }}
         with:
           script: |
             const LABEL = 'native-fingerprint';
             const prNumber = Number(process.env.PR_NUMBER);
-            // Re-read rather than trusting the event payload: a `labeled` event
-            // carries the labels as they were when it fired.
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
-
             const wanted = process.env.OVERALL === 'native-change-required';
-            const has = pr.labels.some((label) => label.name === LABEL);
+            const has = process.env.HAS_NATIVE_LABEL === 'true';
             if (wanted === has) return;
 
             if (wanted) {
@@ -299,12 +312,12 @@ jobs:
             }
 
       - name: Publish the check-run
-        if: always()
+        if: ${{ !cancelled() && (steps.base.outputs.number == '' || steps.current.outputs.matches == 'true') }}
         uses: actions/github-script@v7
         env:
           # Falls back to "unknown" if an earlier step failed before the script
           # produced an output (e.g. install died), so the check always posts.
-          CHECK_TITLE: ${{ steps.ota.outputs.check_title || 'OTA compatibility unknown (no baseline)' }}
+          CHECK_TITLE: ${{ steps.ota.outputs.check_title || (steps.trees.outputs.conflict == 'true' && 'OTA compatibility unknown (merge conflict)') || 'OTA compatibility unknown (no baseline)' }}
           # Neutral unless the script said otherwise, so a step that died before
           # writing an output reports neutral rather than a phantom failure.
           CHECK_CONCLUSION: ${{ steps.ota.outputs.check_conclusion || 'neutral' }}
@@ -320,9 +333,6 @@ jobs:
               name: 'OTA compatibility',
               head_sha: process.env.HEAD_SHA,
               status: 'completed',
-              // Neutral for every verdict except a native change merging into
-              // main without the allow-native-on-main label — see
-              // deriveCheckConclusion in scripts/mobile-ota-compat-check.ts.
               conclusion: process.env.CHECK_CONCLUSION,
               output: { title, summary: title },
             });

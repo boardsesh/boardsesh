@@ -9,11 +9,10 @@
  * (ships OTA in minutes) while a native change (deps, plugins, entitlements,
  * config) moves it (needs a new binary first).
  *
- * Verdict = DIFF vs the PR's BASE branch (normally origin/main
- * for a native change joining the release train), resolved in ONE job under
- * identical env:
+ * CI compares the pinned base commit with the result of merging the PR into
+ * that same commit, in one job under identical env:
  *
- *   fingerprint(PR tree, platform) === fingerprint(base tree, platform)
+ *   fingerprint(merged tree, platform) === fingerprint(base tree, platform)
  *     → ota-compatible            (no native delta vs the base)
  *   …differ                       → native-change-required
  *   …either side unresolved       → unknown (neutral, never blocks)
@@ -37,10 +36,9 @@
  *   vp run check:mobile-ota-compat -- --write-env --base-dir <main-worktree> [--check-shipped-tags]
  *   vp run check:mobile-ota-compat -- --base-fingerprint-ios <h> --base-fingerprint-android <h>
  *
- * The CI workflow (.github/workflows/mobile-ota-check.yml) materializes the
- * baseline as a git worktree of origin/main with its own `vp install`, then
- * passes it via --base-dir. Run locally the same way:
- *   git worktree add /tmp/main-baseline origin/main
+ * To reproduce locally, check out the merged tree and give the baseline
+ * worktree the exact base SHA used in the merge:
+ *   git worktree add --detach /tmp/main-baseline <base-sha>
  *   (cd /tmp/main-baseline && vp install --frozen-lockfile)
  *   vp run check:mobile-ota-compat -- --write-env --base-dir /tmp/main-baseline
  */
@@ -232,8 +230,7 @@ const VERDICT_CELL: Record<Verdict, string> = {
 };
 
 const HEADLINE: Record<Verdict, string> = {
-  'ota-compatible':
-    '✅ **Ships over-the-air.** No native change versus the base branch — this lands on existing builds via OTA.',
+  'ota-compatible': '✅ **No native fingerprint change.** The PR can ship via OTA to builds matching the base branch.',
   'native-change-required':
     '⚠️ **Native change detected.** Merging starts new TestFlight/Play builds and temporarily stops the ' +
     'current store fleet receiving later production OTAs until users install the replacement binary.',
@@ -254,7 +251,7 @@ export function enforcementNote(input: EnforcementInput): string | null {
 
 /** A short title for the GitHub check-run. */
 export const CHECK_TITLE: Record<Verdict, string> = {
-  'ota-compatible': 'OTA-compatible — rides existing builds',
+  'ota-compatible': 'No native fingerprint change versus the base branch',
   'native-change-required': 'Native change — current fleet OTA pauses until store update',
   unknown: 'OTA compatibility unknown (no baseline)',
 };
@@ -566,8 +563,8 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   console.log(`[mobile-ota-compat] overall: ${result.overall}`);
 
   const ctx: CommentContext = {
-    sha: process.env.GITHUB_SHA ?? 'local',
-    branch: process.env.GITHUB_REF_NAME ?? 'local',
+    sha: process.env.OTA_COMPAT_HEAD_SHA ?? process.env.GITHUB_SHA ?? 'local',
+    branch: process.env.OTA_COMPAT_HEAD_BRANCH ?? process.env.GITHUB_REF_NAME ?? 'local',
     baseBranch: options.baseBranch,
     allowNativeOnMain: options.allowNativeOnMain,
   };

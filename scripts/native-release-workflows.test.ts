@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -298,9 +298,8 @@ describe('native release workflow contracts', () => {
 
     // The baseline is the PR's base branch, resolved from the PR lookup.
     expect(otaCheck).toContain("core.setOutput('ref', pr?.base?.ref ?? 'main');");
-    expect(otaCheck).toContain('git worktree add "$RUNNER_TEMP/base-baseline" "origin/$BASE_REF"');
     expect(otaCheck).toContain('--base-branch "$BASE_REF"');
-    expect(otaCheck).toContain('--allow-native-on-main');
+    expect(otaCheck).not.toContain('--allow-native-on-main');
 
     // The workflow publishes the script's informational verdict.
     expect(otaCheck).toContain('conclusion: process.env.CHECK_CONCLUSION,');
@@ -313,11 +312,8 @@ describe('native release workflow contracts', () => {
     };
     expect(triggers.push?.['branches-ignore']).toEqual(['main']);
 
-    // The verdict depends on the base branch and the labels, and neither
-    // remediation the failure prints (retarget, or add the waiver label) produces
-    // a push — so without these event types the red check-run would be stuck.
-    // `edited` is what a base change raises.
-    expect(triggers.pull_request?.types).toEqual(['opened', 'reopened', 'edited', 'labeled', 'unlabeled']);
+    // Retargeting a PR needs a new verdict, while labels cannot change it.
+    expect(triggers.pull_request?.types).toEqual(['opened', 'reopened', 'edited']);
     // A fork PR's token is read-only, so the comment/label/check-run writes would
     // 403; the push path never covered forks either.
     expect(otaCheck).toContain('github.event.pull_request.head.repo.fork != true');
@@ -329,11 +325,22 @@ describe('native release workflow contracts', () => {
     // two-install resolve. Only a base change can move the verdict, and that is
     // what `changes.base` reports.
     expect(otaCheck).toContain("github.event.action != 'edited' || github.event.changes.base != null");
-    // The PR's head commit, not the synthetic merge ref: a check-run posted on
-    // the merge sha is invisible on the PR, and the merge tree is not what the
-    // author pushed.
+    // Start at the author's head to create the merge against the pinned base.
+    // Publishing the check on the resulting merge would hide it from the PR.
     expect(otaCheck).toContain('ref: ${{ github.event.pull_request.head.sha || github.sha }}');
     expect(otaCheck).toContain('head_sha: process.env.HEAD_SHA,');
+    expect(otaCheck).toContain('OTA_COMPAT_HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}');
+    expect(otaCheck).toContain('OTA_COMPAT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}');
+    expect(otaCheck).toContain('pr.head.sha === process.env.HEAD_SHA && pr.base.ref === process.env.BASE_REF');
+    for (const step of [
+      'Comment OTA compatibility on the PR',
+      'Label native fingerprint changes',
+      'Publish the check-run',
+    ]) {
+      expect(stepsOfJob(otaCheck, 'ota-check').find((entry) => entry.name === step)?.if).toContain(
+        "steps.current.outputs.matches == 'true'",
+      );
+    }
     // Both event paths must serialize in ONE lane, or a retarget can race the
     // push whose stale verdict it is trying to replace.
     const parsedCheck = parse(otaCheck) as {
@@ -348,6 +355,64 @@ describe('native release workflow contracts', () => {
       'cancel-in-progress': true,
     });
   });
+
+  it.each(['js-only', 'native', 'conflict'] as const)(
+    'isolates the PR fingerprint from base-branch drift (%s)',
+    (change) => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'ota-check-'));
+      try {
+        const git = (...args: string[]) =>
+          execFileSync(
+            'git',
+            ['-c', 'user.name=OTA test', '-c', 'user.email=ota@example.com', '-c', 'commit.gpgsign=false', ...args],
+            { cwd: sandbox, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+          ).trim();
+        const baseNativeFile = 'native-base.txt';
+        const prNativeFile = 'native-feature.txt';
+        git('init', '-b', 'main');
+        writeFileSync(join(sandbox, baseNativeFile), 'original\n');
+        git('add', '.');
+        git('commit', '-m', 'Branch point');
+        git('branch', 'feature');
+        writeFileSync(join(sandbox, baseNativeFile), 'upstream native change\n');
+        git('commit', '-am', 'Advance main');
+        const baseSha = git('rev-parse', 'HEAD');
+        git('remote', 'add', 'origin', '.');
+        git('switch', 'feature');
+        const featureFile = change === 'conflict' ? baseNativeFile : change === 'native' ? prNativeFile : 'app.js';
+        writeFileSync(join(sandbox, featureFile), 'feature change\n');
+        git('add', featureFile);
+        git('commit', '-m', 'Add feature');
+        const featureSha = git('rev-parse', 'HEAD');
+        const headNativeDelta = git('diff', '--name-only', baseSha, featureSha, '--', 'native-*.txt');
+        expect(headNativeDelta).toContain(baseNativeFile);
+
+        const outputPath = join(sandbox, 'github-output');
+        const script = workflowStep(otaCheck, 'ota-check', (step) => step.id === 'trees').run!;
+        const result = spawnSync('bash', ['-eo', 'pipefail', '-c', script], {
+          cwd: sandbox,
+          encoding: 'utf8',
+          env: { ...process.env, BASE_REF: 'main', RUNNER_TEMP: sandbox, GITHUB_OUTPUT: outputPath },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        if (change === 'conflict') {
+          expect(readFileSync(outputPath, 'utf8')).toBe('conflict=true\n');
+          expect(git('rev-parse', 'HEAD')).toBe(featureSha);
+          return;
+        }
+        expect(readFileSync(outputPath, 'utf8')).toBe('ready=true\n');
+        const baseline = join(sandbox, 'base-baseline');
+        expect(git('-C', baseline, 'rev-parse', 'HEAD')).toBe(baseSha);
+        expect(git('rev-parse', 'HEAD^1', 'HEAD^2')).toBe(`${baseSha}\n${featureSha}`);
+        expect(readFileSync(join(sandbox, featureFile), 'utf8')).toBe('feature change\n');
+        expect(git('diff', '--name-only', baseSha, 'HEAD', '--', 'native-*.txt')).toBe(
+          change === 'native' ? prNativeFile : '',
+        );
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    },
+  );
 
   // The PR CI gate diffs head against the branch it will merge into. Diffing a
   // train PR against main would report the train's existing native change as if
