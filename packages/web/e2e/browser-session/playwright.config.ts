@@ -1,0 +1,41 @@
+import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * The browser-session harness (#7596, B7a): www and the Expo web app on two real
+ * HTTPS subdomains of one parent domain, so a `Domain=` cookie on the parent is
+ * shared between them, in Chromium and WebKit, against the real backend and a
+ * real Postgres. The global setup starts every server and the proxy that makes
+ * the browsers reach https://www.boardsesh.test and https://app.boardsesh.test.
+ *
+ *   vp run db:up                       (once)
+ *   vp run test:e2e:browser-session
+ *
+ * See docs/better-auth-browser-session.md, "Browser-session e2e harness".
+ */
+export default defineConfig({
+  testDir: '.',
+  globalSetup: require.resolve('./global-setup'),
+  // The servers are shared and the specs sign the one seeded account in and out.
+  workers: 1,
+  fullyParallel: false,
+  retries: 0,
+  forbidOnly: !!process.env.CI,
+  timeout: 180_000,
+  expect: { timeout: 20_000 },
+  reporter: process.env.CI
+    ? [['list'], ['html', { open: 'never', outputFolder: '../../playwright-report/browser-session' }]]
+    : 'list',
+  outputDir: '../../test-results/browser-session/artifacts',
+  use: {
+    // CI keeps the HTML report and server logs; a trace adds size, not signal.
+    trace: process.env.CI ? 'off' : 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    actionTimeout: 20_000,
+    // next dev compiles a route the first time it is asked for it.
+    navigationTimeout: 90_000,
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+  ],
+});
