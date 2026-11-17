@@ -50,6 +50,9 @@ internal data class OverlayControls(
     val reduced: Boolean,
     val lowPower: Boolean,
     val mirrored: Boolean,
+    val revealMode: Int = OverlayPolicy.REVEAL_MODE_WIPE,
+    val outgoing: Float = 1f,
+    val incoming: Float = 0f,
 )
 
 internal data class RenderMetrics(
@@ -557,22 +560,36 @@ internal object OverlayRenderer {
                 session.editPending = false
                 session.editStart = null
             }
-            val selection =
-                OverlayPolicy.select(
-                    controls.position ?: request.center,
-                    request.center,
-                    packet.header.present[1],
-                    packet.header.present[2],
-                    controls.reduced,
-                )
-            val lower = if (selection.lower == -1) 1 else 0
-            val upper = if (selection.upper == 1) 2 else 0
+            // The swap honours Reduce Motion in the app, as a shorter dissolve;
+            // only the position-driven wipe is switched off here.
+            val swap = controls.revealMode == OverlayPolicy.REVEAL_MODE_SWAP
+            val (selection, weights) =
+                if (swap)
+                    OverlayPolicy.selectSwap(
+                        controls.position ?: request.center,
+                        request.center,
+                        packet.header.present[1],
+                        packet.header.present[2],
+                        controls.outgoing,
+                        controls.incoming,
+                    )
+                else
+                    OverlayPolicy.select(
+                        controls.position ?: request.center,
+                        request.center,
+                        packet.header.present[1],
+                        packet.header.present[2],
+                        controls.reduced,
+                    ) to OverlayPolicy.SwapWeights(1f, 0f)
+            val lower = OverlayPolicy.slot(selection.lower)
+            val upper = OverlayPolicy.slot(selection.upper)
             val now = System.nanoTime()
             val reach = session.editStart?.let { OverlayPolicy.reach(now - it) } ?: 1f
             if (!eligible(session, request)) return false
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
             encode(packet,lower,upper,packet.uniforms(lower,upper,selection.progress,reach,
-                request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored))
+                request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored,
+                controls.revealMode,weights))
             val frame =
                 session.ledger.submit(now, request.revision, request.generation) ?: return false
             check(EGLExt.eglPresentationTimeANDROID(display, session.eglSurface, frame.timestamp)) {

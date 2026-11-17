@@ -39,8 +39,9 @@ internal object OverlayShader {
             vec4 tuning; // merge, seam, max mix, sharpness
             vec4 tuning2; // fringe, core share, active max reach
             uvec4 offsets; // LED covers, active stamp-layer mask
-            vec4 viewport;
-            vec4 motion; // progress, reveal band width, reserved, editor reach scale
+            vec2 viewport;
+            vec2 swapWeights; // wall swap: lower-only and upper-only hold weights
+            vec4 motion; // progress, reveal band width, reveal mode (0 wipe, 1 swap), editor reach scale
             vec4 other; // second count, second max reach, empty production source, display mirror
             uvec4 coverCrop;
           };
@@ -92,6 +93,14 @@ internal object OverlayShader {
             float membership=upper ? hold.numbers.z : hold.numbers.w;
             // A shared same-role hold stays fully lit, and appears only once.
             if(membership==1.0) return upper ? 0.0 : 1.0;
+            // Wall swap: one weight per side, wherever the hold is. A changed hold
+            // shows only its stronger role (the lower one on a tie), never two marks.
+            if(uniforms.motion.z>0.5) {
+              float own=upper ? uniforms.swapWeights.y : uniforms.swapWeights.x;
+              float other=upper ? uniforms.swapWeights.x : uniforms.swapWeights.y;
+              if(membership==2.0 && (upper ? own<=other : own<other)) return 0.0;
+              return own;
+            }
             float center=clamp((hold.bounds.x+hold.bounds.z)*0.5/uniforms.size.x,0.0,1.0);
             if(uniforms.other.w>0.0) center=1.0-center;
             float halfBand=uniforms.motion.y*0.5;

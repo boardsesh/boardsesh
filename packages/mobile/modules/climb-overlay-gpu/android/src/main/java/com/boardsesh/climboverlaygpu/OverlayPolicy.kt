@@ -1,5 +1,6 @@
 package com.boardsesh.climboverlaygpu
 
+import kotlin.math.abs
 import kotlin.math.max
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -93,6 +94,8 @@ internal object OverlayPolicy {
     const val EDIT_PEAK_NS = OverlayPacketLayout.EDIT_PEAK_NS
     val EDIT_PEAK_REACH = OverlayPacketLayout.EDIT_PEAK_REACH
     val REVEAL_BAND = OverlayPacketLayout.REVEAL_BAND
+    const val REVEAL_MODE_WIPE = OverlayPacketLayout.REVEAL_MODE_WIPE
+    const val REVEAL_MODE_SWAP = OverlayPacketLayout.REVEAL_MODE_SWAP
     const val MAX_ACTIVE = 128
     const val MAX_PENDING = 2
 
@@ -137,6 +140,59 @@ internal object OverlayPolicy {
         if (delta < 0 && previous) return Selection(-1, 0, (1 + delta).toFloat())
         if (delta > 0 && next) return Selection(0, 1, delta.toFloat())
         return Selection(0, 0, 0f)
+    }
+
+    /** The app names the reveal; the generated contract numbers it. */
+    fun revealMode(name: String?): Int = if (name == "swap") REVEAL_MODE_SWAP else REVEAL_MODE_WIPE
+
+    /** Scene slot for a page offset from the centre: 0 current, 1 previous, 2 next. */
+    fun slot(offset: Int): Int = if (offset == -1) 1 else if (offset == 1) 2 else 0
+
+    /** The wall swap's lower and upper class weights. */
+    data class SwapWeights(val lower: Float, val upper: Float)
+
+    private val STILL = SwapWeights(1f, 0f)
+
+    /**
+     * In swap mode the app's page position names a pair, not a progress: the
+     * nearest page is the climb being left, and the side it leans to is the
+     * arriving one. The timing lives in the app; only two weights arrive here.
+     * A pair beyond the prepared neighbours shows the nearest prepared climb on
+     * its own, so a lagging scene can never light a third climb.
+     */
+    fun selectSwap(
+        position: Double,
+        center: Double,
+        previous: Boolean,
+        next: Boolean,
+        outgoing: Float,
+        incoming: Float,
+    ): Pair<Selection, SwapWeights> {
+        if (!position.isFinite() || !center.isFinite()) return Selection(0, 0, 0f) to STILL
+        val delta = position - center
+        if (abs(delta) > 1) {
+            val edge = if (delta > 0) (if (next) 1 else 0) else (if (previous) -1 else 0)
+            return Selection(edge, edge, 0f) to STILL
+        }
+        val selection = select(position, center, previous, next, false)
+        if (selection.lower == selection.upper) return selection to STILL
+        val leaving = if (outgoing.isFinite()) outgoing.coerceIn(0f, 1f) else 1f
+        val arriving = if (incoming.isFinite()) incoming.coerceIn(0f, 1f) else 0f
+        // Progress below one half: the lower page is the nearer one, so it is outgoing.
+        return selection to
+            if (selection.progress < .5f) SwapWeights(leaving, arriving) else SwapWeights(arriving, leaving)
+    }
+
+    /**
+     * The shader's per-hold swap weight. Same-role shared holds stay lit once;
+     * a changed hold shows only its stronger role, the lower one on a tie.
+     */
+    fun swapWeight(weights: SwapWeights, membership: Int, upper: Boolean): Float {
+        if (membership == 1) return if (upper) 0f else 1f
+        val own = if (upper) weights.upper else weights.lower
+        val other = if (upper) weights.lower else weights.upper
+        if (membership == 2 && (if (upper) own <= other else own < other)) return 0f
+        return own
     }
 
     fun reach(elapsed: Long): Float {

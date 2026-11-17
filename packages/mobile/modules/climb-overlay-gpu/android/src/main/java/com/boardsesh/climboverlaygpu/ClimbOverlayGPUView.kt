@@ -41,6 +41,9 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     var reduceMotion = false
     var displayMirrored = false
     private var pagePosition: Double? = null
+    private var revealMode = OverlayPolicy.REVEAL_MODE_WIPE
+    private var outgoingWeight = 1f
+    private var incomingWeight = 0f
     private val main = Handler(Looper.getMainLooper())
     private val texture =
         TextureView(context).apply {
@@ -163,6 +166,25 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         requestDraw()
     }
 
+    /** "swap" or "wipe" from the app; anything else is the wipe. */
+    fun setRevealMode(name: String?) {
+        val next = OverlayPolicy.revealMode(name)
+        if (next == revealMode) return
+        revealMode = next
+        controls = controls.copy(revealMode = next)
+        requestDraw()
+    }
+
+    /** UI-thread animated props: the swap's timing lives in the app. */
+    fun setSwapWeights(outgoing: Double? = null, incoming: Double? = null) {
+        val before = outgoingWeight to incomingWeight
+        if (outgoing != null && outgoing.isFinite()) outgoingWeight = outgoing.toFloat().coerceIn(0f, 1f)
+        if (incoming != null && incoming.isFinite()) incomingWeight = incoming.toFloat().coerceIn(0f, 1f)
+        if (before == (outgoingWeight to incomingWeight)) return
+        controls = controls.copy(outgoing = outgoingWeight, incoming = incomingWeight)
+        if (revealMode == OverlayPolicy.REVEAL_MODE_SWAP) requestDraw()
+    }
+
     private fun refreshMotionPolicy() {
         systemLowPower =
             (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isPowerSaveMode
@@ -183,7 +205,16 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         }
         val lowPower = systemLowPower
         val reduced = reduceMotion || systemReduced
-        controls = OverlayControls(pagePosition, reduced, lowPower, displayMirrored)
+        controls =
+            OverlayControls(
+                pagePosition,
+                reduced,
+                lowPower,
+                displayMirrored,
+                revealMode,
+                outgoingWeight,
+                incomingWeight,
+            )
         val wasAllowed = allowed
         allowed =
             active &&

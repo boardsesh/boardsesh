@@ -62,6 +62,60 @@ class OverlayPolicyTest {
         )
     }
 
+    private fun swapAt(
+        position: Double,
+        outgoing: Float,
+        incoming: Float,
+        center: Double = 12.0,
+        previous: Boolean = true,
+        next: Boolean = true,
+    ): Triple<Int, Int, OverlayPolicy.SwapWeights> {
+        val (selection, weights) =
+            OverlayPolicy.selectSwap(position, center, previous, next, outgoing, incoming)
+        return Triple(OverlayPolicy.slot(selection.lower), OverlayPolicy.slot(selection.upper), weights)
+    }
+
+    @Test
+    fun wallSwapPairsFollowTheOutgoingClimbAcrossARenderAndNeverReachAThird() {
+        assertEquals(0 to 1, OverlayPolicy.REVEAL_MODE_WIPE to OverlayPolicy.REVEAL_MODE_SWAP)
+        assertEquals(OverlayPolicy.REVEAL_MODE_SWAP, OverlayPolicy.revealMode("swap"))
+        for (name in listOf("wipe", null, "", "Swap", "fade")) {
+            assertEquals(OverlayPolicy.REVEAL_MODE_WIPE, OverlayPolicy.revealMode(name))
+        }
+        // Leaving 12 for 13, before and after the app renders 13 as its centre.
+        assertEquals(Triple(0, 2, OverlayPolicy.SwapWeights(.4f, 0f)), swapAt(12.25, .4f, 0f))
+        assertEquals(Triple(1, 0, OverlayPolicy.SwapWeights(.4f, 0f)), swapAt(12.25, .4f, 0f, center = 13.0))
+        // Leaving 13 for 12: the outgoing climb is the upper one, either way round.
+        assertEquals(OverlayPolicy.SwapWeights(.6f, .2f), swapAt(12.75, .2f, .6f).third)
+        assertEquals(OverlayPolicy.SwapWeights(.6f, .2f), swapAt(12.75, .2f, .6f, center = 13.0).third)
+        // Weights ignore position; Reduce Motion is the app's to apply.
+        assertEquals(swapAt(12.1, .3f, .5f).third, swapAt(12.4, .3f, .5f).third)
+        assertEquals(Triple(0, 0, OverlayPolicy.SwapWeights(1f, 0f)), swapAt(12.0, .4f, .9f))
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, .4f, .5f, next = false).third)
+        // A pair beyond the prepared trio shows its nearest prepared climb alone.
+        assertEquals(Triple(2, 2, OverlayPolicy.SwapWeights(1f, 0f)), swapAt(13.25, .4f, .6f))
+        assertEquals(Triple(1, 1, OverlayPolicy.SwapWeights(1f, 0f)), swapAt(10.75, .4f, .6f))
+        assertEquals(0, swapAt(13.25, .4f, .6f, next = false).first)
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, Float.NaN, Float.POSITIVE_INFINITY).third)
+        assertEquals(OverlayPolicy.SwapWeights(1f, 0f), swapAt(12.25, 2f, -1f).third)
+    }
+
+    @Test
+    fun wallSwapHoldWeightsKeepSharedHoldsAndOneRoleAtATime() {
+        val mid = OverlayPolicy.SwapWeights(.3f, .6f)
+        assertEquals(1f, OverlayPolicy.swapWeight(mid, 1, false), 0f)
+        assertEquals(0f, OverlayPolicy.swapWeight(mid, 1, true), 0f)
+        assertEquals(.3f, OverlayPolicy.swapWeight(mid, 0, false), 0f)
+        assertEquals(.6f, OverlayPolicy.swapWeight(mid, 0, true), 0f)
+        for (lowerStep in 0..20) for (upperStep in 0..20) {
+            val weights = OverlayPolicy.SwapWeights(lowerStep / 20f, upperStep / 20f)
+            val oldRole = OverlayPolicy.swapWeight(weights, 2, false)
+            val newRole = OverlayPolicy.swapWeight(weights, 2, true)
+            assertEquals(0f, oldRole * newRole, 0f)
+            assertEquals(maxOf(weights.lower, weights.upper), maxOf(oldRole, newRole), 0f)
+        }
+    }
+
     @Test
     fun readinessRequiresMatchingConsumedAndCompletedFrame() {
         val ledger = PresentationLedger()
