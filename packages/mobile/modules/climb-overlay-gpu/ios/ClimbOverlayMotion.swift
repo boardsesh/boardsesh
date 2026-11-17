@@ -87,14 +87,30 @@ enum ClimbOverlayMotion {
       : SwapWeights(lower: incoming,upper: outgoing))
   }
 
-  /// The shader's per-hold swap weight. Same-role shared holds stay lit once;
-  /// a changed hold shows only its stronger role, the lower one on a tie.
-  static func swapHoldWeight(_ weights: SwapWeights, membership: Int, upper: Bool) -> Float {
-    if membership == 1 { return upper ? 0 : 1 }
-    let own = upper ? weights.upper : weights.lower
-    let other = upper ? weights.lower : weights.upper
-    if membership == 2 && (upper ? own <= other : own < other) { return 0 }
-    return own
+  /// One animated prop carries the swap's pair and both weights, so a frame can
+  /// never pair a new position with old weights. Nil unless it is three finite
+  /// numbers; the weights clamp to 0...1.
+  struct SwapFrame: Equatable {
+    let pagePosition: Double
+    let outgoing: Float
+    let incoming: Float
+  }
+  static func swapFrame(_ values: [Double]) -> SwapFrame? {
+    guard values.count == 3, values.allSatisfy({ $0.isFinite }) else { return nil }
+    return SwapFrame(pagePosition: values[0],outgoing: Float(min(1,max(0,values[1]))),
+      incoming: Float(min(1,max(0,values[2]))))
+  }
+
+  /// While the next trio prepares, the packet already on screen keeps drawing
+  /// the running swap if it holds every climb the frame shows: then the frame
+  /// is the one the new packet will draw, and the hand-over changes nothing.
+  /// Nil means hold the last frame instead of showing a different climb.
+  static func carryOverSwap(pagePosition: Double, centerPage: Double, hasPrevious: Bool, hasNext: Bool,
+                            outgoing: Float, incoming: Float) -> (Selection, SwapWeights)? {
+    guard pagePosition.isFinite, centerPage.isFinite, abs(pagePosition-centerPage) <= 1 else { return nil }
+    let (selection, weights) = selectSwap(pagePosition: pagePosition,centerPage: centerPage,
+      hasPrevious: hasPrevious,hasNext: hasNext,outgoing: outgoing,incoming: incoming)
+    return pagePosition == centerPage || selection.lowerOffset != selection.upperOffset ? (selection, weights) : nil
   }
 
   /// Progress at one whole hold's screen-space centre. The incoming upper

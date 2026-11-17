@@ -128,7 +128,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   let onRenderReady = EventDispatcher()
   let onRenderError = EventDispatcher()
   var configJson = "" {
-    didSet { if configJson != oldValue { configRevision &+= 1; preparation?.cancel();cancelPrefetch();cpuSession = nil } }
+    didSet { if configJson != oldValue { configRevision &+= 1; preparation?.cancel();cancelPrefetch();cpuSession = nil;carryOver = nil } }
   }
   var geometryAssetPath: String? {
     didSet { if geometryAssetPath != oldValue { configRevision &+= 1; preparation?.cancel();cancelPrefetch() } }
@@ -153,6 +153,15 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var revealMode = ClimbOverlayMotion.revealModeWipe
   private var outgoingWeight: Float = 1
   private var incomingWeight: Float = 0
+  /// The packet on screen when a new trio started preparing, kept drawing the
+  /// running swap until the replacement is ready. Same layout revision only.
+  private struct CarryOver {
+    let packet: ClimbOverlayMetalPacket
+    let centerPage: Double
+    let configRevision: UInt64?
+    let productionEmpty: Bool
+  }
+  private var carryOver: CarryOver?
   var requestId = ""
   var active = false
   private let metal: MTKView
@@ -243,6 +252,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     revision &+= 1
     stopEditorMotion()
     packet = nil
+    carryOver = nil
     cancelPrefetch()
     editorBaseline = nil
     editorBaselineRevision = nil
@@ -263,15 +273,21 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     let mode = ClimbOverlayMotion.revealMode(named: name)
     guard mode != revealMode else { return }
     revealMode = mode
+    if mode != ClimbOverlayMotion.revealModeSwap { carryOver = nil }
     requestDraw()
   }
 
-  /// UI-thread animated props: the swap's timing lives in the app.
-  func setSwapWeight(outgoing: Double? = nil, incoming: Double? = nil) {
-    let previous = (outgoingWeight, incomingWeight)
-    if let outgoing, outgoing.isFinite { outgoingWeight = Float(min(1,max(0,outgoing))) }
-    if let incoming, incoming.isFinite { incomingWeight = Float(min(1,max(0,incoming))) }
-    if previous != (outgoingWeight, incomingWeight) && revealMode == ClimbOverlayMotion.revealModeSwap { requestDraw() }
+  /// The swap's animated prop: its pair and both weights, applied together.
+  /// The timing lives in the app.
+  func setSwapFrame(_ values: [Double]) {
+    guard let frame = ClimbOverlayMotion.swapFrame(values),
+      frame.pagePosition != pagePosition || frame.outgoing != outgoingWeight || frame.incoming != incomingWeight
+    else { return }
+    if frame.pagePosition != pagePosition { cancelPrefetch() }
+    pagePosition = frame.pagePosition
+    outgoingWeight = frame.outgoing
+    incomingWeight = frame.incoming
+    requestDraw()
   }
 
   @objc private func motionPolicyChanged() {
@@ -344,6 +360,14 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     stopEditorMotion()
     editChangedHoldCount = 0
     scheduledEditDurationMs = 0
+    // The swap may be mid-fade: keep its pair moving from the packet on screen
+    // until the replacement is ready (see drawCarryOver).
+    if revealMode == ClimbOverlayMotion.revealModeSwap, let packet, !animateEdits {
+      carryOver = CarryOver(packet: packet,centerPage: submittedCenterPage,configRevision: submittedConfigRevision,
+        productionEmpty: submittedPreviousFrames != nil || submittedNextFrames != nil)
+    } else if revealMode != ClimbOverlayMotion.revealModeSwap {
+      carryOver = nil
+    }
     packet = nil
     cancelPrefetch()
     revision &+= 1
@@ -392,11 +416,13 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         switch preparation.completion(current: current,visible: self.window != nil && self.active && !self.background) {
         case .cancelled, .superseded:
           self.clearSubmittedRequest();self.applyProps();return
-        case .hidden: self.clearSubmittedRequest();return
+        case .hidden: self.carryOver = nil;self.clearSubmittedRequest();return
         case .accept: break
         }
         switch result {
         case .success(let packet):
+          // The hand-over: this frame's pair and weights, now from the new trio.
+          self.carryOver = nil
           self.packet = packet
           self.editorBaseline = packet.header.currentRoles.reduce(into: [:]) { $0[$1[0]] = $1[1] }
           self.editorBaselineRevision = layoutRevision
@@ -405,7 +431,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
             ? ClimbOverlayMotion.editDuration*1000 : 0
           self.metal.drawableSize = CGSize(width: packet.header.width,height: packet.header.height)
           self.requestDraw()
-        case .failure(let error): self.packet = nil;self.reportFailure(error,request: request)
+        case .failure(let error): self.packet = nil;self.carryOver = nil;self.reportFailure(error,request: request)
         }
       }
     }
@@ -470,13 +496,53 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
 
   func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { requestDraw() }
 
+  /// A frame of the running swap from the packet on screen while the next trio
+  /// prepares. It reports nothing: readiness belongs to the new request.
+  private func drawCarryOver(in view: MTKView) {
+    guard let carry = carryOver, revealMode == ClimbOverlayMotion.revealModeSwap,
+      carry.configRevision == configRevision, let position = pagePosition,
+      let carried = ClimbOverlayMotion.carryOverSwap(pagePosition: position,
+        centerPage: carry.centerPage,hasPrevious: carry.packet.header.present[1],
+        hasNext: carry.packet.header.present[2],outgoing: outgoingWeight,incoming: incomingWeight),
+      let pipeline = ClimbOverlayMetalPackets.pipeline else { return }
+    let (selection, weights) = carried
+    let packet = carry.packet
+    guard let uniformSlot = packet.acquireUniforms() else { return }
+    guard let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor,
+      let command = ClimbOverlayMetalPackets.commands?.makeCommandBuffer(),
+      let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else {
+      packet.releaseUniforms(uniformSlot)
+      return
+    }
+    needsFrame = false
+    let lower = ClimbOverlayMotion.slot(selection.lowerOffset)
+    let upper = ClimbOverlayMotion.slot(selection.upperOffset)
+    do {
+      try packet.uniforms(slot: uniformSlot,lower: lower,upper: upper,revealMode: revealMode,
+        progress: selection.progress,swap: weights,pulse: 1,
+        viewport: SIMD2(Float(view.drawableSize.width),Float(view.drawableSize.height)),
+        productionEmpty: carry.productionEmpty,mirrored: displayMirrored)
+    } catch { packet.releaseUniforms(uniformSlot);encoder.endEncoding();carryOver = nil;return }
+    encoder.setRenderPipelineState(pipeline)
+    encodeClimbOverlayPacket(packet,encoder: encoder,lower: lower,upper: upper,uniformSlot: uniformSlot)
+    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+    encoder.endEncoding()
+    command.addCompletedHandler { [packet] _ in
+      packet.releaseUniforms(uniformSlot);ClimbOverlayPacketMetrics.gpuEnd();withExtendedLifetime(packet) {}
+    }
+    command.present(drawable)
+    ClimbOverlayPacketMetrics.gpuBegin()
+    command.commit()
+  }
+
   func draw(in view: MTKView) {
-    guard needsFrame, !preparing, active, !background, window != nil,
+    guard needsFrame, active, !background, window != nil else { return }
+    guard !preparing,
       configRevision == submittedConfigRevision, frames == submittedFrames, requestId == submittedRequest,
       previousFrames == submittedPreviousFrames, nextFrames == submittedNextFrames, centerPage == submittedCenterPage,
       let packet, let pipeline = ClimbOverlayMetalPackets.pipeline,
       let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor
-    else { return }
+    else { drawCarryOver(in: view);return }
     guard let uniformSlot = packet.acquireUniforms() else { needsFrame = true;return }
     guard let command = ClimbOverlayMetalPackets.commands?.makeCommandBuffer(),
       let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else {

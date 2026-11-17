@@ -114,20 +114,33 @@ import Foundation
     precondition(swapAt(13.25,next: false,0.4,0.6).0 == 0)
     precondition(swapAt(12.25,.nan,.infinity).2 == .init(lower: 1,upper: 0),"Non-finite weights settle")
     precondition(swapAt(12.25,2,-1).2 == .init(lower: 1,upper: 0),"Weights clamp to 0...1")
-    let mid = ClimbOverlayMotion.SwapWeights(lower: 0.3,upper: 0.6)
-    precondition(ClimbOverlayMotion.swapHoldWeight(mid,membership: 1,upper: false) == 1)
-    precondition(ClimbOverlayMotion.swapHoldWeight(mid,membership: 1,upper: true) == 0)
-    precondition(ClimbOverlayMotion.swapHoldWeight(mid,membership: 0,upper: false) == 0.3)
-    precondition(ClimbOverlayMotion.swapHoldWeight(mid,membership: 0,upper: true) == 0.6)
-    for lowerWeight in stride(from: Float(0),through: 1,by: 0.05) {
-      for upperWeight in stride(from: Float(0),through: 1,by: 0.05) {
-        let weights = ClimbOverlayMotion.SwapWeights(lower: lowerWeight,upper: upperWeight)
-        let oldRole = ClimbOverlayMotion.swapHoldWeight(weights,membership: 2,upper: false)
-        let newRole = ClimbOverlayMotion.swapHoldWeight(weights,membership: 2,upper: true)
-        precondition(oldRole*newRole == 0,"A changed hold never shows two role marks together")
-        precondition(max(oldRole,newRole) == max(lowerWeight,upperWeight),"It shows the stronger role")
+    // The pair and both weights arrive as one prop: never half of an update.
+    precondition(ClimbOverlayMotion.swapFrame([12.25,0.4,0]) == .init(pagePosition: 12.25,outgoing: 0.4,incoming: 0))
+    precondition(ClimbOverlayMotion.swapFrame([12.25,2,-1]) == .init(pagePosition: 12.25,outgoing: 1,incoming: 0))
+    for malformed in [[12.25,0.4], [12.25,0.4,0,1], [.nan,0.4,0], [12,0.4,.infinity], []] {
+      precondition(ClimbOverlayMotion.swapFrame(malformed) == nil,"Malformed swap frames are ignored whole")
+    }
+    // While the next trio prepares, the old one keeps the running swap moving:
+    // leaving 12 for 13 after the app rendered 13, the old trio (11, 12, 13)
+    // draws the same pair and weights the new trio (12, 13, 14) will.
+    func carried(_ position: Double, center: Double, previous: Bool = true, next: Bool = true,
+                 _ outgoing: Float, _ incoming: Float) -> (Int, Int, ClimbOverlayMotion.SwapWeights)? {
+      ClimbOverlayMotion.carryOverSwap(pagePosition: position,centerPage: center,hasPrevious: previous,
+        hasNext: next,outgoing: outgoing,incoming: incoming).map {
+        (ClimbOverlayMotion.slot($0.0.lowerOffset), ClimbOverlayMotion.slot($0.0.upperOffset), $0.1)
       }
     }
+    let oldTrio = carried(12.25,center: 12,0.1,0.5)!
+    let newTrio = swapAt(12.25,center: 13,0.1,0.5)
+    precondition(oldTrio.0 == 0 && oldTrio.1 == 2 && newTrio.0 == 1 && newTrio.1 == 0,"Same pages, other slots")
+    precondition(oldTrio.2 == newTrio.2,"The hand-over keeps the weights")
+    precondition(carried(13,center: 12,1,0)! == (0, 2, .init(lower: 0,upper: 1)),"An arrived climb is its next slot")
+    precondition(carried(12,center: 12,1,0)! == (0, 0, .init(lower: 1,upper: 0)))
+    // A frame the old trio cannot draw holds the last one instead of guessing.
+    precondition(carried(13.25,center: 12,0.1,0.5) == nil,"A pair beyond the old trio")
+    precondition(carried(12.25,center: 12,next: false,0.1,0.5) == nil,"An arriving climb the old trio lacks")
+    precondition(carried(13,center: 12,next: false,1,0) == nil)
+    precondition(carried(.nan,center: 12,1,0) == nil)
     precondition(ClimbOverlayMotion.editDuration == 0.350)
     precondition(ClimbOverlayMotion.editReachScale(elapsed: 0) == 1)
     precondition(abs(ClimbOverlayMotion.editReachScale(elapsed: 0.100)-1.35)<0.0001)
