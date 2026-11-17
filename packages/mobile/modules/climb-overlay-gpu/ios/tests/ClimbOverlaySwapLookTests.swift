@@ -59,6 +59,38 @@ import Metal
     }
   }
 
+  /// The words both ports write for the fixture's looks, holds and sides, as one hex string per
+  /// case (`%04x` per 16-bit word). Android's OverlaySwapLookTest checks the same file, so neither
+  /// port can drift; `SWAP_LOOK_FIXTURE_OUT=<path>` writes a fresh one from this side instead.
+  static func sharedFixture() {
+    let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("../../fixtures/swap-look-words.json").standardizedFileURL
+    let fixture = try! JSONSerialization.jsonObject(with: Data(contentsOf: path)) as! [String: Any]
+    let holdSpec = fixture["holds"] as! [String: Int]
+    let lowerScene = ClimbOverlaySwapLook.Scene(holds(holdSpec["count"]!, seed: UInt32(holdSpec["lowerSeed"]!)))
+    let upperScene = ClimbOverlaySwapLook.Scene(holds(holdSpec["count"]!, seed: UInt32(holdSpec["upperSeed"]!)))
+    let sides = fixture["sides"] as! [[Double]]
+    let written = (fixture["looks"] as! [[Double]]).map { values in
+      let look = Look(values)!
+      return sides.map { side in
+        ClimbOverlaySwapLook.encode(lower: lowerScene, upper: upperScene,
+          lowerSide: Side(weight: Float(side[0]), code: Int(side[1])), upperSide: Side(weight: Float(side[2]), code: Int(side[3])),
+          sharedFloor: Float(side[4]), look: look, mirrored: side[5] != 0, allowReach: side[6] != 0)
+          .map { String(format: "%04x", $0) }.joined()
+      }
+    }
+    if let out = ProcessInfo.processInfo.environment["SWAP_LOOK_FIXTURE_OUT"] {
+      // Keep the hand-written inputs as they are; "words" is the file's last key.
+      let text = try! String(contentsOf: path, encoding: .utf8)
+      let words = written.map { look in "    [\n" + look.map { "      \"\($0)\"" }.joined(separator: ",\n") + "\n    ]" }
+      try! (String(text[..<text.range(of: "\"words\":")!.upperBound]) + " [\n" + words.joined(separator: ",\n") + "\n  ]\n}\n")
+        .write(toFile: out, atomically: true, encoding: .utf8)
+      print("Wrote \(out)")
+      exit(0)
+    }
+    precondition(fixture["words"] as! [[String]] == written, "The shared fixture's words: Android checks the same file")
+  }
+
   static func main() {
     // The prop: exactly 13 finite numbers, format 1, every number clamped.
     precondition(Look([]) == nil && Look([1,1,1,0.4,0.4,0,0,0,0,0,0,0,2,0,0]) == nil, "Format 1 is gone")
@@ -296,6 +328,8 @@ import Metal
     }
     print(shaderCompiled)
 
-    print("Swap look guards passed: prop parsing, W = 1/floor/0 uniform for every key and look, monotone fronts, mark under glow, reach in [0.6, 1.35], plain look = API 7 weights, swipe-edge and mirror direction, climb-up keys, ghosts, swell, buffer layout and seven-number frames")
+    sharedFixture()
+
+    print("Swap look guards passed: shared Android fixture, prop parsing, W = 1/floor/0 uniform for every key and look, monotone fronts, mark under glow, reach in [0.6, 1.35], plain look = API 7 weights, swipe-edge and mirror direction, climb-up keys, ghosts, swell, buffer layout and seven-number frames")
   }
 }

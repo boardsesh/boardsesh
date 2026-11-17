@@ -28,9 +28,9 @@ class ClimbOverlayGPUModule : Module() {
             "apiVersion" to OverlayPacketLayout.NATIVE_API_VERSION,
             "assetApiVersion" to 0,
             "swapCommandApi" to OverlaySwapCommand.API,
-            // The board motion lab's swap look is Metal only for now: 0 tells the
-            // app to send no look and keep its frames to the shipped five numbers.
-            "swapLookVersion" to 0,
+            // The swap look, the same version iOS reports: the app sends the look
+            // and seven-number swap frames (OverlaySwapLook, OverlaySwapCommand).
+            "swapLookVersion" to OverlaySwapLook.VERSION,
         )
         OnCreate {
             application = appContext.reactContext?.applicationContext
@@ -65,7 +65,7 @@ class ClimbOverlayGPUModule : Module() {
             }
         }
         View(ClimbOverlayGPUView::class) {
-            Events("onRenderReady", "onRenderError")
+            Events("onRenderReady", "onRenderError", "onSwapLookState")
             Prop("configJson") { view: ClimbOverlayGPUView, value: String ->
                 view.configJson = value
             }
@@ -96,8 +96,7 @@ class ClimbOverlayGPUModule : Module() {
             Prop("swapFrame") { view: ClimbOverlayGPUView, value: List<Double>? ->
                 view.setSwapFrame(value)
             }
-            // Accepted and ignored (swapLookVersion 0): Android draws the shipped swap.
-            Prop("swapLook") { _: ClimbOverlayGPUView, _: List<Double>? -> }
+            Prop("swapLook") { view: ClimbOverlayGPUView, value: List<Double>? -> view.setSwapLook(value) }
             Prop("requestId") { view: ClimbOverlayGPUView, value: String -> view.requestId = value }
             Prop("active") { view: ClimbOverlayGPUView, value: Boolean -> view.active = value }
             Prop("animateEdits") { view: ClimbOverlayGPUView, value: Boolean ->

@@ -1,6 +1,11 @@
 package com.boardsesh.climboverlaygpu
 
-/** Same compositor as the Metal implementation, with byte-addressed SSBO reads. */
+/**
+ * Same compositor as the Metal implementation, with byte-addressed SSBO reads.
+ * The swap look's per-hold numbers arrive in uniform block `Look` at binding
+ * [OverlaySwapLook.GLES_BINDING] (a literal here, kept in step by a unit test,
+ * so the shader stays checkable with only the generated layout).
+ */
 internal object OverlayShader {
     val vertex =
         """
@@ -50,6 +55,10 @@ internal object OverlayShader {
           layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_UPPER}) readonly buffer Upper { Hold upper[]; };
           layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_RESOURCES}) readonly buffer Resources { uint resources[]; };
           layout(std140,binding=${OverlayPacketLayout.GLES_UNIFORM_BINDINGS_UNIFORMS}) uniform Parameters { Uniforms uniforms; };
+          // Swap look (swapLookVersion 2): Metal's fragment buffer 5, byte for byte. One
+          // 16-bit (mark, glow, reach, 0) per union hold after a header; std140 gives each
+          // array element 16 bytes, so two holds share a uvec4. Always bound.
+          layout(std140,binding=1) uniform Look { uvec4 look[129]; };
           layout(location=0) out vec4 outputColor;
           vec4 quantize(vec4 pixel) { return round(clamp(pixel,0.0,1.0)*255.0)/255.0; }
           vec4 over(vec4 under, vec4 above) {
@@ -117,8 +126,17 @@ internal object OverlayShader {
             if(membership==2.0) return upper ? max(2.0*reveal-1.0,0.0) : max(1.0-2.0*reveal,0.0);
             return upper ? reveal : 1.0-reveal;
           }
+          // Mark and glow weights in 1/65535 steps, glow reach in 1/32768 (reach 1
+          // decodes exactly), scaled as Metal scales its ushort4.
+          vec4 look_hold(uint index) {
+            uint slot=1u+index;
+            uvec4 pair=look[slot>>1u];
+            uvec2 words=(slot&1u)==0u ? pair.xy : pair.zw;
+            return vec4(float(words.x&0xffffu),float(words.x>>16u),float(words.y&0xffffu),0.0)
+              *vec4(1.0/65535.0,1.0/65535.0,1.0/32768.0,0.0);
+          }
           vec4 scene_pixel(uvec2 point,
-              uint lowerCount, uint upperCount, float maxReach, bool transitioning, float reachScale) {
+              uint lowerCount, uint upperCount, float maxReach, bool transitioning, float reachScale, bool shaped) {
             uint count=lowerCount+upperCount;
             uvec2 lowerRange=tile_range(point,uniforms.offsets.z,lowerCount);
             uvec2 upperRange=tile_range(point,uniforms.offsets.w,upperCount);
@@ -130,6 +148,10 @@ internal object OverlayShader {
               ? mix(lowerCount>0u ? 1.0 : 0.0,upperCount>0u ? 1.0 : 0.0,uniforms.motion.x) : 1.0;
             vec4 pixel = quantize(uniforms.veil*ambient);
             float coverage = 0.0;
+            // Shaped only: every visible hold's whole silhouette, so a halo never paints
+            // inside a hold whose mark is fainter than its glow (a ghost). Equal to
+            // coverage whenever every mark is whole.
+            float mask = 0.0;
             float best = 1e20, second = 1e20;
             float bestScore=1e20, secondScore=1e20;
             int nearest = -1, runner = -1;
@@ -139,15 +161,18 @@ internal object OverlayShader {
               if(hold.identity.z>0u) continue; // Annotation: no silhouette coverage or glow.
               int local = index_at(point,hold);
               if(local < 0) continue;
-              float weight=transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0;
-              if(weight<=0.0) continue;
+              vec4 shape=shaped ? look_hold(index) : vec4(0.0);
+              float weight=shaped ? shape.x : (transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0);
+              float glowWeight=shaped ? shape.y : weight;
+              if(glowWeight<=0.0) continue;
               uint field = atlas[hold.offsets.x/4u+uint(local)];
               uint squared = field & 0x00ffffffu;
               float dist2 = squared==0x00ffffffu ? 1e20 : float(squared);
               float alpha = float(field>>24u)/255.0*weight;
               coverage = max(coverage,alpha);
+              if(shaped) mask=max(mask,float(field>>24u)/255.0);
               pixel = quantize(pixel*(1.0-alpha));
-              float dilation = ceil(maxReach*(hold.numbers.y>0.0 ? reachScale : 1.0))+2.0;
+              float dilation = ceil(maxReach*(shaped ? shape.z : (hold.numbers.y>0.0 ? reachScale : 1.0)))+2.0;
               // Match the CPU crop for THIS climb, even though the immutable atlas
               // carries enough padding for the widest hold in the layout.
               if(dist2>=1e20 || hold.numbers.x <= 0.0 || float(point.x)<floor(hold.bounds.x-dilation) ||
@@ -156,7 +181,11 @@ internal object OverlayShader {
               // Faint incoming fields must not steal an existing glow, even at d=0.
               // Keep real distance for falloff, and use a continuous positive fade
               // bias for ownership and seam interpolation during the reveal only.
-              float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+hold.numbers.x*(1.0-weight)/max(weight,0.0001) : dist2;
+              // Shaped only: a hold never owns a pixel past its own (scaled) reach. It
+              // could not light it, and owning it would cut a neighbour's halo, such as a
+              // ghost beside a lit hold of the same colour, along this hold's crop box.
+              if(shaped && max(sqrt(dist2)-0.5,0.0)>=hold.numbers.x*shape.z) continue;
+              float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+hold.numbers.x*(1.0-glowWeight)/max(glowWeight,0.0001) : dist2;
               if(transitioning && nearest>=0 && hold.identity.x==source_hold(uint(nearest),lowerCount).identity.x) continue;
               if(score<bestScore) {
                 second=best;secondScore=bestScore;runner=nearest;
@@ -171,8 +200,9 @@ internal object OverlayShader {
               pixel=stamp_over(pixel,read_rgba(uniforms.offsets.x+uint(coverLocal)*4u)*ambient);
             if(uniforms.size.w > 0.0 && nearest>=0) {
               Hold hold=source_hold(uint(nearest),lowerCount);
-              float weight=transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount) : 1.0;
-              float reach=hold.numbers.x*(hold.numbers.y>0.0 ? reachScale : 1.0);
+              vec4 shape=shaped ? look_hold(uint(nearest)) : vec4(0.0);
+              float weight=shaped ? shape.y : (transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount) : 1.0);
+              float reach=hold.numbers.x*(shaped ? shape.z : (hold.numbers.y>0.0 ? reachScale : 1.0));
               float distance=max(sqrt(best)-0.5,0.0);
               float fraction=distance/reach;
               vec3 color=hold.color.rgb;
@@ -202,7 +232,7 @@ internal object OverlayShader {
                 float deepen=uniforms.tuning2.x*smoothstep(uniforms.tuning2.y,1.0,fraction);
                 vec3 deep=round(hold.color.rgb*255.0*0.35)/255.0;
                 color=round(mix(color,deep,deepen)*255.0)/255.0;
-                alpha*=1.0-coverage;
+                alpha*=1.0-(shaped ? mask : coverage);
                 alpha*=weight;
                 if(alpha>0.002) pixel=over(pixel,vec4(color*alpha,alpha));
               }
@@ -216,7 +246,7 @@ internal object OverlayShader {
                 Hold hold=source_hold(index,lowerCount);
                 bool annotation=hold.identity.z>0u;
                 if((layer==4u)!=annotation) continue;
-                float weight=transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0;
+                float weight=shaped ? look_hold(index).x : (transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0);
                 if(weight<=0.0) continue;
                 uint passes=layer==1u ? 4u : (layer>=3u ? 2u : 1u);
                 for(uint pass=0u;pass<passes;pass++) {
@@ -245,10 +275,15 @@ internal object OverlayShader {
             uvec2 point = min(uvec2(vec2(gl_FragCoord.x,uniforms.viewport.y-gl_FragCoord.y)
               / uniforms.viewport.xy * uniforms.size.xy),uvec2(uniforms.size.xy)-1u);
             float progress=uniforms.motion.x;
-            if(progress<=0.0) outputColor=scene_pixel(point,uint(uniforms.size.z),0u,uniforms.tuning2.z,false,uniforms.motion.w);
-            else if(progress>=1.0) outputColor=scene_pixel(point,0u,uint(uniforms.other.x),uniforms.other.y,false,1.0);
-            else outputColor=scene_pixel(point,uint(uniforms.size.z),uint(uniforms.other.x),
-              max(uniforms.tuning2.z,uniforms.other.y),true,1.0);
+            if(progress<=0.0) outputColor=scene_pixel(point,uint(uniforms.size.z),0u,uniforms.tuning2.z,false,uniforms.motion.w,false);
+            else if(progress>=1.0) outputColor=scene_pixel(point,0u,uint(uniforms.other.x),uniforms.other.y,false,1.0,false);
+            else {
+              // The swap look replaces reveal_weight only here, and only in swap mode; its
+              // header is zero (API 7 path) whenever the app sent no look.
+              bool shaped=uniforms.motion.z>0.5 && (look[0].x&0xffffu)>0u;
+              outputColor=scene_pixel(point,uint(uniforms.size.z),uint(uniforms.other.x),
+                max(uniforms.tuning2.z,uniforms.other.y),true,1.0,shaped);
+            }
           }
 
         """

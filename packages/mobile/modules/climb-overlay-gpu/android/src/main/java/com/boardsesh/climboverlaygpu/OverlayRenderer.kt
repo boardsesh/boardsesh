@@ -54,6 +54,14 @@ internal data class OverlayControls(
     val outgoing: Float = 1f,
     val incoming: Float = 0f,
     val shared: Float = 1f,
+    /** Swap look only: the floor the look's shared holds never go below (a seven-number frame's fourth number). */
+    val sharedFloor: Float? = null,
+    /** Swap look only: how the climb being left and the arriving one move this frame. */
+    val arrivals: OverlaySwapLook.Arrivals = OverlaySwapLook.Arrivals(),
+    /** The swap look (`swapLook` prop); null draws API 7's swap. */
+    val look: OverlaySwapLook.Look? = null,
+    /** Thermal status severe or worse: the look's glow reach stays at 1, as in Battery Saver. */
+    val hot: Boolean = false,
 ) {
     /**
      * The swap's animated prop: its pair and weights in one snapshot, so the
@@ -61,15 +69,24 @@ internal data class OverlayControls(
      * the first three are finite numbers and nothing follows the fourth (API 7:
      * the shared-hold weight). The weights clamp to 0..1; a missing or
      * non-finite shared weight is 1, so three numbers keep shared holds whole.
+     *
+     * [arrivals] comes with a seven-number swap-look frame. Its fourth number is
+     * then the look's shared floor; whenever the look is not drawn (Reduce
+     * Motion, no look yet) API 7 needs the shipped shared weight instead: the
+     * brighter side, never below that floor (iOS `sequencedSwapFrame`).
      */
-    fun withSwapFrame(frame: List<Double>?): OverlayControls? {
+    fun withSwapFrame(frame: List<Double>?, arrivals: OverlaySwapLook.Arrivals? = null): OverlayControls? {
         if (frame == null || frame.size !in 3..4 || frame.take(3).any { !it.isFinite() }) return null
         val shared = frame.getOrNull(3)?.takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 1f) ?: 1f
+        val outgoing = frame[1].toFloat().coerceIn(0f, 1f)
+        val incoming = frame[2].toFloat().coerceIn(0f, 1f)
         return copy(
             position = frame[0],
-            outgoing = frame[1].toFloat().coerceIn(0f, 1f),
-            incoming = frame[2].toFloat().coerceIn(0f, 1f),
-            shared = shared,
+            outgoing = outgoing,
+            incoming = incoming,
+            shared = if (arrivals == null) shared else minOf(1f, maxOf(shared, maxOf(outgoing, incoming))),
+            sharedFloor = if (arrivals == null) null else shared,
+            arrivals = arrivals ?: OverlaySwapLook.Arrivals(),
         )
     }
 }
@@ -147,6 +164,9 @@ internal object OverlayRenderer {
     private var initialized = false
     private var program = 0
     private var uniformBuffer = 0
+    /** The swap look's uniform block ([OverlaySwapLook.GLES_BYTES]); every draw binds it, off or on. */
+    private var lookBuffer = 0
+    private val lookBytes = directBytes(OverlaySwapLook.GLES_BYTES)
     private val budget = AtlasBudget()
     private val bufferBytes = HashMap<Int, Int>()
     private val retiredBuffers = ArrayList<Pair<Long, Int>>()
@@ -292,6 +312,7 @@ internal object OverlayRenderer {
             error("GPU shader link failed (GL $glError)")
         }
         uniformBuffer = buffer(directBytes(OverlayPacketLayout.UNIFORM_BYTES), GLES31.GL_UNIFORM_BUFFER)
+        lookBuffer = buffer(directBytes(OverlaySwapLook.GLES_BYTES), GLES31.GL_UNIFORM_BUFFER)
         checked("GPU initialization")
     }
 
@@ -679,7 +700,8 @@ internal object OverlayRenderer {
             !session.destroyed &&
             session.view.matches(request)
 
-    private fun encode(packet: UploadedPacket,lower: Int,upper: Int,params: ByteBuffer) {
+    /** [look] is the swap look's words ([OverlaySwapLook.encode]) or its zero header: the shader always reads it. */
+    private fun encode(packet: UploadedPacket,lower: Int,upper: Int,params: ByteBuffer,look: IntArray=OverlaySwapLook.OFF) {
         GLES31.glViewport(0,0,packet.header.width,packet.header.height)
         GLES31.glDisable(GLES31.GL_BLEND);GLES31.glDisable(GLES31.GL_DEPTH_TEST);GLES31.glDisable(GLES31.GL_DITHER)
         GLES31.glUseProgram(program)
@@ -690,6 +712,10 @@ internal object OverlayRenderer {
         GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER,uniformBuffer)
         GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER,0,OverlayPacketLayout.UNIFORM_BYTES,params)
         GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER,OverlayPacketLayout.GLES_UNIFORM_BINDINGS_UNIFORMS,uniformBuffer)
+        val lookWords=OverlaySwapLook.bytes(look,lookBytes)
+        GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER,lookBuffer)
+        GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER,0,lookWords.remaining(),lookWords)
+        GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER,OverlaySwapLook.GLES_BINDING,lookBuffer)
         GLES31.glDrawArrays(GLES31.GL_TRIANGLES,0,3);checked("GPU draw")
     }
 
@@ -763,10 +789,14 @@ internal object OverlayRenderer {
             val now = System.nanoTime()
             val reach = session.editStart?.let { OverlayPolicy.reach(now - it) } ?: 1f
             if (!carrying && !eligible(session, request)) return false
+            // The swap look replaces the per-side weights only in swap mode (OverlaySwapLook.frame).
+            val look = if (swap) OverlaySwapLook.frame(controls, selection, weights, packet.lookScenes)
+                else OverlaySwapLook.OFF
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
             encode(packet,lower,upper,packet.uniforms(lower,upper,selection.progress,reach,
                 request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored,
-                controls.revealMode,weights))
+                controls.revealMode,weights),look)
+            session.view.swapLookDrawn(look)
             val frame =
                 session.ledger.submit(now, request.revision, request.generation) ?: return false
             check(EGLExt.eglPresentationTimeANDROID(display, session.eglSurface, frame.timestamp)) {
@@ -970,6 +1000,7 @@ internal object OverlayRenderer {
         display = EGL14.EGL_NO_DISPLAY
         program = 0
         uniformBuffer = 0
+        lookBuffer = 0
         initialized = false
         OverlayPacketMetrics.gpuReset()
         // Destroy the old context before releasing its allocation accounting.

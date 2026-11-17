@@ -44,8 +44,8 @@ function readSwapCommandApi(): number {
 export const climbOverlaySwapCommandApi = readSwapCommandApi();
 
 /**
- * The native swap look (`swapLookVersion`): 2 on iOS binaries that draw it, 0
- * on Android and on older binaries, which would reject its longer swap frames.
+ * The native swap look (`swapLookVersion`): 2 on iOS and Android binaries that
+ * draw it, 0 on older binaries, which would reject its longer swap frames.
  * The player sends its look only from 2 (`play-drawer/player-swap-look.ts`).
  */
 function readSwapLookVersion(): number {

@@ -12,6 +12,11 @@ import UniformTypeIdentifiers
 ///
 ///   render <prepared work dir> <fresh output dir>
 ///   parity <aura-transition-golden work dir> <fresh output dir>
+///   export <prepared work dir> <fresh output dir> <track or sheet id>...
+///   compare <prepared work dir> <export dir> <GLES render dir> <fresh output dir>
+///
+/// `export` and `compare` are the Android half (gles.mjs): the frames' uniforms
+/// and Swift look words for the GLES renderer, then Metal against GLES.
 struct PreviewError: Error, CustomStringConvertible { let description: String }
 
 struct PlanScene: Decodable { let offset: Int; let bytes: Int; let count: Int; let stampLayers: UInt32 }
@@ -330,11 +335,13 @@ final class VideoWriter {
 @main enum BoardMotionPreview {
   static func main() throws {
     let arguments = CommandLine.arguments
-    guard arguments.count == 4, ["render", "parity", "endpoints"].contains(arguments[1]) else {
-      throw PreviewError(description: "Usage: render|parity|endpoints <work dir> <fresh output dir>")
+    let usage = arguments.count == 4 && ["render", "parity", "endpoints"].contains(arguments[1])
+      || arguments.count >= 5 && arguments[1] == "export" || arguments.count == 6 && arguments[1] == "compare"
+    guard usage else {
+      throw PreviewError(description: "Usage: render|parity|endpoints <work dir> <fresh output dir>, export <work dir> <fresh output dir> <id>..., compare <work dir> <export dir> <GLES dir> <fresh output dir>")
     }
     let work = URL(fileURLWithPath: arguments[2], isDirectory: true)
-    let output = URL(fileURLWithPath: arguments[3], isDirectory: true)
+    let output = URL(fileURLWithPath: arguments[arguments[1] == "compare" ? 5 : 3], isDirectory: true)
     guard !FileManager.default.fileExists(atPath: output.path) else {
       throw PreviewError(description: "Output exists: \(output.path)")
     }
@@ -342,8 +349,182 @@ final class VideoWriter {
     switch arguments[1] {
     case "render": try render(work: work, output: output)
     case "parity": try parity(work: work, output: output)
-    default: try endpoints(work: work, output: output)
+    case "endpoints": try endpoints(work: work, output: output)
+    case "export": try export(work: work, output: output, ids: Array(arguments[4...]))
+    default:
+      try compare(work: work, exported: URL(fileURLWithPath: arguments[3], isDirectory: true),
+        gles: arguments[4] == "-" ? nil : URL(fileURLWithPath: arguments[4], isDirectory: true), output: output)
     }
+  }
+
+  /// The frames of the named tracks and sheets, named `<id>-<index>`, each with the look it draws.
+  static func selection(_ plan: Plan, ids: [String]) throws -> [(name: String, frame: PlanFrame, look: [Double]?)] {
+    try ids.flatMap { id -> [(name: String, frame: PlanFrame, look: [Double]?)] in
+      if let track = plan.motion.first(where: { $0.id == id }) {
+        return track.frames.enumerated().map { ("\(id)-\($0.offset)", $0.element, track.look) }
+      }
+      if let sheet = plan.sheets.first(where: { $0.id == id }) {
+        return sheet.frames.enumerated().map { ("\(id)-\($0.offset)", $0.element, $0.element.look) }
+      }
+      throw PreviewError(description: "No track or sheet \(id)")
+    }
+  }
+
+  static func littleEndian(_ words: [UInt16]) -> Data {
+    var data = Data(capacity: words.count * 2)
+    for word in words { withUnsafeBytes(of: word.littleEndian) { data.append(contentsOf: $0) } }
+    return data
+  }
+
+  /// For the GLES renderer and the Kotlin look: each frame's uniforms (exactly the bytes
+  /// `render` draws with), its Swift look words, the packets it needs and a manifest.
+  static func export(work: URL, output: URL, ids: [String]) throws {
+    let plan = try JSONDecoder().decode(Plan.self, from: read(work.appendingPathComponent("plan.json")))
+    let renderer = try Renderer()
+    let frames = output.appendingPathComponent("frames")
+    try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
+    var loaded: [String: LoadedPacket] = [:]
+    var rows: [[String: Any]] = []
+    var table = ""
+    for (name, frame, look) in try selection(plan, ids: ids) {
+      guard let description = plan.packets[frame.packet], let board = plan.boards[description.board] else {
+        throw PreviewError(description: "No packet \(frame.packet)")
+      }
+      let packet = try loaded[frame.packet] ?? LoadedPacket(description, board: board, work: work, renderer: renderer)
+      loaded[frame.packet] = packet
+      try packet.uniforms(lower: frame.lower, upper: frame.upper, swap: frame.swap)
+        .write(to: frames.appendingPathComponent("\(name).uniforms"))
+      try littleEndian(packet.look(frame, values: look)).write(to: frames.appendingPathComponent("\(name).swift-look"))
+      let lower = description.scenes[frame.lower], upper = description.scenes[frame.upper]
+      let directory = "packets/" + frame.packet.replacingOccurrences(of: "/", with: "-")
+      table += "\(name) \(directory) \(packet.width) \(packet.height) \(lower.offset) \(lower.bytes) \(upper.offset) \(upper.bytes)\n"
+      var row: [String: Any] = ["name": name, "packet": frame.packet, "directory": directory, "lower": frame.lower,
+        "upper": frame.upper, "swap": frame.swap, "sharedFloor": frame.sharedFloor, "codes": frame.codes]
+      if let look { row["look"] = look }
+      rows.append(row)
+    }
+    let packets = Dictionary(uniqueKeysWithValues: loaded.keys.map { key -> (String, Any) in
+      let description = plan.packets[key]!, board = plan.boards[description.board]!
+      return (key, ["source": work.appendingPathComponent(description.dir).path, "width": board.width, "height": board.height,
+        "scenes": description.scenes.map { ["offset": $0.offset, "bytes": $0.bytes, "count": $0.count] }])
+    })
+    try table.write(to: output.appendingPathComponent("frames.tsv"), atomically: true, encoding: .utf8)
+    try JSONSerialization.data(withJSONObject: ["packets": packets, "frames": rows], options: [.prettyPrinted, .sortedKeys])
+      .write(to: output.appendingPathComponent("frames.json"))
+    print("{\"status\":\"EXPORTED\",\"frames\":\(rows.count),\"packets\":\(loaded.count)}")
+  }
+
+  /// Metal (Swift look words) against GLES (Kotlin look words), frame by frame: the
+  /// largest channel error, pixels off by more than one byte and pixels changed at all,
+  /// and whether the two platforms' look words are the same words. `lookPixels` is how
+  /// many pixels the look itself changes on Metal (against no look), so a match means
+  /// something. Saves the worst frames as Metal / GLES / 32× difference composites.
+  /// Without a GLES directory it compares the look words only.
+  static func compare(work: URL, exported: URL, gles: URL?, output: URL) throws {
+    let plan = try JSONDecoder().decode(Plan.self, from: read(work.appendingPathComponent("plan.json")))
+    let manifest = try JSONSerialization.jsonObject(with: read(exported.appendingPathComponent("frames.json"))) as! [String: Any]
+    let names = (manifest["frames"] as! [[String: Any]]).map { $0["name"] as! String }
+    let ids = Array(Set(names.map { String($0[..<$0.lastIndex(of: "-")!]) }))
+    let frames = Dictionary(uniqueKeysWithValues: try selection(plan, ids: ids).map { ($0.name, ($0.frame, $0.look)) })
+    let renderer = try Renderer()
+    let pipeline = try renderer.pipeline(ClimbOverlayShader.source)
+    var packets: [String: LoadedPacket] = [:]
+    var photos: [String: CGImage] = [:]
+    var rows: [[String: Any]] = []
+    var worst: [(error: Int, name: String, metal: Data, android: Data, packet: LoadedPacket, board: String)] = []
+    var wordFrames = 0, wordsDiffering = 0, largestWordDifference = 0
+    for name in names {
+      guard let entry = frames[name], let description = plan.packets[entry.0.packet],
+        let board = plan.boards[description.board] else { throw PreviewError(description: "No frame \(name)") }
+      let (frame, look) = entry
+      let packet = try packets[frame.packet] ?? LoadedPacket(description, board: board, work: work, renderer: renderer)
+      packets[frame.packet] = packet
+      if photos[description.board] == nil { photos[description.board] = try Images.load(work.appendingPathComponent(board.photo)) }
+      let swiftWords = try packet.look(frame, values: look)
+      let kotlin = try read(exported.appendingPathComponent("frames/\(name).kotlin-look"))
+      let kotlinWords = stride(from: 0, to: kotlin.count, by: 2).map { UInt16(kotlin[$0]) | UInt16(kotlin[$0 + 1]) << 8 }
+      var differing = kotlinWords.count == swiftWords.count ? 0 : max(kotlinWords.count, swiftWords.count)
+      if differing == 0 {
+        for (left, right) in zip(swiftWords, kotlinWords) where left != right {
+          differing += 1
+          largestWordDifference = max(largestWordDifference, abs(Int(left) - Int(right)))
+        }
+      }
+      if swiftWords.first == 1 { wordFrames += 1 }
+      wordsDiffering += differing
+      guard let gles else {
+        rows.append(["name": name, "lookOn": swiftWords.first == 1, "holds": swiftWords.count / 4 - 1,
+          "lookWordsDiffering": differing])
+        continue
+      }
+      let metal = try renderer.draw(pipeline, width: packet.width, height: packet.height, pixels: packet.pixels,
+        descriptors: packet.descriptors, lowerOffset: packet.scenes[frame.lower].offset,
+        upperOffset: packet.scenes[frame.upper].offset,
+        uniforms: packet.uniforms(lower: frame.lower, upper: frame.upper, swap: frame.swap), resources: packet.resources,
+        look: swiftWords)
+      let android = try read(gles.appendingPathComponent("\(name).rgba"))
+      guard android.count == metal.count else { throw PreviewError(description: "GLES frame \(name) has the wrong size") }
+      var largest = 0, overOne = 0, changed = 0
+      metal.withUnsafeBytes { a in android.withUnsafeBytes { b in
+        let left = a.bindMemory(to: UInt8.self), right = b.bindMemory(to: UInt8.self)
+        var index = 0
+        while index < left.count {
+          var error = 0
+          for channel in 0..<4 { error = max(error, abs(Int(left[index + channel]) - Int(right[index + channel]))) }
+          largest = max(largest, error)
+          if error > 1 { overOne += 1 }
+          if error > 0 { changed += 1 }
+          index += 4
+        }
+      } }
+      let lookPixels = swiftWords.first == 1 ? changedPixels(metal, try renderer.draw(pipeline, width: packet.width,
+        height: packet.height, pixels: packet.pixels, descriptors: packet.descriptors,
+        lowerOffset: packet.scenes[frame.lower].offset, upperOffset: packet.scenes[frame.upper].offset,
+        uniforms: packet.uniforms(lower: frame.lower, upper: frame.upper, swap: frame.swap), resources: packet.resources,
+        look: ClimbOverlaySwapLook.off)).any : 0
+      rows.append(["name": name, "lookOn": swiftWords.first == 1, "holds": swiftWords.count / 4 - 1,
+        "lookWordsDiffering": differing, "maxChannelError": largest, "pixelsOverOne": overOne, "changedPixels": changed,
+        "lookPixels": lookPixels])
+      worst.append((largest * 10_000_000 + overOne, name, metal, android, packet, description.board))
+      worst.sort { $0.error > $1.error }
+      if worst.count > 3 { worst.removeLast() }
+    }
+    let images = output.appendingPathComponent("worst")
+    try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+    for entry in worst {
+      var difference = Data(count: entry.metal.count)
+      difference.withUnsafeMutableBytes { target in entry.metal.withUnsafeBytes { a in entry.android.withUnsafeBytes { b in
+        let out = target.bindMemory(to: UInt8.self), left = a.bindMemory(to: UInt8.self), right = b.bindMemory(to: UInt8.self)
+        for index in stride(from: 0, to: out.count, by: 4) {
+          for channel in 0..<3 { out[index + channel] = UInt8(min(255, 32 * abs(Int(left[index + channel]) - Int(right[index + channel])))) }
+          out[index + 3] = 255
+        }
+      } } }
+      for (suffix, rgba) in [("metal", entry.metal), ("gles", entry.android)] {
+        try Images.savePNG(try Images.composite(board: photos[entry.board]!,
+          overlay: try Images.image(rgba, width: entry.packet.width, height: entry.packet.height)),
+          to: images.appendingPathComponent("\(entry.name)-\(suffix).png"))
+      }
+      try Images.savePNG(try Images.image(difference, width: entry.packet.width, height: entry.packet.height),
+        to: images.appendingPathComponent("\(entry.name)-difference-32x.png"))
+    }
+    func summary(_ subset: [[String: Any]]) -> [String: Any] {
+      guard gles != nil else { return ["frames": subset.count] }
+      return ["frames": subset.count, "maxChannelError": subset.map { $0["maxChannelError"] as! Int }.max() ?? 0,
+       "meanLookPixels": subset.isEmpty ? 0 : subset.map { $0["lookPixels"] as! Int }.reduce(0, +) / subset.count,
+       "framesWithPixelsOverOne": subset.filter { ($0["pixelsOverOne"] as! Int) > 0 }.count,
+       "maxPixelsOverOne": subset.map { $0["pixelsOverOne"] as! Int }.max() ?? 0,
+       "maxChangedPixels": subset.map { $0["changedPixels"] as! Int }.max() ?? 0,
+       "meanChangedPixels": subset.isEmpty ? 0 : subset.map { $0["changedPixels"] as! Int }.reduce(0, +) / subset.count]
+    }
+    let report: [String: Any] = ["device": renderer.device.name, "lookOn": summary(rows.filter { $0["lookOn"] as! Bool }),
+      "lookOff": summary(rows.filter { !($0["lookOn"] as! Bool) }),
+      "lookWords": ["framesWithLook": wordFrames, "wordsDiffering": wordsDiffering, "largestDifference": largestWordDifference],
+      "worst": worst.map(\.name), "rows": rows]
+    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+      .write(to: output.appendingPathComponent("compare.json"))
+    let brief = report.filter { $0.key != "rows" }
+    print(String(data: try JSONSerialization.data(withJSONObject: brief, options: [.sortedKeys]), encoding: .utf8)!)
   }
 
   /// The swap's two ends against the still compositor, pixel for pixel: a look frame at

@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.view.Choreographer
 import android.view.TextureView
 import android.view.View
@@ -27,6 +28,8 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     ExpoView(context, appContext), TextureView.SurfaceTextureListener, ExpoViewCommandReceiver {
     private val onRenderReady by EventDispatcher<Map<String, Any?>>()
     private val onRenderError by EventDispatcher()
+    /** Whether the swap look is drawing, sent when that changes and only once a look was sent. */
+    private val onSwapLookState by EventDispatcher<Map<String, Any>>()
     var configJson = ""
     var geometryAssetPath: String? = null
     var geometryAssetSha256: String? = null
@@ -46,6 +49,24 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var outgoingWeight = 1f
     private var incomingWeight = 0f
     private var sharedWeight = 1f
+    /** A seven-number frame's shared floor, for the look; null for the shipped frames. */
+    private var sharedFloor: Float? = null
+    /** Which climbs arrive this frame, for the look (a seven-number frame's last two numbers). */
+    private var arrivals = OverlaySwapLook.Arrivals()
+    /** The swap look; null draws API 7's swap. */
+    private var swapLook: OverlaySwapLook.Look? = null
+    /** Set once the app has sent any look, so a view that never gets one never sends a state event. */
+    private var swapLookRequested = false
+    private var swapLookRejected = false
+    /** Holds in the last look drawn since the look last changed; null until one is drawn. Main thread. */
+    private var swapLookAppliedHolds: Int? = null
+    private var swapLookLastReport: Map<String, Any>? = null
+    /** Bumped whenever [swapLookAppliedHolds] resets, so a late report from the render thread is dropped. */
+    @Volatile private var swapLookEpoch = 0L
+    /** Render thread only: the last (epoch, hold count) it reported, so it posts once per change. */
+    private var swapLookDrawnEpoch = -1L
+    private var swapLookDrawnHolds = -1
+    private var swapLookLogged = false
     /** The newest swap frame this view has applied, by the app's sequence. */
     private val swapSequence = SwapFrameSequenceGate()
     private val main = Handler(Looper.getMainLooper())
@@ -76,6 +97,10 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var registered = false
     private var systemLowPower = false
     private var systemReduced = false
+    /** Thermal status severe or worse (API 29+): the swap look's reach stays at 1. */
+    private var systemHot = false
+    /** A `PowerManager.OnThermalStatusChangedListener` on API 29+, while attached. */
+    private var thermalListener: Any? = null
     private var lastErrorRevision: Long? = null
     @Volatile private var activePreparation: PacketCancellation? = null
     @Volatile private var idlePreparation: PacketCancellation? = null
@@ -132,6 +157,15 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 false,
                 animationObserver,
             )
+            if (Build.VERSION.SDK_INT >= 29) {
+                val listener =
+                    PowerManager.OnThermalStatusChangedListener {
+                        refreshMotionPolicy()
+                        applyProps()
+                    }
+                powerManager().addThermalStatusListener(listener)
+                thermalListener = listener
+            }
             registered = true
         }
         post { applyProps() }
@@ -148,6 +182,12 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         if (registered) {
             context.unregisterReceiver(powerReceiver)
             context.contentResolver.unregisterContentObserver(animationObserver)
+            if (Build.VERSION.SDK_INT >= 29) {
+                (thermalListener as? PowerManager.OnThermalStatusChangedListener)?.let {
+                    powerManager().removeThermalStatusListener(it)
+                }
+            }
+            thermalListener = null
             registered = false
         }
         session?.let { OverlayRenderer.deactivate(it) }
@@ -178,6 +218,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         if (next == revealMode) return
         revealMode = next
         controls = controls.copy(revealMode = next)
+        reportSwapLook()
         requestDraw()
     }
 
@@ -189,7 +230,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
      */
     fun setSwapFrame(frame: List<Double>?) {
         val sequenced = OverlaySwapCommand.split(frame) ?: return
-        val next = controls.withSwapFrame(sequenced.frame) ?: return
+        val next = controls.withSwapFrame(sequenced.frame, sequenced.arrivals) ?: return
         if (!swapSequence.admit(sequenced.sequence)) return
         if (next == controls) return
         if (next.position != pagePosition) cancelPrefetch()
@@ -197,8 +238,76 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         outgoingWeight = next.outgoing
         incomingWeight = next.incoming
         sharedWeight = next.shared
+        sharedFloor = next.sharedFloor
+        arrivals = next.arrivals
         controls = next
         requestDraw()
+    }
+
+    /**
+     * The swap look's numbers ([OverlaySwapLook.Look]), set when the look
+     * changes. Null or malformed turns the look off.
+     */
+    fun setSwapLook(values: List<Double>?) {
+        val look = OverlaySwapLook.Look.parse(values)
+        swapLookRequested = swapLookRequested || values != null
+        swapLookRejected = values != null && look == null
+        if (look != swapLook) {
+            swapLook = look
+            resetSwapLookApplied()
+            controls = controls.copy(look = look)
+            requestDraw()
+        }
+        reportSwapLook()
+    }
+
+    private fun resetSwapLookApplied() {
+        swapLookAppliedHolds = null
+        swapLookEpoch++
+    }
+
+    /**
+     * Tells the app whether the look is off (with why), ready, or drawn (with its
+     * hold count), only when that changes. Never sent to a view that got no look.
+     * Main thread.
+     */
+    private fun reportSwapLook() {
+        if (!swapLookRequested) return
+        val offReason =
+            OverlaySwapLook.offReason(swapLook, swapLookRejected, revealMode, reduceMotion || systemReduced)
+        if (offReason != null) resetSwapLookApplied()
+        val report =
+            OverlaySwapLook.report(
+                offReason,
+                swapLookAppliedHolds,
+                OverlaySwapLook.reachOffReason(systemLowPower, systemHot),
+            )
+        if (report == swapLookLastReport) return
+        swapLookLastReport = report
+        onSwapLookState(report)
+    }
+
+    /**
+     * Render thread, after each draw: a frame that used the look reports it the
+     * first time, and again when its hold count changes; the first one is logged.
+     */
+    internal fun swapLookDrawn(words: IntArray) {
+        if (words[0] != 1) return
+        val holds = words.size / 4 - 1
+        val epoch = swapLookEpoch
+        if (epoch == swapLookDrawnEpoch && holds == swapLookDrawnHolds) return
+        swapLookDrawnEpoch = epoch
+        swapLookDrawnHolds = holds
+        if (!swapLookLogged) {
+            swapLookLogged = true
+            val reach = OverlaySwapLook.reachOffReason(controls.lowPower, controls.hot) ?: "on"
+            Log.i(LOG_TAG, "swap look applied: $holds holds, reach $reach")
+        }
+        main.post {
+            if (swapLookEpoch != epoch || swapLookAppliedHolds == holds) return@post
+            swapLookAppliedHolds = holds
+            reportSwapLook()
+        }
     }
 
     /**
@@ -212,9 +321,14 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         return true
     }
 
+    private fun powerManager() = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+
     private fun refreshMotionPolicy() {
-        systemLowPower =
-            (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isPowerSaveMode
+        val power = powerManager()
+        systemLowPower = power.isPowerSaveMode
+        // iOS pins the look's reach at ProcessInfo.ThermalState.serious; Android's
+        // nearest is SEVERE ("UX is largely impacted").
+        systemHot = Build.VERSION.SDK_INT >= 29 && power.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
         systemReduced =
             if (Build.VERSION.SDK_INT >= 26) !ValueAnimator.areAnimatorsEnabled()
             else
@@ -230,6 +344,8 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
             main.post { applyProps() }
             return
         }
+        // The Reduce Motion prop, Battery Saver or the thermal status may have changed.
+        reportSwapLook()
         val lowPower = systemLowPower
         val reduced = reduceMotion || systemReduced
         controls =
@@ -242,6 +358,10 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 outgoingWeight,
                 incomingWeight,
                 sharedWeight,
+                sharedFloor,
+                arrivals,
+                swapLook,
+                systemHot,
             )
         val wasAllowed = allowed
         allowed =
@@ -523,6 +643,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     }
 
     companion object {
+        private const val LOG_TAG = "ClimbOverlayGPU"
         private val views = Collections.newSetFromMap(WeakHashMap<ClimbOverlayGPUView, Boolean>())
 
         fun foregroundChanged(foreground: Boolean) {
