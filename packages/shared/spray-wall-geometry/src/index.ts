@@ -109,6 +109,16 @@ export {
   type SprayHoldLedLink,
 } from './hold-led-links';
 export {
+  groupLedPair,
+  ledPairs,
+  ledPartner,
+  keepLedPairsFromOlderApp,
+  readLedPairs,
+  separateLedPair,
+  withLedPartners,
+  type SprayLedPair,
+} from './led-pairs';
+export {
   bindLedPositionsToHoles,
   buildSprayLedMapping,
   findSprayHoldAtPoint,
@@ -126,6 +136,7 @@ export {
   extendWiring,
   cutWiring,
   setWiringSkip,
+  wiringSkipCount,
   setWiringInitialSkip,
   assignLedIndices,
   rowMajorLedIndices,

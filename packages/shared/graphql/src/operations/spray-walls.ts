@@ -207,6 +207,8 @@ export const GET_SPRAY_WALL_LED_SETUP = gql`
         controllerType
         controllerUrl
         enabled
+        brightness
+        autoOffMinutes
         layout
         updatedAt
       }
@@ -219,6 +221,8 @@ export type SprayWallLedSetupData = {
   controllerType: string;
   controllerUrl: string;
   enabled: boolean;
+  brightness: number;
+  autoOffMinutes: number;
   layout: unknown;
   updatedAt: string;
 };
@@ -243,6 +247,8 @@ export type SaveSprayWallLedSetupMutationVariables = {
     controllerType?: string;
     controllerUrl?: string;
     enabled?: boolean;
+    brightness?: number;
+    autoOffMinutes?: number;
     layout?: unknown;
   };
 };

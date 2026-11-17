@@ -127,6 +127,16 @@ describe('WLED BLE driver', () => {
       expect(device.disconnect).toHaveBeenCalledOnce();
     }
   });
+  it('applies the brightness over Bluetooth, and leaves auto-off to Wi-Fi until the usermod takes a duration', async () => {
+    const device = connection();
+    const driver = createWledBleDriver({ connect: async () => device });
+    await driver.createPreview(target, { brightness: 180, autoOffMinutes: 15 }).show([5]);
+    await driver.lightAll(target, undefined, { brightness: 180, autoOffMinutes: 15 });
+    const writes = device.request.mock.calls.filter(([op]) => op === 'setState').map(([, state]) => state);
+    expect(writes[0]).toMatchObject({ on: true, bri: 180, nl: { on: false } });
+    expect(writes.at(-1)).toMatchObject({ on: true, bri: 180, nl: { on: false } });
+    expect(writes.every((state) => !state?.nl || Object.keys(state.nl).join() === 'on')).toBe(true);
+  });
   it('rejects pixels outside configured count before lighting writes', async () => {
     const device = connection();
     const driver = createWledBleDriver({ connect: async () => device });

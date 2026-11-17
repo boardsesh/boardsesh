@@ -21,6 +21,11 @@ export type SprayPhotoCanvasProps = {
   maxHeight: number;
   mode?: 'pan' | 'tap' | 'draw' | 'move';
   onTap?: (point: TnutPoint, width: number, height: number) => void;
+  /**
+   * Drop taps that land beside the photo instead of moving them to its edge. Zoomed
+   * out, the pan can show a blank margin, and an Add tap there must not place a point.
+   */
+  ignoreTapsOutsidePhoto?: boolean;
   onTrace?: (points: TnutPoint[], tolerance: number) => void;
   /** Called while drawing, only when the finger reaches a different marker, for a live snap preview. */
   onTraceProgress?: (points: TnutPoint[], tolerance: number) => void;
@@ -56,6 +61,7 @@ function FittedCanvas({
   height,
   mode = 'pan',
   onTap,
+  ignoreTapsOutsidePhoto = false,
   onTrace,
   onTraceProgress,
   onMove,
@@ -121,12 +127,22 @@ function FittedCanvas({
     drawing = useSharedValue(false),
     cancelled = useSharedValue(false);
   const actions = useMemo(() => {
-    const pointAt = (x: number, y: number): TnutPoint => {
+    const unclampedPointAt = (x: number, y: number): TnutPoint => {
       'worklet';
       return {
-        x: Math.max(0, Math.min(1, ((x - width / 2 - panX.value) / zoom.value + width / 2) / width)),
-        y: Math.max(0, Math.min(1, ((y - height / 2 - panY.value) / zoom.value + height / 2) / height)),
+        x: ((x - width / 2 - panX.value) / zoom.value + width / 2) / width,
+        y: ((y - height / 2 - panY.value) / zoom.value + height / 2) / height,
       };
+    };
+    const pointAt = (x: number, y: number): TnutPoint => {
+      'worklet';
+      const point = unclampedPointAt(x, y);
+      return { x: Math.max(0, Math.min(1, point.x)), y: Math.max(0, Math.min(1, point.y)) };
+    };
+    const onPhoto = (x: number, y: number) => {
+      'worklet';
+      const point = unclampedPointAt(x, y);
+      return point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
     };
     const tap = Gesture.Tap()
       .onBegin(() => {
@@ -136,8 +152,9 @@ function FittedCanvas({
         if (event.numberOfTouches > 1) tapCancelled.value = true;
       })
       .onEnd((event, success) => {
-        if (success && (mode === 'tap' || mode === 'draw') && !isPinching.value && !tapCancelled.value)
-          runOnJS(commitTap)(pointAt(event.x, event.y), zoom.value);
+        if (!success || (mode !== 'tap' && mode !== 'draw') || isPinching.value || tapCancelled.value) return;
+        if (ignoreTapsOutsidePhoto && !onPhoto(event.x, event.y)) return;
+        runOnJS(commitTap)(pointAt(event.x, event.y), zoom.value);
       });
     const draw = Gesture.Pan()
       .withRef(editRef)
@@ -231,6 +248,7 @@ function FittedCanvas({
     return Gesture.Simultaneous(viewportGesture, Gesture.Exclusive(draw, tap));
   }, [
     mode,
+    ignoreTapsOutsidePhoto,
     dragMode,
     width,
     height,

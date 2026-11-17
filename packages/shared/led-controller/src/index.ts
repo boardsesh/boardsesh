@@ -10,6 +10,7 @@ export {
   normalizeWledBleTarget,
 } from './url';
 export { createLedPreviewSession, type LedPreviewSession } from './preview';
+export { discoverLedControllers, wledScanHosts, type DiscoverOptions, type DiscoveredLedController } from './discovery';
 export { createWledDriver, wledDriver, type WledDriverOptions } from './wled';
 export { createWledBleDriver } from './wled-ble';
 

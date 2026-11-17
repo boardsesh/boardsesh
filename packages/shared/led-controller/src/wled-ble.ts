@@ -32,15 +32,19 @@ export function createWledBleDriver(connector: WledBleConnector): LedControllerD
           if (capabilities.controllerId !== controllerId) throw new LedControllerError('not-wled');
           if (signal?.aborted) throw new LedControllerError('cancelled');
           const active = connection;
-          const commands = createWledCommandDriver(async (_target, path, requestSignal, command) => {
-            if (signal?.aborted || requestSignal?.aborted) throw new LedControllerError('cancelled');
-            if (command) validateLightingState(command, capabilities.ledCount);
-            return active.request(
-              command ? 'setState' : path === 'info' ? 'getInfo' : 'getState',
-              command,
-              signal ?? requestSignal,
-            );
-          });
+          // The usermod accepts only `nl.on`, so brightness applies here and auto-off does not.
+          const commands = createWledCommandDriver(
+            async (_target, path, requestSignal, command) => {
+              if (signal?.aborted || requestSignal?.aborted) throw new LedControllerError('cancelled');
+              if (command) validateLightingState(command, capabilities.ledCount);
+              return active.request(
+                command ? 'setState' : path === 'info' ? 'getInfo' : 'getState',
+                command,
+                signal ?? requestSignal,
+              );
+            },
+            { autoOff: false },
+          );
           return await apply(commands);
         } finally {
           if (connection) await connection.disconnect();
@@ -55,18 +59,21 @@ export function createWledBleDriver(connector: WledBleConnector): LedControllerD
   }
   const driver: LedControllerDriver = {
     probe: (target, signal) => operation(target, signal, (commands) => commands.probe(target, signal)),
-    lightAll: (target, signal) => operation(target, signal, (commands) => commands.lightAll(target, signal)),
+    lightAll: (target, signal, lighting) =>
+      operation(target, signal, (commands) => commands.lightAll(target, signal, lighting)),
     turnOff: (target, signal) => operation(target, signal, (commands) => commands.turnOff(target, signal)),
-    createPreview(target): LedControllerPreviewTransport {
+    createPreview(target, lighting): LedControllerPreviewTransport {
       return {
         show(indices, pixels) {
           const snapshot = [...indices];
           const colors = snapshotLedPixels(snapshot, pixels);
           // A fresh command context re-arms brightness/nightlight and clears the
           // whole segment on every connection. Another phone may have changed it.
-          return operation(target, undefined, (commands) => commands.createPreview(target).show(snapshot, colors));
+          return operation(target, undefined, (commands) =>
+            commands.createPreview(target, lighting).show(snapshot, colors),
+          );
         },
-        lightAll: () => driver.lightAll(target),
+        lightAll: () => driver.lightAll(target, undefined, lighting),
         turnOff: () => driver.turnOff(target),
       };
     },

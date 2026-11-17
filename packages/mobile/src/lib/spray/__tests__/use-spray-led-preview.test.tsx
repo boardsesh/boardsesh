@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(),
   close: vi.fn(),
   isOwner: vi.fn(),
+  setLighting: vi.fn(),
   create: vi.fn(),
   loadDriver: vi.fn(),
   detach: vi.fn(),
@@ -54,6 +55,7 @@ beforeEach(() => {
     stop: mocks.stop,
     close: mocks.close,
     isOwner: mocks.isOwner,
+    setLighting: mocks.setLighting,
   });
 });
 afterEach(() => {
@@ -78,6 +80,43 @@ describe('spray LED preview lifecycle', () => {
     });
     expect(result.current.available).toBe(false);
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['wled', 'http://wall.local'],
+    ['wled-ble', 'wled-ble:wled-aabbccddeeff'],
+  ] as const)('gives the %s session the wall’s brightness and auto-off', async (type, url) => {
+    mocks.settings = {
+      enabled: true,
+      controller: { type, url },
+      brightness: 200,
+      autoOffMinutes: 30,
+    } as typeof mocks.settings;
+    renderHook(() => useSprayLedPreview('wall'));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create).toHaveBeenLastCalledWith({}, url, { brightness: 200, autoOffMinutes: 30 });
+  });
+
+  it('applies a new brightness to the open session and relights a wall lit with Light all, never closing it', async () => {
+    mocks.settings = { ...mocks.settings, brightness: 64, autoOffMinutes: 0 } as typeof mocks.settings;
+    const { result, rerender } = renderHook(() => useSprayLedPreview('wall'));
+    await act(() => result.current.lightAll());
+    expect(mocks.lightAll).toHaveBeenCalledTimes(1);
+    mocks.settings = { ...mocks.settings, brightness: 200 } as typeof mocks.settings;
+    await act(async () => rerender());
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.setLighting).toHaveBeenLastCalledWith({ brightness: 200, autoOffMinutes: 0 });
+    // The wall shows the new brightness at once.
+    expect(mocks.lightAll).toHaveBeenCalledTimes(2);
+    expect(result.current.allLit).toBe(true);
+    // Lit by a selection instead, the next one carries it: nothing is sent now.
+    await act(() => result.current.show([3]));
+    mocks.settings = { ...mocks.settings, autoOffMinutes: 30 } as typeof mocks.settings;
+    await act(async () => rerender());
+    expect(mocks.setLighting).toHaveBeenLastCalledWith({ brightness: 200, autoOffMinutes: 30 });
+    expect(mocks.lightAll).toHaveBeenCalledTimes(2);
+    expect(mocks.close).not.toHaveBeenCalled();
   });
 
   it('waits for interaction and keeps callbacks stable through state changes', async () => {
@@ -105,7 +144,7 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.show).toHaveBeenCalledTimes(1);
     mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://new.local' } };
     rerender();
-    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local');
+    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local', expect.any(Object));
   });
 
   it('chases in supplied order, at 100ms intervals, then clears', async () => {

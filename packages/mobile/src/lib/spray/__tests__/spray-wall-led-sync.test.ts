@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
+// The sync module loads its storage and network layers on first use; under a
+// full parallel run that can take longer than the default 5 s.
+vi.setConfig({ testTimeout: 20_000 });
+
 const backend = vi.hoisted(() => ({ request: vi.fn() }));
 const storage = vi.hoisted(() => ({
   records: new Map<string, unknown>(),
@@ -48,7 +52,13 @@ const LAYOUT_KEY = 'sprayWallTnutLayout:wall-one';
 const UNSENT_SETTINGS = 'sprayWallLedUnsent:settings:wall-one';
 const UNSENT_LAYOUT = 'sprayWallLedUnsent:layout:wall-one';
 
-const local = { version: 1, enabled: true, controller: { type: 'wled', url: 'http://wled.local' } };
+const local = {
+  version: 1,
+  enabled: true,
+  controller: { type: 'wled', url: 'http://wled.local' },
+  brightness: 64,
+  autoOffMinutes: 0,
+};
 
 function layout(photoKey = 'photo-key'): TnutLayout {
   return {
@@ -63,11 +73,16 @@ function layout(photoKey = 'photo-key'): TnutLayout {
   };
 }
 
+/** What the upload sends: `ledGroups` is always named, null for the default pairs. */
+const uploaded = (sent: TnutLayout) => ({ ...sent, ledGroups: sent.ledGroups ?? null });
+
 /** The server's row: jsonb key order differs from what the reader builds. */
 const rowFor = (overrides: Record<string, unknown> = {}) => ({
   boardUuid: WALL,
   controllerType: 'wled',
   controllerUrl: 'http://wled.local',
+  brightness: 64,
+  autoOffMinutes: 0,
   enabled: true,
   layout: null as unknown,
   updatedAt: '2026-11-09T00:00:00.000Z',
@@ -202,6 +217,8 @@ describe('reading a wall’s LED setup', () => {
         enabled: true,
         controller: { type: 'wled-ble', url: target },
         wifiUrl: local.controller.url,
+        brightness: 64,
+        autoOffMinutes: 0,
       });
     },
   );
@@ -217,6 +234,8 @@ describe('reading a wall’s LED setup', () => {
       version: 1,
       enabled: false,
       controller: { type: 'wled', url: '' },
+      brightness: 64,
+      autoOffMinutes: 0,
     });
   });
 
@@ -317,7 +336,9 @@ describe('one-time adoption of a phone-only setup', () => {
       controllerType: 'wled',
       controllerUrl: 'http://wled.local',
       enabled: true,
-      layout: layout(),
+      brightness: 64,
+      autoOffMinutes: 0,
+      layout: uploaded(layout()),
     });
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
@@ -347,7 +368,7 @@ describe('one-time adoption of a phone-only setup', () => {
       .mockResolvedValueOnce({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
     await prepareSprayWallLedRead(WALL, 'settings');
     await settle();
-    expect(saves()[0]).toMatchObject({ controllerUrl: '', layout: layout() });
+    expect(saves()[0]).toMatchObject({ controllerUrl: '', layout: uploaded(layout()) });
   });
 });
 
@@ -419,10 +440,46 @@ describe('saving', () => {
     expect(storage.records.get(UNSENT_SETTINGS)).toBe(true);
     await settle();
     expect(saves()).toEqual([
-      { boardUuid: WALL, controllerType: 'wled', controllerUrl: 'http://wled.local', enabled: true },
+      {
+        boardUuid: WALL,
+        controllerType: 'wled',
+        controllerUrl: 'http://wled.local',
+        enabled: true,
+      },
     ]);
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(uploadOutcomes).toEqual(['uploaded']);
+  });
+
+  it('sends only the lighting value that changed, so a stale copy cannot undo another phone’s', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    // This phone still has auto-off 0 while another phone set 30 on the server.
+    await markSprayWallLedSaveStarted(WALL, ['brightness'], async () => {
+      storage.records.set(SETTINGS_KEY, { ...local, brightness: 128 });
+    });
+    queueSprayWallLedUpload(WALL, ['brightness']);
+    await settle();
+    expect(saves()).toEqual([{ boardUuid: WALL, brightness: 128 }]);
+    expect(storage.records.has('sprayWallLedUnsent:brightness:wall-one')).toBe(false);
+    await markSprayWallLedSaveStarted(WALL, 'autoOff', async () => {
+      storage.records.set(SETTINGS_KEY, { ...local, brightness: 128, autoOffMinutes: 60 });
+    });
+    queueSprayWallLedUpload(WALL, 'autoOff');
+    await settle();
+    expect(saves().at(-1)).toEqual({ boardUuid: WALL, autoOffMinutes: 60 });
+  });
+
+  it('keeps an unsent brightness over the server copy while taking the server’s auto-off', async () => {
+    storage.records.set(SETTINGS_KEY, { ...local, brightness: 128 });
+    await markSprayWallLedSaveStarted(WALL, 'brightness');
+    backend.request.mockImplementation(async (document: unknown) => {
+      if (String(document).includes('mutation')) throw new Error('offline');
+      return answering(true, rowFor({ brightness: 64, autoOffMinutes: 30 }));
+    });
+    await prepareSprayWallLedRead(WALL, 'settings');
+    await settle();
+    expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ brightness: 128, autoOffMinutes: 30 });
+    expect(storage.records.get('sprayWallLedUnsent:brightness:wall-one')).toBe(true);
   });
 
   it('keeps layout and settings separate: a layout save sends no settings', async () => {
@@ -430,6 +487,18 @@ describe('saving', () => {
     await saveLocally('layout', layout());
     await settle();
     expect(Object.keys(saves()[0])).toEqual(['boardUuid', 'layout']);
+  });
+
+  it('always names the LED pairs, so the server can tell this app from one that predates them', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    await saveLocally('layout', layout());
+    await settle();
+    // No list: the default pairs, said out loud.
+    expect(saves()[0].layout).toHaveProperty('ledGroups', null);
+    // A list, even an empty one, goes as it is.
+    await saveLocally('layout', { ...layout(), ledGroups: [] });
+    await settle();
+    expect(saves()[1].layout).toHaveProperty('ledGroups', []);
   });
 
   it('coalesces step saves: one upload in flight, then only the newest', async () => {
@@ -450,8 +519,8 @@ describe('saving', () => {
     await settle();
 
     expect(saves()).toHaveLength(2);
-    expect(saves()[0].layout).toEqual(layout('step-1'));
-    expect(saves()[1]).toMatchObject({ layout: layout('step-3'), enabled: true });
+    expect(saves()[0].layout).toEqual(uploaded(layout('step-1')));
+    expect(saves()[1]).toMatchObject({ layout: uploaded(layout('step-3')), enabled: true });
   });
 
   it('does not let a read started before an upload overwrite what the upload just sent', async () => {
@@ -491,7 +560,7 @@ describe('saving', () => {
 
     expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('mine'));
     expect(saves()).toHaveLength(2);
-    expect(saves()[1].layout).toEqual(layout('mine'));
+    expect(saves()[1].layout).toEqual(uploaded(layout('mine')));
     expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
     expect(uploadOutcomes).toEqual(['failed', 'uploaded']);
   });
