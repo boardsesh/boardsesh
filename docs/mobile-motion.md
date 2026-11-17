@@ -12,8 +12,33 @@ Spring and timing presets, variant-aware motion, the haptics rules and the queue
 | `interactive` | 20 / 250 / 1.0             | Dragging, swiping, pressing                           |
 | `gentle`      | 15 / 150 / 1.0             | Sheet presentations, layout changes                   |
 | `bouncy`      | 10 / 200 / 0.7             | Playful overshoot (success, celebrations)             |
+| `paging`      | 40 / 400 / 1.0 (floor)     | A page settling after a swipe; see [Paging](#paging)  |
 
 **Timing** (`withTiming`): `instant` 50ms · `fast` 150ms · `normal` 250ms · `slow` 350ms.
+
+### Paging
+
+The player's swipe between climbs settles with `pagingSpring(from, to, velocity)`
+(`theme/paging-spring.ts`), never a fixed preset. `springs.paging` is its floor.
+
+- **Where it lands.** At the content's real resting place: one board width along for a step, 0 for
+  a swipe let go short. Never at a padded target the content is clamped short of: content that hits
+  a clamp at speed stops dead in one frame.
+- **Critically damped, stiffness from the release.** k = max(400, (v / d)²), damping = 2√(k·m),
+  where v is the release speed toward the target and d the distance left. At that stiffness the
+  spring starts at exactly the finger's speed and cannot pass its target. A speed pointing away
+  from the target is dropped.
+- **Timing.** A flick reaches 90% of the remaining distance in 40–75 ms (the iPhone 17 Pro
+  recording's releases: 71, 65 and 42 ms). A slow release or a standstill takes about 190 ms. A
+  swipe let go short comes back the same way, without the 8% overshoot `interactive` gave it.
+- **Landing.** It finishes within a quarter point of its target (`PAGING_LANDED_DISTANCE`), at
+  5–10 pt/s, rather than at Reanimated's default energy floor, which kept a flick creeping on below
+  a pixel until about 300 ms.
+- **Reduce Motion.** Reanimated skips the spring and the step lands at once.
+
+A board that must travel further than the swipe settles (the PNG board leaving a letterboxed
+frame) stretches its own path toward the ends of the swipe instead of extending the spring;
+see `pageOffset` in `use-swipe-pager.ts`.
 
 **Variant-aware motion** (`theme.motion`, resolved from `motionByVariant`): for `withTiming`
 transitions that should follow the active design language. `theme.motion.standard` (utility:

@@ -25,10 +25,17 @@ describe('springs', () => {
     expect(springs.snappy.stiffness).toBeGreaterThan(springs.gentle.stiffness);
   });
 
-  it('snappy has the highest stiffness of all presets', () => {
-    for (const preset of springNames) {
+  // `paging` is left out: it is the floor of a settle whose stiffness the
+  // release raises (`pagingSpring`), not a response for a control.
+  it('snappy has the highest stiffness of the control presets', () => {
+    for (const preset of springNames.filter((name) => name !== 'paging')) {
       expect(springs.snappy.stiffness).toBeGreaterThanOrEqual(springs[preset].stiffness);
     }
+  });
+
+  it('paging is critically damped, so a page never overshoots', () => {
+    const { damping, stiffness, mass } = springs.paging;
+    expect(damping / (2 * Math.sqrt(stiffness * mass))).toBe(1);
   });
 
   it('bouncy has the lowest damping (most overshoot)', () => {

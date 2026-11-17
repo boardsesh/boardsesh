@@ -12,10 +12,10 @@ import {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO, SWIPE_OFFSCREEN_PAD } from '@boardsesh/play-view';
+import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO } from '@boardsesh/play-view';
 import { carouselCommitDirection } from './carousel-commit';
 import type { SwipeArtWait, SwipePager } from './use-swipe-pager';
-import { springs } from '../../theme/animations';
+import { pagingSpring } from '../../theme/paging-spring';
 import { hapticMedium } from '../../lib/haptics';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 
@@ -69,11 +69,11 @@ type UseCarouselGestureOptions = {
    * the way a step reaches the JS thread. See use-swipe-pager.
    */
   pager: SwipePager;
-  /** Width the incoming board enters by (the contained board width). */
+  /** Width the incoming board enters by (the contained board width). The
+   *  release settles the offset at exactly this, where the incoming board and
+   *  header rest; see `pageOffset` for how the outgoing board still clears the
+   *  letterbox margins. */
   boardWidth: number;
-  /** Full screen width — the card flings to ±(screenWidth + pad) so it fully
-   *  clears the viewport on release, past its letterbox margins. */
-  screenWidth: number;
   enabled?: boolean;
   isZoomedSV?: SharedValue<boolean>;
   /** Mounted pages whose backgrounds and holds have actually displayed. */
@@ -136,7 +136,6 @@ function sameTarget(release: PendingSwipeRelease, other: PendingSwipeRelease): b
 export function useCarouselGesture({
   pager,
   boardWidth,
-  screenWidth,
   enabled = true,
   isZoomedSV,
   pageArt,
@@ -184,14 +183,6 @@ export function useCarouselGesture({
   useEffect(() => {
     boardWidthSV.value = boardWidth;
   }, [boardWidth, boardWidthSV]);
-
-  // Fling distance rides the FULL screen width (+ pad) so the card fully clears
-  // the viewport. Mirrored for the same reason as boardWidth — a layout change
-  // must not rebuild the gesture.
-  const screenWidthSV = useSharedValue(screenWidth);
-  useEffect(() => {
-    screenWidthSV.value = screenWidth;
-  }, [screenWidth, screenWidthSV]);
 
   // A carousel taken down under a finger gets no `onEnd`. The offset is the
   // pager's and outlives it: left where the drag was, the header would sit off
@@ -344,12 +335,11 @@ export function useCarouselGesture({
      * the new anchor's terms it is still that far off centre, and the outgoing
      * board beside it stays put too.
      *
-     * Two cases are not carried exactly. Once the incoming board has stopped,
-     * the outgoing one is dropped a few frames before it would have left; that
-     * shows only beside a letterboxed board, whose margins it was still
-     * crossing. And a fling cut short before it has crossed the middle, which
-     * takes a touch that activates within a frame or two of the last release,
-     * puts the board it was leaving in the middle.
+     * A board's place depends only on its distance from the middle
+     * (`pageOffset`), so both are carried exactly. A fling cut short before it
+     * has crossed the middle, which takes a touch that activates within a frame
+     * or two of the last release, leaves the board it was leaving in the middle,
+     * now as the neighbour.
      */
     const landFling = (carry: boolean) => {
       'worklet';
@@ -389,15 +379,20 @@ export function useCarouselGesture({
       if (artWait !== null) runOnJS(noteStepArtWait)(uiSteps.value, artWait);
       isAnimating.value = true;
       flingDirection.value = direction;
-      // Clear the full viewport, including the board's letterbox margins.
-      translateX.value = withSpring(
-        -direction * (screenWidthSV.value + SWIPE_OFFSCREEN_PAD),
-        { ...springs.interactive, velocity, overshootClamping: true },
-        (finished) => {
-          'worklet';
-          if (finished) landFling(false);
-        },
-      );
+      // Settles where the incoming board and header rest, one board width
+      // along, carrying the finger's speed and never passing it. It used to
+      // spring toward the screen width plus 80 pt (482 pt on a 402 pt phone)
+      // while everything visible was clamped at the board's width (335 pt), so
+      // the content hit that clamp at 2,700–3,400 pt/s and stopped dead, then
+      // waited out an invisible 80–94 ms tail.
+      const target = -direction * boardWidthSV.value;
+      // Only this spring's speed counts: a spring back to the middle still
+      // running under a held release must not add its own.
+      cancelAnimation(translateX);
+      translateX.value = withSpring(target, pagingSpring(translateX.value, target, velocity), (finished) => {
+        'worklet';
+        if (finished) landFling(false);
+      });
     };
 
     /**
@@ -605,8 +600,10 @@ export function useCarouselGesture({
         ) {
           runOnJS(reachTrackEnd)();
         }
+        // The same settle as a step, so a swipe let go short comes back
+        // without the 8% overshoot the interactive spring gave it.
         if (offset !== 0) {
-          translateX.value = withSpring(0, { ...springs.interactive, velocity });
+          translateX.value = withSpring(0, pagingSpring(offset, 0, velocity));
         }
       })
       // manualActivation hands the touch lifecycle to these worklets, so a touch
@@ -634,7 +631,6 @@ export function useCarouselGesture({
     };
   }, [
     boardWidthSV,
-    screenWidthSV,
     translateX,
     isAnimating,
     anchorPage,

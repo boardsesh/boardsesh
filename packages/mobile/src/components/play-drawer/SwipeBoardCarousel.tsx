@@ -146,6 +146,8 @@ type CarouselBoardSlotProps = {
   pageArt: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
   /** How far the incoming board travels to reach the middle: the contained board width. */
   slideWidth: number;
+  /** How far a board travels to leave the carousel's frame, letterbox margins included. */
+  exitWidth: number;
   boardBox: ViewStyle;
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: SwipeBoardCarouselProps['onReadyArtDisplayed'];
@@ -180,6 +182,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   translateX,
   pageArt,
   slideWidth,
+  exitWidth,
   boardBox,
   readyBoardArt,
   onReadyArtDisplayed,
@@ -263,16 +266,16 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     }
   }, [artIdentity, onCurrentArtReadinessChange]);
   const slotStyle = useAnimatedStyle(() => {
-    const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth);
+    const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth, exitWidth);
     // Opacity and transform only, and never zIndex. Two pages that are both
-    // drawn never overlap (the incoming one stops in the middle as the outgoing
-    // one's trailing edge leaves it), so there is no order to keep. And a
+    // drawn never overlap (the incoming one lands in the middle as the outgoing
+    // one leaves the frame), so there is no order to keep. And a
     // zIndex that changes is not a paint-order tweak in Fabric: it re-inserts
     // the native view among its siblings, which cancels a touch that began on
     // it. A swipe that took over a fling was cut off that way, 3 ms after it
     // started, until this stopped animating zIndex.
     return { opacity: visible ? 1 : 0, transform: [{ translateX: offset }] };
-  }, [page, slideWidth]);
+  }, [page, slideWidth, exitWidth]);
 
   return (
     <Animated.View style={[styles.slot, slotStyle]} {...NOT_AN_ELEMENT}>
@@ -477,11 +480,13 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     [boardBox],
   );
   const gesturesEnabled = enabled && boardBox !== null;
-  // The carousel works in board-width units: a letterboxed (narrower) board
-  // must slide off by its own width and the incoming board must enter
-  // edge-adjacent. Using screenWidth instead leaves a gap equal to the letterbox
-  // margins.
+  // The carousel works in board-width units: the swipe settles when the
+  // incoming board has travelled its own width to the middle, and the header's
+  // fade is measured against the same width. The outgoing board has further to
+  // go: half the frame plus half the board, past its letterbox margins, so
+  // `pageOffset` stretches its path to leave the frame in the same swipe.
   const boardWidthForSwipe = boardBox?.width ?? screenWidth;
+  const exitWidthForSwipe = boardBox ? (containerSize.width + boardBox.width) / 2 : boardWidthForSwipe;
   const zoomViewport = useMemo(
     () =>
       boardBox
@@ -519,7 +524,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const { gesture: swipeGesture } = useCarouselGesture({
     pager,
     boardWidth: boardWidthForSwipe,
-    screenWidth,
     enabled: gesturesEnabled,
     isZoomedSV,
     // The static capture board cannot share readiness owned by retained slots.
@@ -618,6 +622,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       translateX={pager.translateX}
       pageArt={pageArt}
       slideWidth={boardWidthForSwipe}
+      exitWidth={exitWidthForSwipe}
       boardBox={imageBox}
       readyBoardArt={isCurrent ? readyBoardArt : undefined}
       onReadyArtDisplayed={isCurrent ? onReadyArtDisplayed : undefined}

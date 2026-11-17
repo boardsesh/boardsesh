@@ -209,8 +209,8 @@ it can read on the UI thread.
   `onUpdate` frame.
 - A swipe to a mounted neighbour shows its board and takes the next touch on the UI thread. Which
   climb is in the middle is a shared value (`anchorPage` in `use-swipe-pager.ts`) that the release
-  animation moves on the frame the outgoing board is gone; the JS thread is told once, when the
-  incoming board has stopped in the middle, and changes the climb while the rest of the fling runs.
+  animation moves on the frame it lands; the JS thread is told once, when the incoming board is
+  within 3% of the middle, and changes the climb while the settle finishes.
   The previous design asked the JS thread which neighbour to draw when a swipe changed sides, and
   waited for it to swap the climb before taking another touch: on an iPhone 13 Pro every swipe
   forward began with the wrong holds on the incoming board, and swipes were ignored for 160 to 230 ms
@@ -543,13 +543,21 @@ reference numbers):
   tap, a crew member's change, a step the queue refused) the UI thread goes where the JS thread is.
 - A swipe that starts while the last fling is still running takes it over (`landFling` with
   `carry`): the anchor moves at once and the offset keeps the incoming board where it was, with the
-  outgoing one beside it. Once the incoming board has stopped in the middle the outgoing one is
-  dropped instead, a few frames early; that shows only in the margins of a letterboxed board.
-- The JS thread is told about a step once the incoming board has stopped in the middle, about two
-  thirds of the way through the fling. Changing the climb costs the UI thread a frame now and then
-  (the new neighbour's board is mounted, the rest of the drawer updates). Told at finger-up, that
-  frame fell while both boards were moving; told only at landing, the next swipe waits 50 ms longer
-  for its page.
+  outgoing one beside it. A board's place is a function of its distance from the middle alone
+  (`pageOffset`), so neither board moves when the anchor does.
+- A release settles at exactly one board width with the `paging` spring (critically damped,
+  stiffness from the release speed; see [mobile-motion.md](./mobile-motion.md#paging)). It used to
+  spring toward the screen width plus 80 pt while the content was clamped at the board width, so
+  the header and holds stopped dead at 2,700–3,400 pt/s, then waited out an invisible 80–94 ms tail.
+  The outgoing PNG board needs half the frame plus half the board to leave a letterboxed frame;
+  `pageOffset` stretches its path, and the incoming one's, by that margin toward the ends of the
+  swipe, so it leaves exactly as the incoming board lands and moves 1:1 with the finger at the start.
+- The JS thread is told about a step once the incoming board is within 3% of the middle
+  (`TELL_JS_REMAINING`, about 10 pt): 55–70 ms after a flick, about 250 ms after a slow release.
+  Changing the climb costs the UI thread a frame now and then (the new neighbour's board is
+  mounted, the rest of the drawer updates). Told at finger-up, that frame fell while both boards
+  were moving fast; told only at landing, the next swipe waits for the settle's last sub-pixel
+  creep.
 - The JS thread takes the steps one per committed render (`requestStep`). Two can be waiting when
   it has been busy, and the queue's navigation reads state that only a render brings up to date.
 - A release blocked because React or the neighbour's artwork is behind retains one direction and
