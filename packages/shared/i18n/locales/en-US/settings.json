@@ -699,7 +699,10 @@
     "publishResourceMessage": "Anyone can open this session or board. Your other private activity stays limited to people you approve."
   },
   "reloadRequired": {
-    "message": "Your account changed in another tab or the app. Reload this page to keep going.",
+    "message": "This page is out of date. Reload it to continue.",
     "action": "Reload"
+  },
+  "writeRefused": {
+    "tryAgain": "That didn't go through. Try again."
   }
 }

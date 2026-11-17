@@ -92,7 +92,7 @@ const deleteCalls = () => mockFetch.mock.calls.filter(([, init]) => init?.method
 /** The session provider's probe: it finds the page's own account, so nothing changes. */
 let checks: ReturnType<typeof vi.fn<() => void>>;
 function probeFindsNoChange() {
-  checks = vi.fn<() => void>(() => browserSessionGuard().sessionChecked());
+  checks = vi.fn<() => void>(() => browserSessionGuard().sessionChecked(browserSessionGuard().sessionReadStarted()));
   window.addEventListener(WEB_SESSION_CHECK_EVENT, checks);
   return () => window.removeEventListener(WEB_SESSION_CHECK_EVENT, checks);
 }
@@ -277,24 +277,31 @@ describe('ControllersSection', () => {
     expect(mockShowMessage).not.toHaveBeenCalled();
   });
 
-  it('keeps the form after one refused register, and asks for a reload after the second', async () => {
+  it('keeps the form and what was typed after a refused register: try again, then reload', async () => {
     respondWith([], VIEWER_CHANGED);
     const stopProbe = probeFindsNoChange();
 
     render(<ControllersSection />);
     fireEvent.click(await screen.findByText(t('controllers.add')));
     await screen.findByText(t('controllers.register.title'));
+    fireEvent.change(screen.getByPlaceholderText(t('controllers.register.namePlaceholder')), {
+      target: { value: 'Projector' },
+    });
     await chooseOption(0, t('controllers.register.boardSpray'));
 
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
-    await waitFor(() => expect(checks).toHaveBeenCalledOnce());
-    await waitFor(() => expect(screen.getByText(t('controllers.register.title'))).toBeTruthy());
+    expect(await screen.findByText(t('writeRefused.tryAgain'))).toBeTruthy();
+    expect(checks).toHaveBeenCalledOnce();
     expect(screen.queryByText(t('reloadRequired.message'))).toBeNull();
 
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect(await screen.findByText(t('reloadRequired.message'))).toBeTruthy();
     stopProbe();
+    expect(screen.queryByText(t('writeRefused.tryAgain'))).toBeNull();
+    // The dialog stays open with the typed name.
+    expect(screen.getByText(t('controllers.register.title'))).toBeTruthy();
+    expect(screen.getByDisplayValue('Projector')).toBeTruthy();
     // Never sent twice per press.
     expect(postCalls()).toHaveLength(2);
     expect(mockShowMessage).not.toHaveBeenCalled();

@@ -27,3 +27,13 @@ export default function ReloadPageAlert() {
     </MuiAlert>
   );
 }
+
+/** A write the server refused once and saved nothing for (`WriteRefusedError`): press again. */
+export function TryAgainAlert() {
+  const { t } = useTranslation('settings');
+  return (
+    <MuiAlert severity="info" sx={{ mb: 2 }}>
+      {t('writeRefused.tryAgain')}
+    </MuiAlert>
+  );
+}

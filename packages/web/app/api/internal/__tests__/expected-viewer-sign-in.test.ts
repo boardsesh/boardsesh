@@ -81,17 +81,22 @@ vi.mock('@/app/lib/auth/credential-admission.server', async (original) => ({
 }));
 
 import { authOptions } from '@/app/lib/auth/auth-options';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { admittedViewerKey } from '@/app/lib/auth/expected-viewer.server';
 import { users } from '@/app/lib/db/schema';
 import { webLogger } from '@/app/lib/observability/logger';
 import {
   createSessionGuard,
   isSessionSuperseded,
+  readProbedViewer,
+  sessionViewerKey,
   sessionViewerOf,
   type SessionGuard,
 } from '@/app/lib/auth/session-guard';
 import * as controllersRoute from '../controllers/route';
 import * as profileRoute from '../profile/route';
 import * as setPasswordRoute from '../set-password/route';
+import * as wsAuthRoute from '../ws-auth/route';
 
 const ORIGIN = 'http://localhost:3000';
 const COOKIE_NAME = 'next-auth.session-token';
@@ -112,8 +117,23 @@ function browserRequest(path: string, init: RequestInit = {}): NextRequest {
   return new NextRequest(new URL(path, ORIGIN), { ...init, headers } as ConstructorParameters<typeof NextRequest>[1]);
 }
 
-/** NextAuth's credentials sign-in, from the point it calls the jwt callback and encodes the cookie. */
-async function signIn(): Promise<void> {
+/**
+ * The cookies a browser holds when this ships. `current`: a login made through
+ * today's jwt callback, which names its auth session. `legacy`: a login from
+ * before that claim, with only NextAuth's own `jti`; the jwt callback derives
+ * the auth session from it on every read (auth-options.ts, `legacy_no_sid`).
+ */
+type CookieShape = 'current' | 'legacy';
+
+async function signIn(shape: CookieShape = 'current'): Promise<void> {
+  if (shape === 'legacy') {
+    sessionCookie = await encode({
+      token: { name: climber.name, email: climber.email, picture: null, sub: climber.id },
+      secret: process.env.NEXTAUTH_SECRET ?? '',
+      maxAge: 3600,
+    });
+    return;
+  }
   const jwt = authOptions.callbacks?.jwt;
   if (!jwt) throw new Error('auth-options has no jwt callback');
   const token = await jwt({
@@ -126,15 +146,37 @@ async function signIn(): Promise<void> {
   sessionCookie = await encode({ token, secret: process.env.NEXTAUTH_SECRET ?? '', maxAge: 3600 });
 }
 
-/** What the www session provider reads and hands to the guard. */
-async function readClientSession() {
+/**
+ * What the www session provider reads and hands to the guard. NextAuth rewrites
+ * the cookie on this read; a browser keeps the new one unless it is lost.
+ */
+async function readClientSession(keepRewrittenCookie = true) {
   const request = browserRequest('/api/auth/session');
   const handler = NextAuth(authOptions);
-  const response = await requestStorage.run(request, () =>
+  const response: Response = await requestStorage.run(request, () =>
     handler(request, { params: Promise.resolve({ nextauth: ['session'] }) }),
   );
   expect(response.status).toBe(200);
+  const rewritten = response.headers
+    .getSetCookie()
+    .map((header) => header.split(';')[0])
+    .find((pair) => pair.startsWith(`${COOKIE_NAME}=`));
+  if (keepRewrittenCookie && rewritten) sessionCookie = rewritten.slice(COOKIE_NAME.length + 1);
   return response.json();
+}
+
+/** The three keys that must agree: the guard's, the focus probe's (ws-auth) and the routes'. */
+async function viewerKeys() {
+  const probeRequest = browserRequest('/api/internal/ws-auth');
+  const probe = await requestStorage.run(probeRequest, async () => (await wsAuthRoute.GET(probeRequest)).json());
+  const probed = readProbedViewer(probe);
+  const routeRequest = browserRequest('/api/internal/controllers');
+  const server = await requestStorage.run(routeRequest, () => getAdmittedServerSession());
+  return {
+    guard: guard.viewerKey(),
+    probe: probed === undefined ? 'unproven' : sessionViewerKey(probed),
+    routes: admittedViewerKey(server),
+  };
 }
 
 const send: typeof fetch = async (input, init) => {
@@ -159,13 +201,16 @@ beforeAll(() => {
   }));
 });
 
-beforeEach(async () => {
+async function openSettings(shape: CookieShape, keepRewrittenCookie = true) {
+  await signIn(shape);
+  guard = createSessionGuard({ reloadPage: vi.fn(), requestSessionCheck: vi.fn(), pageOrigin: () => ORIGIN, send });
+  guard.accept(sessionViewerOf(await readClientSession(keepRewrittenCookie)));
+}
+
+beforeEach(() => {
   fixture.tables.clear();
   rowsOf(users).push({ ...climber, image: null, emailVerified: new Date() });
   warn = vi.spyOn(webLogger, 'warn');
-  await signIn();
-  guard = createSessionGuard({ reloadPage: vi.fn(), requestSessionCheck: vi.fn(), pageOrigin: () => ORIGIN, send });
-  guard.accept(sessionViewerOf(await readClientSession()));
 });
 
 afterAll(() => {
@@ -179,43 +224,54 @@ const json = (body: unknown): RequestInit => ({
 });
 
 describe('a signed-in www page and the cookie routes', () => {
-  it('agree on the viewer: list, register, delete, profile and set-password all go through', async () => {
-    expect(guard.viewerKey()).toMatch(/^climber-a:[0-9a-f-]{36}$/);
+  it.each([
+    ['a current login', 'current', true],
+    ['a login from before the auth-session claim', 'legacy', true],
+    ['a login from before the claim whose rewritten cookie was lost', 'legacy', false],
+  ] as const)(
+    'agree on the viewer for %s: list, register, delete, profile and set-password all go through',
+    async (_label, shape, keep) => {
+      await openSettings(shape, keep);
+      expect(guard.viewerKey()).toMatch(/^climber-a:[0-9a-f-]{36}$/);
+      const keys = await viewerKeys();
+      expect(keys).toEqual({ guard: guard.viewerKey(), probe: guard.viewerKey(), routes: guard.viewerKey() });
 
-    const empty = await guard.fetch('/api/internal/controllers');
-    expect(empty.status).toBe(200);
-    expect(await empty.json()).toEqual({ controllers: [] });
+      const empty = await guard.fetch('/api/internal/controllers');
+      expect(empty.status).toBe(200);
+      expect(await empty.json()).toEqual({ controllers: [] });
 
-    const registered = await guard.fetch('/api/internal/controllers', {
-      method: 'POST',
-      ...json({ name: 'Projector', boardName: 'spray' }),
-    });
-    expect(registered.status).toBe(200);
-    const { controllerId, apiKey } = (await registered.json()) as { controllerId: string; apiKey: string };
-    expect(apiKey).toMatch(/^[0-9a-f]{64}$/);
+      const registered = await guard.fetch('/api/internal/controllers', {
+        method: 'POST',
+        ...json({ name: 'Projector', boardName: 'spray' }),
+      });
+      expect(registered.status).toBe(200);
+      const { controllerId, apiKey } = (await registered.json()) as { controllerId: string; apiKey: string };
+      expect(apiKey).toMatch(/^[0-9a-f]{64}$/);
 
-    const listed = (await (await guard.fetch('/api/internal/controllers')).json()) as {
-      controllers: { id: string }[];
-    };
-    expect(listed.controllers.map((controller) => controller.id)).toEqual([controllerId]);
+      const listed = (await (await guard.fetch('/api/internal/controllers')).json()) as {
+        controllers: { id: string }[];
+      };
+      expect(listed.controllers.map((controller) => controller.id)).toEqual([controllerId]);
 
-    const deleted = await guard.fetch('/api/internal/controllers', { method: 'DELETE', ...json({ controllerId }) });
-    expect(deleted.status).toBe(200);
+      const deleted = await guard.fetch('/api/internal/controllers', { method: 'DELETE', ...json({ controllerId }) });
+      expect(deleted.status).toBe(200);
 
-    const profile = await guard.fetch('/api/internal/profile');
-    expect(profile.status).toBe(200);
-    expect(await profile.json()).toMatchObject({ id: climber.id, hasPassword: false });
+      const profile = await guard.fetch('/api/internal/profile');
+      expect(profile.status).toBe(200);
+      expect(await profile.json()).toMatchObject({ id: climber.id, hasPassword: false });
 
-    const password = await guard.fetch('/api/internal/set-password', {
-      method: 'POST',
-      ...json({ password: 'fixture-password-1', confirmPassword: 'fixture-password-1' }),
-    });
-    expect(password.status).toBe(200);
+      const password = await guard.fetch('/api/internal/set-password', {
+        method: 'POST',
+        ...json({ password: 'fixture-password-1', confirmPassword: 'fixture-password-1' }),
+      });
+      expect(password.status).toBe(200);
 
-    expect(warn).not.toHaveBeenCalledWith('expected viewer refused', expect.anything());
-  });
+      expect(warn).not.toHaveBeenCalledWith('expected viewer refused', expect.anything());
+    },
+  );
 
   it('still refuses once the climber signs in again elsewhere, so the agreement above is not vacuous', async () => {
+    await openSettings('current');
     await signIn();
 
     await expect(guard.fetch('/api/internal/controllers')).rejects.toSatisfy(isSessionSuperseded);

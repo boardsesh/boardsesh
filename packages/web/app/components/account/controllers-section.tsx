@@ -33,8 +33,13 @@ import { getBoardSelectorOptions } from '@/app/lib/board-constants';
 import type { BoardName } from '@/app/lib/types';
 import styles from './controllers-section.module.css';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { guardedActionFetch, isReloadRequired, isSessionSuperseded } from '@/app/lib/auth/session-guard';
-import ReloadPageAlert from './reload-page-alert';
+import {
+  guardedActionFetch,
+  isReloadRequired,
+  isSessionSuperseded,
+  isWriteRefused,
+} from '@/app/lib/auth/session-guard';
+import ReloadPageAlert, { TryAgainAlert } from './reload-page-alert';
 
 // Get board config data (synchronous - from generated data)
 const boardSelectorOptions = getBoardSelectorOptions();
@@ -241,6 +246,8 @@ export default function ControllersSection() {
   const [successControllerName, setSuccessControllerName] = useState('');
   // An action that still failed after the session re-check: say so instead of nothing.
   const [reloadRequired, setReloadRequired] = useState(false);
+  // The same, for the open register form, which keeps what was typed.
+  const [registerNotice, setRegisterNotice] = useState<'tryAgain' | 'reload' | null>(null);
 
   const fetchControllers = async () => {
     try {
@@ -268,6 +275,7 @@ export default function ControllersSection() {
     setSelectedLayout(undefined);
     setSelectedSize(undefined);
     setSelectedSets([]);
+    setRegisterNotice(null);
     setIsModalOpen(true);
   };
 
@@ -316,6 +324,7 @@ export default function ControllersSection() {
     setIds?: number[];
   }) => {
     setIsSaving(true);
+    setRegisterNotice(null);
     try {
       const response = await guardedActionFetch('/api/internal/controllers', {
         method: 'POST',
@@ -346,13 +355,16 @@ export default function ControllersSection() {
 
       await fetchControllers();
     } catch (error) {
-      // The account changed under this page, or the server refused once and
-      // registered nothing; the form stays open for another try.
+      // Refused once, nothing registered: the form stays open with what was typed.
+      if (isWriteRefused(error)) {
+        setRegisterNotice('tryAgain');
+        return;
+      }
+      // The page is moving to another account and reloads.
       if (isSessionSuperseded(error)) return;
       if (isReloadRequired(error)) {
+        setRegisterNotice('reload');
         // A lost answer may have registered a controller whose key is gone, so show the list.
-        setIsModalOpen(false);
-        setReloadRequired(true);
         await fetchControllers();
         return;
       }
@@ -451,6 +463,8 @@ export default function ControllersSection() {
       <Dialog open={isModalOpen} onClose={handleModalCancel} maxWidth="sm" fullWidth>
         <DialogTitle>{t('controllers.register.title')}</DialogTitle>
         <DialogContent>
+          {registerNotice === 'tryAgain' && <TryAgainAlert />}
+          {registerNotice === 'reload' && <ReloadPageAlert />}
           <Typography variant="body2" component="span" color="text.secondary" className={styles.modalDescription}>
             {t('controllers.register.description')}
           </Typography>

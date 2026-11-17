@@ -178,6 +178,20 @@ describe('GET /api/internal/ws-auth', () => {
     });
   });
 
+  it('names a pre-claim cookie’s login by its jti, as the jwt callback does on every session read', async () => {
+    getTokenMock.mockResolvedValue('legacy-encrypted-session-token');
+    decodeMock.mockResolvedValue({ sub: 'user-1', jti: 'jti-of-this-cookie' });
+
+    const response = await GET(request());
+
+    await expect(response.json()).resolves.toEqual({
+      token: 'legacy-encrypted-session-token',
+      authenticated: true,
+      userId: 'user-1',
+      authSessionId: 'jti-of-this-cookie',
+    });
+  });
+
   it('keeps failures private and non-cacheable', async () => {
     getTokenMock.mockRejectedValue(new Error('cookie read failed'));
     const stderr = captureStderr();

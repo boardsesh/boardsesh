@@ -699,7 +699,10 @@
     "publishResourceMessage": "Chiunque può aprire questa session o questo pannello. Le altre tue attività private restano limitate alle persone che approvi."
   },
   "reloadRequired": {
-    "message": "Il tuo account è cambiato in un’altra scheda o nell’app. Ricarica questa pagina per continuare.",
+    "message": "Questa pagina non è aggiornata. Ricaricala per continuare.",
     "action": "Ricarica"
+  },
+  "writeRefused": {
+    "tryAgain": "Non è andato a buon fine. Riprova."
   }
 }

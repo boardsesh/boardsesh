@@ -250,12 +250,12 @@ describe('SetPasswordSection', () => {
       });
     });
 
-    it('keeps the typed password after one refusal, and asks for a reload after the second', async () => {
+    it('keeps the typed password after a refusal: try again, then reload', async () => {
       mockFetch.mockImplementation(async () =>
         Response.json({ code: 'viewer_changed', error: 'Reload this page.' }, { status: 409 }),
       );
       // The session provider's probe finds the page's own account: nothing changes.
-      const checks = vi.fn(() => browserSessionGuard().sessionChecked());
+      const checks = vi.fn(() => browserSessionGuard().sessionChecked(browserSessionGuard().sessionReadStarted()));
       window.addEventListener(WEB_SESSION_CHECK_EVENT, checks);
       const onPasswordSet = vi.fn();
 
@@ -274,7 +274,8 @@ describe('SetPasswordSection', () => {
       });
       fireEvent.click(screen.getByText('Set Password'));
 
-      await waitFor(() => expect(checks).toHaveBeenCalledOnce());
+      expect(await screen.findByText(tFromCatalog('settings', 'writeRefused.tryAgain'))).toBeTruthy();
+      expect(checks).toHaveBeenCalledOnce();
       await waitFor(() => expect(screen.getByText('Set Password').closest('button')?.disabled).toBe(false));
       expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('testpass123');
       expect(screen.queryByText(tFromCatalog('settings', 'reloadRequired.message'))).toBeNull();

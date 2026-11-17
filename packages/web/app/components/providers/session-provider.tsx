@@ -13,10 +13,9 @@ import {
 import {
   browserSessionGuard,
   sessionViewerKey,
+  readProbedViewer,
   sessionViewerOf,
-  signedInViewer,
   WEB_SESSION_CHECK_EVENT,
-  type SessionViewer,
 } from '../../lib/auth/session-guard';
 
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
@@ -42,15 +41,6 @@ function parseSession(candidate: unknown): Session | null {
   if (typeof user.id !== 'string' || !user.id.trim() || typeof session.expires !== 'string')
     throw new Error('Invalid session response');
   return candidate as Session;
-}
-
-/** The account the cookie names now; undefined when the probe proves nothing. */
-function readProbedViewer(candidate: unknown): SessionViewer | undefined {
-  if (typeof candidate !== 'object' || candidate === null) return undefined;
-  const probe = candidate as Record<string, unknown>;
-  if (probe.authenticated === false) return null;
-  if (probe.authenticated !== true || typeof probe.userId !== 'string') return undefined;
-  return signedInViewer(probe.userId, typeof probe.authSessionId === 'string' ? probe.authSessionId : null);
 }
 
 async function readSessionJson(response: Response, signal: AbortSignal): Promise<unknown> {
@@ -124,6 +114,8 @@ export default function SessionProviderWrapper({
       retryTimerRef.current = null;
     }
     const sequence = ++requestSequenceRef.current;
+    // A re-check asked for after this read started is not answered by it.
+    const readStarted = browserSessionGuard().sessionReadStarted();
     activeControllerRef.current?.abort();
     const epoch = captureWebSessionEpoch();
     const controller = new AbortController();
@@ -179,7 +171,7 @@ export default function SessionProviderWrapper({
       const acceptedSession = parseSession(body);
       // An account change made in another tab or app is never shown in this
       // page: the guard clears its caches and reloads it from the root.
-      if (browserSessionGuard().accept(sessionViewerOf(acceptedSession)) === 'retire') {
+      if (browserSessionGuard().accept(sessionViewerOf(acceptedSession), readStarted) === 'retire') {
         setAcceptedView((current) => (current.retired ? current : { ...current, retired: true }));
         return sessionRef.current;
       }
@@ -199,7 +191,7 @@ export default function SessionProviderWrapper({
       // through the public refresh event instead of replaying an update POST.
       scheduleInitialRetry();
       // A re-check waiting on this read learns that it proved nothing.
-      if (ownsResult()) browserSessionGuard().sessionChecked();
+      if (ownsResult()) browserSessionGuard().sessionChecked(readStarted);
       return sessionRef.current;
     } finally {
       clearTimeout(deadline);
@@ -254,6 +246,7 @@ export default function SessionProviderWrapper({
       if (throttled && Date.now() - lastIdentityCheck < FOCUS_CHECK_INTERVAL_MS) return;
       lastIdentityCheck = Date.now();
       const probe = new AbortController();
+      const probeStarted = browserSessionGuard().sessionReadStarted();
       identityProbe = probe;
       const deadline = setTimeout(() => probe.abort(), 15_000);
       let readsSession = false;
@@ -282,7 +275,7 @@ export default function SessionProviderWrapper({
             void checkIdentity(false);
           } else if (!readsSession) {
             // No session read follows, so a request waiting on this check goes on now.
-            browserSessionGuard().sessionChecked();
+            browserSessionGuard().sessionChecked(probeStarted);
           }
         }
       }

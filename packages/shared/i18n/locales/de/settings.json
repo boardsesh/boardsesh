@@ -699,7 +699,10 @@
     "publishResourceMessage": "Alle können diese Session oder dieses Board öffnen. Deine anderen privaten Aktivitäten sehen weiterhin nur Personen, die du bestätigst."
   },
   "reloadRequired": {
-    "message": "Dein Konto hat sich in einem anderen Tab oder in der App geändert. Lade diese Seite neu, um weiterzumachen.",
+    "message": "Diese Seite ist nicht mehr aktuell. Lade sie neu, um weiterzumachen.",
     "action": "Neu laden"
+  },
+  "writeRefused": {
+    "tryAgain": "Das hat nicht geklappt. Versuch es nochmal."
   }
 }

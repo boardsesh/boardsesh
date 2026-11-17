@@ -344,23 +344,41 @@ cookie before it changed. The check then retires the page as in the table
 above. Other 409s, such as "Password already set.", reach the caller as before.
 
 The settings page sends its requests through `guardedActionFetch`, which waits
-for that check (the provider reports the probe's outcome; 30 seconds at most)
-and then:
+for that check and then acts on what it found. Only a probe or session read
+that started after the 409, or a read that moved the viewer, ends the wait; a
+read already in flight may have seen the cookie before it changed. The
+provider records when each probe and read starts (`sessionReadStarted`) and
+passes it back. The wait is 30 seconds at most.
 
 - the page is moving to another account: nothing is shown, the page reloads;
 - a read or a delete: sent once more, with the header the check left (a new
   login of the same account keeps the page and changes only the session id).
-  Refused again, the card shows "Reload this page" with a Reload button;
+  Refused again, the card shows "This page is out of date" with a Reload
+  button;
 - a write (register a controller, set a password) is never sent twice, because
-  a lost answer may have committed. Refused once, nothing is shown and the form
-  keeps what was typed for another press. Refused twice in a row, or answered
-  after the page's login changed (a controller may exist whose one-time key is
-  gone), the card shows "Reload this page" and the controllers list is read
-  again.
+  a lost answer may have committed. Refused once, the form stays open with
+  what was typed and says "That didn't go through. Try again." Refused twice
+  in a row, or answered after the page's login changed (a controller may exist
+  whose one-time key is gone), the form shows the reload message, still open,
+  and the controllers list is read again. The count of refusals starts again
+  when any action is answered or the viewer moves, so two refusals hours apart
+  never add up.
 
-The message is inline rather than a toast, because the snackbar drops a toast
-from before an account change, and after a new login of the same account it
-must still show. Its text is `settings.reloadRequired` in all five locales.
+The messages are inline rather than toasts, because the snackbar drops a toast
+from before an account change, and after a new login of the same account they
+must still show. Their text is `settings.reloadRequired` and
+`settings.writeRefused` in all five locales; the reload message says only that
+the page is out of date, because the cause is not always an account change.
+
+All three ends build the key the same way for both cookie shapes that exist at
+deploy: a login with an `authSessionId` claim, and a login from before the
+claim, whose id the jwt callback takes from the cookie's `jti` on every read.
+`ws-auth` (the focus probe and the WebSocket token) used to answer no id for
+the second shape, so the probe saw `pending-login-identity`, the page saw the
+`jti`, and every probe asked for a session read until that read had rewritten
+the cookie; it now answers the `jti` too. `expected-viewer-sign-in.test.ts`
+checks the guard, the probe and the routes for a current login, a pre-claim
+login, and a pre-claim login whose rewritten cookie was lost.
 
 | Route | Missing header | Why |
 | --- | --- | --- |

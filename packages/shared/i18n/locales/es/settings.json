@@ -699,7 +699,10 @@
     "publishResourceMessage": "Cualquiera puede abrir esta sesión o este plafón. El resto de tu actividad privada sigue limitado a las personas que apruebes."
   },
   "reloadRequired": {
-    "message": "Tu cuenta cambió en otra pestaña o en la app. Recarga esta página para seguir.",
+    "message": "Esta página está desactualizada. Recárgala para continuar.",
     "action": "Recargar"
+  },
+  "writeRefused": {
+    "tryAgain": "No se completó. Inténtalo de nuevo."
   }
 }

@@ -59,6 +59,21 @@ export function isReloadRequired(error: unknown): error is ReloadRequiredError {
   return error instanceof Error && error.name === 'ReloadRequiredError';
 }
 
+/**
+ * The server refused a write before writing anything, and the re-check kept
+ * the page's account. Nothing was saved; the caller asks for another press.
+ */
+export class WriteRefusedError extends Error {
+  constructor() {
+    super('The server refused this write before writing anything');
+    this.name = 'WriteRefusedError';
+  }
+}
+
+export function isWriteRefused(error: unknown): error is WriteRefusedError {
+  return error instanceof Error && error.name === 'WriteRefusedError';
+}
+
 /** React Query retry: a superseded request is tried once more, under the account that replaced it. */
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
   return failureCount < (isSessionSuperseded(error) ? 1 : QUERY_RETRY_LIMIT);
@@ -70,6 +85,15 @@ export function signedInViewer(userId: string, authSessionId?: string | null): N
 
 export function sessionViewerOf(session: Session | null): SessionViewer {
   return session ? signedInViewer(session.user.id, session.authSessionId) : null;
+}
+
+/** The account ws-auth says the cookie names now; undefined when the probe proves nothing. */
+export function readProbedViewer(candidate: unknown): SessionViewer | undefined {
+  if (typeof candidate !== 'object' || candidate === null) return undefined;
+  const probe = candidate as Record<string, unknown>;
+  if (probe.authenticated === false) return null;
+  if (probe.authenticated !== true || typeof probe.userId !== 'string') return undefined;
+  return signedInViewer(probe.userId, typeof probe.authSessionId === 'string' ? probe.authSessionId : null);
 }
 
 export function sessionViewerKey(viewer: SessionViewer): string {
@@ -179,9 +203,12 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     }, dependencies.unauthorizedDelayMs ?? 1000);
   }
 
-  // The re-check a viewer_changed answer asked for, open until the provider
-  // accepts a read or reports a probe that changed nothing.
-  let pendingCheck: { readonly done: Promise<void>; readonly settle: () => void } | null = null;
+  // The re-check a viewer_changed answer asked for. Only a probe or session
+  // read that started after it was asked can answer it (a read already out may
+  // have seen the cookie before it changed), or a read that moved the viewer.
+  // `checkEpoch` counts the re-checks asked for; a read records it when it starts.
+  let checkEpoch = 0;
+  let pendingCheck: { readonly epoch: number; readonly done: Promise<void>; readonly settle: () => void } | null = null;
   function askForCheck(): void {
     if (!pendingCheck) {
       let resolve = () => {};
@@ -190,6 +217,7 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       });
       const timer = setTimeout(settleCheck, dependencies.recheckTimeoutMs ?? RECHECK_TIMEOUT_MS);
       pendingCheck = {
+        epoch: ++checkEpoch,
         done,
         settle: () => {
           clearTimeout(timer);
@@ -204,7 +232,15 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     pendingCheck = null;
     pending?.settle();
   }
+  /** Settles the open re-check only for a read that started after it was asked. */
+  function settleCheckStartedAt(readStarted: number | undefined): void {
+    if (pendingCheck && readStarted !== undefined && readStarted >= pendingCheck.epoch) settleCheck();
+  }
   const afterSessionCheck = (): Promise<void> => pendingCheck?.done ?? Promise.resolve();
+
+  // Consecutive viewer_changed refusals of one write (method and URL). Any
+  // answer, or a move of the viewer, starts the count again.
+  const refusedWrites = new Map<string, number>();
 
   // Only this page's own origin hears who it shows; other origins never get the
   // header (it would also force a CORS preflight). Before the first accepted
@@ -261,6 +297,7 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     }
     if (sessionViewerKey(previous) === sessionViewerKey(next)) return 'publish';
     generation += 1;
+    refusedWrites.clear();
     // A claim covers one change.
     const local = localChange !== null && localChange.until > now();
     localChange = null;
@@ -276,16 +313,14 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     return 'retire';
   }
 
-  // Consecutive viewer_changed refusals of one write (method and URL), reset by any answer.
-  const refusedWrites = new Map<string, number>();
-
   /**
    * A climber's action. A superseded request waits for the session re-check; a
    * page moving to another account rethrows it (show nothing, the page
    * reloads). Otherwise a read or delete is sent once more under the account
-   * the re-check kept, and ReloadRequiredError replaces silence when that is
-   * refused again, when a write is refused twice in a row, or when a write's
-   * answer was lost. One retry at most, never for a write.
+   * the re-check kept. A write is never sent again: refused once, it throws
+   * WriteRefusedError (ask for another press). ReloadRequiredError replaces
+   * silence when a retry is refused again, when a write is refused twice in a
+   * row, or when a write's answer was lost. One retry at most.
    */
   const actionFetch: typeof fetch = async (input, init) => {
     const method = requestMethod(input, init);
@@ -302,7 +337,7 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
         const refusals = (refusedWrites.get(action) ?? 0) + 1;
         if (refusals < 2) {
           refusedWrites.set(action, refusals);
-          throw error;
+          throw new WriteRefusedError();
         }
         refusedWrites.delete(action);
         throw new ReloadRequiredError();
@@ -314,15 +349,18 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
         throw new ReloadRequiredError();
       }
     }
-    refusedWrites.delete(action);
+    // An answered action shows the page and the server agree again.
+    refusedWrites.clear();
     return response;
   };
 
   return {
     fetch: guardedFetch,
     actionFetch,
-    /** The provider's probe ended without a session read: nothing changed, or it proved nothing. */
-    sessionChecked: settleCheck,
+    /** Recorded by the provider when a probe or session read starts; pass it back when it ends. */
+    sessionReadStarted: (): number => checkEpoch,
+    /** The provider's probe or read ended without an accepted read: nothing changed, or it proved nothing. */
+    sessionChecked: settleCheckStartedAt,
     subscribe,
     isCurrent,
     viewerKey,
@@ -367,10 +405,13 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       });
     },
     /** Called by the session provider before it publishes a read. 'retire' means: publish nothing. */
-    accept(next: SessionViewer): 'publish' | 'retire' {
+    accept(next: SessionViewer, readStarted?: number): 'publish' | 'retire' {
+      const before = viewerKey();
       const outcome = acceptViewer(next);
-      // Any accepted read answers an open re-check, after the viewer has moved.
-      settleCheck();
+      // A read that moved the viewer answers an open re-check whenever it
+      // started; one that found the same viewer only if it started after.
+      if (outcome === 'retire' || viewerKey() !== before) settleCheck();
+      else settleCheckStartedAt(readStarted);
       return outcome;
     },
   };

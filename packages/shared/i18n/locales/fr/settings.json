@@ -699,7 +699,10 @@
     "publishResourceMessage": "Tout le monde peut ouvrir cette séance ou cette board. Tes autres activités privées restent réservées aux personnes que tu approuves."
   },
   "reloadRequired": {
-    "message": "Ton compte a changé dans un autre onglet ou dans l’app. Recharge cette page pour continuer.",
+    "message": "Cette page n’est plus à jour. Recharge-la pour continuer.",
     "action": "Recharger"
+  },
+  "writeRefused": {
+    "tryAgain": "Ça n’a pas abouti. Réessaie."
   }
 }
