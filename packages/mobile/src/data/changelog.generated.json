@@ -1,6 +1,42 @@
 {
-  "generatedAt": "2026-11-17T14:52:37.388Z",
+  "generatedAt": "2026-11-17T20:00:35.587Z",
   "entries": [
+    {
+      "prNumber": 7750,
+      "category": "fixed",
+      "title": "Flicking back and forth through climbs no longer flashes the wall at full brightness",
+      "mergedAt": "2026-11-17T19:43:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7750",
+      "body": "Flick back mid-swipe and the wall fades straight back to your climb\nFlick past a climb and it stays dim on the wall as you go by"
+    },
+    {
+      "prNumber": 7739,
+      "category": "fixed",
+      "title": "Swiping between climbs on Android no longer stutters mid-fade while the next climb loads",
+      "mergedAt": "2026-11-17T19:10:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7739"
+    },
+    {
+      "prNumber": 7746,
+      "category": "improved",
+      "title": "Lit holds draw straight from the GPU, without a slower image first",
+      "mergedAt": "2026-11-17T19:10:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7746"
+    },
+    {
+      "prNumber": 7740,
+      "category": "new",
+      "title": "Swiping between climbs, holds both climbs share now dim and return with the rest",
+      "mergedAt": "2026-11-17T19:10:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7740"
+    },
+    {
+      "prNumber": 7744,
+      "category": "new",
+      "title": "New GPU acceleration switch in Settings > Board. Turn it off if the board flickers or stutters on your phone.",
+      "mergedAt": "2026-11-17T18:34:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7744"
+    },
     {
       "prNumber": 7725,
       "category": "new",
@@ -9824,13 +9860,26 @@
   "nativeReleases": [
     {
       "kind": "native-release",
-      "date": "2026-11-17T14:06:29Z",
-      "sha": "4aff415625ff33743f9c6a57d07d55473919534f",
+      "date": "2026-11-17T19:10:40Z",
+      "sha": "2ae776efb8a6bbbe9ca05441d3606456e61c51e4",
       "platforms": [
         "android"
       ],
       "fingerprints": {
-        "android": "bafceeb0492b225377a94d2e68a5f155d6521037"
+        "android": "60f04de27c499fd5df33b70f3dbcc412e58fc4fb"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T14:06:29Z",
+      "sha": "4aff415625ff33743f9c6a57d07d55473919534f",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "bafceeb0492b225377a94d2e68a5f155d6521037",
+        "ios": "b137f4044002f6a0941ed8fa4f10b7a852c37755"
       }
     },
     {

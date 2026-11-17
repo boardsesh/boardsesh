@@ -12,6 +12,8 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Swiping between climbs, holds both climbs share now dim and return with the rest ([#7740](https://github.com/boardsesh/boardsesh/pull/7740))
+- New GPU acceleration switch in Settings > Board. Turn it off if the board flickers or stutters on your phone. ([#7744](https://github.com/boardsesh/boardsesh/pull/7744))
 - Swiping to the next climb now swaps only the holds that change, just like your wall. ([#7725](https://github.com/boardsesh/boardsesh/pull/7725))
 - Spraywall "maybe" holds stand out in mint, clear of every grade colour ([#7721](https://github.com/boardsesh/boardsesh/pull/7721))
 - A brighter, richer violet across the app, with selected items easier to spot ([#7711](https://github.com/boardsesh/boardsesh/pull/7711))
@@ -20,8 +22,16 @@ A new version shipped to the App Store and Play Store.
   Find your Spraywall's WLED controller on your Wi-Fi in one tap.
   Until every phone at a Spraywall has this update, a phone without it resets the brightness and cancels auto-off whenever it lights a climb.
 
+### Improved
+
+- Lit holds draw straight from the GPU, without a slower image first ([#7746](https://github.com/boardsesh/boardsesh/pull/7746))
+
 ### Fixed
 
+- Flicking back and forth through climbs no longer flashes the wall at full brightness ([#7750](https://github.com/boardsesh/boardsesh/pull/7750))
+  Flick back mid-swipe and the wall fades straight back to your climb
+  Flick past a climb and it stays dim on the wall as you go by
+- Swiping between climbs on Android no longer stutters mid-fade while the next climb loads ([#7739](https://github.com/boardsesh/boardsesh/pull/7739))
 - Swiping between climbs lands smoothly, and the name and grade stay in step. ([#7720](https://github.com/boardsesh/boardsesh/pull/7720))
   VoiceOver reads each climb's name and grade as you swipe.
 - The board no longer flickers smaller after you swipe to a climb with a long name. ([#7716](https://github.com/boardsesh/boardsesh/pull/7716))
