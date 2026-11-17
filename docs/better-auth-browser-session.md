@@ -435,12 +435,20 @@ Chromium proof, and the last web readiness gate
 (`browser-consumer-readiness.ts`). Nothing on www imported any of them except
 each other and their tests. The same PR deleted the backend's private binding
 route (`/api/internal/auth/browser-binding/v1/*`, now the ordinary 404) and its
-HTTP proof, because the deleted www client was its only caller. What stays
-until B5: the backend binding core (`authority/browser-binding.ts`) and the
-binding-table readers the kept provider-security and first-password cores use,
-`@boardsesh/auth-protocol/browser-binding-v1`, the `private-browser-v1`
-database profile, and `CURRENT_STORE_BROWSER_BINDING_MODE`, which the startup
-check for staged writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads.
+HTTP proof, because the deleted www client was its only caller. It also
+deleted the shared `@boardsesh/auth-protocol` modules the deleted www and Expo
+web clients used: the four iframe coordinator subpaths (`browser-coordinator`,
+`-runner`, `-channel`, `-dom`) with the renewal message schema they shared,
+`browser-delegation-v1`, and the ten `browser-backend-*` lease, HTTP and
+WebSocket modules. Nothing outside the package imported them any more, and
+`packages/mobile` no longer depends on the package. What stays until B5: the
+backend binding core (`authority/browser-binding.ts`) and the binding-table
+readers the kept provider-security and first-password cores use,
+`@boardsesh/auth-protocol/browser-binding-v1` (nothing outside the package
+imports it since the private route went; B5 deletes it with the backend core),
+the `private-browser-v1` database profile, and
+`CURRENT_STORE_BROWSER_BINDING_MODE`, which the startup check for staged
+writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads.
 
 Kept, per #7596: BA-04 cutoffs, SID denials and the legacy bridge; BA-06
 native and Garmin work; the backend provider and first-password cores. Some
