@@ -319,6 +319,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       tertiaryBackground: '#f5f5f5',
     },
     brandColors: { primary: '#6D28D9', warning: '#FF9500' },
+    selection: { fill: '#SELECTION_WASH' },
   }),
 }));
 

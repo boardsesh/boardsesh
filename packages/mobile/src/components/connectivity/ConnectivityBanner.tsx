@@ -162,8 +162,16 @@ function ConnectivityBannerContent() {
   // An opaque surface plus a brand-hued wash, exactly like Toast: the banner
   // floats over arbitrary content (board art, photos), where a translucent card
   // is unreadable. Dark mode needs the heavier wash to register at all.
+  // The brand tone's wash mixes from the fill, never the tint (Velvet Send rule 2);
+  // the semantic tones wash in their own hue, as Toast does.
   const washAlpha = colorScheme === 'dark' ? 0.24 : 0.15;
-  const tintColor = presentation.tint === 'none' ? null : withAlpha(brandColors[presentation.tint], washAlpha);
+  const tintColor =
+    presentation.tint === 'none'
+      ? null
+      : withAlpha(
+          presentation.tint === 'primary' ? brandColors.primaryFill : brandColors[presentation.tint],
+          washAlpha,
+        );
   const surfaceColors = { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator };
   const entering = reduceMotion ? undefined : FadeIn.duration(180);
   const exiting = reduceMotion ? undefined : FadeOut.duration(150);

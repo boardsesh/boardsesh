@@ -168,7 +168,7 @@ function PlayerPreviewTipComponent({
       style={[
         styles.surface,
         {
-          backgroundColor: withAlpha(brandColors.primary, 0.08),
+          backgroundColor: withAlpha(brandColors.primaryFill, 0.08),
           borderColor: withAlpha(brandColors.primary, 0.2),
         },
       ]}

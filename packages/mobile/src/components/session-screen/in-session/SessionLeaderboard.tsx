@@ -23,7 +23,7 @@ type SessionLeaderboardProps = {
  */
 export function SessionLeaderboard({ participants, selfUserId }: SessionLeaderboardProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors, chartColors } = useTheme();
+  const { systemColors, brandColors, chartColors, selection } = useTheme();
 
   const ranked = useMemo(
     () => [...participants].sort((a, b) => b.sends - a.sends || b.flashes - a.flashes),
@@ -49,7 +49,7 @@ export function SessionLeaderboard({ participants, selfUserId }: SessionLeaderbo
               style={[
                 styles.row,
                 index > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: systemColors.separator } : null,
-                isSelf ? { backgroundColor: withAlpha(brandColors.primary, 0.1) } : null,
+                isSelf ? { backgroundColor: selection.fill } : null,
               ]}
             >
               <Text variant="subheadline" color={systemColors.secondaryLabel} numeric style={styles.rank}>

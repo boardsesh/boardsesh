@@ -45,7 +45,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
   onClearAll,
 }: QueueSheetHeaderProps) {
   const { t } = useTranslation('session');
-  const { brandColors, systemColors, variant } = useTheme();
+  const { brandColors, systemColors, variant, selection } = useTheme();
   const spec = topBarFor(variant);
 
   const handleToggleHistory = useCallback(() => {
@@ -123,10 +123,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           color={showHistory ? brandColors.primary : undefined}
           style={
             showHistory
-              ? [
-                  styles.headerButtonActive,
-                  { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` },
-                ]
+              ? [styles.headerButtonActive, { borderColor: brandColors.primary, backgroundColor: selection.fill }]
               : undefined
           }
         />

@@ -78,7 +78,7 @@ export const LogbookDayDividerView = memo(function LogbookDayDividerView({
   const accessibilityLabel = rollup ? `${labelWithWall}, ${rollup}` : labelWithWall;
 
   const chipStyle = selectByVariant(variant, {
-    liquidGlass: { backgroundColor: withAlpha(brand.primary, 0.08), borderRadius: borderRadius.md },
+    liquidGlass: { backgroundColor: withAlpha(brand.primaryFill, 0.08), borderRadius: borderRadius.md },
     material: null,
   });
   const labelColor = selectByVariant(variant, {

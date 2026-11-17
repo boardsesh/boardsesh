@@ -20,7 +20,7 @@ export const WorkoutHeadlineChip = memo(function WorkoutHeadlineChip({ headline 
   const { text } = workoutHeadlineText(headline, t);
   return (
     <View
-      style={[styles.chip, { backgroundColor: withAlpha(brandColors.primary, 0.12) }]}
+      style={[styles.chip, { backgroundColor: withAlpha(brandColors.primaryFill, 0.12) }]}
       testID="workout-headline-chip"
     >
       <Icon name="repeat" size={12} color={brandColors.primary} />

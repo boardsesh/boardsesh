@@ -181,7 +181,7 @@ function LiveSessionCardComponent({
               { backgroundColor: colors.tintFill, borderColor: colors.tintBorder },
             ]}
           >
-            <LiveActionLabel color={colors.primary}>{t('mobile.liveSessions.actions.invite')}</LiveActionLabel>
+            <LiveActionLabel color={colors.tintInk}>{t('mobile.liveSessions.actions.invite')}</LiveActionLabel>
           </PressableSurface>
         ) : (
           <LiveActionPill
