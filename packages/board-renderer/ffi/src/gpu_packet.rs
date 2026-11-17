@@ -542,7 +542,8 @@ pub unsafe extern "C" fn board_renderer_gpu_packet_shared_reveal_uniforms(
         let Lease::Packet(packet) = lookup(packet)? else {
             return Err("wrong packet handle".into());
         };
-        let reveal = Reveal::from_native(reveal_mode, progress, swap_lower, swap_upper, swap_shared)?;
+        let reveal =
+            Reveal::from_native(reveal_mode, progress, swap_lower, swap_upper, swap_shared)?;
         let output = unsafe { &mut *(output as *mut [u8; gpu_packet::UNIFORM_BYTES]) };
         packet.encode_uniforms(
             lower as usize,
@@ -780,9 +781,15 @@ mod tests {
         );
         let mut rejected = [7; 144];
         assert_eq!(swap(2, 0.4, 0.25, 1.0, &mut rejected), -1);
-        assert_eq!(swap(REVEAL_MODE_SWAP, f32::NAN, 0.0, 1.0, &mut rejected), -1);
+        assert_eq!(
+            swap(REVEAL_MODE_SWAP, f32::NAN, 0.0, 1.0, &mut rejected),
+            -1
+        );
         assert_eq!(swap(REVEAL_MODE_SWAP, 0.0, 1.01, 1.0, &mut rejected), -1);
-        assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.0, f32::NAN, &mut rejected), -1);
+        assert_eq!(
+            swap(REVEAL_MODE_SWAP, 0.4, 0.0, f32::NAN, &mut rejected),
+            -1
+        );
         assert_eq!(swap(REVEAL_MODE_SWAP, 0.4, 0.0, 1.01, &mut rejected), -1);
         for bytes in [
             chunks.pixels,
