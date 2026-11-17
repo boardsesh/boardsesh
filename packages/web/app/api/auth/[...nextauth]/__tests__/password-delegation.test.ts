@@ -243,6 +243,9 @@ describe('public NextAuth App Router password delegation', () => {
     expect(legacyAuthorize).not.toHaveBeenCalled();
   });
   describe('the client address sent to the backend', () => {
+    const originProofSecret = 'origin-proof-fixture-secret-at-least-32-bytes';
+    const proven = (visitor = clientAddress, proof = originProofSecret) =>
+      password(CLOUDFLARE_EDGE, selected.email, { 'CF-Connecting-IP': visitor, 'X-Boardsesh-Origin-Proof': proof });
     async function sentClientAddress(response: Promise<Response>, fetchMock: ReturnType<typeof backendResponse>) {
       expect((await response).status).toBe(401);
       expect(fetchMock).toHaveBeenCalledOnce();
@@ -250,34 +253,50 @@ describe('public NextAuth App Router password delegation', () => {
       if (typeof init?.body !== 'string') throw new Error('Expected serialized command');
       return (JSON.parse(init.body) as { clientAddress?: string }).clientAddress;
     }
-
-    it('is the visitor a Cloudflare edge vouches for', async () => {
-      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+    let fetchMock: ReturnType<typeof backendResponse>;
+    beforeEach(() => {
+      vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', originProofSecret);
+      fetchMock = backendResponse({ outcome: 'invalid_credentials' });
       vi.stubGlobal('fetch', fetchMock);
-      expect(await sentClientAddress(passwordFromVisitor(), fetchMock)).toBe(clientAddress);
+    });
+
+    it('is the visitor when our zone proved the request crossed it', async () => {
+      expect(await sentClientAddress(proven(), fetchMock)).toBe(clientAddress);
     });
 
     it('is the whole IPv6 visitor address; the backend groups it by /64', async () => {
-      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
-      vi.stubGlobal('fetch', fetchMock);
-      expect(await sentClientAddress(passwordFromVisitor('2001:db8:7:8::42'), fetchMock)).toBe('2001:db8:7:8::42');
+      expect(await sentClientAddress(proven('2001:db8:7:8::42'), fetchMock)).toBe('2001:db8:7:8::42');
     });
 
-    it('is left out for a direct caller that forges a Cloudflare hop and visitor header', async () => {
-      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
-      vi.stubGlobal('fetch', fetchMock);
+    // What a Worker on any Cloudflare account sends when it fetches our Railway domain.
+    it('is left out for a Cloudflare last hop with a chosen visitor header and no proof', async () => {
+      expect(await sentClientAddress(passwordFromVisitor('203.0.113.200'), fetchMock)).toBeUndefined();
+    });
+
+    it('is left out when the proof is wrong', async () => {
+      expect(
+        await sentClientAddress(proven(clientAddress, 'not-the-origin-proof-secret-but-as-long-as-it'), fetchMock),
+      ).toBeUndefined();
+    });
+
+    it('is left out while the proof secret is unset', async () => {
+      vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', '');
+      expect(await sentClientAddress(proven(), fetchMock)).toBeUndefined();
+    });
+
+    it('is left out for a direct caller that forges a Cloudflare hop, visitor header and proof', async () => {
       const spoofed = password(`${CLOUDFLARE_EDGE}, ${clientAddress}`, selected.email, {
         'CF-Connecting-IP': '203.0.113.200',
+        'X-Boardsesh-Origin-Proof': originProofSecret,
       });
       expect(await sentClientAddress(spoofed, fetchMock)).toBeUndefined();
     });
 
     it('is left out when the request carries no forwarding headers', async () => {
-      const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
-      vi.stubGlobal('fetch', fetchMock);
       expect(await sentClientAddress(password(''), fetchMock)).toBeUndefined();
     });
   });
+
   // Legacy sign-in runs bcrypt on the web process for every address, unknown ones
   // included, so one client must not be able to fill its event loop.
   it('never limits right passwords in legacy mode: 20 sign-ins from one visitor all succeed', async () => {
