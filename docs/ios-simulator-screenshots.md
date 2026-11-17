@@ -24,3 +24,11 @@ Story links open in portrait so iPad system-confirmation taps do not use rotated
 Production screenshot-driving hooks have been removed. Showcase and tutorial video recorders retain live integration behavior through dev-only transport injection and real application controls. Native Live Activity captures still use the actual system API through the isolated dev setup.
 
 See [Mobile view stories](mobile-stories.md), [recorded fixtures](mobile-screenshot-fixtures.md) and [the integration gate](mobile-e2e-gate.md).
+
+## Recovering an evicted simulator app cache
+
+If a capture retry fails at “Restore prebuilt simulator app,” retain the missing full cache key and the original application SHA. Do not rerun the campaign's `ios-build` job: GitHub reruns its dependent capture jobs too, including successful shards.
+
+Dispatch `mobile-screenshot-cache-recovery.yml` from `main` with `source_sha` set to that full 40-character lowercase SHA and `expected_cache_key` set to the exact missing key. The workflow requires the commit to be an ancestor of `origin/main`, checks out both application and cache tooling from that commit, and requires the computed toolchain/native-input key to match before building or saving. It uses the existing simulator build and identity validation recipe and writes the cache in main's scope. It does not capture images, publish to a store, or delete caches. A different installed Xcode/SDK fails the key check; do not substitute a different key for an existing campaign.
+
+After the recovery job succeeds, retry only the unsuccessful capture jobs in the original campaign. Keep its successful artifacts and frozen source. A cache created by a temporary branch cannot be restored by the original main run.
