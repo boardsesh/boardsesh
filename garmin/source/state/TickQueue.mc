@@ -206,6 +206,40 @@ module TickQueue {
             BuildConfig.LEGACY_ADOPT_SKEW_SEC, BuildConfig.TICK_QUEUE_MAX));
     }
 
+    // The signed-in owner's refused entries, oldest first. Read-only.
+    function refusedEntries() as Lang.Array {
+        var context = TokenStore.snapshot();
+        var store = loadRejected();
+        return activeContext(context) && store != null ? RejectedTicks.forOwner(store, context["owner"]) : [];
+    }
+
+    // Retry: moves the owner's refused ticks back to the end of their queue,
+    // as many as the queue has room for. The outbox write comes FIRST: a
+    // failure after it leaves a copy in both stores, never in neither, and the
+    // next retry only drops the stale entry. Returns how many left the store.
+    function retryRefused(context) as Lang.Number {
+        if (!activeContext(context)) { return 0; }
+        var envelope = loadEnvelope();
+        var store = loadRejected();
+        if (envelope == null || store == null) { return 0; }
+        var result = RejectedTicks.requeue(envelope, store, context["owner"], BuildConfig.TICK_QUEUE_MAX);
+        if (result == null || !persist(result["envelope"])) { return 0; }
+        persistRejected(result["store"]);
+        return result["moved"];
+    }
+
+    // Delete: drops the signed-in owner's refused ticks after the climber
+    // confirmed it on the watch. The only deletion without a server
+    // acknowledgement; other accounts' entries stay. Returns how many went.
+    function clearRefused(context) as Lang.Number {
+        if (!activeContext(context)) { return 0; }
+        var store = loadRejected();
+        if (store == null) { return 0; }
+        var count = RejectedTicks.countFor(store, context["owner"]);
+        if (count == 0 || !persistRejected(RejectedTicks.withoutOwner(store, context["owner"]))) { return 0; }
+        return count;
+    }
+
     // [refused for this owner, held from older builds, dead-letter store full].
     // Read-only. A full store (any owner's entries) means the next refusal
     // stays queued and stops the drain, so it is worth showing.

@@ -181,14 +181,15 @@ queued ticks by itself (see the adoption rule below).
 before the first request and before FIT laps, counters or success feedback.
 Logical capacity and storage failures refuse new logs without evicting saved
 efforts. Each request owns an owner/scope/UUID lease. Nothing is ever deleted
-without either the server's acknowledgement or a copy in the dead-letter store.
+without either the server's acknowledgement, a copy in the dead-letter store,
+or the climber confirming Delete in the refused-ticks list.
 
 #### Where a tick can be
 
 | State | Storage value | Sent? | Leaves when |
 | --- | --- | --- | --- |
 | Queued under its owner | `bs.pendingTicks` `owners[<userId>]` | Only while that verified owner is signed in | The server acknowledges its exact UUID, or refuses it for good |
-| Refused (dead letter) | `bs.rejectedTicks` | Never again | Never; the watch has no way to list or clear it yet |
+| Refused (dead letter) | `bs.rejectedTicks` | Only after Retry, under the same owner | The signed-in owner picks Retry all (back to the end of their queue) or confirms Delete all |
 | On hold (pre-G2, owner unproven) | `bs.pendingTicks` `unowned` | Never, until adopted | The adoption rule below proves its owner |
 
 #### Server replies
@@ -242,8 +243,26 @@ about 500 bytes, so a full store is roughly 15KB of its own 32KB value. Nothing
 is ever evicted. When the store is full, the next refusal is treated as "retry
 later": the tick stays at the head of the queue and the drain stops there, as
 every refusal did before this change. The summary then says the store is full.
-Clearing or retrying refused ticks needs an on-watch list, which is a
-follow-up.
+The climber empties it from the watch: Session menu (MENU) → Refused ticks,
+shown only when the signed-in owner has any. The list has Retry all, Delete
+all, and one row per refused tick (status, local time, the server's reason).
+
+- **Retry all** moves the owner's refused ticks back to the END of their queue,
+  unchanged and with the same UUIDs, as many as the shared 25-tick queue has
+  room for, then starts a drain. The outbox write comes first, so a failure in
+  between leaves a copy in both stores; the next retry only drops the stale
+  entry. A resent UUID cannot become a second logbook entry: `saveTick`
+  answers a UUID the account already saved with the stored tick. A tick the
+  server refuses again returns to the list, once. Use it after a server-side
+  fix (a climb restored, a wall made visible again) or after re-pairing the
+  account whose ticks they are; a re-pair alone retries nothing.
+- **Delete all** asks first, then drops the owner's refused ticks. It is the
+  only deletion without a server acknowledgement.
+
+Both act only on the signed-in owner's entries. Another account's refused
+ticks stay until that account signs in on the watch again, and they still
+count toward the 25-entry cap. The phone has no channel to the watch's
+storage, so neither action exists on the phone.
 
 #### On-hold ticks from before G2 (#7445)
 
@@ -380,7 +399,7 @@ garmin/
     state/PollController.mc  3s foreground poll w/ backoff + optimistic reconcile
     state/TickQueue.mc    Reply classification, storage adapters, scoped flusher
     state/OwnedTickOutbox.mc  PURE owner-partitioned outbox + on-hold adoption
-    state/RejectedTicks.mc    PURE dead-letter store for refused ticks
+    state/RejectedTicks.mc    PURE dead-letter store for refused ticks (+ requeue/delete)
     state/LegacyTickProof.mc  PURE pre-G2 token subject/issue-time reader
     state/TickLogger.mc   Live log: persist, send once, settle the reply
     recording/ActivityController.mc  FIT recording (start/lap/save/discard)
