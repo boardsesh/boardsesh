@@ -70,6 +70,8 @@ const ALLOWED: Record<string, string> = {
     'An exact immutable uploaded-build receipt binds the source to a trusted main native workflow and main ancestry; a dispatch uses its own run commit.',
   'mobile-screenshots-android.yml ${{ needs.gate.outputs.source_sha }}':
     'An exact immutable uploaded-build receipt binds the source to a trusted main native workflow and main ancestry; a dispatch uses its own run commit.',
+  'duo-startup-diagnostics.yml ${{ needs.validate-source.outputs.source-sha }}':
+    'Runs only on a dispatch from main; validate-source refuses anything but a full 40-character commit that is an ancestor of origin/main.',
   'mobile-screenshot-cache-recovery.yml ${{ needs.validate-source.outputs.source-sha }}':
     'Runs only on a dispatch from main; validate-source refuses anything but a full 40-character commit that is an ancestor of origin/main.',
   'mobile-store-videos-pipeline.yml ${{ inputs.source_sha }}':
