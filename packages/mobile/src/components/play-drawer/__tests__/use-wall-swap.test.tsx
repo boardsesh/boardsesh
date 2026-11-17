@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import type { SwipePager } from '../use-swipe-pager';
+import type { BoardTransition, BoardTransitionDriver } from '../board-transition';
 
 /**
  * A small stand-in for Reanimated's UI runtime: shared values, reactions that
@@ -227,5 +228,62 @@ describe('useWallSwap', () => {
     runtime.frame();
     expect(frame()).toEqual([0, 1, 0, 1]);
     expect(runtime.clocks).toHaveLength(0);
+  });
+});
+
+describe('useWallSwap with a transition', () => {
+  function mountWith(transition: BoardTransition) {
+    const swipe = pager();
+    const { result } = renderHook(() => useWallSwap(swipe, 0, true, transition));
+    return { swipe, frame: () => [...result.current.value] };
+  }
+
+  it('slows the clocks in real time while they count the same swap', () => {
+    const { swipe, frame } = mountWith({ revealMode: 'swap', slowdown: 4 });
+    swipe.translateX.value = -SWIPE_THRESHOLD;
+    runtime.frame();
+    swipe.uiSteps.value = 1;
+    swipe.flingDirection.value = 1;
+    runtime.frame();
+    // 200 clock milliseconds over 800 real ones.
+    expect(runtime.timingConfigs.at(-1)).toMatchObject({ duration: 800, reduceMotion: 'never' });
+    swipe.anchorPage.value = 1;
+    swipe.flingDirection.value = 0;
+    swipe.translateX.value = 0;
+    runtime.frame();
+    runtime.advance(400);
+    // Half way in real time is half way through the swap: still a pair on screen.
+    expect(frame()[0]).toBe(0.25);
+    runtime.advance(400);
+    expect(frame()).toEqual([1, 1, 0, 1]);
+  });
+
+  it('takes Reduce Motion from the transition over the system setting', () => {
+    const { swipe, frame } = mountWith({ revealMode: 'swap', reduceMotion: true });
+    swipe.translateX.value = -SWIPE_THRESHOLD * 2;
+    runtime.frame();
+    expect(frame()).toEqual([0.25, 1, 0, 1]);
+  });
+
+  it('runs the driver it is given, and starts the clocks it asks for', () => {
+    const steps: number[] = [];
+    const driver: BoardTransitionDriver = {
+      rest: (input) => ({ page: input.anchor }),
+      step: (_previous, input) => {
+        steps.push(input.offset);
+        return {
+          state: { page: input.anchor },
+          frame: [input.anchor, 0.5, 0.5, 0.5],
+          startSwapMs: input.offset === -10 ? 300 : null,
+          startSettleMs: null,
+        };
+      },
+    };
+    const { swipe, frame } = mountWith({ revealMode: 'swap', driver, slowdown: 2 });
+    swipe.translateX.value = -10;
+    runtime.frame();
+    expect(frame()).toEqual([0, 0.5, 0.5, 0.5]);
+    expect(steps).toContain(-10);
+    expect(runtime.timingConfigs.at(-1)).toMatchObject({ duration: 600 });
   });
 });

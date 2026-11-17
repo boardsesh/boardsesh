@@ -3,7 +3,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { getBoardRenderData } from '../../lib/board-details';
 import { STORY_CLIMBS } from './climbs';
-import recorded from './recorded-climbs.json';
+import recorded from '../../components/board-motion-lab/recorded-climbs.json';
 
 export type StoryBoardConfig = {
   boardName: BoardName;

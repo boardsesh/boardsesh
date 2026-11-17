@@ -8,6 +8,7 @@ import { CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { useWallSwap } from './use-wall-swap';
 import { playerRevealMode } from './wall-swap';
+import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
 
 type Props = {
   boardProps: React.ComponentProps<typeof BoardImageNative>;
@@ -21,6 +22,10 @@ type Props = {
   zoomStyle: AnimatedStyle<ViewStyle>;
   onUnavailable: () => void;
   onCurrentArtReadinessChange?: (readiness: BoardArtReadiness) => void;
+  /** How the board changes climbs; absent, the shipped wall swap. See board-transition.ts. */
+  transition?: BoardTransition;
+  /** The board motion lab's status line; nothing in production passes one. */
+  diagnostics?: BoardRenderDiagnostics;
 };
 
 /** One photograph and one native compositor; the header still rides the pager.
@@ -39,6 +44,8 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   zoomStyle,
   onUnavailable,
   onCurrentArtReadinessChange,
+  transition: boardTransition,
+  diagnostics,
 }: Props) {
   const { anchorPage, translateX, slideWidth } = pager;
   const stationaryMotion = pager.stationaryMotion;
@@ -56,11 +63,36 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
     return anchorPage.value + Math.max(-1, Math.min(1, offset));
   });
   // The wall swap keeps its own clock and weights; see wall-swap.ts.
-  const revealMode = playerRevealMode(climbOverlayGpuApiVersion);
-  const swapFrame = useWallSwap(pager, centerPage, revealMode === 'swap');
+  const revealMode = playerRevealMode(climbOverlayGpuApiVersion, boardTransition?.revealMode);
+  const swapFrame = useWallSwap(pager, centerPage, revealMode === 'swap', boardTransition);
+  const reduceMotion = boardTransition?.reduceMotion;
+  const onRenderReady = diagnostics?.onGpuReady;
+  const onRenderError = diagnostics?.onGpuError;
   const transition = useMemo(
-    () => ({ previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames, revealMode, swapFrame }),
-    [previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames, revealMode, swapFrame],
+    () => ({
+      previousFrames,
+      nextFrames,
+      centerPage,
+      pagePosition,
+      prefetchFrames,
+      revealMode,
+      swapFrame,
+      reduceMotion,
+      onRenderReady,
+      onRenderError,
+    }),
+    [
+      previousFrames,
+      nextFrames,
+      centerPage,
+      pagePosition,
+      prefetchFrames,
+      revealMode,
+      swapFrame,
+      reduceMotion,
+      onRenderReady,
+      onRenderError,
+    ],
   );
   const identity = JSON.stringify([
     centerPage,
