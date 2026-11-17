@@ -135,6 +135,21 @@ describe('HomeWeekCard', () => {
     expect(screen.queryByTestId('home-week-record')).toBeNull();
   });
 
+  it('reads a week with nothing logged yet as a start, keeping the run', () => {
+    const summary = summaryOf([tick('2026-11-03', 'send', 20), tick('2026-11-10', 'send', 20)]);
+    render(createElement(HomeWeekCard, { summary }));
+    expect(screen.queryByTestId('home-week-totals')).toBeNull();
+    expect(screen.getByTestId('home-week-start')).toBeTruthy();
+    expect(screen.getByTestId('home-week-running')).toBeTruthy();
+    expect(screen.getByTestId('home-week-dots')).toBeTruthy();
+  });
+
+  it('names a record with nothing to open when the climb is not on the phone', () => {
+    render(createElement(HomeWeekCard, { summary: summaryOf([tick('2026-11-17', 'send', 23)]) }));
+    expect(screen.queryByTestId('home-week-record')).toBeNull();
+    expect(screen.getByTestId('home-week-record-text')).toBeTruthy();
+  });
+
   it('leaves the run out while it is a single week', () => {
     render(createElement(HomeWeekCard, { summary: summaryOf([tick('2026-11-16', 'send', 20)]) }));
     expect(screen.queryByTestId('home-week-running')).toBeNull();

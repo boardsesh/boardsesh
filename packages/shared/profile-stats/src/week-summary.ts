@@ -82,12 +82,14 @@ function isSend(entry: WeekActivityEntry): boolean {
   return entry.status === 'flash' || entry.status === 'send';
 }
 
-function hardestOf<T extends WeekActivityEntry>(entries: readonly T[], keep: (entry: T) => boolean): T | null {
+/** An entry with its time parsed once: a heavy logbook holds tens of thousands. */
+type Parsed<T> = { entry: T; climbedMs: number };
+
+function hardestOf<T extends WeekActivityEntry>(entries: readonly Parsed<T>[], keep: (entry: T) => boolean): T | null {
   let hardest: T | null = null;
   let hardestMs = 0;
-  for (const entry of entries) {
+  for (const { entry, climbedMs } of entries) {
     if (entry.difficulty === null || !keep(entry)) continue;
-    const climbedMs = parseTickTime(entry.climbedAt).valueOf();
     if (
       hardest === null ||
       entry.difficulty > (hardest.difficulty ?? -Infinity) ||
@@ -129,17 +131,20 @@ export function buildWeekSummary<T extends WeekActivityEntry>(
   const todayKey = today.format('YYYY-MM-DD');
 
   const activeDays = new Set<string>();
-  const thisWeek: T[] = [];
-  const before: T[] = [];
+  const thisWeek: Parsed<T>[] = [];
+  const before: Parsed<T>[] = [];
   let latestDay: string | null = null;
   for (const entry of entries) {
-    const day = parseTickTime(entry.climbedAt).format('YYYY-MM-DD');
+    const climbedAt = parseTickTime(entry.climbedAt);
+    // A tick dated after today (a phone clock that was ahead) counts as today's,
+    // so the dots, the totals and the record always agree.
+    const parsedDay = climbedAt.format('YYYY-MM-DD');
+    const day = parsedDay > todayKey ? todayKey : parsedDay;
     activeDays.add(day);
     if (latestDay === null || day > latestDay) latestDay = day;
-    // A tick dated after this week (a phone clock that was ahead) still counts
-    // as this week's rather than vanishing.
-    if (day >= weekStartKey) thisWeek.push(entry);
-    else before.push(entry);
+    const parsed = { entry, climbedMs: climbedAt.valueOf() };
+    if (day >= weekStartKey) thisWeek.push(parsed);
+    else before.push(parsed);
   }
 
   const days: WeekDay[] = [];
@@ -158,7 +163,7 @@ export function buildWeekSummary<T extends WeekActivityEntry>(
     cursor = cursor.subtract(1, 'week');
   }
 
-  const sends = thisWeek.filter(isSend).length;
+  const sends = thisWeek.filter(({ entry }) => isSend(entry)).length;
   const hardestSend = hardestOf(thisWeek, isSend);
   const isFlash = (entry: T) => entry.status === 'flash';
 

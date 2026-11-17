@@ -130,6 +130,13 @@ describe('buildWeekSummary', () => {
     expect(summary.record).toBeNull();
   });
 
+  it('counts a tick dated after today as today', () => {
+    const summary = buildWeekSummary([tick('ahead', '2026-11-25', 'send', 20)], { today: TODAY });
+    expect(summary.sessions).toBe(1);
+    expect(summary.sends).toBe(1);
+    expect(summary.days.find((day) => day.isToday)?.active).toBe(true);
+  });
+
   it('is dormant after 28 days with nothing logged', () => {
     expect(buildWeekSummary([tick('old', '2026-10-22', 'send')], { today: TODAY }).isDormant).toBe(false);
     expect(buildWeekSummary([tick('old', '2026-10-21', 'send')], { today: TODAY }).isDormant).toBe(true);

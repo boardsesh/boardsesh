@@ -99,9 +99,16 @@ export const HomeWeekCard = memo(function HomeWeekCard({ summary }: { summary: W
     <Card>
       <View style={styles.headline}>
         <View style={styles.totals}>
-          <Text variant="headline" color={systemColors.label} testID="home-week-totals">
-            {totals}
-          </Text>
+          {/* A week with nothing logged yet reads as a start, never as "0 sessions". */}
+          {summary.sessions > 0 ? (
+            <Text variant="headline" color={systemColors.label} testID="home-week-totals">
+              {totals}
+            </Text>
+          ) : (
+            <Text variant="body" color={systemColors.secondaryLabel} testID="home-week-start">
+              {t('mobile.home.sections.week.empty')}
+            </Text>
+          )}
           {/* Wraps rather than truncates: a V-grade is never cut. */}
           {hardestGrade ? (
             <Text variant="subheadline" color={systemColors.secondaryLabel} testID="home-week-hardest">
@@ -117,18 +124,14 @@ export const HomeWeekCard = memo(function HomeWeekCard({ summary }: { summary: W
         ) : null}
       </View>
       <WeekDots days={summary.days} />
-      {recordText ? (
+      {recordText && record?.entry.climbName ? (
         <PressableSurface
           onPress={openRecord}
           feedback="opacity"
           rippleColor={systemColors.label as string}
           accessibilityRole="button"
           accessibilityLabel={recordText}
-          accessibilityHint={
-            record?.entry.climbName
-              ? t('mobile.home.sections.week.openRecord', { climb: record.entry.climbName })
-              : undefined
-          }
+          accessibilityHint={t('mobile.home.sections.week.openRecord', { climb: record.entry.climbName })}
           style={styles.record}
           testID="home-week-record"
         >
@@ -138,6 +141,14 @@ export const HomeWeekCard = memo(function HomeWeekCard({ summary }: { summary: W
           </Text>
           <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
         </PressableSurface>
+      ) : recordText ? (
+        // The board's catalogue is not on this phone: name the record, with nothing to open.
+        <View style={styles.record} testID="home-week-record-text">
+          <Icon name="star.fill" size={16} color={systemColors.accent} />
+          <Text variant="subheadline" color={systemColors.label} numberOfLines={2} style={styles.recordText}>
+            {recordText}
+          </Text>
+        </View>
       ) : null}
     </Card>
   );

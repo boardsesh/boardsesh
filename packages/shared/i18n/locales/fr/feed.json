@@ -36,8 +36,8 @@
           "recordFirstGrade": "Nouveau : ton premier {{grade}}",
           "recordHardestFlash": "Nouveau : ton flash le plus dur, {{grade}}",
           "recordClimb": "{{record}} · {{climb}}",
-          "empty": "Fais une croix pour lancer ta semaine",
-          "dayClimbed": "{{day}}, grimpé",
+          "empty": "Enregistre une croix pour lancer ta semaine",
+          "dayClimbed": "{{day}} : séance de grimpe",
           "openRecord": "Ouvrir {{climb}}"
         },
         "session": {
