@@ -84,7 +84,7 @@ export const WorkoutPreviewRowView = memo(function WorkoutPreviewRowView({
   rowDisplay: ReturnType<typeof useClimbRowDisplay>;
   renderContent: (props: ComponentProps<typeof ClimbListItemContent>) => ReactNode;
 }) {
-  const { systemColors, brandColors, opacity } = useTheme();
+  const { systemColors, selection, opacity } = useTheme();
   const { t: sessionT } = useTranslation('session');
   const { t: climbsT } = useTranslation('climbs');
   const { gradeFormat, formatGrade } = useGradeFormat();
@@ -181,7 +181,7 @@ export const WorkoutPreviewRowView = memo(function WorkoutPreviewRowView({
         style={[
           styles.row,
           { backgroundColor: systemColors.secondaryBackground },
-          isActive && { backgroundColor: `${brandColors.primary}14` },
+          isActive && { backgroundColor: selection.fill },
         ]}
       >
         {onPress ? (

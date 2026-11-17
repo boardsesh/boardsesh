@@ -30,7 +30,7 @@ type FilterButtonProps = {
 
 export function FilterButton({ activeFilterCount, onPress, onLongPress, prominence = 'standard' }: FilterButtonProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors, variant } = useTheme();
+  const { systemColors, brandColors, variant, selection } = useTheme();
   const active = activeFilterCount > 0;
   const floatingLiquidGlass =
     prominence === 'floating' && selectByVariant(variant, { liquidGlass: true, material: false });
@@ -48,8 +48,9 @@ export function FilterButton({ activeFilterCount, onPress, onLongPress, prominen
     // Liquid Glass paints the active button on a violet glass tint, so a violet
     // glyph is low-contrast. Material has no tint behind the glyph.
     iconColor = selectByVariant(variant, { liquidGlass: iosSystemColors.white, material: brandColors.primary });
-    tintColor = withAlpha(brandColors.primary, 0.18);
-    fallbackColor = withAlpha(brandColors.primary, 0.16);
+    // An active filter is a selected state: the selection wash, mixed from the fill.
+    tintColor = selection.fill;
+    fallbackColor = selection.fill;
   }
 
   return (

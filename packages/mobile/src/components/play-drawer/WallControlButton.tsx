@@ -299,8 +299,8 @@ function WallControlButtonComponent({
   const lit = model.driving;
   // Put on board's timed drive: its frost shrinks as the time runs out.
   const timed = model.lightWindow;
-  // Amber with white text in light; the dark scheme's amber is pale, so dark text.
-  const litForeground = colorScheme === 'dark' ? brandColors.onAccent : brandColors.onPrimary;
+  // The live fill's own ink: white on the light amber, dark ink on the dark scheme's pale one.
+  const litForeground = brandColors.onLive;
   // On the wall per presence, with no link (QA #147): an amber outline on the
   // sheet. Connecting alone does not claim driving or add a face.
   const onWallUnlinked = model.state === 'on_wall_unlinked';

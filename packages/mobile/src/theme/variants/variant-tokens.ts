@@ -151,7 +151,7 @@ export type SelectionColors = {
   checkmark: ColorValue;
   /**
    * The row or cell wash: the scheme's brand FILL, never the tint (#5B22F2 at 13%
-   * in light, #6D33FF at 20% in dark), the same wash the current climb in the
+   * in light, #7855FF at 20% in dark), the same wash the current climb in the
    * Climbs list draws (`selectedRowColors`). Every variant takes it: Material's
    * climb list already draws this wash rather than an M3 tonal container, so one
    * look holds everywhere.
@@ -163,8 +163,9 @@ export type SelectionColors = {
  * The selection wash's strength per scheme, applied to the brand fill. Dark needs
  * more: the wash sits on near-black OLED, where a swiped row's accent bar scrolls
  * away and the wash is the only state cue left. The checkmark (the tint) stays
- * 3:1 or better on it: 5.13:1 on the light wash over #F2F2F7, 4.18:1 on the dark
- * wash over #2C2C2E. Must stay equal to `selectedRowColors`' wash.
+ * 3:1 or better on it: 5.13:1 on the light wash over #F2F2F7, 3.88:1 on the dark
+ * wash over #2C2C2E. Must stay equal to `selectedRowColors`' wash. Any other
+ * violet wash that marks a selected, current or active item uses `selectionWash`.
  */
 export const SELECTION_WASH_ALPHA = { light: 0.13, dark: 0.2 } as const satisfies Record<'light' | 'dark', number>;
 
@@ -172,6 +173,19 @@ export const SELECTION_WASH_ALPHA = { light: 0.13, dark: 0.2 } as const satisfie
 export function selectionWash(brandFill: string, colorScheme: 'light' | 'dark'): string {
   return withAlpha(brandFill, SELECTION_WASH_ALPHA[colorScheme]);
 }
+
+/**
+ * Decorative brand chips, not a selection: the brand fill at a light, fixed alpha
+ * behind a violet label. The label is `primaryStrong`, never the tint: the dark
+ * tint is 4.20:1 on the 12% wash over #2C2C2E and 4.37:1 on the 8% one, under AA
+ * for their caption text, where #A294FF is 4.89:1 and 5.09:1.
+ */
+export const BRAND_CHIP_WASH_ALPHA = {
+  /** The feed card's workout line (`WorkoutHeadlineChip`). */
+  workoutHeadline: 0.12,
+  /** The logbook's day divider on Liquid Glass (`LogbookDayDividerView`). */
+  logbookDay: 0.08,
+} as const;
 
 /**
  * Same mapping on both variants: the variant arrives through the resolved inputs.

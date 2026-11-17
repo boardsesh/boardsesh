@@ -68,7 +68,7 @@ function OnboardingTipBannerComponent({
       style={[
         styles.surface,
         {
-          backgroundColor: solid ? systemColors.secondaryBackground : `${brandColors.primary}14`,
+          backgroundColor: solid ? systemColors.secondaryBackground : `${brandColors.primaryFill}14`,
           borderColor: `${brandColors.primary}33`,
         },
         style,

@@ -24,7 +24,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../../theme/tokens', () => ({
@@ -34,7 +35,7 @@ vi.mock('../../../theme/tokens', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     variant: 'liquidGlass',
-    brandColors: { primary: '#6D28D9' },
+    brandColors: { primary: '#TINT', primaryFill: '#FILL', primaryStrong: '#STRONG' },
     systemColors: { secondaryLabel: '#666' },
   }),
 }));
@@ -111,6 +112,13 @@ describe('LogbookDayDivider', () => {
     expect(container.querySelector('[accessibilityRole="header"]')?.getAttribute('accessibilityLabel')).toContain(
       'mobile.logbook.day.today · Kilter 40°',
     );
+  });
+
+  it('draws the wall line on the violet chip in primaryStrong, not the tint (AA on the wash)', () => {
+    const { getByText } = render(
+      createElement(LogbookDayDivider, { dayStartMs: startOfToday(), stats: stats(), wallLabel: 'Kilter 40°' }),
+    );
+    expect(getByText('Kilter 40°').getAttribute('data-color')).toBe('#STRONG');
   });
 
   it('marks the anchor as a header for the screen-reader rotor', () => {

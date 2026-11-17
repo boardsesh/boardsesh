@@ -55,6 +55,7 @@ import { recordPlaylistOpen } from '@/app/lib/recent-playlists-db';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { isSessionSuperseded } from '@/app/lib/auth/session-guard';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
+import { currentBrandColor } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
@@ -353,7 +354,7 @@ export default function PlaylistDetailContent({
 
   const getPlaylistColor = () => {
     if (playlist?.color && isValidHexColor(playlist.color)) {
-      return playlist.color;
+      return currentBrandColor(playlist.color);
     }
     return PLAYLIST_COLORS[0];
   };

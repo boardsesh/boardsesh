@@ -185,8 +185,7 @@ export const playDrawerMaterialTint = {
  * `low`↔level1, `base`↔level2, `high`↔level3, `level4`↔level4, `highest`↔level5.
  *
  * `base` is the MiniPlayer ground. It stays at #1A1A1A in dark so the filled
- * #6D33FF play button keeps the strongest edge it can: 2.96:1, just under 3:1
- * (the white glyph on it, 5.89:1, is what identifies it); a lighter base drops lower.
+ * #7855FF play button keeps a 3:1 edge on it (3.76:1); a lighter base erodes it.
  * `material-theme-contrast.test.ts` pins every label, outline and accent pairing.
  */
 export const materialSurfaceContainers = {
@@ -227,12 +226,16 @@ export const materialFloatingBarSurface = {
  * connected MiniPlayer). Opaque so they read the same over any ground; a
  * translucent wash took the colour of whatever sat under it.
  *
- * Contrast (WCAG): ink #21005D on #EADDFF 13.3:1 and on #E6DAF8 12.9:1; ink #EADDFF
- * on #4F378B 7.23:1 and on #3C2467 9.93:1.
+ * On the brand's Ultraviolet hue: each is M3's baseline container moved to OKLCH
+ * hue 287 at the same lightness and chroma (sRGB caps the lightest at C 0.042).
+ * The baseline sat at 293–304, a pinker violet than the tint beside it.
+ *
+ * Contrast (WCAG): ink #21005D on #E1E0FF 13.3:1 and on #DEDDFC 13.0:1; ink #E1E0FF
+ * on #483A8E 7.18:1 and on #34276B 9.89:1.
  */
 export const materialTonalContainers = {
-  light: { primaryContainer: '#EADDFF', secondaryContainer: '#E6DAF8', ink: '#21005D' },
-  dark: { primaryContainer: '#4F378B', secondaryContainer: '#3C2467', ink: '#EADDFF' },
+  light: { primaryContainer: '#E1E0FF', secondaryContainer: '#DEDDFC', ink: '#21005D' },
+  dark: { primaryContainer: '#483A8E', secondaryContainer: '#34276B', ink: '#E1E0FF' },
 } as const;
 
 /**

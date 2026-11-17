@@ -45,7 +45,7 @@ export function PaneWallControlBulb({
   solidGlyphs = false,
 }: PaneWallControlBulbProps) {
   const { model, press, longPress } = control;
-  const { systemColors, brandColors, colorScheme } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   const text = useWallControlText(model);
   const driveCue = resolvePaneBulbDriveCue(model);
@@ -68,7 +68,7 @@ export function PaneWallControlBulb({
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
     // The disc is for an open-ended drive; a timed one is ringed instead.
-    driving: driveCue === 'disc' ? drivingBulbColors(brandColors, colorScheme) : null,
+    driving: driveCue === 'disc' ? drivingBulbColors(brandColors) : null,
   });
   const haloColor = bulbHaloFor(driveCue, visual.haloColor);
   if (model.state === null) return null;

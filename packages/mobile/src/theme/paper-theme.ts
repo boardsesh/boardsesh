@@ -53,7 +53,7 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
   const tonal = materialTonalContainers[colorScheme];
   // M3 `primary` is a FOREGROUND role (selected tab label, text buttons, focused
   // field outline), so it takes the brand foreground tint — `#9784FF` in dark
-  // (5.60:1 on the `#1E1E1E` surface), not the fill-only `#6D33FF`. A
+  // (5.60:1 on the `#1E1E1E` surface), not the fill-only `#7855FF`. A
   // light `primary` then needs dark ink on top: `#2E0077`, the dark end of the
   // brand's light heat ramp, same hue (5.11:1 on `#9784FF`). Light is unchanged:
   // there `primary` and `primaryFill` are both `#5B22F2` under white. Filled brand
@@ -73,18 +73,20 @@ export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['co
       onSecondary: onPrimary,
       secondaryContainer: tonal.secondaryContainer,
       onSecondaryContainer: tonal.ink,
-      // Amber accent is the M3 tertiary role — fill-only, so it carries dark text
-      // in BOTH schemes (white fails on amber). Pin to the accent's own ink
-      // (`onAccent`, the same in both schemes) rather than the per-scheme
-      // `onSurface`, which would be near-white in dark and illegible on the accent.
+      // The mint spark is the M3 tertiary role — fill-only, so it carries dark text
+      // in BOTH schemes (white is 3.32:1 on the light mint). Pin to the spark's own
+      // ink (`onAccent`, the same in both schemes: 5.58:1 light, 11.72:1 dark)
+      // rather than the per-scheme `onSurface`, which would be near-white in dark
+      // and illegible on the spark.
       tertiary: brand.accent,
       onTertiary: brand.onAccent,
-      // The amber accent's own tonal container (M3 tones 90 / 30 of #FF8A3D's hue,
-      // with tones 10 / 90 as ink). Paper's default here is a pink from its
-      // baseline palette, which says nothing about "lit". The Climbs bar's wall
-      // pill fills with it: ink contrast 13.2:1 in light, 7.2:1 in dark.
-      tertiaryContainer: isDark ? '#773300' : '#FFDBCA',
-      onTertiaryContainer: isDark ? '#FFDBCA' : '#341100',
+      // The spark's own tonal container: M3's tone-90 / tone-30 containers and their
+      // tone-10 / tone-90 ink, on mint's hue (OKLCH ~175). Paper's default here is a
+      // pink from its baseline palette. Ink contrast 13.29:1 in light, 6.81:1 in dark.
+      // Not for "lit": the Climbs bar's wall pill fills with `brandColors.live`, the
+      // amber, so the spark never stands in for a climb on the wall.
+      tertiaryContainer: isDark ? '#005747' : '#C5EEE2',
+      onTertiaryContainer: isDark ? '#C5EEE2' : '#00231C',
       background: surfaces.background as string,
       onBackground: onSurface,
       surface: surfaces.secondaryBackground as string,

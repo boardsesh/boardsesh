@@ -16,7 +16,7 @@
 //
 // `primary` is the FOREGROUND violet (links, indicators, borders, focus) at
 // #9784FF; `primaryFill` is the FILLED-surface violet (button bg + white text) at
-// #6D33FF. The two are NOT interchangeable and must never be collapsed into one:
+// #7855FF. The two are NOT interchangeable and must never be collapsed into one:
 // white on #9784FF is 2.97:1. The parity test fences this. Hover and active are
 // the same Ultraviolet hue (OKLCH ~287) one lightness step either side.
 
@@ -28,16 +28,16 @@ import { brandColorsDark } from '@boardsesh/velvet-tokens';
 // below; the parity test keeps them in sync with index.css.
 
 export const themeTokens = {
-  // Brand colors — Velvet Send violet + amber
+  // Brand colors — Velvet Send violet + mint spark
   colors: {
     primary: brandColorsDark.primary, // #9784FF — FOREGROUND violet (text, icons, links, borders, focus)
     primaryHover: '#B6AFFF', // Lighter step, 9.71:1 on the page
     primaryActive: '#8360FF', // Darker step, 4.67:1 on the page
-    primaryFill: brandColorsDark.primaryFill, // #6D33FF — FILLED bg; white text clears 5.89:1
+    primaryFill: brandColorsDark.primaryFill, // #7855FF — FILLED bg; white text clears 4.62:1
     primaryFillHover: '#5B22F2', // Darker than the fill so white text stays AA on hover (7.10:1)
     onPrimary: brandColorsDark.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
-    accent: brandColorsDark.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
-    onAccent: brandColorsDark.onAccent, // #16111F — dark text on accent (8.95:1)
+    accent: brandColorsDark.accent, // #3EE6C1 — mint spark, FILL-ONLY, always pair with dark text
+    onAccent: brandColorsDark.onAccent, // #16111F — dark text on accent (11.72:1)
     live: brandColorsDark.live, // #FBBF24 — "now on the wall / physically lit" status hue (own role, not warning)
     secondary: '#A9A2B6', // violet-grey for info/secondary
     info: '#A5ABD6', // Lifted violet-slate — help/guide accent
@@ -148,12 +148,12 @@ export const themeTokens = {
     lg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
     xl: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
     inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.15)',
-    // Amber glow under the one hero CTA per page. Amber is fill-only in Velvet Send and this
+    // Mint glow under the one hero CTA per page. The spark is fill-only in Velvet Send and this
     // is the only place it appears as light rather than a fill — it is the spark, so exactly
     // one surface carries it. Mirrored here because index.css claims parity with this file
     // and these two were the gap: they lived only in CSS, so the parity test could not see them.
-    accentGlow: '0 6px 18px rgba(255, 138, 61, 0.35)',
-    accentGlowHover: '0 8px 22px rgba(255, 138, 61, 0.45)',
+    accentGlow: '0 6px 18px rgba(62, 230, 193, 0.35)',
+    accentGlowHover: '0 8px 22px rgba(62, 230, 193, 0.45)',
   },
 
   // Typography

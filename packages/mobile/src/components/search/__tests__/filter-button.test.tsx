@@ -74,6 +74,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { fill: '#EEE', secondaryLabel: '#999' },
     brandColors: { primary: '#6D28D9', primaryFill: cfg.primaryFill, onPrimary: '#FFFFFF' },
+    selection: { fill: '#SELECTION_WASH' },
     variant: cfg.variant,
   }),
 }));
@@ -173,10 +174,11 @@ describe('FilterButton', () => {
     cfg.variant = 'liquidGlass';
     const { container } = render(<FilterButton activeFilterCount={2} onPress={() => {}} />);
     const filterButton = button(container);
-    // Active on glass: white glyph reads on the violet tint; glass tints/falls back to alpha-mixed violet.
+    // Active on glass: white glyph reads on the violet tint; an active filter is a selected state, so
+    // the glass tint and its fallback are both the selection wash (the fill, per scheme).
     expect(filterButton.getAttribute('data-icon-color')).toBe('#FFFFFF');
-    expect(filterButton.getAttribute('data-tint')).toBe('#6D28D9@0.18');
-    expect(filterButton.getAttribute('data-fallback')).toBe('#6D28D9@0.16');
+    expect(filterButton.getAttribute('data-tint')).toBe('#SELECTION_WASH');
+    expect(filterButton.getAttribute('data-fallback')).toBe('#SELECTION_WASH');
   });
 
   it('keeps the floating Liquid Glass count badge visible on the filled button', () => {
@@ -200,8 +202,8 @@ describe('FilterButton', () => {
     const { container } = render(<FilterButton activeFilterCount={2} onPress={() => {}} prominence="floating" />);
     const filterButton = button(container);
     expect(filterButton.getAttribute('data-icon-color')).toBe('#6D28D9');
-    expect(filterButton.getAttribute('data-tint')).toBe('#6D28D9@0.18');
-    expect(filterButton.getAttribute('data-fallback')).toBe('#6D28D9@0.16');
+    expect(filterButton.getAttribute('data-tint')).toBe('#SELECTION_WASH');
+    expect(filterButton.getAttribute('data-fallback')).toBe('#SELECTION_WASH');
     expect(filterButton.getAttribute('data-badge-bg')).toBe('');
     expect(filterButton.getAttribute('data-badge-color')).toBe('');
   });

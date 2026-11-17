@@ -50,12 +50,13 @@ export const BRAND_ROLE_USE: Record<string, string> = {
   primaryFill: 'Brand **filled** surface/button background',
   primaryStrong: 'Brand foreground on a tonal violet wash (the player wall button)',
   onPrimary: 'Text/icon sitting on `primaryFill`',
-  accent: 'Warm amber spark for highlights; **fill-only, always pair with dark text**',
-  onAccent: 'The dark ink that pairs with `accent`; same in both schemes',
+  accent: 'Mint spark for highlights; **fill or stroke only, never text; pair a fill with dark text**',
+  onAccent: 'The dark ink that pairs with `accent`; one ink for both mints',
   success: 'Success states',
   warning: 'Warnings',
   error: 'Destructive actions',
   live: 'This climb is lit / now on the wall',
+  onLive: 'Text/icon on a `live` fill: white in light, the dark ink in dark',
   historyFill: 'The wall kiosk\'s "viewing history" bar',
 };
 

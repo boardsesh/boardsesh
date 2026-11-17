@@ -5,7 +5,7 @@ import { selectionWash } from '../theme/variants/variant-tokens';
  * scheme-aware brand. Pass `useTheme().brandColors` and `useTheme().colorScheme`.
  * The wash is the brand FILL at the scheme's selection alpha, exactly the
  * `theme.selection.fill` role; the left accent bar is the tint (`primary`), the
- * lifted #9784FF in dark rather than the #6D33FF fill. Kept as a pure function so
+ * lifted #9784FF in dark rather than the #7855FF fill. Kept as a pure function so
  * the per-scheme behaviour is unit testable without rendering the (reanimated +
  * swipeable) row.
  */

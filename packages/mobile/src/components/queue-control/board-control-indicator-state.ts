@@ -76,14 +76,11 @@ export type DrivingBulbColors = {
 
 /**
  * The wall button's live look (`WallControlButton`): the `live` fill, with its
- * lit label colour on top (dark ink on the dark scheme's pale amber, white on
- * the light scheme's deep amber).
+ * ink `onLive` on top (dark ink on the dark scheme's pale amber, white on the
+ * light scheme's deep amber). Pass the scheme-resolved `useTheme().brandColors`.
  */
-export function drivingBulbColors(
-  brand: { live: string; onAccent: string; onPrimary: string },
-  colorScheme: string,
-): DrivingBulbColors {
-  return { fillColor: brand.live, iconColor: colorScheme === 'dark' ? brand.onAccent : brand.onPrimary };
+export function drivingBulbColors(brand: { live: string; onLive: string }): DrivingBulbColors {
+  return { fillColor: brand.live, iconColor: brand.onLive };
 }
 
 /**

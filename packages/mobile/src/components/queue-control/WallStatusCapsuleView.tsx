@@ -18,12 +18,12 @@
 //     devices and Reduce Transparency retain the opaque pill.
 //   - Material 3 (the Android Climbs bar): the same content in M3 dress, plus
 //     the climb's board art. A 48dp full-radius pill in the amber
-//     `tertiaryContainer` (the "lit" tone, as the iOS capsule's warm tint) that
+//     `live` fill (the "lit" amber, as the iOS capsule's warm tint) that
 //     fills the app bar's title slot (up to 280dp). It leads with the MiniPlayer's
 //     board-art thumbnail (from a 130dp pill), then the sender's face where glass
 //     would show it (from a 180dp pill beside the thumbnail), then the name in
 //     titleSmall over the same "grade · one fact" byline as glass, in
-//     labelMedium, all in `onTertiaryContainer`.
+//     labelMedium, all in `onLive`.
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.
@@ -103,7 +103,7 @@ export function WallStatusCapsuleView({
   onPress,
 }: WallStatusCapsuleViewProps) {
   const { t } = useTranslation('session');
-  const { variant, brandColors, m3 } = useTheme();
+  const { variant, brandColors } = useTheme();
   const reduceMotion = useReducedMotion();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   // UIKit hands the glass capsule its title bound; the Material pill fills its
@@ -221,14 +221,14 @@ export function WallStatusCapsuleView({
         key={climbUuid}
         entering={reduceMotion ? undefined : FadeIn.duration(180)}
         onLayout={handleMaterialLayout}
-        style={[styles.appBarPill, { backgroundColor: m3.tertiaryContainer }]}
+        style={[styles.appBarPill, { backgroundColor: brandColors.live }]}
       >
         <PressableSurface
           onPress={handlePress}
           // Android rides its native ripple, clipped by the pill's radius: the
-          // M3 state layer is the container's own ink.
+          // M3 state layer is the fill's own ink.
           feedback="none"
-          rippleColor={m3.onTertiaryContainer}
+          rippleColor={brandColors.onLive}
           accessibilityRole="button"
           accessibilityLabel={a11yLabel}
           accessibilityHint={accessibilityHint}

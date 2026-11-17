@@ -52,7 +52,7 @@ describe('wall button contrast', () => {
 
   it('moves the label one step further from the ground: deeper in light, lighter in dark', () => {
     expect(brandColors.primaryStrong).toBe('#4A16CF');
-    expect(brandColorsDark.primaryStrong).toBe('#9C8CFF');
+    expect(brandColorsDark.primaryStrong).toBe('#A294FF');
     // Dark: the plain tint is under 4.5:1 on the wash over #2C2C2E, which is why strong lifts.
     const darkWash = blendOpaque(brandColorsDark.primaryFill, '#2C2C2E', WALL_CONTROL_TONAL_ALPHA);
     expect(contrastRatioHex(brandColorsDark.primary, darkWash)).toBeLessThan(4.5);

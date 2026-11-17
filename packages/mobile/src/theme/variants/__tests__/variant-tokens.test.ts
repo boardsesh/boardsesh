@@ -126,7 +126,7 @@ describe('Velvet Send v2 roles', () => {
       checkmark: '#ACCENT',
       fill: 'rgba(91, 34, 242, 0.13)',
     });
-    expect(resolveSelectionColors(inputs, '#6D33FF', 'dark').fill).toBe('rgba(109, 51, 255, 0.2)');
+    expect(resolveSelectionColors(inputs, '#7855FF', 'dark').fill).toBe('rgba(120, 85, 255, 0.2)');
   });
 
   it.each(['light', 'dark'] as const)(

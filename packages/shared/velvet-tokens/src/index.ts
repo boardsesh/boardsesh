@@ -23,8 +23,11 @@ const isDev = process.env.NODE_ENV !== 'production';
  * 1. Tint and fill share one hue (~287) and differ only in lightness.
  * 2. A selection wash mixes from the FILL, never the tint: fill at 0.13 in light,
  *    fill at 0.20 in dark (`SELECTION_WASH_ALPHA` in the mobile app).
- * 3. Dark fill chroma ≥ light fill chroma: dark mode lifts the violet, it never
- *    greys it.
+ * 3. Every dark violet sits on the sRGB gamut edge (blue channel at FF): the most
+ *    chroma the screen has at its lightness, so dark mode lifts the violet and
+ *    never greys it. (This replaced "dark fill chroma ≥ light fill chroma", which
+ *    no fill light enough for a 3:1 edge on #2C2C2E can meet: sRGB tops out at
+ *    C 0.239 there, against the light fill's 0.271.)
  *
  * `brandColors` holds the LIGHT-scheme values (and the scheme-agnostic anchors);
  * `brandColorsDark` overrides the few roles that need a different value in dark
@@ -43,20 +46,28 @@ const isDev = process.env.NODE_ENV !== 'production';
  *   in light and one step lighter in dark, same hue, so the label clears 4.5:1
  *   on the wash over every sheet.
  * - `onPrimary`: text/icon colour sitting on `primaryFill`.
- * - `accent`: warm amber spark for highlights — FILL-ONLY, always pair with dark text.
- * - `onAccent`: the ink that pairs with `accent`. Same value in both schemes because
- *   `accent` itself doesn't change per scheme — a filled amber chip reads identically
- *   in light and dark, so its text must too.
+ * - `accent`: the mint spark for highlights — FILL or STROKE only (outlines, dots,
+ *   a fill under `onAccent` ink), never text: the light mint is 3.32:1 on white. It
+ *   differs per scheme (#0F9F86 light, #3EE6C1 dark). Mint replaced the amber
+ *   spark, which sat between the V2/V3 grade oranges; mint (OKLCH hue ~175) sits
+ *   about 33° from the green start-hold LED and 25° from the cyan hand-hold LED,
+ *   and pairs with Ultraviolet.
+ * - `onAccent`: the ink that pairs with `accent`. The same #16111F in both schemes:
+ *   5.58:1 on the light mint, 11.72:1 on the dark one.
  * - `live`: the "this climb is physically lit / now on the wall" status hue. A
  *   dedicated role (not `warning`) so a future warning retune can't silently shift
- *   the board-presence affordance. Resolves to the warm amber per scheme.
+ *   the board-presence affordance. Resolves to the warm amber per scheme. It is not
+ *   the spark: "lit" stays amber whatever the spark is.
+ * - `onLive`: text/icon on a `live` fill: white on the light amber (5.02:1), the
+ *   dark ink on the dark amber (11.09:1). The lit wall button, the bar bulb and the
+ *   Material wall pill all draw it.
  * - `historyFill`: the FILLED slate bar behind the wall kiosk's "viewing history"
  *   state — a positive, distinct-from-amber signal, not an absence-of-amber wash.
  *   White text clears AA on both schemes.
  *
  * Contrast (WCAG, light): #5B22F2 is 7.10:1 on #FFFFFF and 6.37:1 on #F2F2F7, and
  * white on it is 7.10:1. `primaryStrong` #4A16CF is 5.81:1 on the 20% fill wash
- * over #F2F2F7 (6.43:1 over white). Black-on-accent = 8.95:1.
+ * over #F2F2F7 (6.43:1 over white). `onAccent` on the mint `accent` = 5.58:1.
  */
 export const brandColors = {
   tint: '#5B22F2',
@@ -64,42 +75,72 @@ export const brandColors = {
   primaryFill: '#5B22F2',
   primaryStrong: '#4A16CF',
   onPrimary: '#FFFFFF',
-  accent: '#FF8A3D',
+  accent: '#0F9F86',
   onAccent: '#16111F',
   success: '#047857',
   warning: '#B45309',
   error: '#C81E1E',
   live: '#B45309',
+  onLive: '#FFFFFF',
   historyFill: '#475569',
 } as const;
 
 /**
  * Dark-scheme brand overrides. The light violet is too low-contrast as a
  * foreground on near-black, so the tint lifts to #9784FF; filled buttons use a
- * brighter #6D33FF so white text still clears AA (5.89:1). Semantic tones brighten
- * for legibility on dark surfaces. Same keys as `brandColors`.
+ * brighter #7855FF, light enough that the fill's own edge clears 3:1 on every dark
+ * card (3.76:1 on #1A1A1A, 3.68:1 on #1C1C1E, 3.01:1 on #2C2C2E) and dark enough
+ * that white text still clears AA (4.62:1). Semantic tones brighten for legibility
+ * on dark surfaces. Same keys as `brandColors`.
  *
  * Contrast (WCAG, dark): #9784FF tint 7.06:1 on #000000, 5.72:1 on #1C1C1E and
  * 4.69:1 on the iOS elevated grouped card (#2C2C2E) — legible for text and
- * controls drawn on a card. #6D33FF is a FILL only: white-on-#6D33FF = 5.89:1, but
- * #6D33FF itself is 2.37:1 on #2C2C2E, so never use it as a control tint or text
- * on a dark card. `primaryStrong` #9C8CFF is the tint's hue lifted until it clears
- * 4.5:1 on the 20% fill wash over #2C2C2E (4.50:1; 5.33:1 over #1C1C1E).
+ * controls drawn on a card. #7855FF is a FILL only: at 3.01:1 on #2C2C2E it is
+ * under the 4.5:1 text needs, so never use it as a control tint or text on a dark
+ * card. `primaryStrong` #A294FF is the tint's hue lifted until it clears 4.5:1 on
+ * the 20% fill wash over #2C2C2E (4.52:1; 5.45:1 over #1C1C1E).
  */
 export const brandColorsDark = {
   tint: '#9784FF',
   primary: '#9784FF',
-  primaryFill: '#6D33FF',
-  primaryStrong: '#9C8CFF',
+  primaryFill: '#7855FF',
+  primaryStrong: '#A294FF',
   onPrimary: '#FFFFFF',
-  accent: '#FF8A3D',
+  // Lifted for dark grounds: 10.77:1 on #1C1C1E, and `onAccent` on it 11.72:1.
+  accent: '#3EE6C1',
   onAccent: '#16111F',
   success: '#34D399',
   warning: '#FBBF24',
   error: '#F87171',
   live: '#FBBF24',
+  onLive: '#16111F',
   historyFill: '#64748B',
 } as const;
+
+/**
+ * The brand swatches the app itself offered for a saved colour (the mobile playlist
+ * form's first two swatches) before a retune, mapped to the token that replaced each.
+ * Keyed by uppercase `#RRGGBB`. Readers map a saved colour through `currentBrandColor`
+ * so an old playlist shows today's brand instead of a colour the app no longer uses.
+ *
+ * Only values the app offered as swatches belong here. Other retired brand hexes
+ * (#7C3AED, #A78BFA, #5B21B6) were never swatches; they are stock Tailwind values a
+ * climber or Aurora could have picked on purpose, so they stay as saved.
+ */
+export const RETIRED_BRAND_COLORS: Readonly<Record<string, string>> = {
+  // The Velvet violet swatch, before Ultraviolet.
+  '#6D28D9': brandColors.primaryFill,
+  // The amber spark swatch, before mint.
+  '#FF8A3D': brandColors.accent,
+};
+
+/**
+ * The current brand colour for a saved colour: a retired brand hex maps to the token
+ * that replaced it (case-insensitive); any other colour comes back unchanged.
+ */
+export function currentBrandColor(color: string): string {
+  return RETIRED_BRAND_COLORS[color.toUpperCase()] ?? color;
+}
 
 /**
  * Material 3 surfaces for the Material UI variant of the React Native app (Android,

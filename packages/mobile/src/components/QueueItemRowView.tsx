@@ -153,7 +153,7 @@ function QueueItemRowComponent({
   menu: ReturnType<typeof useClimbMenu>;
   ContentComponent: ComponentType<ComponentProps<typeof ClimbListItemContent>>;
 }) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   const tickColor = useVariantValue({ liquidGlass: systemColors.label, material: systemColors.secondaryLabel });
   const { t } = useTranslation(['session', 'climbs']);
   // The climber's thumbnail switch moves two things in this row with it: where
@@ -473,7 +473,7 @@ function QueueItemRowComponent({
         styles.row,
         minimumHeight === undefined ? null : { minHeight: minimumHeight },
         { backgroundColor: systemColors.secondaryBackground },
-        isCurrentClimb && !isHistoryItem && { backgroundColor: `${brandColors.primary}14` },
+        isCurrentClimb && !isHistoryItem && { backgroundColor: selection.fill },
         isHistoryItem && styles.historyRow,
         rowAnimatedStyle,
       ]}
@@ -484,7 +484,7 @@ function QueueItemRowComponent({
         style={styles.menuAnchor}
         liftPreview
         previewBackgroundColor={systemColors.secondaryBackground}
-        previewOverlayColor={isCurrentClimb && !isHistoryItem ? `${brandColors.primary}14` : undefined}
+        previewOverlayColor={isCurrentClimb && !isHistoryItem ? selection.fill : undefined}
       >
         <GestureDetector gesture={tapGesture} touchAction="pan-y">
           <View

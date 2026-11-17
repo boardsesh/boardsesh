@@ -98,7 +98,7 @@ export const LiveActionPill = memo(function LiveActionPill({ label, colors, tone
         style,
       ]}
     >
-      <LiveActionLabel color={filled ? colors.onPrimary : colors.primary}>{label}</LiveActionLabel>
+      <LiveActionLabel color={filled ? colors.onPrimary : colors.tintInk}>{label}</LiveActionLabel>
     </View>
   );
 });

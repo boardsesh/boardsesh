@@ -155,6 +155,18 @@ describe('PlaylistPreviewSquare', () => {
     expect(root.style.background).toContain('rgb(79, 70, 229)');
   });
 
+  it('shows a colour saved from a retired brand swatch as today’s brand token', () => {
+    mockGetBoardDetailsForPlaylist.mockReturnValue(null);
+
+    const { container: violet } = render(<PlaylistPreviewSquare boardType="kilter" layoutId={1} color="#6D28D9" />);
+    // #5B22F2 = rgb(91, 34, 242), the Ultraviolet fill.
+    expect((violet.firstChild as HTMLElement).style.background).toContain('rgb(91, 34, 242)');
+
+    const { container: amber } = render(<PlaylistPreviewSquare boardType="kilter" layoutId={1} color="#FF8A3D" />);
+    // #0F9F86 = rgb(15, 159, 134), the mint spark.
+    expect((amber.firstChild as HTMLElement).style.background).toContain('rgb(15, 159, 134)');
+  });
+
   it('applies frosted overlay with rgba color derived from hex', () => {
     mockGetBoardDetailsForPlaylist.mockReturnValue(MOCK_BOARD_DETAILS);
 

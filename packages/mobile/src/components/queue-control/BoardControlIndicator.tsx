@@ -84,7 +84,7 @@ export function BoardControlIndicator({
   placement,
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
-  const { systemColors, brandColors, colorScheme } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { inAppBoardConnection, localConnected, ledless, holderDisplayName, bluetooth } = useBoardConnectionState();
   // Driving the wall (#7113): a tap on any climb lights it, so the bulb takes
   // the wall button's live fill. The board control's own rule
@@ -172,7 +172,7 @@ export function BoardControlIndicator({
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
     // A timed drive is ringed instead: the amber disc would hide the arc.
-    driving: driveCue === 'disc' ? drivingBulbColors(brandColors, colorScheme) : null,
+    driving: driveCue === 'disc' ? drivingBulbColors(brandColors) : null,
   });
 
   const haloColor = bulbHaloFor(driveCue, visual.haloColor);

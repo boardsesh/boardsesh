@@ -6,6 +6,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { withAlpha } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { selectByVariant } from '../../theme/variants';
+import { BRAND_CHIP_WASH_ALPHA } from '../../theme/variants/variant-tokens';
 import { Text } from '../Text';
 
 // Off-grid on purpose: 8pt (spacing[2]) reads too tall around caption1 text in
@@ -78,11 +79,15 @@ export const LogbookDayDividerView = memo(function LogbookDayDividerView({
   const accessibilityLabel = rollup ? `${labelWithWall}, ${rollup}` : labelWithWall;
 
   const chipStyle = selectByVariant(variant, {
-    liquidGlass: { backgroundColor: withAlpha(brand.primary, 0.08), borderRadius: borderRadius.md },
+    liquidGlass: {
+      backgroundColor: withAlpha(brand.primaryFill, BRAND_CHIP_WASH_ALPHA.logbookDay),
+      borderRadius: borderRadius.md,
+    },
     material: null,
   });
   const labelColor = selectByVariant(variant, {
-    liquidGlass: brand.primary,
+    // On the violet chip: the strong ink, which keeps 4.5:1 there (the tint does not).
+    liquidGlass: brand.primaryStrong,
     material: systemColors.secondaryLabel,
   });
 

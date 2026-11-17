@@ -40,7 +40,7 @@ export const FindClimbersTile = memo(function FindClimbersTile({ height, onPress
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <Icon name="person.badge.plus" size={20} color={colors.primary} />
+        <Icon name="person.badge.plus" size={20} color={colors.tintInk} />
       </View>
       <Text variant="headline" color={colors.label} numberOfLines={1} style={styles.title}>
         {title}
@@ -50,7 +50,7 @@ export const FindClimbersTile = memo(function FindClimbersTile({ height, onPress
       </Text>
       <View style={styles.spacer} />
       <View style={[styles.cta, { backgroundColor: colors.tintFill, borderColor: colors.tintBorder }]}>
-        <Text variant="subheadline" color={colors.primary} numberOfLines={1} style={styles.bold}>
+        <Text variant="subheadline" color={colors.tintInk} numberOfLines={1} style={styles.bold}>
           {t('mobile.liveSessions.find.cta')}
         </Text>
       </View>

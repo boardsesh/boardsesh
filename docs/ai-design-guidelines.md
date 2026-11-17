@@ -59,19 +59,20 @@ on near-black. `tint` aliases `primary`.
 
 <!-- velvet-tokens:brand:start -->
 
-| Role            | Light     | Dark      | Use                                                                        |
-| --------------- | --------- | --------- | -------------------------------------------------------------------------- |
-| `primary`       | `#5B22F2` | `#9784FF` | Brand **foreground**: text, icons, links, borders                          |
-| `primaryFill`   | `#5B22F2` | `#6D33FF` | Brand **filled** surface/button background                                 |
-| `primaryStrong` | `#4A16CF` | `#9C8CFF` | Brand foreground on a tonal violet wash (the player wall button)           |
-| `onPrimary`     | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                         |
-| `accent`        | `#FF8A3D` | `#FF8A3D` | Warm amber spark for highlights; **fill-only, always pair with dark text** |
-| `onAccent`      | `#16111F` | `#16111F` | The dark ink that pairs with `accent`; same in both schemes                |
-| `success`       | `#047857` | `#34D399` | Success states                                                             |
-| `warning`       | `#B45309` | `#FBBF24` | Warnings                                                                   |
-| `error`         | `#C81E1E` | `#F87171` | Destructive actions                                                        |
-| `live`          | `#B45309` | `#FBBF24` | This climb is lit / now on the wall                                        |
-| `historyFill`   | `#475569` | `#64748B` | The wall kiosk's "viewing history" bar                                     |
+| Role            | Light     | Dark      | Use                                                                                        |
+| --------------- | --------- | --------- | ------------------------------------------------------------------------------------------ |
+| `primary`       | `#5B22F2` | `#9784FF` | Brand **foreground**: text, icons, links, borders                                          |
+| `primaryFill`   | `#5B22F2` | `#7855FF` | Brand **filled** surface/button background                                                 |
+| `primaryStrong` | `#4A16CF` | `#A294FF` | Brand foreground on a tonal violet wash (the player wall button)                           |
+| `onPrimary`     | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                                         |
+| `accent`        | `#0F9F86` | `#3EE6C1` | Mint spark for highlights; **fill or stroke only, never text; pair a fill with dark text** |
+| `onAccent`      | `#16111F` | `#16111F` | The dark ink that pairs with `accent`; one ink for both mints                              |
+| `success`       | `#047857` | `#34D399` | Success states                                                                             |
+| `warning`       | `#B45309` | `#FBBF24` | Warnings                                                                                   |
+| `error`         | `#C81E1E` | `#F87171` | Destructive actions                                                                        |
+| `live`          | `#B45309` | `#FBBF24` | This climb is lit / now on the wall                                                        |
+| `onLive`        | `#FFFFFF` | `#16111F` | Text/icon on a `live` fill: white in light, the dark ink in dark                           |
+| `historyFill`   | `#475569` | `#64748B` | The wall kiosk's "viewing history" bar                                                     |
 
 <!-- velvet-tokens:brand:end -->
 
@@ -83,26 +84,38 @@ on near-black. `tint` aliases `primary`.
 1. Tint and fill share one hue (OKLCH ~287) and differ only in lightness.
 2. A wash mixes from the **fill**, never the tint: the selection wash is `primaryFill` at 0.13 in light and
    0.20 in dark (`SELECTION_WASH_ALPHA`).
-3. Dark chroma is at least light chroma (the dark fill `#6D33FF` is C 0.272, the light `#5B22F2` C 0.271):
-   dark mode lifts the violet, it never greys it.
+3. Every dark violet sits on the sRGB gamut edge (blue channel at `FF`): the most chroma the screen has at
+   its lightness, so dark mode lifts the violet and never greys it. This replaced "dark fill chroma ≥ light
+   fill chroma" when the dark fill moved up to `#7855FF` for a 3:1 edge on dark cards: at that lightness sRGB
+   tops out at C 0.239 for this hue, under the light fill's 0.271, so no fill could meet both.
 
 **Foreground vs fill.** In light, tint and fill are one `#5B22F2`. In dark the tint lifts to `#9784FF` as a
-foreground, while filled buttons use a brighter `#6D33FF` so white text clears AA. `primaryStrong` is the
-same hue one step further from the ground (`#4A16CF` light, `#9C8CFF` dark), for text on the 20% fill wash of
-the wall button. Contrast (WCAG):
+foreground, while filled buttons use a brighter `#7855FF`: light enough that the fill's own edge clears 3:1 on
+every dark card (`#1A1A1A`, `#1C1C1E`, `#2C2C2E`) and dark enough that white text clears AA. `primaryStrong`
+is the same hue one step further from the ground (`#4A16CF` light, `#A294FF` dark), for text on the 20% fill
+wash of the wall button. Contrast (WCAG):
 
 | Pairing                                                                     | Ratio                    |
 | --------------------------------------------------------------------------- | ------------------------ |
 | `#5B22F2` on `#FFFFFF` / `#F2F2F7`                                          | 7.10:1 / 6.37:1          |
 | `#9784FF` on `#000000` / `#1C1C1E` / `#2C2C2E`                              | 7.06:1 / 5.72:1 / 4.69:1 |
-| White on `#5B22F2` / `#6D33FF`                                              | 7.10:1 / 5.89:1          |
+| White on `#5B22F2` / `#7855FF`                                              | 7.10:1 / 4.62:1          |
+| `#7855FF` fill edge on `#1A1A1A` / `#1C1C1E` / `#2C2C2E`                    | 3.76:1 / 3.68:1 / 3.01:1 |
 | `#4A16CF` on the 20% fill wash over `#FFFFFF` / `#F2F2F7`                   | 6.43:1 / 5.81:1          |
-| `#9C8CFF` on the 20% fill wash over `#1C1C1E` / `#2C2C2E`                   | 5.33:1 / 4.50:1          |
-| Checkmark (tint) on the selection wash over `#F2F2F7` / `#2C2C2E`           | 5.13:1 / 4.18:1          |
+| `#A294FF` on the 20% fill wash over `#1C1C1E` / `#2C2C2E`                   | 5.45:1 / 4.52:1          |
+| Checkmark (tint) on the selection wash over `#F2F2F7` / `#2C2C2E`           | 5.13:1 / 3.88:1          |
 | Increase Contrast: `#5613EA` on `#F2F2F7`, `#B6AFFF` on `#2C2C2E`           | 7.03:1 / 7.01:1          |
 
-`#6D33FF` as a foreground on `#2C2C2E` is 2.37:1, under the 3:1 a control needs, so it is a fill only.
-`accent` amber is fill-only with `onAccent` ink (8.95:1).
+`#7855FF` as a foreground on `#2C2C2E` is 3.01:1, under the 4.5:1 text needs, so it is a fill only.
+
+**The spark: mint.** `accent` is mint, `#0F9F86` in light and `#3EE6C1` in dark, and it is the one brand
+colour that differs per scheme on purpose. It replaced an amber spark that sat between the V2 and V3 grade
+oranges. Mint (OKLCH hue ~175) sits about 33° from the green start-hold LED and 25° from the cyan hand-hold
+LED, and pairs with Ultraviolet. Use it as a fill or a stroke only (outlines, dots, a filled chip under
+`onAccent` ink), never as text: the light mint is 3.32:1 on white and 2.98:1 on `#F2F2F7`, enough for a 3:1
+outline or dot, not for words. `onAccent` `#16111F` is one ink for both: 5.58:1 on the light mint, 11.72:1
+on the dark. The amber that stays is `live` (`#B45309` / `#FBBF24`, ink `onLive`), the lit-bulb hue; it is not the spark,
+and every "lit / on the wall" surface reads it, never `accent` or Material's `tertiary` (both mint).
 
 **Settings rows and controls.** Row titles, values and chevrons use `label` / `secondaryLabel` /
 `tertiaryLabel`, never the accent. On iOS that means fixed `PlatformColor` styles
@@ -122,7 +135,7 @@ color to indicate that a borderless button is interactive, using the same or sim
 noninteractive text is confusing."_
 
 - **Surfaces (`theme.surfaces`).** Two page styles, each a `{ page, card, tile }` ladder: `plain` (a feed, a shelf, a climb list: `systemBackground` / `secondarySystemBackground` / `tertiarySystemBackground`) and `grouped` (inset-grouped rows like Settings: the `…Grouped…` trio). iOS resolves base vs elevated itself, so a page drawn in a sheet steps up (the React Navigation ground in dark is `surfaces.plain.page`, not a static `#000`). Material and Liquid Glass off iOS take the same steps from their own ladders.
-- **Selection (`theme.selection`).** `{ text: label, checkmark: accent, fill: primaryFill at 13% light / 20% dark }`. The title stays `label`, set semibold with `<Text emphasized>`; an accent checkmark marks it; a violet wash mixed from the fill sits behind the row (the current climb's look in the Climbs list, on every variant: `#5B22F2` at 13% light, `#6D33FF` at 20% dark). A surface, not violet text. Selection is a state, not a link.
+- **Selection (`theme.selection`).** `{ text: label, checkmark: accent, fill: primaryFill at 13% light / 20% dark }`. The title stays `label`, set semibold with `<Text emphasized>`; an accent checkmark marks it; a violet wash mixed from the fill sits behind the row (the current climb's look in the Climbs list, on every variant: `#5B22F2` at 13% light, `#7855FF` at 20% dark). A surface, not violet text. Selection is a state, not a link.
 - **Status (`theme.status`).** `{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap ("Ready to review", "On it").
 - **Guards.** `no-violet-selection.test.ts` (a selection flag choosing `brandColors.primary`: use `theme.selection`) and `no-text-opacity-dim.test.ts` (a `StyleSheet` opacity on a `<Text>`: use `tone`). Their allowlists only shrink.
 - **Scroll edges.** iOS 26 draws its own (no forced pre-26 blur, `useHeaderBlurEffect`). HIG Layout: _"Instead of applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to visually elevate controls above content."_
@@ -217,8 +230,8 @@ level2 (the MiniPlayer ground), `high` level3, `level4`, `highest` level5. The M
 **The violet budget.** On Material violet is spent only on: (1) accent foreground (links, active nav
 label, focus ring, spinners); (2) one filled `primaryFill` CTA per region, plus switch, radio and
 checkbox on-states; (3) opaque tonal containers for a selected or current state (nav pill and Stepper
-`secondaryContainer` `#E6DAF8` / `#3C2467`, selected chips and segments, tonal buttons, the connected
-MiniPlayer; `primaryContainer` `#EADDFF` / `#4F378B`, ink `#21005D` / `#EADDFF`); (4) the selected
+`secondaryContainer` `#DEDDFC` / `#34276B`, selected chips and segments, tonal buttons, the connected
+MiniPlayer; `primaryContainer` `#E1E0FF` / `#483A8E`, ink `#21005D` / `#E1E0FF`, all on hue 287); (4) the selected
 climb-row wash; (5) data (heat ramp, grade colours, holds, playlist swatch). Everything else is grey.
 
 **Tertiary-label placement.** `tertiaryLabel` clears 4.5:1 only on the lower steps. Dark: page, card,

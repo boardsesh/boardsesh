@@ -120,7 +120,7 @@ vi.mock('../../PressableSurface', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    brandColors: { primary: '#6D28D9' },
+    brandColors: { primary: '#5B22F2', primaryFill: '#5B22F2' },
     systemColors: { label: '#111', secondaryLabel: '#666' },
   }),
 }));

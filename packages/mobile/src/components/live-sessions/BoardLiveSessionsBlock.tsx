@@ -276,8 +276,8 @@ function BoardLiveSessionsBlockComponent({
             accessibilityLabel={t('mobile.liveSessions.board.emptyCta')}
             style={[styles.startButton, { backgroundColor: colors.tintFill, borderColor: colors.tintBorder }]}
           >
-            <Icon name="record" size={18} color={colors.primary} />
-            <Text emphasized variant="subheadline" color={colors.primary}>
+            <Icon name="record" size={18} color={colors.tintInk} />
+            <Text emphasized variant="subheadline" color={colors.tintInk}>
               {t('mobile.liveSessions.board.emptyCta')}
             </Text>
           </PressableSurface>

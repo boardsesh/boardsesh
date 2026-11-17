@@ -54,7 +54,7 @@ import {
   readableTextColor,
   type HoldStateInfo,
 } from '@boardsesh/board-constants';
-import { brandColors, brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
+import { brandColorsDark, marketingSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '../app/theme/theme-config';
 import {
   showcaseVariantWorkDirs,
@@ -492,7 +492,7 @@ function writeTokens(): void {
     'sub-light': marketingSurfaces.light.secondaryLabel,
     'accent-dark': marketingSurfaces.dark.accent,
     'accent-light': marketingSurfaces.light.accent,
-    amber: brandColors.accent,
+    amber: brandColorsDark.accent,
     'glow-dark': brandColorsDark.primaryFill,
     'role-start': roleColor('STARTING', '#00FF00'),
     'role-hand': roleColor('HAND', '#4DF5FD'),

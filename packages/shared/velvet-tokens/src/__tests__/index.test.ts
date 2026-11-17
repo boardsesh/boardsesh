@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { brandColors, brandColorsDark, marketingSurfaces, materialSurfaces, withAlpha, blendOpaque } from '../index';
+import {
+  RETIRED_BRAND_COLORS,
+  blendOpaque,
+  brandColors,
+  brandColorsDark,
+  currentBrandColor,
+  marketingSurfaces,
+  materialSurfaces,
+  withAlpha,
+} from '../index';
 
 /** sRGB `#RRGGBB` channels, linearised. */
 function linearChannels(hex: string): [number, number, number] {
@@ -39,15 +48,15 @@ describe('brand palette anchors', () => {
     expect(brandColors.primary).toBe('#5B22F2');
     expect(brandColors.primaryFill).toBe('#5B22F2');
     expect(brandColors.primaryStrong).toBe('#4A16CF');
-    expect(brandColors.accent).toBe('#FF8A3D');
+    expect(brandColors.accent).toBe('#0F9F86');
     expect(brandColors.onPrimary).toBe('#FFFFFF');
     expect(brandColorsDark.tint).toBe('#9784FF');
     expect(brandColorsDark.primary).toBe('#9784FF'); // lifted foreground
-    expect(brandColorsDark.primaryFill).toBe('#6D33FF'); // fill stays dark for white text
-    expect(brandColorsDark.primaryStrong).toBe('#9C8CFF'); // a step lighter, for the wash
+    expect(brandColorsDark.primaryFill).toBe('#7855FF'); // dark enough for white text, light enough for a 3:1 edge
+    expect(brandColorsDark.primaryStrong).toBe('#A294FF'); // a step lighter, for the wash
   });
 
-  it('keeps tint and fill on one hue, differing only in lightness, with dark chroma at least light chroma', () => {
+  it('keeps tint and fill on one hue, differing only in lightness, with every dark violet on the gamut edge', () => {
     const light = toOklch(brandColors.primaryFill);
     for (const color of [
       brandColors.tint,
@@ -57,7 +66,11 @@ describe('brand palette anchors', () => {
     ]) {
       expect(Math.abs(toOklch(color).hue - light.hue), color).toBeLessThan(7);
     }
-    expect(toOklch(brandColorsDark.primaryFill).chroma).toBeGreaterThanOrEqual(light.chroma);
+    // Dark mode never greys the violet: each dark violet has its blue channel at FF, the
+    // sRGB edge for this hue at these lightnesses, so it carries all the chroma it can.
+    for (const color of [brandColorsDark.tint, brandColorsDark.primaryFill, brandColorsDark.primaryStrong]) {
+      expect(color.slice(5, 7).toUpperCase(), color).toBe('FF');
+    }
     // Strong is the same violet one step further from the ground: darker in light, lighter in dark.
     expect(toOklch(brandColors.primaryStrong).lightness).toBeLessThan(toOklch(brandColors.tint).lightness);
     expect(toOklch(brandColorsDark.primaryStrong).lightness).toBeGreaterThan(toOklch(brandColorsDark.tint).lightness);
@@ -74,6 +87,25 @@ describe('brand palette anchors', () => {
     expect(contrastRatio(brandColorsDark.onPrimary, brandColorsDark.primaryFill)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('keeps "lit" amber, whatever the spark is, with its own ink at AA in both schemes', () => {
+    expect(brandColors.live).toBe('#B45309');
+    expect(brandColorsDark.live).toBe('#FBBF24');
+    expect(brandColors.live).not.toBe(brandColors.accent);
+    expect(brandColorsDark.live).not.toBe(brandColorsDark.accent);
+    // The same ink the lit wall button has always drawn: onPrimary in light, onAccent in dark.
+    expect(brandColors.onLive).toBe(brandColors.onPrimary);
+    expect(brandColorsDark.onLive).toBe(brandColorsDark.onAccent);
+    expect(contrastRatio(brandColors.onLive, brandColors.live)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(brandColorsDark.onLive, brandColorsDark.live)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('gives the dark fill a 3:1 edge on every dark card a filled button sits on', () => {
+    // The MiniPlayer's play button on #1A1A1A, iOS cards #1C1C1E and #2C2C2E (WCAG 1.4.11).
+    for (const ground of ['#1A1A1A', '#1C1C1E', '#2C2C2E']) {
+      expect(contrastRatio(brandColorsDark.primaryFill, ground), ground).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it('keeps primaryStrong at 4.5:1 on the 20% fill wash over every sheet', () => {
     for (const ground of ['#FFFFFF', '#F2F2F7']) {
       const wash = blendOpaque(brandColors.primaryFill, ground, 0.2);
@@ -85,13 +117,18 @@ describe('brand palette anchors', () => {
     }
   });
 
-  it('pairs the amber accent with the same dark ink in both schemes', () => {
-    // The accent does not change per scheme, so its ink must not either — a filled
-    // amber chip is the same colour on a light page and a dark one, and mobile reads
-    // `brandColors.onAccent` off whichever set the scheme resolved.
+  it('pairs the mint spark with the same dark ink in both schemes, at AA on each mint', () => {
+    // The spark differs per scheme (#0F9F86 light, #3EE6C1 dark); one dark ink reads on
+    // both, so a filled mint chip needs no per-scheme text colour.
+    expect(brandColors.accent).toBe('#0F9F86');
+    expect(brandColorsDark.accent).toBe('#3EE6C1');
     expect(brandColors.onAccent).toBe('#16111F');
     expect(brandColorsDark.onAccent).toBe(brandColors.onAccent);
-    expect(brandColorsDark.accent).toBe(brandColors.accent);
+    expect(contrastRatio(brandColors.onAccent, brandColors.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(brandColorsDark.onAccent, brandColorsDark.accent)).toBeGreaterThanOrEqual(4.5);
+    // Fill or stroke only: the light mint is under 4.5:1 on white, so it never sets text.
+    expect(contrastRatio(brandColors.accent, '#FFFFFF')).toBeLessThan(4.5);
+    expect(contrastRatio(brandColors.accent, '#FFFFFF')).toBeGreaterThanOrEqual(3);
   });
 
   it('holds the neutral Graphite surface anchors the app reads', () => {
@@ -130,6 +167,34 @@ describe('marketingSurfaces', () => {
   it('carries the same roles as the app surfaces, so a render script can swap one for the other', () => {
     expect(Object.keys(marketingSurfaces.light).sort()).toEqual(Object.keys(materialSurfaces.light).sort());
     expect(Object.keys(marketingSurfaces.dark).sort()).toEqual(Object.keys(materialSurfaces.dark).sort());
+  });
+});
+
+describe('currentBrandColor', () => {
+  it('maps only the swatches the app offered: the old violet and the amber spark', () => {
+    expect(Object.keys(RETIRED_BRAND_COLORS).sort()).toEqual(['#6D28D9', '#FF8A3D']);
+  });
+
+  it('maps the retired violet swatch to the current fill, in any case', () => {
+    expect(currentBrandColor('#6D28D9')).toBe(brandColors.primaryFill);
+    expect(currentBrandColor('#6d28d9')).toBe('#5B22F2');
+  });
+
+  it('maps the retired amber spark to the current spark', () => {
+    expect(currentBrandColor('#FF8A3D')).toBe(brandColors.accent);
+    expect(currentBrandColor('#ff8a3d')).toBe('#0F9F86');
+  });
+
+  it('leaves any other colour alone: other old brand violets a climber could pick, the current brand', () => {
+    for (const color of ['#7C3AED', '#A78BFA', '#5B21B6', '#047857', '#5B22F2', '#0F9F86', '#8B5CF6', 'not-a-colour']) {
+      expect(currentBrandColor(color)).toBe(color);
+    }
+  });
+
+  it('never maps to a colour that is itself retired', () => {
+    for (const replacement of Object.values(RETIRED_BRAND_COLORS)) {
+      expect(RETIRED_BRAND_COLORS[replacement.toUpperCase()]).toBeUndefined();
+    }
   });
 });
 

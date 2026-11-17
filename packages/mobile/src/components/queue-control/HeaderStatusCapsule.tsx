@@ -235,7 +235,7 @@ type HeaderCapsuleClimbLabelProps = {
   /**
    * The type and colour roles. `glass` (default): the HIG caption pair in label
    * colours. `material`: M3 titleSmall over a labelMedium byline, both in
-   * `onTertiaryContainer`, the ink on the Android app-bar pill's amber fill.
+   * `onLive`, the ink on the Android app-bar pill's `live` amber fill.
    */
   skin?: 'glass' | 'material';
 };
@@ -252,14 +252,14 @@ export function HeaderCapsuleClimbLabel({
   textStyle,
   skin = 'glass',
 }: HeaderCapsuleClimbLabelProps) {
-  const { systemColors, m3 } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const material = skin === 'material';
   // M3 titleSmall is 14/20 medium, `label`'s metrics; labelMedium is 12/16
   // medium, `footnote` at medium weight.
   const nameVariant = material ? 'label' : 'caption1';
   const bylineVariant = material ? 'footnote' : 'caption2';
-  const nameColor = textColor ?? (material ? m3.onTertiaryContainer : systemColors.label);
-  const bylineColor = textColor ?? (material ? m3.onTertiaryContainer : systemColors.secondaryLabel);
+  const nameColor = textColor ?? (material ? brandColors.onLive : systemColors.label);
+  const bylineColor = textColor ?? (material ? brandColors.onLive : systemColors.secondaryLabel);
   const nameSkinStyle = material ? styles.climbNameMaterial : null;
   const bylineSkinStyle = material ? styles.climbBylineMaterial : null;
   return (

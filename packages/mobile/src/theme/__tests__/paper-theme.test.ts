@@ -44,8 +44,8 @@ describe('buildPaperTheme', () => {
       level5: '#D9D9D9',
     });
     // Opaque violet tonal containers: the selected/current state keeps the brand.
-    expect(theme.colors.primaryContainer).toBe('#EADDFF');
-    expect(theme.colors.secondaryContainer).toBe('#E6DAF8');
+    expect(theme.colors.primaryContainer).toBe('#E1E0FF');
+    expect(theme.colors.secondaryContainer).toBe('#DEDDFC');
     // Container ink is an explicit dark violet, not the grey `onSurface`.
     expect(theme.colors.onPrimaryContainer).toBe('#21005D');
     expect(theme.colors.onSecondaryContainer).toBe('#21005D');
@@ -55,7 +55,7 @@ describe('buildPaperTheme', () => {
     // `outline` (form border) is a fixed grey, distinct from the faint divider.
     expect(theme.colors.outline).toBe('#7A7A7A');
     expect(theme.colors.outlineVariant).toBe('rgba(0, 0, 0, 0.12)');
-    // The amber tertiary keeps its dark ink in both schemes.
+    // The mint tertiary keeps its dark ink in both schemes.
     expect(theme.colors.onTertiary).toBe('#16111F');
   });
 
@@ -85,27 +85,28 @@ describe('buildPaperTheme', () => {
 
   it('uses the foreground tint for dark primary, with dark ink on top', () => {
     const theme = buildPaperTheme('dark');
-    // Not the fill-only #6D33FF: primary colours text (tab labels, text buttons).
+    // Not the fill-only #7855FF: primary colours text (tab labels, text buttons).
     expect(theme.colors.primary).toBe('#9784FF');
     expect(theme.colors.onPrimary).toBe('#2E0077');
     // `secondary` stays violet: it is the active nav label.
     expect(theme.colors.secondary).toBe('#9784FF');
     expect(theme.colors.onSecondary).toBe('#2E0077');
     // Opaque tonal containers with a light violet ink.
-    expect(theme.colors.primaryContainer).toBe('#4F378B');
-    expect(theme.colors.secondaryContainer).toBe('#3C2467');
-    expect(theme.colors.onPrimaryContainer).toBe('#EADDFF');
-    expect(theme.colors.onSecondaryContainer).toBe('#EADDFF');
+    expect(theme.colors.primaryContainer).toBe('#483A8E');
+    expect(theme.colors.secondaryContainer).toBe('#34276B');
+    expect(theme.colors.onPrimaryContainer).toBe('#E1E0FF');
+    expect(theme.colors.onSecondaryContainer).toBe('#E1E0FF');
   });
 
-  // The Climbs bar's wall pill fills with tertiaryContainer, so it must be the
-  // amber accent's container (not Paper's baseline pink) with AA-legible ink.
+  // Material's tertiary is the mint spark's own container (not Paper's baseline
+  // pink) with AA-legible ink. "Lit" never reads it: the wall pill fills with `live`.
   it.each([
-    ['light', '#FFDBCA', '#341100'],
-    ['dark', '#773300', '#FFDBCA'],
-  ] as const)('gives the amber tertiary a legible tonal container (%s)', (scheme, container, ink) => {
+    ['light', '#0F9F86', '#C5EEE2', '#00231C'],
+    ['dark', '#3EE6C1', '#005747', '#C5EEE2'],
+  ] as const)('gives the mint tertiary a legible tonal container (%s)', (scheme, spark, container, ink) => {
     const theme = buildPaperTheme(scheme);
-    expect(theme.colors.tertiary).toBe('#FF8A3D');
+    expect(theme.colors.tertiary).toBe(spark);
+    expect(contrastRatio(theme.colors.onTertiary, theme.colors.tertiary)).toBeGreaterThanOrEqual(4.5);
     expect(theme.colors.tertiaryContainer).toBe(container);
     expect(theme.colors.onTertiaryContainer).toBe(ink);
     expect(contrastRatio(theme.colors.onTertiaryContainer, theme.colors.tertiaryContainer)).toBeGreaterThanOrEqual(4.5);

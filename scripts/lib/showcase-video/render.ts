@@ -2542,7 +2542,7 @@ export function islandOverlaySvg(
     `<path d="M ${px(mirrorX + 4)} ${px(mirrorY - 9)} L ${px(mirrorX + 9)} ${px(mirrorY - 5)} L ${px(mirrorX + 4)} ${px(mirrorY - 1)}" fill="none" stroke="#F5F2FB" stroke-width="${px(2.4)}" stroke-linecap="round" stroke-linejoin="round"/>` +
     `<path d="M ${px(mirrorX - 4)} ${px(mirrorY + 9)} L ${px(mirrorX - 9)} ${px(mirrorY + 5)} L ${px(mirrorX - 4)} ${px(mirrorY + 1)}" fill="none" stroke="#F5F2FB" stroke-width="${px(2.4)}" stroke-linecap="round" stroke-linejoin="round"/>` +
     `<text x="${px(next.x + next.width / 2)}" y="${px(next.y + 27)}" font-size="${px(15)}" font-weight="600" text-anchor="middle" fill="${violet}">Next ›</text>` +
-    `<rect x="${px(120)}" y="${px(214)}" width="${px(200)}" height="${px(22)}" rx="${px(11)}" fill="#FF8A3D"/>` +
+    `<rect x="${px(120)}" y="${px(214)}" width="${px(200)}" height="${px(22)}" rx="${px(11)}" fill="#3EE6C1"/>` +
     `<text x="${px(220)}" y="${px(229)}" font-size="${px(12)}" font-weight="700" text-anchor="middle" fill="#16111F">PLACEHOLDER ISLAND</text>` +
     `</svg>`;
   const box = (value: number) => Math.round(value * scale);
