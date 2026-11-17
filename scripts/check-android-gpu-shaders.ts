@@ -30,6 +30,13 @@ const shaderMatches = [...kotlinSource.matchAll(/val\s+(vertex|fragment)\s*=\s*"
 if (shaderMatches.length !== 2 || new Set(shaderMatches.map((match) => match[1])).size !== 2) {
   throw new Error('Expected exactly one literal vertex and fragment shader with trimIndent().');
 }
+// Adreno 840 drops a Hold returned straight from a storage-buffer element (#7749).
+// Copy it into a local first; glslc accepts both forms, so only this check catches it.
+const directStructReturn = /\breturn\s+(lower|upper)\s*\[/;
+for (const [, stage, literal] of shaderMatches) {
+  const match = directStructReturn.exec(literal);
+  if (match) throw new Error(`${stage}: returns ${match[1]}[...] directly; copy the Hold into a local first (#7749).`);
+}
 
 const outputDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-gpu-shaders-'));
 try {

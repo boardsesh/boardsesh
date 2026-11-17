@@ -72,9 +72,14 @@ internal object OverlayShader {
             return int((point.y-crop.y)*crop.z+point.x-crop.x);
           }
           int index_at(uvec2 point, Hold hold) { return crop_index(point,hold.crop); }
+          // Copy into a local before returning. The Adreno 840 compiler (driver
+          // 0842.19.13) drops a struct returned straight from the lower buffer,
+          // so the lower scene drew nothing: no holds at rest, no outgoing climb (#7749).
           Hold source_hold(uint index, uint lowerCount) {
-            if(index<lowerCount) return lower[index];
-            return upper[index-lowerCount];
+            Hold hold;
+            if(index<lowerCount) hold=lower[index];
+            else hold=upper[index-lowerCount];
+            return hold;
           }
           uvec2 tile_range(uvec2 point, uint directory, uint count) {
             if(count==0u || directory==0xffffffffu) return uvec2(0u);

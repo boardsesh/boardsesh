@@ -122,6 +122,10 @@ On 2026-11-15, an owned Android API 36 ARM64 emulator with 4 GiB RAM and ANGLE/S
 
 The first TextureView notification reported timestamp zero. A deferred read subsequently matched the submitted buffer exactly and emitted one ready event. After pausing for comparison, the old timestamp was rejected and the newly submitted buffer was matched on resume. A separate 2 GiB emulator run correctly fell back because available memory was below preparation admission.
 
+### Physical Adreno: lower scene dropped (#7749)
+
+On a Galaxy S26 Ultra (Adreno 840, driver 0842.19.13) the compositor drew nothing from the lower scene: no lit holds at rest, and no outgoing climb during a swap. The emulator never showed it. A diagnostic build proved the inputs were right: the hold count, the descriptors read back from the GPU, and the tile lookup. Drawing the same still frame through the upper scene lit every hold. The driver dropped the `Hold` that `source_hold` returned straight from `lower[index]`. Copying it into a local before returning fixed both cases on the phone. `scripts/check-android-gpu-shaders.ts` now rejects a `return lower[` or `return upper[` in the shipped shader, because `glslc` accepts both forms.
+
 The [Android comparison screen](images/gpu-climb-overlay/android-comparison-screen.png) shows the existing PNG renderer beside GPU rendering over the same photographs. The images below are actual 768 × 1047 offscreen overlays. Transparent cutouts reveal the unchanged board photographs when composed in the app.
 
 | Appearance | Rust reference | Android GPU |
