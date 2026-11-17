@@ -373,9 +373,11 @@ and merged migrations stay, and this work writes no migrations.
 The web publication layer for these flows is deleted in A5 and rebuilt on the
 new session in B5: the provider Settings UI and its server code, the
 first-password web layer, the web half of Google reauthentication, anonymous
-and owned provider sign-in, and the ACK step. It imports the binding today
-(`provider-security-settings.server.ts:9-12`). With every gate `false` it
-shows nothing in production, so deleting it changes nothing live except the
+and owned provider sign-in, the ACK step and the provider-security web core
+(command client, candidate issuer, sealed flow cookie, actor selection and the
+`publicProviderSecurityReady()` gate). It imported the binding, both directly
+and through the shared actor selection. With every gate `false` it
+showed nothing in production, so deleting it changes nothing live except the
 Cookie-header check under "What is removed". The dark
 `/auth/browser-coordinator` and `/auth/confirm-first-password` pages may become
 404s. The provider-security, Google auth-time and first-password

@@ -1,8 +1,6 @@
 'use client';
 
 import { getSession, signIn, type SignInOptions, type SignInResponse } from 'next-auth/react';
-import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
-import { publicProviderSecurityReady } from './provider-security-readiness';
 import { browserSessionGuard } from './session-guard';
 
 export const WEB_SESSION_REFRESH_EVENT = 'boardsesh-web-session-refresh';
@@ -35,10 +33,9 @@ export async function signInWithSessionIntent(
   const epoch = beginWebSessionIntent();
   // This tab's own sign-in: the guard drops older responses but keeps the page.
   const localChange = browserSessionGuard().expectLocalChange();
-  const providerReady = publicProviderSecurityReady();
   let signedIn = false;
   try {
-    const result = await signInThroughReadyPath(provider, options, providerReady);
+    const result = await signIn(provider, options);
     signedIn = !result?.error;
     return result;
   } finally {
@@ -48,18 +45,6 @@ export async function signInWithSessionIntent(
     requestWebSessionRefresh(epoch);
     // Public notification for already-open NextAuth pages. Its result is never
     // accepted as identity by the owned provider.
-    if (!providerReady && epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
+    if (epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
   }
-}
-
-async function signInThroughReadyPath(
-  provider: 'credentials' | 'apple' | 'google',
-  options: SignInOptions | undefined,
-  providerReady: boolean,
-): Promise<SignInResponse | undefined> {
-  // #7596 removed the selected password writer and the selected Google/Apple
-  // start. While the provider security gate is on, a legacy sign-in would write
-  // a NextAuth cookie the selected reader ignores.
-  if (providerReady) return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
-  return await signIn(provider, options);
 }
