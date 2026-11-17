@@ -6,8 +6,10 @@ using Toybox.Lang;
 //
 // Every entry keeps the owner the tick was queued under and the server's
 // reason. Nothing here is sent again or dropped on its own: a valid tick can
-// be refused because of a watch-side gap (no boardUuid on a share-link spray
-// wall), so an entry may be a real send. Only the signed-in owner's explicit
+// be refused when its wall's or climb's visibility changed between logging
+// and the drain, so an entry may be a real send. (An unlisted spray wall
+// never hands its uuid to a session, so the watch cannot log there at all;
+// the climber logs those on the phone.) Only the signed-in owner's explicit
 // Retry (requeue) or Delete (withoutOwner) on the watch moves an entry out.
 // A full store refuses the next tick, and the caller keeps it at the head of
 // the outbox.
