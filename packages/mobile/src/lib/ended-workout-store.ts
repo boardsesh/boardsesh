@@ -163,6 +163,18 @@ export function useEndedWorkout(sessionId: string | null | undefined): EndedWork
   return useSyncExternalStore(subscribeEndedWorkouts, getSnapshot, getSnapshot);
 }
 
+/** The newest recap `userId` ran on this phone, or null. Another account's recap never answers. */
+export function getLatestEndedWorkout(userId: string | null | undefined): EndedWorkoutRecord | null {
+  if (!userId) return null;
+  return records.find((record) => record.userId === userId) ?? null;
+}
+
+/** `getLatestEndedWorkout`, re-rendering only when that answer changes. */
+export function useLatestEndedWorkout(userId: string | null | undefined): EndedWorkoutRecord | null {
+  const getSnapshot = useCallback(() => getLatestEndedWorkout(userId), [userId]);
+  return useSyncExternalStore(subscribeEndedWorkouts, getSnapshot, getSnapshot);
+}
+
 /** Test-only: back to an empty, unhydrated store. */
 export function resetEndedWorkoutStoreForTests(): void {
   records = [];

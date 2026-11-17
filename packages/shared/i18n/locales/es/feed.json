@@ -44,9 +44,15 @@
           "startTitle": "Empieza una sesión",
           "startBody": "Elige un entrenamiento o simplemente escala",
           "running": "Sesión en marcha",
-          "open": "Abrir sesión"
+          "open": "Abrir sesión",
+          "lastWorkoutToday": "Último entrenamiento · Hoy",
+          "lastWorkoutYesterday": "Último entrenamiento · Ayer",
+          "lastWorkoutOn": "Último entrenamiento · {{day}}",
+          "lastWorkoutSends_one": "{{count}} encadene",
+          "lastWorkoutSends_other": "{{count}} encadenes"
         },
         "playlists": {
+          "title": "A tu nivel, sin encadenar",
           "all": "Todas las listas"
         },
         "empty": {

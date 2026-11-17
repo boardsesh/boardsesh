@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useSmartPlaylistCounts } from '@boardsesh/playlists-react';
 import type { SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 import { ArtRow } from '../ArtRow';
@@ -11,20 +12,26 @@ import { Text } from '../Text';
 import { PlaylistPreviewSquare } from '../playlist/PlaylistPreviewSquare';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useAuthToken } from '../../lib/graphql/use-auth-token';
+import { track } from '../../lib/analytics';
 import { hapticLight } from '../../lib/haptics';
 import { smartPlaylistByType, smartPlaylistHref, type SmartPlaylistPresentation } from '../../lib/smart-playlists';
 import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { HomeSectionFrame } from './HomeSectionFrame';
 
-// The two lists a climber keeps coming back to, as on Boardz's Home. Choosing
-// which lists show here is a later change.
-const HOME_SMART_PLAYLIST_TYPES: readonly SmartPlaylistType[] = ['LIKED_CLIMBS', 'PROJECTS'];
+// Climbs to try next, at the climber's level and not sent yet (#7689). Projects
+// get their own shelf (#7691); Liked climbs stay one tap away on Discover.
+const HOME_SMART_PLAYLIST_TYPES: readonly SmartPlaylistType[] = [
+  'RECOMMENDED_AT_LEVEL',
+  'RECOMMENDED_HIDDEN_GEMS',
+  'RECOMMENDED_FRESH',
+];
 const HOME_SMART_PLAYLISTS = HOME_SMART_PLAYLIST_TYPES.flatMap((type) => smartPlaylistByType(type) ?? []);
 const PREVIEW_SIZE = 44;
 
 /**
- * "Playlists": Liked climbs and Projects, then All playlists on Discover.
+ * "At your level, unsent": the At your level, Hidden gems and Fresh smart
+ * playlists, then All playlists on Discover.
  *
  * The counts come from the network. Without them (no signal, still loading)
  * the rows show without a count, and each list shows its own offline state.
@@ -32,7 +39,6 @@ const PREVIEW_SIZE = 44;
 export const HomePlaylistsSection = memo(function HomePlaylistsSection() {
   const { t } = useTranslation('playlists');
   const { t: tFeed } = useTranslation('feed');
-  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const { systemColors } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -47,6 +53,7 @@ export const HomePlaylistsSection = memo(function HomePlaylistsSection() {
   const openSmartPlaylist = useCallback(
     (smartType: SmartPlaylistType) => {
       hapticLight();
+      track(SHARED_EVENTS.HomeSectionTapped, { section: 'playlists', target: smartType });
       // With its anchor: a Discover tab that has not been opened yet would
       // otherwise hold only this list, and back would leave Discover's main page
       // unreachable (the JS tab bars mount tabs lazily).
@@ -56,15 +63,13 @@ export const HomePlaylistsSection = memo(function HomePlaylistsSection() {
   );
   const openAllPlaylists = useCallback(() => {
     hapticLight();
+    track(SHARED_EVENTS.HomeSectionTapped, { section: 'playlists', target: 'all' });
     router.navigate('/(tabs)/discover');
   }, [router]);
 
   const allPlaylistsLabel = tFeed('mobile.home.sections.playlists.all');
   return (
-    <HomeSectionFrame
-      title={tCommon('mobile.settings.homeSections.sections.playlists')}
-      testID="home-section-playlists"
-    >
+    <HomeSectionFrame title={tFeed('mobile.home.sections.playlists.title')} testID="home-section-playlists">
       <InsetGroupedList>
         {HOME_SMART_PLAYLISTS.map((preset) => {
           const count = countByType.get(preset.type);

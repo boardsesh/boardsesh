@@ -495,7 +495,7 @@
           "week": "Cette semaine",
           "board": "Ta board",
           "session": "Session",
-          "playlists": "Listes",
+          "playlists": "À ton niveau",
           "climbingNow": "En train de grimper",
           "beta": "Beta récente",
           "feed": "Fil"
@@ -503,8 +503,8 @@
         "descriptions": {
           "week": "Sessions, croix et semaines d’affilée",
           "board": "Parcourir les blocs ou changer de board",
-          "session": "Démarrer une session ou voir son chrono",
-          "playlists": "Voies aimées et Projets",
+          "session": "Ton dernier entraînement, ou démarre une session",
+          "playlists": "À ton niveau, Pépites cachées et Nouveautés",
           "climbingNow": "Sessions en direct à rejoindre",
           "beta": "Nouvelles vidéos beta pour ta board",
           "feed": "Sessions et nouveaux blocs de ton crew. Toujours en bas."

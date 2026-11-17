@@ -44,9 +44,15 @@
           "startTitle": "Démarre une session",
           "startBody": "Choisis un entraînement ou grimpe librement",
           "running": "Session en cours",
-          "open": "Ouvrir la session"
+          "open": "Ouvrir la session",
+          "lastWorkoutToday": "Dernier entraînement · Aujourd’hui",
+          "lastWorkoutYesterday": "Dernier entraînement · Hier",
+          "lastWorkoutOn": "Dernier entraînement · {{day}}",
+          "lastWorkoutSends_one": "{{count}} croix",
+          "lastWorkoutSends_other": "{{count}} croix"
         },
         "playlists": {
+          "title": "À ton niveau, pas encore enchaînées",
           "all": "Toutes les listes"
         },
         "empty": {

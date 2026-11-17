@@ -71,7 +71,6 @@ export const SHARED_EVENTS = {
   // question: of the newcomers who never sign in, how many tapped anything.
   AuthOptionTapped: 'Auth Option Tapped',
   // Queue / session
-  AddToQueue: 'Add to Queue',
   ClimbAddedToQueue: 'Climb Added to Queue',
   // A climb from a DIFFERENT board than the queue is on was tapped, so the
   // cross-board prompt was raised. Props: { outcome: 'add' | 'switch' | 'cancel',
@@ -351,6 +350,12 @@ export const SHARED_EVENTS = {
   LiveSessionCardTapped: 'Live Session Card Tapped',
   LiveSessionJoined: 'Live Session Joined',
   StartSessionPromptTapped: 'Start Session Prompt Tapped',
+  // A tap inside one of Home's sections (#7689). { section: 'week' | 'session'
+  // | 'playlists', target }: `target` names what was tapped ('record',
+  // 'start', 'open', 'all', or a smart playlist's type). Divide by Home
+  // screen views for the share of Home visits that act on a section. Added
+  // together with retiring 'Add to Queue', which had no call site left.
+  HomeSectionTapped: 'Home Section Tapped',
   // The creator's "show this session live" switch. { isPublic, phase:
   // 'pre_session' | 'in_session' }.
   SessionVisibilityChanged: 'Session Visibility Changed',
