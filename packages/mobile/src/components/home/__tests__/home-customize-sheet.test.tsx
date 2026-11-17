@@ -150,19 +150,19 @@ describe('HomeCustomizeSheet', () => {
     renderSheet();
     expect(switchLabels()).toEqual([
       `${SECTION_KEY}.week`,
-      `${SECTION_KEY}.board`,
       `${SECTION_KEY}.session`,
-      `${SECTION_KEY}.playlists`,
       `${SECTION_KEY}.climbingNow`,
+      `${SECTION_KEY}.playlists`,
+      `${SECTION_KEY}.board`,
       `${SECTION_KEY}.beta`,
       `${SECTION_KEY}.feed`,
     ]);
     expect(screen.getAllByRole('switch').map((element) => (element as HTMLInputElement).checked)).toEqual([
       true,
-      false,
-      false,
-      false,
       true,
+      true,
+      true,
+      false,
       false,
       true,
     ]);
@@ -172,7 +172,7 @@ describe('HomeCustomizeSheet', () => {
     expect((screen.getByTestId('home-customize-restore-defaults') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('Focused turns on the three cards and hides the feed and Climbing now', () => {
+  it('Focused turns on Session, At your level and Your board, and hides the feed and Climbing now', () => {
     renderSheet();
     act(() => {
       fireEvent.click(screen.getByTestId('home-customize-focused'));
@@ -190,14 +190,14 @@ describe('HomeCustomizeSheet', () => {
     });
     expect(homeSectionsStore.getLayout().order).toEqual([
       'week',
-      'board',
-      'session',
       'climbingNow',
+      'session',
       'playlists',
+      'board',
       'beta',
       'feed',
     ]);
-    expect(switchLabels()[3]).toBe(`${SECTION_KEY}.climbingNow`);
+    expect(switchLabels()[1]).toBe(`${SECTION_KEY}.climbingNow`);
     expect(analytics.trackSettingChanged).toHaveBeenCalledWith('homeScreen', 'moveUp', 'climbingNow');
   });
 
@@ -230,10 +230,10 @@ describe('HomeCustomizeSheet', () => {
     expect(homeSectionsStore.getLayout().order).toEqual([
       'week',
       'session',
-      'board',
-      'playlists',
       'climbingNow',
+      'playlists',
       'beta',
+      'board',
       'feed',
     ]);
   });

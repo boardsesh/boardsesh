@@ -254,10 +254,10 @@ afterEach(() => {
 });
 
 describe('Home sections', () => {
-  it('draws This week, Climbing now, then the feed by default', () => {
+  it('draws This week, Session, Climbing now, At your level, then the feed by default', () => {
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow']);
-    expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(true);
+    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-climbingNow', 'section-playlists']);
+    expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(false);
     expect(screen.getByText('mobile.home.feedTitle')).toBeTruthy();
     expect(screen.getByTestId('home-customize')).toBeTruthy();
     expect(recorded.crewFeedEnabled.at(-1)).toBe(true);
@@ -266,10 +266,10 @@ describe('Home sections', () => {
     expect(lastChrome()?.scopeTitle).toBe('mobile.home.scope.myCrew');
   });
 
-  it('Focused mounts your week and the three cards and asks for no feed and no Climbing now', () => {
+  it('Focused mounts your week, Session, At your level and Your board, and asks for no feed and no Climbing now', () => {
     homeSectionsStore.apply(focusedHomeLayout(homeSectionsStore.getLayout()));
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-board', 'section-session', 'section-playlists']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-playlists', 'section-board']);
     expect(recorded.railProps).toEqual([]);
     expect(recorded.crewFeedEnabled.every((enabled) => !enabled)).toBe(true);
     expect(recorded.sessionFeedEnabled.every((enabled) => !enabled)).toBe(true);
@@ -284,14 +284,23 @@ describe('Home sections', () => {
       visible: { ...HOME_SECTIONS.defaults.visible, playlists: true, board: true },
     });
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-playlists', 'section-climbingNow', 'section-board']);
+    expect(sectionOrder()).toEqual([
+      'section-week',
+      'section-playlists',
+      'section-climbingNow',
+      'section-board',
+      'section-session',
+    ]);
   });
 
   it('keeps Start out of Climbing now while the Session card shows', () => {
-    homeSectionsStore.setVisible('session', true);
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-climbingNow']);
     expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(false);
+    cleanup();
+    homeSectionsStore.setVisible('session', false);
+    render(createElement(HomeTab));
+    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow', 'section-playlists']);
+    expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(true);
   });
 
   it('holds the cards back until Home is first opened', () => {
@@ -301,7 +310,7 @@ describe('Home sections', () => {
     expect(sectionOrder()).toEqual([]);
     focus.hasBeenFocused = true;
     rerender(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-board', 'section-session', 'section-playlists']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-playlists', 'section-board']);
   });
 
   it('shows the empty state with everything off, and Customize opens the sheet from there', () => {
@@ -326,13 +335,23 @@ describe('Home sections', () => {
     act(() => {
       homeSectionsStore.setVisible('board', true);
     });
-    expect(sectionOrder()).toEqual(['section-week', 'section-board', 'section-climbingNow']);
+    expect(sectionOrder()).toEqual([
+      'section-week',
+      'section-session',
+      'section-climbingNow',
+      'section-playlists',
+      'section-board',
+    ]);
   });
 
   it('pull to refresh asks again only for what is on screen', () => {
     const { unmount } = render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());
-    expect(refresh.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual([{ queryKey: ['followed'] }]);
+    expect(refresh.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual([
+      { queryKey: ['followed'] },
+      { queryKey: ['sessionSummary'] },
+      { queryKey: ['mySmartPlaylistCounts'] },
+    ]);
     unmount();
 
     refresh.invalidateQueries.mockClear();
@@ -355,7 +374,7 @@ describe('Home sections', () => {
     );
     homeSectionsStore.apply({
       ...HOME_SECTIONS.defaults,
-      visible: { ...HOME_SECTIONS.defaults.visible, session: true, climbingNow: false, feed: false },
+      visible: { ...HOME_SECTIONS.defaults.visible, session: true, playlists: false, climbingNow: false, feed: false },
     });
     render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());
@@ -369,7 +388,14 @@ describe('Home sections', () => {
   it('shows no spinner when nothing on screen has anything to fetch', () => {
     homeSectionsStore.apply({
       ...HOME_SECTIONS.defaults,
-      visible: { ...HOME_SECTIONS.defaults.visible, board: true, climbingNow: false, feed: false },
+      visible: {
+        ...HOME_SECTIONS.defaults.visible,
+        board: true,
+        session: false,
+        playlists: false,
+        climbingNow: false,
+        feed: false,
+      },
     });
     render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());
@@ -383,7 +409,13 @@ describe('Home sections', () => {
     cleanup();
     homeSectionsStore.setVisible('beta', true);
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow', 'section-beta']);
+    expect(sectionOrder()).toEqual([
+      'section-week',
+      'section-session',
+      'section-climbingNow',
+      'section-playlists',
+      'section-beta',
+    ]);
     // No home board resolved in this test, so the shelf is every board.
     expect(recorded.betaProps.at(-1)).toEqual({ boardType: null, layoutId: null, enabled: true });
     act(() => refresh.onRefresh?.());
@@ -439,7 +471,7 @@ describe('Home sections', () => {
     );
     homeSectionsStore.apply({
       ...HOME_SECTIONS.defaults,
-      visible: { ...HOME_SECTIONS.defaults.visible, session: true, climbingNow: false, feed: false },
+      visible: { ...HOME_SECTIONS.defaults.visible, session: true, playlists: false, climbingNow: false, feed: false },
     });
     render(createElement(HomeTab));
     act(() => refresh.onRefresh?.());

@@ -211,7 +211,7 @@ describe('HomeSettingsScreen', () => {
   });
 
   it('hosts the movable sections with switches and arrows, in the saved order, the feed left out', () => {
-    homeSectionsStore.move('climbingNow', -1);
+    homeSectionsStore.move('playlists', -1);
     render(createElement(HomeSettingsScreen));
     expect(hostedRow().fullBleed).toBe(true);
     // A first guess until the list reports what it drew: six rows at the default text size.
@@ -219,10 +219,10 @@ describe('HomeSettingsScreen', () => {
     const { container } = renderHostedRows();
     expect(switchLabels(container)).toEqual([
       `${SECTION_KEY}.week`,
-      `${SECTION_KEY}.board`,
       `${SECTION_KEY}.session`,
-      `${SECTION_KEY}.climbingNow`,
       `${SECTION_KEY}.playlists`,
+      `${SECTION_KEY}.climbingNow`,
+      `${SECTION_KEY}.board`,
       `${SECTION_KEY}.beta`,
     ]);
     expect(container.querySelector('[data-testid="section-layout-move-up-board"]')).not.toBeNull();
@@ -250,11 +250,11 @@ describe('HomeSettingsScreen', () => {
     expect(settingChangedCalls()).toEqual([{ page: 'homeScreen', key: 'moveUp', value: 'beta' }]);
     expect(homeSectionsStore.getLayout().order).toEqual([
       'week',
-      'board',
       'session',
+      'climbingNow',
       'playlists',
       'beta',
-      'climbingNow',
+      'board',
       'feed',
     ]);
 
@@ -262,33 +262,39 @@ describe('HomeSettingsScreen', () => {
       homeSectionsStore.setVisible('beta', true);
     });
     // Home draws the switched-on sections above the feed in the stored order.
-    expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual(['week', 'beta', 'climbingNow']);
+    expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual([
+      'week',
+      'session',
+      'climbingNow',
+      'playlists',
+      'beta',
+    ]);
 
     cleanup();
     render(createElement(HomeCustomizeSheet, { visible: true, onClose: vi.fn() }));
     expect(screen.getAllByRole('switch').map((element) => element.getAttribute('aria-label'))).toEqual([
       `${SECTION_KEY}.week`,
-      `${SECTION_KEY}.board`,
       `${SECTION_KEY}.session`,
+      `${SECTION_KEY}.climbingNow`,
       `${SECTION_KEY}.playlists`,
       `${SECTION_KEY}.beta`,
-      `${SECTION_KEY}.climbingNow`,
+      `${SECTION_KEY}.board`,
       `${SECTION_KEY}.feed`,
     ]);
   });
 
   it('on Android, draws native switches in the saved order with move buttons, and a move saves the order', () => {
     platform.OS = 'android';
-    homeSectionsStore.move('climbingNow', -1);
+    homeSectionsStore.move('playlists', -1);
     render(createElement(HomeSettingsScreen));
     const sectionRows = () =>
       (captured.model?.sections.find((section) => section.key === 'sections')?.rows ?? []) as MoreToggleRow[];
     expect(sectionRows().map((row) => [row.kind, row.key])).toEqual([
       ['toggle', 'week'],
-      ['toggle', 'board'],
       ['toggle', 'session'],
-      ['toggle', 'climbingNow'],
       ['toggle', 'playlists'],
+      ['toggle', 'climbingNow'],
+      ['toggle', 'board'],
       ['toggle', 'beta'],
     ]);
     expect(rows().some((row) => row.kind === 'custom')).toBe(false);
@@ -303,20 +309,20 @@ describe('HomeSettingsScreen', () => {
     ]);
     expect(toggle('feed').actions).toBeUndefined();
 
-    act(() => toggle('climbingNow').actions?.[0].onPress());
-    expect(settingChangedCalls()).toEqual([{ page: 'homeScreen', key: 'moveUp', value: 'climbingNow' }]);
+    act(() => toggle('board').actions?.[0].onPress());
+    expect(settingChangedCalls()).toEqual([{ page: 'homeScreen', key: 'moveUp', value: 'board' }]);
     expect(settings.values.get('homeSectionsV1')).toMatchObject({
-      order: ['week', 'board', 'climbingNow', 'session', 'playlists', 'beta', 'feed'],
+      order: ['week', 'session', 'playlists', 'board', 'climbingNow', 'beta', 'feed'],
     });
     expect(announce.announceQueued).toHaveBeenCalledWith(
-      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: `${SECTION_KEY}.climbingNow`, position: 3, count: 6 })}`,
+      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: `${SECTION_KEY}.board`, position: 4, count: 6 })}`,
     );
     expect(sectionRows().map((row) => row.key)).toEqual([
       'week',
-      'board',
-      'climbingNow',
       'session',
       'playlists',
+      'board',
+      'climbingNow',
       'beta',
     ]);
 
@@ -324,8 +330,8 @@ describe('HomeSettingsScreen', () => {
     act(() => toggle('week').actions?.[0].onPress());
     expect(settingChangedCalls()).toHaveLength(1);
 
-    act(() => toggle('playlists').onValueChange(true));
-    expect(homeSectionsStore.getLayout().visible.playlists).toBe(true);
+    act(() => toggle('board').onValueChange(true));
+    expect(homeSectionsStore.getLayout().visible.board).toBe(true);
   });
 
   it('reports a switch once, under the Home page', () => {
