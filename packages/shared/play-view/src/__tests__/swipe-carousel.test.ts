@@ -5,8 +5,6 @@ import {
   evaluateSwipeOutcome,
   selectPeekDirection,
   getEnterDirection,
-  computeSwipeExitTarget,
-  SWIPE_OFFSCREEN_PAD,
   SWIPE_THRESHOLD,
   DIRECTION_THRESHOLD,
   VERTICAL_LOCK_RATIO,
@@ -134,11 +132,5 @@ describe('getEnterDirection', () => {
 
   it('maps previous-navigation to from-left', () => {
     expect(getEnterDirection('previous')).toBe('from-left');
-  });
-});
-
-describe('computeSwipeExitTarget', () => {
-  it('targets the screen width plus the off-screen pad', () => {
-    expect(computeSwipeExitTarget(390)).toBe(390 + SWIPE_OFFSCREEN_PAD);
   });
 });

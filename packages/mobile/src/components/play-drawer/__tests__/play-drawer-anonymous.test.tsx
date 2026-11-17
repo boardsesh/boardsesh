@@ -413,21 +413,25 @@ vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null
 // that swallowed it would hide whether PlayDrawer passes one at all.
 vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
+  // The climb's name and a fixed grade, for the board's spoken value.
   useLivePlayDrawerHeaderModel: (props: Props) =>
     recorded.liveHeader.push(props) && props.climb
       ? {
-          headerProps: props,
+          headerProps: { ...props, name: (props.climb as { name: string }).name, difficulty: 'V5' },
           reduceMotion: false,
           layoutFingerprint: JSON.stringify(props.climb),
         }
       : null,
+  describePlayDrawerGrade: (headerProps: Props) => headerProps.difficulty,
   PreparedPlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
   LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
 }));
 vi.mock('../SwipeableHeader', () => ({
-  SwipeableHeader: (props: { current?: ReactNode; next?: ReactNode; previous?: ReactNode }) => {
+  // Renders the pinned `leading` chip after the current header's reserve, so
+  // the last WallStatePill recorded is the one a climber taps.
+  SwipeableHeader: (props: { current?: ReactNode; next?: ReactNode; previous?: ReactNode; leading?: ReactNode }) => {
     recorded.swipeableHeader.push(props);
-    return createElement('div', null, props.current);
+    return createElement('div', null, props.current, props.leading);
   },
 }));
 vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));
@@ -3769,13 +3773,16 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       render(drawerElement('member', committedTargetFor(first)));
       expect(lastCaption()).toBeNull();
       expect(lastListParts()).not.toHaveProperty('thenTail');
-      expect(lastBoardProps().accessibilityValueText).toBeUndefined();
+      // The climb and its place in the list, and nothing about Up next.
+      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.climbPositionAria');
       expect(lastBoardProps().nextActionLabel).toBeUndefined();
     });
 
     it('names the list for a screen reader on the board, and ticks once on the swipe across', () => {
       onTheLastOfUpNext();
-      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.upNextPositionThenAria');
+      expect(lastBoardProps().accessibilityValueText).toBe(
+        'playView.track.climbAria, playView.track.upNextPositionThenAria',
+      );
       expect(lastBoardProps().nextActionLabel).toBe('playView.track.nextIn');
       swipeNext();
       expect(haptics.selection).toHaveBeenCalledTimes(1);
@@ -3823,16 +3830,52 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       swipeNext();
       expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
       // A screen reader hears it too: the board's value after the swipe.
-      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.previewUpNextWaiting');
+      expect(lastBoardProps().accessibilityValueText).toBe(
+        'playView.track.climbPositionAria, playView.track.previewUpNextWaiting',
+      );
       swipeNext();
       expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
-      expect(lastBoardProps().accessibilityValueText).toBeUndefined();
+      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.climbPositionAria');
       // A look at a list never crosses anything: no tick.
       expect(haptics.selection).not.toHaveBeenCalled();
       // Once per open: a new open of the list earns it once more.
       view.rerender(openSearch(2));
       swipeNext();
       expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
+    });
+
+    // The board's value used to be set only in Up next, so a swipe from Search
+    // results said nothing, and no screen reader ever heard the climb's name or
+    // grade. Now it names the climb, its grade and its place in the list, and a
+    // step announces that where it lands.
+    it('names the climb and its place in Search results, and announces it after a swipe', () => {
+      const searchA = climb('climb-search-a', 'Sloper Town');
+      const searchB = climb('climb-search-b', 'B');
+      const search = {
+        playlistUuid: 'search',
+        activatedClimbUuid: searchA.uuid,
+        boardKey: 'kilter:1:10:1,20',
+        climbs: [searchA, searchB],
+        label: 'Search results',
+        total: 2,
+      } as unknown as PlaylistSuggestionSource;
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst];
+      session.currentItem = itemFirst;
+      render(
+        drawerElement('member', {
+          climb: searchA,
+          options: { previewQueueItem: { uuid: 'preview-a', climb: searchA }, playlistSuggestionSource: search },
+          nonce: 1,
+        } as unknown as Parameters<typeof drawerElement>[1]),
+      );
+      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.climbPositionAria');
+      announceMock.mockClear();
+
+      swipeNext();
+
+      expect(announceMock).toHaveBeenCalledWith('playView.track.climbPositionAria');
     });
 
     // The end card from a preview names the climb back goes to, as "On the

@@ -1,5 +1,5 @@
 import { memo, useCallback, useState, type ReactNode } from 'react';
-import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent, type ViewProps } from 'react-native';
 import { spacing } from '../theme/tokens';
 
 // Default width of the trailing slot (and the matching leading spacer) so the
@@ -99,12 +99,45 @@ export const DrawerHeader = memo(function DrawerHeader({
   );
 });
 
+/**
+ * A leading element drawn over a `DrawerHeader` (or several stacked ones) at
+ * exactly the spot the header's leading flank gives it: the same insets, left
+ * aligned, centred on the row. For a leading element that must stay put while
+ * the headers under it change, like the play drawer's back chip during a swipe.
+ * The headers reserve the flank themselves (an invisible copy), so their names
+ * centre as if the element were theirs. Fills its parent and lets every touch
+ * outside the element through.
+ */
+export function DrawerHeaderPinnedLeading({ children, ...viewProps }: Omit<ViewProps, 'style' | 'pointerEvents'>) {
+  return (
+    <View {...viewProps} style={styles.pinnedLeading} pointerEvents="box-none">
+      {children}
+    </View>
+  );
+}
+
+const HEADER_PADDING_HORIZONTAL = spacing[4];
+const HEADER_PADDING_VERTICAL = spacing[3];
+
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingHorizontal: HEADER_PADDING_HORIZONTAL,
+    paddingVertical: HEADER_PADDING_VERTICAL,
     minHeight: 56,
     justifyContent: 'center',
+  },
+  // The container's insets, with the row's vertical centring and the leading
+  // flank's start alignment.
+  pinnedLeading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: HEADER_PADDING_HORIZONTAL,
+    paddingVertical: HEADER_PADDING_VERTICAL,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
   },
   headerRow: {
     flexDirection: 'row',

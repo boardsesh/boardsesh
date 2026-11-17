@@ -1,24 +1,36 @@
 import { memo, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
-import { pageOffset, type SwipePager } from './use-swipe-pager';
+import { DrawerHeaderPinnedLeading } from '../DrawerHeader';
+import type { SwipePager } from './use-swipe-pager';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+
+/**
+ * How far a header drifts while it fades, in points: the outgoing one toward
+ * the side it leaves by, the incoming one in from the side it arrives from.
+ * Enough to say which way the list moved; small enough that a name, its grade
+ * and its stats never travel far from where they rest.
+ */
+export const HEADER_SWAP_DRIFT = 16;
 
 type SwipeableHeaderProps = {
   /** The carousel's pager — the header rides the EXACT same anchor and offset as
-   *  the board, so the title/grade slide in lockstep with the climb. */
+   *  the board, so the climb on the header changes with the climb on the board. */
   pager: SwipePager;
   /** The page the current climb is on; its neighbours are the pages either side. */
   centerPage: number;
-  /** The header's own width (screen width). The current header flings past this
-   *  and a neighbour slides in by it, so each clears the viewport. */
-  viewportWidth: number;
   /** The current climb's header. */
   current: ReactNode;
-  /** The neighbours' headers, sliding in edge-adjacent from the side being
-   *  swiped towards. Null at a queue boundary. */
+  /** The neighbours' headers, faded in when the swipe goes their way. Null at a
+   *  queue boundary. */
   previous: ReactNode;
   next: ReactNode;
+  /**
+   * The header's leading element (the back chip), drawn once over the slots so
+   * it never moves, fades or remounts with the climb. Each slot reserves its
+   * width with an invisible copy, so every name is centred the same way.
+   */
+  leading?: ReactNode;
   /** What a screen reader reads for the header: one fixed view, never a slot.
    *  Every slot is hidden from assistive tech, because the slots change places
    *  on every climb change and focus on one would be left on a hidden view.
@@ -27,10 +39,26 @@ type SwipeableHeaderProps = {
   accessibilityStandIn: ReactNode;
 };
 
+/**
+ * Where a header slot is drawn for the pager's position: one whole block (name,
+ * grade, stats), never a name beside another climb's grade.
+ *
+ * `distance` is how far the page is from the middle, in pages, signed: 0 is at
+ * rest, 1 is a whole board width toward the next side. The outgoing header
+ * fades out over the first half of the swipe while drifting away; the incoming
+ * one fades in over the second half while drifting into place. At most one of
+ * them shows at any moment, so a grade is only ever drawn beside its own name.
+ */
+export function headerSlotFrame(distance: number, drift: number): { opacity: number; offset: number } {
+  'worklet';
+  const away = Math.min(1, Math.abs(distance) * 2);
+  return { opacity: 1 - away, offset: Math.sign(distance) * drift * away };
+}
+
 type HeaderSlotProps = {
   page: number;
   /** The JS thread shows this climb as current: this header is in flow, sets the
-   *  height and takes the sighted taps (copy the name, the setter, the wall pill). */
+   *  height and takes the sighted taps (copy the name, the setter). */
   isCurrent: boolean;
   anchorPage: SharedValue<number>;
   translateX: SharedValue<number>;
@@ -38,7 +66,6 @@ type HeaderSlotProps = {
   boardSlideWidth: SharedValue<number>;
   stationaryMotion: SharedValue<boolean>;
   reduceMotion: boolean;
-  viewportWidth: number;
   children: ReactNode;
 };
 
@@ -56,24 +83,26 @@ const HeaderSlot = memo(function HeaderSlot({
   boardSlideWidth,
   stationaryMotion,
   reduceMotion,
-  viewportWidth,
   children,
 }: HeaderSlotProps) {
   const slotStyle = useAnimatedStyle(() => {
-    // The offset is in the board's terms: the incoming board is in the middle
-    // when it reaches the board's width. The header is as wide as the screen,
-    // so its travel is scaled to match and the title arrives with the board.
-    // It also keeps the two in step when a swipe takes over a fling, which
-    // re-bases the offset by the board's width.
-    const boardWidth = boardSlideWidth.value;
+    // The anchored GPU board does not reveal under Reduce Motion: its holds
+    // change when the step lands, so the title does too.
     if (stationaryMotion?.value && reduceMotion) {
       return { opacity: page === anchorPage.value ? 1 : 0, transform: [{ translateX: 0 }] };
     }
-    const scale = boardWidth > 0 ? viewportWidth / boardWidth : 1;
-    const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value * scale, viewportWidth);
+    // The offset is in the board's terms: the incoming board is in the middle
+    // when it has travelled the board's width. Clamped to one page, so a drag
+    // past the board's width never starts on a third climb's header.
+    const boardWidth = boardSlideWidth.value;
+    const progress = boardWidth > 0 ? Math.max(-1, Math.min(1, translateX.value / boardWidth)) : 0;
+    const { opacity, offset } = headerSlotFrame(
+      page - anchorPage.value + progress,
+      reduceMotion ? 0 : HEADER_SWAP_DRIFT,
+    );
     // Opacity and transform only; see CarouselBoardSlot for why never zIndex.
-    return { opacity: visible ? 1 : 0, transform: [{ translateX: offset }] };
-  }, [page, viewportWidth, reduceMotion]);
+    return { opacity, transform: [{ translateX: offset }] };
+  }, [page, reduceMotion]);
 
   return (
     <Animated.View
@@ -88,7 +117,7 @@ const HeaderSlot = memo(function HeaderSlot({
 });
 
 /**
- * Wraps the play-drawer's title + grade so they swipe with the board. Three
+ * Wraps the play-drawer's title + grade so they change with the board. Three
  * headers stay mounted, the current climb's and its two neighbours', on the same
  * pages as the carousel's boards; the pager's anchor says which is in the middle.
  * At rest only that one is drawn. A screen reader reads `accessibilityStandIn`
@@ -98,10 +127,10 @@ const HeaderSlot = memo(function HeaderSlot({
 export const SwipeableHeader = memo(function SwipeableHeader({
   pager,
   centerPage,
-  viewportWidth,
   current,
   previous,
   next,
+  leading,
   accessibilityStandIn,
 }: SwipeableHeaderProps) {
   const reduceMotion = useReduceMotion();
@@ -116,7 +145,6 @@ export const SwipeableHeader = memo(function SwipeableHeader({
         boardSlideWidth={pager.slideWidth}
         stationaryMotion={pager.stationaryMotion}
         reduceMotion={reduceMotion}
-        viewportWidth={viewportWidth}
       >
         {content}
       </HeaderSlot>
@@ -129,6 +157,18 @@ export const SwipeableHeader = memo(function SwipeableHeader({
         renderSlot(centerPage, current, true),
         renderSlot(centerPage + 1, next, false),
       ]}
+      {/* Above the slots, so the chip takes its own taps; `box-none`, so every
+          other tap reaches the current header. Hidden from assistive tech like
+          the slots: the stand-in carries the chip's action. */}
+      {leading ? (
+        <DrawerHeaderPinnedLeading
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          testID="play-drawer-header-leading"
+        >
+          {leading}
+        </DrawerHeaderPinnedLeading>
+      ) : null}
       {/* Last, so it is on top: Android's explore-by-touch sends hover events to
           the topmost view first, and the current slot below holds views that
           would take them (the setter link) and announce nothing, being hidden.

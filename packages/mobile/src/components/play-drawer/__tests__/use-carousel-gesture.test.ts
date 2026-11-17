@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useState } from 'react';
 import type { SharedValue } from 'react-native-reanimated';
-import { SWIPE_OFFSCREEN_PAD, SWIPE_THRESHOLD } from '@boardsesh/play-view';
+import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import type { BoardArtReadiness } from '../../../lib/board-render/ready-board-art';
 
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
@@ -19,6 +19,9 @@ vi.mock('react-native', () => ({ Platform: platform }));
 // is the pager's.
 
 const springCallbacks = vi.hoisted(() => [] as ((finished: boolean) => void)[]);
+// What each spring was started from and with, for the settle's own contract.
+type SpringStart = { toValue: number; config: { stiffness: number; damping: number; mass: number; velocity: number } };
+const springStarts = vi.hoisted(() => [] as SpringStart[]);
 // A waiting release's clock: a delayed no-op timing whose callback the test runs.
 type Deadline = { delayMs: number; reduceMotion: unknown; finish: (finished: boolean) => void };
 const deadlines = vi.hoisted(() => [] as Deadline[]);
@@ -55,7 +58,8 @@ vi.mock('react-native-reanimated', async () => {
     },
     // Resolves to its target at once, like the rest of this mock, and hands the
     // completion callback to the test, which decides when the fling lands.
-    withSpring: (toValue: unknown, _config?: unknown, onFinished?: (finished: boolean) => void) => {
+    withSpring: (toValue: unknown, config?: unknown, onFinished?: (finished: boolean) => void) => {
+      springStarts.push({ toValue, config } as SpringStart);
       if (onFinished) springCallbacks.push(onFinished);
       return toValue;
     },
@@ -113,8 +117,8 @@ import {
 type Options = Parameters<typeof useCarouselGesture>[0];
 
 const BOARD_WIDTH = 320;
-const SCREEN_WIDTH = 390;
-const FLING_TARGET = SCREEN_WIDTH + SWIPE_OFFSCREEN_PAD;
+// A release settles where the incoming board rests: one board width along.
+const FLING_TARGET = BOARD_WIDTH;
 
 function shared<Value>(value: Value) {
   return { value } as unknown as SharedValue<Value>;
@@ -166,7 +170,6 @@ function makeOptions(overrides: Partial<Options> = {}): Options {
   return {
     pager: makePager(),
     boardWidth: BOARD_WIDTH,
-    screenWidth: SCREEN_WIDTH,
     ...overrides,
   };
 }
@@ -240,7 +243,7 @@ describe('useCarouselGesture', () => {
     expect(settings.blocksExternalGesture).toBeUndefined();
   });
 
-  it('keeps the gesture identity stable across enabled, board-width and screen-width changes', () => {
+  it('keeps the gesture identity stable across enabled and board-width changes', () => {
     const pager = makePager();
     const { result, rerender } = renderHook((props: Options) => useCarouselGesture(props), {
       initialProps: makeOptions({ pager }),
@@ -249,7 +252,7 @@ describe('useCarouselGesture', () => {
     const firstGesture = result.current.gesture;
 
     rerender(makeOptions({ pager, enabled: false, boardWidth: 280 }));
-    rerender(makeOptions({ pager, screenWidth: 430 }));
+    rerender(makeOptions({ pager, boardWidth: 300 }));
 
     expect(result.current.gesture).toBe(firstGesture);
     // One composition total — recomposing mid-session is the iOS RNGH wedge.
@@ -1149,6 +1152,43 @@ describe('useCarouselGesture', () => {
     });
   });
 
+  // The release used to spring toward the screen width plus 80 pt while the
+  // content was clamped at the board width: it stopped dead there at up to
+  // 3,400 pt/s. Now it settles at the board width, from the finger's speed,
+  // critically damped and stiff enough that it cannot pass the middle.
+  it('settles a release at the board width, carrying the finger’s speed without overshooting', () => {
+    const pager = makePager();
+    renderHook(() => useCarouselGesture(makeOptions({ pager })));
+    springStarts.length = 0;
+    const handlers = latestHandlers();
+    handlers.onStart({ translationX: 0 });
+    handlers.onUpdate({ translationX: -250 });
+    handlers.onEnd({ translationX: -250, velocityX: -2950 });
+
+    const [{ toValue, config }] = springStarts;
+    expect(toValue).toBe(-BOARD_WIDTH);
+    expect(config.velocity).toBe(-2950);
+    // Critically damped: damping² = 4·k·m.
+    expect(config.damping ** 2).toBeCloseTo(4 * config.stiffness * config.mass, 6);
+    // Stiff enough for this speed over the 70 pt left: k ≥ (v / d)².
+    expect(config.stiffness).toBeGreaterThanOrEqual((2950 / (BOARD_WIDTH - 250)) ** 2 - 1e-6);
+  });
+
+  it('springs a short swipe back with the same settle', () => {
+    const pager = makePager();
+    renderHook(() => useCarouselGesture(makeOptions({ pager })));
+    springStarts.length = 0;
+    const handlers = latestHandlers();
+    handlers.onStart({ translationX: 0 });
+    handlers.onUpdate({ translationX: -(SWIPE_THRESHOLD - 1) });
+    handlers.onEnd({ translationX: -(SWIPE_THRESHOLD - 1), velocityX: 300 });
+
+    const [{ toValue, config }] = springStarts;
+    expect(toValue).toBe(0);
+    expect(config.damping ** 2).toBeCloseTo(4 * config.stiffness * config.mass, 6);
+    expect(config.velocity).toBe(300);
+  });
+
   it('springs back without committing below the threshold', () => {
     const pager = makePager();
     renderHook(() => useCarouselGesture(makeOptions({ pager })));
@@ -1238,6 +1278,8 @@ describe('useCarouselGesture', () => {
       const pager = makePager();
       const { unmount } = renderHook(() => useCarouselGesture(makeOptions({ pager })));
       swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+      // Starting the fling clears whatever ran before it; only the teardown counts here.
+      cancelAnimation.mockClear();
 
       unmount();
 

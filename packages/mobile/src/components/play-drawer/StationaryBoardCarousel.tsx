@@ -46,9 +46,9 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
     };
   }, [stationaryMotion]);
   const pagePosition = useDerivedValue(() => {
-    // The header travels beyond one board width while its outgoing tail clears
-    // the viewport. Navigation has already advanced the trio at that point;
-    // treating the tail as another step briefly reveals the following climb.
+    // One step at most: a drag past the board's width must not reveal the
+    // climb after the next one, which the trio may already hold once the JS
+    // thread has taken the step.
     const offset = slideWidth.value > 0 ? -translateX.value / slideWidth.value : 0;
     return anchorPage.value + Math.max(-1, Math.min(1, offset));
   });

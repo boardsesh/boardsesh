@@ -44,8 +44,12 @@ vi.mock('react-native-reanimated', async () => {
   const { View } = await import('react-native');
   return { default: { View }, useAnimatedStyle: (factory: () => unknown) => factory() };
 });
+vi.mock('../../DrawerHeader', async () => {
+  const { View } = await import('react-native');
+  return { DrawerHeaderPinnedLeading: View };
+});
 
-import { SwipeableHeader } from '../SwipeableHeader';
+import { HEADER_SWAP_DRIFT, SwipeableHeader, headerSlotFrame } from '../SwipeableHeader';
 
 const pager = {
   anchorPage: { value: 0 },
@@ -69,7 +73,6 @@ function mountHeaderFrames() {
   const props = (centerPage: number) => ({
     pager,
     centerPage,
-    viewportWidth: 390,
     current: header(String(centerPage)),
     previous: header(String(centerPage - 1)),
     next: header(String(centerPage + 1)),
@@ -77,38 +80,83 @@ function mountHeaderFrames() {
   });
   const { getByTestId, rerender } = render(createElement(SwipeableHeader, props(0)));
   return {
-    frame(anchor: number, offset: number, centerPage = 0) {
+    frame: (anchor: number, offset: number, centerPage = 0) => {
       pager.anchorPage.value = anchor;
       pager.translateX.value = offset;
       rerender(createElement(SwipeableHeader, props(centerPage)));
     },
-    style(page: number) {
-      return JSON.parse(getByTestId(`header-${page}`).parentElement!.dataset.style!)[1] as {
+    style: (page: number) =>
+      JSON.parse(getByTestId(`header-${page}`).parentElement!.dataset.style!)[1] as {
         opacity: number;
         transform: { translateX: number }[];
-      };
-    },
+      },
   };
 }
 
 const visibleAt = (translateX: number) => ({ opacity: 1, transform: [{ translateX }] });
+const close = (actual: { opacity: number; transform: { translateX: number }[] }, opacity: number, offset: number) => {
+  expect(actual.opacity).toBeCloseTo(opacity, 6);
+  expect(actual.transform[0].translateX).toBeCloseTo(offset, 6);
+};
+
+describe('headerSlotFrame', () => {
+  it('rests in place at full strength', () => {
+    expect(headerSlotFrame(0, HEADER_SWAP_DRIFT)).toEqual({ opacity: 1, offset: 0 });
+  });
+
+  it('fades the outgoing header out over the first half while it drifts away', () => {
+    expect(headerSlotFrame(-0.25, 16)).toEqual({ opacity: 0.5, offset: -8 });
+    expect(headerSlotFrame(-0.5, 16)).toEqual({ opacity: 0, offset: -16 });
+    expect(headerSlotFrame(-0.9, 16)).toEqual({ opacity: 0, offset: -16 });
+  });
+
+  it('fades the incoming header in over the second half while it drifts into place', () => {
+    expect(headerSlotFrame(0.5, 16)).toEqual({ opacity: 0, offset: 16 });
+    expect(headerSlotFrame(0.25, 16)).toEqual({ opacity: 0.5, offset: 8 });
+  });
+});
+
+describe('one header at a time', () => {
+  it.each([-1, 1])(
+    'never draws a name beside the other climb’s grade, at any point of a swipe in direction %s',
+    (direction) => {
+      // Each slot is one whole header (name, grade, stats). The old screen-wide
+      // slide put the outgoing grade beside the incoming name for 2–3 frames.
+      pager.slideWidth.value = 300;
+      const { frame, style } = mountHeaderFrames();
+      for (let step = 0; step <= 60; step += 1) {
+        frame(0, -direction * step * 5);
+        const outgoing = style(0).opacity;
+        const incoming = style(direction).opacity;
+        expect(outgoing === 0 || incoming === 0).toBe(true);
+        expect(style(-direction).opacity).toBe(0);
+      }
+    },
+  );
+});
 
 describe('continuous title motion', () => {
   it.each([false, true])(
     'follows forward, backward, reversal and cancellation with stationary board %s',
     (stationary) => {
       pager.stationaryMotion.value = stationary;
-      // The board fits inside a wider header; travel uses the same page progress.
       pager.slideWidth.value = 300;
       const { frame, style } = mountHeaderFrames();
       for (const offset of [-30, -75, -150, -225, -150, -75, 0, 75, 150, 75, 0]) {
         frame(0, offset);
-        expect(style(0)).toEqual(visibleAt(offset * 1.3));
+        const progress = offset / 300;
+        close(
+          style(0),
+          Math.max(0, 1 - Math.abs(progress) * 2),
+          Math.sign(progress) * 16 * Math.min(1, Math.abs(progress) * 2),
+        );
         if (offset < 0) {
-          expect(style(1)).toEqual(visibleAt(390 + offset * 1.3));
+          const incoming = headerSlotFrame(1 + progress, 16);
+          close(style(1), incoming.opacity, incoming.offset);
           expect(style(-1).opacity).toBe(0);
         } else if (offset > 0) {
-          expect(style(-1)).toEqual(visibleAt(-390 + offset * 1.3));
+          const incoming = headerSlotFrame(-1 + progress, 16);
+          close(style(-1), incoming.opacity, incoming.offset);
           expect(style(1).opacity).toBe(0);
         } else {
           expect(style(-1).opacity).toBe(0);
@@ -118,37 +166,42 @@ describe('continuous title motion', () => {
     },
   );
 
-  it.each([-1, 1])('keeps incoming title settled through fling overshoot and rebase in direction %s', (direction) => {
-    pager.stationaryMotion.value = true;
-    pager.slideWidth.value = 300;
-    const { frame, style } = mountHeaderFrames();
-    frame(0, -direction * 300);
-    expect(style(direction)).toEqual(visibleAt(0));
-    // The outgoing board clears the screen, beyond the narrower board width.
-    // JS catches up before the UI anchor lands; neither event moves the title.
-    frame(0, -direction * 360, direction);
-    expect(style(direction)).toEqual(visibleAt(0));
-    frame(0, -direction * 422, direction);
-    expect(style(direction)).toEqual(visibleAt(0));
-    frame(direction, 0, direction);
-    expect(style(direction)).toEqual(visibleAt(0));
-  });
-
   it.each([-1, 1])(
-    'preserves both title positions when a new swipe takes over a fling in direction %s',
+    'lands the incoming title where it rests, and the landing moves nothing, in direction %s',
     (direction) => {
       pager.stationaryMotion.value = true;
       pager.slideWidth.value = 300;
       const { frame, style } = mountHeaderFrames();
-      frame(0, -direction * 225);
-      const outgoing = style(0);
-      const incoming = style(direction);
-      // landFling(true) carries the remaining board offset into the new anchor.
-      frame(direction, direction * 75, direction);
-      expect(style(0)).toEqual(outgoing);
-      expect(style(direction)).toEqual(incoming);
+      frame(0, -direction * 300);
+      expect(style(direction)).toEqual(visibleAt(0));
+      // JS catches up before the UI anchor lands; neither event moves the title.
+      frame(0, -direction * 300, direction);
+      expect(style(direction)).toEqual(visibleAt(0));
+      frame(direction, 0, direction);
+      expect(style(direction)).toEqual(visibleAt(0));
     },
   );
+
+  it('never fades a third climb in when a drag runs past the board’s width', () => {
+    pager.slideWidth.value = 300;
+    const { frame, style } = mountHeaderFrames();
+    frame(0, -360);
+    expect(style(1)).toEqual(visibleAt(0));
+    expect(style(0).opacity).toBe(0);
+  });
+
+  it.each([-1, 1])('preserves both title frames when a new swipe takes over a fling in direction %s', (direction) => {
+    pager.stationaryMotion.value = true;
+    pager.slideWidth.value = 300;
+    const { frame, style } = mountHeaderFrames();
+    frame(0, -direction * 225);
+    const outgoing = style(0);
+    const incoming = style(direction);
+    // landFling(true) carries the remaining board offset into the new anchor.
+    frame(direction, direction * 75, direction);
+    close(style(0), outgoing.opacity, outgoing.transform[0].translateX);
+    close(style(direction), incoming.opacity, incoming.transform[0].translateX);
+  });
 
   it('keeps the committed stationary-board title still under Reduce Motion', () => {
     pager.stationaryMotion.value = true;
@@ -157,12 +210,21 @@ describe('continuous title motion', () => {
     frame(0, -290);
     expect(style(0)).toEqual(visibleAt(0));
     expect(style(1).opacity).toBe(0);
-    frame(0, -422, 1);
+    frame(0, -390, 1);
     expect(style(0)).toEqual(visibleAt(0));
     expect(style(1).opacity).toBe(0);
     frame(1, 0, 1);
     expect(style(1)).toEqual(visibleAt(0));
     expect(style(0).opacity).toBe(0);
+  });
+
+  it('dissolves in place under Reduce Motion beside a board that slides', () => {
+    preferences.reduceMotion = true;
+    const { frame, style } = mountHeaderFrames();
+    frame(0, -97.5);
+    close(style(0), 0.5, 0);
+    frame(0, -292.5);
+    close(style(1), 0.5, 0);
   });
 });
 
@@ -172,7 +234,6 @@ describe('SwipeableHeader accessibility', () => {
       createElement(SwipeableHeader, {
         pager,
         centerPage: 0,
-        viewportWidth: 390,
         previous: null,
         current: header('A'),
         next: header('B'),
@@ -186,7 +247,6 @@ describe('SwipeableHeader accessibility', () => {
       createElement(SwipeableHeader, {
         pager,
         centerPage: 1,
-        viewportWidth: 390,
         previous: header('A'),
         current: header('B'),
         next: header('C'),
@@ -212,7 +272,6 @@ describe('SwipeableHeader accessibility', () => {
       createElement(SwipeableHeader, {
         pager,
         centerPage: 0,
-        viewportWidth: 390,
         previous: header('A'),
         current: header('B'),
         next: header('C'),
@@ -222,5 +281,33 @@ describe('SwipeableHeader accessibility', () => {
     expect(getByTestId('header-B').parentElement!.dataset.pointerEvents).toBe('auto');
     expect(getByTestId('header-A').parentElement!.dataset.pointerEvents).toBe('none');
     expect(getByTestId('header-C').parentElement!.dataset.pointerEvents).toBe('none');
+  });
+
+  it('pins the leading chip over the slots, under the stand-in, through a climb change', () => {
+    const chip = createElement('div', { 'data-testid': 'chip' });
+    const props = (centerPage: number) => ({
+      pager,
+      centerPage,
+      previous: header(String(centerPage - 1)),
+      current: header(String(centerPage)),
+      next: header(String(centerPage + 1)),
+      leading: chip,
+      accessibilityStandIn: standIn,
+    });
+    const { getByTestId, rerender } = render(createElement(SwipeableHeader, props(0)));
+    const pinned = getByTestId('chip');
+    const layer = pinned.parentElement!;
+
+    rerender(createElement(SwipeableHeader, props(1)));
+
+    // Same node: the chip neither fades nor remounts when the climb changes.
+    expect(getByTestId('chip')).toBe(pinned);
+    // Not inside any slot, so it does not move or fade with one.
+    for (const name of ['0', '1', '2']) {
+      expect(getByTestId(`header-${name}`).parentElement!.contains(pinned)).toBe(false);
+    }
+    // Hidden like the slots; the stand-in, still last, carries its action.
+    expect(layer.dataset.elementsHidden).toBe('true');
+    expect(layer.parentElement!.lastElementChild).toBe(getByTestId('stand-in'));
   });
 });

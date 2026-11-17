@@ -132,21 +132,3 @@ export function selectPeekDirection({
 export function getEnterDirection(navigation: 'next' | 'previous'): EnterDirection {
   return navigation === 'next' ? 'from-right' : 'from-left';
 }
-
-// ── Mobile swipe-between-climbs animation ───────────────────────────────────
-// Mobile-only tuning + helper for the play-drawer's horizontal swipe: the current
-// board + climb name slide with the finger and, on release past the threshold,
-// fling off-screen while the next climb slides in edge-adjacent (computePeekOffset
-// above). A flat horizontal slide — no tilt, no droop. Web's swipe matches.
-
-/** Extra px past the screen edge the fling targets so the card fully clears. */
-export const SWIPE_OFFSCREEN_PAD = 80;
-
-// Where the fling animates translateX to so the card fully clears the screen,
-// margins included. The mobile gesture inlines `screenWidth + SWIPE_OFFSCREEN_PAD`
-// (cross-module worklet CALLS aren't reliable in gesture callbacks); this is the
-// canonical spec / test target.
-export function computeSwipeExitTarget(screenWidth: number): number {
-  'worklet';
-  return screenWidth + SWIPE_OFFSCREEN_PAD;
-}

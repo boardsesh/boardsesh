@@ -92,10 +92,13 @@ describe('pageOffset', () => {
     expect(pageOffset(4, 4, -120, WIDTH)).toEqual({ visible: true, offset: -120 });
   });
 
-  it('brings the next page in edge to edge and stops it in the middle', () => {
+  it('brings the next page in edge to edge and lands it in the middle', () => {
     expect(pageOffset(5, 4, -120, WIDTH)).toEqual({ visible: true, offset: 180 });
+    // The swipe settles at one board width: the incoming page is home, the
+    // outgoing one is gone.
     expect(pageOffset(5, 4, -300, WIDTH)).toEqual({ visible: true, offset: 0 });
-    // The outgoing page carries on past its own width; the incoming one does not follow.
+    expect(pageOffset(4, 4, -300, WIDTH).visible).toBe(false);
+    // A drag further than that changes nothing.
     expect(pageOffset(5, 4, -470, WIDTH)).toEqual({ visible: true, offset: 0 });
     // The other neighbour stays out of it.
     expect(pageOffset(3, 4, -120, WIDTH).visible).toBe(false);
@@ -110,6 +113,53 @@ describe('pageOffset', () => {
   it('never draws a page further away than a neighbour', () => {
     expect(pageOffset(6, 4, -120, WIDTH).visible).toBe(false);
     expect(pageOffset(2, 4, 120, WIDTH).visible).toBe(false);
+  });
+
+  describe('a letterboxed board', () => {
+    // A 335 pt board in a 402 pt frame: 33.5 pt margins, and 368.5 pt to leave it.
+    const BOARD = 335;
+    const EXIT = (402 + BOARD) / 2;
+
+    it.each([-1, 1])(
+      'takes the outgoing board out of the frame, margins and all, as the swipe lands (%s)',
+      (direction) => {
+        // The board used to stop at 335 pt with 33.5 pt of it still in the margin,
+        // then vanish when the anchor moved.
+        expect(pageOffset(4, 4, -direction * BOARD * 0.999, BOARD, EXIT).offset).toBeCloseTo(-direction * EXIT, 0);
+        expect(pageOffset(4 + direction, 4, -direction * BOARD, BOARD, EXIT)).toEqual({ visible: true, offset: 0 });
+      },
+    );
+
+    it('moves the board in the middle exactly with the finger as the swipe starts', () => {
+      const offset = (translateX: number) => pageOffset(4, 4, translateX, BOARD, EXIT).offset;
+      expect((offset(-1) - offset(0)) / -1).toBeCloseTo(1, 2);
+    });
+
+    it('brings the incoming board in from the frame’s edge, not from inside the margin', () => {
+      expect(pageOffset(5, 4, -0.001, BOARD, EXIT).offset).toBeCloseTo(EXIT, 0);
+    });
+
+    it('never lets the two boards overlap', () => {
+      for (let translateX = -5; translateX > -BOARD; translateX -= 5) {
+        const outgoing = pageOffset(4, 4, translateX, BOARD, EXIT).offset;
+        const incoming = pageOffset(5, 4, translateX, BOARD, EXIT).offset;
+        expect(incoming - outgoing).toBeGreaterThanOrEqual(BOARD);
+      }
+    });
+
+    it.each([-1, 1])('keeps both boards where they were when a swipe takes over a fling (%s)', (direction) => {
+      // landFling(true): the anchor moves on and the offset is re-based by a board width.
+      const before = -direction * BOARD * 0.6;
+      const after = before + direction * BOARD;
+      expect(pageOffset(4 + direction, 4 + direction, after, BOARD, EXIT).offset).toBeCloseTo(
+        pageOffset(4 + direction, 4, before, BOARD, EXIT).offset,
+        9,
+      );
+      expect(pageOffset(4, 4 + direction, after, BOARD, EXIT).offset).toBeCloseTo(
+        pageOffset(4, 4, before, BOARD, EXIT).offset,
+        9,
+      );
+    });
   });
 });
 
@@ -346,26 +396,27 @@ describe('useSwipePager', () => {
       return rendered;
     }
 
-    it('waits until the incoming board has stopped in the middle, and tells it once', () => {
+    it('waits until the incoming board is all but home, and tells it once', () => {
       const onNext = vi.fn();
       const { result } = renderMeasuredPager({ onNext });
       const { pager } = result.current;
 
       startFling(pager, 1);
       // Finger-up: nothing yet. Changing the climb can cost the UI thread a
-      // frame, and both boards are moving.
+      // frame, and both boards are moving fast.
       act(() => flingReaches(pager, -40));
       act(() => flingReaches(pager, -(BOARD_WIDTH - 40)));
+      act(() => flingReaches(pager, -(BOARD_WIDTH - 10)));
       expect(onNext).not.toHaveBeenCalled();
 
-      // The outgoing board has travelled its own width: the incoming one is home.
-      act(() => flingReaches(pager, -BOARD_WIDTH));
+      // Within 3% of the middle: the settle is down to a few points a frame.
+      act(() => flingReaches(pager, -(BOARD_WIDTH - 9)));
       expect(onNext).toHaveBeenCalledTimes(1);
       expect(pager.untoldStep.value).toBe(0);
-      // The anchor still waits for the outgoing board to leave.
+      // The anchor still waits for the spring to land.
       expect(pager.anchorPage.value).toBe(0);
 
-      act(() => flingReaches(pager, -(BOARD_WIDTH + 60)));
+      act(() => flingReaches(pager, -BOARD_WIDTH));
       act(() => pager.tellUntoldStep());
       expect(onNext).toHaveBeenCalledTimes(1);
     });

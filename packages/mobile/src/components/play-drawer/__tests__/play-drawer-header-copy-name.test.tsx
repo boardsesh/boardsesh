@@ -66,7 +66,17 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  // The setter is a nested Text in the link colour (no `color`); the stats line
+  // around it is the secondary grey. Surfaced so a peek can be compared.
+  Text: ({
+    children,
+    color,
+    accessibilityRole,
+  }: {
+    children?: ReactNode;
+    color?: string;
+    accessibilityRole?: string;
+  }) => createElement('span', { 'data-color': color ?? 'label', 'data-role': accessibilityRole }, children),
 }));
 // MarqueeText (the scrolling climb-name label) has its own unit test; here it's a
 // plain text node so the long-press wrapper + name lookup work without Reanimated.
@@ -123,11 +133,49 @@ describe('PlayDrawerHeader long-press copy', () => {
     expect(onLongPressName).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the name without an interactive press target on the peek header (no handler)', () => {
+  it('renders the name without an interactive press target when there is no handler', () => {
     const { getByLabelText, getByText } = render(createElement(PlayDrawerHeader, baseProps));
     expect(getByText('Hueco Madness')).toBeTruthy();
-    // The Pressable is disabled when no handler is supplied (swipe "peek" header).
     expect((getByLabelText('name-pressable') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+// The swipe's incoming header used to be drawn disabled (50%, 38% on Material)
+// and its setter grey, then both snapped to full strength when the swipe
+// committed, 83–150 ms after the climb had landed on an iPhone 17 Pro.
+describe('PlayDrawerHeader swipe peek', () => {
+  const withSetter = { ...baseProps, ascensionistCount: 737, setterUsername: 'briancarlson' };
+
+  it('draws the peek name at full strength, never with the disabled look', () => {
+    const { getByLabelText } = render(createElement(PlayDrawerHeader, { ...withSetter, peek: true }));
+    // PressableSurface dims only a disabled surface.
+    expect((getByLabelText('name-pressable') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('draws the setter exactly as the committed header does, so the commit changes nothing', () => {
+    // The innermost span that names the setter: the link on its own, or the
+    // whole grey stats line when the setter is printed as part of it.
+    const setterSpan = (props: object) => {
+      const { container, unmount } = render(createElement(PlayDrawerHeader, { ...withSetter, ...props }));
+      const span = [...container.querySelectorAll('span')]
+        .filter((node) => node.textContent?.includes('briancarlson'))
+        .find(
+          (node) => ![...node.querySelectorAll('span')].some((child) => child.textContent?.includes('briancarlson')),
+        )!;
+      const drawn = {
+        text: span.textContent,
+        color: span.dataset.color,
+        parentColor: span.parentElement?.dataset.color,
+      };
+      unmount();
+      return { span, drawn };
+    };
+    const committed = setterSpan({ onPressSetter: vi.fn(), onLongPressName: vi.fn() });
+    const peek = setterSpan({ peek: true });
+    expect(peek.drawn).toEqual(committed.drawn);
+    // Still not a link a screen reader could reach: the peek takes no action.
+    expect(peek.span.dataset.role).toBeUndefined();
+    expect(committed.span.dataset.role).toBe('link');
   });
 });
 

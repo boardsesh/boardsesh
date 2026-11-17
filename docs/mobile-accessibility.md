@@ -51,7 +51,9 @@ scrollable text-sized tabs. Native linear settings sliders commit once on releas
 nonlinear ValueSlider tracks retain their existing mapping.
 
 Boards announce the rendered hold-role counts. Play boards expose adjustable
-previous/next actions at queue boundaries. Create's “Choose holds from a list”
+previous/next actions at queue boundaries. Their value names the climb on screen
+by name and grade, and its place in the list ("Yoshi's Island, V5, 5 of 40");
+a step the climber takes announces it where it lands. Create's “Choose holds from a list”
 action lives in the header's overflow menu and replaces the drawing area with a virtualized list using the same paint and
 role-picker callbacks. A short fast flick commits a carousel swipe; springs use
 release velocity and retain the host's post-render handoff.
