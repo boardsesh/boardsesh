@@ -9,8 +9,8 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import * as jsxDevRuntime from 'react/jsx-dev-runtime';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { LedPosition, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
-import * as cableEndpointsModule from '../spray-cable-endpoints';
+import type { LedPosition, SprayLedPair, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
+import * as cableDisplayModule from '../spray-cable-display';
 
 // Every test compiles the overlay with Babel + the React Compiler; under a full
 // parallel run that takes longer than the default 5 s, so the file allows 20 s.
@@ -35,6 +35,7 @@ type Shape = {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  strokeDasharray?: number[];
   animatedProps: { updater: Worklet };
 };
 type OverlayProps = {
@@ -52,6 +53,8 @@ type OverlayProps = {
   selectedHoles?: TnutPoint[];
   distinguishSkips?: boolean;
   showSkips?: boolean;
+  ledPairs?: readonly SprayLedPair[];
+  showPairConnectors?: boolean;
 };
 const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
@@ -123,7 +126,7 @@ function compileOverlay(source: string, isDev: boolean) {
       useAnimatedProps: (updater: Worklet) => ({ updater }),
     },
     '../../providers/theme-provider': { useTheme: () => ({ brandColors: palette }) },
-    './spray-cable-endpoints': cableEndpointsModule,
+    './spray-cable-display': cableDisplayModule,
   };
   const module = { exports: {} as Record<string, unknown> };
   compileFunction(compiled.code, ['require', 'module', 'exports', '__DEV__'])(
@@ -274,6 +277,53 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(paths[0].d).toContain('M180 150L180 400');
     expect(paths[1].d).toBe('');
     expect(paths[3].d).toBe('');
+  });
+
+  it('routes into and out of the shared midpoint of a wired pair', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    const initial = props();
+    render(
+      React.createElement(Component, {
+        ...initial,
+        leds: [
+          { id: 'a', x: 0.5, y: 0.1 },
+          { id: 'b', x: 0.4, y: 0.5 },
+          { id: 'c', x: 0.6, y: 0.5 },
+          { id: 'd', x: 0.5, y: 0.9 },
+        ],
+        wiring: { ...initial.wiring, paths: [['a', 'b', 'c', 'd']], skips: [{ from: 'd', to: 'c', count: 2 }] },
+        ledPairs: [['b', 'c']],
+        distinguishSkips: true,
+      }),
+    );
+    const paths = evaluated(shapes);
+    expectPathCoordinates(paths[0].d, [150, 50, 150, 250]);
+    expectPathCoordinates(paths[1].d, [150, 250, 150, 450]);
+    expect(paths[1].stroke).toBe(palette.error);
+    expect(paths[3].d?.match(/M/g)).toHaveLength(2);
+  });
+
+  it('links separated rings with a yellow dash while keeping overlapping rings unchanged', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    const initial = props();
+    render(
+      React.createElement(Component, {
+        ...initial,
+        leds: [
+          { id: 'a', x: 0.48, y: 0.5 },
+          { id: 'b', x: 0.52, y: 0.5 },
+        ],
+        wiring: { ...initial.wiring, paths: [], skips: [] },
+        ledPairs: [['a', 'b']],
+        showPairConnectors: true,
+      }),
+    );
+    const atOne = evaluated(shapes);
+    expect(atOne[6].d?.match(/M/g)).toHaveLength(2);
+    expect(atOne[7]).toMatchObject({ d: '', stroke: '#FBBF24', strokeDasharray: [4, 3] });
+    initial.zoom.value = 3;
+    const atThree = evaluated(shapes);
+    expectPathCoordinates(atThree[7].d, [146, 250, 154, 250]);
   });
 
   it('rings the ends a cut left unconnected in red, and only the real start in green', () => {

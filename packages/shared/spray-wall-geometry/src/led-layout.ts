@@ -1,4 +1,5 @@
 import { homographyFromAnchors, invert, mapPoint } from './homography';
+import type { SprayLedPair } from './led-pairs';
 import { generateTnutGrid, isValidTnutCorners, type TnutLayout, type TnutPoint } from './tnut-layout';
 
 export type LedPosition = TnutPoint & {
@@ -239,17 +240,41 @@ export function createWiring(
   direction: CableDirection,
   startCorner: CableStartCorner,
   layout?: TnutLayout,
+  pairs: readonly SprayLedPair[] = [],
 ): TnutWiring {
   const wiring: TnutWiring = { direction, startCorner, paths: [], skips: [] };
   if (direction === 'custom' || !leds.length) return wiring;
-  const groups = ledGroups(leds, direction, layout);
+  const byId = new Map(leds.map((led) => [led.id, led]));
+  const pairStarts = new Map<string, { midpoint: LedPosition; members: string[] }>();
+  const pairEnds = new Set<string>();
+  const frame = pairs.length && layout ? wallFrame(layout) : null;
+  for (const [firstId, secondId] of pairs) {
+    const first = byId.get(firstId);
+    const second = byId.get(secondId);
+    if (!first || !second) continue;
+    const [firstX, firstY] = frame ? mapPoint(frame.toUnit, first.x, first.y) : [first.x, first.y];
+    const [secondX, secondY] = frame ? mapPoint(frame.toUnit, second.x, second.y) : [second.x, second.y];
+    const along = direction === 'horizontal' ? firstX - secondX : firstY - secondY;
+    const across = direction === 'horizontal' ? firstY - secondY : firstX - secondX;
+    pairStarts.set(firstId, {
+      midpoint: { id: firstId, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+      members: (Math.abs(along) > 1e-8 ? along : across) <= 0 ? [firstId, secondId] : [secondId, firstId],
+    });
+    pairEnds.add(secondId);
+  }
+  const stops = leds.filter(({ id }) => !pairEnds.has(id)).map((led) => pairStarts.get(led.id)?.midpoint ?? led);
+  const groups = ledGroups(stops, direction, layout);
   const reversePrimary = direction === 'horizontal' ? startCorner[0] === 'b' : startCorner[1] === 'r';
   const reverseSecondary = direction === 'horizontal' ? startCorner[1] === 'r' : startCorner[0] === 'b';
   if (reversePrimary) groups.reverse();
   const path: string[] = [];
   groups.forEach((group, index) => {
-    if (reverseSecondary !== (index % 2 === 1)) group.reverse();
-    path.push(...group.map((point) => point.id));
+    const backwards = reverseSecondary !== (index % 2 === 1);
+    if (backwards) group.reverse();
+    for (const { id } of group) {
+      const members = pairStarts.get(id)?.members;
+      path.push(...(members ? (backwards ? [...members].reverse() : members) : [id]));
+    }
   });
   wiring.paths = [path];
   return wiring;

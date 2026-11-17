@@ -19,6 +19,7 @@ import { SprayPhotoStage } from './SprayPhotoStage';
 import { SprayPhotoToolButton } from './SprayPointToolbar';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { sprayHoldRings } from './spray-hold-rings';
+import { sprayPhotoCoverage } from './spray-photo-coverage';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
 export function SprayLedLightingStep({
@@ -74,17 +75,22 @@ export function SprayLedLightingStep({
     if (indicesKey) void show(indicesKey.split(',').map(Number));
     else void stop();
   }, [available, indicesKey, show, stop]);
-  // Draw what the wall shows: every LED after Light all, the LED the row-by-row
-  // test has reached, or otherwise the selection's LEDs.
-  const ledIdByIndex = useMemo(
-    () => new Map(layout.wiring ? assignLedIndices(layout.wiring).map(({ id, index }) => [index, id]) : []),
-    [layout.wiring],
-  );
+  const visibleWiredLeds = useMemo(() => {
+    if (!layout.wiring) return [];
+    const onPhoto = sprayPhotoCoverage(source);
+    const { width: frameWidth, height: frameHeight } = source.frame;
+    const visible = new Set(
+      (layout.ledPositions ?? []).filter(({ x, y }) => onPhoto(x * frameWidth, y * frameHeight)).map(({ id }) => id),
+    );
+    return assignLedIndices(layout.wiring).filter(({ id }) => visible.has(id));
+  }, [layout.ledPositions, layout.wiring, source]);
+  const ledIdByIndex = useMemo(() => new Map(visibleWiredLeds.map(({ id, index }) => [index, id])), [visibleWiredLeds]);
+  const visibleChaseIndices = orderedIndices.filter((index) => ledIdByIndex.has(index));
   const chasing = typeof preview.chaseIndex === 'number';
   const testingStrip = preview.allLit || preview.state === 'chasing';
   const chaseLedId = typeof preview.chaseIndex === 'number' ? ledIdByIndex.get(preview.chaseIndex) : undefined;
   const litLedIds = preview.allLit
-    ? (layout.ledPositions ?? []).map((led) => led.id)
+    ? visibleWiredLeds.map(({ id }) => id)
     : chasing
       ? chaseLedId === undefined
         ? []
@@ -109,7 +115,7 @@ export function SprayLedLightingStep({
     void preview.stop();
   }
   function toggleLighting() {
-    if (selectionLighting || testingStrip) {
+    if (selectionLighting || testingStrip || preview.state === 'sending') {
       lastLit.current = '';
       void preview.stop();
       setSelectionLighting(false);
@@ -123,6 +129,11 @@ export function SprayLedLightingStep({
         ? findSprayHoldAtPoint(visibleHolds, point, source.frame)
         : nearestPhotoPointIndex(layout.holes, point, photoWidth, photoHeight, 18);
     if (id === null || id < 0) return;
+    // A tap during a full-wall test replaces that test, even with an unwired selection.
+    if (testingStrip || preview.state === 'sending') {
+      const tapped = entries.find((entry) => ('holeIndex' in entry ? entry.holeIndex : entry.holdId) === id);
+      if ((!selectionLighting || !tapped?.indices.length) && !lastLit.current) void stop();
+    }
     setSelectedId((previous) => (previous === id ? null : id));
   }
   const bulbOn = selectionLighting || testingStrip;
@@ -198,7 +209,7 @@ export function SprayLedLightingStep({
       />
       <Text variant="footnote" accessibilityLiveRegion="polite">
         {preview.allLit
-          ? t('sprayLedSetup.allLitSummary', { count: layout.ledPositions?.length ?? 0 })
+          ? t('sprayLedSetup.allLitSummary', { count: visibleWiredLeds.length })
           : t('sprayLedSetup.selectionSummary', { count: chosen ? 1 : 0, leds: indices.length })}
       </Text>
       {missing ? (
@@ -209,33 +220,33 @@ export function SprayLedLightingStep({
       <Text variant="footnote">{t('sprayLedSetup.lightingHint')}</Text>
       {!preview.available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
       <Button
-        title={preview.allLit ? t('sprayLed.turnOff') : t('sprayLed.lightAll')}
+        title={preview.allLit ? t('sprayLed.turnOff') : t('sprayLedSetup.lightWired')}
         variant="outlined"
-        disabled={!preview.available}
+        disabled={!preview.available || visibleWiredLeds.length === 0}
         onPress={() => {
           if (preview.allLit) {
             void preview.stop();
             return;
           }
           clearSelection();
-          void preview.lightAll();
+          void preview.lightAll(visibleWiredLeds.map(({ index }) => index));
         }}
       />
       <Button
         title={t('sprayLedSetup.lightingChase')}
         variant="outlined"
-        disabled={!preview.available || orderedIndices.length === 0}
+        disabled={!preview.available || visibleChaseIndices.length === 0}
         onPress={() => {
           clearSelection();
-          void preview.chase(orderedIndices);
+          void preview.chase(visibleChaseIndices);
         }}
       />
-      {preview.state !== 'idle' ? (
+      {preview.state !== 'idle' && !preview.allLit ? (
         <Text variant="footnote" accessibilityLiveRegion="polite">
           {preview.state === 'chasing'
             ? t('sprayLedSetup.lightingChasing')
             : preview.state === 'lit'
-              ? t('sprayLed.lit')
+              ? t('sprayLedSetup.lightingSelected')
               : t('sprayLed.sending')}
         </Text>
       ) : null}

@@ -553,8 +553,7 @@ describe('SprayWallLedSetupScreen', () => {
     tap({ x: 0.35, y: 0.3 });
     expect(screen.getByText('sprayLedSetup.skipsSelected')).toBeTruthy();
     expect(screen.getByText('sprayLedSetup.skipsNone')).toBeTruthy();
-    // Light the ends lights only the two LEDs on either side of the connection.
-    fireEvent.click(button('skipsLightEnds'));
+    // Selecting the connection lights the LEDs on either side.
     expect(preview.show).toHaveBeenLastCalledWith([2, 3]);
     fireEvent.click(button('insertSkips'));
     fireEvent.change(field('skipCount'), { target: { value: '2' } });

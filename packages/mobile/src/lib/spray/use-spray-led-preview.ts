@@ -37,8 +37,7 @@ export function useSprayLedPreviewForSettings(
   const [state, setState] = useState<SprayLedPreviewState>('idle');
   const [error, setError] = useState<LedControllerErrorCode | null>(null);
   const [available, setAvailable] = useState(false);
-  // What the wall shows, so the screen can draw it: every LED after Light all,
-  // or the one LED the row-by-row test has reached.
+  // What the wall shows: all LEDs requested for a full test, or the current LED in a row test.
   const [allLit, setAllLit] = useState(false);
   const [chaseIndex, setChaseIndex] = useState<number | null>(null);
 
@@ -156,17 +155,20 @@ export function useSprayLedPreviewForSettings(
       run('sending', (current) => current.session.show(indices), indices.length ? 'lit' : 'idle'),
     [run],
   );
+  /** Without indices, test the entire controller strip. The editor supplies its wired photo LEDs. */
   const lightAll = useCallback(
-    () =>
-      run(
+    (indices?: readonly number[]) => {
+      if (indices?.length === 0) return Promise.resolve(false);
+      return run(
         'sending',
         async (current, generation) => {
-          const completed = await current.session.lightAll();
+          const completed = await (indices ? current.session.show(indices) : current.session.lightAll());
           if (completed && current.active && current.generation === generation) setAllLit(true);
           return completed;
         },
         'lit',
-      ),
+      );
+    },
     [run],
   );
   // A new brightness or auto-off goes to the open session; a wall lit with Light all

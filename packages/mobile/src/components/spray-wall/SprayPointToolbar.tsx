@@ -39,7 +39,10 @@ export function SprayPhotoToolButton({
         },
       ]}
     >
-      {icon === 'next-unmapped-hold' || icon === 'next-free-led' || icon === 'select-two-leds' ? (
+      {icon === 'next-unmapped-hold' ||
+      icon === 'next-free-led' ||
+      icon === 'select-two-leds' ||
+      icon === 'insert-skipped-leds' ? (
         <SprayLedToolIcon name={icon} color={color} />
       ) : (
         <Icon name={icon} size={20} color={color} />

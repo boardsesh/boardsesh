@@ -1,11 +1,22 @@
 import type { ColorValue } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useTheme } from '../../providers/theme-provider';
+import { SPRAY_CABLE_COLOR } from './SpraySetupOverlay';
 
-export type SprayLedToolIconName = 'next-unmapped-hold' | 'next-free-led' | 'select-two-leds';
+export type SprayLedToolIconName = 'next-unmapped-hold' | 'next-free-led' | 'select-two-leds' | 'insert-skipped-leds';
 
 export function SprayLedToolIcon({ name, color }: { name: SprayLedToolIconName; color: ColorValue }) {
   const { brandColors } = useTheme();
+  if (name === 'insert-skipped-leds') {
+    return (
+      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" strokeWidth={1.5}>
+        <Path d="M5.5 12h2M16.5 12h2" stroke={SPRAY_CABLE_COLOR} strokeLinecap="round" />
+        <Circle cx={3.25} cy={12} r={2.25} stroke={brandColors.primary} />
+        <Circle cx={20.75} cy={12} r={2.25} stroke={brandColors.primary} />
+        <Path d="M9.5 12h5M12 9.5v5" stroke={brandColors.error} strokeLinecap="round" />
+      </Svg>
+    );
+  }
   return (
     <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" strokeWidth={1.5}>
       {name === 'select-two-leds' ? (

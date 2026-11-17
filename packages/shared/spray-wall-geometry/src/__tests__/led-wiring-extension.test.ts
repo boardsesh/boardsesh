@@ -16,6 +16,7 @@ import {
   type TnutWiring,
 } from '../led-layout';
 import { DEFAULT_TNUT_CORNERS, generateTnutGrid, readTnutLayout, type TnutLayout } from '../tnut-layout';
+import { ledPairs } from '../led-pairs';
 
 const leds: LedPosition[] = [
   { id: 'a', x: 0.2, y: 0.2 },
@@ -152,6 +153,16 @@ describe('side pairs on a vertical cable', () => {
     const grid = { pattern: 'grid' as const, rows: 2, columns, corners, firstRowOffset: false };
     return { ...layout, ...grid, ledPlacement: 'sides', holes: generateTnutGrid(grid) };
   };
+
+  it('visits each supplied pair together when generating a new vertical run', () => {
+    const configured = sideLayout(3);
+    const points = generateLedPositions(configured);
+    const pairs = ledPairs({ ...configured, ledPositions: points });
+    const [path] = createWiring(points, 'vertical', 'tl', configured, pairs).paths;
+    const holeFor = new Map(points.map(({ id }, position) => [id, Math.floor(position / 2)]));
+    expect(new Set(path).size).toBe(12);
+    expect(path.map((id) => holeFor.get(id))).toEqual([0, 0, 3, 3, 4, 4, 1, 1, 2, 2, 5, 5]);
+  });
 
   it('runs up one side of every column and down the other on a 2x3 grid', () => {
     const configured = sideLayout(3);
