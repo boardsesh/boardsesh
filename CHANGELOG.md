@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Spraywall "maybe" holds stand out in mint, clear of every grade colour ([#7721](https://github.com/boardsesh/boardsesh/pull/7721))
 - A brighter, richer violet across the app, with selected items easier to spot ([#7711](https://github.com/boardsesh/boardsesh/pull/7711))
 - Set your Spraywall's LED brightness once for everyone at the wall. ([#7454](https://github.com/boardsesh/boardsesh/pull/7454))
   Your Spraywall's LEDs can switch off by themselves after 15 minutes to 2 hours.

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-17T10:14:49.660Z",
+  "generatedAt": "2026-11-17T10:30:11.512Z",
   "entries": [
+    {
+      "prNumber": 7721,
+      "category": "new",
+      "title": "Spraywall \"maybe\" holds stand out in mint, clear of every grade colour",
+      "mergedAt": "2026-11-17T10:24:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7721"
+    },
     {
       "prNumber": 7720,
       "category": "fixed",
@@ -9813,10 +9820,12 @@
       "date": "2026-11-17T09:25:11Z",
       "sha": "ce98979658af4ce0e653e45c52a6d6e1d5ec7fbf",
       "platforms": [
-        "android"
+        "android",
+        "ios"
       ],
       "fingerprints": {
-        "android": "1e61a150e955b973dc0c4aafeff36f7c34ac12e1"
+        "android": "1e61a150e955b973dc0c4aafeff36f7c34ac12e1",
+        "ios": "291d5305fc53553137c9b6458086326afbd3cc21"
       }
     },
     {
