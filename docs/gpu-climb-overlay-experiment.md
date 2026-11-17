@@ -138,7 +138,7 @@ The final APK without diagnostic tracing also reported API v3 readiness in the n
 
 ## Physical Adreno: lower scene dropped (#7749)
 
-On a Galaxy S26 Ultra (Adreno 840, driver 0842.19.13) the compositor drew nothing from the lower scene: no lit holds at rest, and no outgoing climb during a swap. The emulator never showed it. A diagnostic build proved the inputs were right: the hold count, the descriptors read back from the GPU, and the tile lookup. Drawing the same still frame through the upper scene lit every hold. The driver dropped the `Hold` that `source_hold` returned straight from `lower[index]`. Copying it into a local before returning fixed both cases on the phone. `scripts/check-android-gpu-shaders.ts` now rejects a `return lower[` or `return upper[` in the shipped shader, because `glslc` accepts both forms.
+On a Galaxy S26 Ultra (Adreno 840, driver 0842.19.13) the compositor drew nothing from the lower scene: no lit holds at rest, and no outgoing climb during a swap. The emulator never showed it. A diagnostic build proved the inputs were right: the hold count, the descriptors read back from the GPU, and the tile lookup. Drawing the same still frame through the upper scene lit every hold. The driver dropped the `Hold` that `source_hold` returned straight from `lower[index]`. Copying it into a local before returning fixed both cases on the phone. `scripts/check-android-gpu-shaders.ts` now rejects any `return` that ends on a whole `lower[...]` or `upper[...]` element, because `glslc` compiles that form without complaint.
 
 ## Catalogue expansion evidence
 
