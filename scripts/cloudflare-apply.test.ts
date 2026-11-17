@@ -8,6 +8,9 @@ import { API_HOSTNAME as BACKEND_API_HOSTNAME } from '../packages/backend/src/ha
 import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
   API_HOSTNAME,
+  API_RAILWAY_CNAME_TARGET,
+  API_RAILWAY_VERIFY_HOSTNAME,
+  API_RAILWAY_VERIFY_VALUE,
   APEX_HOSTNAME,
   APEX_ORIGINLESS_ADDRESS,
   APEX_REDIRECT_RULE_DESCRIPTION,
@@ -116,6 +119,8 @@ const assetsDnsRecord: FullyManagedDnsRecordDesired = {
 };
 const wwwDnsRecord = requiredFullyManagedDnsRecord(WWW_HOSTNAME);
 const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
+const apiDnsRecord = requiredFullyManagedDnsRecord(API_HOSTNAME);
+const apiVerifyDnsRecord = requiredFullyManagedDnsRecord(API_RAILWAY_VERIFY_HOSTNAME);
 const drPrimaryDnsRecord = requiredFullyManagedDnsRecord(DR_PRIMARY_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
@@ -141,6 +146,31 @@ function liveWwwDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord
     content: wwwDnsRecord.content,
     ttl: wwwDnsRecord.ttl,
     proxied: wwwDnsRecord.proxied,
+    ...overrides,
+  };
+}
+
+/** Railway's ownership proof as Cloudflare returns it: the value wrapped in double quotes. */
+function liveApiVerifyDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'api-verify-dns-record-id',
+    name: API_RAILWAY_VERIFY_HOSTNAME,
+    type: 'TXT',
+    content: `"${API_RAILWAY_VERIFY_VALUE}"`,
+    ttl: 1,
+    proxied: false,
+    ...overrides,
+  };
+}
+
+function liveApiDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'api-dns-record-id',
+    name: API_HOSTNAME,
+    type: apiDnsRecord.type,
+    content: apiDnsRecord.content,
+    ttl: apiDnsRecord.ttl,
+    proxied: apiDnsRecord.proxied,
     ...overrides,
   };
 }
@@ -276,6 +306,8 @@ function inSyncDnsRecords(): LiveState['dnsRecords'] {
     [wsDnsRecord.name]: liveDnsRecord(),
     [assetsDnsRecord.name]: liveAssetsDnsRecord(),
     [wwwDnsRecord.name]: liveWwwDnsRecord(),
+    [apiDnsRecord.name]: liveApiDnsRecord(),
+    [apiVerifyDnsRecord.name]: liveApiVerifyDnsRecord(),
     [apexDnsRecord.name]: liveApexDnsRecord(),
     [drPrimaryDnsRecord.name]: liveDrPrimaryDnsRecord(),
   };
@@ -666,14 +698,48 @@ describe('api.boardsesh.com (#6981)', () => {
     expect(API_HOSTNAME).toBe(BACKEND_API_HOSTNAME);
   });
 
-  it('is not a desired DNS record yet, so a merge cannot create one', () => {
-    // A proxied-only entry would also make every apply throw while the record
-    // is missing, and deploy-cloudflare runs on each merge touching this config.
-    expect(desired.dnsRecords.some((record) => record.name === API_HOSTNAME)).toBe(false);
+  it('is a fully managed proxied CNAME to the Railway backend service', () => {
+    expect(apiDnsRecord).toEqual({
+      management: 'full',
+      name: API_HOSTNAME,
+      type: 'CNAME',
+      content: API_RAILWAY_CNAME_TARGET,
+      ttl: 1,
+      proxied: true,
+    });
+    expect(apiDnsRecord.content).toMatch(/\.up\.railway\.app$/);
+    expect('settings' in fullyManagedDnsBody(apiDnsRecord)).toBe(false);
+  });
 
-    const plan = buildPlan(desired, inSyncLiveState(), { allowZoneSsl: false });
-    expect(plan.filter((change) => change.dnsName === API_HOSTNAME)).toEqual([]);
-    expect(JSON.stringify(plan)).not.toContain(API_HOSTNAME);
+  it('is created when absent and is zero drift once live matches', () => {
+    const { [API_HOSTNAME]: _absent, ...withoutApi } = inSyncDnsRecords();
+    const plan = buildPlan(desired, { ...inSyncLiveState(), dnsRecords: withoutApi }, { allowZoneSsl: false });
+    expect(plan.map((change) => change.dnsName)).toEqual([API_HOSTNAME]);
+
+    expect(diffDnsRecord(apiDnsRecord, liveApiDnsRecord())).toBeNull();
+  });
+
+  it('declares the Railway ownership proof as a DNS-only TXT record, ahead of the CNAME', () => {
+    expect(apiVerifyDnsRecord).toEqual({
+      management: 'full',
+      name: '_railway-verify.api.boardsesh.com',
+      type: 'TXT',
+      content: API_RAILWAY_VERIFY_VALUE,
+      ttl: 1,
+      proxied: false,
+    });
+    const names = desired.dnsRecords.map((record) => record.name);
+    expect(names.indexOf(API_RAILWAY_VERIFY_HOSTNAME)).toBeLessThan(names.indexOf(API_HOSTNAME));
+  });
+
+  it('sends the proof quoted, and reads the quoted live value as in sync', () => {
+    expect(fullyManagedDnsBody(apiVerifyDnsRecord).content).toBe(`"${API_RAILWAY_VERIFY_VALUE}"`);
+    // A record added by hand in the dashboard comes back quoted; a bare one must match too.
+    expect(diffDnsRecord(apiVerifyDnsRecord, liveApiVerifyDnsRecord())).toBeNull();
+    expect(diffDnsRecord(apiVerifyDnsRecord, liveApiVerifyDnsRecord({ content: API_RAILWAY_VERIFY_VALUE }))).toBeNull();
+    expect(
+      diffDnsRecord(apiVerifyDnsRecord, liveApiVerifyDnsRecord({ content: '"railway-verify=stale"' }))?.detail,
+    ).toContain('content railway-verify=stale');
   });
 
   it('is not named by any managed rule', () => {
@@ -840,6 +906,15 @@ describe('selectManagedDnsRecord', () => {
     expect(() =>
       selectManagedDnsRecord([recordAt('A', '203.0.113.1'), recordAt('AAAA', '2001:db8::1')], WWW_HOSTNAME),
     ).toThrow('ambiguous');
+  });
+
+  it('matches only TXT records for a desired TXT, and refuses two of them', () => {
+    const records = [recordAt('TXT', '"railway-verify=abc"'), recordAt('CNAME', 'cname.vercel-dns.com')];
+    expect(selectManagedDnsRecord(records, WWW_HOSTNAME, 'TXT')?.type).toBe('TXT');
+    expect(selectManagedDnsRecord([recordAt('CNAME', 'cname.vercel-dns.com')], WWW_HOSTNAME, 'TXT')).toBeNull();
+    expect(() => selectManagedDnsRecord([recordAt('TXT', '"a"'), recordAt('TXT', '"b"')], WWW_HOSTNAME, 'TXT')).toThrow(
+      'ambiguous',
+    );
   });
 
   it('ignores a different name, and reports absence as null', () => {
@@ -1917,6 +1992,8 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       [WS_HOSTNAME]: [liveDnsRecord()],
       [ASSETS_HOSTNAME]: [liveAssetsDnsRecord()],
       [WWW_HOSTNAME]: [liveWwwDnsRecord()],
+      [API_HOSTNAME]: [liveApiDnsRecord()],
+      [API_RAILWAY_VERIFY_HOSTNAME]: [liveApiVerifyDnsRecord()],
       [DR_PRIMARY_HOSTNAME]: [liveDrPrimaryDnsRecord()],
       // The apex carries the mail and verification records every zone has.
       // Cloudflare returns them from the same by-name lookup, and they must not
