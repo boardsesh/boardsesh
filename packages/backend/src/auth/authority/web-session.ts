@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, notExists, notLike, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lt, ne, notExists, notLike, or, sql, type SQL } from 'drizzle-orm';
 import { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS } from '@boardsesh/auth-protocol';
 import {
   authCredentialLineage,
@@ -21,14 +21,39 @@ export { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS 
 const WEB_SESSION_LIFETIME_MS = WEB_SESSION_LIFETIME_SECONDS * 1000;
 const WEB_SESSION_ROLL_BELOW_REMAINING_MS = WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS * 1000;
 
+/**
+ * The `legacy_lineage_id` of a `carried` session: no lineage row has this id,
+ * so the reader finds none to check, but the column is not null, so the
+ * session reads as `bridge` and never as a fresh login. No new column needed.
+ */
+export const CARRIED_WEB_SESSION_LINEAGE_PREFIX = 'carried:';
+
+/**
+ * `login`: the caller verified a credential just now, so the sign-in time may
+ * pass a five-minute freshness check. `carried`: the sign-in happened
+ * elsewhere (a native transfer, a provider sign-in without a verified
+ * `auth_time`), so the row keeps that time for the 30-day rules but never
+ * passes `requireFreshAuthentication` or `webSignInProof`, like a bridged row.
+ */
+export type WebSessionFreshness = 'login' | 'carried';
+
 export interface WebSessionIssue {
-  /** The account whose credential the caller verified, in this transaction, under its user lock. */
+  /**
+   * The account whose credential the caller verified, in this transaction.
+   * A caller that locks `users` rows before calling must lock this account and
+   * the presented one in one pass with `lockWebSessionAccounts`; holding only
+   * its own row and then calling deadlocks against a crossed login.
+   */
   readonly userId: string;
   /** When that credential was verified: the real sign-in time. Never later than `now`. */
   readonly authenticatedAt: Date;
+  /** Defaults to `login`. */
+  readonly freshness?: WebSessionFreshness;
   /**
    * The admitted first-party session that arrived on the login request, legacy
-   * cookie or canonical, of any account. Revoked in this transaction.
+   * cookie or canonical, of any account, exactly as `readFirstPartySession`
+   * returned it in this transaction. Revoked here when it has its own session
+   * id; one that `requiresAccountCutoff` is left alone.
    */
   readonly presented?: FirstPartySession;
   readonly now: Date;
@@ -61,9 +86,12 @@ function captureIssue(input: WebSessionIssue) {
     authenticatedAt.getTime() > now.getTime()
   )
     throw new CurrentStoreFoundationError('INVALID_COMMAND');
+  const freshness = input.freshness ?? 'login';
+  if (freshness !== 'login' && freshness !== 'carried') throw new CurrentStoreFoundationError('INVALID_COMMAND');
   return {
     userId: input.userId,
     authenticatedAt,
+    freshness,
     now,
     presented: input.presented && {
       ...input.presented,
@@ -75,29 +103,34 @@ function captureIssue(input: WebSessionIssue) {
 }
 
 /**
- * Both accounts' `users` rows in `users.id` order, as the database sorts them:
- * FOR UPDATE for the presented session's account, whose rows are revoked, and
- * the weakest correct lock, FOR KEY SHARE, for the account signing in. Two
- * logins that present each other's sessions then queue instead of deadlocking.
- * Returns whether the presented account still exists.
+ * The `users` row locks a web-session issuance needs, in one pass in
+ * `users.id` order, each at its final strength: FOR UPDATE for the presented
+ * session's account, whose rows are revoked, and FOR KEY SHARE for every row
+ * `signingIn` selects. Two logins that present each other's sessions then
+ * queue instead of deadlocking, and no row is upgraded later. Every caller
+ * that locks `users` before `issueWebSession` uses this instead of its own
+ * statement. `limit` bounds the rows `signingIn` may name, plus one for the
+ * presented account. Returns whether the presented account still exists.
  */
-async function lockAccounts(
+export async function lockWebSessionAccounts(
   transaction: AuthorityTransaction,
-  userId: string,
+  signingIn: SQL,
   presentedUserId: string | undefined,
-): Promise<boolean> {
+  limit = 1,
+): Promise<{ readonly presentedAccountExists: boolean }> {
   const accounts = await transaction
     .select({ id: users.id })
     .from(users)
-    .where(inArray(users.id, presentedUserId ? [userId, presentedUserId] : [userId]))
-    .orderBy(users.id);
+    .where(presentedUserId === undefined ? signingIn : or(signingIn, eq(users.id, presentedUserId)))
+    .orderBy(users.id)
+    .limit(limit + 1);
   let presentedAccountExists = false;
   for (const { id } of accounts) {
     const account = transaction.select({ id: users.id }).from(users).where(eq(users.id, id));
     if (id !== presentedUserId) await account.for('key share');
     else presentedAccountExists = (await account.for('update')).length === 1;
   }
-  return presentedAccountExists;
+  return { presentedAccountExists };
 }
 
 /**
@@ -107,9 +140,17 @@ async function lockAccounts(
  * token only after it commits.
  *
  * Lock order: the shared authority gate (and a manifest re-check), then
- * `users` rows in id order, then the presented session's rows, then the new
- * row. Refuses a deleted account with `AuthSubjectDeniedError`, as native
- * issuance does, and a moved authority with `STALE_AUTHORITY`.
+ * `users` rows in id order (`lockWebSessionAccounts`), then the presented
+ * session's rows, then the new row. A caller that already holds a `users` row
+ * must have taken it with `lockWebSessionAccounts` for this account and the
+ * presented one.
+ *
+ * It refuses before writing anything: a deleted or missing account with
+ * `AuthSubjectDeniedError`, as native issuance does, and a moved authority
+ * with `STALE_AUTHORITY`. A presented session is revoked only through its own
+ * session id; one that `requiresAccountCutoff` (a no-SID legacy cookie, or the
+ * bridged row of one) is left alone, so a login never cuts off an account and
+ * never moves its generation.
  */
 export async function issueWebSession(
   transaction: AuthorityTransaction,
@@ -118,17 +159,21 @@ export async function issueWebSession(
   const request = captureIssue(input);
   await requireReadCommitted(transaction);
   await revalidateIdentityAuthority(transaction, request.authority);
-  const presentedAccountExists = await lockAccounts(transaction, request.userId, request.presented?.userId);
+  const presented = request.presented?.requiresAccountCutoff ? undefined : request.presented;
+  const { presentedAccountExists } = await lockWebSessionAccounts(
+    transaction,
+    eq(users.id, request.userId),
+    presented?.userId,
+  );
+  // Refuse before any write, so a caller that catches the refusal commits nothing.
+  const subject = await requireHumanSubjectForIssuance(transaction, request.userId);
   // A deleted account's sessions are refused by every reader already.
-  if (request.presented && presentedAccountExists)
-    await denyFirstPartySessionInTransaction(transaction, request.presented, request.now, {
+  if (presented && presentedAccountExists)
+    await denyFirstPartySessionInTransaction(transaction, presented, request.now, {
       expectedProjectionId: request.authority.projectionId,
       expectedNormalizerVersion: request.authority.normalizerVersion,
       expectedWriterEpoch: request.authority.epoch,
     });
-  // After the revocation: ending this account's own no-SID legacy login moves
-  // its generation, and the new session must carry the moved one.
-  const subject = await requireHumanSubjectForIssuance(transaction, request.userId);
   const sessionId = randomUUID();
   const issued = newSessionToken();
   const expiresAt = new Date(request.now.getTime() + WEB_SESSION_LIFETIME_MS);
@@ -141,8 +186,11 @@ export async function issueWebSession(
     createdAt: request.authenticatedAt,
     updatedAt: request.now,
     originalAuthenticatedAt: request.authenticatedAt,
-    // No lineage: this row's source is `login`.
-    legacyLineageId: null,
+    // No lineage: this row's source is `login`. A carried one names no lineage
+    // row but reads as `bridge`, so it is never fresh.
+    legacyLineageId: request.freshness === 'carried' ? `${CARRIED_WEB_SESSION_LINEAGE_PREFIX}${sessionId}` : null,
+    // An SID denial never moves the generation, so this is the one the
+    // caller's credential was verified at.
     revocationGeneration: subject.generation,
   });
   return { sessionId, token: issued.token, expiresAt, generation: subject.generation };
@@ -160,6 +208,12 @@ export type WebSessionRoll = { readonly rolled: true; readonly expiresAt: Date }
  * too. Rows bound to a native refresh token keep that token's expiry and are
  * never rolled. Rolling never makes a row readable: every reader re-checks the
  * same conditions itself.
+ *
+ * `rolled: true` is not proof the session is live. Under READ COMMITTED a roll
+ * queued behind an account cutoff re-checks only the row it waited on; its
+ * sub-selects keep their earlier snapshot, so it can push out the expiry of a
+ * row the cutoff just ended. The reader still refuses that row by its
+ * generation. Callers rely on the reader, never on this result.
  */
 export async function rollWebSession(
   database: Pick<AuthorityDatabase, 'select' | 'update'>,
