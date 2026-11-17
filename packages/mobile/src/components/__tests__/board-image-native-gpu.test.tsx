@@ -12,7 +12,7 @@ const controls = vi.hoisted(() => ({
   motionAvailable: true,
   reduceMotion: false,
   gpuStatus: 'ready' as 'loading' | 'ready',
-  animatedWorklet: null as null | (() => { pagePosition: number; outgoingWeight?: number; incomingWeight?: number }),
+  animatedWorklet: null as null | (() => { pagePosition?: number; swapFrame?: readonly number[] }),
   hidden: false,
   active: true,
   visibilityListeners: new Set<() => void>(),
@@ -409,29 +409,27 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     expect(controls.animatedWorklet?.().pagePosition).toBe(4);
   });
 
-  it('hands an API 6 overlay the wall swap weights, whose dissolve outlives Reduce Motion', () => {
+  it('hands an API 6 overlay the wall swap as one frame, whose dissolve outlives Reduce Motion', () => {
     controls.apiVersion = 6;
-    const pagePosition = { value: 4.25 } as SharedValue<number>;
-    const outgoingWeight = { value: 0.4 } as SharedValue<number>;
-    const incomingWeight = { value: 0 } as SharedValue<number>;
+    const pagePosition = { value: 4.6 } as SharedValue<number>;
+    const swapFrame = { value: [4.25, 0.4, 0] } as unknown as SharedValue<readonly [number, number, number]>;
     const transition = {
       previousFrames: 'p4131r43',
       nextFrames: 'p4306r43',
       centerPage: 4,
       pagePosition,
       revealMode: 'swap' as const,
-      outgoingWeight,
-      incomingWeight,
+      swapFrame,
     };
     const { rerender } = render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
     expect(controls.props?.revealMode).toBe('swap');
-    expect(controls.animatedWorklet?.()).toEqual({ pagePosition: 4.25, outgoingWeight: 0.4, incomingWeight: 0 });
-    outgoingWeight.value = 0.1;
-    incomingWeight.value = 0.5;
-    expect(controls.animatedWorklet?.()).toEqual({ pagePosition: 4.25, outgoingWeight: 0.1, incomingWeight: 0.5 });
+    // The pair and both weights travel together; the pager's position does not.
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.4, 0] });
+    swapFrame.value = [4.25, 0.1, 0.5];
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.1, 0.5] });
     controls.reduceMotion = true;
     rerender(<BoardImageNative {...BOARD} frames="p4131r43" gpuTransition={transition} />);
-    expect(controls.animatedWorklet?.()).toEqual({ pagePosition: 4.25, outgoingWeight: 0.1, incomingWeight: 0.5 });
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.1, 0.5] });
     // The wipe on the same binary says so, and still stops under Reduce Motion.
     rerender(<BoardImageNative {...BOARD} gpuTransition={{ ...transition, revealMode: 'wipe' }} />);
     expect(controls.props?.revealMode).toBe('wipe');
@@ -441,7 +439,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     controls.reduceMotion = false;
     rerender(<BoardImageNative {...BOARD} frames="p4306r43" gpuTransition={transition} />);
     expect(controls.props?.revealMode).toBeUndefined();
-    expect(controls.animatedWorklet?.()).toEqual({ pagePosition: 4.25 });
+    expect(controls.animatedWorklet?.()).toEqual({ pagePosition: 4.6 });
   });
 
   it('flattens multi-frame neighboring climbs just like the current climb', () => {

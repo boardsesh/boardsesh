@@ -19,9 +19,15 @@
  *   holds fade in over 60-200 ms (ease-out). Incoming-only holds never appear
  *   while outgoing-only ones are above 40%: a flick that commits before the
  *   board has dimmed waits for the fade to reach 40% before the new holds start.
- * - Grabbing the board mid-swap and pulling it back fades from the weights on
- *   screen to what the finger asks for, with no jump. A new commit during a swap
- *   ends the running swap first: its old holds go and its new climb is whole.
+ * - Catching the board mid-swap does not stop the swap. Pulling it back toward
+ *   the climb being left (4 points or more past where it was caught) fades from
+ *   the weights on screen to what the finger asks for, with no jump. A new commit
+ *   during a swap, a caught board flicked onward included, ends the running swap
+ *   first: its old holds go and its new climb is whole.
+ * - A commit whose pair is not the one on screen (pulled back toward one climb,
+ *   then flicked toward the other) first eases that pair to its leaving climb,
+ *   whole, over 120 ms, and only then swaps: changing pairs any earlier would
+ *   change which holds count as outgoing-only in one frame.
  * - Reduce Motion: no dim while dragging, and the swap is one 120 ms dissolve.
  *
  * The native view is told which pair it is showing through its page position:
@@ -56,6 +62,10 @@ export const WALL_SWAP = {
   reduceMotionDurationMs: 120,
   /** Interrupted weights ease to what the finger asks for over this long. */
   settleMs: 120,
+  /** A commit from another pair first eases that pair to its leaving climb, whole, over this long. */
+  leadInMs: 120,
+  /** A board caught mid-swap is pulled back once it travels this many points back toward the climb being left. */
+  pullBackPoints: 4,
   /** How far the page position leans from the outgoing page toward the arriving one. */
   pairLean: 0.25,
 } as const;
@@ -175,20 +185,36 @@ export function swapWeightsAt(
 }
 
 export type WallSwapState = {
-  /** The page whose climb is being left; at rest, the climb on show. */
+  /** The page whose climb is being left on screen; at rest, the climb on show. */
   from: number;
-  /** Toward the arriving page: 1 next, -1 previous, 0 no pair. */
+  /** Toward the arriving page on screen: 1 next, -1 previous, 0 no pair. */
   dir: number;
   /** Weights on screen for outgoing-only and incoming-only holds. */
   outgoing: number;
   incoming: number;
   /** A committed swap is running on its own clock. */
   swapping: boolean;
+  /** The running swap's leaving page and direction; during a lead-in the pair on screen is another. */
+  swapFrom: number;
+  swapDir: number;
   swapStartOutgoing: number;
   swapStartIncoming: number;
   durationMs: number;
   outgoingEndMs: number;
   incomingStartMs: number;
+  /** Lead-in before the swap: the pair on screen at the commit easing to its leaving climb, whole. */
+  leadMs: number;
+  leadFrom: number;
+  leadDir: number;
+  leadOutgoing: number;
+  leadIncoming: number;
+  /**
+   * The pager has made the swap's arriving climb its middle page (landed, or
+   * caught by a finger), and how far back toward the leaving climb the board
+   * has been at its most onward since, in points.
+   */
+  arrived: boolean;
+  backReference: number;
   /** Interrupted weights easing to what the finger asks for, on their own clock. */
   settling: boolean;
   settleOutgoing: number;
@@ -217,11 +243,17 @@ export type WallSwapInput = {
 
 export type WallSwapStep = {
   state: WallSwapState;
-  /** Restart the swap clock from 0 toward `state.durationMs`. */
+  /** Restart the swap clock from 0 toward `swapClockMs(state)`. */
   startSwap: boolean;
   /** Restart the settle clock from 0 toward `WALL_SWAP.settleMs`. */
   startSettle: boolean;
 };
+
+/** How long the swap clock runs: any lead-in, then the swap itself. */
+export function swapClockMs(state: WallSwapState): number {
+  'worklet';
+  return state.leadMs + state.durationMs;
+}
 
 /** One climb on its own: nothing leaving, nothing arriving. */
 export function wallSwapRest(page: number, seen: Pick<WallSwapState, 'anchor' | 'steps' | 'reset'>): WallSwapState {
@@ -232,11 +264,20 @@ export function wallSwapRest(page: number, seen: Pick<WallSwapState, 'anchor' | 
     outgoing: 1,
     incoming: 0,
     swapping: false,
+    swapFrom: page,
+    swapDir: 0,
     swapStartOutgoing: 1,
     swapStartIncoming: 0,
     durationMs: WALL_SWAP.durationMs,
     outgoingEndMs: WALL_SWAP.outgoingEndMs,
     incomingStartMs: WALL_SWAP.incomingStartMs,
+    leadMs: 0,
+    leadFrom: page,
+    leadDir: 0,
+    leadOutgoing: 1,
+    leadIncoming: 0,
+    arrived: false,
+    backReference: 0,
     settling: false,
     settleOutgoing: 1,
     settleIncoming: 0,
@@ -279,12 +320,20 @@ function settleFromHere(state: WallSwapState): WallSwapStep {
   };
 }
 
-/** The weights on screen for the pair (`from`, `dir`), relabelled if `state` shows it the other way round. */
-function weightsFor(state: WallSwapState, from: number, dir: number): [number, number] {
+/**
+ * The weights on screen for the pair (`from`, `dir`), relabelled if `state`
+ * shows it the other way round, or null when `state` shows another pair that
+ * is not settled on its leaving climb: switching to (`from`, `dir`) now would
+ * change which holds count as outgoing-only in a single frame.
+ */
+function weightsFor(state: WallSwapState, from: number, dir: number): [number, number] | null {
   'worklet';
-  if (state.from === from) return [state.outgoing, state.dir === dir ? state.incoming : 0];
+  if (state.from === from && (state.dir === dir || state.dir === 0)) {
+    return [state.outgoing, state.dir === dir ? state.incoming : 0];
+  }
   if (state.dir === -dir && state.from === from + dir) return [state.incoming, state.outgoing];
-  return [1, 0];
+  if (state.from !== from) return [1, 0];
+  return state.outgoing >= 1 - EPSILON && state.incoming <= DARK ? [1, 0] : null;
 }
 
 function commit(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
@@ -295,20 +344,32 @@ function commit(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
   const from = input.fling !== 0 ? input.anchor : previous.anchor;
   if (dir === 0) return settled(wallSwapRest(input.anchor, seen));
   // A commit during a swap ends that swap first: its arriving climb is whole.
-  const base = previous.swapping ? wallSwapRest(previous.from + previous.dir, seen) : previous;
-  const [outgoing, incoming] = weightsFor(base, from, dir);
+  const base = previous.swapping ? wallSwapRest(previous.swapFrom + previous.swapDir, seen) : previous;
+  const start = weightsFor(base, from, dir);
+  const scale = input.reduceMotion ? WALL_SWAP.reduceMotionDurationMs / WALL_SWAP.durationMs : 1;
+  const [outgoing, incoming] = start ?? [1, 0];
   return {
     state: {
       ...base,
       ...seen,
       ...swapTiming(outgoing, input.reduceMotion),
-      from,
-      dir,
-      outgoing,
-      incoming,
+      // Without a lead-in the swap's pair is on screen from the first frame.
+      from: start ? from : base.from,
+      dir: start ? dir : base.dir,
+      outgoing: start ? outgoing : base.outgoing,
+      incoming: start ? incoming : base.incoming,
       swapping: true,
+      swapFrom: from,
+      swapDir: dir,
       swapStartOutgoing: outgoing,
       swapStartIncoming: incoming,
+      leadMs: start ? 0 : WALL_SWAP.leadInMs * scale,
+      leadFrom: base.from,
+      leadDir: base.dir,
+      leadOutgoing: base.outgoing,
+      leadIncoming: base.incoming,
+      arrived: false,
+      backReference: 0,
       settling: false,
     },
     startSwap: true,
@@ -319,33 +380,56 @@ function commit(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
 function runSwap(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
   'worklet';
   const seen = { anchor: input.anchor, steps: input.steps, reset: input.reset };
-  const { outgoing, incoming } = swapWeightsAt(
-    input.swapMs,
+  const elapsed = input.swapMs;
+  const leading = elapsed < previous.leadMs;
+  const amount = leading ? easeOut(elapsed / previous.leadMs) : 1;
+  const swapped = swapWeightsAt(
+    elapsed - previous.leadMs,
     previous.swapStartOutgoing,
     previous.swapStartIncoming,
     previous,
   );
-  const to = previous.from + previous.dir;
-  // The board was caught: the pager has made the arriving climb its middle
-  // page and a finger moves it, rather than the fling's spring.
-  const dragging = input.fling === 0 && input.anchor === to && input.offset !== 0;
-  if (dragging && to + sideOf(input.offset) === previous.from) {
-    // Pulled back: the arriving climb is now the one being left. Same pixels.
-    return settleFromHere({
-      ...previous,
-      ...seen,
-      from: to,
-      dir: -previous.dir,
-      outgoing: incoming,
-      incoming: outgoing,
-    });
+  const shown = leading
+    ? {
+        from: previous.leadFrom,
+        dir: previous.leadDir,
+        outgoing: mix(previous.leadOutgoing, 1, amount),
+        incoming: mix(previous.leadIncoming, 0, amount),
+      }
+    : { from: previous.swapFrom, dir: previous.swapDir, ...swapped };
+  const to = previous.swapFrom + previous.swapDir;
+  // The pager has made the arriving climb its middle page: landed (offset 0),
+  // or caught by a finger with the offset it was still travelling.
+  const onArrival = input.fling === 0 && input.anchor === to;
+  // How far the board sits back toward the climb being left.
+  const back = input.offset * previous.swapDir;
+  let arrived = previous.arrived;
+  let backReference = previous.backReference;
+  if (onArrival && !arrived) {
+    arrived = true;
+    backReference = back;
+  } else if (onArrival) {
+    if (!leading && back > 0 && back > backReference + WALL_SWAP.pullBackPoints) {
+      // Pulled back: the arriving climb is now the one being left. Same pixels.
+      return settleFromHere({
+        ...previous,
+        ...seen,
+        from: to,
+        dir: -previous.swapDir,
+        outgoing: shown.incoming,
+        incoming: shown.outgoing,
+      });
+    }
+    backReference = Math.min(backReference, back);
   }
-  if (input.swapMs >= previous.durationMs) {
-    const arrived = wallSwapRest(to, seen);
-    // A drag onward waited for the swap; it dims the arrived climb from whole.
-    return dragging ? settleFromHere({ ...arrived, dir: sideOf(input.offset) }) : settled(arrived);
+  if (elapsed >= swapClockMs(previous)) {
+    const arrivedRest = wallSwapRest(to, seen);
+    // A finger still on the board dims the arrived climb from whole.
+    return onArrival && input.offset !== 0
+      ? settleFromHere({ ...arrivedRest, dir: sideOf(input.offset) })
+      : settled(arrivedRest);
   }
-  return settled({ ...previous, ...seen, outgoing, incoming });
+  return settled({ ...previous, ...seen, ...shown, arrived, backReference });
 }
 
 function follow(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
@@ -353,6 +437,9 @@ function follow(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
   const seen = { anchor: input.anchor, steps: input.steps, reset: input.reset };
   // A committed fling that its swap already covered is still landing.
   if (input.fling !== 0) return settled({ ...previous, ...seen });
+  // The fling landed this frame, or a finger caught it short with the offset
+  // it was still travelling.
+  const caught = input.anchor !== previous.anchor && input.offset !== 0;
   let current = previous;
   if (current.from !== input.anchor) {
     if (current.dir === 0 || current.from + current.dir !== input.anchor) {
@@ -380,8 +467,14 @@ function follow(previous: WallSwapState, input: WallSwapInput): WallSwapStep {
     incoming: settling ? mix(current.settleIncoming, 0, amount) : 0,
     settling,
   });
-  // The finger is on the pair's side, or the board was at rest: follow it.
-  if (side === current.dir || current.dir === 0) return settled({ ...toward(target), dir: side });
+  // The finger is on the pair's side, or the board was at rest: follow it. A
+  // board caught away from the middle eases into its dim rather than snap.
+  if (side === current.dir || current.dir === 0) {
+    if (caught && !settling && Math.abs(current.outgoing - target) > EPSILON) {
+      return settleFromHere({ ...current, ...seen, dir: side });
+    }
+    return settled({ ...toward(target), dir: side });
+  }
   if (side === 0) {
     // Centred again: the pair goes once its leaving climb is whole and the other dark.
     const centred = toward(1);

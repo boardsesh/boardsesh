@@ -57,33 +57,10 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   });
   // The wall swap keeps its own clock and weights; see wall-swap.ts.
   const revealMode = playerRevealMode(climbOverlayGpuApiVersion);
-  const {
-    pagePosition: swapPair,
-    outgoingWeight,
-    incomingWeight,
-  } = useWallSwap(pager, centerPage, revealMode === 'swap');
+  const swapFrame = useWallSwap(pager, centerPage, revealMode === 'swap');
   const transition = useMemo(
-    () => ({
-      previousFrames,
-      nextFrames,
-      centerPage,
-      pagePosition: revealMode === 'swap' ? swapPair : pagePosition,
-      prefetchFrames,
-      revealMode,
-      outgoingWeight,
-      incomingWeight,
-    }),
-    [
-      previousFrames,
-      nextFrames,
-      centerPage,
-      pagePosition,
-      prefetchFrames,
-      revealMode,
-      swapPair,
-      outgoingWeight,
-      incomingWeight,
-    ],
+    () => ({ previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames, revealMode, swapFrame }),
+    [previousFrames, nextFrames, centerPage, pagePosition, prefetchFrames, revealMode, swapFrame],
   );
   const identity = JSON.stringify([
     centerPage,

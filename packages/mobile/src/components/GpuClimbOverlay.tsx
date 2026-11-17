@@ -14,6 +14,7 @@ import {
   type ClimbOverlayGPUReady,
 } from '../../modules/climb-overlay-gpu/src';
 import type { RevealMode } from './play-drawer/wall-swap';
+import type { WallSwapFrame } from './play-drawer/use-wall-swap';
 import {
   classifyGpuFallback,
   reportGpuFallback,
@@ -26,13 +27,13 @@ export type GpuClimbTransition = {
   previousFrames: string | null;
   nextFrames: string | null;
   centerPage: number;
-  /** The wipe's pager position, or the swap's pair (see play-drawer/wall-swap). */
+  /** The pager's position, which the wipe follows. */
   pagePosition: SharedValue<number>;
   prefetchFrames?: readonly string[];
   /** API 6: the swap weights hold classes over time instead of wiping by position. */
   revealMode?: RevealMode;
-  outgoingWeight?: SharedValue<number>;
-  incomingWeight?: SharedValue<number>;
+  /** The swap's pair and two weights, one value (see play-drawer/wall-swap). */
+  swapFrame?: SharedValue<WallSwapFrame>;
 };
 
 const NO_GPU_PREFETCH_FRAMES: readonly string[] = [];
@@ -78,22 +79,17 @@ export function GpuClimbOverlay({
   const appActive = useIsAppActive();
   const pagePosition = transition?.pagePosition;
   const centerPage = transition?.centerPage ?? 0;
-  const outgoingWeight = transition?.outgoingWeight;
-  const incomingWeight = transition?.incomingWeight;
+  const swapFrame = transition?.swapFrame;
   // The swap handles Reduce Motion itself, as a shorter dissolve; the wipe stops.
-  const swap = transition?.revealMode === 'swap' && climbOverlayGpuApiVersion >= 6;
+  const swap = transition?.revealMode === 'swap' && swapFrame !== undefined && climbOverlayGpuApiVersion >= 6;
   // Updating these native numeric props stays on the UI thread. No React render,
   // config serialization or hold-list preparation runs for a drag frame.
   const animatedProps = useAnimatedProps(
-    () =>
-      swap
-        ? {
-            pagePosition: pagePosition?.value ?? centerPage,
-            outgoingWeight: outgoingWeight?.value ?? 1,
-            incomingWeight: incomingWeight?.value ?? 0,
-          }
+    (): { pagePosition?: number; swapFrame?: WallSwapFrame } =>
+      swap && swapFrame
+        ? { swapFrame: swapFrame.value }
         : { pagePosition: reduceMotion ? centerPage : (pagePosition?.value ?? centerPage) },
-    [pagePosition, centerPage, reduceMotion, swap, outgoingWeight, incomingWeight],
+    [pagePosition, centerPage, reduceMotion, swap, swapFrame],
   );
   // Clearing the view/config releases its last presented drawable; changing
   // only the request keeps that drawable on screen until the next is ready.

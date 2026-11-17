@@ -6,6 +6,7 @@ import {
   easeOut,
   playerRevealMode,
   stepWallSwap,
+  swapClockMs,
   swapTiming,
   swapWeightsAt,
   WALL_SWAP,
@@ -14,6 +15,40 @@ import {
   type WallSwapInput,
   type WallSwapState,
 } from '../wall-swap';
+
+/**
+ * Five overlapping climbs by page, as hold ids. Page 1 shares 3 and 4 with page
+ * 0 and 4 and 6 with page 2, so changing which climb page 1 is paired with
+ * changes which of its holds count as outgoing-only.
+ */
+const CLIMBS = new Map<number, ReadonlySet<number>>([
+  [-1, new Set([1, 9, 10])],
+  [0, new Set([1, 2, 3, 4])],
+  [1, new Set([3, 4, 5, 6])],
+  [2, new Set([4, 6, 7, 8])],
+  [3, new Set([8, 11])],
+]);
+
+/**
+ * What the board shows for a state, hold by hold, as the native compositor
+ * draws it: a pair lights shared holds fully and each side's own holds at its
+ * weight; no pair is the climb's still.
+ */
+function holdWeights(state: WallSwapState): Map<number, number> {
+  const leaving = CLIMBS.get(state.from) ?? new Set<number>();
+  const shown = new Map<number, number>();
+  if (state.dir === 0) {
+    for (const hold of leaving) shown.set(hold, 1);
+    return shown;
+  }
+  const arriving = CLIMBS.get(state.from + state.dir) ?? new Set<number>();
+  for (const hold of leaving) shown.set(hold, arriving.has(hold) ? 1 : state.outgoing);
+  for (const hold of arriving) if (!leaving.has(hold)) shown.set(hold, state.incoming);
+  return shown;
+}
+
+/** One frame: the weights, the pair's page position, and every hold as drawn. */
+type Frame = { outgoing: number; incoming: number; position: number; holds: Map<number, number> };
 
 /**
  * Drives the UI-thread step the way use-wall-swap does: the pager's values in,
@@ -39,9 +74,12 @@ function harness(reduceMotion = false) {
     state = step.state;
     if (step.startSwap) input = { ...input, swapMs: 0 };
     if (step.startSettle) input = { ...input, settleMs: 0 };
-    const pages = new Map([[state.from, state.outgoing]]);
-    if (state.dir !== 0) pages.set(state.from + state.dir, state.incoming);
-    frames.push({ outgoing: state.outgoing, incoming: state.incoming, position: wallSwapPagePosition(state), pages });
+    frames.push({
+      outgoing: state.outgoing,
+      incoming: state.incoming,
+      position: wallSwapPagePosition(state),
+      holds: holdWeights(state),
+    });
     return state;
   };
   return {
@@ -53,7 +91,7 @@ function harness(reduceMotion = false) {
     /** One frame on both clocks; they stop exactly at their ends, as withTiming does. */
     tick: (ms = 16) =>
       apply({
-        swapMs: Math.min(input.swapMs + ms, state.durationMs),
+        swapMs: Math.min(input.swapMs + ms, swapClockMs(state)),
         settleMs: Math.min(input.settleMs + ms, WALL_SWAP.settleMs),
       }),
     reset: (anchor: number) => apply({ anchor, offset: 0, fling: 0, reset: input.reset + 1 }),
@@ -62,26 +100,24 @@ function harness(reduceMotion = false) {
   };
 }
 
-/** One frame: the weights, the pair's page position, and each paired climb's class weight. */
-type Frame = { outgoing: number; incoming: number; position: number; pages: Map<number, number> };
-
 /**
- * The largest change from one frame to the next in any climb's class weight. A
- * climb leaving the pair must be dark (its partner whole) when it goes.
+ * The largest change of any hold from one frame to the next. At 8 ms frames the
+ * steepest curve here moves a hold by under 0.14; a jump moves it further.
  */
 function largestStep(frames: Frame[]) {
   let largest = 0;
   for (let index = 1; index < frames.length; index++) {
-    const before = frames[index - 1].pages;
-    const after = frames[index].pages;
-    for (const page of new Set([...before.keys(), ...after.keys()])) {
-      // A climb outside the pair is dark, unless it is the one on show alone.
-      const weight = (pages: Map<number, number>) => pages.get(page) ?? 0;
-      largest = Math.max(largest, Math.abs(weight(after) - weight(before)));
+    const before = frames[index - 1].holds;
+    const after = frames[index].holds;
+    for (const hold of new Set([...before.keys(), ...after.keys()])) {
+      largest = Math.max(largest, Math.abs((after.get(hold) ?? 0) - (before.get(hold) ?? 0)));
     }
   }
   return largest;
 }
+
+/** The step in which a jump is reported, at 8 ms frames. */
+const JUMP = 0.15;
 
 describe('wall swap drag', () => {
   it('dims outgoing-only holds linearly to 40% at the commit point and holds them there', () => {
@@ -173,91 +209,142 @@ describe('wall swap commit', () => {
 });
 
 describe('wall swap interruptions', () => {
-  it('a reversal mid-swap fades from the weights on screen with no jump', () => {
+  /** A forward swap from page 0, `ms` in, its board caught with `carry` points still to travel. */
+  function caughtSwap(ms: number, carry: number) {
     const swap = harness();
     swap.drag(-90);
     swap.commit(1);
-    for (let frame = 0; frame < 5; frame++) swap.tick();
+    for (let elapsed = 0; elapsed < ms; elapsed += 8) swap.tick(8);
+    swap.land(carry);
+    return swap;
+  }
+
+  it('a catch mid-swap does not stop the swap; only pulling back reverses it', () => {
+    const swap = caughtSwap(40, 140);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 0, swapDir: 1, arrived: true });
+    // Held, or moved onward, the swap keeps its clock.
+    for (const offset of [140, 142, 120, 100, 103]) {
+      swap.drag(offset);
+      swap.tick(8);
+      expect(swap.state().swapping).toBe(true);
+    }
+    // Back past where it was most onward (100) by more than 4 points: reversed.
     const before = swap.state();
-    expect(before.outgoing).toBeGreaterThan(0);
-    expect(before.incoming).toBeGreaterThan(0);
-    // Caught mid-fling: the pager carries the arriving board's offset, which
-    // still leans back toward the climb being left.
-    swap.land(140);
+    swap.drag(106);
     expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: false, settling: true });
     expect(swap.state().outgoing).toBe(before.incoming);
     expect(swap.state().incoming).toBe(before.outgoing);
     expect(wallSwapPagePosition(swap.state())).toBe(1 - WALL_SWAP.pairLean);
-    for (const offset of [150, 160, 170, 170, 170, 165, 165, 165, 165, 165]) {
+    for (const offset of [120, 140, 160, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170]) {
       swap.drag(offset);
-      swap.tick();
+      swap.tick(8);
     }
     expect(swap.state()).toMatchObject({ settling: false, incoming: 0 });
     expect(swap.state().outgoing).toBeCloseTo(0.4, 10);
-    expect(largestStep(swap.frames)).toBeLessThan(0.2);
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
   });
 
-  it('a commit after a reversal starts from where the weights are', () => {
-    const swap = harness();
-    swap.drag(-90);
+  it('a caught board flicked onward snaps the running swap to its end before starting the next', () => {
+    const swap = caughtSwap(40, 140);
+    swap.drag(120);
+    swap.tick(8);
+    expect(swap.state()).toMatchObject({ swapping: true, from: 0, dir: 1 });
+    expect(swap.state().incoming).toBeLessThan(1);
     swap.commit(1);
-    for (let frame = 0; frame < 5; frame++) swap.tick();
-    swap.land(140);
-    swap.drag(160);
-    swap.tick();
-    const shown = swap.state();
-    swap.commit(-1);
-    expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: true });
-    expect(swap.state().outgoing).toBe(shown.outgoing);
-    expect(swap.state().incoming).toBe(shown.incoming);
+    expect(swap.state()).toMatchObject({ from: 1, dir: 1, swapping: true, leadMs: 0, outgoing: 1, incoming: 0 });
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
+    swap.land();
+    swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 2, dir: 0, outgoing: 1, incoming: 0 });
   });
 
-  it('a new fling during a swap snaps the running swap to its end before starting the next', () => {
+  it('a new fling after a natural landing snaps the running swap too', () => {
     const swap = harness();
     swap.drag(-90);
     swap.commit(1);
     for (let frame = 0; frame < 3; frame++) swap.tick();
-    expect(swap.state().incoming).toBeLessThan(1);
-    // Caught after the arriving board stopped, then flicked onward.
     swap.land(0);
     swap.commit(1);
     expect(swap.state()).toMatchObject({ from: 1, dir: 1, swapping: true, outgoing: 1, incoming: 0 });
-    for (let frame = 0; frame < 13; frame++) swap.tick();
+  });
+
+  it('a caught board held still lets the swap finish, then eases the arrived climb into its dim', () => {
+    const swap = caughtSwap(40, 140);
+    for (let frame = 0; frame < 20; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: false, settling: true, outgoing: 1 });
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(140, SWIPE_THRESHOLD, false), 10);
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('catching a slow fling after its swap has finished eases into the dim instead of snapping', () => {
+    const swap = harness();
+    swap.drag(-90);
+    swap.commit(1);
+    // The swap's 200 ms run out while the board is still landing.
+    for (let frame = 0; frame < 27; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ swapping: false, from: 1, dir: 0, outgoing: 1 });
+    swap.land(120);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, settling: true, outgoing: 1, incoming: 0 });
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(120, SWIPE_THRESHOLD, false), 10);
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
+  });
+
+  it('a commit after a reversal, back the way it was pulled, starts from the weights on screen', () => {
+    const swap = caughtSwap(40, 140);
+    swap.drag(150);
+    swap.tick(8);
+    const shown = swap.state();
+    swap.commit(-1);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: true, leadMs: 0 });
+    expect(swap.state().outgoing).toBe(shown.outgoing);
+    expect(swap.state().incoming).toBe(shown.incoming);
+  });
+
+  it('a commit toward the other side out of a pulled-back fade leads in instead of dropping the old climb', () => {
+    const swap = caughtSwap(40, 140);
+    swap.drag(150);
+    swap.tick(8);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, settling: true });
+    expect(swap.state().incoming).toBeGreaterThan(0.1);
+    // Flicked toward page 2 while page 0 is still lit and page 1 dimmed.
+    swap.commit(1);
+    expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: 1, leadMs: 120, from: 1, dir: -1 });
+    for (let frame = 0; frame < 15; frame++) swap.tick(8);
+    // The old pair reached its leaving climb, whole, before the pair changed.
+    expect(swap.state()).toMatchObject({ from: 1, dir: 1, incoming: 0 });
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     swap.land();
-    swap.tick();
+    swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 2, dir: 0, outgoing: 1, incoming: 0 });
+    expect(largestStep(swap.frames)).toBeLessThan(JUMP);
   });
 
   it('an onward drag during a swap lets it finish, then dims the arrived climb from whole', () => {
-    const swap = harness();
-    swap.drag(-90);
-    swap.commit(1);
-    swap.tick();
-    swap.land(0);
+    const swap = caughtSwap(8, 0);
     swap.drag(-30);
     expect(swap.state().swapping).toBe(true);
-    for (let frame = 0; frame < 12; frame++) swap.tick();
+    for (let frame = 0; frame < 24; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 1, dir: 1, swapping: false, settling: true, outgoing: 1 });
-    for (let frame = 0; frame < 9; frame++) swap.tick();
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
     expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(-30, SWIPE_THRESHOLD, false), 10);
-    expect(largestStep(swap.frames.slice(-10))).toBeLessThan(0.2);
+    expect(largestStep(swap.frames.slice(-20))).toBeLessThan(JUMP);
   });
 
   it('crossing to the other side keeps a lit pair until its arriving climb is dark', () => {
-    const swap = harness();
-    swap.drag(-90);
-    swap.commit(1);
-    for (let frame = 0; frame < 6; frame++) swap.tick();
-    swap.land(120);
+    const swap = caughtSwap(96, 120);
+    swap.drag(130);
+    expect(swap.state()).toMatchObject({ from: 1, dir: -1, settling: true });
     swap.drag(-40);
-    // The old climb is still lit, so the pair stays and the outgoing side heads for whole.
+    // The old climb is still lit, so the pair stays and the leaving side heads for whole.
     expect(swap.state().dir).toBe(-1);
-    for (let frame = 0; frame < 10; frame++) swap.tick();
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
     swap.drag(-41);
     expect(swap.state().dir).toBe(1);
-    for (let frame = 0; frame < 9; frame++) swap.tick();
+    for (let frame = 0; frame < 16; frame++) swap.tick(8);
     expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(-41, SWIPE_THRESHOLD, false), 10);
-    expect(largestStep(swap.frames.slice(1))).toBeLessThan(0.2);
+    expect(largestStep(swap.frames.slice(1))).toBeLessThan(JUMP);
   });
 
   it('a JS-driven move shows the new climb at once, as before', () => {

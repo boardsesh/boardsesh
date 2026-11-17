@@ -442,7 +442,7 @@ it('keeps one photograph and feeds reversible absolute progress without a JS ren
   expect(recorded.boardProps.mock.calls).toHaveLength(renderCount);
 });
 
-it('hands an API 6 board the wall swap weights instead of the wipe progress', () => {
+it('hands an API 6 board the wall swap frame alongside the wipe progress', () => {
   recorded.motionNative = true;
   recorded.apiVersion = 6;
   const pager = restingPager();
@@ -458,17 +458,15 @@ it('hands an API 6 board the wall swap weights instead of the wipe progress', ()
   const transition = latestStationaryBoard().gpuTransition as unknown as {
     revealMode: string;
     pagePosition: { value: number };
-    outgoingWeight: { value: number };
-    incomingWeight: { value: number };
+    swapFrame: { value: readonly number[] };
   };
   expect(transition.revealMode).toBe('swap');
-  expect([transition.pagePosition.value, transition.outgoingWeight.value, transition.incomingWeight.value]).toEqual([
-    0, 1, 0,
-  ]);
-  // The swap's pair moves only on the UI thread, never with the pager's raw offset.
+  expect(transition.swapFrame.value).toEqual([0, 1, 0]);
+  // The swap's frame moves only on the UI thread, never with the pager's raw offset.
   pager.slideWidth.value = 250;
   pager.translateX.value = -125;
-  expect(transition.pagePosition.value).toBe(0);
+  expect(transition.swapFrame.value).toEqual([0, 1, 0]);
+  expect(transition.pagePosition.value).toBe(0.5);
 });
 
 it.each([1, -1] as const)('keeps the incoming holds during the outgoing animation tail (%s)', (direction) => {
