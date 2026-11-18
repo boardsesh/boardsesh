@@ -27,8 +27,12 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', { 'data-testid': testID }, children),
+  View: ({ children, testID, style }: { children?: ReactNode; testID?: string; style?: { flexDirection?: string } }) =>
+    createElement(
+      'div',
+      { 'data-testid': testID, 'data-stacked': style ? String(style.flexDirection !== 'row') : undefined },
+      children,
+    ),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: state.fontScale }),
 }));
@@ -39,9 +43,11 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       key === 'mobile.home.sections.session.joinName'
         ? `Join ${String(options?.name)}`
-        : options
-          ? `${key} ${JSON.stringify(options)}`
-          : key,
+        : key === 'mobile.home.sections.session.startOwn'
+          ? 'Start my own'
+          : options
+            ? `${key} ${JSON.stringify(options)}`
+            : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -356,7 +362,7 @@ describe('HomeSessionSection live state (#7689)', () => {
     expect(join.textContent).toBe('Join Anna');
     expect(join.getAttribute('data-variant')).toBe('filled');
     const own = screen.getByTestId('home-session-start-own');
-    expect(own.textContent).toBe('mobile.home.sections.session.startOwn');
+    expect(own.textContent).toBe('Start my own');
     expect(own.getAttribute('data-variant')).toBe('outlined');
     expect(screen.queryByTestId('home-session-start')).toBeNull();
     expect(screen.queryByTestId('home-session-live-more')).toBeNull();
@@ -451,7 +457,52 @@ describe('HomeSessionSection live state (#7689)', () => {
       }),
     ];
     renderSession();
-    expect(screen.getByTestId('home-session-join').textContent).toBe('mobile.home.sections.session.join');
+    expect(screen.getByTestId('home-session-join').textContent).toBe('mobile.liveSessions.actions.join');
+  });
+
+  it('stacks the buttons at large text, where the full-width Join keeps a longer name', () => {
+    state.fontScale = 1.5;
+    state.liveCards = [
+      liveCard('a', {
+        host: { userId: 'host-a', displayName: 'Maximiliana Rodríguez', avatarUrl: null },
+        participants: [{ userId: 'host-a', displayName: 'Maximiliana Rodríguez', avatarUrl: null }],
+      }),
+    ];
+    renderSession();
+    expect(screen.getByTestId('home-session-live-buttons').getAttribute('data-stacked')).toBe('true');
+    expect(screen.getByTestId('home-session-join').textContent).toBe('Join Maximiliana');
+    cleanup();
+    state.fontScale = 1;
+    renderSession();
+    expect(screen.getByTestId('home-session-live-buttons').getAttribute('data-stacked')).toBe('false');
+  });
+
+  it('counts one shelf view per focus, through polls and a session ending', () => {
+    // The card is memoised and the hooks are plain mocks, so each step hands it a
+    // new scope to make it render again.
+    let step = 0;
+    const renderStep = () =>
+      createElement(HomeSessionSection, { liveBoardUuid: `board-${(step += 1)}`, liveEnabled: true });
+    state.sessionId = 'session-1';
+    const { rerender } = render(renderStep());
+    expect(trackedCalls('Live Sessions Shelf Viewed')).toEqual([]);
+    // The viewer's session ends while Home is on screen: one view, not a second on a remount.
+    state.sessionId = null;
+    state.liveCards = [liveCard('a')];
+    rerender(renderStep());
+    state.liveCards = [liveCard('a'), liveCard('b')];
+    rerender(renderStep());
+    state.sessionId = 'session-2';
+    rerender(renderStep());
+    state.sessionId = null;
+    rerender(renderStep());
+    expect(trackedCalls('Live Sessions Shelf Viewed')).toHaveLength(1);
+    // Leave Home and come back: one more.
+    state.focused = false;
+    rerender(renderStep());
+    state.focused = true;
+    rerender(renderStep());
+    expect(trackedCalls('Live Sessions Shelf Viewed')).toHaveLength(2);
   });
 
   it('keeps the running-session state while the viewer is in a session, and asks nobody who is live', () => {

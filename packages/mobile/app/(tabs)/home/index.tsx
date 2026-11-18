@@ -135,7 +135,9 @@ export default function HomeTab() {
   const feedInput = useMemo(() => deriveFeedScopeInput(mode, selectedBoard?.uuid ?? null), [mode, selectedBoard]);
   // "Climbing now" adds the selected board's sessions only when the climber is
   // looking at that board (gym mode); crew mode is people only.
-  const liveBoardUuid = mode === 'gym' ? (selectedBoard?.uuid ?? null) : null;
+  // Without the scope menu on screen (no feed, no Climbing now) a gym pick from
+  // earlier could not be undone, so the Session card falls back to the crew.
+  const liveBoardUuid = mode === 'gym' && scopeVisible ? (selectedBoard?.uuid ?? null) : null;
 
   // Hold both queries until home-board inference settles, so a cold start never
   // fires the unscoped global feed first (initial state is gym + no board) and

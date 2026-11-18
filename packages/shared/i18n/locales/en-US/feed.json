@@ -50,7 +50,6 @@
           "lastWorkoutOn": "Last workout · {{day}}",
           "lastWorkoutSends_one": "{{count}} send",
           "lastWorkoutSends_other": "{{count}} sends",
-          "join": "Join",
           "joinName": "Join {{name}}",
           "startOwn": "Start my own",
           "moreLive_one": "+ {{count}} more climbing now",

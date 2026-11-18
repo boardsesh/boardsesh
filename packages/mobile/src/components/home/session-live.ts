@@ -5,13 +5,42 @@
 import { isQuietSession, type LiveCardModel } from '../live-sessions/live-session-model';
 
 /**
- * Past this many characters the Join label drops the name and reads a plain
- * "Join". Two equal-width buttons on a 375pt phone leave each label about
- * 128pt, which is 14 characters of a 16pt semibold label. The budget covers the
- * whole label, so a locale with a longer verb ("Rejoindre Anna") gets the same
- * room, and the verb is never the part that gets cut.
+ * How many characters fit on one line of a half-width button at the default
+ * text size: two equal buttons on a 375pt phone leave each label about 128pt,
+ * 14 characters of a 16pt semibold label. Larger text fits fewer.
  */
 export const MAX_JOIN_LABEL_LENGTH = 14;
+/** Past this text size the buttons stack whatever their labels. */
+export const STACK_BUTTONS_FONT_SCALE = 1.35;
+/** A full-width stacked button has room for about twice as much. */
+const STACKED_LABEL_LENGTH = MAX_JOIN_LABEL_LENGTH * 2;
+
+/** Code points: what `Array.from` counts. A combining accent counts on its own, so a name drops a little early. */
+function labelLength(label: string): number {
+  return Array.from(label).length;
+}
+
+export type SessionButtonsLayout = {
+  /** Join and Start my own one above the other, full width. */
+  stacked: boolean;
+  /** The longest Join label that stays on one line in this layout. */
+  maxLabelLength: number;
+};
+
+/**
+ * Join and Start my own sit side by side at equal widths. They stack when the
+ * text size is large, or when this locale's Start my own would not fit half a
+ * card on one line (the Join label can drop its name instead; Start cannot).
+ */
+export function sessionButtonsLayout(fontScale: number, startOwnTitle: string): SessionButtonsLayout {
+  const scale = Math.max(1, fontScale);
+  const sideBySideLength = Math.floor(MAX_JOIN_LABEL_LENGTH / scale);
+  const stacked = scale > STACK_BUTTONS_FONT_SCALE || labelLength(startOwnTitle) > sideBySideLength;
+  return {
+    stacked,
+    maxLabelLength: stacked ? Math.floor(STACKED_LABEL_LENGTH / scale) : sideBySideLength,
+  };
+}
 
 /**
  * The sessions the card can lead with: somebody is connected (a quiet session
@@ -48,12 +77,16 @@ export function joinButtonName(card: LiveCardModel, viewerUserId: string | null)
 }
 
 /**
- * The Join button's label: "Join Anna" when it fits on one line beside Start
- * my own, else the plain "Join". Lengths count code points, so an emoji or an
- * accented name is not counted twice.
+ * The Join button's label: "Join Anna" when it fits on one line, else the
+ * plain "Join". The name is what drops, never the verb.
  */
-export function joinButtonTitle(name: string | null, withName: (name: string) => string, withoutName: string): string {
+export function joinButtonTitle(
+  name: string | null,
+  withName: (name: string) => string,
+  withoutName: string,
+  maxLabelLength: number = MAX_JOIN_LABEL_LENGTH,
+): string {
   if (!name) return withoutName;
   const named = withName(name);
-  return Array.from(named).length <= MAX_JOIN_LABEL_LENGTH ? named : withoutName;
+  return labelLength(named) <= maxLabelLength ? named : withoutName;
 }
