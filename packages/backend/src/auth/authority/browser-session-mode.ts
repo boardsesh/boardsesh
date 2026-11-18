@@ -57,7 +57,6 @@ export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze
   'B3_BROWSER_ACCESS_TOKEN',
   'B4_SERVER_RENDERS_ON_CANONICAL_SESSION',
   'B5_PROVIDER_SIGN_IN',
-  'B6_PARTNER_CONSENT',
   'B7_BROWSER_ACCEPTANCE',
 ]);
 
@@ -188,6 +187,15 @@ export function browserAccessTokenKeyFromEnvironment(environment: Environment = 
 }
 
 let derivedAccessTokenKey: { readonly secret: string; readonly key: BrowserAccessTokenKey } | undefined;
+
+/**
+ * The secret that signs the first-party session cookies, for a backend reader
+ * of them (partner consent, B6). Throws unless strong and different from every
+ * other auth secret; the message names the variable only.
+ */
+export function browserSessionCookieSecretFromEnvironment(environment: Environment = process.env): string {
+  return distinctSecret(environment, BROWSER_SESSION_COOKIE_SECRET_ENV);
+}
 
 /** The named secret, refused unless strong and different from every other auth secret. Never in the message. */
 function distinctSecret(environment: Environment, name: string): string {

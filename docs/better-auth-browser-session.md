@@ -391,7 +391,10 @@ itself. `requireFreshAuthentication` passes only for `login`.
 `webSignInProof(session)` is the `webSignIn` value B3 must set when a canonical
 session authenticates a request; it carries no sign-in time for a `bridge`, so
 partner app changes refuse it. The 30-day partner-consent rule reads
-`authenticatedAt`, which a bridged row keeps. Provider link and unlink need
+`authenticatedAt`, which a bridged row keeps. Partner consent (B6) reads the
+first-party cookies before the legacy one while `CURRENT_STORE_WEB_SESSION_MODE`
+is on; the order, the stale-cookie rule and the 503 are in
+[integration-platform.md](./integration-platform.md), "Who is signed in". Provider link and unlink need
 their own reauthentication receipt (`provider-reauthentication-evidence.ts`),
 never the session's age, so they did not change. Provider security and first
 password compare the actor session's expiry exactly

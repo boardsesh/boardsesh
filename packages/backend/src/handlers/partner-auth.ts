@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
+import { webSessionMode } from '@boardsesh/auth-protocol';
 import { loadPartnerAuthority } from '../auth/partner/load-authority';
 import { readPartnerOAuthMode, type PartnerOAuthMode } from '../auth/partner/mode';
 import {
@@ -63,6 +64,17 @@ const COOKIE_READING_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['authorize
 /** The routes the www consent screen calls with the climber's cookie. JSON bodies, no app credentials. */
 const CONSENT_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['consent', 'consent-details']);
 const NEXTAUTH_SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/;
+/** The first-party login and bridged cookies (#7596, B6), read only while the web session mode is on. */
+const FIRST_PARTY_SESSION_COOKIE = /(?:^|;\s*)__Secure-boardsesh\.(?:session_token|bridged_session_token)=/;
+
+/** Same reading as the consent hook's: an unknown value is off. */
+function webSessionModeOn(): boolean {
+  try {
+    return webSessionMode(process.env) === 'backend-staging';
+  } catch {
+    return false;
+  }
+}
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 class PartnerBodyRefused extends Error {
@@ -500,7 +512,9 @@ export function createPartnerAuthHandler({
       // The session is known only inside the provider's hooks, but one can only
       // come from a NextAuth cookie. Without the cookie this is signed out, and
       // the plan keeps only a signed-in authorize in a transaction.
-      const mayHaveSession = NEXTAUTH_SESSION_COOKIE.test(req.headers.cookie ?? '');
+      const mayHaveSession =
+        NEXTAUTH_SESSION_COOKIE.test(req.headers.cookie ?? '') ||
+        (webSessionModeOn() && FIRST_PARTY_SESSION_COOKIE.test(req.headers.cookie ?? ''));
       return await runtime.handleRequest(buildPartnerRequest(req, route, runtime.configuration.issuer, null), {
         transaction: mayHaveSession,
         logContext: { requestId },

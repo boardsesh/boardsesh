@@ -42,6 +42,11 @@
       "import": "./src/browser-session-cookie.ts",
       "default": "./src/browser-session-cookie.ts"
     },
+    "./legacy-login-precedence": {
+      "types": "./src/legacy-login-precedence.ts",
+      "import": "./src/legacy-login-precedence.ts",
+      "default": "./src/legacy-login-precedence.ts"
+    },
     "./browser-session-mode": {
       "types": "./src/browser-session-mode.ts",
       "import": "./src/browser-session-mode.ts",
