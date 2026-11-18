@@ -1,19 +1,22 @@
 /**
  * The only retries the browser-session suite allows (#7596 B7 review): this
- * suite tests races, and a blanket Playwright retry would hide one. Two named
+ * suite tests races, and a blanket Playwright retry would hide one. Three named
  * infrastructure errors get one more try each:
  *
- *   restart-www-timeout      a `restartStack` that timed out waiting for www (servers.ts)
- *   webkit-internal-error    WebKit failing a navigation, its document or one of its
- *                            scripts with "internal error", or an app navigation left
- *                            blank for 30 s after a request failed that way (fixtures.ts)
+ *   restart-www-timeout          a `restartStack` that timed out waiting for www (servers.ts)
+ *   webkit-internal-error        WebKit failing a navigation, its document or one of its
+ *                                scripts with "internal error"; the navigation is tried again
+ *                                (fixtures.ts)
+ *   webkit-network-process-lost  WebKit failing loads with "internal error" and the context
+ *                                losing its cookies with them; the test runs once more, and
+ *                                only such a test may (harness-retry-reporter.ts)
  *
  * Each is logged with the `[harness-retry]` marker. The setup process counts
  * them (the control server takes a worker's report) and teardown fails the run
  * when there were more than MAX_HARNESS_RETRIES.
  */
 
-export type HarnessRetryKind = 'restart-www-timeout' | 'webkit-internal-error';
+export type HarnessRetryKind = 'restart-www-timeout' | 'webkit-internal-error' | 'webkit-network-process-lost';
 export const MAX_HARNESS_RETRIES = 2;
 
 const recorded: HarnessRetryKind[] = [];
@@ -34,4 +37,11 @@ export function harnessRetryBudgetError(): Error | undefined {
   return new Error(
     `The run needed ${recorded.length} harness retries (${recorded.join(', ')}); at most ${MAX_HARNESS_RETRIES} are allowed.`,
   );
+}
+
+/** The line a test's log carries when WebKit lost its context; the reporter allows a retry only after it. */
+export const NETWORK_PROCESS_LOST_LOG_MARKER = '[harness-retry] webkit-network-process-lost';
+
+export function isHarnessRetryKind(kind: unknown): kind is HarnessRetryKind {
+  return kind === 'restart-www-timeout' || kind === 'webkit-internal-error' || kind === 'webkit-network-process-lost';
 }

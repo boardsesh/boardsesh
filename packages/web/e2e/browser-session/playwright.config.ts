@@ -22,9 +22,14 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   timeout: 180_000,
   expect: { timeout: 20_000 },
+  // harness-retry-reporter.ts fails the run when a test ran again for any reason but a lost WebKit context.
   reporter: process.env.CI
-    ? [['list'], ['html', { open: 'never', outputFolder: '../../playwright-report/browser-session' }]]
-    : 'list',
+    ? [
+        ['list'],
+        ['html', { open: 'never', outputFolder: '../../playwright-report/browser-session' }],
+        ['./harness-retry-reporter.ts'],
+      ]
+    : [['list'], ['./harness-retry-reporter.ts']],
   outputDir: '../../test-results/browser-session/artifacts',
   use: {
     // CI keeps the HTML report and server logs; a trace adds size, not signal.
@@ -36,7 +41,9 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    // One more attempt, allowed only after WebKit's network process lost the context
+    // (harness-retries.ts); the reporter fails the run for a retry after any other failure.
+    { name: 'webkit', retries: 1, use: { ...devices['Desktop Safari'] } },
     {
       // The one project with the back/forward cache on: the full Chromium build
       // (the headless shell cannot have it) without playwright's

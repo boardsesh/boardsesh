@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { EdgeResponseObservation } from '../../partner-oauth-e2e/edge';
 import type { EnvironmentOverrides, RestartOverrides, ServerSet } from './servers';
 import type { SetCookieRecord } from './stack';
-import { recordHarnessRetry } from './harness-retries';
+import { isHarnessRetryKind, recordHarnessRetry } from './harness-retries';
 import type { CapturedMail } from './mail-sink';
 
 /**
@@ -115,7 +115,13 @@ export async function startControlServer(
         );
         sendJson(response, 202, restart);
       } else if (request.method === 'POST' && url.pathname === '/harness-retry') {
-        recordHarnessRetry('webkit-internal-error');
+        let kind: unknown;
+        try {
+          kind = (JSON.parse((await readBody(request)) || '{}') as { kind?: unknown }).kind;
+        } catch {
+          kind = undefined;
+        }
+        recordHarnessRetry(isHarnessRetryKind(kind) ? kind : 'webkit-internal-error');
         sendJson(response, 200, { counted: true });
       } else if (request.method === 'GET' && url.pathname === '/mail') {
         const recipient = (url.searchParams.get('to') ?? '').toLowerCase();

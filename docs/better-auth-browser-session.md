@@ -1950,17 +1950,25 @@ deployment restarts `next dev`, so it is not a product bug. Each dev start now
 deletes `packages/web/.next/dev` first (`servers.ts`). Not reproduced locally;
 the evidence is that run's log.
 
-**Retries.** Playwright retries are off (`retries: 0`): this suite tests
-races, and a blanket retry would hide one. The harness retries exactly two
-named infrastructure errors once each (`harness-retries.ts`): a `restartStack`
-that timed out waiting for www, and WebKit failing a load with "internal
-error": the navigation itself, its document or one of its scripts (the page
-never runs, as run 44329764195 showed once), or an app navigation that renders
-nothing for 30 s while one of its requests failed that way (run 44339770816:
-the session read, a font and the splash image failed together). Each
-logs a `[harness-retry]` line, and teardown fails the run when there were more
-than two. Every request WebKit fails is logged with its URL (`[webkit] request
-failed`), so a failure outside that class shows in the run log.
+**Retries.** Playwright retries are off for Chromium (`retries: 0`): this
+suite tests races, and a blanket retry would hide one. The harness retries
+three named infrastructure errors once each (`harness-retries.ts`): a
+`restartStack` that timed out waiting for www; WebKit failing a navigation, its
+document or one of its scripts with "internal error" (the navigation is tried
+again; run 44329764195 left a tab black that way); and WebKit's network
+process losing a context (`webkit-network-process-lost`). In that last case
+every load in flight fails at once with "internal error" (in each run that hit
+it: the app's session read, its icon font and its splash image, on two hosts
+at the same instant) and the context's cookies are gone with it, so the tab
+reads as signed out and nothing in the test can recover; runs 44339770816,
+44345728475 and 44351039908 each lost one WebKit test that way. The harness
+sees it as the consent cookie every context starts with going missing, logs
+the marker, and the WebKit project may run that test once more
+(`retries: 1`); `harness-retry-reporter.ts` fails the run when a test ran
+again after an attempt that did not log the marker, so any other failure
+still fails the run. Every request WebKit fails is logged with its URL
+(`[webkit] request failed`). Each retry logs a `[harness-retry]` line, and
+teardown fails the run when there were more than two.
 
 **Probes.** `websocket.spec.ts`: the app tab opens `wss://ws.boardsesh.test/graphql`
 through the proxy and gets `connection_ack`, in both engines. `bfcache.spec.ts`,

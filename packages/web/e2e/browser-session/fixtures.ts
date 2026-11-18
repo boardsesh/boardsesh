@@ -4,10 +4,10 @@ import { viewerMarkerValue } from '@boardsesh/auth-protocol/browser-session-cook
 import { resolve } from 'node:path';
 import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
 import { test as base, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { NETWORK_PROCESS_LOST_LOG_MARKER } from './harness-retries';
 import { addLegacySession, type LegacySessionShape, type MintedLegacySession } from './legacy-session';
 import type { CapturedMail } from './mail-sink';
 import {
-  APP_ORIGIN,
   MARKER_COOKIE,
   PARENT_DOMAIN,
   readStack,
@@ -157,85 +157,79 @@ export function expectedMarker(authSessionId: string): { value: string; valueDig
 
 const WEBKIT_INTERNAL_ERROR = /WebKit encountered an internal error/;
 
-/** How long a navigation to the app may stay blank before a WebKit network failure is read as the cause. */
-const APP_RENDER_WAIT_MS = 30_000;
-
 /**
- * Whether the app shows anything a climber could use: a tab, a button or a
- * text field. A tab left on the loading splash shows none (its text may still
- * be in the DOM, hidden, so text alone does not count).
+ * WebKit's network process holds a context's cookies in memory. When it dies,
+ * every load in flight fails at once with "internal error" (in each failing
+ * run so far: the app's session read, its icon font and its splash image, on
+ * two hosts at the same instant), and the context comes back with no cookies:
+ * the consent cookie every context starts with is gone, and the climber reads
+ * as signed out. Nothing in the test can bring that state back.
  */
-async function appRenderedSomething(page: Page): Promise<boolean> {
-  const usableControl = page.getByRole('tab').or(page.getByRole('button')).or(page.getByRole('textbox')).first();
-  try {
-    await usableControl.waitFor({ state: 'visible', timeout: APP_RENDER_WAIT_MS });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
- * One named infrastructure retry (harness-retries.ts): WebKit failing a load
- * with "internal error", a failure of its network stack through the proxy,
- * not an answer from the app. It covers:
- * - the navigation itself, or its document or a script it loads (the page
- *   then never runs);
- * - a navigation to the app that renders nothing for 30 s while one of its
- *   requests failed that way (run 44339770816: the session read, a font and
- *   the splash image failed together and the tab stayed blank).
- * The navigation is tried once more. Every request WebKit fails is logged with
- * its URL, so a failure outside that class is still visible. The setup process
- * counts each retry; the run fails when there were more than two.
+ * Named infrastructure retries (harness-retries.ts), WebKit only:
+ * - webkit-internal-error: the navigation itself, or its document or a script
+ *   it loads, fails with "internal error" (the page never runs). The
+ *   navigation is tried once more.
+ * - webkit-network-process-lost: a load fails with "internal error" and the
+ *   context's cookies are gone with it. The test cannot go on; its log gets
+ *   the marker, and only a test whose failed attempt carries it may run once
+ *   more (playwright.config.ts, harness-retry-reporter.ts).
+ * Every request WebKit fails is logged with its URL, so a failure outside
+ * these classes is visible. The setup process counts each retry; the run
+ * fails when there were more than two.
  */
 function retryWebKitInternalError(page: Page, stack: BrowserSessionStack): void {
   let failedLoads: string[] = [];
-  let failedRequests: string[] = [];
+  let lostReported = false;
   page.on('requestfailed', (request) => {
     const failure = request.failure()?.errorText ?? 'no detail';
     // A request the page itself cancelled (a navigation, an abort) is not a network failure.
     if (/cancelled/i.test(failure)) return;
     console.info(`[webkit] request failed: ${request.method()} ${request.url().slice(0, 200)} (${failure})`);
     if (!WEBKIT_INTERNAL_ERROR.test(failure)) return;
-    failedRequests.push(request.url());
     if (['document', 'script'].includes(request.resourceType())) failedLoads.push(request.url());
+    void page
+      .context()
+      .cookies()
+      .then(async (cookies) => {
+        const consentKept = cookies.some((cookie) => cookie.name === CONSENT_COOKIE_NAME);
+        console.info(`[webkit] after the failure the context holds ${cookies.length} cookies`);
+        if (consentKept || lostReported) return;
+        lostReported = true;
+        console.info(
+          `${NETWORK_PROCESS_LOST_LOG_MARKER}: the context lost its cookies with ${request.url().slice(0, 200)}`,
+        );
+        await control(stack, '/harness-retry', {
+          method: 'POST',
+          body: JSON.stringify({ kind: 'webkit-network-process-lost' }),
+        });
+      })
+      .catch(() => undefined);
   });
-  const retryOnce = async <Result>(navigate: () => Promise<Result>, cause: string): Promise<Result> => {
-    console.info(`[harness-retry] webkit-internal-error ${cause.slice(0, 200)}`);
-    await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
-    failedLoads = [];
-    failedRequests = [];
-    return navigate();
-  };
   const retried =
-    <Result>(navigate: () => Promise<Result>, waitsForApp: () => boolean) =>
+    <Result>(navigate: () => Promise<Result>) =>
     async (): Promise<Result> => {
       failedLoads = [];
-      failedRequests = [];
       let result: Result;
       try {
         result = await navigate();
       } catch (error) {
         if (!(error instanceof Error) || !WEBKIT_INTERNAL_ERROR.test(error.message)) throw error;
-        return retryOnce(navigate, `on ${page.url()}`);
+        console.info(`[harness-retry] webkit-internal-error on ${page.url()}`);
+        await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
+        return navigate();
       }
-      if (failedLoads.length > 0) return retryOnce(navigate, `loading ${failedLoads[0]}`);
-      if (!waitsForApp() || (await appRenderedSomething(page)) || failedRequests.length === 0) return result;
-      return retryOnce(navigate, `leaving the app blank after ${failedRequests[0]}`);
+      if (failedLoads.length === 0) return result;
+      console.info(`[harness-retry] webkit-internal-error loading ${failedLoads[0]?.slice(0, 200)}`);
+      await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
+      failedLoads = [];
+      return navigate();
     };
   const goto = page.goto.bind(page);
   const reload = page.reload.bind(page);
-  const loadsApp = (url: string, waitUntil: string | undefined) => url.startsWith(APP_ORIGIN) && waitUntil !== 'commit';
-  page.goto = (url, options) =>
-    retried(
-      () => goto(url, options),
-      () => loadsApp(url, options?.waitUntil),
-    )();
-  page.reload = (options) =>
-    retried(
-      () => reload(options),
-      () => loadsApp(page.url(), options?.waitUntil),
-    )();
+  page.goto = (url, options) => retried(() => goto(url, options))();
+  page.reload = (options) => retried(() => reload(options))();
 }
 
 async function newProxiedContext(browser: Browser, stack: BrowserSessionStack): Promise<BrowserContext> {
