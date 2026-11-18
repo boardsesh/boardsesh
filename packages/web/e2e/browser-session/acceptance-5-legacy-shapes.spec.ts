@@ -9,8 +9,9 @@ import { expect, sessionSetCookies, test } from './fixtures';
  * AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium and WebKit: a browser
  * signed in before the cutover holds only a NextAuth cookie. It stays signed
  * in on www and the app subdomain for each shape the design supports, normal,
- * chunked and host-only, with its `authSessionId` unchanged and exactly one
- * bridged cookie written for the whole visit. A plain-named cookie on HTTPS
+ * chunked and host-only, with its `authSessionId` unchanged and one bridged
+ * token for the whole visit: first reads that race may each write it, the
+ * same value every time (acceptance 1's rule). A plain-named cookie on HTTPS
  * reads as signed out everywhere and bridges nothing (owner decision
  * 2026-11-18, "Cookie states"), as NextAuth's own read does in production.
  */
@@ -23,7 +24,7 @@ const emailField = (page: Page) => page.getByRole('textbox', { name: 'Email', ex
 const SUPPORTED: readonly LegacySessionShape[] = ['normal', 'chunked', 'host-only'];
 
 for (const shape of SUPPORTED) {
-  test(`@smoke a ${shape} pre-cutover cookie stays signed in on www and the app with one bridged cookie`, async ({
+  test(`@smoke a ${shape} pre-cutover cookie stays signed in on www and the app with one bridged token`, async ({
     context,
     page,
     freshAccount,
@@ -56,8 +57,13 @@ for (const shape of SUPPORTED) {
 
     const sessionWrites = sessionSetCookies(visit.records);
     const bridged = sessionWrites.filter((cookie) => cookie.name === BRIDGED_COOKIE && !cookie.clears);
-    expect(bridged).toEqual([expect.objectContaining({ host: WWW_HOST, path: '/api/auth/session' })]);
-    expect(bridged[0]?.attributes).toEqual(expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Secure', 'HttpOnly']));
+    // As in acceptance 1: first reads that raced each bridge, to one token; every write is that cookie.
+    expect(bridged.length).toBeGreaterThan(0);
+    expect(new Set(bridged.map((cookie) => cookie.valueDigest)).size).toBe(1);
+    for (const cookie of bridged) {
+      expect(cookie).toMatchObject({ host: WWW_HOST, path: '/api/auth/session' });
+      expect(cookie.attributes).toEqual(expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Secure', 'HttpOnly']));
+    }
     // Nothing else: no login cookie, and the legacy cookie is kept for the rollback window.
     expect(sessionWrites.filter((cookie) => cookie.name !== BRIDGED_COOKIE)).toEqual([]);
     expect((await context.cookies()).map((cookie) => cookie.name)).not.toContain(LOGIN_COOKIE);

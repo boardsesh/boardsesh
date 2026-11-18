@@ -68,17 +68,22 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
         await fetch(`${origin}/api/internal/ws-auth`, include);
         // Settings' provider and first-password routes (#7804, #7805, #7807, #7809). Each acts for the
         // session and keeps its token: whatever each answers here, none may write a session cookie.
-        await fetch(`${origin}/api/auth/provider-security/methods`, include);
+        // With the guard's expected-viewer header, as Settings sends them, so each reaches the backend.
+        const guarded = { 'content-type': 'application/json', 'X-Boardsesh-Expected-Viewer': expectedViewer };
+        await fetch(`${origin}/api/auth/provider-security/methods`, {
+          ...include,
+          headers: { 'X-Boardsesh-Expected-Viewer': expectedViewer },
+        });
         await fetch(`${origin}/api/auth/provider-security/start`, {
           ...include,
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: guarded,
           body: JSON.stringify({ action: 'unlink', provider: 'google', methodId: null }),
         });
         await fetch(`${origin}/api/auth/first-password/request`, {
           ...include,
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: guarded,
           body: JSON.stringify({}),
         });
         // This account has a password, so the backend refuses; what matters is the cookie list.
@@ -134,6 +139,8 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
   // Reads that left before the first answer landed each bridge, to the same token by design
   // (owner decision 3); each writes the bridged cookie and nothing else.
   expect(writes.length).toBeGreaterThan(0);
+  // Every write carries the same bridged token (deterministic, owner decision 3).
+  expect(new Set(writes.map((cookie) => cookie.valueDigest)).size).toBe(1);
   for (const cookie of writes) {
     expect(cookie).toMatchObject({ host: WWW_HOST, path: '/api/auth/session', name: BRIDGED_COOKIE, clears: false });
     expect(cookie.attributes).toEqual(
@@ -150,6 +157,25 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
     await readViewer(page);
   });
   expect(sessionSetCookies(after.records)).toEqual([]);
+  // A bridged session cannot set a password here: with provider security on, set-password refuses
+  // everyone (set-password.ts); first password is the way, acceptance-4-first-password.spec.ts.
+  const bridgedViewer = await readViewer(page);
+  const refusal = await edgeCookies.during(() =>
+    page.evaluate(
+      async ({ origin, expectedViewer }) =>
+        (
+          await fetch(`${origin}/api/internal/set-password`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json', 'X-Boardsesh-Expected-Viewer': expectedViewer },
+            body: JSON.stringify({ password: 'a password of eight', confirmPassword: 'a password of eight' }),
+          })
+        ).status,
+      { origin: WWW_ORIGIN, expectedViewer: `${bridgedViewer.userId}:${bridgedViewer.authSessionId}` },
+    ),
+  );
+  expect(refusal.result).toBe(403);
+  expect(sessionSetCookies(refusal.records)).toEqual([]);
   // The bridged session keeps the legacy cookie's session id.
   expect(await readViewer(page)).toEqual({
     authenticated: true,

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import {
   createServer as createHttpServer,
@@ -75,6 +76,12 @@ export interface EdgeSetCookie {
   attributes: string[];
   /** True when the header deletes the cookie: an empty value, `Max-Age` of 0 or less, or an `Expires` in the past. */
   clears: boolean;
+  /**
+   * The first 16 hex characters of the value's SHA-256, so a spec can tell two
+   * writes of one value from two different values without seeing either.
+   * Empty for a clear.
+   */
+  valueDigest: string;
 }
 
 export interface EdgeResponseObservation {
@@ -103,7 +110,8 @@ export function describeSetCookie(header: string): EdgeSetCookie {
     value === '' ||
     (maxAge !== undefined && Number(maxAge) <= 0) ||
     (expires !== undefined && Date.parse(expires) < Date.now());
-  return { name, attributes, clears };
+  const valueDigest = value === '' ? '' : createHash('sha256').update(value).digest('hex').slice(0, 16);
+  return { name, attributes, clears, valueDigest };
 }
 
 export interface Edge {

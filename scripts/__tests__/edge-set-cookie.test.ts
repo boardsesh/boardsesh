@@ -13,8 +13,16 @@ describe('describeSetCookie', () => {
       name: '__Secure-next-auth.session-token',
       attributes: ['Domain=.boardsesh.test', 'Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax'],
       clears: false,
+      valueDigest: expect.stringMatching(/^[0-9a-f]{16}$/),
     });
     expect(JSON.stringify(described)).not.toContain('eyJsecretvalue');
+  });
+
+  it('gives one digest per value: the same value twice matches, another value does not, a clear has none', () => {
+    const first = describeSetCookie('s=token-one; Path=/').valueDigest;
+    expect(describeSetCookie('s=token-one; Path=/; Secure').valueDigest).toBe(first);
+    expect(describeSetCookie('s=token-two; Path=/').valueDigest).not.toBe(first);
+    expect(describeSetCookie('s=; Max-Age=0').valueDigest).toBe('');
   });
 
   it('keeps a value that contains an equals sign out of the name', () => {

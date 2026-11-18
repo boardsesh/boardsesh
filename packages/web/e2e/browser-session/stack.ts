@@ -52,7 +52,8 @@ export interface SetCookieRecord {
   /** Path without its query string. */
   path: string;
   status: number;
-  setCookies: Array<{ name: string; attributes: string[]; clears: boolean }>;
+  /** `valueDigest` is a 16-hex SHA-256 prefix of the value (edge.ts), never the value. */
+  setCookies: Array<{ name: string; attributes: string[]; clears: boolean; valueDigest: string }>;
 }
 
 export interface BrowserSessionStack {

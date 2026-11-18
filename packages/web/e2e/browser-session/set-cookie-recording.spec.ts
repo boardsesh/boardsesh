@@ -25,6 +25,7 @@ test('names every Set-Cookie of a probe response, attributes included and values
       name: '__Secure-recorded',
       attributes: [`Domain=${COOKIE_DOMAIN}`, 'Max-Age=3600', 'Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax'],
       clears: false,
+      valueDigest: expect.stringMatching(/^[0-9a-f]{16}$/),
     },
   ]);
   const clear = records.find((record) => record.path === '/clear');
