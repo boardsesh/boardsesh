@@ -238,6 +238,8 @@ export default function SessionProviderWrapper({
     // A 401 or 409 that lands while a probe is out may have met a cookie that
     // changed after that probe read it, so one more probe runs when it ends.
     let recheckAfterProbe = false;
+    // The viewer a probe last found ended (401), so the next 401 for it reads nothing.
+    let endedProbeViewer: string | undefined;
     const checkIdentity = async (throttled: boolean) => {
       if (suspendedRef.current || !settledRef.current) return;
       if (identityProbe) {
@@ -256,7 +258,12 @@ export default function SessionProviderWrapper({
         // An outage proves nothing and keeps the accepted session. A 401 (only
         // under `better-auth`, #7596 B3b) says the cookie's session ended: the
         // session read that follows decides what the page shows.
-        const sessionEnded = response.status === 401;
+        // Once per accepted viewer: if the session read that follows keeps the
+        // same login, a repeated 401 proves nothing (#7792 review, L2).
+        const viewerBefore = browserSessionGuard().viewerKey();
+        const sessionEnded = response.status === 401 && endedProbeViewer !== viewerBefore;
+        if (response.status === 401) endedProbeViewer = viewerBefore;
+        else if (response.ok) endedProbeViewer = undefined;
         const probed = response.ok ? readProbedViewer(await response.json()) : undefined;
         if (sessionEnded && identityProbe === probe) {
           recheckAfterProbe = false;

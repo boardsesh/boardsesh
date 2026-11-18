@@ -259,6 +259,25 @@ describe('re-reading the session', () => {
     expect(calls('/api/auth/session')).toBe(2);
   });
 
+  it('a probe 401 the session read does not confirm is read once, then proves nothing', async () => {
+    serverSession = session('user-a', 'login-a');
+    renderProviders();
+    await screen.findByText('authenticated:user-a:login-a');
+    probeStatus = 401;
+
+    act(() => {
+      window.dispatchEvent(new Event(WEB_SESSION_CHECK_EVENT));
+    });
+    await waitFor(() => expect(calls('/api/auth/session')).toBe(2));
+    act(() => {
+      window.dispatchEvent(new Event(WEB_SESSION_CHECK_EVENT));
+    });
+    await waitFor(() => expect(calls('/api/internal/ws-auth')).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls('/api/auth/session')).toBe(2);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it('a probe answered 503 proves nothing: no session read, the page keeps its account', async () => {
     serverSession = session('user-a', 'login-a');
     renderProviders();

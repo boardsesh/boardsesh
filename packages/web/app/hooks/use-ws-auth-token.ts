@@ -6,13 +6,13 @@ import { useSession } from 'next-auth/react';
 import { browserSessionGuard, signedInViewer } from '@/app/lib/auth/session-guard';
 import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
 import {
-  accessTokenBackoff,
-  accessTokenRefreshDelay,
-  accessTokenRefreshFailures,
+  accessTokenRefreshInterval,
+  accessTokenStaleTime,
+  holdsBrowserAccessToken,
   noteAccessTokenRefreshFailed,
   registerAccessTokenRefresher,
   rememberBrowserAccessToken,
-  wsAuthTokenExpiry,
+  wsAuthTokenLifetime,
 } from '@/app/lib/auth/browser-access-token';
 
 type WsAuthResponse = {
@@ -22,11 +22,13 @@ type WsAuthResponse = {
   authSessionId?: string;
   /** When the token ends: only the 15-minute browser token has one (`better-auth`). */
   expiresAt?: string;
+  /** Seconds left when the server answered: what the refresh is timed by, from receipt. */
+  expiresIn?: number;
   error?: string;
 };
 
-/** The part of React Query's query the timing reads: the last answer. */
-type WsAuthQuery = { readonly state: { readonly data?: WsAuthResponse } };
+/** The part of React Query's query the timing reads: the last answer and when it arrived. */
+type WsAuthQuery = { readonly state: { readonly data?: WsAuthResponse; readonly dataUpdatedAt: number } };
 
 const LEGACY_STALE_TIME_MS = 5 * 60_000;
 
@@ -47,18 +49,27 @@ async function fetchWsAuthToken(): Promise<WsAuthResponse> {
   return response.json();
 }
 
-/** The legacy JWE has no end time and keeps five minutes; a browser token goes stale three minutes before its end. */
+/**
+ * The legacy JWE has no lifetime and keeps five minutes. A browser token goes
+ * stale three minutes (plus jitter) before its end, counted from its receipt
+ * (`dataUpdatedAt`, which React Query adds this to), and not before the
+ * backoff while refreshes fail.
+ */
 function staleTimeOf(query: WsAuthQuery): number {
-  const expiresAtMs = wsAuthTokenExpiry(query.state.data?.expiresAt);
-  return expiresAtMs === undefined ? LEGACY_STALE_TIME_MS : accessTokenRefreshDelay(expiresAtMs);
+  const lifetimeMs = wsAuthTokenLifetime(query.state.data?.expiresIn);
+  if (lifetimeMs === undefined) return LEGACY_STALE_TIME_MS;
+  return accessTokenStaleTime(query.state.data?.token, lifetimeMs, query.state.dataUpdatedAt);
 }
 
-/** Only a browser token is refreshed on a timer; after failed refreshes the wait backs off up to five minutes. */
+/** Only a browser token is refreshed on a timer: at its stale time, or after the backoff while refreshes fail. */
 function refetchIntervalOf(query: WsAuthQuery): number | false {
-  const expiresAtMs = wsAuthTokenExpiry(query.state.data?.expiresAt);
-  if (expiresAtMs === undefined) return false;
-  return Math.max(accessTokenRefreshDelay(expiresAtMs), accessTokenBackoff(accessTokenRefreshFailures()));
+  const lifetimeMs = wsAuthTokenLifetime(query.state.data?.expiresIn);
+  if (lifetimeMs === undefined) return false;
+  return accessTokenRefreshInterval(query.state.data?.token, lifetimeMs, query.state.dataUpdatedAt);
 }
+
+/** The viewer whose ws-auth answered 401 once already while the session read kept it signed in. */
+let sessionEndedAskedFor: string | null = null;
 
 /**
  * Hook to get a WebSocket authentication token from the server.
@@ -88,10 +99,20 @@ export function useWsAuthToken(enabled = true) {
       try {
         result = await fetchWsAuthToken();
       } catch (fetchError) {
-        if (fetchError instanceof WsAuthSessionEndedError) requestWebSessionRefresh();
-        else noteAccessTokenRefreshFailed();
+        // Every failed refresh backs off: 30 s, doubling, at most 5 minutes.
+        noteAccessTokenRefreshFailed();
+        if (fetchError instanceof WsAuthSessionEndedError) {
+          // The session read decides. Asked once per login: if it still says
+          // signed in, a repeated 401 is a transient fault, not a reason to ask again.
+          const asking = `${sessionUserId ?? ''}:${authSessionId ?? ''}`;
+          if (sessionEndedAskedFor !== asking) {
+            sessionEndedAskedFor = asking;
+            requestWebSessionRefresh();
+          }
+        }
         throw fetchError;
       }
+      sessionEndedAskedFor = null;
       // A logged-in NextAuth session must yield a token. A null here is a
       // transient cookie/endpoint hiccup, not a genuine "anonymous" — throw so
       // React Query retries with backoff instead of caching null forever.
@@ -117,7 +138,7 @@ export function useWsAuthToken(enabled = true) {
       if (result.token && result.userId) {
         const owner = signedInViewer(result.userId, result.authSessionId);
         browserSessionGuard().rememberToken(result.token, owner);
-        rememberBrowserAccessToken(result.token, owner, result.expiresAt);
+        rememberBrowserAccessToken(result.token, owner, result.expiresIn);
       }
       return result;
     },
@@ -127,10 +148,14 @@ export function useWsAuthToken(enabled = true) {
     // reconnects the socket (persistent-session-context) — now authenticated.
     // A 15-minute browser token goes stale three minutes before its end, so
     // focus refetches it only then, and the interval refreshes it in time.
+    // Both count from when the token arrived, never from the client clock.
     staleTime: staleTimeOf,
     refetchInterval: refetchIntervalOf,
     // A session that ended is the session read's to show; retrying cannot help.
-    retry: (failureCount, retryError) => !(retryError instanceof WsAuthSessionEndedError) && failureCount < 3,
+    // While the tab holds a browser token, a failure waits for the backoff
+    // above instead of three quick retries.
+    retry: (failureCount, retryError) =>
+      !(retryError instanceof WsAuthSessionEndedError) && !holdsBrowserAccessToken() && failureCount < 3,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     enabled: enabled && status !== 'loading',

@@ -4,10 +4,15 @@ import { browserSessionGuard, sessionViewerKey, type SessionGuard, type SessionV
  * The tab's 15-minute browser access token (#7596 B3b), in memory only.
  *
  * Under `AUTH_BROWSER_SESSION_MODE=better-auth`, `/api/internal/ws-auth`
- * answers a token that lives 15 minutes and says when it ends (`expiresAt`).
- * This module remembers the tokens ws-auth answered with an end time, so that:
+ * answers a token with its lifetime in seconds (`expiresIn`, by the server's
+ * clock). This module remembers the tokens ws-auth answered with one and times
+ * everything from when the tab RECEIVED the token, never from the client clock
+ * against an absolute end, which may be minutes off. So that:
  * - the hook refreshes about three minutes before the end (at about 12
- *   minutes), and on focus or `pageshow` once fewer than three remain;
+ *   minutes, minus up to 30 s of jitter), and on focus or `pageshow` once
+ *   fewer than three remain;
+ * - a refresh that fails (503, timeout) is tried again after 30 s, doubling
+ *   to 5 minutes, per failure sequence, and never signs anyone out;
  * - a request the backend refuses with 401, or a socket closed with 4401,
  *   gets ONE new token per refused token, shared by every caller, and then the
  *   session guard takes over (it re-reads the session);
@@ -15,7 +20,7 @@ import { browserSessionGuard, sessionViewerKey, type SessionGuard, type SessionV
  *   that stays the same while the viewer does, so a refresh does not reopen it;
  * - an account change or sign-out seen by the guard drops every token first.
  *
- * A token without an end time (the raw NextAuth cookie that `legacy` mode
+ * A token without a lifetime (the raw NextAuth cookie that `legacy` mode
  * answers) is never remembered, so with the mode off nothing here changes what
  * a request or socket sends.
  */
@@ -24,32 +29,46 @@ import { browserSessionGuard, sessionViewerKey, type SessionGuard, type SessionV
 export const ACCESS_TOKEN_REFRESH_LEAD_MS = 3 * 60_000;
 /** Never refresh sooner than this after the last refresh, even for a token capped by a short session. */
 export const MIN_ACCESS_TOKEN_REFRESH_DELAY_MS = 30_000;
-/** Longest wait between refresh attempts while ws-auth keeps answering 503. */
+/** Longest wait between refresh attempts while ws-auth keeps failing. */
 export const MAX_ACCESS_TOKEN_BACKOFF_MS = 5 * 60_000;
+/** Each token's timed refresh comes up to this much earlier, so tabs opened together do not refresh together. */
+export const ACCESS_TOKEN_REFRESH_JITTER_MS = 30_000;
+/** The close code a backend gives a socket whose browser token it refuses. */
+export const SOCKET_REFUSED_CLOSE_CODE = 4401;
 
-type IssuedToken = { readonly token: string; readonly viewerKey: string; readonly expiresAtMs: number };
+type IssuedToken = {
+  readonly token: string;
+  readonly viewerKey: string;
+  /** When the token ends, on this tab's clock: receipt plus its lifetime. */
+  readonly expiresAtMs: number;
+};
 type Refresher = () => Promise<void>;
 
 type AccessTokenState = {
   current: IssuedToken | null;
   /** Every browser token this tab was given, mapped to the viewer it belongs to. */
   owners: Map<string, string>;
+  /** Each token's jitter, chosen once when it arrived. */
+  jitters: Map<string, number>;
   /** The first token of each viewer: the handle a socket is keyed and opened by. */
   socketHandles: Map<string, string>;
   /** Tokens already refreshed once after a refusal; a second refusal goes to the guard. */
   refusedOnce: Set<string>;
   /** Tokens a socket was refused with (4401); the next connect asks for a new one. */
   socketRefused: Set<string>;
-  refresher: Refresher | null;
+  /** The token each socket handle last connected with: the one a 4401 refused. */
+  socketSent: Map<string, string>;
+  /** Every mounted hook's refetch; any one refreshes the tab, so unmounting one never stops it. */
+  refreshers: Set<Refresher>;
   refreshing: Promise<void> | null;
   consecutiveFailures: number;
+  lastFailureAt: number;
   watchedGuard: SessionGuard | null;
   listening: boolean;
 };
 
-const STATE_KEY = Symbol.for('boardsesh.browser-access-token.v1');
+const STATE_KEY = Symbol.for('boardsesh.browser-access-token.v2');
 const REMEMBERED_TOKEN_LIMIT = 32;
-const SOCKET_REFUSED_CLOSE_CODE = 4401;
 
 type StateGlobal = typeof globalThis & { [key: symbol]: AccessTokenState | undefined };
 
@@ -58,41 +77,66 @@ function state(): AccessTokenState {
   return (shared[STATE_KEY] ??= {
     current: null,
     owners: new Map(),
+    jitters: new Map(),
     socketHandles: new Map(),
     refusedOnce: new Set(),
     socketRefused: new Set(),
-    refresher: null,
+    socketSent: new Map(),
+    refreshers: new Set(),
     refreshing: null,
     consecutiveFailures: 0,
+    lastFailureAt: 0,
     watchedGuard: null,
     listening: false,
   });
 }
 
-/** The end of a ws-auth token in ms, or undefined for a token without one (legacy mode). */
-export function wsAuthTokenExpiry(expiresAt: unknown): number | undefined {
-  if (typeof expiresAt !== 'string') return undefined;
-  const parsed = Date.parse(expiresAt);
-  return Number.isFinite(parsed) ? parsed : undefined;
+/** A ws-auth token's lifetime in ms, or undefined for a token without one (legacy mode). */
+export function wsAuthTokenLifetime(expiresIn: unknown): number | undefined {
+  return typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn >= 0 ? expiresIn * 1000 : undefined;
 }
 
-/** How long until the token should be refreshed: about three minutes before its end, never under 30 s. */
-export function accessTokenRefreshDelay(expiresAtMs: number, now = Date.now()): number {
-  return Math.max(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS, expiresAtMs - ACCESS_TOKEN_REFRESH_LEAD_MS - now);
-}
-
-/** Wait before the next attempt after `failures` refreshes in a row answered 503 or failed. */
+/** Wait before the next attempt after `failures` refreshes in a row failed: 30 s, doubling, at most 5 minutes. */
 export function accessTokenBackoff(failures: number): number {
   if (failures <= 0) return 0;
   return Math.min(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS * 2 ** (failures - 1), MAX_ACCESS_TOKEN_BACKOFF_MS);
 }
 
+/**
+ * How long after it arrived a token goes stale: three minutes (plus its
+ * jitter) before its end, never under 30 s. While refreshes fail, not before
+ * the backoff since the last failure has passed. Measured from receipt, which
+ * is what React Query's `dataUpdatedAt` is.
+ */
+export function accessTokenStaleTime(token: string | null | undefined, lifetimeMs: number, receivedAt: number): number {
+  const store = state();
+  const jitter = token ? (store.jitters.get(token) ?? 0) : 0;
+  const fresh = Math.max(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS, lifetimeMs - ACCESS_TOKEN_REFRESH_LEAD_MS - jitter);
+  if (store.consecutiveFailures === 0) return fresh;
+  return Math.max(fresh, store.lastFailureAt + accessTokenBackoff(store.consecutiveFailures) - receivedAt);
+}
+
+/** How long from now until the next timed refresh of a token that arrived at `receivedAt`. */
+export function accessTokenRefreshInterval(
+  token: string | null | undefined,
+  lifetimeMs: number,
+  receivedAt: number,
+  now = Date.now(),
+): number {
+  return Math.max(
+    MIN_ACCESS_TOKEN_REFRESH_DELAY_MS,
+    receivedAt + accessTokenStaleTime(token, lifetimeMs, receivedAt) - now,
+  );
+}
+
 function dropEveryToken(store: AccessTokenState): void {
   store.current = null;
   store.owners.clear();
+  store.jitters.clear();
   store.socketHandles.clear();
   store.refusedOnce.clear();
   store.socketRefused.clear();
+  store.socketSent.clear();
 }
 
 /** An account change or sign-out drops every token before anything else runs. */
@@ -119,27 +163,33 @@ function listenForReturn(store: AccessTokenState): void {
 }
 
 /**
- * Remembers a token ws-auth answered with an end time, for the viewer it was
- * answered for. A token without one is not a browser access token and is ignored.
+ * Remembers a token ws-auth answered with a lifetime, for the viewer it was
+ * answered for, timed from `receivedAt` (now). A token without one is not a
+ * browser access token and is ignored.
  */
 export function rememberBrowserAccessToken(
   token: string,
   viewer: NonNullable<SessionViewer>,
-  expiresAt: unknown,
+  expiresIn: unknown,
+  receivedAt = Date.now(),
 ): void {
-  const expiresAtMs = wsAuthTokenExpiry(expiresAt);
-  if (expiresAtMs === undefined) return;
+  const lifetimeMs = wsAuthTokenLifetime(expiresIn);
+  if (lifetimeMs === undefined) return;
   const store = state();
   watchGuard(store);
   listenForReturn(store);
   const viewerKey = sessionViewerKey(viewer);
   if (store.current && store.current.viewerKey !== viewerKey) dropEveryToken(store);
-  store.current = { token, viewerKey, expiresAtMs };
+  store.current = { token, viewerKey, expiresAtMs: receivedAt + lifetimeMs };
   store.owners.set(token, viewerKey);
+  if (!store.jitters.has(token)) store.jitters.set(token, Math.random() * ACCESS_TOKEN_REFRESH_JITTER_MS);
   if (store.owners.size > REMEMBERED_TOKEN_LIMIT) {
     const oldest = store.owners.keys().next().value;
     // A socket handle stays: it keys the open socket for as long as the viewer does.
-    if (oldest !== undefined && ![...store.socketHandles.values()].includes(oldest)) store.owners.delete(oldest);
+    if (oldest !== undefined && ![...store.socketHandles.values()].includes(oldest)) {
+      store.owners.delete(oldest);
+      store.jitters.delete(oldest);
+    }
   }
   if (!store.socketHandles.has(viewerKey)) store.socketHandles.set(viewerKey, token);
   store.consecutiveFailures = 0;
@@ -150,24 +200,31 @@ export function isBrowserAccessToken(token: string): boolean {
   return state().owners.has(token);
 }
 
-/** Within three minutes of its end (or past it). False with no browser token. */
+/** Whether the tab holds a browser token now: then a failed refresh backs off instead of retrying at once. */
+export function holdsBrowserAccessToken(): boolean {
+  return state().current !== null;
+}
+
+/** Within three minutes of its end (or past it), by time since receipt. False with no browser token. */
 export function accessTokenNeedsRefresh(now = Date.now()): boolean {
   const current = state().current;
   return current !== null && now >= current.expiresAtMs - ACCESS_TOKEN_REFRESH_LEAD_MS;
 }
 
-/** The hook's refetch, registered while a hook is mounted. One per tab. */
+/** A hook's refetch, registered while the hook is mounted. Any registered one refreshes the tab. */
 export function registerAccessTokenRefresher(refresher: Refresher): () => void {
   const store = state();
-  store.refresher = refresher;
+  store.refreshers.add(refresher);
   return () => {
-    if (store.refresher === refresher) store.refresher = null;
+    store.refreshers.delete(refresher);
   };
 }
 
-/** Counts refreshes that failed in a row (503, timeout), for the hook's backoff. */
-export function noteAccessTokenRefreshFailed(): number {
-  return ++state().consecutiveFailures;
+/** Counts refreshes that failed in a row (503, timeout, a repeated 401), for the backoff. */
+export function noteAccessTokenRefreshFailed(now = Date.now()): number {
+  const store = state();
+  store.lastFailureAt = now;
+  return ++store.consecutiveFailures;
 }
 
 export function accessTokenRefreshFailures(): number {
@@ -178,7 +235,7 @@ export function accessTokenRefreshFailures(): number {
 export function refreshAccessToken(): Promise<void> {
   const store = state();
   if (store.refreshing) return store.refreshing;
-  const refresher = store.refresher;
+  const refresher = store.refreshers.values().next().value;
   if (!refresher) return Promise.resolve();
   const refreshing = refresher()
     .catch(() => {})
@@ -230,20 +287,20 @@ export function socketCredentialHandle(token: string | null): string | null {
   return owner === undefined ? token : (store.socketHandles.get(owner) ?? token);
 }
 
-/** A socket opened with `handle` was closed with `code`; 4401 means its token was refused. */
+/** A socket opened with `handle` was closed with `code`; 4401 means the token it connected with was refused. */
 export function noteSocketClosed(handle: string, code: number | undefined): void {
   if (code !== SOCKET_REFUSED_CLOSE_CODE) return;
   const store = state();
-  const owner = store.owners.get(handle);
-  if (owner === undefined || store.current?.viewerKey !== owner) return;
-  store.socketRefused.add(store.current.token);
+  const sent = store.socketSent.get(handle);
+  if (sent !== undefined && store.owners.has(sent)) store.socketRefused.add(sent);
 }
 
 /**
  * The token a socket sends in `connection_init`, read at each (re)connect.
  * Outside `better-auth` it is the handle itself. Inside, it is the viewer's
- * current token, refreshed first when it was refused (4401) or is close to
- * its end; a 1013 or a network drop reconnects with the same token.
+ * current token: refreshed once first when that very token was refused
+ * (4401), or when it is close to its end. A 1013 or a network drop reconnects
+ * with the same token.
  */
 export async function socketConnectToken(handle: string): Promise<string> {
   const store = state();
@@ -251,21 +308,26 @@ export async function socketConnectToken(handle: string): Promise<string> {
   if (owner === undefined) return handle;
   const current = store.current;
   if (!current || current.viewerKey !== owner) return handle;
-  if (store.socketRefused.has(current.token)) {
-    store.socketRefused.delete(current.token);
-    return (await refreshAfterRefusal(current.token)) ?? current.token;
+  let token = current.token;
+  if (store.socketRefused.has(token)) {
+    store.socketRefused.delete(token);
+    token = (await refreshAfterRefusal(token)) ?? token;
+  } else if (accessTokenNeedsRefresh()) {
+    await refreshAccessToken();
+    const latest = store.current;
+    if (latest && latest.viewerKey === owner) token = latest.token;
   }
-  if (accessTokenNeedsRefresh()) await refreshAccessToken();
-  const latest = store.current;
-  return latest && latest.viewerKey === owner ? latest.token : current.token;
+  store.socketSent.set(handle, token);
+  return token;
 }
 
 /** Tests only: forget everything. */
 export function resetBrowserAccessTokensForTests(): void {
   const store = state();
   dropEveryToken(store);
-  store.refresher = null;
+  store.refreshers.clear();
   store.refreshing = null;
   store.consecutiveFailures = 0;
+  store.lastFailureAt = 0;
   store.watchedGuard = null;
 }
