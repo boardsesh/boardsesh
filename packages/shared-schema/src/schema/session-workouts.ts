@@ -128,6 +128,8 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
     mainKind: String
     "Display grade name of the main block's target grade."
     mainTargetGrade: String
+    "Board whose grade scale mainTargetGrade is on. Null exactly when mainTargetGrade is."
+    mainTargetBoardType: String
     secondMainKind: String
     "Every block, warm-ups and cool-downs included."
     blockCount: Int!

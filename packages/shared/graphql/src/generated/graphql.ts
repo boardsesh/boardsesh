@@ -11055,6 +11055,8 @@ export type SessionWorkoutHeadline = {
   /** Main blocks after the first. */
   extraMainBlocks: Scalars['Int']['output'];
   mainKind?: Maybe<Scalars['String']['output']>;
+  /** Board whose grade scale mainTargetGrade is on. Null exactly when mainTargetGrade is. */
+  mainTargetBoardType?: Maybe<Scalars['String']['output']>;
   /** Display grade name of the main block's target grade. */
   mainTargetGrade?: Maybe<Scalars['String']['output']>;
   secondMainKind?: Maybe<Scalars['String']['output']>;

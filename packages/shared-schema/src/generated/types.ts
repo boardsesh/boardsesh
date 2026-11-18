@@ -11058,6 +11058,8 @@ export type SessionWorkoutHeadline = {
   /** Main blocks after the first. */
   extraMainBlocks: Scalars['Int']['output'];
   mainKind?: Maybe<Scalars['String']['output']>;
+  /** Board whose grade scale mainTargetGrade is on. Null exactly when mainTargetGrade is. */
+  mainTargetBoardType?: Maybe<Scalars['String']['output']>;
   /** Display grade name of the main block's target grade. */
   mainTargetGrade?: Maybe<Scalars['String']['output']>;
   secondMainKind?: Maybe<Scalars['String']['output']>;
@@ -20769,6 +20771,7 @@ export type SessionWorkoutHeadlineResolvers<
   blockCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   extraMainBlocks?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   mainKind?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  mainTargetBoardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   mainTargetGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   secondMainKind?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
