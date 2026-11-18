@@ -1209,7 +1209,7 @@
     },
     "climbCount": "Geplante Boulder: {{count}}",
     "rounds": "Runden: {{count}} · Pause zwischen Bouldern: {{climbRest}}s · Zwischen Runden: {{roundRest}}s",
-    "rest": "Pause nach jedem Boulder: {{seconds}}s",
+    "rest": "Pause {{seconds}}s, nächster Boulder erst, wenn getoppt",
     "queueFull": "Deine Warteschlange ist voll. Schaffe Platz für dieses Training.",
     "syncError": "Dein Training läuft, aber der Plan konnte nicht gespeichert werden. Lass Boardsesh geöffnet und versuche erneut zu synchronisieren.",
     "targetGrade": "Zielgrad: {{grade}}",

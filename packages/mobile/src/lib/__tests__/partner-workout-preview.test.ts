@@ -188,6 +188,20 @@ describe('partner block rest', () => {
     }
   });
 
+  it('leaves a limit block with a rest freeform: no climbs queued, nothing paced', async () => {
+    const built = await preview(
+      workout({
+        type: 'limitBouldering',
+        climbCount: 3,
+        restSeconds: 120,
+        targetGrade: { scale: 'font', value: '6B' },
+      }),
+      catalogue({ 18: 3 }),
+    );
+    expect(built.items).toEqual([]);
+    expect(built.run.stages.filter((stage) => stage.pacing !== undefined)).toEqual([]);
+  });
+
   it("runs a rest of 0 on the climber's own settings, with no 10 s changeover", async () => {
     for (const restSeconds of [0, undefined]) {
       const { pacing } = await restAfter(volume(restSeconds), 'attempt');
