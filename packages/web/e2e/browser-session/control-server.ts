@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { EdgeResponseObservation } from '../../partner-oauth-e2e/edge';
 import type { EnvironmentOverrides, RestartOverrides, ServerSet } from './servers';
 import type { SetCookieRecord } from './stack';
+import { recordHarnessRetry } from './harness-retries';
 
 /**
  * How a spec, which runs in a Playwright worker, reaches the things only the
@@ -20,6 +21,7 @@ import type { SetCookieRecord } from './stack';
  *                                                   environment (null unsets); answers at once
  *   GET  /restart/status            { state, error? }  `running`, then `ready` or `failed`; a restart can take
  *                                                   minutes, longer than one HTTP request should be held open
+ *   POST /harness-retry             { counted }    a worker reports a WebKit "internal error" navigation retry
  */
 
 export class SetCookieLog {
@@ -109,6 +111,9 @@ export async function startControlServer(
           },
         );
         sendJson(response, 202, restart);
+      } else if (request.method === 'POST' && url.pathname === '/harness-retry') {
+        recordHarnessRetry('webkit-internal-error');
+        sendJson(response, 200, { counted: true });
       } else if (request.method === 'GET' && url.pathname === '/restart/status') {
         sendJson(response, 200, restart);
       } else {

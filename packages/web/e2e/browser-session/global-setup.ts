@@ -14,6 +14,7 @@ import {
 import { startBackendRelay } from './backend-relay';
 import { betterAuthEnvironments, type BetterAuthDatabase } from './better-auth-environment';
 import { createCertificate } from './certificate';
+import { harnessRetryBudgetError } from './harness-retries';
 import { SetCookieLog, startControlServer } from './control-server';
 import { freePort, readEnvironmentFile } from './processes';
 import { startProbeServer } from './probe-server';
@@ -198,6 +199,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     );
     if (accountBSeeded) runDatabaseStep(databaseUrl, ['cleanup', `${runAccountPrefix}%`]);
     rmSync(workDirectory, { recursive: true, force: true });
+    const overBudget = harnessRetryBudgetError();
+    if (overBudget) throw overBudget;
   };
 
   try {

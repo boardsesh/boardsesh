@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
-import { test as base, expect, type Browser, type BrowserContext } from '@playwright/test';
+import { test as base, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { addLegacySession, type LegacySessionShape, type MintedLegacySession } from './legacy-session';
 import {
   PARENT_DOMAIN,
@@ -116,11 +116,39 @@ export function sessionSetCookies(records: readonly SetCookieRecord[]) {
   );
 }
 
+const WEBKIT_INTERNAL_ERROR = /WebKit encountered an internal error/;
+
+/**
+ * One named infrastructure retry (harness-retries.ts): WebKit failing a
+ * navigation with "internal error", a failure of its network stack through the
+ * proxy, not an answer from the app. The navigation is tried once more, and
+ * the setup process counts it; the run fails when there were more than two.
+ */
+function retryWebKitInternalError(page: Page, stack: BrowserSessionStack): void {
+  const retried =
+    <Result>(navigate: () => Promise<Result>) =>
+    async (): Promise<Result> => {
+      try {
+        return await navigate();
+      } catch (error) {
+        if (!(error instanceof Error) || !WEBKIT_INTERNAL_ERROR.test(error.message)) throw error;
+        console.info(`[harness-retry] webkit-internal-error on ${page.url()}`);
+        await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
+        return navigate();
+      }
+    };
+  const goto = page.goto.bind(page);
+  const reload = page.reload.bind(page);
+  page.goto = (url, options) => retried(() => goto(url, options))();
+  page.reload = (options) => retried(() => reload(options))();
+}
+
 async function newProxiedContext(browser: Browser, stack: BrowserSessionStack): Promise<BrowserContext> {
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     proxy: { server: stack.proxyServer },
   });
+  if (browser.browserType().name() === 'webkit') context.on('page', (page) => retryWebKitInternalError(page, stack));
   // Analytics declined up front, so no consent banner sits over a form. A
   // Domain cookie on the parent, so every host under it sees the same answer.
   await context.addCookies([

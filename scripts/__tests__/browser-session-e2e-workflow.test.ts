@@ -80,19 +80,16 @@ describe('browser-session-e2e.yml', () => {
     expect(runs).toContain('vp run test:e2e:browser-session');
   });
 
-  it('runs the nightly against a production www build, a pull request against next dev, and lets a dispatch choose', () => {
+  it('runs every CI run against a production www build, and lets a dispatch choose next dev', () => {
     const runs = (workflow.jobs['browser-session'].steps ?? []).filter(
       (step) => step.run === 'vp run test:e2e:browser-session',
     );
     expect(runs).toHaveLength(2);
-    for (const run of runs)
-      expect(run.env?.BROWSER_SESSION_E2E_WWW).toBe(
-        "${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}",
-      );
+    for (const run of runs) expect(run.env?.BROWSER_SESSION_E2E_WWW).toBe("${{ inputs.www || 'production' }}");
     expect(workflow.on.workflow_dispatch?.inputs?.www).toMatchObject({
       type: 'choice',
-      options: ['dev', 'production'],
-      default: 'dev',
+      options: ['production', 'dev'],
+      default: 'production',
     });
   });
 
@@ -125,6 +122,13 @@ describe('browser-session-e2e.yml', () => {
 });
 
 describe('the browser-session harness', () => {
+  it('never retries a spec: only the two named harness retries exist, and a run past two fails', () => {
+    expect(playwrightConfig).toContain('retries: 0,');
+    const retries = readFileSync('packages/web/e2e/browser-session/harness-retries.ts', 'utf8');
+    expect(retries).toContain("'restart-www-timeout' | 'webkit-internal-error'");
+    expect(retries).toContain('MAX_HARNESS_RETRIES = 2');
+  });
+
   it('runs Chromium and WebKit, with traces off in CI', () => {
     expect(playwrightConfig).toContain("name: 'chromium'");
     expect(playwrightConfig).toContain("name: 'webkit'");
