@@ -7,6 +7,7 @@ import { test as base, expect, type Browser, type BrowserContext, type Page } fr
 import { addLegacySession, type LegacySessionShape, type MintedLegacySession } from './legacy-session';
 import type { CapturedMail } from './mail-sink';
 import {
+  APP_ORIGIN,
   MARKER_COOKIE,
   PARENT_DOMAIN,
   readStack,
@@ -156,49 +157,80 @@ export function expectedMarker(authSessionId: string): { value: string; valueDig
 
 const WEBKIT_INTERNAL_ERROR = /WebKit encountered an internal error/;
 
+/** How long a navigation to the app may stay blank before a WebKit network failure is read as the cause. */
+const APP_RENDER_WAIT_MS = 30_000;
+
+async function appRenderedSomething(page: Page): Promise<boolean> {
+  const deadline = Date.now() + APP_RENDER_WAIT_MS;
+  while (Date.now() < deadline) {
+    const rendered = await page.evaluate(() => (document.body?.innerText ?? '').trim().length > 0).catch(() => false);
+    if (rendered) return true;
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
 /**
- * One named infrastructure retry (harness-retries.ts): WebKit failing a
- * navigation with "internal error", a failure of its network stack through the
- * proxy, not an answer from the app. That covers the navigation's own
- * document and the scripts it loads: when one of those fails that way the page
- * never runs (a blank app tab), so the navigation is tried once more. Every
- * failed request is logged with its URL, so a failure outside that class is
- * still visible in the run log. The setup process counts each retry; the run
- * fails when there were more than two.
+ * One named infrastructure retry (harness-retries.ts): WebKit failing a load
+ * with "internal error", a failure of its network stack through the proxy,
+ * not an answer from the app. It covers:
+ * - the navigation itself, or its document or a script it loads (the page
+ *   then never runs);
+ * - a navigation to the app that renders nothing for 30 s while one of its
+ *   requests failed that way (run 44339770816: the session read, a font and
+ *   the splash image failed together and the tab stayed blank).
+ * The navigation is tried once more. Every request WebKit fails is logged with
+ * its URL, so a failure outside that class is still visible. The setup process
+ * counts each retry; the run fails when there were more than two.
  */
 function retryWebKitInternalError(page: Page, stack: BrowserSessionStack): void {
   let failedLoads: string[] = [];
+  let failedRequests: string[] = [];
   page.on('requestfailed', (request) => {
     const failure = request.failure()?.errorText ?? 'no detail';
     // A request the page itself cancelled (a navigation, an abort) is not a network failure.
     if (/cancelled/i.test(failure)) return;
     console.info(`[webkit] request failed: ${request.method()} ${request.url().slice(0, 200)} (${failure})`);
-    if (WEBKIT_INTERNAL_ERROR.test(failure) && ['document', 'script'].includes(request.resourceType()))
-      failedLoads.push(request.url());
+    if (!WEBKIT_INTERNAL_ERROR.test(failure)) return;
+    failedRequests.push(request.url());
+    if (['document', 'script'].includes(request.resourceType())) failedLoads.push(request.url());
   });
+  const retryOnce = async <Result>(navigate: () => Promise<Result>, cause: string): Promise<Result> => {
+    console.info(`[harness-retry] webkit-internal-error ${cause.slice(0, 200)}`);
+    await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
+    failedLoads = [];
+    failedRequests = [];
+    return navigate();
+  };
   const retried =
-    <Result>(navigate: () => Promise<Result>) =>
+    <Result>(navigate: () => Promise<Result>, waitsForApp: () => boolean) =>
     async (): Promise<Result> => {
       failedLoads = [];
+      failedRequests = [];
       let result: Result;
       try {
         result = await navigate();
       } catch (error) {
         if (!(error instanceof Error) || !WEBKIT_INTERNAL_ERROR.test(error.message)) throw error;
-        console.info(`[harness-retry] webkit-internal-error on ${page.url()}`);
-        await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
-        return navigate();
+        return retryOnce(navigate, `on ${page.url()}`);
       }
-      if (failedLoads.length === 0) return result;
-      console.info(`[harness-retry] webkit-internal-error loading ${failedLoads[0]?.slice(0, 200)}`);
-      await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
-      failedLoads = [];
-      return navigate();
+      if (failedLoads.length > 0) return retryOnce(navigate, `loading ${failedLoads[0]}`);
+      if (!waitsForApp() || (await appRenderedSomething(page)) || failedRequests.length === 0) return result;
+      return retryOnce(navigate, `leaving the app blank after ${failedRequests[0]}`);
     };
   const goto = page.goto.bind(page);
   const reload = page.reload.bind(page);
-  page.goto = (url, options) => retried(() => goto(url, options))();
-  page.reload = (options) => retried(() => reload(options))();
+  const loadsApp = (url: string, waitUntil: string | undefined) => url.startsWith(APP_ORIGIN) && waitUntil !== 'commit';
+  page.goto = (url, options) =>
+    retried(
+      () => goto(url, options),
+      () => loadsApp(url, options?.waitUntil),
+    )();
+  page.reload = (options) =>
+    retried(
+      () => reload(options),
+      () => loadsApp(page.url(), options?.waitUntil),
+    )();
 }
 
 async function newProxiedContext(browser: Browser, stack: BrowserSessionStack): Promise<BrowserContext> {

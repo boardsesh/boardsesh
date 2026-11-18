@@ -4,8 +4,9 @@
  * infrastructure errors get one more try each:
  *
  *   restart-www-timeout      a `restartStack` that timed out waiting for www (servers.ts)
- *   webkit-internal-error    WebKit failing a navigation, or its document or one of
- *                            its scripts, with "internal error" (fixtures.ts)
+ *   webkit-internal-error    WebKit failing a navigation, its document or one of its
+ *                            scripts with "internal error", or an app navigation left
+ *                            blank for 30 s after a request failed that way (fixtures.ts)
  *
  * Each is logged with the `[harness-retry]` marker. The setup process counts
  * them (the control server takes a worker's report) and teardown fails the run

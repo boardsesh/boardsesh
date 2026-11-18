@@ -1953,9 +1953,11 @@ the evidence is that run's log.
 **Retries.** Playwright retries are off (`retries: 0`): this suite tests
 races, and a blanket retry would hide one. The harness retries exactly two
 named infrastructure errors once each (`harness-retries.ts`): a `restartStack`
-that timed out waiting for www, and WebKit failing a navigation, its
-document or one of the scripts it loads with "internal error" (a script that
-fails that way leaves the app tab blank, as run 44329764195 showed once). Each
+that timed out waiting for www, and WebKit failing a load with "internal
+error": the navigation itself, its document or one of its scripts (the page
+never runs, as run 44329764195 showed once), or an app navigation that renders
+nothing for 30 s while one of its requests failed that way (run 44339770816:
+the session read, a font and the splash image failed together). Each
 logs a `[harness-retry]` line, and teardown fails the run when there were more
 than two. Every request WebKit fails is logged with its URL (`[webkit] request
 failed`), so a failure outside that class shows in the run log.
