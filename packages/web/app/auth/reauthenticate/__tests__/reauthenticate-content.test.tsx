@@ -10,7 +10,11 @@ vi.mock('react-i18next', () => ({
     i18n: { language: 'en-US' },
   }),
 }));
-vi.mock('@/app/lib/auth/session-guard', () => ({ guardedFetch: mocks.fetch }));
+// The page already knows who it shows: the guard's first session read is done.
+vi.mock('@/app/lib/auth/session-guard', () => ({
+  guardedFetch: mocks.fetch,
+  browserSessionGuard: () => ({ whenViewerKnown: async () => 'viewer' }),
+}));
 vi.mock('@/app/lib/auth/web-session-events', () => ({ signInWithSessionIntent: mocks.signIn }));
 vi.mock('next-auth/react', () => ({ getSession: mocks.getSession }));
 vi.mock('@/app/components/brand/logo', () => ({ default: () => null }));

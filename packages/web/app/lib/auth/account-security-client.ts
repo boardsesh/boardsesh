@@ -1,7 +1,7 @@
 'use client';
 
 import { getSession } from 'next-auth/react';
-import { guardedFetch } from './session-guard';
+import { browserSessionGuard, guardedFetch } from './session-guard';
 
 /**
  * The browser side of www's provider-security and first-password routes
@@ -26,7 +26,16 @@ export function refusalOf(answer: AccountSecurityAnswer): { outcome: string; cod
     : undefined;
 }
 
+/**
+ * How long a call waits for the page's first accepted session read. Before it
+ * the guard names nobody, and these routes refuse a call without the
+ * expected-viewer header: the emailed first-password link opens a new tab whose
+ * status check ran before that read and always showed "try again".
+ */
+export const ACCOUNT_SECURITY_VIEWER_WAIT_MS = 10_000;
+
 async function send(path: string, init: RequestInit): Promise<AccountSecurityAnswer> {
+  await browserSessionGuard().whenViewerKnown(ACCOUNT_SECURITY_VIEWER_WAIT_MS);
   const response = await guardedFetch(path, { ...init, cache: 'no-store' });
   const parsed: unknown = await response.json().catch(() => undefined);
   const body =
