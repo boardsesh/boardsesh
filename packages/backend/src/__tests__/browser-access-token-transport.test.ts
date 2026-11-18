@@ -9,7 +9,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import { WebSocket } from 'ws';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
@@ -89,7 +89,7 @@ async function climber() {
 /** A session row as each writer leaves it, and a token the access command would sign for it. */
 async function sessionWithToken(
   userId: string,
-  shape: { lineage?: 'bridge' | 'carried'; signedInAgoMs?: number; expiresInMs?: number } = {},
+  shape: { lineage?: 'bridge' | 'carried'; signedInAgoMs?: number; expiresInMs?: number; issuedAgoMs?: number } = {},
 ) {
   const sessionId = randomUUID();
   await db.insert(authSession).values({
@@ -109,7 +109,11 @@ async function sessionWithToken(
   });
   const session = (await selectLiveSessions(db, [sessionId], new Date())).get(sessionId);
   if (!session) throw new Error('Synthetic session not live');
-  const issued = await issueBrowserAccessToken(browserAccessTokenKey(ACCESS_SECRET), session, new Date());
+  const issued = await issueBrowserAccessToken(
+    browserAccessTokenKey(ACCESS_SECRET),
+    session,
+    new Date(Date.now() - (shape.issuedAgoMs ?? 0)),
+  );
   if (!issued) throw new Error('No token issued');
   return { session, token: issued.token };
 }
@@ -220,6 +224,34 @@ describe('a browser access token over GraphQL HTTP', () => {
   );
 });
 
+/** Ends a session by deleting its row while the table is renamed: what a sign-out leaves behind. */
+async function denyFirstPartySessionWhileHidden(sessionId: string, hiddenTable: string) {
+  await db.execute(sql.raw(`DELETE FROM ${hiddenTable} WHERE id = '${sessionId.replaceAll("'", "''")}'`));
+}
+
+type Frame = { type: string; id?: string; payload?: unknown };
+
+/** A graphql-ws client socket: its frames as they arrive, and its close code. */
+async function openSocket(token: string) {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws');
+  const frames: Frame[] = [];
+  const closed = new Promise<number>((resolve) => socket.once('close', (code) => resolve(code)));
+  socket.on('message', (message) => frames.push(JSON.parse(String(message)) as Frame));
+  await once(socket, 'open');
+  socket.send(JSON.stringify({ type: 'connection_init', payload: { authToken: token } }));
+  const closedOrOpen = (withinMs: number) =>
+    Promise.race([closed, new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), withinMs))]);
+  return { socket, frames, closed, closedOrOpen };
+}
+
+async function acknowledged(client: Awaited<ReturnType<typeof openSocket>>) {
+  for (let waited = 0; waited < 5000; waited += 25) {
+    if (client.frames.some((frame) => frame.type === 'connection_ack')) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('No connection_ack');
+}
+
 describe('a browser access token on a WebSocket', () => {
   it(
     'is closed by the admission sweep once its session signs out',
@@ -242,6 +274,94 @@ describe('a browser access token on a WebSocket', () => {
         new Promise<'still open'>((resolve) => setTimeout(() => resolve('still open'), 10_000)),
       ]);
       expect(code).toBe(4401);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'answers nine operations sent at once, as a reconnect resubscribes, without closing',
+    async () => {
+      const userId = await climber();
+      const { token } = await sessionWithToken(userId);
+      const client = await openSocket(token);
+      await acknowledged(client);
+      for (let index = 0; index < 9; index += 1)
+        client.socket.send(
+          JSON.stringify({ id: `op-${index}`, type: 'subscribe', payload: { query: '{ authenticatedUserId }' } }),
+        );
+      for (let waited = 0; waited < 5000; waited += 25) {
+        if (client.frames.filter((frame) => frame.type === 'complete').length === 9) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const answers = client.frames.filter((frame) => frame.type === 'next');
+      expect(answers).toHaveLength(9);
+      for (const answer of answers) expect(answer.payload).toEqual({ data: { authenticatedUserId: userId } });
+      expect(await client.closedOrOpen(500)).toBe('open');
+      client.socket.close();
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'refuses a handshake with an expired token with 4401',
+    async () => {
+      const userId = await climber();
+      const { token } = await sessionWithToken(userId, { issuedAgoMs: 20 * MINUTE_MS });
+      const client = await openSocket(token);
+      expect(await client.closedOrOpen(5000)).toBe(4401);
+      expect(client.frames.some((frame) => frame.type === 'connection_ack')).toBe(false);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'closes with 4401 at the first operation after its token expired',
+    async () => {
+      const userId = await climber();
+      // Signed 899 s ago: one second of lifetime left, plus the 30 s of accepted skew.
+      const { token } = await sessionWithToken(userId, { issuedAgoMs: 899_000 });
+      const client = await openSocket(token);
+      await acknowledged(client);
+      await new Promise((resolve) => setTimeout(resolve, 32_000));
+      // The session is still live, so the sweep left the socket open.
+      expect(await client.closedOrOpen(10)).toBe('open');
+      client.socket.send(
+        JSON.stringify({ id: 'late', type: 'subscribe', payload: { query: '{ authenticatedUserId }' } }),
+      );
+      expect(await client.closedOrOpen(5000)).toBe(4401);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'keeps every socket open while the session read fails, and closes only the ended one after',
+    async () => {
+      const browserUser = await climber();
+      const nativeUser = await climber();
+      const { session, token } = await sessionWithToken(browserUser);
+      const nativeToken = await new SignJWT({ gen: 0, ngen: 0 })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setSubject(nativeUser)
+        .setIssuer('boardsesh')
+        .setAudience('boardsesh-mobile')
+        .setExpirationTime('1h')
+        .sign(new TextEncoder().encode(process.env.NEXTAUTH_SECRET));
+      const [browser, native] = [await openSocket(token), await openSocket(nativeToken)];
+      await acknowledged(browser);
+      await acknowledged(native);
+      const hiddenTable = `auth_session_hidden_${randomBytes(4).toString('hex')}`;
+      // The session read now fails: an outage proves nothing, so nothing closes.
+      await db.execute(sql.raw(`ALTER TABLE auth_session RENAME TO ${hiddenTable}`));
+      try {
+        await denyFirstPartySessionWhileHidden(session.authSessionId, hiddenTable);
+        expect(await browser.closedOrOpen(3000)).toBe('open');
+        expect(await native.closedOrOpen(10)).toBe('open');
+      } finally {
+        await db.execute(sql.raw(`ALTER TABLE ${hiddenTable} RENAME TO auth_session`));
+      }
+      expect(await browser.closedOrOpen(5000)).toBe(4401);
+      expect(await native.closedOrOpen(10)).toBe('open');
+      native.socket.close();
     },
     TEST_DEADLINE_MS,
   );

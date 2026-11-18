@@ -11,7 +11,6 @@ import {
   webSessionAccessReplySchema,
   webSessionBridgeReplySchema,
   webSessionReadReplySchema,
-  webSessionRollReplySchema,
   webSessionSignOutReplySchema,
 } from '@boardsesh/auth-protocol';
 import { authSession } from '@boardsesh/db/schema';
@@ -232,8 +231,8 @@ describe('the bridge command', () => {
     const reply = await bridged(credential);
     const legacyExpiry = new Date(reply.expiresAt).getTime();
     expect(legacyExpiry).toBeLessThan(Date.now() + 2 * 3_600_000);
-    const roll = await post(WEB_SESSION_COMMAND_PATHS.roll, command('roll', { token: reply.token }));
-    const rolled = webSessionRollReplySchema.parse(roll.body);
+    const roll = await post(WEB_SESSION_COMMAND_PATHS.access, command('access', { presented: canonical(reply.token) }));
+    const rolled = webSessionAccessReplySchema.parse(roll.body);
     if (rolled.outcome !== 'active') throw new Error('Bridged roll refused');
     expect(rolled.rolled).toBe(true);
     expect(new Date(rolled.expiresAt).getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
@@ -316,14 +315,12 @@ describe('the bridge command switches', () => {
     const schemas = {
       session: webSessionReadReplySchema,
       signout: webSessionSignOutReplySchema,
-      roll: webSessionRollReplySchema,
       bridge: webSessionBridgeReplySchema,
       access: webSessionAccessReplySchema,
     } as const;
     const payloads = {
       session: { presented: canonical('t') },
       signout: { token: 't', expectedUserId: 'u', expectedAuthSessionId: 's' },
-      roll: { token: 't' },
       bridge: { credential: 'a.b.c.d.e' },
       access: { presented: canonical('t') },
     } as const;

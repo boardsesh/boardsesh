@@ -137,5 +137,9 @@ describe('verifying a browser access token', () => {
     expect(claimsBrowserAudience((await issued()).token)).toBe(true);
     expect(claimsBrowserAudience(await signed({}, { audience: 'boardsesh-mobile' }))).toBe(false);
     for (const junk of ['', 'a.b.c', 'not-a-token']) expect(claimsBrowserAudience(junk)).toBe(false);
+    // A browser token padded past 4096 characters is never decoded.
+    const padded = await signed({ padding: 'x'.repeat(4096) });
+    expect(padded.length).toBeGreaterThan(4096);
+    expect(claimsBrowserAudience(padded)).toBe(false);
   });
 });

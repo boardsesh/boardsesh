@@ -250,7 +250,8 @@ export async function validateToken(token: string, options: ValidateTokenOptions
     // The unverified audience only picks the verifier. With the web session
     // mode off, a browser token takes the mobile path, as it did before B3a,
     // and fails its audience check there.
-    if (claimsBrowserAudience(token) && browserAccessTokensEnabled()) return validateBrowserAccessToken(token, options);
+    // Mode first: with it off, no unverified input is decoded.
+    if (browserAccessTokensEnabled() && claimsBrowserAudience(token)) return validateBrowserAccessToken(token, options);
     return validateMobileJwt(token, options);
   }
   return null;
@@ -291,7 +292,7 @@ export async function validateBrowserAccessToken(
   const now = new Date();
   const verified = await verifyBrowserAccessToken(tokenKey, token, now);
   // An outage throws unavailable here; only a confirmed answer refuses.
-  const session = verified ? await readBrowserAccessSession(verified, now) : undefined;
+  const session = verified ? await readBrowserAccessSession(verified) : undefined;
   if (!verified || !session) {
     if (throwOnRefusal) throw new AuthCredentialRefusedError();
     return null;

@@ -136,20 +136,27 @@ revocation goes through `lineage.ts`.
   (the session row's expiry), `link_guarded`, and `auth_time` only for a
   `login` session. `exp` is the earlier of `iat` + 900 s and the row's expiry.
   The key is HKDF-SHA256 of `AUTH_BROWSER_ACCESS_TOKEN_SECRET` (label
-  `boardsesh-browser-access-token-key-v1`). Verification pins HS256 (so never
-  `none`), the audience and issuer, 30 s of clock skew, a lifetime of at most
-  900 s and every claim.
+  `boardsesh-browser-access-token-key-v1`), derived once per secret value.
+  Verification pins HS256 (so never `none`), the audience and issuer, 30 s of
+  clock skew, a lifetime of at most 900 s, and requires every claim with its
+  type; `sexp` and `link_guarded` are never trusted (the session read decides
+  expiry and sign-in proof).
 - **The token endpoint**: `POST …/web-session/v1/access` with `{ presented }`
-  (see the command table). It is where a session rolls: it reads the session,
+  (see the command table). It is the only place a session rolls (the separate
+  `/roll` command is gone; nothing on www called it): it reads the session,
   rolls it when under 29 days remain, reads it again and signs a token for what
   the second read admitted; `rolled: true` is never taken as liveness. A legacy
   cookie gets `401 unauthenticated` with `reason: 'bridge_required'` and is not
   read; a dead cookie gets `reason: 'no_session'`.
-- **Requests** (`validateToken` in `middleware/auth.ts`): a three-segment token
-  whose unverified audience is `boardsesh-browser` goes to the browser verifier,
-  only while `CURRENT_STORE_WEB_SESSION_MODE=backend-staging`; off, it takes the
-  app path as before and fails that path's audience check. Each request then
-  reads the session by id in ONE statement on the auth admission pool
+- **Requests** (`validateToken` in `middleware/auth.ts`): only while
+  `CURRENT_STORE_WEB_SESSION_MODE=backend-staging`, a three-segment token of at
+  most 4,096 characters whose unverified audience is `boardsesh-browser` goes to
+  the browser verifier; the mode is checked first, so with it off no token is
+  decoded and every token takes the app path exactly as before. Each request
+  then reads the session by id in ONE statement on the auth admission pool,
+  through a coalescer keyed by session id that shares its two read slots with
+  the account read (`docs/db-connectivity.md`, "How much can queue on two
+  connections")
   (`auth_session` and its lineage by primary key, the account, its cutoff row
   and a denial of this id) and applies exactly the cookie read's row and
   account rules (`canonicalFirstPartySession`, `admitsFirstPartySession`), plus
@@ -162,14 +169,15 @@ revocation goes through `lineage.ts`.
   cached. `credentialExpiresAt` is the session's expiry (notification-device
   leases), and `webSignIn` carries a sign-in time only for a `login` session.
 - **WebSockets**: the admission sweep also reads the sessions its browser
-  sockets were opened with (one admission read per 128 ids) and closes a socket
+  sockets were opened with (one admission read per 128 ids, one at a time,
+  after the account read) and closes a socket
   whose session is no longer live or no longer the token's (4401). A token
   that expires mid-connection closes the socket at the next operation, as the
   older kinds do, and the client reconnects with a new one.
 - **Cost per request**: one primary-key statement on the bounded auth
   admission pool (2 connections per replica, 1 s deadline) instead of the
-  older kinds' account read; no result cache, by design. The `/roll` command
-  from #7722 still exists; www should call only `/access`.
+  older kinds' account read, shared by every request that asks in the same
+  tick; no result cache, by design.
 
 ## Signed-in browsers from before the switch
 
@@ -398,7 +406,7 @@ cookie signature check.
 
 ### The private commands B1 calls
 
-All six sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
+All five sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
 backend (404 `{ "error": "disabled" }` when off, 503 for an unknown value), use
 the existing `Authorization: Bearer <CURRENT_STORE_AUTH_RPC_SECRET>` and refuse
 any request carrying an `Origin` header. Schemas and types are in
@@ -409,7 +417,6 @@ any request carrying an `Origin` header. Schemas and types are in
 | Login: the staged password command, `POST /api/internal/auth/current-store/password` | `passwordCommandSchema` plus `webSession: { presented? }`. `presented` is `{ kind: 'legacy-jwe', credential }` (the joined NextAuth cookie) or `{ kind: 'canonical-token', token }` (from the new cookie). There is no field for an account: the session goes to the account the password proves. | `authenticated` with `webSession: { sessionId, token, expiresAt, generation }`; `invalid_credentials` with nothing issued and nothing revoked. An account that still needs email verification gets `authenticated` with `verification.verified: false` and no `webSession`, and its presented session stays. Rate limits and the compare gate are those of #7650. |
 | Session read, `POST /api/internal/auth/current-store/web-session/v1/session` | `webSessionReadCommandSchema`: `{ presented }`, the same `PresentedWebSession` login takes | 200 `active` with `userId`, `authSessionId`, `generation`, `expiresAt`, `source` (`login` or `bridge`), `authenticatedAt` (or null), `linkGuarded` and `user: { id, email, name, image }`, the fields of today's NextAuth session JSON (profile display name and avatar win); 401 `unauthenticated`; 503 `unavailable`. It applies exactly `readFirstPartySession`'s rules and writes nothing: no roll, no last-seen time, no bridge. A legacy cookie is answered by its own admission rules. |
 | Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ presented, expectedUserId, expectedAuthSessionId }`, or the first form `{ token, … }` with a bare canonical token, still accepted so either web works with either backend | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. A legacy cookie with its own session id gets a denial of that id and nothing else ends; one without a session id is answered `signed_out`, and only the row the bridge made from it, if any, ends. |
-| Roll, `POST /api/internal/auth/current-store/web-session/v1/roll` | `webSessionRollCommandSchema`: `{ token }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` and `rolled`; 401 `unauthenticated`; 503 `unavailable`. |
 | Access token (B3a), `POST /api/internal/auth/current-store/web-session/v1/access` | `webSessionAccessCommandSchema`: `{ presented }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` (after any roll), `rolled`, `accessToken` and `accessTokenExpiresAt`; 401 `unauthenticated` with `reason`: `no_session` (clear the cookie) or `bridge_required` (a legacy cookie: bridge it, then ask again); 503 `unavailable`, also when `AUTH_BROWSER_ACCESS_TOKEN_SECRET` is missing, weak or reused. The only place a web session rolls. |
 | Bridge (B2a), `POST /api/internal/auth/current-store/web-session/v1/bridge` | `webSessionBridgeCommandSchema`: `{ credential }`, the joined NextAuth cookie (at most 12,288 characters) | 200 `bridged` with `userId`, `sessionId`, `token`, `expiresAt` and `generation`; 401 `denied` (see "Signed-in browsers from before the switch"); 503 `unavailable`, also when `NEXTAUTH_SECRET` or `AUTH_BRIDGE_TOKEN_SECRET` is missing, weak or reused. The same cookie always gets the same `token`. It does not read `AUTH_LEGACY_BRIDGE_MODE`, which the native refresh path keeps. |
 

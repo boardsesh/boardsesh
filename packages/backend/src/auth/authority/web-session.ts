@@ -473,33 +473,6 @@ export async function readWebSession(
   };
 }
 
-export type WebSessionRefresh =
-  | {
-      readonly status: 'active';
-      readonly session: FirstPartySession;
-      readonly rolled: boolean;
-      readonly expiresAt: Date;
-    }
-  | { readonly status: 'unauthenticated' };
-
-/** Read the session a cookie carries, as every request does, then roll it when it is due. */
-export async function refreshWebSession(
-  database: AuthorityDatabase,
-  token: string,
-  now = new Date(),
-): Promise<WebSessionRefresh> {
-  const outcome = await readFirstPartySession(database, { kind: 'canonical-token', token }, now);
-  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
-  if (outcome.status === 'denied') return { status: 'unauthenticated' };
-  const roll = await rollWebSession(database, outcome.session.authSessionId, now);
-  return {
-    status: 'active',
-    session: outcome.session,
-    rolled: roll.rolled,
-    expiresAt: roll.rolled ? roll.expiresAt : outcome.session.expiresAt,
-  };
-}
-
 export type WebSessionBridge =
   | {
       readonly status: 'bridged';

@@ -16,6 +16,48 @@ export const MAX_CONCURRENT_COALESCED_ADMISSION_READS = 2;
 /** Distinct users allowed to wait for a read before new callers are refused. */
 export const MAX_WAITING_ADMISSION_USERS = 1024;
 
+/**
+ * Read slots that several coalescers share, so the reads they start together
+ * never exceed `MAX_CONCURRENT_COALESCED_ADMISSION_READS`. When a read ends,
+ * the waiting coalescers are woken in turn, starting after the one woken
+ * first last time, so a burst on one cannot starve the other.
+ */
+interface AdmissionReadSlots {
+  inFlight: number;
+  readonly members: Array<{ readonly hasWaiters: () => boolean; readonly schedule: () => void }>;
+  turn: number;
+}
+
+function createAdmissionReadSlots(): AdmissionReadSlots {
+  return { inFlight: 0, members: [], turn: 0 };
+}
+
+/**
+ * Named slot groups. `per-request` is the one every request-path admission
+ * read uses: the account read of the app and web credentials, and the browser
+ * access token's session read (#7596, B3a). The sweep calls the runner directly.
+ */
+const SLOT_GROUPS = new Map<AdmissionSlotGroup, AdmissionReadSlots>();
+
+export type AdmissionSlotGroup = 'per-request';
+
+function groupSlots(group: AdmissionSlotGroup): AdmissionReadSlots {
+  const existing = SLOT_GROUPS.get(group);
+  if (existing) return existing;
+  const created = createAdmissionReadSlots();
+  SLOT_GROUPS.set(group, created);
+  return created;
+}
+
+function wakeWaitingMembers(slots: AdmissionReadSlots): void {
+  const count = slots.members.length;
+  for (let offset = 0; offset < count; offset += 1) {
+    const member = slots.members[(slots.turn + offset) % count];
+    if (member.hasWaiters()) member.schedule();
+  }
+  if (count > 0) slots.turn = (slots.turn + 1) % count;
+}
+
 type AdmissionWaiter<Answer> = {
   enqueuedAt: number;
   resolve: (answer: Answer | undefined) => void;
@@ -31,13 +73,18 @@ type AdmissionWaiter<Answer> = {
  * older than its question. This coalesces work; it is not a cache.
  *
  * The read answers for each active user it found. A user it has no answer for
- * (deleted or missing) resolves to undefined.
+ * (deleted or missing) resolves to undefined. The key need not be a user id:
+ * the browser session read keys by session id.
+ *
+ * Coalescers in one `slotGroup` share its two read slots.
  */
 export function createAdmissionCoalescer<Answer>(
   readAnswers: (userIds: readonly string[]) => Promise<ReadonlyMap<string, Answer>>,
+  slotGroup?: AdmissionSlotGroup,
 ): (userId: string) => Promise<Answer | undefined> {
   const waitersByUserId = new Map<string, AdmissionWaiter<Answer>[]>();
-  let inFlightReads = 0;
+  // Without a group, this coalescer has its own two slots, as before.
+  const sharedSlots = slotGroup === undefined ? createAdmissionReadSlots() : groupSlots(slotGroup);
   let isFlushScheduled = false;
 
   function scheduleFlush() {
@@ -65,10 +112,10 @@ export function createAdmissionCoalescer<Answer>(
 
   function flushWaiters() {
     isFlushScheduled = false;
-    while (inFlightReads < MAX_CONCURRENT_COALESCED_ADMISSION_READS && waitersByUserId.size > 0) {
+    while (sharedSlots.inFlight < MAX_CONCURRENT_COALESCED_ADMISSION_READS && waitersByUserId.size > 0) {
       const claimedWaiters = claimNextBatch();
       if (claimedWaiters.size === 0) continue;
-      inFlightReads += 1;
+      sharedSlots.inFlight += 1;
       void readAnswers([...claimedWaiters.keys()])
         .then(
           (answers) => {
@@ -83,11 +130,12 @@ export function createAdmissionCoalescer<Answer>(
           },
         )
         .finally(() => {
-          inFlightReads -= 1;
-          if (waitersByUserId.size > 0) scheduleFlush();
+          sharedSlots.inFlight -= 1;
+          wakeWaitingMembers(sharedSlots);
         });
     }
   }
+  sharedSlots.members.push({ hasWaiters: () => waitersByUserId.size > 0, schedule: scheduleFlush });
 
   return (userId) =>
     new Promise<Answer | undefined>((resolve, reject) => {

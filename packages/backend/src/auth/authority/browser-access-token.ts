@@ -15,6 +15,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { readOnAdmissionConnection } from '../admission-pool';
+import { createAdmissionCoalescer } from '../admission-read-coalescer';
 import {
   AUTH_ADMISSION_BATCH_SIZE,
   AuthAdmissionUnavailableError,
@@ -103,6 +104,8 @@ export interface VerifiedBrowserAccessToken {
  * audience only to choose a verifier; nothing is trusted from it.
  */
 export function claimsBrowserAudience(token: string): boolean {
+  // The verifier refuses longer tokens anyway; never decode one.
+  if (token.length > 4096) return false;
   try {
     const { aud } = decodeJwt(token);
     return aud === BROWSER_ACCESS_TOKEN_AUDIENCE || (Array.isArray(aud) && aud.includes(BROWSER_ACCESS_TOKEN_AUDIENCE));
@@ -118,7 +121,8 @@ function isIdentity(value: unknown): value is string {
 /**
  * Strict: HS256 only (so never `none`), this audience and issuer, 30 seconds
  * of clock skew, a lifetime no longer than 15 minutes, and every claim this
- * backend writes. Null for anything else; the error never leaves.
+ * backend writes, with its type. `sexp` and `link_guarded` are required but
+ * never trusted: the session read decides expiry and sign-in proof. Null for anything else; the error never leaves.
  */
 export async function verifyBrowserAccessToken(
   tokenKey: BrowserAccessTokenKey,
@@ -133,10 +137,12 @@ export async function verifyBrowserAccessToken(
       issuer: BROWSER_ACCESS_TOKEN_ISSUER,
       clockTolerance: BROWSER_ACCESS_TOKEN_CLOCK_TOLERANCE_SECONDS,
       currentDate: now,
-      requiredClaims: ['sub', 'sid', 'gen', 'iat', 'exp'],
+      requiredClaims: ['sub', 'sid', 'gen', 'sexp', 'link_guarded', 'iat', 'exp'],
     });
-    const { sub, sid, gen, iat, exp } = payload;
+    const { sub, sid, gen, sexp, link_guarded: linkGuarded, iat, exp } = payload;
     if (
+      typeof sexp !== 'number' ||
+      typeof linkGuarded !== 'boolean' ||
       !isIdentity(sub) ||
       !isIdentity(sid) ||
       typeof gen !== 'number' ||
@@ -225,11 +231,22 @@ export async function readLiveSessions(
  * session moves both the row and the account, so a token signed before it is
  * refused).
  */
+/**
+ * The request path's session read, coalesced by session id (#7596, review of
+ * B3a, H1): a burst of browser requests shares a few reads instead of taking
+ * one runner slot each, and shares the `per-request` read slots with the
+ * account read the app and web credentials use, so neither can starve the
+ * other. A caller only joins a read that has not started: never a cache.
+ */
+const readCoalescedLiveSession = createAdmissionCoalescer(
+  (sessionIds: readonly string[]) => readLiveSessions(sessionIds),
+  'per-request',
+);
+
 export async function readBrowserAccessSession(
   verified: VerifiedBrowserAccessToken,
-  now = new Date(),
 ): Promise<FirstPartySession | undefined> {
-  const session = (await readLiveSessions([verified.sessionId], now)).get(verified.sessionId);
+  const session = await readCoalescedLiveSession(verified.sessionId);
   if (!session || session.userId !== verified.userId || session.generation !== verified.generation) return undefined;
   return session;
 }

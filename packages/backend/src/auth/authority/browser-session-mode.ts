@@ -181,8 +181,13 @@ export function bridgeTokenKeyFromEnvironment(environment: Environment = process
  * is strong and equals none of the other auth secrets.
  */
 export function browserAccessTokenKeyFromEnvironment(environment: Environment = process.env): BrowserAccessTokenKey {
-  return browserAccessTokenKey(distinctSecret(environment, BROWSER_ACCESS_TOKEN_SECRET_ENV));
+  const secret = distinctSecret(environment, BROWSER_ACCESS_TOKEN_SECRET_ENV);
+  // Every browser request needs the key; derive it once per secret value.
+  if (derivedAccessTokenKey?.secret !== secret) derivedAccessTokenKey = { secret, key: browserAccessTokenKey(secret) };
+  return derivedAccessTokenKey.key;
 }
+
+let derivedAccessTokenKey: { readonly secret: string; readonly key: BrowserAccessTokenKey } | undefined;
 
 /** The named secret, refused unless strong and different from every other auth secret. Never in the message. */
 function distinctSecret(environment: Environment, name: string): string {
