@@ -68,7 +68,7 @@ const runtime = vi.hoisted(() => {
   function useAnimatedReaction<Prepared>(
     prepare: () => Prepared,
     react: (prepared: Prepared, previous: Prepared | null) => void,
-  ) {
+  ): Reaction {
     const reaction: Reaction = { run: () => {}, reads: new Set(), dirty: false };
     let previous: Prepared | null = null;
     reaction.run = () => {
@@ -82,6 +82,12 @@ const runtime = vi.hoisted(() => {
     reactions.push(reaction);
     reaction.run();
     frame();
+    return reaction;
+  }
+  /** A reaction whose dependencies changed: Reanimated drops the old one and starts the new. */
+  function replaceReaction(old: Reaction) {
+    const index = reactions.indexOf(old);
+    if (index >= 0) reactions.splice(index, 1);
   }
   return {
     reactions,
@@ -91,6 +97,7 @@ const runtime = vi.hoisted(() => {
     frame,
     advance,
     useAnimatedReaction,
+    replaceReaction,
     reduceMotion: false,
     reset() {
       reactions.length = 0;
@@ -114,12 +121,22 @@ vi.mock('react-native-reanimated', async () => {
       shared.current ??= runtime.makeShared(initial);
       return shared.current;
     },
-    useAnimatedReaction: (prepare: () => unknown, react: (prepared: unknown, previous: unknown) => void) => {
-      const registered = useRef(false);
-      if (!registered.current) {
-        registered.current = true;
-        runtime.useAnimatedReaction(prepare, react);
-      }
+    useAnimatedReaction: (
+      prepare: () => unknown,
+      react: (prepared: unknown, previous: unknown) => void,
+      dependencies?: unknown[],
+    ) => {
+      const registered = useRef<{ dependencies: unknown[] | undefined; reaction: unknown } | null>(null);
+      const current = registered.current;
+      const changed =
+        current === null ||
+        (dependencies !== undefined &&
+          (current.dependencies === undefined ||
+            dependencies.length !== current.dependencies.length ||
+            dependencies.some((dependency, index) => !Object.is(dependency, current.dependencies?.[index]))));
+      if (!changed) return;
+      if (current !== null) runtime.replaceReaction(current.reaction as Parameters<typeof runtime.replaceReaction>[0]);
+      registered.current = { dependencies, reaction: runtime.useAnimatedReaction(prepare, react) };
     },
   };
 });
@@ -220,6 +237,40 @@ describe('useWallSwap', () => {
     expect(shared.every((weight) => weight === 1)).toBe(true);
   });
 
+  // The PNG board's still wall turns it off and on again on a mounted board:
+  // the GPU board taking over and handing back (playback, a GPU failure), or
+  // `png-wall-fade-kill` flipped live. Steps taken meanwhile are not commits.
+  it('starts from rest on the current page when switched back on', () => {
+    const swipe = pager();
+    const { result, rerender } = renderHook(({ enabled }) => useWallSwap(swipe, 0, enabled), {
+      initialProps: { enabled: true },
+    });
+    const frame = () => [...result.current.value];
+    swipe.translateX.value = -SWIPE_THRESHOLD;
+    runtime.frame();
+    swipe.uiSteps.value = 1;
+    swipe.flingDirection.value = 1;
+    runtime.frame();
+    swipe.anchorPage.value = 1;
+    swipe.flingDirection.value = 0;
+    swipe.translateX.value = 0;
+    runtime.advance(400);
+    expect(frame()).toEqual([1, 1, 0, 1]);
+
+    rerender({ enabled: false });
+    // A swipe on the other board, which this one did not see. The frame rests
+    // on the pager's page meanwhile, so nothing reads a page it has left.
+    swipe.uiSteps.value = 2;
+    swipe.anchorPage.value = 2;
+    runtime.frame();
+    expect(frame()).toEqual([2, 1, 0, 1]);
+    const clocksStarted = runtime.timingConfigs.length;
+
+    rerender({ enabled: true });
+    expect(frame()).toEqual([2, 1, 0, 1]);
+    expect(runtime.timingConfigs).toHaveLength(clocksStarted);
+  });
+
   it('stays at rest for the wipe', () => {
     const { swipe, frame } = mount(false);
     swipe.translateX.value = -SWIPE_THRESHOLD;
@@ -227,6 +278,9 @@ describe('useWallSwap', () => {
     swipe.flingDirection.value = 1;
     runtime.frame();
     expect(frame()).toEqual([0, 1, 0, 1]);
+    swipe.anchorPage.value = 1;
+    runtime.frame();
+    expect(frame()).toEqual([1, 1, 0, 1]);
     expect(runtime.clocks).toHaveLength(0);
   });
 });
