@@ -127,3 +127,56 @@ export async function expectSessionReadNames(page: Page, account: SeededAccount)
     .poll(async () => readSession(page), { timeout: 20_000, message: 'www session read (GET /api/auth/session)' })
     .toMatchObject({ status: 200, userId: account.userId });
 }
+
+/**
+ * Logs `account` in on www from a tab that may already be signed in as
+ * someone else: the credentials POST the login form's `signIn()` sends, with
+ * the csrf token and the browser's cookies, then a full load of /settings. The
+ * login page itself sends a signed-in browser on to its callback, so a second
+ * login in one browser happens like this, from a login form left open in
+ * another tab.
+ */
+export async function signInOverExistingSession(page: Page, account: SeededAccount): Promise<void> {
+  if (!page.url().startsWith(WWW_ORIGIN)) await page.goto(`${WWW_ORIGIN}/help`);
+  const status = await page.evaluate(
+    async ({ email, password }) => {
+      const include = { credentials: 'include' as const, cache: 'no-store' as const };
+      const { csrfToken } = (await (await fetch('/api/auth/csrf', include)).json()) as { csrfToken: string };
+      const response = await fetch('/api/auth/callback/credentials', {
+        ...include,
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ csrfToken, email, password, json: 'true', callbackUrl: '/settings' }),
+      });
+      return response.status;
+    },
+    { email: account.email, password: account.password },
+  );
+  expect(status).toBe(200);
+  await page.goto(`${WWW_ORIGIN}/settings`);
+}
+
+/**
+ * Focuses `page` until its document is replaced (the guard's reload after an
+ * account change), within 90 s. Headless tabs get no real focus change, so it
+ * dispatches `focus` and `visibilitychange`, the listeners a real focus runs;
+ * both clients throttle their focus probe (www to one per 30 s), hence the
+ * repeats. The page must have been marked with `markDocument` first.
+ */
+export async function focusUntilReloaded(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        await page.bringToFront();
+        await page
+          .evaluate(() => {
+            window.dispatchEvent(new Event('focus'));
+            document.dispatchEvent(new Event('visibilitychange'));
+          })
+          .catch(() => undefined);
+        return isSameDocument(page);
+      },
+      { timeout: 90_000, intervals: [2_000, 5_000, 10_000], message: 'the tab reloads after the account change' },
+    )
+    .toBe(false);
+}

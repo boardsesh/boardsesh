@@ -1,5 +1,12 @@
 import type { Page } from '@playwright/test';
-import { openApp, readSession, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
+import {
+  expectSessionReadNames,
+  openApp,
+  readSession,
+  readViewer,
+  signInOnWww,
+  signInOverExistingSession,
+} from './helpers';
 import { BRIDGED_COOKIE, LEGACY_COOKIE, LOGIN_COOKIE, WWW_ORIGIN } from './stack';
 import { expect, sessionSetCookies, test } from './fixtures';
 
@@ -71,11 +78,18 @@ test('rollback keeps browsers signed in through the legacy twin, and a newer leg
       expect(await readViewer(appPage)).toMatchObject({ authenticated: true, userId: first.userId });
       await appPage.close();
     });
-    // No cookie-clearing step: nothing cleared a session cookie on the way.
-    expect(sessionSetCookies(underLegacy.records).filter((cookie) => cookie.clears)).toEqual([]);
+    // No cookie-clearing step: nothing cleared a cookie this browser holds. The only clears are
+    // NextAuth's own host-only deletion of the legacy name (no Domain), which legacy www sends
+    // beside every write of its cookie since the shared domain (secure-cookies.ts); the browser's
+    // Domain-scoped twin is not touched by it, and is still there below.
+    for (const cookie of sessionSetCookies(underLegacy.records).filter((written) => written.clears)) {
+      expect(cookie.name).toBe(LEGACY_COOKIE);
+      expect(cookie.attributes.some((attribute) => attribute.startsWith('Domain='))).toBe(false);
+    }
+    expect(await sessionCookieNames(page)).toContain(LEGACY_COOKIE);
 
     // Someone else logs in on this browser while the mode is rolled back.
-    await signInOnWww(page, second);
+    await signInOverExistingSession(page, second);
     await expectSessionReadNames(page, second);
     expect((await readViewer(page)).userId).toBe(second.userId);
   } finally {
@@ -103,6 +117,9 @@ test('a newer legacy login beside a stale first-party login cookie replaces it',
   await expectSessionReadNames(page, stale);
   expect(await sessionCookieNames(page)).toContain(LOGIN_COOKIE);
   // A legacy login of someone else, written later than the first-party login, outside /api/auth/*.
+  // `auth_time` counts whole seconds and must be later than the session's sign-in time, so the
+  // two logins are at least a second apart, as two real sign-ins are.
+  await page.waitForTimeout(1_100);
   await context.clearCookies({ name: LEGACY_COOKIE });
   const minted = await legacySession.addTo(context, newer, 'normal');
 

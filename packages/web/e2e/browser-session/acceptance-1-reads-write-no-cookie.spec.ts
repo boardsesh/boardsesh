@@ -115,7 +115,7 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
   expect(await readViewer(page)).toEqual(viewer);
 });
 
-test('@smoke the session read that bridges a pre-cutover cookie writes exactly the bridged cookie, once', async ({
+test('@smoke only the session read that bridges a pre-cutover cookie writes, and only the bridged cookie', async ({
   context,
   page,
   freshAccount,
@@ -124,20 +124,32 @@ test('@smoke the session read that bridges a pre-cutover cookie writes exactly t
 }) => {
   const account = freshAccount();
   const minted = await legacySession.addTo(context, account, 'normal');
-  const window = await edgeCookies.during(async () => {
+  const hasBridgedCookie = async () => (await context.cookies()).some((cookie) => cookie.name === BRIDGED_COOKIE);
+  // The page's own session reads, and nothing of the spec's, until the browser holds the bridged cookie.
+  const bridging = await edgeCookies.during(async () => {
     await page.goto(`${WWW_ORIGIN}/settings`);
-    await expect.poll(async () => (await readSession(page)).userId).toBe(account.userId);
+    await expect.poll(hasBridgedCookie, { timeout: 20_000 }).toBe(true);
+  });
+  const writes = sessionSetCookies(bridging.records);
+  // Reads that left before the first answer landed each bridge, to the same token by design
+  // (owner decision 3); each writes the bridged cookie and nothing else.
+  expect(writes.length).toBeGreaterThan(0);
+  for (const cookie of writes) {
+    expect(cookie).toMatchObject({ host: WWW_HOST, path: '/api/auth/session', name: BRIDGED_COOKIE, clears: false });
+    expect(cookie.attributes).toEqual(
+      expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax']),
+    );
+  }
+  for (const record of bridging.records.filter((entry) => sessionSetCookies([entry]).length > 0))
+    expect(`${record.method} ${record.path}`).toBe('GET /api/auth/session');
+
+  // Once the browser holds it, no read writes anything, the legacy cookie stays.
+  const after = await edgeCookies.during(async () => {
     await page.reload();
     await readSession(page);
     await readViewer(page);
   });
-  const writes = sessionSetCookies(window.records);
-  expect(writes).toEqual([
-    expect.objectContaining({ host: WWW_HOST, path: '/api/auth/session', name: BRIDGED_COOKIE, clears: false }),
-  ]);
-  expect(writes[0]?.attributes).toEqual(
-    expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax']),
-  );
+  expect(sessionSetCookies(after.records)).toEqual([]);
   // The bridged session keeps the legacy cookie's session id.
   expect(await readViewer(page)).toEqual({
     authenticated: true,

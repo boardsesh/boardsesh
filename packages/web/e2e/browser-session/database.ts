@@ -92,10 +92,12 @@ async function run(sql: SqlClient, command: string | undefined, args: string[]):
     `;
     print({ aged: aged.length });
   } else if (command === 'session-expiry') {
-    const [row] = await sql<{ expiresAt: Date }[]>`
-      SELECT expires_at AS "expiresAt" FROM auth_session WHERE id = ${sessionId ?? ''} AND user_id = ${userId}
+    // The column has no time zone and holds UTC; render it as an ISO instant in SQL.
+    const [row] = await sql<{ expiresAt: string }[]>`
+      SELECT to_char(expires_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
+      FROM auth_session WHERE id = ${sessionId ?? ''} AND user_id = ${userId}
     `;
-    print({ expiresAt: row?.expiresAt.toISOString() ?? null });
+    print({ expiresAt: row?.expiresAt ?? null });
   } else {
     throw new Error(`Unknown command ${command ?? '(none)'}.`);
   }

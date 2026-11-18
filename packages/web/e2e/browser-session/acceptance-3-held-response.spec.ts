@@ -1,5 +1,14 @@
 import type { Page, Route } from '@playwright/test';
-import { isSameDocument, markDocument, openApp, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
+import {
+  focusUntilReloaded,
+  isSameDocument,
+  signInOverExistingSession,
+  markDocument,
+  openApp,
+  readViewer,
+  signInOnWww,
+  expectSessionReadNames,
+} from './helpers';
 import { APP_ORIGIN, WS_HOST, WWW_ORIGIN } from './stack';
 import { expect, test } from './fixtures';
 
@@ -29,7 +38,7 @@ import { expect, test } from './fixtures';
 
 test.skip(process.env.AUTH_BROWSER_SESSION_MODE !== 'better-auth', 'Runs under AUTH_BROWSER_SESSION_MODE=better-auth.');
 
-const PASSWORD_SET = 'Password set! You can now log in with your email and password.';
+const PROFILE_ERROR = 'Failed to load profile';
 
 /** Holds every matching reply after the server answered it, until `release()`. */
 async function holdReplies(page: Page, url: string | RegExp) {
@@ -60,10 +69,9 @@ async function expectNeverVisible(page: Page, text: string): Promise<void> {
   }
 }
 
-test("www: a set-password reply of A's held across a switch to B shows no toast and the tab reloads as B", async ({
+test("www: A's profile reply held across a switch to B shows nothing and the tab reloads as B", async ({
   context,
   freshAccount,
-  accountDatabase,
 }, testInfo) => {
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
   const accountA = freshAccount();
@@ -71,23 +79,23 @@ test("www: a set-password reply of A's held across a switch to B shows no toast 
   const pageA = await context.newPage();
   await signInOnWww(pageA, accountA);
   await expectSessionReadNames(pageA, accountA);
-  accountDatabase.removePassword(accountA);
+  // Settings reads the viewer's profile through the guarded transport on load; hold A's reply.
+  const held = await holdReplies(pageA, `${WWW_ORIGIN}/api/internal/profile`);
   await pageA.goto(`${WWW_ORIGIN}/settings`);
-  await pageA.getByLabel('Password', { exact: true }).fill(accountA.password);
-  await pageA.getByLabel('Confirm Password').fill(accountA.password);
-  const held = await holdReplies(pageA, `${WWW_ORIGIN}/api/internal/set-password`);
   await markDocument(pageA);
-  await pageA.getByRole('button', { name: 'Set Password' }).click();
-  await expect.poll(held.count).toBe(1);
+  await expect.poll(held.count, { timeout: 60_000 }).toBeGreaterThan(0);
 
   const pageB = await context.newPage();
-  await signInOnWww(pageB, accountB);
+  await signInOverExistingSession(pageB, accountB);
   await expectSessionReadNames(pageB, accountB);
+  // The A tab learns of the switch the way a climber's tab does, on focus, and reloads as B.
+  await focusUntilReloaded(pageA);
   held.release();
+  await pageA.unrouteAll({ behavior: 'ignoreErrors' });
 
-  await expect.poll(() => isSameDocument(pageA), { timeout: 60_000 }).toBe(false);
   await pageA.waitForLoadState('load');
-  await expectNeverVisible(pageA, PASSWORD_SET);
+  await expectNeverVisible(pageA, PROFILE_ERROR);
+  await expectNeverVisible(pageA, accountA.email);
   expect(new URL(pageA.url()).pathname).toBe('/');
   expect(await readViewer(pageA)).toMatchObject({ authenticated: true, userId: accountB.userId });
 });
@@ -111,18 +119,9 @@ test("app: GraphQL replies of A's held across a switch to B land nowhere and the
   await markDocument(appPage);
   await expect.poll(held.count, { timeout: 60_000 }).toBeGreaterThan(0);
 
-  await signInOnWww(wwwPage, accountB);
+  await signInOverExistingSession(wwwPage, accountB);
   await expectSessionReadNames(wwwPage, accountB);
-  await expect
-    .poll(
-      async () => {
-        await appPage.bringToFront();
-        await appPage.evaluate(() => window.dispatchEvent(new Event('focus'))).catch(() => undefined);
-        return isSameDocument(appPage);
-      },
-      { timeout: 90_000, intervals: [2_000, 5_000, 10_000] },
-    )
-    .toBe(false);
+  await focusUntilReloaded(appPage);
   held.release();
   await appPage.unrouteAll({ behavior: 'ignoreErrors' });
   await expect(appPage.getByRole('tab', { name: 'Home', exact: true })).toBeVisible({ timeout: 120_000 });
@@ -131,7 +130,7 @@ test("app: GraphQL replies of A's held across a switch to B land nowhere and the
   expect(await readViewer(appPage)).toMatchObject({ authenticated: true, userId: accountB.userId });
 });
 
-test('back/forward cache: a page of A restored after the switch re-reads the session and does not show A', async ({
+test('back/forward cache: a page of A restored after the switch re-reads the session and is replaced', async ({
   context,
   freshAccount,
 }, testInfo) => {
@@ -145,7 +144,8 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
   await signInOnWww(pageA, accountA);
   await expectSessionReadNames(pageA, accountA);
   await pageA.goto(`${WWW_ORIGIN}/settings`);
-  await expect(pageA.getByText(accountA.email).first()).toBeVisible({ timeout: 60_000 });
+  await expect(pageA.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 60_000 });
+  await markDocument(pageA);
   await pageA.evaluate(() => {
     window.addEventListener('pageshow', (event) => {
       const record = window as unknown as { __restored?: boolean };
@@ -155,7 +155,7 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
   await pageA.goto(`${WWW_ORIGIN}/help`);
 
   const pageB = await context.newPage();
-  await signInOnWww(pageB, accountB);
+  await signInOverExistingSession(pageB, accountB);
   await expectSessionReadNames(pageB, accountB);
   const sessionReads: string[] = [];
   pageA.on('request', (request) => {
@@ -167,8 +167,9 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
     .catch(() => false);
   testInfo.annotations.push({ type: 'bfcache', description: `restored=${restored}` });
   expect(restored, 'the back navigation restored the page from the back/forward cache').toBe(true);
+  // The restored page asks who is signed in, finds B, and goes: the guard's reload from the root.
   await expect.poll(() => sessionReads.length, { timeout: 30_000 }).toBeGreaterThan(0);
-  await expect(pageA.getByText(accountA.email)).toHaveCount(0, { timeout: 60_000 });
+  await expect.poll(() => isSameDocument(pageA), { timeout: 60_000 }).toBe(false);
   expect(await readViewer(pageA)).toMatchObject({ userId: accountB.userId });
 });
 
@@ -188,7 +189,7 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
   await signInOnWww(pageA, accountA);
   await expectSessionReadNames(pageA, accountA);
   await pageA.goto(`${WWW_ORIGIN}/settings`);
-  await expect(pageA.getByText(accountA.email).first()).toBeVisible({ timeout: 60_000 });
+  await expect(pageA.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 60_000 });
   await markDocument(pageA);
   // A client-side navigation away, so going back is served from the Router Cache.
   await pageA.locator('a[href="/"]').first().click();
@@ -197,9 +198,11 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
   testInfo.annotations.push({ type: 'router-cache', description: `soft navigation=${softNavigation}` });
 
   const pageB = await context.newPage();
-  await signInOnWww(pageB, accountB);
+  await signInOverExistingSession(pageB, accountB);
   await expectSessionReadNames(pageB, accountB);
   await pageA.goBack();
-  await expect(pageA.getByText(accountA.email)).toHaveCount(0, { timeout: 60_000 });
+  // A's page must not stay up under B: the guard re-reads on focus and reloads from the root.
+  await focusUntilReloaded(pageA);
+  expect(new URL(pageA.url()).pathname).toBe('/');
   expect(await readViewer(pageA)).toMatchObject({ userId: accountB.userId });
 });

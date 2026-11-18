@@ -1,11 +1,11 @@
 import type { Page } from '@playwright/test';
 import { isSameDocument, markDocument, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
-import { WWW_HOST, WWW_ORIGIN } from './stack';
+import { WWW_ORIGIN } from './stack';
 import { expect, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 4, under AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium
- * and WebKit, through the Settings card a climber uses:
+ * and WebKit, through the request the Settings set-password card sends:
  *
  * - On a bridged session (a pre-cutover cookie) set-password asks for a new
  *   sign-in and sets nothing: a bridged session never counts as fresh.
@@ -19,13 +19,34 @@ import { expect, sessionSetCookies, test } from './fixtures';
 
 test.skip(process.env.AUTH_BROWSER_SESSION_MODE !== 'better-auth', 'Runs under AUTH_BROWSER_SESSION_MODE=better-auth.');
 
-const PASSWORD_SET = 'Password set! You can now log in with your email and password.';
-const SIGN_IN_AGAIN = 'Sign in again to set a password.';
-
-async function submitPassword(page: Page, password: string): Promise<void> {
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByLabel('Confirm Password').fill(password);
-  await page.getByRole('button', { name: 'Set Password' }).click();
+/**
+ * The Settings card's request (`set-password-section.tsx`): the guard's expected-viewer header
+ * and the expected login in the body. With provider security staged on www, as here, Settings
+ * shows the sign-in methods card and its first-password flow instead of that card, so the
+ * route is driven from the page as the card drives it; the page and its guard stay loaded.
+ */
+async function setPassword(page: Page, password: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { userId, authSessionId } = await readViewer(page);
+  return page.evaluate(
+    async ({ origin, expected, chosen }) => {
+      const response = await fetch(`${origin}/api/internal/set-password`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'content-type': 'application/json',
+          'X-Boardsesh-Expected-Viewer': `${expected.userId}:${expected.authSessionId}`,
+        },
+        body: JSON.stringify({
+          password: chosen,
+          confirmPassword: chosen,
+          expectedUserId: expected.userId,
+          expectedAuthSessionId: expected.authSessionId,
+        }),
+      });
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    },
+    { origin: WWW_ORIGIN, expected: { userId: userId ?? '', authSessionId: authSessionId ?? '' }, chosen: password },
+  );
 }
 
 test('on a bridged session it asks for a new sign-in and sets nothing', async ({
@@ -42,16 +63,12 @@ test('on a bridged session it asks for a new sign-in and sets nothing', async ({
   await page.goto(`${WWW_ORIGIN}/settings`);
   await expect.poll(async () => (await readViewer(page)).authSessionId).toBe(minted.authSessionId);
 
-  const attempt = await edgeCookies.during(async () => {
-    await submitPassword(page, account.password);
-    await expect(page.getByText(SIGN_IN_AGAIN)).toBeVisible({ timeout: 30_000 });
+  const attempt = await edgeCookies.during(() => setPassword(page, account.password));
+  expect(attempt.result).toEqual({
+    status: 403,
+    body: expect.objectContaining({ error: 'reauthentication_required' }),
   });
-  const reply = attempt.records.find(
-    (record) => record.host === WWW_HOST && record.path === '/api/internal/set-password',
-  );
-  expect(reply?.status).toBe(403);
   expect(sessionSetCookies(attempt.records)).toEqual([]);
-  await expect(page.getByText(PASSWORD_SET)).toHaveCount(0);
   // Still the bridged session.
   expect(await readViewer(page)).toMatchObject({ userId: account.userId, authSessionId: minted.authSessionId });
 });
@@ -75,14 +92,8 @@ test('on a fresh login it succeeds with no reload and no cookie, and signs the o
 
   await page.goto(`${WWW_ORIGIN}/settings`);
   await markDocument(page);
-  const change = await edgeCookies.during(async () => {
-    await submitPassword(page, account.password);
-    await expect(page.getByText(PASSWORD_SET)).toBeVisible({ timeout: 30_000 });
-  });
-  const reply = change.records.find(
-    (record) => record.host === WWW_HOST && record.path === '/api/internal/set-password',
-  );
-  expect(reply?.status).toBe(200);
+  const change = await edgeCookies.during(() => setPassword(page, account.password));
+  expect(change.result).toEqual({ status: 200, body: { outcome: 'set' } });
   expect(sessionSetCookies(change.records)).toEqual([]);
 
   // Same tab, same document, same session.

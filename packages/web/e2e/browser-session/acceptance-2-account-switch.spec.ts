@@ -7,6 +7,7 @@ import {
   openApp,
   readViewer,
   signInOnWww,
+  signInOverExistingSession,
   signOutOnWww,
   expectSessionReadNames,
 } from './helpers';
@@ -98,7 +99,7 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
   await markDocument(appPage);
 
   // B logs in on www in the same context, presenting A's cookie.
-  await signInOnWww(wwwPage, accountB);
+  await signInOverExistingSession(wwwPage, accountB);
   await expectSessionReadNames(wwwPage, accountB);
   expect((await readViewer(wwwPage)).userId).toBe(accountB.userId);
 
