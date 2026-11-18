@@ -20,7 +20,7 @@ describe('first-password existing maintenance drain', () => {
     vi.clearAllMocks();
     dependencies.claims.mockResolvedValue(undefined);
     dependencies.emails.mockResolvedValue(undefined);
-    dependencies.guessPrune.mockResolvedValue('done');
+    dependencies.guessPrune.mockResolvedValue({ result: 'done', deleted: 0, batches: 1, drained: true });
   });
   afterEach(() => vi.restoreAllMocks());
   it('keeps the existing worker promise pending until the bounded credential task drains, with no new timer', async () => {
