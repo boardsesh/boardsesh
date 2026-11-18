@@ -1146,8 +1146,9 @@ locked in one pass through `lockWebSessionAccounts` (the provider's owner FOR
 UPDATE, since resolution writes its rows, and the presented account FOR
 UPDATE), after the provider-subject lock, so crossed sign-ins queue. A session
 request needs `actorCookie: null`: a sign-in never links a provider to the
-account it arrived as, and an unknown provider creates a new account as a
-signed-out sign-in does. Freshness: Google is a `login` only when the backend
+account it arrived as. An unknown provider creates a new account as a
+signed-out sign-in does, unless a live session is presented: then it is
+`link_required` (decision D1, B5e1, below). Freshness: Google is a `login` only when the backend
 verifies a signed `auth_time` under five minutes old for this subject
 (`CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE=auth-time-staging`), with the
 nonce bound into the intent's `flow` (`flow` = SHA-256 hex of
@@ -1239,9 +1240,8 @@ start through `/api/auth/signin/*` is an explicit sign-in
   making a climber already signed in to Google sign in again. The backend counts
   the session as a fresh login only when Google's own `auth_time` is under five
   minutes old; a silent sign-in is `carried` and never passes a five-minute
-  check. A forced reauthentication (`max_age=0`) is B5e1's entry point
-  (`googleSessionAuthorizationParams({ reauthenticate: true })`). Apple
-  sign-ins are always `carried`.
+  check. A forced reauthentication (`max_age=0`) is B5e1's re-sign-in page
+  (`/auth/reauthenticate`, below). Apple sign-ins are always `carried`.
 - The B1c rule that clears the first-party names on a legacy provider login
   now applies only to providers that still sign in on the legacy cookie alone
   (the native transfer until B4c), not to Google or Apple.
@@ -1251,21 +1251,52 @@ start through `/api/auth/signin/*` is an explicit sign-in
 `web-provider-session.integration.proof.ts` drives Google end to end through
 the real route against a loopback stand-in that signs real ID tokens, the real
 backend web OAuth and web-session handlers and real PostgreSQL. Apple runs the
-same code with no nonce, but is not driven end to end there. A Google ID
-token without `auth_time` (Google ignoring `max_age`) signs in as `carried`
-(proven).
+same code with no nonce, but is not driven end to end there, so
+`B5B_WWW_PROVIDER_SIGN_IN` stays on the www cutover list. A Google ID token
+without `auth_time` (Google ignoring `max_age`) signs in as `carried`
+(proven). Runbook note: a Google flow started in one mode and finished in the
+other answers the outage page; it lasts 15 minutes at most, and starting again
+works.
 
-What is still open before `B5B_WWW_PROVIDER_SIGN_IN` leaves the www cutover
-list: under the mode nobody can link a provider until B5e1 (a signed-in
-climber who signs in with an unknown Google or Apple identity gets a new
-account today, and with the email of an existing account gets the
-`email_conflict` page). Owner decision D1: the backend will answer
-`link_required` for an unknown identity presented with a live session (no
-account created, the presented session kept), and www will show "you are
-signed in as X; connect Google or Apple from Settings" with no cookie change.
-Both halves land in B5e1. Runbook note: a Google flow started in one mode and
-finished in the other answers the outage page; it lasts 15 minutes at most,
-and starting again works.
+**Signed in, an unknown provider identity is `link_required` (decision D1,
+B5e1).** When `resolve` with `webSession` presents a live session (canonical,
+bridged or legacy, admitted by the reader) and no account owns the verified
+provider subject, the backend answers the denial code `link_required` (409):
+no account and no provider row are created, the presented session is kept,
+and the intent is consumed like any other end. A known subject still signs in
+and ends the presented session; with no live presented session an unknown
+subject still creates an account. www sends the browser to
+`/auth/error?error=OAuthLinkRequired` ("You're signed in as X. To sign in with
+this Google or Apple account, connect it from Settings first.") and changes no
+cookie. It is checked before the email rule, so a signed-in climber who brings
+an unknown identity with another account's address also gets `link_required`;
+signed out, that is still `email_conflict`.
+
+### Forced re-sign-in (B5e1)
+
+`/auth/reauthenticate?callbackUrl=…` (#7655 item 6).
+One page for Settings, the developer console and partner pages, under
+`better-auth` only (404 otherwise; signed-out browsers go to the login page
+first). It is a real sign-in of the account already signed in: its password
+through the credentials login, or Google through the sign-in route with
+`max_age=0` and `prompt=select_account consent`. Either is a login, so the
+backend issues a new session whose sign-in time is now (Google only with a
+signed `auth_time` under five minutes old) and ends the old one, and the
+browser returns to the `callbackUrl`, reduced to a same-origin path
+(`safeCallbackUrl`). A silent Google sign-in cannot satisfy a five-minute
+check. Apple-only accounts are told to set a password first. Settings' link
+and unlink use the per-intent reauthentication of the provider-security
+commands instead, which does not touch the session's sign-in time; the console
+and partner pages need the session's own sign-in time, which only a login
+moves. The page asks the provider-security `methods` read which ways the
+account can confirm, and offers both when it does not answer.
+
+Owner check against real Google, before the mode goes on: Google accepts
+`max_age=0` with `prompt=select_account consent` (no 400), asks for the
+password, and the ID token's `auth_time` moves to that moment (#7590).
+`web-provider-session.integration.proof.ts` proves the rest against the
+stand-in: the start sends both values, the answer is a login with its twin,
+and only a fresh `auth_time` passes a five-minute check.
 
 ## What is removed, and why
 

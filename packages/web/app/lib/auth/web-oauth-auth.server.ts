@@ -18,6 +18,8 @@ type ResolvedIdentity = Extract<WebOAuthResolveReply, { outcome: 'resolved' }>;
 const ACTIONABLE_DENIAL_REDIRECTS: Partial<Record<WebOAuthResolveDenialCode, string>> = {
   email_conflict: '/auth/error?error=OAuthAccountNotLinked',
   email_required: '/auth/error?error=OAuthEmailRequired',
+  // Signed in, and no account has this provider identity yet (D1, #7596 B5e1).
+  link_required: '/auth/error?error=OAuthLinkRequired',
 };
 export interface WebOAuthRequestBinding {
   provider: WebOAuthProvider;

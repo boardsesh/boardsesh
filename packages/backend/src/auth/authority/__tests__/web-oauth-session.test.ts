@@ -302,8 +302,37 @@ describe('web OAuth sign-in issues a first-party web session (#7596 B5a)', () =>
     expect(await environment.database.select().from(authProviderReauthenticationReceipts)).toEqual(receiptsBefore);
   });
 
-  it('an unknown provider while signed in creates a new account and links nothing to the presented one', async () => {
+  it.each(['canonical-token', 'legacy-jwe'] as const)(
+    'an unknown provider while signed in (%s) is link_required: no account, no row, presented kept, intent spent (D1)',
+    async (kind) => {
+      const previous = await environment.actor('better-auth', kind);
+      const subject = randomUUID();
+      const usersBefore = await environment.database.select({ id: users.id }).from(users);
+      const sessionsBefore = await environment.database.select().from(authSession);
+      const flow = randomBytes(32).toString('hex');
+      const reply = await signIn({
+        provider: 'google',
+        subject,
+        flow,
+        webSession: { presented: presentedOf(previous) },
+      });
+      expect(reply).toMatchObject({ outcome: 'denied', code: 'link_required' });
+      expect(await environment.database.select({ id: users.id }).from(users)).toHaveLength(usersBefore.length);
+      expect(await environment.database.select().from(authSession)).toEqual(sessionsBefore);
+      expect(await linkedTo(previous.userId, subject)).toBe(false);
+      expect((await admit(previous.credential)).status).toBe('admitted');
+      // The intent ended like any other outcome: the same flow cannot be resolved again.
+      expect(await resolve({ provider: 'google', subject, flow, webSession: {} })).toMatchObject({ outcome: 'denied' });
+    },
+  );
+
+  it('an unknown provider with no live presented session still creates the account (D1 applies to live sessions only)', async () => {
     const previous = await environment.actor('better-auth', 'canonical-token');
+    await environment.database
+      .update(authSession)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(authSession.id, previous.webActor.expectedAuthSessionId));
+    expect((await admit(previous.credential)).status).not.toBe('admitted');
     const subject = randomUUID();
     const reply = resolved(
       await signIn({ provider: 'google', subject, webSession: { presented: presentedOf(previous) } }),
@@ -312,7 +341,6 @@ describe('web OAuth sign-in issues a first-party web session (#7596 B5a)', () =>
     expect(reply.user.id).not.toBe(previous.userId);
     expect(await linkedTo(previous.userId, subject)).toBe(false);
     expect(await linkedTo(reply.user.id, subject)).toBe(true);
-    expect(await admit(previous.credential)).toEqual({ status: 'denied' });
   });
 
   it('two crossed sign-ins, each presenting the other account, both finish and both presented sessions end', async () => {
@@ -385,7 +413,18 @@ describe('web OAuth sign-in issues a first-party web session (#7596 B5a)', () =>
     ).toHaveLength(1);
   });
 
-  it('an email that belongs to another account is a conflict: no session, no provider row, presented kept', async () => {
+  it('an email that belongs to another account is a conflict when signed out: no session, no provider row', async () => {
+    const existing = await providerOwner('apple');
+    const [stored] = await environment.database.select().from(users).where(eq(users.id, existing.userId));
+    const sessionsBefore = await environment.database.select().from(authSession);
+    const subject = randomUUID();
+    const reply = await signIn({ provider: 'google', subject, email: stored.email.toUpperCase(), webSession: {} });
+    expect(reply).toMatchObject({ outcome: 'denied', code: 'email_conflict' });
+    expect(await environment.database.select().from(authSession)).toEqual(sessionsBefore);
+    expect(await linkedTo(existing.userId, subject)).toBe(false);
+  });
+
+  it('signed in, an unknown provider with the email of another account is link_required, presented kept (D1)', async () => {
     const existing = await providerOwner('apple');
     const [stored] = await environment.database.select().from(users).where(eq(users.id, existing.userId));
     const previous = await environment.actor('better-auth', 'canonical-token');
@@ -397,7 +436,7 @@ describe('web OAuth sign-in issues a first-party web session (#7596 B5a)', () =>
       email: stored.email.toUpperCase(),
       webSession: { presented: presentedOf(previous) },
     });
-    expect(reply).toMatchObject({ outcome: 'denied', code: 'email_conflict' });
+    expect(reply).toMatchObject({ outcome: 'denied', code: 'link_required' });
     expect(await environment.database.select().from(authSession)).toEqual(sessionsBefore);
     expect(await linkedTo(existing.userId, subject)).toBe(false);
     expect((await admit(previous.credential)).status).toBe('admitted');
