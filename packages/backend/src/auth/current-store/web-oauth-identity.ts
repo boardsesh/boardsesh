@@ -3,12 +3,13 @@ import { readLockedWebSubjectState } from './web-credential-state';
 import { issueWebCredentialProof } from './web-credential-proof';
 import { createHash } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
-import { authSubjectCutoffs, authWebOAuthCommands, authWebOAuthIntents } from '@boardsesh/db/schema/auth';
+import { authSubjectCutoffs, authWebOAuthCommands, authWebOAuthIntents, users } from '@boardsesh/db/schema/auth';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   AUTH_COMMAND_FUTURE_SKEW_MS,
   AUTH_COMMAND_MAX_AGE_MS,
   AUTH_COMMAND_TIMEOUT_MS,
+  WEB_OAUTH_GOOGLE_NONCE_DOMAIN,
   WEB_OAUTH_PROTOCOL_VERSION,
   providerSecurityMode,
   webOAuthProviderSchema,
@@ -20,6 +21,7 @@ import {
   type WebOAuthResolveDenialCode,
   type WebOAuthIntentReply,
   type WebOAuthResolveReply,
+  type WebOAuthSessionRequest,
 } from '@boardsesh/auth-protocol';
 import { assertFresh, transactionSettings } from './command-context';
 import {
@@ -34,6 +36,16 @@ import { readNegativeWebOAuthActor, webOAuthActorStillValid, type NegativeWebOAu
 import { resolveReservedCurrentStoreOAuthIdentity } from './provider-oauth-identity';
 import { readIdentityAuthority, revalidateIdentityAuthority } from '../authority/router';
 import { bindIdentityAuthority } from '../authority/identity-authority';
+import { issueWebSession, lockWebSessionAccounts, readPresentedWebSession } from '../authority/web-session';
+import type { FirstPartySession } from '../authority/session-reader';
+import {
+  verifyProviderGoogleAuthenticationAssertion,
+  type VerifiedGoogleAuthenticationAssertion,
+} from '../authority/provider-google-reauthentication';
+import {
+  captureProviderSecurityMethodsConfiguration,
+  googleReauthenticationDeadline,
+} from '../authority/provider-security-policy';
 
 export const WEB_OAUTH_INTENT_LIFETIME_MS = 15 * 60_000;
 type Unavailable = { readonly outcome: 'unavailable' };
@@ -111,6 +123,34 @@ function sameBinding(before: Intent, after: Intent) {
   );
 }
 
+/**
+ * A Google sign-in counts as fresh only with a signed `auth_time` the backend
+ * verifies itself (`CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE`), for this
+ * subject, with a nonce bound into this intent's flow. Anything else is null:
+ * the session is then `carried`, never refused for it.
+ */
+async function verifyFreshGoogleSignIn(
+  provider: string,
+  flow: string,
+  subject: string,
+  request: WebOAuthSessionRequest | undefined,
+): Promise<VerifiedGoogleAuthenticationAssertion | null> {
+  const proof = request?.googleAuthentication;
+  if (provider !== 'google' || !proof) return null;
+  const configuration = captureProviderSecurityMethodsConfiguration(process.env);
+  if (!configuration.googleReauthenticationEnabled) return null;
+  if (digest([WEB_OAUTH_GOOGLE_NONCE_DOMAIN, proof.nonce]) !== flow) return null;
+  try {
+    const assertion = await verifyProviderGoogleAuthenticationAssertion(configuration, {
+      idToken: proof.idToken,
+      nonce: proof.nonce,
+    });
+    return assertion && assertion.subject === subject ? assertion : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Trusted web verifies the provider; backend exclusively resolves and writes identity. */
 export async function recordWebOAuthIntent(
   database: DbInstance,
@@ -183,6 +223,18 @@ export async function resolveWebOAuthIdentity(
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { provider, flow, actorCookie, subject, email, name, image } = input.payload;
   if (!webOAuthProviderSchema.safeParse(provider).success) return denied('resolve', requestId);
+  // A sign-in that asks for a web session links nothing to the session it
+  // arrived with: that session is presented only to be revoked.
+  const sessionRequest = input.webSession
+    ? Object.freeze({
+        presented: input.webSession.presented && Object.freeze({ ...input.webSession.presented }),
+        googleAuthentication:
+          input.webSession.googleAuthentication && Object.freeze({ ...input.webSession.googleAuthentication }),
+      })
+    : undefined;
+  if (sessionRequest && actorCookie !== null) return denied('resolve', requestId);
+  // Network verification before any transaction or lock.
+  const freshGoogle = await verifyFreshGoogleSignIn(provider, flow, subject, sessionRequest);
   const receipt = await readIdentityAuthority(database, configuredAuthority);
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   const captured = await captureActor(actorCookie, nextAuthSecret);
@@ -195,6 +247,83 @@ export async function resolveWebOAuthIdentity(
     ? { ...initial, issuedAt: new Date(initial.issuedAt), expiresAt: new Date(initial.expiresAt) }
     : undefined;
   return database.transaction(async (transaction) => {
+    let presentedSession: FirstPartySession | undefined;
+    let intentExpiresAt = new Date(0);
+    /**
+     * Issues the session for the resolved account, revoking the presented
+     * one, and the rollback proof under the same session id and generation.
+     * Google is a fresh `login` only with the verified `auth_time` above;
+     * otherwise, and always for Apple, the session is `carried`, keeping this
+     * sign-in's time without ever passing a five-minute check, and the proof
+     * says so to www by `authenticatedAt: null, linkGuarded: false`, so the
+     * legacy rollback cookie carries no `auth_time` either.
+     */
+    async function signInWithWebSession(
+      locked: CurrentStoreTransaction,
+      user: {
+        id: string;
+        email: string;
+        name: string | null;
+        image: string | null;
+        emailVerified: Date | null;
+        createdAt: Date;
+      },
+      createdUser: boolean,
+    ): Promise<WebOAuthResolveReply> {
+      const now = new Date(await nowMilliseconds(locked));
+      const freshUntil = freshGoogle
+        ? googleReauthenticationDeadline(freshGoogle.authenticatedAt, freshGoogle.expiresAt, now, intentExpiresAt)
+        : null;
+      const fresh = freshGoogle !== null && freshUntil !== null;
+      const webSession = await issueWebSession(locked, {
+        userId: user.id,
+        authenticatedAt: fresh ? new Date(freshGoogle.authenticatedAt * 1000) : now,
+        freshness: fresh ? 'login' : 'carried',
+        presented: presentedSession,
+        now,
+        authority: receipt,
+      });
+      const issuedProof = await issueWebCredentialProof(
+        locked,
+        user.id,
+        credentialProofVersion,
+        webSession.generation,
+        webSession.sessionId,
+      );
+      if (
+        issuedProof &&
+        (issuedProof.generation !== webSession.generation || issuedProof.authSessionId !== webSession.sessionId)
+      )
+        throw new Error('Web credential proof and web session disagree');
+      const credentialProof = issuedProof && {
+        ...issuedProof,
+        authenticatedAt: fresh ? new Date(freshGoogle.authenticatedAt * 1000).toISOString() : null,
+        linkGuarded: fresh,
+      };
+      return webOAuthResolveReplySchema.parse({
+        webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
+        operation: 'resolve',
+        requestId,
+        outcome: 'resolved',
+        ...(credentialProof ? { credentialProof } : {}),
+        webSession: {
+          sessionId: webSession.sessionId,
+          token: webSession.token,
+          expiresAt: webSession.expiresAt.toISOString(),
+          generation: webSession.generation,
+        },
+        createdUser,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          emailVerified: user.emailVerified?.toISOString() ?? null,
+          createdAt: user.createdAt.toISOString(),
+        },
+        account: { provider, providerAccountId: subject },
+      });
+    }
     const execute = async (): Promise<WebOAuthResolveReply | Unavailable> => {
       await transactionSettings(transaction);
       await lockEnforcedProjection(transaction, authority);
@@ -278,6 +407,26 @@ export async function resolveWebOAuthIdentity(
         )
         .returning({ intentHash: authWebOAuthIntents.intentHash });
       if (consumed.length !== 1) return denied('resolve', requestId);
+      // Users rows in one pass, in id order, each at its final strength: the
+      // provider's owner FOR UPDATE (identity resolution writes its rows) and
+      // the presented account FOR UPDATE (its session is revoked). Crossed
+      // sign-ins queue instead of deadlocking (#7596 B5a).
+      intentExpiresAt = intent.expiresAt;
+      if (sessionRequest) {
+        presentedSession = await readPresentedWebSession(
+          transaction,
+          sessionRequest.presented,
+          new Date(await nowMilliseconds(transaction)),
+        );
+        const owner = await bindIdentityAuthority(transaction, receipt).findProvider(provider, subject);
+        await lockWebSessionAccounts(
+          transaction,
+          owner ? eq(users.id, owner.userId) : sql`false`,
+          presentedSession?.userId,
+          1,
+          'update',
+        );
+      }
       // PostgreSQL must receive the exact provider subject/address, not a lossy
       // UTF-8 replacement of an unpaired JavaScript surrogate.
       if (
@@ -307,6 +456,7 @@ export async function resolveWebOAuthIdentity(
       if (identity.outcome === 'no_email') return denied('resolve', requestId, 'email_required');
       if (identity.outcome !== 'linked' && identity.outcome !== 'created') return denied('resolve', requestId);
       const user = identity.user;
+      if (sessionRequest) return signInWithWebSession(transaction, user, identity.outcome === 'created');
       let credentialProof = await issueWebCredentialProof(transaction, user.id, credentialProofVersion);
       if (credentialProof && actorCookie !== null) {
         const actorSession = await readFirstPartySession(

@@ -8,7 +8,6 @@ import {
 } from '../authority/router';
 import { randomUUID } from 'node:crypto';
 import { executeFirstRow } from '@boardsesh/db/client';
-import type { ProviderIdentityPlan } from '@boardsesh/auth-protocol';
 import {
   authEmailReservations,
   authEmailReservationMembers,
@@ -52,7 +51,25 @@ export type ReservedCurrentStoreOAuthIdentity =
   | { outcome: 'actor_conflict' }
   | { outcome: 'sensitive_link_unavailable' };
 
-export type CurrentStoreOAuthIdentityPlan = ProviderIdentityPlan;
+/**
+ * A planned identity: the existing owner, or the fixed id and public fields a
+ * new account would get. Only the plan/apply seam uses it (its protocol went
+ * with the binding sign-in in #7596 B5a).
+ */
+export type CurrentStoreOAuthIdentityPlan = {
+  readonly kind: 'existing' | 'new';
+  readonly provider: 'google' | 'apple';
+  readonly subject: string;
+  readonly generation: number;
+  readonly user: {
+    readonly id: string;
+    readonly email: string;
+    readonly name: string | null;
+    readonly image: string | null;
+    readonly emailVerified: string | null;
+    readonly createdAt: string;
+  };
+};
 export type PlannedCurrentStoreOAuthIdentity =
   | { readonly outcome: 'planned'; readonly plan: CurrentStoreOAuthIdentityPlan }
   | Exclude<ReservedCurrentStoreOAuthIdentity, { outcome: 'linked' | 'created' }>;

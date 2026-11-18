@@ -206,7 +206,7 @@ describe('owned credential writer CI boundary', () => {
     for (const file of [
       'provider-security-http.proof.ts',
       'first-password-http.proof.ts',
-      'anonymous-provider-http.proof.ts',
+      'web-oauth-session-http.proof.ts',
     ]) {
       expect(browserRenewalConfiguration).toContain(file);
       expect(existsSync(`packages/backend/src/auth/authority/__tests__/${file}`)).toBe(true);
@@ -216,7 +216,7 @@ describe('owned credential writer CI boundary', () => {
     for (const file of [
       'provider-security-http.proof.ts',
       'first-password-http.proof.ts',
-      'anonymous-provider-http.proof.ts',
+      'web-oauth-session-http.proof.ts',
     ])
       expect(nativeHandoffConfiguration).toContain(file);
     for (const file of [

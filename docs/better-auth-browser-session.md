@@ -694,10 +694,33 @@ challenges (the credential role has no DELETE), so both are bounded at
 creation: one session holds at most five unexpired pending or prepared provider
 intents (`PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION`, refusal
 `too_many_pending`), and an account holds one live first-password challenge (a
-new request ends the old one; `auth_first_password_active_user_idx`). Only the sign-in commands
-(`provider-owned-signin.ts`, through `provider-binding-actor.ts`, and
-`anonymous-provider-signin.ts`) still use `authority/browser-binding.ts`,
-until B5a; B5d deletes the binding core.
+new request ends the old one; `auth_first_password_active_user_idx`).
+
+Google and Apple sign-in (B5a). The web OAuth `resolve` command takes an
+optional `webSession: { presented?, googleAuthentication? }`. With it (and
+`CURRENT_STORE_WEB_SESSION_MODE=backend-staging`, else 404), `resolve` issues a
+first-party web session for the resolved account with `issueWebSession`, in
+the transaction that resolved the identity, revoking `presented`; the reply
+adds `webSession: { sessionId, token, expiresAt, generation }`, and the
+credential proof names the same session id and generation. `users` rows are
+locked in one pass through `lockWebSessionAccounts` (the provider's owner FOR
+UPDATE, since resolution writes its rows, and the presented account FOR
+UPDATE), after the provider-subject lock, so crossed sign-ins queue. A session
+request needs `actorCookie: null`: a sign-in never links a provider to the
+account it arrived as, and an unknown provider creates a new account as a
+signed-out sign-in does. Freshness: Google is a `login` only when the backend
+verifies a signed `auth_time` under five minutes old for this subject
+(`CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE=auth-time-staging`), with the
+nonce bound into the intent's `flow` (`flow` = SHA-256 hex of
+`JSON.stringify(["web-oauth-google-nonce-v1", nonce])`); otherwise, and always
+for Apple, the session is `carried`: it keeps this sign-in's time for the
+30-day rules but never passes a five-minute check. The proof tells www the
+same thing: `authenticatedAt: null, linkGuarded: false` for a carried session,
+so the legacy rollback cookie carries no `auth_time`; the verified `auth_time`
+and `linkGuarded: true` for a fresh one. Without `webSession` the command and
+reply are unchanged. The browser-binding `signin-*` commands and the
+anonymous-provider protocol are deleted, so only `authority/browser-binding.ts`'s
+own tests use it; B5d deletes the binding core.
 
 The web publication layer for these flows is deleted in A5 and rebuilt on the
 new session in B5: the provider Settings UI and its server code, the

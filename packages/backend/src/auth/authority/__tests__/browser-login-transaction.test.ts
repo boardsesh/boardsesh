@@ -3,7 +3,14 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { authBrowserIntents, authEmailProjection, authSession, authWebOAuthIntents } from '@boardsesh/db/schema/auth';
 import { createProviderSecurityEnvironment } from './provider-security-fixture';
-import { beginBrowserIntent, commitBrowserLoginInTransaction, readBrowserBinding } from '../browser-binding';
+import {
+  beginBrowserIntent,
+  commitBrowserLogin,
+  commitBrowserLoginInTransaction,
+  createUnpublishedBrowserBinding,
+  readBrowserBinding,
+} from '../browser-binding';
+import type { FirstPartyCredential } from '../session-reader';
 import { captureIdentityAuthority } from '../router';
 import { transactionSettings } from '../../current-store/command-context';
 import { providerTokenHash } from '../provider-security-context';
@@ -11,17 +18,41 @@ import { sessionTokenDigest } from '../session-token';
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 
+/** A browser binding whose selection is the presented credential (binding core tests only). */
+async function bindBrowser(credential: FirstPartyCredential) {
+  const binding = await createUnpublishedBrowserBinding(
+    environment.database,
+    environment.qualification,
+    new Date(Date.now() + 86_400_000),
+  );
+  if (binding.status !== 'created') throw new Error('Owned binding initialization failed');
+  const login = await beginBrowserIntent(environment.database, environment.qualification, binding.token, {
+    operation: 'login',
+    expectedVersion: 0,
+  });
+  if (login.status !== 'prepared') throw new Error('Owned login intent failed');
+  const admitted = await commitBrowserLogin(
+    environment.database,
+    environment.qualification,
+    binding.token,
+    login.intentToken,
+    credential,
+  );
+  if (admitted.status !== 'committed') throw new Error('Owned issuance did not admit');
+  return { browserBindingToken: binding.token, browserVersion: admitted.cursor.version };
+}
 async function attempt(selected: 'current-store' | 'better-auth') {
-  const actor = await environment.actor(selected, 'canonical-token');
+  const owner = await environment.actor(selected, 'canonical-token');
+  const actor = { ...owner, binding: await bindBrowser(owner.credential) };
   const target = await environment.actor(selected, 'canonical-token');
-  const presentedActor = { version: actor.actor.browserVersion, credential: actor.credential };
+  const presentedActor = { version: actor.binding.browserVersion, credential: actor.credential };
   const intent = await beginBrowserIntent(
     environment.database,
     environment.qualification,
-    actor.actor.browserBindingToken,
+    actor.binding.browserBindingToken,
     {
       operation: 'login',
-      expectedVersion: actor.actor.browserVersion,
+      expectedVersion: actor.binding.browserVersion,
       presented: presentedActor,
     },
   );
@@ -58,7 +89,7 @@ async function attempt(selected: 'current-store' | 'better-auth') {
       const result = await commitBrowserLoginInTransaction(
         transaction,
         authority,
-        actor.actor.browserBindingToken,
+        actor.binding.browserBindingToken,
         intent.intentToken,
         candidate,
         presentedActor,
@@ -93,7 +124,7 @@ describe('credential issuance and browser login in one caller-owned transaction'
         await readBrowserBinding(
           environment.database,
           environment.qualification,
-          pending.actor.actor.browserBindingToken,
+          pending.actor.binding.browserBindingToken,
           { version: committed.cursor.version, credential: pending.candidate },
         ),
       ).toMatchObject({
@@ -136,8 +167,8 @@ describe('credential issuance and browser login in one caller-owned transaction'
         await readBrowserBinding(
           environment.database,
           environment.qualification,
-          pending.actor.actor.browserBindingToken,
-          { version: pending.actor.actor.browserVersion, credential: pending.actor.credential },
+          pending.actor.binding.browserBindingToken,
+          { version: pending.actor.binding.browserVersion, credential: pending.actor.credential },
         ),
       ).toMatchObject({ status: 'admitted', session: { userId: pending.actor.userId } });
     });

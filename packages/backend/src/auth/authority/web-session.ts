@@ -26,6 +26,7 @@ import { denyFirstPartySessionInTransaction } from './lineage';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from './session-reader';
 import { newSessionToken } from './session-token';
+import { readLockedWebSubjectState } from '../current-store/web-credential-state';
 
 export { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS };
 
@@ -128,6 +129,7 @@ export async function lockWebSessionAccounts(
   signingIn: SQL,
   presentedUserId: string | undefined,
   limit = 1,
+  signingInStrength: 'key share' | 'update' = 'key share',
 ): Promise<{ readonly presentedAccountExists: boolean }> {
   const accounts = await transaction
     .select({ id: users.id })
@@ -138,10 +140,33 @@ export async function lockWebSessionAccounts(
   let presentedAccountExists = false;
   for (const { id } of accounts) {
     const account = transaction.select({ id: users.id }).from(users).where(eq(users.id, id));
-    if (id !== presentedUserId) await account.for('key share');
+    if (id !== presentedUserId) await account.for(signingInStrength);
     else presentedAccountExists = (await account.for('update')).length === 1;
   }
   return { presentedAccountExists };
+}
+
+/**
+ * The session a login request arrived with, read in this transaction. One
+ * that no longer reads as live needs no revocation; an unreadable store fails
+ * the login. A login revokes only a session it can name: a canonical row or a
+ * legacy cookie with its own session id. A legacy cookie without one could only
+ * be ended by cutting off its whole account (every session and every phone), so
+ * it is left alone and the login goes ahead (#7596 review of #7722, finding 1).
+ */
+export async function readPresentedWebSession(
+  transaction: AuthorityTransaction,
+  presented: PresentedWebSession | undefined,
+  now: Date,
+): Promise<FirstPartySession | undefined> {
+  if (!presented) return undefined;
+  const credential = presentedWebCredential(presented);
+  const outcome = await readFirstPartySession(transaction, credential, now, (userId) =>
+    readLockedWebSubjectState(transaction, userId),
+  );
+  if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (outcome.status !== 'admitted' || outcome.session.requiresAccountCutoff) return undefined;
+  return outcome.session;
 }
 
 /**

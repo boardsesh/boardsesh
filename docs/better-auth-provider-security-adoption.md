@@ -102,58 +102,15 @@ to two minutes and the original proof/intent/source deadlines.
 
 ## Evidence and remaining gates
 
-### Ordinary sign-in to an already-owned account
+### Google and Apple sign-in
 
-> **Superseded by #7596.** Provider sign-in for an admitted browser selection belongs to the browser binding design. #7596 deleted the web layer that called these commands. The backend commands stay until B5 decides whether Google and Apple sign-in on the new session reuse them; there, a login revokes the session it arrived with. See [better-auth-browser-session.md](better-auth-browser-session.md).
-
-The separate `signin-intent`, `signin-prepare`, `signin-finalize` and
-`signin-abort` private commands handle an admitted browser selecting an existing
-Google/Apple account. Their purpose-separated initial/preparation capabilities
-reuse the classified OAuth intent table. Hashes bind the exact original actor,
-source kind and bytes, SID/generation, browser version, selected-authority receipt,
-provider/flow/nonce and immutable prepared candidate metadata. No raw bearer is
-stored in those rows. Wrong expected UID/SID cannot advance the browser intent
-revision, and an unknown provider subject cannot consume the ordinary flow.
-
-A callback for the same owner preserves the exact current source, original age,
-SID and expiry. Switching to another existing owner takes the provider subject
-lock, sorted actor/target user locks and a fresh primary owner/generation recheck.
-It creates a distinct login SID and a session deadline rounded down to a whole
-second and bounded by the fixed browser binding. It does not create, link,
-reassign or rewrite a provider identity or profile.
-
-Only independently verified recent Google `auth_time` for that exact owned
-subject can populate the new login's original authentication time. An old or
-missing claim, an unavailable supported claim reader, and Apple sign-in retain
-unknown age with no guarded freshness. A callback clock, token issuance, prompt
-or transfer never supplies age. Even a recent ordinary Google login is not an
-operation-bound provider mutation receipt.
-
-The complete response must be buffered before finalization. Canonical credential
-insertion, flow consumption and the browser login CAS share one caller-owned
-transaction; every denial, uncertainty or late expiry after insertion throws and
-rolls back all writes. Lost-success retries require the exact retained candidate
-and current primary B selection, and return only an ACK/hash/cursor. A primary
-outage returns unavailable without an ACK. The original actor's exact UID/SID
-bindings still apply to that retry.
-
-Cancellation also retires the exact browser login intent when a lost preparation
-reply means the caller has no preparation token. Its consumed row retains the
-schema-required result version, but has no candidate hash and does not move the
-binding. Pending preparation/finalization and the generic browser login command
-cannot reuse it or acknowledge a candidate. Repeated cancellation is idempotent;
-wrong or stale actors consume nothing. If finalization wins first, a later old
-actor cancellation is refused and the exact committed candidate still recovers.
-Both orders and preparation followed by cancellation use observed real queued
-PostgreSQL user-row locks in the regression; command timeouts remain unchanged.
-
-The source slice has 54 owned-login PostgreSQL/actual-RSA controls, the existing
-125 browser cases and four same-transaction composition cases. Twelve actual
-restricted-LOGIN provider HTTP cases include both authorities/source kinds,
-unknown-subject nonconsumption and post-commit primary-read outage/restored ACK.
-These backend commands do not enable public sign-in. The www publication,
-broker and Settings integration that would have called them were deleted by
-#7596 and are rebuilt in B5.
+Since #7596 B5a, a Google or Apple web sign-in is the web OAuth `resolve`
+command with `webSession` (see [better-auth-browser-session.md](better-auth-browser-session.md)):
+it issues a first-party web session in the transaction that resolved the
+identity and revokes the session it arrived with. The browser-binding
+`signin-*` commands and the anonymous-provider protocol are deleted. A sign-in
+never mints a reauthentication receipt and never links a provider to the
+session it arrived with.
 
 ### Checkpoint qualification
 
