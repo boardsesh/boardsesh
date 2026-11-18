@@ -94,8 +94,8 @@ async function logTick(
   status: 'flash' | 'send' | 'attempt',
   minute: number,
   userId = CLIMBER,
+  uuid = `workouts-tick-${randomUUID()}`,
 ): Promise<string> {
-  const uuid = `workouts-tick-${randomUUID()}`;
   await db.insert(dbSchema.boardseshTicks).values({
     uuid,
     userId,
@@ -241,7 +241,7 @@ describe('recordSessionWorkout', () => {
     expect((await storedRow(sessionId, MEMBER))?.revision).toBe(99);
   });
 
-  it('keeps only tick-map entries that are the caller’s own ticks in the session', async () => {
+  it('drops tick-map entries naming another climber’s tick or a tick from another session', async () => {
     const sessionId = await hostSession();
     const otherSession = await hostSession();
     const own = await logTick(sessionId, CLIMB_A, 'send', 1);
@@ -255,7 +255,31 @@ describe('recordSessionWorkout', () => {
         { tickUuid: 'no-such-tick', queueItemUuid: 'qi-a' },
       ]),
     );
-    expect((await storedRow(sessionId))?.tickMap).toEqual([{ tickUuid: own, queueItemUuid: 'qi-a' }]);
+    // A tick the server has not seen yet keeps its entry: it may still be on its way.
+    expect((await storedRow(sessionId))?.tickMap).toEqual([
+      { tickUuid: own, queueItemUuid: 'qi-a' },
+      { tickUuid: 'no-such-tick', queueItemUuid: 'qi-a' },
+    ]);
+  });
+
+  it('places a tick that lands after the workout write on the block its map entry names', async () => {
+    // A dead-lettered tick retried after End, or a spray tick held behind its
+    // climb write, reaches the server after the last workout write (#7028).
+    const sessionId = await hostSession();
+    const lateTick = `workouts-late-tick-${randomUUID()}`;
+    const input = workoutInput(sessionId, 1, [{ tickUuid: lateTick, queueItemUuid: 'qi-a2' }]);
+    input.stages[1].items = [
+      { queueItemUuid: 'qi-a1', climbUuid: CLIMB_A, angle: 40 },
+      { queueItemUuid: 'qi-a2', climbUuid: CLIMB_A, angle: 40 },
+    ];
+    await record(input);
+    expect((await storedRow(sessionId))?.tickMap).toEqual([{ tickUuid: lateTick, queueItemUuid: 'qi-a2' }]);
+
+    await logTick(sessionId, CLIMB_A, 'send', 1, CLIMBER, lateTick);
+    const [workout] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
+    const [first, second] = workout.stages[1].climbs;
+    expect(first).toMatchObject({ climbUuid: CLIMB_A, reps: [], tickUuids: [], skipped: true });
+    expect(second).toMatchObject({ climbUuid: CLIMB_A, reps: ['SEND'], tickUuids: [lateTick], skipped: false });
   });
 
   it('writes only a higher revision; a replay is a no-op that still answers true', async () => {

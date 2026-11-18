@@ -176,8 +176,10 @@ export const sessionWorkoutMutations = {
    * a tick is not enough, since `saveTick` accepts any existing session id.
    * Written only when the revision is higher than the stored one; an equal or
    * lower revision is a no-op that still answers true, so an outbox replay is
-   * idempotent. Tick-map entries naming anything but the caller's own ticks in
-   * the session are dropped.
+   * idempotent. Tick-map entries naming another climber's tick, or the
+   * caller's tick in another session, are dropped. An entry naming a tick the
+   * server doesn't have yet is kept, so a tick that arrives after the workout
+   * still lands on its block.
    */
   recordSessionWorkout: async (
     _: unknown,
@@ -213,27 +215,32 @@ export const sessionWorkoutMutations = {
       throw new GraphQLError('Not a participant of this session', { extensions: { code: 'FORBIDDEN' } });
     }
 
-    const ownTickUuids =
+    // Looked up by uuid alone: a tick still on its way (a retried dead letter,
+    // or a spray tick held behind its climb write) has no row yet, and its
+    // entry is kept so the tick lands on its block when it arrives. Readers only
+    // ever apply the map to the owner's ticks in this session, so a pending
+    // entry does nothing until then. An entry naming a tick that exists but is
+    // someone else's, or the caller's in another session, is dropped.
+    const namedTicks =
       tickMap.length === 0
-        ? new Set<string>()
-        : new Set(
-            (
-              await db
-                .select({ uuid: dbSchema.boardseshTicks.uuid })
-                .from(dbSchema.boardseshTicks)
-                .where(
-                  and(
-                    eq(dbSchema.boardseshTicks.sessionId, sessionId),
-                    eq(dbSchema.boardseshTicks.userId, userId),
-                    inArray(
-                      dbSchema.boardseshTicks.uuid,
-                      tickMap.map((entry) => entry.tickUuid),
-                    ),
-                  ),
-                )
-            ).map((tick) => tick.uuid),
-          );
-    const ownTickMap = tickMap.filter((entry) => ownTickUuids.has(entry.tickUuid));
+        ? []
+        : await db
+            .select({
+              uuid: dbSchema.boardseshTicks.uuid,
+              userId: dbSchema.boardseshTicks.userId,
+              sessionId: dbSchema.boardseshTicks.sessionId,
+            })
+            .from(dbSchema.boardseshTicks)
+            .where(
+              inArray(
+                dbSchema.boardseshTicks.uuid,
+                tickMap.map((entry) => entry.tickUuid),
+              ),
+            );
+    const foreignTickUuids = new Set(
+      namedTicks.filter((tick) => tick.userId !== userId || tick.sessionId !== sessionId).map((tick) => tick.uuid),
+    );
+    const ownTickMap = tickMap.filter((entry) => !foreignTickUuids.has(entry.tickUuid));
 
     const now = new Date();
     await db.transaction(async (tx) => {
