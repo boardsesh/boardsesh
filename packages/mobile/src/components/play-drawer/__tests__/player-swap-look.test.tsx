@@ -118,6 +118,7 @@ const controls = vi.hoisted(() => ({
   killed: false,
   reduceMotion: false,
   differentiateWithoutColor: 'off' as 'on' | 'off' | 'unknown',
+  platform: 'ios' as 'ios' | 'android',
   /** Every `swapFrame` command the native view received, in order. */
   commands: [] as number[][],
   /** The native view's last props. */
@@ -125,6 +126,11 @@ const controls = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return controls.platform;
+    },
+  },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: <Styles,>(styles: Styles) => styles, absoluteFill: {} },
 }));
@@ -326,6 +332,7 @@ beforeEach(() => {
   controls.killed = false;
   controls.reduceMotion = false;
   controls.differentiateWithoutColor = 'off';
+  controls.platform = 'ios';
 });
 afterEach(() => cleanup());
 
@@ -367,7 +374,15 @@ describe('the player board’s swap look', () => {
     for (const command of player.commands) expect(command).toHaveLength(5);
   });
 
-  it('keeps the look while Differentiate Without Color is not read yet: native turns it off if the setting is on', () => {
+  it('on iOS holds the look until Differentiate Without Color reads off', () => {
+    controls.differentiateWithoutColor = 'unknown';
+    const player = sent();
+    expect(player.swapLook).toBeUndefined();
+    expect(player.commands).toEqual(sent(SHIPPED).commands);
+  });
+
+  it('on Android, which has no Differentiate Without Color setting, an unknown read keeps the look', () => {
+    controls.platform = 'android';
     controls.differentiateWithoutColor = 'unknown';
     expect(sent().swapLook).toBeDefined();
   });

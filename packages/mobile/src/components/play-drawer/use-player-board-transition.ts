@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import {
@@ -19,7 +20,13 @@ import { playerBoardTransition } from './player-swap-look';
 export function usePlayerBoardTransition(): BoardTransition | undefined {
   const enabled = usePlayerSwapLookEnabled();
   const reduceMotion = useReduceMotion();
-  const differentiateWithoutColor = useDifferentiateWithoutColor() === 'on';
+  const differentiateWithoutColorSetting = useDifferentiateWithoutColor();
+  // iOS: hold the look until the setting reads 'off', the same conservative
+  // start as Reduce Motion. While it is 'unknown' native may already know it is
+  // on and draw the plain swap, which would show the look's ghosts as full
+  // marks. Android has no such setting (the hook stays 'unknown' there).
+  const differentiateWithoutColor =
+    Platform.OS === 'ios' ? differentiateWithoutColorSetting !== 'off' : differentiateWithoutColorSetting === 'on';
   return playerBoardTransition({
     apiVersion: climbOverlayGpuApiVersion,
     swapCommandApi: climbOverlaySwapCommandApi,

@@ -18,10 +18,13 @@ The player's swap look (`play-drawer/player-swap-look.ts`) is off while it is on
 exactly like Reduce Motion: its ghosts show the next climb's role colours as
 glow-only halos, without the role shapes, so the board changes climbs with the
 shipped wall swap instead. JS reads the setting through
-`useDifferentiateWithoutColor` and sends no look while it reads `'on'`; the GPU
-view also checks `UIAccessibility.shouldDifferentiateWithoutColor` on every frame
-and follows its change notification, so a binary whose JS has not read the setting
-yet, or the board motion lab, never draws a ghost either. The lab reports this as
+`useDifferentiateWithoutColor` and, on iOS, sends a look only once it reads
+`'off'` (the same conservative start as Reduce Motion), so JS never runs the
+look's driver while native already knows the setting is on. Android has no such
+setting; the hook stays `'unknown'` there and only `'on'` would stop the look. The
+GPU view also checks `UIAccessibility.shouldDifferentiateWithoutColor` on every
+frame and follows its change notification, so the board motion lab never draws a
+ghost either. The lab reports this as
 `look off (Differentiate Without Color)`.
 
 Persistent climb labels in `ClimbCapsule` and `NativeAccessoryClimbRow` retain
