@@ -111,6 +111,17 @@ beforeEach(() => {
 });
 
 describe('AcknowledgementsScreen', () => {
+  it.each(['Climbdex', 'BoardLib'])('opens the %s repo from the open source credits', (project) => {
+    render(<AcknowledgementsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: project }));
+
+    expect(openUrl.openExternalUrl).toHaveBeenCalledWith(
+      `https://github.com/lemeryfertitta/${project}`,
+      'acknowledgements',
+    );
+  });
+
   it('renders a contributor chip that opens the GitHub profile', () => {
     render(<AcknowledgementsScreen />);
 
