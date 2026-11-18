@@ -16,16 +16,11 @@ export default function AboutContent() {
   return (
     <PageShell title={t('about.hero.title')} lead={t('about.hero.subtitle')} width="wide">
       <Box className={styles.story}>
-        {/* The old "Our Vision" said the same thing the landing page says, in the
-            same words. This is the part only About can tell: what the problem
-            actually was, and what happened when it bit. The Aurora outage is
-            written up properly on /aurora-migration — link to it rather than
-            re-litigate someone else's dispute on a marketing page. */}
         <PageSection title={t('about.story.title')} icon={<RocketLaunchOutlined />} className={styles.vision}>
           <Prose>{t('about.story.p1')}</Prose>
           <Prose>{t('about.story.p2')}</Prose>
           <Prose>
-            <MuiLink component={LocaleLink} href="/aurora-migration">
+            <MuiLink component={LocaleLink} href="/bring-your-logbook#old-kilter-app">
               {t('about.story.link')}
             </MuiLink>
           </Prose>

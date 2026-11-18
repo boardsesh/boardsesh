@@ -1,54 +1,36 @@
 {
   "metadata": {
     "migration": {
-      "title": "Von der alten Kilter-App migrieren",
-      "description": "Hol deine Daten vom Kilter Board zu Boardsesh, nachdem Aurora das Backend abgeschaltet hat."
+      "title": "Importiere dein Kilter- oder Tension-Routenbuch",
+      "description": "Verknüpfe dein Kilter- oder Tension-Konto, um deine Begehungen zu übernehmen, oder importiere eine Datei aus der alten Kilter-App."
     }
   },
   "migration": {
-    "whatHappened": {
-      "title": "Was passiert ist",
-      "lead": "Das Aurora-Backend für Kilter ist weg. Deine Playlists, dein Routenbuch und deine Boulder-Entwürfe gehen mit, wenn du sie nicht exportierst.",
-      "body": "Am 25. März war die Kilter Board App plötzlich verschwunden: Aurora hat sein Kilter-Backend ohne Vorwarnung abgeschaltet. Kilter hat daraufhin überstürzt die eigene App veröffentlicht, die noch in der Beta steckte. Das Ergebnis des Streits zwischen den beiden Firmen: Die Kund*innen bleiben auf dem Schaden sitzen. Mehr dazu hier:",
-      "articleTitle": "Die Kilter Board App ist ohne Vorwarnung verschwunden. Das ist wirklich passiert.",
-      "articleDescription": "Jahrelang lag das erfolgreichste Trainingsboard im Klettern im Clinch mit dem Entwickler seiner App. Jetzt zahlen die Kletterer*innen die Rechnung.",
-      "articleSource": "climbing.com",
-      "articleAlt": "Die Kilter Board App ist ohne Vorwarnung verschwunden",
-      "ledRisk": "Wie riskant die Abhängigkeit von einem einzigen Anbieter ist, war schon vor 2 Jahren klar: Wegen eines Rechtsstreits zwischen Kilter und Aurora gab es kein LED-Kit mehr für deine Kilter-Griffe.",
-      "boardseshIntroPrefix": "Um dieses Risiko loszuwerden, wurde ",
-      "boardseshLink": "Boardsesh",
-      "boardseshIntroSuffix": " als Open-Source-Alternative zu allen Board-Kletter-Apps entwickelt. Boardsesh hat eine eigene Kopie der Boulder-Datenbanken und unterstützt nach und nach alle Boards. Es lässt sich einfach selbst hosten und bekommt eine Funktion, mit der du deine Daten jederzeit mitnehmen kannst."
+    "title": "Dein Routenbuch in Boardsesh übernehmen",
+    "lead": "Du kannst deine Begehungen von Kilter und Tension mitnehmen. Wähle den passenden Weg, je nachdem, wo dein Routenbuch gespeichert ist.",
+    "account": {
+      "title": "Du hast ein Kilter- oder Tension-Konto",
+      "step1": "Lade die kostenlose App herunter und melde dich an.",
+      "step2": "Tipp auf deinen Avatar, dann auf Einstellungen, dann auf Verbundene Apps.",
+      "step3": "Tipp auf Bei Kilter anmelden oder auf Verknüpfen bei der Tension-Karte.",
+      "sync": "Deine Begehungen werden etwa alle 12 Stunden übernommen. Die Synchronisation läuft in eine Richtung: Was du in Boardsesh einträgst, bleibt in Boardsesh.",
+      "signIn": "Anmelden"
     },
-    "howToMigrate": {
-      "title": "So migrierst du",
-      "step1": {
-        "title": "Datenexport anfordern",
-        "body": "Schreib Aurora eine E-Mail und fordere einen Export deiner Daten an. Du bekommst eine JSON-Datei mit deinen Begehungen, Versuchen und Circuits.",
-        "cta": "E-Mail an peter@auroraclimbing.com"
-      },
-      "step2": {
-        "title": "Boardsesh-Konto erstellen",
-        "signedInAs": "Angemeldet als {{email}}",
-        "body": "Erstelle ein Konto oder melde dich an, damit wir deine Daten irgendwo ablegen können.",
-        "cta": "Anmelden oder Konto erstellen",
-        "modalTitle": "Melde dich an, um deine Daten zu migrieren",
-        "modalDescription": "Erstelle ein Konto oder melde dich an, um deine Aurora-Daten zu importieren."
-      },
-      "step3": {
-        "title": "Daten importieren",
-        "signInFirst": "Melde dich zuerst an, um deine Daten zu importieren.",
-        "body": "Das Kilter-Backend ist offline, deshalb geht für Kilter nur der JSON-Import. Bei Tension synchronisiert dein verknüpftes Konto die Daten automatisch alle 12 Stunden, du hast also immer ein Backup."
-      },
-      "step4": {
-        "title": "Dein Boardsesh-Profil",
-        "signInFirst": "Melde dich zuerst an, um dein Profil zu sehen."
-      }
+    "legacy": {
+      "title": "Du hast die alte Kilter-App (Aurora) genutzt",
+      "request": "Fordere deinen Export bei Aurora an",
+      "export": "Du bekommst eine Datei mit deinen Begehungen, Versuchen und Zirkeln.",
+      "support": "Schreib dem Aurora-Support",
+      "signIn": "Melde dich auf deinem Handy bei Boardsesh an",
+      "upload": "Lade die Datei hoch",
+      "uploadInstructions": "Öffne unter Verbundene Apps die Karte Kilter (Aurora) und wähle deine Exportdatei aus."
     },
-    "getHelp": {
-      "title": "Hilfe holen",
-      "body": "Boardsesh ist Open Source. Melde Bugs, wünsch dir Features oder frag einfach nach Hilfe.",
-      "discord": "Discord — Komm rein für Hilfe und Austausch",
-      "github": "GitHub — github.com/boardsesh/boardsesh"
-    }
+    "history": {
+      "title": "Warum es diese Seite gibt",
+      "body": "Im März 2026 hörte die alte Kilter-App auf zu funktionieren. Wer das eigene Routenbuch vorher nicht exportiert hatte, konnte es in der App nicht mehr abrufen.",
+      "article": "Lies den Artikel auf Climbing.com"
+    },
+    "install": "Hol dir die kostenlose App",
+    "logbookHelp": "Mehr Hilfe zum Routenbuch"
   }
 }

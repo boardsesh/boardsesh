@@ -113,6 +113,11 @@ export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_CONFIG_APP_
  * has to come before the `/:board/…` catch-all that would otherwise swallow it.
  */
 const BASE_REDIRECTS = [
+  {
+    source: '/aurora-migration',
+    destination: '/bring-your-logbook#old-kilter-app',
+    permanent: true,
+  },
   // Help pages folded into their parent guides. The destination's own `#`
   // survives the redirect; the old pages had no ids to carry over.
   {

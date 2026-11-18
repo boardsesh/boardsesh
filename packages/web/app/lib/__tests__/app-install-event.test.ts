@@ -85,6 +85,7 @@ describe('buildAppInstallClickProperties', () => {
       'spray-climb',
       'spray-wall',
       'gyms-directory',
+      'bring-your-logbook',
       'join-page',
       'site-banner',
     ]);

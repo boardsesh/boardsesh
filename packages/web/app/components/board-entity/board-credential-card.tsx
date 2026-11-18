@@ -4,8 +4,7 @@
  * Lifted out of `components/settings/aurora-credentials-section.tsx` by W-21
  * (#4440). `/settings` no longer renders the Aurora credentials section — board
  * accounts live in the app now — but `board-import-prompt.tsx` still renders the
- * credential card and the import progress list, and that prompt is on two
- * indexable surfaces the epic keeps: `/aurora-migration` and `/profile/{id}`.
+ * credential card and the import progress list on profile pages.
  * Co-located with its only consumer so the lift removes a cross-directory edge
  * instead of relocating one.
  *
@@ -83,7 +82,7 @@ function buildKilterDataRequestMailto(
   const subject = t('aurora.kilterEmail.subject');
   const body = t('aurora.kilterEmail.body', { name, email });
 
-  return `mailto:peter@auroraclimbing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `mailto:support@auroraclimbing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 // The surviving web prompt renders `kilterAurora` for the legacy Aurora-built

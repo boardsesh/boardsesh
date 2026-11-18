@@ -1,54 +1,36 @@
 {
   "metadata": {
     "migration": {
-      "title": "Migrate from Old Kilter App",
-      "description": "Migrate your Kilter board data to Boardsesh after the Aurora backend shutdown."
+      "title": "Import your Kilter or Tension logbook",
+      "description": "Link your Kilter or Tension account to bring your sends to Boardsesh, or import an export from the old Kilter app."
     }
   },
   "migration": {
-    "whatHappened": {
-      "title": "What Happened",
-      "lead": "The Aurora Kilter backend is gone. Your playlists, logbook, and draft climbs go with it unless you export them.",
-      "body": "On March 25, the Kilter board app suddenly disappeared, as Aurora randomly shut down its Kilter backend. In response Kilter rushed out their own app which was still in beta, but the outcome of these two entities fighting is that the customer gets left holding the bag. For more info read:",
-      "articleTitle": "The Kilter Board App Just Disappeared Without Warning. Here's What Really Happened.",
-      "articleDescription": "For years, climbing's most successful training board has been at war with its app developer. Now, climbers are paying the price.",
-      "articleSource": "climbing.com",
-      "articleAlt": "The Kilter Board App Just Disappeared Without Warning",
-      "ledRisk": "This single-vendor risk first became obvious 2 years ago, when you couldn't buy an LED kit for your Kilter holds due to an ongoing legal dispute between Kilter and Aurora.",
-      "boardseshIntroPrefix": "To remove this risk, ",
-      "boardseshLink": "Boardsesh",
-      "boardseshIntroSuffix": " was created as an open-source alternative to all board climbing apps. Boardsesh has its own copy of the climb databases and will eventually support all boards. It can easily be self-hosted, and will provide data checkout functionality."
+    "title": "Bring your logbook to Boardsesh",
+    "lead": "Your Kilter and Tension sends can come with you. Pick the route that matches where your history lives.",
+    "account": {
+      "title": "You have a Kilter or Tension account",
+      "step1": "Get the free app and sign in.",
+      "step2": "Tap your avatar, then Settings, then Connected apps.",
+      "step3": "Tap Sign in to Kilter, or Link on the Tension card.",
+      "sync": "Your sends come across about every 12 hours. Sync runs one way: nothing you log in Boardsesh goes back to their apps.",
+      "signIn": "Sign in"
     },
-    "howToMigrate": {
-      "title": "How to Migrate",
-      "step1": {
-        "title": "Request your data export",
-        "body": "Email Aurora to request an export of your data. This will give you a JSON file containing your ascents, attempts, and circuits.",
-        "cta": "Email peter@auroraclimbing.com"
-      },
-      "step2": {
-        "title": "Create a Boardsesh account",
-        "signedInAs": "Signed in as {{email}}",
-        "body": "Create an account or sign in so we have somewhere to put your data.",
-        "cta": "Sign in or Create Account",
-        "modalTitle": "Sign in to migrate your data",
-        "modalDescription": "Create an account or sign in to import your Aurora data."
-      },
-      "step3": {
-        "title": "Import your data",
-        "signInFirst": "Sign in first to import your data.",
-        "body": "The Kilter backend is down so only JSON import is available for Kilter. For Tension, linking your account will automatically sync your data every 12 hours so you always have a backup."
-      },
-      "step4": {
-        "title": "Your Boardsesh profile",
-        "signInFirst": "Sign in first to see your profile."
-      }
+    "legacy": {
+      "title": "You used the old Kilter app (Aurora)",
+      "request": "Ask Aurora for your export",
+      "export": "You get one file with your ascents, attempts and circuits.",
+      "support": "Email Aurora support",
+      "signIn": "Sign in to Boardsesh on your phone",
+      "upload": "Upload the file",
+      "uploadInstructions": "In Connected apps, open the Kilter (Aurora) card and choose your export."
     },
-    "getHelp": {
-      "title": "Get Help",
-      "body": "Boardsesh is open source. File bugs, request features, or just ask for help.",
-      "discord": "Discord — Join for help and discussion",
-      "github": "GitHub — github.com/boardsesh/boardsesh"
-    }
+    "history": {
+      "title": "Why this page exists",
+      "body": "In March 2026, the old Kilter app stopped working. Climbers who hadn’t exported their history lost access to it in the app.",
+      "article": "Read the story on Climbing.com"
+    },
+    "install": "Get the free app",
+    "logbookHelp": "More logbook help"
   }
 }

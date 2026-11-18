@@ -91,7 +91,7 @@ export default function LogbookContent() {
             back to Kilter; there is none (kilter-sync push-back is stubbed). */}
         <Prose>{t('help.log.bring.p2')}</Prose>
         <Prose>
-          <MuiLink component={LocaleLink} href="/aurora-migration">
+          <MuiLink component={LocaleLink} href="/bring-your-logbook">
             {t('help.log.bring.link')}
           </MuiLink>
         </Prose>

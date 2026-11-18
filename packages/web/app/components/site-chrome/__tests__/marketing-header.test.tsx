@@ -105,7 +105,7 @@ describe('MarketingHeader', () => {
   // e2e is workflow_dispatch-only (standing rule 6), so pin the contract here
   // where every PR runs it.
   it('tags every header branch with the marketing-header testid the e2e spec selects', () => {
-    for (const pathname of ['/some-page', '/', '/settings', '/profile/user-2', '/aurora-migration']) {
+    for (const pathname of ['/some-page', '/', '/settings', '/profile/user-2', '/bring-your-logbook']) {
       mockPathname = pathname;
       const { container, unmount } = render(<MarketingHeader />);
       expect(
@@ -153,6 +153,7 @@ describe('MarketingHeader', () => {
     for (const [label, pathname] of [
       ['the default header', '/some-page'],
       ['the home header', '/'],
+      ['the logbook guide', '/bring-your-logbook'],
     ] as const) {
       it(`carries the four nav links on ${label}`, () => {
         mockPathname = pathname;
@@ -202,7 +203,7 @@ describe('MarketingHeader', () => {
     // The centred and brand-only variants own their whole bar — a profile
     // header is a back button, a title and one action, and /settings is the
     // brand link alone. Neither gets the nav.
-    for (const pathname of ['/profile/user-2', '/profile/user-2/statistics', '/settings', '/aurora-migration']) {
+    for (const pathname of ['/profile/user-2', '/profile/user-2/statistics', '/settings']) {
       it(`leaves ${pathname} without a nav`, () => {
         mockPathname = pathname;
         const { container } = render(<MarketingHeader />);
@@ -383,16 +384,6 @@ describe('MarketingHeader', () => {
 
       expect(screen.getByText('Sign in').closest('a')?.getAttribute('href')).toBe('/auth/login');
       expect(container.querySelector('a[href="/settings"]')).toBeNull();
-    });
-  });
-
-  describe('on /aurora-migration', () => {
-    it('renders the title header with a back button', () => {
-      mockPathname = '/aurora-migration';
-      render(<MarketingHeader />);
-
-      expect(screen.getByText('Bring your logbook')).toBeTruthy();
-      expect(screen.getByTestId('back-button').getAttribute('data-fallback')).toBe('/');
     });
   });
 });

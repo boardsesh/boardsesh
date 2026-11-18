@@ -42,7 +42,7 @@ const SITEMAP_PATHS = [
   '/help',
   '/docs',
   '/playlists',
-  '/aurora-migration',
+  '/bring-your-logbook',
   '/legal',
   '/privacy',
 ];

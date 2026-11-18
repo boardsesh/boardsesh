@@ -209,7 +209,7 @@ const KEPT_ROUTE_DIRS = [
   'docs',
   'legal',
   'privacy',
-  'aurora-migration',
+  'bring-your-logbook',
   'preview',
   'b',
   'session',

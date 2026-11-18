@@ -69,8 +69,8 @@
     },
     "onboardingHeader": "Faites-en votre app",
     "cards": {
-      "auroraTitle": "Vous venez de Kilter ?",
-      "auroraDescription": "Importez votre carnet et votre historique en une étape",
+      "auroraTitle": "Récupère ton carnet Kilter ou Tension",
+      "auroraDescription": "Lie ton compte une seule fois. Tes croix arrivent environ toutes les 12 heures.",
       "playlistTitle": "Préparez une playlist",
       "playlistDescription": "Alignez vos blocs avant d'arriver à la salle",
       "bluetoothTitle": "Connectez votre board",
@@ -191,7 +191,7 @@
     "story": {
       "title": "Pourquoi ça existe",
       "p1": "Chaque board a son app, son compte et son carnet. Tu grimpes sur un Kilter dans ta salle et sur un MoonBoard en vacances, et tu te retrouves avec deux historiques qui ne se croisent jamais.",
-      "p2": "Puis une de ces apps a disparu du jour au lendemain et les grimpeurs ont perdu leur carnet avec. Voilà ce qui arrive quand une seule boîte contrôle le seul accès à du matériel que tu as déjà payé.",
+      "p2": "Quand l’ancienne app Kilter a cessé de fonctionner, les grimpeurs et grimpeuses ont perdu l’accès à leur historique.",
       "link": "Ce qui s'est passé, et comment récupérer tes données"
     },
     "who": {
@@ -713,7 +713,7 @@
         "step3": "Saisis l'identifiant et le mot de passe de cette board.",
         "p1": "Tu utilisais l'ancienne app Kilter ? La carte Kilter (Aurora) accepte un export JSON.",
         "p2": "La synchro va dans un seul sens, de leurs apps vers Boardsesh, environ toutes les 12 heures. Rien ne repart.",
-        "link": "Lire le guide de migration"
+        "link": "Récupérer ton carnet"
       },
       "beta": {
         "title": "Joindre une vidéo de beta",

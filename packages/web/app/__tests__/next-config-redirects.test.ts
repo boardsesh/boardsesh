@@ -292,6 +292,16 @@ describe('next.config redirects', () => {
     }
   });
 
+  it('redirects old Aurora migration bookmarks to the export instructions in their locale', () => {
+    for (const prefix of ['', ...LOCALE_PREFIXES]) {
+      const source = `${prefix}/aurora-migration`;
+      expect(redirects.find((rule) => rule.source === source)).toMatchObject({
+        destination: `${prefix}/bring-your-logbook#old-kilter-app`,
+        permanent: true,
+      });
+    }
+  });
+
   it('leaves the /play routes alone — their pages redirect with the climb name', () => {
     // A static rule here would emit a bare-uuid /view URL that redirects again,
     // turning one hop into two.

@@ -69,8 +69,8 @@
     },
     "onboardingHeader": "Rendila tua",
     "cards": {
-      "auroraTitle": "Arrivi da Kilter?",
-      "auroraDescription": "Porta qui diario e cronologia in un solo passaggio",
+      "auroraTitle": "Porta qui il tuo diario Kilter o Tension",
+      "auroraDescription": "Collega il tuo account una volta. Le tue ripetizioni arrivano circa ogni 12 ore.",
       "playlistTitle": "Crea una playlist",
       "playlistDescription": "Metti in fila i blocchi prima di arrivare in palestra",
       "bluetoothTitle": "Connetti il tuo pannello",
@@ -191,7 +191,7 @@
     "story": {
       "title": "Perché esiste",
       "p1": "Ogni pannello ha la sua app, il suo login e il suo diario. Arrampichi su un Kilter in palestra e su una MoonBoard in vacanza e hai due storie che non si incontrano mai.",
-      "p2": "Poi una di quelle app è sparita da un giorno all'altro e i climber hanno perso i loro diari. È quello che succede quando una sola azienda possiede l'unica porta d'accesso a un hardware che hai già pagato.",
+      "p2": "Quando la vecchia app Kilter ha smesso di funzionare, chi la usava ha perso l’accesso alle proprie salite.",
       "link": "Cos'è successo e come recuperare i tuoi dati"
     },
     "who": {
@@ -713,7 +713,7 @@
         "step3": "Inserisci nome utente e password di quel pannello.",
         "p1": "Usavi la vecchia app Kilter? La scheda Kilter (Aurora) accetta un'esportazione JSON.",
         "p2": "La sincronizzazione va in una sola direzione, dalle loro app a Boardsesh, circa ogni 12 ore. Niente torna indietro.",
-        "link": "Leggi la guida alla migrazione"
+        "link": "Porta il tuo diario"
       },
       "beta": {
         "title": "Allega un video della beta",

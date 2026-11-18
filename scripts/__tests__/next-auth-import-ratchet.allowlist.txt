@@ -36,8 +36,6 @@ packages/web/app/api/auth/native/callback/route.ts
 packages/web/app/api/internal/__tests__/expected-viewer-sign-in.test.ts
 packages/web/app/api/internal/ws-auth/__tests__/route.test.ts
 packages/web/app/api/internal/ws-auth/route.ts
-packages/web/app/aurora-migration/__tests__/aurora-migration-content.test.tsx
-packages/web/app/aurora-migration/aurora-migration-content.tsx
 packages/web/app/auth/login/__tests__/auth-page-callback-url.test.tsx
 packages/web/app/auth/login/__tests__/auth-page-locale-router.test.tsx
 packages/web/app/auth/login/__tests__/auth-page-server-errors.test.tsx

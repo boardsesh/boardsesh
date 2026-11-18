@@ -84,7 +84,7 @@ export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?
         { href: '/support', label: t('footer.links.support') },
         { href: '/help', label: t('footer.links.help') },
         { href: '/playlists', label: t('footer.links.playlists') },
-        { href: '/aurora-migration', label: t('footer.links.auroraMigration') },
+        { href: '/bring-your-logbook', label: t('footer.links.auroraMigration') },
         { href: '/docs', label: t('footer.links.docs') },
         // The only crawl path into /build-plans, and it appears only when the
         // `cnc-packs` flag is on — while it is off the route 404s, and a footer
