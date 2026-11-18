@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useQuery, useQueryClient, type Query } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { browserSessionGuard, signedInViewer } from '@/app/lib/auth/session-guard';
 import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
@@ -26,7 +26,8 @@ type WsAuthResponse = {
   error?: string;
 };
 
-type WsAuthQuery = Query<WsAuthResponse, Error, WsAuthResponse, readonly unknown[]>;
+/** The part of React Query's query the timing reads: the last answer. */
+type WsAuthQuery = { readonly state: { readonly data?: WsAuthResponse } };
 
 const LEGACY_STALE_TIME_MS = 5 * 60_000;
 
