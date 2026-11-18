@@ -343,11 +343,10 @@ session authenticates a request; it carries no sign-in time for a `bridge`, so
 partner app changes refuse it. The 30-day partner-consent rule reads
 `authenticatedAt`, which a bridged row keeps. Provider link and unlink need
 their own reauthentication receipt (`provider-reauthentication-evidence.ts`),
-never the session's age, so they did not change. Provider security and first
-password compare the actor session's expiry exactly
-(`provider-security-context.ts:114`, `provider-security-finalizer.ts:208`,
-`first-password-challenges.ts:98`), so a flow that spans a roll is refused.
-B5 drops those comparisons when it rebuilds the flows.
+never the session's age, so they did not change. Since B5c1, provider security
+compares the actor on session id and generation, not expiry, so a link that
+spans a roll goes through. First password still compares the expiry exactly
+(`first-password-challenges.ts:98`) until B5c2.
 
 What B1 does with the token: put it in the signed session cookie, Max-Age
 34,560,000 (decision 2), only after the command answers; never log it or hand
@@ -710,9 +709,51 @@ only a signed `auth_time` in a verified ID token counts
 ([provider security adoption](./better-auth-provider-security-adoption.md)).
 Apple-only accounts set a first password after email confirmation, which is
 not provider reauthentication. Facebook sign-in and linking stay removed;
-stored Facebook identities stay. The backend `authority/browser-binding.ts` and
-the binding-table readers those cores use stay until B5. Drizzle schema exports
-and merged migrations stay, and this work writes no migrations.
+stored Facebook identities stay. Drizzle schema exports and merged migrations
+stay, and this work writes no migrations.
+
+Since B5c1, provider link, unlink, reauthentication and the ownership check
+take the first-party web session (`presented`: the canonical token or the
+legacy cookie, plus the user and session id the tab expects), read by
+`readFirstPartySession`, never a browser binding. Every step presents the same
+session token; the intent stores its hash and refuses any other. The intent's
+NOT NULL binding columns hold values keyed by the session:
+`browser_binding_hash` is the SHA-256 of
+`["provider-security-web-session-v1", sessionId]`, `browser_version` is 0,
+`browser_intent_hash` is derived from the intent itself, and
+`browser_binding_expires_at` is the session's expiry when the intent was made.
+Finalize keeps the session's id, token, sign-in time and expiry and moves only
+its generation to the account's new one (`keepCanonicalAfterSecurityMutation`);
+every other web session, native refresh token, partner connection and pending
+recovery or verification link of the account ends. No candidate credential and
+no cookie write exist any more. A legacy NextAuth cookie can read its methods
+but cannot start a link or unlink: its generation lives in the cookie, so it
+could continue only by being re-issued, which only a login may do. The backend
+answers `canonical_session_required` (403), apart from
+`reauthentication_required`, so www knows to bridge it first (B2b) rather than
+ask for a password. The backend refuses to start with
+`CURRENT_STORE_PROVIDER_SECURITY_MODE=backend-staging` unless
+`AUTH_BROWSER_SESSION_MODE=better-auth`
+(`AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED`): without it nobody could
+link.
+
+Rollback after a link or unlink (accepted). During the 30-day rollback window
+a login also writes the legacy NextAuth cookie with the same session id
+(owner decision 2 of 2026-11-17). A link or unlink moves the account to a new
+generation and keeps only the canonical cookie's session alive, because only a
+login may write a cookie. The legacy cookie still names the old generation, so
+it is dead from that moment. If the mode is rolled back to `legacy` inside the
+window, that browser has to sign in again. This is the one exception to
+acceptance 6 ("rollback leaves every browser signed in"); it applies only to a
+browser that linked or unlinked a provider after cutover, and the alternative
+is a cookie write outside login, which this design does not allow. The same
+holds for first password once B5c2 keeps its token. What the binding proved, the same browser across the OAuth
+round trip, now comes from the session token every step presents plus the
+OAuth state hash bound to the intent (`bind`) and checked at `prepare`.
+
+First password (`first-password-*.ts`) and the owned-provider sign-in
+(`provider-owned-signin.ts`) still use `authority/browser-binding.ts` through
+`provider-binding-actor.ts` until B5c2 and B5a; B5d deletes the binding core.
 
 The web publication layer for these flows is deleted in A5 and rebuilt on the
 new session in B5: the provider Settings UI and its server code, the

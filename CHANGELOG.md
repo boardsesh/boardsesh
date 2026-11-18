@@ -12,13 +12,23 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Turn the last-seconds countdown buzz off, and choose whether your rest shows on the Lock Screen, right from Settings › Timers. ([#7812](https://github.com/boardsesh/boardsesh/pull/7812))
+- Your workout builder always offers 4x4, Limit Bouldering and On the Minute, even right after opening the app. ([#7818](https://github.com/boardsesh/boardsesh/pull/7818))
+- Pyramids can come back down on the same climbs. Turn on Same climbs down to retrace your way up. ([#7822](https://github.com/boardsesh/boardsesh/pull/7822))
 - Secondary buttons read as buttons now, with plain text beside the main violet one ([#7801](https://github.com/boardsesh/boardsesh/pull/7801))
 - Back to your projects: climbs you tried and haven't sent yet sit on Home, one tap from the wall ([#7759](https://github.com/boardsesh/boardsesh/pull/7759))
 
 ### Improved
 
+- Swipe between climbs on Android with fewer accidental scrolls. ([#7813](https://github.com/boardsesh/boardsesh/pull/7813))
 - Open a workout from your connected training app and climb it in Boardsesh. ([#7776](https://github.com/boardsesh/boardsesh/pull/7776))
   Keep your connected training app up to date with your logbook.
+
+### Fixed
+
+- A climb you logged during a workout now lands on the right block, even when it saves after the session ends. ([#7819](https://github.com/boardsesh/boardsesh/pull/7819))
+- Resume a partner workout after restarting Boardsesh, with your progress and timer intact. ([#7823](https://github.com/boardsesh/boardsesh/pull/7823))
+  Crew workouts keep your private notes and board name to you.
 
 ## 2026-11-17
 

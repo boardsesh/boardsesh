@@ -6,7 +6,6 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   authAccount,
-  authBrowserBindings,
   authEmailProjection,
   authProviderReauthenticationReceipts,
   authProviderSecurityIntents,
@@ -22,7 +21,6 @@ import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation
 import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-reservations';
 import { bindIdentityAuthority } from '../identity-authority';
 import { captureIdentityAuthority, switchIdentityAuthority, type IdentityAuthorityName } from '../router';
-import { beginBrowserIntent, commitBrowserLogin, createUnpublishedBrowserBinding } from '../browser-binding';
 import { createProviderSecurityIntent, type ProviderSecurityRuntime } from '../provider-security-intents';
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { providerTokenHash } from '../provider-security-context';
@@ -73,7 +71,7 @@ async function switchTo(selected: IdentityAuthorityName) {
       });
   });
 }
-async function actorFixture(selected: IdentityAuthorityName, kind: ProviderSecurityActor['kind']) {
+async function sessionFixture(selected: IdentityAuthorityName, kind: ProviderSecurityActor['presented']['kind']) {
   await switchTo(selected);
   const userId = randomUUID();
   const sid = randomUUID();
@@ -108,41 +106,22 @@ async function actorFixture(selected: IdentityAuthorityName, kind: ProviderSecur
       originalAuthenticatedAt: authenticatedAt,
       revocationGeneration: 0,
     });
-  const credential = kind === 'legacy-jwe' ? { kind, credential: raw, secret } : { kind, token: raw };
-  const binding = await createUnpublishedBrowserBinding(
-    environment.database,
-    qualification,
-    new Date(Date.now() + 86_400_000),
-  );
-  if (binding.status !== 'created') throw new Error('Owned browser binding initialization failed');
-  const login = await beginBrowserIntent(environment.database, qualification, binding.token, {
-    operation: 'login',
-    expectedVersion: 0,
-  });
-  if (login.status !== 'prepared') throw new Error('Owned login intent failed');
-  const admitted = await commitBrowserLogin(
-    environment.database,
-    qualification,
-    binding.token,
-    login.intentToken,
-    credential,
-  );
-  if (admitted.status !== 'committed') throw new Error('Owned issued credential was not admitted');
   const actor: ProviderSecurityActor = {
-    kind,
-    credential: raw,
+    presented: kind === 'legacy-jwe' ? { kind, credential: raw } : { kind, token: raw },
     expectedUserId: userId,
     expectedAuthSessionId: sid,
-    browserBindingToken: binding.token,
-    browserVersion: admitted.cursor.version,
   };
+  return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor, raw };
+}
+async function actorFixture(selected: IdentityAuthorityName) {
+  const owner = await sessionFixture(selected, 'canonical-token');
   const intent = await createProviderSecurityIntent(environment.database, runtime, {
-    actor,
+    actor: owner.actor,
     action: 'link',
     provider: 'apple',
     methodId: null,
   });
-  return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor, ...intent };
+  return { ...owner, ...intent };
 }
 async function intentRow(owner: Awaited<ReturnType<typeof actorFixture>>) {
   const [row] = await environment.database
@@ -178,49 +157,53 @@ describe('operation-bound selected-authority actual password reauthentication', 
   });
   afterAll(async () => environment?.close());
   for (const selected of ['current-store', 'better-auth'] as const) {
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
-      it(`${selected}/${kind}: actual password proves only the intent while original session age and expiry stay unchanged`, async () => {
-        const owner = await actorFixture(selected, kind);
-        const before = await intentRow(owner);
-        const proved = await reauthenticateProviderWithPassword(environment.database, runtime, {
-          actor: owner.actor,
-          intentToken: owner.intentToken,
-          browserIntentToken: owner.browserIntentToken,
-          password: ' exact password ',
-        });
-        expect(proved.reauthenticationToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-        const [receipt] = await receipts(owner);
-        expect(receipt.method).toBe('password');
-        expect(receipt.authenticatedAt.getTime()).toBeGreaterThan(owner.authenticatedAt.getTime() + 3_600_000);
-        expect(receipt.expiresAt.getTime()).toBeLessThanOrEqual(receipt.authenticatedAt.getTime() + 300_000);
-        expect(receipt.expiresAt.getTime()).toBeLessThanOrEqual(before.expiresAt.getTime());
-        expect(receipt.consumedAt).toBeNull();
-        expect(await intentRow(owner)).toEqual(before);
-        const [binding] = await environment.database
-          .select()
-          .from(authBrowserBindings)
-          .where(eq(authBrowserBindings.id, before.browserBindingHash));
-        expect(binding).toMatchObject({
-          generation: 0,
-          version: owner.actor.browserVersion,
-          authenticatedAt: owner.authenticatedAt,
-        });
-        expect(
-          await environment.database
-            .select()
-            .from(authSecurityMutationEvents)
-            .where(eq(authSecurityMutationEvents.userId, owner.userId)),
-        ).toHaveLength(0);
-        if (kind === 'canonical-token') {
-          const [session] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
-          expect(session.token).toBe(sessionTokenDigest(owner.actor.credential));
-          expect(session.originalAuthenticatedAt).toEqual(owner.authenticatedAt);
-          expect(session.expiresAt).toEqual(owner.sourceExpiresAt);
-        }
+    it(`${selected}: actual password proves only the intent while original session age and expiry stay unchanged`, async () => {
+      const owner = await actorFixture(selected);
+      const before = await intentRow(owner);
+      const proved = await reauthenticateProviderWithPassword(environment.database, runtime, {
+        actor: owner.actor,
+        intentToken: owner.intentToken,
+        password: ' exact password ',
       });
-    }
+      expect(proved.reauthenticationToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      const [receipt] = await receipts(owner);
+      expect(receipt.method).toBe('password');
+      expect(receipt.authenticatedAt.getTime()).toBeGreaterThan(owner.authenticatedAt.getTime() + 3_600_000);
+      expect(receipt.expiresAt.getTime()).toBeLessThanOrEqual(receipt.authenticatedAt.getTime() + 300_000);
+      expect(receipt.expiresAt.getTime()).toBeLessThanOrEqual(before.expiresAt.getTime());
+      expect(receipt.consumedAt).toBeNull();
+      expect(await intentRow(owner)).toEqual(before);
+      expect(
+        await environment.database
+          .select()
+          .from(authSecurityMutationEvents)
+          .where(eq(authSecurityMutationEvents.userId, owner.userId)),
+      ).toHaveLength(0);
+      const [session] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
+      expect(session.token).toBe(sessionTokenDigest(owner.raw));
+      expect(session.revocationGeneration).toBe(0);
+      expect(session.originalAuthenticatedAt).toEqual(owner.authenticatedAt);
+      expect(session.expiresAt).toEqual(owner.sourceExpiresAt);
+    });
+    it(`${selected}: a legacy NextAuth cookie is admitted for reads but cannot start a link it could not survive`, async () => {
+      const owner = await sessionFixture(selected, 'legacy-jwe');
+      await expect(
+        createProviderSecurityIntent(environment.database, runtime, {
+          actor: owner.actor,
+          action: 'link',
+          provider: 'apple',
+          methodId: null,
+        }),
+      ).rejects.toMatchObject({ outcome: 'canonical_session_required', code: 'canonical_session_required' });
+      expect(
+        await environment.database
+          .select()
+          .from(authProviderSecurityIntents)
+          .where(eq(authProviderSecurityIntents.userId, owner.userId)),
+      ).toHaveLength(0);
+    });
     it(`${selected}: wrong password and wrong actor cannot consume the intent or mint a receipt`, async () => {
-      const owner = await actorFixture(selected, 'legacy-jwe');
+      const owner = await actorFixture(selected);
       const before = await intentRow(owner);
       await expect(
         reauthenticateProviderWithPassword(environment.database, runtime, {
@@ -239,7 +222,7 @@ describe('operation-bound selected-authority actual password reauthentication', 
       expect(await intentRow(owner)).toEqual(before);
     });
     it(`${selected}: a generation change after actual comparison cannot restamp proof or consume intent`, async () => {
-      const owner = await actorFixture(selected, 'legacy-jwe');
+      const owner = await actorFixture(selected);
       const before = await intentRow(owner);
       phase.afterCompare = async () => {
         phase.afterCompare = undefined;
@@ -254,7 +237,7 @@ describe('operation-bound selected-authority actual password reauthentication', 
       expect(await intentRow(owner)).toEqual(before);
     });
     it(`${selected}: exact primary hash is re-read after bcrypt instead of accepting a stale successful comparison`, async () => {
-      const owner = await actorFixture(selected, 'legacy-jwe');
+      const owner = await actorFixture(selected);
       const before = await intentRow(owner);
       phase.afterCompare = async () => {
         phase.afterCompare = undefined;
@@ -284,7 +267,7 @@ describe('operation-bound selected-authority actual password reauthentication', 
       ).toMatch(/^[A-Za-z0-9_-]{43}$/);
     });
     it(`${selected}: releases the gate during real bcrypt and refuses an authority switch before receipt creation`, async () => {
-      const owner = await actorFixture(selected, 'legacy-jwe');
+      const owner = await actorFixture(selected);
       const before = await intentRow(owner);
       phase.afterCompare = async () => {
         phase.afterCompare = undefined;

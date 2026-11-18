@@ -32,7 +32,6 @@ import { isUsableProviderPassword, type ProviderSecurityMethodsConfiguration } f
 interface BoundInput {
   readonly actor: ProviderSecurityActor;
   readonly intentToken: string;
-  readonly browserIntentToken: string;
 }
 export interface ProviderReauthenticationRuntime {
   readonly qualification: IdentityAuthorityQualification;
