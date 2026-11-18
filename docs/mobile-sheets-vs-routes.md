@@ -69,6 +69,11 @@ these two triggers use one controlled `FullWindowOverlay`. The source body is re
 with a placeholder while lifted; the row content is mounted only once. Recycled rows,
 account changes and window-size changes retire the menu. Commands run after the overlay
 unmounts, preserving the normal sheet presenter for add-to-playlist and other actions.
+Closing does not depend on a successful animation: cancellation finishes dismissal too,
+and a 500 ms JavaScript fallback retires the overlay if no completion arrives. The close
+finishes once; cleanup cancels the fallback, and stale callbacks cannot affect a later
+menu or run an action after its target/account changes. This protects the full-window
+touch blocker from an interrupted animation, but cannot recover a stalled JavaScript thread.
 Other surfaces retain SwiftUI ContextMenu/Menu on iOS, Compose dropdowns on Android,
 and Paper on Expo web. `getClimbActions` resolves a snapshot without opening anything.
 The old `ClimbReactionMenu` overlay and its embedded sheets are removed.
