@@ -26,6 +26,7 @@ import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
   responseSetsSessionCookie,
+  sessionCookieName,
   sessionCookieNameCandidates,
 } from './secure-cookies';
 import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
@@ -196,8 +197,10 @@ async function signOut(
  * (verified or not) bridges it (B2b, `bridgeOnSessionRead`); so does a GET
  * whose active login cookie is older than a legacy login beside it (a login
  * made during a rollback). POST never bridges and answers a legacy cookie from
- * the legacy path. Apart from the bridged cookie, no answer writes or clears a
- * session cookie.
+ * the legacy path. A session read writes or clears a session cookie in three
+ * planned cases only (`bridgeOnSessionRead`): the bridged cookie, the clears
+ * of a stale first-party cookie a newer legacy login replaces, and the clears
+ * of a legacy cookie the backend denies. Nothing else does.
  */
 async function readSession(
   request: NextRequest,
@@ -214,9 +217,16 @@ async function readSession(
   if (session.kind === 'conflicted' || session.kind === 'oversized-legacy')
     return NextResponse.json({}, { headers: PRIVATE });
   const bridging = request.method === 'GET';
-  if (session.kind === 'legacy' && bridging && !carriesFirstPartyCookie(request))
+  // Only the legacy name this deployment writes is bridged: a plain-named cookie
+  // in a secure context would otherwise become a 400-day `__Secure-` cookie.
+  if (
+    session.kind === 'legacy' &&
+    bridging &&
+    !carriesFirstPartyCookie(request) &&
+    session.cookieName === sessionCookieName()
+  )
     return bridgeOnSessionRead(request, cookies, session.presented, {
-      replacesLoginCookie: false,
+      replaces: 'nothing',
       fallback: legacyAnswer(legacyRoute),
       onDenied: () => NextResponse.json({}, { headers: PRIVATE }),
     });
@@ -232,18 +242,26 @@ async function readSession(
     return unavailableCredentialResponse();
   }
   const activeAnswer = () => NextResponse.json(sessionJson(active), { headers: PRIVATE });
-  if (bridging && session.cookieKind === 'login') {
+  if (bridging) {
     let newer: Awaited<ReturnType<typeof newerLegacyLogin>>;
     try {
-      newer = await newerLegacyLogin(request, active);
+      newer = await newerLegacyLogin(request, active, session.cookieKind);
     } catch {
       newer = undefined;
     }
+    const carriedNames = requestCookieNames(request);
     if (newer)
       return bridgeOnSessionRead(request, cookies, newer, {
-        replacesLoginCookie: true,
+        replaces: session.cookieKind,
+        // A failed bridge keeps this request's answer; the next read retries.
         fallback: async () => activeAnswer(),
-        onDenied: activeAnswer,
+        // The newer login ended: signed out, never back to the stale session.
+        onDenied: () => {
+          const signedOut = NextResponse.json({}, { headers: PRIVATE });
+          for (const clear of signOutBrowserSessionCookieClears(cookies, carriedNames))
+            signedOut.headers.append('Set-Cookie', clear);
+          return signedOut;
+        },
       });
   }
   return activeAnswer();

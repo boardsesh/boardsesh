@@ -25,6 +25,7 @@ import {
 import { cloudflareVouchedVisitorAddress } from '@/app/lib/auth/trusted-client-ip.server';
 import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
 import { routeBrowserSessionAuth } from '@/app/lib/auth/browser-session-route.server';
+import { withLegacyModeFirstPartyClears } from '@/app/lib/auth/browser-session.server';
 import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
@@ -329,9 +330,12 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
           : getAuth(current, context, options),
       ),
     );
-  // AUTH_BROWSER_SESSION_MODE unset, empty or `legacy`: exactly the route as it was.
+  // AUTH_BROWSER_SESSION_MODE unset, empty or `legacy`: the route as it was. The
+  // only difference: a login or sign-out reply also clears a first-party cookie
+  // the request carried, which no browser holds before the first cutover.
   const browserSessionMode = browserSessionRouteMode();
-  if (browserSessionMode.kind === 'legacy') return legacyRoute();
+  if (browserSessionMode.kind === 'legacy')
+    return withLegacyModeFirstPartyClears(request, nextauth[0] ?? '', await legacyRoute());
   // The guarded sign-out keeps this route's form fields and answers.
   return routeBrowserSessionAuth(request, context, browserSessionMode, {
     legacyRoute,

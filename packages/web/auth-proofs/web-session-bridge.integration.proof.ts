@@ -7,11 +7,9 @@
  * cutover list is replaced through its test seam, never from the environment.
  */
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
 import { encode, type JWT } from 'next-auth/jwt';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { signBrowserSessionCookie } from '@boardsesh/auth-protocol/browser-session-cookie';
-import { authSession } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
@@ -23,7 +21,6 @@ import {
   LOGIN,
   browserSteps,
   createClimber,
-  loginToken,
   randomClientAddress,
   sessionCookieNamesIn,
   startWebSessionBackend,
@@ -68,6 +65,7 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
 import { BRIDGES_PER_CLIENT } from '../app/lib/auth/browser-session-bridge.server';
+import { issueNativeOAuthTransferToken } from '../app/lib/auth/native-oauth-transfer';
 
 const secret = 'web-session-bridge-proof-nextauth-secret-7596';
 const { csrf, login, readSession } = browserSteps(authRoute);
@@ -118,9 +116,8 @@ function bridgedCookieOf(response: Response): string | undefined {
 
 describe('a browser signed in before the switch', () => {
   it.each([
-    ['the Domain cookie', (credential: string) => `${LEGACY}=${credential}`],
-    ['a host-only cookie', (credential: string) => `${LEGACY}=${credential}`],
-    ['the plain-named cookie', (credential: string) => `next-auth.session-token=${credential}`],
+    // Host-only and Domain copies send the same header; the server cannot tell them apart.
+    ['the cookie this deployment writes', (credential: string) => `${LEGACY}=${credential}`],
     [
       'a chunked cookie',
       (credential: string) => `${LEGACY}.0=${credential.slice(0, 700)}; ${LEGACY}.1=${credential.slice(700)}`,
@@ -148,6 +145,72 @@ describe('a browser signed in before the switch', () => {
     const response = await readSession(`${LEGACY}=${first.credential}; ${LEGACY}=${second.credential}`);
     expect(await response.json()).toEqual({});
     expect(setCookies(response)).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a base name beside chunk names',
+      (one: string) => `${LEGACY}=${one}; ${LEGACY}.0=${one.slice(0, 700)}; ${LEGACY}.1=${one.slice(700)}`,
+    ],
+    [
+      'the plain and the secure name with differing values',
+      (one: string, other: string) => `${LEGACY}=${one}; next-auth.session-token=${other}`,
+    ],
+  ])('with %s reads as signed out and bridges nothing', async (_shape, cookieOf) => {
+    const [first, second] = [await legacyLogin(), await legacyLogin()];
+    const response = await readSession(cookieOf(first.credential, second.credential));
+    expect(await response.json()).toEqual({});
+    expect(setCookies(response)).toEqual([]);
+  });
+
+  it('never bridges a plain-named cookie in a secure context; the legacy path, which reads only the secure name, answers', async () => {
+    const { credential } = await legacyLogin();
+    const response = await readSession(`next-auth.session-token=${credential}`);
+    expect(await response.json()).toEqual({});
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+  });
+
+  it('keeps the session id of a legacy_no_sid cookie, and gives a claimless cookie its derived id', async () => {
+    const marked = await legacyLogin({ legacy_no_sid: true });
+    const markedRead = await bridgingRead(`${LEGACY}=${marked.credential}`);
+    expect(await markedRead.json()).toMatchObject({
+      user: { id: marked.climber.id },
+      authSessionId: marked.authSessionId,
+    });
+    const claimless = await createClimber(environment.database);
+    const credential = await encode({ token: { sub: claimless.id }, secret, maxAge: 3600 });
+    const claimlessRead = await bridgingRead(`${LEGACY}=${credential}`);
+    const body = (await claimlessRead.json()) as SessionJson;
+    expect(body.user?.id).toBe(claimless.id);
+    expect(body.authSessionId).toMatch(/^credential:/);
+    expect(bridgedCookieOf(claimlessRead)).toBeDefined();
+  });
+
+  it('after a provider login (the native transfer) is bridged on its first read', async () => {
+    const climber = await createClimber(environment.database);
+    const jar = new CookieJar();
+    const transferToken = issueNativeOAuthTransferToken({
+      userId: climber.id,
+      nextPath: '/',
+      credentialProof: {
+        version: 1,
+        userId: climber.id,
+        authSessionId: randomUUID(),
+        generation: 0,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+    });
+    const csrfToken = await csrf(jar);
+    jar.apply(
+      await callRoute(authRoute, '/api/auth/callback/native-oauth', {
+        cookie: jar.header(),
+        form: { csrfToken, transferToken, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
+      }),
+    );
+    const first = await bridgingRead(jar.header());
+    expect(((await first.json()) as SessionJson).user?.id).toBe(climber.id);
+    expect(bridgedCookieOf(first)).toBeDefined();
   });
 
   it('whose cookie the backend denies (a rollback cookie of a login) reads as signed out and its chunks are cleared', async () => {
@@ -232,40 +295,6 @@ describe('a bridge reply that arrives after a login as B', () => {
     expect(await delayed.json()).toEqual({});
     jar.apply(delayed);
     expect(((await (await readSession(jar.header())).json()) as SessionJson).user?.id).toBe(climberB.id);
-  });
-});
-
-describe('a stale login cookie beside a legacy login made during a rollback', () => {
-  async function loggedInHourAgo() {
-    const climberA = await createClimber(environment.database);
-    const jar = new CookieJar();
-    await login(jar, climberA.email);
-    const token = loginToken(jar);
-    const { authSessionId } = (await (await readSession(jar.header())).json()) as { authSessionId: string };
-    await environment.database
-      .update(authSession)
-      .set({ originalAuthenticatedAt: new Date(Date.now() - 3_600_000) })
-      .where(eq(authSession.id, authSessionId));
-    return { climberA, loginCookie: `${LOGIN}=${jar.get(LOGIN, DOMAIN)}`, token };
-  }
-
-  it('gives way to the newer legacy login: bridged, the login cookie cleared in both scopes', async () => {
-    const { loginCookie } = await loggedInHourAgo();
-    const { climber: climberB, authSessionId, credential } = await legacyLogin();
-    const response = await readSession(`${loginCookie}; ${LEGACY}=${credential}`, 'GET', '', { writes: true });
-    expect(await response.json()).toMatchObject({ user: { id: climberB.id }, authSessionId });
-    const written = setCookies(response);
-    expect(written).toContain(`${LOGIN}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
-    expect(written).toContain(`${LOGIN}=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
-    expect(bridgedCookieOf(response)).toBeDefined();
-  });
-
-  it('wins over an older legacy login, with no cookie written', async () => {
-    const { climberA, loginCookie } = await loggedInHourAgo();
-    const { credential } = await legacyLogin({ auth_time: Math.floor(Date.now() / 1000) - 7200 });
-    const response = await readSession(`${loginCookie}; ${LEGACY}=${credential}`);
-    expect(await response.json()).toMatchObject({ user: { id: climberA.id } });
-    expect(setCookies(response)).toEqual([]);
   });
 });
 

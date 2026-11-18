@@ -10,6 +10,7 @@
     "web-session-cookie.integration.proof.ts",
     "web-session-signout.integration.proof.ts",
     "web-session-bridge.integration.proof.ts",
+    "web-session-bridge-replacement.integration.proof.ts",
     "web-session-harness.ts",
     "route-harness.ts",
     "credential-proof.vite.config.ts",
