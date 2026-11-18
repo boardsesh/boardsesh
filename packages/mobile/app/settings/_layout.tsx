@@ -142,6 +142,8 @@ export default function SettingsLayout() {
         {/* i18n-ignore-next-line — tester-only screen */}
         <Stack.Screen name="feature-flags" options={{ title: 'Feature Flags' }} />
         {/* i18n-ignore-next-line — tester-only screen */}
+        <Stack.Screen name="board-motion-lab" options={{ title: 'Board motion lab' }} />
+        {/* i18n-ignore-next-line — tester-only screen */}
         <Stack.Screen name="dev-offline-writes" options={{ title: 'Offline Writes' }} />
         {/* i18n-ignore-next-line — tester-only screen */}
         <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />

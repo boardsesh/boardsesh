@@ -1,4 +1,5 @@
 import 'server-only';
+import { parsePartnerOAuthMode } from '@boardsesh/auth-protocol/partner-oauth-mode';
 import { notFound, redirect } from 'next/navigation';
 import { DEVELOPER_CONSOLE_FLAG } from '@/app/flags';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
@@ -26,5 +27,6 @@ export async function requireDeveloperConsoleAccess(path: string, locale: Locale
   if (!distinctId) {
     redirect(`${localeHref('/auth/login', locale)}?callbackUrl=${encodeURIComponent(localeHref(path, locale))}`);
   }
+  if (parsePartnerOAuthMode(process.env.PARTNER_OAUTH_MODE) === 'open') return;
   if (!(await getServerFeatureFlag(DEVELOPER_CONSOLE_FLAG, { distinctId }))) notFound();
 }

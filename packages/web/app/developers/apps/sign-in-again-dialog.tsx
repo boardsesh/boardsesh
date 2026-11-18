@@ -17,6 +17,7 @@ import { signInAgainPath } from '@/app/lib/developer-apps/sign-in-again';
 type SignInAgainDialogProps = {
   /** Refused from the edit form, which stays open behind this with what was typed. */
   fromForm: boolean;
+  fromWebhook?: boolean;
   onClose: () => void;
 };
 
@@ -28,7 +29,7 @@ type SignInAgainDialogProps = {
  * leaves the page, so an open form's edits cannot survive it: the dialog says
  * so, and Cancel goes back to the form with them intact.
  */
-export default function SignInAgainDialog({ fromForm, onClose }: SignInAgainDialogProps) {
+export default function SignInAgainDialog({ fromForm, fromWebhook = false, onClose }: SignInAgainDialogProps) {
   const { t, i18n } = useTranslation('developers');
   const titleId = useId();
   const locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
@@ -38,14 +39,16 @@ export default function SignInAgainDialog({ fromForm, onClose }: SignInAgainDial
       <DialogContent>
         <Stack spacing={1.5}>
           <Typography variant="body2" color="text.secondary">
-            {t('signInAgain.body', { minutes: PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS / 60 })}
+            {fromWebhook
+              ? t('webhooks.reauthBody', { minutes: PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS / 60 })
+              : t('signInAgain.body', { minutes: PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS / 60 })}
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {t('signInAgain.next')}
           </Typography>
           {fromForm ? (
             <Typography variant="body2" color="text.secondary">
-              {t('signInAgain.formKept')}
+              {fromWebhook ? t('webhooks.reauthForm') : t('signInAgain.formKept')}
             </Typography>
           ) : null}
         </Stack>

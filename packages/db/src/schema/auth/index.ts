@@ -8,6 +8,7 @@ export * from './email-verification';
 export * from './password-recovery';
 export * from './web-oauth-intents';
 export * from './partner-oauth';
+export * from './partner-developer-email';
 export * from './email-resolution';
 export * from './authority';
 export * from './browser-bindings';

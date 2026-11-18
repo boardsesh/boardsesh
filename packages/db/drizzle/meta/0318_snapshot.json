@@ -1,5 +1,5 @@
 {
-  "id": "4346f82e-0071-48c8-9cf3-046fca59cec5",
+  "id": "458aaa3d-1d86-4954-ae11-d88afc1e96e1",
   "prevId": "762b3018-476a-4cb3-9738-a89dc38e17fa",
   "version": "7",
   "dialect": "postgresql",
@@ -7449,6 +7449,197 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.partner_connection_notices": {
+      "name": "partner_connection_notices",
+      "schema": "",
+      "columns": {
+        "connection_id": {
+          "name": "connection_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "partner_connection_notices_pending_idx": {
+          "name": "partner_connection_notices_pending_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "partner_connection_notices_connection_id_oauth_connections_id_fk": {
+          "name": "partner_connection_notices_connection_id_oauth_connections_id_fk",
+          "tableFrom": "partner_connection_notices",
+          "tableTo": "oauth_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "partner_connection_notices_user_id_users_id_fk": {
+          "name": "partner_connection_notices_user_id_users_id_fk",
+          "tableFrom": "partner_connection_notices",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "partner_connection_notices_client_id_oauth_client_client_id_fk": {
+          "name": "partner_connection_notices_client_id_oauth_client_client_id_fk",
+          "tableFrom": "partner_connection_notices",
+          "tableTo": "oauth_client",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "client_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "partner_connection_notices_connection_id_generation_pk": {
+          "name": "partner_connection_notices_connection_id_generation_pk",
+          "columns": [
+            "connection_id",
+            "generation"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.partner_developer_emails": {
+      "name": "partner_developer_emails",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "partner_developer_emails_user_id_users_id_fk": {
+          "name": "partner_developer_emails_user_id_users_id_fk",
+          "tableFrom": "partner_developer_emails",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.auth_email_resolution_log": {
       "name": "auth_email_resolution_log",
       "schema": "",
@@ -9312,93 +9503,6 @@
         "auth_first_password_candidate": {
           "name": "auth_first_password_candidate",
           "value": "(\"auth_first_password_challenges\".\"phase\" NOT IN ('prepared', 'committed')\n          OR (\"auth_first_password_challenges\".\"actor_credential_kind\" = 'canonical-token' AND \"auth_first_password_challenges\".\"proposed_credential_hash\" IS NOT NULL)\n          OR (\"auth_first_password_challenges\".\"actor_credential_kind\" = 'legacy-jwe' AND \"auth_first_password_challenges\".\"proposed_credential_hash\" IS NULL))\n        AND (\"auth_first_password_challenges\".\"recovery_expires_at\" IS NULL OR (\"auth_first_password_challenges\".\"recovery_expires_at\" > \"auth_first_password_challenges\".\"consumed_at\"\n          AND \"auth_first_password_challenges\".\"recovery_expires_at\" <= \"auth_first_password_challenges\".\"expires_at\"\n          AND \"auth_first_password_challenges\".\"recovery_expires_at\" <= \"auth_first_password_challenges\".\"consumed_at\" + interval '2 minutes'))"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.auth_password_guess_windows": {
-      "name": "auth_password_guess_windows",
-      "schema": "",
-      "columns": {
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_key": {
-          "name": "subject_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "window_kind": {
-          "name": "window_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "window_start": {
-          "name": "window_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "failures": {
-          "name": "failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "auth_password_guess_windows_start_idx": {
-          "name": "auth_password_guess_windows_start_idx",
-          "columns": [
-            {
-              "expression": "window_start",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "auth_password_guess_windows_pk": {
-          "name": "auth_password_guess_windows_pk",
-          "columns": [
-            "subject_kind",
-            "subject_key",
-            "window_kind",
-            "window_start"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "auth_password_guess_windows_subject_kind": {
-          "name": "auth_password_guess_windows_subject_kind",
-          "value": "\"auth_password_guess_windows\".\"subject_kind\" IN ('email_digest', 'account_digest')"
-        },
-        "auth_password_guess_windows_subject_key": {
-          "name": "auth_password_guess_windows_subject_key",
-          "value": "\"auth_password_guess_windows\".\"subject_key\" ~ '^[0-9a-f]{64}$'"
-        },
-        "auth_password_guess_windows_window_kind": {
-          "name": "auth_password_guess_windows_window_kind",
-          "value": "\"auth_password_guess_windows\".\"window_kind\" IN ('hour', 'day')"
-        },
-        "auth_password_guess_windows_failures": {
-          "name": "auth_password_guess_windows_failures",
-          "value": "\"auth_password_guess_windows\".\"failures\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -23744,6 +23848,105 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.partner_app_cap_audit": {
+      "name": "partner_app_cap_audit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "performed_by": {
+          "name": "performed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_max_active_connections": {
+          "name": "previous_max_active_connections",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_max_new_connections_per_day": {
+          "name": "previous_max_new_connections_per_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_active_connections": {
+          "name": "max_active_connections",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_new_connections_per_day": {
+          "name": "max_new_connections_per_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "partner_app_cap_audit_client_history_idx": {
+          "name": "partner_app_cap_audit_client_history_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "partner_app_cap_audit_actor_idx": {
+          "name": "partner_app_cap_audit_actor_idx",
+          "columns": [
+            {
+              "expression": "performed_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

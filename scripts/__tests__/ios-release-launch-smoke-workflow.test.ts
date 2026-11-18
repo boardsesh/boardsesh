@@ -117,6 +117,14 @@ describe('iOS Release launch workflow', () => {
       'ClimbOverlayPacketProtocol.swift',
       'tests/ClimbOverlayPacketProtocolTests.swift',
     ],
+    [
+      'swap-look',
+      'ClimbOverlayPacketLayout.swift',
+      'ClimbOverlayMotion.swift',
+      'ClimbOverlayShader.swift',
+      'ClimbOverlaySwapLook.swift',
+      'tests/ClimbOverlaySwapLookTests.swift',
+    ],
   ];
   it.each([
     { suite: 'all', compilerExit: 0, testExit: 0, expectedExit: 0 },

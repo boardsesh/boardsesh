@@ -1552,3 +1552,117 @@ describe('useCarouselGesture', () => {
     }
   });
 });
+
+describe('useCarouselGesture virtual finger', () => {
+  beforeEach(() => {
+    reactions.length = 0;
+    vi.clearAllMocks();
+    recordedBuilders.length = 0;
+    springCallbacks.length = 0;
+    springStarts.length = 0;
+    deadlines.length = 0;
+    timingCallbacks.length = 0;
+    platform.OS = 'ios';
+  });
+
+  /** What a swipe leaves behind on the pager and in the springs it started. */
+  function outcome(pager: ReturnType<typeof makePager>) {
+    return {
+      translateX: pager.translateX.value,
+      anchorPage: pager.anchorPage.value,
+      flingDirection: pager.flingDirection.value,
+      uiSteps: pager.uiSteps.value,
+      untoldStep: pager.untoldStep.value,
+      springs: springStarts.splice(0, springStarts.length),
+    };
+  }
+
+  it.each([
+    ['a drag past the threshold', [-30, -60, -(SWIPE_THRESHOLD + 10)], -120],
+    ['a short hard flick', [-10, -40], -1500],
+    ['a drag let go short', [-20, -50], 0],
+    ['a drag back the other way', [40, SWIPE_THRESHOLD + 20], 300],
+  ])('runs %s exactly as a touch does', (_name, moves, velocityX) => {
+    const touched = makePager();
+    renderHook(() => useCarouselGesture(makeOptions({ pager: touched })));
+    const handlers = latestHandlers();
+    handlers.onStart({ translationX: 0 });
+    for (const translationX of moves) handlers.onUpdate({ translationX });
+    handlers.onEnd({ translationX: moves.at(-1), velocityX });
+    const byTouch = outcome(touched);
+
+    const scripted = makePager();
+    const { result } = renderHook(() => useCarouselGesture(makeOptions({ pager: scripted })));
+    const finger = result.current.virtualFinger;
+    finger.down();
+    for (const translationX of moves) finger.move(translationX);
+    finger.up(velocityX);
+
+    expect(outcome(scripted)).toEqual(byTouch);
+  });
+
+  it('takes over a running fling like a touch', () => {
+    const pager = makePager();
+    const { result } = renderHook(() => useCarouselGesture(makeOptions({ pager })));
+    const finger = result.current.virtualFinger;
+    finger.down();
+    finger.move(-(SWIPE_THRESHOLD + 1));
+    finger.up(0);
+    pager.translateX.value = -200;
+
+    finger.down();
+
+    expect(pager.anchorPage.value).toBe(1);
+    expect(pager.translateX.value).toBe(120);
+    finger.move(-50);
+    expect(pager.translateX.value).toBe(70);
+  });
+
+  it('is refused while the swipe is off or the board zoomed, as a touch would be', () => {
+    const pager = makePager();
+    const { result, rerender } = renderHook((options: Options) => useCarouselGesture(options), {
+      initialProps: makeOptions({ pager, enabled: false }),
+    });
+    result.current.virtualFinger.down();
+    result.current.virtualFinger.move(-(SWIPE_THRESHOLD + 20));
+    result.current.virtualFinger.up(-2000);
+    expect(pager.translateX.value).toBe(0);
+    expect(pager.uiSteps.value).toBe(0);
+
+    const isZoomedSV = shared(true);
+    rerender(makeOptions({ pager, isZoomedSV }));
+    result.current.virtualFinger.down();
+    result.current.virtualFinger.move(-(SWIPE_THRESHOLD + 20));
+    expect(pager.translateX.value).toBe(0);
+  });
+
+  it('lets go where it was when the swipe is switched off under it', () => {
+    const pager = makePager();
+    const { result, rerender } = renderHook((options: Options) => useCarouselGesture(options), {
+      initialProps: makeOptions({ pager }),
+    });
+    const finger = result.current.virtualFinger;
+    finger.down();
+    finger.move(-30);
+    expect(pager.translateX.value).toBe(-30);
+
+    rerender(makeOptions({ pager, enabled: false }));
+    finger.move(-(SWIPE_THRESHOLD + 20));
+    // Ended at -30, short of the threshold: back to the middle, no step.
+    expect(pager.translateX.value).toBe(0);
+    expect(pager.uiSteps.value).toBe(0);
+    // The finger is up: nothing more moves the board.
+    finger.up(-2000);
+    expect(pager.uiSteps.value).toBe(0);
+  });
+
+  it('keeps the same worklets across renders', () => {
+    const pager = makePager();
+    const { result, rerender } = renderHook((options: Options) => useCarouselGesture(options), {
+      initialProps: makeOptions({ pager }),
+    });
+    const first = result.current.virtualFinger;
+    rerender(makeOptions({ pager, enabled: false, boardWidth: 280 }));
+    expect(result.current.virtualFinger).toBe(first);
+  });
+});

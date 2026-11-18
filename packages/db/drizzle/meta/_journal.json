@@ -2231,8 +2231,57 @@
     {
       "idx": 318,
       "version": "7",
-      "when": 1794962258949,
-      "tag": "0318_password_guess_windows",
+      "when": 1794956550170,
+      "tag": "0318_partner_self_service_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 319,
+      "version": "7",
+      "when": 1794957338406,
+      "tag": "0319_partner_workouts_webhooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 320,
+      "version": "7",
+      "when": 1794957369866,
+      "tag": "0320_partner_lifecycle_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 321,
+      "version": "7",
+      "when": 1794958290643,
+      "tag": "0321_partner_webhook_delivery_fences",
+      "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1794958323725,
+      "tag": "0322_partner_webhook_event_generations",
+      "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1794958662391,
+      "tag": "0323_partner_webhook_reconcile_fairness",
+      "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1794960085736,
+      "tag": "0324_partner_workout_initial_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1794991102772,
+      "tag": "0325_password_guess_windows",
       "breakpoints": true
     }
   ]

@@ -51,6 +51,22 @@ final class ClimbOverlayMetalPacket {
     uniformInUse[slot] = true;return slot
   }
   func releaseUniforms(_ slot: Int) { uniformLock.lock();uniformInUse[slot] = false;uniformLock.unlock() }
+  /// Swap look only: a scene's holds as the look reads them, as the lower or
+  /// the upper side of a pair (each side has its own membership number).
+  /// Decoded on first use; read and written on the main thread only.
+  private var swapLookScenes: [Int: ClimbOverlaySwapLook.Scene] = [:]
+  func swapLookScene(slot: Int,upper: Bool) -> ClimbOverlaySwapLook.Scene {
+    let cacheKey = slot*2+(upper ? 1 : 0)
+    if let scene = swapLookScenes[cacheKey] { return scene }
+    let count = header.scenes[slot].count
+    let buffer = descriptors[slot]
+    let holds = ClimbOverlaySwapLook.holds(
+      descriptors: UnsafeRawBufferPointer(start: buffer.contents(),count: min(buffer.length,count*ClimbOverlayPacketLayout.descriptorBytes)),
+      count: count,upper: upper,width: Float(header.width),height: Float(header.height))
+    let scene = ClimbOverlaySwapLook.Scene(holds)
+    swapLookScenes[cacheKey] = scene
+    return scene
+  }
   func uniforms(slot: Int,lower: Int,upper: Int,revealMode: Int = ClimbOverlayMotion.revealModeWipe,progress: Float,
                 swap: ClimbOverlayMotion.SwapWeights = .init(lower: 1,upper: 0),pulse: Float,viewport: SIMD2<Float>,
                 productionEmpty: Bool,mirrored: Bool) throws {
@@ -235,11 +251,16 @@ private extension Optional where Wrapped == ClimbOverlayMetalArena {
   func unwrap() throws -> Wrapped { guard let self else { throw ClimbOverlayArenaFailure.invalid };return self }
 }
 
+/// `look` is the swap look's buffer (`ClimbOverlaySwapLook.encode`), or its
+/// zero header: the shader always reads the header, so it is always bound.
 func encodeClimbOverlayPacket(_ packet: ClimbOverlayMetalPacket,encoder: MTLRenderCommandEncoder,
-                             lower: Int,upper: Int,uniformSlot: Int) {
+                             lower: Int,upper: Int,uniformSlot: Int,look: [UInt16] = ClimbOverlaySwapLook.off) {
   encoder.setFragmentBuffer(packet.pins.arena.pixels,offset: 0,index: ClimbOverlayPacketLayout.metalBindingsPixels)
   encoder.setFragmentBuffer(packet.descriptors[lower],offset: 0,index: ClimbOverlayPacketLayout.metalBindingsLower)
   encoder.setFragmentBuffer(packet.uniformBuffers[uniformSlot],offset: 0,index: ClimbOverlayPacketLayout.metalBindingsUniforms)
   encoder.setFragmentBuffer(packet.resources,offset: 0,index: ClimbOverlayPacketLayout.metalBindingsResources)
   encoder.setFragmentBuffer(packet.descriptors[upper],offset: 0,index: ClimbOverlayPacketLayout.metalBindingsUpper)
+  look.withUnsafeBytes { bytes in
+    encoder.setFragmentBytes(bytes.baseAddress!,length: bytes.count,index: ClimbOverlaySwapLook.metalBinding)
+  }
 }

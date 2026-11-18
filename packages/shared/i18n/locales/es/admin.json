@@ -139,7 +139,8 @@
     "locationSync": "Bloqueos de sincronización de ubicaciones",
     "sprayWalls": "Datos de entrenamiento de Spraywalls",
     "boards": "Plafones registrados",
-    "buildPlans": "Pedidos de packs de construcción"
+    "buildPlans": "Pedidos de packs de construcción",
+    "partnerApps": "Aplicaciones asociadas"
   },
   "buildPlans": {
     "title": "Pedidos de packs de construcción",
@@ -580,5 +581,34 @@
       "unlisted": "No listado",
       "private": "Privado"
     }
+  },
+  "partnerApps": {
+    "title": "Aplicaciones asociadas",
+    "description": "Aplicaciones registradas, escaladores conectados y límites de conexiones.",
+    "limitsHelp": "Los límites se aplican a las conexiones nuevas. Reducir un límite mantiene las conexiones existentes. Cero bloquea las conexiones nuevas. Los cambios se registran con tu cuenta de administrador.",
+    "search": "Buscar aplicación, editor o desarrollador",
+    "searchAction": "Buscar",
+    "app": "Aplicación",
+    "developer": "Desarrollador",
+    "connections": "Conexiones",
+    "limits": "Límites",
+    "actions": "Acciones",
+    "activeLimit": "Máximo de conexiones activas",
+    "dailyLimit": "Máximo de conexiones nuevas por 24 horas",
+    "usage": "{{active}} activas · {{recent}} nuevas en 24 horas",
+    "invalidLimit": "Usa un número entero de 0 a 2147483647.",
+    "save": "Guardar límites",
+    "saved": "Límites guardados",
+    "saveError": "No se han podido guardar los límites. Inténtalo de nuevo.",
+    "loading": "Cargando aplicaciones asociadas",
+    "loadError": "No se han podido cargar las aplicaciones asociadas.",
+    "retry": "Reintentar",
+    "empty": "Ninguna aplicación coincide con esta búsqueda.",
+    "total_one": "{{count}} aplicación registrada",
+    "total_other": "{{count}} aplicaciones registradas",
+    "previous": "Página anterior",
+    "next": "Página siguiente",
+    "active": "Activa",
+    "suspended": "Suspendida"
   }
 }

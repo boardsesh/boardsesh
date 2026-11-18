@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { executeFirstRow } from '@boardsesh/db/client';
+import { appWorkouts, oauthClientWebhooks, partnerWebhookOutbox } from '@boardsesh/db/schema/app';
 import {
   qualifyCredentialWriter,
   PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES,
@@ -82,7 +83,7 @@ async function seedPartnerUser() {
   await database
     .insert(oauthClient)
     .values({ id: clientId, clientId, redirectUris: ['https://owned.example.invalid/callback'] });
-  await database.insert(oauthConnections).values({ id: connectionId, userId, clientId });
+  await database.insert(oauthConnections).values({ id: connectionId, userId, clientId, connectedAt: now });
   await database.insert(oauthSession).values({ id: sessionId, token: randomUUID(), userId, expiresAt, updatedAt: now });
   await database.insert(oauthRefreshToken).values({
     id: refreshId,
@@ -122,6 +123,30 @@ async function seedPartnerUser() {
   await database.insert(oauthGrants).values({ authorizationCodeId: codeId, connectionId, generation: 0 });
   return { userId, clientId, connectionId, codeId };
 }
+async function seedSubscribedWorkout(affected: Awaited<ReturnType<typeof seedPartnerUser>>) {
+  const database = environment.ownerDatabase;
+  const id = randomUUID();
+  await database.insert(oauthClientWebhooks).values({
+    clientId: affected.clientId,
+    url: 'https://owned.example.invalid/notify',
+    events: ['connection.revoked'],
+    secret: 'owned-fixture',
+    version: 4,
+  });
+  await database.insert(appWorkouts).values({
+    id,
+    clientId: affected.clientId,
+    userId: affected.userId,
+    connectionId: affected.connectionId,
+    connectionGeneration: 0,
+    externalRef: id,
+    title: 'Owned workout',
+    spec: {},
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+  return id;
+}
+
 async function partnerSnapshot(owner: Awaited<ReturnType<typeof seedPartnerUser>>) {
   const database = environment.ownerDatabase;
   return Promise.all([
@@ -258,6 +283,33 @@ describe('private-provider-v1 on the actual restricted credential LOGIN', () => 
     expect((await qualify()).contract).toBe('private-provider-v1');
   });
 
+  it('pins the lifecycle routines, triggers and write targets without granting direct access', async () => {
+    for (const routine of ['partner_account_deletion_events', 'partner_connection_lifecycle_events']) {
+      const [original] = await environment.owner<{ definition: string }[]>`
+        SELECT pg_get_functiondef(to_regprocedure(${`public.${routine}()`})) AS definition`;
+      await drift(
+        `CREATE OR REPLACE FUNCTION public.${routine}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS 'BEGIN RETURN NULL; END'`,
+        original!.definition,
+        'CREDENTIAL_WRITER_UNREVIEWED_PARTNER_REVOKE',
+      );
+    }
+    await drift(
+      'ALTER TABLE public.oauth_connections DISABLE TRIGGER trg_partner_connection_lifecycle_events',
+      'ALTER TABLE public.oauth_connections ENABLE TRIGGER trg_partner_connection_lifecycle_events',
+      'CREDENTIAL_WRITER_UNREVIEWED_TRIGGER_PATH',
+    );
+    await drift(
+      'ALTER TABLE public.partner_webhook_outbox ADD COLUMN unreviewed boolean',
+      'ALTER TABLE public.partner_webhook_outbox DROP COLUMN unreviewed',
+      'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE',
+    );
+    await drift(
+      'GRANT UPDATE ON public.app_workouts TO boardsesh_identity_writer',
+      'REVOKE UPDATE ON public.app_workouts FROM boardsesh_identity_writer',
+      'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
+    );
+  });
+
   it('requires explicit nongrantable direct revocation EXECUTE and refuses PUBLIC or overload alternatives', async () => {
     await drift(
       'REVOKE EXECUTE ON FUNCTION public.partner_revoke_user(text) FROM boardsesh_identity_writer',
@@ -381,6 +433,7 @@ describe('private-provider-v1 on the actual restricted credential LOGIN', () => 
 
   it('revokes every affected partner row and commits provider storage while unrelated credentials remain exact', async () => {
     const affected = await seedPartnerUser();
+    const workoutId = await seedSubscribedWorkout(affected);
     const unrelated = await seedPartnerUser();
     const unrelatedBefore = await partnerSnapshot(unrelated);
     const result = await revokeAndStoreReceipts(affected.userId, false);
@@ -388,6 +441,16 @@ describe('private-provider-v1 on the actual restricted credential LOGIN', () => 
     const after = await partnerSnapshot(affected);
     expect(after[0]).toMatchObject([{ generation: 1, revocationReason: 'account_security_revocation' }]);
     expect(after[0][0].revokedAt).toBeInstanceOf(Date);
+    const database = environment.ownerDatabase;
+    expect(
+      await database.select({ status: appWorkouts.status }).from(appWorkouts).where(eq(appWorkouts.id, workoutId)),
+    ).toEqual([{ status: 'revoked' }]);
+    expect(
+      await database
+        .select({ type: partnerWebhookOutbox.type, endpointVersion: partnerWebhookOutbox.endpointVersion })
+        .from(partnerWebhookOutbox)
+        .where(eq(partnerWebhookOutbox.connectionId, affected.connectionId)),
+    ).toEqual([{ type: 'connection.revoked', endpointVersion: 4 }]);
     for (const rows of after.slice(1)) expect(rows).toEqual([]);
     expect(await partnerSnapshot(unrelated)).toEqual(unrelatedBefore);
     expect(
@@ -405,11 +468,22 @@ describe('private-provider-v1 on the actual restricted credential LOGIN', () => 
   });
   it('rolls the real callee and all provider/event storage back after a late transaction failure', async () => {
     const affected = await seedPartnerUser();
+    const workoutId = await seedSubscribedWorkout(affected);
     const unrelated = await seedPartnerUser();
     const affectedBefore = await partnerSnapshot(affected);
     const unrelatedBefore = await partnerSnapshot(unrelated);
     const result = await revokeAndStoreReceipts(affected.userId, true);
     await expect(result.pending).rejects.toThrow('OWNED_PROVIDER_LATE_ROLLBACK');
+    const database = environment.ownerDatabase;
+    expect(
+      await database.select({ status: appWorkouts.status }).from(appWorkouts).where(eq(appWorkouts.id, workoutId)),
+    ).toEqual([{ status: 'created' }]);
+    expect(
+      await database
+        .select({ id: partnerWebhookOutbox.id })
+        .from(partnerWebhookOutbox)
+        .where(eq(partnerWebhookOutbox.connectionId, affected.connectionId)),
+    ).toEqual([]);
     expect(await partnerSnapshot(affected)).toEqual(affectedBefore);
     expect(await partnerSnapshot(unrelated)).toEqual(unrelatedBefore);
     expect(

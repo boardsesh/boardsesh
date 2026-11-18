@@ -51,6 +51,13 @@
           "lastWorkoutSends_one": "{{count}} Begehung",
           "lastWorkoutSends_other": "{{count}} Begehungen"
         },
+        "projects": {
+          "title": "Zurück zu deinen Projekten",
+          "tries_one": "{{count}} Versuch",
+          "tries_other": "{{count}} Versuche",
+          "seeAll": "Alle ansehen",
+          "unknownClimb": "Unbekannter Boulder"
+        },
         "playlists": {
           "title": "Auf deinem Level, noch nicht getoppt",
           "all": "Alle Playlists"
