@@ -1,4 +1,4 @@
-// Reviewed PostgreSQL catalog shapes for the partner lifecycle trigger closure after migration 0325.
+// Reviewed PostgreSQL catalog shapes for the partner lifecycle trigger closure after migration 0328.
 export default [
   {
     name: 'app_workouts',
@@ -27,6 +27,7 @@ export default [
         'CREATE INDEX app_workouts_connection_status_idx ON public.app_workouts USING btree (connection_id, status)',
         'CREATE INDEX app_workouts_expiry_idx ON public.app_workouts USING btree (status, expires_at)',
         'CREATE UNIQUE INDEX app_workouts_external_ref_idx ON public.app_workouts USING btree (client_id, user_id, external_ref)',
+        "CREATE INDEX app_workouts_finished_user_idx ON public.app_workouts USING btree (user_id, completed_at) WHERE (status = ANY (ARRAY['completed'::text, 'auto_closed'::text]))",
         'CREATE UNIQUE INDEX app_workouts_pkey ON public.app_workouts USING btree (id)',
         'CREATE UNIQUE INDEX app_workouts_session_user_idx ON public.app_workouts USING btree (session_id, user_id)',
       ],
@@ -107,7 +108,7 @@ export default [
         'CREATE INDEX partner_webhook_outbox_pending_idx ON public.partner_webhook_outbox USING btree (occurred_at) WHERE (relayed_at IS NULL)',
         'CREATE UNIQUE INDEX partner_webhook_outbox_pkey ON public.partner_webhook_outbox USING btree (id)',
         "CREATE UNIQUE INDEX partner_webhook_revocation_generation_idx ON public.partner_webhook_outbox USING btree (connection_id, connection_generation) WHERE (type = 'connection.revoked'::text)",
-        "CREATE UNIQUE INDEX partner_webhook_workout_completion_idx ON public.partner_webhook_outbox USING btree (workout_id) WHERE (type = 'workout.completed'::text)",
+        "CREATE UNIQUE INDEX partner_webhook_workout_completion_pending_idx ON public.partner_webhook_outbox USING btree (workout_id) WHERE ((type = 'workout.completed'::text) AND (relayed_at IS NULL))",
       ],
       constraints: ['FOREIGN KEY (client_id) REFERENCES oauth_client(client_id) ON DELETE CASCADE', 'PRIMARY KEY (id)'],
     },

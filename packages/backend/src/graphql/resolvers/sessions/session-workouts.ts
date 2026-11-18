@@ -26,6 +26,7 @@ import {
 } from '@boardsesh/workout-summary';
 import { db } from '../../../db/client';
 import { recoverAppWorkoutPlan } from '../../../services/public-api/workouts';
+import { markSessionWorkoutResultsChanged } from '../../../services/partner-webhooks/workout-results-changed';
 import type { PartnerDatabase } from '../../../auth/partner/tables';
 import { canAccessResource } from '../../../services/privacy';
 import { sessionsOwnSurfaceVisibleUserIds, sessionVisibleUserIds } from '../../../services/board-session-privacy';
@@ -268,7 +269,7 @@ export const sessionWorkoutMutations = {
     const now = new Date();
     await db.transaction(async (tx) => {
       await recoverAppWorkoutPlan(tx as unknown as PartnerDatabase, userId, sessionId, plan);
-      await tx
+      const written = await tx
         .insert(dbSchema.sessionWorkouts)
         .values({ sessionId, userId, plan, tickMap: ownTickMap, revision, createdAt: now, updatedAt: now })
         .onConflictDoUpdate({
@@ -280,7 +281,11 @@ export const sessionWorkoutMutations = {
             updatedAt: now,
           },
           setWhere: sql`${dbSchema.sessionWorkouts.revision} < excluded.revision`,
-        });
+        })
+        .returning({ sessionId: dbSchema.sessionWorkouts.sessionId });
+      // The tick map places ticks on blocks, so a write after End can change a
+      // finished partner workout's results without any tick changing.
+      if (written.length > 0) await markSessionWorkoutResultsChanged(tx, sessionId, userId, now);
     });
     return true;
   },

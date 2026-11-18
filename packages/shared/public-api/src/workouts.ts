@@ -231,6 +231,8 @@ export const WorkoutResultsSchema = z
     ),
   })
   .openapi('WorkoutResults', {
+    description:
+      'Built when read. A late, edited or deleted tick can change them for seven days after the end, and each change sends workout.completed again; the latest read is authoritative.',
     additionalProperties: true,
     example: {
       completion: 'ended',

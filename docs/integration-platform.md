@@ -2802,6 +2802,42 @@ Sequence proposal is superseded by these implemented delivery rules:
   at most ten producer pages of 1,000 feed rows and 100 ready connections each,
   and ten relay pages of 100 outbox events. The cursor and pending bits preserve
   unfinished work for later runs.
+- `workout.completed` is sent at End, in the End transaction, and again when the
+  workout's results change afterwards, for seven days after End.
+  - **Tick changes.** The same producer page reads each change's `tick_uuid` and
+    follows it to a tick of the workout's climber in the workout's session. A
+    deleted tick no longer names a session, so it counts for every recent
+    workout of that climber. It marks finished workouts whose app subscribes to
+    `workout.completed` (`app_workouts_finished_user_idx` serves the lookup).
+  - **Tick-map and plan writes.** `recordSessionWorkout` places ticks on blocks
+    without changing any tick, so it writes no `logbook_changes` row. It marks
+    the climber's finished workouts in that session inside its own transaction.
+  - **Moves between sessions.** A tick moved into the workout's session is seen
+    (its `session_id` change writes a feed row). A tick moved out of it is not.
+    That is safe only because inferred-session reconcile never moves a tick out
+    of an explicit session (`inferred-sessions/reconcile.ts`) and a workout only
+    binds the explicit session the climber started it in. If either changes,
+    this producer misses the move.
+  - **Spacing.** `partner_workout_result_debounce` (one row per workout,
+    `pending` plus `last_enqueued_at`, which starts at `completed_at`) spaces
+    sends at least a minute apart, End's included, across restarts and
+    replicas. The outbox allows one unrelayed `workout.completed` per workout
+    (`partner_webhook_workout_completion_pending_idx`); a relayed one may be
+    followed by another.
+  - **End's own event.** A workout whose completion event is still unrelayed is
+    skipped: its delivery comes after the change committed, so the app's read
+    already sees it. This relies on `produce` running before `relay` in the
+    same minute job. When `produce` fails, falls more than ten pages behind, or
+    a long transaction holds the horizon back, a tick saved just before End can
+    still cause a second send about a minute later. Apps re-read and the latest
+    read wins, so that is harmless.
+  - **Cursor resets.** A stale-cursor reset (restore or pruning) broadcasts
+    `logbook.changed` and jumps to the horizon. It does not re-send
+    `workout.completed` for the changes it skips.
+  - **Event.** Each repeat has a new event id and the same workout id.
+    `occurredAt` is when the producer queued it, normally within a minute or
+    two of the change. Apps that did not subscribe, or whose endpoint is off,
+    get nothing, as at End.
 - Signature, retry table and `410` handling are specified in partner-api.md
   section 5 (`Boardsesh-Signature: t=…,v1=…`, HMAC-SHA256 over `t.rawBody`).
   Nine exponential retry delays total roughly 17–26 hours with jitter;

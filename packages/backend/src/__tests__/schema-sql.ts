@@ -4,6 +4,10 @@
  */
 
 import { readFileSync } from 'node:fs';
+const partnerWorkoutResultResendSchema = readFileSync(
+  new URL('../../../db/drizzle/0328_partner_workout_result_resend.sql', import.meta.url),
+  'utf8',
+);
 const partnerNoticeRetentionSchema = readFileSync(
   new URL('../../../db/drizzle/0326_partner_notice_retention_7811.sql', import.meta.url),
   'utf8',
@@ -2557,7 +2561,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${stampNewCredentialsSchema}
   DROP TABLE IF EXISTS partner_connection_notices, partner_developer_emails, partner_app_cap_audit;
   ${partnerSelfServiceSchema}
-  DROP TABLE IF EXISTS app_workout_requests, app_workouts, webhook_deliveries, partner_webhook_outbox, partner_webhook_debounce, partner_webhook_feed_state, oauth_client_webhooks;
+  DROP TABLE IF EXISTS partner_workout_result_debounce, app_workout_requests, app_workouts, webhook_deliveries, partner_webhook_outbox, partner_webhook_debounce, partner_webhook_feed_state, oauth_client_webhooks;
   ${partnerWorkoutWebhookSchema}
   DROP TRIGGER IF EXISTS trg_partner_account_deletion_events ON users;
   ${partnerLifecycleEventsSchema}
@@ -2567,4 +2571,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerInitialHistorySchema}
   ${partnerReviewSchema}
   ${partnerNoticeRetentionSchema}
+  ${partnerWorkoutResultResendSchema}
 `;

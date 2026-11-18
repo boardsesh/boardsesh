@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "date": "2026-11-18",
+      "documentSha256": "7db986f2ce8593b4958a1a8f66d4a33177b27ab4db17314d3b52f176212b3548",
+      "changes": [
+        "workout.completed is sent again when a finished workout's results change (a late, edited or deleted tick) within seven days of the end, at most once a minute per workout. Each repeat has a new event id and the same workoutId; re-read the workout and treat the latest results as authoritative."
+      ]
+    },
+    {
       "date": "2026-11-17",
       "documentSha256": "483a46cc328c7bfd68dac6d1ab14e4cd18aabe34bb8d374d4b12726553506de5",
       "changes": [

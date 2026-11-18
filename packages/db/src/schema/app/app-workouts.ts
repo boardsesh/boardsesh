@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { pgTable, text, timestamp, jsonb, integer, boolean, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 import { oauthClient, oauthConnections } from '../auth/partner-oauth';
 import { users } from '../auth/users';
@@ -37,6 +38,10 @@ export const appWorkouts = pgTable(
     index('app_workouts_connection_status_idx').on(table.connectionId, table.status),
     index('app_workouts_app_user_status_idx').on(table.clientId, table.userId, table.status),
     index('app_workouts_expiry_idx').on(table.status, table.expiresAt),
+    // Finished workouts by climber, for re-sending workout.completed when results change.
+    index('app_workouts_finished_user_idx')
+      .on(table.userId, table.completedAt)
+      .where(sql`${table.status} IN ('completed', 'auto_closed')`),
   ],
 );
 

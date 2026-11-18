@@ -15,6 +15,7 @@ export const BACKEND_ONLY_PARTNER_TABLES: readonly string[] = Object.freeze([
   'webhook_deliveries',
   'partner_webhook_feed_state',
   'partner_webhook_debounce',
+  'partner_workout_result_debounce',
 ]);
 /** Identity tables outside the `auth_`/`oauth_` prefixes. The web role may read them, never write. */
 export const NAMED_IDENTITY_TABLES: readonly string[] = Object.freeze([

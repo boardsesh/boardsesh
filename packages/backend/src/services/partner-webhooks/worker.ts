@@ -6,6 +6,7 @@ import {
   oauthClientWebhooks,
   partnerWebhookDebounce,
   partnerWebhookOutbox,
+  partnerWorkoutResultDebounce,
   webhookDeliveries,
 } from '@boardsesh/db/schema/app';
 import { PARTNER_WEBHOOK_DELIVERY_QUEUE, PARTNER_WEBHOOK_MAINTENANCE_QUEUE } from '@boardsesh/db/job-queue-schema';
@@ -483,6 +484,15 @@ export async function prunePartnerWebhookHistory(database: Database = db): Promi
       ),
     ),
   );
+  // A row recreated later starts from completed_at, already more than a minute old.
+  await database
+    .delete(partnerWorkoutResultDebounce)
+    .where(
+      and(
+        eq(partnerWorkoutResultDebounce.pending, false),
+        lt(partnerWorkoutResultDebounce.lastEnqueuedAt, new Date(now.getTime() - 60_000)),
+      ),
+    );
 }
 
 export async function startPartnerWebhooks(boss: PgBoss): Promise<void> {

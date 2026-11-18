@@ -10,8 +10,9 @@ import { db, type Database } from '../../db/client';
 import { readLogbookFeedState } from '../logbook-feed';
 import { enqueuePartnerWebhookEvent } from './events';
 import { liveWebhookScopeCondition } from './authorization';
+import { enqueueChangedWorkoutResults, markChangedWorkoutResults } from './workout-results-changed';
 
-/** Durable cursor and pending bit preserve the trailing change inside a debounce window. */
+/** Durable cursor and pending bits preserve the trailing change inside a debounce window. */
 async function produceLogbookWebhookPage(database: Database): Promise<boolean> {
   return database.transaction(
     async (transaction) => {
@@ -40,6 +41,7 @@ async function produceLogbookWebhookPage(database: Database): Promise<boolean> {
       const changes = await transaction
         .select({
           userId: logbookChanges.userId,
+          tickUuid: logbookChanges.tickUuid,
           txid: sql<string>`${logbookChanges.txid}::text`,
           seq: sql<string>`${logbookChanges.seq}::text`,
         })
@@ -118,6 +120,10 @@ async function produceLogbookWebhookPage(database: Database): Promise<boolean> {
             ),
           );
       }
+      // The same page also re-sends workout.completed to apps whose finished
+      // workout's results it changed (docs/partner-api.md, section 5).
+      await markChangedWorkoutResults(transaction, changes);
+      const readyWorkouts = await enqueueChangedWorkoutResults(transaction);
       const last = changes.at(-1);
       await transaction
         .update(partnerWebhookFeedState)
@@ -127,7 +133,7 @@ async function produceLogbookWebhookPage(database: Database): Promise<boolean> {
           seq: changes.length === 1000 && last ? last.seq : '0',
         })
         .where(eq(partnerWebhookFeedState.id, 1));
-      return changes.length === 1000 || ready.length === 100;
+      return changes.length === 1000 || ready.length === 100 || readyWorkouts === 100;
     },
     { isolationLevel: 'repeatable read' },
   );

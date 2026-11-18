@@ -434,7 +434,10 @@ are `null` for another climber's workout in a shared session. Public board
 configuration remains available.
 
 Building on read means a tick the climber edits or deletes after End shows
-up correctly in the next `GET`, with no stored payload to invalidate.
+up correctly in the next `GET`, with no stored payload to invalidate. That next
+`GET` is prompted: for seven days after End, a late, edited or deleted tick
+re-sends `workout.completed` (`services/partner-webhooks/workout-results-changed.ts`,
+described under "Webhooks" in `integration-platform.md`).
 
 ---
 

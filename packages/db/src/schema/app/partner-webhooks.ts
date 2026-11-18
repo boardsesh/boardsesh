@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, index, integer, pgTable, primaryKey, text, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core';
 import { oauthClient } from '../auth/partner-oauth';
+import { appWorkouts } from './app-workouts';
 
 export const oauthClientWebhooks = pgTable('oauth_client_webhooks', {
   clientId: text('client_id')
@@ -44,9 +45,12 @@ export const partnerWebhookOutbox = pgTable(
     uniqueIndex('partner_webhook_revocation_generation_idx')
       .on(table.connectionId, table.connectionGeneration)
       .where(sql`${table.type} = 'connection.revoked'`),
-    uniqueIndex('partner_webhook_workout_completion_idx')
+    // At most one unsent completion per workout. A workout's results can change
+    // after End, so a sent one may be followed by another (docs/partner-api.md
+    // section 5); an unsent one already makes the app read the newest results.
+    uniqueIndex('partner_webhook_workout_completion_pending_idx')
       .on(table.workoutId)
-      .where(sql`${table.type} = 'workout.completed'`),
+      .where(sql`${table.type} = 'workout.completed' AND ${table.relayedAt} IS NULL`),
   ],
 );
 
@@ -97,3 +101,18 @@ export const partnerWebhookDebounce = pgTable(
   },
   (table) => [primaryKey({ columns: [table.connectionId, table.connectionGeneration] })],
 );
+
+/**
+ * Re-sent `workout.completed` for results that change after End (a late tick,
+ * an edit, a delete). One row per workout: `pending` holds the trailing change
+ * and `lastEnqueuedAt` spaces sends at least a minute apart, across restarts
+ * and backend replicas. A fresh row starts at the workout's `completed_at`,
+ * which counts as the first send.
+ */
+export const partnerWorkoutResultDebounce = pgTable('partner_workout_result_debounce', {
+  workoutId: text('workout_id')
+    .primaryKey()
+    .references(() => appWorkouts.id, { onDelete: 'cascade' }),
+  lastEnqueuedAt: timestamp('last_enqueued_at', { withTimezone: true }).notNull(),
+  pending: boolean('pending').default(false).notNull(),
+});

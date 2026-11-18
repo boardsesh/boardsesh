@@ -898,8 +898,17 @@ includes:
 - There is no session id or session link. A Boardsesh session link invites
   people into the session, so it is never shared with apps.
 
+Results can change after completion. Results are built each time you read
+them, and a tick can reach Boardsesh after End: one saved offline, one retried
+from the climber's sync issues, or one they edit or delete afterwards. For seven
+days after End, any such change sends `workout.completed` again (section 5), so
+you may receive it more than once for the same workout. Always treat the latest
+read as authoritative: replace the results you stored, do not merge them.
+
 If you poll instead of using webhooks: check `started` workouts when the
 climber opens your app, and sweep any `started` workout older than a day.
+Re-read workouts that finished in the last seven days if you show their
+results.
 
 ## 5. Webhooks
 
@@ -914,7 +923,7 @@ flight. After a disconnect the only event still sent is
 | Event | Means | Then |
 | --- | --- | --- |
 | `logbook.changed` | This climber's logbook changed. At most one per climber per minute | Run your sync |
-| `workout.completed` | A workout finished (ended or auto-closed) | `GET /v1/workouts/{workoutId}` |
+| `workout.completed` | A workout finished (ended or auto-closed), or its results changed in the seven days after. At most one per workout per minute | `GET /v1/workouts/{workoutId}` and replace what you stored |
 | `connection.revoked` | A connection for this climber was revoked; it may predate a reconnect | Check current credentials before removing their stored data |
 
 ```
@@ -933,6 +942,15 @@ Boardsesh-Signature: t=1758150000,v1=5f1c...
 Events can arrive out of order and more than once. Use `Boardsesh-Delivery-Id`
 to drop duplicates. Respond with any `2xx` within 10 seconds and do the work
 afterwards.
+
+You may receive `workout.completed` more than once for the same workout: a tick
+that reaches Boardsesh after End, or a tick the climber edits or deletes, sends
+it again for seven days after End. Each repeat has a new event `id` and delivery
+id and the same `workoutId`; its `occurredAt` is when Boardsesh noticed the
+change (normally within a minute or two of it), not when the workout ended (that
+is `results.session.endedAt`). A repeat can also arrive when nothing visible
+changed. Handle every one the same way: `GET` the workout and treat that read as
+authoritative.
 
 For `connection.revoked`, a delayed event must not erase a newer connection.
 In your background handler, call `GET /v1/me` with the currently stored access
