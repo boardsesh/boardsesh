@@ -387,7 +387,7 @@
       },
       "poll": {
         "title": "Poll when the climber needs it",
-        "body": "Sync when the climber opens your app. Background sync runs no more than once every 15 minutes per climber. Honor Retry-After on 429 and temporary 503 responses. Optional logbook.changed webhooks tell you to run this same sync; they do not replace the feed.\n\nKeep all private ticks private in your app too. A tick on someone else’s non-public Spraywall redacts the climb name and wall identity. Do not build a climb catalog or publish other setters’ draft or unlisted climbs from a logbook."
+        "body": "Sync when the climber opens your app. Background sync runs no more than once every 15 minutes per climber. Honor Retry-After on 429 and temporary 503 responses. Optional logbook.changed webhooks tell you to run this same sync; they do not replace the feed.\n\nKeep all private ticks private in your app too. A tick on someone else’s non-public Spraywall redacts the climb name and Spraywall identity. Do not build a climb catalog or publish other setters’ draft or unlisted climbs from a logbook."
       }
     },
     "errors": {
