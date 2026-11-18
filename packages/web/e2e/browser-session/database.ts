@@ -13,6 +13,12 @@ import { ACCOUNT_ID_PREFIX, SEED_OUTPUT_PREFIX, type SeededAccount } from './sta
  *   create <id>                creates one more account for a single test; prints it as JSON
  *   cleanup <id or prefix%>    deletes this suite's accounts, and by cascade everything they own
  *   remove-password <id>       deletes an account's password row, as for a Google-only climber
+ *   first-password <id>        makes an account one that may set a first password by email: no
+ *                              password, a Google identity, a deliverable address (`@example.test`,
+ *                              which the mailer accepts and the run's mail sink takes) and that
+ *                              address's reservation, owned by the account under the current
+ *                              projection; prints the new address
+ *   has-password <id>          prints whether the account has a password row
  *   age-session <id> <session> <days>  sets the session row's expiry that many days ahead
  *   session-expiry <id> <session>      prints the session row's expiry, or null
  *
@@ -62,11 +68,19 @@ async function run(sql: SqlClient, command: string | undefined, args: string[]):
   const [userId, sessionId, days] = args;
   if (command === 'seed') {
     if (!userId) throw new Error('seed needs the id for account B.');
-    await sql`
-      DELETE FROM users
-      WHERE id LIKE ${`${ACCOUNT_ID_PREFIX}%`} AND email LIKE ${`${ACCOUNT_ID_PREFIX}%@example.invalid`}
-        AND created_at < now() - interval '1 hour'
-    `;
+    await sql.begin(async (transaction) => {
+      const stale = await transaction<{ id: string }[]>`
+        SELECT id FROM users
+        WHERE id LIKE ${`${ACCOUNT_ID_PREFIX}%`}
+          AND (email LIKE ${`${ACCOUNT_ID_PREFIX}%@example.invalid`} OR email LIKE ${`${ACCOUNT_ID_PREFIX}%@example.test`})
+          AND created_at < now() - interval '1 hour'
+      `;
+      const ids = stale.map(({ id }) => id);
+      if (ids.length === 0) return;
+      await transaction`DELETE FROM auth_email_reservation_members WHERE user_id IN ${transaction(ids)}`;
+      await transaction`DELETE FROM auth_email_reservations WHERE owner_user_id IN ${transaction(ids)}`;
+      await transaction`DELETE FROM users WHERE id IN ${transaction(ids)}`;
+    });
     const accountA = await seedAccountA(
       sql,
       process.env.TEST_USER_EMAIL ?? 'test@boardsesh.com',
@@ -76,12 +90,41 @@ async function run(sql: SqlClient, command: string | undefined, args: string[]):
   } else if (command === 'create') {
     print(await createAccount(sql, userId));
   } else if (command === 'cleanup') {
-    // A trailing `%` deletes every account of one run; otherwise exactly one.
-    if (userId?.endsWith('%')) await sql`DELETE FROM users WHERE id LIKE ${userId}`;
-    else if (userId) await sql`DELETE FROM users WHERE id = ${userId}`;
+    // A trailing `%` deletes every account of one run; otherwise exactly one. Reservations
+    // (first-password) have no foreign key to users, so they go first, members before the row.
+    const pattern = userId ?? '';
+    await sql`DELETE FROM auth_email_reservation_members WHERE user_id LIKE ${pattern}`;
+    await sql`DELETE FROM auth_email_reservations WHERE owner_user_id LIKE ${pattern}`;
+    await sql`DELETE FROM users WHERE id LIKE ${pattern}`;
+  } else if (command === 'first-password') {
+    // The same rows the backend's first-password proof makes (first-password-http.proof.ts).
+    const email = `${userId}@example.test`.toLowerCase();
+    const [projection] = await sql<{ projectionId: string }[]>`
+      SELECT projection_id AS "projectionId" FROM auth_email_projection WHERE is_current
+    `;
+    if (!projection) throw new Error('No current email projection: the better-auth database step has not run.');
+    await sql.begin(async (transaction) => {
+      await transaction`DELETE FROM user_credentials WHERE user_id = ${userId}`;
+      await transaction`UPDATE users SET email = ${email} WHERE id = ${userId}`;
+      await transaction`
+        INSERT INTO accounts ("userId", type, provider, "providerAccountId")
+        VALUES (${userId}, 'oauth', 'google', ${`google-${randomBytes(12).toString('hex')}`})
+      `;
+      await transaction`
+        INSERT INTO auth_email_reservations (normalized_email, basis_projection_id, state, owner_user_id)
+        VALUES (${email}, ${projection.projectionId}, 'owned', ${userId})
+      `;
+      await transaction`INSERT INTO auth_email_reservation_members (normalized_email, user_id) VALUES (${email}, ${userId})`;
+    });
+    print({ email });
   } else if (command === 'remove-password') {
     await sql`DELETE FROM user_credentials WHERE user_id = ${userId}`;
     print({ removed: true });
+  } else if (command === 'has-password') {
+    const [row] = await sql<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM user_credentials WHERE user_id = ${userId}
+    `;
+    print({ hasPassword: (row?.count ?? 0) > 0 });
   } else if (command === 'age-session') {
     const daysAhead = Number(days);
     if (!sessionId || !Number.isFinite(daysAhead)) throw new Error('age-session needs a session id and a day count.');

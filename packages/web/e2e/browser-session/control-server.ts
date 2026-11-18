@@ -6,6 +6,7 @@ import type { EdgeResponseObservation } from '../../partner-oauth-e2e/edge';
 import type { EnvironmentOverrides, RestartOverrides, ServerSet } from './servers';
 import type { SetCookieRecord } from './stack';
 import { recordHarnessRetry } from './harness-retries';
+import type { CapturedMail } from './mail-sink';
 
 /**
  * How a spec, which runs in a Playwright worker, reaches the things only the
@@ -22,6 +23,7 @@ import { recordHarnessRetry } from './harness-retries';
  *   GET  /restart/status            { state, error? }  `running`, then `ready` or `failed`; a restart can take
  *                                                   minutes, longer than one HTTP request should be held open
  *   POST /harness-retry             { counted }    a worker reports a WebKit "internal error" navigation retry
+ *   GET  /mail?to=<address>         { messages }   every message the run's mail sink took for that recipient
  */
 
 export class SetCookieLog {
@@ -79,6 +81,7 @@ function parseOverrides(body: string): RestartOverrides {
 export async function startControlServer(
   log: SetCookieLog,
   servers: ServerSet,
+  mail: readonly CapturedMail[],
 ): Promise<{ server: Server; url: string; token: string }> {
   const token = randomBytes(24).toString('base64url');
   const expected = Buffer.from(token);
@@ -114,6 +117,9 @@ export async function startControlServer(
       } else if (request.method === 'POST' && url.pathname === '/harness-retry') {
         recordHarnessRetry('webkit-internal-error');
         sendJson(response, 200, { counted: true });
+      } else if (request.method === 'GET' && url.pathname === '/mail') {
+        const recipient = (url.searchParams.get('to') ?? '').toLowerCase();
+        sendJson(response, 200, { messages: mail.filter((message) => message.recipients.includes(recipient)) });
       } else if (request.method === 'GET' && url.pathname === '/restart/status') {
         sendJson(response, 200, restart);
       } else {

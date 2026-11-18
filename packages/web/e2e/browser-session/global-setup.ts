@@ -16,6 +16,7 @@ import { betterAuthEnvironments, type BetterAuthDatabase } from './better-auth-e
 import { createCertificate } from './certificate';
 import { harnessRetryBudgetError } from './harness-retries';
 import { SetCookieLog, startControlServer } from './control-server';
+import { startMailSink, type MailSink } from './mail-sink';
 import { freePort, readEnvironmentFile } from './processes';
 import { startProbeServer } from './probe-server';
 import { backendReadiness, ServerSet, webReadiness, type ServerSpec } from './servers';
@@ -184,9 +185,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let serverSet: ServerSet | undefined;
   let edge: Edge | undefined;
   let accountBSeeded = false;
+  let mailSink: MailSink | undefined;
   const teardown = async () => {
     await serverSet?.shutdown();
     await edge?.close();
+    await mailSink?.close();
     // Kept-alive connections (www's to the relay, a worker's to the control server) would hold close() open.
     await Promise.all(
       servers.map(
@@ -289,6 +292,17 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       });
       Object.assign(backendEnvironment.environment, betterAuth.backend);
       Object.assign(webEnvironment.environment, betterAuth.web);
+      // www's shared mailer sends the first-password link here, over TLS with the run's certificate.
+      mailSink = await startMailSink(certificate, {
+        user: 'browser-session-e2e',
+        password: randomBytes(18).toString('base64url'),
+      });
+      Object.assign(webEnvironment.environment, {
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: String(mailSink.port),
+        SMTP_USER: mailSink.user,
+        SMTP_PASSWORD: mailSink.password,
+      });
       assertLocalOnly('backend', backendEnvironment);
       assertLocalOnly('web server', webEnvironment);
     }
@@ -339,7 +353,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       refusedPathPrefixes: { [WWW_HOST]: ['/monitoring'], [WS_HOST]: ['/api/posthog'] },
       onResponse: (observation) => setCookieLog.observe(observation),
     });
-    const control = await startControlServer(setCookieLog, serverSet);
+    const control = await startControlServer(setCookieLog, serverSet, mailSink?.messages ?? []);
     servers.push(control.server);
 
     await serverSet.start();

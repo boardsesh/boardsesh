@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
 import { test as base, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { addLegacySession, type LegacySessionShape, type MintedLegacySession } from './legacy-session';
+import type { CapturedMail } from './mail-sink';
 import {
   PARENT_DOMAIN,
   readStack,
@@ -32,6 +33,7 @@ import {
  *   restartStack         restarts the backend and www with a changed environment
  *   freshAccount         a new account made for this one test, so tests never share sessions or limits
  *   accountDatabase      the few database steps a spec needs on its own accounts (database.ts)
+ *   mailbox              what the run's mail sink took (mail-sink.ts): the emailed first-password link
  */
 
 /** One window over the edge's log: `end()` returns every response relayed since `begin()`. */
@@ -67,6 +69,26 @@ export interface AccountDatabase {
   ageSession(account: SeededAccount, sessionId: string, days: number): void;
   /** The session row's expiry, or null when there is no row. */
   sessionExpiry(account: SeededAccount, sessionId: string): Date | null;
+  /**
+   * Makes the account one that may set a first password by email (database.ts
+   * `first-password`): no password, a Google identity, a deliverable address and
+   * its reservation. Returns the account with that address.
+   */
+  firstPasswordAccount(account: SeededAccount): SeededAccount;
+  /** Whether the account has a password row. */
+  hasPassword(account: SeededAccount): boolean;
+}
+
+export interface FirstPasswordLink {
+  readonly token: string;
+  readonly operation: string;
+}
+
+export interface Mailbox {
+  /** The newest first-password link the run's mail sink took for `email`, waiting up to 20 s for one. */
+  firstPasswordLink(email: string): Promise<FirstPasswordLink>;
+  /** How many messages the mail sink has taken for `email`. */
+  count(email: string): Promise<number>;
 }
 
 interface Fixtures {
@@ -79,6 +101,7 @@ interface Fixtures {
   restartStack: (options?: RestartOptions) => Promise<void>;
   freshAccount: () => SeededAccount;
   accountDatabase: AccountDatabase;
+  mailbox: Mailbox;
 }
 
 const WEB_DIRECTORY = resolve(__dirname, '../..');
@@ -241,6 +264,12 @@ export const test = base.extend<Fixtures>({
         ]);
         if (aged !== 1) throw new Error(`No session row ${sessionId} for ${account.userId}.`);
       },
+      firstPasswordAccount: (account) => {
+        const { email } = databaseStep<{ email: string }>(stack, ['first-password', account.userId]);
+        return { ...account, email };
+      },
+      hasPassword: (account) =>
+        databaseStep<{ hasPassword: boolean }>(stack, ['has-password', account.userId]).hasPassword,
       sessionExpiry: (account, sessionId) => {
         const { expiresAt } = databaseStep<{ expiresAt: string | null }>(stack, [
           'session-expiry',
@@ -248,6 +277,27 @@ export const test = base.extend<Fixtures>({
           sessionId,
         ]);
         return expiresAt === null ? null : new Date(expiresAt);
+      },
+    });
+  },
+
+  mailbox: async ({ stack }, use) => {
+    const messages = async (email: string) =>
+      (await control<{ messages: CapturedMail[] }>(stack, `/mail?to=${encodeURIComponent(email.toLowerCase())}`))
+        .messages;
+    await use({
+      count: async (email) => (await messages(email)).length,
+      firstPasswordLink: async (email) => {
+        const deadline = Date.now() + 20_000;
+        for (;;) {
+          const links = (await messages(email))
+            .map(({ text }) => /confirm-first-password#token=([A-Za-z0-9_-]{43})&operation=([a-f0-9]{64})/.exec(text))
+            .filter((match): match is RegExpExecArray => match !== null);
+          const newest = links.at(-1);
+          if (newest) return { token: newest[1], operation: newest[2] };
+          if (Date.now() > deadline) throw new Error(`No first-password email for ${email} within 20 s.`);
+          await new Promise((settle) => setTimeout(settle, 250));
+        }
       },
     });
   },
