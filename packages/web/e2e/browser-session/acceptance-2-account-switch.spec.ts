@@ -152,7 +152,14 @@ test('a sign-out on www signs the app subdomain out at its next load', async ({ 
   expect(await graphqlStatusWithToken(wwwPage, token.token)).toBe(401);
 
   await focusAppTab(appPage);
-  await appPage.reload();
+  // The app may already be reloading by itself: a reply that landed after its marker went retires
+  // the page. A reload that races that one is lost with the old document; the next load is the
+  // app's own then, and what it shows is the same check.
+  await appPage.reload().catch(async (error: unknown) => {
+    if (!(error instanceof Error) || !/Not attached to an active page|ERR_ABORTED|interrupted/i.test(error.message))
+      throw error;
+    await appPage.waitForLoadState('load');
+  });
   await expect(emailField(appPage)).toBeVisible({ timeout: 120_000 });
   await expect(homeTab(appPage)).toBeHidden();
   expect((await readViewer(appPage)).authenticated).toBe(false);
