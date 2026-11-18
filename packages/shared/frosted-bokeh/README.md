@@ -30,19 +30,31 @@ contrast checks, conservatively accounting for the brightest/darkest grain.
 
 ## Moving frost
 
-`BOKEH_DRIFT` (3.5 pt), `BOKEH_SWELL` (0.14) and `BOKEH_GLIDE_MS` (700) describe
-the moving frost: each light drifts on its own slow orbit no further than the
-drift, swells by up to the swell share of its peak, and slides to the next
-climb's light over the glide. The iOS Metal view in
-`packages/mobile/modules/frosted-bokeh-gpu` takes all three as props, so this
-package is the only place they are set.
+`BOKEH_DRIFT` (3.5 pt) and `BOKEH_SWELL` (0.14) describe the moving frost: each
+light drifts on its own slow orbit no further than the drift and swells by up to
+the swell share of its peak. Its phase is `bokehSeed`: a hash of the hold id (or
+the position), so a light keeps its phase whatever slot it is drawn in. The
+native views in `packages/mobile/modules/frosted-bokeh-gpu` take all of these as
+props, so this package is the only place they are set.
+
+`swap.ts` is how the frost changes climbs: the board's swap look at pill scale
+(option I). The native views follow the board's swap frames light by light
+(`frostLightWeight`, `frostLightShape`), and with no frames run a release of
+their own (`frostReleaseFill`, `frostReleaseFade`: old lights out by
+`BOKEH_SWAP_OUT_MS`, new ones filling from the right edge over `BOKEH_SWAP_MS`,
+a linear `BOKEH_DISSOLVE_MS` dissolve under Reduce Motion). A light lit in both
+climbs (`sameBokehHold`) stays whole; at most `MAX_GPU_BOKEH_LIGHTS` are drawn,
+the strongest kept (`capBokehLights`). `BokehMotion.swift` and `BokehMotion.kt`
+implement the same rules; change all three together. `BOKEH_GLIDE_MS` (700) is
+the old index glide, kept for binaries without the swap-frame API.
 
 `bokehPixel(point, blobs, { ..., motion: true })` returns the worst frame that
-motion can draw at a point: every light as close as its drift allows and fully
+breathing can draw at a point: every light as close as its drift allows and fully
 swelled. Screen and multiply both move a pixel further from the base as alpha
 grows, so a contrast check over `motion: true` covers every breathing frame.
-The glide between two climbs is not covered by that bound; the wall button
-holds the stronger of the two climbs' label fades until the glide ends.
+A change of climb is not covered by that bound; the wall button holds the
+stronger of the two climbs' label fades while the board shows both and through
+the release.
 
 Native consumers use `FrostedBokeh` in the mobile component library. The board
 button's `WallGlow` adapter owns its label fade and interaction-specific choices.
