@@ -2,13 +2,12 @@
  * The wall swap: how the player's stationary GPU board hands its lit holds from
  * one climb to the next during a swipe.
  *
- * On an iOS binary that draws the native swap look (`swapLookVersion` 2), the
+ * On a binary that draws the native swap look (`swapLookVersion` 2), the
  * player runs this state machine with its own numbers and a per-hold look on
  * top (`player-swap-look.ts`: a 220 ms swap, the next climb as halos while
- * dragging, standby rings on the old one). Everything below describes the
- * shipped swap that Android, older iOS binaries, Reduce Motion and the
- * `player-swap-look-kill` switch get; the look keeps its rules for cancels,
- * re-flicks, reversals and pull-backs.
+ * dragging, standby rings on the old one). The base swap described below runs
+ * on older binaries, when the look is disabled and under Reduce Motion.
+ * The look keeps its rules for cancels, re-flicks, reversals and pull-backs.
  *
  * Between the climb being left and the one arriving, every hold is one of three
  * kinds. Shared holds are lit with the same role in both. Outgoing-only holds
@@ -55,8 +54,9 @@
  *   the other two kinds is brighter, never below 40% (`wallSwapSharedWeight`).
  *   Dragging takes them down with the outgoing-only holds; a swap holds them at
  *   40% until the incoming-only holds pass it, then brings them back with them.
- * - Reduce Motion: no dim while dragging, the swap is one 120 ms dissolve, and
- *   shared holds stay fully lit.
+ * - Reduce Motion: no dim while dragging, shared holds stay fully lit, and
+ *   both sides fade together over a 240 ms linear dissolve. Lead-ins and
+ *   pull-back settles use the same linear timing.
  *
  * The native view is told which pair it is showing through its page position:
  * the nearest page is the climb being left, and the side the position leans to
@@ -126,8 +126,8 @@ export const WALL_SWAP = {
   outgoingEndMs: 120,
   /** Incoming-only holds start no earlier than this, and finish at `durationMs` (ease-out). */
   incomingStartMs: 60,
-  /** Reduce Motion compresses the same swap into one dissolve this long. */
-  reduceMotionDurationMs: 120,
+  /** A linear dissolve changes either weight by at most 0.07 per frame at 60 Hz. */
+  reduceMotionDurationMs: 240,
   /** Interrupted weights ease to what the finger asks for over this long. */
   settleMs: 120,
   /** A commit from another pair first eases that pair to its leaving climb, whole, over this long. */
@@ -225,24 +225,28 @@ export function dragOutgoingWeight(
   return 1 - (1 - tuning.dimFloor) * Math.min(1, Math.abs(offset) / commitDistance);
 }
 
-export type SwapTiming = { durationMs: number; outgoingEndMs: number; incomingStartMs: number };
+export type SwapTiming = { durationMs: number; outgoingEndMs: number; incomingStartMs: number; dissolve: boolean };
 
 /**
- * The windows of one swap. Incoming-only holds start at 60 ms (36 ms under
- * Reduce Motion), or later if the outgoing ones are still above 40% then.
+ * Reduce Motion fades both sides together. In the eased swap, incoming-only
+ * holds start at 60 ms, or later if the outgoing ones are still above 40% then.
  */
 export function swapTiming(startOutgoing: number, reduceMotion: boolean, tuning: WallSwapTuning): SwapTiming {
   'worklet';
-  const scale = reduceMotion ? tuning.reduceMotionDurationMs / tuning.durationMs : 1;
-  const outgoingEndMs = tuning.outgoingEndMs * scale;
+  if (reduceMotion) {
+    const durationMs = tuning.reduceMotionDurationMs;
+    return { durationMs, outgoingEndMs: durationMs, incomingStartMs: 0, dissolve: true };
+  }
+  const outgoingEndMs = tuning.outgoingEndMs;
   const toFloor =
     startOutgoing > tuning.dimFloor
       ? outgoingEndMs * easeInProgressFor(1 - tuning.dimFloor / startOutgoing, tuning)
       : 0;
   return {
-    durationMs: tuning.durationMs * scale,
+    durationMs: tuning.durationMs,
     outgoingEndMs,
-    incomingStartMs: Math.max(tuning.incomingStartMs * scale, toFloor),
+    incomingStartMs: Math.max(tuning.incomingStartMs, toFloor),
+    dissolve: false,
   };
 }
 
@@ -256,6 +260,10 @@ export function swapWeightsAt(
 ): { outgoing: number; incoming: number } {
   'worklet';
   const elapsed = Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0;
+  if (timing.dissolve) {
+    const progress = clampUnit(elapsed / timing.durationMs);
+    return { outgoing: mix(startOutgoing, 0, progress), incoming: mix(startIncoming, 1, progress) };
+  }
   const incomingSpan = timing.durationMs - timing.incomingStartMs;
   return {
     outgoing: startOutgoing * (1 - easeIn(elapsed / timing.outgoingEndMs, tuning)),
@@ -267,7 +275,7 @@ export function swapWeightsAt(
   };
 }
 
-export type WallSwapState = {
+export type WallSwapState = SwapTiming & {
   /** The page whose climb is being left on screen; at rest, the climb on show. */
   from: number;
   /** Toward the arriving page on screen: 1 next, -1 previous, 0 no pair. */
@@ -282,9 +290,6 @@ export type WallSwapState = {
   swapDir: number;
   swapStartOutgoing: number;
   swapStartIncoming: number;
-  durationMs: number;
-  outgoingEndMs: number;
-  incomingStartMs: number;
   /** Lead-in before the swap: the pair on screen at the commit easing to its leaving climb, whole. */
   leadMs: number;
   leadFrom: number;
@@ -300,6 +305,7 @@ export type WallSwapState = {
   backReference: number;
   /** Interrupted weights easing to what the finger asks for, on their own clock. */
   settling: boolean;
+  settleDurationMs: number;
   settleOutgoing: number;
   settleIncoming: number;
   /** The pager as last seen: its middle page, committed steps and resets. */
@@ -328,8 +334,8 @@ export type WallSwapStep = {
   state: WallSwapState;
   /** Restart the swap clock from 0 toward `swapClockMs(state)`. */
   startSwap: boolean;
-  /** Restart the settle clock from 0 toward the tuning's `settleMs`. */
-  startSettle: boolean;
+  /** Restart the settle clock at 0 for this duration, or leave it running. */
+  startSettleMs: number | null;
 };
 
 /** How long the swap clock runs: any lead-in, then the swap itself. */
@@ -358,6 +364,7 @@ export function wallSwapRest(
     durationMs: tuning.durationMs,
     outgoingEndMs: tuning.outgoingEndMs,
     incomingStartMs: tuning.incomingStartMs,
+    dissolve: false,
     leadMs: 0,
     leadFrom: page,
     leadDir: 0,
@@ -366,6 +373,7 @@ export function wallSwapRest(
     arrived: false,
     backReference: 0,
     settling: false,
+    settleDurationMs: 0,
     settleOutgoing: 1,
     settleIncoming: 0,
     anchor: seen.anchor,
@@ -436,22 +444,25 @@ function sideOf(offset: number): number {
 
 function settled(state: WallSwapState): WallSwapStep {
   'worklet';
-  return { state, startSwap: false, startSettle: false };
+  return { state, startSwap: false, startSettleMs: null };
 }
 
 /** Start easing from the weights on screen, which therefore do not move this frame. */
-function settleFromHere(state: WallSwapState): WallSwapStep {
+function settleFromHere(state: WallSwapState, reduceMotion: boolean, tuning: WallSwapTuning): WallSwapStep {
   'worklet';
+  const durationMs = reduceMotion ? tuning.reduceMotionDurationMs : tuning.settleMs;
   return {
     state: {
       ...state,
       swapping: false,
       settling: true,
+      settleDurationMs: durationMs,
+      dissolve: reduceMotion,
       settleOutgoing: state.outgoing,
       settleIncoming: state.incoming,
     },
     startSwap: false,
-    startSettle: true,
+    startSettleMs: durationMs,
   };
 }
 
@@ -484,6 +495,7 @@ function backThroughLeadIn(
   from: number,
   dir: number,
   leadMs: number,
+  dissolve: boolean,
 ): WallSwapStep {
   'worklet';
   return {
@@ -499,6 +511,7 @@ function backThroughLeadIn(
       durationMs: 0,
       outgoingEndMs: 0,
       incomingStartMs: 0,
+      dissolve,
       leadMs,
       leadFrom: previous.from,
       leadDir: previous.dir,
@@ -509,7 +522,7 @@ function backThroughLeadIn(
       settling: false,
     },
     startSwap: true,
-    startSettle: false,
+    startSettleMs: null,
   };
 }
 
@@ -549,11 +562,11 @@ function commit(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
   const dir = input.fling !== 0 ? Math.sign(input.fling) : Math.sign(input.anchor - previous.anchor);
   const from = input.fling !== 0 ? input.anchor : previous.anchor;
   if (dir === 0) return settled(wallSwapRest(input.anchor, seen, tuning));
-  const scale = input.reduceMotion ? tuning.reduceMotionDurationMs / tuning.durationMs : 1;
+  const leadMs = input.reduceMotion ? tuning.reduceMotionDurationMs : tuning.leadInMs;
   // Leaves the running swap's arriving climb, back toward its leaving one.
   const reverses = previous.swapping && dir === -previous.swapDir && from === previous.swapFrom + previous.swapDir;
   if (reverses && previous.from === from + dir && previous.dir !== -dir) {
-    return backThroughLeadIn(previous, seen, from, dir, tuning.leadInMs * scale);
+    return backThroughLeadIn(previous, seen, from, dir, leadMs, input.reduceMotion);
   }
   // A reversing commit starts from the weights on screen, relabelled. An onward
   // one ends the running swap first, from the climb it skips at no more than 40%
@@ -576,7 +589,7 @@ function commit(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
       swapDir: dir,
       swapStartOutgoing: outgoing,
       swapStartIncoming: incoming,
-      leadMs: start ? 0 : tuning.leadInMs * scale,
+      leadMs: start ? 0 : leadMs,
       leadFrom: base.from,
       leadDir: base.dir,
       leadOutgoing: base.outgoing,
@@ -586,7 +599,7 @@ function commit(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
       settling: false,
     },
     startSwap: true,
-    startSettle: false,
+    startSettleMs: null,
   };
 }
 
@@ -595,7 +608,8 @@ function runSwap(previous: WallSwapState, input: WallSwapInput, tuning: WallSwap
   const seen = { anchor: input.anchor, steps: input.steps, reset: input.reset };
   const elapsed = input.swapMs;
   const leading = elapsed < previous.leadMs;
-  const amount = leading ? easeOut(elapsed / previous.leadMs, tuning) : 1;
+  const progress = leading ? elapsed / previous.leadMs : 1;
+  const amount = previous.dissolve ? clampUnit(progress) : easeOut(progress, tuning);
   const swapped = swapWeightsAt(
     elapsed - previous.leadMs,
     previous.swapStartOutgoing,
@@ -625,28 +639,37 @@ function runSwap(previous: WallSwapState, input: WallSwapInput, tuning: WallSwap
   } else if (onArrival) {
     if (!leading && back > 0 && back > backReference + tuning.pullBackPoints) {
       // Pulled back: the arriving climb is now the one being left. Same pixels.
-      return settleFromHere({
-        ...previous,
-        ...seen,
-        from: to,
-        dir: -previous.swapDir,
-        outgoing: shown.incoming,
-        incoming: shown.outgoing,
-      });
+      return settleFromHere(
+        {
+          ...previous,
+          ...seen,
+          from: to,
+          dir: -previous.swapDir,
+          outgoing: shown.incoming,
+          incoming: shown.outgoing,
+        },
+        input.reduceMotion,
+        tuning,
+      );
     }
     backReference = Math.min(backReference, back);
   }
   if (elapsed >= swapClockMs(previous)) {
     const arrivedRest = wallSwapRest(to, seen, tuning);
     // A finger still on the board dims the arrived climb from whole.
-    return onArrival && input.offset !== 0
-      ? settleFromHere({ ...arrivedRest, dir: sideOf(input.offset) })
+    return onArrival && input.offset !== 0 && !input.reduceMotion
+      ? settleFromHere({ ...arrivedRest, dir: sideOf(input.offset) }, false, tuning)
       : settled(arrivedRest);
   }
   return settled({ ...previous, ...seen, ...shown, arrived, backReference });
 }
 
-function follow(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapTuning): WallSwapStep {
+function follow(
+  previous: WallSwapState,
+  input: WallSwapInput,
+  tuning: WallSwapTuning,
+  suppressDragDim: boolean,
+): WallSwapStep {
   'worklet';
   const seen = { anchor: input.anchor, steps: input.steps, reset: input.reset };
   // A committed fling that its swap already covered is still landing.
@@ -669,9 +692,10 @@ function follow(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
       settleIncoming: current.settleOutgoing,
     };
   }
-  const target = dragOutgoingWeight(input.offset, input.commitDistance, input.reduceMotion, tuning);
+  const target = dragOutgoingWeight(input.offset, input.commitDistance, input.reduceMotion || suppressDragDim, tuning);
   const side = sideOf(input.offset);
-  const amount = current.settling ? easeOut(input.settleMs / tuning.settleMs, tuning) : 1;
+  const progress = current.settling ? input.settleMs / current.settleDurationMs : 1;
+  const amount = current.dissolve ? clampUnit(progress) : easeOut(progress, tuning);
   const settling = current.settling && amount < 1;
   /** This frame's weights for the pair on show, heading for `goal` and nothing arriving. */
   const toward = (goal: number): WallSwapState => ({
@@ -685,7 +709,7 @@ function follow(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
   // board caught away from the middle eases into its dim rather than snap.
   if (side === current.dir || current.dir === 0) {
     if (caught && !settling && Math.abs(current.outgoing - target) > EPSILON) {
-      return settleFromHere({ ...current, ...seen, dir: side });
+      return settleFromHere({ ...current, ...seen, dir: side }, input.reduceMotion, tuning);
     }
     return settled({ ...toward(target), dir: side });
   }
@@ -701,11 +725,13 @@ function follow(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
   // the weight on screen into the new side's dim.
   if (current.incoming > DARK) {
     const held = toward(1);
-    if (held.incoming > DARK) return settling ? settled(held) : settleFromHere({ ...current, ...seen });
-    return settleFromHere({ ...held, dir: side, incoming: 0 });
+    if (held.incoming > DARK) {
+      return settling ? settled(held) : settleFromHere({ ...current, ...seen }, input.reduceMotion, tuning);
+    }
+    return settleFromHere({ ...held, dir: side, incoming: 0 }, input.reduceMotion, tuning);
   }
   if (Math.abs(current.outgoing - target) <= EPSILON) return settled({ ...toward(target), dir: side });
-  return settleFromHere({ ...current, ...seen, dir: side, incoming: 0 });
+  return settleFromHere({ ...current, ...seen, dir: side, incoming: 0 }, input.reduceMotion, tuning);
 }
 
 /**
@@ -714,7 +740,12 @@ function follow(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapT
  * starts a swap; otherwise a running swap advances, or the weights follow the
  * finger.
  */
-export function stepWallSwap(previous: WallSwapState, input: WallSwapInput, tuning: WallSwapTuning): WallSwapStep {
+export function stepWallSwap(
+  previous: WallSwapState,
+  input: WallSwapInput,
+  tuning: WallSwapTuning,
+  suppressDragDim?: boolean,
+): WallSwapStep {
   'worklet';
   if (input.reset !== previous.reset) {
     return settled(
@@ -722,7 +753,9 @@ export function stepWallSwap(previous: WallSwapState, input: WallSwapInput, tuni
     );
   }
   if (input.steps !== previous.steps) return commit(previous, input, tuning);
-  const step = previous.swapping ? runSwap(previous, input, tuning) : follow(previous, input, tuning);
+  const step = previous.swapping
+    ? runSwap(previous, input, tuning)
+    : follow(previous, input, tuning, suppressDragDim === true);
   return {
     ...step,
     state: { ...step.state, outgoing: clampUnit(step.state.outgoing), incoming: clampUnit(step.state.incoming) },
@@ -752,7 +785,7 @@ export function wallSwapDriver(tuning: WallSwapTuning = WALL_SWAP): BoardTransit
         wallSwapSharedWeight(next.state, input.reduceMotion, tuning),
       ],
       startSwapMs: next.startSwap ? swapClockMs(next.state) : null,
-      startSettleMs: next.startSettle ? tuning.settleMs : null,
+      startSettleMs: next.startSettleMs,
     };
   };
   return { rest, step };
