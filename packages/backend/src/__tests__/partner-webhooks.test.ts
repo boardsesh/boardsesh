@@ -26,6 +26,7 @@ import {
 import { rotateOwnedWebhookSecret, updateOwnedWebhook } from '../services/partner-webhooks/settings';
 import type { PartnerDatabase } from '../auth/partner/tables';
 import { produceLogbookWebhookEvents } from '../services/partner-webhooks/logbook';
+import { readLogbookFeedState } from '../services/logbook-feed';
 import type { PgBoss } from 'pg-boss';
 
 const RESOURCE = 'https://api.boardsesh.com/v1';
@@ -328,7 +329,18 @@ describe('durable partner webhook lifecycle', () => {
     await db.execute(
       sql`insert into logbook_changes (user_id, tick_uuid) select ${first.climber}, tick::text from generate_series(1,3000) tick`,
     );
-    await db.execute(sql`insert into logbook_changes (user_id, tick_uuid) values (${second.climber}, 'next-tick')`);
+    const [secondChange] = await db.execute<{ txid: string }>(
+      sql`insert into logbook_changes (user_id, tick_uuid) values (${second.climber}, 'next-tick') returning txid::text as txid`,
+    );
+    // Other workers can hold PostgreSQL's cluster-wide horizon below these committed changes.
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const { horizon } = await db.transaction(readLogbookFeedState);
+      if (BigInt(horizon) > BigInt(secondChange.txid)) break;
+      if (Date.now() >= deadline)
+        throw new Error(`Logbook horizon ${horizon} did not pass inserted change ${secondChange.txid}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     await produceLogbookWebhookEvents();
     const events = await db.select().from(partnerWebhookOutbox);
     expect(events.map((event) => event.clientId).sort()).toEqual([first.clientId, second.clientId].sort());

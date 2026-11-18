@@ -1,5 +1,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
@@ -26,6 +27,14 @@ vi.mock('@/app/components/ui/page-shell', () => ({
 }));
 import WorkoutLaunchPage, { generateMetadata } from '../page';
 
+async function renderLanding() {
+  return renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      {await WorkoutLaunchPage({ params: Promise.resolve({ workoutId: 'wk_example' }) })}
+    </QueryClientProvider>,
+  );
+}
+
 const fetchMock = vi.fn();
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
@@ -33,7 +42,7 @@ beforeEach(() => {
 });
 
 describe('private workout launch landing', () => {
-  it('requests and displays only the public source name, never private plan details', async () => {
+  it('server-renders the launch action without fetching or disclosing private plan details', async () => {
     fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -48,22 +57,16 @@ describe('private workout launch landing', () => {
         }),
       ),
     );
-    const html = renderToStaticMarkup(
-      await WorkoutLaunchPage({ params: Promise.resolve({ workoutId: 'wk_example' }) }),
-    );
-    expect(html).toContain('Training Planner');
+    const html = await renderLanding();
+    expect(html).not.toContain('Training Planner');
     expect(html).toContain('com.boardsesh.app://w/wk_example');
     expect(html).not.toMatch(/Private title|Secret coach note|secret block/);
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { query: string };
-    expect(requestBody.query).toContain('{ sourceAppName }');
-    expect(requestBody.query).not.toMatch(/notes|blocks|title/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('keeps the scheme and store fallback available when the backend is unavailable', async () => {
     fetchMock.mockRejectedValue(new Error('network unavailable'));
-    const html = renderToStaticMarkup(
-      await WorkoutLaunchPage({ params: Promise.resolve({ workoutId: 'wk_example' }) }),
-    );
+    const html = await renderLanding();
     expect(html).toContain('com.boardsesh.app://w/wk_example');
     expect(html).toContain('apps.apple.com');
     expect(html).toContain('play.google.com');

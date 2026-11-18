@@ -3303,3 +3303,7 @@ production activation and device QA remain separate operator gates.
   throughput, per-step fault isolation, key resealing and retirement,
   bounded signing failures, sustained endpoint failures and recovered-job backoff
   follow [Webhooks](#webhooks). O1 remains explicitly unconfirmed above.
+  Migration 0325 appends a nullable `last_failure_at` timestamp to the reviewed
+  webhook settings relation. The credential-writer catalog profile records that
+  exact physical column; its historical baseline, privileges and trigger checks
+  remain unchanged.
