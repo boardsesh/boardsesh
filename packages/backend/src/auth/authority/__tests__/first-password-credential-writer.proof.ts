@@ -145,7 +145,7 @@ describe('private-first-password-v1 canonical0314 restricted LOGIN closure', () 
     );
   });
   for (const selected of ['current-store', 'better-auth'] as const) {
-    it(`${selected}: executes issue/read/prepare/finalize/exactACK on the restricted LOGIN with original known age`, async () => {
+    it(`${selected}: executes issue/read/prepare/finalize/exactACK on the restricted LOGIN with original known age (${selected === 'better-auth' ? 'Google' : 'Apple'}-only)`, async () => {
       const qualification = {
         expectedProjectionId: projectionId,
         expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
@@ -170,8 +170,10 @@ describe('private-first-password-v1 canonical0314 restricted LOGIN closure', () 
         },
       };
       const driver = await createProviderSecurityDriver({ database: environment.database, runtime: providerRuntime });
-      // First password acts for the canonical web session under either authority (#7596 B5c2).
-      const owner = await driver.actor(selected, 'canonical-token', { password: false, provider: 'apple' });
+      // First password acts for the canonical web session under either authority (#7596 B5c2),
+      // and for any account with a Google or Apple identity (decision of 2026-11-18): one run of each.
+      const provider = selected === 'better-auth' ? 'google' : 'apple';
+      const owner = await driver.actor(selected, 'canonical-token', { password: false, provider });
       const [user] = await environment.ownerDatabase.select().from(users).where(eq(users.id, owner.userId));
       const normalizedEmail = normalizeAccountEmail(user.email);
       await environment.database

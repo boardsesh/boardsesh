@@ -74,6 +74,7 @@ vi.mock('@boardsesh/email', async (original) => ({
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
 import * as firstPasswordRoute from '../app/api/auth/first-password/[...step]/route';
+import * as providerSecurityRoute from '../app/api/auth/provider-security/[...step]/route';
 
 const secret = 'first-password-proof-nextauth-secret-7596-b5e2';
 const NEW_PASSWORD = 'a first password for Apple climbers';
@@ -103,7 +104,7 @@ beforeAll(async () => {
         expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
       },
       legacySecret: secret,
-      methods: { configuredProviders: ['apple'], googleAudience: null, googleReauthenticationEnabled: false },
+      methods: { configuredProviders: ['google', 'apple'], googleAudience: null, googleReauthenticationEnabled: false },
     },
   });
 });
@@ -136,8 +137,9 @@ afterAll(async () => {
 });
 
 /** An Apple-only climber who owns their address, signed in on a browser with a first-party session. */
-async function appleOnlyClimber() {
-  const owner = await driver.actor('current-store', 'canonical-token', { password: false, provider: 'apple' });
+/** A climber with no password and one identity (Apple by default), signed in with a first-party session. */
+async function appleOnlyClimber(provider: 'apple' | 'google' = 'apple') {
+  const owner = await driver.actor('current-store', 'canonical-token', { password: false, provider });
   const [user] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
   await reserveClimberEmail(environment.database, { id: user.id, email: user.email });
   const presented = owner.webActor.presented;
@@ -353,5 +355,31 @@ describe('first password under better-auth', () => {
     expect((await post('confirm', stale, body(first))).body).toMatchObject({ status: 'refused' });
     expect(await hasPassword(owner.userId)).toBe(false);
     expect((await post('confirm', jar, body(second))).body).toMatchObject({ status: 'committed' });
+  });
+
+  it('a Google-only climber sets a password, and methods then shows it (decision of 2026-11-18)', async () => {
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'first-password-proof.apps.googleusercontent.test');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'first-password-proof-google-secret');
+    const { owner, jar } = await appleOnlyClimber('google');
+    expect((await post('request', jar)).body).toMatchObject({ status: 'sent' });
+    const [{ token: confirmation, operation }] = holder.mail;
+    const done = await post('confirm', jar, {
+      operation,
+      token: confirmation,
+      password: NEW_PASSWORD,
+      confirmPassword: NEW_PASSWORD,
+    });
+    expect(done.body).toMatchObject({ status: 'committed', refreshAccessToken: true });
+    expect(await hasPassword(owner.userId)).toBe(true);
+    const methodsRequest = new NextRequest(new URL('/api/auth/provider-security/methods', ORIGIN), {
+      headers: { cookie: jar.header(), 'x-forwarded-for': randomClientAddress() },
+    });
+    const methods = await providerSecurityRoute.GET(methodsRequest, { params: Promise.resolve({ step: ['methods'] }) });
+    expect(methods.status).toBe(200);
+    expect(await methods.json()).toMatchObject({
+      passwordUsable: true,
+      providers: [expect.objectContaining({ provider: 'google', canUnlink: true })],
+    });
   });
 });

@@ -68,8 +68,6 @@ export const BROWSER_SESSION_WEB_CUTOVER_BLOCKERS: readonly string[] = Object.fr
   'B5B_WWW_PROVIDER_SIGN_IN',
   // Apple link is refused (`APPLE_LINK_ENABLED`) until a stand-in proof drives Apple's form_post.
   'B5E1_APPLE_LINK_PROOF',
-  // www offers first password to any account without one; the backend must accept Google-only accounts too.
-  'B5E2_FIRST_PASSWORD_ANY_PROVIDER',
   'B6_PARTNER_CONSENT',
   'B7_BROWSER_ACCEPTANCE',
 ]);

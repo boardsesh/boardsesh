@@ -1495,9 +1495,10 @@ Every account without a usable password is offered "Set a password", a link
 to `/settings/first-password` (decision of 2026-11-18 on #7596: first
 password is open to any account with no password and a Google or Apple
 identity). Connect and Disconnect stay enabled whenever the account can
-confirm a change (a password, or a fresh Google sign-in). Until the backend
-accepts Google-only accounts, the www cutover list carries
-`B5E2_FIRST_PASSWORD_ANY_PROVIDER`.
+confirm a change (a password, or a fresh Google sign-in). The backend
+accepts them (`isFirstPasswordInventory`), with a durable cap of 5 emails an
+hour and 10 a day per account; the www proof drives a Google-only account end
+to end.
 
 **First password** (`first-password-route.server.ts`). Routes under
 `/api/auth/first-password/*`, all POST with this site's `Origin`, the
