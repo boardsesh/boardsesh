@@ -9,6 +9,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import { NOINDEX_FOLLOW_ROBOTS, createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
 import DocsCodeBlock from './docs-code-block';
+import { GUIDE_SLUGS } from './guide-documents';
 import {
   API_PER_APP,
   API_PER_CLIMBER,
@@ -207,6 +208,13 @@ export default async function DevelopersPage() {
 
       <PageSection title={t('docs.related.title')}>
         <ProseList>
+          {GUIDE_SLUGS.map((slug) => (
+            <li key={slug}>
+              <MuiLink component={LocaleLink} href={`/developers/${slug}`}>
+                {t(`guides.${slug}.title`)}
+              </MuiLink>
+            </li>
+          ))}
           {RELATED.map(({ key, href }) => (
             <li key={key}>
               <MuiLink component={LocaleLink} href={href}>

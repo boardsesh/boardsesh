@@ -927,14 +927,14 @@ describe('partner consent', () => {
       expect(JSON.stringify(details.body)).not.toContain('Profile name');
     });
 
-    it('offer only published scopes: logbook:read now that its routes ship, never a workout scope', async () => {
+    it('offer shipped logbook and workout scopes', async () => {
       expect(PARTNER_SCOPES).toContain('logbook:read');
       const client = await consentClient();
       const climber = await webClimber();
       const logbook = await authorize(instance, client, climber.cookie, { scope: 'logbook:read' });
       expect(new URL(logbook.location).pathname).toBe('/oauth/consent');
       const workouts = await authorize(instance, client, climber.cookie, { scope: 'workouts:write' });
-      expect(new URL(workouts.location).searchParams.get('error')).toBe('invalid_scope');
+      expect(new URL(workouts.location).pathname).toBe('/oauth/consent');
     });
 
     it('say when approving reconnects an app the climber disconnected', async () => {

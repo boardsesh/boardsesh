@@ -396,6 +396,16 @@ jobs:
             packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlayPacketProtocolTests.swift \
             -o "$RUNNER_TEMP/aura-protocol-tests"
           vp exec "$RUNNER_TEMP/aura-protocol-tests"
+          # The board motion lab's swap look: per-hold fronts, ghosts, reach, look frames.
+          vp exec swiftc \
+            -module-cache-path "$RUNNER_TEMP/aura-atlas-module-cache" \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayPacketLayout.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayMotion.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlayShader.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/ClimbOverlaySwapLook.swift \
+            packages/mobile/modules/climb-overlay-gpu/ios/tests/ClimbOverlaySwapLookTests.swift \
+            -o "$RUNNER_TEMP/aura-swap-look-tests"
+          vp exec "$RUNNER_TEMP/aura-swap-look-tests"
 
       - name: Test Aura JNI empty buffer ownership
         run: |

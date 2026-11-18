@@ -1689,6 +1689,15 @@ export default defineConfig({
         dependsOn: ['db:up'],
         cache: false,
       },
+      // Browser-session harness (#7596, B7a): www and the Expo web app on two
+      // HTTPS subdomains of one parent domain, in Chromium and WebKit, against
+      // the real backend and database. See scripts/browser-session-e2e.ts and
+      // docs/better-auth-browser-session.md, "Browser-session e2e harness".
+      'test:e2e:browser-session': {
+        command: 'tsx scripts/browser-session-e2e.ts',
+        dependsOn: ['db:up', 'mobile:web-runtime:install'],
+        cache: false,
+      },
       // Expo-web smoke: boots the full expo-web stack (backend + Next proxy +
       // Metro web) via the dev orchestrator and runs the `expo-web-smoke`
       // Playwright project against it. See scripts/expo-web-e2e.ts.

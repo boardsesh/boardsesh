@@ -81,4 +81,19 @@
     <string id="SummaryRefused">refused</string>
     <string id="SummaryRefusedFull">refused, full</string>
     <string id="SummaryHeld">on hold</string>
+
+    <!-- Refused ticks (Session menu): retry or delete what the server refused -->
+    <string id="RefusedTitle">Refused ticks</string>
+    <string id="RefusedRetry">Retry all</string>
+    <string id="RefusedDelete">Delete all</string>
+    <string id="RefusedDeleteConfirm">Delete refused ticks? They are not in your logbook.</string>
+    <string id="RefusedRetrying">Queued to send again</string>
+    <string id="RefusedRetryFailed">Couldn't retry</string>
+    <string id="RefusedDeleted">Refused ticks deleted</string>
+    <string id="StatusAttempt">ATTEMPT</string>
+    <string id="RefusedClimbGone">Climb not found</string>
+    <string id="RefusedConflict">Used by another account</string>
+    <string id="RefusedInvalid">Server said invalid</string>
+    <string id="RefusedMissingData">Climb data missing</string>
+    <string id="RefusedOther">Refused</string>
 </strings>

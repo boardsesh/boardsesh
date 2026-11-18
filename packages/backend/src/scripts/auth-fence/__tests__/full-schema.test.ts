@@ -8,7 +8,14 @@ import { runAuthFence } from '../../auth-fence';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { fencePlan, protectedIdentityTable, readFenceCatalog, verifyFence, WEB_FENCE_LOCK_SQL } from '../catalog';
+import {
+  BACKEND_ONLY_PARTNER_TABLES,
+  fencePlan,
+  protectedIdentityTable,
+  readFenceCatalog,
+  verifyFence,
+  WEB_FENCE_LOCK_SQL,
+} from '../catalog';
 import { reconcileWebRuntimeAcl, quoteIdentifier } from '@boardsesh/db/auth-web-acl';
 import { runAuthAuthority } from '../../auth-authority';
 import { grantOwnedCredentialWriterCapabilities } from '../../../auth/authority/__tests__/fixtures/credential-writer-environment';
@@ -393,6 +400,13 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       }
     }
     expect(allowed).toEqual([]);
+  });
+  it('refuses SELECT on every backend-owned partner table', async () => {
+    for (const table of BACKEND_ONLY_PARTNER_TABLES) {
+      await expect(web.unsafe(`SELECT * FROM public.${quoteIdentifier(table)}`)).rejects.toMatchObject({
+        code: '42501',
+      });
+    }
   });
   it('keeps an ordinary playlist write working for the web role', async () => {
     const ownerId = randomUUID();

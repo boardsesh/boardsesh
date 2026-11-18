@@ -135,6 +135,50 @@ function testSaveTickInputPassesAttemptCountThrough(logger as Test.Logger) as La
 }
 
 (:test)
+function testSaveTickInputCarriesTheBoardUuidOnlyWhenStateHasOne(logger as Test.Logger) as Lang.Boolean {
+    // Every server today: no boardUuid in state, no key in the body (the
+    // input schema refuses a null one).
+    var plain = BsEndpoints.saveTickInput(sampleState(), "sess-1", "send", 1,
+        "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174003");
+    Test.assertEqual(plain.hasKey("boardUuid"), false);
+
+    var state = sampleState();
+    state["boardUuid"] = "0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10";
+    var withBoard = BsEndpoints.saveTickInput(state, "sess-1", "send", 1,
+        "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174004");
+    Test.assertEqual(withBoard["boardUuid"], "0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10");
+
+    var malformed = [null, "", "not-a-uuid", 42, ["0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10"]];
+    for (var index = 0; index < malformed.size(); index += 1) {
+        state["boardUuid"] = malformed[index];
+        var input = BsEndpoints.saveTickInput(state, "sess-1", "send", 1,
+            "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174005");
+        Test.assertEqual(input.hasKey("boardUuid"), false);
+    }
+    return true;
+}
+
+// A tick queued with a board uuid keeps it through the outbox and is sent
+// with it, unchanged, on the drain.
+(:test)
+function testQueuedTickSendsItsBoardUuid(logger as Test.Logger) as Lang.Boolean {
+    var context = installAuthFixture("owner-a", 3100);
+    resetTickStores();
+    var state = sampleState();
+    state["boardUuid"] = "0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10";
+    Test.assert(TickQueue.enqueue(BsEndpoints.saveTickInput(state, "sess-1", "send", 1,
+        "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174006"), context));
+    var client = new CapturedBsClient();
+    new TickFlusher(client).start(new FlushCompletionObserver().method(:done));
+    Test.assertEqual(client.sent[0]["params"]["variables"]["input"]["boardUuid"],
+        "0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10");
+    client.sent[0]["callback"].invoke(200, savedReply("123e4567-e89b-42d3-a456-426614174006"));
+    Test.assertEqual(TickQueue.size(), 0);
+    resetTickStores();
+    return true;
+}
+
+(:test)
 function testUuidV4Formatting(logger as Test.Logger) as Lang.Boolean {
     var formatted = Uuid.formatV4([
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0xf6, 0x07,

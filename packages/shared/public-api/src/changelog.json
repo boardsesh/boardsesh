@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "date": "2026-11-17",
+      "documentSha256": "483a46cc328c7bfd68dac6d1ab14e4cd18aabe34bb8d374d4b12726553506de5",
+      "changes": [
+        "Add scoped workout creation, listing, retrieval and cancellation with idempotency, lifecycle states and climber-owned results.",
+        "Publish workouts:read and workouts:write; existing tokens keep their original scopes."
+      ]
+    },
+    {
       "date": "2026-11-10",
       "documentSha256": "af95ddef79eac4f661e9c4c425d430bd4a6b272b24ef2041ff09ba0aaf806895",
       "changes": [

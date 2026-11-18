@@ -224,7 +224,7 @@
       },
       "open": {
         "title": "Enregistre ton app",
-        "body": "Connecte-toi en tant que développeur activé, accepte les conditions développeur et crée une app dans la console. Tu reçois tout de suite un client ID, et un client secret si ton serveur échange le code. Si ton compte n'est pas encore activé, la console te le dit.",
+        "body": "Connecte-toi, vérifie ton adresse de développement et accepte les conditions pour créer une application dans la console. Tu reçois un client ID et, si ton serveur échange le code, un client secret. Aucune invitation n’est nécessaire.",
         "action": "Ouvre la console développeur"
       }
     },
@@ -322,5 +322,146 @@
         "support": "Pose ta question à l'équipe Boardsesh"
       }
     }
+  },
+  "emailVerification": {
+    "title": "Vérifie ton adresse de développement",
+    "lead": "Confirme ton adresse avant d’enregistrer une application.",
+    "description": "Envoie un lien de confirmation à {{email}}. Chaque nouvel e-mail remplace le lien précédent.",
+    "send": "Recevoir l’e-mail de confirmation",
+    "sending": "Envoi…",
+    "sent": "Consulte ta boîte de réception. Le lien expire dans 30 minutes.",
+    "failed": "L’e-mail n’a pas pu être envoyé. Attends une minute, puis réessaie.",
+    "confirmDescription": "Confirme uniquement si tu as demandé cet e-mail pour le compte actuellement connecté.",
+    "signInHelp": "Connecte-toi dans un nouvel onglet, puis reviens ici. Utilise le compte qui a demandé cet e-mail.",
+    "signIn": "Se connecter",
+    "confirm": "Confirmer l’adresse",
+    "confirming": "Confirmation…",
+    "verified": "Ton adresse est vérifiée. Tu peux enregistrer une application.",
+    "invalid": "Ce lien a expiré, a été remplacé ou appartient à un autre compte. Demande un nouvel e-mail dans la console.",
+    "back": "Ouvrir les applications"
+  },
+  "guides": {
+    "labels": {
+      "home": "Présentation développeur",
+      "related": "Pour aller plus loin",
+      "markdown": "Lire en Markdown",
+      "openapi": "Télécharger OpenAPI 3.1",
+      "example": "Télécharger l’exemple de synchronisation",
+      "loading": "Chargement de la référence…",
+      "invitation": "L’inscription se fait sur invitation. Écris à support@boardsesh.com pour demander un accès."
+    },
+    "auth": {
+      "title": "Connecte un compte avec OAuth",
+      "description": "Enregistre une application, autorise avec PKCE et conserve les identifiants renouvelés en sécurité.",
+      "registration": {
+        "title": "Enregistre ton application",
+        "body": "Connecte-toi sur /developers/apps et vérifie ton adresse de développement. Choisis une application publique native pour un outil en ligne de commande, mobile ou de bureau ; publique web pour le navigateur ; confidentielle si ton serveur échange le code. Garde le secret uniquement sur ce serveur.\n\nEnregistre l’URI de retour exacte. Une application native peut utiliser http://127.0.0.1:8765/oauth/boardsesh ou http://[::1]:8765/oauth/boardsesh : le port de bouclage est ignoré. https et les schémas privés contenant un point sont acceptés. localhost, jokers, fragments, hôtes et schémas Boardsesh sont refusés. Limites : 10 applications par compte, 10 retours par application, 25 personnes connectées et 20 nouvelles connexions en 24 heures. Pour les augmenter, contacte support@boardsesh.com."
+      },
+      "authorize": {
+        "title": "Autorise dans le navigateur du système",
+        "body": "Découvre les endpoints sur https://api.boardsesh.com/.well-known/oauth-authorization-server/api/auth. L’émetteur est https://api.boardsesh.com/api/auth et la ressource exactement https://api.boardsesh.com/v1. Envoie resource lors de l’autorisation, de l’échange et du renouvellement.\n\nGénère un vérificateur PKCE aléatoire, son défi S256 et au moins 128 bits aléatoires pour state. Demande logbook:read et offline_access ; ajoute profile:read seulement pour le nom et l’avatar. Ouvre le navigateur du système. Vérifie state et iss au retour. Les codes durent 60 secondes et ne servent qu’une fois. Recommence l’autorisation si le résultat d’un échange est incertain."
+      },
+      "credentials": {
+        "title": "Enregistre chaque jeton renouvelé avant de l’utiliser",
+        "body": "Les jetons d’accès durent une heure, ceux de renouvellement 90 jours. Chaque renouvellement remplace le précédent. Sérialise les renouvellements par personne et enregistre durablement la nouvelle paire avant de l’utiliser. Réutiliser un jeton consommé invalide sa famille. Après un échec réseau au résultat inconnu, reconnecte le compte au lieu de rejouer le jeton.\n\nSur 401, renouvelle une fois puis réessaie. invalid_grant exige une reconnexion : cesse d’utiliser cet identifiant. Conserve la méthode enregistrée : none, client_secret_post ou client_secret_basic. CORS accepte les origines https de retour enregistrées. Ne stocke pas les identifiants dans les préférences du navigateur."
+      },
+      "disconnect": {
+        "title": "Révoque toute la connexion",
+        "body": "DELETE /v1/connection ne demande aucun scope supplémentaire. Un 204 confirme la déconnexion : supprime les identifiants et la copie du carnet, sauf demande de conservation. Un 401 seul ne confirme pas un DELETE précédent. Renouvelle une fois et réessaie ; si les identifiants ne fonctionnent plus, demande de vérifier les applications connectées dans Boardsesh. Révoquer un jeton OAuth ne déconnecte pas toutes les familles. Un changement de mot de passe ou une suppression de compte déconnecte aussi les applications."
+      }
+    },
+    "sync": {
+      "title": "Synchronise le carnet complet",
+      "description": "Télécharge un instantané complet, enregistre modifications et curseurs ensemble, et reprends après expiration.",
+      "snapshot": {
+        "title": "Prépare d’abord une copie de remplacement",
+        "body": "GET /v1/logbook/changes sans curseur lance un instantané complet, y compris les anciennes croix inchangées et les entrées antérieures à cette API. Suis tous les curseurs jusqu’à hasMore: false. La dernière page d’instantané passe au rattrapage incrémental avec hasMore: true. Une page vide peut aussi avoir hasMore: true. limit va de 1 à 200, avec 100 par défaut.\n\nPrépare une copie séparée. Publie-la avec son curseur final dans une transaction durable, en gardant l’ancienne jusque-là. Après un arrêt pendant le téléchargement initial, abandonne la copie partielle et recommence sans curseur. N’applique jamais les pages d’instantané comme des modifications de l’ancienne copie."
+      },
+      "changes": {
+        "title": "Enregistre chaque page et son curseur ensemble",
+        "body": "Avec logbook:read, ajoute ou remplace les entrées tick par tick.id et supprime tick.deleted par id, même si cette entrée n’était pas connue. Applique les entrées dans l’ordre, ignore les types inconnus et enregistre les modifications avec leur curseur atomiquement. Sérialise la synchronisation par personne.\n\nUne entrée contient ses essais, sa cotation, ses étoiles et son commentaire. La cotation du catalogue peut changer sans modifier l’entrée. Une page incrémentale vide ne signale pas de suppression. GET /v1/me fournit un ID stable pour ton application, différent dans les autres. Sépare les copies par application et compte."
+      },
+      "recovery": {
+        "title": "Reprends après un 410 sans perdre l’ancienne copie",
+        "body": "410 cursor_expired impose un remplacement complet, pas seulement une remise à zéro du curseur. Enregistre d’abord durablement qu’une synchronisation complète est nécessaire. Les curseurs d’instantané expirent après une heure et appartiennent à une connexion. La rétention incrémentale dépend du seuil de purge ; n’expire pas un curseur selon son âge seul.\n\nL’exemple conserve identifiants, entrées, curseur et indicateur dans un fichier JSON privé. Chaque commande verrouille le fichier, remplace par renommage atomique, sérialise les renouvellements et réessaie les erreurs réseau, 429 et 5xx avec attente croissante. Après un arrêt brutal, vérifie que la commande est terminée avant de supprimer son fichier .lock."
+      },
+      "poll": {
+        "title": "Synchronise au bon moment",
+        "body": "Synchronise quand la personne ouvre ton application. En arrière-plan, au plus une fois toutes les 15 minutes par personne. Respecte Retry-After sur 429 et les 503 temporaires. Les webhooks facultatifs logbook.changed demandent cette même synchronisation ; ils ne remplacent pas le flux.\n\nGarde les entrées privées confidentielles. Sur le Spraywall non public d’une autre personne, le nom du bloc et l’identité du Spraywall sont masqués. Ne crée pas de catalogue et ne publie pas les brouillons ou blocs non répertoriés d’autres ouvreurs à partir du carnet."
+      }
+    },
+    "errors": {
+      "title": "Gère les erreurs et limites de l’API",
+      "description": "Sache quand renouveler, reconstruire le carnet, attendre ou reconnecter le compte.",
+      "status": {
+        "title": "Vérifie d’abord le statut HTTP",
+        "body": "400 indique une requête ou un curseur incorrect. Sur 401 invalid_token, renouvelle une fois ; invalid_grant au renouvellement exige une reconnexion. 403 insufficient_scope nécessite ce scope. 404 masque les ressources d’une autre application ou personne. 409 indique un conflit, dont externalRef déjà utilisé ou l’annulation d’un entraînement commencé. 410 cursor_expired impose un téléchargement complet. 413 indique plus de 64 Ko ; 422, une validation ou une idempotence incorrecte.\n\nRéessaie 429 et 5xx avec Retry-After et une attente exponentielle bornée. Un échec réseau ne prouve pas une révocation. Tolère de nouveaux codes et champs en v1. Les erreurs contiennent error, message et requestId, parfois field. OAuth utilise error et error_description."
+      },
+      "limits": {
+        "title": "Lis les en-têtes de réponse",
+        "body": "L’API accepte 120 requêtes par minute et application/personne, et 6 000 par application. Renouvellement : 10 par minute et connexion. Échange et révocation : 60 par minute et application/IP. Une nouvelle application admet 25 personnes connectées et 20 nouvelles connexions en 24 heures. Un administrateur peut modifier ces plafonds.\n\nRateLimit-Limit, RateLimit-Remaining et RateLimit-Reset décrivent la limite la plus stricte. Retry-After donne l’attente en secondes. Boardsesh-Request-Id identifie la requête pour l’assistance. N’envoie jamais de jetons, codes ou secrets à l’assistance."
+      },
+      "versions": {
+        "title": "Prévois les ajouts",
+        "body": "v1 peut ajouter champs, routes, scopes, événements et valeurs d’énumération. Ignore ce que tu ne connais pas. Supprimer ou renommer un champ impose v2 ; v1 reste disponible au moins six mois avec un en-tête Sunset. Chaque changement figure dans l’historique.\n\nGénère un client ou simule l’API avec OpenAPI 3.1. La simulation montre les formats, pas la sécurité OAuth ni les vrais curseurs. Teste autorisation et synchronisation avec ton compte avant publication."
+      }
+    },
+    "reference": {
+      "title": "Référence de l’API pour applications",
+      "description": "Explore l’API REST avec scopes et télécharge son contrat OpenAPI 3.1.",
+      "contract": {
+        "title": "Utilise le contrat publié",
+        "body": "L’hôte est https://api.boardsesh.com. /v1 utilise un jeton Bearer opaque pour la ressource https://api.boardsesh.com/v1. Les endpoints OAuth et leurs métadonnées sont distincts du contrat REST. Cette référence utilise le même document OpenAPI versionné que le serveur.\n\nGénère un client ou lance la simulation Prism. Les exemples sont illustratifs. La simulation n’autorise pas d’application, ne renouvelle pas de jeton, ne maintient pas d’instantané et ne contrôle pas la propriété. Teste ces parcours avec ton compte."
+      }
+    },
+    "changelog": {
+      "title": "Historique de l’API Boardsesh",
+      "description": "Consulte les changements du contrat, du plus récent au plus ancien.",
+      "contract": {
+        "title": "Changements du contrat",
+        "body": "Ces entrées viennent de l’historique versionné que CI vérifie avec le document OpenAPI généré. Les nouveaux champs et routes restent en v1 ; suppressions et renommages imposent une nouvelle version majeure. Consulte cette page lorsque tu mets ton client à jour."
+      }
+    }
+  },
+  "webhooks": {
+    "open": "Webhooks",
+    "title": "Webhooks pour {{app}}",
+    "description": "Reçois un avis quand un carnet change, qu’un entraînement finit ou qu’une connexion se termine. Les avis ne contiennent aucune donnée d’escalade.",
+    "loading": "Chargement des webhooks…",
+    "failed": "Impossible de charger ou d’enregistrer les réglages. Réessaie.",
+    "retry": "Réessayer",
+    "url": "URL HTTPS du destinataire",
+    "urlHelp": "HTTPS public sur le port 443. Adresses privées et redirections refusées.",
+    "events": "Événements de notification",
+    "enabled": "Activer les livraisons",
+    "save": "Enregistrer le webhook",
+    "saving": "Enregistrement…",
+    "saved": "Webhook enregistré.",
+    "testQueued": "Envoi de test en attente. Actualise la liste pour voir son résultat.",
+    "secretOnce": "Copie ce secret maintenant. Il ne sera plus affiché.",
+    "secret": "Secret de signature du webhook",
+    "rotationHelp": "Après rotation, les requêtes portent les signatures des deux secrets pendant 24 heures. Mets ton récepteur à jour avant l’expiration de l’ancien.",
+    "rotate": "Changer le secret de signature",
+    "test": "Envoyer un test",
+    "disable": "Désactiver les livraisons",
+    "enable": "Réactiver les livraisons",
+    "deliveries": "Livraisons récentes",
+    "refresh": "Actualiser les livraisons",
+    "noDeliveries": "Aucune livraison pour le moment.",
+    "delivery": "{{event}} · {{status}} · {{attempts}} tentatives · HTTP {{code}}",
+    "noResponse": "sans réponse",
+    "close": "Fermer",
+    "endpointGone": "Cette URL a répondu HTTP 410. Corrige-la, puis réactive les livraisons.",
+    "failuresDisabled": "Les livraisons ont été désactivées après des échecs répétés. Corrige le destinataire, puis réactive-les.",
+    "reauthBody": "Modifier les réglages ou changer le secret nécessite une connexion datant de moins de {{minutes}} minutes. Reconnecte-toi pour protéger la destination des avis.",
+    "reauthForm": "Te reconnecter quitte cette page et efface les modifications non enregistrées. Copie l’URL avant de continuer.",
+    "deliveryStatus": {
+      "delivered": "Livré",
+      "failed": "Échec",
+      "cancelled": "Annulé",
+      "retrying": "Nouvel essai",
+      "pending": "En attente"
+    },
+    "rotationAvailableAfter": "Tu pourras renouveler le secret après {{time}}."
   }
 }

@@ -10,10 +10,18 @@ import { requireResourceAccess, resourceAccessCondition, sessionBoardLocationCon
 import { db } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
 import { sessionBoards } from '@boardsesh/db/schema/app';
-import { eq, and, gt, gte, lt, lte, ne, sql, getTableColumns } from 'drizzle-orm';
+import { eq, and, asc, gt, gte, lt, lte, ne, sql, getTableColumns } from 'drizzle-orm';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
 import type { DiscoverableSession, LiveSession, RoomManagerDeps } from './types';
 import { logger } from '../../utils/logger';
+import type { PartnerDatabase } from '../../auth/partner/tables';
+import {
+  lockSessionAppWorkouts,
+  lockSessionAppWorkoutUsers,
+  completeSessionAppWorkouts,
+} from '../public-api/workout-lifecycle';
+import { lockAppWorkoutSession, type AppWorkoutRow } from '../public-api/workouts';
+import { reportCompletedAppWorkouts } from '../public-api/workout-telemetry';
 import { hasLiveConnectionsOrSessionKey, readSessionLiveness } from './session-liveness';
 
 /**
@@ -315,7 +323,21 @@ export async function endSession(deps: RoomManagerDeps, sessionId: string): Prom
 
   // Mark as ended in Postgres
   const now = new Date();
-  await db.update(sessions).set({ status: 'ended', lastActivity: now, endedAt: now }).where(eq(sessions.id, sessionId));
+  const completedWorkouts = await db.transaction(async (tx) => {
+    const transaction = tx as unknown as PartnerDatabase;
+    const workouts = await lockSessionAppWorkouts(transaction, sessionId);
+    const ended = await tx
+      .update(sessions)
+      .set({ status: 'ended', lastActivity: now, endedAt: now })
+      .where(and(eq(sessions.id, sessionId), ne(sessions.status, 'ended')))
+      .returning({ id: sessions.id });
+    if (ended.length) {
+      await completeSessionAppWorkouts(transaction, workouts, 'completed', now);
+      return workouts;
+    }
+    return [];
+  });
+  await reportCompletedAppWorkouts(completedWorkouts, 'completed');
 
   // Remove from memory
   sessionsMap.delete(sessionId);
@@ -350,7 +372,8 @@ const INACTIVITY_SWEEP_LOCK_KEY = 19551850;
  * lock for this tick.
  */
 export async function endStaleInactiveSessions(thresholdMs: number): Promise<string[]> {
-  return db.transaction(async (tx) => {
+  const completedWorkouts: AppWorkoutRow[] = [];
+  const endedSessionIds = await db.transaction(async (tx) => {
     const lockResult = await tx.execute<{ locked: boolean }>(
       sql`SELECT pg_try_advisory_xact_lock(${INACTIVITY_SWEEP_LOCK_KEY}) AS locked`,
     );
@@ -362,9 +385,9 @@ export async function endStaleInactiveSessions(thresholdMs: number): Promise<str
     // endedAt mirrors the existing lastActivity so session duration reflects
     // when the user actually stopped, not when the sweep ran. lastActivity is
     // left untouched so the column keeps recording last-evidence going forward.
-    const result = await tx
-      .update(sessions)
-      .set({ status: 'ended', endedAt: sql`${sessions.lastActivity}` })
+    const candidates = await tx
+      .select({ id: sessions.id })
+      .from(sessions)
       .where(
         and(
           eq(sessions.status, 'active'),
@@ -377,10 +400,36 @@ export async function endStaleInactiveSessions(thresholdMs: number): Promise<str
           isLiveSessionRow,
         ),
       )
-      .returning({ id: sessions.id });
+      .orderBy(asc(sessions.id))
+      .limit(100);
+    const result: Array<{ id: string }> = [];
+    // Take every session fence before any user/connection lock. Otherwise a
+    // later session could wait for an End holding its fence and awaiting a
+    // connection that an earlier session in this batch already holds.
+    for (const candidate of candidates) await lockAppWorkoutSession(tx as unknown as PartnerDatabase, candidate.id);
+    await lockSessionAppWorkoutUsers(
+      tx as unknown as PartnerDatabase,
+      candidates.map((candidate) => candidate.id),
+    );
+    for (const candidate of candidates) {
+      const transaction = tx as unknown as PartnerDatabase;
+      const workouts = await lockSessionAppWorkouts(transaction, candidate.id);
+      const [ended] = await tx
+        .update(sessions)
+        .set({ status: 'ended', endedAt: sql`${sessions.lastActivity}` })
+        .where(and(eq(sessions.id, candidate.id), eq(sessions.status, 'active'), lt(sessions.lastActivity, cutoff)))
+        .returning({ id: sessions.id, endedAt: sessions.endedAt });
+      if (ended) {
+        await completeSessionAppWorkouts(transaction, workouts, 'auto_closed', ended.endedAt ?? new Date());
+        completedWorkouts.push(...workouts);
+        result.push({ id: ended.id });
+      }
+    }
     if (result.length > 0) {
       logger.info(`[RoomManager] Auto-ended ${result.length} inactive session(s)`);
     }
     return result.map((row) => row.id);
   });
+  await reportCompletedAppWorkouts(completedWorkouts, 'auto_closed');
+  return endedSessionIds;
 }

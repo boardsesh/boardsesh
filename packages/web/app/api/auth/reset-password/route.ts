@@ -7,7 +7,6 @@ import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
 import { isVersionedPasswordRecoveryToken, passwordRecoveryTokenSchema } from '@boardsesh/auth-protocol';
-import { soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
@@ -18,6 +17,7 @@ import {
 } from '@/app/lib/auth/password-recovery-command.server';
 import { withEmailVerificationPrivacy } from '@/app/lib/auth/email-verification-response.server';
 import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
+import { LEGACY_PASSWORD_RESET_LIFETIME_MS, legacyLinkAccount } from '@/app/lib/auth/legacy-link-account';
 
 const resetPasswordSchema = z
   .object({
@@ -119,13 +119,14 @@ async function handleResetPassword(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
-    // The token row only carries the email-derived identifier, not the user id —
-    // look the user up to get the id the transaction below needs. This also guards
-    // the rare case where the account was deleted within the token's 1-hour window.
-    // The link's address is matched exactly first, so a link names the row it was
-    // issued for even when another account has the address in other capitals. A
-    // link that matches no row exactly and several rows in other capitals is refused.
-    const account = soleAccount(await findAccountsByEmail(db, email));
+    // The token row only carries the email-derived identifier, not the user id.
+    // Bind it to the one account it was issued for: the only row storing this
+    // exact address, created before the link. Never another capitalisation, so a
+    // link for an account since deleted cannot reset its case sibling.
+    const account = legacyLinkAccount(await findAccountsByEmail(db, email), {
+      expires: resetToken[0].expires,
+      lifetimeMs: LEGACY_PASSWORD_RESET_LIFETIME_MS,
+    });
     if (!account) {
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });

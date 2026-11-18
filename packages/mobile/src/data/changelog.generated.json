@@ -1,6 +1,43 @@
 {
-  "generatedAt": "2026-11-17T21:44:33.944Z",
+  "generatedAt": "2026-11-18T09:24:54.068Z",
   "entries": [
+    {
+      "prNumber": 7801,
+      "category": "new",
+      "title": "Secondary buttons read as buttons now, with plain text beside the main violet one",
+      "mergedAt": "2026-11-18T09:18:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7801"
+    },
+    {
+      "prNumber": 7776,
+      "category": "improved",
+      "title": "Open a workout from your connected training app and climb it in Boardsesh.",
+      "mergedAt": "2026-11-18T08:35:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7776",
+      "body": "Keep your connected training app up to date with your logbook."
+    },
+    {
+      "prNumber": 7759,
+      "category": "new",
+      "title": "Back to your projects: climbs you tried and haven't sent yet sit on Home, one tap from the wall",
+      "mergedAt": "2026-11-18T08:34:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7759"
+    },
+    {
+      "prNumber": 7757,
+      "category": "fixed",
+      "title": "Shorter, clearer tips when you start out: each one says what to tap and what you get.",
+      "mergedAt": "2026-11-17T23:03:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7757"
+    },
+    {
+      "prNumber": 7754,
+      "category": "new",
+      "title": "Home now opens with your session and climbs at your level, unsent",
+      "mergedAt": "2026-11-17T22:28:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7754",
+      "body": "The Session card shows your last workout, one tap from starting again"
+    },
     {
       "prNumber": 7755,
       "category": "fixed",
@@ -9889,12 +9926,27 @@
   "nativeReleases": [
     {
       "kind": "native-release",
-      "date": "2026-11-17T20:19:49Z",
-      "sha": "1a52595646180af74fefc2fc3bebc9f4e5c4ffaa",
+      "date": "2026-11-18T08:35:00Z",
+      "sha": "b87bb473c9c576c852bced07a0e18ef71675dbe2",
       "platforms": [
+        "android",
         "ios"
       ],
       "fingerprints": {
+        "android": "a533b70663f501abab0c1b8c0d95f131fe26693a",
+        "ios": "a5591e0e2588bc852798a16d89b18bdc4df602b1"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-11-17T20:19:49Z",
+      "sha": "1a52595646180af74fefc2fc3bebc9f4e5c4ffaa",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "c12775dbcda3bba693ef9a961399366ede3b910a",
         "ios": "4e92c0d05830fa462184294c5df41845ae452f7f"
       }
     },

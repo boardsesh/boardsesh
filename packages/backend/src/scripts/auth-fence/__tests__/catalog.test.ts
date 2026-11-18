@@ -2,13 +2,71 @@ import { readdirSync } from 'node:fs';
 import { getTableName, is } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vite-plus/test';
-import { fencePlan, protectedIdentityTable, WEB_WRITABLE_AUTH_SCHEMA_TABLES } from '../catalog';
+import {
+  BACKEND_ONLY_PARTNER_TABLES,
+  fencePlan,
+  protectedIdentityTable,
+  WEB_WRITABLE_AUTH_SCHEMA_TABLES,
+} from '../catalog';
 import { operatorConnectionOptions, parseOperatorArguments } from '../operator';
 import { assertAuthorityActivationGates, AUTHORITY_ACTIVATION_BLOCKERS } from '../../auth-authority';
 import { authFenceRefusalCode, runAuthFence } from '../../auth-fence';
 import { ExplicitConnectionConfigurationError } from '../../../auth/email-audit/connection';
 
 const FENCE_COMMANDS = ['plan', 'apply', 'verify'];
+
+describe('backend-owned partner state', () => {
+  it('denies every direct web read/write, including sealed webhook credentials and proof hashes', () => {
+    const plan = fencePlan({
+      schemas: ['public'],
+      owners: ['boardsesh_owner'],
+      routines: [],
+      relations: BACKEND_ONLY_PARTNER_TABLES.map((name) => ({
+        schema: 'public',
+        name,
+        kind: 'r',
+        columns: ['id', 'secret'],
+      })),
+    });
+    expect(BACKEND_ONLY_PARTNER_TABLES).toEqual(
+      expect.arrayContaining([
+        'partner_developer_emails',
+        'app_workouts',
+        'app_workout_requests',
+        'oauth_client_webhooks',
+        'partner_webhook_outbox',
+        'webhook_deliveries',
+      ]),
+    );
+    for (const name of BACKEND_ONLY_PARTNER_TABLES) {
+      expect(protectedIdentityTable(name)).toBe(true);
+      expect(plan.sql).toContain(`REVOKE ALL ON TABLE "public"."${name}" FROM PUBLIC, "boardsesh_web";`);
+      expect(plan.sql).not.toContain(`GRANT SELECT ON TABLE "public"."${name}"`);
+      expect(plan.sql).not.toContain(`GRANT INSERT, UPDATE, DELETE ON TABLE "public"."${name}"`);
+      expect(plan.rollbackSql).not.toContain(`GRANT INSERT, UPDATE, DELETE ON TABLE "public"."${name}"`);
+    }
+  });
+
+  it('keeps a partner audit sequence closed even in the emergency rollback plan', () => {
+    const plan = fencePlan({
+      schemas: ['public'],
+      owners: ['boardsesh_owner'],
+      routines: [],
+      relations: [
+        {
+          schema: 'public',
+          name: 'partner_app_cap_audit_id_seq',
+          kind: 'S',
+          columns: [],
+          sequenceOwner: 'partner_app_cap_audit',
+        },
+      ],
+    });
+    expect(plan.sql).toContain('REVOKE ALL ON SEQUENCE "public"."partner_app_cap_audit_id_seq"');
+    expect(plan.sql).not.toContain('GRANT USAGE ON SEQUENCE');
+    expect(plan.rollbackSql).not.toContain('GRANT USAGE ON SEQUENCE');
+  });
+});
 
 describe('auth-fence command line', () => {
   it('defaults to the read-only plan and accepts verify', () => {

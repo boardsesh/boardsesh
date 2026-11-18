@@ -182,8 +182,7 @@ describe('FirstConnectHost', () => {
     await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(1));
     expect(chooseMock).toHaveBeenCalledWith({
       title: 'Connected to Kilter at Blocs',
-      message:
-        'Always drive the wall is on: every climb you pick lights until you tap You are driving the wall to stop.',
+      message: 'Always drive the wall is on. Every climb you pick lights until you tap You are driving the wall.',
       options: [{ value: 'got_it', label: 'Got it' }],
       cancelValue: 'got_it',
     });
@@ -242,7 +241,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.alwaysDrive = false;
 
     expect(await confirmFirstConnect()).toBe(
-      'Put on board lets you drive the wall: for 45 seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
+      'Put on board lights a climb. Every pick in the next 45 seconds lights too. After that, tap Put on board again.',
     );
     expect(getFirstConnectSnapshot().device).toMatchObject({ connectedAt: 1_000, confirmationShownAt: 1_000 });
   });
@@ -251,9 +250,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.alwaysDrive = false;
     settingsCtrl.values.putOnBoardKeepsLighting = '30';
 
-    expect(await confirmFirstConnect()).toMatch(
-      /^Put on board lets you drive the wall: for 30 seconds after each climb/,
-    );
+    expect(await confirmFirstConnect()).toMatch(/^Put on board lights a climb\. Every pick in the next 30 seconds/);
   });
 
   it('says a 60 s window the way the preview-first card does', async () => {
@@ -261,7 +258,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.putOnBoardKeepsLighting = '60';
 
     expect(await confirmFirstConnect()).toBe(
-      'Put on board lets you drive the wall: for 1 minute after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
+      'Put on board lights a climb. Every pick in the next minute lights too. After that, tap Put on board again.',
     );
   });
 
@@ -269,14 +266,14 @@ describe('FirstConnectHost', () => {
   it('says every pick lights in a crew with In a session too on', async () => {
     sessionCtrl.crew = true;
 
-    expect(await confirmFirstConnect()).toMatch(/^Always drive the wall is on:/);
+    expect(await confirmFirstConnect()).toMatch(/^Always drive the wall is on\./);
   });
 
   it('falls back to Put on board in a crew with In a session too off', async () => {
     settingsCtrl.values.putOnBoardDrivesInSession = false;
     sessionCtrl.crew = true;
 
-    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it.');
   });
 
   // A MoonBoard follows In a session too like every board.
@@ -285,23 +282,21 @@ describe('FirstConnectHost', () => {
     sessionCtrl.crew = true;
     boardCtrl.boardType = 'moonboard';
 
-    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it.');
   });
 
   // The swipe flag is driving's kill switch: off, Always drive the wall drives nothing either.
   it('promises one climb with the swipe flag off, Always drive the wall on or not', async () => {
     flagsCtrl.keepLighting = false;
 
-    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it.');
   });
 
   it('names a 5 minute drive in minutes', async () => {
     settingsCtrl.values.alwaysDrive = false;
     settingsCtrl.values.putOnBoardKeepsLighting = '300';
 
-    expect(await confirmFirstConnect()).toMatch(
-      /^Put on board lets you drive the wall: for 5 minutes after each climb/,
-    );
+    expect(await confirmFirstConnect()).toMatch(/^Put on board lights a climb\. Every pick in the next 5 minutes/);
   });
 
   // Stop driving after is one choice for every board: a MoonBoard gets the
@@ -311,7 +306,7 @@ describe('FirstConnectHost', () => {
     boardCtrl.boardType = 'moonboard';
 
     expect(await confirmFirstConnect()).toBe(
-      'Put on board lets you drive the wall: for 45 seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
+      'Put on board lights a climb. Every pick in the next 45 seconds lights too. After that, tap Put on board again.',
     );
   });
 
@@ -319,7 +314,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.alwaysDrive = false;
     flagsCtrl.keepLighting = false;
 
-    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it.');
   });
 
   it('honours In a session too in a crew session', async () => {
@@ -327,7 +322,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.putOnBoardDrivesInSession = false;
     sessionCtrl.crew = true;
 
-    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it.');
   });
 
   it('holds the preview-first card back from the decision until the dialog closes', async () => {

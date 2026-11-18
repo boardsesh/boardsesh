@@ -263,6 +263,39 @@ export type AdminBoardsInput = {
   query?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** Global-admin app directory. Never contains client credentials or connected climber identities. */
+export type AdminPartnerApp = {
+  __typename?: 'AdminPartnerApp';
+  activeConnections: Scalars['Int']['output'];
+  clientId: Scalars['ID']['output'];
+  createdAt: Scalars['String']['output'];
+  disabled: Scalars['Boolean']['output'];
+  homepageUrl?: Maybe<Scalars['String']['output']>;
+  maxActiveConnections: Scalars['Int']['output'];
+  maxNewConnectionsPerDay: Scalars['Int']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  newConnectionsLast24Hours: Scalars['Int']['output'];
+  ownerEmail?: Maybe<Scalars['String']['output']>;
+  ownerName?: Maybe<Scalars['String']['output']>;
+  ownerUserId: Scalars['ID']['output'];
+  publisherName?: Maybe<Scalars['String']['output']>;
+  suspendedAt?: Maybe<Scalars['String']['output']>;
+  suspensionReason?: Maybe<Scalars['String']['output']>;
+};
+
+export type AdminPartnerAppConnection = {
+  __typename?: 'AdminPartnerAppConnection';
+  apps: Array<AdminPartnerApp>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
+export type AdminPartnerAppsInput = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Result of fetching the authenticated user's playlists, paginated. */
 export type AllUserPlaylistsResult = {
   __typename?: 'AllUserPlaylistsResult';
@@ -372,6 +405,29 @@ export type AppFeedbackStatusCounts = {
  * sources, `ratings` = prompt/drawer-feedback sources, `all` = everything.
  */
 export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
+
+/** A partner workout delivered to the signed-in climber. Its session identifier never leaves the partner API. */
+export type AppWorkout = {
+  __typename?: 'AppWorkout';
+  blocks: Scalars['JSON']['output'];
+  clientId: Scalars['ID']['output'];
+  expiresAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  notes?: Maybe<Scalars['String']['output']>;
+  openedByMismatch: Scalars['Boolean']['output'];
+  scheduledFor?: Maybe<Scalars['String']['output']>;
+  sessionId?: Maybe<Scalars['ID']['output']>;
+  sessionPlan?: Maybe<Scalars['JSON']['output']>;
+  sourceAppName: Scalars['String']['output'];
+  spec: Scalars['JSON']['output'];
+  status: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type AppWorkoutLaunch = {
+  __typename?: 'AppWorkoutLaunch';
+  sourceAppName: Scalars['String']['output'];
+};
 
 /** Campaign identifiers verified against Apple's AdServices API, never its raw response. */
 export type AppleAdsAttribution = {
@@ -2665,6 +2721,10 @@ export type CreateProposalInput = {
 
 /** Input for creating a new climbing session. */
 export type CreateSessionInput = {
+  /** Partner workout to start atomically with this climber's session. */
+  appWorkoutId?: InputMaybe<Scalars['ID']['input']>;
+  /** Initial queue and generated stage plan, committed with the new partner workout session. */
+  appWorkoutSeed?: InputMaybe<Scalars['JSON']['input']>;
   audience?: InputMaybe<PrivacyResourceAudience>;
   /** Board entity IDs for multi-board sessions */
   boardIds?: InputMaybe<Array<Scalars['Int']['input']>>;
@@ -4764,6 +4824,7 @@ export type Mutation = {
   adminUpdateBoard: AdminBoard;
   approveFollowRequest: Scalars['Boolean']['output'];
   approveResourceAccess: Scalars['Boolean']['output'];
+  attachAppWorkout: Scalars['Boolean']['output'];
   /**
    * Attach an Instagram or TikTok video as beta for a climb. Idempotent on
    * (boardType, climbUuid, link).
@@ -4817,6 +4878,7 @@ export type Mutation = {
    * no `sessionId` argument is required.
    */
   confirmClimbOnWall: Session;
+  confirmPartnerDeveloperEmail: Scalars['Boolean']['output'];
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
@@ -5128,6 +5190,7 @@ export type Mutation = {
    * audit trail. No self-serve entry point exists.
    */
   reassignGymOwner: ReassignGymOwnerResult;
+  recordAppWorkoutPlan: Scalars['Boolean']['output'];
   /**
    * Record that the viewer opened this board, which is what orders "Your boards"
    * by recency. Never moves the stored timestamp backwards, so an out-of-order
@@ -5263,6 +5326,7 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  requestPartnerDeveloperEmail: Scalars['Boolean']['output'];
   /**
    * Pull the latest logbook from a linked board account now.
    * Joins a sync that is already waiting instead of queueing a second one.
@@ -5356,6 +5420,7 @@ export type Mutation = {
   revokeRole: Scalars['Boolean']['output'];
   /** Replace a confidential app's secret. The old secret stops working at once. */
   rotateOAuthClientSecret: OAuthClientCredentials;
+  rotatePartnerWebhookSecret: PartnerWebhookCredentials;
   /**
    * Save Aurora climbing credentials.
    * Validates with Aurora API before saving.
@@ -5501,6 +5566,7 @@ export type Mutation = {
    * Caller must be a participant of the session. Requires authentication.
    */
   syncSessionToIntegration: IntegrationExportResult;
+  testPartnerWebhook: Scalars['ID']['output'];
   /**
    * Toggle favorite status for a climb.
    * Returns new favorite state.
@@ -5559,6 +5625,8 @@ export type Mutation = {
   updateGymKiosk: GymKiosk;
   /** Edit the signed-in developer's app. */
   updateOAuthClient: OAuthClient;
+  updatePartnerAppLimits: AdminPartnerApp;
+  updatePartnerWebhook: PartnerWebhookCredentials;
   /** Update playlist metadata. */
   updatePlaylist: Playlist;
   /** Update only lastAccessedAt for a playlist (does not update updatedAt). */
@@ -5660,6 +5728,12 @@ export type MutationApproveResourceAccessArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationAttachAppWorkoutArgs = {
+  sessionId: Scalars['ID']['input'];
+  workoutId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationAttachBetaLinkArgs = {
   input: AttachBetaLinkInput;
 };
@@ -5700,6 +5774,11 @@ export type MutationCommitSprayWallVersionArgs = {
 export type MutationConfirmClimbOnWallArgs = {
   climbUuid: Scalars['ID']['input'];
   queueItemUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationConfirmPartnerDeveloperEmailArgs = {
+  token: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -6025,6 +6104,12 @@ export type MutationReassignGymOwnerArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRecordAppWorkoutPlanArgs = {
+  plan: Scalars['JSON']['input'];
+  workoutId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRecordBoardOpenedArgs = {
   input: RecordBoardOpenedInput;
 };
@@ -6275,6 +6360,11 @@ export type MutationRotateOAuthClientSecretArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRotatePartnerWebhookSecretArgs = {
+  clientId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationSaveAuroraCredentialArgs = {
   input: SaveAuroraCredentialInput;
 };
@@ -6421,6 +6511,11 @@ export type MutationSyncSessionToIntegrationArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationTestPartnerWebhookArgs = {
+  clientId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationToggleFavoriteArgs = {
   input: ToggleFavoriteInput;
 };
@@ -6509,6 +6604,16 @@ export type MutationUpdateGymKioskArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateOAuthClientArgs = {
   input: UpdateOAuthClientInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdatePartnerAppLimitsArgs = {
+  input: UpdatePartnerAppLimitsInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdatePartnerWebhookArgs = {
+  input: UpdatePartnerWebhookInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6888,6 +6993,40 @@ export type OutlierAnalysis = {
   isOutlier: Scalars['Boolean']['output'];
   neighborAverage: Scalars['Float']['output'];
   neighborCount: Scalars['Int']['output'];
+};
+
+export type PartnerDeveloperEmailStatus = {
+  __typename?: 'PartnerDeveloperEmailStatus';
+  email: Scalars['String']['output'];
+  verified: Scalars['Boolean']['output'];
+};
+
+export type PartnerWebhookCredentials = {
+  __typename?: 'PartnerWebhookCredentials';
+  secret?: Maybe<Scalars['String']['output']>;
+  settings: PartnerWebhookSettings;
+};
+
+export type PartnerWebhookDelivery = {
+  __typename?: 'PartnerWebhookDelivery';
+  attempts: Scalars['Int']['output'];
+  createdAt: Scalars['String']['output'];
+  deliveredAt?: Maybe<Scalars['String']['output']>;
+  event: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lastError?: Maybe<Scalars['String']['output']>;
+  lastStatusCode?: Maybe<Scalars['Int']['output']>;
+  status: Scalars['String']['output'];
+};
+
+export type PartnerWebhookSettings = {
+  __typename?: 'PartnerWebhookSettings';
+  clientId: Scalars['ID']['output'];
+  disabledReason?: Maybe<Scalars['String']['output']>;
+  enabled: Scalars['Boolean']['output'];
+  events: Array<Scalars['String']['output']>;
+  previousSecretExpiresAt?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
 };
 
 /** Input for listing pending gym claims (admin only). */
@@ -7602,6 +7741,7 @@ export type Query = {
    * is capped at 100, and `cursor` comes from the previous page.
    */
   adminCncOrders: CncOrderConnection;
+  adminPartnerApps: AdminPartnerAppConnection;
   /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
@@ -7609,6 +7749,7 @@ export type Query = {
   allUserPlaylists: AllUserPlaylistsResult;
   /** Get available angles for a board layout. */
   angles: Array<Angle>;
+  appWorkout: AppWorkout;
   /**
    * Get Aurora credential for a specific board type.
    * Includes token if available. Requires authentication.
@@ -8128,6 +8269,9 @@ export type Query = {
    * to mention connected apps read this. It changes only with a deploy.
    */
   partnerAppsEnabled: Scalars['Boolean']['output'];
+  partnerDeveloperEmailStatus: PartnerDeveloperEmailStatus;
+  partnerWebhookDeliveries: Array<PartnerWebhookDelivery>;
+  partnerWebhookSettings?: Maybe<PartnerWebhookSettings>;
   /** List pending gym ownership claims for the admin review queue (admin only). */
   pendingGymClaims: GymClaimConnection;
   /**
@@ -8174,6 +8318,8 @@ export type Query = {
    * @deprecated In-place resets were retired. Always refuses with SPRAY_WALL_RESET_RETIRED; use resetSprayWall.
    */
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
+  /** Only the registered app's public name; never the workout title, notes or blocks. */
+  publicAppWorkoutLaunch?: Maybe<AppWorkoutLaunch>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
   /**
@@ -8549,6 +8695,11 @@ export type QueryAdminCncOrdersArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryAdminPartnerAppsArgs = {
+  input?: InputMaybe<AdminPartnerAppsInput>;
+};
+
+/** Root query type for all read operations. */
 export type QueryAllUserPlaylistsArgs = {
   input: GetAllUserPlaylistsInput;
 };
@@ -8557,6 +8708,11 @@ export type QueryAllUserPlaylistsArgs = {
 export type QueryAnglesArgs = {
   boardName: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAppWorkoutArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9019,6 +9175,16 @@ export type QueryOrphanGymsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryPartnerWebhookDeliveriesArgs = {
+  clientId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPartnerWebhookSettingsArgs = {
+  clientId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryPendingGymClaimsArgs = {
   input?: InputMaybe<PendingGymClaimsInput>;
 };
@@ -9071,6 +9237,11 @@ export type QueryProposalReportReleaseContextsArgs = {
 /** Root query type for all read operations. */
 export type QueryProposeSprayWallResetArgs = {
   input: ProposeSprayWallResetInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicAppWorkoutLaunchArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -12890,6 +13061,19 @@ export type UpdateOAuthClientInput = {
   redirectUris?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
+export type UpdatePartnerAppLimitsInput = {
+  clientId: Scalars['ID']['input'];
+  maxActiveConnections: Scalars['Int']['input'];
+  maxNewConnectionsPerDay: Scalars['Int']['input'];
+};
+
+export type UpdatePartnerWebhookInput = {
+  clientId: Scalars['ID']['input'];
+  enabled: Scalars['Boolean']['input'];
+  events: Array<Scalars['String']['input']>;
+  url: Scalars['String']['input'];
+};
+
 /** Input for updating a playlist. */
 export type UpdatePlaylistInput = {
   /** New color */
@@ -13524,6 +13708,9 @@ export type ResolversTypes = ResolversObject<{
   AdminBoard: ResolverTypeWrapper<AdminBoard>;
   AdminBoardConnection: ResolverTypeWrapper<AdminBoardConnection>;
   AdminBoardsInput: AdminBoardsInput;
+  AdminPartnerApp: ResolverTypeWrapper<AdminPartnerApp>;
+  AdminPartnerAppConnection: ResolverTypeWrapper<AdminPartnerAppConnection>;
+  AdminPartnerAppsInput: AdminPartnerAppsInput;
   AllUserPlaylistsResult: ResolverTypeWrapper<AllUserPlaylistsResult>;
   AnalyticsConsent: ResolverTypeWrapper<AnalyticsConsent>;
   Angle: ResolverTypeWrapper<Angle>;
@@ -13533,6 +13720,8 @@ export type ResolversTypes = ResolversObject<{
   AppFeedbackStatus: AppFeedbackStatus;
   AppFeedbackStatusCounts: ResolverTypeWrapper<AppFeedbackStatusCounts>;
   AppFeedbackTypeFilter: AppFeedbackTypeFilter;
+  AppWorkout: ResolverTypeWrapper<AppWorkout>;
+  AppWorkoutLaunch: ResolverTypeWrapper<AppWorkoutLaunch>;
   AppleAdsAttribution: ResolverTypeWrapper<AppleAdsAttribution>;
   AppleAdsAttributionResult: ResolverTypeWrapper<AppleAdsAttributionResult>;
   AppleAdsAttributionStatus: AppleAdsAttributionStatus;
@@ -13831,6 +14020,10 @@ export type ResolversTypes = ResolversObject<{
   OrphanGymConnection: ResolverTypeWrapper<OrphanGymConnection>;
   OrphanGymsInput: OrphanGymsInput;
   OutlierAnalysis: ResolverTypeWrapper<OutlierAnalysis>;
+  PartnerDeveloperEmailStatus: ResolverTypeWrapper<PartnerDeveloperEmailStatus>;
+  PartnerWebhookCredentials: ResolverTypeWrapper<PartnerWebhookCredentials>;
+  PartnerWebhookDelivery: ResolverTypeWrapper<PartnerWebhookDelivery>;
+  PartnerWebhookSettings: ResolverTypeWrapper<PartnerWebhookSettings>;
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinBoardInput: PinBoardInput;
   PinPlaylistInput: PinPlaylistInput;
@@ -14083,6 +14276,8 @@ export type ResolversTypes = ResolversObject<{
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
   UpdateOAuthClientInput: UpdateOAuthClientInput;
+  UpdatePartnerAppLimitsInput: UpdatePartnerAppLimitsInput;
+  UpdatePartnerWebhookInput: UpdatePartnerWebhookInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdatePrivacySettingsInput: UpdatePrivacySettingsInput;
   UpdateProfileInput: UpdateProfileInput;
@@ -14135,6 +14330,9 @@ export type ResolversParentTypes = ResolversObject<{
   AdminBoard: AdminBoard;
   AdminBoardConnection: AdminBoardConnection;
   AdminBoardsInput: AdminBoardsInput;
+  AdminPartnerApp: AdminPartnerApp;
+  AdminPartnerAppConnection: AdminPartnerAppConnection;
+  AdminPartnerAppsInput: AdminPartnerAppsInput;
   AllUserPlaylistsResult: AllUserPlaylistsResult;
   AnalyticsConsent: AnalyticsConsent;
   Angle: Angle;
@@ -14142,6 +14340,8 @@ export type ResolversParentTypes = ResolversObject<{
   AppFeedbackReport: AppFeedbackReport;
   AppFeedbackReporter: AppFeedbackReporter;
   AppFeedbackStatusCounts: AppFeedbackStatusCounts;
+  AppWorkout: AppWorkout;
+  AppWorkoutLaunch: AppWorkoutLaunch;
   AppleAdsAttribution: AppleAdsAttribution;
   AppleAdsAttributionResult: AppleAdsAttributionResult;
   AppleAdsConsentInput: AppleAdsConsentInput;
@@ -14408,6 +14608,10 @@ export type ResolversParentTypes = ResolversObject<{
   OrphanGymConnection: OrphanGymConnection;
   OrphanGymsInput: OrphanGymsInput;
   OutlierAnalysis: OutlierAnalysis;
+  PartnerDeveloperEmailStatus: PartnerDeveloperEmailStatus;
+  PartnerWebhookCredentials: PartnerWebhookCredentials;
+  PartnerWebhookDelivery: PartnerWebhookDelivery;
+  PartnerWebhookSettings: PartnerWebhookSettings;
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinBoardInput: PinBoardInput;
   PinPlaylistInput: PinPlaylistInput;
@@ -14621,6 +14825,8 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
   UpdateOAuthClientInput: UpdateOAuthClientInput;
+  UpdatePartnerAppLimitsInput: UpdatePartnerAppLimitsInput;
+  UpdatePartnerWebhookInput: UpdatePartnerWebhookInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdatePrivacySettingsInput: UpdatePrivacySettingsInput;
   UpdateProfileInput: UpdateProfileInput;
@@ -14789,6 +14995,39 @@ export type AdminBoardConnectionResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type AdminPartnerAppResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminPartnerApp'] = ResolversParentTypes['AdminPartnerApp'],
+> = ResolversObject<{
+  activeConnections?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  clientId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  disabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  homepageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  maxActiveConnections?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  maxNewConnectionsPerDay?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  newConnectionsLast24Hours?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  ownerEmail?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  ownerName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  ownerUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  publisherName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  suspendedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  suspensionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AdminPartnerAppConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminPartnerAppConnection'] =
+    ResolversParentTypes['AdminPartnerAppConnection'],
+> = ResolversObject<{
+  apps?: Resolver<Array<ResolversTypes['AdminPartnerApp']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type AllUserPlaylistsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['AllUserPlaylistsResult'] = ResolversParentTypes['AllUserPlaylistsResult'],
@@ -14876,6 +15115,34 @@ export type AppFeedbackStatusCountsResolvers<
   new?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   resolved?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   wontFix?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppWorkoutResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppWorkout'] = ResolversParentTypes['AppWorkout'],
+> = ResolversObject<{
+  blocks?: Resolver<ResolversTypes['JSON'], ParentType, ContextType>;
+  clientId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  openedByMismatch?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  scheduledFor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sessionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  sessionPlan?: Resolver<Maybe<ResolversTypes['JSON']>, ParentType, ContextType>;
+  sourceAppName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  spec?: Resolver<ResolversTypes['JSON'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppWorkoutLaunchResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppWorkoutLaunch'] = ResolversParentTypes['AppWorkoutLaunch'],
+> = ResolversObject<{
+  sourceAppName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17099,6 +17366,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationApproveResourceAccessArgs, 'kind' | 'resourceId' | 'userId'>
   >;
+  attachAppWorkout?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationAttachAppWorkoutArgs, 'sessionId' | 'workoutId'>
+  >;
   attachBetaLink?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -17146,6 +17419,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationConfirmClimbOnWallArgs, 'climbUuid'>
+  >;
+  confirmPartnerDeveloperEmail?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationConfirmPartnerDeveloperEmailArgs, 'token'>
   >;
   controllerHeartbeat?: Resolver<
     ResolversTypes['Boolean'],
@@ -17501,6 +17780,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationReassignGymOwnerArgs, 'input'>
   >;
+  recordAppWorkoutPlan?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRecordAppWorkoutPlanArgs, 'plan' | 'workoutId'>
+  >;
   recordBoardOpened?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -17670,6 +17955,7 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestGymClaimArgs, 'input'>
   >;
+  requestPartnerDeveloperEmail?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   requestProviderSync?: Resolver<
     ResolversTypes['ProviderSyncRequest'],
     ParentType,
@@ -17774,6 +18060,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationRotateOAuthClientSecretArgs, 'clientId'>
+  >;
+  rotatePartnerWebhookSecret?: Resolver<
+    ResolversTypes['PartnerWebhookCredentials'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRotatePartnerWebhookSecretArgs, 'clientId'>
   >;
   saveAuroraCredential?: Resolver<
     ResolversTypes['AuroraCredentialStatus'],
@@ -17932,6 +18224,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSyncSessionToIntegrationArgs, 'provider' | 'sessionId'>
   >;
+  testPartnerWebhook?: Resolver<
+    ResolversTypes['ID'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationTestPartnerWebhookArgs, 'clientId'>
+  >;
   toggleFavorite?: Resolver<
     ResolversTypes['ToggleFavoriteResult'],
     ParentType,
@@ -18034,6 +18332,18 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationUpdateOAuthClientArgs, 'input'>
+  >;
+  updatePartnerAppLimits?: Resolver<
+    ResolversTypes['AdminPartnerApp'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdatePartnerAppLimitsArgs, 'input'>
+  >;
+  updatePartnerWebhook?: Resolver<
+    ResolversTypes['PartnerWebhookCredentials'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdatePartnerWebhookArgs, 'input'>
   >;
   updatePlaylist?: Resolver<
     ResolversTypes['Playlist'],
@@ -18296,6 +18606,54 @@ export type OutlierAnalysisResolvers<
   isOutlier?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   neighborAverage?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   neighborCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PartnerDeveloperEmailStatusResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PartnerDeveloperEmailStatus'] =
+    ResolversParentTypes['PartnerDeveloperEmailStatus'],
+> = ResolversObject<{
+  email?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  verified?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PartnerWebhookCredentialsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PartnerWebhookCredentials'] =
+    ResolversParentTypes['PartnerWebhookCredentials'],
+> = ResolversObject<{
+  secret?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  settings?: Resolver<ResolversTypes['PartnerWebhookSettings'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PartnerWebhookDeliveryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PartnerWebhookDelivery'] = ResolversParentTypes['PartnerWebhookDelivery'],
+> = ResolversObject<{
+  attempts?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  deliveredAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  event?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lastError?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastStatusCode?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PartnerWebhookSettingsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PartnerWebhookSettings'] = ResolversParentTypes['PartnerWebhookSettings'],
+> = ResolversObject<{
+  clientId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  disabledReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  enabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  events?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  previousSecretExpiresAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -18694,6 +19052,12 @@ export type QueryResolvers<
     ContextType,
     Partial<QueryAdminCncOrdersArgs>
   >;
+  adminPartnerApps?: Resolver<
+    ResolversTypes['AdminPartnerAppConnection'],
+    ParentType,
+    ContextType,
+    Partial<QueryAdminPartnerAppsArgs>
+  >;
   allUserPlaylists?: Resolver<
     ResolversTypes['AllUserPlaylistsResult'],
     ParentType,
@@ -18705,6 +19069,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryAnglesArgs, 'boardName' | 'layoutId'>
+  >;
+  appWorkout?: Resolver<
+    ResolversTypes['AppWorkout'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryAppWorkoutArgs, 'id'>
   >;
   auroraCredential?: Resolver<
     Maybe<ResolversTypes['AuroraCredential']>,
@@ -19185,6 +19555,19 @@ export type QueryResolvers<
   >;
   orphanGyms?: Resolver<ResolversTypes['OrphanGymConnection'], ParentType, ContextType, Partial<QueryOrphanGymsArgs>>;
   partnerAppsEnabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  partnerDeveloperEmailStatus?: Resolver<ResolversTypes['PartnerDeveloperEmailStatus'], ParentType, ContextType>;
+  partnerWebhookDeliveries?: Resolver<
+    Array<ResolversTypes['PartnerWebhookDelivery']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryPartnerWebhookDeliveriesArgs, 'clientId'>
+  >;
+  partnerWebhookSettings?: Resolver<
+    Maybe<ResolversTypes['PartnerWebhookSettings']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryPartnerWebhookSettingsArgs, 'clientId'>
+  >;
   pendingGymClaims?: Resolver<
     ResolversTypes['GymClaimConnection'],
     ParentType,
@@ -19252,6 +19635,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryProposeSprayWallResetArgs, 'input'>
+  >;
+  publicAppWorkoutLaunch?: Resolver<
+    Maybe<ResolversTypes['AppWorkoutLaunch']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryPublicAppWorkoutLaunchArgs, 'id'>
   >;
   publicProfile?: Resolver<
     Maybe<ResolversTypes['PublicUserProfile']>,
@@ -21475,6 +21864,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   AdminAppFeedbackResult?: AdminAppFeedbackResultResolvers<ContextType>;
   AdminBoard?: AdminBoardResolvers<ContextType>;
   AdminBoardConnection?: AdminBoardConnectionResolvers<ContextType>;
+  AdminPartnerApp?: AdminPartnerAppResolvers<ContextType>;
+  AdminPartnerAppConnection?: AdminPartnerAppConnectionResolvers<ContextType>;
   AllUserPlaylistsResult?: AllUserPlaylistsResultResolvers<ContextType>;
   AnalyticsConsent?: AnalyticsConsentResolvers<ContextType>;
   Angle?: AngleResolvers<ContextType>;
@@ -21482,6 +21873,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   AppFeedbackReport?: AppFeedbackReportResolvers<ContextType>;
   AppFeedbackReporter?: AppFeedbackReporterResolvers<ContextType>;
   AppFeedbackStatusCounts?: AppFeedbackStatusCountsResolvers<ContextType>;
+  AppWorkout?: AppWorkoutResolvers<ContextType>;
+  AppWorkoutLaunch?: AppWorkoutLaunchResolvers<ContextType>;
   AppleAdsAttribution?: AppleAdsAttributionResolvers<ContextType>;
   AppleAdsAttributionResult?: AppleAdsAttributionResultResolvers<ContextType>;
   AscentFeedItem?: AscentFeedItemResolvers<ContextType>;
@@ -21660,6 +22053,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
+  PartnerDeveloperEmailStatus?: PartnerDeveloperEmailStatusResolvers<ContextType>;
+  PartnerWebhookCredentials?: PartnerWebhookCredentialsResolvers<ContextType>;
+  PartnerWebhookDelivery?: PartnerWebhookDeliveryResolvers<ContextType>;
+  PartnerWebhookSettings?: PartnerWebhookSettingsResolvers<ContextType>;
   PlaceSuggestion?: PlaceSuggestionResolvers<ContextType>;
   PlacementOutline?: PlacementOutlineResolvers<ContextType>;
   PlaybackStateChanged?: PlaybackStateChangedResolvers<ContextType>;

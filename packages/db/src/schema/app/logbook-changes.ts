@@ -41,6 +41,7 @@ export const logbookChanges = pgTable(
   (table) => ({
     // The feed read: a range scan on (user, position).
     userPositionIdx: index('logbook_changes_user_position_idx').on(table.userId, table.txid, table.seq),
+    globalPositionIdx: index('logbook_changes_global_position_idx').on(table.txid, table.seq),
     // For the 90-day retention job. BRIN because the table is append-only and
     // created_at follows insertion order, so it stays tiny.
     createdAtBrinIdx: index('logbook_changes_created_at_brin_idx').using('brin', table.createdAt),

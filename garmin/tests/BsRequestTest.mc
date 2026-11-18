@@ -49,6 +49,69 @@ function testGraphqlResponseRejectsMalformedNestedData(logger as Test.Logger) as
     return true;
 }
 
+// /graphql answers an expired access token with HTTP 200 and this code-less
+// error (yoga.ts reads the bearer as anonymous; requireAuthenticated throws).
+(:debug) const EXPIRED_ACCESS_MESSAGE = "Authentication required to perform this operation";
+
+(:test)
+function testGraphqlAuthErrorRefreshesThenRetriesOnce(logger as Test.Logger) as Lang.Boolean {
+    installAuthFixture("owner-a", 430);
+    var observer = new RequestResultObserver();
+    var client = new CapturedBsClient();
+    var request = new BsRequest(client, "https://example.invalid", {}, 0, true, null, observer.method(:onResult));
+    request.fire();
+    client.sent[0]["callback"].invoke(200, graphqlError(null, EXPIRED_ACCESS_MESSAGE));
+    // The caller hears nothing yet: the client refreshes first, as for a 401.
+    Test.assertEqual(observer.calls, 0);
+    Test.assertEqual(client.sent.size(), 2);
+    Test.assertEqual(client.sent[1]["params"]["refreshToken"], "refresh");
+    var rotated = authResponse("owner-a");
+    rotated["jwt"] = "rotated-access";
+    client.sent[1]["callback"].invoke(200, rotated);
+    Test.assertEqual(client.sent.size(), 3);
+    Test.assertEqual(client.sent[2]["token"], "rotated-access");
+    // Retried once: a second auth error reaches the caller, no second refresh.
+    client.sent[2]["callback"].invoke(200, graphqlError(null, EXPIRED_ACCESS_MESSAGE));
+    Test.assertEqual(client.sent.size(), 3);
+    Test.assertEqual(observer.calls, 1);
+    Test.assertEqual(observer.code, 200);
+    Test.assertEqual(observer.result["errors"][0]["message"], EXPIRED_ACCESS_MESSAGE);
+    return true;
+}
+
+(:test)
+function testOnlyTheCodelessAuthErrorOnAnAuthedRequestRefreshes(logger as Test.Logger) as Lang.Boolean {
+    installAuthFixture("owner-a", 440);
+    var replies = [
+        [200, graphqlError("UNAUTHENTICATED", EXPIRED_ACCESS_MESSAGE)],
+        [200, graphqlError("CLIMB_NOT_FOUND", "Climb not found")],
+        [200, graphqlError("INTERNAL_SERVER_ERROR", "Something went wrong on our end. Please try again.")],
+        [200, graphqlError(null, "Authentication required")],
+        [200, savedReply("tick")],
+        [503, graphqlError(null, EXPIRED_ACCESS_MESSAGE)],
+        [-104, null]
+    ];
+    for (var index = 0; index < replies.size(); index += 1) {
+        var observer = new RequestResultObserver();
+        var client = new CapturedBsClient();
+        var request = new BsRequest(client, "https://example.invalid", {}, 0, true, null, observer.method(:onResult));
+        request.onResponse(replies[index][0], replies[index][1]);
+        Test.assertEqual(client.sent.size(), 0);
+        Test.assertEqual(observer.calls, 1);
+        Test.assertEqual(observer.code, replies[index][0]);
+    }
+    // A request sent without a token has nothing to refresh.
+    var unauthedObserver = new RequestResultObserver();
+    var unauthedClient = new CapturedBsClient();
+    var unauthed = new BsRequest(unauthedClient, "https://example.invalid", {}, 0, false, null,
+        unauthedObserver.method(:onResult));
+    unauthed.onResponse(200, graphqlError(null, EXPIRED_ACCESS_MESSAGE));
+    Test.assertEqual(unauthedClient.sent.size(), 0);
+    Test.assertEqual(unauthedObserver.calls, 1);
+    Test.assertEqual(AuthState.statusIs(TokenStore.snapshot(), "active"), true);
+    return true;
+}
+
 (:test)
 function testOldUnauthorizedCannotRetryWithNewOwnersJwt(logger as Test.Logger) as Lang.Boolean {
     installAuthFixture("owner-a", 20);

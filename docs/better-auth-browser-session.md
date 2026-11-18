@@ -779,6 +779,73 @@ Unit tests cannot show real cookie order across www and app, the back/forward
 cache or the Router Cache; only B7 can. There is no account-switching browser
 test in `packages/web/e2e/` today.
 
+## Browser-session e2e harness
+
+`vp run test:e2e:browser-session` runs www and the Expo web app on two real
+HTTPS subdomains of one parent domain, in Chromium and WebKit, against the real
+backend and the dev Postgres. B7b to B7d put the acceptance specs on it. It
+needs the dev database (`vp run db:up` runs as a task dependency) and
+`vp exec playwright install chromium webkit` once. Add `-- --project=webkit` to
+run one engine, and `BROWSER_SESSION_E2E_REUSE_EXPORT=1` to skip the Expo
+export when one is already built. It is not part of per-PR CI. The workflow
+`browser-session-e2e.yml` runs it nightly, on dispatch, and on a pull request
+that touches the harness or the web or backend auth it exercises.
+
+What starts, from `scripts/browser-session-e2e.ts` and
+`packages/web/e2e/browser-session/global-setup.ts`:
+
+| Host | Served by |
+| --- | --- |
+| `https://www.boardsesh.test` | `next dev`, with `NEXTAUTH_URL` on that origin and `AUTH_COOKIE_DOMAIN=.boardsesh.test` |
+| `https://app.boardsesh.test` | the standalone Expo export (baseUrl `/`, SPA fallback), with the www, app and backend origins baked in |
+| `https://ws.boardsesh.test` | the backend (`src/index.ts`), with `BOARDSESH_URL` and `APP_ORIGIN` set to the two origins above |
+
+**How the browsers reach the hosts.** One TLS edge (`partner-oauth-e2e/edge.ts`,
+shared with the partner OAuth journey) holds a self-signed certificate for all
+the hosts, generated at run time under the ignored `.boardsesh/browser-session/`
+and deleted at teardown, so no key is committed. Each Playwright context is
+given the edge's HTTP proxy (`fixtures.ts`). The proxy answers CONNECT only for
+these hosts, so the browser never resolves the names and nothing needs
+`/etc/hosts`, `--host-resolver-rules` or a root-owned CA. It is the same
+mechanism in Chromium and WebKit, because both honour a per-context proxy.
+`ignoreHTTPSErrors` trusts the certificate. `.test` is reserved (RFC 6761), so
+the names can never reach a real site.
+
+**No new production override.** The parent cookie domain comes from the existing
+`AUTH_COOKIE_DOMAIN` (`secure-cookies.ts`), and the origins from the existing
+`NEXT_PUBLIC_APP_URL`, `APP_ORIGIN` and `BOARDSESH_URL`. The only code change
+outside the harness is that the partner journey's local-only check accepts
+`.test` hosts (`server-environment.ts`).
+
+**What the specs check.**
+
+- `cookie-domain.spec.ts` asks each engine, with no Boardsesh code involved,
+  whether a `__Secure-` cookie with `Secure; HttpOnly; SameSite=Lax;
+  Domain=.boardsesh.test` set by one host is stored, sent to a sibling host,
+  and removed by an expiring `Set-Cookie`, and that one without a `Domain`
+  stays on its host. Public-suffix rules and `Secure` handling with ignored
+  HTTPS errors differ by engine, so this is tested, not assumed. Result, first
+  run (PR #7767, Playwright 1.62.1 on Linux): all three pass in Chromium and
+  WebKit, so `.boardsesh.test` is a registrable domain in both and a `Secure`
+  cookie is stored and sent over the ignored-error certificate. When another
+  spec fails in only one engine, read this one first.
+- `legacy-mode.spec.ts` is the baseline in today's mode
+  (`AUTH_BROWSER_SESSION_MODE` unset): sign in on www as the seeded test user
+  (`test@boardsesh.com`), open the app subdomain in the same context and see
+  the same `userId` and `authSessionId` from www's cookie route, then sign out
+  on www and see the app tab show the sign-in form after a reload. It skips
+  itself when `AUTH_BROWSER_SESSION_MODE` is set.
+
+The global setup forwards `AUTH_BROWSER_SESSION_MODE` from the caller's
+environment when it is set, so a Phase B spec can run the same stack under
+`better-auth`. Server logs and the HTML report land in
+`packages/web/test-results/browser-session/` and
+`packages/web/playwright-report/browser-session/`.
+
+What the harness does not show: Playwright's WebKit does not apply Safari's
+intelligent tracking prevention, so the seven-day cap on a server-set cookie
+(owner decision 2) still needs a real Safari check.
+
 ## Open questions
 
 1. Session lifetime. Decided 2026-11-17 (decision 2): 30-day rolling, a

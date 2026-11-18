@@ -103,6 +103,31 @@ SELECT count(*) AS rows, count(*) FILTER (WHERE expires_at > now()) AS live FROM
 Both must be 0. If not, those sessions end at the next request; nothing else
 breaks.
 
+### Session tokens at rest
+
+`auth_session.token` stores the SHA-256 digest (base64url) of a session token,
+never the token (`auth/authority/session-token.ts`). The reader hashes the
+presented token and looks the digest up, so a copy of the table (a dump, the DR
+standby, a backup) authenticates nothing. Every writer stores the digest: the
+legacy bridge, the native refresh binding, the security-mutation token
+rotation, the provider continuation and both staged provider sign-ins.
+
+A row written before this change holds a clear token, and the reader no longer
+accepts it: that session is signed out. Nothing in the repo sets
+`AUTH_LEGACY_BRIDGE_MODE=on` or any staged provider mode, so no such row should
+exist in production, but code cannot prove it. **Before turning on
+`AUTH_LEGACY_BRIDGE_MODE`, `CURRENT_STORE_PROVIDER_SECURITY_MODE`,
+`CURRENT_STORE_FIRST_PASSWORD_MODE` or `CURRENT_STORE_BROWSER_BINDING_MODE`,
+the owner confirms the table is empty**
+(read-only):
+
+```sql
+SELECT count(*) AS rows, count(*) FILTER (WHERE expires_at > now()) AS live FROM auth_session;
+```
+
+Both must be 0. If not, those sessions end at the next request; nothing else
+breaks.
+
 ## 5. Browser design that #7596 deletes. Do not turn any of these on.
 
 [#7596](https://github.com/boardsesh/boardsesh/issues/7596) replaces the host-only cookie, browser binding, lease and receipt design with one shared-domain session cookie and one central client guard, and deletes the code below. The binding was never on in production. These rows exist so nobody flips them. Removal is in progress: #7617 (first-password web layer), #7618 (renewal custody) and #7620 (BA-01 prototype) are merged, and #7632 and #7634 add the client guards. Rows below say what is still on main.

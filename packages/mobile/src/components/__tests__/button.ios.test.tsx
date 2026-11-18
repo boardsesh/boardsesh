@@ -80,6 +80,10 @@ import { ButtonSurfaceProvider } from '../Button.surface';
 import type { ButtonVariant } from '../Button.types';
 import { brandColors } from '../../theme/colors';
 import { overlays } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
+
+// The mocked provider hands every caller the same theme.
+const theme = useTheme();
 
 function lastHostProps(): Record<string, unknown> {
   const props = hostCalls.props.at(-1);
@@ -267,10 +271,24 @@ describe('iOS Button text colour', () => {
     expect(modifierArg('foregroundStyle')).toBeUndefined();
   });
 
-  it.each<ButtonVariant>(['filled', 'outlined', 'tonal'])('preserves the %s foreground', (variant) => {
+  it('keeps the filled foreground on the brand fill', () => {
+    render(<Button title="Save" onPress={vi.fn()} variant="filled" />);
+
+    expect(modifierArg('foregroundStyle')).toBe(brandColors.onPrimary);
+  });
+
+  // #7695: the secondary tier is a neutral capsule with a neutral label, never violet.
+  it.each<ButtonVariant>(['outlined', 'tonal'])('gives the %s tier the neutral label colour', (variant) => {
     render(<Button title="Save" onPress={vi.fn()} variant={variant} />);
 
-    expect(modifierArg('foregroundStyle')).toBe(variant === 'filled' ? brandColors.onPrimary : brandColors.primary);
+    expect(modifierArg('foregroundStyle')).toBe(theme.systemColors.label);
+    expect(modifierArg('foregroundStyle')).not.toBe(brandColors.primary);
+  });
+
+  it('lets an explicit tint colour the secondary label', () => {
+    render(<Button title="Save" onPress={vi.fn()} variant="outlined" tintColor="#123456" />);
+
+    expect(modifierArg('foregroundStyle')).toBe('#123456');
   });
 
   it('leaves a destructive text button colour to its native role', () => {

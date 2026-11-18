@@ -19,6 +19,9 @@ const { baseUrl, sessionSecret } = vi.hoisted(() => {
 // A left join adds the joined table's first row to each row of the first table.
 const databaseRows = vi.hoisted(() => new Map<unknown, unknown[] | Error>());
 const transferAdmission = vi.hoisted(() => ({ enabled: false, generations: [] as number[] }));
+// Identifiers of the `verificationTokens` rows inserted so far; a second insert of
+// one conflicts and returns no row, as the primary key makes it in Postgres.
+const insertedMarkers = vi.hoisted(() => new Set<string>());
 
 vi.mock('server-only', () => ({}));
 vi.mock('@sentry/nextjs', async (importOriginal) => ({
@@ -45,7 +48,20 @@ vi.mock('@/app/lib/db/db', () => {
       where: () => ({ orderBy: () => ({ limit }), limit }),
     };
   }
-  return { getDb: () => ({ select: () => ({ from: (table: unknown) => query(table, []) }) }) };
+  function insert() {
+    return {
+      values: (row: { identifier: string; token: string }) => ({
+        onConflictDoNothing: () => ({
+          returning: async () => {
+            if (insertedMarkers.has(row.identifier)) return [];
+            insertedMarkers.add(row.identifier);
+            return [{ token: row.token }];
+          },
+        }),
+      }),
+    };
+  }
+  return { getDb: () => ({ select: () => ({ from: (table: unknown) => query(table, []) }), insert }) };
 });
 // Most age tests isolate callbacks; transfer publication cases retain the real
 // response buffer and replace only the primary generation admission RPC.
@@ -164,6 +180,7 @@ beforeEach(async () => {
   transferAdmission.enabled = false;
   transferAdmission.generations = [];
   databaseRows.clear();
+  insertedMarkers.clear();
   databaseRows.set(schema.users, [climber]);
   databaseRows.set(schema.userCredentials, [{ passwordHash: hashSync(PASSWORD, 4) }]);
   cookies = new Map();
@@ -236,6 +253,20 @@ describe('auth_time through the real NextAuth handler', () => {
     const claims = await currentSessionClaims();
     expect(claims?.sub).toBe(climber.id);
     expect(claims).not.toHaveProperty('auth_time');
+  });
+
+  it('signs in once per native transfer token', async () => {
+    const transferToken = issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' });
+    const signIn = () =>
+      invoke('callback/native-oauth', { transferToken, csrfToken, json: 'true', callbackUrl: baseUrl });
+
+    const first = await signIn();
+    expect(first.status).toBe(200);
+    expect(first.headers.getSetCookie().some((header) => header.startsWith(`${SESSION_COOKIE}=`))).toBe(true);
+
+    const replay = await signIn();
+    expect(replay.status).not.toBe(200);
+    expect(replay.headers.getSetCookie().some((header) => header.startsWith(`${SESSION_COOKIE}=`))).toBe(false);
   });
 
   it('stays out of the session JSON the browser reads', async () => {
