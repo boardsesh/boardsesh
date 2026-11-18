@@ -126,6 +126,7 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
   freshAccount,
   legacySession,
   edgeCookies,
+  accountDatabase,
 }) => {
   const account = freshAccount();
   const minted = await legacySession.addTo(context, account, 'normal');
@@ -159,22 +160,25 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
   expect(sessionSetCookies(after.records)).toEqual([]);
   // A bridged session cannot set a password here: with provider security on, set-password refuses
   // everyone (set-password.ts); first password is the way, acceptance-4-first-password.spec.ts.
+  // Without a password row, so the refusal is that and not "already set" (409).
+  accountDatabase.removePassword(account);
   const bridgedViewer = await readViewer(page);
   const refusal = await edgeCookies.during(() =>
     page.evaluate(
-      async ({ origin, expectedViewer }) =>
-        (
-          await fetch(`${origin}/api/internal/set-password`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json', 'X-Boardsesh-Expected-Viewer': expectedViewer },
-            body: JSON.stringify({ password: 'a password of eight', confirmPassword: 'a password of eight' }),
-          })
-        ).status,
+      async ({ origin, expectedViewer }) => {
+        const response = await fetch(`${origin}/api/internal/set-password`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'X-Boardsesh-Expected-Viewer': expectedViewer },
+          body: JSON.stringify({ password: 'a password of eight', confirmPassword: 'a password of eight' }),
+        });
+        return { status: response.status, body: (await response.json().catch(() => null)) as unknown };
+      },
       { origin: WWW_ORIGIN, expectedViewer: `${bridgedViewer.userId}:${bridgedViewer.authSessionId}` },
     ),
   );
-  expect(refusal.result).toBe(403);
+  expect(refusal.result).toEqual({ status: 403, body: { error: 'reauthentication_required' } });
+  expect(accountDatabase.hasPassword(account)).toBe(false);
   expect(sessionSetCookies(refusal.records)).toEqual([]);
   // The bridged session keeps the legacy cookie's session id.
   expect(await readViewer(page)).toEqual({
