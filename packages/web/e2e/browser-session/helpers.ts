@@ -135,20 +135,17 @@ export async function expectSessionReadNames(page: Page, account: SeededAccount)
 }
 
 /**
- * Logs `account` in on www from a tab that may already be signed in as
- * someone else: the credentials POST the login form's `signIn()` sends, with
- * the csrf token and the browser's cookies, then a full load of /settings. The
- * login page itself sends a signed-in browser on to its callback, so a second
- * login in one browser happens like this, from a login form left open in
- * another tab.
+ * The credentials POST the login form's `signIn()` sends to www, with the csrf
+ * token and the browser's cookies, from whichever page `page` shows: a www tab,
+ * or an app.boardsesh.com tab, whose sign-in calls www's auth routes
+ * cross-origin with credentials (cross-subdomain-cors.ts). Returns the status.
  */
-export async function signInOverExistingSession(page: Page, account: SeededAccount): Promise<void> {
-  if (!page.url().startsWith(WWW_ORIGIN)) await page.goto(`${WWW_ORIGIN}/help`);
-  const status = await page.evaluate(
-    async ({ email, password }) => {
+export async function postCredentialsLogin(page: Page, account: SeededAccount): Promise<number> {
+  return page.evaluate(
+    async ({ origin, email, password }) => {
       const include = { credentials: 'include' as const, cache: 'no-store' as const };
-      const { csrfToken } = (await (await fetch('/api/auth/csrf', include)).json()) as { csrfToken: string };
-      const response = await fetch('/api/auth/callback/credentials', {
+      const { csrfToken } = (await (await fetch(`${origin}/api/auth/csrf`, include)).json()) as { csrfToken: string };
+      const response = await fetch(`${origin}/api/auth/callback/credentials`, {
         ...include,
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -156,9 +153,19 @@ export async function signInOverExistingSession(page: Page, account: SeededAccou
       });
       return response.status;
     },
-    { email: account.email, password: account.password },
+    { origin: WWW_ORIGIN, email: account.email, password: account.password },
   );
-  expect(status).toBe(200);
+}
+
+/**
+ * Logs `account` in on www from a tab that may already be signed in as
+ * someone else, then loads /settings. The login page sends a signed-in
+ * browser on to its callback, so a second login in one browser comes from a
+ * login form left open in another tab; this sends that form's request.
+ */
+export async function signInOverExistingSession(page: Page, account: SeededAccount): Promise<void> {
+  if (!page.url().startsWith(WWW_ORIGIN)) await page.goto(`${WWW_ORIGIN}/help`);
+  expect(await postCredentialsLogin(page, account)).toBe(200);
   // The tab's own guard may already be reloading it for the new account, which aborts a navigation
   // started at the same moment; that reload is the design, so go to /settings once it is done.
   for (let attempt = 0; ; attempt += 1) {
