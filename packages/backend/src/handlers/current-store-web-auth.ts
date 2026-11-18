@@ -20,6 +20,7 @@ import {
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
 import { getCredentialDatabase } from '../auth/credential-database';
+import { databaseErrorCode } from '../auth/current-store/database-error-code';
 import {
   currentStoreAuthorityConfiguration,
   currentStoreRpcSecret,
@@ -285,7 +286,11 @@ export async function handleCurrentStoreWebAuth(
     }
     // SQL/Sentry/validation exceptions can contain bound credentials or the
     // private mail response. Emit only a fixed category, never the exception.
-    logger.warn('Current-store web authentication command unavailable', { operation });
+    const sqlState = databaseErrorCode(error);
+    logger.warn('Current-store web authentication command unavailable', {
+      operation,
+      ...(sqlState ? { sqlState } : {}),
+    });
     sendJson(response, 503, {
       protocolVersion: AUTH_PROTOCOL_VERSION,
       operation,

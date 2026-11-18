@@ -20,6 +20,7 @@ import {
   type WebSessionSignOutReply,
 } from '@boardsesh/auth-protocol';
 import { getCredentialDatabase } from '../auth/credential-database';
+import { databaseErrorCode } from '../auth/current-store/database-error-code';
 import {
   currentStoreAuthorityConfiguration,
   currentStoreRpcSecret,
@@ -199,9 +200,11 @@ export async function handleCurrentStoreWebSession(
       );
     }
     sendJson(response, webSessionReplyStatus(reply), reply);
-  } catch {
-    // Database errors can carry the bound token. Log a fixed category only.
-    logger.warn('Current-store web session command unavailable', { operation });
+  } catch (error) {
+    // Database errors can carry the bound token. Log a fixed category and the
+    // SQLSTATE only, never the message, SQL text or parameters.
+    const sqlState = databaseErrorCode(error);
+    logger.warn('Current-store web session command unavailable', { operation, ...(sqlState ? { sqlState } : {}) });
     sendJson(response, 503, { ...base, operation, outcome: 'error', code: 'unavailable' });
   }
 }
