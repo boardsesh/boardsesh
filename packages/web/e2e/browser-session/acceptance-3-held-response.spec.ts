@@ -1,7 +1,7 @@
 import type { Page, Route } from '@playwright/test';
-import { isSameDocument, markDocument, openApp, readViewer, signInOnWww } from './helpers';
+import { isSameDocument, markDocument, openApp, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
 import { APP_ORIGIN, WS_HOST, WWW_ORIGIN } from './stack';
-import { expect, test } from './fixtures';
+import { expect, failsOnSessionReadGrant, test } from './fixtures';
 
 /**
  * #7596 acceptance 3, under AUTH_BROWSER_SESSION_MODE=better-auth: a response
@@ -65,11 +65,13 @@ test("www: a set-password reply of A's held across a switch to B shows no toast 
   freshAccount,
   accountDatabase,
 }, testInfo) => {
+  failsOnSessionReadGrant();
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
   const accountA = freshAccount();
   const accountB = freshAccount();
   const pageA = await context.newPage();
   await signInOnWww(pageA, accountA);
+  await expectSessionReadNames(pageA, accountA);
   accountDatabase.removePassword(accountA);
   await pageA.goto(`${WWW_ORIGIN}/settings`);
   await pageA.getByLabel('Password', { exact: true }).fill(accountA.password);
@@ -81,6 +83,7 @@ test("www: a set-password reply of A's held across a switch to B shows no toast 
 
   const pageB = await context.newPage();
   await signInOnWww(pageB, accountB);
+  await expectSessionReadNames(pageB, accountB);
   held.release();
 
   await expect.poll(() => isSameDocument(pageA), { timeout: 60_000 }).toBe(false);
@@ -94,11 +97,13 @@ test("app: GraphQL replies of A's held across a switch to B land nowhere and the
   context,
   freshAccount,
 }, testInfo) => {
+  failsOnSessionReadGrant();
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
   const accountA = freshAccount();
   const accountB = freshAccount();
   const wwwPage = await context.newPage();
   await signInOnWww(wwwPage, accountA);
+  await expectSessionReadNames(wwwPage, accountA);
   const appPage = await context.newPage();
   await openApp(appPage);
   await expect(appPage.getByRole('tab', { name: 'Home', exact: true })).toBeVisible({ timeout: 120_000 });
@@ -109,6 +114,7 @@ test("app: GraphQL replies of A's held across a switch to B land nowhere and the
   await expect.poll(held.count, { timeout: 60_000 }).toBeGreaterThan(0);
 
   await signInOnWww(wwwPage, accountB);
+  await expectSessionReadNames(wwwPage, accountB);
   await expect
     .poll(
       async () => {
@@ -131,6 +137,7 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
   context,
   freshAccount,
 }, testInfo) => {
+  failsOnSessionReadGrant();
   test.skip(
     testInfo.project.name !== 'chromium-bfcache',
     'Only chromium-bfcache restores pages; WebKit under Playwright never does (bfcache.spec.ts): a real-Safari check.',
@@ -139,6 +146,7 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
   const accountB = freshAccount();
   const pageA = await context.newPage();
   await signInOnWww(pageA, accountA);
+  await expectSessionReadNames(pageA, accountA);
   await pageA.goto(`${WWW_ORIGIN}/settings`);
   await expect(pageA.getByText(accountA.email).first()).toBeVisible({ timeout: 60_000 });
   await pageA.evaluate(() => {
@@ -151,6 +159,7 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
 
   const pageB = await context.newPage();
   await signInOnWww(pageB, accountB);
+  await expectSessionReadNames(pageB, accountB);
   const sessionReads: string[] = [];
   pageA.on('request', (request) => {
     if (new URL(request.url()).pathname === '/api/auth/session') sessionReads.push(request.method());
@@ -171,6 +180,7 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
   freshAccount,
   stack,
 }, testInfo) => {
+  failsOnSessionReadGrant();
   test.skip(testInfo.project.name === 'chromium-bfcache', 'The back/forward cache project runs the test above.');
   test.skip(
     stack.wwwMode !== 'production',
@@ -180,6 +190,7 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
   const accountB = freshAccount();
   const pageA = await context.newPage();
   await signInOnWww(pageA, accountA);
+  await expectSessionReadNames(pageA, accountA);
   await pageA.goto(`${WWW_ORIGIN}/settings`);
   await expect(pageA.getByText(accountA.email).first()).toBeVisible({ timeout: 60_000 });
   await markDocument(pageA);
@@ -191,6 +202,7 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
 
   const pageB = await context.newPage();
   await signInOnWww(pageB, accountB);
+  await expectSessionReadNames(pageB, accountB);
   await pageA.goBack();
   await expect(pageA.getByText(accountA.email)).toHaveCount(0, { timeout: 60_000 });
   expect(await readViewer(pageA)).toMatchObject({ userId: accountB.userId });

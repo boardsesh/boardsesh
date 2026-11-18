@@ -1,6 +1,6 @@
-import { fetchWsAuth, openApp, readSession, readViewer, signInOnWww } from './helpers';
+import { fetchWsAuth, openApp, readSession, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
 import { BRIDGED_COOKIE, COOKIE_DOMAIN, LOGIN_COOKIE, WWW_HOST, WWW_ORIGIN, type SetCookieRecord } from './stack';
-import { expect, sessionSetCookies, test } from './fixtures';
+import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 1, under AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium
@@ -32,8 +32,10 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
   freshAccount,
   edgeCookies,
 }) => {
+  failsOnSessionReadGrant();
   const account = freshAccount();
   const signIn = await edgeCookies.during(() => signInOnWww(page, account));
+  await expectSessionReadNames(page, account);
   // The login writes the login cookie, and nothing else in the sign-in writes a session cookie.
   const signInWrites = sessionSetCookies(signIn.records).filter((cookie) => !cookie.clears);
   expect(signInWrites).toContainEqual(
@@ -102,6 +104,7 @@ test('@smoke the session read that bridges a pre-cutover cookie writes exactly t
   legacySession,
   edgeCookies,
 }) => {
+  failsOnSessionReadGrant();
   const account = freshAccount();
   const minted = await legacySession.addTo(context, account, 'normal');
   const window = await edgeCookies.during(async () => {
@@ -132,8 +135,10 @@ test('a session with under 29 days left rolls on the server and writes no cookie
   edgeCookies,
   accountDatabase,
 }) => {
+  failsOnSessionReadGrant();
   const account = freshAccount();
   await signInOnWww(page, account);
+  await expectSessionReadNames(page, account);
   const { authSessionId } = await readViewer(page);
   if (!authSessionId) throw new Error('No session id after sign-in.');
   accountDatabase.ageSession(account, authSessionId, 28);

@@ -1662,6 +1662,16 @@ section 4).
 | `acceptance-8-one-switch.spec.ts` | 8: two refused preconditions per service, by restart | Chromium |
 | `scripts/check-native-unchanged.ts` (workflow `web-lane-native-unchanged.yml`) | 7: no file that ships to phones changes in the web lane | not a browser test |
 
+**Found by the first run, open:** under `better-auth` every www session read
+answers 503. The backend's `session` command (`readWebSession`) joins
+`user_profiles` for the display name and avatar, but it runs on the dedicated
+credential LOGIN, and no reviewed credential-writer contract grants SELECT on
+`user_profiles` (only INSERT). The integration proofs inject the owner's
+connection, so they never saw it. Every spec that needs a session read is
+marked `test.fail` with `SESSION_READ_GRANT_BUG` (`fixtures.ts`) until the read
+or the contract is fixed; Playwright then reports them as passing unexpectedly,
+and the marks come off.
+
 A pull request runs the tests tagged `@smoke` (items 1, 2 and 5); the nightly
 runs the legacy baseline and then every acceptance spec against a production
 build of www. Not covered here: Google and Apple sign-in through the browser

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { APP_ORIGIN, WS_HOST, WWW_ORIGIN, type SeededAccount } from './stack';
 
 /** What www's cookie route (`/api/internal/ws-auth`) says about the viewer. */
@@ -115,4 +115,15 @@ export async function isSameDocument(page: Page): Promise<boolean> {
     // The context was torn down mid-navigation: a new document is on its way.
     return false;
   }
+}
+
+/**
+ * www's session read names `account` within 20 s. Called right after a sign-in
+ * or a bridge, so a spec whose later steps wait minutes for the app fails here,
+ * fast and with the cause, when the session read itself is broken.
+ */
+export async function expectSessionReadNames(page: Page, account: SeededAccount): Promise<void> {
+  await expect
+    .poll(async () => readSession(page), { timeout: 20_000, message: 'www session read (GET /api/auth/session)' })
+    .toMatchObject({ status: 200, userId: account.userId });
 }

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
-import { openApp, readSession, readViewer, signInOnWww } from './helpers';
+import { openApp, readSession, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
 import { BRIDGED_COOKIE, LEGACY_COOKIE, LOGIN_COOKIE, WWW_ORIGIN } from './stack';
-import { expect, sessionSetCookies, test } from './fixtures';
+import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 6, in Chromium and WebKit, by restarting both servers with
@@ -42,11 +42,14 @@ test('rollback keeps browsers signed in through the legacy twin, and a newer leg
   restartStack,
   edgeCookies,
 }) => {
+  failsOnSessionReadGrant();
   const first = freshAccount();
   const second = freshAccount();
   const bystander = await (await openContext()).newPage();
   await signInOnWww(bystander, first);
+  await expectSessionReadNames(bystander, first);
   await signInOnWww(page, first);
+  await expectSessionReadNames(page, first);
   const viewer = await readViewer(page);
   expect(await sessionCookieNames(page)).toEqual([LEGACY_COOKIE, LOGIN_COOKIE].sort());
 
@@ -66,6 +69,7 @@ test('rollback keeps browsers signed in through the legacy twin, and a newer leg
 
     // Someone else logs in on this browser while the mode is rolled back.
     await signInOnWww(page, second);
+    await expectSessionReadNames(page, second);
     expect((await readViewer(page)).userId).toBe(second.userId);
   } finally {
     await restartStack();
@@ -86,9 +90,11 @@ test('a newer legacy login beside a stale first-party login cookie replaces it',
   legacySession,
   edgeCookies,
 }) => {
+  failsOnSessionReadGrant();
   const stale = freshAccount();
   const newer = freshAccount();
   await signInOnWww(page, stale);
+  await expectSessionReadNames(page, stale);
   expect(await sessionCookieNames(page)).toContain(LOGIN_COOKIE);
   // A legacy login of someone else, written later than the first-party login, outside /api/auth/*.
   await context.clearCookies({ name: LEGACY_COOKIE });

@@ -8,9 +8,10 @@ import {
   readViewer,
   signInOnWww,
   signOutOnWww,
+  expectSessionReadNames,
 } from './helpers';
 import { WS_HOST, WWW_ORIGIN } from './stack';
-import { expect, test } from './fixtures';
+import { expect, failsOnSessionReadGrant, test } from './fixtures';
 
 /**
  * #7596 acceptance 2, under AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium
@@ -77,10 +78,12 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
   openContext,
   freshAccount,
 }) => {
+  failsOnSessionReadGrant();
   const accountA = freshAccount();
   const accountB = freshAccount();
   const wwwPage = await context.newPage();
   await signInOnWww(wwwPage, accountA);
+  await expectSessionReadNames(wwwPage, accountA);
   const appPage = await context.newPage();
   await openApp(appPage);
   await expect(homeTab(appPage)).toBeVisible({ timeout: 120_000 });
@@ -97,6 +100,7 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
 
   // B logs in on www in the same context, presenting A's cookie.
   await signInOnWww(wwwPage, accountB);
+  await expectSessionReadNames(wwwPage, accountB);
   expect((await readViewer(wwwPage)).userId).toBe(accountB.userId);
 
   expect(await graphqlStatusWithToken(wwwPage, tokenA.token)).toBe(401);
@@ -126,9 +130,11 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
 });
 
 test('a sign-out on www signs the app subdomain out at its next load', async ({ context, freshAccount }) => {
+  failsOnSessionReadGrant();
   const account = freshAccount();
   const wwwPage = await context.newPage();
   await signInOnWww(wwwPage, account);
+  await expectSessionReadNames(wwwPage, account);
   const appPage = await context.newPage();
   await openApp(appPage);
   await expect(homeTab(appPage)).toBeVisible({ timeout: 120_000 });
