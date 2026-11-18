@@ -6,7 +6,9 @@ import {
   MIN_ACCESS_TOKEN_REFRESH_DELAY_MS,
   accessTokenBackoff,
   accessTokenNeedsRefresh,
-  accessTokenRefreshDelay,
+  accessTokenRefreshInterval,
+  accessTokenStaleTime,
+  noteAccessTokenRefreshFailed,
   isBrowserAccessToken,
   noteSocketClosed,
   refreshAccessTokenAfterCredentialChange,
@@ -22,14 +24,15 @@ import { createSessionGuard } from '../session-guard';
 const viewerA = { userId: 'user-a', authSessionId: 'login-a' };
 const viewerB = { userId: 'user-b', authSessionId: 'login-b' };
 const MINUTE_MS = 60_000;
-const inMinutes = (minutes: number) => new Date(Date.now() + minutes * MINUTE_MS).toISOString();
+/** ws-auth's `expiresIn` for a fresh 15-minute token. */
+const FIFTEEN_MINUTES = 15 * 60;
 
 /** A ws-auth that hands out `token-2`, `token-3`, ... for viewer A, counting its calls. */
 function issuingRefresher(viewer = viewerA) {
   let issued = 1;
   const refresher = vi.fn(async () => {
     issued += 1;
-    rememberBrowserAccessToken(`token-${issued}`, viewer, inMinutes(15));
+    rememberBrowserAccessToken(`token-${issued}`, viewer, FIFTEEN_MINUTES);
   });
   registerAccessTokenRefresher(refresher);
   return refresher;
@@ -39,11 +42,42 @@ beforeEach(() => resetBrowserAccessTokensForTests());
 afterEach(() => vi.useRealTimers());
 
 describe('refresh timing', () => {
-  it('refreshes a 15-minute token about three minutes before its end, never sooner than 30 s', () => {
-    const now = Date.now();
-    expect(accessTokenRefreshDelay(now + 15 * MINUTE_MS, now)).toBe(12 * MINUTE_MS);
+  it('goes stale three minutes (and its jitter) before its end, counted from receipt, never under 30 s', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const receivedAt = 1_000_000;
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES, receivedAt);
+    // 15 min - 3 min - 15 s of jitter, whatever the client clock says the time is.
+    expect(accessTokenStaleTime('token-1', FIFTEEN_MINUTES * 1000, receivedAt)).toBe(12 * MINUTE_MS - 15_000);
+    expect(accessTokenRefreshInterval('token-1', FIFTEEN_MINUTES * 1000, receivedAt, receivedAt)).toBe(
+      12 * MINUTE_MS - 15_000,
+    );
     // A token capped by a session ending in a minute: no refresh storm.
-    expect(accessTokenRefreshDelay(now + MINUTE_MS, now)).toBe(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS);
+    expect(accessTokenStaleTime('token-1', MINUTE_MS, receivedAt)).toBe(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS);
+    vi.mocked(Math.random).mockRestore();
+  });
+
+  it('a client clock 15 minutes fast or slow changes nothing: only time since receipt counts', () => {
+    vi.useFakeTimers();
+    for (const skewMs of [15 * MINUTE_MS, -15 * MINUTE_MS]) {
+      resetBrowserAccessTokensForTests();
+      vi.setSystemTime(Date.UTC(2026, 10, 18, 12) + skewMs);
+      rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
+      expect(accessTokenNeedsRefresh()).toBe(false);
+      vi.advanceTimersByTime(11 * MINUTE_MS);
+      expect(accessTokenNeedsRefresh()).toBe(false);
+      vi.advanceTimersByTime(MINUTE_MS + 1);
+      expect(accessTokenNeedsRefresh()).toBe(true);
+    }
+  });
+
+  it('after failed refreshes waits 30 s, then 60 s, doubling per failure up to five minutes', () => {
+    const receivedAt = 1_000_000;
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES, receivedAt);
+    const refreshDue = receivedAt + 12 * MINUTE_MS;
+    noteAccessTokenRefreshFailed(refreshDue);
+    expect(accessTokenRefreshInterval('token-1', FIFTEEN_MINUTES * 1000, receivedAt, refreshDue)).toBe(30_000);
+    noteAccessTokenRefreshFailed(refreshDue + 30_000);
+    expect(accessTokenRefreshInterval('token-1', FIFTEEN_MINUTES * 1000, receivedAt, refreshDue + 30_000)).toBe(60_000);
   });
 
   it('backs off after failed refreshes, up to five minutes', () => {
@@ -55,7 +89,7 @@ describe('refresh timing', () => {
 
   it('needs a refresh only inside the last three minutes', () => {
     vi.useFakeTimers();
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     expect(accessTokenNeedsRefresh()).toBe(false);
     vi.advanceTimersByTime(15 * MINUTE_MS - ACCESS_TOKEN_REFRESH_LEAD_MS);
     expect(accessTokenNeedsRefresh()).toBe(true);
@@ -77,7 +111,7 @@ describe('with the mode off (a token without an end)', () => {
 
 describe('after the backend refuses a token', () => {
   it('fetches ONE new token for every caller refused at once, and only once per token', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     const refresher = issuingRefresher();
     const answers = await Promise.all([1, 2, 3].map(() => refreshAfterRefusal('token-1')));
     expect(answers).toEqual(['token-2', 'token-2', 'token-2']);
@@ -88,7 +122,7 @@ describe('after the backend refuses a token', () => {
   });
 
   it('gives up (and leaves it to the session guard) when the new token brings nothing new', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     // ws-auth keeps failing: the refresh brings no token.
     const refresher = vi.fn(async () => {});
     registerAccessTokenRefresher(refresher);
@@ -98,7 +132,7 @@ describe('after the backend refuses a token', () => {
   });
 
   it('after set-password or a provider link fetches a new token at once', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     const refresher = issuingRefresher();
     await refreshAccessTokenAfterCredentialChange();
     expect(refresher).toHaveBeenCalledTimes(1);
@@ -110,14 +144,14 @@ describe('after the backend refuses a token', () => {
 
 describe('a socket', () => {
   it('keeps one handle while the viewer does and connects with the current token', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
-    rememberBrowserAccessToken('token-2', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
+    rememberBrowserAccessToken('token-2', viewerA, FIFTEEN_MINUTES);
     expect(socketCredentialHandle('token-2')).toBe('token-1');
     await expect(socketConnectToken('token-1')).resolves.toBe('token-2');
   });
 
   it('asks for a new token after a 4401, and reconnects with the same token after a 1013', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     const refresher = issuingRefresher();
     noteSocketClosed('token-1', 1013);
     await expect(socketConnectToken('token-1')).resolves.toBe('token-1');
@@ -129,7 +163,7 @@ describe('a socket', () => {
 
   it('refreshes a token inside its last three minutes before the handshake', async () => {
     vi.useFakeTimers();
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     const refresher = issuingRefresher();
     vi.advanceTimersByTime(13 * MINUTE_MS);
     await expect(socketConnectToken('token-1')).resolves.toBe('token-2');
@@ -137,8 +171,8 @@ describe('a socket', () => {
   });
 
   it('forgets every token of an account that is gone', async () => {
-    rememberBrowserAccessToken('token-a', viewerA, inMinutes(15));
-    rememberBrowserAccessToken('token-b', viewerB, inMinutes(15));
+    rememberBrowserAccessToken('token-a', viewerA, FIFTEEN_MINUTES);
+    rememberBrowserAccessToken('token-b', viewerB, FIFTEEN_MINUTES);
     expect(isBrowserAccessToken('token-a')).toBe(false);
     // A stale socket of A gets nothing of B's.
     await expect(socketConnectToken('token-a')).resolves.toBe('token-a');
@@ -170,7 +204,7 @@ describe('the session guard with a browser access token', () => {
   beforeEach(() => requestSessionCheck.mockClear());
 
   it('sends a refused request once more with one new token, body included', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     issuingRefresher();
     const { guard, sent } = guardSending([401, 200]);
     const request = new Request('https://backend.boardsesh.com/graphql', {
@@ -187,7 +221,7 @@ describe('the session guard with a browser access token', () => {
   });
 
   it('hands a second refusal to the session check and never loops', async () => {
-    rememberBrowserAccessToken('token-1', viewerA, inMinutes(15));
+    rememberBrowserAccessToken('token-1', viewerA, FIFTEEN_MINUTES);
     issuingRefresher();
     const { guard, sent } = guardSending([401, 401, 401]);
     const response = await guard.fetch('https://backend.boardsesh.com/graphql', {

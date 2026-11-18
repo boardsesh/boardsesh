@@ -3,6 +3,7 @@ import {
   getAuthToken,
   isAuthCredentialGenerationCurrent,
   isAuthTokenExpired,
+  isAuthTokenRefreshAllowed,
   isTokenExpiringSoon,
   synchronizeWebSession,
   hasConfirmedAnonymousWebSession,
@@ -120,8 +121,11 @@ export async function recoverAuthRejection(): Promise<AuthRejectionResult> {
  */
 export async function ensureFreshToken(): Promise<boolean> {
   const generation = captureAuthCredentialGeneration();
-  if ((await getAuthToken()) && !(await isTokenExpiringSoon())) return isAuthCredentialGenerationCurrent(generation);
+  const held = await getAuthToken();
+  if (held && !(await isTokenExpiringSoon())) return isAuthCredentialGenerationCurrent(generation);
   if (!isAuthCredentialGenerationCurrent(generation)) return false;
+  // A failed refresh is backing off: send the held token while it lasts, read nothing.
+  if (held && !isAuthTokenRefreshAllowed()) return !isAuthTokenExpired();
   const session = await synchronizeWebSession();
   if (!isAuthCredentialGenerationCurrent(generation)) return false;
   if (session.status === 'authenticated') return true;

@@ -31,6 +31,18 @@ const browserToken = (token: string, minutes = 15) =>
     userId: 'user-1',
     authSessionId: 'login-1',
     expiresAt: new Date(Date.now() + minutes * MINUTE_MS).toISOString(),
+    expiresIn: minutes * 60,
+  });
+
+/** The same answer a server with a correct clock gives: `expiresAt` in server time, `expiresIn` in seconds. */
+const browserTokenFromServer = (token: string) =>
+  jsonResponse({
+    authenticated: true,
+    token,
+    userId: 'user-1',
+    authSessionId: 'login-1',
+    expiresAt: '2026-11-18T12:15:00.000Z',
+    expiresIn: 15 * 60,
   });
 
 function wsAuthCalls(): number {
@@ -39,6 +51,8 @@ function wsAuthCalls(): number {
 
 beforeEach(async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  // No jitter, so the refresh comes exactly three minutes before the end.
+  vi.spyOn(Math, 'random').mockReturnValue(0);
   fetchMock.mockReset();
   await clearTokens();
 });
@@ -46,6 +60,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await clearTokens();
   vi.useRealTimers();
+  vi.mocked(Math.random).mockRestore();
 });
 
 describe('a 15-minute browser access token on Expo web', () => {
@@ -71,9 +86,44 @@ describe('a 15-minute browser access token on Expo web', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: 'Credential authority is temporarily unavailable' }, 503));
     await expect(ensureFreshToken()).resolves.toBe(true);
     await expect(getAuthToken()).resolves.toBe('browser-token-1');
+    // Backing off: the next requests send the held token and read nothing.
+    const sessionReadsBefore = fetchMock.mock.calls.length;
+    await expect(ensureFreshToken()).resolves.toBe(true);
+    await expect(ensureFreshToken()).resolves.toBe(true);
+    expect(fetchMock.mock.calls.length).toBe(sessionReadsBefore);
     // Past its end, a failed refresh has nothing left to send.
     await vi.advanceTimersByTimeAsync(3 * MINUTE_MS);
     await expect(ensureFreshToken()).resolves.toBe(false);
+  });
+
+  it.each([
+    ['15 minutes fast', 15 * MINUTE_MS],
+    ['15 minutes slow', -15 * MINUTE_MS],
+  ])('with a client clock %s refreshes 12 minutes after receipt, not before', async (_label, skewMs) => {
+    vi.setSystemTime(Date.now() + skewMs);
+    fetchMock.mockResolvedValueOnce(sessionRead()).mockResolvedValueOnce(browserTokenFromServer('browser-token-1'));
+    await synchronizeWebSession();
+    await expect(isTokenExpiringSoon()).resolves.toBe(false);
+    await expect(ensureFreshToken()).resolves.toBe(true);
+    expect(wsAuthCalls()).toBe(1);
+    fetchMock.mockResolvedValueOnce(sessionRead()).mockResolvedValueOnce(browserTokenFromServer('browser-token-2'));
+    await vi.advanceTimersByTimeAsync(11 * MINUTE_MS);
+    expect(wsAuthCalls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(MINUTE_MS + 1000);
+    await vi.waitFor(async () => expect(await getAuthToken()).toBe('browser-token-2'));
+  });
+
+  it('does not refresh in a hidden tab; refreshes when the tab is shown', async () => {
+    fetchMock.mockResolvedValueOnce(sessionRead()).mockResolvedValueOnce(browserToken('browser-token-1'));
+    await synchronizeWebSession();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    await vi.advanceTimersByTimeAsync(12 * MINUTE_MS + 1000);
+    expect(wsAuthCalls()).toBe(1);
+    fetchMock.mockResolvedValueOnce(sessionRead()).mockResolvedValueOnce(browserToken('browser-token-2'));
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.waitFor(async () => expect(await getAuthToken()).toBe('browser-token-2'));
+    visibility.mockRestore();
   });
 
   it('reads the session again when ws-auth answers 401, and follows it to signed out', async () => {

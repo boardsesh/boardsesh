@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createQueryWrapper } from '@/app/test-utils/test-providers';
 import { useWsAuthToken } from '../use-ws-auth-token';
-import { resetBrowserAccessTokensForTests, socketCredentialHandle } from '@/app/lib/auth/browser-access-token';
+import {
+  refreshAccessTokenAfterCredentialChange,
+  resetBrowserAccessTokensForTests,
+  socketCredentialHandle,
+} from '@/app/lib/auth/browser-access-token';
+import { focusManager } from '@tanstack/react-query';
 import { WEB_SESSION_REFRESH_EVENT } from '@/app/lib/auth/web-session-events';
 
 const mockUseSession = vi.fn();
@@ -274,6 +279,7 @@ describe('useWsAuthToken with a 15-minute browser token (#7596 B3b)', () => {
         userId: 'user-1',
         authSessionId: 'session-1',
         expiresAt: new Date(Date.now() + 15 * MINUTE_MS).toISOString(),
+        expiresIn: 15 * 60,
       }),
     };
   };
@@ -338,6 +344,90 @@ describe('useWsAuthToken with a 15-minute browser token (#7596 B3b)', () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
     expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(refreshRequests).toHaveBeenCalledTimes(1);
+    window.removeEventListener(WEB_SESSION_REFRESH_EVENT, refreshRequests);
+  });
+
+  it('on focus refetches only inside the last three minutes, counted from receipt (focus at minute 8 does not)', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    mockFetch.mockImplementation(async () => browserToken());
+    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
+    await waitFor(() => expect(result.current.token).toBe('browser-token-1'));
+    const refocus = () =>
+      act(async () => {
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+        await vi.advanceTimersByTimeAsync(10);
+      });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8 * MINUTE_MS);
+    });
+    await refocus();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * MINUTE_MS + 1000);
+    });
+    await waitFor(() => expect(result.current.token).toBe('browser-token-2'));
+    vi.mocked(Math.random).mockRestore();
+    focusManager.setFocused(undefined);
+  });
+
+  it('keeps refreshing after the hook that registered last unmounts', async () => {
+    mockFetch.mockImplementation(async () => browserToken());
+    const wrapper = createQueryWrapper();
+    const kept = renderHook(() => useWsAuthToken(), { wrapper });
+    const dialog = renderHook(() => useWsAuthToken(), { wrapper });
+    await waitFor(() => expect(kept.result.current.token).toBe('browser-token-1'));
+    dialog.unmount();
+    await act(async () => {
+      await refreshAccessTokenAfterCredentialChange();
+    });
+    await waitFor(() => expect(kept.result.current.token).toBe('browser-token-2'));
+  });
+
+  it('backs off 30 s, then 60 s, per failed refresh, with no quick retries in between', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    mockFetch.mockImplementationOnce(async () => browserToken());
+    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
+    await waitFor(() => expect(result.current.token).toBe('browser-token-1'));
+    mockFetch.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12 * MINUTE_MS + 1000);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(28_000);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // The failure at 12:30 waits 60 s: nothing until 13:30.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(55_000);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    expect(result.current.token).toBe('browser-token-1');
+    vi.mocked(Math.random).mockRestore();
+  });
+
+  it('asks the session read once when 401s repeat while the session keeps the login, then only backs off', async () => {
+    const refreshRequests = vi.fn();
+    window.addEventListener(WEB_SESSION_REFRESH_EVENT, refreshRequests);
+    mockFetch.mockImplementationOnce(async () => browserToken());
+    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
+    await waitFor(() => expect(result.current.token).toBe('browser-token-1'));
+    mockFetch.mockResolvedValue({ ok: false, status: 401, json: async () => ({ token: null, authenticated: false }) });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * MINUTE_MS);
+    });
+    // 12 min, then 30 s, 60 s, 120 s: four 401s, one session read asked for.
+    expect(mockFetch.mock.calls.length).toBeLessThanOrEqual(5);
     expect(refreshRequests).toHaveBeenCalledTimes(1);
     window.removeEventListener(WEB_SESSION_REFRESH_EVENT, refreshRequests);
   });

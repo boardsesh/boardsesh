@@ -24,17 +24,18 @@ function signedOut(status: 200 | 401): NextResponse {
  * without one (the backend gives the same token for the same cookie, so the
  * next session read sets exactly that cookie), in its own rate-limit bucket.
  *
- * - 200 `{ token, authenticated: true, userId, authSessionId, expiresAt }`:
- *   `expiresAt` is the token's end (at most 15 minutes away).
+ * - 200 `{ token, authenticated: true, userId, authSessionId, expiresAt, expiresIn }`:
+ *   `expiresAt` is the token's end (at most 15 minutes away) and `expiresIn`
+ *   the seconds left until it, which is what clients time their refresh by.
  * - 200 `{ token: null, authenticated: false }`: no session cookie, a
- *   conflicted one, an oversized legacy cookie, or a legacy login the backend
- *   denies.
+ *   conflicted one, an oversized legacy cookie, a plain-named legacy cookie in
+ *   a secure context, or a legacy login the backend denies.
  * - 401 `{ token: null, authenticated: false }`: the cookie's session ended (a
  *   dead first-party cookie, with no fall back to the legacy cookie). The
  *   client re-reads the session, which answers signed out.
- * - 503: the backend is unavailable or answered nothing that parses, a bridge
- *   is over its limit, or nothing is known beyond a legacy cookie that cannot
- *   be bridged now (`legacy-answer`). The client keeps its session and retries.
+ * - 503: the backend is unavailable or answered nothing that parses, or a
+ *   bridge is over its limit or failing. The client keeps its session and
+ *   retries with backoff.
  *
  * The token goes only into the response body, never into a log line.
  */
@@ -67,6 +68,10 @@ export async function browserAccessTokenAnswer(
         userId: grant.userId,
         authSessionId: grant.authSessionId,
         expiresAt: grant.accessTokenExpiresAt,
+        // Seconds left, by this server's clock: a client times its refresh
+        // from when it received the token, never from its own clock against
+        // `expiresAt`, which may be minutes off.
+        expiresIn: Math.max(0, Math.floor((Date.parse(grant.accessTokenExpiresAt) - Date.now()) / 1000)),
       },
       { headers: PRIVATE },
     );

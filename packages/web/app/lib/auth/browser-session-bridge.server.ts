@@ -158,10 +158,13 @@ export type SignedOutClears = 'none' | 'legacy' | 'first-party-and-legacy';
  *   `replaces: 'login'`, clear a stale login cookie).
  * - `signed-out`: with the reason, which decides the session read's clears and
  *   header, and whether ws-auth answers 401 (`session-ended`) or 200.
- * - `legacy-answer`: nothing is known beyond the legacy cookie (a POST, a
- *   bridge over its limit or failing, an unverifiable first-party cookie beside
- *   the legacy one, a plain-named legacy cookie). The session read answers from
- *   the legacy path as before; ws-auth has no token to give and answers 503.
+ * - `legacy-answer`: nothing is known beyond the legacy cookie (a POST, or a
+ *   bridge over its limit or failing). The session read answers from the
+ *   legacy path as before; ws-auth has no token to give and answers 503.
+ *   A plain-named legacy cookie in a secure context is `signed-out` instead,
+ *   and an unverifiable first-party cookie beside a valid legacy cookie is
+ *   bridged without any cookie write (`active` with no `bridged`), its failed
+ *   bridge `unavailable` (#7792 review, M4).
  * - `unavailable`: 503.
  */
 export type BrowserSessionResolution =
@@ -200,16 +203,25 @@ export async function resolveBrowserSession(
   if (session.kind === 'oversized-legacy') return { kind: 'signed-out', reason: 'oversized', clears: 'none' };
   if (session.kind === 'none') return { kind: 'signed-out', reason: 'no-cookie', clears: 'none' };
   if (session.kind === 'legacy') {
-    // Only the legacy name this deployment writes is bridged: a plain-named cookie
-    // in a secure context would otherwise become a 400-day `__Secure-` cookie.
-    if (!bridges || carriesFirstPartyCookie(request) || session.cookieName !== sessionCookieName())
-      return { kind: 'legacy-answer' };
+    // A legacy cookie under a name this deployment does not write (the plain
+    // name in a secure context) is signed out everywhere, as NextAuth reads
+    // only the `__Secure-` name in production today (#7792 review, M4a).
+    if (session.cookieName !== sessionCookieName()) return { kind: 'signed-out', reason: 'no-cookie', clears: 'none' };
+    if (!bridges) return { kind: 'legacy-answer' };
+    // A first-party cookie that does not verify (another secret, a bad
+    // signature) beside a valid legacy cookie: a legacy-only browser that may
+    // never get a cookie written (M4b). It is bridged without one; a denial is
+    // signed out with nothing cleared, and an outage is an outage.
+    const writesNoCookie = carriesFirstPartyCookie(request);
     const outcome = await bridgeLegacyLogin(request, session.presented, bucket);
     if (outcome.kind === 'bridged')
-      return { kind: 'active', session: outcome.session, token: outcome.token, bridged: { replaces: 'nothing' } };
-    if (outcome.kind === 'denied') return { kind: 'signed-out', reason: 'bridge-denied', clears: 'legacy' };
+      return writesNoCookie
+        ? { kind: 'active', session: outcome.session, token: outcome.token }
+        : { kind: 'active', session: outcome.session, token: outcome.token, bridged: { replaces: 'nothing' } };
+    if (outcome.kind === 'denied')
+      return { kind: 'signed-out', reason: 'bridge-denied', clears: writesNoCookie ? 'none' : 'legacy' };
     if (outcome.kind === 'mismatch') return { kind: 'signed-out', reason: 'session-ended', clears: 'none' };
-    return { kind: 'legacy-answer' };
+    return writesNoCookie ? { kind: 'unavailable' } : { kind: 'legacy-answer' };
   }
   let active: ActiveWebSession;
   try {

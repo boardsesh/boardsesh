@@ -40,6 +40,8 @@ type WsAuthResponse = {
   authSessionId?: unknown;
   /** When the token ends: only the 15-minute browser token has one (`better-auth`, #7596 B3b). */
   expiresAt?: unknown;
+  /** Its lifetime in seconds by the server's clock, which the page times its refresh by from receipt. */
+  expiresIn?: unknown;
 };
 
 type AuthTokenClearedMessageBase = {
@@ -60,10 +62,18 @@ type AuthTokenClearPayload =
   | { reason: 'confirmed-signout'; identity: WebAuthIdentity };
 
 let backendToken: string | null = null;
-/** When `backendToken` ends, in ms; null for the legacy JWE, which has no end the page knows. */
+/**
+ * When `backendToken` ends, in ms on this page's clock: when it was received
+ * plus the lifetime ws-auth gave (`expiresIn`). Null for the legacy JWE, which
+ * has no end the page knows.
+ */
 let backendTokenExpiresAt: number | null = null;
 let accessTokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let accessTokenRefreshFailures = 0;
+/** While refreshes fail, no new one before this (30 s, doubling, at most 5 minutes after the last failure). */
+let accessTokenRetryNotBefore = 0;
+/** The timer came due while the tab was hidden: refresh when it is shown. */
+let accessTokenRefreshWhenVisible = false;
 let confirmedSessionIdentity: WebAuthIdentity | null | undefined;
 let sessionGeneration = 0;
 let synchronization: {
@@ -88,10 +98,12 @@ const MIN_ACCESS_TOKEN_REFRESH_DELAY_MS = 30_000;
 /** Longest wait between refresh attempts while the token endpoint keeps failing. */
 const MAX_ACCESS_TOKEN_BACKOFF_MS = 5 * 60_000;
 
-function readTokenExpiry(expiresAt: unknown): number | null {
-  if (typeof expiresAt !== 'string') return null;
-  const parsed = Date.parse(expiresAt);
-  return Number.isFinite(parsed) ? parsed : null;
+/** Each token's timed refresh comes up to this much earlier, so pages opened together do not refresh together. */
+const ACCESS_TOKEN_REFRESH_JITTER_MS = 30_000;
+
+/** A ws-auth token's lifetime in ms, from its `expiresIn` seconds; null for the legacy JWE. */
+function readTokenLifetime(expiresIn: unknown): number | null {
+  return typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn >= 0 ? expiresIn * 1000 : null;
 }
 
 function clearAccessTokenRefreshTimer(): void {
@@ -102,22 +114,41 @@ function clearAccessTokenRefreshTimer(): void {
 
 /**
  * The page's backend token, in memory only. A browser access token
- * (`better-auth`) carries its end: the page refreshes it about three minutes
- * before, through the one shared session read, and backs off while that read
- * fails. The legacy JWE has no end and is never refreshed on a timer.
+ * (`better-auth`) carries its lifetime: the page refreshes it about three
+ * minutes before the end (less up to 30 s of jitter), counted from when it
+ * arrived, through the one shared session read, and backs off while that read
+ * fails. The legacy JWE has no lifetime and is never refreshed on a timer.
  */
-function setBackendToken(token: string | null, expiresAt: number | null = null): void {
+function setBackendToken(token: string | null, lifetimeMs: number | null = null): void {
   const replaced = token !== backendToken;
+  const receivedAt = Date.now();
   backendToken = token;
-  backendTokenExpiresAt = token === null ? null : expiresAt;
+  backendTokenExpiresAt = token === null || lifetimeMs === null ? null : receivedAt + lifetimeMs;
   if (replaced || token === null) {
     clearAccessTokenRefreshTimer();
-    if (token !== null) accessTokenRefreshFailures = 0;
+    accessTokenRefreshWhenVisible = false;
   }
-  if (token !== null && backendTokenExpiresAt !== null && accessTokenRefreshTimer === null)
+  if (token !== null && lifetimeMs !== null && accessTokenRefreshTimer === null)
     scheduleAccessTokenRefresh(
-      Math.max(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS, backendTokenExpiresAt - ACCESS_TOKEN_REFRESH_LEAD_MS - Date.now()),
+      Math.max(
+        MIN_ACCESS_TOKEN_REFRESH_DELAY_MS,
+        lifetimeMs - ACCESS_TOKEN_REFRESH_LEAD_MS - Math.random() * ACCESS_TOKEN_REFRESH_JITTER_MS,
+      ),
     );
+}
+
+function pageHidden(): boolean {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+/** One refresh through the shared session read, unless the page is hidden: then it waits for the page to show. */
+function refreshAccessTokenNow(): void {
+  if (pageHidden()) {
+    accessTokenRefreshWhenVisible = true;
+    return;
+  }
+  accessTokenRefreshWhenVisible = false;
+  void synchronizeWebSession();
 }
 
 function scheduleAccessTokenRefresh(delayMs: number): void {
@@ -127,18 +158,34 @@ function scheduleAccessTokenRefresh(delayMs: number): void {
   accessTokenRefreshTimer = setTimeout(() => {
     accessTokenRefreshTimer = null;
     if (backendToken !== token || generation !== sessionGeneration) return;
-    void synchronizeWebSession().then((result) => {
-      if (result.status !== 'unavailable' || backendToken !== token || generation !== sessionGeneration) return;
-      // The endpoint failed (503, timeout): keep the token while it lasts and try again later.
-      accessTokenRefreshFailures += 1;
-      scheduleAccessTokenRefresh(
-        Math.min(
-          MIN_ACCESS_TOKEN_REFRESH_DELAY_MS * 2 ** (accessTokenRefreshFailures - 1),
-          MAX_ACCESS_TOKEN_BACKOFF_MS,
-        ),
-      );
-    });
+    refreshAccessTokenNow();
   }, delayMs);
+}
+
+/**
+ * Every session read's outcome for a page holding a browser token: a new
+ * token ends a failure sequence; an unavailable answer starts or extends one,
+ * and the next timed refresh waits for the backoff. Never signs anyone out.
+ */
+function noteAccessTokenRefreshOutcome(result: AuthSessionResult): void {
+  if (result.status === 'authenticated' || backendTokenExpiresAt === null) {
+    accessTokenRefreshFailures = 0;
+    accessTokenRetryNotBefore = 0;
+    return;
+  }
+  if (result.status !== 'unavailable') return;
+  accessTokenRefreshFailures += 1;
+  const backoff = Math.min(
+    MIN_ACCESS_TOKEN_REFRESH_DELAY_MS * 2 ** (accessTokenRefreshFailures - 1),
+    MAX_ACCESS_TOKEN_BACKOFF_MS,
+  );
+  accessTokenRetryNotBefore = Date.now() + backoff;
+  scheduleAccessTokenRefresh(backoff);
+}
+
+/** Whether a refresh may go out now: no token yet, or not inside a failure backoff. */
+function accessTokenRefreshAllowed(now = Date.now()): boolean {
+  return backendToken === null || now >= accessTokenRetryNotBefore;
 }
 
 /** A browser access token within three minutes of its end. Never true for the legacy JWE. */
@@ -301,7 +348,7 @@ createNextAuthStorageListener();
  * outage is never evidence of a change.
  */
 async function readCookieIdentityWithoutCookieWrite(): Promise<
-  { identity: WebAuthIdentity | null; accessToken?: { token: string; expiresAt: number } } | undefined
+  { identity: WebAuthIdentity | null; accessToken?: { token: string; lifetimeMs: number } } | undefined
 > {
   try {
     const response = await fetch(webApiUrl('/api/internal/ws-auth'), {
@@ -320,9 +367,9 @@ async function readCookieIdentityWithoutCookieWrite(): Promise<
     if (candidate.authenticated !== true) return undefined;
     const identity = readWebAuthIdentity(candidate);
     if (identity === null) return undefined;
-    const expiresAt = readTokenExpiry(candidate.expiresAt);
-    return typeof candidate.token === 'string' && candidate.token && expiresAt !== null
-      ? { identity, accessToken: { token: candidate.token, expiresAt } }
+    const lifetimeMs = readTokenLifetime(candidate.expiresIn);
+    return typeof candidate.token === 'string' && candidate.token && lifetimeMs !== null
+      ? { identity, accessToken: { token: candidate.token, lifetimeMs } }
       : { identity };
   } catch {
     return undefined;
@@ -342,7 +389,7 @@ async function recheckSessionIdentity(): Promise<void> {
   if (observed === undefined || generation !== sessionGeneration) return;
   if (confirmedSessionIdentity !== undefined && sameIdentity(confirmedSessionIdentity, observed.identity)) {
     if (observed.accessToken && backendToken !== null)
-      setBackendToken(observed.accessToken.token, observed.accessToken.expiresAt);
+      setBackendToken(observed.accessToken.token, observed.accessToken.lifetimeMs);
     return;
   }
   notifyAuthTokenChange(backendToken, 'hint');
@@ -354,8 +401,10 @@ function createSessionRecheckListeners(): void {
   // www reaches this page only through these re-reads (visibilitychange is
   // already an AppState re-read in the provider).
   window.addEventListener('focus', () => {
-    // A browser access token with under three minutes left is refreshed now, throttle or not.
-    if (Date.now() - lastSessionReadAt < FOCUS_SESSION_RECHECK_INTERVAL_MS && !accessTokenNearExpiry()) return;
+    // A browser access token with under three minutes left is refreshed now,
+    // throttle or not, unless a failed refresh is still backing off.
+    const tokenDue = accessTokenNearExpiry() && accessTokenRefreshAllowed();
+    if (Date.now() - lastSessionReadAt < FOCUS_SESSION_RECHECK_INTERVAL_MS && !tokenDue) return;
     void recheckSessionIdentity();
   });
   window.addEventListener('pageshow', (event: PageTransitionEvent) => {
@@ -367,6 +416,12 @@ function createSessionRecheckListeners(): void {
       return;
     }
     void recheckSessionIdentity();
+  });
+  // A timer that came due while the page was hidden refreshes when it is shown.
+  if (typeof document === 'undefined') return;
+  document.addEventListener('visibilitychange', () => {
+    if (pageHidden() || !accessTokenRefreshWhenVisible) return;
+    refreshAccessTokenNow();
   });
 }
 
@@ -582,7 +637,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
         );
       }
 
-      setBackendToken(tokenPayload.token, readTokenExpiry(tokenPayload.expiresAt));
+      setBackendToken(tokenPayload.token, readTokenLifetime(tokenPayload.expiresIn));
       return { status: 'authenticated', token: tokenPayload.token, ...resolvedIdentity };
     }
 
@@ -621,6 +676,11 @@ export function synchronizeWebSession(): Promise<AuthSessionResult> {
     .catch((error: unknown): AuthSessionResult => {
       if (!isAuthCredentialGenerationCurrent(generation)) return { status: 'superseded' };
       return unavailable(error);
+    })
+    .then((result) => {
+      // The timer, a request and a socket all share this backoff (#7596 B3b).
+      if (isAuthCredentialGenerationCurrent(generation)) noteAccessTokenRefreshOutcome(result);
+      return result;
     })
     .finally(() => {
       clearTimeout(timeout);
@@ -751,4 +811,13 @@ export async function isTokenExpiringSoon(): Promise<boolean> {
 /** Whether the page's token is a browser access token past its end (never the legacy JWE). */
 export function isAuthTokenExpired(): boolean {
   return backendToken !== null && accessTokenExpired();
+}
+
+/**
+ * Whether a refresh may go out now. False only while a held browser token's
+ * failed refreshes back off, so a request during an outage or with a fast
+ * clock does not read the session before every send (#7596 B3b).
+ */
+export function isAuthTokenRefreshAllowed(): boolean {
+  return accessTokenRefreshAllowed();
 }
