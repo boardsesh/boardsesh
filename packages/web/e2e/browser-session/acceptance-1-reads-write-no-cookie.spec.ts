@@ -1,6 +1,23 @@
-import { fetchWsAuth, openApp, readSession, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
-import { BRIDGED_COOKIE, COOKIE_DOMAIN, LOGIN_COOKIE, WWW_HOST, WWW_ORIGIN, type SetCookieRecord } from './stack';
-import { expect, sessionSetCookies, test } from './fixtures';
+import {
+  fetchWsAuth,
+  openApp,
+  readSession,
+  readViewer,
+  signInOnWww,
+  signOutOnWww,
+  expectSessionReadNames,
+} from './helpers';
+import {
+  APP_ORIGIN,
+  BRIDGED_COOKIE,
+  COOKIE_DOMAIN,
+  LOGIN_COOKIE,
+  MARKER_COOKIE,
+  WWW_HOST,
+  WWW_ORIGIN,
+  type SetCookieRecord,
+} from './stack';
+import { expect, expectedMarker, markerSetCookies, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 1, under AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium
@@ -15,7 +32,21 @@ import { expect, sessionSetCookies, test } from './fixtures';
  * The Settings routes for provider link, unlink and reauthentication and for
  * a first password (#7804 to #7809) are in the list too: they act for the
  * session and keep its token, so they write no session cookie either.
+ *
+ * The viewer marker (#7596 decision, "how the guard learns of an account
+ * switch on another host") rides only with those writes: the login, the
+ * bridging read and the sign-out carry it, with the login's value and the
+ * session cookie's scope, readable by page scripts on www and the app; nothing
+ * else writes or clears it.
  */
+
+/** The marker's attributes: the session cookie's scope, and never HttpOnly. */
+function expectMarkerAttributes(attributes: readonly string[]): void {
+  expect(attributes).toEqual(
+    expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Path=/', 'Secure', 'SameSite=Lax', 'Max-Age=34560000']),
+  );
+  expect(attributes).not.toContain('HttpOnly');
+}
 
 test.skip(process.env.AUTH_BROWSER_SESSION_MODE !== 'better-auth', 'Runs under AUTH_BROWSER_SESSION_MODE=better-auth.');
 
@@ -48,6 +79,23 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
   );
   const viewer = await readViewer(page);
   expect(viewer.userId).toBe(account.userId);
+  if (!viewer.authSessionId) throw new Error('No session id after sign-in.');
+  // The login writes the marker for its own session, readable by page scripts.
+  const marker = expectedMarker(viewer.authSessionId);
+  const markerWrites = markerSetCookies(signIn.records).filter((cookie) => !cookie.clears);
+  expect(markerWrites).toEqual([
+    expect.objectContaining({
+      host: WWW_HOST,
+      path: '/api/auth/callback/credentials',
+      name: MARKER_COOKIE,
+      valueDigest: marker.valueDigest,
+    }),
+  ]);
+  expectMarkerAttributes(markerWrites[0]?.attributes ?? []);
+  expect(await page.evaluate(() => document.cookie)).toContain(`${MARKER_COOKIE}=${marker.value}`);
+  expect(markerSetCookies(signIn.records).filter((cookie) => cookie.path !== '/api/auth/callback/credentials')).toEqual(
+    [],
+  );
 
   const reads = await edgeCookies.during(async () => {
     // Server renders of private pages, each a full document.
@@ -100,6 +148,9 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
     const appPage = await context.newPage();
     await openApp(appPage);
     await expect.poll(async () => (await readViewer(appPage)).userId).toBe(account.userId);
+    // The app host reads the parent-domain marker www wrote.
+    expect(await appPage.evaluate(() => document.cookie)).toContain(`${MARKER_COOKIE}=${marker.value}`);
+    expect(new URL(appPage.url()).origin).toBe(APP_ORIGIN);
   });
 
   for (const [method, path] of [
@@ -116,8 +167,19 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
   ] as const)
     expectRequested(reads.records, method, path);
   expect(sessionSetCookies(reads.records)).toEqual([]);
+  expect(markerSetCookies(reads.records)).toEqual([]);
   // Still the same login after all of it.
   expect(await readViewer(page)).toEqual(viewer);
+
+  // Sign-out clears the marker in both scopes with the session cookies, and writes none.
+  const signOut = await edgeCookies.during(() => signOutOnWww(page));
+  const markerClears = markerSetCookies(signOut.records);
+  expect(markerClears.every((cookie) => cookie.clears && cookie.path === '/api/auth/signout')).toBe(true);
+  expect(markerClears.some((cookie) => cookie.attributes.includes(`Domain=${COOKIE_DOMAIN}`))).toBe(true);
+  expect(markerClears.some((cookie) => !cookie.attributes.some((attribute) => attribute.startsWith('Domain=')))).toBe(
+    true,
+  );
+  expect((await context.cookies(WWW_ORIGIN)).some((cookie) => cookie.name === MARKER_COOKIE)).toBe(false);
 });
 
 test('@smoke only the session read that bridges a pre-cutover cookie writes, and only the bridged cookie', async ({
@@ -150,6 +212,20 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
   }
   for (const record of bridging.records.filter((entry) => sessionSetCookies([entry]).length > 0))
     expect(`${record.method} ${record.path}`).toBe('GET /api/auth/session');
+  // Each bridging write carries the marker for the bridged login (the legacy cookie's session id).
+  const marker = expectedMarker(minted.authSessionId);
+  const markerWrites = markerSetCookies(bridging.records);
+  expect(markerWrites.length).toBe(writes.length);
+  for (const cookie of markerWrites) {
+    expect(cookie).toMatchObject({
+      host: WWW_HOST,
+      path: '/api/auth/session',
+      name: MARKER_COOKIE,
+      clears: false,
+      valueDigest: marker.valueDigest,
+    });
+    expectMarkerAttributes(cookie.attributes);
+  }
 
   // Once the browser holds it, no read writes anything, the legacy cookie stays.
   const after = await edgeCookies.during(async () => {
@@ -158,6 +234,7 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
     await readViewer(page);
   });
   expect(sessionSetCookies(after.records)).toEqual([]);
+  expect(markerSetCookies(after.records)).toEqual([]);
   // A bridged session cannot set a password here: with provider security on, set-password refuses
   // everyone (set-password.ts); first password is the way, acceptance-4-first-password.spec.ts.
   // Without a password row, so the refusal is that and not "already set" (409).
@@ -186,6 +263,7 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
   expect(refusal.result).toEqual({ status: 403, body: { error: 'reauthentication_required' } });
   expect(accountDatabase.hasPassword(account)).toBe(false);
   expect(sessionSetCookies(refusal.records)).toEqual([]);
+  expect(markerSetCookies(refusal.records)).toEqual([]);
   // The bridged session keeps the legacy cookie's session id.
   expect(await readViewer(page)).toEqual({
     authenticated: true,
@@ -213,6 +291,7 @@ test('a session with under 29 days left rolls on the server and writes no cookie
   const rolled = await edgeCookies.during(() => fetchWsAuth(page));
   expect(rolled.result).toMatchObject({ status: 200, authenticated: true, authSessionId });
   expect(sessionSetCookies(rolled.records)).toEqual([]);
+  expect(markerSetCookies(rolled.records)).toEqual([]);
 
   const renewed = accountDatabase.sessionExpiry(account, authSessionId);
   if (!renewed) throw new Error('The rolled session row is gone.');

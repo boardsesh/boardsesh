@@ -86,6 +86,8 @@ export const SESSION_COOKIE_NAME = /(?:next-auth|better-auth|boardsesh)\.(?:brid
 export const LOGIN_COOKIE = '__Secure-boardsesh.session_token';
 export const BRIDGED_COOKIE = '__Secure-boardsesh.bridged_session_token';
 export const LEGACY_COOKIE = '__Secure-next-auth.session-token';
+/** The viewer marker (#7596): readable, written and cleared only beside a session cookie. */
+export const MARKER_COOKIE = '__Secure-boardsesh.viewer';
 
 export function readStack(): BrowserSessionStack {
   const raw = process.env[STACK_ENVIRONMENT_VARIABLE];

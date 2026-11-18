@@ -1,11 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { viewerMarkerValue } from '@boardsesh/auth-protocol/browser-session-cookie';
 import { resolve } from 'node:path';
 import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
 import { test as base, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { addLegacySession, type LegacySessionShape, type MintedLegacySession } from './legacy-session';
 import type { CapturedMail } from './mail-sink';
 import {
+  MARKER_COOKIE,
   PARENT_DOMAIN,
   readStack,
   SEED_OUTPUT_PREFIX,
@@ -137,6 +139,19 @@ export function sessionSetCookies(records: readonly SetCookieRecord[]) {
       .filter((cookie) => SESSION_COOKIE_NAME.test(cookie.name))
       .map((cookie) => ({ host, path, status, ...cookie })),
   );
+}
+
+/** The viewer marker writes and clears a window saw, with the host, path and status of the response. */
+export function markerSetCookies(records: readonly SetCookieRecord[]) {
+  return records.flatMap(({ host, path, status, setCookies }) =>
+    setCookies.filter((cookie) => cookie.name === MARKER_COOKIE).map((cookie) => ({ host, path, status, ...cookie })),
+  );
+}
+
+/** The marker a login carries, and the edge's digest of it (the edge logs no value). */
+export function expectedMarker(authSessionId: string): { value: string; valueDigest: string } {
+  const value = viewerMarkerValue(authSessionId);
+  return { value, valueDigest: createHash('sha256').update(value).digest('hex').slice(0, 16) };
 }
 
 const WEBKIT_INTERNAL_ERROR = /WebKit encountered an internal error/;
