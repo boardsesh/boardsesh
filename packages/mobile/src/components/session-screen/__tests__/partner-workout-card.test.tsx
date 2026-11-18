@@ -4,6 +4,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { AppWorkout } from '../../../lib/pending-workout-store';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
+import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { Climb, UserBoard } from '@boardsesh/shared-schema';
+import { getGradesForBoard } from '@boardsesh/board-config';
+import type { PartnerWorkoutPreview } from '../../../lib/partner-workout-preview';
 
 const state = vi.hoisted(() => ({
   sessionId: null as string | null,
@@ -12,7 +16,7 @@ const state = vi.hoisted(() => ({
   hydrate: vi.fn(async () => 'clean'),
   request: vi.fn(async () => ({})),
   start: vi.fn(async () => 'new-session'),
-  append: vi.fn(() => 1),
+  append: vi.fn((items: ClimbQueueItem[]) => Math.min(items.length, 1)),
   activate: vi.fn(),
   prepare: vi.fn(),
   setRun: vi.fn(),
@@ -20,7 +24,15 @@ const state = vi.hoisted(() => ({
   pending: null as AppWorkout | null,
   remember: vi.fn(async () => undefined),
   setPending: vi.fn(),
+  queue: [] as ClimbQueueItem[],
+  pendingStart: false,
+  arm: vi.fn((_sessionId: string, _run: WorkoutRun, _nowMs: number) => true),
+  preview: null as PartnerWorkoutPreview | null,
 }));
+vi.mock('expo-crypto', () => {
+  let counter = 0;
+  return { randomUUID: () => `qi-${counter++}` };
+});
 vi.mock('expo-router', () => ({ useRouter: () => ({ navigate: state.navigate }) }));
 vi.mock('react-native', () => ({ View: 'div', StyleSheet: { create: (styles: unknown) => styles } }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12, 4: 16 } }));
@@ -28,10 +40,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({}),
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
-    data:
-      queryKey[0] === 'partnerWorkoutWinningPlan'
-        ? state.active
-        : { items: [], run: { stages: [] }, selectionSlots: 0 },
+    data: queryKey[0] === 'partnerWorkoutWinningPlan' ? state.active : (state.preview ?? EMPTY_PREVIEW),
   }),
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({ useAppWorkoutsFlag: () => true }));
@@ -40,7 +49,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({
     startSession: state.start,
     appendQueueItems: state.append,
-    getQueueSnapshot: () => ({ sessionId: state.sessionId, queue: [], currentClimbQueueItem: null }),
+    getQueueSnapshot: () => ({ sessionId: state.sessionId, queue: state.queue, currentClimbQueueItem: null }),
   }),
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -52,13 +61,15 @@ vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request:
 vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
-vi.mock('../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout: vi.fn() }));
+// The real "Add a block" arm rule runs; only the arm itself is watched.
+vi.mock('../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout: state.arm }));
+vi.mock('../../../lib/graphql/hooks/search-grade-source', () => ({ useSearchGradeSourceActive: () => false }));
 vi.mock('../../../offline/session-workout-outbox', () => ({ enqueueSessionWorkoutWrite: vi.fn(async () => 'queued') }));
-vi.mock('../pre-session/workout-preview-pool', () => ({ buildPools: vi.fn(), selectItemsFromPools: vi.fn() }));
 vi.mock('../pre-session/select-climbs-for-plan', () => ({ fetchGradePool: vi.fn() }));
 vi.mock('../../../lib/workout-run-store', () => ({
   getWorkoutRunForSession: () => state.run,
   hydrateWorkoutRun: state.hydrate,
+  isWorkoutRunPendingStart: (sessionId: string | null) => sessionId !== null && state.pendingStart,
   prepareWorkoutRun: state.prepare,
   setWorkoutRun: state.setRun,
 }));
@@ -85,6 +96,24 @@ vi.mock('../../Button', () => ({
 }));
 
 import { PartnerWorkoutCard } from '../PartnerWorkoutCard';
+import { buildPartnerWorkoutPlan } from '../../../lib/partner-workout-plan';
+import { buildPartnerWorkoutPreview } from '../../../lib/partner-workout-preview';
+
+const EMPTY_PREVIEW: PartnerWorkoutPreview = {
+  items: [],
+  run: { stages: [] },
+  selectionSlots: 0,
+  slots: [],
+  built: {
+    pools: new Map(),
+    poolDemands: new Map(),
+    poolTopUpTiers: new Map(),
+    exhaustedPoolKeys: new Set(),
+    items: [],
+    usedUuids: new Set(),
+    borrowScale: [],
+  },
+};
 const workout: AppWorkout = {
   id: 'wk_one',
   clientId: 'app_one',
@@ -101,6 +130,9 @@ beforeEach(() => {
   state.active = null;
   state.run = null;
   state.pending = null;
+  state.queue = [];
+  state.pendingStart = false;
+  state.preview = null;
   state.request.mockImplementation(async () => ({}));
   state.hydrate.mockResolvedValue('clean');
 });
@@ -189,5 +221,61 @@ describe('partner workout card recovery', () => {
     await waitFor(() => expect(state.hydrate).toHaveBeenCalled());
     expect(state.prepare).not.toHaveBeenCalled();
     expect(state.setRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('adding a partner workout to a running session', () => {
+  const focusWorkout: AppWorkout = {
+    ...workout,
+    spec: {
+      title: 'Focus',
+      externalRef: 'focus',
+      blocks: [{ type: 'gradeFocus', climbCount: 1, restSeconds: 60, targetGrade: { scale: 'font', value: '6B' } }],
+    },
+  };
+  const climb = (uuid: string) => ({ uuid, name: uuid, difficulty: '6b/V4', angle: 40 }) as Climb;
+
+  beforeEach(async () => {
+    state.sessionId = 'existing-session';
+    state.pending = focusWorkout;
+    // Built while the queue was empty: the preview's one row is climb `first`.
+    vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    state.preview = await buildPartnerWorkoutPreview({
+      spec: focusWorkout.spec,
+      partnerPlan: buildPartnerWorkoutPlan(focusWorkout.spec, getGradesForBoard('kilter'), focusWorkout.id),
+      grades: getGradesForBoard('kilter'),
+      ctx: { board: { boardType: 'kilter' } as UserBoard, isAuthenticated: true },
+      fetchPool: async () => ({ climbs: [climb('first'), climb('second')], topUpTiers: new Map(), exhausted: true }),
+    });
+    vi.mocked(Math.random).mockRestore();
+    state.append.mockImplementation((items: ClimbQueueItem[]) => items.length);
+  });
+
+  it('does not arm the rest timer while the session workout waits for its Start', async () => {
+    state.pendingStart = true;
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.setRun).toHaveBeenCalled());
+    expect(state.arm).not.toHaveBeenCalled();
+  });
+
+  it('arms the block rest when the session workout has already started', async () => {
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.arm).toHaveBeenCalled());
+    expect(state.arm).toHaveBeenCalledWith(
+      'existing-session',
+      expect.objectContaining({ stages: [expect.objectContaining({ pacing: expect.anything() })] }),
+      expect.any(Number),
+    );
+  });
+
+  it('passes over a climb queued since the preview was built', async () => {
+    state.queue = [{ uuid: 'queued-item', climb: climb('first') } as ClimbQueueItem];
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.append).toHaveBeenCalled());
+    const appended = state.append.mock.calls[0][0] as ClimbQueueItem[];
+    expect(appended.map((item) => item.climb.uuid)).toEqual(['second']);
   });
 });

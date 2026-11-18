@@ -38,6 +38,30 @@ export type AddWorkoutBlockResult = {
 };
 
 /**
+ * The climbs a block added to a live session passes over while its pools have
+ * others: every climb already in the queue. A restored queue can carry an item
+ * whose climb has not resolved yet; it names none.
+ */
+export function queuedClimbUuids(queue: readonly ClimbQueueItem[]): Set<string> {
+  const climbUuids = new Set<string>();
+  for (const queueItem of queue) {
+    const climb: ClimbQueueItem['climb'] | undefined = queueItem.climb;
+    if (climb) climbUuids.add(climb.uuid);
+  }
+  return climbUuids;
+}
+
+/**
+ * `items` without any queue item already in `queue`, so an add never queues one
+ * twice: a reopen, or a retry after a lost reply, can still hold a preview that
+ * is already queued.
+ */
+export function withoutQueuedItems(items: ClimbQueueItem[], queue: readonly ClimbQueueItem[]): ClimbQueueItem[] {
+  const queuedUuids = new Set(queue.map((queueItem) => queueItem.uuid));
+  return items.filter((item) => !queuedUuids.has(item.uuid));
+}
+
+/**
  * Adds a block's stages to the end of the session's run, keeping only the
  * climbs in `landedUuids`. With no run yet, the block's run becomes the
  * session's run, so a session started without the generator turns into a workout.

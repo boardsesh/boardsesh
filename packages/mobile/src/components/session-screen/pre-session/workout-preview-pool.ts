@@ -657,6 +657,58 @@ async function searchNearbyPool(
   return true;
 }
 
+/** What `buildPreview` fills a plan with: the rows and every pool behind them. */
+export type BuiltPreview = BuiltPools & {
+  items: PreviewItem[];
+  usedUuids: Set<string>;
+  /** The grade scale the rows borrowed along (`borrowScaleFor`), for a shuffle or refresh to borrow along too. */
+  borrowScale: GeneratorGradeScale;
+};
+
+export type BuildPreviewOptions = {
+  /** Pools an earlier preview fetched, reused under `buildPoolsReusing`'s rule. */
+  cache?: PoolCache;
+  /** The rows the slots showed before, kept where they still fit (`selectItemsFromPools`). */
+  keptItems?: ReadonlyArray<ClimbQueueItem | undefined>;
+  /**
+   * The climbs to pass over while the pools have others, such as the live queue.
+   * Read once the plan's own pools are in, so a climb queued during that fetch
+   * is passed over too.
+   */
+  getAvoidedClimbUuids?: () => ReadonlySet<string>;
+};
+
+/**
+ * The whole preview pipeline for one plan: fetch the pools its slots draw from
+ * (`buildPoolsReusing`), fetch the nearby grades its short slots borrow from
+ * (`borrowForShortSlots`), then fill the rows (`selectItemsFromPools`), passing
+ * over the avoided climbs and taking top-ups last. The workout builder, "Add a
+ * block" and a partner app's workout all fill their blocks through here, so
+ * they pick climbs the same way. A build `ctx.isCurrent` calls superseded
+ * sends no more nearby searches; the caller drops what it returns.
+ */
+export async function buildPreview(
+  slots: readonly PreviewSlot[],
+  ctx: PreviewFetchContext,
+  fetchPool: FetchGradePool,
+  grades: GeneratorGradeScale,
+  { cache, keptItems = [], getAvoidedClimbUuids }: BuildPreviewOptions = {},
+): Promise<BuiltPreview> {
+  const built = await buildPoolsReusing(slots, ctx, fetchPool, cache);
+  const avoidClimbUuids = getAvoidedClimbUuids?.() ?? NO_AVOIDED_CLIMBS;
+  const borrowScale = borrowScaleFor(grades);
+  await borrowForShortSlots(slots, built, ctx, fetchPool, borrowScale, { cache, avoidClimbUuids, keptItems });
+  const { items, usedUuids } = selectItemsFromPools(
+    slots,
+    built.pools,
+    avoidClimbUuids,
+    keptItems,
+    built.poolTopUpTiers,
+    borrowScale,
+  );
+  return { ...built, items, usedUuids, borrowScale };
+}
+
 /** `buildPoolsReusing` with nothing cached, for callers that only need the pools. */
 export async function buildPools(
   slots: readonly PreviewSlot[],

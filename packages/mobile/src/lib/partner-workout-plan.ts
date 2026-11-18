@@ -13,11 +13,17 @@ import {
 
 type RequestedGrade = { scale: 'v'; value: number } | { scale: 'font'; value: string };
 
-/** Compare against the full scale before selecting the nearest supported board grade. */
+/**
+ * Compare against the full scale before selecting the nearest supported board grade.
+ * `grade` is the lowest difficulty id the request names on this board. `band` is
+ * every id it names, lowest first: a V grade spans each Font grade the board's own
+ * table gives it (Kilter V4 is 6b and 6b+; MoonBoard labels 6A as V2, so its V3 is
+ * 6A+ alone). A Font grade, or a grade clamped onto the board, is one id.
+ */
 export function resolvePartnerGrade(
   request: RequestedGrade,
   grades: readonly BoulderGrade[],
-): { grade: number; clamped: boolean } {
+): { grade: number; band: number[]; clamped: boolean } {
   if (grades.length === 0) throw new Error('No board grades');
   const matches = (grade: BoulderGrade) =>
     request.scale === 'v'
@@ -32,10 +38,24 @@ export function resolvePartnerGrade(
   const nearest = grades.reduce((best, grade) =>
     Math.abs(grade.difficulty_id - wantedId) < Math.abs(best.difficulty_id - wantedId) ? grade : best,
   );
-  return { grade: nearest.difficulty_id, clamped: requested === undefined || nearest.difficulty_id !== wantedId };
+  const clamped = requested === undefined || nearest.difficulty_id !== wantedId;
+  const band =
+    request.scale === 'v' && !clamped
+      ? grades.filter(matches).map((grade) => grade.difficulty_id)
+      : [nearest.difficulty_id];
+  return { grade: nearest.difficulty_id, band, clamped };
 }
 
-function rangeForBlock(block: WorkoutBlock, grades: readonly BoulderGrade[]) {
+/**
+ * The grades a block's slots draw from: `from` and `to`, the lowest and highest
+ * difficulty ids, with every V band whole, and `target`, the grade its stage is
+ * labelled with (the lowest id of the target, or of the range's top, band).
+ * `band` is set for a single target grade: its slots take turns across it.
+ */
+function rangeForBlock(
+  block: WorkoutBlock,
+  grades: readonly BoulderGrade[],
+): { from: number; to: number; target: number; band?: number[]; clamped: boolean } | null {
   if ('gradeRange' in block) {
     const from = resolvePartnerGrade(
       { scale: block.gradeRange.scale, value: block.gradeRange.from } as RequestedGrade,
@@ -45,11 +65,17 @@ function rangeForBlock(block: WorkoutBlock, grades: readonly BoulderGrade[]) {
       { scale: block.gradeRange.scale, value: block.gradeRange.to } as RequestedGrade,
       grades,
     );
-    return { from: from.grade, to: to.grade, clamped: from.clamped || to.clamped };
+    return { from: from.band[0], to: to.band.at(-1)!, target: to.grade, clamped: from.clamped || to.clamped };
   }
   if ('targetGrade' in block) {
     const target = resolvePartnerGrade(block.targetGrade, grades);
-    return { from: target.grade, to: target.grade, clamped: target.clamped };
+    return {
+      from: target.band[0],
+      to: target.band.at(-1)!,
+      target: target.grade,
+      band: target.band,
+      clamped: target.clamped,
+    };
   }
   return null;
 }
@@ -80,7 +106,7 @@ export function buildPartnerWorkoutPlan(
     let stage: WorkoutStage;
     switch (block.type) {
       case 'warmUp':
-        stage = { id, kind: 'warmUp', warmUpType: 'standard', targetGrade: range.to };
+        stage = { id, kind: 'warmUp', warmUpType: 'standard', targetGrade: range.target };
         break;
       case 'volume':
         stage = {
@@ -88,17 +114,25 @@ export function buildPartnerWorkoutPlan(
           kind: 'volume',
           options: {
             ...DEFAULT_VOLUME_OPTIONS,
-            targetGrade: range.to,
+            targetGrade: range.target,
             warmUp: 'none',
             mainSetClimbs: block.climbCount,
           },
         };
         break;
       case 'pyramid':
-        stage = { id, kind: 'pyramid', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: range.to, warmUp: 'none' } };
+        stage = {
+          id,
+          kind: 'pyramid',
+          options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: range.target, warmUp: 'none' },
+        };
         break;
       case 'ladder':
-        stage = { id, kind: 'ladder', options: { ...DEFAULT_LADDER_OPTIONS, targetGrade: range.to, warmUp: 'none' } };
+        stage = {
+          id,
+          kind: 'ladder',
+          options: { ...DEFAULT_LADDER_OPTIONS, targetGrade: range.target, warmUp: 'none' },
+        };
         break;
       case 'onTheMinute':
         stage = {
@@ -106,7 +140,7 @@ export function buildPartnerWorkoutPlan(
           kind: 'onTheMinute',
           options: {
             ...DEFAULT_ON_THE_MINUTE_OPTIONS,
-            targetGrade: range.to,
+            targetGrade: range.target,
             warmUp: 'none',
             numberOfClimbs: block.climbCount,
             intervalSeconds: block.intervalSeconds,
@@ -119,7 +153,7 @@ export function buildPartnerWorkoutPlan(
           kind: 'gradeFocus',
           options: {
             ...DEFAULT_GRADE_FOCUS_OPTIONS,
-            targetGrade: range.to,
+            targetGrade: range.target,
             warmUp: 'none',
             numberOfClimbs: block.climbCount,
           },
@@ -127,12 +161,17 @@ export function buildPartnerWorkoutPlan(
     }
     stages.push(stage);
     const available = grades.filter((grade) => grade.difficulty_id >= range.from && grade.difficulty_id <= range.to);
+    const { band } = range;
     for (let position = 0; position < block.climbCount; position++) {
       const progress = block.climbCount === 1 ? 1 : position / (block.climbCount - 1);
       const peakHeight = block.climbCount % 2 === 0 ? (block.climbCount - 2) / (block.climbCount - 1) : 1;
       const ramp =
         block.type === 'pyramid' && block.climbCount > 2 ? (1 - Math.abs(2 * progress - 1)) / peakHeight : progress;
-      const grade = available[Math.round(ramp * (available.length - 1))]?.difficulty_id ?? range.to;
+      // One target grade: the slots take turns across its band, so a V grade
+      // draws from each Font grade in it and a short one borrows from the next.
+      const grade = band
+        ? band[position % band.length]
+        : (available[Math.round(ramp * (available.length - 1))]?.difficulty_id ?? range.to);
       slots.push({ index: slots.length, grade, section: block.type === 'warmUp' ? 'warmUp' : 'main', stageId: id });
     }
   }

@@ -15,7 +15,11 @@ describe('partner workout planning', () => {
     const planned = buildPartnerWorkoutPlan(spec, grades, 'wk_one');
     expect(planned.slots).toHaveLength(6);
     expect(planned.slots[0].grade).toBe(resolvePartnerGrade({ scale: 'v', value: 0 }, grades).grade);
-    expect(planned.slots.at(-1)?.grade).toBe(resolvePartnerGrade({ scale: 'v', value: 3 }, grades).grade);
+    // The range's top is V3 whole: 6a+ is V3 too.
+    expect(planned.slots.at(-1)?.grade).toBe(resolvePartnerGrade({ scale: 'v', value: 3 }, grades).band.at(-1));
+    expect(planned.plan.stages[0]).toMatchObject({
+      targetGrade: resolvePartnerGrade({ scale: 'v', value: 3 }, grades).grade,
+    });
     expect(planned.plan.stages).toHaveLength(1);
     expect(planned.plan.stages[0].kind).toBe('warmUp');
   });
@@ -81,8 +85,46 @@ describe('partner workout planning', () => {
     const grades = getGradesForBoard('kilter');
     const planned = buildPartnerWorkoutPlan(spec, grades, 'wk_pyramid');
     const low = resolvePartnerGrade({ scale: 'v', value: 1 }, grades).grade;
-    const high = resolvePartnerGrade({ scale: 'v', value: 5 }, grades).grade;
+    const high = resolvePartnerGrade({ scale: 'v', value: 5 }, grades).band.at(-1);
     expect(planned.slots.map((slot) => slot.grade)).toEqual([low, high, high, low]);
+  });
+});
+
+describe('partner V grades span their whole band on the board', () => {
+  const gradeFocus = (targetGrade: { scale: 'v'; value: number }): CreateWorkout => ({
+    title: 'Focus',
+    externalRef: 'focus',
+    blocks: [{ type: 'gradeFocus', climbCount: 4, targetGrade }],
+  });
+
+  it('draws a Kilter V4 from both 6b and 6b+, and labels the stage with the lowest', () => {
+    const planned = buildPartnerWorkoutPlan(gradeFocus({ scale: 'v', value: 4 }), getGradesForBoard('kilter'), 'wk_v4');
+    // 18 is 6b/V4, 19 is 6b+/V4 on the shared table.
+    expect(planned.slots.map((slot) => slot.grade)).toEqual([18, 19, 18, 19]);
+    expect(planned.plan.stages[0]).toMatchObject({ kind: 'gradeFocus', options: { targetGrade: 18 } });
+    expect(planned.clampedBlocks).toEqual([]);
+  });
+
+  it('follows the MoonBoard table: 6A is V2 there, so V3 is 6A+ alone', () => {
+    const grades = getGradesForBoard('moonboard');
+    expect(resolvePartnerGrade({ scale: 'v', value: 3 }, grades)).toEqual({ grade: 17, band: [17], clamped: false });
+    expect(resolvePartnerGrade({ scale: 'v', value: 2 }, grades)).toEqual({ grade: 16, band: [16], clamped: false });
+    expect(resolvePartnerGrade({ scale: 'v', value: 4 }, grades).band).toEqual([18, 19]);
+  });
+
+  it('keeps a Font target and a clamped V target to one grade', () => {
+    const kilter = getGradesForBoard('kilter');
+    expect(resolvePartnerGrade({ scale: 'font', value: '6B' }, kilter)).toEqual({
+      grade: 18,
+      band: [18],
+      clamped: false,
+    });
+    const moonboard = getGradesForBoard('moonboard');
+    expect(resolvePartnerGrade({ scale: 'v', value: 0 }, moonboard)).toEqual({
+      grade: moonboard[0].difficulty_id,
+      band: [moonboard[0].difficulty_id],
+      clamped: true,
+    });
   });
 });
 

@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
-import { buildWorkoutRun } from '@boardsesh/playlist-generator';
 import { MAX_SYNCED_QUEUE_ITEMS } from '@boardsesh/queue';
 import { MAX_SESSION_WORKOUT_ITEMS } from '@boardsesh/workout-summary';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -37,9 +36,11 @@ import {
   type AppWorkout,
 } from '../../lib/pending-workout-store';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
-import { buildPools, selectItemsFromPools } from './pre-session/workout-preview-pool';
 import { fetchGradePool } from './pre-session/select-climbs-for-plan';
 import { appendPartnerWorkout } from '../../lib/partner-workout-queue';
+import { buildPartnerWorkoutPreview, reselectPartnerWorkoutPreview } from '../../lib/partner-workout-preview';
+import { queuedClimbUuids, withoutQueuedItems } from './in-session/add-workout-block';
+import { useSearchGradeSourceActive } from '../../lib/graphql/hooks/search-grade-source';
 import {
   getWorkoutRunForSession,
   hydrateWorkoutRun,
@@ -48,7 +49,7 @@ import {
 } from '../../lib/workout-run-store';
 import { captureWorkoutRunClimbs } from '../../lib/session-workout-plan';
 import { enqueueSessionWorkoutWrite } from '../../offline/session-workout-outbox';
-import { armRestTimerForWorkout } from '../../lib/rest-timer-effective';
+import { armRestTimerForAddedBlock } from '../../lib/arm-added-block-rest-timer';
 import { nowMs } from '../../lib/clock';
 import { reportHandledError } from '../../lib/error-reporting';
 import { track } from '../../lib/analytics';
@@ -124,41 +125,41 @@ export function PartnerWorkoutCard({
       cancelled = true;
     };
   }, [active, sessionId, winningPlan.data, credentialGeneration]);
-  const plan = useMemo(() => {
+  const boardseshGrades = useSearchGradeSourceActive();
+  const grades = useMemo(() => {
     const boardName = board ? toBoardName(board.boardType) : null;
-    return pending && pending.status !== 'started' && boardName
-      ? buildPartnerWorkoutPlan(pending.spec, getGradesForBoard(boardName), pending.id)
-      : null;
-  }, [pending, board]);
+    return boardName ? getGradesForBoard(boardName) : null;
+  }, [board]);
+  const plan = useMemo(
+    () =>
+      pending && pending.status !== 'started' && grades
+        ? buildPartnerWorkoutPlan(pending.spec, grades, pending.id)
+        : null,
+    [pending, grades],
+  );
+  // The app's own preview pipeline (`buildPartnerWorkoutPreview`). Added to a
+  // running session, it passes over the climbs that session already queued, as
+  // "Add a block" does; a new session starts from what the climber picked, as
+  // the pre-session builder does.
   const preview = useQuery({
-    queryKey: ['partnerWorkoutPreview', credentialGeneration, pending?.id, board],
+    queryKey: ['partnerWorkoutPreview', credentialGeneration, pending?.id, board, sessionId, boardseshGrades],
     enabled: enabled && pending !== null && pending.status !== 'started' && board != null && plan !== null,
     retry: false,
     queryFn: async ({ signal }) => {
-      if (!plan || !board) throw new Error('No workout board');
-      const slots = plan.slots.slice(0, MAX_SESSION_WORKOUT_ITEMS);
-      const pools = await buildPools(
-        slots,
-        {
+      if (!pending || !plan || !board || !grades) throw new Error('No workout board');
+      return buildPartnerWorkoutPreview({
+        spec: pending.spec,
+        partnerPlan: plan,
+        grades,
+        ctx: {
           board,
           isAuthenticated: true,
+          boardseshGrades,
           isCurrent: () => !signal.aborted && credentialGeneration === getCredentialGeneration(),
         },
-        fetchGradePool,
-      );
-      const selected = selectItemsFromPools(slots, pools).items;
-      const run = buildWorkoutRun(
-        selected.map((previewItem) => ({ uuid: previewItem.item.uuid, stageId: previewItem.slot.stageId! })),
-        plan.plan,
-      );
-      // Untimed partner blocks can request a rest even though the local builder does not offer one yet.
-      for (const stage of run.stages) {
-        const block = pending?.spec.blocks[Number(stage.id.split(':').at(-1))];
-        if (block && 'restSeconds' in block && block.restSeconds !== undefined) {
-          stage.pacing = { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'tick' };
-        }
-      }
-      return { items: selected.map((previewItem) => previewItem.item), run, selectionSlots: slots.length };
+        fetchPool: fetchGradePool,
+        getAvoidedClimbUuids: sessionId ? () => queuedClimbUuids(getQueueSnapshot().queue) : undefined,
+      });
     },
   });
 
@@ -258,25 +259,31 @@ export function PartnerWorkoutCard({
         showToast(t('partnerWorkouts.startError'), 'error');
         return;
       }
+      // "Add a block"'s rule: pass over the climbs the queue holds now (it can
+      // have gained some since the preview was built), from the pools already
+      // fetched, and never queue a queue item twice.
+      const attached = plan
+        ? reselectPartnerWorkoutPreview(preview.data, pending.spec, plan.plan, queuedClimbUuids(snapshot.queue))
+        : preview.data;
       const {
         landedItems: items,
         partnerRun,
         combinedRun,
       } = appendPartnerWorkout({
-        items: preview.data.items,
-        run: preview.data.run,
+        items: withoutQueuedItems(attached.items, snapshot.queue),
+        run: attached.run,
         existingRun: getWorkoutRunForSession(attachedSessionId),
         appendQueueItems,
       });
-      if (preview.data.items.length > 0 && items.length === 0) {
+      if (attached.items.length > 0 && items.length === 0) {
         showToast(t('partnerWorkouts.queueFull'), 'error');
         return;
       }
-      if (items.length < preview.data.items.length || (plan?.slots.length ?? 0) > MAX_SESSION_WORKOUT_ITEMS)
+      if (items.length < attached.items.length || (plan?.slots.length ?? 0) > MAX_SESSION_WORKOUT_ITEMS)
         showToast(
           t('partnerWorkouts.budgetShortfall', {
             found: items.length,
-            planned: plan?.slots.length ?? preview.data.items.length,
+            planned: plan?.slots.length ?? attached.items.length,
           }),
           'info',
         );
@@ -286,7 +293,8 @@ export function PartnerWorkoutCard({
       // persistence or response must never make a retry append these UUIDs twice.
       activatePartnerWorkout(attachedSessionId, { ...pending, status: 'started', sessionId: attachedSessionId });
       track(SHARED_EVENTS.AppWorkoutStarted, partnerWorkoutAnalytics(pending, board.boardType));
-      if (intendedSessionId) armRestTimerForWorkout(attachedSessionId, partnerRun, nowMs());
+      // The partner block's own pacing, and never while a workout waits for its Start.
+      armRestTimerForAddedBlock(attachedSessionId, partnerRun, nowMs());
       // This durable write also reconstructs the partner snapshot after a lost response.
       await enqueueSessionWorkoutWrite(attachedSessionId, { queryClient, queueItems: getQueueSnapshot().queue }).catch(
         (error: unknown) => {
