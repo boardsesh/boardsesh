@@ -27,6 +27,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Keep browsing when a climb menu's closing animation is interrupted. ([#7843](https://github.com/boardsesh/boardsesh/pull/7843))
 - Apps you connect see only the climbs from the workout they sent you, counted on the blocks you climbed them in. ([#7832](https://github.com/boardsesh/boardsesh/pull/7832))
 - Workout cards in the feed and on your Sessions list now show the target grade on your board's scale, so a MoonBoard 6A+ workout reads V3, same as the session itself. ([#7821](https://github.com/boardsesh/boardsesh/pull/7821))
 - Workouts from your training apps fill up more often: when a grade is thin, Boardsesh picks from the grade next to it, and a V4 block uses both of the board's V4 grades. ([#7824](https://github.com/boardsesh/boardsesh/pull/7824))
