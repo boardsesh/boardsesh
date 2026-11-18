@@ -67,21 +67,17 @@ const admitServerCredentialForRender = cache(async () => {
  * `better-auth` only a GET or HEAD may bridge a legacy-only browser (a write
  * answers it from the admitted legacy cookie, as the session read does for a
  * POST). Without it, a server action (Next's `Next-Action` header) counts as a
- * write and anything else as a read. `legacyCookie` reads the admitted legacy
- * NextAuth cookie in every mode: only for the native transfer callback, which
- * runs right after a provider login that wrote that cookie (and, under
- * `better-auth`, cleared the first-party names), and needs its claims (B4c).
+ * write and anything else as a read.
  */
-export type AdmittedSessionSource = { readonly legacyCookie?: boolean; readonly method?: string };
+export type AdmittedSessionSource = { readonly method?: string };
 
 /**
  * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B4a) the request's one
  * resolution, from `server-browser-session.server.ts`; undefined in `legacy`
- * mode or when asked for the legacy cookie. Loaded on first use, so `legacy`
- * mode loads and runs exactly what it did before.
+ * mode. Loaded on first use, so `legacy` mode loads and runs exactly what it
+ * did before.
  */
 async function resolvedForRequest(source: AdmittedSessionSource) {
-  if (source.legacyCookie) return undefined;
   // Unset, empty and `legacy` are `legacy` to `browserSessionRouteMode` as
   // well; any other value goes there and gets its answer (503 when invalid).
   const rawMode = process.env[BROWSER_SESSION_MODE_ENV];

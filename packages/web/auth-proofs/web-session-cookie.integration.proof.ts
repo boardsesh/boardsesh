@@ -188,10 +188,11 @@ describe('login', () => {
     expect(setCookies(response)).toEqual([]);
   });
 
-  it('on the legacy cookie alone (the native transfer) also clears the first-party names, so a stale login cookie cannot outrank it', async () => {
+  it('refuses the native transfer provider (#7596 B4c-web): no session cookie changes and the login stays', async () => {
     const [climberA, climberB] = [await climber(), await climber()];
     const jar = new CookieJar();
     await login(jar, climberA.email);
+    const before = jar.header();
     const transferToken = issueNativeOAuthTransferToken({
       userId: climberB.id,
       nextPath: '/',
@@ -209,17 +210,11 @@ describe('login', () => {
       cookie: jar.header(),
       form: { csrfToken, transferToken, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
     });
-    expect(response.status).toBe(200);
-    const cleared = setCookies(response).filter((header) => /^[^=]+=;/.test(header));
-    for (const name of [LOGIN, BRIDGED]) {
-      expect(cleared).toContain(`${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
-      expect(cleared).toContain(`${name}=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
-    }
+    expect(response.status).toBe(401);
+    expect(sessionCookieNamesIn(response)).toEqual([]);
     jar.apply(response);
-    expect(jar.get(LOGIN, DOMAIN)).toBeUndefined();
-    // The legacy cookie alone is now bridged on the read (B2b).
-    const bridged = await readSession(jar.header(), 'GET', '', { bridges: true });
-    expect(((await bridged.json()) as SessionJson).user?.id).toBe(climberB.id);
+    expect(jar.header()).toBe(before);
+    expect((await sessionOf(jar.header())).user?.id).toBe(climberA.id);
   });
 });
 

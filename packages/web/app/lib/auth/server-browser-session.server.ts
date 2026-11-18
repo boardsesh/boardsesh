@@ -46,6 +46,12 @@ export type ServerBrowserSession =
       kind: 'active';
       session: ActiveWebSession;
       accessToken: string;
+      /**
+       * The canonical token the resolution read (from the login or bridged cookie,
+       * or the deterministic bridge of a legacy-only read). Server side only: a
+       * command that acts for this session presents it (set-password, B4b).
+       */
+      presentedToken: string;
       /** A newer legacy login sat beside this stale first-party cookie and could not be bridged now. */
       newerLegacyLoginUnresolved: boolean;
     }
@@ -97,6 +103,7 @@ async function resolveOnce(incoming: Headers, bridges: boolean): Promise<ServerB
     kind: 'active',
     session: resolution.session,
     accessToken: grant.accessToken,
+    presentedToken: resolution.token,
     newerLegacyLoginUnresolved: resolution.newerLegacyLoginUnresolved === true,
   };
 }

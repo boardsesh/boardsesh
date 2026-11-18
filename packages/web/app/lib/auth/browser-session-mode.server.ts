@@ -63,7 +63,6 @@ export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
  * tests build a resolver with another list (`browserSessionRouteModeResolver`).
  */
 export const BROWSER_SESSION_WEB_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([
-  'B4_WWW_SERVER_RENDERS_ON_CANONICAL_SESSION',
   'B5B_WWW_PROVIDER_SIGN_IN',
   'B6_PARTNER_CONSENT',
   'B7_BROWSER_ACCEPTANCE',

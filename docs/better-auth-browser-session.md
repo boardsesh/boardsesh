@@ -320,12 +320,12 @@ one more `session`); the page's own session read sends one `session`, and its
 ws-auth two. These are www-to-backend commands, each one admission read on the
 backend (#7787's coalescer covers the per-request token reads that follow).
 
-Two readers stay on the legacy cookie on purpose: the native transfer callback
-(`api/auth/native/callback`) reads the legacy cookie in every mode, because it
-runs right after a Google or Apple sign-in that wrote that cookie (with
-`nativeOAuthCreationProof`, which no first-party session read carries) and,
-under `better-auth`, cleared both first-party names; issuing a first-party
-session there is B4c. The provider link guard (`oauth-link-guard.server.ts`)
+The native transfer callback (`api/auth/native/callback`, where the app's
+browser sign-in ends and the app's transfer token is minted) reads the same
+request resolution under `better-auth` since B4c-web: the account, session id,
+generation, sign-in time and link guard of the token come from the canonical
+session (see "The native app's transfer token under `better-auth`"). The
+provider link guard (`oauth-link-guard.server.ts`)
 reads the cookie NextAuth's own provider callback links into, which stays the
 legacy cookie until B5. The partner sign-in and consent pages read the same
 request resolution (sign-in time and link guard from the session row, as
@@ -598,8 +598,69 @@ deep-link listener that used it was deleted (d5a8336c88), and the Expo app
 exchanges the token at the backend's `/auth/native/exchange` and never used the
 provider. So there is no backend command that turns a transfer token into a web
 session, and under `AUTH_BROWSER_SESSION_MODE=better-auth` www refuses the
-`native-oauth` provider (the web half does that) instead of minting a NextAuth
-session no backend session stands behind.
+`native-oauth` provider instead of minting a NextAuth session no backend
+session stands behind: its `authorize` answers the existing failure before any
+work, with no backend call and no cookie change (B4c-web).
+
+### The native app's transfer token under `better-auth` (B4c-web)
+
+`/api/auth/native/callback` stays live in every mode: every app sign-in ends
+there, in the app's browser, and the page mints the transfer token the app
+exchanges at the backend. Under `better-auth` it reads the request's one
+canonical resolution (a legacy-only browser is bridged without a cookie) and
+signs the token from it: account, session id, generation, sign-in time and
+link guard, the same values the session read and partner consent see. A signed
+out browser answers `session_missing`; a request known only by its legacy
+cookie (its bridge over budget or failing) or a backend outage answers
+`session_unavailable`.
+
+The legacy cookie is still read for one thing: the account-creation receipt
+(`nativeOAuthCreationProof`) a Google or Apple sign-in puts on its legacy twin,
+which no session read carries. It is used only when that cookie names the same
+login (`sub` and `authSessionId` equal the canonical session's). A legacy cookie
+of any other login, or one that does not decode, refuses the token
+(`token_issue_failed`): the page never mixes two logins. The backend change
+that would end this read: the web OAuth `resolve` command knows whether it
+created the account, so it would store the receipt (provider, creation time,
+sign-in time) with the session it issues, and the session read would return it
+while that sign-in is minutes old.
+
+A token minted from a bridged session of a cookie without a session id carries
+that bridged row's `credential:` id and no `legacy_no_sid` mark, so the
+native session it starts ends by that id alone, never by an account cutoff. With
+the mode unset the page answers byte for byte as before
+(`native-callback.integration.proof.ts` pins status, headers, body and the
+token's claims).
+
+### Set-password on www under `better-auth` (B4b-web)
+
+`/api/internal/set-password` presents the request's one resolution (the one the
+route already read its viewer from) to the staged command's `presented` form,
+canonical token only, with that resolution's user id and session id as the
+expected login. Outcomes:
+
+- `set`: the proof's user and session ids are checked against the session and
+  the proof is dropped; the answer is `{ "outcome": "set" }` with no
+  `Set-Cookie` at all. The card asks for a new 15-minute token at once
+  (`refreshAccessTokenAfterCredentialChange`) and stays signed in, with no
+  reload. The old token is refused from then on.
+- `reauthentication_required` (a bridged or carried session, or a login over
+  five minutes old): 403 and nothing written. The card offers today's way back
+  in: sign out, then the login page with the password and Google buttons and a
+  callback to Settings. A forced Google reauthentication arrives with B5e1;
+  until then a Google sign-in the browser completes silently is `carried` and
+  is asked again.
+- `already_set` (a retry after a lost reply): 409 with `code: "already_set"`,
+  which the card shows as done.
+- `identity_changed`, or a body naming another login than the cookie: 409 with
+  `reload: "root"`; the card reloads from the locale root.
+- A request known only by its legacy cookie (the page's own session read bridges
+  first, so this means the bridge is over budget or failing), a lost or failed
+  reply: 503 and no cookie change. The legacy cookie is never acted on.
+
+After a rollback, a browser that set a password since cutover signs in again:
+its legacy twin is at the old generation.
+
 
 ### The private commands B1 calls
 
@@ -684,7 +745,7 @@ anything about the session; freshness and source come from the session row.
 | `POST /api/auth/signout` | The same form fields and the same 400, 409 and 503 answers as today. No session, or a conflicted login cookie, is 409. NextAuth's own handler still checks the CSRF token; a refusal goes back without revocation or clears. The backend `signout` command gets the first-party token when there is one, else the legacy cookie, with the expected viewer. `signed_out` clears both legacy names with every chunk (today's clears) and both first-party names in both scopes, plus the plain names the request carried. `identity_changed` is 409 and an outage is 503, and neither clears anything. NextAuth refuses a bad CSRF token by answering exactly `<NEXTAUTH_URL>/api/auth/signout?csrf=true`; only that answer counts as a refusal. |
 | `GET` or `POST /api/auth/session` | With a first-party cookie, the backend `session` command answers in today's JSON shape: `user { name, email, image, id }`, `expires`, `authGeneration` and `authSessionId`, which the session guard keys on. No live session is `{}`, an outage is 503. A GET with only a legacy cookie bridges it (B2b, below); a POST answers it from the legacy path as before. Only the three planned cases of the bridge (below) write or clear a session cookie: NextAuth's rewrite of the legacy cookie is removed. |
 | `GET /api/auth/csrf` | The legacy path with every session `Set-Cookie` removed. |
-| Everything else | The legacy path unchanged. Google, Apple and the native transfer still write only the legacy cookie until B4c and B5; when such a reply writes it, both first-party names are cleared in both scopes too, because it is a login and a stale login cookie would otherwise outrank it. |
+| Everything else | The legacy path. Google and Apple publish their own first-party session with its legacy twin (B5b). The native transfer provider is refused (B4c-web). |
 
 A command reply counts only when its body parses as that command's reply, with
 the status that reply is sent with. The transport's 401
@@ -1313,9 +1374,9 @@ start through `/api/auth/signin/*` is an explicit sign-in
   check. A forced reauthentication (`max_age=0`) is B5e1's entry point
   (`googleSessionAuthorizationParams({ reauthenticate: true })`). Apple
   sign-ins are always `carried`.
-- The B1c rule that clears the first-party names on a legacy provider login
-  now applies only to providers that still sign in on the legacy cookie alone
-  (the native transfer until B4c), not to Google or Apple.
+- The B1c rule that cleared the first-party names on a legacy provider login
+  is gone: Google and Apple publish their own session, and the native transfer
+  provider is refused under `better-auth` (B4c-web).
 - The NextAuth link guard (`oauth-link-guard.server.ts`) runs only on the
   legacy web OAuth path, which under `better-auth` answers 503 instead.
 

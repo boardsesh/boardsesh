@@ -130,6 +130,10 @@ providers.push(
       transferToken: { label: 'Transfer Token', type: 'text' },
     },
     async authorize(credentials) {
+      // Under AUTH_BROWSER_SESSION_MODE=better-auth (or any value but legacy) www
+      // refuses this provider (#7596 B4c-web): nothing has called it since
+      // 2026-08-15, and a transfer token would otherwise mint a second session.
+      if (browserSessionModeRequiresProof()) return null;
       if (!credentials?.transferToken) {
         return null;
       }

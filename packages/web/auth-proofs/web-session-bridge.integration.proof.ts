@@ -65,7 +65,6 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
 import { BRIDGES_PER_CLIENT } from '../app/lib/auth/browser-session-bridge.server';
-import { issueNativeOAuthTransferToken } from '../app/lib/auth/native-oauth-transfer';
 
 const secret = 'web-session-bridge-proof-nextauth-secret-7596';
 const { csrf, login, readSession } = browserSteps(authRoute);
@@ -184,33 +183,6 @@ describe('a browser signed in before the switch', () => {
     expect(body.user?.id).toBe(claimless.id);
     expect(body.authSessionId).toMatch(/^credential:/);
     expect(bridgedCookieOf(claimlessRead)).toBeDefined();
-  });
-
-  it('after a provider login (the native transfer) is bridged on its first read', async () => {
-    const climber = await createClimber(environment.database);
-    const jar = new CookieJar();
-    const transferToken = issueNativeOAuthTransferToken({
-      userId: climber.id,
-      nextPath: '/',
-      credentialProof: {
-        version: 1,
-        userId: climber.id,
-        authSessionId: randomUUID(),
-        generation: 0,
-        authenticatedAt: null,
-        linkGuarded: false,
-      },
-    });
-    const csrfToken = await csrf(jar);
-    jar.apply(
-      await callRoute(authRoute, '/api/auth/callback/native-oauth', {
-        cookie: jar.header(),
-        form: { csrfToken, transferToken, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
-      }),
-    );
-    const first = await bridgingRead(jar.header());
-    expect(((await first.json()) as SessionJson).user?.id).toBe(climber.id);
-    expect(bridgedCookieOf(first)).toBeDefined();
   });
 
   it('whose cookie the backend denies (a rollback cookie of a login) reads as signed out and its chunks are cleared', async () => {

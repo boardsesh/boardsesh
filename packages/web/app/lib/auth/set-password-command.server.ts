@@ -5,6 +5,7 @@ import { setPasswordMode, webCredentialProofSchema, type WebCredentialProof } fr
 import { capturePresentedWebCredential } from './admitted-session.server';
 import { admitPresentedWebCredential } from './credential-admission.server';
 import { createPasswordCommandClient, AuthBackendUnavailableError } from './password-command-client.server';
+import { browserSessionRouteMode } from './browser-session-mode.server';
 import { isSecureCookieContext, sessionCookieDomain } from './secure-cookies';
 
 /** Preserve the exact session lineage, auth age and original expiry after the committed mutation. */
@@ -66,12 +67,68 @@ async function replacementResponse(
   return response;
 }
 
+/**
+ * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B4b): the request's one
+ * session resolution (the same the route read its viewer from) is presented,
+ * canonical token only. A request known only by its legacy cookie (its bridge
+ * over budget, failing, or this being a write) is refused as unavailable, never
+ * acted on with that cookie; the page's own session read bridges a legacy-only
+ * browser first, and the backend answers a bridged session
+ * `reauthentication_required`. The expected login is this resolution's; a tab
+ * that expected another answers `identity_changed` and reloads from the root.
+ * No outcome writes or clears a session cookie: the session keeps its token,
+ * and the proof in a `set` reply is checked against the session, then dropped.
+ */
+async function delegateForBrowserSession(
+  password: string,
+  confirmPassword: string,
+  expected?: { userId: string; authSessionId: string },
+): Promise<NextResponse> {
+  const { serverBrowserSession } = await import('./server-browser-session.server');
+  const resolved = await serverBrowserSession({ method: 'POST' });
+  if (!resolved || resolved.kind === 'legacy') throw new AuthBackendUnavailableError();
+  if (resolved.kind === 'signed-out') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { session } = resolved;
+  if (expected?.userId !== session.userId || expected.authSessionId !== session.authSessionId)
+    return NextResponse.json({ error: 'identity_changed', reload: 'root' }, { status: 409 });
+  const reply = await createPasswordCommandClient().setPasswordForSession(
+    { kind: 'canonical-token', token: resolved.presentedToken },
+    password,
+    confirmPassword,
+    session.userId,
+    session.authSessionId,
+  );
+  if (reply.outcome === 'set') {
+    const proof = webCredentialProofSchema.parse(reply.credentialProof);
+    if (proof.userId !== session.userId || proof.authSessionId !== session.authSessionId)
+      throw new AuthBackendUnavailableError();
+    return NextResponse.json({ outcome: 'set' });
+  }
+  if (reply.outcome === 'reauthentication_required')
+    return NextResponse.json({ error: reply.outcome }, { status: 403 });
+  if (reply.outcome === 'unauthenticated') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (reply.outcome === 'identity_changed')
+    return NextResponse.json({ error: reply.outcome, reload: 'root' }, { status: 409 });
+  // A retry after a lost reply finds the password set: the card shows it done.
+  if (reply.outcome === 'already_set')
+    return NextResponse.json({ error: 'Password already set.', code: 'already_set' }, { status: 409 });
+  if (reply.outcome === 'error' && reply.code === 'rate_limited')
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': String(reply.retryAfterSeconds) } },
+    );
+  throw new AuthBackendUnavailableError();
+}
+
 async function delegate(
   request: NextRequest,
   password: string,
   confirmPassword: string,
   expected?: { userId: string; authSessionId: string },
 ): Promise<NextResponse | null> {
+  const browserSession = browserSessionRouteMode();
+  if (browserSession.kind === 'unavailable') throw new AuthBackendUnavailableError();
+  if (browserSession.kind === 'better-auth') return delegateForBrowserSession(password, confirmPassword, expected);
   if (setPasswordMode(process.env) === 'legacy') return null;
   if (!expected?.userId || !expected.authSessionId)
     return NextResponse.json({ error: 'identity_changed' }, { status: 409 });

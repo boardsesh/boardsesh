@@ -24,6 +24,7 @@ import {
   isWriteRefused,
 } from '@/app/lib/auth/session-guard';
 import { refreshAccessTokenAfterCredentialChange } from '@/app/lib/auth/browser-access-token';
+import { reloadAfterAccountChange } from '@/app/lib/auth/reload-after-account-change';
 import ReloadPageAlert, { TryAgainAlert } from './reload-page-alert';
 
 type SetPasswordSectionProps = {
@@ -119,6 +120,19 @@ export default function SetPasswordSection({
 
       if (response.status === 401 || (response.status === 403 && data.error === 'reauthentication_required')) {
         setReauthenticationRequired(true);
+        return;
+      }
+      // Under the first-party session the server names the reload: the tab shows another login (#7596 B4b).
+      if (response.status === 409 && data.error === 'identity_changed' && data.reload === 'root') {
+        reloadAfterAccountChange();
+        return;
+      }
+      // A retry after a lost reply: the password was set the first time.
+      if (response.status === 409 && data.code === 'already_set') {
+        showMessage(t('password.success'), 'success');
+        setPassword('');
+        setConfirmPassword('');
+        onPasswordSet();
         return;
       }
       if (response.status === 409 && data.error === 'identity_changed') {

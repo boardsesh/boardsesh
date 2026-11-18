@@ -19,6 +19,7 @@ import {
   type ForgotPasswordReply,
   type ResetPasswordReply,
   type SetPasswordReply,
+  type PresentedWebSession,
   type WebSessionRequest,
 } from '@boardsesh/auth-protocol';
 
@@ -97,6 +98,18 @@ export type SetPasswordCommandClient = {
     expectedUserId: string,
     expectedAuthSessionId: string,
   ): Promise<SetPasswordReply>;
+  /**
+   * The second form (#7596 B4b): presents the session as the web-session
+   * commands do. A canonical token keeps its session and token through the
+   * password write; www writes no cookie from the reply.
+   */
+  setPasswordForSession(
+    presented: PresentedWebSession,
+    password: string,
+    confirmPassword: string,
+    expectedUserId: string,
+    expectedAuthSessionId: string,
+  ): Promise<SetPasswordReply>;
 };
 export type PasswordRecoveryCommandClient = {
   forgotPassword(payload: unknown): Promise<ForgotPasswordReply>;
@@ -148,6 +161,15 @@ export function createPasswordCommandClient(
   }
 
   return {
+    async setPasswordForSession(presented, password, confirmPassword, expectedUserId, expectedAuthSessionId) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'set-password',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload: { presented, password, confirmPassword, expectedUserId, expectedAuthSessionId },
+      })) as SetPasswordReply;
+    },
     async setPassword(credential, password, confirmPassword, expectedUserId, expectedAuthSessionId) {
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,

@@ -218,8 +218,8 @@ async function readSession(
  * The `/api/auth/*` route when `AUTH_BROWSER_SESSION_MODE` is not `legacy`.
  * Login, sign-out and the session read move to the first-party cookie; csrf
  * keeps the legacy path without any session `Set-Cookie`; everything else
- * (providers, Google and Apple, the native transfer) keeps the legacy path
- * until B4 and B5 move it.
+ * (providers, Google and Apple through their own session publication, the
+ * refused native transfer) goes through the legacy path.
  */
 export async function routeBrowserSessionAuth(
   request: NextRequest,
@@ -235,15 +235,8 @@ export async function routeBrowserSessionAuth(
   if (request.method === 'POST' && action === 'signout') return signOut(request, context, mode.cookies, legacy);
   if (action === 'session') return readSession(request, mode.cookies, legacy.legacyRoute);
   if (action === 'csrf') return withoutSessionSetCookies(await legacy.legacyRoute());
-  const response = await legacy.legacyRoute();
   // Google and Apple publish their own first-party session with the legacy
-  // twin (B5b, `web-oauth-session.server.ts`). Any other provider login (the
-  // native transfer, until B4c) still signs in on the legacy cookie alone;
-  // that reply is a login, so it also ends any first-party cookie the browser
-  // holds, as a stale one would otherwise outrank this newer login.
-  if (provider === 'google' || provider === 'apple') return response;
-  if (responseSetsSessionCookie(response))
-    for (const clear of signOutBrowserSessionCookieClears(mode.cookies, requestCookieNames(request)))
-      response.headers.append('Set-Cookie', clear);
-  return response;
+  // twin (B5b, `web-oauth-session.server.ts`). The native transfer provider is
+  // refused under this mode (B4c-web), so no other provider login remains.
+  return legacy.legacyRoute();
 }
