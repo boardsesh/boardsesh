@@ -18,10 +18,16 @@ import { users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { CookieJar, ORIGIN, callRoute, patchNextRequestIo, servedRequests } from './route-harness';
+import { signBrowserSessionCookie } from '@boardsesh/auth-protocol/browser-session-cookie';
+import { captureIdentityAuthority } from '../../backend/src/auth/authority/router';
+import { issueWebSession } from '../../backend/src/auth/authority/web-session';
+import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../backend/src/auth/current-store/foundation-context';
 import {
+  COOKIE_SECRET,
   DOMAIN,
   LEGACY,
   LOGIN,
+  PROJECTION_ID,
   browserSteps,
   createClimber,
   randomClientAddress,
@@ -76,6 +82,7 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
 import * as nativeCallbackRoute from '../app/api/auth/native/callback/route';
+import { BRIDGES_PER_CLIENT } from '../app/lib/auth/browser-session-bridge.server';
 import {
   NATIVE_OAUTH_ATTEMPT_COOKIE,
   issueNativeOAuthAttempt,
@@ -113,9 +120,9 @@ function betterAuth(): void {
 }
 
 /** The app's browser lands on the callback carrying `cookie`, as Next serves it. */
-async function nativeCallback(cookie: string, query = 'next=%2Fafter') {
+async function nativeCallback(cookie: string, query = 'next=%2Fafter', clientAddress = randomClientAddress()) {
   const request = new NextRequest(new URL(`/api/auth/native/callback?${query}`, ORIGIN), {
-    headers: { cookie, 'x-forwarded-for': randomClientAddress() },
+    headers: { cookie, 'x-forwarded-for': clientAddress },
   });
   return servedRequests.run(request, () => nativeCallbackRoute.GET(request));
 }
@@ -147,26 +154,35 @@ async function legacyLogin(claims: Partial<JWT> = {}) {
 const NORMALIZED = (claims: Record<string, unknown> | null) =>
   JSON.parse(
     JSON.stringify(claims, (key, field: unknown) =>
-      ['userId', 'authSessionId'].includes(key) ? '<id>' : ['iat', 'exp'].includes(key) ? '<seconds>' : field,
+      ['userId', 'authSessionId'].includes(key)
+        ? '<id>'
+        : ['iat', 'exp', 'auth_time'].includes(key)
+          ? '<seconds>'
+          : field,
     ),
   ) as unknown;
 
+/** What the app's browser gets from the callback after a password login, as comparable data. */
+async function unsetModeAnswer() {
+  const climber = await createClimber(environment.database);
+  const jar = new CookieJar();
+  await login(jar, climber.email);
+  const response = await nativeCallback(jar.header());
+  const { url, claims } = await deepLink(response.clone());
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type'),
+    cacheControl: response.headers.get('cache-control'),
+    setCookie: response.headers.getSetCookie(),
+    deepLink: `${url.protocol}//${url.host}${url.pathname}?next=${url.searchParams.get('next')}`,
+    claims: NORMALIZED(claims),
+    userIsTheClimber: claims?.userId === climber.id,
+  };
+}
+
 describe('the native callback with the mode unset (live today)', () => {
   it('answers and mints exactly as on main', async () => {
-    const climber = await createClimber(environment.database);
-    const jar = new CookieJar();
-    await login(jar, climber.email);
-    const response = await nativeCallback(jar.header());
-    const { url, claims } = await deepLink(response.clone());
-    expect({
-      status: response.status,
-      contentType: response.headers.get('content-type'),
-      cacheControl: response.headers.get('cache-control'),
-      setCookie: response.headers.getSetCookie(),
-      deepLink: `${url.protocol}//${url.host}${url.pathname}?next=${url.searchParams.get('next')}`,
-      claims: NORMALIZED(claims),
-      userIsTheClimber: claims?.userId === climber.id,
-    }).toMatchInlineSnapshot(`
+    expect(await unsetModeAnswer()).toMatchInlineSnapshot(`
       {
         "cacheControl": "no-store",
         "claims": {
@@ -185,6 +201,37 @@ describe('the native callback with the mode unset (live today)', () => {
       }
     `);
     expect((await deepLink(await nativeCallback(''))).error).toBe('session_missing');
+  });
+
+  it.each(['', 'legacy'])('answers with the mode %j exactly as unset', async (mode) => {
+    const unset = await unsetModeAnswer();
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
+    expect(await unsetModeAnswer()).toEqual(unset);
+  });
+
+  it("mints from the legacy cookie's proof claims with staged sign-in and proofs required, as on main", async () => {
+    stubBetterAuthEnvironment(backend.origin);
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', undefined);
+    expect(await unsetModeAnswer()).toMatchInlineSnapshot(`
+      {
+        "cacheControl": "no-store",
+        "claims": {
+          "authSessionId": "<id>",
+          "auth_time": "<seconds>",
+          "exp": "<seconds>",
+          "gen": 0,
+          "iat": "<seconds>",
+          "link_guarded": true,
+          "nextPath": "/after",
+          "userId": "<id>",
+        },
+        "contentType": "text/html; charset=utf-8",
+        "deepLink": "com.boardsesh.app://auth/callback?next=/after",
+        "setCookie": [],
+        "status": 200,
+        "userIsTheClimber": true,
+      }
+    `);
   });
 });
 
@@ -222,12 +269,66 @@ describe('the native callback under better-auth', () => {
     expect(error).toBe('token_issue_failed');
   });
 
-  it('bridges a browser signed in before the switch and mints from that session, writing no cookie', async () => {
-    const { climber, authSessionId, credential } = await legacyLogin();
+  it('bridges a browser signed in before the switch and mints from that session, with no sign-in time, writing no cookie', async () => {
+    // A guarded legacy sign-in: the bridged row keeps its time, but a bridge is never a real login.
+    const { climber, authSessionId, credential } = await legacyLogin({ link_guarded: true });
     const response = await nativeCallback(`${LEGACY}=${credential}`);
     expect(sessionCookieNamesIn(response)).toEqual([]);
     const { claims } = await deepLink(response);
     expect(claims).toMatchObject({ userId: climber.id, authSessionId, gen: 0 });
+    expect(claims).not.toHaveProperty('auth_time');
+    expect(claims).not.toHaveProperty('link_guarded');
+  });
+
+  it('mints a carried session (a silent Google or an Apple sign-in) with no sign-in time and no link guard', async () => {
+    const climber = await createClimber(environment.database);
+    const authority = await environment.database.transaction((transaction) =>
+      captureIdentityAuthority(transaction, {
+        expectedProjectionId: PROJECTION_ID,
+        expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+      }),
+    );
+    const issued = await environment.database.transaction((transaction) =>
+      issueWebSession(transaction, {
+        userId: climber.id,
+        authority,
+        now: new Date(),
+        authenticatedAt: new Date(),
+        freshness: 'carried',
+      }),
+    );
+    const response = await nativeCallback(`${LOGIN}=${signBrowserSessionCookie('login', issued.token, COOKIE_SECRET)}`);
+    const { claims } = await deepLink(response);
+    expect(claims).toMatchObject({ userId: climber.id, authSessionId: issued.sessionId });
+    expect(claims).not.toHaveProperty('auth_time');
+    expect(claims).not.toHaveProperty('link_guarded');
+  });
+
+  it('answers session_unavailable when the session is known only by its legacy cookie (bridge over budget)', async () => {
+    const { credential } = await legacyLogin();
+    const clientAddress = randomClientAddress();
+    let last = await nativeCallback(`${LEGACY}=${credential}`, 'next=%2Fafter', clientAddress);
+    for (let count = 0; count < BRIDGES_PER_CLIENT && (await deepLink(last.clone())).error === null; count += 1)
+      last = await nativeCallback(`${LEGACY}=${credential}`, 'next=%2Fafter', clientAddress);
+    expect((await deepLink(last)).error).toBe('session_unavailable');
+  });
+
+  it.each([
+    ['does not decode', async () => 'not-a-legacy-cookie'],
+    [
+      'names the same account but another session',
+      async (userId: string) =>
+        (await legacyLogin({ sub: userId, auth_time: Math.floor(Date.now() / 1000) - 7200 })).credential,
+    ],
+  ])('refuses when the legacy cookie beside the session %s', async (_case, legacyFor) => {
+    const climber = await createClimber(environment.database);
+    const jar = new CookieJar();
+    await login(jar, climber.email);
+    const legacy = await legacyFor(climber.id);
+    const response = await nativeCallback(`${LOGIN}=${jar.get(LOGIN, DOMAIN)}; ${LEGACY}=${legacy}`);
+    const { error, claims } = await deepLink(response);
+    expect(claims).toBeNull();
+    expect(error).toBe('token_issue_failed');
   });
 
   it('answers session_missing when nobody is signed in', async () => {

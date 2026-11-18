@@ -86,7 +86,10 @@ async function delegateForBrowserSession(
 ): Promise<NextResponse> {
   const { serverBrowserSession } = await import('./server-browser-session.server');
   const resolved = await serverBrowserSession({ method: 'POST' });
-  if (!resolved || resolved.kind === 'legacy') throw new AuthBackendUnavailableError();
+  if (!resolved) throw new AuthBackendUnavailableError();
+  // Known only by its legacy cookie: never acted on. Not "try again" either, as a
+  // browser whose bridge never sets a cookie would never get past it: sign in again.
+  if (resolved.kind === 'legacy') return NextResponse.json({ error: 'reauthentication_required' }, { status: 403 });
   if (resolved.kind === 'signed-out') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { session } = resolved;
   if (expected?.userId !== session.userId || expected.authSessionId !== session.authSessionId)

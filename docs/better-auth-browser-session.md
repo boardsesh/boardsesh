@@ -608,8 +608,11 @@ work, with no backend call and no cookie change (B4c-web).
 there, in the app's browser, and the page mints the transfer token the app
 exchanges at the backend. Under `better-auth` it reads the request's one
 canonical resolution (a legacy-only browser is bridged without a cookie) and
-signs the token from it: account, session id, generation, sign-in time and
-link guard, the same values the session read and partner consent see. A signed
+signs the token from it: account, session id and generation, the same values
+the session read and partner consent see. The sign-in time and the link guard
+go into the token only for a real login (`source: "login"`); a carried session
+(every Apple sign-in, a silent Google one) or a bridged one hands the app
+neither, as the 15-minute browser token drops them too. A signed
 out browser answers `session_missing`; a request known only by its legacy
 cookie (its bridge over budget or failing) or a backend outage answers
 `session_unavailable`.
@@ -625,12 +628,16 @@ created the account, so it would store the receipt (provider, creation time,
 sign-in time) with the session it issues, and the session read would return it
 while that sign-in is minutes old.
 
-A token minted from a bridged session of a cookie without a session id carries
-that bridged row's `credential:` id and no `legacy_no_sid` mark, so the
-native session it starts ends by that id alone, never by an account cutoff. With
-the mode unset the page answers byte for byte as before
+A browser still holding a legacy cookie without a session id is refused here:
+its bridged row's id is `credential:<hash>`, which never equals the cookie's own
+(absent or assigned) `authSessionId`, so the twin check fails. The app flow does
+not reach that state, because a sign-in always comes first and rewrites both
+cookies. The app's native session always gets its own new id at the exchange;
+the source session id in the token is only checked once there, for a denial.
+With the mode unset the page answers byte for byte as before
 (`native-callback.integration.proof.ts` pins status, headers, body and the
-token's claims).
+token's claims, with the mode unset, empty and `legacy`, and with proofs
+required).
 
 ### Set-password on www under `better-auth` (B4b-web)
 
@@ -650,13 +657,17 @@ expected login. Outcomes:
   callback to Settings. A forced Google reauthentication arrives with B5e1;
   until then a Google sign-in the browser completes silently is `carried` and
   is asked again.
-- `already_set` (a retry after a lost reply): 409 with `code: "already_set"`,
-  which the card shows as done.
+- `already_set` (a retry after a lost reply, or a password another tab set):
+  409 with `code: "already_set"`. The card never claims this password was
+  saved: it switches to its "password login is enabled" state, and asks for a
+  new 15-minute token, as the earlier write moved the generation.
 - `identity_changed`, or a body naming another login than the cookie: 409 with
   `reload: "root"`; the card reloads from the locale root.
 - A request known only by its legacy cookie (the page's own session read bridges
-  first, so this means the bridge is over budget or failing), a lost or failed
-  reply: 503 and no cookie change. The legacy cookie is never acted on.
+  first, so this means the bridge is over budget or failing, or never sets a
+  cookie): 403 `reauthentication_required`, nothing written, the legacy cookie
+  never acted on. Not "try again", which such a browser would never get past.
+- A lost or failed reply: 503 and no cookie change.
 
 After a rollback, a browser that set a password since cutover signs in again:
 its legacy twin is at the old generation.

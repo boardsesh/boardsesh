@@ -251,7 +251,7 @@ describe('set-password under better-auth', () => {
     expect(await hasPassword(climber.id)).toBe(false);
   });
 
-  it('refuses a request known only by its legacy cookie, never acting on that cookie', async () => {
+  it('asks a request known only by its legacy cookie to sign in again, never acting on that cookie', async () => {
     const climber = await createClimber(environment.database);
     await environment.database.delete(userCredentials).where(eq(userCredentials.userId, climber.id));
     const authSessionId = randomUUID();
@@ -260,8 +260,10 @@ describe('set-password under better-auth', () => {
       secret,
       maxAge: 3600,
     });
-    const { response, status } = await setPassword(`${LEGACY}=${legacy}`, { userId: climber.id, authSessionId });
-    expect(status).toBe(503);
+    const { response, status, body } = await setPassword(`${LEGACY}=${legacy}`, { userId: climber.id, authSessionId });
+    // Not "try again": a browser whose bridge never sets a cookie would never get past it.
+    expect(status).toBe(403);
+    expect(body).toEqual({ error: 'reauthentication_required' });
     expect(response.headers.getSetCookie()).toEqual([]);
     expect(await hasPassword(climber.id)).toBe(false);
   });

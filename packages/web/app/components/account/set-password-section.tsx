@@ -127,9 +127,11 @@ export default function SetPasswordSection({
         reloadAfterAccountChange();
         return;
       }
-      // A retry after a lost reply: the password was set the first time.
+      // The account already has a password (a retry after a lost reply, or another tab).
+      // Never claim this password was saved: show the card's "password login is
+      // enabled" state instead. The earlier write moved the generation.
       if (response.status === 409 && data.code === 'already_set') {
-        showMessage(t('password.success'), 'success');
+        void refreshAccessTokenAfterCredentialChange();
         setPassword('');
         setConfirmPassword('');
         onPasswordSet();

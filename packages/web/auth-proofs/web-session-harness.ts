@@ -38,6 +38,8 @@ export const DOMAIN = '.boardsesh.com';
 
 const rpcSecret = randomBytes(32).toString('base64url');
 const projectionId = `web-session-proof-${randomUUID()}`;
+/** The enforced projection the harness backend runs under, for proofs that issue a session directly. */
+export const PROJECTION_ID = projectionId;
 const sockets = new Set<Socket>();
 
 async function listen(handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) {

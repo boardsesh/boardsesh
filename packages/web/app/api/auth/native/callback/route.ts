@@ -111,10 +111,14 @@ async function canonicalNativeCallback(request: NextRequest, nextPath: string): 
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_unavailable`);
   if (resolved.kind === 'signed-out') return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
   const { session } = resolved;
+  // Outside the `try`: an authority outage reading the cookie is `session_unavailable` (GET's catch).
+  const twin = await capturePresentedWebCredential(request);
+  // Only a real login hands the app a sign-in time and a link guard; a carried or
+  // bridged session never does, as the 15-minute token drops them (#7802 review M1).
+  const realLogin = session.source === 'login';
   let transferToken: string;
   try {
     let creationProof: CreationProof | undefined;
-    const twin = await capturePresentedWebCredential(request);
     if (twin) {
       if (!process.env.NEXTAUTH_SECRET) throw new Error('Source credential unavailable');
       const claims = await decode({ token: twin.credential, secret: process.env.NEXTAUTH_SECRET });
@@ -127,8 +131,8 @@ async function canonicalNativeCallback(request: NextRequest, nextPath: string): 
       userId: session.userId,
       authSessionId: session.authSessionId,
       generation: session.generation,
-      authenticatedAt: session.authenticatedAt,
-      linkGuarded: session.linkGuarded,
+      authenticatedAt: realLogin ? session.authenticatedAt : null,
+      linkGuarded: realLogin && session.linkGuarded,
     });
     transferToken = issueNativeOAuthTransferToken({
       userId: session.userId,
