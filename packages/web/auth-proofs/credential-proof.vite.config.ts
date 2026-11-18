@@ -20,7 +20,11 @@ export default defineConfig(async (environment) => {
       ...web.test,
       name: 'auth-web-credential-proof',
       environment: 'node',
-      include: ['auth-proofs/*.integration.proof.ts'],
+      include: [
+        'auth-proofs/web-credential-proof.integration.proof.ts',
+        'auth-proofs/legacy-route-snapshot.integration.proof.ts',
+        'auth-proofs/web-session-cookie.integration.proof.ts',
+      ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30000,
       hookTimeout: 60000,

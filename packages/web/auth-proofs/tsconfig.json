@@ -5,7 +5,9 @@
     "types": ["node"]
   },
   "include": [
-    "*.integration.proof.ts",
+    "web-credential-proof.integration.proof.ts",
+    "legacy-route-snapshot.integration.proof.ts",
+    "web-session-cookie.integration.proof.ts",
     "route-harness.ts",
     "credential-proof.vite.config.ts",
     "../app/lib/auth/types.ts"
