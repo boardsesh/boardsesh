@@ -11,7 +11,7 @@ import {
   authSubjectCutoffs,
   users,
 } from '@boardsesh/db/schema';
-import { createEnvironment } from './environment';
+import { createEnvironment, testBridgeTokenKey } from './environment';
 import { denyFirstPartySession } from '../lineage';
 import { bridgeLegacyCredential } from '../bridge';
 import { readFirstPartySession, requireFreshAuthentication } from '../session-reader';
@@ -69,13 +69,13 @@ it('does not promote unguarded legacy auth_time into fresh authentication', asyn
   );
   expect(legacy.status).toBe('admitted');
   if (legacy.status === 'admitted') expect(requireFreshAuthentication(legacy.session, now)).toBe(false);
-  const bridged = await bridgeLegacyCredential(environment.database, proof, secret, 'on', now);
+  const bridged = await bridgeLegacyCredential(environment.database, proof, secret, testBridgeTokenKey, 'on', now);
   expect(bridged.status).toBe('bridged');
   if (bridged.status === 'bridged') {
     expect(bridged.session.createdAt.getTime()).toBe(0);
     const canonical = await readFirstPartySession(
       environment.database,
-      { kind: 'canonical-token', token: bridged.token ?? '' },
+      { kind: 'canonical-token', token: bridged.token },
       now,
     );
     expect(canonical.status).toBe('admitted');
@@ -88,13 +88,14 @@ it('accepts a renewed signed cookie on the same SID after the original canonical
     environment.database,
     await cookie(userId, sessionId, now, 120),
     secret,
+    testBridgeTokenKey,
     'on',
     now,
   );
   expect(first.status).toBe('bridged');
   const later = new Date(now.getTime() + 130000);
   const renewed = await cookie(userId, sessionId, later, 3600, later.getTime() / 1000, true);
-  const answer = await bridgeLegacyCredential(environment.database, renewed, secret, 'on', later);
+  const answer = await bridgeLegacyCredential(environment.database, renewed, secret, testBridgeTokenKey, 'on', later);
   expect(answer.status).toBe('bridged');
   if (answer.status === 'bridged' && first.status === 'bridged') {
     expect(answer.session.id).toBe(first.session.id);
@@ -160,7 +161,7 @@ it('serializes simultaneous first bridges even when canonical insertion is delay
   );
   try {
     const answers = await Promise.all(
-      [1, 2].map(() => bridgeLegacyCredential(environment.database, proof, secret, 'on', now)),
+      [1, 2].map(() => bridgeLegacyCredential(environment.database, proof, secret, testBridgeTokenKey, 'on', now)),
     );
     expect(answers.map((answer) => answer.status)).toEqual(['bridged', 'bridged']);
     expect(await environment.database.select().from(authSession).where(eq(authSession.userId, userId))).toHaveLength(1);
@@ -193,7 +194,7 @@ it('waits for a committed reset and refuses its old generation without creating 
     await held;
   });
   await ready;
-  const bridging = bridgeLegacyCredential(environment.database, proof, secret, 'on', now);
+  const bridging = bridgeLegacyCredential(environment.database, proof, secret, testBridgeTokenKey, 'on', now);
   try {
     // A second client avoids consuming the two connections occupied by reset and bridge.
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -229,7 +230,7 @@ it('honors the authority gate before taking its user and lineage locks', async (
     await held;
   });
   await ready;
-  const bridging = bridgeLegacyCredential(environment.database, proof, secret, 'on', now);
+  const bridging = bridgeLegacyCredential(environment.database, proof, secret, testBridgeTokenKey, 'on', now);
   try {
     let waiting = false;
     for (let attempt = 0; attempt < 50; attempt++) {

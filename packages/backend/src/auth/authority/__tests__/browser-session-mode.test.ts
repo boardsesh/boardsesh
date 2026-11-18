@@ -5,9 +5,11 @@ import {
   BROWSER_SESSION_STARTUP_ERRORS,
   BrowserSessionStartupError,
   browserSessionModeChecker,
+  bridgeTokenKeyFromEnvironment,
   readBrowserSessionMode,
   type BrowserSessionStartupErrorCode,
 } from '../browser-session-mode';
+import { bridgedSessionToken, bridgeTokenKey } from '../session-token';
 
 // #7596 B1b: `better-auth` needs real preconditions, each refused with its own
 // code, and still refuses while later Phase B work is outstanding.
@@ -35,6 +37,7 @@ const READY: Readonly<Record<string, string>> = Object.freeze({
   NEXTAUTH_SECRET: secret('nextauth'),
   AUTH_BROWSER_SESSION_COOKIE_SECRET: secret('cookie'),
   AUTH_BROWSER_ACCESS_TOKEN_SECRET: secret('access-token'),
+  AUTH_BRIDGE_TOKEN_SECRET: secret('bridge-token'),
   CRON_SECRET: secret('cron'),
 });
 
@@ -72,6 +75,12 @@ const cases: ReadonlyArray<readonly [BrowserSessionStartupErrorCode, string, Cha
     errors.accessTokenSecret,
     'the access-token secret is padded',
     { AUTH_BROWSER_ACCESS_TOKEN_SECRET: ` ${secret('a')}` },
+  ],
+  [errors.bridgeTokenSecret, 'the bridge token secret is unset', { AUTH_BRIDGE_TOKEN_SECRET: undefined }],
+  [
+    errors.secretReused,
+    'the bridge token secret is the access-token secret',
+    { AUTH_BRIDGE_TOKEN_SECRET: READY.AUTH_BROWSER_ACCESS_TOKEN_SECRET },
   ],
   [
     errors.secretReused,
@@ -134,6 +143,27 @@ describe('the better-auth startup preconditions', () => {
   it('do not need the legacy bridge or the web sign-out writer', () => {
     const without: Change = { AUTH_LEGACY_BRIDGE_MODE: undefined, CURRENT_STORE_WEB_SIGNOUT_MODE: undefined };
     expect(refusal(() => preconditions({ ...READY, ...without }))).toBeUndefined();
+  });
+});
+
+describe('the bridge key', () => {
+  it('is derived from AUTH_BRIDGE_TOKEN_SECRET alone, whatever the browser session mode', () => {
+    const fromEnvironment = bridgeTokenKeyFromEnvironment({ ...READY, AUTH_BROWSER_SESSION_MODE: undefined });
+    const expected = bridgeTokenKey(READY.AUTH_BRIDGE_TOKEN_SECRET);
+    expect(bridgedSessionToken(fromEnvironment, 's').token).toBe(bridgedSessionToken(expected, 's').token);
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['short', short],
+    ['padded', ` ${secret('bridge')}`],
+    ['NEXTAUTH_SECRET', READY.NEXTAUTH_SECRET],
+    ['the cookie secret', READY.AUTH_BROWSER_SESSION_COOKIE_SECRET],
+    ['the RPC secret', READY.CURRENT_STORE_AUTH_RPC_SECRET],
+  ])('refuses a secret that is %s, without its value in the message', (_label, value) => {
+    expect(() => bridgeTokenKeyFromEnvironment({ ...READY, AUTH_BRIDGE_TOKEN_SECRET: value })).toThrow(
+      'Invalid AUTH_BRIDGE_TOKEN_SECRET',
+    );
   });
 });
 

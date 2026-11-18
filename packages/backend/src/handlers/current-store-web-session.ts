@@ -3,6 +3,8 @@ import type { DbInstance } from '@boardsesh/db/client';
 import {
   WEB_SESSION_COMMAND_PATHS,
   WEB_SESSION_PROTOCOL_VERSION,
+  webSessionBridgeCommandSchema,
+  webSessionBridgeReplySchema,
   webSessionMode,
   webSessionReadCommandSchema,
   webSessionReadReplySchema,
@@ -11,6 +13,7 @@ import {
   webSessionRollReplySchema,
   webSessionSignOutCommandSchema,
   webSessionSignOutReplySchema,
+  type WebSessionBridgeReply,
   type WebSessionReadReply,
   type WebSessionRollReply,
   type WebSessionSignOutCommand,
@@ -23,7 +26,9 @@ import {
 } from '../auth/current-store/authority-configuration';
 import { isWebPasswordCommandFresh } from '../auth/current-store/command-context';
 import type { ExpectedCurrentStoreAuthority } from '../auth/current-store/foundation-context';
+import { bridgeTokenKeyFromEnvironment } from '../auth/authority/browser-session-mode';
 import {
+  bridgeWebSession,
   presentedWebCredential,
   readWebSession,
   refreshWebSession,
@@ -38,6 +43,7 @@ const COMMAND_SCHEMAS = {
   session: webSessionReadCommandSchema,
   signout: webSessionSignOutCommandSchema,
   roll: webSessionRollCommandSchema,
+  bridge: webSessionBridgeCommandSchema,
 } as const;
 type WebSessionOperation = keyof typeof COMMAND_SCHEMAS;
 
@@ -58,8 +64,18 @@ function signOutRequest(payload: WebSessionSignOutCommand['payload']): WebSessio
 }
 
 /**
+ * The bridge's secrets. Missing or invalid ones make the command unavailable
+ * (503), never a denial: a denial tells www to drop the legacy cookie.
+ */
+function bridgeKeys() {
+  const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+  if (!nextAuthSecret) throw new Error('Web session authority unavailable');
+  return { nextAuthSecret, tokenKey: bridgeTokenKeyFromEnvironment(process.env) };
+}
+
+/**
  * Default-off private commands for the first-party web session (#7596):
- * session read, guarded sign-out and roll. Login is the staged password
+ * session read, guarded sign-out, roll and the legacy cookie bridge. Login is the staged password
  * command with `webSession`. No CORS, cookie or public token reaches these,
  * and no reply sets a cookie: www owns the cookie.
  */
@@ -105,7 +121,7 @@ export async function handleCurrentStoreWebSession(
   const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId: command.requestId };
   try {
     const commandDatabase = database ?? (await getCredentialDatabase());
-    let reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply;
+    let reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply | WebSessionBridgeReply;
     if (command.operation === 'session') {
       // Reads only: nothing is rolled, bridged or stamped.
       const read = await readWebSession(commandDatabase, presentedWebCredential(command.payload.presented));
@@ -134,6 +150,22 @@ export async function handleCurrentStoreWebSession(
         operation: 'signout',
         outcome: outcome === 'signed-out' ? 'signed_out' : 'identity_changed',
       });
+    } else if (command.operation === 'bridge') {
+      const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
+      reply = webSessionBridgeReplySchema.parse(
+        bridged.status === 'bridged'
+          ? {
+              ...base,
+              operation: 'bridge',
+              outcome: 'bridged',
+              userId: bridged.userId,
+              sessionId: bridged.sessionId,
+              token: bridged.token,
+              expiresAt: bridged.expiresAt.toISOString(),
+              generation: bridged.generation,
+            }
+          : { ...base, operation: 'bridge', outcome: 'denied' },
+      );
     } else {
       const refreshed = await refreshWebSession(commandDatabase, command.payload.token);
       reply = webSessionRollReplySchema.parse(

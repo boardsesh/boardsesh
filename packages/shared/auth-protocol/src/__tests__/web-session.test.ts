@@ -3,9 +3,13 @@ import {
   AUTH_PROTOCOL_VERSION,
   WEB_SESSION_LIFETIME_SECONDS,
   WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS,
+  WEB_SESSION_COMMAND_PATHS,
   WEB_SESSION_PROTOCOL_VERSION,
+  LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH,
   passwordCommandSchema,
   passwordReplySchema,
+  webSessionBridgeCommandSchema,
+  webSessionBridgeReplySchema,
   webSessionMode,
   webSessionReadCommandSchema,
   webSessionReadReplySchema,
@@ -141,5 +145,34 @@ describe('web session protocol', () => {
     expect(webSessionReadReplySchema.safeParse({ ...active, source: 'native' }).success).toBe(false);
     expect(webSessionReplyStatus(active)).toBe(200);
     expect(webSessionReplyStatus({ ...base, operation: 'session', outcome: 'unauthenticated' })).toBe(401);
+  });
+
+  it('bridges a legacy cookie on its own path, and answers a denial with 401', () => {
+    expect(WEB_SESSION_COMMAND_PATHS.bridge).toBe('/api/internal/auth/current-store/web-session/v1/bridge');
+    const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId } as const;
+    const bridge = (payload: unknown) =>
+      webSessionBridgeCommandSchema.safeParse({ ...base, operation: 'bridge', issuedAt: 1, payload }).success;
+    expect(bridge({ credential: 'jwe' })).toBe(true);
+    expect(bridge({ credential: '' })).toBe(false);
+    expect(bridge({ credential: 'x'.repeat(LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH + 1) })).toBe(false);
+    expect(bridge({ credential: 'jwe', userId: 'u' })).toBe(false);
+    const bridged = {
+      ...base,
+      operation: 'bridge',
+      outcome: 'bridged',
+      userId: 'u',
+      sessionId: 's',
+      token: 't',
+      expiresAt: new Date(0).toISOString(),
+      generation: 0,
+    } as const;
+    expect(webSessionBridgeReplySchema.safeParse(bridged).success).toBe(true);
+    expect(webSessionBridgeReplySchema.safeParse({ ...bridged, source: 'bridge' }).success).toBe(false);
+    const denied = { ...base, operation: 'bridge', outcome: 'denied' } as const;
+    expect(webSessionReplyStatus(bridged)).toBe(200);
+    expect(webSessionReplyStatus(denied)).toBe(401);
+    expect(webSessionReplyStatus({ ...base, operation: 'bridge', outcome: 'error', code: 'unavailable' })).toBe(503);
+    // The transport's own 401 never reads as a denial.
+    expect(webSessionBridgeReplySchema.safeParse({ error: 'unauthorized' }).success).toBe(false);
   });
 });

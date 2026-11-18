@@ -36,6 +36,7 @@ export const WEB_SESSION_COMMAND_PATHS = {
   session: `${WEB_SESSION_PATH_PREFIX}/session`,
   signout: `${WEB_SESSION_PATH_PREFIX}/signout`,
   roll: `${WEB_SESSION_PATH_PREFIX}/roll`,
+  bridge: `${WEB_SESSION_PATH_PREFIX}/bridge`,
 } as const;
 
 /** The opaque token as www read it from the session cookie, after the cookie signature checked out. */
@@ -127,6 +128,19 @@ export const webSessionRollCommandSchema = z
   .object({ ...metadata, operation: z.literal('roll'), payload: z.object({ token: sessionToken }).strict() })
   .strict();
 
+/**
+ * Bridges a browser signed in before the switch: the joined NextAuth cookie
+ * becomes a backend session with the cookie's own session id. Governed by
+ * this mode alone on the backend; it does not read `AUTH_LEGACY_BRIDGE_MODE`.
+ */
+export const webSessionBridgeCommandSchema = z
+  .object({
+    ...metadata,
+    operation: z.literal('bridge'),
+    payload: z.object({ credential: z.string().min(1).max(LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH) }).strict(),
+  })
+  .strict();
+
 const replyBase = { webSessionProtocolVersion: version, requestId };
 const unavailableReply = <Operation extends keyof typeof WEB_SESSION_COMMAND_PATHS>(operation: Operation) =>
   z
@@ -194,6 +208,29 @@ export const webSessionRollReplySchema = z.union([
   unavailableReply('roll'),
 ]);
 
+export const webSessionBridgeReplySchema = z.union([
+  /**
+   * The bridged session. `token` is the same on every bridge of the same
+   * legacy login, so a lost reply is recovered by bridging again. www puts it
+   * in the bridged-session cookie and never logs it.
+   */
+  z
+    .object({
+      ...replyBase,
+      operation: z.literal('bridge'),
+      outcome: z.literal('bridged'),
+      userId: identityId,
+      sessionId: identityId,
+      token: sessionToken,
+      expiresAt: z.iso.datetime(),
+      generation: z.number().int().nonnegative().max(2_147_483_647),
+    })
+    .strict(),
+  /** The cookie cannot be bridged: forged, expired, signed out, cut off, deleted, or its row was replaced. */
+  z.object({ ...replyBase, operation: z.literal('bridge'), outcome: z.literal('denied') }).strict(),
+  unavailableReply('bridge'),
+]);
+
 export type PresentedWebSession = z.infer<typeof presentedWebSessionSchema>;
 export type WebSessionRequest = z.infer<typeof webSessionRequestSchema>;
 export type IssuedWebSessionReply = z.infer<typeof issuedWebSessionSchema>;
@@ -203,18 +240,20 @@ export type WebSessionSignOutCommand = z.infer<typeof webSessionSignOutCommandSc
 export type WebSessionSignOutReply = z.infer<typeof webSessionSignOutReplySchema>;
 export type WebSessionRollCommand = z.infer<typeof webSessionRollCommandSchema>;
 export type WebSessionRollReply = z.infer<typeof webSessionRollReplySchema>;
+export type WebSessionBridgeCommand = z.infer<typeof webSessionBridgeCommandSchema>;
+export type WebSessionBridgeReply = z.infer<typeof webSessionBridgeReplySchema>;
 
 /**
  * The status each reply is sent with. A 401 here always carries a body that
- * parses as the reply (`outcome: 'unauthenticated'`). The transport's own 401
+ * parses as the reply (`outcome: 'unauthenticated'`, or `denied` for a bridge). The transport's own 401
  * for a wrong secret is `{ error: 'unauthorized' }`, which never parses as a
  * reply, so a caller keys on the parsed body and never on the status alone.
  */
 export function webSessionReplyStatus(
-  reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply,
+  reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply | WebSessionBridgeReply,
 ): number {
   if (reply.outcome === 'identity_changed') return 409;
-  if (reply.outcome === 'unauthenticated') return 401;
+  if (reply.outcome === 'unauthenticated' || reply.outcome === 'denied') return 401;
   if (reply.outcome === 'error') return 503;
   return 200;
 }

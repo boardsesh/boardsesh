@@ -32,8 +32,8 @@ Phase A is in progress. It works against today's NextAuth sessions:
 Phase B is blocked. #7596 says to stop after Phase A if the BA-04 authority
 cannot issue sessions yet, and on main it cannot. Nothing at runtime calls
 `createAuthority` (`packages/backend/src/auth/authority/authority.ts:34`), the
-bridge is not mounted ("No route is mounted", `authority/bridge.ts:21`), and
-`issuerFor` always returns `'legacy'` (`authority/router.ts:139-143`); only
+bridge was not mounted (B2a now reaches it through the dark private command
+`/web-session/v1/bridge`, which nothing on www calls yet), and `issuerFor` always returns `'legacy'` (`authority/router.ts:139-143`); only
 tests call the three. The operator script refuses `activate` while three code
 gates are listed (`packages/backend/src/scripts/auth-authority.ts:23-30`).
 BA-04 ([#6978](https://github.com/boardsesh/boardsesh/issues/6978)) is paused
@@ -131,10 +131,75 @@ revocation goes through `lineage.ts`.
 
 ## Signed-in browsers from before the switch
 
-A browser with a valid legacy JWE and no new cookie is bridged once by
-`bridgeLegacyCredential` (`bridge.ts:22`), which keeps the legacy
-`authSessionId` as the new session's id (`bridge.ts:37,78`). The www session
-read sets the new cookie on that response (B2).
+A browser with a valid legacy JWE and no new cookie is bridged by the private
+command `POST /api/internal/auth/current-store/web-session/v1/bridge` (B2a,
+`bridgeWebSession` in `authority/web-session.ts`, over
+`bridgeLegacyCredential`), which keeps the legacy `authSessionId` as the new
+session's id. The www session read sets the new cookie on that response (B2b).
+
+The bridged token is derived, not random (owner decision 3):
+base64url(HMAC-SHA256(key, "boardsesh-bridge-token-v1:" + sessionId)), the key
+derived by HKDF-SHA256 from `AUTH_BRIDGE_TOKEN_SECRET` (`session-token.ts`).
+So the same legacy login always bridges to the same token and one row, a lost
+reply is recovered by bridging again, and two concurrent bridges both get a
+usable token. The row still stores only the digest. The secret is the
+backend's alone: `NEXTAUTH_SECRET` and the cookie secret are also on www, and
+the access-token secret verifies short tokens and should stay free to rotate.
+
+What the bridge denies, writing nothing: a cookie that does not verify or has
+expired; a deleted or missing account; a cookie stamped with another
+generation than the account's, where a missing stamp counts as 0 (so a cookie
+from before any password change is denied once the generation has moved); a
+session id that was signed out (its denial row); a revoked lineage; and a
+session id that already names a row the bridge did not make from this login: a
+`login` row, a `carried:` row (every rollback cookie a post-cutover login
+writes, since proof and session share one id), or a bridged row whose token
+the current key does not derive. The browser then signs in again.
+
+The bridge writes only under an enforced manifest with the configured
+projection id and writer epoch, as login does; otherwise it answers 503 and
+writes nothing. It runs under the commands' 5-second statement and 4-second
+lock timeouts, so a bridge queued behind a held account (a reset, a deletion)
+answers 503 instead of holding a connection. Renewing a row from a later
+cookie never shortens it: the update re-checks the expiry under the row lock,
+so a roll that committed in between wins.
+
+A legacy cookie without a session id follows the bridge's existing rule: it is
+bridged as its own row, never by an account cutoff. The row id is the
+cookie's lineage id, `credential:` + sha256 of the JSON
+`["nextauth-v4", userId, sha256(cookie)]`, where the cookie is hashed in its
+canonical form (each of the five segments re-encoded from the bytes jose
+decrypted), so `=` padding, whitespace, a trailing newline or different unused
+bits in a last character do not make a second session. A genuine NextAuth
+cookie, and a chunked one www joins, is already canonical, so its id does not
+change. A cookie that carries `authSessionId` and `legacy_no_sid: true` keys
+its row by that session id and its lineage by a hash of it, so its renewals
+share one row. Such a row ends alone, never by a cutoff: sign-out by its
+token; sign-out presenting the raw cookie; and a login presenting either one
+ends the row the bridge made from it (exact id and lineage), if any, and
+nothing else.
+
+### If `AUTH_BRIDGE_TOKEN_SECRET` leaks
+
+Rotating the secret alone ends no session: each bridged row keeps the digest
+of the token it was given, and the leaked key with a session id still derives
+that token. The owner runs these steps; agents prepare them.
+
+1. Count the web-bridged rows (read-only):
+
+   ```sql
+   SELECT count(*) AS bridged, count(*) FILTER (WHERE expires_at > now()) AS live
+   FROM auth_session
+   WHERE (legacy_lineage_id LIKE 'session:%' OR legacy_lineage_id LIKE 'credential:%')
+     AND legacy_lineage_id NOT LIKE 'credential:native-refresh:%';
+   ```
+
+2. Set a new `AUTH_BRIDGE_TOKEN_SECRET` on the backend and redeploy.
+3. Delete exactly those rows, in one transaction, and check the count matches
+   step 1 before committing. Every browser bridged before then signs in again;
+   a legacy cookie it still holds bridges to a new token under the new key.
+   Native refresh rows (`native-refresh:` and `credential:native-refresh:`) and
+   login or carried rows are untouched.
 
 That bridging read is the one read that writes the cookie, so the cookie-order
 race comes back once for every browser signed in before the switch. Tab 1's
@@ -253,8 +318,10 @@ or `{ rolled: false }`. It is one conditional UPDATE that sets `expires_at` to
 no denial, a generation equal to the account's, an account not deleted, and a
 lineage (if any) that is unrevoked and names this row. It writes no cookie.
 Bridged web rows roll too. The bridge still caps a new row at the legacy
-cookie's expiry (`bridge.ts:92`); the first roll lifts that, and re-bridging
-never shortens a row (`bridge.ts:102`). A revoked lineage stops the roll, and
+cookie's expiry; the first roll lifts that to `now` + 30 days, and re-bridging
+never shortens a row. Nothing here tests "bridged" by a non-null
+`legacy_lineage_id`: a `carried:` row has one too. The roll skips only native
+refresh lineages, and the bridge matches the exact lineage id of the cookie. A revoked lineage stops the roll, and
 sign-out still deletes the row and writes the denial. Rows bound to a native
 refresh token keep that token's expiry and never roll. A roll never makes a row
 readable: every reader checks the same conditions itself. `rolled: true` is not
@@ -289,7 +356,7 @@ cookie signature check.
 
 ### The private commands B1 calls
 
-All four sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
+All five sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
 backend (404 `{ "error": "disabled" }` when off, 503 for an unknown value), use
 the existing `Authorization: Bearer <CURRENT_STORE_AUTH_RPC_SECRET>` and refuse
 any request carrying an `Origin` header. Schemas and types are in
@@ -299,11 +366,12 @@ any request carrying an `Origin` header. Schemas and types are in
 | --- | --- | --- |
 | Login: the staged password command, `POST /api/internal/auth/current-store/password` | `passwordCommandSchema` plus `webSession: { presented? }`. `presented` is `{ kind: 'legacy-jwe', credential }` (the joined NextAuth cookie) or `{ kind: 'canonical-token', token }` (from the new cookie). There is no field for an account: the session goes to the account the password proves. | `authenticated` with `webSession: { sessionId, token, expiresAt, generation }`; `invalid_credentials` with nothing issued and nothing revoked. An account that still needs email verification gets `authenticated` with `verification.verified: false` and no `webSession`, and its presented session stays. Rate limits and the compare gate are those of #7650. |
 | Session read, `POST /api/internal/auth/current-store/web-session/v1/session` | `webSessionReadCommandSchema`: `{ presented }`, the same `PresentedWebSession` login takes | 200 `active` with `userId`, `authSessionId`, `generation`, `expiresAt`, `source` (`login` or `bridge`), `authenticatedAt` (or null), `linkGuarded` and `user: { id, email, name, image }`, the fields of today's NextAuth session JSON (profile display name and avatar win); 401 `unauthenticated`; 503 `unavailable`. It applies exactly `readFirstPartySession`'s rules and writes nothing: no roll, no last-seen time, no bridge. A legacy cookie is answered by its own admission rules. |
-| Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ presented, expectedUserId, expectedAuthSessionId }`, or the first form `{ token, … }` with a bare canonical token, still accepted so either web works with either backend | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. A legacy cookie with its own session id gets a denial of that id and nothing else ends; one without a session id is answered `signed_out` with nothing written. |
+| Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ presented, expectedUserId, expectedAuthSessionId }`, or the first form `{ token, … }` with a bare canonical token, still accepted so either web works with either backend | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. A legacy cookie with its own session id gets a denial of that id and nothing else ends; one without a session id is answered `signed_out`, and only the row the bridge made from it, if any, ends. |
 | Roll, `POST /api/internal/auth/current-store/web-session/v1/roll` | `webSessionRollCommandSchema`: `{ token }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` and `rolled`; 401 `unauthenticated`; 503 `unavailable`. |
+| Bridge (B2a), `POST /api/internal/auth/current-store/web-session/v1/bridge` | `webSessionBridgeCommandSchema`: `{ credential }`, the joined NextAuth cookie (at most 12,288 characters) | 200 `bridged` with `userId`, `sessionId`, `token`, `expiresAt` and `generation`; 401 `denied` (see "Signed-in browsers from before the switch"); 503 `unavailable`, also when `NEXTAUTH_SECRET` or `AUTH_BRIDGE_TOKEN_SECRET` is missing, weak or reused. The same cookie always gets the same `token`. It does not read `AUTH_LEGACY_BRIDGE_MODE`, which the native refresh path keeps. |
 
 A 401 means "no live session" only when its body parses as the command's own
-reply (`outcome: 'unauthenticated'`). The transport answers a wrong secret or a
+reply (`outcome: 'unauthenticated'`, or `denied` from the bridge). The transport answers a wrong secret or a
 browser `Origin` with 401 `{ "error": "unauthorized" }`, which no reply schema
 accepts; www must treat that as unavailable and never clear a cookie on it.
 
@@ -834,8 +902,8 @@ Web tests have no jest-dom, so they assert DOM properties directly.
 | 1. Chromium and WebKit on real HTTPS subdomains: renewal, sign-out, set-password and session reads emit no `Set-Cookie` | B1 backend tests over real HTTP for the after-hook. B7 Playwright on both engines. Rerun the fixture in [the cookie-order doc](./better-auth-browser-cookie-order.md). |
 | 2. www and app open as A, log in as B on www: A's token gets a 401 and the app tab reloads as B | A3 latch and reload tests. B1 revocation test. B7 Playwright. |
 | 3. A response held across an account switch, then back/forward: no toast, navigation or cache write under B | A2 and A3 tests that hold a real server's response body across a switch. B7 Playwright for the Router Cache and back/forward cache. |
-| 4. Set-password on a bridged session requires reauthentication | B2 backend test with real Postgres. |
-| 5. A browser signed in before cutover stays signed in, with every legacy cookie shape | B2 and B4 tests per shape, including the conflicting host-only and domain pair. B7 Playwright. |
+| 4. Set-password on a bridged session requires reauthentication | B2a: a bridged session reads as `source: 'bridge'` and fails `requireFreshAuthentication` and `webSignInProof` even from a sign-in 15 seconds old (`web-session-bridge.test.ts`). Set-password still takes the legacy cookie until B4b moves it to the canonical session. |
+| 5. A browser signed in before cutover stays signed in, with every legacy cookie shape | B2a: every claim shape the backend receives (session id with and without a stamp, `legacy_no_sid`, no session id, a fresh link-guarded sign-in, a value joined from several chunks). B2b and B4 per cookie name, including the conflicting host-only and domain pair. B7 Playwright. |
 | 6. Rollback leaves every browser signed in through the legacy cookie, with no clearing step | B7 Playwright that switches the mode back, including a browser that logged in after cutover. |
 | 7. Native iOS and Android unchanged; no abort on unmount; no new identity per render | A3 and A4 tests that run each flow with the platform set to `ios` and `android`. `src/__tests__/web-fork-export-parity.test.ts`. The mobile suite in CI. |
 | 8. One mode switch gates the whole web cutover | A5: parser tests in `@boardsesh/auth-protocol` (`browser-session-mode.test.ts`), and backend tests that `startServer()` refuses an unknown value and `better-auth` before any startup I/O (`authority/__tests__/browser-session-mode.test.ts`). No `*-readiness.ts` gate is left. B4 adds the www reader. |

@@ -4,12 +4,16 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { schemaSQL } from '../../../__tests__/schema-sql';
 import * as schema from '@boardsesh/db/schema';
 import { createAuthority } from '../authority';
+import { bridgeTokenKey } from '../session-token';
 
 export const configuration = {
   baseURL: 'https://auth.boardsesh.test',
   secret: 'boardsesh-isolated-authority-test-secret-6975',
   trustedOrigins: ['https://auth.boardsesh.test'],
 };
+
+/** The bridge key every authority test bridges with: synthetic, at least 32 bytes. */
+export const testBridgeTokenKey = bridgeTokenKey('synthetic-authority-test-bridge-token-secret-6975');
 
 /** Only a fresh, suite-owned localhost database may receive the fixture DDL. */
 export async function createEnvironment() {

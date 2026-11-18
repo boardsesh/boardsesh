@@ -20,6 +20,7 @@ const dependencies = vi.hoisted(() => ({
   webSessionSignout: vi.fn(),
   webSessionRoll: vi.fn(),
   webSessionRead: vi.fn(),
+  webSessionBridge: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('../../credential-database', () => ({ getCredentialDatabase: dependencies.database }));
@@ -52,6 +53,7 @@ vi.mock('../web-session', async (importOriginal) => ({
   signOutWebSession: dependencies.webSessionSignout,
   refreshWebSession: dependencies.webSessionRoll,
   readWebSession: dependencies.webSessionRead,
+  bridgeWebSession: dependencies.webSessionBridge,
 }));
 
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
@@ -64,7 +66,14 @@ const defaultDatabase = Object.freeze({ owner: 'qualified-private-pool' }) as un
 const injectedDatabase = Object.freeze({ owner: 'explicit-owned-test-pool' }) as unknown as DbInstance;
 type Handler = (request: IncomingMessage, response: ServerResponse, database?: DbInstance) => Promise<unknown>;
 interface Route {
-  readonly name: 'password' | 'oauth' | 'signout' | 'webSessionSignout' | 'webSessionRoll' | 'webSessionRead';
+  readonly name:
+    | 'password'
+    | 'oauth'
+    | 'signout'
+    | 'webSessionSignout'
+    | 'webSessionRoll'
+    | 'webSessionRead'
+    | 'webSessionBridge';
   readonly mode: string;
   readonly path: string;
   readonly handle: Handler;
@@ -75,7 +84,7 @@ interface Route {
   result?(command: Record<string, unknown>): unknown;
 }
 const SESSION_EXPIRES_AT = new Date(Date.now() + 86_400_000);
-function webSessionCommand(operation: 'session' | 'signout' | 'roll', payload: Record<string, unknown>) {
+function webSessionCommand(operation: 'session' | 'signout' | 'roll' | 'bridge', payload: Record<string, unknown>) {
   return () => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     operation,
@@ -84,7 +93,7 @@ function webSessionCommand(operation: 'session' | 'signout' | 'roll', payload: R
     payload,
   });
 }
-function webSessionReply(operation: 'session' | 'signout' | 'roll', fields: Record<string, unknown>) {
+function webSessionReply(operation: 'session' | 'signout' | 'roll' | 'bridge', fields: Record<string, unknown>) {
   return (command: Record<string, unknown>) => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     requestId: command.requestId,
@@ -235,6 +244,30 @@ const routes: Route[] = [
       user: { id: 'owned-user', email: 'owned@example.test', name: null, image: null },
     }),
   },
+  {
+    name: 'webSessionBridge',
+    mode: 'CURRENT_STORE_WEB_SESSION_MODE',
+    path: WEB_SESSION_COMMAND_PATHS.bridge,
+    handle: handleCurrentStoreWebSession,
+    command: webSessionCommand('bridge', { credential: 'owned.synthetic.legacy.session.cookie' }),
+    unavailable: webSessionReply('bridge', { outcome: 'error', code: 'unavailable' }),
+    success: webSessionReply('bridge', {
+      outcome: 'bridged',
+      userId: 'owned-user',
+      sessionId: 'owned-session',
+      token: 'owned-synthetic-token',
+      expiresAt: SESSION_EXPIRES_AT.toISOString(),
+      generation: 0,
+    }),
+    result: () => ({
+      status: 'bridged',
+      userId: 'owned-user',
+      sessionId: 'owned-session',
+      token: 'owned-synthetic-token',
+      expiresAt: SESSION_EXPIRES_AT,
+      generation: 0,
+    }),
+  },
 ];
 
 async function invoke(route: Route, command: unknown, options: { authorization?: string; database?: DbInstance } = {}) {
@@ -280,6 +313,7 @@ describe('private RPC default credential database selection', () => {
       CURRENT_STORE_WEB_SESSION_MODE: 'backend-staging',
       CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
       NEXTAUTH_SECRET: 'owned-nextauth-private-rpc-key',
+      AUTH_BRIDGE_TOKEN_SECRET: 'owned-private-rpc-bridge-token-secret-32-bytes',
       CURRENT_STORE_AUTH_PROJECTION_ID: 'owned-private-rpc-projection',
       CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
       CURRENT_STORE_DELETED_EMAIL_KEY: 'owned-private-rpc-deleted-email-key-at-least-32-bytes',
@@ -297,6 +331,7 @@ describe('private RPC default credential database selection', () => {
     dependencies.webSessionSignout.mockReset();
     dependencies.webSessionRoll.mockReset();
     dependencies.webSessionRead.mockReset();
+    dependencies.webSessionBridge.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 

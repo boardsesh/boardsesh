@@ -19,6 +19,7 @@ import {
   isValidAuthorityProjectionId,
   isValidAuthorityWriterEpoch,
 } from '../current-store/authority-configuration';
+import { bridgeTokenKey, type BridgeTokenKey } from './session-token';
 
 export { BROWSER_SESSION_MODES, type BrowserSessionMode } from '@boardsesh/auth-protocol/browser-session-mode';
 
@@ -33,6 +34,14 @@ export function readBrowserSessionMode(
 
 export const BROWSER_SESSION_COOKIE_SECRET_ENV = 'AUTH_BROWSER_SESSION_COOKIE_SECRET';
 export const BROWSER_ACCESS_TOKEN_SECRET_ENV = 'AUTH_BROWSER_ACCESS_TOKEN_SECRET';
+/**
+ * Backend only. The bridge key (`bridgeTokenKey`) is derived from it, and the
+ * key with a session id mints that bridged session's token, so neither www nor
+ * the database may hold it. Its own secret, not a derivation of another one:
+ * `NEXTAUTH_SECRET` and the cookie secret are on www too, and the access-token
+ * secret verifies short tokens and should stay free to rotate.
+ */
+export const BRIDGE_TOKEN_SECRET_ENV = 'AUTH_BRIDGE_TOKEN_SECRET';
 
 /**
  * Phase B work (#7596) that must land before a browser can be served a
@@ -66,6 +75,7 @@ export const BROWSER_SESSION_STARTUP_ERRORS = Object.freeze({
   nextAuthSecret: 'AUTH_BROWSER_SESSION_NEXTAUTH_SECRET_INVALID',
   cookieSecret: 'AUTH_BROWSER_SESSION_COOKIE_SECRET_INVALID',
   accessTokenSecret: 'AUTH_BROWSER_SESSION_ACCESS_TOKEN_SECRET_INVALID',
+  bridgeTokenSecret: 'AUTH_BROWSER_SESSION_BRIDGE_TOKEN_SECRET_INVALID',
   secretReused: 'AUTH_BROWSER_SESSION_SECRET_REUSED',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE',
 } as const);
@@ -89,9 +99,10 @@ const BROWSER_SESSION_SECRETS = [
   ['NEXTAUTH_SECRET', BROWSER_SESSION_STARTUP_ERRORS.nextAuthSecret],
   [BROWSER_SESSION_COOKIE_SECRET_ENV, BROWSER_SESSION_STARTUP_ERRORS.cookieSecret],
   [BROWSER_ACCESS_TOKEN_SECRET_ENV, BROWSER_SESSION_STARTUP_ERRORS.accessTokenSecret],
+  [BRIDGE_TOKEN_SECRET_ENV, BROWSER_SESSION_STARTUP_ERRORS.bridgeTokenSecret],
 ] as const;
 
-/** The other auth secrets none of those three may equal. */
+/** The other auth secrets none of those four may equal. */
 const OTHER_AUTH_SECRET_ENV = [
   AUTH_COMMAND_ENV.secret,
   DELETED_EMAIL_KEY_ENV,
@@ -148,6 +159,24 @@ function assertBetterAuthPreconditions(environment: Environment): void {
       !browserSecrets.some((secret) => otherSecrets.includes(secret)),
     errors.secretReused,
   );
+}
+
+/**
+ * The bridge key for the web bridge command, read per request like the other
+ * command configuration. Throws (the command answers 503) unless
+ * `AUTH_BRIDGE_TOKEN_SECRET` is at least 32 bytes with no surrounding spaces
+ * and equals none of the other auth secrets, so a deployment with only
+ * `CURRENT_STORE_WEB_SESSION_MODE` on cannot bridge under a reused secret
+ * either. The error never carries the value.
+ */
+export function bridgeTokenKeyFromEnvironment(environment: Environment = process.env): BridgeTokenKey {
+  const secret = environment[BRIDGE_TOKEN_SECRET_ENV];
+  const others = [...BROWSER_SESSION_SECRETS.map(([name]) => name), ...OTHER_AUTH_SECRET_ENV]
+    .filter((name) => name !== BRIDGE_TOKEN_SECRET_ENV)
+    .map((name) => environment[name]);
+  if (!isStrongSecret(secret) || secret === undefined || others.includes(secret))
+    throw new Error(`Invalid ${BRIDGE_TOKEN_SECRET_ENV}`);
+  return bridgeTokenKey(secret);
 }
 
 /**

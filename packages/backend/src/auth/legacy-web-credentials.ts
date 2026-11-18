@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { hkdf } from '@panva/hkdf';
-import { jwtDecrypt } from 'jose';
+import { base64url, jwtDecrypt } from 'jose';
 import {
   AUTH_TIME_CLOCK_SKEW_SECONDS,
   isLinkGuardedSignIn,
@@ -53,6 +53,23 @@ export interface VerifiedLegacyWebCredential {
 
 function fingerprint(material: string): string {
   return createHash('sha256').update(material).digest('hex');
+}
+
+/**
+ * The compact JWE as its five segments re-encoded from the bytes the decoder
+ * read: no padding, no whitespace, no unused bits. The decoder accepts other
+ * spellings of one cookie (`=` padding, a space, a trailing newline, other
+ * unused bits in the last character), and a cookie without a session id is
+ * identified by its fingerprint, so the fingerprint must not depend on the
+ * spelling. Uses jose's own decoder, so the bytes are the ones it decrypted.
+ * A genuine NextAuth cookie (and a chunked one www joins) is already in this
+ * form, so its identity does not change.
+ */
+function canonicalCompactJwe(credential: string): string {
+  return credential
+    .split('.')
+    .map((segment) => base64url.encode(base64url.decode(segment)))
+    .join('.');
 }
 
 /**
@@ -156,7 +173,7 @@ export async function verifyLegacyNextAuthJwe(
     const authSessionId = typeof claimedSessionId === 'string' ? claimedSessionId : null;
     if (payload.legacy_no_sid !== undefined && payload.legacy_no_sid !== true) return null;
     const requiresAccountCutoff = authSessionId === null || payload.legacy_no_sid === true;
-    const credentialFingerprint = fingerprint(credential);
+    const credentialFingerprint = fingerprint(canonicalCompactJwe(credential));
     const signIn = legacyWebSignIn(payload, currentTime);
     return {
       kind: 'nextauth-v4-jwe',

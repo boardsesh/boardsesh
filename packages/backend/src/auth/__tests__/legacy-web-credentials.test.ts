@@ -510,3 +510,49 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, new Date(Number.NaN))).toBeNull();
   });
 });
+
+/** Re-encodings of one compact JWE that the decoder still reads as the same bytes. */
+function byteVariants(credential: string): Record<string, string> {
+  const segments = credential.split('.');
+  const tag = segments[4];
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  // A 16-byte tag is 22 characters; the last one carries 2 unused bits.
+  const unusedBits = `${tag.slice(0, -1)}${alphabet[alphabet.indexOf(tag.slice(-1)) ^ 1]}`;
+  const ciphertext = segments[3];
+  const middle = Math.floor(ciphertext.length / 2);
+  const withSegment = (index: number, value: string) =>
+    segments.map((part, at) => (at === index ? value : part)).join('.');
+  return {
+    'unused tag bits': withSegment(4, unusedBits),
+    padding: withSegment(4, `${tag}==`),
+    'a space in the ciphertext': withSegment(3, `${ciphertext.slice(0, middle)} ${ciphertext.slice(middle)}`),
+    'a trailing newline': `${credential}\n`,
+  };
+}
+
+describe('the identity of a cookie without a session id', () => {
+  it('is the same for every byte form of one cookie the decoder accepts', async () => {
+    const original = await installedSession({ authSessionId: undefined });
+    const proof = await verifyLegacyNextAuthJwe(original, LEGACY_SECRET, NOW);
+    expect(proof?.requiresAccountCutoff).toBe(true);
+    for (const [label, variant] of Object.entries(byteVariants(original))) {
+      expect(variant, label).not.toBe(original);
+      // The decoder accepts each of them (checked on Node 22 and 26), so each must name the same session.
+      const variantProof = await verifyLegacyNextAuthJwe(variant, LEGACY_SECRET, NOW);
+      expect(variantProof, label).not.toBeNull();
+      expect(variantProof?.lineageId, label).toBe(proof?.lineageId);
+      expect(variantProof?.credentialFingerprint, label).toBe(proof?.credentialFingerprint);
+    }
+  });
+
+  it('still tells two different cookies apart', async () => {
+    const [first, second] = await Promise.all([
+      installedSession({ authSessionId: undefined }),
+      installedSession({ authSessionId: undefined }),
+    ]);
+    const [firstProof, secondProof] = await Promise.all(
+      [first, second].map((credential) => verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)),
+    );
+    expect(firstProof?.lineageId).not.toBe(secondProof?.lineageId);
+  });
+});

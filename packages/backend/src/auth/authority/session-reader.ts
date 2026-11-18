@@ -30,6 +30,12 @@ export interface FirstPartySession {
    * no column stores it.
    */
   readonly source?: FirstPartySessionSource;
+  /**
+   * The legacy lineage the session belongs to: a legacy cookie's own, or a
+   * canonical row's `legacy_lineage_id`. Lets a caller find the one row the
+   * bridge made from a cookie without a session id (exact id and lineage).
+   */
+  readonly lineageId?: string | null;
 }
 export type FirstPartySessionResult =
   | { readonly status: 'admitted'; readonly session: FirstPartySession }
@@ -65,6 +71,7 @@ export async function readFirstPartySession(
         // Read directly, a NextAuth cookie is the legacy login itself. Once
         // bridged, its canonical row reads as `bridge` below.
         source: 'login',
+        lineageId: proof.lineageId,
       };
     } else {
       if (!credential.token || credential.token.length > 4096) return { status: 'denied' };
@@ -96,6 +103,7 @@ export async function readFirstPartySession(
         // the native refresh binding always record one, and a `carried`
         // web session records a `carried:` id that names no lineage row.
         source: canonical.legacyLineageId === null ? 'login' : 'bridge',
+        lineageId: canonical.legacyLineageId,
       };
     }
     const decision = decideCredential(
