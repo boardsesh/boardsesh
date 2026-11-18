@@ -42,7 +42,6 @@ export const BROWSER_ACCESS_TOKEN_SECRET_ENV = 'AUTH_BROWSER_ACCESS_TOKEN_SECRET
  * no environment variable or flag removes an entry.
  */
 export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([
-  'B1C_WWW_COOKIE_WRITERS',
   'B2_LEGACY_COOKIE_BRIDGE',
   'B3_BROWSER_ACCESS_TOKEN',
   'B4_SERVER_RENDERS_ON_CANONICAL_SESSION',
