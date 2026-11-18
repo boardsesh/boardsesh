@@ -114,7 +114,7 @@ jobs:
           # The nightly runs www as a production build (Router Cache and several auth
           # branches differ from next dev); a pull request keeps next dev, which
           # starts minutes sooner. A dispatch chooses.
-          BROWSER_SESSION_E2E_WWW: production
+          BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
           AUTH_BROWSER_SESSION_MODE: better-auth
           BROWSER_SESSION_E2E_REUSE_EXPORT: '1'
           BROWSER_SESSION_E2E_GREP: ''
