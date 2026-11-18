@@ -126,6 +126,7 @@ packages/web/app/lib/auth/__tests__/web-provider-session-intent.test.ts
 packages/web/app/lib/auth/admitted-session.server.ts
 packages/web/app/lib/auth/auth-options.ts
 packages/web/app/lib/auth/auth-response-admission.server.ts
+packages/web/app/lib/auth/browser-session-route.server.ts
 packages/web/app/lib/auth/credential-admission.server.ts
 packages/web/app/lib/auth/nextauth-cookie-fetch-lock.ts
 packages/web/app/lib/auth/oauth-link-guard.server.ts
@@ -151,5 +152,8 @@ packages/web/app/setter/[setter_username]/__tests__/setter-page-ssr.test.tsx
 packages/web/app/setter/[setter_username]/setter-follow-island.tsx
 packages/web/app/settings/__tests__/settings-page-content.test.tsx
 packages/web/app/settings/settings-page-content.tsx
+packages/web/auth-proofs/legacy-route-snapshot.integration.proof.ts
 packages/web/auth-proofs/web-credential-proof.integration.proof.ts
+packages/web/auth-proofs/web-session-cookie.integration.proof.ts
+packages/web/auth-proofs/web-session-signout.integration.proof.ts
 packages/web/package.json
