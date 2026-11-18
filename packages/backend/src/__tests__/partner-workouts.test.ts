@@ -919,6 +919,230 @@ describe('partner workouts', () => {
   });
 });
 
+describe('partner workout results', () => {
+  const minutes = (count: number) => count * 60_000;
+  const twoVolumeBlocks = () =>
+    CreateWorkoutSchema.parse({
+      externalRef: randomUUID(),
+      title: 'Two volume blocks',
+      blocks: [
+        { type: 'volume', climbCount: 2, targetGrade: { scale: 'v', value: 3 } },
+        { type: 'volume', climbCount: 2, targetGrade: { scale: 'v', value: 4 } },
+      ],
+    });
+
+  /** A workout added to a session that has run for an hour; the workout started 20 minutes ago. */
+  async function addToRunningSession(principal: PartnerApiPrincipal, input = spec()) {
+    const workout = await create(principal, input);
+    const sessionId = await start(principal.userId, workout.id);
+    const workoutStartedAt = new Date(Date.now() - minutes(20));
+    await db.update(appWorkouts).set({ startedAt: workoutStartedAt }).where(eq(appWorkouts.id, workout.id));
+    return { workout, sessionId, workoutStartedAt };
+  }
+  async function logTick(userId: string, sessionId: string, climbUuid: string, climbedAt: Date) {
+    const uuid = randomUUID();
+    await db.insert(boardseshTicks).values({
+      uuid,
+      userId,
+      boardType: 'kilter',
+      climbUuid,
+      angle: 40,
+      status: 'send',
+      climbedAt: climbedAt.toISOString(),
+      sessionId,
+    });
+    return uuid;
+  }
+  async function storeSessionWorkout(
+    sessionId: string,
+    userId: string,
+    stages: Array<{ id: string; items: Array<{ queueItemUuid: string; climbUuid: string }> }>,
+    tickMap: Array<{ tickUuid: string; queueItemUuid: string }> = [],
+  ) {
+    await db.insert(sessionWorkouts).values({
+      sessionId,
+      userId,
+      plan: {
+        version: 1,
+        stages: stages.map((stage) => ({
+          id: stage.id,
+          kind: 'volume',
+          items: stage.items.map((item) => ({ ...item, angle: 40 })),
+        })),
+      },
+      tickMap,
+      revision: 1,
+    });
+  }
+  async function endSession(sessionId: string, endedAt = new Date()) {
+    await db.transaction(async (tx) => {
+      const transaction = tx as unknown as PartnerDatabase;
+      const workouts = await lockSessionAppWorkouts(transaction, sessionId);
+      await tx.update(boardSessions).set({ status: 'ended', endedAt }).where(eq(boardSessions.id, sessionId));
+      await completeSessionAppWorkouts(transaction, workouts, 'completed', endedAt);
+    });
+  }
+  const ticksById = (result: Awaited<ReturnType<typeof read>>) =>
+    new Map((result.results?.ticks ?? []).map((tick) => [tick.id, tick.blockIndex]));
+
+  it('leaves out the climbs from before "Add to this session"', async () => {
+    const { principal } = await connected();
+    const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal);
+    const queuedClimb = randomUUID();
+    await storeSessionWorkout(sessionId, principal.userId, [
+      { id: `${workout.id}:0`, items: [{ queueItemUuid: randomUUID(), climbUuid: queuedClimb }] },
+    ]);
+    const beforeWorkout = await logTick(
+      principal.userId,
+      sessionId,
+      randomUUID(),
+      new Date(workoutStartedAt.getTime() - minutes(30)),
+    );
+    const duringWorkout = await logTick(
+      principal.userId,
+      sessionId,
+      randomUUID(),
+      new Date(workoutStartedAt.getTime() + minutes(5)),
+    );
+    await endSession(sessionId);
+    const result = await read(principal, workout.id);
+    expect(WorkoutResponseSchema.safeParse(result).success).toBe(true);
+    const ticks = ticksById(result);
+    expect(ticks.has(beforeWorkout)).toBe(false);
+    expect(ticks.get(duringWorkout)).toBeNull();
+    expect(ticks.size).toBe(1);
+  });
+
+  it('places repeated climbs on the blocks the tick map names, not by guessing from the climb', async () => {
+    const { principal } = await connected();
+    const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal, twoVolumeBlocks());
+    const repeatedClimb = randomUUID();
+    const sharedWithOwnBlock = randomUUID();
+    const ownItem = randomUUID();
+    const firstBlockItem = randomUUID();
+    const secondBlockItem = randomUUID();
+    await db
+      .update(appWorkouts)
+      .set({
+        planSnapshot: [
+          { index: 0, climbUuids: [repeatedClimb] },
+          { index: 1, climbUuids: [repeatedClimb, sharedWithOwnBlock] },
+        ],
+      })
+      .where(eq(appWorkouts.id, workout.id));
+    const at = (offsetMinutes: number) => new Date(workoutStartedAt.getTime() + minutes(offsetMinutes));
+    const onOwnBlock = await logTick(principal.userId, sessionId, sharedWithOwnBlock, at(1));
+    // A phone clock a few seconds behind the server: the tick map still puts it on the block.
+    const onFirstBlock = await logTick(principal.userId, sessionId, repeatedClimb, at(-0.1));
+    const onSecondBlock = await logTick(principal.userId, sessionId, repeatedClimb, at(3));
+    await storeSessionWorkout(
+      sessionId,
+      principal.userId,
+      [
+        { id: 'own-grade-focus', items: [{ queueItemUuid: ownItem, climbUuid: sharedWithOwnBlock }] },
+        { id: `${workout.id}:0`, items: [{ queueItemUuid: firstBlockItem, climbUuid: repeatedClimb }] },
+        {
+          id: `${workout.id}:1`,
+          items: [
+            { queueItemUuid: secondBlockItem, climbUuid: repeatedClimb },
+            { queueItemUuid: randomUUID(), climbUuid: sharedWithOwnBlock },
+          ],
+        },
+      ],
+      [
+        { tickUuid: onOwnBlock, queueItemUuid: ownItem },
+        { tickUuid: onFirstBlock, queueItemUuid: firstBlockItem },
+        { tickUuid: onSecondBlock, queueItemUuid: secondBlockItem },
+      ],
+    );
+    await endSession(sessionId);
+    const ticks = ticksById(await read(principal, workout.id));
+    expect(ticks.get(onOwnBlock)).toBeNull();
+    expect(ticks.get(onFirstBlock)).toBe(0);
+    expect(ticks.get(onSecondBlock)).toBe(1);
+  });
+
+  it('attributes a late tick by its kept tick-map entry once the tick lands', async () => {
+    const { principal } = await connected();
+    const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal, twoVolumeBlocks());
+    const repeatedClimb = randomUUID();
+    const secondBlockItem = randomUUID();
+    const lateTick = randomUUID();
+    await db
+      .update(appWorkouts)
+      .set({
+        planSnapshot: [
+          { index: 0, climbUuids: [repeatedClimb] },
+          { index: 1, climbUuids: [repeatedClimb] },
+        ],
+      })
+      .where(eq(appWorkouts.id, workout.id));
+    await storeSessionWorkout(
+      sessionId,
+      principal.userId,
+      [
+        { id: `${workout.id}:0`, items: [{ queueItemUuid: randomUUID(), climbUuid: repeatedClimb }] },
+        { id: `${workout.id}:1`, items: [{ queueItemUuid: secondBlockItem, climbUuid: repeatedClimb }] },
+      ],
+      [{ tickUuid: lateTick, queueItemUuid: secondBlockItem }],
+    );
+    await endSession(sessionId);
+    expect((await read(principal, workout.id)).results?.ticks).toEqual([]);
+    await db.insert(boardseshTicks).values({
+      uuid: lateTick,
+      userId: principal.userId,
+      boardType: 'kilter',
+      climbUuid: repeatedClimb,
+      angle: 40,
+      status: 'send',
+      climbedAt: new Date(workoutStartedAt.getTime() + minutes(10)).toISOString(),
+      sessionId,
+    });
+    // By climb alone it would fill block 0 first; the map says block 1.
+    expect(ticksById(await read(principal, workout.id)).get(lateTick)).toBe(1);
+  });
+
+  it('times the session from the workout start, not the session start', async () => {
+    const { principal } = await connected();
+    const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal);
+    await endSession(sessionId, new Date(workoutStartedAt.getTime() + minutes(10)));
+    const session = (await read(principal, workout.id)).results?.session;
+    expect(session?.startedAt).toBe(workoutStartedAt.toISOString());
+    expect(session?.durationSeconds).toBe(600);
+  });
+
+  it('falls back to the plan snapshot without a stored plan and still leaves out earlier climbs', async () => {
+    const { principal } = await connected();
+    const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal);
+    const queuedClimb = randomUUID();
+    await db
+      .update(appWorkouts)
+      .set({
+        planSnapshot: [
+          { index: 0, climbUuids: [queuedClimb] },
+          { index: 1, climbUuids: [] },
+        ],
+      })
+      .where(eq(appWorkouts.id, workout.id));
+    const beforeWorkout = await logTick(
+      principal.userId,
+      sessionId,
+      queuedClimb,
+      new Date(workoutStartedAt.getTime() - minutes(10)),
+    );
+    const duringWorkout = await logTick(
+      principal.userId,
+      sessionId,
+      queuedClimb,
+      new Date(workoutStartedAt.getTime() + minutes(2)),
+    );
+    await endSession(sessionId);
+    const ticks = ticksById(await read(principal, workout.id));
+    expect(ticks.has(beforeWorkout)).toBe(false);
+    expect(ticks.get(duringWorkout)).toBe(0);
+  });
+});
+
 describe('workout contract boundaries', () => {
   it('clamps lifetime to seven days or two UTC days after the scheduled date and rejects impossible blocks', () => {
     const now = new Date('2026-11-17T12:00:00Z');
