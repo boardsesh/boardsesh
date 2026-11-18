@@ -15,11 +15,16 @@ module Menus {
         var menu = new WatchUi.Menu2({ :title => WatchUi.loadResource(Rez.Strings.ActionsTitle) });
         menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.ReSend), null, :resend, null));
         menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.SwitchSession), null, :switchSession, null));
-        // Only when the signed-in owner has refused ticks to retry or delete.
-        var refused = TickQueue.surfaceCounts()[0];
-        if (refused > 0) {
+        // Only when the signed-in owner has refused ticks to retry or delete,
+        // or the store is full with other accounts' entries (the list then
+        // offers deleting those, even when the owner has none).
+        var counts = TickQueue.surfaceCounts();
+        if (TickQueue.refusedMenuShown(counts)) {
+            var refused = counts[0];
+            var subLabel = refused.toString();
+            if (refused == 0) { subLabel = othersSubLabel(counts[3]); }
             menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.RefusedTitle),
-                refused.toString(), :refused, null));
+                subLabel, :refused, null));
         }
         menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.EndActivity), null, :end, null));
         return menu;
@@ -33,12 +38,21 @@ module Menus {
         return menu;
     }
 
-    // Retry all, Delete all, then one read-only row per refused tick, oldest
-    // first: what was logged and when, and why the server refused it.
-    function buildRefusedMenu(entries as Lang.Array) as WatchUi.Menu2 {
+    // Retry all and Delete all (when the signed-in owner has entries), then
+    // "Delete others' ticks" (only while the store is full and other accounts
+    // hold entries: `othersCount` is 0 otherwise), then one read-only row per
+    // refused tick of the owner, oldest first: what was logged and when, and
+    // why the server refused it.
+    function buildRefusedMenu(entries as Lang.Array, othersCount as Lang.Number) as WatchUi.Menu2 {
         var menu = new WatchUi.Menu2({ :title => WatchUi.loadResource(Rez.Strings.RefusedTitle) });
-        menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.RefusedRetry), null, :retry, null));
-        menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.RefusedDelete), null, :delete, null));
+        if (entries.size() > 0) {
+            menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.RefusedRetry), null, :retry, null));
+            menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.RefusedDelete), null, :delete, null));
+        }
+        if (othersCount > 0) {
+            menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.RefusedDeleteOthers),
+                othersSubLabel(othersCount), :deleteOthers, null));
+        }
         for (var index = 0; index < entries.size(); index += 1) {
             var entry = entries[index];
             menu.addItem(new WatchUi.MenuItem(refusedTitle(entry["tick"]), refusedReason(entry["reason"]),
@@ -59,6 +73,11 @@ module Menus {
         var local = Gregorian.info(new Time.Moment(seconds.toNumber()), Time.FORMAT_SHORT);
         return word + " " + local.month.format("%d") + "/" + local.day.format("%d") + " " +
             local.hour.format("%02d") + ":" + local.min.format("%02d");
+    }
+
+    // "25 from other accounts"
+    function othersSubLabel(count) as Lang.String {
+        return count.toString() + " " + (WatchUi.loadResource(Rez.Strings.RefusedOthersCount) as Lang.String);
     }
 
     function refusedReason(reason) as Lang.String {

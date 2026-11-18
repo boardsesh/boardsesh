@@ -10,7 +10,9 @@ using Toybox.Lang;
 // and the drain, so an entry may be a real send. (An unlisted spray wall
 // never hands its uuid to a session, so the watch cannot log there at all;
 // the climber logs those on the phone.) Only the signed-in owner's explicit
-// Retry (requeue) or Delete (withoutOwner) on the watch moves an entry out.
+// Retry (requeue) or Delete (withoutOwner) on the watch moves an entry out,
+// plus one exit for a full store: the signed-in climber may confirm deleting
+// other accounts' entries (onlyOwner), offered only at the cap.
 // A full store refuses the next tick, and the caller keeps it at the head of
 // the outbox.
 module RejectedTicks {
@@ -153,6 +155,28 @@ module RejectedTicks {
             "store" => { "version" => VERSION, "entries" => kept },
             "moved" => moved
         };
+    }
+
+    // Entries other owners hold, counted only while the store is at
+    // `capacity`: 0 below it or for invalid input (#7636 decision 2). One
+    // validation pass, since the session menu reads it.
+    function countOthersWhenFull(store, owner, capacity as Lang.Number) as Lang.Number {
+        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return 0; }
+        var entries = store["entries"];
+        if (entries.size() < capacity) { return 0; }
+        var count = 0;
+        for (var index = 0; index < entries.size(); index += 1) {
+            if (!entries[index]["owner"].equals(owner)) { count += 1; }
+        }
+        return count;
+    }
+
+    // The store with only this owner's entries, in order; null for invalid
+    // input. The mirror of withoutOwner, for the confirmed "delete other
+    // accounts' refused ticks" action that exists only while the store is full.
+    function onlyOwner(store, owner) {
+        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return null; }
+        return { "version" => VERSION, "entries" => forOwner(store, owner) };
     }
 
     function countFor(store, owner) as Lang.Number {

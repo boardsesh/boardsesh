@@ -90,6 +90,11 @@
     <string id="RefusedRetrying">Queued to send again</string>
     <string id="RefusedRetryFailed">Couldn't retry</string>
     <string id="RefusedDeleted">Refused ticks deleted</string>
+    <!-- Only while the refused store is full: clear other accounts' refused ticks -->
+    <string id="RefusedDeleteOthers">Delete others' ticks</string>
+    <string id="RefusedOthersCount">from other accounts</string>
+    <string id="RefusedDeleteOthersConfirm">Delete other accounts' refused ticks? They can't be recovered.</string>
+    <string id="RefusedOthersDeleted">Other accounts' ticks deleted</string>
     <string id="StatusAttempt">ATTEMPT</string>
     <string id="RefusedClimbGone">Climb not found</string>
     <string id="RefusedConflict">Used by another account</string>
