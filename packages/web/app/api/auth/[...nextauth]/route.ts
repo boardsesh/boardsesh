@@ -23,7 +23,6 @@ import {
   unavailablePasswordAuthResponse,
 } from '@/app/lib/auth/password-command-auth.server';
 import { cloudflareVouchedVisitorAddress } from '@/app/lib/auth/trusted-client-ip.server';
-import { guardedSignOutResponse, readExpectedSignOutIdentity } from '@/app/lib/auth/guarded-signout.server';
 import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
 import { routeBrowserSessionAuth } from '@/app/lib/auth/browser-session-route.server';
 import {
@@ -46,6 +45,11 @@ type NextAuthRouteContext = {
 };
 
 type NextAuthHandler = (request: NextRequest, context: NextAuthRouteContext) => Promise<Response>;
+
+type ExpectedSignOutIdentity = {
+  userId: string;
+  authSessionId: string;
+};
 
 const handler = NextAuth(authOptions) as NextAuthHandler;
 function handlerFor(options: NextAuthOptions): NextAuthHandler {
@@ -117,6 +121,44 @@ async function handleExpoOAuthPost(
   if (!descriptor) return null;
   const response = clearLegacyCookieIfSessionWritten(await handler(request, context));
   return redirectExpoOAuthResponse(response, request, state, descriptor.returnUrl);
+}
+
+async function readExpectedSignOutIdentity(
+  request: NextRequest,
+): Promise<ExpectedSignOutIdentity | null | 'invalid' | 'unavailable'> {
+  let form: FormData;
+  try {
+    form = await request.clone().formData();
+  } catch {
+    // Couldn't even read the body as form data (too large, wrong content-type,
+    // a transient stream error). That's a server-side condition, not a client
+    // identity mismatch — surface it as retryable ('unavailable' → 503) so the
+    // caller doesn't treat a transient failure as a permanent identity change.
+    return 'unavailable';
+  }
+
+  const expectedUserId = form.get('expectedUserId');
+  const expectedAuthSessionId = form.get('expectedAuthSessionId');
+  if (expectedUserId === null && expectedAuthSessionId === null) return null;
+  if (
+    typeof expectedUserId !== 'string' ||
+    !expectedUserId.trim() ||
+    typeof expectedAuthSessionId !== 'string' ||
+    !expectedAuthSessionId.trim()
+  ) {
+    return 'invalid';
+  }
+  return { userId: expectedUserId.trim(), authSessionId: expectedAuthSessionId.trim() };
+}
+
+function guardedSignOutResponse(status: number, error: string): NextResponse {
+  return NextResponse.json(
+    { error },
+    {
+      status,
+      headers: { 'Cache-Control': 'private, no-store' },
+    },
+  );
 }
 
 // Delete the pre-migration host-only session cookie whenever NextAuth writes a
@@ -290,7 +332,12 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
   // AUTH_BROWSER_SESSION_MODE unset, empty or `legacy`: exactly the route as it was.
   const browserSessionMode = browserSessionRouteMode();
   if (browserSessionMode.kind === 'legacy') return legacyRoute();
-  return routeBrowserSessionAuth(request, context, browserSessionMode, legacyRoute);
+  // The guarded sign-out keeps this route's form fields and answers.
+  return routeBrowserSessionAuth(request, context, browserSessionMode, {
+    legacyRoute,
+    readExpectedSignOutIdentity,
+    guardedSignOutResponse,
+  });
 }
 
 async function composedAuth(

@@ -15,7 +15,6 @@ import {
   type RequestBrowserSession,
 } from './browser-session.server';
 import { CREDENTIAL_AUTHORITY_HEADER, unavailableCredentialResponse } from './credential-admission-response.server';
-import { guardedSignOutResponse, readExpectedSignOutIdentity } from './guarded-signout.server';
 import {
   admitPasswordLogin,
   createPasswordCommandAuthRequest,
@@ -32,6 +31,15 @@ import { createWebSessionCommandClient } from './web-session-command-client.serv
 import { responseClearsNextAuthSession } from './web-signout-command.server';
 
 type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
+
+/** What the route lends this module, so the legacy path and the guarded sign-out form stay in one place. */
+export type LegacyAuthRoute = Readonly<{
+  legacyRoute: () => Promise<Response>;
+  readExpectedSignOutIdentity: (
+    request: NextRequest,
+  ) => Promise<{ userId: string; authSessionId: string } | null | 'invalid' | 'unavailable'>;
+  guardedSignOutResponse: (status: number, error: string) => Response;
+}>;
 type NextAuthHandler = (request: NextRequest, context: AuthRouteContext) => Promise<Response>;
 
 const PRIVATE = { 'Cache-Control': 'private, no-store' } as const;
@@ -118,6 +126,7 @@ async function signOut(
   request: NextRequest,
   context: AuthRouteContext,
   cookies: BrowserSessionCookieConfiguration,
+  { readExpectedSignOutIdentity, guardedSignOutResponse }: LegacyAuthRoute,
 ): Promise<Response> {
   const expected = await readExpectedSignOutIdentity(request);
   if (expected === 'unavailable') return guardedSignOutResponse(503, 'signout_identity_unreadable');
@@ -215,15 +224,15 @@ export async function routeBrowserSessionAuth(
   request: NextRequest,
   context: AuthRouteContext,
   mode: Exclude<BrowserSessionRouteMode, { kind: 'legacy' }>,
-  legacyRoute: () => Promise<Response>,
+  legacy: LegacyAuthRoute,
 ): Promise<Response> {
   const [action, provider] = (await context.params).nextauth;
   const credentialsLogin = request.method === 'POST' && action === 'callback' && provider === 'credentials';
   if (mode.kind === 'unavailable')
     return credentialsLogin ? unavailablePasswordAuthResponse(request.url) : unavailableCredentialResponse();
   if (credentialsLogin) return withAuthResponseAdmission(request, context, () => login(request, context, mode.cookies));
-  if (request.method === 'POST' && action === 'signout') return signOut(request, context, mode.cookies);
-  if (action === 'session') return readSession(request, mode.cookies, legacyRoute);
-  if (action === 'csrf') return withoutSessionSetCookies(await legacyRoute());
-  return legacyRoute();
+  if (request.method === 'POST' && action === 'signout') return signOut(request, context, mode.cookies, legacy);
+  if (action === 'session') return readSession(request, mode.cookies, legacy.legacyRoute);
+  if (action === 'csrf') return withoutSessionSetCookies(await legacy.legacyRoute());
+  return legacy.legacyRoute();
 }
