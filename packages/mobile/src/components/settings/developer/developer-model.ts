@@ -118,6 +118,18 @@ export function buildDeveloperModel(input: DeveloperModelInput): MoreFormModel {
         onPress: () => onNavigate('/settings/sentry-diagnostics'),
       });
     }
+    // #7695: the secondary button candidates beside the filled one, on the real
+    // native controls. Goes away once a look is picked.
+    rows.push({
+      kind: 'nav',
+      key: 'buttonPairs',
+      // i18n-ignore-next-line — tester-only dev tooling
+      label: 'Button pairs',
+      // i18n-ignore-next-line
+      subtitle: 'Compare secondary button looks beside the filled one',
+      icon: 'boardLook',
+      onPress: () => onNavigate('/settings/button-pairs'),
+    });
     // Pretend the server is down, so the banner, the per-surface placards and
     // the outbox can all be exercised without unplugging anything.
     rows.push({

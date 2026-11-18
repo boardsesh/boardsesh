@@ -85,11 +85,12 @@ export function Button({
   tintColor,
   minHeight,
   role = 'default',
+  secondaryLook,
   maxFontSizeMultiplier,
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, m3 } = useTheme();
+  const { brandColors, m3, systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
   // Every tier and size step sets its label in M3 labelLarge (14/20, weight 500),
   // the M3 Buttons spec. The @expo/ui Text has to be TOLD: it builds its own
@@ -132,6 +133,12 @@ export function Button({
     colors = isDestructive
       ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
       : { containerColor: fillColor, contentColor: brandColors.onPrimary };
+  } else if (!isDestructive && secondaryLook === 'neutralTonal' && (variant === 'tonal' || variant === 'outlined')) {
+    // #7695 evaluation: a neutral tonal fill with label-coloured text.
+    colors = { containerColor: m3.surfaceVariant, contentColor: systemColors.label as string };
+  } else if (!isDestructive && secondaryLook === 'neutralOutline' && (variant === 'tonal' || variant === 'outlined')) {
+    // #7695 evaluation: the outline with label-coloured text instead of violet.
+    colors = { contentColor: systemColors.label as string };
   } else if (variant === 'tonal') {
     colors = isDestructive
       ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
@@ -155,14 +162,19 @@ export function Button({
     spinnerColor = isDestructive ? brandColors.error : accentColor;
   }
 
+  const middleTier = variant === 'tonal' || variant === 'outlined';
   const Comp =
-    variant === 'tonal'
+    middleTier && !isDestructive && secondaryLook === 'neutralTonal'
       ? FilledTonalButton
-      : variant === 'outlined'
+      : middleTier && !isDestructive && secondaryLook === 'neutralOutline'
         ? OutlinedButton
-        : variant === 'text'
-          ? TextButton
-          : ComposeButton;
+        : variant === 'tonal'
+          ? FilledTonalButton
+          : variant === 'outlined'
+            ? OutlinedButton
+            : variant === 'text'
+              ? TextButton
+              : ComposeButton;
 
   const fills = buttonFillAxes(style);
   const pinnedHeight = pinnedButtonHeight(style);

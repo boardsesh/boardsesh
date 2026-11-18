@@ -35,6 +35,17 @@ export type ButtonSurface = 'surface' | 'content' | 'glass';
  */
 export type ButtonRole = 'default' | 'destructive' | 'cancel';
 
+/**
+ * Evaluation only (#7695): a candidate look for the middle tier (`outlined` /
+ * `tonal`) while the design system picks a new secondary button. Shown side by
+ * side with today's look on Settings › Developer › Button pairs. Remove it, and
+ * bake the chosen look into the tier, once one is picked.
+ *   neutralTonal   a neutral tonal fill with label-coloured text
+ *   neutralOutline today's outline (or Liquid Glass capsule) with label-coloured
+ *                  text instead of violet
+ */
+export type SecondaryButtonLook = 'neutralTonal' | 'neutralOutline';
+
 export type ButtonProps = {
   title: string;
   onPress: () => void;
@@ -59,6 +70,8 @@ export type ButtonProps = {
   over?: ButtonSurface;
   /** See {@link ButtonRole}. */
   role?: ButtonRole;
+  /** See {@link SecondaryButtonLook}. Ignored by `filled` and `text`, and on web. */
+  secondaryLook?: SecondaryButtonLook;
   /**
    * iOS only. Set it on a button that can mount while it is scrolled out of
    * view, such as one in a list header that appears after a network answer.

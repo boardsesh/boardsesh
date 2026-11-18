@@ -77,12 +77,13 @@ export function Button({
   minHeight = 44,
   over,
   role = 'default',
+  secondaryLook,
   maxFontSizeMultiplier,
   ignoreContainerSafeArea = false,
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, radii, colorScheme } = useTheme();
+  const { brandColors, radii, colorScheme, systemColors } = useTheme();
   const boldText = useBoldText();
   const supportsGlass = useGlassCapability();
   const surfaceFromContext = useButtonSurface();
@@ -98,11 +99,17 @@ export function Button({
   // content (label/icon/spinner) colour. Destructive lets SwiftUI's `role` paint
   // the system red, so we skip the explicit tint/foregroundStyle there — an
   // explicit colour would defeat the red.
-  const nativeStyle = resolveIosButtonStyle({
-    variant,
-    overContent: effectiveOver === 'content',
-    supportsGlass: supportsGlass && effectiveOver !== 'glass',
-  });
+  const middleTier = variant === 'outlined' || variant === 'tonal';
+  // #7695 evaluation: a neutral tonal fill is SwiftUI's `bordered` tinted with the label colour.
+  const candidateTonal = middleTier && secondaryLook === 'neutralTonal' && effectiveOver !== 'content';
+  const candidateNeutral = middleTier && secondaryLook === 'neutralOutline' && effectiveOver !== 'content';
+  const nativeStyle = candidateTonal
+    ? 'bordered'
+    : resolveIosButtonStyle({
+        variant,
+        overContent: effectiveOver === 'content',
+        supportsGlass: supportsGlass && effectiveOver !== 'glass',
+      });
   // One source for the drawn style, so the label weight below can't disagree
   // with what SwiftUI paints.
   const styleModifier: ModifierConfig = buttonStyle(nativeStyle);
@@ -114,6 +121,12 @@ export function Button({
   } else if (variant === 'text') {
     fillTint = undefined;
     contentColor = effectiveOver === 'content' ? overlays.onScrim : accentColor;
+  } else if (candidateTonal) {
+    fillTint = systemColors.label as string;
+    contentColor = systemColors.label as string;
+  } else if (candidateNeutral) {
+    fillTint = undefined;
+    contentColor = systemColors.label as string;
   } else if (effectiveOver === 'content') {
     // outlined / tonal over board art: a solid scrim capsule.
     fillTint = overlays.scrim;

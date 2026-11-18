@@ -42,8 +42,8 @@ function findRow(input: DeveloperModelInput, key: string): MoreRow {
 }
 
 describe('buildDeveloperModel', () => {
-  it('always gives the dev tools the server-unreachable switch, so the section is never empty', () => {
-    expect(layout(makeInput())).toEqual([['development', ['forceServerUnreachable']]]);
+  it('always gives the dev tools the button pairs and the server-unreachable switch, so the section is never empty', () => {
+    expect(layout(makeInput())).toEqual([['development', ['buttonPairs', 'forceServerUnreachable']]]);
   });
 
   it('lists every tool that applies, in the order they always had', () => {
@@ -65,6 +65,7 @@ describe('buildDeveloperModel', () => {
           'qaPick',
           'outlineEditor',
           'sentryDiagnostics',
+          'buttonPairs',
           'forceServerUnreachable',
         ],
       ],
@@ -102,7 +103,7 @@ describe('buildDeveloperModel', () => {
       devTools: devTools({ showFeatureFlags: true, showQaPicker: true }),
       showPreviewBuild: true,
     });
-    for (const key of ['featureFlags', 'qaPick', 'branchSwitcher']) {
+    for (const key of ['featureFlags', 'qaPick', 'buttonPairs', 'branchSwitcher']) {
       const row = findRow(input, key);
       if (row.kind !== 'nav') throw new Error(`${key} is not a nav row`);
       row.onPress();
@@ -110,6 +111,7 @@ describe('buildDeveloperModel', () => {
     expect(onNavigate.mock.calls.map(([href]) => href)).toEqual([
       '/settings/feature-flags',
       '/qa/pick?prNumbers=1',
+      '/settings/button-pairs',
       '/settings/branch-switcher',
     ]);
   });
