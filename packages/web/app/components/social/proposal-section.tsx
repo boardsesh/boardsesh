@@ -163,16 +163,18 @@ export default function ProposalSection({
                   </IconButton>
                 </Tooltip>
               )}
-              <CreateProposalForm
-                climbUuid={climbUuid}
-                boardType={boardType}
-                angle={angle}
-                isFrozen={communityStatus?.isFrozen}
-                outlierWarning={communityStatus?.outlierAnalysis?.isOutlier}
-                currentClimbDifficulty={communityStatus?.communityGrade || currentClimbDifficulty}
-                boardName={boardName}
-                onCreated={handleProposalCreated}
-              />
+              {token && (
+                <CreateProposalForm
+                  climbUuid={climbUuid}
+                  boardType={boardType}
+                  angle={angle}
+                  isFrozen={communityStatus?.isFrozen}
+                  outlierWarning={communityStatus?.outlierAnalysis?.isOutlier}
+                  currentClimbDifficulty={communityStatus?.communityGrade || currentClimbDifficulty}
+                  boardName={boardName}
+                  onCreated={handleProposalCreated}
+                />
+              )}
             </Box>
           </Box>
 

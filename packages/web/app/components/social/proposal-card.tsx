@@ -263,7 +263,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           />
 
           {/* Vote buttons + admin actions */}
-          {localProposal.status === 'open' && (
+          {token && localProposal.status === 'open' && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
               <Tooltip title={t('feed:proposalCard.support')}>
                 <IconButton
@@ -336,7 +336,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           )}
 
           {/* Admin delete for accepted proposals */}
-          {isAdminOrLeader && localProposal.status === 'approved' && (
+          {token && isAdminOrLeader && localProposal.status === 'approved' && (
             <Box sx={{ mt: 1.5 }}>
               <Button
                 size="small"

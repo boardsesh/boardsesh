@@ -34,7 +34,7 @@ export default function ClimbSocialSection({
   const signInHref = `/auth/login?callbackUrl=${encodeURIComponent(pathname ?? '/')}`;
   return (
     <Box>
-      {status === 'authenticated' && boardType && angle != null && (
+      {boardType && angle != null && (
         <ProposalSection
           climbUuid={climbUuid}
           boardType={boardType}
