@@ -16,7 +16,8 @@ import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } 
 import { authSession, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession, requireFreshAuthentication } from '../../backend/src/auth/authority/session-reader';
-import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
+import { NextRequest } from 'next/server';
+import { CookieJar, ORIGIN, callRoute, patchNextRequestIo, servedRequests, setCookies } from './route-harness';
 import {
   BRIDGED,
   DOMAIN,
@@ -72,6 +73,7 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 });
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
+import * as reauthenticationRoute from '../app/api/auth/reauthenticate/[action]/route';
 import { authOptions } from '../app/lib/auth/auth-options';
 import { GOOGLE_FORCED_REAUTHENTICATION } from '../app/lib/auth/google-forced-reauthentication';
 
@@ -400,5 +402,65 @@ describe('the forced re-sign-in (#7655 item 6) under better-auth', () => {
     }
     // Google's own auth_time decides: a silent answer never passes, a real sign-in does.
     expect(passes).toEqual([false, true]);
+  });
+});
+
+/** The forced re-sign-in's own two routes, as the page calls them. */
+async function reauthenticationStep(action: 'start' | 'return', jar: CookieJar, callbackUrl = '/developers/apps') {
+  const headers = new Headers({ cookie: jar.header(), 'x-forwarded-for': randomClientAddress() });
+  if (action === 'start') {
+    const read = await readSession(jar.header());
+    const session = (await read.json()) as { user?: { id?: string }; authSessionId?: string };
+    headers.set('origin', ORIGIN);
+    headers.set('content-type', 'application/json');
+    headers.set('X-Boardsesh-Expected-Viewer', `${session.user?.id}:${session.authSessionId}`);
+  }
+  const request = new NextRequest(new URL(`/api/auth/reauthenticate/${action}`, ORIGIN), {
+    method: action === 'start' ? 'POST' : 'GET',
+    headers,
+    ...(action === 'start' ? { body: JSON.stringify({ callbackUrl }) } : {}),
+  });
+  const context = { params: Promise.resolve({ action }) };
+  const response = await servedRequests.run(request, () =>
+    action === 'start' ? reauthenticationRoute.POST(request, context) : reauthenticationRoute.GET(request, context),
+  );
+  expect(sessionCookieNamesIn(response)).toEqual([]);
+  jar.apply(response);
+  return response;
+}
+
+describe('the forced re-sign-in comes back only as the account that started it (#7804 review M1)', () => {
+  it.each(['', 'legacy'])('its routes answer 404 with the mode %j', async (mode) => {
+    stubBetterAuthEnvironment(backend.origin);
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
+    const jar = new CookieJar();
+    expect((await reauthenticationStep('return', jar)).status).toBe(404);
+  });
+
+  it('forwards to the return path after the same account signs in, and not after another one', async () => {
+    betterAuth();
+    const identityA = newGoogleIdentity(2 * 60 * 60);
+    const identityB = newGoogleIdentity(2 * 60 * 60);
+    await googleSignIn(new CookieJar(), identityB);
+    const jar = new CookieJar();
+    await googleSignIn(jar, identityA);
+
+    expect((await reauthenticationStep('start', jar)).status).toBe(200);
+    await googleSignIn(jar, { ...identityA, authTimeSeconds: nowSeconds() - 10 }, GOOGLE_FORCED_REAUTHENTICATION);
+    const same = await reauthenticationStep('return', jar);
+    expect(same.status).toBe(303);
+    expect(new URL(same.headers.get('location') ?? '').pathname).toBe('/developers/apps');
+
+    expect((await reauthenticationStep('start', jar)).status).toBe(200);
+    // Google offered another (known) account, and the climber picked it.
+    await googleSignIn(jar, { ...identityB, authTimeSeconds: nowSeconds() - 10 }, GOOGLE_FORCED_REAUTHENTICATION);
+    const other = await reauthenticationStep('return', jar);
+    const location = new URL(other.headers.get('location') ?? '');
+    expect(location.pathname).toBe('/auth/reauthenticate');
+    expect(location.searchParams.get('outcome')).toBe('other_account');
+
+    // Without a started re-sign-in nothing is forwarded either.
+    const expired = await reauthenticationStep('return', jar);
+    expect(new URL(expired.headers.get('location') ?? '').searchParams.get('outcome')).toBe('expired');
   });
 });
