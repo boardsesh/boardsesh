@@ -154,6 +154,14 @@ export const SESSION_REST_CADENCE_SELECTION =
   'revision serverNow isSnapshot action }';
 
 /**
+ * The selection a pinned GetSessionWorkoutHeadlines recording predates: the
+ * board a headline's target grade is on (#7027), selected straight after
+ * `mainTargetGrade`. Nullable, so it replays as null: the card then reads the
+ * grade on the shared scale, exactly as it rendered when recorded.
+ */
+const WORKOUT_HEADLINE_BOARD_SELECTION = 'mainTargetGrade mainTargetBoardType';
+
+/**
  * The selection a pinned GetSession recording predates: whether the session is
  * a gym's always-on one (#6591), which decides whether the join screen says
  * everyone in it sees your name. Non-null, so it is never invented: see
@@ -231,6 +239,7 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
  *   `litByWallDevice`, as `false` (`replayBoardsWithoutWallDevice`). It
  *   composes with the `sprayImport` adapter above.
+ * - GetSessionWorkoutHeadlines: each headline's `mainTargetBoardType`.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -258,6 +267,9 @@ export function replayCompatibleFixtureResponse(
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
   if (operationName === 'GetSmartPlaylist') return replaySmartPlaylistWithoutUnfilteredCount(requestQuery, fixture);
   if (operationName === 'SessionUpdates') return replaySessionUpdatesWithoutRestCadence(requestQuery, fixture);
+  if (operationName === 'GetSessionWorkoutHeadlines') {
+    return replayWorkoutHeadlinesWithoutBoard(requestQuery, fixture);
+  }
   if (TICK_CHARACTERISTICS_OPERATIONS.has(operationName ?? '')) {
     return replayTicksWithoutCharacteristics(requestQuery, fixture);
   }
@@ -411,6 +423,36 @@ function replaySmartPlaylistWithoutUnfilteredCount(
   if (!isRecord(result) || result.unfilteredCount !== undefined) return null;
   return {
     response: { ...response, data: { ...data, smartPlaylist: { ...result, unfilteredCount: null } } },
+  };
+}
+
+function replayWorkoutHeadlinesWithoutBoard(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const pieces = normalized.split(WORKOUT_HEADLINE_BOARD_SELECTION);
+  // Exactly one copy, straight after `mainTargetGrade`, and no other change.
+  if (pieces.length !== 2 || normalized.split('mainTargetBoardType').length !== 2) return null;
+  if (pieces.join('mainTargetGrade') !== normalizeDocument(fixture.query)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const headlines = data.sessionWorkoutHeadlines;
+  if (!Array.isArray(headlines)) return null;
+  // A recording that already carries the board was made with it, so it is not this case.
+  if (!headlines.every((headline) => isRecord(headline) && headline.mainTargetBoardType === undefined)) return null;
+  return {
+    response: {
+      ...response,
+      data: {
+        ...data,
+        sessionWorkoutHeadlines: headlines.map((headline: Record<string, unknown>) => ({
+          ...headline,
+          mainTargetBoardType: null,
+        })),
+      },
+    },
   };
 }
 

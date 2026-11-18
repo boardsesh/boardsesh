@@ -232,7 +232,7 @@ export function swapLookDriver(options: SwapLookDriverOptions): BoardTransitionD
           wallSwapSharedWeight(shipped.state, true, tuning),
         ],
         startSwapMs: shipped.startSwap ? swapClockMs(shipped.state) : null,
-        startSettleMs: shipped.startSettle ? tuning.settleMs : null,
+        startSettleMs: shipped.startSettleMs,
       };
     }
 
@@ -240,9 +240,7 @@ export function swapLookDriver(options: SwapLookDriverOptions): BoardTransitionD
     let calmDrag = previous.calmDrag;
     if (reset || commits || input.offset === 0) calmDrag = false;
     else if (previous.lastOffset === 0) calmDrag = calmRuns && inRunWindow;
-    // No dim while it lasts: the machine's follow under Reduce Motion is exactly that.
-    const machineInput = calmDrag && !commits ? { ...input, reduceMotion: true } : input;
-    const machine = stepWallSwap(previous, machineInput, run ? fastTuning : tuning);
+    const machine = stepWallSwap(previous, input, run ? fastTuning : tuning, calmDrag);
     let state: WallSwapState = machine.state;
 
     // A commit straight from a drag (same pair, no lead-in) starts its swap
@@ -281,7 +279,7 @@ export function swapLookDriver(options: SwapLookDriverOptions): BoardTransitionD
     if (ghostDrag && !calmDrag && !state.swapping && state.dir !== 0) {
       const dimmed = tuning.dimFloor < 1 ? (1 - state.outgoing) / (1 - tuning.dimFloor) : 0;
       let eased = 1;
-      if (machine.startSettle) eased = 0;
+      if (machine.startSettleMs !== null) eased = 0;
       else if (state.settling && tuning.settleMs > 0) eased = easeOut(input.settleMs / tuning.settleMs, tuning);
       const ghost = ghostFloor * clampUnit(dimmed) * eased;
       if (ghost > incoming) incoming = ghost;
@@ -340,7 +338,7 @@ export function swapLookDriver(options: SwapLookDriverOptions): BoardTransitionD
       state: lookState,
       frame,
       startSwapMs: machine.startSwap ? Math.max(swapClockMs(state), minimumClockMs) : null,
-      startSettleMs: machine.startSettle ? tuning.settleMs : null,
+      startSettleMs: machine.startSettleMs,
     };
   };
 

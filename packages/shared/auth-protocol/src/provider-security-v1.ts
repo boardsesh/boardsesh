@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { webCredentialProofSchema } from './web-credential-proof';
+import { presentedWebSessionSchema } from './web-session';
 
 export const PROVIDER_SECURITY_VERSION = 1;
 export const PROVIDER_SECURITY_PATH_PREFIX = '/api/internal/auth/current-store/provider-security/v1';
@@ -14,15 +15,31 @@ const token = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const timestamp = z.iso.datetime();
 const subject = z.string().min(1).max(1024);
-const actor = z
+const identityId = z.string().min(1).max(1024);
+/**
+ * The browser-binding actor. Only the owned-provider sign-in commands and
+ * first password still take it, until #7596 B5a and B5c2 move them to the web
+ * session and B5d deletes the binding.
+ */
+export const browserBindingActorSchema = z
   .object({
     kind: z.enum(['legacy-jwe', 'canonical-token']),
     credential,
-    expectedUserId: z.string().min(1).max(1024),
-    expectedAuthSessionId: z.string().min(1).max(1024),
+    expectedUserId: identityId,
+    expectedAuthSessionId: identityId,
     browserBindingToken: token,
     browserVersion: z.number().int().nonnegative().max(2_147_483_646),
   })
+  .strict();
+export type BrowserBindingActor = z.infer<typeof browserBindingActorSchema>;
+/**
+ * The actor of provider link, unlink and reauthentication: the first-party web
+ * session www read from the cookie (the canonical token after its signature
+ * checked out, or the joined legacy NextAuth cookie), and who the tab believed
+ * it was signed in as. Every step presents the same session; none rotates it.
+ */
+const actor = z
+  .object({ presented: presentedWebSessionSchema, expectedUserId: identityId, expectedAuthSessionId: identityId })
   .strict();
 const metadata = {
   providerSecurityVersion: z.literal(PROVIDER_SECURITY_VERSION),
@@ -31,8 +48,14 @@ const metadata = {
 };
 const command = <Operation extends string, Shape extends z.ZodRawShape>(operation: Operation, payload: Shape) =>
   z.object({ ...metadata, operation: z.literal(operation), payload: z.object(payload).strict() }).strict();
-const bound = { actor, intentToken: token, browserIntentToken: token };
-const signinBound = { ...bound, flowHash: digest, nonceHash: digest.nullable() };
+const bound = { actor, intentToken: token };
+const signinBound = {
+  actor: browserBindingActorSchema,
+  intentToken: token,
+  browserIntentToken: token,
+  flowHash: digest,
+  nonceHash: digest.nullable(),
+};
 
 /** Hash-bound backend preparation, never an independently trusted login proof. */
 export const providerOwnedSigninPreparationSchema = z
@@ -51,7 +74,7 @@ export const providerSecurityCommandSchema = z.discriminatedUnion('operation', [
   command('methods', { actor }),
   command('owned-provider', { actor, provider: providerSecurityProviderSchema, subject }),
   command('signin-intent', {
-    actor,
+    actor: browserBindingActorSchema,
     provider: providerSecurityProviderSchema,
     flowHash: digest,
     nonceHash: digest.nullable(),
@@ -107,23 +130,14 @@ export const providerSecurityCommandSchema = z.discriminatedUnion('operation', [
       .strict()
       .nullable(),
   }),
-  command('finalize', {
-    ...bound,
-    reauthenticationToken: token,
-    preparationToken: token,
-    candidate: z.object({ kind: z.enum(['legacy-jwe', 'canonical-token']), credential }).strict(),
-  }),
+  // The requesting session keeps its token: no candidate credential exists.
+  command('finalize', { ...bound, reauthenticationToken: token, preparationToken: token }),
   command('abort', { ...bound, preparationToken: token.nullable(), flowHash: digest.nullable() }),
-  command('recover', {
-    ...bound,
-    recoveryToken: token,
-    reauthenticationToken: token,
-    candidate: z.object({ kind: z.enum(['legacy-jwe', 'canonical-token']), credential }).strict(),
-  }),
+  command('recover', { ...bound, recoveryToken: token, reauthenticationToken: token }),
 ]);
 export type ProviderSecurityCommand = z.infer<typeof providerSecurityCommandSchema>;
 export type ProviderSecurityOperation = ProviderSecurityCommand['operation'];
-export type ProviderSecurityActor = ProviderSecurityCommand['payload']['actor'];
+export type ProviderSecurityActor = z.infer<typeof actor>;
 
 export const PROVIDER_SECURITY_COMMAND_PATHS = {
   methods: `${PROVIDER_SECURITY_PATH_PREFIX}/methods`,
@@ -143,6 +157,7 @@ export const PROVIDER_SECURITY_COMMAND_PATHS = {
   recover: `${PROVIDER_SECURITY_PATH_PREFIX}/recover`,
 } as const satisfies Record<ProviderSecurityOperation, string>;
 
+const generation = z.number().int().nonnegative().max(2_147_483_647);
 const replyMetadata = {
   providerSecurityVersion: z.literal(PROVIDER_SECURITY_VERSION),
   requestId: z.uuidv4(),
@@ -178,6 +193,7 @@ const failure = z
     outcome: z.enum([
       'unauthenticated',
       'identity_changed',
+      'canonical_session_required',
       'reauthentication_required',
       'reauthentication_unavailable',
       'denied',
@@ -193,6 +209,7 @@ const failure = z
       'ownership_conflict',
       'last_usable_method',
       'authority_unavailable',
+      'canonical_session_required',
     ]),
   })
   .strict();
@@ -260,9 +277,6 @@ export const providerSecurityReplySchema = z.union([
       ...replyMetadata,
       operation: z.literal('owned-provider'),
       outcome: z.literal('owned'),
-      credentialProof: webCredentialProofSchema,
-      credentialExpiresAt: timestamp,
-      browserCursor,
       user: providerUser,
     })
     .strict(),
@@ -284,8 +298,6 @@ export const providerSecurityReplySchema = z.union([
       outcome: z.literal('recorded'),
       intentToken: token,
       recoveryToken: token,
-      browserIntentToken: token,
-      browserCursor,
       expiresAt: timestamp,
     })
     .strict(),
@@ -311,12 +323,7 @@ export const providerSecurityReplySchema = z.union([
       operation: z.literal('prepare'),
       outcome: z.literal('prepared'),
       preparationToken: token,
-      credentialProof: webCredentialProofSchema,
-      credentialExpiresAt: timestamp,
       expiresAt: timestamp,
-      browserCursor,
-      /** An opaque canonical token is proposed privately, never inferred from a SID. */
-      proposedCanonicalToken: token.nullable(),
       user: providerUser,
     })
     .strict(),
@@ -325,8 +332,8 @@ export const providerSecurityReplySchema = z.union([
       ...replyMetadata,
       operation: z.literal('finalize'),
       outcome: z.literal('committed'),
-      candidateCredentialHash: digest,
-      browserCursor,
+      /** The requesting session's generation now: the account's new one. Its id and token did not change. */
+      generation,
     })
     .strict(),
   z.object({ ...replyMetadata, operation: z.literal('abort'), outcome: z.literal('aborted') }).strict(),
@@ -335,8 +342,7 @@ export const providerSecurityReplySchema = z.union([
       ...replyMetadata,
       operation: z.literal('recover'),
       outcome: z.literal('recovered'),
-      candidateCredentialHash: digest,
-      browserCursor,
+      generation,
     })
     .strict(),
 ]);
@@ -348,6 +354,8 @@ export function providerSecurityReplyStatus(reply: ProviderSecurityReply): 200 |
       return 401;
     case 'identity_changed':
       return 409;
+    // A legacy cookie must be bridged to a canonical session first (#7596 B5c1).
+    case 'canonical_session_required':
     case 'reauthentication_required':
     case 'reauthentication_unavailable':
       return 403;

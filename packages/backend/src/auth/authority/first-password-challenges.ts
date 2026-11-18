@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { authBrowserBindings, authBrowserIntents, authFirstPasswordChallenges } from '@boardsesh/db/schema/auth';
-import type { ProviderSecurityActor } from '@boardsesh/auth-protocol';
+import type { BrowserBindingActor } from '@boardsesh/auth-protocol';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { beginBrowserIntent, type BrowserBindingCursor } from './browser-binding';
 import type { IdentityAuthorityReceipt } from './router';
@@ -17,22 +17,18 @@ import {
   firstPasswordDeadline,
   type FirstPasswordRuntime,
 } from './first-password-policy';
-import {
-  providerDatabaseNow,
-  providerTokenHash,
-  ProviderSecurityRefusal,
-  type CapturedProviderActor,
-} from './provider-security-context';
+import { providerDatabaseNow, providerTokenHash, ProviderSecurityRefusal } from './provider-security-context';
+import type { CapturedBrowserBindingActor } from './provider-binding-actor';
 import type { FirstPartySession } from './session-reader';
 
 export type FirstPasswordChallenge = typeof authFirstPasswordChallenges.$inferSelect;
 export interface FirstPasswordBoundInput {
-  readonly actor: ProviderSecurityActor;
+  readonly actor: BrowserBindingActor;
   readonly challengeToken: string;
   readonly browserIntentToken: string;
 }
 export interface CapturedFirstPasswordCommand {
-  readonly actor: CapturedProviderActor;
+  readonly actor: CapturedBrowserBindingActor;
   readonly challengeToken: string;
   readonly browserIntentToken: string;
 }
@@ -153,7 +149,7 @@ export async function loadFirstPasswordChallenge(
 export async function requestFirstPasswordChallenge(
   database: AuthorityDatabase,
   runtimeInput: FirstPasswordRuntime,
-  input: { readonly actor: ProviderSecurityActor },
+  input: { readonly actor: BrowserBindingActor },
 ) {
   const runtime = captureFirstPasswordRuntime(runtimeInput);
   const actor = captureFirstPasswordActor(input.actor, runtime);

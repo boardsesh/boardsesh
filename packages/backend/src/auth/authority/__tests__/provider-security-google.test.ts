@@ -27,17 +27,17 @@ const keyId = 'operation-bound-actual-google-key';
 async function start(selected: 'current-store' | 'better-auth', unlink = false) {
   const subject = randomUUID();
   const owner = await environment.actor(selected, 'canonical-token', { provider: 'google', subject, password: false });
-  const methods = await readProviderSecurityMethods(environment.database, environment.runtime, owner.actor);
+  const methods = await readProviderSecurityMethods(environment.database, environment.runtime, owner.webActor);
   expect(methods.googleReauthenticationAvailable).toBe(true);
   const intent = await createProviderSecurityIntent(environment.database, environment.runtime, {
-    actor: owner.actor,
+    actor: owner.webActor,
     action: unlink ? 'unlink' : 'link',
     provider: unlink ? 'google' : 'apple',
     methodId: unlink ? methods.providers.find((method) => method.provider === 'google')!.methodId : null,
   });
   const nonce = randomBytes(32).toString('base64url');
   const flowHash = randomBytes(32).toString('hex');
-  const bound = { actor: owner.actor, intentToken: intent.intentToken, browserIntentToken: intent.browserIntentToken };
+  const bound = { actor: owner.webActor, intentToken: intent.intentToken };
   await bindProviderSecurityFlow(environment.database, environment.runtime, {
     ...bound,
     flowHash,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { SessionDetailTick } from '@boardsesh/shared-schema';
-import { buildWorkoutClimbGroups, type SessionWorkoutView } from '../session-workout';
+import type { SessionWorkoutResult } from '@boardsesh/graphql/operations/session-workouts';
+import { formatGrade } from '@boardsesh/play-view';
+import { buildWorkoutClimbGroups, toWorkoutView, type SessionWorkoutView } from '../session-workout';
 
 const tick = (uuid: string, climbUuid: string, minute: number, userId = 'owner'): SessionDetailTick =>
   ({
@@ -71,5 +73,45 @@ describe('buildWorkoutClimbGroups', () => {
       ['q2', 2, ['c', 'd']],
       ['q3', 3, []],
     ]);
+  });
+});
+
+describe('toWorkoutView', () => {
+  // 6A+ is the one grade MoonBoard's scale reads differently: its V3 holds only
+  // 6A+, so it gets no "+". Every other board's V3 also holds 6A, so it does.
+  const workoutOn = (boardType: string): SessionWorkoutResult => ({
+    userId: 'owner',
+    displayName: null,
+    avatarUrl: null,
+    offPlan: 0,
+    offPlanTickUuids: [],
+    updatedAt: '2026-10-27T13:00:00.000Z',
+    stages: [
+      {
+        id: 'main',
+        kind: 'pyramid',
+        isCoolDown: false,
+        targetGrade: '6a+/V3',
+        repsPerSet: null,
+        sets: null,
+        intervalSeconds: null,
+        restSeconds: null,
+        tally: { sent: 1, attempts: 0, skipped: 0, climbs: 1 },
+        climbs: [{ ...climb('q1', 'CLIMB', ['a']), grade: '6a+/V3', boardType, reps: ['SEND'] }],
+      },
+    ],
+  });
+  const vGrade = (label: string, boardName: string | null) => formatGrade(label, 'v-grade', boardName);
+
+  it('formats the block target and its climbs on the climbs’ board', () => {
+    const [stage] = toWorkoutView(workoutOn('moonboard'), vGrade).stages;
+    expect(stage.targetGrade).toBe('V3');
+    expect(stage.climbs[0].grade).toBe('V3');
+  });
+
+  it('keeps the shared scale for every other board', () => {
+    const [stage] = toWorkoutView(workoutOn('kilter'), vGrade).stages;
+    expect(stage.targetGrade).toBe('V3+');
+    expect(stage.climbs[0].grade).toBe('V3+');
   });
 });

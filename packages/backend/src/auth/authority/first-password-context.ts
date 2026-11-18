@@ -1,17 +1,17 @@
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { authEmailReservationMembers, authEmailReservations, users } from '@boardsesh/db/schema/auth';
-import type { ProviderSecurityActor } from '@boardsesh/auth-protocol';
+import type { BrowserBindingActor } from '@boardsesh/auth-protocol';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { captureIdentityAuthority, revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import { bindIdentityAuthority } from './identity-authority';
 import {
-  admitProviderActorInTransaction,
-  captureProviderActor,
-  type CapturedProviderActor,
-} from './provider-security-context';
+  admitBrowserBindingActorInTransaction,
+  captureBrowserBindingActor,
+  type CapturedBrowserBindingActor,
+} from './provider-binding-actor';
 import {
   captureFirstPasswordRuntime,
   firstPasswordEmailBinding,
@@ -29,10 +29,10 @@ export class FirstPasswordRefusal extends Error {
   }
 }
 
-export function captureFirstPasswordActor(input: ProviderSecurityActor, runtime: FirstPasswordRuntime) {
+export function captureFirstPasswordActor(input: BrowserBindingActor, runtime: FirstPasswordRuntime) {
   // The private protocol independently checks the complete shape before pool
   // acquisition. Capture all primitives here before any authority await.
-  return captureProviderActor(Object.freeze({ ...input }), runtime.legacySecret);
+  return captureBrowserBindingActor(Object.freeze({ ...input }), runtime.legacySecret);
 }
 
 export async function withFirstPasswordAuthority<Result>(
@@ -58,10 +58,10 @@ export async function lockFirstPasswordEligibility(
   transaction: AuthorityTransaction,
   authority: IdentityAuthorityReceipt,
   runtime: FirstPasswordRuntime,
-  actor: CapturedProviderActor,
+  actor: CapturedBrowserBindingActor,
 ) {
   const capturedRuntime = captureFirstPasswordRuntime(runtime);
-  const admitted = await admitProviderActorInTransaction(transaction, authority, actor);
+  const admitted = await admitBrowserBindingActorInTransaction(transaction, authority, actor);
   const [user] = await transaction.select().from(users).where(eq(users.id, admitted.session.userId)).for('update');
   if (!user) throw new FirstPasswordRefusal('identity_changed', 'invalid_proof');
   const recipient = user.email.trim();

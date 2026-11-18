@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
         userId: 'user-1',
         mainKind: 'fourByFour',
         mainTargetGrade: '6b/V4',
+        mainTargetBoardType: 'kilter',
         secondMainKind: null,
         blockCount: 3,
         extraMainBlocks: 0,
