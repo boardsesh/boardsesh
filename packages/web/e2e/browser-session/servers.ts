@@ -99,6 +99,12 @@ export class ServerSet {
     await Promise.all(stopping.map(stopProcess));
   }
 
+  /** For teardown: lets a restart a spec left running finish (each wait is bounded), then stops everything. */
+  async shutdown(): Promise<void> {
+    await this.queue;
+    await this.stop();
+  }
+
   /** Stops both servers and starts them again; one at a time, however many callers ask. */
   restart(overrides: RestartOverrides = {}): Promise<void> {
     const next = this.queue.then(async () => {

@@ -144,6 +144,11 @@ function tlsServer(options: EdgeOptions, clientAddress: string, sockets: Set<Soc
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
   });
+  // Node closes an idle keep-alive connection after 5 s by default, and a browser that reuses it in
+  // that instant sees a network error (WebKit: "internal error"), which the specs then read as an
+  // app that never loads. Keep idle connections far longer than any spec waits between requests.
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
   // Next's dev server keeps a WebSocket open for hot reload; pass upgrades straight through.
   server.on('upgrade', (incoming: IncomingMessage, clientSocket: Duplex, head: Buffer) => {
     const hostname = hostnameOf(incoming.headers.host);

@@ -184,9 +184,18 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let edge: Edge | undefined;
   let accountBSeeded = false;
   const teardown = async () => {
-    await serverSet?.stop();
+    await serverSet?.shutdown();
     await edge?.close();
-    await Promise.all(servers.map((server) => new Promise<void>((done) => server.close(() => done()))));
+    // Kept-alive connections (www's to the relay, a worker's to the control server) would hold close() open.
+    await Promise.all(
+      servers.map(
+        (server) =>
+          new Promise<void>((done) => {
+            server.close(() => done());
+            server.closeAllConnections();
+          }),
+      ),
+    );
     if (accountBSeeded) runDatabaseStep(databaseUrl, ['cleanup', `${runAccountPrefix}%`]);
     rmSync(workDirectory, { recursive: true, force: true });
   };
