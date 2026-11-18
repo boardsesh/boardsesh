@@ -57,6 +57,12 @@ export type PyramidOptions = {
   type: 'pyramid';
   numberOfSteps: number;
   climbsPerStep: number;
+  /**
+   * Come back down on the climbs of the way up: every way-down slot repeats its
+   * way-up twin (`PlannedClimbSlot.repeatOfIndex`). The peak never repeats.
+   * Absent means off (the default): the way down gets climbs of its own.
+   */
+  repeatOnWayDown?: boolean;
 } & BaseGeneratorOptions;
 
 export type LadderOptions = {
@@ -245,6 +251,14 @@ export type PlannedClimbSlot = {
   /** `coolDown`: a warm-up after the last workout block, stepping back down from its grade. */
   section: 'warmUp' | 'increasing' | 'peak' | 'decreasing' | 'main' | 'coolDown';
   index: number;
+  /**
+   * Set on a slot that climbs an earlier slot's climb again: that slot's
+   * `index`. The app fills it with the same climb under a queue item of its own,
+   * so a tick on each visit stays on its own item, and changing either climb
+   * changes both. Never set on the slot right after its twin, so the player
+   * never shows one climb on two pages in a row. Absent on every other slot.
+   */
+  repeatOfIndex?: number;
 };
 
 // Minimal grade scale shape the generator needs. Matches the rows returned by
