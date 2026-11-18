@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { hash } from 'bcryptjs';
 import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
-import { setPasswordCommandSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
+import { setPasswordPasswordSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
 import { authFirstPasswordChallenges } from '@boardsesh/db/schema/auth';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import {
@@ -78,7 +78,7 @@ export async function prepareFirstPasswordChallenge(
   const runtime = captureFirstPasswordRuntime(runtimeInput);
   const command = captureFirstPasswordCommand(input, runtime);
   const { password, confirmPassword, confirmationToken } = input;
-  const validPassword = setPasswordCommandSchema.shape.payload.shape.password.safeParse(password);
+  const validPassword = setPasswordPasswordSchema.safeParse(password);
   if (!validPassword.success || password !== confirmPassword) throw new FirstPasswordRefusal('denied', 'invalid_proof');
   const confirmationHash = firstPasswordTokenHash('confirmation', confirmationToken);
   // No expensive hash or token issuance before actual actor/mail ownership.

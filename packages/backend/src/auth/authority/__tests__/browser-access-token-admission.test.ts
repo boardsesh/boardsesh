@@ -70,7 +70,7 @@ vi.mock('../../../db/client', async () => {
   };
 });
 
-beforeAll(startHarness);
+beforeAll(() => startHarness());
 beforeEach(stubCommandEnvironment);
 afterAll(stopHarness);
 

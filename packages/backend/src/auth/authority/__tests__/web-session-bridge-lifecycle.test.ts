@@ -44,7 +44,7 @@ vi.mock('../../admission-pool', async () => {
   };
 });
 
-beforeAll(startHarness);
+beforeAll(() => startHarness());
 beforeEach(stubCommandEnvironment);
 afterAll(stopHarness);
 
