@@ -72,11 +72,13 @@ describe('browser-session-e2e.yml', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
   });
 
-  it('caps the job at 60 minutes and installs both engines', () => {
+  it('caps the job at 60 minutes and installs both engines, each install attempt bounded', () => {
     const job = workflow.jobs['browser-session'];
     expect(job['timeout-minutes']).toBe(60);
     const runs = (job.steps ?? []).map((step) => step.run ?? '');
-    expect(runs).toContain('vp exec playwright install --with-deps chromium webkit');
+    const install = runs.find((run) => run.includes('playwright install'));
+    expect(install).toContain('timeout 600 vp exec playwright install --with-deps chromium webkit');
+    expect(install).toContain('for attempt in 1 2 3');
     expect(runs).toContain('vp run test:e2e:browser-session');
   });
 
