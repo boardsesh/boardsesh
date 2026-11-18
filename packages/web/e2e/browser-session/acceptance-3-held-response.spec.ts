@@ -165,9 +165,20 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
     if (socketsReachServer) socket.connectToServer();
   });
   const held = await holdReplies(appPage, `https://${WS_HOST}/graphql`);
+  // The reloaded document must have confirmed A (its session read, then ws-auth) before B signs
+  // in, and at least one reply must be held that it sent as A after that. Otherwise its first
+  // read can already name B, the page is B's from the start, and nothing is held across a switch
+  // (run 44378153607, attempt 2: one held reply, sent before the page knew anyone).
+  const confirmedA = appPage.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/internal/ws-auth' && response.status() === 200,
+    { timeout: 60_000 },
+  );
   await appPage.reload({ waitUntil: 'commit' });
   await markDocument(appPage);
-  await expect.poll(held.count, { timeout: 60_000 }).toBeGreaterThan(0);
+  await confirmedA;
+  const heldBeforeA = held.count();
+  await expect.poll(held.count, { timeout: 60_000 }).toBeGreaterThan(heldBeforeA);
+  expect(await readViewer(appPage)).toMatchObject({ authenticated: true, userId: accountA.userId });
 
   await signInOverExistingSession(wwwPage, accountB);
   await expectSessionReadNames(wwwPage, accountB);
