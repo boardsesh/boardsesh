@@ -93,6 +93,19 @@ describe('website journey tracking', () => {
     expect(track).toHaveBeenCalledWith(payload.name, payload.properties);
   });
 
+  it.each(['mailto:support@auroraclimbing.com', 'tel:+31201234567'])(
+    'keeps external-protocol links inside the trusted browser click: %s',
+    (destination) => {
+      const click = linkClick();
+      click.currentTarget.href = destination;
+      trackWebsiteJourneyLinkClick(click, payload);
+      expect(click.preventDefault).not.toHaveBeenCalled();
+      expect(trackBeforeNavigation).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(track).toHaveBeenCalledWith(payload.name, payload.properties);
+    },
+  );
+
   it('does not report an action another handler already canceled', () => {
     trackWebsiteJourneyLinkClick(linkClick({ defaultPrevented: true }), payload);
     expect(track).not.toHaveBeenCalled();

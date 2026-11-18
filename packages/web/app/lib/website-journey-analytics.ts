@@ -13,7 +13,15 @@ export function trackWebsiteJourneyLinkClick(click: MouseEvent<HTMLAnchorElement
   const anchor = click.currentTarget;
   const isNewContext = anchor.target !== '' && anchor.target !== '_self';
   const isModified = click.metaKey || click.ctrlKey || click.shiftKey || click.altKey || click.button !== 0;
-  if (isNewContext || isModified || anchor.origin === window.location.origin || anchor.hasAttribute('download')) {
+  const isWebNavigation = anchor.protocol === 'http:' || anchor.protocol === 'https:';
+  // Email, phone and custom schemes need the original trusted browser gesture.
+  if (
+    !isWebNavigation ||
+    isNewContext ||
+    isModified ||
+    anchor.origin === window.location.origin ||
+    anchor.hasAttribute('download')
+  ) {
     trackWebsiteJourneyEvent(event);
     return;
   }
