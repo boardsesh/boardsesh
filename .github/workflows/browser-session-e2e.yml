@@ -80,8 +80,16 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      # One attempt hung for 30 minutes on a runner (#7810, run 44384191160); give each
+      # attempt 10 minutes and try three times, so a stuck download costs minutes, not the job.
       - name: Install Playwright chromium and webkit
-        run: vp exec playwright install --with-deps chromium webkit
+        run: |
+          for attempt in 1 2 3; do
+            timeout 600 vp exec playwright install --with-deps chromium webkit && exit 0
+            echo "Playwright install attempt $attempt failed or timed out."
+            sleep 10
+          done
+          exit 1
         working-directory: packages/web
 
       # Today's mode first, on the dev database as the image has it: the B7a
