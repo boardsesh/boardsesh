@@ -6,7 +6,8 @@
 //                  and EVERY iOS version — the brand CTA never goes translucent, so
 //                  it can't wash out over board art or in near-black dark mode, and
 //                  it never touches the iOS-26 `#available` glass gate.
-//   outlined/    → glass-as-guest: a neutral Liquid Glass capsule on an opaque
+//   outlined/    → glass-as-guest: a neutral Liquid Glass capsule, label-coloured
+//                  text (never violet, #7695), on an opaque
 //   tonal          surface on iOS 26 (`buttonStyle('glass')`); an EXPLICIT
 //                  `bordered` fallback on iOS < 26 (we branch on
 //                  `useGlassCapability()` rather than trusting @expo/ui's implicit
@@ -77,7 +78,6 @@ export function Button({
   minHeight = 44,
   over,
   role = 'default',
-  secondaryLook,
   maxFontSizeMultiplier,
   ignoreContainerSafeArea = false,
   testID,
@@ -99,17 +99,11 @@ export function Button({
   // content (label/icon/spinner) colour. Destructive lets SwiftUI's `role` paint
   // the system red, so we skip the explicit tint/foregroundStyle there — an
   // explicit colour would defeat the red.
-  const middleTier = variant === 'outlined' || variant === 'tonal';
-  // #7695 evaluation: a neutral tonal fill is SwiftUI's `bordered` tinted with the label colour.
-  const candidateTonal = middleTier && secondaryLook === 'neutralTonal' && effectiveOver !== 'content';
-  const candidateNeutral = middleTier && secondaryLook === 'neutralOutline' && effectiveOver !== 'content';
-  const nativeStyle = candidateTonal
-    ? 'bordered'
-    : resolveIosButtonStyle({
-        variant,
-        overContent: effectiveOver === 'content',
-        supportsGlass: supportsGlass && effectiveOver !== 'glass',
-      });
+  const nativeStyle = resolveIosButtonStyle({
+    variant,
+    overContent: effectiveOver === 'content',
+    supportsGlass: supportsGlass && effectiveOver !== 'glass',
+  });
   // One source for the drawn style, so the label weight below can't disagree
   // with what SwiftUI paints.
   const styleModifier: ModifierConfig = buttonStyle(nativeStyle);
@@ -121,22 +115,19 @@ export function Button({
   } else if (variant === 'text') {
     fillTint = undefined;
     contentColor = effectiveOver === 'content' ? overlays.onScrim : accentColor;
-  } else if (candidateTonal) {
-    fillTint = systemColors.label as string;
-    contentColor = systemColors.label as string;
-  } else if (candidateNeutral) {
-    fillTint = undefined;
-    contentColor = systemColors.label as string;
   } else if (effectiveOver === 'content') {
     // outlined / tonal over board art: a solid scrim capsule.
     fillTint = overlays.scrim;
     contentColor = overlays.onScrim;
   } else if (supportsGlass && effectiveOver !== 'glass') {
-    fillTint = undefined; // neutral glass; the brand reads via the label colour
-    contentColor = accentColor;
+    // Neutral glass with a neutral label (#7695): violet stays for links,
+    // status and selection, so the secondary button never reads as a link.
+    fillTint = undefined;
+    contentColor = tintColor ?? (systemColors.label as string);
   } else {
-    fillTint = accentColor;
-    contentColor = accentColor;
+    // `bordered`, tinted with the label colour: a neutral capsule, as on glass.
+    fillTint = tintColor ?? (systemColors.label as string);
+    contentColor = tintColor ?? (systemColors.label as string);
   }
 
   // Which axes the caller sized for us: a positive `flex`/`width: '100%'` across,

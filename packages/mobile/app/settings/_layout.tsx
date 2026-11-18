@@ -147,7 +147,6 @@ export default function SettingsLayout() {
         <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />
         {/* i18n-ignore-next-line — admin-only screen */}
         <Stack.Screen name="outline-editor" options={{ title: 'Hold Outlines' }} />
-        <Stack.Screen name="button-pairs" options={{ title: 'Button pairs' }} />
         {/* i18n-ignore-next-line — admin-only screen */}
         <Stack.Screen name="outline-canvas" options={{ title: 'Outline Editor' }} />
         <Stack.Screen name="delete-account" options={{ title: tSettings('deleteAccount.title') }} />

@@ -85,7 +85,6 @@ export function Button({
   tintColor,
   minHeight,
   role = 'default',
-  secondaryLook,
   maxFontSizeMultiplier,
   testID,
   style,
@@ -133,16 +132,14 @@ export function Button({
     colors = isDestructive
       ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
       : { containerColor: fillColor, contentColor: brandColors.onPrimary };
-  } else if (!isDestructive && secondaryLook === 'neutralTonal' && (variant === 'tonal' || variant === 'outlined')) {
-    // #7695 evaluation: a neutral tonal fill with label-coloured text.
-    colors = { containerColor: m3.surfaceVariant, contentColor: systemColors.label as string };
-  } else if (!isDestructive && secondaryLook === 'neutralOutline' && (variant === 'tonal' || variant === 'outlined')) {
-    // #7695 evaluation: the outline with label-coloured text instead of violet.
-    colors = { contentColor: systemColors.label as string };
   } else if (variant === 'tonal') {
     colors = isDestructive
       ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
       : tonalButtonColors(m3);
+  } else if (variant === 'outlined') {
+    // Label-coloured text on the neutral outline (#7695): violet stays for
+    // links, status and selection. An explicit tint still wins.
+    colors = { contentColor: isDestructive ? brandColors.error : (tintColor ?? (systemColors.label as string)) };
   } else {
     colors = { contentColor: isDestructive ? brandColors.error : accentColor };
   }
@@ -159,22 +156,17 @@ export function Button({
     // its content (and the spinner) is white (onPrimary), not error.
     spinnerColor = isDestructive ? brandColors.onPrimary : (colors.contentColor ?? brandColors.primary);
   } else {
-    spinnerColor = isDestructive ? brandColors.error : accentColor;
+    spinnerColor = isDestructive ? brandColors.error : (colors.contentColor ?? accentColor);
   }
 
-  const middleTier = variant === 'tonal' || variant === 'outlined';
   const Comp =
-    middleTier && !isDestructive && secondaryLook === 'neutralTonal'
+    variant === 'tonal'
       ? FilledTonalButton
-      : middleTier && !isDestructive && secondaryLook === 'neutralOutline'
+      : variant === 'outlined'
         ? OutlinedButton
-        : variant === 'tonal'
-          ? FilledTonalButton
-          : variant === 'outlined'
-            ? OutlinedButton
-            : variant === 'text'
-              ? TextButton
-              : ComposeButton;
+        : variant === 'text'
+          ? TextButton
+          : ComposeButton;
 
   const fills = buttonFillAxes(style);
   const pinnedHeight = pinnedButtonHeight(style);

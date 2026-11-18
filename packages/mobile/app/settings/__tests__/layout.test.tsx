@@ -174,7 +174,6 @@ const SETTINGS_PAGES = [
   'dev-offline-writes',
   'sentry-diagnostics',
   'outline-editor',
-  'button-pairs',
   'outline-canvas',
   'delete-account',
 ];

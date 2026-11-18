@@ -46,7 +46,7 @@ export function Button({
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const handlePress = makeButtonPressHandler({ onPress, disabled, loading, haptic });
 
   const config = sizeConfig[buttonSize];
@@ -56,7 +56,7 @@ export function Button({
   // `tintColor`) with white content, as the Compose button does: Paper's default
   // `primary` is the lighter foreground tint in dark, made for text, not fills.
   // Tonal takes the MD3 secondaryContainer default; destructive fills with the
-  // brand error token. outlined/text carry the brand (or error) on the LABEL.
+  // brand error token. outlined carries a neutral label, text the brand (or error).
   let buttonColor: string | undefined;
   let textColor: string | undefined;
   if (variant === 'filled') {
@@ -67,8 +67,11 @@ export function Button({
       buttonColor = brandColors.error;
       textColor = brandColors.onPrimary;
     }
+  } else if (variant === 'outlined') {
+    // A neutral label on the outline (#7695), as on Android and iOS.
+    textColor = isDestructive ? brandColors.error : (tintColor ?? (systemColors.label as string));
   } else {
-    // outlined / text — the label carries the emphasis colour.
+    // text — the label carries the emphasis colour.
     textColor = isDestructive ? brandColors.error : tintColor;
   }
 
