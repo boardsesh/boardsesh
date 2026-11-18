@@ -407,9 +407,27 @@ What B1 does with the token: put it in the signed session cookie, Max-Age
 it to page JavaScript. Reads present it back as a `canonical-token` after the
 cookie signature check.
 
+### Set-password on a canonical session (B4b)
+
+The staged set-password command (`POST /api/internal/auth/current-store/set-password`)
+also takes `{ presented, expectedUserId, expectedAuthSessionId, password,
+confirmPassword }`; the first form with `credential` is unchanged, and a
+presented legacy cookie behaves exactly as that form. With
+`CURRENT_STORE_WEB_SESSION_MODE` on, a canonical token sets the password only
+for a `login` session signed in under five minutes ago; a bridged or carried
+session, or an older login, answers `reauthentication_required` and writes
+nothing. On success the account's generation moves and the session keeps its id
+and token at the new generation (`keepCanonicalAfterSecurityMutation`, the same
+function the provider flows use), so www writes no cookie; every other session,
+lineage, native refresh token and pending link ends as before. The reply is
+`set` with a credential proof at the new generation and no token. A browser
+access token signed before the change is refused at once; `/access` signs a new
+one for the same cookie. With the mode off a canonical token answers
+`unauthenticated`.
+
 ### The private commands B1 calls
 
-All five sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
+All six sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
 backend (404 `{ "error": "disabled" }` when off, 503 for an unknown value), use
 the existing `Authorization: Bearer <CURRENT_STORE_AUTH_RPC_SECRET>` and refuse
 any request carrying an `Origin` header. Schemas and types are in
@@ -420,6 +438,7 @@ any request carrying an `Origin` header. Schemas and types are in
 | Login: the staged password command, `POST /api/internal/auth/current-store/password` | `passwordCommandSchema` plus `webSession: { presented? }`. `presented` is `{ kind: 'legacy-jwe', credential }` (the joined NextAuth cookie) or `{ kind: 'canonical-token', token }` (from the new cookie). There is no field for an account: the session goes to the account the password proves. | `authenticated` with `webSession: { sessionId, token, expiresAt, generation }`; `invalid_credentials` with nothing issued and nothing revoked. An account that still needs email verification gets `authenticated` with `verification.verified: false` and no `webSession`, and its presented session stays. Rate limits and the compare gate are those of #7650. |
 | Session read, `POST /api/internal/auth/current-store/web-session/v1/session` | `webSessionReadCommandSchema`: `{ presented }`, the same `PresentedWebSession` login takes | 200 `active` with `userId`, `authSessionId`, `generation`, `expiresAt`, `source` (`login` or `bridge`), `authenticatedAt` (or null), `linkGuarded` and `user: { id, email, name, image }`, the fields of today's NextAuth session JSON (profile display name and avatar win); 401 `unauthenticated`; 503 `unavailable`. It applies exactly `readFirstPartySession`'s rules and writes nothing: no roll, no last-seen time, no bridge. A legacy cookie is answered by its own admission rules. |
 | Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ presented, expectedUserId, expectedAuthSessionId }`, or the first form `{ token, … }` with a bare canonical token, still accepted so either web works with either backend | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. A legacy cookie with its own session id gets a denial of that id and nothing else ends; one without a session id is answered `signed_out`, and only the row the bridge made from it, if any, ends. |
+| Native transfer sign-in (B4c), `POST /api/internal/auth/current-store/web-session/v1/transfer` | `webSessionTransferCommandSchema`: `{ transferToken, presented? }`, the token www's native callback signed | 200 `issued` with `webSession: { sessionId, token, expiresAt, generation }`, `credentialProof` (same session id and generation, `authenticatedAt: null`, `linkGuarded: false`, so the legacy twin is never fresh) and `user`; 401 `denied` (invalid, expired or spent token, a moved generation, a signed-out source login, a deleted account; nothing written) or `sign_in_required` (the token carries no verified sign-in time); 503 `unavailable`. The session is `carried`: it keeps the native sign-in's time and is never fresh. One transaction locks the transferred and presented accounts in one pass, spends the token (single use, a `verificationTokens` row `native-transfer:<sha256 of the signature>`), revokes `presented` and issues the session; no reauthentication receipt. |
 | Access token (B3a), `POST /api/internal/auth/current-store/web-session/v1/access` | `webSessionAccessCommandSchema`: `{ presented }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` (after any roll), `rolled`, `accessToken` and `accessTokenExpiresAt`; 401 `unauthenticated` with `reason`: `no_session` (clear the cookie) or `bridge_required` (a legacy cookie: bridge it, then ask again); 503 `unavailable`, also when `AUTH_BROWSER_ACCESS_TOKEN_SECRET` is missing, weak or reused. The only place a web session rolls. |
 | Bridge (B2a), `POST /api/internal/auth/current-store/web-session/v1/bridge` | `webSessionBridgeCommandSchema`: `{ credential }`, the joined NextAuth cookie (at most 12,288 characters) | 200 `bridged` with `userId`, `sessionId`, `token`, `expiresAt` and `generation`; 401 `denied` (see "Signed-in browsers from before the switch"); 503 `unavailable`, also when `NEXTAUTH_SECRET` or `AUTH_BRIDGE_TOKEN_SECRET` is missing, weak or reused. The same cookie always gets the same `token`. It does not read `AUTH_LEGACY_BRIDGE_MODE`, which the native refresh path keeps. |
 

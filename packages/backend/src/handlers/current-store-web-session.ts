@@ -5,6 +5,8 @@ import {
   WEB_SESSION_PROTOCOL_VERSION,
   webSessionAccessCommandSchema,
   webSessionAccessReplySchema,
+  webSessionTransferCommandSchema,
+  webSessionTransferReplySchema,
   webSessionBridgeCommandSchema,
   webSessionBridgeReplySchema,
   webSessionMode,
@@ -14,6 +16,7 @@ import {
   webSessionSignOutCommandSchema,
   webSessionSignOutReplySchema,
   type WebSessionAccessReply,
+  type WebSessionTransferReply,
   type WebSessionBridgeReply,
   type WebSessionReadReply,
   type WebSessionSignOutCommand,
@@ -39,6 +42,7 @@ import {
   type WebSessionSignOut,
 } from '../auth/authority/web-session';
 import { logger } from '../utils/logger';
+import { transferWebSession } from '../auth/authority/web-session-transfer';
 import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
 import { sendJson } from './http-utils';
 
@@ -47,6 +51,7 @@ const COMMAND_SCHEMAS = {
   signout: webSessionSignOutCommandSchema,
   bridge: webSessionBridgeCommandSchema,
   access: webSessionAccessCommandSchema,
+  transfer: webSessionTransferCommandSchema,
 } as const;
 type WebSessionOperation = keyof typeof COMMAND_SCHEMAS;
 
@@ -78,8 +83,9 @@ function bridgeKeys() {
 
 /**
  * Default-off private commands for the first-party web session (#7596):
- * session read, guarded sign-out, the legacy cookie bridge and the browser
- * access token (which is where a session rolls). Login is the staged password
+ * session read, guarded sign-out, the legacy cookie bridge, the browser
+ * access token (which is where a session rolls) and the native transfer
+ * sign-in. Login is the staged password
  * command with `webSession`. No CORS, cookie or public token reaches these,
  * and no reply sets a cookie: www owns the cookie.
  */
@@ -125,7 +131,12 @@ export async function handleCurrentStoreWebSession(
   const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId: command.requestId };
   try {
     const commandDatabase = database ?? (await getCredentialDatabase());
-    let reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionBridgeReply | WebSessionAccessReply;
+    let reply:
+      | WebSessionReadReply
+      | WebSessionSignOutReply
+      | WebSessionBridgeReply
+      | WebSessionAccessReply
+      | WebSessionTransferReply;
     if (command.operation === 'session') {
       // Reads only: nothing is rolled, bridged or stamped.
       const read = await readWebSession(commandDatabase, presentedWebCredential(command.payload.presented));
@@ -154,6 +165,34 @@ export async function handleCurrentStoreWebSession(
         operation: 'signout',
         outcome: outcome === 'signed-out' ? 'signed_out' : 'identity_changed',
       });
+    } else if (command.operation === 'transfer') {
+      const transferred = await transferWebSession(
+        commandDatabase,
+        command.payload,
+        authority,
+        process.env.NEXTAUTH_SECRET,
+      );
+      reply = webSessionTransferReplySchema.parse(
+        transferred.status === 'issued'
+          ? {
+              ...base,
+              operation: 'transfer',
+              outcome: 'issued',
+              webSession: {
+                sessionId: transferred.session.sessionId,
+                token: transferred.session.token,
+                expiresAt: transferred.session.expiresAt.toISOString(),
+                generation: transferred.session.generation,
+              },
+              credentialProof: transferred.credentialProof,
+              user: transferred.user,
+            }
+          : {
+              ...base,
+              operation: 'transfer',
+              outcome: transferred.status === 'denied' ? 'denied' : 'sign_in_required',
+            },
+      );
     } else if (command.operation === 'access') {
       // A missing or reused signing secret is unavailable (503), never a signed-out answer.
       const tokenKey = browserAccessTokenKeyFromEnvironment(process.env);

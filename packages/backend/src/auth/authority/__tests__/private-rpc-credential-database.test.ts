@@ -21,6 +21,7 @@ const dependencies = vi.hoisted(() => ({
   webSessionRead: vi.fn(),
   webSessionBridge: vi.fn(),
   webSessionAccess: vi.fn(),
+  webSessionTransfer: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('../../credential-database', () => ({ getCredentialDatabase: dependencies.database }));
@@ -48,6 +49,7 @@ vi.mock('../../current-store/web-oauth-identity', () => ({
   resolveWebOAuthIdentity: vi.fn(),
 }));
 vi.mock('../web-signout', () => ({ signOutLegacyWebSession: dependencies.signout }));
+vi.mock('../web-session-transfer', () => ({ transferWebSession: dependencies.webSessionTransfer }));
 vi.mock('../web-session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../web-session')>()),
   signOutWebSession: dependencies.webSessionSignout,
@@ -73,7 +75,8 @@ interface Route {
     | 'webSessionSignout'
     | 'webSessionRead'
     | 'webSessionBridge'
-    | 'webSessionAccess';
+    | 'webSessionAccess'
+    | 'webSessionTransfer';
   readonly mode: string;
   readonly path: string;
   readonly handle: Handler;
@@ -84,7 +87,10 @@ interface Route {
   result?(command: Record<string, unknown>): unknown;
 }
 const SESSION_EXPIRES_AT = new Date(Date.now() + 86_400_000);
-function webSessionCommand(operation: 'session' | 'signout' | 'bridge' | 'access', payload: Record<string, unknown>) {
+function webSessionCommand(
+  operation: 'session' | 'signout' | 'bridge' | 'access' | 'transfer',
+  payload: Record<string, unknown>,
+) {
   return () => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     operation,
@@ -93,7 +99,10 @@ function webSessionCommand(operation: 'session' | 'signout' | 'bridge' | 'access
     payload,
   });
 }
-function webSessionReply(operation: 'session' | 'signout' | 'bridge' | 'access', fields: Record<string, unknown>) {
+function webSessionReply(
+  operation: 'session' | 'signout' | 'bridge' | 'access' | 'transfer',
+  fields: Record<string, unknown>,
+) {
   return (command: Record<string, unknown>) => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     requestId: command.requestId,
@@ -271,6 +280,50 @@ const routes: Route[] = [
       accessTokenExpiresAt: SESSION_EXPIRES_AT,
     }),
   },
+  {
+    name: 'webSessionTransfer',
+    mode: 'CURRENT_STORE_WEB_SESSION_MODE',
+    path: WEB_SESSION_COMMAND_PATHS.transfer,
+    handle: handleCurrentStoreWebSession,
+    command: webSessionCommand('transfer', { transferToken: 'owned.synthetic-transfer' }),
+    unavailable: webSessionReply('transfer', { outcome: 'error', code: 'unavailable' }),
+    success: webSessionReply('transfer', {
+      outcome: 'issued',
+      webSession: {
+        sessionId: 'owned-session',
+        token: 'owned-synthetic-token',
+        expiresAt: SESSION_EXPIRES_AT.toISOString(),
+        generation: 0,
+      },
+      credentialProof: {
+        version: 1,
+        userId: 'owned-user',
+        authSessionId: 'owned-session',
+        generation: 0,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+      user: { id: 'owned-user', email: 'owned@example.test', name: null, image: null },
+    }),
+    result: () => ({
+      status: 'issued',
+      session: {
+        sessionId: 'owned-session',
+        token: 'owned-synthetic-token',
+        expiresAt: SESSION_EXPIRES_AT,
+        generation: 0,
+      },
+      credentialProof: {
+        version: 1,
+        userId: 'owned-user',
+        authSessionId: 'owned-session',
+        generation: 0,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+      user: { id: 'owned-user', email: 'owned@example.test', name: null, image: null },
+    }),
+  },
 ];
 
 async function invoke(route: Route, command: unknown, options: { authorization?: string; database?: DbInstance } = {}) {
@@ -336,6 +389,7 @@ describe('private RPC default credential database selection', () => {
     dependencies.webSessionRead.mockReset();
     dependencies.webSessionBridge.mockReset();
     dependencies.webSessionAccess.mockReset();
+    dependencies.webSessionTransfer.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { webCredentialProofSchema } from './web-credential-proof';
 
 /**
  * The first-party web session the backend issues (#7596, owner decisions of
@@ -37,6 +38,7 @@ export const WEB_SESSION_COMMAND_PATHS = {
   signout: `${WEB_SESSION_PATH_PREFIX}/signout`,
   bridge: `${WEB_SESSION_PATH_PREFIX}/bridge`,
   access: `${WEB_SESSION_PATH_PREFIX}/access`,
+  transfer: `${WEB_SESSION_PATH_PREFIX}/transfer`,
 } as const;
 
 /**
@@ -160,6 +162,21 @@ export const webSessionAccessCommandSchema = z
   })
   .strict();
 
+/**
+ * Signs a browser in with a native OAuth transfer token (#7596, B4c): the
+ * sign-in happened in the app's browser, so the session is `carried` (keeps
+ * that sign-in's time, never fresh). `presented` is revoked as a login's is.
+ */
+export const webSessionTransferCommandSchema = z
+  .object({
+    ...metadata,
+    operation: z.literal('transfer'),
+    payload: z
+      .object({ transferToken: z.string().min(1).max(4096), presented: presentedWebSessionSchema.optional() })
+      .strict(),
+  })
+  .strict();
+
 const replyBase = { webSessionProtocolVersion: version, requestId };
 const unavailableReply = <Operation extends keyof typeof WEB_SESSION_COMMAND_PATHS>(operation: Operation) =>
   z
@@ -265,6 +282,29 @@ export const webSessionAccessReplySchema = z.union([
   unavailableReply('access'),
 ]);
 
+export const webSessionTransferReplySchema = z.union([
+  /**
+   * The issued session and the proof for the legacy twin cookie, with the same
+   * session id and generation. The proof carries no sign-in time
+   * (`authenticatedAt: null`), so the twin is never fresh.
+   */
+  z
+    .object({
+      ...replyBase,
+      operation: z.literal('transfer'),
+      outcome: z.literal('issued'),
+      webSession: issuedWebSessionSchema,
+      credentialProof: webCredentialProofSchema,
+      user: sessionUser,
+    })
+    .strict(),
+  /** Invalid, expired or already used token, a moved account, a signed-out source login, or a deleted account. */
+  z.object({ ...replyBase, operation: z.literal('transfer'), outcome: z.literal('denied') }).strict(),
+  /** The transfer carries no verified sign-in time to keep: send the climber to sign in. */
+  z.object({ ...replyBase, operation: z.literal('transfer'), outcome: z.literal('sign_in_required') }).strict(),
+  unavailableReply('transfer'),
+]);
+
 export type PresentedWebSession = z.infer<typeof presentedWebSessionSchema>;
 export type WebSessionRequest = z.infer<typeof webSessionRequestSchema>;
 export type IssuedWebSessionReply = z.infer<typeof issuedWebSessionSchema>;
@@ -276,18 +316,27 @@ export type WebSessionBridgeCommand = z.infer<typeof webSessionBridgeCommandSche
 export type WebSessionBridgeReply = z.infer<typeof webSessionBridgeReplySchema>;
 export type WebSessionAccessCommand = z.infer<typeof webSessionAccessCommandSchema>;
 export type WebSessionAccessReply = z.infer<typeof webSessionAccessReplySchema>;
+export type WebSessionTransferCommand = z.infer<typeof webSessionTransferCommandSchema>;
+export type WebSessionTransferReply = z.infer<typeof webSessionTransferReplySchema>;
 
 /**
  * The status each reply is sent with. A 401 here always carries a body that
- * parses as the reply (`outcome: 'unauthenticated'`, or `denied` for a bridge). The transport's own 401
+ * parses as the reply (`outcome: 'unauthenticated'`, `denied` for a bridge or
+ * a transfer, `sign_in_required` for a transfer). The transport's own 401
  * for a wrong secret is `{ error: 'unauthorized' }`, which never parses as a
  * reply, so a caller keys on the parsed body and never on the status alone.
  */
 export function webSessionReplyStatus(
-  reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionBridgeReply | WebSessionAccessReply,
+  reply:
+    | WebSessionReadReply
+    | WebSessionSignOutReply
+    | WebSessionBridgeReply
+    | WebSessionAccessReply
+    | WebSessionTransferReply,
 ): number {
   if (reply.outcome === 'identity_changed') return 409;
-  if (reply.outcome === 'unauthenticated' || reply.outcome === 'denied') return 401;
+  if (reply.outcome === 'unauthenticated' || reply.outcome === 'denied' || reply.outcome === 'sign_in_required')
+    return 401;
   if (reply.outcome === 'error') return 503;
   return 200;
 }
