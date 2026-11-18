@@ -43,7 +43,7 @@ export type VariantAvailability = { available: true } | { available: false; reas
 
 /**
  * Whether this binary can run `variant`. The one native lab mode is the swap
- * look (`swapLookVersion`, iOS only for now); any other mode is unavailable.
+ * look (`swapLookVersion`, iOS and Android); any other mode is unavailable.
  */
 export function variantAvailability(
   variant: BoardMotionVariant,
@@ -54,7 +54,7 @@ export function variantAvailability(
     if (swapLookVersion < SWAP_LOOK_NATIVE_VERSION) {
       return {
         available: false,
-        reason: `needs the native swap look (iOS, swapLookVersion ${SWAP_LOOK_NATIVE_VERSION}); this build has ${swapLookVersion}`,
+        reason: `needs the native swap look (swapLookVersion ${SWAP_LOOK_NATIVE_VERSION}); this build has ${swapLookVersion}`,
       };
     }
   } else if (variant.requiresNativeLab) {

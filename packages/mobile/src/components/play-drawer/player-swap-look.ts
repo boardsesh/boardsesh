@@ -1,7 +1,7 @@
 /**
  * The player's swap look: how the stationary GPU board hands its lit holds from
- * one climb to the next on a binary that draws the native swap look (iOS,
- * `swapLookVersion` 2). It is the board motion lab's I, "Ghost peek + standby",
+ * one climb to the next on a binary that draws the native swap look (iOS and
+ * Android, `swapLookVersion` 2). It is the board motion lab's I, "Ghost peek + standby",
  * on its Subtle preset, picked on an iPhone 13 Pro on 2026-11-18:
  *
  * - Dragging dims the old holds to 40% one by one from the edge the next climb
@@ -13,11 +13,12 @@
  *   drag dim, no swell, and a 140 ms swap. Shared holds never dip.
  *
  * Everywhere else the board runs the shipped wall swap (`wall-swap.ts`) exactly
- * as before: Android until its GLES port, older iOS binaries, Reduce Motion
- * (the shipped 120 ms dissolve, no look), Differentiate Without Color (a ghost
- * shows a hold's role colour without its role shape) and the
- * `player-swap-look-kill` switch, which is also the QA switch for comparing the
- * two. The native view turns the look off for both settings too.
+ * as before: binaries without the look (older ones, and an Android phone that
+ * cannot build its GLES program), Reduce Motion (the shipped 120 ms dissolve, no
+ * look), Differentiate Without Color on iOS (a ghost shows a hold's role colour
+ * without its role shape) and the `player-swap-look-kill` switch, which is also
+ * the QA switch for comparing the two. The native view turns the look off for
+ * those settings too.
  *
  * To change the look, change `PLAYER_SWAP_LOOK`. The lab's I starts from it, so
  * the lab shows the player's look and its sliders retune it live
@@ -72,7 +73,7 @@ export type PlayerSwapLookInputs = {
   apiVersion: number;
   /** `climbOverlaySwapCommandApi`: the look's seven-number frames go out as the swap command. */
   swapCommandApi: number;
-  /** `climbOverlaySwapLookVersion`: 2 on iOS binaries that draw the look, 0 on Android. */
+  /** `climbOverlaySwapLookVersion`: 2 on iOS and Android binaries that draw the look, 0 on older ones. */
   swapLookVersion: number;
   /** `player-swap-look-kill` is on. */
   killed: boolean;

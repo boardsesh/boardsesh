@@ -4,7 +4,7 @@
 // its transition, the wall swap steps it on the (stand-in) UI thread, and
 // GpuClimbOverlay hands each frame to the native view as the `swapFrame`
 // command. With the look on, a supporting binary gets the look and seven-number
-// frames. Everywhere else (kill switch, Reduce Motion, Android, older iOS) the
+// frames. Everywhere else (kill switch, Reduce Motion, older binaries) the
 // native view must get exactly what it got before the look existed: the frames
 // of the carousel with the shipped transition, and no look.
 import { act, cleanup, render } from '@testing-library/react';
@@ -362,7 +362,7 @@ describe('the player board’s swap look', () => {
     ['the kill switch is on', () => (controls.killed = true)],
     ['Reduce Motion is on', () => (controls.reduceMotion = true)],
     ['Differentiate Without Color is on', () => (controls.differentiateWithoutColor = 'on')],
-    ['the binary is Android (swapLookVersion 0)', () => (controls.swapLookVersion = 0)],
+    ['the binary has no swap look (swapLookVersion 0)', () => (controls.swapLookVersion = 0)],
     ['the binary is an older iOS one (swapLookVersion 1)', () => (controls.swapLookVersion = 1)],
     ['the binary has no swap command', () => (controls.swapCommandApi = 0)],
   ])('when %s, sends exactly the shipped frames and no look', (_case, arrange) => {
