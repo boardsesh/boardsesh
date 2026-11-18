@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, count, eq, gt, inArray } from 'drizzle-orm';
 import { authProviderSecurityIntents } from '@boardsesh/db/schema/auth';
 import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
@@ -29,6 +29,7 @@ import {
   isUsableProviderPassword,
   providerMethodId,
   PROVIDER_SECURITY_INTENT_LIFETIME_MS,
+  PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION,
   type ProviderSecurityMethodsConfiguration,
 } from './provider-security-policy';
 
@@ -119,6 +120,20 @@ export async function createProviderSecurityIntent(
     const { session } = await admitProviderActorInTransaction(transaction, authority, actor);
     requireCanonicalProviderActor(actor);
     const now = await providerDatabaseNow(transaction);
+    // One session may hold only a few live intents; the users lock taken by
+    // admission serializes this count with every other intent of the account.
+    const [live] = await transaction
+      .select({ total: count() })
+      .from(authProviderSecurityIntents)
+      .where(
+        and(
+          eq(authProviderSecurityIntents.browserBindingHash, providerWebSessionHash(session.authSessionId)),
+          inArray(authProviderSecurityIntents.phase, ['pending', 'prepared']),
+          gt(authProviderSecurityIntents.expiresAt, now),
+        ),
+      );
+    if ((live?.total ?? 0) >= PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION)
+      throw new ProviderSecurityRefusal('denied', 'too_many_pending');
     let providerSubject: string | null = null;
     if (action === 'unlink') {
       const methods = await bindIdentityAuthority(transaction, authority).listProviders(session.userId);

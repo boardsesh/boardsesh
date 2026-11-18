@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { qualifyCredentialWriter, type CredentialWriterContract } from '@boardsesh/db/credential-writer-acl';
 import {
+  authSession,
   authEmailProjection,
   authEmailReservationMembers,
   authEmailReservations,
@@ -23,6 +24,7 @@ import {
   acknowledgeFirstPasswordResult,
 } from '../first-password-finalizer';
 import { normalizeAccountEmail } from '../../normalize-email';
+import { sessionTokenDigest } from '../session-token';
 import { runFirstPasswordPreparationMaintenance } from '../first-password-maintenance';
 import { closeCredentialDatabase, getCredentialDatabase } from '../../credential-database';
 
@@ -168,10 +170,8 @@ describe('private-first-password-v1 canonical0314 restricted LOGIN closure', () 
         },
       };
       const driver = await createProviderSecurityDriver({ database: environment.database, runtime: providerRuntime });
-      const owner = await driver.actor(selected, selected === 'current-store' ? 'legacy-jwe' : 'canonical-token', {
-        password: false,
-        provider: 'apple',
-      });
+      // First password acts for the canonical web session under either authority (#7596 B5c2).
+      const owner = await driver.actor(selected, 'canonical-token', { password: false, provider: 'apple' });
       const [user] = await environment.ownerDatabase.select().from(users).where(eq(users.id, owner.userId));
       const normalizedEmail = normalizeAccountEmail(user.email);
       await environment.database
@@ -183,12 +183,8 @@ describe('private-first-password-v1 canonical0314 restricted LOGIN closure', () 
         legacySecret: providerRuntime.legacySecret,
         emailBindingKey: 'first-password-restricted-private-rpc-key-6975',
       });
-      const issued = await requestFirstPasswordChallenge(environment.database, runtime, { actor: owner.actor });
-      const bound = {
-        actor: owner.actor,
-        challengeToken: issued.challengeToken,
-        browserIntentToken: issued.browserIntentToken,
-      };
+      const issued = await requestFirstPasswordChallenge(environment.database, runtime, { actor: owner.webActor });
+      const bound = { actor: owner.webActor, challengeToken: issued.challengeToken };
       expect((await readFirstPasswordChallenge(environment.database, runtime, bound)).outcome).toBe('pending');
       const prepared = await prepareFirstPasswordChallenge(environment.database, runtime, {
         ...bound,
@@ -196,15 +192,20 @@ describe('private-first-password-v1 canonical0314 restricted LOGIN closure', () 
         password: ' first restricted password ',
         confirmPassword: ' first restricted password ',
       });
-      expect(prepared.credentialProof.authenticatedAt).toBe(owner.authenticatedAt?.toISOString());
-      expect(prepared.credentialProof.authSessionId).toBe(owner.sid);
-      const candidate = await driver.candidate(prepared, owner.actor.kind);
-      const command = { ...bound, ...prepared, candidate, recoveryToken: issued.recoveryToken };
+      expect(prepared).not.toHaveProperty('proposedCanonicalToken');
+      const command = { ...bound, ...prepared, recoveryToken: issued.recoveryToken };
       const committed = await finalizeFirstPasswordChallenge(environment.database, runtime, command);
-      expect(committed.outcome).toBe('committed');
-      expect(await acknowledgeFirstPasswordResult(environment.database, runtime, command)).toMatchObject({
+      expect(committed).toEqual({ outcome: 'committed', generation: 1 });
+      expect(await acknowledgeFirstPasswordResult(environment.database, runtime, command)).toEqual({
         outcome: 'recovered',
-        candidateCredentialHash: committed.candidateCredentialHash,
+        generation: 1,
+      });
+      // The restricted LOGIN kept the session in place: same token, new generation.
+      const [session] = await environment.ownerDatabase.select().from(authSession).where(eq(authSession.id, owner.sid));
+      expect(session).toMatchObject({
+        token: sessionTokenDigest(owner.actor.credential),
+        revocationGeneration: 1,
+        originalAuthenticatedAt: owner.authenticatedAt,
       });
       const [challenge] = await environment.database
         .select()

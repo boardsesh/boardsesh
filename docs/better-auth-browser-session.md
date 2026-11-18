@@ -278,8 +278,7 @@ partner app changes refuse it. The 30-day partner-consent rule reads
 their own reauthentication receipt (`provider-reauthentication-evidence.ts`),
 never the session's age, so they did not change. Since B5c1, provider security
 compares the actor on session id and generation, not expiry, so a link that
-spans a roll goes through. First password still compares the expiry exactly
-(`first-password-challenges.ts:98`) until B5c2.
+spans a roll goes through. First password does the same since B5c2.
 
 What B1 does with the token: put it in the signed session cookie, Max-Age
 34,560,000 (decision 2), only after the command answers; never log it or hand
@@ -679,13 +678,26 @@ window, that browser has to sign in again. This is the one exception to
 acceptance 6 ("rollback leaves every browser signed in"); it applies only to a
 browser that linked or unlinked a provider after cutover, and the alternative
 is a cookie write outside login, which this design does not allow. The same
-holds for first password once B5c2 keeps its token. What the binding proved, the same browser across the OAuth
+holds for first password, which keeps its token since B5c2. The backend
+refuses to start with `CURRENT_STORE_FIRST_PASSWORD_MODE=backend-staging`
+unless `AUTH_BROWSER_SESSION_MODE=better-auth`
+(`AUTH_FIRST_PASSWORD_BROWSER_SESSION_REQUIRED`). What the binding proved, the same browser across the OAuth
 round trip, now comes from the session token every step presents plus the
 OAuth state hash bound to the intent (`bind`) and checked at `prepare`.
 
-First password (`first-password-*.ts`) and the owned-provider sign-in
-(`provider-owned-signin.ts`) still use `authority/browser-binding.ts` through
-`provider-binding-actor.ts` until B5c2 and B5a; B5d deletes the binding core.
+Since B5c2, first password (`first-password-*.ts`) is keyed the same way:
+the same admission, the same refusal for a legacy cookie, the same columns
+(`auth_first_password_challenges`), and finalize keeps the session's token
+through the `password-set` receipt. The emailed confirmation link must be
+completed by the session token that asked for it. Nothing deletes intents or
+challenges (the credential role has no DELETE), so both are bounded at
+creation: one session holds at most five unexpired pending or prepared provider
+intents (`PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION`, refusal
+`too_many_pending`), and an account holds one live first-password challenge (a
+new request ends the old one; `auth_first_password_active_user_idx`). Only the sign-in commands
+(`provider-owned-signin.ts`, through `provider-binding-actor.ts`, and
+`anonymous-provider-signin.ts`) still use `authority/browser-binding.ts`,
+until B5a; B5d deletes the binding core.
 
 The web publication layer for these flows is deleted in A5 and rebuilt on the
 new session in B5: the provider Settings UI and its server code, the

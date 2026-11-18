@@ -3,9 +3,9 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { eq } from 'drizzle-orm';
 import {
-  authBrowserBindings,
   authEmailReservationMembers,
   authEmailReservations,
+  authSession,
   authSubjectCutoffs,
   users,
 } from '@boardsesh/db/schema/auth';
@@ -17,7 +17,8 @@ import {
 } from '../first-password-context';
 import { captureFirstPasswordRuntime, firstPasswordEmailBinding } from '../first-password-policy';
 import { bindIdentityAuthority } from '../identity-authority';
-import { readBrowserBinding } from '../browser-binding';
+import { readFirstPartySession } from '../session-reader';
+import { readLockedWebSubjectState } from '../../current-store/web-credential-state';
 import { normalizeAccountEmail } from '../../normalize-email';
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
@@ -43,7 +44,7 @@ async function reserve(owner: Owner) {
 }
 async function admit(owner: Owner) {
   const captured = runtime();
-  const actor = captureFirstPasswordActor(owner.actor, captured);
+  const actor = captureFirstPasswordActor(owner.webActor, captured);
   return withFirstPasswordAuthority(environment.database, captured, (transaction, authority) =>
     lockFirstPasswordEligibility(transaction, authority, captured, actor),
   );
@@ -54,10 +55,7 @@ async function sourceState(owner: Owner) {
       .select()
       .from(authSubjectCutoffs)
       .where(eq(authSubjectCutoffs.userId, owner.userId)),
-    binding: await environment.database
-      .select()
-      .from(authBrowserBindings)
-      .where(eq(authBrowserBindings.userId, owner.userId)),
+    sessions: await environment.database.select().from(authSession).where(eq(authSession.userId, owner.userId)),
   };
 }
 
@@ -68,36 +66,44 @@ describe('first-password actual selected-authority eligibility', () => {
   afterAll(async () => environment?.close());
 
   for (const selected of ['current-store', 'better-auth'] as const) {
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
-      it(`${selected}/${kind}: admits only actual Apple-only ownership without refreshing age or writing state`, async () => {
-        const owner = await environment.actor(selected, kind, {
-          password: false,
-          provider: 'apple',
-          unknownAge: true,
-        });
-        await reserve(owner);
-        const before = await sourceState(owner);
-        const source = await readBrowserBinding(
-          environment.database,
-          environment.runtime.qualification,
-          owner.actor.browserBindingToken,
-          { version: owner.actor.browserVersion, credential: owner.credential },
-        );
-        if (source.status !== 'admitted') throw new Error('Owned original credential did not admit');
-        const result = await admit(owner);
-        expect(result.session).toMatchObject({
-          userId: owner.userId,
-          authSessionId: owner.sid,
-          generation: 0,
-          authenticatedAt: null,
-          linkGuarded: false,
-        });
-        expect(result.session.expiresAt.getTime()).toBe(source.session.expiresAt.getTime());
-        expect(result.session).toEqual(source.session);
-        expect(result.emailBindingHash).toMatch(/^[a-f0-9]{64}$/);
-        expect(await sourceState(owner)).toEqual(before);
+    it(`${selected}: admits only actual Apple-only ownership without refreshing age or writing state`, async () => {
+      const owner = await environment.actor(selected, 'canonical-token', {
+        password: false,
+        provider: 'apple',
+        unknownAge: true,
       });
-    }
+      await reserve(owner);
+      const before = await sourceState(owner);
+      const source = await environment.database.transaction((transaction) =>
+        readFirstPartySession(transaction, owner.credential, new Date(), (userId) =>
+          readLockedWebSubjectState(transaction, userId),
+        ),
+      );
+      if (source.status !== 'admitted') throw new Error('Owned original credential did not admit');
+      const result = await admit(owner);
+      expect(result.session).toMatchObject({
+        userId: owner.userId,
+        authSessionId: owner.sid,
+        generation: 0,
+        authenticatedAt: null,
+        linkGuarded: false,
+      });
+      expect(result.session.expiresAt.getTime()).toBe(source.session.expiresAt.getTime());
+      expect(result.session).toEqual(source.session);
+      expect(result.emailBindingHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(await sourceState(owner)).toEqual(before);
+    });
+
+    it(`${selected}: a legacy NextAuth cookie is told to bridge first and writes nothing`, async () => {
+      const owner = await environment.actor(selected, 'legacy-jwe', { password: false, provider: 'apple' });
+      await reserve(owner);
+      const before = await sourceState(owner);
+      await expect(admit(owner)).rejects.toMatchObject({
+        outcome: 'canonical_session_required',
+        code: 'canonical_session_required',
+      });
+      expect(await sourceState(owner)).toEqual(before);
+    });
 
     it(`${selected}: refuses an existing selected password or any additional provider without consuming source state`, async () => {
       const passwordOwner = await environment.actor(selected, 'canonical-token', { provider: 'apple' });
@@ -125,7 +131,9 @@ describe('first-password actual selected-authority eligibility', () => {
       const normalizedEmail = await reserve(owner);
       await environment.database.insert(authEmailReservationMembers).values({ normalizedEmail, userId: randomUUID() });
       await expect(admit(owner)).rejects.toMatchObject({ outcome: 'denied', code: 'not_eligible' });
-      await expect(admit({ ...owner, actor: { ...owner.actor, expectedUserId: randomUUID() } })).rejects.toMatchObject({
+      await expect(
+        admit({ ...owner, webActor: { ...owner.webActor, expectedUserId: randomUUID() } }),
+      ).rejects.toMatchObject({
         outcome: 'identity_changed',
         code: 'invalid_proof',
       });
@@ -137,7 +145,7 @@ describe('first-password actual selected-authority eligibility', () => {
       await reserve(owner);
       const mutableRuntime = { ...runtime() };
       const original = captureFirstPasswordRuntime(mutableRuntime);
-      const actor = captureFirstPasswordActor(owner.actor, original);
+      const actor = captureFirstPasswordActor(owner.webActor, original);
       const address = new URL(
         process.env.AUTH_PROTOTYPE_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',
       );

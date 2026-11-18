@@ -30,7 +30,8 @@ export type ProviderSecurityFailureCode =
   | 'ownership_conflict'
   | 'last_usable_method'
   | 'authority_unavailable'
-  | 'canonical_session_required';
+  | 'canonical_session_required'
+  | 'too_many_pending';
 
 export class ProviderSecurityRefusal extends Error {
   constructor(

@@ -1,17 +1,18 @@
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { authEmailReservationMembers, authEmailReservations, users } from '@boardsesh/db/schema/auth';
-import type { BrowserBindingActor } from '@boardsesh/auth-protocol';
+import type { ProviderSecurityActor } from '@boardsesh/auth-protocol';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { captureIdentityAuthority, revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import { bindIdentityAuthority } from './identity-authority';
 import {
-  admitBrowserBindingActorInTransaction,
-  captureBrowserBindingActor,
-  type CapturedBrowserBindingActor,
-} from './provider-binding-actor';
+  admitProviderActorInTransaction,
+  captureProviderActor,
+  requireCanonicalProviderActor,
+  type CapturedProviderActor,
+} from './provider-security-context';
 import {
   captureFirstPasswordRuntime,
   firstPasswordEmailBinding,
@@ -29,10 +30,10 @@ export class FirstPasswordRefusal extends Error {
   }
 }
 
-export function captureFirstPasswordActor(input: BrowserBindingActor, runtime: FirstPasswordRuntime) {
+export function captureFirstPasswordActor(input: ProviderSecurityActor, runtime: FirstPasswordRuntime) {
   // The private protocol independently checks the complete shape before pool
   // acquisition. Capture all primitives here before any authority await.
-  return captureBrowserBindingActor(Object.freeze({ ...input }), runtime.legacySecret);
+  return captureProviderActor(input, runtime.legacySecret);
 }
 
 export async function withFirstPasswordAuthority<Result>(
@@ -51,17 +52,22 @@ export async function withFirstPasswordAuthority<Result>(
 }
 
 /**
- * Actual source possession locks user/cutoff/binding first. Only that fixed UID
- * may own the current email reservation; an address never chooses an account.
+ * The presented web session is admitted first, under its account's `users`
+ * lock (#7596 B5c2). Only that fixed UID may own the current email
+ * reservation; an address never chooses an account. A legacy cookie is refused
+ * with `canonical_session_required`: setting the password moves the account's
+ * generation, which only a re-issued legacy cookie could survive, and only a
+ * login may write a cookie.
  */
 export async function lockFirstPasswordEligibility(
   transaction: AuthorityTransaction,
   authority: IdentityAuthorityReceipt,
   runtime: FirstPasswordRuntime,
-  actor: CapturedBrowserBindingActor,
+  actor: CapturedProviderActor,
 ) {
   const capturedRuntime = captureFirstPasswordRuntime(runtime);
-  const admitted = await admitBrowserBindingActorInTransaction(transaction, authority, actor);
+  const admitted = await admitProviderActorInTransaction(transaction, authority, actor);
+  requireCanonicalProviderActor(actor);
   const [user] = await transaction.select().from(users).where(eq(users.id, admitted.session.userId)).for('update');
   if (!user) throw new FirstPasswordRefusal('identity_changed', 'invalid_proof');
   const recipient = user.email.trim();

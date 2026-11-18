@@ -3,6 +3,11 @@ import type { ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import type { IdentityPasswordSnapshot, ProviderIdentitySnapshot } from './identity-authority';
 
 export const PROVIDER_SECURITY_INTENT_LIFETIME_MS = 15 * 60_000;
+/**
+ * Unexpired pending or prepared link and unlink intents one session may hold.
+ * Two tabs fit; a script cannot pile up rows. Aborting or finishing frees a slot.
+ */
+export const PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION = 5;
 export const PROVIDER_REAUTHENTICATION_LIFETIME_MS = 5 * 60_000;
 export const PROVIDER_RESULT_RECOVERY_LIFETIME_MS = 2 * 60_000;
 export type ProviderSecurityEnvironment = Readonly<Record<string, string | undefined>>;

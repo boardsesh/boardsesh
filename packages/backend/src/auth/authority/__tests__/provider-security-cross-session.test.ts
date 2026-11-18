@@ -16,7 +16,7 @@ import { bindProviderSecurityFlow, createProviderSecurityIntent } from '../provi
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { abortProviderSecurityMutation, acknowledgeProviderSecurityResult } from '../provider-security-terminal';
 import { providerTokenHash } from '../provider-security-context';
-import { sessionTokenDigest } from '../session-token';
+import { PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION } from '../provider-security-policy';
 import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
 
 // #7596 B5c1 review S2-1: what the browser binding proved, the session token,
@@ -28,25 +28,6 @@ let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 type Owner = Awaited<ReturnType<typeof environment.actor>>;
 const password = ' exact password ';
 
-/** A new login of the same account: another live canonical session. */
-async function secondSession(owner: Owner): Promise<ProviderSecurityActor> {
-  const sessionId = randomUUID();
-  const token = randomBytes(32).toString('base64url');
-  await environment.database.insert(authSession).values({
-    id: sessionId,
-    userId: owner.userId,
-    token: sessionTokenDigest(token),
-    expiresAt: new Date(Date.now() + 3_600_000),
-    updatedAt: new Date(),
-    originalAuthenticatedAt: new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000),
-    revocationGeneration: 0,
-  });
-  return {
-    presented: { kind: 'canonical-token', token },
-    expectedUserId: owner.userId,
-    expectedAuthSessionId: sessionId,
-  };
-}
 function appleProof(subject = randomUUID()) {
   return { provider: 'apple' as const, subject, email: 'verified@example.test', emailVerified: true };
 }
@@ -222,7 +203,7 @@ describe('provider security across sessions, callbacks and replays (#7596 B5c1)'
 
   it('a second live session of the same account (a new login mid-flow) cannot drive it either', async () => {
     const owner = await environment.actor('better-auth', 'canonical-token');
-    await driveWithOtherSession(owner, await secondSession(owner), [owner.userId]);
+    await driveWithOtherSession(owner, (await environment.secondSession(owner)).webActor, [owner.userId]);
   });
 
   it('a callback with another state hash is not verified, writes no provider row and ends the intent', async () => {
@@ -330,6 +311,24 @@ describe('provider security across sessions, callbacks and replays (#7596 B5c1)'
     ).rejects.toMatchObject({ outcome: 'identity_changed' });
     expect(await snapshot(link.intentToken, [owner.userId])).toEqual(after);
     expect(after.cutoffs[0].generation).toBe(1);
+  });
+
+  it('one session holds at most five live intents; ending one frees a slot', async () => {
+    const owner = await environment.actor('better-auth', 'canonical-token');
+    const live = [];
+    for (let index = 0; index < PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION; index++)
+      live.push(await intent(owner.webActor));
+    await expect(intent(owner.webActor)).rejects.toMatchObject({ outcome: 'denied', code: 'too_many_pending' });
+    // Another session of the same account has its own slots.
+    const other = await environment.secondSession(owner);
+    await intent(other.webActor);
+    await abortProviderSecurityMutation(environment.database, environment.runtime, {
+      ...live[0].bound,
+      preparationToken: null,
+      flowHash: null,
+    });
+    await intent(owner.webActor);
+    await expect(intent(owner.webActor)).rejects.toMatchObject({ code: 'too_many_pending' });
   });
 
   it('two tabs, one session: both prepare, the first finalizes, the second is refused and writes nothing', async () => {

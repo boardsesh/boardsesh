@@ -88,19 +88,13 @@ describe('first-password confirmation policy', () => {
     expect(isAppleOnlyFirstPasswordInventory([apple], 'owned-user', Number.NaN)).toBe(false);
   });
 
-  it('caps confirmation at five minutes and every original source/binding/intent deadline', () => {
+  it('caps confirmation at five minutes and the presented session expiry', () => {
     const now = new Date('2026-11-13T12:00:00.000Z');
     const later = new Date(now.getTime() + 3_600_000);
-    expect(firstPasswordDeadline(now, later, later, later).getTime()).toBe(now.getTime() + 300_000);
-    for (const shorter of [0, 1, 2]) {
-      const limits = [later, later, later];
-      limits[shorter] = new Date(now.getTime() + 10_000);
-      expect(firstPasswordDeadline(now, limits[0], limits[1], limits[2]).getTime()).toBe(now.getTime() + 10_000);
-    }
-    expect(() => firstPasswordDeadline(now, now, later, later)).toThrow('FIRST_PASSWORD_EXPIRED');
-    expect(() => firstPasswordDeadline(new Date(Number.NaN), later, later, later)).toThrow(
-      'FIRST_PASSWORD_AUTHORITY_UNAVAILABLE',
-    );
+    expect(firstPasswordDeadline(now, later).getTime()).toBe(now.getTime() + 300_000);
+    expect(firstPasswordDeadline(now, new Date(now.getTime() + 10_000)).getTime()).toBe(now.getTime() + 10_000);
+    expect(() => firstPasswordDeadline(now, now)).toThrow('FIRST_PASSWORD_EXPIRED');
+    expect(() => firstPasswordDeadline(new Date(Number.NaN), later)).toThrow('FIRST_PASSWORD_AUTHORITY_UNAVAILABLE');
   });
 
   it('compares complete canonical digests without accepting truncated or malformed tokens', () => {

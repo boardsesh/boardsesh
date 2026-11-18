@@ -7,10 +7,10 @@ import { ProviderSecurityRefusal } from './provider-security-context';
 import type { IdentityAuthorityReceipt } from './router';
 
 /**
- * The browser-binding actor of the owned-provider sign-in commands and first
- * password. Provider link, unlink and reauthentication no longer use it: they
+ * The browser-binding actor of the owned-provider sign-in commands. Provider
+ * link, unlink, reauthentication and first password no longer use it: they
  * read the first-party web session (`provider-security-context.ts`). This goes
- * with the binding core once #7596 B5a and B5c2 have moved its last callers.
+ * with the binding core once #7596 B5a has moved its last callers.
  */
 export interface CapturedBrowserBindingActor {
   readonly input: BrowserBindingActor;
