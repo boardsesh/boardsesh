@@ -14,6 +14,7 @@ import { createEnvironment } from './environment';
 import { bridgeLegacyCredential, legacyBridgeMode } from '../bridge';
 import { readFirstPartySession, requireFreshAuthentication } from '../session-reader';
 import { denyFirstPartySession } from '../lineage';
+import { sessionTokenDigest } from '../session-token';
 
 const secret = 'isolated-test-bridge-key-6975';
 const now = new Date();
@@ -83,14 +84,29 @@ describe('production legacy bridge (dark)', () => {
         .from(authCredentialLineage)
         .where(eq(authCredentialLineage.userId, fixtureSession.userId)),
     ).toHaveLength(1);
+    // Only the call that created the row hands out the raw token; the row holds its digest.
+    const tokens = answers.flatMap((answer) => (answer.status === 'bridged' && answer.token ? [answer.token] : []));
+    expect(tokens).toHaveLength(1);
+    expect(canonical.token).toBe(sessionTokenDigest(tokens[0]));
     const readSubject = async () => ({ generation: 0, nativeGeneration: 7, deniedSessionKeys: new Set<string>() });
     const admitted = await readFirstPartySession(
       environment.database,
-      { kind: 'canonical-token', token: canonical.token },
+      { kind: 'canonical-token', token: tokens[0] },
       now,
       readSubject,
     );
     expect(admitted.status).toBe('admitted');
+    // The stored digest itself is not a token.
+    expect(
+      (
+        await readFirstPartySession(
+          environment.database,
+          { kind: 'canonical-token', token: canonical.token },
+          now,
+          readSubject,
+        )
+      ).status,
+    ).toBe('denied');
     if (admitted.status === 'admitted') expect(requireFreshAuthentication(admitted.session, now)).toBe(false);
   });
   it('missing lineage does not deny a valid legacy session; an explicit denial does', async () => {

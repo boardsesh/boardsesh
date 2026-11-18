@@ -307,8 +307,9 @@ The web writes these identity tables today; on `boardsesh_web` each fails with
 | `api/auth/reset-password/route.ts` | 145, 152, 162, 166 | update or insert `user_credentials`, verify `users`, delete the token |
 | `api/auth/verify-email/route.ts` | 86–115 | delete tokens, set `users.emailVerified` |
 | `api/internal/set-password/route.ts` | 111, 120 | insert `user_credentials`, verify `users` |
-| `lib/auth/auth-options.ts` | 255 | `DrizzleAdapter` creates and updates `users` and `accounts` on OAuth sign-in |
-| `lib/auth/auth-options.ts` | 408 | sign-in callback sets `users.emailVerified`; its failure is swallowed, so it would stop silently |
+| `lib/auth/auth-options.ts` | 146 | the `native-oauth` provider inserts a transfer token's single-use marker into `verificationTokens`; on `boardsesh_web` that sign-in is refused |
+| `lib/auth/auth-options.ts` | 270 | `DrizzleAdapter` creates and updates `users` and `accounts` on OAuth sign-in |
+| `lib/auth/auth-options.ts` | 424 | sign-in callback sets `users.emailVerified`; its failure is swallowed, so it would stop silently |
 
 How the URL is chosen. The web builds its shared pool in
 `packages/web/app/lib/db/db.ts`, which calls `applyWebDatabaseUrl()` from

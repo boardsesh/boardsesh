@@ -756,6 +756,9 @@
       "preGeneratorHardestFirst": "Hardest first",
       "preGeneratorHardestFirstDescription": "Start at your top grade and step down.",
       "preGeneratorBlockSummaryHardestFirst": "hardest first",
+      "preGeneratorSameClimbsDown": "Same climbs down",
+      "preGeneratorSameClimbsDownDescription": "Come back down on the climbs you went up.",
+      "preGeneratorBlockSummarySameClimbsDown": "same climbs down",
       "preGeneratorNumberOfClimbs": "Climbs",
       "preGeneratorSets": "Sets",
       "preGeneratorRepsPerSet": "Reps per set",
@@ -1166,6 +1169,8 @@
     "repAttempt": "Attempt"
   },
   "partnerWorkouts": {
+    "openWebsite": "Open on the website",
+    "personalSessionRequired": "Start a personal session to use this workout.",
     "routeTitle": "Workout from an app",
     "from": "From {{app}}",
     "unavailable": "App workouts are not available yet.",

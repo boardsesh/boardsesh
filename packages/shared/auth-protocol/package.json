@@ -37,6 +37,11 @@
       "import": "./src/partner-oauth-mode.ts",
       "default": "./src/partner-oauth-mode.ts"
     },
+    "./browser-session-cookie": {
+      "types": "./src/browser-session-cookie.ts",
+      "import": "./src/browser-session-cookie.ts",
+      "default": "./src/browser-session-cookie.ts"
+    },
     "./browser-session-mode": {
       "types": "./src/browser-session-mode.ts",
       "import": "./src/browser-session-mode.ts",

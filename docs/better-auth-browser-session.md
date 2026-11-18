@@ -162,7 +162,9 @@ to epoch 0 otherwise (`bridge.ts:82`). With `freshAge` at 300 seconds
 (`authority.ts:47`, compared at `session.mjs:337-340`), a bridged cookie from a
 sign-in under five minutes old counts as fresh. That follows
 [the accepted migration](./better-auth-migration.md) at lines 207-213 ("preserve
-trustworthy age"). The owner decides before B2 (open question 2).
+trustworthy age"). The owner decided on 2026-11-17 (decision 3): a bridged
+session keeps that time for the 30-day rules and fails every five-minute check.
+The reader now carries that as `source` (see "The backend session interface").
 
 ## Login revokes the session it arrived with
 
@@ -191,6 +193,136 @@ database delete failed (`api/routes/sign-out.mjs:49-54`), checks no expected
 identity and writes no denial row. Neither is used as is. B4 keeps today's
 guarded sign-out, which answers 409 when the cookie no longer belongs to the
 identity the tab expected (`[...nextauth]/route.ts:243`).
+
+## The backend session interface
+
+Owner decision 1 (2026-11-17) splits issuance at the session row: the backend
+writes and rolls `auth_session` rows, and B1 owns the cookie. The backend half
+is `packages/backend/src/auth/authority/web-session.ts`. No route mounts it
+directly, and it sets no cookie or header.
+
+`issueWebSession(transaction, { userId, authenticatedAt, freshness?, presented?, now, authority })`
+returns `{ sessionId, token, expiresAt, generation }`.
+
+- It runs inside the transaction that verified the credential. It verifies
+  nothing itself. A caller that takes `users` row locks before calling must
+  take the signing-in account's row and the presented account's row in one
+  pass, in `users.id` order, with the exported `lockWebSessionAccounts`
+  (FOR KEY SHARE and FOR UPDATE). A caller that holds only KEY SHARE on its own
+  row and then calls deadlocks against a crossed login: each holds its own row
+  and waits FOR UPDATE on the other's. The staged password command uses the
+  helper.
+- `authority` is the receipt the caller captured before bcrypt. A writer switch
+  since then is refused with `STALE_AUTHORITY`, as the staged password command
+  refuses it. So it works only once the manifest is `enforced`, like every
+  staged writer.
+- Locks: the shared (6975, 2) gate and a manifest re-check, then the `users`
+  rows in `users.id` order (FOR KEY SHARE for the account signing in, FOR UPDATE
+  for the presented session's account), then the presented session's rows,
+  then the new row. Two logins that present each other's sessions queue on the
+  first `users` row instead of deadlocking.
+- It writes one row: a random UUID id; a token of 32 random bytes in base64url
+  from `newSessionToken()`, of which the row stores only the SHA-256 digest, as
+  every first-party writer does (the reader hashes a presented
+  `canonical-token` and looks the digest up), and the raw token goes back only
+  in this call's return value; `expires_at` =
+  `now` + 30 days; `original_authenticated_at` = `authenticatedAt`; no
+  `legacy_lineage_id` for `freshness: 'login'` (the default); and
+  `revocation_generation` = the account's generation.
+- `freshness: 'carried'` is for a sign-in made elsewhere (a native transfer, a
+  provider sign-in without a verified `auth_time`). The row keeps the sign-in
+  time for the 30-day rules but stores `legacy_lineage_id = 'carried:<id>'`,
+  which names no lineage row, so it reads as `bridge` and never passes a
+  five-minute freshness check. No new column.
+- `presented`, of any account, legacy cookie or canonical row, must be the
+  session `readFirstPartySession` admitted in this transaction. One with its
+  own session id is revoked in the same transaction by
+  `denyFirstPartySessionInTransaction`: it loses its row and gets a denial, so
+  every reader refuses it. One that `requiresAccountCutoff` (a no-SID legacy
+  cookie, or the bridged row of one) is left alone: ending it would cut off the
+  whole account, phones included, so a login never does that and never moves
+  the generation.
+- It refuses before writing anything: a deleted or missing account with
+  `AuthSubjectDeniedError`, as native issuance does, and a sign-in time later
+  than `now` or an unknown `freshness` with `INVALID_COMMAND`. So a caller that
+  catches the refusal inside its transaction still commits nothing.
+
+`rollWebSession(database, sessionId, now)` returns `{ rolled: true, expiresAt }`
+or `{ rolled: false }`. It is one conditional UPDATE that sets `expires_at` to
+`now` + 30 days when fewer than 29 days remain and the row is live: unexpired,
+no denial, a generation equal to the account's, an account not deleted, and a
+lineage (if any) that is unrevoked and names this row. It writes no cookie.
+Bridged web rows roll too. The bridge still caps a new row at the legacy
+cookie's expiry (`bridge.ts:92`); the first roll lifts that, and re-bridging
+never shortens a row (`bridge.ts:102`). A revoked lineage stops the roll, and
+sign-out still deletes the row and writes the denial. Rows bound to a native
+refresh token keep that token's expiry and never roll. A roll never makes a row
+readable: every reader checks the same conditions itself. `rolled: true` is not
+proof the session is live: a roll queued behind an account cutoff re-checks
+only the row it waited on, so it can extend the expiry of a row the cutoff just
+ended, which the reader then refuses by its generation. B3 relies on the
+reader, never on the roll's result.
+
+Constants, in `@boardsesh/auth-protocol`: `WEB_SESSION_LIFETIME_SECONDS`
+(2,592,000, 30 days) and `WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS` (2,505,600,
+29 days).
+
+Session source. `readFirstPartySession` returns `source: 'login' | 'bridge'`,
+derived from the row (`login` when `legacy_lineage_id` is null) with no new
+column. A NextAuth cookie read directly is `login`, as it is the legacy login
+itself. `requireFreshAuthentication` passes only for `login`.
+`webSignInProof(session)` is the `webSignIn` value B3 must set when a canonical
+session authenticates a request; it carries no sign-in time for a `bridge`, so
+partner app changes refuse it. The 30-day partner-consent rule reads
+`authenticatedAt`, which a bridged row keeps. Provider link and unlink need
+their own reauthentication receipt (`provider-reauthentication-evidence.ts`),
+never the session's age, so they did not change. Provider security and first
+password compare the actor session's expiry exactly
+(`provider-security-context.ts:114`, `provider-security-finalizer.ts:208`,
+`first-password-challenges.ts:98`), so a flow that spans a roll is refused.
+B5 drops those comparisons when it rebuilds the flows.
+
+What B1 does with the token: put it in the signed session cookie, Max-Age
+34,560,000 (decision 2), only after the command answers; never log it or hand
+it to page JavaScript. Reads present it back as a `canonical-token` after the
+cookie signature check.
+
+### The private commands B1 calls
+
+All four sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the
+backend (404 `{ "error": "disabled" }` when off, 503 for an unknown value), use
+the existing `Authorization: Bearer <CURRENT_STORE_AUTH_RPC_SECRET>` and refuse
+any request carrying an `Origin` header. Schemas and types are in
+`@boardsesh/auth-protocol` (`web-session.ts`).
+
+| Command | Request | Replies |
+| --- | --- | --- |
+| Login: the staged password command, `POST /api/internal/auth/current-store/password` | `passwordCommandSchema` plus `webSession: { presented? }`. `presented` is `{ kind: 'legacy-jwe', credential }` (the joined NextAuth cookie) or `{ kind: 'canonical-token', token }` (from the new cookie). There is no field for an account: the session goes to the account the password proves. | `authenticated` with `webSession: { sessionId, token, expiresAt, generation }`; `invalid_credentials` with nothing issued and nothing revoked. An account that still needs email verification gets `authenticated` with `verification.verified: false` and no `webSession`, and its presented session stays. Rate limits and the compare gate are those of #7650. |
+| Session read, `POST /api/internal/auth/current-store/web-session/v1/session` | `webSessionReadCommandSchema`: `{ presented }`, the same `PresentedWebSession` login takes | 200 `active` with `userId`, `authSessionId`, `generation`, `expiresAt`, `source` (`login` or `bridge`), `authenticatedAt` (or null), `linkGuarded` and `user: { id, email, name, image }`, the fields of today's NextAuth session JSON (profile display name and avatar win); 401 `unauthenticated`; 503 `unavailable`. It applies exactly `readFirstPartySession`'s rules and writes nothing: no roll, no last-seen time, no bridge. A legacy cookie is answered by its own admission rules. |
+| Sign-out, `POST /api/internal/auth/current-store/web-session/v1/signout` | `webSessionSignOutCommandSchema`: `{ presented, expectedUserId, expectedAuthSessionId }`, or the first form `{ token, … }` with a bare canonical token, still accepted so either web works with either backend | 200 `signed_out` (ended, or was not live); 409 `identity_changed` (the cookie carries another live session; nothing ended); 503 `unavailable`. A legacy cookie with its own session id gets a denial of that id and nothing else ends; one without a session id is answered `signed_out` with nothing written. |
+| Roll, `POST /api/internal/auth/current-store/web-session/v1/roll` | `webSessionRollCommandSchema`: `{ token }` | 200 `active` with `userId`, `authSessionId`, `expiresAt` and `rolled`; 401 `unauthenticated`; 503 `unavailable`. |
+
+A 401 means "no live session" only when its body parses as the command's own
+reply (`outcome: 'unauthenticated'`). The transport answers a wrong secret or a
+browser `Origin` with 401 `{ "error": "unauthorized" }`, which no reply schema
+accepts; www must treat that as unavailable and never clear a cookie on it.
+
+A presented session that no longer reads as live is ignored, and a session
+store that cannot be read fails the login with 503, so a login never succeeds
+while leaving the presented session live. A presented legacy cookie without a
+session id is ignored too: ending it would cut off the whole account, phones
+included, so neither login nor sign-out ever performs an account cutoff. A
+login presenting a legacy cookie answers 503 before any password work when the
+backend has no `NEXTAUTH_SECRET`. A joined legacy cookie may be at most 12,288
+characters (`LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH`), so the command stays
+inside the 16,384-byte body budget. The legacy cookie's own sign-out
+can also go to the existing `/api/internal/auth/current-store/signout` behind
+`CURRENT_STORE_WEB_SIGNOUT_MODE`, whose no-SID path cuts off the account.
+
+No reply of these commands sets a cookie. When a login asks for a session and
+a credential proof together, the proof's `authSessionId` and `generation` are
+the issued session's, so the legacy NextAuth cookie www writes from the proof
+during the 30-day rollback window names the same session.
 
 ## One guard in each browser client
 
@@ -647,18 +779,133 @@ Unit tests cannot show real cookie order across www and app, the back/forward
 cache or the Router Cache; only B7 can. There is no account-switching browser
 test in `packages/web/e2e/` today.
 
+## Browser-session e2e harness
+
+`vp run test:e2e:browser-session` runs www and the Expo web app on two real
+HTTPS subdomains of one parent domain, in Chromium and WebKit, against the real
+backend and the dev Postgres. B7b to B7d put the acceptance specs on it. It
+needs the dev database (`vp run db:up` runs as a task dependency) and
+`vp exec playwright install chromium webkit` once. Add `-- --project=webkit` to
+run one engine, and `BROWSER_SESSION_E2E_REUSE_EXPORT=1` to skip the Expo
+export when one is already built. It is not part of per-PR CI. The workflow
+`browser-session-e2e.yml` runs it nightly, on dispatch, and on a pull request
+that touches the harness or the web or backend auth it exercises.
+
+What starts, from `scripts/browser-session-e2e.ts` and
+`packages/web/e2e/browser-session/global-setup.ts`:
+
+| Host | Served by |
+| --- | --- |
+| `https://www.boardsesh.test` | `next dev`, with `NEXTAUTH_URL` on that origin and `AUTH_COOKIE_DOMAIN=.boardsesh.test` |
+| `https://app.boardsesh.test` | the standalone Expo export (baseUrl `/`, SPA fallback), with the www, app and backend origins baked in |
+| `https://ws.boardsesh.test` | the backend (`src/index.ts`), with `BOARDSESH_URL` and `APP_ORIGIN` set to the two origins above |
+
+**How the browsers reach the hosts.** One TLS edge (`partner-oauth-e2e/edge.ts`,
+shared with the partner OAuth journey) holds a self-signed certificate for all
+the hosts, generated at run time under the ignored `.boardsesh/browser-session/`
+and deleted at teardown, so no key is committed. Each Playwright context is
+given the edge's HTTP proxy (`fixtures.ts`). The proxy answers CONNECT only for
+these hosts, so the browser never resolves the names and nothing needs
+`/etc/hosts`, `--host-resolver-rules` or a root-owned CA. It is the same
+mechanism in Chromium and WebKit, because both honour a per-context proxy.
+`ignoreHTTPSErrors` trusts the certificate. `.test` is reserved (RFC 6761), so
+the names can never reach a real site.
+
+**No new production override.** The parent cookie domain comes from the existing
+`AUTH_COOKIE_DOMAIN` (`secure-cookies.ts`), and the origins from the existing
+`NEXT_PUBLIC_APP_URL`, `APP_ORIGIN` and `BOARDSESH_URL`. The only code change
+outside the harness is that the partner journey's local-only check accepts
+`.test` hosts (`server-environment.ts`).
+
+**What the specs check.**
+
+- `cookie-domain.spec.ts` asks each engine, with no Boardsesh code involved,
+  whether a `__Secure-` cookie with `Secure; HttpOnly; SameSite=Lax;
+  Domain=.boardsesh.test` set by one host is stored, sent to a sibling host,
+  and removed by an expiring `Set-Cookie`, and that one without a `Domain`
+  stays on its host. Public-suffix rules and `Secure` handling with ignored
+  HTTPS errors differ by engine, so this is tested, not assumed. Result, first
+  run (PR #7767, Playwright 1.62.1 on Linux): all three pass in Chromium and
+  WebKit, so `.boardsesh.test` is a registrable domain in both and a `Secure`
+  cookie is stored and sent over the ignored-error certificate. When another
+  spec fails in only one engine, read this one first.
+- `legacy-mode.spec.ts` is the baseline in today's mode
+  (`AUTH_BROWSER_SESSION_MODE` unset): sign in on www as the seeded test user
+  (`test@boardsesh.com`), open the app subdomain in the same context and see
+  the same `userId` and `authSessionId` from www's cookie route, then sign out
+  on www and see the app tab show the sign-in form after a reload. It skips
+  itself when `AUTH_BROWSER_SESSION_MODE` is set.
+
+The global setup forwards `AUTH_BROWSER_SESSION_MODE` from the caller's
+environment when it is set, so a Phase B spec can run the same stack under
+`better-auth`. Server logs and the HTML report land in
+`packages/web/test-results/browser-session/` and
+`packages/web/playwright-report/browser-session/`.
+
+### What a spec can use
+
+Fixtures from `packages/web/e2e/browser-session/fixtures.ts`, each with a spec
+that shows it working in legacy mode in both engines:
+
+| Fixture | What it gives a spec | Spec |
+| --- | --- | --- |
+| `accountA`, `accountB` | `{ userId, email, password, name }` for the dev database's test user and a second account made at global setup (`database.ts`: the same two inserts the partner journey uses, deleted at teardown). `openContext()` opens another context set up like `context`. Sign in with `helpers.ts` `signInOnWww(page, account)`. | `accounts.spec.ts` |
+| `edgeCookies` | `begin()` then `end()`, or `during(action)`: every response the edge relayed in the window, as `{ host, method, path, status, setCookies: [{ name, attributes, clears }] }`. Names and attributes only, never a value (`edge.ts` drops it). A response with no Set-Cookie is still listed, so "emitted none" differs from "never ran". `sessionSetCookies(records)` keeps the session cookies. | `set-cookie-recording.spec.ts` |
+| `legacySession.addTo(context, account, shape)` | A NextAuth cookie minted with `encode` from `next-auth/jwt` and the run's `NEXTAUTH_SECRET`: `normal`, `chunked` (three `.0` to `.2` pieces), `host-only` (no Domain, www only) or `plain-named` (`next-auth.session-token`, no `Secure`). Returns the cookie names. | `legacy-session.spec.ts` |
+| `restartStack({ env })` | Stops both servers and starts them again with `env` set over the run's own environment (null unsets; no argument goes back to it). The database, edge, browser contexts and ports stay. The setup process does it, so the specs reach it through a loopback control server with a per-run token. Allow minutes under `next dev`. | `restart.spec.ts` |
+
+Legacy mode rewrites the session cookie on every `/api/auth/session` read, as
+well as at sign-in (both show in `set-cookie-recording.spec.ts`), and
+`/api/internal/ws-auth` writes none.
+
+**www as a production build.** `BROWSER_SESSION_E2E_WWW=production` (or
+`vp run test:e2e:browser-session -- --www-production`) runs `next build` and
+`next start` instead of `next dev`. Router Cache behaviour and several auth
+branches differ under `NODE_ENV=production`. The nightly uses it and a pull
+request run does not, because the build adds minutes; a dispatch has a `www`
+input. The build writes `packages/web/.next`, so do not start it while
+`vp run dev` is running.
+
+**Probes.** `websocket.spec.ts`: the app tab opens `wss://ws.boardsesh.test/graphql`
+through the proxy and gets `connection_ack`, in both engines. `bfcache.spec.ts`,
+below.
+
+**Back/forward cache.** From playwright-core 1.62.1: Chromium is launched with
+`--disable-back-forward-cache`, so no Chromium page is restored from the cache.
+Dropping that flag is not enough with the default headless shell, which reports
+`BackForwardCacheDisabledForDelegate`. The `chromium-bfcache` project uses the
+full Chromium build (`channel: 'chromium'`) with
+`ignoreDefaultArgs: ['--disable-back-forward-cache']`, and a back navigation
+there fires `pageshow` with `persisted: true`. The other Chromium project stays
+`false`. WebKit's launcher passes no such flag, and its Linux build fired
+`persisted: false` in the first CI run; I found no supported switch for it, so a
+spec cannot rely on a WebKit restore. `chromium-bfcache` runs only
+`bfcache.spec.ts`; a spec that needs a restore uses it. A restored page runs no
+script and sends no request, and `goBack` must wait for `commit`, since a
+restore fires no `load`.
+
+What the harness does not show:
+
+- Safari's seven-day cap on a server-set cookie (owner decision 2) cannot
+  trigger here. Playwright's WebKit has no intelligent tracking prevention, and
+  every host resolves through one proxy to 127.0.0.1, so no site looks
+  cross-site to a tracker list. It still needs a real Safari check.
+- The back/forward cache differs by engine, as above: no WebKit restore at all,
+  and a Chromium restore only in `chromium-bfcache`.
+- A pull request runs www under `next dev`. Behaviour that differs in a
+  production build is checked only by the nightly, or a dispatch with
+  `www=production`.
+- One auth mode per run. `AUTH_BROWSER_SESSION_MODE` is read when the setup
+  starts the servers, so a spec that needs the other mode calls
+  `restartStack({ env: { AUTH_BROWSER_SESSION_MODE: ... } })`, and every
+  restart is a cold start for the servers.
+
 ## Open questions
 
-1. Session lifetime. With no cookie writes on reads, Max-Age is fixed at login
-   (`cookies/index.mjs:169-178`), and nothing rolls `expires_at` (above).
-   NextAuth extends the cookie to 30 days on every read today, so an active
-   climber is never signed out. Keeping that means a long Max-Age at login and
-   B1 rolling `auth_session.expires_at` itself; a 30-day absolute lifetime
-   changes account behaviour. Better Auth defaults to 7 days
-   (`context/create-context.mjs:148`), and `createAuthority` sets no
-   `expiresIn`.
-2. Bridged freshness. Never fresh (#7596) or keep trustworthy age
-   (`better-auth-migration.md:207-213`, `bridge.ts:82`)?
+1. Session lifetime. Decided 2026-11-17 (decision 2): 30-day rolling, a
+   400-day cookie and `rollWebSession` (see "The backend session interface").
+2. Bridged freshness. Decided 2026-11-17 (decision 3): never fresh for the
+   five-minute checks; the legacy sign-in time still serves the 30-day rules.
 3. The bridging read's cookie write. Options: bridge only from a POST the
    guard owns, or skip the `Set-Cookie` when the request's legacy session is
    already denied. Neither has been checked against the cookie-order fixture.

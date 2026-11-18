@@ -201,6 +201,20 @@ check live in `@boardsesh/consent/edge-country`, which the backend's
 reads as no country. The contract is in
 [production deploy](./production-deploy.md#the-support-link-contract).
 
+### Origin proof header (owner-managed)
+
+A Cloudflare last hop proves only that a request crossed some Cloudflare edge.
+A Worker on any account can fetch the web's Railway domain from inside
+Cloudflare's ranges and set its own `CF-Connecting-IP`. The web's auth limiters
+therefore trust `CF-Connecting-IP` only with `X-Boardsesh-Origin-Proof`, which a
+request-header transform on this zone sets on `www` requests whose path contains
+`/api/auth/`, locale-prefixed ones included (#7766).
+The value is a secret, so the rule is not in `infra/cloudflare/config.ts`; it is
+created by hand, and `vp run cf:apply` leaves rules it does not declare alone.
+The rule, the matching Railway variable `CLOUDFLARE_ORIGIN_PROOF_SECRET` and the
+order to set them, and the `_NEXT` variable for rotation, are in
+[password delegation](./better-auth-web-password-delegation.md#turning-on-the-origin-proof).
+
 ### Consent province header
 
 Quebec consent prompting uses a trusted coarse province code. The declared

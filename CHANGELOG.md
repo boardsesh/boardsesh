@@ -4,6 +4,22 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-18
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Secondary buttons read as buttons now, with plain text beside the main violet one ([#7801](https://github.com/boardsesh/boardsesh/pull/7801))
+- Back to your projects: climbs you tried and haven't sent yet sit on Home, one tap from the wall ([#7759](https://github.com/boardsesh/boardsesh/pull/7759))
+
+### Improved
+
+- Open a workout from your connected training app and climb it in Boardsesh. ([#7776](https://github.com/boardsesh/boardsesh/pull/7776))
+  Keep your connected training app up to date with your logbook.
+
 ## 2026-11-17
 
 ### App update

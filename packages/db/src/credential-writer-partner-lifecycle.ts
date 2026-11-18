@@ -1,4 +1,4 @@
-// Reviewed PostgreSQL catalog shapes for the partner lifecycle trigger closure after migration 0322.
+// Reviewed PostgreSQL catalog shapes for the partner lifecycle trigger closure after migration 0325.
 export default [
   {
     name: 'app_workouts',
@@ -55,6 +55,7 @@ export default [
         ['disabled_reason', 'text', false, '', '', null],
         ['failure_email_pending', 'boolean', true, '', '', 'false'],
         ['updated_at', 'timestamp with time zone', true, '', '', 'now()'],
+        ['last_failure_at', 'timestamp with time zone', false, '', '', null],
       ],
       indexes: [
         'CREATE UNIQUE INDEX oauth_client_webhooks_pkey ON public.oauth_client_webhooks USING btree (client_id)',

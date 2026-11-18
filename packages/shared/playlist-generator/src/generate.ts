@@ -109,19 +109,27 @@ export const generatePyramidPlan = (options: PyramidOptions, grades: GeneratorGr
   const stepCount = Math.max(0, options.numberOfSteps);
   const climbsPerStep = Math.max(0, options.climbsPerStep);
   const center = (stepCount - 1) / 2;
+  const repeatOnWayDown = options.repeatOnWayDown === true;
+  const firstIndexOfStep: number[] = [];
   let currentIndex = slots.length;
 
   for (let step = 0; step < stepCount; step++) {
     const distanceFromPeak = Math.floor(Math.abs(step - center));
     const grade = getPyramidGrade(options.targetGrade, distanceFromPeak, grades);
     const section = distanceFromPeak === 0 ? 'peak' : step < center ? 'increasing' : 'decreasing';
+    firstIndexOfStep.push(currentIndex);
 
     for (let climb = 0; climb < climbsPerStep; climb++) {
-      slots.push({
-        grade,
-        section,
-        index: currentIndex++,
-      });
+      const slot: PlannedClimbSlot = { grade, section, index: currentIndex++ };
+      // The way down retraces the way up in exact reverse: step `stepCount - 1 -
+      // step` is its twin at the same grade, and within the step the last climb
+      // up is the first one down (B2 B1 A2 A1). Only `decreasing` steps repeat:
+      // an even step count plans two peak steps, and mirroring them would put one
+      // climb on two pages in a row.
+      if (repeatOnWayDown && section === 'decreasing') {
+        slot.repeatOfIndex = firstIndexOfStep[stepCount - 1 - step] + (climbsPerStep - 1 - climb);
+      }
+      slots.push(slot);
     }
   }
 

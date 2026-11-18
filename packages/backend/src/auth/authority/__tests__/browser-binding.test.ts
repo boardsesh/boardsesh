@@ -51,6 +51,7 @@ import {
 import { transactionSettings } from '../../current-store/command-context';
 import type { AuthorityTransaction } from '../adapter';
 import * as authorityRouter from '../router';
+import { sessionTokenDigest } from '../session-token';
 
 const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
 const jwt = requireWeb('next-auth/jwt') as {
@@ -122,7 +123,7 @@ async function canonicalSource(options: { readonly lineage?: boolean; readonly a
   const authenticatedAt = options.authenticatedAt ?? null;
   await environment.database.insert(authSession).values({
     id,
-    token,
+    token: sessionTokenDigest(token),
     userId: accountA,
     expiresAt,
     updatedAt: new Date(),
@@ -246,7 +247,7 @@ async function replacePasswordSelection(
     if (candidate.kind === 'canonical-token' && canonicalSessionId)
       await transaction
         .update(authSession)
-        .set({ token: candidate.token, revocationGeneration: 1 })
+        .set({ token: sessionTokenDigest(candidate.token), revocationGeneration: 1 })
         .where(eq(authSession.id, canonicalSessionId));
     return commitPreparedBrowserReplacementInTransaction(
       transaction,
@@ -319,7 +320,12 @@ describe('dark stable browser binding under the selected identity authority', ()
           linkGuarded: false,
           requiresAccountCutoff: true,
         });
-        if (admitted.status === 'admitted') expect(selected.session).toEqual(admitted.session);
+        if (admitted.status === 'admitted') {
+          // The binding row keeps the evidence fields only; the reader's source stays with the reader.
+          const { source, ...evidence } = admitted.session;
+          expect(source).toBe('login');
+          expect(selected.session).toEqual(evidence);
+        }
         const [stored] = await environment.database.select().from(authBrowserBindings);
         expect(stored.id).toBe(created.cursor.bindingId);
         expect(JSON.stringify(stored)).not.toContain(created.token);
@@ -777,7 +783,7 @@ describe('dark stable browser binding under the selected identity authority', ()
         const rotated = { kind: 'canonical-token' as const, token: randomUUID() };
         await environment.database
           .update(authSession)
-          .set({ token: rotated.token })
+          .set({ token: sessionTokenDigest(rotated.token) })
           .where(eq(authSession.id, proof.id));
         expect(
           (

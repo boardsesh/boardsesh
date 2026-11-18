@@ -400,8 +400,24 @@ const IDENTITY_WRITE_PATTERNS = [
   /\.(?:insert|update|delete)\(\s*(?:[\w$]+\.)?(?:users|userCredentials|accounts|verificationTokens|mobileRefreshTokens|auth[A-Z]\w*)\s*\)/g,
   /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\.)?"?(?:users|user_credentials|accounts|verificationTokens|verification_tokens|mobile_refresh_tokens|auth_[a-z_]+)\b/g,
 ];
-/** The authority module and the staged commands: every write there runs under the gate by construction. */
+/**
+ * The authority module and the staged commands: every write there runs under
+ * the gate by construction, except the ones named in UNGATED_AUTHORITY_WRITES.
+ */
 const IDENTITY_AUTHORITY_ROOTS = [FIRST_PARTY_AUTHORITY_ROOT, 'packages/backend/src/auth/current-store/'];
+/**
+ * Functions inside the authority folders that write an identity table without
+ * the gate, each with its reason. The text scan cannot see gating, so whoever
+ * adds such a write names it here.
+ */
+const UNGATED_AUTHORITY_WRITES: Readonly<Record<string, readonly string[]>> = {
+  // rollWebSession (#7596, owner decision 2): one conditional UPDATE of a web
+  // session's expiry. It writes no identity, generation, credential or token,
+  // and every reader re-checks the row's liveness, so it can only extend a
+  // session that is still valid. The gate would add a statement to every roll
+  // and fence nothing.
+  'packages/backend/src/auth/authority/web-session.ts': ['rollWebSession'],
+};
 
 interface ReviewedIdentityWriter {
   /** Direct writes in the file. Outside the authority folders a new one needs review here. */
@@ -504,6 +520,14 @@ describe('identity writer catalog', () => {
       ([path, reviewed]) => reviewed.writes === undefined && !isInIdentityAuthorityRoot(path),
     );
     expect(uncounted).toEqual([]);
+  });
+
+  it('names every ungated write inside the authority folders where it still lives', () => {
+    for (const [path, functions] of Object.entries(UNGATED_AUTHORITY_WRITES)) {
+      expect(isInIdentityAuthorityRoot(path)).toBe(true);
+      const source = readRepoFile(path);
+      for (const name of functions) expect(source).toContain(`function ${name}(`);
+    }
   });
 
   it('keeps each legacy writer behind its gate', () => {

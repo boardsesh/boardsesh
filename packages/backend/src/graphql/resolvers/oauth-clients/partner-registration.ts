@@ -76,13 +76,24 @@ function rateLimited(error: RateLimitError, operation: string): GraphQLError {
   });
 }
 
-function limitOperation(kind: 'read' | 'write'): string {
+type DeveloperLimitPurpose = 'app' | 'email';
+
+function limitOperation(kind: 'read' | 'write', purpose: DeveloperLimitPurpose = 'app'): string {
+  if (purpose === 'email') return kind === 'write' ? 'oauthClientEmailWrite' : 'oauthClientEmailRead';
   return kind === 'write' ? 'oauthClientWrite' : 'oauthClientRead';
 }
 
 /** Charged only once the caller is a signed-in account, and only that account can spend it. */
-async function chargeDeveloperLimit(ctx: ConnectionContext, kind: 'read' | 'write'): Promise<void> {
-  await applyRateLimit(ctx, kind === 'write' ? WRITES_PER_DEVELOPER : READS_PER_DEVELOPER, limitOperation(kind));
+async function chargeDeveloperLimit(
+  ctx: ConnectionContext,
+  kind: 'read' | 'write',
+  purpose: DeveloperLimitPurpose = 'app',
+): Promise<void> {
+  await applyRateLimit(
+    ctx,
+    kind === 'write' ? WRITES_PER_DEVELOPER : READS_PER_DEVELOPER,
+    limitOperation(kind, purpose),
+  );
 }
 
 /**
@@ -114,8 +125,12 @@ async function requireInvitedDeveloper(developerId: string): Promise<void> {
  * `cf-connecting-ip` only from a verified Cloudflare edge and groups an IPv6
  * client by its /64, so a direct-origin caller cannot choose the bucket.
  */
-async function chargeAddressLimit(ctx: ConnectionContext, kind: 'read' | 'write'): Promise<void> {
-  const operation = limitOperation(kind);
+async function chargeAddressLimit(
+  ctx: ConnectionContext,
+  kind: 'read' | 'write',
+  purpose: DeveloperLimitPurpose = 'app',
+): Promise<void> {
+  const operation = limitOperation(kind, purpose);
   if (!ctx.trustedClientIp || process.env.NODE_ENV === 'development') return;
   try {
     await checkRateLimitRedis(
@@ -163,10 +178,9 @@ function refusalError(error: PartnerRegistrationError): GraphQLError {
  * Every operation's way in. The order is the contract: the mode first, so an
  * off deployment does nothing at all; then the account and its own limit; then
  * the `developer-console` flag; then the address limit, which only invited
- * developers spend. `open` registers invited developers only, like
- * `allowlist`, until a developer's email has a real proof of ownership
- * (BA-02, or registration's own email check): `emailVerified` was stamped
- * without one while verification was off.
+ * developers spend. `allowlist` requires the developer-console invite. `open` instead requires
+ * independent ownership proof of the exact current developer email. The legacy
+ * `emailVerified` stamp never grants access.
  */
 export async function withRegistration<Result>(
   ctx: ConnectionContext,
@@ -287,9 +301,10 @@ async function withDeveloperEmail<Result>(
     });
   requireAuthenticated(ctx);
   if (!ctx.userId) throw new GraphQLError('Sign in first.', { extensions: { code: 'UNAUTHENTICATED' } });
-  await chargeDeveloperLimit(ctx, kind);
+  await chargeDeveloperLimit(ctx, kind, 'email');
   if (mode !== 'open') await requireInvitedDeveloper(ctx.userId);
-  await chargeAddressLimit(ctx, kind);
+  // Verification traffic has its own address bucket; unverified accounts cannot spend app writes.
+  await chargeAddressLimit(ctx, kind, 'email');
   try {
     return await work(db as unknown as RegistrationDatabase, ctx.userId);
   } catch (error) {

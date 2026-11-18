@@ -1,3 +1,4 @@
+import { and, gte, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { integer, pgTable, primaryKey, text, timestamp, index } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { oauthClient, oauthConnections } from './partner-oauth';
@@ -13,6 +14,8 @@ export const partnerDeveloperEmails = pgTable('partner_developer_emails', {
   requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
   verifiedAt: timestamp('verified_at', { withTimezone: true }),
 });
+
+export const PARTNER_CONNECTION_NOTICE_MAX_ATTEMPTS = 10;
 
 /** Written with first successful code redemption; SMTP never participates in token issuance. */
 export const partnerConnectionNotices = pgTable(
@@ -35,6 +38,19 @@ export const partnerConnectionNotices = pgTable(
   },
   (table) => ({
     identity: primaryKey({ columns: [table.connectionId, table.generation] }),
-    pending: index('partner_connection_notices_pending_idx').on(table.nextAttemptAt),
+    // Index DDL requires a literal threshold, not a prepared-statement parameter.
+    pending: index('partner_connection_notices_pending_idx')
+      .on(table.nextAttemptAt)
+      .where(
+        and(isNull(table.deliveredAt), lt(table.attempts, sql.raw(String(PARTNER_CONNECTION_NOTICE_MAX_ATTEMPTS))))!,
+      ),
+    deliveredRetention: index('partner_connection_notices_delivered_retention_idx')
+      .on(table.deliveredAt)
+      .where(isNotNull(table.deliveredAt)),
+    failedRetention: index('partner_connection_notices_failed_retention_idx')
+      .on(table.nextAttemptAt)
+      .where(
+        and(isNull(table.deliveredAt), gte(table.attempts, sql.raw(String(PARTNER_CONNECTION_NOTICE_MAX_ATTEMPTS))))!,
+      ),
   }),
 );

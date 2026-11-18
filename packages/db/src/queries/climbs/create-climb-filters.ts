@@ -1,4 +1,4 @@
-import { type SQL, desc, eq, gt, isNotNull, ne, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
+import { type SQL, desc, eq, gt, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
 import { getMoonBoardGeometryByLayoutId, isSizeScopedBoard, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
@@ -17,6 +17,7 @@ import {
   userFavorites,
 } from '../../schema/index';
 import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
+import { realBenchmarkCondition } from './benchmark';
 import { followedAuthorCondition } from './followed-authors';
 import { climbHoldPlacementMatchSql } from './placement-match';
 import {
@@ -724,10 +725,7 @@ export const createClimbFilters = (
   // Benchmarks only and buried the real ones (#6232). The literal stays SQL: a
   // bound NaN is not portable across drivers (JSON turns it into null).
   if (searchParams.onlyBenchmarks) {
-    const benchmarkDifficulty = statsCol('benchmarkDifficulty');
-    climbStatsConditions.push(
-      sql`(${gt(benchmarkDifficulty, 0)} AND ${ne(benchmarkDifficulty, sql`'NaN'::double precision`)})`,
-    );
+    climbStatsConditions.push(realBenchmarkCondition(statsCol('benchmarkDifficulty')));
   }
 
   // Name search condition. The shared pattern builder escapes the user's own

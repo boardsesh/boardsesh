@@ -1,5 +1,5 @@
 {
-  "id": "1bcc300e-9a3d-4658-b99e-6ad9272e032e",
+  "id": "6f65abdc-f406-4bf8-b23d-83014fe1f8be",
   "prevId": "b4785687-8e63-4962-8dc2-422f197df3b5",
   "version": "7",
   "dialect": "postgresql",
@@ -9503,93 +9503,6 @@
         "auth_first_password_candidate": {
           "name": "auth_first_password_candidate",
           "value": "(\"auth_first_password_challenges\".\"phase\" NOT IN ('prepared', 'committed')\n          OR (\"auth_first_password_challenges\".\"actor_credential_kind\" = 'canonical-token' AND \"auth_first_password_challenges\".\"proposed_credential_hash\" IS NOT NULL)\n          OR (\"auth_first_password_challenges\".\"actor_credential_kind\" = 'legacy-jwe' AND \"auth_first_password_challenges\".\"proposed_credential_hash\" IS NULL))\n        AND (\"auth_first_password_challenges\".\"recovery_expires_at\" IS NULL OR (\"auth_first_password_challenges\".\"recovery_expires_at\" > \"auth_first_password_challenges\".\"consumed_at\"\n          AND \"auth_first_password_challenges\".\"recovery_expires_at\" <= \"auth_first_password_challenges\".\"expires_at\"\n          AND \"auth_first_password_challenges\".\"recovery_expires_at\" <= \"auth_first_password_challenges\".\"consumed_at\" + interval '2 minutes'))"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.auth_password_guess_windows": {
-      "name": "auth_password_guess_windows",
-      "schema": "",
-      "columns": {
-        "subject_kind": {
-          "name": "subject_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_key": {
-          "name": "subject_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "window_kind": {
-          "name": "window_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "window_start": {
-          "name": "window_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "failures": {
-          "name": "failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "auth_password_guess_windows_start_idx": {
-          "name": "auth_password_guess_windows_start_idx",
-          "columns": [
-            {
-              "expression": "window_start",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "auth_password_guess_windows_pk": {
-          "name": "auth_password_guess_windows_pk",
-          "columns": [
-            "subject_kind",
-            "subject_key",
-            "window_kind",
-            "window_start"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "auth_password_guess_windows_subject_kind": {
-          "name": "auth_password_guess_windows_subject_kind",
-          "value": "\"auth_password_guess_windows\".\"subject_kind\" IN ('email_digest', 'account_digest')"
-        },
-        "auth_password_guess_windows_subject_key": {
-          "name": "auth_password_guess_windows_subject_key",
-          "value": "\"auth_password_guess_windows\".\"subject_key\" ~ '^[0-9a-f]{64}$'"
-        },
-        "auth_password_guess_windows_window_kind": {
-          "name": "auth_password_guess_windows_window_kind",
-          "value": "\"auth_password_guess_windows\".\"window_kind\" IN ('hour', 'day')"
-        },
-        "auth_password_guess_windows_failures": {
-          "name": "auth_password_guess_windows_failures",
-          "value": "\"auth_password_guess_windows\".\"failures\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -24523,6 +24436,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "last_failure_at": {
+          "name": "last_failure_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "disabled_reason": {
           "name": "disabled_reason",
           "type": "text",
@@ -24921,6 +24840,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "webhook_deliveries_reconcile_idx": {
+          "name": "webhook_deliveries_reconcile_idx",
+          "columns": [
+            {
+              "expression": "next_reconcile_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"webhook_deliveries\".\"status\" in ('pending', 'retrying')",
           "concurrently": false,
           "method": "btree",
           "with": {}

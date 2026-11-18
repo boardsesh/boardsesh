@@ -6,7 +6,7 @@ import { expireAppWorkouts } from './public-api/workout-lifecycle';
 import { roomManager } from './room-manager';
 
 export async function startAppWorkoutMaintenance(boss: PgBoss): Promise<void> {
-  await boss.schedule(APP_WORKOUT_EXPIRY_QUEUE, '19 3 * * *', null, { tz: 'UTC' });
+  await boss.schedule(APP_WORKOUT_EXPIRY_QUEUE, '* * * * *', null, { tz: 'UTC' });
   await boss.work(APP_WORKOUT_EXPIRY_QUEUE, async () => {
     try {
       await db.transaction((tx) => expireAppWorkouts(tx as unknown as PartnerDatabase));
@@ -14,6 +14,10 @@ export async function startAppWorkoutMaintenance(boss: PgBoss): Promise<void> {
       throw new Error('APP_WORKOUT_EXPIRY_FAILED');
     }
   });
+}
+
+/** Register independently: workout maintenance failures must not stop session closure. */
+export async function startSessionInactivityMaintenance(boss: PgBoss): Promise<void> {
   await boss.schedule(SESSION_INACTIVITY_QUEUE, '* * * * *', null, { tz: 'UTC' });
   await boss.work(SESSION_INACTIVITY_QUEUE, async () => {
     try {

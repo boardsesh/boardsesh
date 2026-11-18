@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
+import { issuedWebSessionSchema, webSessionRequestSchema } from './web-session';
 export * from './web-credential-proof';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
@@ -8,6 +9,7 @@ export * from './provider-security-v1';
 export * from './anonymous-provider-v1';
 export * from './first-password-v1';
 export * from './batch-system-user-v1';
+export * from './web-session';
 
 export const AUTH_PROTOCOL_VERSION = 2;
 export const AUTH_COMMAND_PATHS = {
@@ -90,6 +92,13 @@ export const passwordCommandSchema = z
      * or not a public address, the sign-in takes the backend's per-process budget.
      */
     clientAddress: z.union([z.ipv4(), z.ipv6()]).optional(),
+    /**
+     * Issue a first-party web session for the account this command verifies,
+     * revoking `presented` in the same transaction. Needs
+     * `CURRENT_STORE_WEB_SESSION_MODE=backend-staging`; the command answers 404
+     * without it.
+     */
+    webSession: webSessionRequestSchema.optional(),
     payload: z.object({ email: z.string().min(1), password: z.string().min(1) }).strict(),
   })
   .strict();
@@ -251,6 +260,8 @@ export const passwordReplySchema = z.union([
       requestId,
       outcome: z.literal('authenticated'),
       credentialProof: webCredentialProofSchema.optional(),
+      /** Only when the command asked for one. */
+      webSession: issuedWebSessionSchema.optional(),
       user: z
         .object({ id: identityId, email: z.string().min(1), name: z.string().nullable(), image: z.string().nullable() })
         .strict(),

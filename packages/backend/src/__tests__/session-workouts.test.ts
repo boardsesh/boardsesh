@@ -14,6 +14,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type { RecordSessionWorkoutInput } from '@boardsesh/shared-schema/generated';
 import { db } from '../db/client';
 import {
+  MAX_PENDING_TICK_MAP_ENTRIES,
   MAX_SESSION_WORKOUT_HEADLINE_IDS,
   sessionWorkoutMutations,
   sessionWorkoutQueries,
@@ -74,11 +75,21 @@ const workoutInput = (sessionId: string, revision: number, ticks: RecordSessionW
   ticks,
 });
 
-async function hostSession(): Promise<string> {
+/** The same workout with climb A queued twice in the 4x4 (`qi-a1`, `qi-a2`), so only the map tells them apart. */
+const twiceQueuedInput = (sessionId: string, revision: number, ticks: RecordSessionWorkoutInput['ticks'] = []) => {
+  const input = workoutInput(sessionId, revision, ticks);
+  input.stages[1].items = [
+    { queueItemUuid: 'qi-a1', climbUuid: CLIMB_A, angle: 40 },
+    { queueItemUuid: 'qi-a2', climbUuid: CLIMB_A, angle: 40 },
+  ];
+  return input;
+};
+
+async function hostSession(boardPath = 'kilter/1/10/1/40'): Promise<string> {
   const sessionId = `workouts-${randomUUID()}`;
   await db.insert(dbSchema.boardSessions).values({
     id: sessionId,
-    boardPath: 'kilter/1/10/1/40',
+    boardPath,
     createdByUserId: CLIMBER,
     boardId,
     isPublic: true,
@@ -94,8 +105,8 @@ async function logTick(
   status: 'flash' | 'send' | 'attempt',
   minute: number,
   userId = CLIMBER,
+  uuid = `workouts-tick-${randomUUID()}`,
 ): Promise<string> {
-  const uuid = `workouts-tick-${randomUUID()}`;
   await db.insert(dbSchema.boardseshTicks).values({
     uuid,
     userId,
@@ -241,7 +252,7 @@ describe('recordSessionWorkout', () => {
     expect((await storedRow(sessionId, MEMBER))?.revision).toBe(99);
   });
 
-  it('keeps only tick-map entries that are the caller’s own ticks in the session', async () => {
+  it('drops tick-map entries naming another climber’s tick or a tick from another session', async () => {
     const sessionId = await hostSession();
     const otherSession = await hostSession();
     const own = await logTick(sessionId, CLIMB_A, 'send', 1);
@@ -255,7 +266,86 @@ describe('recordSessionWorkout', () => {
         { tickUuid: 'no-such-tick', queueItemUuid: 'qi-a' },
       ]),
     );
+    // A tick the server has not seen yet keeps its entry: it may still be on its way.
+    expect((await storedRow(sessionId))?.tickMap).toEqual([
+      { tickUuid: own, queueItemUuid: 'qi-a' },
+      { tickUuid: 'no-such-tick', queueItemUuid: 'qi-a' },
+    ]);
+  });
+
+  it('places a tick that lands after the workout write on the block its map entry names', async () => {
+    // A dead-lettered tick retried after End, or a spray tick held behind its
+    // climb write, reaches the server after the last workout write (#7028).
+    const sessionId = await hostSession();
+    const lateTick = `workouts-late-tick-${randomUUID()}`;
+    await record(twiceQueuedInput(sessionId, 1, [{ tickUuid: lateTick, queueItemUuid: 'qi-a2' }]));
+    expect((await storedRow(sessionId))?.tickMap).toEqual([{ tickUuid: lateTick, queueItemUuid: 'qi-a2' }]);
+
+    await logTick(sessionId, CLIMB_A, 'send', 1, CLIMBER, lateTick);
+    const [workout] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
+    const [first, second] = workout.stages[1].climbs;
+    expect(first).toMatchObject({ climbUuid: CLIMB_A, reps: [], tickUuids: [], skipped: true });
+    expect(second).toMatchObject({ climbUuid: CLIMB_A, reps: ['SEND'], tickUuids: [lateTick], skipped: false });
+  });
+
+  it('leaves a pending entry inert when its tick lands in another session', async () => {
+    const sessionId = await hostSession();
+    const otherSession = await hostSession();
+    // One visible tick of the owner's in the session, so the workout shows at all.
+    await logTick(sessionId, WARM_CLIMB, 'send', 1);
+    const strayTick = `workouts-stray-tick-${randomUUID()}`;
+    await record(twiceQueuedInput(sessionId, 1, [{ tickUuid: strayTick, queueItemUuid: 'qi-a2' }]));
+
+    await logTick(otherSession, CLIMB_A, 'send', 2, CLIMBER, strayTick);
+    const [workout] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
+    expect(workout.offPlan).toBe(0);
+    expect(workout.stages[1].climbs.map((climb) => climb.reps)).toEqual([[], []]);
+    expect(JSON.stringify(workout)).not.toContain(strayTick);
+  });
+
+  it('never applies a pending entry to another climber’s tick that lands under its uuid', async () => {
+    const sessionId = await hostSession();
+    await db.insert(dbSchema.boardSessionParticipants).values({ sessionId, userId: MEMBER });
+    await logTick(sessionId, WARM_CLIMB, 'send', 1);
+    const sharedUuid = `workouts-shared-tick-${randomUUID()}`;
+    await record(twiceQueuedInput(sessionId, 1, [{ tickUuid: sharedUuid, queueItemUuid: 'qi-a2' }]));
+    await record(twiceQueuedInput(sessionId, 1), MEMBER);
+
+    await logTick(sessionId, CLIMB_A, 'send', 2, MEMBER, sharedUuid);
+    const workouts = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
+    const climbers = workouts.find((workout) => workout.userId === CLIMBER);
+    const members = workouts.find((workout) => workout.userId === MEMBER);
+    expect(climbers?.offPlan).toBe(0);
+    expect(climbers?.stages[1].climbs.map((climb) => climb.reps)).toEqual([[], []]);
+    expect(JSON.stringify(climbers)).not.toContain(sharedUuid);
+    // The member's own workout places their tick by climb, untouched by the climber's map.
+    expect(members?.stages[1].climbs.map((climb) => climb.tickUuids)).toEqual([[sharedUuid], []]);
+  });
+
+  it('drops tick-map entries naming a queue item the plan does not hold', async () => {
+    const sessionId = await hostSession();
+    const own = await logTick(sessionId, CLIMB_A, 'send', 1);
+    const ownOffPlan = await logTick(sessionId, CLIMB_A, 'send', 2);
+    await record(
+      workoutInput(sessionId, 1, [
+        { tickUuid: own, queueItemUuid: 'qi-a' },
+        { tickUuid: ownOffPlan, queueItemUuid: 'qi-not-in-plan' },
+        { tickUuid: 'pending-off-plan', queueItemUuid: 'qi-not-in-plan' },
+      ]),
+    );
     expect((await storedRow(sessionId))?.tickMap).toEqual([{ tickUuid: own, queueItemUuid: 'qi-a' }]);
+  });
+
+  it('keeps only the last pending entries past the cap, and every own tick', async () => {
+    const sessionId = await hostSession();
+    const own = await logTick(sessionId, CLIMB_A, 'send', 1);
+    const pending = Array.from({ length: MAX_PENDING_TICK_MAP_ENTRIES + 2 }, (_, index) => ({
+      tickUuid: `pending-${index}`,
+      queueItemUuid: 'qi-a',
+    }));
+    const ownEntry = { tickUuid: own, queueItemUuid: 'qi-b' };
+    await record(workoutInput(sessionId, 1, [...pending.slice(0, 1), ownEntry, ...pending.slice(1)]));
+    expect((await storedRow(sessionId))?.tickMap).toEqual([ownEntry, ...pending.slice(2)]);
   });
 
   it('writes only a higher revision; a replay is a no-op that still answers true', async () => {
@@ -514,11 +604,67 @@ describe('sessionWorkoutHeadlines', () => {
         userId: CLIMBER,
         mainKind: 'fourByFour',
         mainTargetGrade: getGradeLabel(TARGET_GRADE, 'kilter'),
+        mainTargetBoardType: 'kilter',
         secondMainKind: null,
         blockCount: 2,
         extraMainBlocks: 0,
       },
     ]);
+  });
+
+  it('names the session’s board as the scale when the main climb has no catalogue row', async () => {
+    // 6A+ is the one grade MoonBoard's scale reads differently (V3, not V3+),
+    // so a client must know the board to format the label.
+    const moonboardTarget = 17;
+    const sessionId = await hostSession('moonboard/1/1/1/40');
+    await logTick(sessionId, CLIMB_A, 'send', 1);
+    await record({
+      sessionId,
+      revision: 1,
+      stages: [
+        {
+          id: 'stage-pyramid',
+          kind: 'pyramid',
+          targetGrade: moonboardTarget,
+          items: [{ queueItemUuid: 'qi-moon', climbUuid: 'workouts-climb-not-catalogued', angle: 40 }],
+        },
+      ],
+      ticks: [],
+    });
+
+    const [headline] = await sessionWorkoutQueries.sessionWorkoutHeadlines(
+      null,
+      { sessionIds: [sessionId] },
+      viewer(STRANGER),
+    );
+    expect(headline).toMatchObject({
+      mainTargetGrade: getGradeLabel(moonboardTarget, 'moonboard'),
+      mainTargetBoardType: 'moonboard',
+    });
+  });
+
+  it('names no board when the main block has no target grade', async () => {
+    const sessionId = await hostSession();
+    await logTick(sessionId, CLIMB_A, 'send', 1);
+    await record({
+      sessionId,
+      revision: 1,
+      stages: [
+        {
+          id: 'stage-limit',
+          kind: 'limit',
+          items: [{ queueItemUuid: 'qi-limit', climbUuid: CLIMB_A, angle: 40 }],
+        },
+      ],
+      ticks: [],
+    });
+
+    const [headline] = await sessionWorkoutQueries.sessionWorkoutHeadlines(
+      null,
+      { sessionIds: [sessionId] },
+      viewer(STRANGER),
+    );
+    expect(headline).toMatchObject({ mainTargetGrade: null, mainTargetBoardType: null });
   });
 
   it(`refuses more than ${MAX_SESSION_WORKOUT_HEADLINE_IDS} sessions`, async () => {

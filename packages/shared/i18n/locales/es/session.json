@@ -756,6 +756,9 @@
       "preGeneratorHardestFirst": "Primero lo más difícil",
       "preGeneratorHardestFirstDescription": "Empieza en tu grado máximo y baja paso a paso.",
       "preGeneratorBlockSummaryHardestFirst": "primero lo más difícil",
+      "preGeneratorSameClimbsDown": "Mismos bloques al bajar",
+      "preGeneratorSameClimbsDownDescription": "Baja por los mismos bloques que subiste.",
+      "preGeneratorBlockSummarySameClimbsDown": "mismos bloques al bajar",
       "preGeneratorNumberOfClimbs": "Bloques",
       "preGeneratorSets": "Series",
       "preGeneratorRepsPerSet": "Repeticiones por serie",
@@ -1166,6 +1169,8 @@
     "repAttempt": "Intento"
   },
   "partnerWorkouts": {
+    "openWebsite": "Abrir en la web",
+    "personalSessionRequired": "Inicia una sesión personal para usar este entrenamiento.",
     "routeTitle": "Entrenamiento de una app",
     "from": "De {{app}}",
     "unavailable": "Los entrenamientos de apps aún no están disponibles.",

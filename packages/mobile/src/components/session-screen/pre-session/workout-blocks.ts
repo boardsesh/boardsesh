@@ -51,36 +51,18 @@ export const MAX_WORKOUT_BLOCKS = 5;
 const UNTIMED_WORKOUT_TYPES: readonly WorkoutType[] = ['volume', 'pyramid', 'ladder', 'gradeFocus'];
 
 /**
- * Whether the chips offer the timed types (on the minute, 4x4, limit) until they
- * launch (#5380): in every dev build, and in a store build where the
- * `workout-timed-blocks` flag is on (testers, through PostHog or the Feature
- * Flags screen). `flagEnabled` is that flag, read by the component through
- * `useWorkoutTimedBlocksFlag`; it is off by default, so an OTA that reaches store
- * binaries shows climbers today's chips.
- */
-export function timedWorkoutBlocksOffered(flagEnabled: boolean): boolean {
-  return __DEV__ || flagEnabled;
-}
-
-// Both lists stay the same arrays between renders, so a caller can pass them as
-// props or effect deps.
-const UNTIMED_BLOCK_TYPES: readonly WorkoutBlockType[] = ['warmUp', ...UNTIMED_WORKOUT_TYPES];
-const ALL_BLOCK_TYPES: readonly WorkoutBlockType[] = [...UNTIMED_BLOCK_TYPES, ...TIMED_WORKOUT_TYPES];
-const UNTIMED_ADD_BLOCK_TYPES = UNTIMED_BLOCK_TYPES.filter((type) => type !== 'warmUp');
-const ALL_ADD_BLOCK_TYPES = ALL_BLOCK_TYPES.filter((type) => type !== 'warmUp');
-
-/**
  * Picker order for a block's type chips: warm-up, the untimed types, then the
- * timed ones when `timedBlocksOffered` (`timedWorkoutBlocksOffered`).
+ * timed ones (on the minute, 4x4, limit). Every build offers all eight. The same
+ * array between renders, so a caller can pass it as a prop or effect dep.
  */
-export function workoutBlockTypes(timedBlocksOffered: boolean): readonly WorkoutBlockType[] {
-  return timedBlocksOffered ? ALL_BLOCK_TYPES : UNTIMED_BLOCK_TYPES;
-}
+export const WORKOUT_BLOCK_TYPES: readonly WorkoutBlockType[] = [
+  'warmUp',
+  ...UNTIMED_WORKOUT_TYPES,
+  ...TIMED_WORKOUT_TYPES,
+];
 
 /** The chips of the in-session "Add a block" sheet: the workout types only, since mid-session the climber is warm. */
-export function addBlockTypes(timedBlocksOffered: boolean): readonly WorkoutBlockType[] {
-  return timedBlocksOffered ? ALL_ADD_BLOCK_TYPES : UNTIMED_ADD_BLOCK_TYPES;
-}
+export const ADD_BLOCK_TYPES: readonly WorkoutBlockType[] = WORKOUT_BLOCK_TYPES.filter((type) => type !== 'warmUp');
 
 /** Just the filter fields, from any object that carries them (a block's options, say). */
 export function filtersOf({

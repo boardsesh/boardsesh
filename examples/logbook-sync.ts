@@ -108,13 +108,21 @@ export async function withStateLock<Result>(file: string, work: () => Promise<Re
   }
 }
 
+const MAX_INLINE_RETRY_WAIT_MS = 60_000;
+
+function boundedRetryWait(milliseconds: number): number {
+  if (milliseconds > MAX_INLINE_RETRY_WAIT_MS)
+    throw new Error('Boardsesh asked for a retry later than 60 seconds. Keep the file and retry later.');
+  return milliseconds;
+}
+
 function waitMilliseconds(response: Response, attempt: number): number {
   const retryAfter = response.headers.get('Retry-After');
   if (retryAfter !== null) {
     const seconds = Number(retryAfter);
-    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    if (Number.isFinite(seconds) && seconds >= 0) return boundedRetryWait(seconds * 1000);
     const date = Date.parse(retryAfter);
-    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+    if (Number.isFinite(date)) return boundedRetryWait(Math.max(0, date - Date.now()));
   }
   return 1000 * 2 ** attempt;
 }
