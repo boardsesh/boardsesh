@@ -873,7 +873,7 @@
     "tabs": {
       "overview": "Überblick",
       "rest": "REST-API",
-      "graphql": "GraphQL-Schema",
+      "graphql": "Internes GraphQL-Schema",
       "websocket": "WebSocket-Leitfaden"
     },
     "overview": {
@@ -891,7 +891,7 @@
         "baseUrlLabel": "Basis-URL:"
       },
       "ws": {
-        "title": "WebSocket-GraphQL-API",
+        "title": "Interne WebSocket-GraphQL-API",
         "intro": "Nimm die WebSocket-API für Echtzeit-Funktionen wie Party-Sessions und die Sync der Warteschlange. Die GraphQL-API bietet:",
         "feature1": "Echtzeit-Updates der Warteschlange über Subscriptions",
         "feature2": "Session-Verwaltung (anlegen, beitreten, verlassen)",

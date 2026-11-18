@@ -5,10 +5,16 @@ using Toybox.Lang;
 // build reads stays unchanged, and so its 32KB budget is separate.
 //
 // Every entry keeps the owner the tick was queued under and the server's
-// reason. Nothing here is ever sent again, and nothing is ever dropped: a
-// valid tick can be refused because of a watch-side gap (no boardUuid on a
-// share-link spray wall), so an entry may be a real send. A full store
-// refuses the next tick, and the caller keeps it at the head of the outbox.
+// reason. Nothing here is sent again or dropped on its own: a valid tick can
+// be refused when its wall's or climb's visibility changed between logging
+// and the drain, so an entry may be a real send. (An unlisted spray wall
+// never hands its uuid to a session, so the watch cannot log there at all;
+// the climber logs those on the phone.) Only the signed-in owner's explicit
+// Retry (requeue) or Delete (withoutOwner) on the watch moves an entry out,
+// plus one exit for a full store: the signed-in climber may confirm deleting
+// other accounts' entries (onlyOwner), offered only at the cap.
+// A full store refuses the next tick, and the caller keeps it at the head of
+// the outbox.
 module RejectedTicks {
     const VERSION = 1;
 
@@ -75,6 +81,102 @@ module RejectedTicks {
 
     function isFull(store, capacity as Lang.Number) as Lang.Boolean {
         return _valid(store) && store["entries"].size() >= capacity;
+    }
+
+    // This owner's entries, oldest first, as copies. Empty for invalid input.
+    function forOwner(store, owner) as Lang.Array {
+        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return []; }
+        var entries = store["entries"];
+        var owned = [];
+        for (var index = 0; index < entries.size(); index += 1) {
+            if (entries[index]["owner"].equals(owner)) { owned.add(OwnedTickOutbox._copyTree(entries[index])); }
+        }
+        return owned;
+    }
+
+    // The store without this owner's entries; null for invalid input. Other
+    // accounts' entries are never touched: they are not this login's to drop.
+    function withoutOwner(store, owner) {
+        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return null; }
+        var entries = store["entries"];
+        var kept = [];
+        for (var index = 0; index < entries.size(); index += 1) {
+            if (!entries[index]["owner"].equals(owner)) { kept.add(OwnedTickOutbox._copyTree(entries[index])); }
+        }
+        return { "version" => VERSION, "entries" => kept };
+    }
+
+    // Moves this owner's refused ticks back to the END of their outbox queue,
+    // oldest first, unchanged (same UUID): at most `limit` of them, and only
+    // while the shared queue stays within `capacity`. The caller passes a
+    // capacity below the real queue bound, so a batch the server refuses again
+    // can never fill the queue and block new logs (a drain dead-letters only
+    // one tick per reason). TICK_UUID_CONFLICT entries never move: another
+    // account owns that UUID, so a resend can only be refused again.
+    // An entry whose UUID is already queued (a crash between the two writes
+    // left a copy in each) only leaves the store. Returns
+    // { "envelope", "store", "moved" }, or null when nothing moves or the
+    // input is invalid. Entries that do not move stay here.
+    //
+    // A resent UUID cannot become a second logbook entry: saveTick answers a
+    // UUID the account already saved with the stored tick.
+    function requeue(envelope, store, owner, capacity as Lang.Number, limit as Lang.Number) {
+        if (!OwnedTickOutbox._validEnvelope(envelope) || !_valid(store) ||
+                !OwnedTickOutbox._validOwner(owner) || capacity < 1 || limit < 1) {
+            return null;
+        }
+        // One validated copy of the owner's queue, not one per entry: the
+        // watch's bytecode watchdog bounds work per event.
+        var queue = OwnedTickOutbox.forOwner(envelope, owner);
+        var room = capacity - OwnedTickOutbox.ownedCount(envelope);
+        if (room > limit) { room = limit; }
+        var entries = store["entries"];
+        var kept = [];
+        var moved = 0;
+        for (var index = 0; index < entries.size(); index += 1) {
+            var entry = entries[index];
+            if (!entry["owner"].equals(owner) || "TICK_UUID_CONFLICT".equals(entry["reason"])) {
+                kept.add(OwnedTickOutbox._copyTree(entry));
+            } else if (OwnedTickOutbox._findIn(queue, entry["tick"]["uuid"]) != null) {
+                moved += 1;
+            } else if (room > 0) {
+                queue.add(OwnedTickOutbox._copyTree(entry["tick"]));
+                room -= 1;
+                moved += 1;
+            } else {
+                kept.add(OwnedTickOutbox._copyTree(entry));
+            }
+        }
+        if (moved == 0) { return null; }
+        var nextEnvelope = OwnedTickOutbox._copyTree(envelope);
+        nextEnvelope["owners"][owner] = queue;
+        return {
+            "envelope" => nextEnvelope,
+            "store" => { "version" => VERSION, "entries" => kept },
+            "moved" => moved
+        };
+    }
+
+    // Entries other owners hold, counted only while the store is at
+    // `capacity`: 0 below it or for invalid input (#7636 decision 2). One
+    // validation pass, since the session menu reads it.
+    function countOthersWhenFull(store, owner, capacity as Lang.Number) as Lang.Number {
+        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return 0; }
+        var entries = store["entries"];
+        if (entries.size() < capacity) { return 0; }
+        var count = 0;
+        for (var index = 0; index < entries.size(); index += 1) {
+            if (!entries[index]["owner"].equals(owner)) { count += 1; }
+        }
+        return count;
+    }
+
+    // The store with only this owner's entries, in order; null for invalid
+    // input. The mirror of withoutOwner, for the confirmed "delete other
+    // accounts' refused ticks" action that exists only while the store is full.
+    function onlyOwner(store, owner) {
+        if (!_valid(store) || !OwnedTickOutbox._validOwner(owner)) { return null; }
+        return { "version" => VERSION, "entries" => forOwner(store, owner) };
     }
 
     function countFor(store, owner) as Lang.Number {

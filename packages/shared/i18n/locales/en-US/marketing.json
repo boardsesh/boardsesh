@@ -873,7 +873,7 @@
     "tabs": {
       "overview": "Overview",
       "rest": "REST API",
-      "graphql": "GraphQL Schema",
+      "graphql": "Internal GraphQL schema",
       "websocket": "WebSocket Guide"
     },
     "overview": {
@@ -891,7 +891,7 @@
         "baseUrlLabel": "Base URL:"
       },
       "ws": {
-        "title": "WebSocket GraphQL API",
+        "title": "Internal WebSocket GraphQL API",
         "intro": "Use the WebSocket API for real-time features like party sessions and queue synchronization. The GraphQL API provides:",
         "feature1": "Real-time queue updates via subscriptions",
         "feature2": "Session management (create, join, leave)",

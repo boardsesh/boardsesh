@@ -12,6 +12,7 @@ import {
   redactSensitiveSpanUrls,
 } from './app/lib/observability/sentry-tracing';
 import { redactShareCapabilitiesFromEvent } from './app/lib/observability/redact-share-capabilities';
+import { redactOriginProof } from './app/lib/observability/redact-origin-proof';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -26,6 +27,11 @@ Sentry.init({
   enabled: isProductionSentryEnvironment(),
 
   environment: resolveSentryEnvironment(),
+
+  // The last steps before an event leaves: the Cloudflare origin proof header
+  // never reaches Sentry (#7766). See redact-origin-proof.ts.
+  beforeSend: redactOriginProof,
+  beforeSendTransaction: redactOriginProof,
 
   // Enable logs to be sent to Sentry
   enableLogs: true,
@@ -50,7 +56,7 @@ Sentry.init({
 
   // Node defaults this to *every* host. Must be set. See the constant.
   tracePropagationTargets: WEB_TRACE_PROPAGATION_TARGETS,
-  beforeSendSpan: redactSensitiveSpanUrls,
+  beforeSendSpan: (span) => redactOriginProof(redactSensitiveSpanUrls(span)),
 
   // Same list as the server config. The edge SDK (@sentry/vercel-edge) ships
   // no Graphql integration, so there is nothing to filter out of

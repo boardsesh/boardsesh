@@ -145,6 +145,9 @@ vi.mock('../../../../src/components/home/HomeBoardSection', () => ({
 vi.mock('../../../../src/components/home/HomeSessionSection', () => ({
   HomeSessionSection: () => createElement('div', { 'data-testid': 'section-session' }),
 }));
+vi.mock('../../../../src/components/home/HomeProjectsSection', () => ({
+  HomeProjectsSection: () => createElement('div', { 'data-testid': 'section-projects' }),
+}));
 vi.mock('../../../../src/components/home/HomePlaylistsSection', () => ({
   HomePlaylistsSection: () => createElement('div', { 'data-testid': 'section-playlists' }),
 }));
@@ -254,9 +257,15 @@ afterEach(() => {
 });
 
 describe('Home sections', () => {
-  it('draws This week, Session, Climbing now, At your level, then the feed by default', () => {
+  it('draws This week, Session, Climbing now, Back to your projects, At your level, then the feed by default', () => {
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-climbingNow', 'section-playlists']);
+    expect(sectionOrder()).toEqual([
+      'section-week',
+      'section-session',
+      'section-climbingNow',
+      'section-projects',
+      'section-playlists',
+    ]);
     expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(false);
     expect(screen.getByText('mobile.home.feedTitle')).toBeTruthy();
     expect(screen.getByTestId('home-customize')).toBeTruthy();
@@ -266,10 +275,16 @@ describe('Home sections', () => {
     expect(lastChrome()?.scopeTitle).toBe('mobile.home.scope.myCrew');
   });
 
-  it('Focused mounts your week, Session, At your level and Your board, and asks for no feed and no Climbing now', () => {
+  it('Focused mounts your week, Session, Back to your projects, At your level and Your board, and asks for no feed and no Climbing now', () => {
     homeSectionsStore.apply(focusedHomeLayout(homeSectionsStore.getLayout()));
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-playlists', 'section-board']);
+    expect(sectionOrder()).toEqual([
+      'section-week',
+      'section-session',
+      'section-projects',
+      'section-playlists',
+      'section-board',
+    ]);
     expect(recorded.railProps).toEqual([]);
     expect(recorded.crewFeedEnabled.every((enabled) => !enabled)).toBe(true);
     expect(recorded.sessionFeedEnabled.every((enabled) => !enabled)).toBe(true);
@@ -288,6 +303,7 @@ describe('Home sections', () => {
       'section-week',
       'section-playlists',
       'section-climbingNow',
+      'section-projects',
       'section-board',
       'section-session',
     ]);
@@ -299,7 +315,7 @@ describe('Home sections', () => {
     cleanup();
     homeSectionsStore.setVisible('session', false);
     render(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow', 'section-playlists']);
+    expect(sectionOrder()).toEqual(['section-week', 'section-climbingNow', 'section-projects', 'section-playlists']);
     expect(recorded.railProps.at(-1)?.showStartPrompt).toBe(true);
   });
 
@@ -310,7 +326,13 @@ describe('Home sections', () => {
     expect(sectionOrder()).toEqual([]);
     focus.hasBeenFocused = true;
     rerender(createElement(HomeTab));
-    expect(sectionOrder()).toEqual(['section-week', 'section-session', 'section-playlists', 'section-board']);
+    expect(sectionOrder()).toEqual([
+      'section-week',
+      'section-session',
+      'section-projects',
+      'section-playlists',
+      'section-board',
+    ]);
   });
 
   it('shows the empty state with everything off, and Customize opens the sheet from there', () => {
@@ -339,6 +361,7 @@ describe('Home sections', () => {
       'section-week',
       'section-session',
       'section-climbingNow',
+      'section-projects',
       'section-playlists',
       'section-board',
     ]);
@@ -413,6 +436,7 @@ describe('Home sections', () => {
       'section-week',
       'section-session',
       'section-climbingNow',
+      'section-projects',
       'section-playlists',
       'section-beta',
     ]);

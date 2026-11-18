@@ -27,6 +27,9 @@ export type BackendAnalyticsEvent =
   // Once-a-minute per-replica count of GraphQL operations per client app
   // (services/client-usage.ts). One event per (client, version, transport).
   | 'Client Usage Summary'
+  | 'Public API Usage Summary'
+  | 'Public API Feed Health'
+  | 'App Workout Completed'
   // One personless weekly roll-up of the spray-wall fleet's health (issue
   // #6062). The distinct id is a fixed synthetic actor; count WEEKS, and read
   // the properties, never the event volume. Contract:

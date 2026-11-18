@@ -4,6 +4,42 @@
  */
 
 import { readFileSync } from 'node:fs';
+const partnerNoticeRetentionSchema = readFileSync(
+  new URL('../../../db/drizzle/0326_partner_notice_retention_7811.sql', import.meta.url),
+  'utf8',
+);
+const partnerReviewSchema = readFileSync(
+  new URL('../../../db/drizzle/0325_partner_review_7811.sql', import.meta.url),
+  'utf8',
+);
+const partnerInitialHistorySchema = readFileSync(
+  new URL('../../../db/drizzle/0324_partner_workout_initial_history.sql', import.meta.url),
+  'utf8',
+);
+const partnerSelfServiceSchema = readFileSync(
+  new URL('../../../db/drizzle/0318_partner_self_service_admin.sql', import.meta.url),
+  'utf8',
+);
+const partnerWorkoutWebhookSchema = readFileSync(
+  new URL('../../../db/drizzle/0319_partner_workouts_webhooks.sql', import.meta.url),
+  'utf8',
+);
+const partnerLifecycleEventsSchema = readFileSync(
+  new URL('../../../db/drizzle/0320_partner_lifecycle_events.sql', import.meta.url),
+  'utf8',
+);
+const partnerWebhookFencesSchema = readFileSync(
+  new URL('../../../db/drizzle/0321_partner_webhook_delivery_fences.sql', import.meta.url),
+  'utf8',
+);
+const partnerEventGenerationsSchema = readFileSync(
+  new URL('../../../db/drizzle/0322_partner_webhook_event_generations.sql', import.meta.url),
+  'utf8',
+);
+const partnerReconcileFairnessSchema = readFileSync(
+  new URL('../../../db/drizzle/0323_partner_webhook_reconcile_fairness.sql', import.meta.url),
+  'utf8',
+);
 // Reuse the existing generated account table and FK for actual social writes.
 const legacyAccountsSchema = readFileSync(
   new URL('../../../db/drizzle/0016_exotic_valkyrie.sql', import.meta.url),
@@ -60,6 +96,11 @@ const authUidVerificationSchema = readFileSync(
 );
 const authUidPasswordRecoverySchema = readFileSync(
   new URL('../../../db/drizzle/0293_auth_uid_password_recovery.sql', import.meta.url),
+  'utf8',
+);
+// Per-account password guess windows (#7656), straight from the generated migration.
+const authPasswordGuessWindowsSchema = readFileSync(
+  new URL('../../../db/drizzle/0327_password_guess_windows.sql', import.meta.url),
   'utf8',
 );
 const authWebOAuthIdentitySchema = readFileSync(
@@ -2489,6 +2530,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS auth_password_recovery_tokens;
   DROP TABLE IF EXISTS auth_password_recovery_state;
   ${authUidPasswordRecoverySchema}
+  DROP TABLE IF EXISTS auth_password_guess_windows;
+  ${authPasswordGuessWindowsSchema}
   DROP TABLE IF EXISTS auth_web_oauth_intents;
   DROP TABLE IF EXISTS auth_web_oauth_commands;
   ${authWebOAuthIdentitySchema}
@@ -2512,4 +2555,16 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${logbookSnapshotsConnectionSchema};
   ${partnerPublisherNameSchema}
   ${stampNewCredentialsSchema}
+  DROP TABLE IF EXISTS partner_connection_notices, partner_developer_emails, partner_app_cap_audit;
+  ${partnerSelfServiceSchema}
+  DROP TABLE IF EXISTS app_workout_requests, app_workouts, webhook_deliveries, partner_webhook_outbox, partner_webhook_debounce, partner_webhook_feed_state, oauth_client_webhooks;
+  ${partnerWorkoutWebhookSchema}
+  DROP TRIGGER IF EXISTS trg_partner_account_deletion_events ON users;
+  ${partnerLifecycleEventsSchema}
+  ${partnerWebhookFencesSchema}
+  ${partnerEventGenerationsSchema}
+  ${partnerReconcileFairnessSchema}
+  ${partnerInitialHistorySchema}
+  ${partnerReviewSchema}
+  ${partnerNoticeRetentionSchema}
 `;

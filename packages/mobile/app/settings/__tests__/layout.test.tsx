@@ -171,6 +171,7 @@ const SETTINGS_PAGES = [
   'branch-switcher',
   'dev-servers',
   'feature-flags',
+  'board-motion-lab',
   'dev-offline-writes',
   'sentry-diagnostics',
   'outline-editor',

@@ -809,6 +809,21 @@ export const desiredRailwayState: RailwayDesiredState = {
             'breaks sign-up, password reset and email verification, so the web refuses to boot with it until then ' +
             '(WEB_DATABASE_LOGIN_BLOCKED). Runbook #7430 owns the switch, then removing DATABASE_URL here.',
         },
+        {
+          name: 'CLOUDFLARE_ORIGIN_PROOF_SECRET',
+          reason:
+            'The value our Cloudflare zone sets as X-Boardsesh-Origin-Proof on www /api/auth/ requests (#7766). ' +
+            'Set, the web believes CF-Connecting-IP only on requests carrying it. Unset or under 32 bytes, the ' +
+            'auth limiters behave as before and staged sign-in sends no client address. Add the Cloudflare rule ' +
+            'first, then this: docs/better-auth-web-password-delegation.md, "Turning on the origin proof".',
+        },
+        {
+          name: 'CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT',
+          reason:
+            'A second accepted origin proof value, set only during a rotation so www visitors are never ' +
+            'unproven: set this to the new value, change the Cloudflare rule, then move it to ' +
+            'CLOUDFLARE_ORIGIN_PROOF_SECRET and unset this. Same 32-byte rule.',
+        },
       ],
       optionalConstrainedVars: [
         {

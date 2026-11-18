@@ -1,3 +1,4 @@
+import { setPartnerWorkoutOwner } from '../lib/pending-workout-store';
 import { deactivateNotificationDevice } from '../notifications/device-registration';
 import { markStartup } from '../lib/profiling/startup-profile';
 import { invalidateConsentAccount } from '../lib/consent-state';
@@ -726,6 +727,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         updateNativeSessionDegraded(degradation !== undefined);
       }
 
+      setPartnerWorkoutOwner(authSession.userId ?? userIdFromJwt(authSession.token) ?? null);
       return handleAuthenticatedTransition(transitionEpoch, authSession);
     },
     [handleAuthenticatedTransition, updateNativeSessionDegraded],
@@ -1370,7 +1372,15 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // `readPostLoginReturnHref()` a constant `null` — so both branches below are
   // exactly what ships today on the store fleet. Asserted by test, because this
   // change auto-OTAs to every installed binary.
-  if (!isAuthenticated && !inAuthGroup && segments[0] !== 'privacy-consent' && !isAnonymousReadOnlyLocation()) {
+  // The workout route owns its public flag-off fallback and timestamped login
+  // handoff. Its private query remains disabled until authentication and consent.
+  if (
+    !isAuthenticated &&
+    !inAuthGroup &&
+    segments[0] !== 'privacy-consent' &&
+    segments[0] !== 'w' &&
+    !isAnonymousReadOnlyLocation()
+  ) {
     return <Redirect href="/auth/login" />;
   }
   if (isAuthenticated && inAuthGroup) {

@@ -37,7 +37,6 @@ const noop = () => {};
 const VIEWABILITY = { minimumViewTime: 0, itemVisiblePercentThreshold: 1 };
 const presentation: WorkoutPresentation = {
   isAuthenticated: true,
-  timedBlocksOffered: false,
   formatGradeByDifficultyId: (grade, board) => formatGradeByDifficultyId(grade, 'v-grade', board),
 };
 const rowAssetId = (row: PreviewListRow) => (row.kind === 'climb' ? (row.preview.item.climb?.uuid ?? null) : null);

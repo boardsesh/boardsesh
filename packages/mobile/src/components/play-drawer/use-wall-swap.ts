@@ -10,23 +10,34 @@ import {
 import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import type { SwipePager } from './use-swipe-pager';
-import {
-  stepWallSwap,
-  swapClockMs,
-  WALL_SWAP,
-  wallSwapPagePosition,
-  wallSwapRest,
-  wallSwapSharedWeight,
-  type WallSwapFrame,
-  type WallSwapState,
-} from './wall-swap';
+import type { BoardTransition, BoardTransitionDriver, BoardTransitionState } from './board-transition';
+import type { BoardSwapFrame } from './swap-look';
+import { wallSwapDriver } from './wall-swap';
 
-/** A clock, not motion: the dissolve still runs under Reduce Motion. */
-function startClock(clock: SharedValue<number>, durationMs: number) {
+/** The shipped wall swap: the driver a transition without one runs. */
+const SHIPPED_DRIVER = wallSwapDriver();
+
+/** A number per driver, so a reaction can tell its own state from another driver's. */
+const DRIVER_SERIALS = new WeakMap<BoardTransitionDriver, number>();
+let lastDriverSerial = 0;
+
+function driverSerialOf(driver: BoardTransitionDriver): number {
+  const known = DRIVER_SERIALS.get(driver);
+  if (known !== undefined) return known;
+  lastDriverSerial += 1;
+  DRIVER_SERIALS.set(driver, lastDriverSerial);
+  return lastDriverSerial;
+}
+
+/**
+ * A clock, not motion: the dissolve still runs under Reduce Motion. It counts
+ * `durationMs` clock milliseconds over `durationMs × slowdown` real ones.
+ */
+function startClock(clock: SharedValue<number>, durationMs: number, slowdown: number) {
   'worklet';
   clock.value = 0;
   clock.value = withTiming(durationMs, {
-    duration: durationMs,
+    duration: durationMs * slowdown,
     easing: Easing.linear,
     reduceMotion: ReduceMotion.Never,
   });
@@ -36,18 +47,39 @@ function startClock(clock: SharedValue<number>, durationMs: number) {
  * The wall swap's three weights and its pair, driven from the pager on the UI
  * thread. Nothing crosses to the JS thread per frame, and nothing runs at rest.
  * `enabled` is false for the wipe; the values then stay at rest.
+ *
+ * `transition` swaps the step for another (the player's swap look, or the board
+ * motion lab's); absent, it is the shipped wall swap at real speed under the
+ * system's Reduce Motion. A new driver (the player's look switched on or off by
+ * its kill switch or Reduce Motion) starts from rest on the climb the pager is
+ * on: one driver's state means nothing to another.
  */
-export function useWallSwap(pager: SwipePager, centerPage: number, enabled: boolean): SharedValue<WallSwapFrame> {
+export function useWallSwap(
+  pager: SwipePager,
+  centerPage: number,
+  enabled: boolean,
+  transition?: BoardTransition,
+): SharedValue<BoardSwapFrame> {
   const { anchorPage, translateX, flingDirection, uiSteps, resetGeneration } = pager;
-  const reduceMotion = useReduceMotion();
+  const systemReduceMotion = useReduceMotion();
+  const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
+  const driver = transition?.driver ?? SHIPPED_DRIVER;
+  const requestedSlowdown = transition?.slowdown;
+  const slowdown =
+    requestedSlowdown !== undefined && Number.isFinite(requestedSlowdown) && requestedSlowdown > 0
+      ? requestedSlowdown
+      : 1;
   const reduceMotionValue = useSharedValue(reduceMotion);
   useEffect(() => {
     reduceMotionValue.value = reduceMotion;
   }, [reduceMotion, reduceMotionValue]);
-  const frame = useSharedValue<WallSwapFrame>([centerPage, 1, 0, 1]);
+  const frame = useSharedValue<BoardSwapFrame>([centerPage, 1, 0, 1]);
   const swapClock = useSharedValue(0);
   const settleClock = useSharedValue(0);
-  const state = useSharedValue<WallSwapState | null>(null);
+  const state = useSharedValue<BoardTransitionState | null>(null);
+  // The serial of the driver that wrote `state`, written only when it changes.
+  const stateDriver = useSharedValue(0);
+  const driverSerial = driverSerialOf(driver);
   useAnimatedReaction(
     () =>
       enabled
@@ -65,18 +97,15 @@ export function useWallSwap(pager: SwipePager, centerPage: number, enabled: bool
         : null,
     (input) => {
       if (input === null) return;
-      const step = stepWallSwap(state.value ?? wallSwapRest(input.anchor, input), input);
+      const previous = state.value !== null && stateDriver.value === driverSerial ? state.value : driver.rest(input);
+      const step = driver.step(previous, input);
       state.value = step.state;
-      if (step.startSwap) startClock(swapClock, swapClockMs(step.state));
-      if (step.startSettle) startClock(settleClock, WALL_SWAP.settleMs);
-      frame.value = [
-        wallSwapPagePosition(step.state),
-        step.state.outgoing,
-        step.state.incoming,
-        wallSwapSharedWeight(step.state, input.reduceMotion),
-      ];
+      if (stateDriver.value !== driverSerial) stateDriver.value = driverSerial;
+      if (step.startSwapMs !== null) startClock(swapClock, step.startSwapMs, slowdown);
+      if (step.startSettleMs !== null) startClock(settleClock, step.startSettleMs, slowdown);
+      frame.value = step.frame;
     },
-    [enabled],
+    [enabled, driver, driverSerial, slowdown],
   );
   return frame;
 }

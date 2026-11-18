@@ -5,10 +5,12 @@ const dependencies = vi.hoisted(() => ({
   claims: vi.fn(),
   emails: vi.fn(),
   warn: vi.fn(),
+  guessPrune: vi.fn(),
 }));
 vi.mock('../first-password-maintenance', () => ({ runFirstPasswordPreparationMaintenance: dependencies.scrub }));
 vi.mock('../../current-store/command-context', () => ({ deleteExpiredCommandClaims: dependencies.claims }));
 vi.mock('../../current-store/email-reservations', () => ({ purgeRetiredEmailKeys: dependencies.emails }));
+vi.mock('../../password-guess-windows', () => ({ prunePasswordGuessWindows: dependencies.guessPrune }));
 vi.mock('../../../utils/logger', () => ({ logger: { warn: dependencies.warn } }));
 vi.mock('../../../services/job-queue-client', () => ({ MAINTENANCE_POLLING_INTERVAL_SECONDS: 60 }));
 import { clearExpiredAuthRecords } from '../../../services/background-job-maintenance';
@@ -18,6 +20,7 @@ describe('first-password existing maintenance drain', () => {
     vi.clearAllMocks();
     dependencies.claims.mockResolvedValue(undefined);
     dependencies.emails.mockResolvedValue(undefined);
+    dependencies.guessPrune.mockResolvedValue({ result: 'done', deleted: 0, batches: 1, drained: true });
   });
   afterEach(() => vi.restoreAllMocks());
   it('keeps the existing worker promise pending until the bounded credential task drains, with no new timer', async () => {

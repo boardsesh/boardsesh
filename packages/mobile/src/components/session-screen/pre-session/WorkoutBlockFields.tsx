@@ -22,7 +22,7 @@ import { WorkoutBlockFiltersView } from './WorkoutBlockFilters';
 import { useWorkoutPresentation, type WorkoutPresentation } from './workout-presentation';
 import {
   blockType,
-  workoutBlockTypes,
+  WORKOUT_BLOCK_TYPES,
   type SizeFilterAvailability,
   type WorkoutBlockType,
   type WorkoutFilters,
@@ -49,7 +49,7 @@ export type WorkoutBlockFieldsProps = {
   railGrades: readonly Grade[];
   /** Names the chip group for screen readers ("Block 2, Pyramid"). */
   groupLabel: string;
-  /** The type chips, in order. Every type on offer by default (`workoutBlockTypes`, behind the timed-blocks gate), warm-up first. */
+  /** The type chips, in order. Every type on offer by default (`WORKOUT_BLOCK_TYPES`), warm-up first. */
   blockTypes?: readonly WorkoutBlockType[];
   /** For a warm-up: the grade it ramps to, null when no workout block follows it. */
   warmUpTargetGrade?: number | null;
@@ -90,8 +90,7 @@ export function WorkoutBlockFieldsView({
   onFiltersChange,
 }: WorkoutBlockFieldsProps & { presentation: WorkoutPresentation }) {
   const { t } = useTranslation('session');
-  const { timedBlocksOffered } = presentation;
-  const blockTypes = blockTypesProp ?? workoutBlockTypes(timedBlocksOffered);
+  const blockTypes = blockTypesProp ?? WORKOUT_BLOCK_TYPES;
   const selectedType = blockType(block);
 
   return (

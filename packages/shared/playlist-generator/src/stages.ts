@@ -235,7 +235,10 @@ export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScal
 
     const indexOffset = stagedSlots.length;
     for (const slot of stageSlots) {
-      stagedSlots.push({ ...slot, index: indexOffset + slot.index, stageId: stage.id });
+      const stagedSlot: StagedSlot = { ...slot, index: indexOffset + slot.index, stageId: stage.id };
+      // A repeat names its twin within the stage; across the plan it sits at the same offset.
+      if (slot.repeatOfIndex !== undefined) stagedSlot.repeatOfIndex = indexOffset + slot.repeatOfIndex;
+      stagedSlots.push(stagedSlot);
     }
   });
 

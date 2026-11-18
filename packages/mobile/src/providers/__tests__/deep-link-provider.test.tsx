@@ -11,7 +11,8 @@ const linkState = vi.hoisted(() => ({
   listener: null as ((event: { url: string }) => void) | null,
 }));
 const authState = vi.hoisted(() => ({ isAuthenticated: false }));
-const gate = vi.hoisted(() => ({ relaxesAnonymousRoutes: false }));
+const gate = vi.hoisted(() => ({ relaxesAnonymousRoutes: false, appWorkoutsEnabled: true }));
+vi.mock('../feature-flags-provider', () => ({ useAppWorkoutsFlag: () => gate.appWorkoutsEnabled }));
 const store = vi.hoisted(() => new Map<string, string>());
 
 vi.mock('expo-router', () => ({ useRouter: () => ({ navigate: navigateMock }) }));
@@ -53,6 +54,12 @@ import {
   resetHandledLaunchBoardUrlForTests,
 } from '../deep-link-provider';
 import { clearBoardLinkReplay, didReplayBoardLink } from '../../lib/routing/board-link-replay';
+import {
+  PENDING_APP_WORKOUT_KEY,
+  serializePendingAppWorkout,
+  readPendingAppWorkout,
+  PENDING_APP_WORKOUT_MAX_AGE_MS,
+} from '../../lib/partner-workout-link';
 
 const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
 const LEGACY_PREVIEW_LINK = 'https://www.boardsesh.com/preview/pr-1234';
@@ -63,10 +70,69 @@ beforeEach(() => {
   linkState.listener = null;
   authState.isAuthenticated = false;
   gate.relaxesAnonymousRoutes = false;
+  gate.appWorkoutsEnabled = true;
   store.clear();
   clearBoardLinkReplay();
   // Each test is its own launch: the provider handles a launch URL once per process.
   resetHandledLaunchBoardUrlForTests();
+});
+
+describe('DeepLinkProvider — partner workout links', () => {
+  it('discards a disabled launch and never replays it after a later flag change', async () => {
+    gate.appWorkoutsEnabled = false;
+    linkState.initialUrl = 'com.boardsesh.app://w/wk_disabled';
+    store.set(PENDING_APP_WORKOUT_KEY, serializePendingAppWorkout('wk_old'));
+    const view = render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(store.has(PENDING_APP_WORKOUT_KEY)).toBe(false);
+    gate.appWorkoutsEnabled = true;
+    authState.isAuthenticated = true;
+    view.rerender(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    serializePendingAppWorkout('wk_old', Date.now() - PENDING_APP_WORKOUT_MAX_AGE_MS - 1000),
+    serializePendingAppWorkout('wk_future', Date.now() + 60_000),
+    'wk_legacy_without_expiry',
+  ])('drops expired, future-clock, and legacy stashes on a cold sign-in: %s', async (stored) => {
+    store.set(PENDING_APP_WORKOUT_KEY, stored);
+    authState.isAuthenticated = true;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(store.has(PENDING_APP_WORKOUT_KEY)).toBe(false);
+  });
+  it('preserves a signed-out launch through sign-in and consumes it once', async () => {
+    linkState.initialUrl = 'com.boardsesh.app://w/wk_training';
+    const signedOut = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() => expect(readPendingAppWorkout(store.get(PENDING_APP_WORKOUT_KEY) ?? null)).toBe('wk_training'));
+    expect(navigateMock).not.toHaveBeenCalled();
+    signedOut.unmount();
+    authState.isAuthenticated = true;
+    const signedIn = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledExactlyOnceWith({
+        pathname: '/w/[workoutId]',
+        params: { workoutId: 'wk_training' },
+      }),
+    );
+    expect(store.has(PENDING_APP_WORKOUT_KEY)).toBe(false);
+    signedIn.unmount();
+    authState.isAuthenticated = false;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(store.has(PENDING_APP_WORKOUT_KEY)).toBe(false);
+  });
+
+  it('does not navigate an arbitrary stored path after sign-in', async () => {
+    store.set(PENDING_APP_WORKOUT_KEY, '//evil.example');
+    authState.isAuthenticated = true;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('DeepLinkProvider — legacy OTA preview links', () => {

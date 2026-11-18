@@ -91,3 +91,23 @@ export type RotateOAuthClientSecretMutationResponse = { rotateOAuthClientSecret:
 
 export type DeleteOAuthClientMutationVariables = { clientId: string };
 export type DeleteOAuthClientMutationResponse = { deleteOAuthClient: boolean };
+
+export const GET_PARTNER_DEVELOPER_EMAIL_STATUS = gql`
+  query PartnerDeveloperEmailStatus {
+    partnerDeveloperEmailStatus {
+      email
+      verified
+    }
+  }
+`;
+export const REQUEST_PARTNER_DEVELOPER_EMAIL = gql`
+  mutation RequestPartnerDeveloperEmail {
+    requestPartnerDeveloperEmail
+  }
+`;
+export const CONFIRM_PARTNER_DEVELOPER_EMAIL = gql`
+  mutation ConfirmPartnerDeveloperEmail($token: String!) {
+    confirmPartnerDeveloperEmail(token: $token)
+  }
+`;
+export type PartnerDeveloperEmailStatusResponse = { partnerDeveloperEmailStatus: { email: string; verified: boolean } };

@@ -18,13 +18,30 @@ Where a row says **Both**, set it on the web service and the backend service. **
 
 | Switch | Where | Values (default) | Turning it on | Needs first | Back out |
 | --- | --- | --- | --- | --- | --- |
-| `PARTNER_OAUTH_MODE` | Both | `off`, `hold`, `allowlist`, `open` (`off`; empty and unknown values read as `off`; case and surrounding spaces are ignored) | `hold` answers 503 on every partner route without loading Better Auth. `allowlist` and `open` serve the OAuth routes, `/v1` and the developer console. Today both register only developers the `developer-console` flag names. | `PARTNER_OAUTH_SECRETS`, `NEXTAUTH_SECRET` (the backend refuses to start the authority without them), the `developer-console` flag, the `api.boardsesh.com` domain, the pre-stage-A list in "Running partner OAuth" in [integration-platform.md](./integration-platform.md) | Backend `off`, then web `off`. For a pause, backend `hold` alone. Refresh tokens are kept. |
-| `PARTNER_OAUTH_SECRETS` | Backend | `version:value,version:value`, newest first; each value at least 32 characters; versions 0 to 999,999,999 (unset) | Seals tokens and the `c3.` logbook cursors. | A mode other than `off` | Not a switch. Rotate by putting a new version first; dropping an old version sends its cursors back to a full sync (410). |
+| `PARTNER_OAUTH_MODE` | Both | `off`, `hold`, `allowlist`, `open` (`off`; empty and unknown values read as `off`; case and surrounding spaces are ignored) | `hold` answers 503 on every partner route without loading Better Auth. `allowlist` and `open` serve the OAuth routes, `/v1` and the developer console. `allowlist` requires the `developer-console` invitation. `open` admits any signed-in account after independent proof of its exact current developer email, bypassing that flag and its overrides. Switching to `open` makes registration public; it does not preserve the invitation list. | `PARTNER_OAUTH_SECRETS`, `NEXTAUTH_SECRET` (the backend refuses to start the authority without them), the `developer-console` flag for `allowlist`, the `api.boardsesh.com` domain, the pre-stage-A list in "Running partner OAuth" in [integration-platform.md](./integration-platform.md) | Backend `off`, then web `off`. For a pause, backend `hold` alone. Refresh tokens are kept. |
+| `PARTNER_OAUTH_SECRETS` | Backend | `version:value,version:value`, newest first; each value at least 32 characters; versions 0 to 999,999,999 (unset) | Seals tokens, the `c3.` logbook cursors and webhook signing secrets. | A mode other than `off` | Not a switch. Put a new version first and retain old versions through token/cursor compatibility and webhook resealing. Dropping an old version sends its cursors to full sync (410) and can make webhook current secrets unreadable; see the retirement checks below. |
 | `PARTNER_DEVELOPER_TERMS_VERSION` | Backend | A published terms version (the code constant) | **Ignored in production.** Registration opened when the constant changed to `2026-11-17` in a reviewed PR. Outside production the variable overrides it. | Done: owner approved `LEGAL.md`, `/legal` and the developer terms text (#7411) | Not applicable. |
-| `developer-console` (PostHog flag, `PARTNER_DEVELOPER_CONSOLE_FLAG` in `@boardsesh/auth-protocol`) | Web and backend, both asking PostHog for the account's user id | On or off for a person (off). Off if PostHog is unreachable | The one list of invited developers. www shows `/developers/apps` and `/developers/terms` to them. The backend lets them list, register, edit, rotate and delete apps, in `allowlist` and, for now, in `open` too. Both keep an answer 60 s, so a change lands within a minute. When the backend cannot reach PostHog (1.5 s deadline) the console says it could not check the invite and lets nobody in. `FEATURE_FLAG_OVERRIDES=developer-console=false` closes pages and operations everywhere. `FEATURE_FLAG_OVERRIDES=developer-console` lets every account in on the backend only when its database is local or private (tests, e2e, a laptop); in production www still shows the pages for it, but who may register comes from PostHog. | A mode other than `off`; the flag targeted at the developers' user ids by `distinct_id` only (never email or a cohort: anyone with the public project token can set those on their own person); `POSTHOG_PROJECT_KEY` on the backend (it already sends analytics with it) | Take the developer out of the flag. Within a minute the pages are 404 and the backend refuses their console operations. Their registered apps keep working; suspend an app to stop it. |
+| `developer-console` (PostHog flag, `PARTNER_DEVELOPER_CONSOLE_FLAG` in `@boardsesh/auth-protocol`) | Web and backend, both asking PostHog for the account's user id | On or off for a person (off). Off if PostHog is unreachable | In `allowlist`, the one list of invited developers. www shows `/developers/apps` and `/developers/terms` to them. The backend lets them list, register, edit, rotate and delete apps, in `allowlist`. `open` skips the flag on both web and backend, including false overrides; independent developer email proof admits app operations instead. Both keep an answer 60 s, so a change lands within a minute. When the backend cannot reach PostHog (1.5 s deadline) the console says it could not check the invite and lets nobody in. In `allowlist`, `FEATURE_FLAG_OVERRIDES=developer-console=false` closes the pages and operations in every environment. It does not close public registration in `open`; use the mode switch to pause it. `FEATURE_FLAG_OVERRIDES=developer-console` lets every account in on the backend only when its database is local or private (tests, e2e, a laptop); in production www still shows the pages for it, but who may register comes from PostHog. | `allowlist` mode; the flag targeted at the developers' user ids by `distinct_id` only (never email or a cohort: anyone with the public project token can set those on their own person); `POSTHOG_PROJECT_KEY` on the backend (it already sends analytics with it) | In `allowlist`, take the developer out of the flag. Within a minute the pages are 404 and the backend refuses their console operations. Their registered apps keep working; suspend an app to stop it. |
 | `BETTER_AUTH_TELEMETRY` | Backend | Must be unset, empty, `0` or `false` | Nothing. Any other value makes the partner authority refuse to start, because it would override the telemetry-off setting. | Not applicable | Unset it or set it to `0`. |
 
 Connected apps (Settings, Disconnect) works in every mode, `off` and `hold` included.
+
+`PARTNER_OAUTH_SECRETS` rotation also affects webhooks. Current and still-valid
+previous signing secrets are re-sealed under the first key on delivery and by
+a sweep of up to 100 settings per maintenance run, scheduled every minute,
+while old versions remain configured. Elapsed time alone does not prove completion.
+Keep the old sealing versions until every current and still-valid previous
+secret has been re-sealed, including idle/disabled endpoints; verify the sweep
+and investigate resealing warnings before retiring a version. Retain any old
+versions still required for token/cursor compatibility too. An unreadable
+previous signing secret is skipped if the current secret can sign; an
+unreadable current secret retries and settles `signing_unavailable` after ten
+attempts, without counting against endpoint health. It is therefore unsafe to
+describe key retirement as costing only cursors. Webhook signing-secret
+rotation's 24-hour overlap is a separate promise from sealing-key rotation.
+O1's historical concurrent-index prebuild remains unconfirmed; its production
+receipt and required evidence are recorded in
+[integration-platform.md](./integration-platform.md#milestones-24-implementation-decisions-2026-11-17).
 
 ## 2. Shared secrets and identity settings
 
@@ -36,6 +53,7 @@ These are not modes. Most `CURRENT_STORE_*` modes below need them, and a missing
 | `CURRENT_STORE_AUTH_RPC_SECRET` | Both | At least 32 bytes, no surrounding spaces, different from `NEXTAUTH_SECRET` and `CRON_SECRET` (unset) | Signs private web-to-backend commands. | Nothing | Unset it after the modes that use it are off. |
 | `CURRENT_STORE_AUTH_PROJECTION_ID` and `CURRENT_STORE_AUTH_WRITER_EPOCH` | Backend | The current projection id; a positive integer up to 2,147,483,647 (unset) | Tell every staged writer which authority row to expect. A mismatch is refused as stale. | `auth-authority prepare` for the id. Every staged writer also refuses with `AUTHORITY_NOT_ENFORCED` until `activate` succeeds (section "Code gates"). | Unset them after the modes are off. |
 | `CURRENT_STORE_DELETED_EMAIL_KEY` | Backend | At least 32 bytes, different from the other secrets (unset) | Keys the address digest kept for 90 days after an account is deleted. Every staged mode needs it, because an unknown address also looks up a digest. | Nothing | **Never rotate it.** Rotating frees every address deleted in the last 90 days. Keep a copy in 1Password. |
+| `AUTH_ACCOUNT_GUESS_LIMIT_EMAIL_KEY` | Backend | At least 32 bytes, no surrounding spaces, different from the other secrets in this table (unset) | Keys the digests the per-account password guess counter (#7656) is stored under, of the typed email and of the account's user id, so `auth_password_guess_windows` never holds an address or a user id. Unset, short, padded or reused turns the counter off (one error log naming the variable); it never stops the backend from starting. Nothing consults the counter yet. | Nothing | Unset it. Rotating it only forgets the guesses counted so far. |
 | `CURRENT_STORE_AUTH_BACKEND_ORIGIN` | Web | Backend origin URL (unset) | Where the web sends private commands. | The backend modes it serves | Unset after the mode is off. |
 | `EMAIL_VERIFICATION_ENABLED` | Backend | `true` or anything else (existing setting) | Staged writers copy it into their authority record. | Not an epic switch | Existing behaviour. |
 | `DEBUG_SQL` | Backend | Must not be `true` while a staged writer is on | Staged modes refuse to run with SQL logging on, because it would log credentials. | Not applicable | Unset it. |
@@ -77,6 +95,31 @@ Each moves one kind of credential write from the old path into the backend's cur
 | `AUTH_LEGACY_BRIDGE_MODE` | Backend | `off`, `shadow`, `on` (`off`) | `shadow` verifies legacy sessions against the canonical store and reports without issuing. `on` re-issues them as canonical sessions. | `on` needs web sign-out staged and generation revocation, both blocked, so it cannot start. Today no web route is mounted; the native refresh path reads it. | `off`. Existing denials are still enforced. |
 | `AUTH_NATIVE_REVOCATION_MODE` | Backend | `legacy`, `generation` (`legacy`) | Native credentials die by account generation instead of one by one. | `AUTH_WATCH_PAIRING_MODE=source-bound-staging`. **The backend refuses to start with `generation`** until Garmin offline tick queue preservation is proven. | `legacy`. |
 | `AUTH_BROWSER_SESSION_MODE` | Backend (web reads it from B4) | `legacy`, `better-auth` (`legacy`; unset or empty is `legacy`; any other value, including another case or spaces, is a startup error) | The one switch for the www and app.boardsesh.com session cutover ([design](./better-auth-browser-session.md), #7596). `better-auth` would move browsers to the backend's Better Auth session. Nothing on www reads it yet. | Under `better-auth` the backend checks, and refuses to start with its own code for each: `AUTH_CUTOFF_ENFORCEMENT=enforce`; `DEBUG_SQL` not `true`; `CURRENT_STORE_WEB_SESSION_MODE`, `_WEB_AUTH_MODE`, `_WEB_OAUTH_MODE` and `_SET_PASSWORD_MODE` each `backend-staging`; `CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE=required`; a valid RPC secret, projection id, writer epoch and deleted-email key; `NEXTAUTH_SECRET`, `AUTH_BROWSER_SESSION_COOKIE_SECRET` and `AUTH_BROWSER_ACCESS_TOKEN_SECRET` each set, at least 32 bytes with no surrounding spaces, different from each other and from `CURRENT_STORE_AUTH_RPC_SECRET`, `CURRENT_STORE_DELETED_EMAIL_KEY`, `CRON_SECRET` and the batch and location-sync RPC secrets. Codes are `AUTH_BROWSER_SESSION_*` in `BROWSER_SESSION_STARTUP_ERRORS` (`authority/browser-session-mode.ts`). It does not need `AUTH_LEGACY_BRIDGE_MODE` or `CURRENT_STORE_WEB_SIGNOUT_MODE`. **Even with all of them met it refuses with `AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE`** while `BROWSER_SESSION_CUTOVER_BLOCKERS` lists Phase B work that has not landed (B1c to B7); each PR removes its own entry. | `legacy`. |
+
+### Session tokens at rest
+
+`auth_session.token` stores the SHA-256 digest (base64url) of a session token,
+never the token (`auth/authority/session-token.ts`). The reader hashes the
+presented token and looks the digest up, so a copy of the table (a dump, the DR
+standby, a backup) authenticates nothing. Every writer stores the digest: the
+legacy bridge, the native refresh binding, the security-mutation token
+rotation, the provider continuation and both staged provider sign-ins.
+
+A row written before this change holds a clear token, and the reader no longer
+accepts it: that session is signed out. Nothing in the repo sets
+`AUTH_LEGACY_BRIDGE_MODE=on` or any staged provider mode, so no such row should
+exist in production, but code cannot prove it. **Before turning on
+`AUTH_LEGACY_BRIDGE_MODE`, `CURRENT_STORE_PROVIDER_SECURITY_MODE`,
+`CURRENT_STORE_FIRST_PASSWORD_MODE` or `CURRENT_STORE_BROWSER_BINDING_MODE`,
+the owner confirms the table is empty**
+(read-only):
+
+```sql
+SELECT count(*) AS rows, count(*) FILTER (WHERE expires_at > now()) AS live FROM auth_session;
+```
+
+Both must be 0. If not, those sessions end at the next request; nothing else
+breaks.
 
 ### Session tokens at rest
 
@@ -147,7 +190,7 @@ Nothing else in this document has to be on. Full runbook: "Running partner OAuth
 2. **Stage A:** `PARTNER_OAUTH_MODE=allowlist` on the web, then the backend. The owner's test app and test accounts only. Rehearse `hold` and `off`. Stage lengths and caps are in "Stages" in the same doc.
 3. **Stage B:** add the Sequence and DivePeaks developers to the `developer-console` flag. One PostHog edit, no deploy. Needs stage A clean.
 4. **Stage C:** real climbers connect. Same caps (25 live, 20 new in 24 hours per app).
-5. **Stage D:** `PARTNER_OAUTH_MODE=open`. Needs BA-02 shipped or registration that proves the email, the milestone 2 docs, a second independent security review, a Cloudflare rule for floods from many IPv6 /48s, and the email to a climber when an app connects. Until then `open` registers the same developers as `allowlist`: the ones the flag names.
+5. **Stage D:** `PARTNER_OAUTH_MODE=open`. Milestone 2 now implements independent proof of the exact current developer email; legacy `emailVerified` is insufficient. Complete the milestone 2 docs/acceptance, second independent security review, Cloudflare flood rule and connection-email gates before this public-registration switch. `developer-console` and its overrides do not restrict `open`. Defaults stay 25 live and 20 new connections per rolling 24 hours; global admins may edit either app cap. The earlier flag-only `open` fallback is superseded.
 
 ### B. Email uniqueness (BA-02)
 

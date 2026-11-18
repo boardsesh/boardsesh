@@ -31,8 +31,10 @@ import type {
   DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import { BOARD_FIELDS } from '@boardsesh/graphql/operations/boards';
-export { GET_SPRAY_CLIMB } from '@boardsesh/graphql/operations/climb-search';
+import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { SessionWorkoutPlan } from '@boardsesh/workout-summary';
 import type { SubscriptionQueueItem } from '../queue-conversion';
+export { GET_SPRAY_CLIMB } from '@boardsesh/graphql/operations/climb-search';
 
 // ============================================
 // Field Fragments (string interpolation, not GQL fragments)
@@ -486,7 +488,17 @@ export const CREATE_SESSION = gql`
   }
 `;
 
+export type AppWorkoutInitialSeed = {
+  queue: ClimbQueueItem[];
+  currentClimbQueueItem: ClimbQueueItem | null;
+  historyCount?: number;
+  plan: Array<{ index: number; climbUuids: string[] }>;
+  sessionPlan: SessionWorkoutPlan;
+};
+
 export type CreateSessionInput = {
+  appWorkoutId?: string;
+  appWorkoutSeed?: AppWorkoutInitialSeed;
   audience?: 'public' | 'unlisted' | 'followers' | 'invite_only';
   boardPath: string;
   latitude: number;
@@ -518,6 +530,12 @@ export type CreateSessionMutationResponse = {
     isPermanent: boolean;
     color: string | null;
     startedAt: string;
+    queueState?: {
+      sequence: number;
+      queue: SubscriptionQueueItem[];
+      currentClimbQueueItem: SubscriptionQueueItem | null;
+      historyCount?: number | null;
+    } | null;
   };
 };
 
@@ -1294,6 +1312,20 @@ export const SUBSCRIPTION_QUEUE_ITEM_FIELDS = `
   addedByUser { id username avatarUrl }
   tickedBy
   suggested
+`;
+
+/** Partner creation commits its complete first queue before this response is exposed. */
+export const CREATE_PARTNER_WORKOUT_SESSION = gql`
+  mutation CreatePartnerWorkoutSession($input: CreateSessionInput!) {
+    createSession(input: $input) {
+      id name boardPath goal isPublic isPermanent color startedAt
+      queueState {
+        sequence historyCount
+        queue { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+        currentClimbQueueItem { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+      }
+    }
+  }
 `;
 
 // QueueItemAdded.item is ClimbQueueItem! and CurrentClimbChanged.item is

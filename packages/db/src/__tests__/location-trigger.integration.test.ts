@@ -83,6 +83,8 @@ if (!DB_URL) {
       // fourteen. PostGIS installs a fifteenth RETURNS trigger function into
       // public, postgis_cache_bbox() — extension-owned, never pinned, and not
       // ours to ALTER — so exclude it by pg_depend, not by name.
+      // The two exact reviewed lifecycle bodies from 0322 use qualified public
+      // relations and pg_catalog alone; hashes match credential-writer-acl.ts.
       const unpinned = await sql`
         SELECT p.proname
         FROM pg_proc p
@@ -93,11 +95,22 @@ if (!DB_URL) {
             SELECT 1 FROM pg_depend d
             WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
           )
-          AND NOT EXISTS (
-            SELECT 1
-            FROM pg_catalog.unnest(coalesce(p.proconfig, '{}'::text[])) AS configured(setting)
-            WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
-              'search_path=public,pg_catalog'
+          AND NOT (
+            EXISTS (
+              SELECT 1
+              FROM pg_catalog.unnest(coalesce(p.proconfig, '{}'::text[])) AS configured(setting)
+              WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+                'search_path=public,pg_catalog'
+            )
+            OR (
+              coalesce(p.proconfig, '{}'::text[]) = ARRAY['search_path=pg_catalog']::text[]
+              AND p.pronargs = 0 AND p.prosecdef
+              AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
+              AND (p.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex')) IN (
+                ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
+                ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e')
+              )
+            )
           )
         ORDER BY p.proname`;
       assert.deepEqual(

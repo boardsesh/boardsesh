@@ -28,6 +28,9 @@ type Documents = {
   '\n  query GetMyAnalyticsConsent {\n    myAnalyticsConsent {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n': typeof types.GetMyAnalyticsConsentDocument;
   '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n': typeof types.SetAnalyticsConsentDocument;
   '\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n': typeof types.GetConsentRegionDocument;
+  '\n  query AppWorkout($id: ID!) {\n    appWorkout(id: $id) {\n      id\n      clientId\n      status\n      title\n      sourceAppName\n      notes\n      spec\n      expiresAt\n      sessionId\n      sessionPlan\n    }\n  }\n': typeof types.AppWorkoutDocument;
+  '\n  mutation AttachAppWorkout($workoutId: ID!, $sessionId: ID!) {\n    attachAppWorkout(workoutId: $workoutId, sessionId: $sessionId)\n  }\n': typeof types.AttachAppWorkoutDocument;
+  '\n  mutation RecordAppWorkoutPlan($workoutId: ID!, $plan: JSON!) {\n    recordAppWorkoutPlan(workoutId: $workoutId, plan: $plan)\n  }\n': typeof types.RecordAppWorkoutPlanDocument;
   '\n  mutation ExchangeAppleAdsAttribution($token: String!, $consent: AppleAdsConsentInput!) {\n    exchangeAppleAdsAttribution(token: $token, consent: $consent) {\n      status\n      retryAfterSeconds\n      retryReason\n      attribution {\n        orgId\n        campaignId\n        adGroupId\n        keywordId\n        adId\n        conversionType\n        claimType\n        countryOrRegion\n        supplyPlacement\n      }\n    }\n  }\n': typeof types.ExchangeAppleAdsAttributionDocument;
   '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      tickUuid\n      boardId\n    }\n  }\n': typeof types.GetBetaLinksDocument;
   '\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n': typeof types.AttachBetaLinkDocument;
@@ -238,6 +241,12 @@ const documents: Documents = {
     types.SetAnalyticsConsentDocument,
   '\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n':
     types.GetConsentRegionDocument,
+  '\n  query AppWorkout($id: ID!) {\n    appWorkout(id: $id) {\n      id\n      clientId\n      status\n      title\n      sourceAppName\n      notes\n      spec\n      expiresAt\n      sessionId\n      sessionPlan\n    }\n  }\n':
+    types.AppWorkoutDocument,
+  '\n  mutation AttachAppWorkout($workoutId: ID!, $sessionId: ID!) {\n    attachAppWorkout(workoutId: $workoutId, sessionId: $sessionId)\n  }\n':
+    types.AttachAppWorkoutDocument,
+  '\n  mutation RecordAppWorkoutPlan($workoutId: ID!, $plan: JSON!) {\n    recordAppWorkoutPlan(workoutId: $workoutId, plan: $plan)\n  }\n':
+    types.RecordAppWorkoutPlanDocument,
   '\n  mutation ExchangeAppleAdsAttribution($token: String!, $consent: AppleAdsConsentInput!) {\n    exchangeAppleAdsAttribution(token: $token, consent: $consent) {\n      status\n      retryAfterSeconds\n      retryReason\n      attribution {\n        orgId\n        campaignId\n        adGroupId\n        keywordId\n        adId\n        conversionType\n        claimType\n        countryOrRegion\n        supplyPlacement\n      }\n    }\n  }\n':
     types.ExchangeAppleAdsAttributionDocument,
   '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      tickUuid\n      boardId\n    }\n  }\n':
@@ -694,6 +703,24 @@ export function graphql(
 export function graphql(
   source: '\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n',
 ): (typeof documents)['\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query AppWorkout($id: ID!) {\n    appWorkout(id: $id) {\n      id\n      clientId\n      status\n      title\n      sourceAppName\n      notes\n      spec\n      expiresAt\n      sessionId\n      sessionPlan\n    }\n  }\n',
+): (typeof documents)['\n  query AppWorkout($id: ID!) {\n    appWorkout(id: $id) {\n      id\n      clientId\n      status\n      title\n      sourceAppName\n      notes\n      spec\n      expiresAt\n      sessionId\n      sessionPlan\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation AttachAppWorkout($workoutId: ID!, $sessionId: ID!) {\n    attachAppWorkout(workoutId: $workoutId, sessionId: $sessionId)\n  }\n',
+): (typeof documents)['\n  mutation AttachAppWorkout($workoutId: ID!, $sessionId: ID!) {\n    attachAppWorkout(workoutId: $workoutId, sessionId: $sessionId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RecordAppWorkoutPlan($workoutId: ID!, $plan: JSON!) {\n    recordAppWorkoutPlan(workoutId: $workoutId, plan: $plan)\n  }\n',
+): (typeof documents)['\n  mutation RecordAppWorkoutPlan($workoutId: ID!, $plan: JSON!) {\n    recordAppWorkoutPlan(workoutId: $workoutId, plan: $plan)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

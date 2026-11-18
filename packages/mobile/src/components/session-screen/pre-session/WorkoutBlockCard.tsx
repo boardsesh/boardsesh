@@ -98,6 +98,9 @@ function blockSettingsSummary(
       if (options.type === 'ladder' && options.descending === true) {
         parts.push(t('mobile.session.preGeneratorBlockSummaryHardestFirst'));
       }
+      if (options.type === 'pyramid' && options.repeatOnWayDown === true) {
+        parts.push(t('mobile.session.preGeneratorBlockSummarySameClimbsDown'));
+      }
       break;
     case 'gradeFocus':
       parts.push(t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.numberOfClimbs }));

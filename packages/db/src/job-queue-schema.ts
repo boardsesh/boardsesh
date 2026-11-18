@@ -123,6 +123,19 @@ export const CRON_JOB_DELETE_AFTER_SECONDS = 24 * 60 * 60;
  * "Retention sweep"). Lives here because the migrator creates the queue.
  */
 export const PARTNER_OAUTH_SWEEP_QUEUE = 'partner-oauth-sweep';
+export const PARTNER_CONNECTION_NOTICES_QUEUE = 'partner-connection-notices';
+export const APP_WORKOUT_EXPIRY_QUEUE = 'app-workout-expiry';
+export const SESSION_INACTIVITY_QUEUE = 'session-inactivity';
+export const PARTNER_WEBHOOK_DELIVERY_QUEUE = 'partner-webhook-delivery';
+export const PARTNER_WEBHOOK_MAINTENANCE_QUEUE = 'partner-webhook-maintenance';
+
+const PARTNER_CONNECTION_NOTICES_OPTIONS = {
+  policy: 'exclusive',
+  expireInSeconds: 300,
+  retryLimit: 3,
+  retryDelay: 60,
+  retryBackoff: true,
+} as const;
 
 /**
  * `exclusive`: one run queued or running across every replica. A run stops
@@ -924,6 +937,31 @@ export async function initializeJobQueueSchema(
     });
     const { policy: _partnerSweepPolicy, ...mutablePartnerSweepOptions } = PARTNER_OAUTH_SWEEP_QUEUE_OPTIONS;
     await boss.updateQueue(PARTNER_OAUTH_SWEEP_QUEUE, mutablePartnerSweepOptions);
+    await boss.createQueue(PARTNER_CONNECTION_NOTICES_QUEUE, {
+      partition: false,
+      ...PARTNER_CONNECTION_NOTICES_OPTIONS,
+    });
+    const { policy: _connectionNoticePolicy, ...mutableNoticeOptions } = PARTNER_CONNECTION_NOTICES_OPTIONS;
+    await boss.updateQueue(PARTNER_CONNECTION_NOTICES_QUEUE, mutableNoticeOptions);
+    for (const queue of [APP_WORKOUT_EXPIRY_QUEUE, SESSION_INACTIVITY_QUEUE, PARTNER_WEBHOOK_MAINTENANCE_QUEUE]) {
+      await boss.createQueue(queue, {
+        partition: false,
+        policy: 'exclusive',
+        expireInSeconds: 300,
+        retryLimit: 2,
+        retryDelay: 60,
+      });
+      await boss.updateQueue(queue, { expireInSeconds: 300, retryLimit: 2, retryDelay: 60 });
+    }
+    const webhookDeliveryOptions = {
+      retryLimit: 9,
+      retryDelay: 120,
+      retryBackoff: true,
+      retryDelayMax: 32_000,
+      expireInSeconds: 30,
+    };
+    await boss.createQueue(PARTNER_WEBHOOK_DELIVERY_QUEUE, { partition: false, ...webhookDeliveryOptions });
+    await boss.updateQueue(PARTNER_WEBHOOK_DELIVERY_QUEUE, webhookDeliveryOptions);
     // Family queues are stately. A queue created under an earlier policy keeps
     // it (pg-boss cannot change a policy), which is why these are new names
     // rather than the retired `background-probe-<role>` queues.

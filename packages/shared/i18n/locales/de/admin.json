@@ -28,7 +28,8 @@
     "locationSync": "Standort-Sync-Sperren",
     "sprayWalls": "Trainingsdaten der Spraywalls",
     "boards": "Registrierte Boards",
-    "buildPlans": "Baupaket-Bestellungen"
+    "buildPlans": "Baupaket-Bestellungen",
+    "partnerApps": "Partner-Apps"
   },
   "buildPlans": {
     "title": "Baupaket-Bestellungen",
@@ -580,5 +581,34 @@
       "unlisted": "Nicht gelistet",
       "private": "Privat"
     }
+  },
+  "partnerApps": {
+    "title": "Partner-Apps",
+    "description": "Registrierte Apps, verbundene Kletterer*innen und Verbindungslimits.",
+    "limitsHelp": "Die Limits gelten für neue Verbindungen. Niedrigere Limits lassen bestehende Verbindungen weiter funktionieren. Null blockiert neue Verbindungen. Änderungen werden mit deinem Admin-Konto protokolliert.",
+    "search": "App, Herausgeber*in oder Entwickler*in suchen",
+    "searchAction": "Suchen",
+    "app": "App",
+    "developer": "Entwickler*in",
+    "connections": "Verbindungen",
+    "limits": "Limits",
+    "actions": "Aktionen",
+    "activeLimit": "Maximale aktive Verbindungen",
+    "dailyLimit": "Maximale neue Verbindungen pro 24 Stunden",
+    "usage": "{{active}} aktiv · {{recent}} neu in 24 Stunden",
+    "invalidLimit": "Verwende eine ganze Zahl von 0 bis 2147483647.",
+    "save": "Limits speichern",
+    "saved": "Limits gespeichert",
+    "saveError": "Die Limits konnten nicht gespeichert werden. Versuch es erneut.",
+    "loading": "Partner-Apps werden geladen",
+    "loadError": "Partner-Apps konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "empty": "Keine App passt zu dieser Suche.",
+    "total_one": "{{count}} registrierte App",
+    "total_other": "{{count}} registrierte Apps",
+    "previous": "Vorherige Seite",
+    "next": "Nächste Seite",
+    "active": "Aktiv",
+    "suspended": "Gesperrt"
   }
 }

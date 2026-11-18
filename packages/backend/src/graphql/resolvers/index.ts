@@ -101,6 +101,9 @@ import { qaQueries } from './qa/queries';
 import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { oauthClientMutations, oauthClientQueries } from './oauth-clients/partner-registration';
+import { adminPartnerAppMutations, adminPartnerAppQueries } from './oauth-clients/admin-partner-apps';
+import { partnerWebhookMutations, partnerWebhookQueries } from './oauth-clients/partner-webhooks';
+import { appWorkoutMutations, appWorkoutQueries } from './app-workouts';
 import { connectedAppsMutations, connectedAppsQueries } from './connected-apps/connected-apps';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
@@ -177,6 +180,9 @@ export const resolvers = {
     ...boardPresenceResolvers.Query,
     ...integrationQueries,
     ...oauthClientQueries,
+    ...adminPartnerAppQueries,
+    ...partnerWebhookQueries,
+    ...appWorkoutQueries,
     ...connectedAppsQueries,
     ...syncQueries,
     ...feedbackQueries,
@@ -236,6 +242,9 @@ export const resolvers = {
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
     ...oauthClientMutations,
+    ...adminPartnerAppMutations,
+    ...partnerWebhookMutations,
+    ...appWorkoutMutations,
     ...connectedAppsMutations,
     ...cncPackMutations,
     ...cncComputationMutations,

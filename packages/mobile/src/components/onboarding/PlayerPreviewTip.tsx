@@ -2,10 +2,10 @@
 // on board lights one and drives the wall for a while, and what the frosted
 // wall button means.
 //
-//   [💡 A tap opens a preview. Put on board lights it.        (×)]
-//   [   Then you drive the wall: each climb you pick lights…   ]
+//   [💡 Tap a climb to preview it. Put on board lights it.    (×)]
+//   [   For 45 seconds after each climb lights, every climb…  ]
 //   [   [💡   You are driving the wall   (me)]   ← the real button  ]
-//   [   The frost means you're driving the wall…                  ]
+//   [   The frosted button means every climb you pick lights…    ]
 //   [   [Lighting settings]                         [Got it]       ]
 //
 // The player docks it as the first section under the board, above Logbook: its

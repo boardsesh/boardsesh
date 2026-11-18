@@ -173,8 +173,22 @@ describe('PartnerConsentContent', () => {
   });
 
   it('drops the "can\'t change anything" line when a scope it does not know is asked for', async () => {
-    await renderReady(details({ scopes: [{ scope: 'workouts:write', includesOnlyMeTicks: false }] }));
-    expect(screen.getByText('Other access: workouts:write')).toBeTruthy();
+    await renderReady(details({ scopes: [{ scope: 'future:write', includesOnlyMeTicks: false }] }));
+    expect(screen.getByText('Other access: future:write')).toBeTruthy();
+    expect(screen.queryByText(/can't change anything/)).toBeNull();
+  });
+
+  it('explains workout writing and does not promise read-only access', async () => {
+    await renderReady(
+      details({
+        scopes: [
+          { scope: 'workouts:write', includesOnlyMeTicks: false },
+          { scope: 'workouts:read', includesOnlyMeTicks: false },
+        ],
+      }),
+    );
+    expect(screen.getByText('Plan and cancel workouts for you')).toBeTruthy();
+    expect(screen.getByText('Read the results of workouts this app planned')).toBeTruthy();
     expect(screen.queryByText(/can't change anything/)).toBeNull();
   });
 

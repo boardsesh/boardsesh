@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { DRIZZLE_DIR, JOURNAL_PATH, parseJournal } from '../lib/drizzle-migrations';
@@ -212,7 +213,7 @@ const CREATE_FUNCTION_SEARCH_PATH_RE = new RegExp(
 const CREATE_FUNCTION_UNSAFE_CONFIGURATION_RE =
   /\b(?:RESET\s+(?:ALL\b|"search_path"(?=\s|$)|search_path\b)|SET\s+SCHEMA\b|(?:SET|RESET)\s+U&")/i;
 
-function createFunctionPinsPrescribedSearchPath(statement: string): boolean {
+function createFunctionPinsPrescribedSearchPath(statement: string, reviewedCatalogOnly = false): boolean {
   if (CREATE_FUNCTION_UNSAFE_CONFIGURATION_RE.test(statement)) return false;
 
   let effectiveSearchPath: string | undefined;
@@ -221,8 +222,20 @@ function createFunctionPinsPrescribedSearchPath(statement: string): boolean {
       effectiveSearchPath = match[3];
     }
   }
-  return effectiveSearchPath?.replace(/\s+/g, '').toLowerCase() === 'public,pg_catalog';
+  const normalized = effectiveSearchPath?.replace(/\s+/g, '').toLowerCase();
+  return normalized === 'public,pg_catalog' || (reviewedCatalogOnly && normalized === 'pg_catalog');
 }
+
+// These two security-definer functions qualify every public relation and use
+// pg_catalog alone. Pin the COMPLETE immutable migration, including headers and
+// bodies: trusting a name or sanitized header would hide a later unqualified
+// dependency. The credential-writer catalog proof separately pins each body,
+// owner, search_path, trigger target and relation closure after migration 0322.
+const REVIEWED_CATALOG_ONLY_MIGRATION_SHA256 = '4299773d153d91534002be3e51f643e71f427535274924349d3ff0b28ce7c73c';
+const REVIEWED_CATALOG_ONLY_FUNCTIONS = new Set([
+  'partner_account_deletion_events',
+  'partner_connection_lifecycle_events',
+]);
 
 /**
  * Fold migration sources, in order, into a final pinned/unpinned verdict per
@@ -240,6 +253,8 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
   const pinned = new Map<string, boolean>();
 
   for (const source of sources) {
+    const reviewedCatalogOnlySource =
+      createHash('sha256').update(source).digest('hex') === REVIEWED_CATALOG_ONLY_MIGRATION_SHA256;
     for (const statement of topLevelStatements(source)) {
       const created = CREATE_FUNCTION_RE.exec(statement);
       if (created !== null) {
@@ -256,7 +271,13 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         // identity, so requiring a literal empty `()` here would miss them.
         const createsTrigger = RETURNS_TRIGGER_RE.test(definition);
         if (name !== undefined && (pinned.has(name) || createsTrigger)) {
-          pinned.set(name, createFunctionPinsPrescribedSearchPath(statement));
+          pinned.set(
+            name,
+            createFunctionPinsPrescribedSearchPath(
+              statement,
+              reviewedCatalogOnlySource && REVIEWED_CATALOG_ONLY_FUNCTIONS.has(name),
+            ),
+          );
         }
         continue;
       }
@@ -385,6 +406,25 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
       'LANGUAGE plpgsql;',
     ].join('\n');
   const createTriggerWithPins = (...clauses: string[]) => createTriggerWithAttributes(clauses, []);
+
+  it('accepts catalog-only paths only in the complete reviewed lifecycle migration', () => {
+    const reviewed = migrationSources().find(
+      (source) => createHash('sha256').update(source).digest('hex') === REVIEWED_CATALOG_ONLY_MIGRATION_SHA256,
+    );
+    expect(reviewed).toBeDefined();
+    expect(unpinnedIn(foldMigrationSources([reviewed!]))).toEqual([]);
+    for (const source of [
+      reviewed!.replace('UPDATE public.app_workouts', 'UPDATE app_workouts'),
+      reviewed!.replace('SET search_path = pg_catalog', 'SET search_path = pg_catalog, public'),
+      `${reviewed}\nCREATE OR REPLACE FUNCTION public.partner_connection_lifecycle_events() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$ BEGIN RETURN NEW; END; $$;`,
+    ])
+      expect(unpinnedIn(foldMigrationSources([source]))).toContain('partner_connection_lifecycle_events');
+    expect(
+      unpinnedIn(
+        foldMigrationSources([reviewed!, 'ALTER FUNCTION public.partner_connection_lifecycle_events() RESET ALL;']),
+      ),
+    ).toContain('partner_connection_lifecycle_events');
+  });
 
   it.each([
     ['an empty path', "SET search_path = ''"],

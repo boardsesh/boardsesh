@@ -4,6 +4,7 @@ import { canAccessResourceWithoutLink } from '../../../services/privacy';
 import { getPrivacySettings, legacyResourceAudience } from '../../../services/privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
 import { v4 as uuidv4 } from 'uuid';
+import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
 import type { ConnectionContext, SessionEvent, ClimbQueueItem } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
@@ -51,6 +52,15 @@ import type { CreateSessionInput } from '../shared/types';
 import { db } from '../../../db/client';
 import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
 import { sessionBoards, sessions } from '../../../db/schema';
+import {
+  AppWorkoutError,
+  prepareAppWorkoutSessionStart,
+  attachLockedAppWorkout,
+} from '../../../services/public-api/workouts';
+import { appWorkoutGraphError } from '../app-workouts/errors';
+import { parseAppWorkoutSeed, persistInitialAppWorkoutSeed } from '../../../services/public-api/workout-seed';
+import type { PartnerDatabase } from '../../../auth/partner/tables';
+import { readPartnerOAuthMode } from '../../../auth/partner/mode';
 import { eq, inArray } from 'drizzle-orm';
 import { generateSessionSummary } from './session-summary';
 import { autoSyncSessionToIntegrations } from '../../../integrations/export-service';
@@ -304,6 +314,16 @@ export const sessionMutations = {
 
       // Validate input
       validateInput(CreateSessionInputSchema, input, 'createSession input');
+      if (input.appWorkoutId) {
+        requireAuthenticated(ctx);
+        const mode = readPartnerOAuthMode();
+        if (mode === 'off' || mode === 'hold')
+          throw new GraphQLError('Partner workouts are unavailable.', { extensions: { code: 'SERVICE_UNAVAILABLE' } });
+        if (input.isPermanent)
+          throw new GraphQLError('Start a personal session to use this workout.', {
+            extensions: { code: 'CONFLICT', reason: 'APP_WORKOUT_PERMANENT_SESSION' },
+          });
+      }
       if (input.discoverable) requireAuthenticated(ctx);
 
       // Generate a unique session ID
@@ -349,7 +369,19 @@ export const sessionMutations = {
           throw new Error('All boards must belong to the same gym for multi-board sessions');
       }
       // Persist the audience before exposing the ID or publishing a live roster.
-      await db.transaction(async (tx) => {
+      const replayedSession = await db.transaction(async (tx) => {
+        const partnerTransaction = tx as unknown as PartnerDatabase;
+        const preparedWorkout = input.appWorkoutId
+          ? await prepareAppWorkoutSessionStart(partnerTransaction, ctx.userId!, input.appWorkoutId, sessionId)
+          : null;
+        if (preparedWorkout?.existingSession) {
+          if (preparedWorkout.existingSession.boardPath !== input.boardPath)
+            throw new GraphQLError('This workout is already running on another board. Open its session to resume.', {
+              extensions: { code: 'CONFLICT' },
+            });
+          return preparedWorkout.existingSession;
+        }
+        const appWorkout = preparedWorkout?.workout ?? null;
         await tx.insert(sessions).values({
           id: sessionId,
           boardPath: input.boardPath,
@@ -367,7 +399,22 @@ export const sessionMutations = {
           await tx
             .insert(resourcePrivacy)
             .values({ kind: 'session', resourceId: sessionId, ownerId: ctx.userId, audience });
+        if (appWorkout) await attachLockedAppWorkout(partnerTransaction, appWorkout, sessionId);
+        if (appWorkout && input.appWorkoutSeed != null)
+          await persistInitialAppWorkoutSeed(
+            partnerTransaction,
+            appWorkout,
+            sessionId,
+            parseAppWorkoutSeed(input.appWorkoutSeed),
+          );
+        return null;
       });
+      if (replayedSession)
+        return buildSessionPayload(replayedSession.id, ctx, {
+          sessionData: replayedSession,
+          isLeader: false,
+          clientId: '',
+        });
 
       if (input.discoverable) {
         // Discoverable sessions require authentication (they write to DB with userId)
@@ -465,6 +512,8 @@ export const sessionMutations = {
         await ensureSessionRecordExists(sessionId, input.boardPath, ctx.userId ?? null, input.name, false);
       }
 
+      if (input.appWorkoutId && input.appWorkoutSeed != null)
+        return buildSessionPayload(sessionId, ctx, { isLeader: false, clientId: '' });
       return {
         id: sessionId,
         name: input.name || null,
@@ -489,6 +538,8 @@ export const sessionMutations = {
         createdByUserId: ctx.userId ?? null,
       };
     } catch (err) {
+      if (err instanceof AppWorkoutError) throw appWorkoutGraphError(err);
+      if (err instanceof GraphQLError) throw err;
       // Rate-limit hits are expected abuse-protection noise, not a session-start
       // bug — let them flow through without a Sentry event.
       if (err instanceof Error && err.message.startsWith('Rate limit exceeded')) throw err;

@@ -1,5 +1,6 @@
 import { developerDocsIndexable } from '@/app/lib/developer-apps/docs-access';
 import type { SitemapItem } from './entries';
+import { GUIDE_SLUGS } from '@/app/developers/guide-documents';
 
 /**
  * Hardcoded dates are the page's last meaningful copy edit. We don't track that
@@ -53,10 +54,16 @@ export const DEVELOPER_DOCS_ENTRY: SitemapItem = {
   path: '/developers',
   changeFrequency: 'monthly',
   priority: 0.5,
-  lastModified: new Date('2026-11-16'),
+  lastModified: new Date('2026-11-17'),
 };
 
 /** A copy: a caller that sorts or splices the result must not rewrite the constant. */
 export function buildStaticEntries(): SitemapItem[] {
-  return developerDocsIndexable() ? [...STATIC_ENTRIES, DEVELOPER_DOCS_ENTRY] : [...STATIC_ENTRIES];
+  return developerDocsIndexable()
+    ? [
+        ...STATIC_ENTRIES,
+        DEVELOPER_DOCS_ENTRY,
+        ...GUIDE_SLUGS.map((slug) => ({ ...DEVELOPER_DOCS_ENTRY, path: `/developers/${slug}` })),
+      ]
+    : [...STATIC_ENTRIES];
 }
