@@ -182,7 +182,7 @@ async function markTokenConsumed(tokenSignature: string): Promise<'consumed' | '
 
 /**
  * Check if a transfer token signature has already been consumed (read-only check).
- * Used for the early-reject path before verifying the HMAC.
+ * Used for the early-reject path after verifying the HMAC, before the account lookup.
  */
 async function isTokenConsumed(tokenSignature: string): Promise<boolean> {
   if (redisClientManager.isRedisConnected()) {
@@ -366,6 +366,9 @@ type TransferPayload = {
   provider?: unknown;
 };
 
+/** One token segment: unpadded base64url, the only alphabet our signer writes. */
+const TRANSFER_TOKEN_SEGMENT = /^[A-Za-z0-9_-]+$/;
+
 function verifyTransferToken(token: string): {
   userId: string;
   generation: number;
@@ -374,30 +377,25 @@ function verifyTransferToken(token: string): {
   accountCreation?: AccountCreationReceipt;
   requiresAccountCutoff: boolean;
   validUntil: number;
+  /** The signature this server computed, so a token is spent once however it was spelled. */
+  replayKey: string;
 } | null {
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [encodedPayload, signature] = parts;
+  if (!TRANSFER_TOKEN_SEGMENT.test(encodedPayload) || !TRANSFER_TOKEN_SEGMENT.test(signature)) return null;
+
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new AuthAdmissionUnavailableError();
 
-  const parts = token.split('.');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    return null;
-  }
-  const [encodedPayload, signature] = parts;
-
   const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
 
-  const sigBuffer = Buffer.from(signature);
-  const expectedSigBuffer = Buffer.from(expectedSignature);
+  const sigBuffer = Buffer.from(signature, 'utf8');
+  const expectedSigBuffer = Buffer.from(expectedSignature, 'utf8');
 
-  // Pad both buffers to the same length so the comparison is always
-  // constant-time — no length oracle, no JIT short-circuit.
-  const maxLen = Math.max(sigBuffer.length, expectedSigBuffer.length);
-  const paddedSig = Buffer.alloc(maxLen);
-  const paddedExpected = Buffer.alloc(maxLen);
-  sigBuffer.copy(paddedSig);
-  expectedSigBuffer.copy(paddedExpected);
-
-  if (!crypto.timingSafeEqual(paddedSig, paddedExpected)) {
+  // The length of an HMAC-SHA256 signature is public (43 characters), so a
+  // different length is refused outright; equal lengths compare in constant time.
+  if (sigBuffer.length !== expectedSigBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)) {
     return null;
   }
 
@@ -464,6 +462,7 @@ function verifyTransferToken(token: string): {
     // tolerance. Reject at the first millisecond outside that same window.
     validUntil: (payload.exp + CLOCK_SKEW_TOLERANCE_SECONDS + 1) * 1000,
     authenticatedAt,
+    replayKey: expectedSignature,
     ...(accountCreation ? { accountCreation } : {}),
   };
 }
@@ -766,21 +765,6 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
     return;
   }
 
-  // Extract the signature before verification so we can check for replay
-  const tokenParts = transferToken.split('.');
-  if (tokenParts.length !== 2 || !tokenParts[1]) {
-    sendJson(res, 401, { error: 'Invalid or expired transfer token' });
-    return;
-  }
-  const tokenSignature = tokenParts[1];
-
-  // Check if this transfer token has already been consumed (replay prevention)
-  if (await isTokenConsumed(tokenSignature)) {
-    logger.warn('[NativeAuth] Transfer token replay attempt detected');
-    sendJson(res, 409, { error: 'Transfer token has already been used' });
-    return;
-  }
-
   // Verify the HMAC transfer token
   let verified: ReturnType<typeof verifyTransferToken>;
   try {
@@ -792,6 +776,14 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   if (!verified) {
     logger.warn('[NativeAuth] Transfer token verification failed');
     sendJson(res, 401, { error: 'Invalid or expired transfer token' });
+    return;
+  }
+
+  // Replay prevention keys on the signature this server computed, never on the
+  // bytes the caller sent.
+  if (await isTokenConsumed(verified.replayKey)) {
+    logger.warn('[NativeAuth] Transfer token replay attempt detected');
+    sendJson(res, 409, { error: 'Transfer token has already been used' });
     return;
   }
 
@@ -809,7 +801,7 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
 
   // Atomically mark the token as consumed. If another request consumed it
   // between the EXISTS check above and now, markTokenConsumed returns 'replay'.
-  const consumeResult = await markTokenConsumed(tokenSignature);
+  const consumeResult = await markTokenConsumed(verified.replayKey);
   if (consumeResult === 'replay') {
     logger.warn('[NativeAuth] Transfer token replay attempt detected (race)');
     sendJson(res, 409, { error: 'Transfer token has already been used' });

@@ -6,6 +6,14 @@ import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@board
 
 const NATIVE_OAUTH_TRANSFER_TTL_SECONDS = 120;
 const CLOCK_SKEW_TOLERANCE_SECONDS = 5;
+/** The backend's cap too: 120 signed seconds plus the skew tolerance. */
+const MAX_TRANSFER_TOKEN_LIFETIME_SECONDS = NATIVE_OAUTH_TRANSFER_TTL_SECONDS + CLOCK_SKEW_TOLERANCE_SECONDS;
+/** A spent marker outlives the last second the token verifies, plus room for clock offset between replicas. */
+const SPENT_MARKER_MARGIN_SECONDS = 5 * 60;
+/** The backend's replay-record prefix (`command-context.ts`), so its cleanup deletes these rows too. */
+const SPENT_MARKER_IDENTIFIER_PREFIX = 'ba03-web-auth:';
+/** One token segment: unpadded base64url, the only alphabet the signer writes. */
+const TRANSFER_TOKEN_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
 type NativeOAuthTransferPayload = {
   userId: string;
@@ -88,6 +96,26 @@ export const issueNativeOAuthTransferToken = ({
   return `${encodedPayload}.${signature}`;
 };
 
+/**
+ * The exact two segments our signer writes, with a signature that matches.
+ * Any other spelling (padding, whitespace, NUL bytes, a third segment) is refused,
+ * so a token has one accepted form. Signature length is public, so a different
+ * length is refused outright; equal lengths compare in constant time.
+ */
+function readSignedTransfer(token: string, secret: string): { encodedPayload: string } | null {
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [encodedPayload, signature] = parts;
+  if (!TRANSFER_TOKEN_SEGMENT.test(encodedPayload) || !TRANSFER_TOKEN_SEGMENT.test(signature)) return null;
+  const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  const sigBuffer = Buffer.from(signature, 'utf8');
+  const expectedSigBuffer = Buffer.from(expectedSignature, 'utf8');
+  if (sigBuffer.length !== expectedSigBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)) {
+    return null;
+  }
+  return { encodedPayload };
+}
+
 export const verifyNativeOAuthTransferToken = (
   token: string,
 ): {
@@ -104,29 +132,9 @@ export const verifyNativeOAuthTransferToken = (
     return null;
   }
 
-  const parts = token.split('.');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    return null;
-  }
-  const [encodedPayload, signature] = parts;
-
-  const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
-
-  const sigBuffer = Buffer.from(signature);
-  const expectedSigBuffer = Buffer.from(expectedSignature);
-
-  if (sigBuffer.length !== expectedSigBuffer.length) {
-    // Perform a no-op timingSafeEqual so this branch takes the same time as
-    // the valid-length comparison below. The earlier structural checks
-    // (missing payload/signature) return immediately — that's fine because
-    // they don't reveal anything about a valid token's signature.
-    crypto.timingSafeEqual(expectedSigBuffer, expectedSigBuffer);
-    return null;
-  }
-
-  if (!crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)) {
-    return null;
-  }
+  const signed = readSignedTransfer(token, secret);
+  if (!signed) return null;
+  const { encodedPayload } = signed;
 
   let payload: NativeOAuthTransferPayload;
   try {
@@ -141,6 +149,10 @@ export const verifyNativeOAuthTransferToken = (
     !payload?.nextPath ||
     !payload?.exp ||
     !payload?.iat ||
+    !Number.isSafeInteger(payload.exp) ||
+    !Number.isSafeInteger(payload.iat) ||
+    payload.exp <= payload.iat ||
+    payload.exp - payload.iat > MAX_TRANSFER_TOKEN_LIFETIME_SECONDS ||
     payload.exp < now - CLOCK_SKEW_TOLERANCE_SECONDS ||
     payload.iat > now + CLOCK_SKEW_TOLERANCE_SECONDS
   ) {
@@ -192,6 +204,40 @@ export const verifyNativeOAuthTransferToken = (
     generation: payload.gen ?? 0,
     ...(verifiedReceipt ? { accountCreation: verifiedReceipt } : {}),
     ...(credentialProof ? { credentialProof } : {}),
+  };
+};
+
+/**
+ * The `verificationTokens` row that spends a transfer token the verifier
+ * accepted. It is keyed on a hash of the signed payload, which only the signer
+ * chooses, never on the bytes a caller sent. It expires after the last second
+ * the token can verify; the backend's expired-claim cleanup
+ * (`deleteExpiredCommandClaims`, every `ba03-web-auth:` row) then deletes it.
+ * Null for a token that does not verify.
+ */
+export const nativeOAuthTransferSpentMarker = (
+  token: string,
+): { identifier: string; token: string; expires: Date } | null => {
+  let secret: string;
+  try {
+    secret = getNativeOAuthSecret();
+  } catch {
+    return null;
+  }
+  const signed = readSignedTransfer(token, secret);
+  if (!signed) return null;
+  let exp: unknown;
+  try {
+    exp = (JSON.parse(base64UrlDecode(signed.encodedPayload)) as { exp?: unknown }).exp;
+  } catch {
+    return null;
+  }
+  if (typeof exp !== 'number' || !Number.isSafeInteger(exp)) return null;
+  const digest = crypto.createHash('sha256').update(`native-oauth-transfer-v1\0${signed.encodedPayload}`).digest('hex');
+  return {
+    identifier: `${SPENT_MARKER_IDENTIFIER_PREFIX}${digest}`,
+    token: digest,
+    expires: new Date((exp + CLOCK_SKEW_TOLERANCE_SECONDS + SPENT_MARKER_MARGIN_SECONDS) * 1000),
   };
 };
 

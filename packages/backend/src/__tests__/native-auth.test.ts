@@ -365,6 +365,60 @@ describe('handleNativeAuthExchange', () => {
     expect(body.error).toBe('Transfer token has already been used');
   });
 
+  it.each([
+    ['one trailing NUL', (signature: string) => `${signature}\u0000`],
+    ['two trailing NULs', (signature: string) => `${signature}\u0000\u0000`],
+    ['base64 padding', (signature: string) => `${signature}=`],
+    ['a trailing space', (signature: string) => `${signature} `],
+    ['a trailing newline', (signature: string) => `${signature}\n`],
+    ['a leading space', (signature: string) => ` ${signature}`],
+    ['the standard base64 alphabet', (signature: string) => Buffer.from(signature, 'base64url').toString('base64')],
+  ])('refuses a signature respelled with %s, before and after the real token is spent', async (_label, respell) => {
+    const transferToken = createTransferToken('user-abc');
+    const [encodedPayload, signature] = transferToken.split('.');
+    const respelled = `${encodedPayload}.${respell(signature)}`;
+    expect(respelled).not.toBe(transferToken);
+
+    const exchange = async (token: string) => {
+      const res = makeResponse();
+      await handleNativeAuthExchange(
+        makeRequest({ method: 'POST', body: { transferToken: token } }) as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+      );
+      return res.statusCode;
+    };
+
+    expect(await exchange(respelled)).toBe(401);
+    expect(await exchange(transferToken)).toBe(200);
+    expect(await exchange(respelled)).toBe(401);
+    expect(await exchange(transferToken)).toBe(409);
+  });
+
+  it('refuses a spent token whose segments are respelled', async () => {
+    const transferToken = createTransferToken('user-abc');
+    const exchange = async (token: string) => {
+      const res = makeResponse();
+      await handleNativeAuthExchange(
+        makeRequest({ method: 'POST', body: { transferToken: token } }) as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+      );
+      return res.statusCode;
+    };
+    expect(await exchange(transferToken)).toBe(200);
+
+    const [encodedPayload, signature] = transferToken.split('.');
+    for (const variant of [
+      `${transferToken}.`,
+      `${encodedPayload}..${signature}`,
+      `${encodedPayload}=.${signature}`,
+      ` ${transferToken}`,
+      `${transferToken}\n`,
+    ]) {
+      expect(await exchange(variant)).toBe(401);
+    }
+    expect(await exchange(transferToken)).toBe(409);
+  });
+
   it('returns 400 for missing transferToken field', async () => {
     const req = makeRequest({ method: 'POST', body: {} });
     const res = makeResponse();
