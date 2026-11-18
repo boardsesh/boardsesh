@@ -1,6 +1,42 @@
 {
-  "generatedAt": "2026-11-18T15:03:27.688Z",
+  "generatedAt": "2026-11-18T18:48:54.886Z",
   "entries": [
+    {
+      "prNumber": 7832,
+      "category": "fixed",
+      "title": "Apps you connect see only the climbs from the workout they sent you, counted on the blocks you climbed them in.",
+      "mergedAt": "2026-11-18T18:29:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7832"
+    },
+    {
+      "prNumber": 7836,
+      "category": "improved",
+      "title": "See how Climbdex and BoardLib helped get Boardsesh off the ground in Acknowledgements.",
+      "mergedAt": "2026-11-18T18:29:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7836"
+    },
+    {
+      "prNumber": 7821,
+      "category": "fixed",
+      "title": "Workout cards in the feed and on your Sessions list now show the target grade on your board's scale, so a MoonBoard 6A+ workout reads V3, same as the session itself.",
+      "mergedAt": "2026-11-18T15:45:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7821"
+    },
+    {
+      "prNumber": 7824,
+      "category": "fixed",
+      "title": "Workouts from your training apps fill up more often: when a grade is thin, Boardsesh picks from the grade next to it, and a V4 block uses both of the board's V4 grades.",
+      "mergedAt": "2026-11-18T15:45:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7824",
+      "body": "Adding a training app's workout to a session you're already climbing skips climbs already in your queue. If your own workout is waiting for Start, the rest timer waits too."
+    },
+    {
+      "prNumber": 7833,
+      "category": "fixed",
+      "title": "With Reduce Motion on, holds fade together when you swipe between climbs.",
+      "mergedAt": "2026-11-18T15:44:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7833"
+    },
     {
       "prNumber": 7812,
       "category": "new",

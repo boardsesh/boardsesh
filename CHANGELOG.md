@@ -20,12 +20,18 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- See how Climbdex and BoardLib helped get Boardsesh off the ground in Acknowledgements. ([#7836](https://github.com/boardsesh/boardsesh/pull/7836))
 - Swipe between climbs on Android with fewer accidental scrolls. ([#7813](https://github.com/boardsesh/boardsesh/pull/7813))
 - Open a workout from your connected training app and climb it in Boardsesh. ([#7776](https://github.com/boardsesh/boardsesh/pull/7776))
   Keep your connected training app up to date with your logbook.
 
 ### Fixed
 
+- Apps you connect see only the climbs from the workout they sent you, counted on the blocks you climbed them in. ([#7832](https://github.com/boardsesh/boardsesh/pull/7832))
+- Workout cards in the feed and on your Sessions list now show the target grade on your board's scale, so a MoonBoard 6A+ workout reads V3, same as the session itself. ([#7821](https://github.com/boardsesh/boardsesh/pull/7821))
+- Workouts from your training apps fill up more often: when a grade is thin, Boardsesh picks from the grade next to it, and a V4 block uses both of the board's V4 grades. ([#7824](https://github.com/boardsesh/boardsesh/pull/7824))
+  Adding a training app's workout to a session you're already climbing skips climbs already in your queue. If your own workout is waiting for Start, the rest timer waits too.
+- With Reduce Motion on, holds fade together when you swipe between climbs. ([#7833](https://github.com/boardsesh/boardsesh/pull/7833))
 - A climb you logged during a workout now lands on the right block, even when it saves after the session ends. ([#7819](https://github.com/boardsesh/boardsesh/pull/7819))
 - Resume a partner workout after restarting Boardsesh, with your progress and timer intact. ([#7823](https://github.com/boardsesh/boardsesh/pull/7823))
   Crew workouts keep your private notes and board name to you.
