@@ -85,11 +85,11 @@ const twiceQueuedInput = (sessionId: string, revision: number, ticks: RecordSess
   return input;
 };
 
-async function hostSession(): Promise<string> {
+async function hostSession(boardPath = 'kilter/1/10/1/40'): Promise<string> {
   const sessionId = `workouts-${randomUUID()}`;
   await db.insert(dbSchema.boardSessions).values({
     id: sessionId,
-    boardPath: 'kilter/1/10/1/40',
+    boardPath,
     createdByUserId: CLIMBER,
     boardId,
     isPublic: true,
@@ -604,11 +604,67 @@ describe('sessionWorkoutHeadlines', () => {
         userId: CLIMBER,
         mainKind: 'fourByFour',
         mainTargetGrade: getGradeLabel(TARGET_GRADE, 'kilter'),
+        mainTargetBoardType: 'kilter',
         secondMainKind: null,
         blockCount: 2,
         extraMainBlocks: 0,
       },
     ]);
+  });
+
+  it('names the session’s board as the scale when the main climb has no catalogue row', async () => {
+    // 6A+ is the one grade MoonBoard's scale reads differently (V3, not V3+),
+    // so a client must know the board to format the label.
+    const moonboardTarget = 17;
+    const sessionId = await hostSession('moonboard/1/1/1/40');
+    await logTick(sessionId, CLIMB_A, 'send', 1);
+    await record({
+      sessionId,
+      revision: 1,
+      stages: [
+        {
+          id: 'stage-pyramid',
+          kind: 'pyramid',
+          targetGrade: moonboardTarget,
+          items: [{ queueItemUuid: 'qi-moon', climbUuid: 'workouts-climb-not-catalogued', angle: 40 }],
+        },
+      ],
+      ticks: [],
+    });
+
+    const [headline] = await sessionWorkoutQueries.sessionWorkoutHeadlines(
+      null,
+      { sessionIds: [sessionId] },
+      viewer(STRANGER),
+    );
+    expect(headline).toMatchObject({
+      mainTargetGrade: getGradeLabel(moonboardTarget, 'moonboard'),
+      mainTargetBoardType: 'moonboard',
+    });
+  });
+
+  it('names no board when the main block has no target grade', async () => {
+    const sessionId = await hostSession();
+    await logTick(sessionId, CLIMB_A, 'send', 1);
+    await record({
+      sessionId,
+      revision: 1,
+      stages: [
+        {
+          id: 'stage-limit',
+          kind: 'limit',
+          items: [{ queueItemUuid: 'qi-limit', climbUuid: CLIMB_A, angle: 40 }],
+        },
+      ],
+      ticks: [],
+    });
+
+    const [headline] = await sessionWorkoutQueries.sessionWorkoutHeadlines(
+      null,
+      { sessionIds: [sessionId] },
+      viewer(STRANGER),
+    );
+    expect(headline).toMatchObject({ mainTargetGrade: null, mainTargetBoardType: null });
   });
 
   it(`refuses more than ${MAX_SESSION_WORKOUT_HEADLINE_IDS} sessions`, async () => {

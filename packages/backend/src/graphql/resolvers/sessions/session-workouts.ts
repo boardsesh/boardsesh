@@ -617,11 +617,14 @@ export const sessionWorkoutQueries = {
       .sort((left, right) => (order.get(left.row.sessionId) ?? 0) - (order.get(right.row.sessionId) ?? 0))
       .map(({ row, headline, mainClimbUuid }) => {
         const boardType = (mainClimbUuid && boardTypeByClimb.get(mainClimbUuid)) || boardTypeFromPath(row.boardPath);
+        const mainTargetGrade = gradeName(headline.mainTargetGrade, boardType);
         return {
           sessionId: row.sessionId,
           userId: row.userId,
           mainKind: headline.mainKind ?? null,
-          mainTargetGrade: gradeName(headline.mainTargetGrade, boardType),
+          mainTargetGrade,
+          // The label is on this board's scale, so a client formats it on the same one.
+          mainTargetBoardType: mainTargetGrade == null ? null : boardType,
           secondMainKind: headline.secondMainKind ?? null,
           blockCount: headline.blockCount,
           extraMainBlocks: headline.extraMainBlocks,
