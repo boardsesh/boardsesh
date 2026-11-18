@@ -168,13 +168,18 @@
     },
     "openSource": {
       "title": "Open Source",
-      "body": "Boardsesh is open source under the Apache license. Browse the code, send a PR, file a bug, or fork the whole project.",
+      "body": "The code is public under the Apache 2.0 licence, so you can run your own copy. CONTRIBUTING.md is the starting point today; a maintained self-hosting guide is still to come.",
       "cta": "View on GitHub →"
     },
     "api": {
       "title": "API Documentation",
-      "body": "Want to build on climbing data? The API is public. Have at it.",
-      "cta": "Explore the API Documentation →"
+      "body": "The climb and grade read API is public. An app can read a climber’s logbook with their permission through the separate OAuth API; its current access rules are in the developer guide.",
+      "cta": "Explore the API Documentation →",
+      "status": {
+        "open": "App registration is open.",
+        "invitation": "App registration is invite only while we test it.",
+        "unavailable": "App connections are not available right now."
+      }
     },
     "community": {
       "title": "Join the Community",
@@ -285,7 +290,7 @@
       "body": "Your support went through. It goes straight into building Boardsesh."
     },
     "aboutLink": "Read more about the project →",
-    "docsLink": "See how it is built in the developer docs →",
+    "docsLink": "Read the source on GitHub",
     "footer": "Free for everyone, funded by whoever can chip in."
   },
   "legal": {
@@ -661,7 +666,7 @@
         "discordTitle": "Discord",
         "discordBody": "Climbers and the team answer most questions the same day.",
         "bugBody": "In the app, tap your avatar, then Report a bug. Say what happened and on which phone.",
-        "devBody": "Logbook sync, workouts and webhooks."
+        "devBody": "Building a logbook tool? Read a climber’s history with their permission. Check the developer guide for current access."
       },
       "topics": {
         "guides": "Guides",
@@ -863,73 +868,29 @@
     }
   },
   "docs": {
-    "loading": "Loading documentation...",
-    "headerTitle": "API Documentation",
-    "headerSubtitle": "Complete reference for the Boardsesh REST and WebSocket APIs",
+    "headerTitle": "Public climb API reference",
+    "headerSubtitle": "Read climb data without a Boardsesh account. Apps connecting to a climber’s logbook use the separate developer API.",
     "tabs": {
       "overview": "Overview",
-      "rest": "REST API",
-      "graphql": "Internal GraphQL schema",
-      "websocket": "WebSocket Guide"
+      "rest": "Public REST reference",
+      "graphql": "Internal GraphQL schema"
     },
-    "overview": {
-      "title": "Boardsesh API Overview",
-      "intro": "Boardsesh provides two complementary APIs for interacting with interactive climbing training boards (Kilter, Tension):",
-      "usagePolicy": "This API is for integrations. Publishing an app that uses the Boardsesh backend as its service needs written permission, which we do not currently grant. See our",
-      "usagePolicyLink": "legal page",
-      "rest": {
-        "title": "REST API",
-        "intro": "Use the REST API for stateless operations like searching climbs, fetching board configuration, and user authentication. The REST API is ideal for:",
-        "feature1": "Fetching climb data and statistics",
-        "feature2": "User registration and authentication",
-        "feature3": "Profile management",
-        "feature4": "Resolving URL slugs to numeric IDs",
-        "baseUrlLabel": "Base URL:"
-      },
-      "ws": {
-        "title": "Internal WebSocket GraphQL API",
-        "intro": "Use the WebSocket API for real-time features like party sessions and queue synchronization. The GraphQL API provides:",
-        "feature1": "Real-time queue updates via subscriptions",
-        "feature2": "Session management (create, join, leave)",
-        "feature3": "Multi-user collaboration",
-        "feature4": "All REST API functionality via queries/mutations",
-        "endpointLabel": "Endpoint:",
-        "endpointSuffix": "(via graphql-ws protocol)"
-      },
-      "auth": {
-        "title": "Authentication",
-        "restLabel": "REST API:",
-        "restBody": "Uses NextAuth session cookies. Authenticate via",
-        "restBodyEnd": "endpoints.",
-        "wsLabel": "WebSocket API:",
-        "wsBody": "Obtain a JWT token from",
-        "wsBodyEnd": "and include it in the connection parameters:"
-      },
-      "rateLimit": {
-        "title": "Rate Limiting",
-        "body": "Authentication endpoints are rate-limited to prevent abuse. Rate limit headers are included in responses. Public read endpoints have generous limits."
-      }
+    "public": {
+      "title": "Public read API · Live",
+      "body": "Use /api/v1/ for public climb, grade, board configuration and slug lookups. These read endpoints do not use sign-in cookies and do not register users or change profiles."
     },
-    "ws": {
-      "title": "WebSocket Connection Guide",
-      "introStart": "The Boardsesh WebSocket API uses the",
-      "introEnd": "protocol for real-time GraphQL subscriptions.",
-      "connection": {
-        "title": "Connection Setup"
-      },
-      "session": {
-        "title": "Session Management",
-        "body": "Sessions are the core collaboration unit. Users join sessions to share a climb queue."
-      },
-      "delta": {
-        "title": "Delta Synchronization",
-        "body": "When reconnecting, use delta sync to catch up without full state transfer:"
-      },
-      "connectionHandling": {
-        "title": "Connection Handling",
-        "body": "The WebSocket connection may be interrupted by network changes. Implement reconnection logic with the graphql-ws retry options and use delta sync to maintain state consistency."
-      }
-    }
+    "partners": {
+      "title": "Connected apps",
+      "body": "Use OAuth, a climber’s approval and the scopes they grant for their personal logbook. Registration may be invite only; the developer guide shows current access. Workouts and webhooks are not offered as generally available on this page.",
+      "link": "Read the developer guide"
+    },
+    "internal": {
+      "title": "Internal protocol · Contributor reference",
+      "body": "GraphQL and session protocols power the Boardsesh apps. They are internal interfaces, not a supported API for another app’s backend. Forks run their own service. See the contributor reference and hosted-service policy.",
+      "link": "Read the internal protocol reference"
+    },
+    "policyLink": "Read the hosted-service policy",
+    "loading": "Loading reference…"
   },
   "privacy": {
     "title": "Privacy Policy",

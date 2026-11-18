@@ -220,7 +220,7 @@
     "access": {
       "invitation": {
         "title": "El registro es por invitación",
-        "body": "El acceso anticipado está abierto solo a las cuentas de desarrollador que el equipo de Boardsesh ha añadido. Cada app puede tener {{live}} escaladores conectados a la vez y {{perDay}} nuevos en cualquier periodo de 24 horas. Para pedir acceso, escribe a {{email}} y cuéntanos qué hace tu app."
+        "body": "El registro es por invitación mientras hacemos pruebas. Cada app empieza con espacio para {{live}} escaladores conectados a la vez y {{perDay}} nuevos al día. Para pedir acceso, escribe a:"
       },
       "open": {
         "title": "Registra tu app",

@@ -194,7 +194,7 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
         <Prose>{monthlyFirst ? t('support.honesty.p1Monthly') : t('support.honesty.p1')}</Prose>
         <Prose>{monthlyFirst ? t('support.honesty.p2Monthly') : t('support.honesty.p2')}</Prose>
         <Prose>
-          <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>
+          <MuiLink href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className={styles.standaloneLink}>
             {t('support.docsLink')}
           </MuiLink>
         </Prose>

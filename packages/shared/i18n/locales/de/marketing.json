@@ -168,13 +168,18 @@
     },
     "openSource": {
       "title": "Open Source",
-      "body": "Boardsesh ist Open Source unter der Apache-Lizenz. Stöber im Code, schick einen PR, meld einen Fehler oder fork das ganze Projekt.",
+      "body": "Der Code ist unter Apache 2.0 öffentlich, du kannst also deine eigene Kopie betreiben. CONTRIBUTING.md ist der aktuelle Einstieg; eine gepflegte Anleitung zum Selbsthosten steht noch aus.",
       "cta": "Auf GitHub ansehen →"
     },
     "api": {
       "title": "API-Dokumentation",
-      "body": "Du willst etwas mit Kletterdaten bauen? Die API ist öffentlich. Leg los.",
-      "cta": "API-Dokumentation ansehen →"
+      "body": "Die Lese-API für Boulder und Grade ist öffentlich. Über die separate OAuth-API kann eine App mit Erlaubnis der kletternden Person deren Logbuch lesen; der Entwicklerleitfaden nennt die aktuellen Zugangsregeln.",
+      "cta": "API-Dokumentation ansehen →",
+      "status": {
+        "open": "Die App-Registrierung ist offen.",
+        "invitation": "Während der Tests ist die App-Registrierung nur auf Einladung möglich.",
+        "unavailable": "App-Verbindungen sind derzeit nicht verfügbar."
+      }
     },
     "community": {
       "title": "Komm in die Community",
@@ -285,7 +290,7 @@
       "body": "Deine Unterstützung ist angekommen. Sie fließt direkt in Boardsesh."
     },
     "aboutLink": "Mehr über das Projekt →",
-    "docsLink": "Sieh in der Doku, wie es gebaut ist →",
+    "docsLink": "Lies den Code auf GitHub",
     "footer": "Kostenlos für alle, finanziert von denen, die können."
   },
   "legal": {
@@ -661,7 +666,7 @@
         "discordTitle": "Discord",
         "discordBody": "Kletterer*innen und das Team beantworten die meisten Fragen am selben Tag.",
         "bugBody": "Tipp in der App auf deinen Avatar, dann auf Bug melden. Schreib uns, was passiert ist und auf welchem Handy.",
-        "devBody": "Routenbuch-Sync, Workouts und Webhooks."
+        "devBody": "Du entwickelst ein Logbuch-Tool? Lies mit Erlaubnis der kletternden Person deren Historie. Der Entwicklerleitfaden erklärt den aktuellen Zugang."
       },
       "topics": {
         "guides": "Anleitungen",
@@ -863,73 +868,29 @@
     }
   },
   "docs": {
-    "loading": "Dokumentation wird geladen...",
-    "headerTitle": "API-Dokumentation",
-    "headerSubtitle": "Vollständige Referenz für die REST- und WebSocket-APIs von Boardsesh",
+    "headerTitle": "Referenz der öffentlichen Boulder-API",
+    "headerSubtitle": "Lies Boulderdaten ohne Boardsesh-Konto. Apps, die sich mit einem persönlichen Logbuch verbinden, verwenden die separate Entwickler-API.",
     "tabs": {
-      "overview": "Überblick",
-      "rest": "REST-API",
-      "graphql": "Internes GraphQL-Schema",
-      "websocket": "WebSocket-Leitfaden"
+      "overview": "Übersicht",
+      "rest": "Öffentliche REST-Referenz",
+      "graphql": "Internes GraphQL-Schema"
     },
-    "overview": {
-      "title": "Überblick über die Boardsesh-API",
-      "intro": "Boardsesh bietet zwei APIs, die sich ergänzen, für den Umgang mit interaktiven Kletter-Trainingsboards (Kilter, Tension):",
-      "usagePolicy": "Diese API ist für Integrationen gedacht. Wer eine App veröffentlicht, die das Boardsesh-Backend als ihren Dienst nutzt, braucht eine schriftliche Erlaubnis, die wir derzeit nicht erteilen. Siehe unsere",
-      "usagePolicyLink": "rechtliche Seite",
-      "rest": {
-        "title": "REST-API",
-        "intro": "Nimm die REST-API für zustandslose Vorgänge wie die Bouldersuche, das Abrufen der Board-Konfiguration und die Authentifizierung. Die REST-API passt für:",
-        "feature1": "Boulderdaten und Statistiken abrufen",
-        "feature2": "Registrierung und Authentifizierung",
-        "feature3": "Profilverwaltung",
-        "feature4": "Auflösung von URL-Slugs zu IDs",
-        "baseUrlLabel": "Basis-URL:"
-      },
-      "ws": {
-        "title": "Interne WebSocket-GraphQL-API",
-        "intro": "Nimm die WebSocket-API für Echtzeit-Funktionen wie Party-Sessions und die Sync der Warteschlange. Die GraphQL-API bietet:",
-        "feature1": "Echtzeit-Updates der Warteschlange über Subscriptions",
-        "feature2": "Session-Verwaltung (anlegen, beitreten, verlassen)",
-        "feature3": "Zusammenarbeit mehrerer Nutzer*innen",
-        "feature4": "Alle Funktionen der REST-API über Queries/Mutations",
-        "endpointLabel": "Endpunkt:",
-        "endpointSuffix": "(über das graphql-ws-Protokoll)"
-      },
-      "auth": {
-        "title": "Authentifizierung",
-        "restLabel": "REST-API:",
-        "restBody": "Nutzt NextAuth-Session-Cookies. Authentifizier dich über die",
-        "restBodyEnd": "Endpunkte.",
-        "wsLabel": "WebSocket-API:",
-        "wsBody": "Hol dir ein JWT-Token von",
-        "wsBodyEnd": "und gib es in den Verbindungsparametern mit:"
-      },
-      "rateLimit": {
-        "title": "Rate-Limits",
-        "body": "Die Endpunkte zur Authentifizierung sind rate-limitiert, um Missbrauch zu verhindern. Die Rate-Limit-Header stehen in den Antworten. Öffentliche Lese-Endpunkte haben großzügige Limits."
-      }
+    "public": {
+      "title": "Öffentliche Lese-API · Verfügbar",
+      "body": "Nutze /api/v1/ für öffentliche Boulder, Grade, Board-Konfigurationen und Slugs. Diese Leserouten verwenden keine Anmelde-Cookies, registrieren niemanden und ändern keine Profile."
     },
-    "ws": {
-      "title": "Leitfaden zur WebSocket-Verbindung",
-      "introStart": "Die WebSocket-API von Boardsesh nutzt das",
-      "introEnd": "Protokoll für GraphQL-Subscriptions in Echtzeit.",
-      "connection": {
-        "title": "Verbindung einrichten"
-      },
-      "session": {
-        "title": "Session-Verwaltung",
-        "body": "Sessions sind die zentrale Einheit für die Zusammenarbeit. Nutzer*innen treten einer Session bei, um sich eine Warteschlange zu teilen."
-      },
-      "delta": {
-        "title": "Delta-Synchronisation",
-        "body": "Nutz beim Wiederverbinden die Delta-Sync, um ohne vollständige Zustandsübertragung aufzuholen:"
-      },
-      "connectionHandling": {
-        "title": "Umgang mit der Verbindung",
-        "body": "Die WebSocket-Verbindung kann durch Netzwerkwechsel abreißen. Bau eine Reconnect-Logik mit den Retry-Optionen von graphql-ws und nutz die Delta-Sync, damit der Zustand konsistent bleibt."
-      }
-    }
+    "partners": {
+      "title": "Verbundene Apps",
+      "body": "Nutze OAuth, die Zustimmung der kletternden Person und deren freigegebene Berechtigungen für das persönliche Logbuch. Die Registrierung kann eine Einladung erfordern; der Leitfaden nennt den aktuellen Zugang. Workouts und Webhooks werden hier nicht als allgemein verfügbar angeboten.",
+      "link": "Lies den Entwicklerleitfaden"
+    },
+    "internal": {
+      "title": "Internes Protokoll · Referenz für Beiträge",
+      "body": "GraphQL und Sitzungsprotokolle betreiben die Boardsesh-Apps. Das sind interne Schnittstellen, keine unterstützte API für das Backend einer anderen App. Forks betreiben ihren eigenen Dienst. Siehe die Referenz und die Regeln zum gehosteten Dienst.",
+      "link": "Lies die interne Protokollreferenz"
+    },
+    "policyLink": "Lies die Regeln zum gehosteten Dienst",
+    "loading": "Referenz wird geladen…"
   },
   "privacy": {
     "title": "Datenschutzerklärung",

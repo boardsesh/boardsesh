@@ -10,8 +10,13 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
 import styles from './about.module.css';
+import type { DeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 
-export default function AboutContent() {
+export default function AboutContent({
+  developerDocsState = 'unavailable',
+}: {
+  developerDocsState?: DeveloperDocsState;
+}) {
   const { t } = useTranslation('marketing');
   return (
     <PageShell title={t('about.hero.title')} lead={t('about.hero.subtitle')} width="wide">
@@ -86,11 +91,14 @@ export default function AboutContent() {
 
         <PageSection title={t('about.api.title')} icon={<ApiOutlined />} className={styles.projectSection}>
           <Prose>{t('about.api.body')}</Prose>
-          <Prose>
-            <MuiLink component={LocaleLink} href="/docs">
-              {t('about.api.cta')}
-            </MuiLink>
-          </Prose>
+          <Prose>{t(`about.api.status.${developerDocsState}`)}</Prose>
+          {developerDocsState !== 'unavailable' ? (
+            <Prose>
+              <MuiLink component={LocaleLink} href="/developers">
+                {t('about.api.cta')}
+              </MuiLink>
+            </Prose>
+          ) : null}
         </PageSection>
       </Box>
 

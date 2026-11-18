@@ -168,13 +168,18 @@
     },
     "openSource": {
       "title": "Open Source",
-      "body": "Boardsesh est open source sous licence Apache. Parcourez le code, envoyez une PR, signalez un bug ou forkez le projet en entier.",
+      "body": "Le code est public sous licence Apache 2.0 : tu peux donc faire tourner ta propre copie. CONTRIBUTING.md est le point de départ actuel ; un guide d’auto-hébergement maintenu reste à venir.",
       "cta": "Voir sur GitHub →"
     },
     "api": {
       "title": "Documentation de l'API",
-      "body": "Envie de construire avec les données d'escalade ? L'API est publique. Régalez-vous.",
-      "cta": "Explorer la documentation de l'API →"
+      "body": "L’API de lecture des blocs et des cotations est publique. Une application peut lire le carnet d’un grimpeur avec son accord via l’API OAuth distincte ; le guide développeur précise les conditions d’accès actuelles.",
+      "cta": "Explorer la documentation de l'API →",
+      "status": {
+        "open": "L’inscription des applications est ouverte.",
+        "invitation": "L’inscription des applications est sur invitation pendant les tests.",
+        "unavailable": "Les connexions avec d’autres applications sont indisponibles pour le moment."
+      }
     },
     "community": {
       "title": "Rejoignez la communauté",
@@ -285,7 +290,7 @@
       "body": "Votre soutien est bien passé. Il sert directement à construire Boardsesh."
     },
     "aboutLink": "En savoir plus sur le projet →",
-    "docsLink": "Voyez comment c'est construit dans la doc développeur →",
+    "docsLink": "Lis le code sur GitHub",
     "footer": "Gratuit pour tous, financé par ceux qui le peuvent."
   },
   "legal": {
@@ -661,7 +666,7 @@
         "discordTitle": "Discord",
         "discordBody": "Des grimpeurs et l'équipe répondent à la plupart des questions dans la journée.",
         "bugBody": "Dans l'app, touche ton avatar, puis Signaler un bug. Dis-nous ce qui s'est passé et sur quel téléphone.",
-        "devBody": "Synchro du carnet, entraînements et webhooks."
+        "devBody": "Tu crées un outil de carnet ? Lis l’historique d’un grimpeur avec son accord. Consulte le guide développeur pour les conditions d’accès actuelles."
       },
       "topics": {
         "guides": "Guides",
@@ -863,73 +868,29 @@
     }
   },
   "docs": {
-    "loading": "Chargement de la documentation…",
-    "headerTitle": "Documentation API",
-    "headerSubtitle": "Référence complète des API REST et WebSocket de Boardsesh",
+    "headerTitle": "Référence de l’API publique de blocs",
+    "headerSubtitle": "Lis les données des blocs sans compte Boardsesh. Les applications connectées au carnet d’un grimpeur utilisent une API développeur distincte.",
     "tabs": {
-      "overview": "Aperçu",
-      "rest": "API REST",
-      "graphql": "Schéma GraphQL interne",
-      "websocket": "Guide WebSocket"
+      "overview": "Présentation",
+      "rest": "Référence REST publique",
+      "graphql": "Schéma GraphQL interne"
     },
-    "overview": {
-      "title": "Aperçu de l'API Boardsesh",
-      "intro": "Boardsesh fournit deux API complémentaires pour interagir avec les boards d'entraînement interactives (Kilter, Tension) :",
-      "usagePolicy": "Cette API est destinée aux intégrations. Publier une app qui utilise le backend de Boardsesh comme son service demande une autorisation écrite, que nous n'accordons pas pour le moment. Voir notre",
-      "usagePolicyLink": "page légale",
-      "rest": {
-        "title": "API REST",
-        "intro": "Utilisez l'API REST pour des opérations sans état comme la recherche de blocs, la récupération de la configuration de la board et l'authentification utilisateur. L'API REST est idéale pour :",
-        "feature1": "Récupérer les données et statistiques de blocs",
-        "feature2": "Inscription et authentification des utilisateurs",
-        "feature3": "Gestion de profil",
-        "feature4": "Résolution des slugs d'URL en identifiants",
-        "baseUrlLabel": "URL de base :"
-      },
-      "ws": {
-        "title": "API GraphQL interne par WebSocket",
-        "intro": "Utilisez l'API WebSocket pour les fonctionnalités temps réel comme les sessions party et la synchronisation de file. L'API GraphQL fournit :",
-        "feature1": "Mises à jour de file en temps réel via les abonnements",
-        "feature2": "Gestion de session (créer, rejoindre, quitter)",
-        "feature3": "Collaboration multi-utilisateur",
-        "feature4": "Toutes les fonctionnalités de l'API REST via les queries et mutations",
-        "endpointLabel": "Endpoint :",
-        "endpointSuffix": "(via le protocole graphql-ws)"
-      },
-      "auth": {
-        "title": "Authentification",
-        "restLabel": "API REST :",
-        "restBody": "Utilise les cookies de session NextAuth. Authentifiez-vous via les endpoints",
-        "restBodyEnd": ".",
-        "wsLabel": "API WebSocket :",
-        "wsBody": "Récupérez un jeton JWT depuis",
-        "wsBodyEnd": "et incluez-le dans les paramètres de connexion :"
-      },
-      "rateLimit": {
-        "title": "Limitation de débit",
-        "body": "Les endpoints d'authentification sont limités en débit pour éviter les abus. Les en-têtes de limite sont inclus dans les réponses. Les endpoints de lecture publics ont des limites généreuses."
-      }
+    "public": {
+      "title": "API publique de lecture · Disponible",
+      "body": "Utilise /api/v1/ pour consulter les blocs, cotations, configurations de boards et slugs publics. Ces routes de lecture n’utilisent pas les cookies de connexion, n’inscrivent personne et ne modifient pas les profils."
     },
-    "ws": {
-      "title": "Guide de connexion WebSocket",
-      "introStart": "L'API WebSocket de Boardsesh utilise le protocole",
-      "introEnd": "pour les abonnements GraphQL en temps réel.",
-      "connection": {
-        "title": "Configuration de la connexion"
-      },
-      "session": {
-        "title": "Gestion des sessions",
-        "body": "Les sessions sont l'unité centrale de collaboration. Les utilisateurs rejoignent une session pour partager une file de blocs."
-      },
-      "delta": {
-        "title": "Synchronisation delta",
-        "body": "Lors d'une reconnexion, utilisez la sync delta pour vous remettre à jour sans transfert d'état complet :"
-      },
-      "connectionHandling": {
-        "title": "Gestion de la connexion",
-        "body": "La connexion WebSocket peut être interrompue par des changements de réseau. Implémentez une logique de reconnexion avec les options de retry de graphql-ws et utilisez la sync delta pour maintenir la cohérence d'état."
-      }
-    }
+    "partners": {
+      "title": "Applications connectées",
+      "body": "Utilise OAuth, l’accord du grimpeur et les permissions accordées pour son carnet personnel. L’inscription peut être sur invitation ; le guide précise l’accès actuel. Cette page ne présente ni les entraînements ni les webhooks comme disponibles pour tous.",
+      "link": "Lis le guide développeur"
+    },
+    "internal": {
+      "title": "Protocole interne · Référence contributeur",
+      "body": "GraphQL et les protocoles de session servent aux applications Boardsesh. Ce sont des interfaces internes, pas une API prise en charge pour le serveur d’une autre application. Les forks exécutent leur propre service. Consulte la référence et les règles du service hébergé.",
+      "link": "Lis la référence du protocole interne"
+    },
+    "policyLink": "Lis les règles du service hébergé",
+    "loading": "Chargement de la référence…"
   },
   "privacy": {
     "title": "Politique de confidentialité",

@@ -170,7 +170,7 @@ export default function HelpContent() {
             <Typography component="p" className={styles.askBody}>
               {t('help.hub.ask.devBody')}
             </Typography>
-            <MuiLink component={LocaleLink} href="/docs" className={styles.askLink}>
+            <MuiLink component={LocaleLink} href="/developers" className={styles.askLink}>
               {t('help.hub.ask.docs')}
             </MuiLink>
           </Box>
