@@ -87,9 +87,8 @@ rests) is still freeform, and how its fields map onto sets and reps is settled w
 natively. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
-The three timed kinds are offered in dev builds and to testers with the
-`workout-timed-blocks` flag until they launch (see "Timed blocks" below); a release bundle
-with the flag off offers warm-up, volume, pyramid, ladder and grade focus.
+Every build offers the three timed kinds (see "Timed blocks" below), so the block card has
+eight chips and the in-session sheet seven.
 Their fields: a 4x4 takes 1 to 10 sets and 2 to 10 reps per set (one queue item per set,
 so the player never has the same climb on two pages); limit bouldering 1 to 10 climbs; on
 the minute 1 to 40. Their rests use
@@ -169,8 +168,18 @@ check the input on write and every stored row on read.
 
 **Who writes.** Only the climber, for their own row, with `recordSessionWorkout`. They must
 have created the session or joined it (`board_session_participants`). A tick in the session
-is not enough: `saveTick` takes any existing session id, so a tick proves nothing. Tick-map
-entries that are not the caller's own ticks in that session are dropped on write. A write
+is not enough: `saveTick` takes any existing session id, so a tick proves nothing. On write,
+the server looks up every tick the map names by uuid alone. It drops an entry naming another
+climber's tick, or the caller's tick in another session. It keeps an entry naming a tick it
+does not have yet, so a tick that reaches the server after the workout write (a dead-lettered
+tick retried later, or a spray-wall tick held behind its climb write) still lands on its
+block. Readers only apply the map to the owner's ticks in the session, so a kept entry does
+nothing until its tick lands. Two limits keep free entries small. An entry naming a queue
+item the plan doesn't hold is dropped: a reader would ignore it, and the phone never sends
+one. Entries for ticks the server doesn't have yet are capped at 300
+(`MAX_PENDING_TICK_MAP_ENTRIES`, the plan's item cap), keeping the last ones in submitted
+order, which is the phone's newest-last log order. Entries for the caller's own ticks in
+the session have only the 4000-entry cap. A write
 lands only when its revision is higher than the stored one; an equal or lower revision is
 a no-op that still answers true, so an outbox replay never rolls a newer plan back. Both
 the mutation and the headline query are rate limited. An unknown session and a malformed plan answer `BAD_USER_INPUT` and a stranger
@@ -179,9 +188,15 @@ the mutation and the headline query are rate limited. An unknown session and a m
 **How results are derived.** Nothing about results is stored. Each read takes the owner's
 ticks in the session and runs `deriveWorkoutStages`: a tick in the tick map goes to that
 queue item. Any other tick goes to a plan climb with the same climb and angle (and mirror
-when both say): the first one in plan order that still has room (a 4x4 climb until it
-holds its reps per set, any other climb until it holds one tick), else the last one. So a
-climb queued twice fills its first slot before its second. A tick that matches nothing
+when both say) that still has room (a 4x4 climb until it holds its reps per set, any other
+climb until it holds one tick): the first such climb at or after the one the tick before it
+went to, in plan order, else the first such climb anywhere, else the last matching one. So a
+climb queued twice fills its first slot before its second, and a tick on a pyramid's way
+down never lands on a way-up copy the climber skipped. `assignWorkoutTicks` groups a
+session's ticks by the same rule when the server sends no tick uuids, given each stage's
+`repsPerSet` (an exhaustive test over small plans holds the two together). Both walk ticks
+oldest first, equal times by tick uuid (`ticksInTimeOrder`), because the tick queries return
+equal times in no fixed order. A tick that matches nothing
 counts as off plan.
 Each climb's reps are its ticks in time order. Every tally counts ticks, the unit the
 session totals use: `sent` is flash plus send ticks, `attempts` is attempt ticks, `skipped`
@@ -296,10 +311,11 @@ the newer copy replaces it. Workout rows keep the outbox's 10 retries; one drain
 tries up to 7 times within about a minute, so a smaller budget would dead-letter the End
 copy on one bad minute.
 
-Order matters. The server keeps a tick-map entry only when the tick is already one of the
-climber's ticks in the session, and the outbox drains first in, first out, so a write
-queued after the ticks lands after them. A tick still queued when END_SESSION goes is
-behind none of this: the last write is queued after it.
+Order does not matter for the tick map (#7028). The server keeps an entry for a tick it
+has not seen yet, so a tick that lands after the last workout write, such as one retried
+from Sync issues or a spray-wall tick waiting on its climb write, is placed on the block
+the map names as soon as it lands. The outbox still drains first in, first out, which is
+harmless here.
 
 Nothing is sent for a session id the server never minted (`isServerSessionId`: stories
 and fakes use readable ids, daily cards are `daily:…`), in a screenshot capture, or when
@@ -498,7 +514,9 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   on the minute still gets a whole interval.
 - **Arming.** "Start workout", and "Add a block" in a workout already started, arm the timer when the workout (for a mid-session
   block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
-  timed block runs hands-free. A timer the climber already set up is left alone, and arming
+  timed block runs hands-free. A partner app's workout added to a running session follows the
+  "Add a block" rule (`armRestTimerForAddedBlock`): its own block's pacing, and nothing while
+  the session's workout still waits for its Start, which arms the whole run. A timer the climber already set up is left alone, and arming
   still never survives a cold start.
 - **Logging every go.** While the climb on the wall is in a timed stage, the player's small row
   is one-tap Fell / Sent (`docs/climb-view-options.md` › One-tap Fell / Sent). Fell logs a 1-try
@@ -632,6 +650,25 @@ warm-up with no workout block on either side says it needs one. Any block can mo
 blocks, warm-ups included (`MAX_WORKOUT_BLOCKS` in `workout-blocks.ts`).
 A ladder block has a "Hardest first" switch (`descending` on `LadderOptions`): the steps run from the target grade down, the first step is the peak and the rest are decreasing, and a warm-up before it still ramps to the target grade.
 
+A pyramid block has a "Same climbs down" switch (`repeatOnWayDown` on `PyramidOptions`, off
+by default, #6740): the way down climbs the way-up climbs again in exact reverse, so 7 steps
+queue A B C D C B A and 5 steps of two climbs queue A B C D E F D C B A. Every way-down slot
+carries `repeatOfIndex`, the plan index of its way-up twin (`PlannedClimbSlot`); only
+`decreasing` slots repeat. An even step count plans two peak steps, and those stay two
+different climbs (6 steps queue A B C D B A), so one climb never sits on two pages in a row.
+The slot field is generic on purpose: OTM rounds (#6736) and climb sources (#6739) can mark
+repeats the same way.
+
+In the preview (`workout-preview-pool.ts`), a repeat slot takes no climb from a pool and asks
+none for one: once every other slot is filled it copies its twin's climb under a queue item
+of its own (`repeatTwinPositions`), and it is empty when its twin is. Refreshing either row of
+a pair picks a new climb for the way-up slot and gives it to both, each keeping its queue-item
+uuid, and both rows spin while it runs (`linkedRowUuids`). Start queues every row once, so
+the second visit is its own queue item: its own place in the run, its own ticks in the tick
+log, its own row in the summary. Nothing new is stored: a run keeps no options, so a pyramid
+with the switch on writes the same `pyramid` stage under `boardsesh_workout_run_v1`, and an
+older bundle reads it as a pyramid whose way down happens to hold the same climbs.
+
 Every block, warm-ups included, has its own climb filters, in a folded "Climb filters"
 disclosure under the block's fields (`WorkoutBlockFilters`, rendered by
 `WorkoutBlockFields`, so the mid-session sheet gets it too). The first block starts on
@@ -728,20 +765,15 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 
 ### Timed blocks
 
-On the minute, 4x4 and limit bouldering are offered in dev builds and to testers until
-they launch: `timedWorkoutBlocksOffered(flagEnabled)` in `workout-blocks.ts` is
-`__DEV__ || flag('workout-timed-blocks')`. The flag is a positive rollout flag in the
-mobile catalog, off by default and listed on the tester Feature Flags screen (see
-`docs/feature-flags.md` → "Mobile flags"), so a release bundle, and with it every OTA,
-shows the five chips climbers have today unless PostHog or a tester's override turns it
-on. View stories inject their offered block types and workout state. Integration smokes
-use the ordinary dev-build gate. `workoutBlockTypes(offered)` is the
-block card's chip list, `addBlockTypes(offered)` the mid-session sheet's; both are pure, and
-`WorkoutBlockFields` and `AddWorkoutBlockSheet` read the flag with
-`useWorkoutTimedBlocksFlag` and hand it in. The launch removes the flag and the gate. The Record tab's "Add a block" never steps onto a timed type
+On the minute, 4x4 and limit bouldering are offered in every build. They shipped behind the
+`workout-timed-blocks` flag (#5380), which has been at 100% since 2026-10-25; the gate is gone
+from the code (see `docs/feature-flags.md` for why the PostHog flag stays on). `WORKOUT_BLOCK_TYPES`
+is the block card's chip list and `ADD_BLOCK_TYPES` the mid-session sheet's; both are constants.
+View stories inject their workout state. The Record tab's "Add a block" never steps onto a timed type
 (`nextBlockType` cycles the four untimed ones), so a timed block is always picked from its
-chip. The mid-session sheet opened after a timed stage opens on that type where the build
-offers it, and on volume at the stage's grade where it does not (`defaultMidSessionBlock`).
+chip. The mid-session sheet opened after a timed stage opens on that type; a stage kind it has no
+chip for (a kind from a newer bundle, read after an OTA rollback) opens on volume at the
+stage's grade (`defaultMidSessionBlock`).
 
 - **Preview.** A 4x4 previews one row per set, under a heading that says each row is done
   for every rep: "4x4 · 4 reps × 4 sets". `buildPreviewListRows` gives a 4x4 its heading
@@ -1011,10 +1043,6 @@ the fetch, the pools, the preview and Start are unchanged.
 
 ## What comes next
 
-- **Launch the timed blocks** ([#5380](https://github.com/boardsesh/boardsesh/issues/5380)):
-  4x4 reps and sets, limit bouldering and on the minute are built (see "Timed blocks") and offered
-  in dev builds and to testers through `workout-timed-blocks`. The launch removes that flag
-  and `timedWorkoutBlocksOffered`, so every climber gets the eight chips.
 - **Repeats** ([#6734](https://github.com/boardsesh/boardsesh/issues/6734)): a 4x4 is now
   reps × sets on one climb, with a rest between reps and another between sets, which runs the
   doubles, triples, "four more" and laps shapes there (2 to 10 reps, rests from none to an

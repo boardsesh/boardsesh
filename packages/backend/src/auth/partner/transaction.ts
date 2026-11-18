@@ -125,6 +125,7 @@ export function createPartnerDatabaseHandle(root: PartnerDatabase): PartnerDatab
 export async function runInPartnerTransaction<Result>(
   root: PartnerDatabase,
   work: (transaction: PartnerDatabase, state: PartnerRequestState) => Promise<Result>,
+  transactionOptions?: Parameters<PartnerDatabase['transaction']>[1],
 ): Promise<Result> {
   const state: PartnerRequestState = { databaseBusy: false, consentApproved: false, consent: null, redemption: null };
   return root.transaction(async (transaction) => {
@@ -136,7 +137,7 @@ export async function runInPartnerTransaction<Result>(
                  set_config('idle_in_transaction_session_timeout', ${IDLE_IN_TRANSACTION_TIMEOUT}, true)`,
     );
     return activeTransaction.run({ transaction, state }, () => work(transaction, state));
-  });
+  }, transactionOptions);
 }
 
 export interface PartnerRequestOptions {

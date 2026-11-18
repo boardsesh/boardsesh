@@ -23,7 +23,6 @@ import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { summarizePlanFill, type GeneratorOptions, type WorkoutBlockSpec } from '@boardsesh/playlist-generator';
-import type { ClimbQueueItem } from '@boardsesh/queue';
 import { Card } from '../../Card';
 import { ModalSheet } from '../../ModalSheet';
 import { SectionHeader } from '../../SectionHeader';
@@ -32,18 +31,16 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { useAuth } from '../../../providers/auth-provider';
 import { useQueueActions, useQueueSessionId } from '../../../providers/queue-provider';
-import { useWorkoutTimedBlocksFlag } from '../../../providers/feature-flags-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import {
   getWorkoutRunForSession,
   hydrateWorkoutRun,
-  isWorkoutRunPendingStart,
   setWorkoutRun,
   useWorkoutRun,
 } from '../../../lib/workout-run-store';
 import { track } from '../../../lib/analytics';
 import { hapticSuccess } from '../../../lib/haptics';
-import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
+import { armRestTimerForAddedBlock } from '../../../lib/arm-added-block-rest-timer';
 import { nowMs } from '../../../lib/clock';
 import { spacing } from '../../../theme/tokens';
 import { getDefaultTargetGrade, toRailGrades } from '../pre-session/generator-controls';
@@ -55,10 +52,9 @@ import { useWorkoutPreview } from '../pre-session/use-workout-preview';
 import {
   DEFAULT_WORKOUT_FILTERS,
   NO_WORKOUT,
-  addBlockTypes,
+  ADD_BLOCK_TYPES,
   buildDefaultOptions,
   singleBlockSelection,
-  timedWorkoutBlocksOffered,
   withAvailableSizeFilters,
   type GeneratorSelection,
   type WorkoutBlockType,
@@ -66,7 +62,13 @@ import {
 } from '../pre-session/workout-blocks';
 import { buildPreviewListRows, type PreviewListRow } from '../pre-session/workout-preview-sections';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
-import { addWorkoutBlock, defaultMidSessionBlock, defaultMidSessionFilters } from './add-workout-block';
+import {
+  addWorkoutBlock,
+  defaultMidSessionBlock,
+  defaultMidSessionFilters,
+  queuedClimbUuids,
+  withoutQueuedItems,
+} from './add-workout-block';
 import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
 import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
 
@@ -101,7 +103,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const railGrades = useMemo(() => toRailGrades(boardName), [boardName]);
   const { tall, wide } = sizeFilterAvailability(boardName, activeBoard?.layoutId ?? null, activeBoard?.sizeId ?? null);
   const sizeFilters = useMemo(() => ({ tall, wide }), [tall, wide]);
-  const timedBlocksOffered = timedWorkoutBlocksOffered(useWorkoutTimedBlocksFlag());
 
   // The block being edited. Null while the sheet is closed, so a closed sheet
   // builds no preview and fetches nothing. Seeded on every open from the run's
@@ -121,10 +122,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const wasVisibleRef = useRef(false);
   const runRef = useRef(run);
   runRef.current = run;
-  // Read when the sheet opens only: a flag landing while it is open changes the
-  // chips, never the block the climber is editing.
-  const timedBlocksOfferedRef = useRef(timedBlocksOffered);
-  timedBlocksOfferedRef.current = timedBlocksOffered;
   // Latest values for the confirm to re-check after it awaits the store.
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -132,9 +129,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   sessionIdRef.current = sessionId;
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
-      setOptions(
-        defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName), timedBlocksOfferedRef.current),
-      );
+      setOptions(defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName)));
       setFilters(defaultMidSessionFilters(runRef.current));
       setError(null);
       submittedRef.current = false;
@@ -158,15 +153,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const block = useMemo<WorkoutBlockSpec | null>(() => (options ? { kind: 'workout', options } : null), [options]);
   // Read at build and shuffle time, never subscribed: a crew add mid-preview
   // must not rebuild what the climber is looking at.
-  const getAvoidedClimbUuids = useCallback(() => {
-    const queuedClimbUuids = new Set<string>();
-    for (const queueItem of getQueueSnapshot().queue) {
-      // A restored queue can carry an item whose climb has not resolved yet.
-      const climb: ClimbQueueItem['climb'] | undefined = queueItem.climb;
-      if (climb) queuedClimbUuids.add(climb.uuid);
-    }
-    return queuedClimbUuids;
-  }, [getQueueSnapshot]);
+  const getAvoidedClimbUuids = useCallback(() => queuedClimbUuids(getQueueSnapshot().queue), [getQueueSnapshot]);
   const {
     items,
     status,
@@ -242,8 +229,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     }
     // Belt and braces for this path: never queue a uuid twice. A reopen during
     // the slide-down can keep a preview that is already queued.
-    const queuedUuids = new Set(getQueueSnapshot().queue.map((queueItem) => queueItem.uuid));
-    const blockItems = stagedItems.filter((item) => !queuedUuids.has(item.uuid));
+    const blockItems = withoutQueuedItems(stagedItems, getQueueSnapshot().queue);
     if (blockItems.length === 0) {
       onClose();
       return;
@@ -266,10 +252,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     // earlier blocks' climbs if the run lost them (a run an older bundle wrote).
     // Otherwise only a local End fills them in, and a crew guest never presses End.
     void enqueueSessionWorkoutWrite(sessionId, { queryClient, queueItems: getQueueSnapshot().queue });
-    // The added block's own pacing, not the run's: adding a volume block to a
-    // workout that once had a 4x4 must not turn back on a timer the climber
-    // switched off.
-    if (!isWorkoutRunPendingStart(sessionId)) armRestTimerForWorkout(sessionId, blockRun, nowMs());
+    // The added block's own pacing, and never before a waiting Start.
+    armRestTimerForAddedBlock(sessionId, blockRun, nowMs());
     track(SHARED_EVENTS.SessionQueueGenerated, {
       // One block and never a warm-up, so both fields hold the same type here;
       // `phase` tells this add apart from a pre-session workout.
@@ -381,7 +365,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               railGrades={railGrades}
               groupLabel={title}
               // Workout types only: mid-session the climber is already warm.
-              blockTypes={addBlockTypes(timedBlocksOffered)}
+              blockTypes={ADD_BLOCK_TYPES}
               filters={effectiveFilters}
               sizeFilters={sizeFilters}
               onTypeChange={handleTypeChange}
@@ -421,7 +405,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       boardName,
       railGrades,
       title,
-      timedBlocksOffered,
       filters,
       sizeFilters,
       handleTypeChange,

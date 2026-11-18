@@ -1,7 +1,7 @@
 // The slot key a ladder gets: hardest first changes the slots, so it must change
 // the key, while every ascending ladder keeps the key it always had.
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LADDER_OPTIONS } from '@boardsesh/playlist-generator';
+import { DEFAULT_LADDER_OPTIONS, DEFAULT_PYRAMID_OPTIONS } from '@boardsesh/playlist-generator';
 import type { WorkoutBlock, WorkoutFilters } from '../workout-blocks';
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'uuid' }));
@@ -35,5 +35,28 @@ describe('getBlockSlotKey for a ladder', () => {
   it('adds :down when the ladder runs hardest first', () => {
     expect(getBlockSlotKey(ladderBlock(true)).startsWith('ladder:18:5:2:down/')).toBe(true);
     expect(getBlockSlotKey(ladderBlock(true))).not.toBe(getBlockSlotKey(ladderBlock()));
+  });
+});
+
+const pyramidBlock = (repeatOnWayDown?: boolean): WorkoutBlock => ({
+  id: 'block',
+  kind: 'workout',
+  filters,
+  options: {
+    ...DEFAULT_PYRAMID_OPTIONS,
+    targetGrade: 18,
+    ...(repeatOnWayDown === undefined ? {} : { repeatOnWayDown }),
+  },
+});
+
+describe('getBlockSlotKey for a pyramid', () => {
+  it('leaves a pyramid with a fresh way down keyed as it was', () => {
+    const key = getBlockSlotKey(pyramidBlock());
+    expect(key.startsWith('pyramid:18:5:1/')).toBe(true);
+    expect(getBlockSlotKey(pyramidBlock(false))).toBe(key);
+  });
+
+  it('adds :same when the way down repeats the way up', () => {
+    expect(getBlockSlotKey(pyramidBlock(true)).startsWith('pyramid:18:5:1:same/')).toBe(true);
   });
 });

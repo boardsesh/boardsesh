@@ -873,7 +873,7 @@
     "tabs": {
       "overview": "Aperçu",
       "rest": "API REST",
-      "graphql": "Schéma GraphQL",
+      "graphql": "Schéma GraphQL interne",
       "websocket": "Guide WebSocket"
     },
     "overview": {
@@ -891,7 +891,7 @@
         "baseUrlLabel": "URL de base :"
       },
       "ws": {
-        "title": "API GraphQL WebSocket",
+        "title": "API GraphQL interne par WebSocket",
         "intro": "Utilisez l'API WebSocket pour les fonctionnalités temps réel comme les sessions party et la synchronisation de file. L'API GraphQL fournit :",
         "feature1": "Mises à jour de file en temps réel via les abonnements",
         "feature2": "Gestion de session (créer, rejoindre, quitter)",

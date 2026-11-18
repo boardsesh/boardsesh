@@ -24,7 +24,8 @@ import { BoardImageNative } from '../BoardImageNative';
 import { StationaryBoardCarousel } from './StationaryBoardCarousel';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { usePlayerGpuBoard } from './use-player-gpu-board';
-import { useCarouselGesture } from './use-carousel-gesture';
+import { useCarouselGesture, type CarouselVirtualFinger } from './use-carousel-gesture';
+import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { centeredZoomViewport } from './zoom-viewport-clamp';
@@ -113,6 +114,18 @@ type SwipeBoardCarouselProps = {
   scrollRef?: React.RefObject<React.ComponentType | undefined | null>;
   /** RNGH ref to the drawer-dismiss Pan blocked by the zoomed-only board pan. */
   dismissRef?: React.MutableRefObject<GestureType | undefined>;
+  /**
+   * How the stationary GPU board changes climbs; absent, the shipped wall swap.
+   * The board motion lab passes its own, and remounts the carousel to change it.
+   */
+  transition?: BoardTransition;
+  /**
+   * The board motion lab's scripted finger: handed UI-thread worklets that drive
+   * this swipe through the same handlers as a touch, and null when they go.
+   */
+  onVirtualFinger?: (finger: CarouselVirtualFinger | null) => void;
+  /** The board motion lab's status line; nothing in production passes one. */
+  diagnostics?: BoardRenderDiagnostics;
 };
 
 /** Hoisted so an omitted `prefetchFrames` doesn't remount the prefetch every render. */
@@ -359,6 +372,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   enabled = true,
   scrollRef,
   dismissRef,
+  transition,
+  onVirtualFinger,
+  diagnostics,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const { settings: renderSettings } = useBoardRenderSettings();
@@ -392,6 +408,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     return lookahead.length > 0 ? lookahead : NO_PREFETCH_FRAMES;
   }, [prefetchFrames, currentFrames, prevFrames, nextFrames]);
   const stationary = playerGpuBoard && !currentFrameOverride && failedStationaryIdentity !== stationaryIdentity;
+  const onRenderPath = diagnostics?.onRenderPath;
+  useEffect(() => {
+    onRenderPath?.(stationary ? 'gpu' : 'png');
+  }, [onRenderPath, stationary]);
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, currentFrameOverride ?? currentFrames);
@@ -515,7 +535,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     }
   }, [currentFrames, isZoomed, resetZoom]);
 
-  const { gesture: swipeGesture } = useCarouselGesture({
+  const { gesture: swipeGesture, virtualFinger } = useCarouselGesture({
     pager,
     boardWidth: boardWidthForSwipe,
     enabled: gesturesEnabled,
@@ -525,6 +545,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     pageArt,
     scrollRef,
   });
+  useEffect(() => {
+    if (!onVirtualFinger) return;
+    onVirtualFinger(virtualFinger);
+    return () => onVirtualFinger(null);
+  }, [onVirtualFinger, virtualFinger]);
 
   // Outer composition: pinch + swipe always. zoomPan is rendered separately
   // as a conditional overlay when zoomed (see below) so it doesn't claim
@@ -696,6 +721,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             zoomStyle={animatedZoomStyle}
             onUnavailable={handleStationaryUnavailable}
             onCurrentArtReadinessChange={onCurrentArtReadinessChange}
+            transition={transition}
+            diagnostics={diagnostics}
           />
         ) : (
           [

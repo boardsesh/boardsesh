@@ -1,0 +1,2 @@
+ALTER TABLE "oauth_client_webhooks" ADD COLUMN "last_failure_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "webhook_deliveries_reconcile_idx" ON "webhook_deliveries" USING btree ("next_reconcile_at","id") WHERE "webhook_deliveries"."status" in ('pending', 'retrying');

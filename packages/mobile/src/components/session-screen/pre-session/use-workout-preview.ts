@@ -17,11 +17,10 @@ import { useToast } from '../../../providers/toast-provider';
 import { useSearchGradeSourceActive } from '../../../lib/graphql/hooks/search-grade-source';
 import { fetchGradePool } from './select-climbs-for-plan';
 import {
-  borrowForShortSlots,
-  borrowScaleFor,
-  buildPoolsReusing,
+  buildPreview,
   fetchFilters,
   filtersSignature,
+  linkedRowUuids,
   refreshSlotInState,
   reshufflePools,
   NO_AVOIDED_CLIMBS,
@@ -177,7 +176,8 @@ function getBlockSlotSettingsKey(block: WorkoutBlockSpec): string {
     case 'volume':
       return `${commonKey}:${options.mainSetClimbs}:${options.mainSetVariability}`;
     case 'pyramid':
-      return `${commonKey}:${options.numberOfSteps}:${options.climbsPerStep}`;
+      // ':same' only when the way down repeats the way up, so every existing key stays as it was.
+      return `${commonKey}:${options.numberOfSteps}:${options.climbsPerStep}${options.repeatOnWayDown === true ? ':same' : ''}`;
     case 'ladder':
       // ':down' only when hardest first, so every existing key stays as it was.
       return `${commonKey}:${options.numberOfSteps}:${options.climbsPerStep}${options.descending === true ? ':down' : ''}`;
@@ -421,31 +421,24 @@ export function useWorkoutPreview(
         // A newer build stops this one's searches before their next request.
         const fetchCtx: PreviewFetchContext = { ...ctx, isCurrent: () => token === genTokenRef.current };
         const cache = canReuse ? previous.data : undefined;
-        const built = await buildPoolsReusing(plan, fetchCtx, fetchPoolRef.current, cache);
-        if (token !== genTokenRef.current) return; // superseded by a newer build
-        const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
         const keptItems = canReuse
           ? keptRowsFor(plan, rowKeyByStageId, previous.plan, previous.rowKeyByStageId, previous.data.items)
           : [];
         // A grade that came up short borrows from the grades next to it.
-        const borrowScale = borrowScaleFor(grades);
-        const { pools, poolDemands, poolTopUpTiers, exhaustedPoolKeys } = await borrowForShortSlots(
-          plan,
-          built,
-          fetchCtx,
-          fetchPoolRef.current,
-          borrowScale,
-          { cache, avoidClimbUuids: avoided, keptItems },
-        );
-        if (token !== genTokenRef.current) return; // superseded by a newer build
-        const { items: nextItems, usedUuids } = selectItemsFromPools(
-          plan,
+        const {
+          items: nextItems,
+          usedUuids,
           pools,
-          avoided,
-          keptItems,
+          poolDemands,
           poolTopUpTiers,
+          exhaustedPoolKeys,
           borrowScale,
-        );
+        } = await buildPreview(plan, fetchCtx, fetchPoolRef.current, grades, {
+          cache,
+          keptItems,
+          getAvoidedClimbUuids: () => getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS,
+        });
+        if (token !== genTokenRef.current) return; // superseded by a newer build
         dataRef.current = { items: nextItems, pools, usedUuids, poolDemands, poolTopUpTiers, exhaustedPoolKeys };
         planRef.current = plan;
         workoutPlanRef.current = workoutPlan;
@@ -477,8 +470,10 @@ export function useWorkoutPreview(
       const ctx = buildCtx();
       if (!ctx) return;
       const token = genTokenRef.current;
+      // A row and its twin show one climb and change together, so both spin.
+      const linkedUuids = linkedRowUuids(dataRef.current.items, itemUuid);
       inFlightSlotsRef.current.add(itemUuid);
-      setRefreshingUuids((prev) => new Set(prev).add(itemUuid));
+      setRefreshingUuids((prev) => new Set([...prev, itemUuid, ...linkedUuids]));
       try {
         // Read at tap time, like a build: climbs queued since the preview was built
         // are passed over too.
@@ -508,6 +503,7 @@ export function useWorkoutPreview(
         setRefreshingUuids((prev) => {
           const next = new Set(prev);
           next.delete(itemUuid);
+          for (const linkedUuid of linkedUuids) next.delete(linkedUuid);
           return next;
         });
       }

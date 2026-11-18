@@ -59,3 +59,4 @@ export {
   type WeekRecordKind,
   type WeekSummary,
 } from './week-summary';
+export { deriveProjects, type ClimbProject, type ProjectTickEntry } from './projects';

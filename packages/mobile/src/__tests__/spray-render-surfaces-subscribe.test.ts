@@ -28,6 +28,12 @@ const SOURCE_ROOTS = [join(__dirname, '..'), join(__dirname, '..', '..', 'app')]
 const EXEMPT: Record<string, string> = {
   'src/components/GpuClimbOverlay.stories.tsx':
     'Development-only parity fixtures pin Kilter Homewall; this story never accepts a spray wall or runtime board selection.',
+  'src/components/board-motion-lab/LabStage.tsx':
+    'Board motion lab (testers only). Draws its own catalogue board fixtures; spray walls are left out of the lab, so no wall reaches it.',
+  'src/components/board-motion-lab/fixtures.ts':
+    'Board motion lab fixtures. Not React, and only catalogue boards; spray walls are left out of the lab.',
+  'src/components/board-motion-lab/screen.tsx':
+    'Board motion lab (testers only). Reads geometry for its own catalogue board fixtures; spray walls are left out of the lab.',
   'src/lib/board-details.ts': 'Defines it. Already folds `sprayCacheToken` into its own memo key.',
   'src/lib/background-image-cache.ts': 'Not React. Called from the render hook, which subscribes for it.',
   'src/lib/create-board-holds.ts': 'Not React. Calls `ensureSprayWallLoaded` itself and keys its memo on the token.',

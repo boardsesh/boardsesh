@@ -560,8 +560,9 @@ export async function getQueueState(sessionId: string, redisStore: RedisSessionS
   const row = result[0];
   const stateHash = computeQueueStateHash(row.queue, row.currentClimbQueueItem?.uuid || null);
   const stateHashOrdered = computeQueueStateHashOrdered(row.queue, row.currentClimbQueueItem?.uuid || null);
-  // No Postgres column holds the line (section 2): a dormant restore derives
-  // it from the current index, or 0 with nothing current, and takes the hold's
+  // An atomic partner Start stores its initial line for version 1. Ordinary
+  // queues and all later versions derive it from the current index, or 0
+  // with nothing current, and take the hold's
   // clock from `updated_at`, which every queue flush writes. That is
   // approximate in one direction only: an Up next add also bumps `updated_at`,
   // so a restored room can read as changed recently and light, never the
@@ -577,7 +578,7 @@ export async function getQueueState(sessionId: string, redisStore: RedisSessionS
     historyCount: historyLine({
       queue: row.queue,
       currentClimbQueueItem: row.currentClimbQueueItem,
-      historyCount: rememberedFresh ? remembered.historyCount : null,
+      historyCount: rememberedFresh ? remembered.historyCount : row.version === 1 ? row.initialHistoryCount : null,
     }),
     currentChangedAt: rememberedFresh ? remembered.currentChangedAt : row.updatedAt.toISOString(),
     currentChangedBy: rememberedFresh && row.currentClimbQueueItem ? remembered.currentChangedBy : null,

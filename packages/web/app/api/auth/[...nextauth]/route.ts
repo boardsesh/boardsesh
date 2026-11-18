@@ -22,6 +22,7 @@ import {
   createPasswordCommandAuthRequest,
   unavailablePasswordAuthResponse,
 } from '@/app/lib/auth/password-command-auth.server';
+import { cloudflareVouchedVisitorAddress } from '@/app/lib/auth/trusted-client-ip.server';
 import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
@@ -185,7 +186,12 @@ async function postAuth(
   if (action === 'callback' && provider === 'credentials') {
     const admission = admitPasswordLogin(request);
     if (admission.limitedResponse) return admission.limitedResponse;
-    const commandRequest = createPasswordCommandAuthRequest(options, undefined, admission.passwordAccepted);
+    const commandRequest = createPasswordCommandAuthRequest(
+      options,
+      undefined,
+      admission.passwordAccepted,
+      cloudflareVouchedVisitorAddress(request),
+    );
     const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
     const response = await commandHandler(request, context);
     return commandRequest.unavailable()

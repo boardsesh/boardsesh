@@ -43,6 +43,10 @@ function watchReplay() {
     saveTickGraphqlBody: currentGarminFunction('net/BsEndpoints.mc', 'saveTickGraphqlBody', endpoints) as (
       input: unknown,
     ) => unknown,
+    graphqlAuthRequired: currentGarminFunction('net/BsClient.mc', 'graphqlAuthRequired', {}) as (
+      code: number,
+      reply: unknown,
+    ) => boolean,
   };
 }
 
@@ -101,7 +105,40 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     expect(watch.exactAck(saved.code, saved.reply, TICK_UUID)).toBe(true);
     expect(watch.exactAck(saved.code, saved.reply, 'another-uuid')).toBe(false);
     expect(watch.rejectionReason(saved.code, saved.reply)).toBeNull();
+    expect(watch.graphqlAuthRequired(saved.code, saved.reply)).toBe(false);
     expect(backendSource('graphql/resolvers/ticks/mutations.ts')).toContain('if (existingTick.userId !== userId) {');
+  });
+
+  it('sends the board uuid only when session state carries one, in a form the schema accepts', async () => {
+    const wallUuid = '0b5a8f0e-6a2d-4f43-9d1e-2b7c3e8f9a10';
+    const inputs: Record<string, unknown>[] = [];
+    const accept = (input: Record<string, unknown>) => {
+      validateInput(SaveTickInputSchema, input, 'input');
+      inputs.push(input);
+      return { uuid: input.uuid };
+    };
+
+    // The share-link capability: sent like the phone's activeBoard.uuid.
+    const withBoard = await exchange(body({ ...slimState, boardUuid: wallUuid } as typeof slimState), accept);
+    expect(withBoard.code).toBe(200);
+    expect(watch.exactAck(withBoard.code, withBoard.reply, TICK_UUID)).toBe(true);
+    expect(inputs.at(-1)?.boardUuid).toBe(wallUuid);
+    expect(backendSource('graphql/resolvers/ticks/mutations.ts')).toContain('validatedInput.boardUuid ?? null,');
+
+    // Session state from a server that sends no board uuid (every server
+    // today) or a null or malformed one: the key is left out. A null would be
+    // refused by the schema (`UUIDSchema.optional()`) and dead-lettered.
+    for (const boardUuid of [undefined, null, '', 'not-a-uuid', 42]) {
+      const state = boardUuid === undefined ? slimState : { ...slimState, boardUuid };
+      const built = watch.saveTickInput(state, 'fixture-session', 'send', 1, '2026-11-16T10:00:00Z', TICK_UUID);
+      expect(Object.hasOwn(built, 'boardUuid')).toBe(false);
+      const saved = await exchange(watch.saveTickGraphqlBody(built), accept);
+      expect(watch.exactAck(saved.code, saved.reply, TICK_UUID)).toBe(true);
+    }
+    const refusedNull = await exchange(body(), (input) =>
+      accept({ ...input, boardUuid: null } as Record<string, unknown>),
+    );
+    expect(watch.rejectionReason(refusedNull.code, refusedNull.reply)).toBe('INVALID_INPUT');
   });
 
   it('dead-letters the permanent refusals the saveTick handler can produce', async () => {
@@ -118,6 +155,7 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
       expect(refused.code).toBe(200);
       expect(watch.exactAck(refused.code, refused.reply, TICK_UUID)).toBe(false);
       expect(watch.rejectionReason(refused.code, refused.reply)).toBe(code);
+      expect(watch.graphqlAuthRequired(refused.code, refused.reply)).toBe(false);
     }
 
     // The real input schema: an impossible climbedAt is refused without a code.
@@ -185,6 +223,9 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     });
     expect(anonymous.code).toBe(200);
     expect(watch.rejectionReason(anonymous.code, anonymous.reply)).toBeNull();
+    // That reply, and only that reply, sends the watch to its token refresh
+    // and one retry, the same path an HTTP 401 takes (BsRequest.onResponse).
+    expect(watch.graphqlAuthRequired(anonymous.code, anonymous.reply)).toBe(true);
 
     // A refused credential and an unavailable auth admission are transport
     // replies from the context factory (yoga.ts), not verdicts on the tick.
@@ -203,6 +244,8 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
       );
       expect(refused.code).toBe(status);
       expect(watch.rejectionReason(refused.code, refused.reply)).toBeNull();
+      // A 401 already refreshes by status; a 503 must not spend the refresh secret.
+      expect(watch.graphqlAuthRequired(refused.code, refused.reply)).toBe(false);
     }
 
     // The production mask: a database statement failure and an unreachable
@@ -215,6 +258,7 @@ describe('current Garmin saveTick reply classification over the real /graphql tr
     expect(statementFailure.code).toBe(200);
     expect(JSON.stringify(statementFailure.reply)).toContain('INTERNAL_SERVER_ERROR');
     expect(watch.rejectionReason(statementFailure.code, statementFailure.reply)).toBeNull();
+    expect(watch.graphqlAuthRequired(statementFailure.code, statementFailure.reply)).toBe(false);
     const outage = await exchange(body(), () => {
       throw Object.assign(new Error('Failed query: select 1'), {
         cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),

@@ -7,6 +7,7 @@ import {
   DEFAULT_LADDER_OPTIONS,
   DEFAULT_LIMIT_BOULDERING_OPTIONS,
   DEFAULT_ON_THE_MINUTE_OPTIONS,
+  DEFAULT_PYRAMID_OPTIONS,
   type GeneratorOptions,
   type WorkoutBlockSpec,
 } from '@boardsesh/playlist-generator';
@@ -84,6 +85,15 @@ describe('blockSummary for a ladder', () => {
     expect(summaryOf({ ...DEFAULT_LADDER_OPTIONS, targetGrade: 5 })).toBe('V5 · Steps(5) · PerStep(2)');
     expect(summaryOf({ ...DEFAULT_LADDER_OPTIONS, targetGrade: 5, descending: true })).toBe(
       'V5 · Steps(5) · PerStep(2) · mobile.session.preGeneratorBlockSummaryHardestFirst',
+    );
+  });
+});
+
+describe('blockSummary for a pyramid', () => {
+  it('adds same climbs down only when the way down repeats the way up', () => {
+    expect(summaryOf({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 5 })).toBe('V5 · Steps(5) · PerStep(1)');
+    expect(summaryOf({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 5, repeatOnWayDown: true })).toBe(
+      'V5 · Steps(5) · PerStep(1) · mobile.session.preGeneratorBlockSummarySameClimbsDown',
     );
   });
 });

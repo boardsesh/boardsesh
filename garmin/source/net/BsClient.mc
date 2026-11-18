@@ -6,7 +6,8 @@ using Toybox.System;
 //
 // Every authed request goes through a BsRequest, which:
 //   * captures a Bearer JWT and login scope at request creation,
-//   * on a 401 triggers a single-flight token refresh and retries ONCE,
+//   * on a 401, or the 200 auth error /graphql gives an expired token,
+//     triggers a single-flight token refresh and retries ONCE,
 //   * requires explicit pairing after a failed/ambiguous single-use rotation.
 //
 // GraphQL calls POST { query, variables } to /graphql and the caller callback
@@ -190,6 +191,31 @@ class BsClient {
     }
 }
 
+module BsAuthReply {
+    // True for the reply /graphql gives an expired or invalid access token.
+    // yoga.ts reads such a bearer as anonymous (a refused credential is an
+    // HTTP 401 instead), so the request answers HTTP 200 and an auth-gated
+    // resolver throws requireAuthenticated's code-less error. Only that exact
+    // message counts: a coded error, a masked failure or a 503 must never
+    // spend the single-use refresh secret.
+    function graphqlAuthRequired(code as Lang.Number, response) as Lang.Boolean {
+        if (code < 200 || code >= 300 || !(response instanceof Lang.Dictionary)) { return false; }
+        var errors = response["errors"];
+        if (!(errors instanceof Lang.Array)) { return false; }
+        for (var index = 0; index < errors.size(); index += 1) {
+            var error = errors[index];
+            if (error instanceof Lang.Dictionary) {
+                var extensions = error["extensions"];
+                var errorCode = extensions instanceof Lang.Dictionary ? extensions["code"] : null;
+                if (errorCode == null && "Authentication required to perform this operation".equals(error["message"])) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
 module BsRefreshPolicy {
     function provenUnconsumed(code as Lang.Number, response) as Lang.Boolean {
         // SDK distinguishes no connection/queue refusal from response timeout
@@ -286,7 +312,10 @@ class BsRequest {
     function onResponse(code as Lang.Number, response) as Void {
         if (_settled) { return; }
         if (!TokenStore.current(_captured)) { fail(BsResponse.STALE); return; }
-        if (code == 401 && _authed && !_retried) {
+        // An expired token on /graphql answers 200 with an auth error, not
+        // 401. Both take the same refresh and one retry; the retried reply
+        // goes to the caller whatever it is.
+        if (_authed && !_retried && (code == 401 || BsAuthReply.graphqlAuthRequired(code, response))) {
             _retried = true;
             _client.handleUnauthorized(self);
             return;

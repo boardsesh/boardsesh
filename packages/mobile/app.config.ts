@@ -532,6 +532,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           autoVerify: true,
           data: [
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/join' },
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/w/' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/b/' },
             ...[...ANDROID_BOARD_LINK_PREFIXES, ...ANDROID_LOCALISED_BOARD_LINK_PREFIXES].map((pathPrefix) => ({

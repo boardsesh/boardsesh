@@ -36,6 +36,7 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   // The developer console's GraphQL operations (F12).
   'packages/backend/src/graphql/resolvers/oauth-clients/partner-registration.ts': [
     '../../../auth/partner/developer-access',
+    '../../../auth/partner/developer-email',
     '../../../auth/partner/load-authority',
     '../../../auth/partner/mode',
     '../../../auth/partner/registration-rules',
@@ -52,6 +53,48 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
     '../../../auth/partner/connected-apps',
     '../../../auth/partner/mode',
   ],
+  // A type-only dependency cannot be promoted to a runtime import without review.
+  'packages/backend/src/server.ts': ['./auth/partner/mode'],
+  'packages/backend/src/graphql/resolvers/app-workouts/index.ts': [
+    '../../../auth/partner/mode',
+    'type ../../../auth/partner/tables',
+  ],
+  'packages/backend/src/graphql/resolvers/sessions/mutations.ts': [
+    '../../../auth/partner/mode',
+    'type ../../../auth/partner/tables',
+  ],
+  'packages/backend/src/graphql/resolvers/sessions/session-workouts.ts': ['type ../../../auth/partner/tables'],
+  'packages/backend/src/handlers/public-api/workouts.ts': ['type ../../auth/partner/bearer'],
+  'packages/backend/src/services/app-workout-maintenance.ts': ['type ../auth/partner/tables'],
+  'packages/backend/src/services/public-api/workout-lifecycle.ts': [
+    '../../auth/partner/locks',
+    'type ../../auth/partner/tables',
+  ],
+  'packages/backend/src/services/public-api/workout-results.ts': ['type ../../auth/partner/tables'],
+  'packages/backend/src/services/public-api/workout-seed.ts': ['type ../../auth/partner/tables'],
+  'packages/backend/src/services/public-api/workouts.ts': [
+    '../../auth/partner/api-access',
+    '../../auth/partner/bearer',
+    '../../auth/partner/configuration',
+    '../../auth/partner/locks',
+    '../../auth/partner/transaction',
+    'type ../../auth/partner/tables',
+  ],
+  'packages/backend/src/services/room-manager/session-discovery.ts': ['type ../../auth/partner/tables'],
+  // Webhooks share token checks and registration guards without loading the issuer.
+  'packages/backend/src/services/partner-webhooks/authorization.ts': ['../../auth/partner/configuration'],
+  'packages/backend/src/services/partner-webhooks/crypto.ts': ['../../auth/partner/configuration'],
+  'packages/backend/src/services/partner-webhooks/events.ts': [
+    '../../auth/partner/api-access',
+    'type ../../auth/partner/tables',
+  ],
+  'packages/backend/src/services/partner-webhooks/settings.ts': [
+    '../../auth/partner/developer-change',
+    '../../auth/partner/registration-rules',
+    '../../auth/partner/transaction',
+    'type ../../auth/partner/tables',
+  ],
+  'packages/backend/src/services/partner-webhooks/worker.ts': ['../../auth/partner/mode'],
 };
 /** The sweep itself: plain SQL on the partner tables. */
 const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
@@ -62,12 +105,22 @@ const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
  */
 const CONNECTED_APPS_MODULE = `${PARTNER_ROOT}connected-apps.ts`;
 const CONNECTED_APPS_PARTNER_CLOSURE = ['connected-apps.ts', 'connection.ts', 'locks.ts', 'transaction.ts'];
-/**
- * Partner modules an entry point loads besides the loader, whose one import of
- * the authority is dynamic (checked below). They import no Better Auth and no
- * other partner module but `mode`.
- */
-const PARTNER_ENTRY_TARGETS = ['mode.ts', 'routes.ts', 'registration-rules.ts', 'locks.ts', 'developer-access.ts'];
+// Runtime dependencies within the partner folder, including all transitive targets.
+// The loader, Connected apps and retention have their own checks below.
+const PARTNER_ENTRY_TARGETS: Readonly<Record<string, readonly string[]>> = {
+  'api-access.ts': ['./bearer', './connection', './locks', './transaction'],
+  'bearer.ts': [],
+  'configuration.ts': [],
+  'connection.ts': ['./locks', './transaction'],
+  'developer-access.ts': [],
+  'developer-change.ts': ['./registration-rules'],
+  'developer-email.ts': ['./registration-rules'],
+  'locks.ts': [],
+  'mode.ts': [],
+  'registration-rules.ts': [],
+  'routes.ts': [],
+  'transaction.ts': [],
+};
 
 interface Manifest {
   dependencies?: Record<string, string>;
@@ -241,24 +294,46 @@ describe('Better Auth dependency boundary', () => {
   it.each(Object.entries(PARTNER_ENTRY_POINTS))(
     'limits %s to modules that build nothing, and to the loader for the authority',
     (entryPoint, allowedImports) => {
-      const partnerImports = importSpecifiers(readRepoFile(entryPoint)).filter((specifier) =>
-        resolvesIntoPartnerFolder(entryPoint, specifier),
-      );
-      expect([...new Set(partnerImports)].sort()).toEqual([...allowedImports].sort());
       const entrySource = readRepoFile(entryPoint);
+      const runtimeImports = new Set(runtimeImportSpecifiers(entrySource));
+      const partnerImports = importSpecifiers(entrySource)
+        .filter((specifier) => resolvesIntoPartnerFolder(entryPoint, specifier))
+        .map((specifier) => (runtimeImports.has(specifier) ? specifier : `type ${specifier}`));
+      expect([...new Set(partnerImports)].sort()).toEqual([...allowedImports].sort());
       expect(entrySource).not.toMatch(/import\(['"`][^'"`]*auth\/partner/);
       expect(importSpecifiers(entrySource).some(isBetterAuthSpecifier)).toBe(false);
     },
   );
 
-  it.each(PARTNER_ENTRY_TARGETS)(
+  it.each(Object.entries(PARTNER_ENTRY_TARGETS))(
     'keeps %s, which an entry point loads, free of Better Auth and the authority',
-    (file) => {
-      const specifiers = runtimeImportSpecifiers(readRepoFile(`${PARTNER_ROOT}${file}`));
+    (file, allowedPartnerImports) => {
+      const path = `${PARTNER_ROOT}${file}`;
+      const specifiers = runtimeImportSpecifiers(readRepoFile(path));
       expect(specifiers.some(isBetterAuthSpecifier)).toBe(false);
-      expect(specifiers.filter((specifier) => specifier.startsWith('./') && specifier !== './mode')).toEqual([]);
+      expect(specifiers).not.toContain('@boardsesh/db/client');
+      expect(specifiers.filter((specifier) => resolvesIntoPartnerFolder(path, specifier)).sort()).toEqual(
+        [...allowedPartnerImports].sort(),
+      );
     },
   );
+
+  it('checks every reachable partner runtime module from the permitted entry points', () => {
+    const directAndTransitive = [
+      ...Object.values(PARTNER_ENTRY_POINTS).flat(),
+      ...Object.values(PARTNER_ENTRY_TARGETS).flat(),
+    ];
+    const reachable = directAndTransitive
+      .filter((specifier) => !specifier.startsWith('type '))
+      .map((specifier) => `${posix.basename(specifier)}.ts`);
+    const guardedTargets = [
+      ...Object.keys(PARTNER_ENTRY_TARGETS),
+      'load-authority.ts',
+      'retention.ts',
+      'connected-apps.ts',
+    ];
+    expect([...new Set(reachable)].sort()).toEqual(guardedTargets.sort());
+  });
 
   it('keeps the sweep off every other partner module, so running it with the mode off loads nothing more', () => {
     const sweepSource = readRepoFile(PARTNER_SWEEP_MODULE);
@@ -367,6 +442,10 @@ const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>
   'packages/backend/src/auth/current-store/system-identities.ts': { gate: 'assertLegacyIdentityWriterAllowed(' },
   // The operator switch itself: the gate held exclusively.
   'packages/backend/src/scripts/auth-authority.ts': { writes: 3, gate: 'lockAuthorityGateExclusively(' },
+  // Per-account password guess counter (#7656): no identity, credential or user
+  // id, only rejected-password counts by keyed digest. Fails open in 250 ms, so
+  // it must never wait on the authority gate.
+  'packages/backend/src/auth/password-guess-windows.ts': { writes: 4 },
   // Documented legacy branches of the worker jobs; their staged modes go through the backend.
   'packages/db/src/jobs/system-user.ts': { writes: 1 },
   'packages/location-sync/src/upsert.ts': { writes: 1 },

@@ -15,6 +15,7 @@ import {
   registerWithPasswordCommand,
 } from '@/app/lib/auth/register-password-command.server';
 import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
+import { LEGACY_EMAIL_VERIFICATION_LIFETIME_MS } from '@/app/lib/auth/legacy-link-account';
 
 const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     const userId = crypto.randomUUID();
     const passwordHash = await hash(password, PASSWORD_HASH_COST);
     const verificationToken = emailVerificationEnabled ? crypto.randomUUID() : null;
-    const tokenExpires = emailVerificationEnabled ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null; // 24 hours
+    const tokenExpires = emailVerificationEnabled ? new Date(Date.now() + LEGACY_EMAIL_VERIFICATION_LIFETIME_MS) : null;
 
     // Use transaction to ensure user, credentials, profile, and token are created atomically
     // If any insert fails, all changes are rolled back

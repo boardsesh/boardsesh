@@ -1,6 +1,7 @@
 import { and, count, eq, gt, isNotNull, isNull, ne } from 'drizzle-orm';
 import { oauthAppPolicy, oauthConnections } from '@boardsesh/db/schema/auth';
 import type { PartnerDatabase } from './tables';
+import { recordPartnerConnectionCapRefusal } from '../../services/public-api-usage';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -45,12 +46,18 @@ export async function checkConnectionCaps(
     .select({ connections: count() })
     .from(oauthConnections)
     .where(and(otherApprovedConnections, isNull(oauthConnections.revokedAt)));
-  if ((active?.connections ?? 0) >= policy.maxActiveConnections) return 'active_connections';
+  if ((active?.connections ?? 0) >= policy.maxActiveConnections) {
+    recordPartnerConnectionCapRefusal(connection.clientId);
+    return 'active_connections';
+  }
 
   const [today] = await transaction
     .select({ connections: count() })
     .from(oauthConnections)
     .where(and(otherApprovedConnections, gt(oauthConnections.connectedAt, new Date(connectingAt.getTime() - DAY_MS))));
-  if ((today?.connections ?? 0) >= policy.maxNewConnectionsPerDay) return 'new_connections_today';
+  if ((today?.connections ?? 0) >= policy.maxNewConnectionsPerDay) {
+    recordPartnerConnectionCapRefusal(connection.clientId);
+    return 'new_connections_today';
+  }
   return null;
 }

@@ -65,6 +65,8 @@ import {
 } from '../../src/lib/boards/board-picker-add-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { boardUuidOrNull } from '../../src/lib/boards/board-identity';
+import { orderBoardsForPartnerWorkout } from '../../src/lib/partner-workout-board-order';
+import { usePendingWorkout } from '../../src/lib/pending-workout-store';
 import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
 import {
   BUILDER_PRESET_PARAM_VALUE,
@@ -181,6 +183,7 @@ export default function BoardSelection() {
   // switch rather than onboarding: see `firstBoardChoiceEntry` below.
   const fromNoBoard = isNoBoardEntry({ source });
   const { t } = useTranslation('boards');
+  const preferredWorkoutBoard = usePendingWorkout()?.spec.preferredBoard;
   // The drill-in reuses the manage screen's own title, so the two can never drift.
   const { t: tCommon } = useTranslation('common');
   const { showToast } = useToast();
@@ -488,14 +491,17 @@ export default function BoardSelection() {
     // once. `currentUserId` stamps `isViewerOwner` once per list build so no
     // row ever scans back into `myBoards` for it.
     () =>
-      userBoardsToItems(withoutBoardsShown(myBoards, topBoardUuids), {
-        activeUuid: activeBoard?.uuid,
-        offlineStateFor: boardOfflineState,
-        currentUserId,
-        pinnedOverrides,
-        labelOptions,
-        importStatusStale,
-      }),
+      userBoardsToItems(
+        orderBoardsForPartnerWorkout(withoutBoardsShown(myBoards, topBoardUuids), preferredWorkoutBoard),
+        {
+          activeUuid: activeBoard?.uuid,
+          offlineStateFor: boardOfflineState,
+          currentUserId,
+          pinnedOverrides,
+          labelOptions,
+          importStatusStale,
+        },
+      ),
     [
       myBoards,
       topBoardUuids,
@@ -505,6 +511,7 @@ export default function BoardSelection() {
       pinnedOverrides,
       labelOptions,
       importStatusStale,
+      preferredWorkoutBoard,
     ],
   );
   // Whether the account has a board this screen can draw, shown at the top or
@@ -517,12 +524,15 @@ export default function BoardSelection() {
       userBoardsToItems(
         // Also filtered here: while a newly filtered search loads, the query
         // keeps showing the previous, unfiltered list.
-        nearbyBoardType
-          ? (nearby?.boards ?? []).filter((board) => board.boardType === nearbyBoardType)
-          : (nearby?.boards ?? []),
+        orderBoardsForPartnerWorkout(
+          nearbyBoardType
+            ? (nearby?.boards ?? []).filter((board) => board.boardType === nearbyBoardType)
+            : (nearby?.boards ?? []),
+          preferredWorkoutBoard,
+        ),
         { activeUuid: activeBoard?.uuid, labelOptions },
       ),
-    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions],
+    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions, preferredWorkoutBoard],
   );
   // Near you leaves out boards already shown above it (the top and Your
   // boards). Not under "Where do you climb?", which draws Near you above Your

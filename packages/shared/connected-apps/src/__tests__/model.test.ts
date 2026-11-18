@@ -77,6 +77,18 @@ describe('the section', () => {
 });
 
 describe('a row', () => {
+  it('describes workout access separately from logbook access', () => {
+    const row = buildConnectedAppRow(
+      app({ scopes: ['offline_access', 'workouts:read', 'workouts:write'] }),
+      echo,
+      formatters,
+    );
+    expect(row.scopes.map((scope) => scope.label)).toEqual([
+      'settings:integrations.partnerApps.scopes.workoutsWrite',
+      'settings:integrations.partnerApps.scopes.workoutsRead',
+      'settings:integrations.partnerApps.scopes.offlineAccess',
+    ]);
+  });
   it('names the app, what it reads, when it connected and when it was last used', () => {
     expect(buildConnectedAppRow(app(), echo, formatters)).toEqual({
       connectionId: 'connection-a',
@@ -138,10 +150,10 @@ describe('a row', () => {
   });
 
   it('words a scope it does not know rather than hiding it', () => {
-    const [scope] = buildConnectedAppRow(app({ scopes: ['workouts:write'] }), echo, formatters).scopes;
+    const [scope] = buildConnectedAppRow(app({ scopes: ['future:write'] }), echo, formatters).scopes;
     expect(scope).toEqual({
-      scope: 'workouts:write',
-      label: 'settings:integrations.partnerApps.scopes.other {"scope":"workouts:write"}',
+      scope: 'future:write',
+      label: 'settings:integrations.partnerApps.scopes.other {"scope":"future:write"}',
       notes: [],
     });
   });

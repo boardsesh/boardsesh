@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { WeekDay, WeekSummary } from '@boardsesh/profile-stats';
-import type { WeekActivityTick } from '../../db/queries/get-week-activity-local';
+import type { ActivityTick } from '../../db/queries/get-activity-ticks-local';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { track } from '../../lib/analytics';
 import { hapticLight } from '../../lib/haptics';
@@ -50,7 +50,7 @@ export const HomeWeekSection = memo(function HomeWeekSection() {
   );
 });
 
-export const HomeWeekCard = memo(function HomeWeekCard({ summary }: { summary: WeekSummary<WeekActivityTick> }) {
+export const HomeWeekCard = memo(function HomeWeekCard({ summary }: { summary: WeekSummary<ActivityTick> }) {
   const { t } = useTranslation('feed');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();

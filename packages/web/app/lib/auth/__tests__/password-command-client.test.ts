@@ -98,6 +98,26 @@ describe('server-only password command transport', () => {
     await client.password('Legacy@example.com', 'one');
     expect(received[1].body.requestId).not.toBe(received[0].body.requestId);
   });
+  it('sends the visitor address it is given, unchanged, for the backend to key its per-client limit on', async () => {
+    const client = createPasswordCommandClient({ environment: environment() });
+    for (const visitorAddress of ['203.0.113.7', '2001:db8:1:2:aaaa::1']) {
+      received.length = 0;
+      await client.password('Legacy@example.com', 'one', visitorAddress);
+      expect(received[0].body).toMatchObject({ operation: 'password', clientAddress: visitorAddress });
+    }
+  });
+  it.each([undefined, '', 'fe80::1%en0', '2001:db8::/64', 'not-an-ip'])(
+    'omits a client address the backend would refuse (%j), so the sign-in still reaches it',
+    async (visitorAddress) => {
+      await createPasswordCommandClient({ environment: environment() }).password(
+        'Legacy@example.com',
+        'one',
+        visitorAddress,
+      );
+      expect(received).toHaveLength(1);
+      expect(received[0].body).not.toHaveProperty('clientAddress');
+    },
+  );
   it('does not require credentials while default mode is off', () => {
     expect(webPasswordMode({})).toBe('legacy');
     expect(() => webPasswordMode({ CURRENT_STORE_WEB_AUTH_MODE: 'unknown' })).toThrow(AUTH_BACKEND_UNAVAILABLE);
