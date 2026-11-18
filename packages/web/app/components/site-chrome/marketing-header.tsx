@@ -54,7 +54,6 @@ const NAV_LINK_SX = {
 } as const;
 
 /** Route prefixes that render a simple title header instead of the default marketing header */
-const TITLE_HEADER_PAGE_PREFIXES = ['/aurora-migration'] as const;
 
 function isNavigationActive(pathname: string, destination: string) {
   return (
@@ -370,18 +369,6 @@ export default function MarketingHeader() {
         <Box sx={{ flex: 1 }} />
       </header>
     );
-  }
-
-  // Translation keys live alongside the prefix list so the i18n linter can
-  // statically follow `t('header.…')` to the catalog entry.
-  const titleHeaderTitles: Record<(typeof TITLE_HEADER_PAGE_PREFIXES)[number], string> = {
-    '/aurora-migration': t('header.auroraMigration'),
-  };
-  const titleHeaderPagePrefix = TITLE_HEADER_PAGE_PREFIXES.find((prefix) => pathname.startsWith(prefix));
-
-  // Simple title header for specific pages (back button + title).
-  if (titleHeaderPagePrefix) {
-    return <CenteredHeader left={<BackButton fallbackUrl="/" />} title={titleHeaderTitles[titleHeaderPagePrefix]} />;
   }
 
   return (

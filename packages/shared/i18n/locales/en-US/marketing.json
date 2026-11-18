@@ -69,8 +69,8 @@
     },
     "onboardingHeader": "Make it yours",
     "cards": {
-      "auroraTitle": "Coming from Kilter?",
-      "auroraDescription": "Bring your logbook and history over in one step",
+      "auroraTitle": "Bring your Kilter or Tension logbook",
+      "auroraDescription": "Link your account once. Your sends come across about every 12 hours.",
       "playlistTitle": "Build a playlist",
       "playlistDescription": "Line up your climbs before you get to the gym",
       "bluetoothTitle": "Connect your board",
@@ -191,7 +191,7 @@
     "story": {
       "title": "Why this exists",
       "p1": "Every board comes with its own app, its own login and its own logbook. Climb a Kilter at your gym and a MoonBoard on holiday and you have two histories that never meet.",
-      "p2": "Then one of those apps vanished overnight and climbers lost their logbooks with it. That is what happens when one company owns the only way into hardware you already paid for.",
+      "p2": "When the old Kilter app stopped working, climbers lost access to the history they’d built there.",
       "link": "What happened, and how to get your data out"
     },
     "who": {
@@ -713,7 +713,7 @@
         "step3": "Enter that board's username and password.",
         "p1": "Used the old Kilter app? The Kilter (Aurora) card takes a JSON export.",
         "p2": "Sync runs one way, from their apps into Boardsesh, about every 12 hours. Nothing goes back.",
-        "link": "Read the migration guide"
+        "link": "Bring your logbook"
       },
       "beta": {
         "title": "Attach a beta video",

@@ -10,7 +10,7 @@ import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import PlaceOutlined from '@mui/icons-material/PlaceOutlined';
-import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
+import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { resolveHeroInstall } from '@/app/lib/hero-install';
@@ -299,11 +299,11 @@ export default function HomePageContent({
           />
 
           <OnboardingCard
-            icon={<WarningAmberOutlined />}
+            icon={<HistoryOutlined />}
             title={t('home.cards.auroraTitle')}
             description={t('home.cards.auroraDescription')}
             accent="brand"
-            href="/aurora-migration"
+            href="/bring-your-logbook"
           />
 
           <OnboardingCard

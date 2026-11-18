@@ -339,7 +339,7 @@ describe('HomePageContent', () => {
         screen.getByRole('link', { name: new RegExp(resolveMarketingKey('home.cards.auroraTitle'), 'i') }),
       ).toHaveProperty('href');
       const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-      expect(hrefs).toContain('/aurora-migration');
+      expect(hrefs).toContain('/bring-your-logbook');
       expect(hrefs).toContain('/playlists');
     });
 

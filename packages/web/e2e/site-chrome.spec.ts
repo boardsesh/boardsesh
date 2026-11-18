@@ -102,7 +102,7 @@ test.describe('Site chrome - footer links', () => {
       '/help',
       '/docs',
       '/playlists',
-      '/aurora-migration',
+      '/bring-your-logbook',
       '/legal',
       '/privacy',
     ]) {

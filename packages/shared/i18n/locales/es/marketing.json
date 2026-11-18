@@ -69,8 +69,8 @@
     },
     "onboardingHeader": "Hazlo tuyo",
     "cards": {
-      "auroraTitle": "¿Vienes de Kilter?",
-      "auroraDescription": "Trae tu historial en un solo paso",
+      "auroraTitle": "Trae tu logbook de Kilter o Tension",
+      "auroraDescription": "Vincula tu cuenta una vez. Tus encadenes llegan cada 12 horas más o menos.",
       "playlistTitle": "Crea una playlist",
       "playlistDescription": "Prepara tus problemas antes de ir al rocódromo",
       "bluetoothTitle": "Conecta tu plafón",
@@ -191,7 +191,7 @@
     "story": {
       "title": "Por qué existe esto",
       "p1": "Cada plafón trae su propia app, su propio inicio de sesión y su propio registro. Escalas un Kilter en tu rocódromo y un MoonBoard de vacaciones y acabas con dos historiales que nunca se juntan.",
-      "p2": "Luego una de esas apps desapareció de la noche a la mañana y los escaladores perdieron su registro con ella. Eso pasa cuando una sola empresa controla la única forma de usar un material que ya has pagado.",
+      "p2": "Cuando la antigua app de Kilter dejó de funcionar, quienes escalaban con ella perdieron el acceso a su historial.",
       "link": "Qué pasó y cómo sacar tus datos"
     },
     "who": {
@@ -713,7 +713,7 @@
         "step3": "Pon el usuario y la contraseña de ese plafón.",
         "p1": "¿Usabas la app vieja de Kilter? La tarjeta Kilter (Aurora) acepta un export JSON.",
         "p2": "La sincronización va en un solo sentido, de sus apps a Boardsesh, cada 12 horas más o menos. No vuelve nada.",
-        "link": "Leer la guía de migración"
+        "link": "Trae tu logbook"
       },
       "beta": {
         "title": "Adjunta un vídeo de beta",

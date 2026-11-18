@@ -13,7 +13,7 @@ import { GUIDE_SLUGS } from '@/app/developers/guide-documents';
  */
 export const STATIC_ENTRIES: readonly SitemapItem[] = [
   { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-10-06') },
-  { path: '/aurora-migration', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-04-30') },
+  { path: '/bring-your-logbook', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-11-18') },
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
   { path: '/support', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-16') },
   // /help became a hub over its topic pages once adoption data showed people

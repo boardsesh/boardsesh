@@ -69,8 +69,8 @@
     },
     "onboardingHeader": "Mach's zu deinem",
     "cards": {
-      "auroraTitle": "Kommst du von Kilter?",
-      "auroraDescription": "Hol Routenbuch und Historie in einem Schritt rüber",
+      "auroraTitle": "Übernimm dein Kilter- oder Tension-Routenbuch",
+      "auroraDescription": "Verknüpfe dein Konto einmal. Deine Begehungen werden etwa alle 12 Stunden übernommen.",
       "playlistTitle": "Bau eine Playlist",
       "playlistDescription": "Stell deine Boulder zusammen, bevor du in die Halle kommst",
       "bluetoothTitle": "Verbinde dein Board",
@@ -191,7 +191,7 @@
     "story": {
       "title": "Warum es das gibt",
       "p1": "Jedes Board bringt seine eigene App mit, seinen eigenen Login und sein eigenes Logbuch. Du kletterst ein Kilter in deiner Halle und im Urlaub ein MoonBoard — und hast zwei Verläufe, die nie zusammenfinden.",
-      "p2": "Dann war eine dieser Apps über Nacht weg, und die Logbücher gleich mit. Das passiert, wenn eine einzige Firma den einzigen Zugang zu Hardware besitzt, die dir längst gehört.",
+      "p2": "Als die alte Kilter-App ihren Betrieb einstellte, verloren viele den Zugriff auf ihr Routenbuch.",
       "link": "Was passiert ist — und wie du deine Daten rausbekommst"
     },
     "who": {
@@ -713,7 +713,7 @@
         "step3": "Gib Benutzername und Passwort dieses Boards ein.",
         "p1": "Du hast die alte Kilter-App genutzt? Die Karte Kilter (Aurora) nimmt einen JSON-Export an.",
         "p2": "Die Synchronisation läuft in eine Richtung, von deren Apps nach Boardsesh, etwa alle 12 Stunden. Nichts geht zurück.",
-        "link": "Die Migrationsanleitung lesen"
+        "link": "Routenbuch mitnehmen"
       },
       "beta": {
         "title": "Ein Beta-Video anhängen",

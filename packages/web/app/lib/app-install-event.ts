@@ -42,6 +42,7 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `gyms-directory`: `/gyms` and its three board pages.
  *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
  *    campaign token only; Safari reports no tap, so no click carries it.
+ *  - `bring-your-logbook`: the Kilter and Tension import guide.
  *  - `join-page`: reserved for the session invite page (#6004), so that button
  *    and its store link share one vocabulary from the first commit.
  *
@@ -62,6 +63,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'spray-climb',
   'spray-wall',
   'gyms-directory',
+  'bring-your-logbook',
   'join-page',
   'site-banner',
 ] as const;
