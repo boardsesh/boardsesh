@@ -68,3 +68,5 @@ At 0.5× and 0.25× only two things slow down: the transition's own clocks (the 
 - Release: `vp run mobile:ios -- --device <udid> --configuration Release`. No special env is needed.
 
 The iOS Simulator reports native API 1, so it draws PNG and can't show GPU motion. Use a real phone or an Android emulator.
+
+On PNG (the status line says `PNG`), every swap variant plays the PNG board's still wall (`play-drawer/png-swap-layers.ts`): its driver's two side weights fade whole boards over a bare wall, so timings, speed and Reduce Motion carry over but the per-hold look does not. The wipe still slides the whole board. The `png-wall-fade-kill` switch brings the slide back for every variant.

@@ -279,6 +279,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       "Kill switch for the player board's swap look: dragging dims the old holds into standby rings from the edge the next climb comes from and shows the next climb as faint halos behind that front; letting go fills them in along the same sweep. With it on, the board swaps climbs exactly as before, a plain fade. Also the QA switch for comparing the two; it takes effect on the open board. Older builds, Reduce Motion and Differentiate Without Color always get the plain fade. Unresolved reads as enabled.",
   },
   {
+    key: 'png-wall-fade-kill',
+    label: 'Slide the player board without the GPU',
+    description:
+      "Kill switch for the player board's still wall when it draws pictures instead of the GPU board (older builds, no GPU, playback, or the GPU board switched off in Settings › Board): the wall stays put, dragging dims the climb to 40%, and letting go brings the next climb up from 40% to full. Reduce Motion gets a quick dissolve. With it on, the whole board slides from climb to climb as before. Also the QA switch for comparing the two; it takes effect on the open board. Unresolved reads as enabled.",
+  },
+  {
     key: 'early-updates',
     label: 'Early updates',
     description:
@@ -614,6 +620,15 @@ export function useTabBarHideOnScrollEnabled(): boolean {
  */
 export function usePlayerSwapLookEnabled(): boolean {
   return useFeatureFlag('player-swap-look-kill') !== true;
+}
+
+/**
+ * Kill switch for the PNG player board's still wall (`play-drawer/png-swap-layers.ts`).
+ * Unresolved reads as enabled; switched on, the board slides whole from climb
+ * to climb again, live on an open board. Also the QA switch for comparing the two.
+ */
+export function usePngWallFadeEnabled(): boolean {
+  return useFeatureFlag('png-wall-fade-kill') !== true;
 }
 
 export function useQaTesterGateEnabled(): boolean {

@@ -17,6 +17,7 @@ import {
   useFirstBoardPickerEnabled,
   useFirstConnectCtaEnabled,
   usePlayerSwapLookEnabled,
+  usePngWallFadeEnabled,
   useQaTesterGateEnabled,
   useSendRecoveryGateEnabled,
   useStaleCurrentHoldEnabled,
@@ -41,6 +42,8 @@ const KILL_SWITCHES = [
   { key: 'stale-current-hold-kill', useEnabled: useStaleCurrentHoldEnabled },
   // The player board's swap look ships at 100% too: on until PostHog says `true`.
   { key: 'player-swap-look-kill', useEnabled: usePlayerSwapLookEnabled },
+  // So does the PNG board's still wall: on until PostHog says `true`.
+  { key: 'png-wall-fade-kill', useEnabled: usePngWallFadeEnabled },
 ] as const;
 
 function readEnabled(useEnabled: () => boolean, flags?: Record<string, boolean | string | undefined>): boolean {

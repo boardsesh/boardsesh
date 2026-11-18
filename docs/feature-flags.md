@@ -265,6 +265,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   that has already started. Earlier binaries retain their startup probe.
   Binaries without `swapLookVersion` 2, Reduce Motion and (on iOS)
   Differentiate Without Color get the shipped swap whatever it says.
+  `png-wall-fade-kill` is a kill switch (read through `usePngWallFadeEnabled`,
+  unresolved = enabled) for the PNG player board's still wall
+  (`play-drawer/png-swap-layers.ts`): with no GPU board, whole boards fade over
+  a bare wall instead of sliding. On, the whole board slides from climb to
+  climb as before, live on an open board, so it is also the QA switch for
+  comparing the two. The GPU board never reads it.
   `picker-auto-scan-kill` is a kill switch (read through
   `usePickerAutoScanEnabled`, unresolved = enabled) for the board picker's In
   range slot scanning over Bluetooth by itself when the picker opens

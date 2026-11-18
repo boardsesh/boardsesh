@@ -28,6 +28,9 @@ import { useCarouselGesture, type CarouselVirtualFinger } from './use-carousel-g
 import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
 import type { BoardSwapFrame } from './swap-look';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
+import { usePngWallSwap } from './use-png-wall-swap';
+import { pngSwapPageOpacity, type PngSwapLayers } from './png-swap-layers';
+import { usePngWallFadeEnabled } from '../../providers/feature-flags-provider';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { centeredZoomViewport } from './zoom-viewport-clamp';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
@@ -180,6 +183,11 @@ type CarouselBoardSlotProps = {
   fieldColorOverride?: string;
   zoomStyle: AnimatedStyle<ViewStyle>;
   onCurrentArtReadinessChange?: (readiness: BoardArtReadiness) => void;
+  /**
+   * The still-wall swap's layers (`png-swap-layers.ts`): the board stays where it
+   * is and only fades. Null on the slide.
+   */
+  fadeLayers: SharedValue<PngSwapLayers> | null;
 };
 
 /**
@@ -215,6 +223,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   fieldColorOverride,
   zoomStyle,
   onCurrentArtReadinessChange,
+  fadeLayers,
 }: CarouselBoardSlotProps) {
   const mountedRef = useRef(true);
   const artIdentity = JSON.stringify([
@@ -284,19 +293,32 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     }
   }, [artIdentity, onCurrentArtReadinessChange]);
   const slotStyle = useAnimatedStyle(() => {
+    // The still wall: every board stays in the middle and only its opacity
+    // changes, so the photo never moves. The offset is pinned to 0 rather than
+    // left out, so a board that was sliding when the kill switch changed does
+    // not keep its last offset.
+    if (fadeLayers) return { opacity: pngSwapPageOpacity(fadeLayers.value, page), transform: [{ translateX: 0 }] };
     const { visible, offset, opacity } = pageOffset(page, anchorPage.value, translateX.value, slideWidth, exitWidth);
-    // Opacity and transform only, and never zIndex. Two pages that are both
-    // drawn never overlap (the incoming one lands in the middle as the outgoing
-    // one leaves the frame), so there is no order to keep. And a
-    // zIndex that changes is not a paint-order tweak in Fabric: it re-inserts
-    // the native view among its siblings, which cancels a touch that began on
-    // it. A swipe that took over a fling was cut off that way, 3 ms after it
-    // started, until this stopped animating zIndex.
+    // Opacity and transform only, and never zIndex. On the slide, two pages
+    // that are both drawn never overlap (the incoming one lands in the middle as
+    // the outgoing one leaves the frame), so there is no order to keep; the
+    // still wall's fade works out its opacities from the fixed page order
+    // instead. And a zIndex that changes is not a paint-order tweak in Fabric:
+    // it re-inserts the native view among its siblings, which cancels a touch
+    // that began on it. A swipe that took over a fling was cut off that way, 3
+    // ms after it started, until this stopped animating zIndex.
     return { opacity: visible ? opacity : 0, transform: [{ translateX: offset }] };
-  }, [page, slideWidth, exitWidth]);
+  }, [page, slideWidth, exitWidth, fadeLayers]);
 
   return (
-    <Animated.View style={[styles.slot, slotStyle]} {...NOT_AN_ELEMENT}>
+    <Animated.View
+      style={[styles.slot, slotStyle]}
+      // Android: a fading board fades as one picture. Without its own layer the
+      // photo and the holds would each go see-through, and the photo would
+      // show through the veil.
+      needsOffscreenAlphaCompositing={fadeLayers !== null}
+      {...NOT_AN_ELEMENT}
+    >
       {/* The zoom rides every board, not just the current one. Only the board
           in the middle is drawn while zoomed (the swipe is off), and a style
           taken away from a board that is zoomed leaves its last transform
@@ -343,6 +365,85 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
             playSurface={isCurrent}
           />
         ) : null}
+      </Animated.View>
+    </Animated.View>
+  );
+});
+
+type BareWallLayerProps = {
+  layers: SharedValue<PngSwapLayers>;
+  /** Written true while the bare wall has painted its veil, false otherwise. */
+  ready: SharedValue<boolean>;
+  boardBox: ViewStyle;
+  zoomStyle: AnimatedStyle<ViewStyle>;
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  boardWidth: number;
+  boardHeight: number;
+  mirrored: boolean;
+  overlayRenderWidth: number;
+  fieldColorOverride?: string;
+};
+
+/**
+ * The bare wall under the boards on the still wall: the same photo, veil, LED
+ * covers and grid labels with no climb lit. Wherever a fading board is
+ * see-through it shows the unlit wall the board itself draws, so the wall never
+ * brightens. Drawn only while a board above it is see-through, and never a
+ * page: the swipe does not wait for it and it reports nothing to `pageArt`.
+ */
+const BareWallLayer = React.memo(function BareWallLayer({
+  layers,
+  ready,
+  boardBox,
+  zoomStyle,
+  boardName,
+  layoutId,
+  sizeId,
+  setIds,
+  boardWidth,
+  boardHeight,
+  mirrored,
+  overlayRenderWidth,
+  fieldColorOverride,
+}: BareWallLayerProps) {
+  const layerStyle = useAnimatedStyle(() => ({ opacity: layers.value.bareWallOpacity }));
+  const handleArtReadinessChange = useCallback(
+    (readiness: BoardArtReadiness) => {
+      ready.value = readiness === 'ready';
+    },
+    [ready],
+  );
+  useLayoutEffect(
+    () => () => {
+      ready.value = false;
+    },
+    [ready],
+  );
+  return (
+    <Animated.View style={[styles.slot, layerStyle]} {...NOT_AN_ELEMENT}>
+      {/* Rides the zoom like the boards, so it never comes back zoomed. */}
+      <Animated.View style={[boardBox, zoomStyle]}>
+        <BoardImageNative
+          accessible={false}
+          bareWall
+          frames=""
+          onArtReadinessChange={handleArtReadinessChange}
+          boardName={boardName}
+          layoutId={layoutId}
+          sizeId={sizeId}
+          setIds={setIds}
+          boardWidth={boardWidth}
+          boardHeight={boardHeight}
+          mirrored={mirrored}
+          renderWidth={overlayRenderWidth}
+          backgroundVariant="full"
+          fieldColorOverride={fieldColorOverride}
+          style={boardBox}
+          showGridLabels
+        />
       </Animated.View>
     </Animated.View>
   );
@@ -415,6 +516,12 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     return lookahead.length > 0 ? lookahead : NO_PREFETCH_FRAMES;
   }, [prefetchFrames, currentFrames, prevFrames, nextFrames]);
   const stationary = playerGpuBoard && !currentFrameOverride && failedStationaryIdentity !== stationaryIdentity;
+  // The PNG board keeps its wall still too, unless the kill switch is on or the
+  // board motion lab asks for the wipe, which slides.
+  const pngWallFadeEnabled = usePngWallFadeEnabled();
+  const pngFade = !stationary && pngWallFadeEnabled && (transition?.revealMode ?? 'swap') === 'swap';
+  const bareWallReady = useSharedValue(false);
+  const pngLayers = usePngWallSwap(pager, centerPage, pngFade, transition, bareWallReady);
   const onRenderPath = diagnostics?.onRenderPath;
   useEffect(() => {
     onRenderPath?.(stationary ? 'gpu' : 'png');
@@ -587,6 +694,15 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     const handle = requestAnimationFrame(() => setNeighboursMounted(true));
     return () => cancelAnimationFrame(handle);
   }, [boardMeasured]);
+  // The still wall's bare wall a frame after that: a first render of it (once
+  // per board look; it is cached after) queues behind the neighbours', which a
+  // swipe waits for, rather than ahead of them.
+  const [bareWallMounted, setBareWallMounted] = useState(false);
+  useEffect(() => {
+    if (!neighboursMounted) return;
+    const handle = requestAnimationFrame(() => setBareWallMounted(true));
+    return () => cancelAnimationFrame(handle);
+  }, [neighboursMounted]);
 
   const litHoldCount = useMemo(() => countLitHolds(currentFrames), [currentFrames]);
   // Remembered so the climbs list can start the next climb's play-size render at
@@ -663,6 +779,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       fieldColorOverride={fieldColorOverride}
       zoomStyle={animatedZoomStyle}
       onCurrentArtReadinessChange={isCurrent ? onCurrentArtReadinessChange : undefined}
+      fadeLayers={pngFade ? pngLayers : null}
     />
   );
 
@@ -734,6 +851,26 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           />
         ) : (
           [
+            // Under every board, so first in the list; mounted after the
+            // neighbours, so the first paint does no more work than one board.
+            bareWallMounted && pngFade ? (
+              <BareWallLayer
+                key="bare-wall"
+                layers={pngLayers}
+                ready={bareWallReady}
+                boardBox={imageBox}
+                zoomStyle={animatedZoomStyle}
+                boardName={boardName}
+                layoutId={layoutId}
+                sizeId={sizeId}
+                setIds={setIds}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                mirrored={mirrored}
+                overlayRenderWidth={overlayRenderWidth}
+                fieldColorOverride={fieldColorOverride}
+              />
+            ) : null,
             neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
             currentBoard,
             neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
@@ -792,8 +929,10 @@ const styles = StyleSheet.create({
     zIndex: CAROUSEL_LAYER_Z.board,
   },
   // Every board fills the container and centres itself in it, so all three sit
-  // on the same spot and only their transform tells them apart. One zIndex for
-  // all of them, fixed: see CarouselBoardSlot for why it must never change.
+  // on the same spot: their transform tells them apart on the slide, their
+  // opacity on the still wall, where the bare wall shares the spot too. One
+  // zIndex for all of them, fixed: see CarouselBoardSlot for why it must never
+  // change.
   slot: {
     position: 'absolute',
     top: 0,
