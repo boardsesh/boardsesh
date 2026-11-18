@@ -22,6 +22,7 @@ import {
   type PresentedWebSession,
 } from '@boardsesh/auth-protocol';
 import {
+  authCredentialLineage,
   authEmailProjection,
   authSession,
   authSessionDenials,
@@ -191,6 +192,7 @@ async function rows(userId: string) {
     profiles: await select.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
     sessions: await select.select().from(authSession).where(eq(authSession.userId, userId)).orderBy(authSession.id),
     denials: await select.select().from(authSessionDenials).where(eq(authSessionDenials.userId, userId)),
+    lineages: await select.select().from(authCredentialLineage).where(eq(authCredentialLineage.userId, userId)),
     cutoffs: await select.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
   };
 }
@@ -282,6 +284,41 @@ describe('session read', () => {
       const { status, body } = await read(presented);
       expect(status).toBe(401);
       expect(webSessionReadReplySchema.parse(body)).toMatchObject({ outcome: 'unauthenticated' });
+    }
+  });
+
+  it('answers 401 for a legacy cookie that was signed out, cut off or deleted, and writes nothing', async () => {
+    const dead: { userId: string; credential: string }[] = [];
+    const signedOut = await climber();
+    const signedOutSession = randomUUID();
+    const signedOutCookie = await legacyCookie(signedOut.id, signedOutSession);
+    await post(
+      WEB_SESSION_COMMAND_PATHS.signout,
+      command('signout', {
+        presented: { kind: 'legacy-jwe', credential: signedOutCookie },
+        expectedUserId: signedOut.id,
+        expectedAuthSessionId: signedOutSession,
+      }),
+    );
+    dead.push({ userId: signedOut.id, credential: signedOutCookie });
+    for (const deletedAt of [null, new Date()]) {
+      const cutOff = await climber();
+      const credential = await legacyCookie(cutOff.id, randomUUID());
+      await environment.database.insert(authSubjectCutoffs).values({
+        userId: cutOff.id,
+        generation: 1,
+        revokedThrough: new Date(),
+        deletedAt,
+        lastOperationId: randomUUID(),
+      });
+      dead.push({ userId: cutOff.id, credential });
+    }
+    for (const { userId, credential } of dead) {
+      const before = await rows(userId);
+      const { status, body } = await read({ kind: 'legacy-jwe', credential });
+      expect(status).toBe(401);
+      expect(webSessionReadReplySchema.parse(body)).toMatchObject({ outcome: 'unauthenticated' });
+      expect(await rows(userId)).toEqual(before);
     }
   });
 

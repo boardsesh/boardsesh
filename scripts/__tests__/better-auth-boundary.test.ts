@@ -458,3 +458,29 @@ describe('identity writer catalog', () => {
     expect(ungated).toEqual([]);
   });
 });
+
+const BROWSER_SESSION_MODE_MODULE = `${FIRST_PARTY_AUTHORITY_ROOT}browser-session-mode.ts`;
+const BROWSER_SESSION_CHECKER_CALL = /(?<!function\s)\bbrowserSessionModeChecker\s*\(([^)]*)\)/g;
+
+/** Each production call of the startup-check builder, with its argument. */
+function browserSessionCheckerCalls(source: string): string[] {
+  return [...source.matchAll(BROWSER_SESSION_CHECKER_CALL)].map(([, argument]) => argument.trim());
+}
+
+describe('browser session cutover blockers', () => {
+  it('finds the builder calls and skips its definition', () => {
+    expect(
+      browserSessionCheckerCalls(
+        'export function browserSessionModeChecker(cutoverBlockers: readonly string[]) {}\n' +
+          'const check = browserSessionModeChecker([]);',
+      ),
+    ).toEqual(['[]']);
+  });
+
+  it('lets only tests build the startup check with a list other than BROWSER_SESSION_CUTOVER_BLOCKERS', () => {
+    const calls = trackedSourceFiles
+      .filter((path) => isProductionSource(path) && !/\.proof\.[cm]?[jt]sx?$/.test(path))
+      .flatMap((path) => browserSessionCheckerCalls(readRepoFile(path)).map((argument) => `${path}: ${argument}`));
+    expect(calls).toEqual([`${BROWSER_SESSION_MODE_MODULE}: BROWSER_SESSION_CUTOVER_BLOCKERS`]);
+  });
+});

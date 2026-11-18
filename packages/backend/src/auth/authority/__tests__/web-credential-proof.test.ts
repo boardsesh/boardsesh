@@ -21,7 +21,8 @@ import {
   passwordCommandSchema,
   type SetPasswordCommand,
 } from '@boardsesh/auth-protocol';
-import { createEnvironment } from './environment';
+import { createEnvironment, testBridgeTokenKey } from './environment';
+import { sessionTokenDigest } from '../session-token';
 import { authenticateWebPassword } from '../../current-store/web-password';
 import {
   assertWebSessionWriterConfiguration,
@@ -441,13 +442,13 @@ describe('backend-issued web generation/freshness proofs', () => {
   it('rotates an already bridged opaque token atomically, preserving SID and age without resurrecting the old token', async () => {
     const owner = await fixture();
     const credential = await cookie(owner.userId, owner.sessionId);
-    const bridged = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
-    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Expected owned canonical session');
+    const bridged = await bridgeLegacyCredential(environment.database, credential, secret, testBridgeTokenKey, 'on');
+    if (bridged.status !== 'bridged') throw new Error('Expected owned canonical session');
     const old = bridged.session;
     const oldToken = bridged.token;
     expect((await setWebPassword(environment.database, authority, command(owner, credential))).outcome).toBe('set');
     const [next] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sessionId));
-    expect(next.token).not.toBe(old.token);
+    expect(next.token).not.toBe(sessionTokenDigest(oldToken));
     expect(next.revocationGeneration).toBe(1);
     expect(next.originalAuthenticatedAt).toEqual(old.originalAuthenticatedAt);
     expect(next.createdAt).toEqual(old.createdAt);

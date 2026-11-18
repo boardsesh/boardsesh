@@ -14,6 +14,7 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { requireHumanSubjectForIssuance } from '../human-admission';
+import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -22,10 +23,11 @@ import {
 } from '../current-store/foundation-context';
 import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
+import { bridgeLegacyCredential } from './bridge';
 import { denyFirstPartySessionInTransaction } from './lineage';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from './session-reader';
-import { newSessionToken } from './session-token';
+import { newSessionToken, type BridgeTokenKey } from './session-token';
 
 export { WEB_SESSION_LIFETIME_SECONDS, WEB_SESSION_ROLL_BELOW_REMAINING_SECONDS };
 
@@ -320,9 +322,10 @@ export interface WebSessionSignOut {
  * A legacy cookie with its own session id gets a denial of that id, which
  * ends that login and no other. A legacy cookie without one could only be
  * ended by cutting off its whole account, phones included, so it is answered
- * `signed-out` with nothing written: www clears the cookie, as NextAuth's own
- * sign-out does today. A bridged row of such a cookie is ended as that row
- * alone. It never performs an account cutoff.
+ * `signed-out` and only the row the bridge made from it, if any, ends: www
+ * clears the cookie, as NextAuth's own sign-out does today. A bridged row of
+ * such a cookie, presented by its token, is ended as that row alone. It never
+ * performs an account cutoff.
  */
 export async function signOutWebSession(
   database: AuthorityDatabase,
@@ -338,7 +341,10 @@ export async function signOutWebSession(
   const { session } = outcome;
   if (session.userId !== request.expectedUserId || session.authSessionId !== request.expectedAuthSessionId)
     return 'identity-changed';
-  if (request.credential.kind === 'legacy-jwe' && session.requiresAccountCutoff) return 'signed-out';
+  if (request.credential.kind === 'legacy-jwe' && session.requiresAccountCutoff) {
+    await endBridgedRowOfLegacyCookie(database, request.credential, session, now, expectedAuthority);
+    return 'signed-out';
+  }
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     // A bridged row of a legacy cookie without a session id is ended as that
@@ -352,6 +358,49 @@ export async function signOutWebSession(
     );
   });
   return 'signed-out';
+}
+
+/**
+ * A legacy cookie that could only be ended by an account cutoff is never ended
+ * that way. If the bridge turned it into a row (its id is the session id the
+ * reader gave the cookie, and its lineage is this cookie's), that row ends
+ * alone, exactly as a sign-out presenting the row's token ends it; its denial
+ * also refuses this copy of the cookie. Without such a row nothing is written.
+ */
+async function endBridgedRowOfLegacyCookie(
+  database: AuthorityDatabase,
+  credential: Extract<FirstPartyCredential, { kind: 'legacy-jwe' }>,
+  session: FirstPartySession,
+  now: Date,
+  expectedAuthority: ExpectedCurrentStoreAuthority,
+): Promise<void> {
+  const proof = await verifyLegacyNextAuthJwe(credential.credential, credential.secret, now);
+  if (!proof) return;
+  await database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    // The denial's own order: the gate, then the account FOR UPDATE, which a
+    // bridge (KEY SHARE) of this cookie must wait for, so a row it committed
+    // first is found here and one it writes later is not left half-seen.
+    await transaction.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
+    await transaction.select({ id: users.id }).from(users).where(eq(users.id, session.userId)).for('update');
+    const [bridged] = await transaction
+      .select({ id: authSession.id })
+      .from(authSession)
+      .where(
+        and(
+          eq(authSession.id, session.authSessionId),
+          eq(authSession.userId, session.userId),
+          eq(authSession.legacyLineageId, proof.lineageId),
+        ),
+      );
+    if (!bridged) return;
+    await denyFirstPartySessionInTransaction(
+      transaction,
+      { ...session, requiresAccountCutoff: false },
+      now,
+      expectedAuthority,
+    );
+  });
 }
 
 /** The user fields of today's NextAuth session JSON. */
@@ -431,5 +480,50 @@ export async function refreshWebSession(
     session: outcome.session,
     rolled: roll.rolled,
     expiresAt: roll.rolled ? roll.expiresAt : outcome.session.expiresAt,
+  };
+}
+
+export type WebSessionBridge =
+  | {
+      readonly status: 'bridged';
+      readonly userId: string;
+      readonly sessionId: string;
+      readonly token: string;
+      readonly expiresAt: Date;
+      readonly generation: number;
+    }
+  | { readonly status: 'denied' };
+
+/**
+ * Bridge a legacy NextAuth cookie into a backend web session (#7596, B2). The
+ * session keeps the cookie's own session id (a no-SID cookie: its lineage id,
+ * as the bridge has always keyed it), its signed expiry until the first roll,
+ * and its sign-in time for the 30-day rules; its source is `bridge`, so it never
+ * passes a five-minute check. The token is derived from the session id, so the
+ * same cookie always gets the same token and one row. `mode` is 'on' here: the
+ * caller's `CURRENT_STORE_WEB_SESSION_MODE` is the switch, never
+ * `AUTH_LEGACY_BRIDGE_MODE`, which the native refresh path keeps reading.
+ *
+ * A no-SID cookie is bridged as its own row, never by an account cutoff; login
+ * and sign-out also treat that row alone. A cookie stamped with another
+ * generation than the account's (a missing stamp counts as 0) is denied, as is
+ * one whose session id was signed out.
+ */
+export async function bridgeWebSession(
+  database: AuthorityDatabase,
+  credential: string,
+  keys: { readonly nextAuthSecret: string; readonly tokenKey: BridgeTokenKey },
+  now = new Date(),
+): Promise<WebSessionBridge> {
+  const bridged = await bridgeLegacyCredential(database, credential, keys.nextAuthSecret, keys.tokenKey, 'on', now);
+  if (bridged.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (bridged.status !== 'bridged') return { status: 'denied' };
+  return {
+    status: 'bridged',
+    userId: bridged.session.userId,
+    sessionId: bridged.session.id,
+    token: bridged.token,
+    expiresAt: bridged.session.expiresAt,
+    generation: bridged.session.revocationGeneration ?? 0,
   };
 }

@@ -5,7 +5,7 @@ import { decideCredential } from '../credential-cutoffs';
 import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 import { requireReadCommitted } from '../current-store/foundation-context';
 import type { AuthorityDatabase } from './adapter';
-import { newSessionToken } from './session-token';
+import { bridgedSessionToken, type BridgeTokenKey } from './session-token';
 
 export type LegacyBridgeMode = 'off' | 'shadow' | 'on';
 export function legacyBridgeMode(environment: Readonly<Record<string, string | undefined>>): LegacyBridgeMode {
@@ -14,25 +14,37 @@ export function legacyBridgeMode(environment: Readonly<Record<string, string | u
   if (selector === 'shadow' || selector === 'on') return selector;
   throw new Error('Invalid AUTH_LEGACY_BRIDGE_MODE');
 }
+/** The bridged row without its `token` column, which holds only a digest that never authenticates. */
+export type BridgedSessionRow = Omit<typeof authSession.$inferSelect, 'token'>;
 export type LegacyBridgeResult =
   | { status: 'off' | 'shadow' | 'denied' | 'unavailable' }
   | {
       status: 'bridged';
-      session: typeof authSession.$inferSelect;
+      session: BridgedSessionRow;
       /**
-       * The raw session token, only from the call that created the row: the row
-       * stores its digest, so a later bridge of the same login cannot hand it out
-       * again and answers null. B2 decides what a browser that lost the first
-       * reply does (#7596).
+       * The raw session token, on every call: it is derived from the session id
+       * under the bridge key (`bridgedSessionToken`), so the same legacy login
+       * always bridges to the same token and a browser that lost a reply gets
+       * it again (#7596, owner decision 3). The row stores only its digest.
        */
-      token: string | null;
+      token: string;
     };
 
-/** Verify first, then gate → user → cutoff → session → lineage. No route is mounted. */
+/**
+ * Verify first, then gate → user → cutoff → session → lineage. The web bridge
+ * command (`bridgeWebSession`) passes `mode` 'on' behind its own switch; the
+ * default reads `AUTH_LEGACY_BRIDGE_MODE`.
+ *
+ * A row for this login whose token is not the one the key derives (rotated by
+ * a security mutation, written before the derived token, or derived under a
+ * rotated key) is never re-keyed: the bridge answers `denied` and writes
+ * nothing, so the climber signs in again.
+ */
 export async function bridgeLegacyCredential(
   database: AuthorityDatabase,
   credential: string,
   secret: string,
+  tokenKey: BridgeTokenKey,
   mode: LegacyBridgeMode = legacyBridgeMode(process.env),
   now = new Date(),
 ): Promise<LegacyBridgeResult> {
@@ -77,10 +89,11 @@ export async function bridgeLegacyCredential(
           existing.legacyLineageId !== proof.lineageId)
       )
         return { status: 'denied' };
+      const issued = bridgedSessionToken(tokenKey, sessionId);
+      if (existing && existing.token !== issued.stored) return { status: 'denied' };
       if (mode === 'shadow') return { status: 'shadow' };
       // A missing lineage is not a denial. Preserve signed expiry and unknown
       // age; never substitute now or the current generation into the proof.
-      const issued = newSessionToken();
       const [session] = existing
         ? [existing]
         : await transaction
@@ -115,7 +128,8 @@ export async function bridgeLegacyCredential(
           originalAuthenticatedAt: proof.originalAuthenticatedAt,
           originalExpiresAt: proof.expiresAt,
         });
-      return { status: 'bridged', session, token: existing ? null : issued.token };
+      const { token: _storedDigest, ...bridged } = session;
+      return { status: 'bridged', session: bridged, token: issued.token };
     });
   } catch (error) {
     return { status: error instanceof AuthSubjectDeniedError ? 'denied' : 'unavailable' };

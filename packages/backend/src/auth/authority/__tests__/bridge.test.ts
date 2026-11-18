@@ -10,7 +10,7 @@ import {
   authSessionDenials,
   authSubjectCutoffs,
 } from '@boardsesh/db/schema';
-import { createEnvironment } from './environment';
+import { createEnvironment, testBridgeTokenKey } from './environment';
 import { bridgeLegacyCredential, legacyBridgeMode } from '../bridge';
 import { readFirstPartySession, requireFreshAuthentication } from '../session-reader';
 import { denyFirstPartySession } from '../lineage';
@@ -54,11 +54,27 @@ describe('production legacy bridge (dark)', () => {
     expect(legacyBridgeMode({})).toBe('off');
     expect(() => legacyBridgeMode({ AUTH_LEGACY_BRIDGE_MODE: 'true' })).toThrow();
     const fixtureSession = await fixture();
-    expect(await bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'off', now)).toEqual({
+    expect(
+      await bridgeLegacyCredential(
+        environment.database,
+        fixtureSession.credential,
+        secret,
+        testBridgeTokenKey,
+        'off',
+        now,
+      ),
+    ).toEqual({
       status: 'off',
     });
     expect(
-      await bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'shadow', now),
+      await bridgeLegacyCredential(
+        environment.database,
+        fixtureSession.credential,
+        secret,
+        testBridgeTokenKey,
+        'shadow',
+        now,
+      ),
     ).toEqual({ status: 'shadow' });
     expect(
       await environment.database.select().from(authSession).where(eq(authSession.id, fixtureSession.authSessionId)),
@@ -67,7 +83,9 @@ describe('production legacy bridge (dark)', () => {
   it('bridges concurrently once, preserving public SID, signed expiry and unknown age', async () => {
     const fixtureSession = await fixture();
     const answers = await Promise.all(
-      [1, 2].map(() => bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'on', now)),
+      [1, 2].map(() =>
+        bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, testBridgeTokenKey, 'on', now),
+      ),
     );
     expect(answers.every((answer) => answer.status === 'bridged')).toBe(true);
     const [canonical] = await environment.database
@@ -84,9 +102,10 @@ describe('production legacy bridge (dark)', () => {
         .from(authCredentialLineage)
         .where(eq(authCredentialLineage.userId, fixtureSession.userId)),
     ).toHaveLength(1);
-    // Only the call that created the row hands out the raw token; the row holds its digest.
-    const tokens = answers.flatMap((answer) => (answer.status === 'bridged' && answer.token ? [answer.token] : []));
-    expect(tokens).toHaveLength(1);
+    // Both calls hand out the same derived token; the row holds its digest.
+    const tokens = answers.flatMap((answer) => (answer.status === 'bridged' ? [answer.token] : []));
+    expect(tokens).toHaveLength(2);
+    expect(tokens[1]).toBe(tokens[0]);
     expect(canonical.token).toBe(sessionTokenDigest(tokens[0]));
     const readSubject = async () => ({ generation: 0, nativeGeneration: 7, deniedSessionKeys: new Set<string>() });
     const admitted = await readFirstPartySession(
@@ -120,7 +139,16 @@ describe('production legacy bridge (dark)', () => {
       expiresAt: new Date(now.getTime() + 3600000),
     });
     expect(
-      (await bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'on', now)).status,
+      (
+        await bridgeLegacyCredential(
+          environment.database,
+          fixtureSession.credential,
+          secret,
+          testBridgeTokenKey,
+          'on',
+          now,
+        )
+      ).status,
     ).toBe('denied');
     expect(
       (
@@ -138,22 +166,49 @@ describe('production legacy bridge (dark)', () => {
       .insert(authSubjectCutoffs)
       .values({ userId: fixtureSession.userId, generation: 1, revokedThrough: now, lastOperationId: randomUUID() });
     expect(
-      (await bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'on', now)).status,
+      (
+        await bridgeLegacyCredential(
+          environment.database,
+          fixtureSession.credential,
+          secret,
+          testBridgeTokenKey,
+          'on',
+          now,
+        )
+      ).status,
     ).toBe('denied');
     const current = await cookie(fixtureSession.userId, fixtureSession.authSessionId, 1);
-    expect((await bridgeLegacyCredential(environment.database, current, secret, 'on', now)).status).toBe('bridged');
+    expect(
+      (await bridgeLegacyCredential(environment.database, current, secret, testBridgeTokenKey, 'on', now)).status,
+    ).toBe('bridged');
     await environment.database
       .update(authCredentialLineage)
       .set({ revokedAt: now })
       .where(eq(authCredentialLineage.userId, fixtureSession.userId));
-    expect((await bridgeLegacyCredential(environment.database, current, secret, 'on', now)).status).toBe('denied');
+    expect(
+      (await bridgeLegacyCredential(environment.database, current, secret, testBridgeTokenKey, 'on', now)).status,
+    ).toBe('denied');
   });
   it('a stale login denial preserves a newer login and persists without lineage', async () => {
     const fixtureSession = await fixture();
     const newerSessionId = randomUUID();
     const newerCredential = await cookie(fixtureSession.userId, newerSessionId);
-    const first = await bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'on', now);
-    const newer = await bridgeLegacyCredential(environment.database, newerCredential, secret, 'on', now);
+    const first = await bridgeLegacyCredential(
+      environment.database,
+      fixtureSession.credential,
+      secret,
+      testBridgeTokenKey,
+      'on',
+      now,
+    );
+    const newer = await bridgeLegacyCredential(
+      environment.database,
+      newerCredential,
+      secret,
+      testBridgeTokenKey,
+      'on',
+      now,
+    );
     expect(first.status).toBe('bridged');
     expect(newer.status).toBe('bridged');
     await denyFirstPartySession(
@@ -170,11 +225,21 @@ describe('production legacy bridge (dark)', () => {
       now,
     );
     expect(
-      (await bridgeLegacyCredential(environment.database, fixtureSession.credential, secret, 'on', now)).status,
+      (
+        await bridgeLegacyCredential(
+          environment.database,
+          fixtureSession.credential,
+          secret,
+          testBridgeTokenKey,
+          'on',
+          now,
+        )
+      ).status,
     ).toBe('denied');
-    expect((await bridgeLegacyCredential(environment.database, newerCredential, secret, 'on', now)).status).toBe(
-      'bridged',
-    );
+    expect(
+      (await bridgeLegacyCredential(environment.database, newerCredential, secret, testBridgeTokenKey, 'on', now))
+        .status,
+    ).toBe('bridged');
     const [denial] = await environment.database
       .select()
       .from(authSessionDenials)
