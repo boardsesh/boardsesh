@@ -9,10 +9,11 @@
 // could hand a crewmate's go on the same climb to the owner.
 //
 // Without them (an older payload), the owner's ticks are matched back the way
-// `deriveWorkoutStages` placed them: oldest first, each to the first climb in
-// plan order with the same climb, angle (and mirror, when both say) that still
-// has fewer ticks than its reps. Owner ticks left over are off plan; everyone
-// else's go to the crew.
+// `deriveWorkoutStages` placed them: oldest first, each to the first climb with
+// the same climb, angle (and mirror, when both say) that still has fewer ticks
+// than its reps, at or after the climb the tick before it went to in plan
+// order, else the first such climb anywhere. Owner ticks left over are off
+// plan; everyone else's go to the crew.
 
 import type { SessionWorkoutRepOutcome } from './types';
 
@@ -92,14 +93,23 @@ export function assignWorkoutTicks<Tick extends AssignableWorkoutTick>(
     return { byClimb, offPlan, crew };
   }
 
+  // Forwards from the slot the last tick went to first, as the derivation does.
+  let lastSlotPosition = -1;
   for (const tick of sorted) {
     if (tick.userId !== workout.userId) {
       crew.push(tick);
       continue;
     }
-    const open = slots.find((slot) => slot.ticks.length < slot.climb.reps.length && sameClimb(slot.climb, tick));
-    if (open) open.ticks.push(tick);
-    else offPlan.push(tick);
+    const isOpen = (slot: (typeof slots)[number]) =>
+      slot.ticks.length < slot.climb.reps.length && sameClimb(slot.climb, tick);
+    const forwardPosition = slots.findIndex((slot, position) => position >= lastSlotPosition && isOpen(slot));
+    const openPosition = forwardPosition >= 0 ? forwardPosition : slots.findIndex(isOpen);
+    if (openPosition < 0) {
+      offPlan.push(tick);
+      continue;
+    }
+    slots[openPosition].ticks.push(tick);
+    lastSlotPosition = openPosition;
   }
   return { byClimb, offPlan, crew };
 }

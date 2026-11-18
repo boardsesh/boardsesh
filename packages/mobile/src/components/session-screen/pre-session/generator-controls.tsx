@@ -277,6 +277,17 @@ export function workoutStepperRows(
           5,
           (climbsPerStep) => onOptionsChange({ ...options, climbsPerStep }),
         ),
+        {
+          key: 'repeatOnWayDown',
+          node: (
+            <SwitchRow
+              label={t('mobile.session.preGeneratorSameClimbsDown')}
+              description={t('mobile.session.preGeneratorSameClimbsDownDescription')}
+              value={options.repeatOnWayDown === true}
+              onValueChange={(repeatOnWayDown) => onOptionsChange({ ...options, repeatOnWayDown })}
+            />
+          ),
+        },
       ];
     case 'ladder':
       return [
