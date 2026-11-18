@@ -631,6 +631,8 @@
         "countdownCuesHint": "A buzz on each of the final seconds, so you are on the holds when the next climb lights up.",
         "sound": "Sound",
         "soundHint": "Play a tone with the cues. It plays over the silent switch and keeps your music going.",
+        "lockScreen": "Show on Lock Screen",
+        "lockScreenHint": "See your rest count down without opening the app.",
         "rogueTitle": "Gym timer",
         "rogueFooter": "Pair a Rogue timer to a board and its stopwatch restarts with your rest: when you log a climb, when the queue moves on and on every fixed-window beat. Only the phone connected to the board drives it.",
         "rogueNotPaired": "Not paired",

@@ -25,13 +25,11 @@ export type TimersModelInput = {
     onAutoAdvanceChange: (enabled: boolean) => void;
   };
   cues: {
-    /**
-     * `null` until something reads the setting and emits the countdown buzz
-     * (#5396): the row is left out, never shown as a switch that does nothing.
-     */
-    countdownCues: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
+    countdownCues: { enabled: boolean; onChange: (enabled: boolean) => void };
     /** `null` on a build that cannot play a sound: the row is left out, not greyed. */
     sound: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
+    /** `null` on a binary that cannot draw the Lock Screen timer: the row is left out. */
+    lockScreen: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
   };
   /** The gym timer section, or `null` when signed out (pairing is saved on the board). */
   rogue: {
@@ -253,18 +251,14 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
       : t('mobile.settings.timers.autoAdvanceNeedsLength');
 
   const cueRows: MoreRow[] = [
-    ...(cues.countdownCues
-      ? [
-          {
-            kind: 'toggle' as const,
-            key: 'countdownCues',
-            label: t('mobile.settings.timers.countdownCues'),
-            subtitle: t('mobile.settings.timers.countdownCuesHint'),
-            value: cues.countdownCues.enabled,
-            onValueChange: cues.countdownCues.onChange,
-          },
-        ]
-      : []),
+    {
+      kind: 'toggle',
+      key: 'countdownCues',
+      label: t('mobile.settings.timers.countdownCues'),
+      subtitle: t('mobile.settings.timers.countdownCuesHint'),
+      value: cues.countdownCues.enabled,
+      onValueChange: cues.countdownCues.onChange,
+    },
     ...(cues.sound
       ? [
           {
@@ -274,6 +268,18 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
             subtitle: t('mobile.settings.timers.soundHint'),
             value: cues.sound.enabled,
             onValueChange: cues.sound.onChange,
+          },
+        ]
+      : []),
+    ...(cues.lockScreen
+      ? [
+          {
+            kind: 'toggle' as const,
+            key: 'lockScreen',
+            label: t('mobile.settings.timers.lockScreen'),
+            subtitle: t('mobile.settings.timers.lockScreenHint'),
+            value: cues.lockScreen.enabled,
+            onValueChange: cues.lockScreen.onChange,
           },
         ]
       : []),
@@ -319,16 +325,12 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
           },
         ],
       },
-      ...(cueRows.length > 0
-        ? [
-            {
-              key: 'cues' as const,
-              title: t('mobile.settings.timers.cuesTitle'),
-              footer: t('mobile.settings.timers.cuesFooter'),
-              rows: cueRows,
-            },
-          ]
-        : []),
+      {
+        key: 'cues',
+        title: t('mobile.settings.timers.cuesTitle'),
+        footer: t('mobile.settings.timers.cuesFooter'),
+        rows: cueRows,
+      },
       ...(rogue ? [rogueSection(t, rogue, fontScale)] : []),
     ],
   };

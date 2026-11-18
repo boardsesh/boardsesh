@@ -631,6 +631,8 @@
         "countdownCuesHint": "Una vibrazione a ogni secondo finale, così sei sulle prese quando si illumina il blocco successivo.",
         "sound": "Suono",
         "soundHint": "Riproduci un tono con i segnali. Suona anche con il tasto silenzioso e non interrompe la tua musica.",
+        "lockScreen": "Mostra nella schermata di blocco",
+        "lockScreenHint": "Guarda il conto alla rovescia del recupero senza aprire l'app.",
         "rogueTitle": "Timer della palestra",
         "rogueFooter": "Abbina un timer Rogue a un pannello e il suo cronometro riparte con il tuo recupero: quando registri un blocco, quando la coda avanza e a ogni scatto della finestra fissa. Lo controlla solo il telefono connesso al pannello.",
         "rogueNotPaired": "Non abbinato",
