@@ -205,8 +205,12 @@ design (solid where legibility demands it, glass where it helps):
   opaque surface on iOS 26 (`buttonStyle('glass')`), an EXPLICIT `bordered`
   fallback below iOS 26 (branch on `useGlassCapability()`, never trusting
   @expo/ui's implicit glass→`.automatic` degradation), and a solid dark-scrim
-  capsule when the region declares `over="content"` (board art). `tonal` aliases
-  `outlined` on iOS; on Android it is a real MD3 `FilledTonalButton`.
+  capsule when the region declares `over="content"` (board art). The label is the
+  neutral label colour, never violet (#7695): beside a filled button a violet
+  label read as a link, and violet already carries links, status and selection.
+  Android's `OutlinedButton` and web's outlined mode do the same; an explicit
+  `tintColor` still wins. `tonal` aliases `outlined` on iOS; on Android it is a
+  real MD3 `FilledTonalButton` (Velvet's secondary container), unchanged.
 - **text** — `borderless`, accent-tinted label.
 - `role="destructive" | "cancel"` maps to the native button role (system red +
   destructive VoiceOver trait on iOS; error tokens on Android). `loading` swaps the
