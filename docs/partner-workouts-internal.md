@@ -262,15 +262,28 @@ the workout to `started`. Then the blocks are turned into a queue:
 
 | Block type                                       | What runs it today                                                                                                                                   |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, `selectClimbsForPlan` fills it, `appendQueueItems` queues it |
+| `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, the shared preview pipeline (`buildPreview`) fills it, `appendQueueItems` queues it |
 | `onTheMinute`                                    | A native `onTheMinute` stage (`partner-workout-plan.ts`) with `numberOfClimbs` and `intervalSeconds` from the block                                       |
 | `freeClimbing`, and any `freeform` block         | Nothing is queued. The block card stays visible in the in-session view with the instructions, and ticks land in the session as usual                    |
 | `fourByFour`, `limitBouldering`                  | Freeform. The card shows rounds and rests as text. The app's own 4x4 and limit blocks are native stages now, but the partner mapping is undecided (`docs/partner-api.md`) |
 
 Grades arrive as `{ scale, value }` and the generator wants a board difficulty
 id, so the mapping happens on device against the board's grade table from
-`@boardsesh/board-config`, once the board is known. A target the board cannot
-express (V0 on a MoonBoard) clamps to the nearest grade and the card says so.
+`@boardsesh/board-config`, once the board is known. A V target spans its whole
+band on that board's own table: Kilter V4 is 6b and 6b+, and the block's slots
+take turns across them. A slot short at its own Font grade fills from the other
+grades in its band before any nearby grade (`PreviewSlot.band`). MoonBoard labels
+6A as V2, so its V3 is 6A+ alone. A V range (a warm-up, pyramid or ladder) ramps
+over V grades, then takes turns across the Font grades inside each, so a Kilter
+V0 to V3 warm-up of four reads V0, V1, V2, V3. A Font target is one grade. A target the board cannot express (V0 on a MoonBoard)
+clamps to the nearest grade and the card says so.
+
+The card fills the blocks through the app's own preview pipeline
+(`buildPreview` in `workout-preview-pool.ts`, called from
+`lib/partner-workout-preview.ts`), the one the workout builder and "Add a block"
+use: a grade that runs short borrows from the nearest grade (#6759), top-ups
+come last, and, added to a running session, the climbs that session already
+queued are passed over.
 
 The native blocks run through the stage model #5379 built
 (`docs/workout-stages.md`). The app already treats every part of a workout as
@@ -297,7 +310,10 @@ to the live session and appends the blocks behind the current queue, the same
 way "Add a block" adds a stage mid-session today (`add-workout-block.ts`: no
 `activateFirstWhenIdle`, so it does not move the wall on this phone, then the
 stages join the run; it shares Add to queue's crew race, see
-`docs/workout-stages.md`). Permanent gym sessions reject attachment before
+`docs/workout-stages.md`). It shares "Add a block"'s rules too: at the tap it
+re-picks, from the pools it already fetched, every row whose climb is in the
+queue now (`queuedClimbUuids`), and arms the rest timer on its own blocks only
+when no workout waits for its Start (`armRestTimerForAddedBlock`). Permanent gym sessions reject attachment before
 changing the workout state; `createSession` also refuses `isPermanent` with
 `appWorkoutId`. Both paths return GraphQL `CONFLICT` with
 `reason: APP_WORKOUT_PERMANENT_SESSION`, and the card asks for a personal
