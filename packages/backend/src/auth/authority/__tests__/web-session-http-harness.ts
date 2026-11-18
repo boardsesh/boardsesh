@@ -19,6 +19,7 @@ import {
   WEB_CREDENTIAL_PROOF_VERSION,
   WEB_SESSION_PROTOCOL_VERSION,
   passwordReplySchema,
+  webCredentialProofMode,
   webSessionBridgeReplySchema,
   type PresentedWebSession,
 } from '@boardsesh/auth-protocol';
@@ -33,6 +34,7 @@ import {
 } from '@boardsesh/db/schema';
 import { createEnvironment } from './environment';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
+import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-reservations';
 import { createPasswordCompareGate } from '../../current-store/password-compare-gate';
 import { createPasswordLoginLimiter } from '../../current-store/password-login-limits';
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
@@ -56,16 +58,27 @@ export function harnessDatabase() {
   return environment.database;
 }
 
-export async function startHarness(): Promise<void> {
+/**
+ * `prepareProjection` builds the manifest the way the operator does (for
+ * suites whose writers reserve email addresses); otherwise a bare enforced
+ * manifest row is enough.
+ */
+export async function startHarness(options: { readonly prepareProjection?: boolean } = {}): Promise<void> {
   environment = await createEnvironment();
   passwordHash = await hash(PASSWORD, 4);
-  await environment.database.insert(authEmailProjection).values({
-    projectionId,
-    normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
-    writerEpoch: 1,
-    phase: 'enforced',
-    preparedAt: new Date(),
-  });
+  if (options.prepareProjection)
+    await environment.database.transaction(async (transaction) => {
+      await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
+      await transaction.update(authEmailProjection).set({ phase: 'enforced' });
+    });
+  else
+    await environment.database.insert(authEmailProjection).values({
+      projectionId,
+      normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+      writerEpoch: 1,
+      phase: 'enforced',
+      preparedAt: new Date(),
+    });
   const database = environment.database;
   const guards = { limits: createPasswordLoginLimiter({ redis: () => null }), gate: createPasswordCompareGate() };
   const owned = createServer((request, response) => {
@@ -156,7 +169,8 @@ export async function login(email: string, presented?: PresentedWebSession) {
     requestId: randomUUID(),
     issuedAt: Date.now(),
     webSession: presented ? { presented } : {},
-    credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION,
+    // With proofs required, every sign-in must ask for one.
+    ...(webCredentialProofMode(process.env) === 'off' ? {} : { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }),
     payload: { email, password: PASSWORD },
   });
   expect(status).toBe(200);

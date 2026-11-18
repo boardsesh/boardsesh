@@ -560,6 +560,46 @@ What B1 does with the token: put it in the signed session cookie, Max-Age
 it to page JavaScript. Reads present it back as a `canonical-token` after the
 cookie signature check.
 
+### Set-password on a canonical session (B4b)
+
+The staged set-password command (`POST /api/internal/auth/current-store/set-password`)
+also takes `{ presented, expectedUserId, expectedAuthSessionId, password,
+confirmPassword }`; the first form with `credential` is unchanged, and a
+presented legacy cookie behaves exactly as that form. With
+`CURRENT_STORE_WEB_SESSION_MODE` on, a canonical token sets the password only
+for a `login` session signed in under five minutes ago; a bridged or carried
+session, or an older login, answers `reauthentication_required` and writes
+nothing. On success the account's generation moves and the session keeps its id
+and token at the new generation (`keepCanonicalAfterSecurityMutation`, the same
+function the provider flows use), so www writes no cookie; every other session,
+lineage, native refresh token and pending link ends as before. The reply is
+`set` with a credential proof at the new generation and no token. That proof
+carries `authenticatedAt: null` and `linkGuarded: false`: www must not write a
+cookie from it, and it stays in the reply only because the reply schema (and
+www builds already deployed) require one; written by mistake, it could never be
+fresh.
+
+Accepted with this design:
+- A stolen copy of the requesting session's token survives the password change,
+  because the session keeps its token. Every other session ends.
+- After set-password the browser's legacy rollback twin is stale (its generation
+  is the old one) and no cookie may be written, so after a rollback that browser
+  signs in again. A browser
+access token signed before the change is refused at once; `/access` signs a new
+one for the same cookie. With the mode off a canonical token answers
+`unauthenticated`.
+
+### Native transfer sign-in in a browser: refused under `better-auth`
+
+www's `native-oauth` credentials provider signed a browser in with a native
+OAuth transfer token. Nothing has called it since 2026-08-15: the Capacitor
+deep-link listener that used it was deleted (d5a8336c88), and the Expo app
+exchanges the token at the backend's `/auth/native/exchange` and never used the
+provider. So there is no backend command that turns a transfer token into a web
+session, and under `AUTH_BROWSER_SESSION_MODE=better-auth` www refuses the
+`native-oauth` provider (the web half does that) instead of minting a NextAuth
+session no backend session stands behind.
+
 ### The private commands B1 calls
 
 All five sit behind `CURRENT_STORE_WEB_SESSION_MODE=backend-staging` on the

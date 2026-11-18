@@ -12,6 +12,7 @@ import {
   BROWSER_ACCESS_TOKEN_LIFETIME_SECONDS,
   webSessionAccessCommandSchema,
   webSessionAccessReplySchema,
+  setPasswordCommandSchema,
   webSessionBridgeCommandSchema,
   webSessionBridgeReplySchema,
   webSessionMode,
@@ -202,5 +203,27 @@ describe('web session protocol', () => {
       webSessionAccessReplySchema.safeParse({ ...base, operation: 'access', outcome: 'unauthenticated' }).success,
     ).toBe(false);
     expect(webSessionAccessReplySchema.safeParse({ error: 'unauthorized' }).success).toBe(false);
+  });
+
+  it('accepts set-password with a presented session as well as the first form', () => {
+    const command = (payload: unknown) =>
+      setPasswordCommandSchema.safeParse({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'set-password',
+        requestId,
+        issuedAt: 1,
+        payload,
+      }).success;
+    const passwords = { password: 'a first password', confirmPassword: 'a first password' };
+    const expected = { expectedUserId: 'u', expectedAuthSessionId: 's' };
+    expect(command({ ...expected, ...passwords, credential: 'jwe' })).toBe(true);
+    expect(command({ ...expected, ...passwords, presented: { kind: 'canonical-token', token: 't' } })).toBe(true);
+    expect(command({ ...expected, ...passwords, presented: { kind: 'legacy-jwe', credential: 'jwe' } })).toBe(true);
+    expect(
+      command({ ...expected, ...passwords, credential: 'jwe', presented: { kind: 'canonical-token', token: 't' } }),
+    ).toBe(false);
+    expect(command({ ...expected, password: 'a first password', confirmPassword: 'another', credential: 'jwe' })).toBe(
+      false,
+    );
   });
 });

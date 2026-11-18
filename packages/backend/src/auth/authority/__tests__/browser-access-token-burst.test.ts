@@ -65,7 +65,7 @@ vi.mock('../browser-access-token', async (importOriginal) => {
   };
 });
 
-beforeAll(startHarness);
+beforeAll(() => startHarness());
 beforeEach(() => {
   stubCommandEnvironment();
   statements.delayMs = 0;
