@@ -272,18 +272,39 @@ admin check and the feature-flag distinct id. With the mode unset, empty or
 `legacy` both read the admitted NextAuth cookie exactly as before: the mode is
 checked from the variable first, and nothing new is even loaded.
 
-Under `better-auth` both come from `server-browser-session.server.ts`: one
-`resolveBrowserSession` per render (React `cache`), with its own bridge budget
-per client address (`server-render-bridge:`), and at most one `access` call per
-render, made only when the page asks for a token. So a page never fetches data
-as one login and shows another.
+Under `better-auth` both come from `server-browser-session.server.ts`: ONE
+`resolveBrowserSession` per request, with its access token, held in a WeakMap
+keyed by the request's headers object (`headers()` gives every helper call of
+one request the same object, in a page render, a route handler or a server
+action, and the entry goes with the request). React's `cache` is not relied
+on: it memoises only inside a page render. The resolver gets the request's
+`Cookie` header exactly as received, never one rebuilt from `cookies()`,
+which keeps one copy per name and would hide the duplicate copies that mean
+signed out. So session and token always come from one resolution, and a
+request costs one `session` command and one `access` command (a legacy-only
+read adds one `bridge` and one more `session`).
+
+Only reads bridge a legacy-only browser without a cookie: a page render or
+any request whose method is GET or HEAD. A route handler passes its method
+(`getAdmittedServerSession({ method: request.method })`), and a server action
+(Next's `Next-Action` header) counts as a write. A write with only a legacy
+cookie is answered from the admitted legacy cookie, as the session read
+answers a POST, or 503 when that cookie cannot be admitted.
 
 | The resolver says | Session | Token |
 | --- | --- | --- |
-| A live session (from the cookie, or a legacy-only browser bridged without a cookie) | The session JSON's fields in NextAuth's `Session` shape | The 15-minute access token for that same session |
-| Signed out (no cookie, a dead or conflicted first-party cookie, an oversized or plain-named legacy cookie, a denied bridge) | `null` | `undefined` |
-| Nothing known beyond the legacy cookie (its bridge over budget or failing) | The admitted legacy cookie's session, as the session read answers then | The admitted legacy cookie, as in `legacy` mode |
+| A live session (from the cookie, or a legacy-only read bridged without a cookie) | The session JSON's fields in NextAuth's `Session` shape | The 15-minute access token for that same session |
+| Signed out (no cookie, a dead, conflicted or duplicated first-party cookie, an oversized or plain-named legacy cookie, a denied bridge), or `access` finding the session ended | `null` | `undefined` |
+| Nothing known beyond the legacy cookie (its bridge over budget or failing, or a write) | The admitted legacy cookie's session, as the session read answers then | The admitted legacy cookie, as in `legacy` mode (the backend still accepts it) |
 | Backend unavailable, or an unknown mode value | `CredentialAuthorityUnavailable`, which each route already answers as its error (503), never as anonymous | the same |
+
+Because `access` is part of every resolution, a request never has a session
+without a token: an `access` that finds the session ended makes the request
+signed out. A browser whose first-party cookie never verifies beside a valid
+legacy cookie can never get a cookie written and is bridged on every read;
+its bridges count in their own budget of 120 a minute per client address
+(`COOKIELESS_BRIDGES_PER_CLIENT`) rather than the 20 of a legacy-only browser,
+so link prefetches do not turn into an outage of its own.
 
 A render never writes or clears a cookie: the legacy-only browser's first
 document arrives before any session read and renders signed in from a
@@ -293,12 +314,11 @@ resolver reads the login cookie first. The token never leaves the server: no
 page passes it to a client component, into an RSC payload or into cacheable
 HTML, and the client store only ever holds tokens from ws-auth.
 
-Private commands per page view under `better-auth`: a render that reads the
-viewer sends one `session` command, plus one `access` if it fetches data with
-the token (a legacy-only first document adds one `bridge` and one more
-`session`); the page's own session read sends one `session`, and its ws-auth
-two. These are www-to-backend commands, each one admission read on the backend
-(#7787's coalescer covers the per-request token reads that follow).
+Private commands per page view under `better-auth`: the render sends one
+`session` and one `access` (a legacy-only first document adds one `bridge` and
+one more `session`); the page's own session read sends one `session`, and its
+ws-auth two. These are www-to-backend commands, each one admission read on the
+backend (#7787's coalescer covers the per-request token reads that follow).
 
 Two readers stay on the legacy cookie on purpose: the native transfer callback
 (`api/auth/native/callback`) reads the legacy cookie in every mode, because it
@@ -308,8 +328,11 @@ under `better-auth`, cleared both first-party names; issuing a first-party
 session there is B4c. The provider link guard (`oauth-link-guard.server.ts`)
 reads the cookie NextAuth's own provider callback links into, which stays the
 legacy cookie until B5. The partner sign-in and consent pages read the same
-render resolution (sign-in time and link guard from the session row, as
-partner consent does on the backend since B6).
+request resolution (sign-in time and link guard from the session row, as
+partner consent does on the backend since B6). In the one state where the two
+could name different accounts (a stale first-party cookie beside a newer
+legacy login whose bridge failed now; the backend follows the newer login),
+the page shows no account and asks for a sign-in.
 
 ## Signed-in browsers from before the switch
 

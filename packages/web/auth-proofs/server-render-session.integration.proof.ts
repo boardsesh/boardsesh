@@ -10,13 +10,16 @@
  * `cache` scope; the proof clears it between renders.
  */
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { encode, type JWT } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { authSession, userCredentials } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { CookieJar, ORIGIN, patchNextRequestIo, servedRequests } from './route-harness';
 import {
+  COOKIE_SECRET,
   DOMAIN,
   LEGACY,
   LOGIN,
@@ -32,21 +35,14 @@ const holder = vi.hoisted(() => {
   // auth-options reads both when it loads: production www, shared Domain cookie.
   process.env.NEXTAUTH_SECRET = 'server-render-session-proof-nextauth-secret-7596';
   process.env.NEXTAUTH_URL = 'https://www.boardsesh.com';
-  // React's per-render `cache` exists only under react-server; one Map is one render here.
-  return { database: undefined as unknown, renderMemo: new Map<unknown, unknown>() };
+  return { database: undefined as unknown };
 });
-vi.mock('react', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('react')>()),
-  cache:
-    <Result>(compute: () => Result) =>
-    () => {
-      if (!holder.renderMemo.has(compute)) holder.renderMemo.set(compute, compute());
-      return holder.renderMemo.get(compute) as Result;
-    },
-}));
 vi.mock('server-only', () => ({}));
 // Next's request store, answered from the served request, for the modules this proof imports.
-// Only `getAll`: a render that tried to set or delete a cookie would throw here.
+// `headers()` is the request's own headers object, so its `Cookie` header is the raw one, with
+// duplicate copies; one object per request, as Next's store is. `cookies()` has only `getAll`:
+// a render that tried to set or delete a cookie would throw here. Nothing mocks React's `cache`:
+// the helpers hold their one resolution per request themselves.
 vi.mock('next/headers', async () => {
   const { servedRequests: served } = await import('./route-harness');
   return {
@@ -87,6 +83,9 @@ import { getAdmittedServerSession } from '../app/lib/auth/admitted-session.serve
 import { CredentialAuthorityUnavailable } from '../app/lib/auth/credential-admission.server';
 import { getServerAuthToken } from '../app/lib/auth/server-auth';
 import { BRIDGES_PER_CLIENT } from '../app/lib/auth/browser-session-bridge.server';
+import * as controllersRoute from '../app/api/internal/controllers/route';
+import { readPartnerPageSession } from '../app/lib/partner-oauth/sign-in-session.server';
+import { resolveFirstPartySession } from '../../backend/src/auth/partner/first-party-session';
 
 const secret = 'server-render-session-proof-nextauth-secret-7596';
 const ACCESS_SECRET = 'server-render-session-proof-access-secret-7596-b4a';
@@ -133,15 +132,15 @@ function betterAuth(): void {
   vi.stubEnv('AUTH_BROWSER_ACCESS_TOKEN_SECRET', ACCESS_SECRET);
 }
 
-/** One server render of a document request carrying `cookie`: a fresh React cache scope. */
+/** One request carrying `cookie` (a page render unless `headers` say otherwise): its own request store. */
 async function render<Result>(
   cookie: string,
   read: () => Promise<Result>,
   clientAddress = randomClientAddress(),
+  extraHeaders: Record<string, string> = {},
 ): Promise<Result> {
-  holder.renderMemo.clear();
   const request = new NextRequest(new URL('/settings', ORIGIN), {
-    headers: { cookie, 'x-forwarded-for': clientAddress },
+    headers: { cookie, 'x-forwarded-for': clientAddress, ...extraHeaders },
   });
   return servedRequests.run(request, read);
 }
@@ -153,6 +152,14 @@ const renderPage = (cookie: string, clientAddress?: string) =>
     async () => ({ session: await getAdmittedServerSession(), token: await getServerAuthToken() }),
     clientAddress,
   );
+
+/** A real `/api/internal/*` route handler, called the way Next calls it, inside its own request store. */
+async function callInternalRoute(handler: (request: NextRequest) => Promise<Response>, path: string, cookie: string) {
+  const request = new NextRequest(new URL(path, ORIGIN), {
+    headers: { cookie, 'x-forwarded-for': randomClientAddress() },
+  });
+  return servedRequests.run(request, () => handler(request));
+}
 
 async function graphqlViewer(bearer: string) {
   const response = await graphqlFetch(
@@ -178,22 +185,26 @@ async function legacyLogin(claims: Partial<JWT> = {}) {
 
 type SessionJson = { user?: { id: string }; authSessionId?: string };
 
-describe('server renders with the mode unset (as on main)', () => {
-  it('read the admitted legacy cookie for the session and forward it as the bearer', async () => {
-    const climber = await createClimber(environment.database);
-    const jar = new CookieJar();
-    await login(jar, climber.email);
-    const { session, token } = await renderPage(jar.header());
-    expect(session?.user.id).toBe(climber.id);
-    expect(token).toBe(jar.get(LEGACY, DOMAIN));
-    expect(commandsSent).toEqual([]);
-  });
+describe('server renders with the mode unset, empty or legacy (as on main)', () => {
+  it.each([undefined, '', 'legacy'])(
+    'read the admitted legacy cookie and forward it as the bearer (mode %j)',
+    async (mode) => {
+      if (mode !== undefined) vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
+      const climber = await createClimber(environment.database);
+      const jar = new CookieJar();
+      await login(jar, climber.email);
+      const { session, token } = await renderPage(jar.header());
+      expect(session?.user.id).toBe(climber.id);
+      expect(token).toBe(jar.get(LEGACY, DOMAIN));
+      expect(commandsSent).toEqual([]);
+    },
+  );
 });
 
 describe('server renders under better-auth', () => {
   beforeEach(betterAuth);
 
-  it('render A with A’s session JSON and a token the backend accepts, one read and one token per render', async () => {
+  it('render A with A’s session JSON and a token the backend accepts, one read and one token per request', async () => {
     const climber = await createClimber(environment.database);
     const jar = new CookieJar();
     await login(jar, climber.email);
@@ -262,6 +273,60 @@ describe('server renders under better-auth', () => {
     const limited = await renderPage(`${LEGACY}=${credential}`, clientAddress);
     expect(limited.session?.user.id).toBe(climber.id);
     expect(limited.token).toBe(credential);
+    // The backend still accepts the legacy cookie as a bearer under better-auth.
+    expect((await graphqlViewer(limited.token ?? '')).body.data?.authenticatedUserId).toBe(climber.id);
+  });
+
+  it('give a browser that can never get a cookie written its own, higher budget (#7798 review, L5)', async () => {
+    const { climber, credential } = await legacyLogin();
+    const clientAddress = randomClientAddress();
+    const cookie = `${LOGIN}=not-a-signed-value; ${LEGACY}=${credential}`;
+    for (let count = 0; count < BRIDGES_PER_CLIENT + 5; count += 1)
+      expect((await renderPage(cookie, clientAddress)).session?.user.id).toBe(climber.id);
+  });
+
+  it('see duplicate copies of the login cookie as signed out, in a render and in a route (#7798 review, H1)', async () => {
+    const [first, second] = [await createClimber(environment.database), await createClimber(environment.database)];
+    const [jarA, jarB] = [new CookieJar(), new CookieJar()];
+    await login(jarA, first.email);
+    await login(jarB, second.email);
+    // A Domain copy and a host-only copy of one name with differing values: which one a reader keeps is not reliable.
+    const duplicated = `${LOGIN}=${jarA.get(LOGIN, DOMAIN)}; ${LOGIN}=${jarB.get(LOGIN, DOMAIN)}`;
+    expect(await renderPage(duplicated)).toEqual({ session: null, token: undefined });
+    const routeAnswer = await callInternalRoute(controllersRoute.GET, '/api/internal/controllers', duplicated);
+    expect(routeAnswer.status).toBe(401);
+  });
+
+  it('resolve once per route request, not per helper call, and bridge only on reads (#7798 review, M1, L4)', async () => {
+    const climber = await createClimber(environment.database);
+    const jar = new CookieJar();
+    await login(jar, climber.email);
+    commandsSent = [];
+    // A server action (Next marks it `Next-Action`): many helper calls, one resolution.
+    const action = await render(
+      jar.header(),
+      async () => {
+        const [token, session] = await Promise.all([getServerAuthToken(), getAdmittedServerSession()]);
+        return { token, session, again: await getServerAuthToken() };
+      },
+      randomClientAddress(),
+      { 'next-action': 'proof-action-id' },
+    );
+    expect(action.again).toBe(action.token);
+    expect(action.session?.user.id).toBe(climber.id);
+    expect(commandsSent.sort()).toEqual(['access', 'session']);
+    // A write with only a legacy cookie: answered from the admitted legacy cookie, never bridged.
+    const { climber: legacyClimber, credential } = await legacyLogin();
+    commandsSent = [];
+    const written = await render(
+      `${LEGACY}=${credential}`,
+      async () => ({ token: await getServerAuthToken(), session: await getAdmittedServerSession() }),
+      randomClientAddress(),
+      { 'next-action': 'proof-action-id' },
+    );
+    expect(written.token).toBe(credential);
+    expect(written.session?.user.id).toBe(legacyClimber.id);
+    expect(commandsSent).toEqual([]);
   });
 
   it('fail with the authority outage, never as anonymous, while the backend is off', async () => {
@@ -280,5 +345,67 @@ describe('server renders under better-auth', () => {
   it('render a page with no session cookie signed out without asking the backend', async () => {
     expect(await renderPage('')).toEqual({ session: null, token: undefined });
     expect(commandsSent).toEqual([]);
+  });
+});
+
+describe('the partner sign-in and consent pages under better-auth (#7798 review, M2)', () => {
+  beforeEach(betterAuth);
+
+  /** The api consent endpoint's own read of the same Cookie header. */
+  const consentRead = (cookie: string) =>
+    resolveFirstPartySession(cookie, secret, () => environment.database, new Date(), COOKIE_SECRET);
+
+  /** A climber whose password was set an hour ago, so a sign-in now is clearly after it. */
+  async function climberWithOldPassword() {
+    const climber = await createClimber(environment.database);
+    await environment.database
+      .update(userCredentials)
+      .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(userCredentials.userId, climber.id));
+    return climber;
+  }
+
+  it('agree with the consent endpoint on account and recency for a login bridged from before the switch', async () => {
+    const climber = await climberWithOldPassword();
+    const credential = await encode({
+      token: {
+        sub: climber.id,
+        email: climber.email,
+        authSessionId: randomUUID(),
+        gen: 0,
+        auth_time: Math.floor(Date.now() / 1000) - 60,
+        link_guarded: true,
+      },
+      secret,
+      maxAge: 3600,
+    });
+    const cookie = `${LEGACY}=${credential}`;
+    const page = await render(cookie, () => readPartnerPageSession());
+    const consent = await consentRead(cookie);
+    expect(consent.status).toBe('signed-in');
+    expect(page).toMatchObject({ account: climber.email, recentGuardedSignIn: true });
+    if (consent.status === 'signed-in') expect(consent.user.email).toBe(page?.account);
+  });
+
+  it('show no account when a stale login cookie sits beside a newer legacy login that cannot be bridged now', async () => {
+    const climberA = await climberWithOldPassword();
+    const jar = new CookieJar();
+    await login(jar, climberA.email);
+    const { authSessionId: staleId } = (await (await readSession(jar.header())).json()) as SessionJson;
+    await environment.database
+      .update(authSession)
+      .set({ originalAuthenticatedAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(authSession.id, staleId ?? ''));
+    const newer = await legacyLogin({ link_guarded: true });
+    const clientAddress = randomClientAddress();
+    // Use up this client's render bridges, so the newer login cannot be bridged now.
+    const filler = await legacyLogin();
+    for (let count = 0; count < BRIDGES_PER_CLIENT; count += 1)
+      await renderPage(`${LEGACY}=${filler.credential}`, clientAddress);
+    const cookie = `${LOGIN}=${jar.get(LOGIN, DOMAIN)}; ${LEGACY}=${newer.credential}`;
+    expect(await render(cookie, () => readPartnerPageSession(), clientAddress)).toBeNull();
+    // The consent endpoint follows the newer login, never A.
+    const consent = await consentRead(cookie);
+    if (consent.status === 'signed-in') expect(consent.user.id).toBe(newer.climber.id);
   });
 });

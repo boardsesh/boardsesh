@@ -15,7 +15,7 @@ const revalidateClimbSearchSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = await getAdmittedServerSession();
+    const session = await getAdmittedServerSession({ method: request.method });
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

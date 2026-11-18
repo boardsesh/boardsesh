@@ -26,10 +26,13 @@ export async function readPartnerPageSession(nowMs: number = Date.now()): Promis
   // guard of the session row (the backend's consent reads the same row, B6).
   const rawMode = process.env[BROWSER_SESSION_MODE_ENV];
   if (rawMode !== undefined && rawMode !== '' && rawMode !== 'legacy') {
-    const { serverBrowserSessionForRender, partnerSignInFacts } =
-      await import('@/app/lib/auth/server-browser-session.server');
-    const render = await serverBrowserSessionForRender();
+    const { serverBrowserSession, partnerSignInFacts } = await import('@/app/lib/auth/server-browser-session.server');
+    const render = await serverBrowserSession();
     if (render?.kind === 'signed-out') return null;
+    // A stale first-party cookie beside a newer legacy login that could not be
+    // bridged now: the consent endpoint follows the newer login, so this page
+    // shows no account rather than the older one (#7798 review, M2).
+    if (render?.kind === 'active' && render.newerLegacyLoginUnresolved) return null;
     if (render?.kind === 'active') {
       const { account, linkGuarded, authTimeSeconds } = partnerSignInFacts(render.session, nowMs);
       return {
