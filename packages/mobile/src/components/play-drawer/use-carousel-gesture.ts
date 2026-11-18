@@ -1,4 +1,5 @@
 import { useEffect, useMemo, type ComponentType, type RefObject } from 'react';
+import { Platform } from 'react-native';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import {
   cancelAnimation,
@@ -27,6 +28,10 @@ import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
  * somewhere.
  */
 const DRAG_RESISTANCE = 0.3;
+
+// Give a swipe that starts with a little vertical drift four more points
+// to show its direction before the carousel yields to Android's native scroll.
+const ANDROID_VERTICAL_HANDOFF_THRESHOLD = 14;
 
 /**
  * How much faster than the finger the board may move to close a gap that opened
@@ -78,9 +83,8 @@ type UseCarouselGestureOptions = {
   isZoomedSV?: SharedValue<boolean>;
   /** Mounted pages whose backgrounds and holds have actually displayed. */
   pageArt?: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
-  /** RNGH ref to the surrounding scroll. Simultaneous recognition lets native
-   *  vertical scrolling start immediately while horizontal swipes still drive
-   *  the carousel. */
+  /** RNGH ref to the surrounding scroll. On Android it waits for the carousel
+   *  to decide the direction. Elsewhere both gestures can recognize together. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
 };
 
@@ -157,6 +161,8 @@ export function useCarouselGesture({
   pageArt,
   scrollRef,
 }: UseCarouselGestureOptions): UseCarouselGestureReturn {
+  const deferNativeScroll = Platform.OS === 'android' && scrollRef !== undefined;
+  const verticalThreshold = deferNativeScroll ? ANDROID_VERTICAL_HANDOFF_THRESHOLD : DIRECTION_THRESHOLD;
   const {
     translateX,
     isAnimating,
@@ -226,7 +232,7 @@ export function useCarouselGesture({
     hapticMedium();
   };
 
-  // Lock direction on first significant move. Once locked horizontal, the gesture
+  // Lock once movement shows the direction. Once locked horizontal, the gesture
   // stays committed even if the user drifts vertically. failOffsetY would
   // otherwise kill a horizontal swipe the moment Y drift crossed 10px, making
   // carousel swipes finicky. Vertical-locked gestures fail so the touch falls
@@ -657,10 +663,10 @@ export function useCarouselGesture({
         // Bias toward horizontal: lock vertical only when the motion is clearly
         // vertical (absY ≥ absX × VERTICAL_LOCK_RATIO). Keeps near-vertical
         // scroll/dismiss working while protecting slightly-diagonal climb swipes.
-        // This mirrors decideSwipeDirection(dx, dy, threshold, VERTICAL_LOCK_RATIO)
-        // in @boardsesh/play-view (the canonical spec + web's path) — inlined here
-        // because the worklet can't call it; keep the two in sync if either changes.
+        // This uses the ratio from decideSwipeDirection in @boardsesh/play-view.
+        // Android's scroll handoff also waits for a little more vertical travel.
         if (absY >= absX * VERTICAL_LOCK_RATIO) {
+          if (absY <= verticalThreshold) return;
           directionLock.value = -1;
           state.fail();
         } else {
@@ -697,8 +703,12 @@ export function useCarouselGesture({
         'worklet';
         directionLock.value = 0;
       });
+    if (scrollRef) {
+      if (deferNativeScroll) pan.blocksExternalGesture(scrollRef);
+      else pan.simultaneousWithExternalGesture(scrollRef);
+    }
     return {
-      gesture: scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan,
+      gesture: pan,
       startFling,
       waitForArt,
       dropPendingRelease,
@@ -734,6 +744,8 @@ export function useCarouselGesture({
     touchCancelled,
     releaseDeadline,
     scrollRef,
+    deferNativeScroll,
+    verticalThreshold,
     virtualTouch,
     virtualTravel,
   ]);

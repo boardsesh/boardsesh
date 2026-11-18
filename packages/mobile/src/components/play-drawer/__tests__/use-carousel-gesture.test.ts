@@ -224,7 +224,7 @@ describe('useCarouselGesture', () => {
     platform.OS = 'ios';
   });
 
-  it.each(['ios', 'android'])('allows %s scrolling simultaneously with the carousel', (platformName) => {
+  it.each(['ios', 'web'])('allows %s scrolling simultaneously with the carousel', (platformName) => {
     platform.OS = platformName;
     const scrollRef = { current: null };
     renderHook(() => useCarouselGesture(makeOptions({ scrollRef })));
@@ -234,13 +234,13 @@ describe('useCarouselGesture', () => {
     expect(settings.maxPointers).toBe(1);
   });
 
-  it('retains simultaneous browser scrolling', () => {
-    platform.OS = 'web';
+  it('makes Android scrolling wait for the carousel', () => {
+    platform.OS = 'android';
     const scrollRef = { current: null };
     renderHook(() => useCarouselGesture(makeOptions({ scrollRef })));
     const settings = recordedBuilders[0].settings;
-    expect(settings.simultaneousWithExternalGesture).toBe(scrollRef);
-    expect(settings.blocksExternalGesture).toBeUndefined();
+    expect(settings.blocksExternalGesture).toBe(scrollRef);
+    expect(settings.simultaneousWithExternalGesture).toBeUndefined();
   });
 
   it('keeps the gesture identity stable across enabled and board-width changes', () => {
@@ -1486,6 +1486,36 @@ describe('useCarouselGesture', () => {
     const state = makeState();
     lockFrom(latestHandlers(), 4, 30, state); // |dy|(30) ≥ |dx|(4) × 1.5
 
+    expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(state.activate).not.toHaveBeenCalled();
+  });
+
+  it('lets an Android swipe start with slight vertical drift and then lock horizontal', () => {
+    platform.OS = 'android';
+    renderHook(() => useCarouselGesture(makeOptions({ scrollRef: { current: null } })));
+    const handlers = latestHandlers();
+    const state = makeState();
+    lockFrom(handlers, 1, 12, state);
+    expect(state.fail).not.toHaveBeenCalled();
+    expect(state.activate).not.toHaveBeenCalled();
+
+    handlers.onTouchesMove({ allTouches: [{ absoluteX: 112, absoluteY: 113 }] }, state);
+    expect(state.activate).toHaveBeenCalledTimes(1);
+    expect(state.fail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['android', 14],
+    ['ios', 10],
+  ])('hands a clearly vertical drag to %s scrolling past %i points', (platformName, threshold) => {
+    platform.OS = platformName;
+    renderHook(() => useCarouselGesture(makeOptions({ scrollRef: { current: null } })));
+    const handlers = latestHandlers();
+    const state = makeState();
+    lockFrom(handlers, 0, -threshold, state);
+    expect(state.fail).not.toHaveBeenCalled();
+
+    handlers.onTouchesMove({ allTouches: [{ absoluteX: 100, absoluteY: 99 - threshold }] }, state);
     expect(state.fail).toHaveBeenCalledTimes(1);
     expect(state.activate).not.toHaveBeenCalled();
   });
