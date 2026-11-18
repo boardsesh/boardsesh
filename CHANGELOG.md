@@ -20,6 +20,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Bring your Kilter or Tension sends to Boardsesh with a guide to linking your account or importing an old Kilter export. ([#7874](https://github.com/boardsesh/boardsesh/pull/7874))
 - See how Climbdex and BoardLib helped get Boardsesh off the ground in Acknowledgements. ([#7836](https://github.com/boardsesh/boardsesh/pull/7836))
 - Swipe between climbs on Android with fewer accidental scrolls. ([#7813](https://github.com/boardsesh/boardsesh/pull/7813))
 - Open a workout from your connected training app and climb it in Boardsesh. ([#7776](https://github.com/boardsesh/boardsesh/pull/7776))
