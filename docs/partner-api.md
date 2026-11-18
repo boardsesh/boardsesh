@@ -721,6 +721,9 @@ Send grades on a named scale, never as a bare string:
 `v` takes an integer 0 to 17. `font` takes the usual Fontainebleau strings
 from `3` to `9A`. Boardsesh converts to the grade table of whichever board the
 climber ends up on. Results use the grade object from section 3.
+When the climber has Boardsesh grades turned on, the app picks climbs on the
+Boardsesh grade it shows them, so a climb in a "V4" block can come back in
+results with a community grade one away, such as V3 or V5.
 
 ### Response
 

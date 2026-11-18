@@ -63,7 +63,10 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 // The real "Add a block" arm rule runs; only the arm itself is watched.
 vi.mock('../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout: state.arm }));
-vi.mock('../../../lib/graphql/hooks/search-grade-source', () => ({ useSearchGradeSourceActive: () => false }));
+vi.mock('../../../lib/graphql/hooks/search-grade-source', () => ({
+  useSearchGradeSourceActive: () => false,
+  useSearchGradeSourceSettled: () => true,
+}));
 vi.mock('../../../offline/session-workout-outbox', () => ({ enqueueSessionWorkoutWrite: vi.fn(async () => 'queued') }));
 vi.mock('../pre-session/select-climbs-for-plan', () => ({ fetchGradePool: vi.fn() }));
 vi.mock('../../../lib/workout-run-store', () => ({
