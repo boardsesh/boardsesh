@@ -87,7 +87,13 @@ afterEach(() => {
 });
 
 describe('ad pixels in the browser', () => {
-  it('loads nothing and sends nothing without consent', async () => {
+  it.each([
+    null,
+    { ...ALLOW_AFTER_COPY, analytics: 'denied' as const },
+    { ...ALLOW_AFTER_COPY, basis: 'region_default' as const },
+  ])('loads nothing and sends nothing without an explicit yes: %j', async (record) => {
+    harness.record = record;
+    harness.authorized = true;
     const pixels = await loadModule();
     pixels.syncAdPixels('/');
     pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
@@ -171,7 +177,7 @@ describe('ad pixels in the browser', () => {
     expect(testWindow().rdt).toBeUndefined();
   });
 
-  it('pauses without withdrawing while the account or region is still resolving', async () => {
+  it('pauses without withdrawing while the account is still resolving', async () => {
     grant();
     cookieJar.set('_fbp', 'fb.1.1.1');
     harness.authorized = false;
@@ -208,6 +214,36 @@ describe('ad pixels in the browser', () => {
     expect(cookieWrites).toContain('_rdt_uuid=; Max-Age=0; Path=/; Domain=www.boardsesh.com');
   });
 
+  it('discards queued pixel events when consent is withdrawn before the scripts arrive', async () => {
+    grant();
+    const pixels = await loadModule();
+    pixels.syncAdPixels('/');
+    pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
+    expect(testWindow().fbq?.queue).toContainEqual(['track', 'PageView']);
+    expect(testWindow().rdt?.callQueue).toContainEqual(['track', 'PageVisit']);
+
+    harness.record = { ...ALLOW_AFTER_COPY, analytics: 'denied' };
+    harness.authorized = false;
+    pixels.syncAdPixels('/');
+    pixels.syncAdPixels('/gyms');
+    pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
+    // These are the commands a late vendor script would drain on arrival.
+    expect(testWindow().fbq?.queue).toEqual([['consent', 'revoke']]);
+    expect(testWindow().rdt?.callQueue).toEqual([]);
+  });
+
+  it('can withdraw when a content blocker replaced the pixel globals with empty functions', async () => {
+    Object.defineProperty(window, 'fbq', { configurable: true, value: vi.fn() });
+    Object.defineProperty(window, 'rdt', { configurable: true, value: vi.fn() });
+    grant();
+    const pixels = await loadModule();
+    pixels.syncAdPixels('/');
+    harness.record = null;
+    harness.authorized = false;
+    expect(() => pixels.syncAdPixels('/')).not.toThrow();
+    expect(pixelScripts()).toEqual([]);
+  });
+
   it('withdraws when Global Privacy Control turns up on a region default', async () => {
     grant({ ...ALLOW_AFTER_COPY, basis: 'region_default' });
     harness.gpc = true;
@@ -229,8 +265,7 @@ describe('ad pixels in the browser', () => {
     pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
     const metaQueue = testWindow().fbq?.queue ?? [];
     expect(metaQueue.at(-1)).toEqual(['consent', 'revoke']);
-    expect((testWindow().rdt?.callQueue ?? []).at(-1)).toEqual(['track', 'PageVisit']);
-    expect(testWindow().rdt?.callQueue).toHaveLength(2);
+    expect(testWindow().rdt?.callQueue).toEqual([]);
   });
 
   it('never loads inside the Capacitor app', async () => {

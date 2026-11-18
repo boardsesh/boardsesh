@@ -215,28 +215,15 @@ The rule, the matching Railway variable `CLOUDFLARE_ORIGIN_PROOF_SECRET` and the
 order to set them, and the `_NEXT` variable for rotation, are in
 [password delegation](./better-auth-web-password-delegation.md#turning-on-the-origin-proof).
 
-### Consent province header
+### Analytics consent
 
-Quebec consent prompting uses a trusted coarse province code. The declared
-`boardsesh:consent-region-header` request transform matches only Canadian
-`/graphql` requests on `ws.boardsesh.com` and sets
-`X-Boardsesh-Region-Code` from Cloudflare's
-[`ip.src.region_code`](https://developers.cloudflare.com/ruleset-engine/rules-language/fields/reference/ip.src.region_code/).
-An empty/undefined expression removes the header, clearing caller input too.
-
-Cloudflare [forbids setting `cf-*` headers in request transforms](https://developers.cloudflare.com/rules/transform/request-header-modification/#important-remarks),
-so the narrow custom header avoids enabling the broader city/coordinate managed
-transform. The backend ignores optional `CF-Region-Code` entirely because its
-[visitor-location managed transform](https://developers.cloudflare.com/rules/transform/managed-transforms/reference/)
-is not part of this contract; a trusted CF hop alone does not prove optional
-headers were overwritten. It ignores the custom header unless the trusted CF hop, exact GraphQL route/host,
-and `BOARDSESH_TRUST_EDGE_REGION_HEADER=true` are all present.
-
-Deploy order: apply and verify the edge overwrite/remove rule first, then enable
-`BOARDSESH_TRUST_EDGE_REGION_HEADER=true` on the backend. Leave it unset/false
-until the rule is live; changing the backend first would trust caller input.
-Before that, missing or unknown Canadian province prompts, so Quebec stays
-covered. The decision reads no city or coordinates and stores neither code.
+Analytics consent is opt-in everywhere. Consent prompting no longer reads the
+visitor's country or province. Current clients make no consent-region request;
+the deprecated compatibility query always asks older clients and reads no
+headers. There is no `BOARDSESH_TRUST_EDGE_REGION_HEADER` setting. The former
+`boardsesh:consent-region-header` transform is no longer declared; an existing
+edge rule is ignored by the backend. Country handling for functional feature
+flags and Observe remains separate from analytics consent.
 
 ### Observe telemetry
 

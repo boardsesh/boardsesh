@@ -14,13 +14,7 @@ import { getConsentSnapshot } from './consent-state';
  * what it finds as an explicit answer that may be written to the account.
  */
 const CONSENT_KEY = 'analyticsConsent';
-/**
- * The region default lives under its own key, which bundles that predate it
- * never read. One of those can still run on this device (expo-updates falls
- * back to the embedded bundle, or an OTA is rolled back): it then finds no
- * answer and asks, rather than reading the default as an Allow and writing it
- * to the account. Expand-then-contract, as for the offline database.
- */
+/** Retired default key, removed during migration without changing explicit answers. */
 export const REGION_DEFAULT_CONSENT_KEY = 'analyticsConsentRegionDefault';
 
 export function readLatestExternalConsent(): DeviceConsentRecord | null {
@@ -46,11 +40,11 @@ function parseStoredAnswer(candidate: unknown): (DeviceConsentRecord & Record<st
  */
 export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
   const answer = parseStoredAnswer(await getPreference<unknown>(CONSENT_KEY));
-  // Anything else under the answer key (an early preview of this change wrote
-  // the region default there) reads as no answer. The gate then looks the
-  // region up again, and the next write moves a default to its own key.
+  // Region defaults were never answers. Clear only their retired storage.
+  await removePreference(REGION_DEFAULT_CONSENT_KEY).catch(() => {});
   if (answer && (answer.basis === undefined || answer.basis === 'explicit')) return toDeviceAnswer(answer);
-  return readRegionDefault();
+  if (answer?.basis === 'region_default') await removePreference(CONSENT_KEY).catch(() => {});
+  return null;
 }
 
 function toDeviceAnswer(record: DeviceConsentRecord & Record<string, unknown>): DeviceConsentRecord {
@@ -69,19 +63,6 @@ function toDeviceAnswer(record: DeviceConsentRecord & Record<string, unknown>): 
   return device;
 }
 
-/** A region default carries no owner and no token: it is nobody's answer. */
-async function readRegionDefault(): Promise<DeviceConsentRecord | null> {
-  const record = parseStoredAnswer(await getPreference<unknown>(REGION_DEFAULT_CONSENT_KEY));
-  if (!record || record.basis !== 'region_default' || record.analytics !== 'granted') return null;
-  return {
-    analytics: 'granted',
-    version: record.version,
-    decidedAt: record.decidedAt,
-    source: record.source,
-    basis: 'region_default',
-  };
-}
-
 let localWrites: Promise<void> = Promise.resolve();
 export function persistLocalConsent(record: DeviceConsentRecord | null): Promise<void> {
   localWrites = localWrites.catch(() => {}).then(() => writeLocalConsent(record));
@@ -93,18 +74,9 @@ export function persistLocalConsent(record: DeviceConsentRecord | null): Promise
  * leaves the climber's own answer readable (it is read first).
  */
 async function writeLocalConsent(record: DeviceConsentRecord | null): Promise<void> {
-  if (record === null) {
+  if (record === null || isRegionDefaultConsent(record)) {
     await removePreference(CONSENT_KEY);
     await removePreference(REGION_DEFAULT_CONSENT_KEY);
-  } else if (isRegionDefaultConsent(record)) {
-    await setPreference(REGION_DEFAULT_CONSENT_KEY, {
-      analytics: 'granted',
-      version: record.version,
-      decidedAt: record.decidedAt,
-      source: record.source,
-      basis: 'region_default',
-    });
-    await removePreference(CONSENT_KEY);
   } else {
     await setPreference(CONSENT_KEY, record);
     await removePreference(REGION_DEFAULT_CONSENT_KEY);

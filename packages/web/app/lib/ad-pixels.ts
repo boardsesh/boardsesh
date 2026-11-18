@@ -4,33 +4,10 @@
 // Lead conversion, cookie cleanup) lives in `ad-pixels-browser.ts` and asks
 // this module before it does anything. See docs/analytics-consent.md#ad-pixels.
 //
-// The rule, on top of the analytics consent the website already enforces:
-//
-//   1. A region default (analytics on by default outside the prompt regions,
-//      never written in one) runs the pixels. The website never applies a
-//      region default under Global Privacy Control.
-//   2. An explicit Allow runs them only when it was given on the website
-//      (`source: 'web'`) on or after AD_MEASUREMENT_COPY_SINCE, the day the
-//      banner and Privacy choices started naming Meta and Reddit. An older
-//      Allow, or one given in the app (whose prompt never names them), keeps
-//      PostHog but gets no pixels.
-//   3. Anything else is off: no answer, No thanks, an outdated record.
-//   4. Global Privacy Control turns them off whatever the record says. GPC is
-//      the browser saying "do not share for advertising", which is exactly what
-//      a pixel does.
-//
-// Why rule 2 needs no region: a region default cannot exist in a prompt region
-// (the browser drops it as soon as the lookup says "ask"), so the only "on" a
-// prompt-region visitor can hold is an explicit Allow, and the date proves they
-// saw the copy that names the pixels. Outside the prompt regions an explicit
-// Allow passes the same test, which is stricter than needed and never wrong.
+// Only an explicit web Allow given after the notice named Meta and Reddit
+// permits pixels. Global Privacy Control always keeps ad measurement off.
 
-import {
-  AD_MEASUREMENT_COPY_SINCE,
-  isAnalyticsGranted,
-  isRegionDefaultConsent,
-  type ConsentRecord,
-} from '@boardsesh/consent';
+import { AD_MEASUREMENT_COPY_SINCE, isAnalyticsGranted, type ConsentRecord } from '@boardsesh/consent';
 import { analyticsPathname, stripAnalyticsLocalePrefix } from './analytics-paths';
 import { isProductionHost } from './production-hosts';
 
@@ -59,13 +36,12 @@ export function parseRedditPixelId(raw: string | undefined | null): string | nul
 /**
  * Does this consent record, on its own, allow ad measurement? Record-level
  * only: it ignores this page load's transient checks (account still
- * resolving, region not yet confirmed). False here is a definitive no, which
+ * resolving). False here is a definitive no, which
  * is when the browser module withdraws and clears the pixel cookies.
  */
 export function isAdMeasurementPermitted(record: ConsentRecord | null, globalPrivacyControl: boolean): boolean {
   if (globalPrivacyControl) return false;
   if (record === null || !isAnalyticsGranted(record)) return false;
-  if (isRegionDefaultConsent(record)) return true;
   if (record.source !== 'web') return false;
   const decidedAtMs = Date.parse(record.decidedAt);
   return Number.isFinite(decidedAtMs) && decidedAtMs >= AD_MEASUREMENT_COPY_SINCE_MS;
@@ -91,8 +67,7 @@ export type AdPixelInput = {
   record: ConsentRecord | null;
   /**
    * This page load may act on that record: `hasAnalyticsConsent()`, which also
-   * waits for the signed-in account to resolve and the region default to be
-   * confirmed by this page load's lookup.
+   * waits for the signed-in account to resolve.
    */
   analyticsAuthorized: boolean;
   globalPrivacyControl: boolean;

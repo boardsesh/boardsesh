@@ -9,7 +9,7 @@ import { useConfirm } from '../../providers/dialog-provider';
 import { decideAnalyticsConsent } from '../../providers/consent-provider';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../lib/auth-store';
-import { useAnalyticsPreference, useAnalyticsRegionDefault } from '../../lib/consent-hooks';
+import { useAnalyticsPreference } from '../../lib/consent-hooks';
 import { reportHandledError } from '../../lib/error-reporting';
 import { hapticSelection } from '../../lib/haptics';
 import { openExternalUrl } from '../../lib/open-url';
@@ -88,7 +88,6 @@ export function PrivacySettingsScreen() {
   const enabled = settings.data?.enabled === true;
   const requests = useIncomingFollowRequests(isAuthenticated && enabled);
   const analyticsPreference = useAnalyticsPreference();
-  const analyticsRegionDefault = useAnalyticsRegionDefault();
   const sessionRecording = useSessionRecordingToggle();
   const [confirmingIsPrivate, setConfirmingIsPrivate] = useState<boolean | null>(null);
   const [confirmingAudience, setConfirmingAudience] = useState<PrivacyResourceAudience | null>(null);
@@ -242,7 +241,6 @@ export function PrivacySettingsScreen() {
       pendingRequestCount: requests.data?.length ?? 0,
       analytics: {
         preference: analyticsPreference,
-        regionDefault: analyticsRegionDefault,
         adMeasurement: Platform.OS === 'web',
       },
       sessionRecording,

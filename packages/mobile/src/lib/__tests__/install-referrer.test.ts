@@ -311,7 +311,7 @@ it('reads nothing from Play before Allow, then reads and publishes once after a 
 it('reads nothing from Play on the region default, then reads and publishes after an explicit Allow', async () => {
   const { updateConsentState, getConsentSnapshot } = await import('../consent-state');
   // Analytics is on (outside the prompt regions, confirmed this launch), but not by the climber's own Allow.
-  updateConsentState({ record: { ...getConsentSnapshot().record!, basis: 'region_default' }, regionConfirmed: true });
+  updateConsentState({ record: { ...getConsentSnapshot().record!, basis: 'region_default' } });
   const fetchNative = vi.fn(async () => ({
     installReferrer: 'utm_source=gym&utm_campaign=pilot',
     referrerClickTimestampSeconds: 100,

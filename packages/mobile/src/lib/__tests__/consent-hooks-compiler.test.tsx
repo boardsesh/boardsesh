@@ -115,7 +115,6 @@ beforeEach(() => {
     accountId: null,
     sdkReady: false,
     flagsResolved: false,
-    regionConfirmed: false,
   });
 });
 
@@ -253,17 +252,15 @@ describe('production-compiled analytics consent', () => {
     expect(result.current).toBe(false);
   });
 
-  it('waits for region confirmation again after a default is suspended', () => {
+  it('never enables analytics for a legacy default', () => {
     grantReadyAnalytics();
-    consentState.updateConsentState({ record: consentModel.createRegionDefaultConsent('ios') });
+    consentState.updateConsentState({ record: { ...grantedConsent, basis: 'region_default' } });
     render(React.createElement(AnalyticsScreenTracker));
     expect(trackScreen).not.toHaveBeenCalled();
-    act(() => consentState.updateConsentState({ regionConfirmed: true }));
+    act(() => consentState.updateConsentState({ sdkReady: true, settled: true }));
+    expect(trackScreen).not.toHaveBeenCalled();
+    act(() => grantReadyAnalytics());
     expect(trackScreen).toHaveBeenCalledExactlyOnceWith('/home');
-    act(() => consentState.updateConsentState({ regionConfirmed: false }));
-    expect(trackScreen).toHaveBeenCalledTimes(1);
-    act(() => consentState.updateConsentState({ regionConfirmed: true }));
-    expect(trackScreen).toHaveBeenCalledTimes(2);
   });
 
   it('keeps explicitly disabled runtimes out of analytics', () => {

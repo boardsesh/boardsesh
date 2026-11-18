@@ -4,7 +4,6 @@ import {
   isConsentRecordOwnedBy,
   isConsentSource,
   isCurrentConsentRecord,
-  isRegionDefaultConsent,
   isSameConsentRecord,
   resolveConsent,
   type AnalyticsConsentChoice,
@@ -156,10 +155,7 @@ export type AccountConsentMerge = {
  * device holds none either: the prompt comes back and nothing is tracked until
  * the climber answers for this account.
  *
- * A region default is checked first. It is nobody's answer, so it is never
- * written, and it is not this account's answer to clear either: with no account
- * answer the device keeps it (asking again would only re-apply it, one account
- * read per turn), and any account answer, grant or denial, replaces it.
+ * Legacy region defaults are unanswered and never written to an account.
  */
 export function mergeAccountConsent(
   local: DeviceConsentRecord | null,
@@ -168,11 +164,6 @@ export function mergeAccountConsent(
 ): AccountConsentMerge {
   const currentLocal = isCurrentConsentRecord(local) ? local : null;
   const currentServer = isCurrentConsentRecord(server) ? server : null;
-  if (isRegionDefaultConsent(currentLocal)) {
-    return currentServer === null
-      ? { record: currentLocal, push: null }
-      : { record: accountCopy(currentServer, accountId), push: null };
-  }
   if (currentLocal !== null && isConsentRecordOwnedBy(currentLocal, accountId)) {
     // Same answer: hold the account's copy. Nothing to write.
     if (
@@ -210,7 +201,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
   let pendingLoaded = false;
   let running: Promise<void> | null = null;
   let snapshot: ConsentSyncSnapshot = {
-    record: options.initialRecord,
+    record: isCurrentConsentRecord(options.initialRecord) ? options.initialRecord : null,
     ready: true,
     syncing: false,
     accountResolved: true,
@@ -410,6 +401,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
       await sync();
     },
     replaceLocalRecord(record: DeviceConsentRecord | null) {
+      record = isCurrentConsentRecord(record) ? record : null;
       // A denial from the shared browser cookie beats an older in-flight grant too.
       if (pending) {
         if (!isCurrentConsentRecord(record) || record.analytics !== 'denied' || pending.record.analytics === 'denied')

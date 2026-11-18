@@ -44,7 +44,10 @@ setBrowserConsentReader(readConsentCookie);
 export const readLatestExternalConsent = readConsentCookie;
 
 export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
-  return readConsentCookie();
+  const record = readConsentCookie();
+  // A retired region-default cookie is unanswered; clear its old pixel cookies too.
+  if (record === null) await persistLocalConsent(null);
+  return record;
 }
 
 export async function persistLocalConsent(record: DeviceConsentRecord | null): Promise<void> {

@@ -1,11 +1,9 @@
 import {
   CONSENT_COOKIE_MAX_AGE_SECONDS,
   CONSENT_COOKIE_NAME,
-  CONSENT_COOKIE_REGION_DEFAULT_PART,
   CONSENT_VERSION,
   isAnalyticsGranted,
   isCurrentConsentRecord,
-  isRegionDefaultConsent,
   parseConsentCookieValue,
   serializeConsentCookieValue,
   type ConsentRecord,
@@ -15,12 +13,6 @@ let initialized = false;
 let currentRecord: ConsentRecord | null = null;
 let lastCookieValue: string | null = null;
 let accountResolved = false;
-/**
- * This page load's region lookup said no prompt is needed here (and the browser
- * sends no Global Privacy Control). A region-default cookie counts as "on" only
- * once it has, so it sends nothing before the lookup answers or when it fails.
- */
-let regionConfirmed = false;
 const listeners = new Set<() => void>();
 function consentCookieValue(): string | null {
   if (typeof document === 'undefined') return null;
@@ -47,20 +39,9 @@ export function hasAnalyticsConsent(): boolean {
   refreshWebConsent();
   return accountResolved && isConsentRecordAuthorized(getWebConsentRecord());
 }
-/**
- * An analytics "on" this page load may act on: an explicit Allow, or the region
- * default once this page load's region lookup confirmed it.
- */
+/** Only a current, explicit Allow authorizes analytics. */
 export function isConsentRecordAuthorized(record: ConsentRecord | null): boolean {
-  return isAnalyticsGranted(record) && (!isRegionDefaultConsent(record) || regionConfirmed);
-}
-export function isConsentRegionConfirmed(): boolean {
-  return regionConfirmed;
-}
-export function setConsentRegionConfirmed(confirmed: boolean): void {
-  if (regionConfirmed === confirmed) return;
-  regionConfirmed = confirmed;
-  listeners.forEach((listener) => listener());
+  return isAnalyticsGranted(record);
 }
 /** Global Privacy Control as the page's script sees it (Firefox, Brave, DuckDuckGo, some extensions). */
 export function isGlobalPrivacyControlEnabled(): boolean {
@@ -111,5 +92,5 @@ export function writeWebConsent(record: ConsentRecord | null): void {
   publish(record);
 }
 // Same validation as the shared parser, emitted without request-cookie branching.
-// A fifth `region` part (the region default, always a grant) hides the banner too.
-export const CONSENT_PREPAINT_SCRIPT = `(function(){try{var c=document.cookie.split(';').map(function(s){return s.trim()}).find(function(s){return s.indexOf('${CONSENT_COOKIE_NAME}=')===0});if(!c)return;var p=c.slice(${CONSENT_COOKIE_NAME.length + 1}).split('.');if((p.length!==4&&!(p.length===5&&p[4]==='${CONSENT_COOKIE_REGION_DEFAULT_PART}'&&p[1]==='granted'))||!/^v[1-9][0-9]{0,5}$/.test(p[0])||Number(p[0].slice(1))<${CONSENT_VERSION}||! /^(granted|denied)$/.test(p[1])||! /^[0-9]{1,12}$/.test(p[2])||Number(p[2])>253402300799||! /^(web|ios|android)$/.test(p[3]))return;document.documentElement.dataset.consent=p[1]}catch(e){}})();`;
+// Legacy fifth-part region defaults are unanswered, just like the shared parser.
+export const CONSENT_PREPAINT_SCRIPT = `(function(){try{var c=document.cookie.split(';').map(function(s){return s.trim()}).find(function(s){return s.indexOf('${CONSENT_COOKIE_NAME}=')===0});if(!c)return;var p=c.slice(${CONSENT_COOKIE_NAME.length + 1}).split('.');if(p.length!==4||!/^v[1-9][0-9]{0,5}$/.test(p[0])||Number(p[0].slice(1))<${CONSENT_VERSION}||! /^(granted|denied)$/.test(p[1])||! /^[0-9]{1,12}$/.test(p[2])||Number(p[2])>253402300799||! /^(web|ios|android)$/.test(p[3]))return;document.documentElement.dataset.consent=p[1]}catch(e){}})();`;

@@ -1,11 +1,11 @@
 # Analytics consent
 
-Boardsesh asks before it runs product analytics, on the web and in the app,
-in the EU, the EEA, the UK, Switzerland, China, South Korea and the other places
-listed under [Who is asked](#who-is-asked), and whenever it cannot tell where a
-visitor is. Everywhere else analytics starts on and the climber can switch it
-off in Settings. Install attribution needs the climber's own Allow everywhere. Answers are stored on the device and on the account. Tracking issue
-#2644.
+Boardsesh asks every visitor before running product analytics, on the website,
+in the browser app and in the native apps, in every country. No answer and
+“No thanks” both keep analytics off. There is no location lookup or regional
+analytics default. Answers are stored on the device and, when signed in, on
+the account. Tracking issue #2644.
+
 This page covers the shared consent model, account synchronization, backend
 statistics, web banner and privacy policy. The app shares the model and account
 synchronizer.
@@ -21,152 +21,61 @@ type ConsentRecord = {
   version: number; // CONSENT_VERSION the climber was asked under
   decidedAt: string; // ISO 8601
   source: 'web' | 'ios' | 'android';
-  basis?: 'explicit' | 'region_default'; // device-only; absent means explicit
+  basis?: 'explicit' | 'region_default'; // legacy defaults are not answers
 };
 ```
 
-- `CONSENT_VERSION` is 1. Bumping it makes every stored answer count as no
-  answer, so everyone is asked again.
-- `needsPrompt(record)` is true when there is no current answer.
-  `isAnalyticsGranted(record)` is true only for a current "Allow". No answer
-  means no tracking.
+- `CONSENT_VERSION` stays 1 so existing explicit Allows and denials remain
+  valid. Bumping it would ask everybody again, including those who answered.
+- `needsPrompt(record)` is true when there is no current explicit answer.
+  `isAnalyticsGranted(record)` is true only for a current explicit Allow.
+  No answer, denial, invalid data and an old region default never grant access.
 - On the web the device copy is the `boardsesh-consent` cookie, value
   `v1.granted.1767225600.web` (version, choice, epoch seconds, source).
-  `parseConsentCookieValue` returns null for anything else, so a garbled cookie
-  asks again; it can never turn tracking on. A region default adds a fifth
-  part, `v1.granted.1767225600.web.region`; only `granted` may carry it.
-- `basis` is new and optional, so no `CONSENT_VERSION` bump: every record
-  stored before it reads as explicit. A bundle that predates the fifth cookie
-  part reads a region-default cookie as no answer and asks, the safe direction.
+  Malformed values and legacy five-part `...web.region` defaults are treated
+  as no answer. Explicit four-part grants and denials remain valid.
+- The app used to store regional defaults separately under
+  `analyticsConsentRegionDefault`. That key never represents an explicit
+  answer. Migration discards the old default and asks once, without replacing
+  an explicit choice saved under `analyticsConsent`.
 
 ## Who is asked
 
-`consentPromptRequired(countryCode, regionCode)` in `@boardsesh/consent`
-(`packages/shared/consent/src/consent-region.ts`) decides. It is true for:
+Every visitor without a current explicit answer is asked. Country, province,
+VPN, device locale and location-lookup failure have no effect on consent.
+The shared consent-country lists and current-client region lookups are
+removed. The backend's trusted edge-country code remains for functional
+feature-flag targeting; it no longer decides analytics permission.
 
-- The 27 EU member states, plus EU territory that geolocation reports under its
-  own code: Åland `AX`, French Guiana `GF`, Guadeloupe `GP`, Saint-Martin `MF`,
-  Martinique `MQ`, Réunion `RE`, Mayotte `YT`.
-- The rest of the EEA: Iceland `IS`, Liechtenstein `LI`, Norway `NO`.
-- The UK `GB`, and places with their own copy of GDPR: Switzerland `CH`
-  (revised FADP), Gibraltar `GI`, Guernsey `GG`, Jersey `JE`, Isle of Man `IM`.
-  These are a policy choice, kept in their own list so they can be dropped.
-- China `CN` (PIPL has no legitimate-interest basis) and South Korea `KR`
-  (PIPA is built on consent). Also a policy choice, in a list of their own.
-- Every code that does not name one known country: null, `XX`, `ZZ`, Tor's
-  `T1`, the other user-assigned codes (`AA`, `QM`-`QZ`, `X*`), the reserved
-  `EU` and `UK`, lowercase or malformed values. When in doubt, ask.
+The deprecated server-only `consentRegion` query remains for older installed
+and embedded bundles. It always returns `promptRequired: true`,
+`countryCode: null` and `globalPrivacyControl: false`, without reading location
+or request headers. Older clients convert a missing query to an unknown
+answer, which keeps a stored regional default switched off but never opens
+the prompt. The constant true response instead clears that default and asks.
+Current clients never call this query. Older bundles keep their embedded
+notice copy and dismissal behavior until updated; the nonblocking controls
+below are supplied by the updated client.
 
-The owner also selected Andorra `AD`, Monaco `MC`, San Marino `SM`,
-Vatican City `VA`, the Faroe Islands `FO` and Quebec (`CA` plus trusted
-province `QC`). Other known Canadian provinces skip the prompt. A missing,
-malformed or unknown Canadian province prompts: without it we cannot exclude
-Quebec. There is no VPN/device-locale fallback.
+The prompt does not block climbing or browsing. Closing it leaves consent
+unanswered and analytics off; navigation does not open it again on every
+screen. Privacy choices in the website footer and Analytics under Settings →
+Privacy reopen the choice. Both Allow and No thanks are always available.
+Native screenshot mode and the onboarding kill switch may suppress the prompt,
+but cannot grant analytics permission.
 
-**Where the country comes from.** The unauthenticated GraphQL query
-`consentRegion { countryCode promptRequired globalPrivacyControl }`. The backend reads Cloudflare's
-`CF-IPCountry` through `resolveFlagCountry` (`packages/backend/src/utils/flag-country.ts`),
-the same trusted-hop check the PostHog proxy uses (see `docs/cloudflare.md`):
-a forged header from a direct-origin caller resolves as `XX` and asks. The HTTP
-context carries that coarse country (`ConnectionContext.edgeCountry`) and the
-trusted subdivision (`edgeRegionCode`), which the backend uses only for Canada.
-The optional native `CF-Region-Code` is ignored: a trusted edge hop alone does
-not prove that header was overwritten. The narrow `X-Boardsesh-Region-Code`
-header is ignored until the edge overwrite/remove rule has been applied and
-`BOARDSESH_TRUST_EDGE_REGION_HEADER=true` is set; see
-[Cloudflare deployment order](./cloudflare.md#consent-province-header). Neither is stored; the IP is not read, logged or stored for this. WebSocket operations have no edge
-country and always ask. `myAnalyticsConsent` does not carry `promptRequired`:
-it is signed-in only and null exactly when the region is needed.
+Signed-in devices still resolve their account answer before enabling capture.
+A previous account Allow or denial is an explicit answer, not a region default.
+If the account has no answer, the visitor is asked. No lookup or failed request
+can manufacture an Allow.
 
-**Region default.** A device with no answer whose region is not a prompt region
-takes `createRegionDefaultConsent(source)`: analytics granted, `basis:
-'region_default'`. It is device-only:
+Global Privacy Control continues to block ad measurement even with an Allow.
+No browser signal can turn unanswered analytics on.
 
-- It is nobody's answer, so it never carries `ownerAccountId` or
-  `basedOnDecidedAt`. `mergeAccountConsent` checks for it before anything else:
-  with no account answer the device keeps it and writes nothing; any account
-  answer, grant or denial, replaces it with the account's copy. So it is never
-  written to the account and never recorded as an Art. 7 consent.
-  `parsePendingConsentDecision` refuses one, `decide()` never makes one, and
-  `accountCopy` never copies `basis`. `isSameConsentRecord` compares `basis`, so
-  a re-read default and an explicit grant from the same second differ.
-- Any choice in Settings, the footer's Privacy choices or the prompt replaces it
-  with an explicit record that syncs as before.
-- It counts as "on" only once this launch or page load looked the region up and
-  got `false` (`regionConfirmed` in the app's consent state, the same flag
-  behind `hasAnalyticsConsent()` on the website). Before that answer, and when
-  the lookup fails, it stays stored but sends nothing, and nothing is asked.
-- A prompt region drops it and the prompt asks (a climber who travels into the
-  EU). The app refreshes the region on each foreground resume while it holds
-  a default; the website refreshes it on focus, becoming visible or coming
-  online. Both stop capture synchronously until the new answer confirms a
-  non-prompt region. A resume during a pending request queues one fresh lookup
-  after it settles; simultaneous signals share that follow-up. The old response
-  cannot confirm the region or enable capture. This also applies to the first
-  lookup on a device with no answer. Native and web share the queue and reject
-  callbacks from a settled answer expired before its UI consumer runs.
-- Install attribution (Apple Ads, the Play install referrer) never runs on it.
-  See [Legal basis per tracker](#legal-basis-per-tracker).
-
-**Stored apart from answers.** The app keeps the region default under its own
-key, `analyticsConsentRegionDefault`. The answer key, `analyticsConsent`, holds
-only the climber's own answers, because every bundle before this change reads
-that key as an explicit answer it may write to the account. An older bundle can
-still run on the device (expo-updates falls back to the embedded bundle after a
-crash, or an OTA is rolled back): it finds no answer and asks. This is the
-expand-then-contract rule from the offline database, applied to consent
-storage. `persistLocalConsent` writes the new key before clearing the other, and
-`readLocalConsent` reads the answer key first. On the web the cookie's fifth
-part does the same job: every parser before it, including the pre-paint script,
-requires exactly four parts, so an older bundle reads a region-default cookie as
-no answer and asks.
-
-**Global Privacy Control.** On the website and the browser app, a browser that
-sends Global Privacy Control (`navigator.globalPrivacyControl`, or `Sec-GPC: 1`,
-which `consentRegion` echoes as `globalPrivacyControl`) gets no region default
-outside the prompt regions: no cookie is written, a stored default is dropped,
-no banner shows and nothing is tracked. Privacy choices still lets the visitor
-allow analytics. Inside the prompt regions the banner asks as usual. The native
-app sends no GPC.
-
-**App.** `ConsentGate` (`packages/mobile/src/components/onboarding/ConsentGate.tsx`)
-starts the lookup as soon as the device turns out to have no answer
-(`lookUpConsentRegion`, one request per launch, capped at 5 seconds). Where it
-would open the prompt it waits for that answer: `false` writes the region
-default, `true` or no answer opens the prompt. It applies the default at most
-once per launch and account; if anything drops it again, the gate settles with
-no answer (nothing tracked, no prompt) rather than apply it in a loop. Signed-in
-climbers still wait up to 5 seconds for their account answer first; an account
-answer is never touched. The gate never starts an account read itself: it runs
-again when the sync effect's read lands. Screenshot mode and the
-`privacy-consent-step-kill` flag skip the lookup, as they skip the prompt.
-
-**Website.** The browser asks, never the server: list and climb pages are cached
-at Cloudflare (`boardsesh:www-html-edge-cache`) and shared between visitors, so a
-region decided in middleware or the layout would hand one visitor's country to
-another. `useConsentRegionPrompt` (used by the banner) looks the region up once
-per page load while the cookie holds no answer or a region default. The banner
-renders only after a prompt region or an unknown answer (capped at 5 seconds),
-so a visitor outside those regions never sees it flash. A `false` answer writes
-the region-default cookie; this is the one consent cookie written without a
-click. Kiosk and embed pages never look up the region and never write it. The
-lookup is a cross-origin POST, so backend CORS answers its preflight with
-`Access-Control-Max-Age: 600`: one OPTIONS per ten minutes, not per page load.
-
-**Legal basis outside the prompt regions.** Product analytics there runs under
-legitimate interest with an opt-out: the Analytics toggle in app Settings, and
-Privacy choices on the website. Both are global, for every visitor in every
-region, and so is the account merge rule. Session replay stays a separate
-opt-in that defaults off everywhere. Install attribution needs an explicit
-Allow everywhere.
-
-**Location with the region default.** A device on a confirmed region default
-captures like one with an Allow, so its capture requests carry the
-`x-boardsesh-analytics-consent: granted` header and the PostHog proxy forwards
-the edge-reported visitor IP for PostHog's GeoIP (see
-[Website and browser app](#website-and-browser-app)). That is the same
-legitimate-interest basis as the capture itself. An unconfirmed default sends
-no capture at all.
+Session recording is separate from this notice. It remains off unless the
+climber deliberately enables its own setting and has also allowed analytics.
+Removing recording from the consent notice does not weaken either gate.
+Install attribution likewise requires the climber's explicit Allow.
 
 ## The merge rule
 
@@ -176,7 +85,7 @@ no capture at all.
 2. An account `denied` always wins. "No thanks" anywhere you are signed in
    stops tracking everywhere you are signed in.
 3. An account `granted` only applies to a device with no answer of its own, or
-   only a region default. A device that said "No thanks" keeps saying it.
+   only a legacy region default (treated as unanswered). A device that said "No thanks" keeps saying it.
 4. Otherwise the device's own answer stands.
 
 Because rule 2 lets the account override a newer device grant, a client must
@@ -199,8 +108,8 @@ under the signed-in account. For anything else:
 
 | Device answer (signed out, other account, cookie) | Account answer | Device holds | Written to the account |
 | --- | --- | --- | --- |
-| region default | none | the region default | nothing |
-| region default | Allow or denied | the account's answer | nothing |
+| legacy region default | none | nothing: ask again | nothing |
+| legacy region default | Allow or denied | the account's answer | nothing |
 | any other | none | nothing: ask again, no tracking until answered | nothing |
 | any other | denied | the account's denial | nothing |
 | Allow | Allow | the account's Allow | nothing |
@@ -252,9 +161,9 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 
 | Tracker | Basis | Notes |
 | --- | --- | --- |
-| PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. A signed-in No thanks or switch-off (unless the account already said No), and account deletion, erase the PostHog person ([Erasure](#erasure)). |
-| Feature-flag bucketing id (web, app) | Strictly necessary (ePrivacy Art. 5(3) exemption), not asked | One random UUID per browser (IndexedDB) or app install (app preferences). Why it is necessary: kill switches and staged rollouts are how we keep the service a climber asked for working, and both need a stable bucket. Without one a 20% rollout re-rolls every launch, so a climber flips between the old and new screen from one launch to the next, and a kill switch scoped to a percentage cannot hold anyone out. It carries no account, no person and no GeoIP, and is never sent next to an account id or beside the SDK's own anonymous id. Lifetime: replaced 13 months after it was minted (CNIL's ceiling for an exempt tracker), and in the app also when the platform reports a different install time (an Android Auto Backup restore). On www it is only the distinct id of signed-out flag requests. In the app it is also the distinct id of the anonymous `OTA Update Status` event (`ota-install:<uuid>`, row below), which is stored. See [feature-flags.md](./feature-flags.md#anonymous-bucketing). |
-| Meta Pixel and Reddit Pixel (www only) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Ad measurement for our Reddit and Instagram ads: page views and a `Lead` on store-button clicks. Prompt regions need a website Allow given on or after `AD_MEASUREMENT_COPY_SINCE`; elsewhere the region default runs them. Global Privacy Control, No thanks, an older Allow and an app Allow all keep them off. Never on kiosk, embed, auth or admin pages, never in the app, no advanced matching. See [Ad pixels](#ad-pixels). |
+| PostHog capture and identify (web, app) | Consent, everywhere | Only after an explicit "Allow", in every country. No answer, denial and legacy region defaults keep capture off. Feature flags still resolve without consent. A signed-in No thanks or switch-off (unless the account already said No), and account deletion, erase the PostHog person ([Erasure](#erasure)). |
+| Feature-flag bucketing id (web, app) | Strictly necessary (ePrivacy Art. 5(3) exemption), not asked | One random UUID per browser (IndexedDB) or app install (app preferences). Why it is necessary: kill switches and staged rollouts are how we keep the service a climber asked for working, and both need a stable bucket. Without one a 20% rollout re-rolls every launch, so a climber flips between the old and new screen from one launch to the next, and a kill switch scoped to a percentage cannot hold anyone out. It carries no account, no person and no GeoIP, and is never sent next to an account id or beside the SDK's own anonymous id. Lifetime: replaced 13 months after it was minted (CNIL's ceiling for an exempt tracker), and in the app also when the platform reports a different install time (an Android Auto Backup restore). On www it is only the distinct id of signed-out flag requests. See [feature-flags.md](./feature-flags.md#anonymous-bucketing). |
+| Meta Pixel and Reddit Pixel (www only) | Consent, everywhere | Ad measurement for our Reddit and Instagram ads: page views and a `Lead` on store-button clicks. Every visitor needs an explicit website Allow given on or after `AD_MEASUREMENT_COPY_SINCE`. Legacy region defaults never run them. Global Privacy Control, No thanks, an older Allow and an app Allow all keep them off. Never on kiosk, embed, auth or admin pages, never in the app, no advanced matching. See [Ad pixels](#ad-pixels). |
 | PostHog session replay | Consent | Off unless analytics is on and the climber also switches replay on; never on by default. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
 | Android install-referrer attribution | Consent, everywhere | The Play referrer is not even read before the climber's own Allow: reading it is access to information on the device for attribution (ePrivacy Art. 5(3)). Play keeps it for 90 days after install, and the first Allow triggers the read. `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
@@ -262,7 +171,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). One exception: the community recap names public, non-anonymous climbers in a month's top ten, the names a signed-out visitor already sees on a board leaderboard ([below](#named-climbers-in-the-community-recap)). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
-| OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags, with the same 13-month lifetime), no account, no person profile, no GeoIP. Per install so adoption and emergency rates can count phones, not launches. If the app cannot read or persist its install id, install-level health is skipped until storage recovers; the launch-only signed-out flag fallback does not enter these counts. |
+| OTA health ping | Consent, everywhere | Does not send an analytics event before an explicit Allow. Update checks and functional feature flags remain available without analytics. |
 
 ## Backend PostHog events are non-personal
 
@@ -701,22 +610,22 @@ answer. That answer is usually false while startup resolves consent and the
 SDK, so compiled screen tracking would never start even though later manual
 events could capture.
 
-The boolean getter keeps every existing account, flags, SDK, region and cookie
-check. `AnalyticsScreenTracker` reports the current route when capture becomes
+The boolean getter keeps the account, flags, SDK and cookie checks. `AnalyticsScreenTracker` reports the current route when capture becomes
 ready and clears its route deduplication while capture is blocked. This retries
 the same route after account replacement or a new Allow; the SDK session gate
 still suppresses repeats within the same session. Routes visited while capture
 was blocked are not replayed. The production-compiled regression tests execute
-the actual hook and tracker, covering startup, withdrawal, regional defaults
+the actual hook and tracker, covering startup, withdrawal, legacy-default migration
 and shared-cookie changes.
 
 ## Website and browser app
 
 The website renders the same analytics components for every request; the banner
-itself appears only after the browser's region lookup (see
+asks every unanswered visitor without a location lookup (see
 [Who is asked](#who-is-asked)). A pre-paint script reads the current, valid
-`boardsesh-consent` cookie, region default included, and sets
-`html[data-consent]`; CSS hides answered banners before hydration. Request
+explicit `boardsesh-consent` cookie and sets `html[data-consent]`; CSS hides
+answered banners before hydration. Legacy region-default cookies leave it
+unanswered so the prompt is shown. Request
 cookies and the visitor's country never determine cached HTML. The one-year cookie uses Path=/,
 SameSite=Lax and Secure on HTTPS, with Domain=.boardsesh.com on the production
 origins. Local development and previews use host-only cookies. The browser app
@@ -727,9 +636,8 @@ and synchronizes the signed-in account.
 The banner offers Allow and No thanks with equal weight and a privacy-policy
 link. Privacy choices in the footer reopens it, as does the Analytics settings
 card. Embed and kiosk routes do not show a banner. Embeds never send product
-analytics. Kiosks send only an operational Kiosk Page Loaded event with a random
-ID per event and an allowlist of non-personal properties; they have no SDK
-identifier, full URL or referrer.
+analytics. The operational Kiosk Page Loaded event also requires an explicit
+Allow and current account authorization; an unanswered kiosk sends nothing.
 
 Website PostHog starts opted out with memory persistence so flags still work.
 Signed-in flag evaluation may use the account ID without identify/capture.
@@ -772,7 +680,7 @@ visitor IP as `X-Forwarded-For` only when all of these hold:
 - the path is a capture path (`/batch`, `/e`, `/i/v0/e`, `/s`);
 - the request carries `x-boardsesh-analytics-consent: granted`
   (`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`), which a client adds
-  while analytics is on: an Allow, or a region default this launch confirmed;
+  only after an explicit Allow;
 - it came through a trusted Cloudflare edge, and the address is the public
   `CF-Connecting-IP` that edge reports (`resolveEdgeVisitorIp` in
   `packages/backend/src/utils/flag-country.ts`, the same trust boundary as the
@@ -781,10 +689,10 @@ visitor IP as `X-Forwarded-For` only when all of these hold:
 Earlier `X-Forwarded-For` entries are caller-controlled and are never used, nor
 is the socket peer (our own ingress), a private or carrier-grade NAT address,
 or a request that did not come through Cloudflare. Web and app add the header
-only to capture sent while analytics is on, an Allow or a region default
-confirmed this launch (not to flags or the SDK config request); www adds it only when it talks to exactly our proxy, not to a
+only to capture sent after an explicit Allow (not to flags or the SDK config
+request); www adds it only when it talks to exactly our proxy, not to a
 direct-to-PostHog override. Everything else is stripped: flags, the public
-config request, surveys, logs, the anonymous OTA health event, kiosk telemetry
+config request, surveys, logs, legacy anonymous OTA health and kiosk telemetry
 and any older client. The default is strip, so a missing or
 mistyped header can only lose a consented event's location, never locate an
 anonymous one. Without the forwarded IP, PostHog geolocated consented events
@@ -822,8 +730,8 @@ event. Expiry notifies the SDK and attribution owners even without another
 consent update, so pending data cannot remain held indefinitely. A withdrawal,
 kill switch, sign-out or credential/account replacement discards pending work
 permanently. A later Allow never replays a conversion taken without consent.
-A confirmed region default can seed a product-conversion handoff, but cannot
-authorize Apple attribution. No pending conversion is persisted or backfilled.
+A legacy region default cannot seed a product-conversion handoff or authorize
+Apple attribution. No pending conversion is persisted or backfilled.
 
 Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.
 
@@ -841,20 +749,18 @@ analytics consent as PostHog, with one extra rule. Code:
 | Consent record | Pixels |
 | --- | --- |
 | no answer, No thanks, outdated version | off |
-| region default (confirmed this page load) | on |
+| legacy region default | off; ask for an explicit choice |
 | explicit Allow, `source: 'web'`, `decidedAt` ≥ `AD_MEASUREMENT_COPY_SINCE` | on |
 | explicit Allow before that date, or from the iOS/Android app | off (PostHog stays on) |
 | anything, with Global Privacy Control on | off |
 
-No region lookup is needed for the explicit case: a region default can never
-exist in a prompt region, so the only "on" a prompt-region visitor can hold is
-an explicit Allow, and the date proves they saw the copy that names Meta and
-Reddit. Outside the prompt regions the same test applies, which is stricter
-than needed and never wrong. An app Allow does not count because the app's
-prompt never names the pixels. GPC turns them off even after an Allow: it is
+Every country uses this same rule. The explicit Allow and its date prove the
+visitor saw the copy that names Meta and Reddit. A legacy region default never
+qualifies. A native app Allow does not count because the native app's prompt
+never names the pixels. GPC turns them off even after an Allow: it is
 the browser asking not to share for advertising, which is what a pixel does.
-On top of the record rule, the live gate needs `hasAnalyticsConsent()` (account
-resolved, region default confirmed), a production host (`boardsesh.com`,
+On top of the record rule, the live gate needs `hasAnalyticsConsent()` (explicit Allow, account
+resolved), a production host (`boardsesh.com`,
 `www.boardsesh.com`) and a page outside `/kiosk`, `/embed`, `/auth` and
 `/admin` (any locale, any case), and a page that is not the retired Capacitor
 app (tracking in its WebView would be app tracking without Apple's ATT prompt).
@@ -889,11 +795,12 @@ in Meta Events Manager and in Reddit Ads' pixel settings, or the pixels could
 read an email typed into the sign-in modal.
 
 **Withdrawal.** On any definitive no (record above says off) `syncAdPixels`
-calls `fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
+clears event queues for pixel scripts that have not loaded, calls
+`fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
 `_rdt_cid` on the host and every parent domain. Every event re-checks the live
 cookie first, so a No thanks in Privacy choices, another tab or
 app.boardsesh.com stops the next event. A transient hold (account still
-resolving, region lookup pending) only pauses: clearing the browser id there
+resolving) only pauses: clearing the browser id there
 would reset it on every page load. A withdrawal is final for the page load:
 fbevents.js keeps the old browser id in memory after its cookie goes, so a new
 Allow starts the pixels on the next page load, with a fresh id. The browser

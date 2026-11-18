@@ -2450,17 +2450,14 @@ export type ConnectedApps = {
   partnerAppsEnabled: Scalars['Boolean']['output'];
 };
 
-/**
- * Whether this visitor is asked before analytics runs, from the Cloudflare
- * country of the request. See docs/analytics-consent.md.
- */
+/** Compatibility response for installed app bundles. No location is read; everyone must explicitly answer. */
 export type ConsentRegion = {
   __typename?: 'ConsentRegion';
-  /** The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted. */
+  /** Always null. Retained for installed app bundles. */
   countryCode?: Maybe<Scalars['String']['output']>;
-  /** True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions. */
+  /** Always false. Retained for old queries; current browsers read privacy signals directly. */
   globalPrivacyControl: Scalars['Boolean']['output'];
-  /** True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown. */
+  /** Always true. A region default never authorizes analytics. */
   promptRequired: Scalars['Boolean']['output'];
 };
 
@@ -7992,7 +7989,10 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
-  /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
+  /**
+   * Compatibility only: makes installed app bundles discard regional defaults and ask for an explicit answer.
+   * @deprecated Analytics is opt-in everywhere. Current clients must not query location for consent.
+   */
   consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
   /**
@@ -14259,18 +14259,6 @@ export type SetAnalyticsConsentMutation = {
   };
 };
 
-export type GetConsentRegionQueryVariables = Exact<{ [key: string]: never }>;
-
-export type GetConsentRegionQuery = {
-  __typename?: 'Query';
-  consentRegion: {
-    __typename?: 'ConsentRegion';
-    countryCode?: string | null;
-    promptRequired: boolean;
-    globalPrivacyControl: boolean;
-  };
-};
-
 export type AppWorkoutQueryVariables = Exact<{
   id: Scalars['ID']['input'];
 }>;
@@ -19685,33 +19673,6 @@ export const SetAnalyticsConsentDocument = {
     },
   ],
 } as unknown as DocumentNode<SetAnalyticsConsentMutation, SetAnalyticsConsentMutationVariables>;
-export const GetConsentRegionDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'GetConsentRegion' },
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'consentRegion' },
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                { kind: 'Field', name: { kind: 'Name', value: 'countryCode' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'promptRequired' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'globalPrivacyControl' } },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<GetConsentRegionQuery, GetConsentRegionQueryVariables>;
 export const AppWorkoutDocument = {
   kind: 'Document',
   definitions: [

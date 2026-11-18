@@ -175,6 +175,11 @@ function hasAnyPixelCookie(): boolean {
 function withdrawAdPixels(): void {
   const pixelWindow = window as PixelWindow;
   if (metaInitialized !== null || redditInitialized !== null) {
+    // A late script must not drain events queued before the withdrawal.
+    if (pixelWindow.fbq && !pixelWindow.fbq.callMethod && Array.isArray(pixelWindow.fbq.queue))
+      pixelWindow.fbq.queue.length = 0;
+    if (pixelWindow.rdt && !pixelWindow.rdt.sendEvent && Array.isArray(pixelWindow.rdt.callQueue))
+      pixelWindow.rdt.callQueue.length = 0;
     if (pixelWindow.fbq && metaInitialized !== null) pixelWindow.fbq('consent', 'revoke');
     withdrawnThisPage = true;
   }
@@ -198,8 +203,7 @@ export function syncAdPixels(pathname: string): void {
   refreshWebConsent();
 
   // A definitive no (No thanks, no answer, an Allow older than the copy, GPC)
-  // withdraws. A transient hold (account still resolving, region lookup not
-  // back yet) only pauses: deleting the browser id there would reset it on
+  // withdraws. A transient hold (account still resolving) only pauses: deleting the browser id there would reset it on
   // every page load.
   if (!isAdMeasurementPermitted(getWebConsentRecord(), isGlobalPrivacyControlEnabled())) {
     withdrawAdPixels();

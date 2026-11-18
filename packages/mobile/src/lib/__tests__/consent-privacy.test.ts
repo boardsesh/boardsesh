@@ -39,6 +39,17 @@ describe('mobile consent privacy boundaries', () => {
     updateConsentState({ killed: true });
     expect(isProductAnalyticsGranted()).toBe(false);
   });
+  it.each([
+    null,
+    { ...grantedConsent, analytics: 'denied' as const },
+    { ...grantedConsent, basis: 'region_default' as const },
+  ])('never sends analytics transport without an explicit yes: %j', async (record) => {
+    const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
+    updateConsentState({ record });
+    const client = new ConsentPostHog('phc_test');
+    await client.fetch(`${BACKEND_URL}/api/posthog/batch/`, { method: 'POST', headers: {} });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
   it('observes an external grant invalidation before permitting the first capture', () => {
     updateConsentState({ accountId: 'account-a' });
     setBrowserConsentReader(() => {
@@ -109,7 +120,7 @@ describe('mobile consent privacy boundaries', () => {
     });
     const options = fetchSpy.mock.calls.at(-1)?.[1];
     expect(options?.credentials).toBe('omit');
-    expect(JSON.parse(String(options?.body))).toEqual({
+    expect(JSON.parse(typeof options?.body === 'string' ? options.body : '')).toEqual({
       distinct_id: 'account-b',
       person_properties: { $os_name: 'Android', $app_version: '2.5.0', $app_build: '42' },
       group_properties: {},
@@ -121,7 +132,10 @@ describe('mobile consent privacy boundaries', () => {
       headers: {},
       body: JSON.stringify({ distinct_id: 'account-b' }),
     });
-    expect(JSON.parse(String(fetchSpy.mock.calls.at(-1)?.[1]?.body)).distinct_id).toMatch(/^flags-install:/);
+    const guestRequestBody = fetchSpy.mock.calls.at(-1)?.[1]?.body;
+    expect(JSON.parse(typeof guestRequestBody === 'string' ? guestRequestBody : '').distinct_id).toMatch(
+      /^flags-install:/,
+    );
   });
   it('preserves the real fetch Response contract when guarding flags JSON', async () => {
     vi.spyOn(PostHog.prototype, 'fetch').mockImplementation(

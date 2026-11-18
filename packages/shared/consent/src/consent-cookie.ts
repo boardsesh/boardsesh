@@ -26,8 +26,8 @@ const EPOCH_SECONDS_PART = /^[0-9]{1,12}$/;
 const MAX_EPOCH_SECONDS = 253_402_300_799;
 
 /**
- * Fifth cookie part that marks a region default (`basis: 'region_default'`).
- * An explicit answer has four parts, exactly as before the field existed.
+ * Legacy fifth cookie part that marks a rejected region default. Kept in the
+ * serializer so an accidental write can never turn a default into an answer.
  */
 export const CONSENT_COOKIE_REGION_DEFAULT_PART = 'region';
 
@@ -36,8 +36,8 @@ export const CONSENT_COOKIE_REGION_DEFAULT_PART = 'region';
  * seconds, source. A region default adds a fifth part,
  * `v1.granted.1767225600.web.region`. Every character is URL-safe and
  * cookie-safe, so the value needs no encoding and the pre-paint script in the
- * web layout can read it with a plain string split. Bundles that predate the
- * fifth part read it as no answer and ask, which is the safe direction.
+ * web layout can read it with a plain string split. Readers reject legacy
+ * fifth-part defaults as unanswered.
  *
  * Throws a RangeError when `decidedAt` is not a parseable date: a record this
  * code base produced always has one, so a bad date is a bug to surface, not a
@@ -71,15 +71,13 @@ export function parseConsentCookieValue(raw: string | null | undefined): Consent
   if (value.length === 0 || value.length > MAX_COOKIE_VALUE_LENGTH) return null;
 
   const parts = value.split('.');
-  if (parts.length !== 4 && parts.length !== 5) return null;
-  const [versionPart, choicePart, epochSecondsPart, sourcePart, basisPart] = parts;
-  if (basisPart !== undefined && basisPart !== CONSENT_COOKIE_REGION_DEFAULT_PART) return null;
+  // Legacy region-default cookies have five parts: they are not an answer.
+  if (parts.length !== 4) return null;
+  const [versionPart, choicePart, epochSecondsPart, sourcePart] = parts;
 
   const versionMatch = VERSION_PART.exec(versionPart);
   if (!versionMatch) return null;
   if (!isAnalyticsConsentChoice(choicePart)) return null;
-  // A region default is only ever "on"; any other combination was not written by us.
-  if (basisPart !== undefined && choicePart !== 'granted') return null;
   if (!EPOCH_SECONDS_PART.test(epochSecondsPart)) return null;
   if (!isConsentSource(sourcePart)) return null;
 
@@ -93,5 +91,5 @@ export function parseConsentCookieValue(raw: string | null | undefined): Consent
     decidedAt: decidedAt.toISOString(),
     source: sourcePart,
   };
-  return basisPart === undefined ? record : { ...record, basis: 'region_default' };
+  return record;
 }

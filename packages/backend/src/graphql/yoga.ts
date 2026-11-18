@@ -21,7 +21,6 @@ import { responseCompressionPlugin } from './response-compression';
 import { recordUserActivity, resolveActivityPlatform } from '../services/user-activity';
 import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usage';
 import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
-import { resolveEdgeRegionCode, resolveFlagCountry } from '../utils/flag-country';
 import { getTrustedClientIp } from '../utils/client-ip';
 import { boardShareTokenPrivacyPlugin, sanitizeBoardShareLogArgument } from './board-share-token-privacy';
 
@@ -123,12 +122,6 @@ export async function buildHttpConnectionContext({
     socketPeerIp: resolveWebSocketSocketPeerIp(req),
     // Unlike clientIp, believes cf-connecting-ip only from a verified edge.
     trustedClientIp: req ? getTrustedClientIp(req) : undefined,
-    // The trusted-edge country decides whether the analytics prompt is shown
-    // (consentRegion). Without the Node request there is no peer to trust.
-    edgeCountry: req ? resolveFlagCountry(req) : undefined,
-    edgeRegionCode: req ? resolveEdgeRegionCode(req) : undefined,
-    // Global Privacy Control: the browser sets this header, a page script cannot.
-    globalPrivacyControl: request.headers.get('sec-gpc')?.trim() === '1',
     clientIdentity,
     clientIdentityRaw,
   };

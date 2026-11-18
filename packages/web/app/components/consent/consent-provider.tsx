@@ -14,7 +14,6 @@ import { useSession } from 'next-auth/react';
 import {
   createConsentSyncCoordinator,
   isAnalyticsGranted,
-  isRegionDefaultConsent,
   type AnalyticsConsentChoice,
   type ConsentSyncSnapshot,
 } from '@boardsesh/consent';
@@ -29,7 +28,6 @@ import { executeGraphQL } from '@/app/lib/graphql/client';
 import {
   getWebConsentRecord,
   isConsentRecordAuthorized,
-  isConsentRegionConfirmed,
   writeWebConsent,
   refreshWebConsent,
   subscribeWebConsent,
@@ -51,6 +49,8 @@ type ConsentContextValue = {
   granted: boolean;
   dialogOpen: boolean;
   syncFailed: boolean;
+  promptDismissed: boolean;
+  dismissPrompt: () => void;
   decide: (choice: AnalyticsConsentChoice) => Promise<void>;
   openChoices: () => void;
   closeChoices: () => void;
@@ -60,6 +60,8 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const { token } = useWsAuthToken(status === 'authenticated');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [promptDismissed, setPromptDismissed] = useState(false);
+  const dismissPrompt = useCallback(() => setPromptDismissed(true), []);
   const [syncFailed, setSyncFailed] = useState(false);
   const authRef = useRef({ accountId: session?.user.id ?? null, token, status });
   authRef.current = { accountId: session?.user.id ?? null, token, status };
@@ -100,12 +102,7 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot, () => SERVER_SNAPSHOT);
   const accountId = status === 'authenticated' ? (session?.user.id ?? null) : null;
   const accountReady = status !== 'loading' && accountId === coordinator.getAccountId() && snapshot.accountResolved;
-  // A region default counts only once this page load's region lookup confirmed it.
-  const regionConfirmed = useSyncExternalStore(subscribeWebConsent, isConsentRegionConfirmed, () => false);
-  const analyticsAuthorized =
-    accountReady &&
-    isAnalyticsGranted(snapshot.record) &&
-    (!isRegionDefaultConsent(snapshot.record) || regionConfirmed);
+  const analyticsAuthorized = accountReady && isAnalyticsGranted(snapshot.record);
   useIsomorphicLayoutEffect(() => {
     authorityActiveRef.current = true;
     setConsentAccountResolved(analyticsAuthorized);
@@ -171,11 +168,23 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
       granted: analyticsAuthorized,
       dialogOpen,
       syncFailed,
+      promptDismissed,
+      dismissPrompt,
       decide,
       openChoices,
       closeChoices,
     }),
-    [snapshot, analyticsAuthorized, dialogOpen, syncFailed, decide, openChoices, closeChoices],
+    [
+      snapshot,
+      analyticsAuthorized,
+      dialogOpen,
+      syncFailed,
+      promptDismissed,
+      dismissPrompt,
+      decide,
+      openChoices,
+      closeChoices,
+    ],
   );
   return <ConsentContext.Provider value={context}>{children}</ConsentContext.Provider>;
 }

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
 import { captureKioskPageLoad } from '../kiosk-telemetry';
+const consent = vi.hoisted(() => ({ granted: false }));
+vi.mock('../consent', () => ({ hasAnalyticsConsent: () => consent.granted }));
 vi.mock('../backend-url', () => ({ getBackendHttpUrl: () => 'https://ws.boardsesh.com' }));
 vi.mock('../production-hosts', () => ({ isProductionHost: () => true }));
 afterEach(() => {
@@ -7,7 +9,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('kiosk operational telemetry', () => {
-  it('sends only the operational allowlist with a fresh event ID', () => {
+  it('sends nothing before an explicit yes', () => {
+    consent.granted = false;
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'test');
+    const network = vi.fn();
+    vi.stubGlobal('fetch', network);
+    captureKioskPageLoad();
+    expect(network).not.toHaveBeenCalled();
+  });
+  it('sends only the operational allowlist with a fresh event ID after yes', () => {
+    consent.granted = true;
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'test');
     const fetchMock = vi.fn(async (_url: string, _options: RequestInit) => ({}));
     vi.stubGlobal('fetch', fetchMock);

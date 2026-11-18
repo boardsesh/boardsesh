@@ -34,21 +34,6 @@ vi.mock('../handlers/robots', async (importOriginal) => {
 // the log once per real minute.
 const recordedRefusals = vi.hoisted(() => ({ count: 0 }));
 
-// What the region trust check decided, as seen from inside Yoga's context.
-const edgeRegionDecisions = vi.hoisted(() => [] as Array<string | undefined>);
-
-vi.mock('../utils/flag-country', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../utils/flag-country')>();
-  return {
-    ...actual,
-    resolveEdgeRegionCode: (...args: Parameters<typeof actual.resolveEdgeRegionCode>) => {
-      const decision = actual.resolveEdgeRegionCode(...args);
-      edgeRegionDecisions.push(decision);
-      return decision;
-    },
-  };
-});
-
 // Forces the rejection branch, which a real cap would need many sockets to reach.
 const anonymousCap = vi.hoisted(() => ({ rejectEveryone: false }));
 
@@ -657,41 +642,6 @@ describe('the running server', () => {
     ])('keeps the query string on a GET to %s', async (target, host) => {
       const request = requestBytes(target, host, { extra: 'Accept: application/json\r\n' });
       expectGraphqlAnswer(await sendRaw(port, request, HEALTHY_ROUTE_DEADLINE_MS));
-    });
-
-    // utils/flag-country.ts trusts this header only on the exact path Cloudflare
-    // clears it on, so no other target form may look like that path by the time
-    // Yoga's context runs.
-    describe('the edge region header', () => {
-      // The loopback peer counts as our private ingress, so the last hop decides.
-      const TRUSTED_EDGE_HEADERS = 'X-Forwarded-For: 203.0.113.9, 173.245.48.1\r\nX-Boardsesh-Region-Code: AU\r\n';
-      const postFromEdge = (target: string) =>
-        sendRaw(port, graphqlPostBytes(target, 'ws.boardsesh.com', TRUSTED_EDGE_HEADERS), HEALTHY_ROUTE_DEADLINE_MS);
-
-      beforeAll(() => {
-        process.env.BOARDSESH_TRUST_EDGE_REGION_HEADER = 'true';
-      });
-      afterAll(() => {
-        delete process.env.BOARDSESH_TRUST_EDGE_REGION_HEADER;
-      });
-      beforeEach(() => {
-        edgeRegionDecisions.length = 0;
-      });
-
-      it('is trusted on the exact path the edge rule covers', async () => {
-        expectGraphqlAnswer(await postFromEdge('/graphql'));
-        expect(edgeRegionDecisions).toContain('AU');
-      });
-
-      it.each(['//foo/graphql', '/\\foo/graphql', 'http://x/graphql', 'https://ws.boardsesh.com/graphql'])(
-        'is not trusted on %s',
-        async (target) => {
-          const response = await postFromEdge(target);
-          expect(response.statusLine).not.toBeNull();
-          expect(response.body).not.toMatch(/\n\s+at /);
-          expect(edgeRegionDecisions).not.toContain('AU');
-        },
-      );
     });
   });
 

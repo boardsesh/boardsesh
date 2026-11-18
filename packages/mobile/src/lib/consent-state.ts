@@ -18,13 +18,6 @@ export type MobileConsentSnapshot = {
   accountId: string | null;
   sdkReady: boolean;
   flagsResolved: boolean;
-  /**
-   * This launch's region lookup said the prompt is not needed here. A stored
-   * region default counts as "on" only once it has, so it sends nothing before
-   * the lookup answers, and nothing when the lookup fails. Reset when a long
-   * background makes the answer stale (see ConsentGate).
-   */
-  regionConfirmed: boolean;
 };
 
 let snapshot: MobileConsentSnapshot = {
@@ -38,8 +31,20 @@ let snapshot: MobileConsentSnapshot = {
   accountId: null,
   sdkReady: false,
   flagsResolved: false,
-  regionConfirmed: false,
 };
+let promptDismissed = false;
+
+/** Dismissal permits app use without supplying analytics permission. */
+export function dismissAnalyticsConsentPrompt(): void {
+  promptDismissed = true;
+  updateConsentState({ settled: true });
+}
+
+/** Test seam for a fresh launch. */
+export function resetConsentPromptDismissal(): void {
+  promptDismissed = false;
+}
+
 const listeners = new Set<() => void>();
 let readBrowserConsent: (() => ConsentRecord | null) | null = null;
 
@@ -63,9 +68,14 @@ export function updateConsentState(update: Partial<MobileConsentSnapshot>): void
       ('accountId' in update && update.accountId !== snapshot.accountId))
   )
     update = { ...update, sdkReady: false };
-  if ('record' in update && needsPrompt(update.record ?? null) && !(update.killed ?? snapshot.killed))
+  if (
+    'record' in update &&
+    needsPrompt(update.record ?? null) &&
+    !promptDismissed &&
+    !(update.killed ?? snapshot.killed)
+  )
     update = { ...update, settled: false };
-  if (snapshot.killed && update.killed === false && needsPrompt(snapshot.record))
+  if (snapshot.killed && update.killed === false && needsPrompt(snapshot.record) && !promptDismissed)
     update = { ...update, settled: false };
   if (Object.entries(update).every(([key, entry]) => Object.is(snapshot[key as keyof MobileConsentSnapshot], entry)))
     return;
@@ -99,8 +109,7 @@ export function isConsentAuthorityGranted(): boolean {
     snapshot.flagsResolved &&
     snapshot.authSettled &&
     snapshot.accountResolved &&
-    isAnalyticsGranted(snapshot.record) &&
-    (!isRegionDefaultConsent(snapshot.record) || snapshot.regionConfirmed)
+    isAnalyticsGranted(snapshot.record)
   );
 }
 
@@ -109,8 +118,7 @@ export function isProductAnalyticsGranted(): boolean {
 }
 
 /**
- * Install attribution (Apple Ads, the Play install referrer) needs the
- * climber's own Allow everywhere. The region default does not turn it on.
+ * Install attribution (Apple Ads, the Play install referrer) needs an explicit Allow.
  */
 export function isAttributionAuthorityGranted(): boolean {
   return isConsentAuthorityGranted() && !isRegionDefaultConsent(snapshot.record);

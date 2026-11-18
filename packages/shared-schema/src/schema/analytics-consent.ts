@@ -35,16 +35,13 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
     conditional: Boolean
   }
 
-  """
-  Whether this visitor is asked before analytics runs, from the Cloudflare
-  country of the request. See docs/analytics-consent.md.
-  """
+  "Compatibility response for installed app bundles. No location is read; everyone must explicitly answer."
   type ConsentRegion {
-    "The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted."
+    "Always null. Retained for installed app bundles."
     countryCode: String
-    "True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown."
+    "Always true. A region default never authorizes analytics."
     promptRequired: Boolean!
-    "True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions."
+    "Always false. Retained for old queries; current browsers read privacy signals directly."
     globalPrivacyControl: Boolean!
   }
 
@@ -79,10 +76,11 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
   }
 
   extend type Query {
+    "Compatibility only: makes installed app bundles discard regional defaults and ask for an explicit answer."
+    consentRegion: ConsentRegion!
+      @deprecated(reason: "Analytics is opt-in everywhere. Current clients must not query location for consent.")
     "The signed-in climber's current analytics consent, or null when they have never answered."
     myAnalyticsConsent: AnalyticsConsent
-    "Whether this request comes from a region where the analytics prompt is shown. No sign-in needed."
-    consentRegion: ConsentRegion!
   }
 
   extend type Mutation {

@@ -1,19 +1,19 @@
 {
   "title": "Hilfst du uns, Boardsesh zu verbessern?",
-  "body": "Erlaube Nutzungsanalysen und optionale Sitzungsaufzeichnungen, damit wir sehen, was funktioniert. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist, und du kannst sie jederzeit ändern.",
+  "body": "Erlaube Nutzungsanalysen, damit wir sehen, was funktioniert. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist, und du kannst sie jederzeit ändern.",
   "adMeasurement": "Auf boardsesh.com umfassen Analysen auch die Werbemessung mit Meta und Reddit. Sie sehen, welche unserer Seiten du besuchst und wann du auf einen App-Store-Button tippst, damit wir wissen, welche unserer Anzeigen Kletternde hierher bringen.",
   "allow": "Erlauben",
   "deny": "Nein danke",
   "privacyLink": "Unsere Datenschutzerklärung lesen",
   "privacyChoices": "Datenschutzwahl",
   "settingsTitle": "Nutzungsanalysen",
-  "settingsBody": "Entscheide, ob du Nutzungsanalysen und optionale Sitzungsaufzeichnungen teilen möchtest. Grundlegende Diagnosen bleiben aktiviert. Du kannst mit beiden Optionen weiterklettern.",
+  "settingsBody": "Entscheide, ob du Nutzungsanalysen teilen möchtest. Grundlegende Diagnosen bleiben aktiviert. Du kannst mit beiden Optionen weiterklettern.",
   "enabled": "Nutzungsanalysen sind eingeschaltet",
   "disabled": "Nutzungsanalysen sind ausgeschaltet",
   "close": "Schließen",
   "syncError": "Deine Wahl ist hier gespeichert. Wir synchronisieren sie mit deinem Konto, sobald du wieder online bist.",
   "mobileTitle": "Deine Privatsphäre, deine Wahl",
-  "mobileBody": "Erlaube Nutzungsanalysen und optionale Sitzungsaufzeichnungen, um Boardsesh zu verbessern. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist. Du kannst sie jederzeit unter Einstellungen → Privatsphäre ändern.",
+  "mobileBody": "Erlaube Nutzungsanalysen, um Boardsesh zu verbessern. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist. Du kannst sie jederzeit unter Einstellungen → Privatsphäre ändern.",
   "analyticsLabel": "Nutzungsanalysen teilen",
-  "regionDefaultNote": "Nutzungsanalysen sind in deiner Region standardmäßig eingeschaltet. Du kannst sie hier jederzeit ausschalten."
+  "later": "Jetzt nicht"
 }

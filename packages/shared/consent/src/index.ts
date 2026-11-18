@@ -4,7 +4,6 @@ export {
   CONSENT_BASES,
   CONSENT_SOURCES,
   CONSENT_VERSION,
-  createRegionDefaultConsent,
   isAnalyticsConsentChoice,
   isAnalyticsGranted,
   isConsentBasis,
@@ -21,12 +20,6 @@ export {
   type ConsentSource,
   type DeviceConsentRecord,
 } from './consent-record';
-export {
-  CONSENT_REGION_EDGE_HEADER_NAME,
-  CONSENT_PROMPT_COUNTRIES,
-  consentPromptRequired,
-  normalizeConsentCountry,
-} from './consent-region';
 export {
   ANALYTICS_CAPTURE_PATH,
   ANALYTICS_CONSENT_HEADER,
@@ -52,7 +45,5 @@ export {
   type ConsentSyncOptions,
   type ConsentSyncCoordinator,
 } from './consent-sync';
-
-export { createConsentRegionLookup } from './consent-region-lookup';
 
 export { AD_PIXEL_COOKIE_NAMES, adPixelCookieExpiries } from './ad-pixel-cookies';

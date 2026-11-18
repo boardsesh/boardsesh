@@ -31,7 +31,7 @@ function makeInput(overrides: Partial<PrivacyModelInput> = {}): PrivacyModelInpu
     pendingAnonymous: undefined,
     confirming: {},
     pendingRequestCount: 0,
-    analytics: { preference: true, regionDefault: false },
+    analytics: { preference: true },
     sessionRecording: { value: false, disabled: false },
     onRetry: vi.fn(),
     onPrivateAccountChange: vi.fn(),
@@ -231,13 +231,10 @@ describe('buildPrivacyModel — follow requests', () => {
 });
 
 describe('buildPrivacyModel — analytics', () => {
-  it('puts the long copy in the footer, with the region note first when it applies', () => {
+  it('puts analytics copy in the footer', () => {
     const footer = (input: PrivacyModelInput) =>
       buildPrivacyModel(input).sections.find((section) => section.key === 'analytics')?.footer;
     expect(footer(makeInput())).toBe('consent:settingsBody');
-    expect(footer(makeInput({ analytics: { preference: true, regionDefault: true } }))).toBe(
-      'consent:regionDefaultNote consent:settingsBody',
-    );
     expect(findRow(makeInput(), 'analytics', 'toggle').label).toBe('consent:analyticsLabel');
   });
 

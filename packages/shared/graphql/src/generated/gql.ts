@@ -27,7 +27,6 @@ type Documents = {
   '\n  fragment AnalyticsConsentFields on AnalyticsConsent {\n    analytics\n    version\n    source\n    decidedAt\n  }\n': typeof types.AnalyticsConsentFieldsFragmentDoc;
   '\n  query GetMyAnalyticsConsent {\n    myAnalyticsConsent {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n': typeof types.GetMyAnalyticsConsentDocument;
   '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n': typeof types.SetAnalyticsConsentDocument;
-  '\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n': typeof types.GetConsentRegionDocument;
   '\n  query AppWorkout($id: ID!) {\n    appWorkout(id: $id) {\n      id\n      clientId\n      status\n      title\n      sourceAppName\n      notes\n      spec\n      expiresAt\n      sessionId\n      sessionPlan\n    }\n  }\n': typeof types.AppWorkoutDocument;
   '\n  mutation AttachAppWorkout($workoutId: ID!, $sessionId: ID!) {\n    attachAppWorkout(workoutId: $workoutId, sessionId: $sessionId)\n  }\n': typeof types.AttachAppWorkoutDocument;
   '\n  mutation RecordAppWorkoutPlan($workoutId: ID!, $plan: JSON!) {\n    recordAppWorkoutPlan(workoutId: $workoutId, plan: $plan)\n  }\n': typeof types.RecordAppWorkoutPlanDocument;
@@ -239,8 +238,6 @@ const documents: Documents = {
     types.GetMyAnalyticsConsentDocument,
   '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n':
     types.SetAnalyticsConsentDocument,
-  '\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n':
-    types.GetConsentRegionDocument,
   '\n  query AppWorkout($id: ID!) {\n    appWorkout(id: $id) {\n      id\n      clientId\n      status\n      title\n      sourceAppName\n      notes\n      spec\n      expiresAt\n      sessionId\n      sessionPlan\n    }\n  }\n':
     types.AppWorkoutDocument,
   '\n  mutation AttachAppWorkout($workoutId: ID!, $sessionId: ID!) {\n    attachAppWorkout(workoutId: $workoutId, sessionId: $sessionId)\n  }\n':
@@ -697,12 +694,6 @@ export function graphql(
 export function graphql(
   source: '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n',
 ): (typeof documents)['\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n',
-): (typeof documents)['\n  query GetConsentRegion {\n    consentRegion {\n      countryCode\n      promptRequired\n      globalPrivacyControl\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -42,11 +42,12 @@ vi.mock('../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../lib/posthog-client', () => ({ applyPosthogConsent: async () => {} }));
 
 import PrivacyConsentScreen from '../../app/privacy-consent';
-import { getConsentSnapshot, updateConsentState } from '../lib/consent-state';
+import { getConsentSnapshot, resetConsentPromptDismissal, updateConsentState } from '../lib/consent-state';
 
 afterEach(cleanup);
 
 it('holds a direct launch, waits for local consent, then leaves immediately after the local decision', () => {
+  resetConsentPromptDismissal();
   updateConsentState({ record: null, loaded: false, settled: false, killed: false });
   navigation.replace.mockImplementation(() => expect(getConsentSnapshot().settled).toBe(true));
   decisions.decide.mockImplementation((choice: 'granted' | 'denied', source: 'ios') => {
@@ -80,39 +81,33 @@ it('holds a direct launch, waits for local consent, then leaves immediately afte
   expect(preventRemoval).toHaveBeenLastCalledWith(false, expect.any(Function));
 });
 
-it.each([false, true])('replays blocked navigation after synchronous consent settles (canDismiss=%s)', (canDismiss) => {
+it.each([false, true])('dismisses without an answer and permits app use (canDismiss=%s)', (canDismiss) => {
   navigation.replace.mockClear();
   navigation.dismiss.mockClear();
+  decisions.decide.mockClear();
   launch.released = true;
+  resetConsentPromptDismissal();
   updateConsentState({ record: null, loaded: true, settled: false, killed: false });
   navigation.canDismiss.mockReturnValue(canDismiss);
-  const repeat = vi.fn();
-  const view = render(createElement(PrivacyConsentScreen));
-  // Capture the currently installed guard before React can observe the choice.
-  const guard = preventRemoval.mock.lastCall?.[1] as (event: { repeat: () => void }) => void;
-  guard({ repeat });
-  expect(repeat).not.toHaveBeenCalled();
-
-  decisions.decide.mockImplementation((analytics: 'granted' | 'denied') => {
-    updateConsentState({
-      record: { analytics, source: 'ios', version: 1, decidedAt: new Date().toISOString() },
-      settled: true,
-    });
-    return new Promise<void>(() => {});
-  });
-  navigation.replace.mockImplementation(() => guard({ repeat }));
-  fireEvent.click(screen.getByRole('button', { name: 'deny' }));
-  if (canDismiss) {
-    // ConsentGate owns dismissal after observing the settled choice.
-    expect(navigation.dismiss).not.toHaveBeenCalled();
-    expect(navigation.replace).not.toHaveBeenCalled();
-    expect(repeat).not.toHaveBeenCalled();
-    guard({ repeat });
-  } else {
-    expect(navigation.replace).toHaveBeenCalledWith('/');
-  }
-  expect(repeat).toHaveBeenCalledOnce();
-  expect(preventRemoval).toHaveBeenLastCalledWith(false, expect.any(Function));
-  view.unmount();
+  render(createElement(PrivacyConsentScreen));
+  fireEvent.click(screen.getByRole('button', { name: 'later' }));
+  expect(getConsentSnapshot().settled).toBe(true);
+  expect(getConsentSnapshot().record).toBeNull();
+  expect(decisions.decide).not.toHaveBeenCalled();
+  if (canDismiss) expect(navigation.dismiss).toHaveBeenCalledOnce();
+  else expect(navigation.replace).toHaveBeenCalledWith('/');
   navigation.canDismiss.mockReturnValue(false);
+});
+
+it('back navigation dismisses without an analytics answer', () => {
+  launch.released = true;
+  resetConsentPromptDismissal();
+  updateConsentState({ record: null, loaded: true, settled: false, killed: false });
+  render(createElement(PrivacyConsentScreen));
+  const guard = preventRemoval.mock.lastCall?.[1] as (event: { repeat: () => void }) => void;
+  const repeat = vi.fn();
+  act(() => guard({ repeat }));
+  expect(repeat).toHaveBeenCalledOnce();
+  expect(getConsentSnapshot().settled).toBe(true);
+  expect(getConsentSnapshot().record).toBeNull();
 });

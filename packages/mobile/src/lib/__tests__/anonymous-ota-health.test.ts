@@ -1,5 +1,11 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
+import { buildOtaLaunchUpdateProperties } from '../ota-telemetry';
 import { anonymousOtaStatusProperties } from '../anonymous-ota-health-properties';
+const consent = vi.hoisted(() => ({ granted: true }));
+vi.mock('../consent-state', () => ({
+  isProductAnalyticsGranted: () => consent.granted,
+  subscribeConsent: () => () => {},
+}));
 vi.mock('../is-dev-build', () => ({ isDevBuild: () => false }));
 // Device storage that outlives a JS runtime restart (vi.resetModules), as AsyncStorage does.
 const deviceStorage = vi.hoisted(() => new Map<string, string>());
@@ -30,6 +36,7 @@ const status = {
 beforeEach(() => {
   vi.resetModules();
   deviceStorage.clear();
+  consent.granted = true;
   persistence.failReads = false;
   persistence.failWrites = false;
   vi.stubEnv('EXPO_PUBLIC_POSTHOG_KEY', 'phc_health');
@@ -95,3 +102,37 @@ it.each(['failReads', 'failWrites'] as const)(
     expect(JSON.parse(fetch.mock.calls[0][1].body).batch[0].distinct_id).toBe(`ota-install:${record.id}`);
   },
 );
+
+it('sends neither OTA status nor launch analytics before consent, including a legacy default', async () => {
+  consent.granted = false;
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  const health = await import('../anonymous-ota-health');
+  await health.reportAnonymousOtaStatus(status);
+  await health.reportAnonymousOtaLaunch(
+    buildOtaLaunchUpdateProperties({
+      outcome: 'nothing_newer',
+      phase: 'none',
+      durationMs: 0,
+      trigger: 'cold_start',
+      capMs: 0,
+      runtimeVersion: null,
+      isEmbeddedLaunch: true,
+    }),
+  );
+  expect(fetch).not.toHaveBeenCalled();
+  expect(deviceStorage.size).toBe(0);
+  consent.granted = true;
+  await Promise.resolve();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('rechecks consent after the asynchronous install identity read', async () => {
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  const health = await import('../anonymous-ota-health');
+  const pending = health.reportAnonymousOtaStatus(status);
+  consent.granted = false;
+  await pending;
+  expect(fetch).not.toHaveBeenCalled();
+});

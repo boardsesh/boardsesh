@@ -1,4 +1,4 @@
-import { isAnalyticsGranted, isRegionDefaultConsent } from '@boardsesh/consent';
+import { isAnalyticsGranted } from '@boardsesh/consent';
 import { getConsentSnapshot, isProductAnalyticsGranted, subscribeConsent } from './consent-state';
 import { subscribeAnalyticsIdentity } from './analytics-identity-events';
 import {
@@ -17,14 +17,7 @@ export function createConsentBoundAnalyticsRunner({
 }: { accountId?: string; ready?: () => boolean; handoff?: AuthAnalyticsHandoff } = {}): (capture: () => void) => void {
   const origin = getConsentSnapshot();
   // A later Allow must never replay actions taken before consent.
-  if (
-    handoff
-      ? !handoff.isCurrent()
-      : !origin.loaded ||
-        origin.killed ||
-        !isAnalyticsGranted(origin.record) ||
-        (isRegionDefaultConsent(origin.record) && !origin.regionConfirmed)
-  )
+  if (handoff ? !handoff.isCurrent() : !origin.loaded || origin.killed || !isAnalyticsGranted(origin.record))
     return () => {};
   const pending: Array<() => void> = [];
   let closed = false;
