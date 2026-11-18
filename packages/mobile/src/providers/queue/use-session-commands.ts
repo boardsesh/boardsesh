@@ -1,3 +1,4 @@
+import { clearActivePartnerWorkout, rememberPartnerWorkout } from '../../lib/pending-workout-store';
 import { useCallback, useContext, useRef } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
@@ -13,6 +14,7 @@ import { getWsClient } from '../../lib/graphql/ws-client';
 import { clampSyncedQueue } from './now-slot-server';
 import {
   CREATE_SESSION,
+  CREATE_PARTNER_WORKOUT_SESSION,
   END_SESSION,
   type CreateSessionMutationResponse,
   type EndSessionMutationResponse,
@@ -30,6 +32,8 @@ import { seedEndedSessionCaches } from '../../lib/session-end-cache';
 import { track } from '../../lib/analytics';
 import { reportError, reportHandledError } from '../../lib/error-reporting';
 import { extractGraphqlMessage, isGraphqlRateLimitedError } from '../../lib/graphql/extract-error-message';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
+import { toClimbQueueItem } from '../../lib/queue-conversion';
 import type { ToastVariant } from '../../components/Toast';
 import type { EndSessionOptions, StartSessionConfig } from './queue-contexts';
 
@@ -112,11 +116,20 @@ export function useSessionCommands({
   // (queue-snapshot-store) until the user starts or joins one, matching web.
   const createSessionWithConfig = useCallback(
     async (config?: StartSessionConfig): Promise<string | null> => {
-      if (sessionIdRef.current) return sessionIdRef.current;
-      if (sessionCreationRef.current) return sessionCreationRef.current;
+      if (sessionIdRef.current) return config?.appWorkoutSeed ? null : sessionIdRef.current;
+      if (sessionCreationRef.current) return config?.appWorkoutSeed ? null : sessionCreationRef.current;
 
       const createPromise = (async () => {
+        const initialSessionId = sessionIdRef.current;
+        const credentialGeneration = getCredentialGeneration();
+        const boardGeneration = getActiveBoardWriteGeneration();
+        const isPartnerScopeCurrent = () =>
+          !config?.appWorkoutSeed ||
+          (credentialGeneration === getCredentialGeneration() &&
+            getActiveBoardWriteGeneration() === boardGeneration &&
+            sessionIdRef.current === initialSessionId);
         const activeBoard = await getStoredActiveBoard();
+        if (!isPartnerScopeCurrent()) return null;
         if (!activeBoard) {
           // The Start button is gated on the React Query copy of the active board;
           // if the stored board is somehow missing, fail loudly so the user knows
@@ -128,27 +141,49 @@ export function useSessionCommands({
         const boardPath = buildSessionBoardPath(activeBoard);
 
         try {
-          const response = await getHttpClient().request<CreateSessionMutationResponse>(CREATE_SESSION, {
-            input: {
-              boardPath,
-              latitude: 0,
-              longitude: 0,
-              discoverable: config?.discoverable ?? false,
-              ...(config?.name ? { name: config.name } : {}),
-              ...(config?.audience ? { audience: config.audience } : {}),
-              ...(config?.goal ? { goal: config.goal } : {}),
-              ...(config?.color ? { color: config.color } : {}),
-              ...(config?.isPermanent ? { isPermanent: config.isPermanent } : {}),
-              // Absent means public server-side. Sending the key only for a
-              // private session keeps the default Start input identical to what
-              // older backends accept.
-              ...(config?.isPublic === false ? { isPublic: false } : {}),
+          const response = await getHttpClient().request<CreateSessionMutationResponse>(
+            config?.appWorkoutSeed ? CREATE_PARTNER_WORKOUT_SESSION : CREATE_SESSION,
+            {
+              input: {
+                boardPath,
+                ...(config?.appWorkoutId ? { appWorkoutId: config.appWorkoutId } : {}),
+                ...(config?.appWorkoutSeed ? { appWorkoutSeed: config.appWorkoutSeed } : {}),
+                latitude: 0,
+                longitude: 0,
+                discoverable: config?.discoverable ?? false,
+                ...(config?.name ? { name: config.name } : {}),
+                ...(config?.audience ? { audience: config.audience } : {}),
+                ...(config?.goal ? { goal: config.goal } : {}),
+                ...(config?.color ? { color: config.color } : {}),
+                ...(config?.isPermanent ? { isPermanent: config.isPermanent } : {}),
+                // Absent means public server-side. Sending the key only for a
+                // private session keeps the default Start input identical to what
+                // older backends accept.
+                ...(config?.isPublic === false ? { isPublic: false } : {}),
+              },
             },
-          });
+          );
           const newId = response.createSession.id;
-          if (sessionIdRef.current !== newId) onSessionContextChanging();
-          sessionIdRef.current = newId;
+          if (config?.appWorkoutId && credentialGeneration === getCredentialGeneration()) {
+            // The server committed even if the climber switched room during the request.
+            await rememberPartnerWorkout(newId, config.appWorkoutId);
+          }
+          if (!isPartnerScopeCurrent()) return null;
+          const winningQueue = config?.appWorkoutSeed ? response.createSession.queueState : null;
+          if (config?.appWorkoutSeed && !winningQueue)
+            throw new Error('Partner session response omitted its committed queue');
+          const winningItems = winningQueue?.queue.map(toClimbQueueItem);
+          const winningCurrent = winningQueue?.currentClimbQueueItem
+            ? toClimbQueueItem(winningQueue.currentClimbQueueItem)
+            : null;
+          // Partner Start remains retryable until all awaited storage work has
+          // completed. A concurrent join must retain its own session context.
+          if (!config?.appWorkoutSeed) {
+            if (sessionIdRef.current !== newId) onSessionContextChanging();
+            sessionIdRef.current = newId;
+          }
           await setStoredSessionId(newId);
+          if (!isPartnerScopeCurrent()) return null;
           // Device provenance: this phone STARTED the party, as opposed to
           // joining one. The in-session exit UI leads with End here and with
           // Leave everywhere else, which is the whole point of #3502 — the
@@ -161,22 +196,51 @@ export function useSessionCommands({
           } catch (provenanceError) {
             if (__DEV__) console.warn('[queue] created-session provenance write failed', provenanceError);
           }
+          if (!isPartnerScopeCurrent()) return null;
           // What the creator chose, so the in-session switch can show it while
           // the `session` query still returns null (empty roster right after
           // Start). Best-effort like the provenance above: losing it only hides
           // the switch until the server can answer.
           try {
-            await setStoredSessionVisibility(newId, config?.isPublic !== false);
+            await setStoredSessionVisibility(
+              newId,
+              config?.appWorkoutSeed ? response.createSession.isPublic : config?.isPublic !== false,
+            );
           } catch (visibilityError) {
             if (__DEV__) console.warn('[queue] session visibility write failed', visibilityError);
           }
+          if (!isPartnerScopeCurrent()) return null;
           // Seed the session with the locally-built queue BEFORE setSessionId
           // mounts the queueUpdates subscription — the subscription's FullSync
           // for an empty room would wipe the local queue via INITIAL_QUEUE_DATA.
           // SET_QUEUE is connection-scoped, so JOIN first (the subscription
           // effect's later eager ensureJoined hits the tracker cache).
           const { queue, currentClimbQueueItem, historyCount } = stateRef.current;
-          if (queue.length > 0 || currentClimbQueueItem) {
+          if (config?.appWorkoutSeed) {
+            // The server won the initial preview and solo seed atomically. A retry
+            // must hydrate that winner and never seed/append this render's preview.
+            if (!winningQueue || !winningItems) throw new Error('Partner queue was not validated');
+            try {
+              await clearStoredQueueSnapshot();
+            } catch (cleanupError) {
+              // The SQL seed already owns the queue; local cleanup cannot undo
+              // a committed Start or leave its session ref half-installed.
+              reportHandledError(cleanupError, { tags: { source: 'startSessionSeedCleanup' } });
+            }
+            if (!isPartnerScopeCurrent()) return null;
+            onSessionContextChanging();
+            sessionIdRef.current = newId;
+            dispatch({
+              type: 'INITIAL_QUEUE_DATA',
+              serverSequence: winningQueue.sequence,
+              payload: {
+                sessionId: newId,
+                queue: winningItems,
+                currentClimbQueueItem: winningCurrent,
+                historyCount: winningQueue.historyCount ?? null,
+              },
+            });
+          } else if (queue.length > 0 || currentClimbQueueItem) {
             try {
               await ensureJoined(newId);
               // Clamped like the local setQueue (#6673): the queue can pass the
@@ -214,6 +278,23 @@ export function useSessionCommands({
           });
           return newId;
         } catch (error) {
+          if (config?.appWorkoutId) {
+            const errors = (
+              error as { response?: { errors?: { extensions?: { reason?: string; code?: string } }[] } } | null
+            )?.response?.errors;
+            if (errors?.some((entry) => entry.extensions?.reason === 'APP_WORKOUT_PERMANENT_SESSION')) {
+              showToast(t('partnerWorkouts.personalSessionRequired'), 'error');
+              return null;
+            }
+            // The card refetches expected workout conflicts and offers Resume
+            // for a previous committed Start rather than treating it as a crash.
+            if (
+              errors?.some((entry) =>
+                ['CONFLICT', 'NOT_FOUND', 'BAD_USER_INPUT'].includes(entry.extensions?.code ?? ''),
+              )
+            )
+              return null;
+          }
           if (isGraphqlRateLimitedError(error)) {
             showToast(t('mobile.queue.rateLimited'), 'error');
             return null;
@@ -242,13 +323,16 @@ export function useSessionCommands({
           const devMessage = __DEV__ ? extractGraphqlMessage(error) : null;
           showToast(devMessage ?? t('mobile.queue.sessionCreateError'), 'error');
           return null;
-        } finally {
-          sessionCreationRef.current = null;
         }
       })();
 
       sessionCreationRef.current = createPromise;
-      return createPromise;
+      try {
+        return await createPromise;
+      } finally {
+        // Includes board lookup failures and early scope/missing-board returns.
+        if (sessionCreationRef.current === createPromise) sessionCreationRef.current = null;
+      }
     },
     [ensureJoined, onSessionContextChanging, setQueueMutation, showToast, t],
   );
@@ -279,6 +363,10 @@ export function useSessionCommands({
       // now; an old removal must not clear that newer selection.
       if (sessionIdRef.current !== sessionToClear || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
       const snapshotRemoval = clearStoredQueueSnapshot();
+      if (sessionToClear)
+        void clearActivePartnerWorkout(sessionToClear).catch((error: unknown) => {
+          reportHandledError(error, { tags: { source: 'partner-workout', op: 'clear-session' } });
+        });
       // Any pending seed-failure guard belongs to the session we're tearing down
       // (it's keyed by id, so a stale value can't match the next session anyway —
       // this just keeps the ref tidy).

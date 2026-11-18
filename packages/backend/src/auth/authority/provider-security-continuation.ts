@@ -14,8 +14,17 @@ import type { AuthorityTransaction } from './adapter';
 import type { FirstPartyCredential, FirstPartySession } from './session-reader';
 import type { ProviderCandidateCredential } from './provider-security-result';
 import { sessionTokenDigest } from './session-token';
+import { keepCanonicalAfterSecurityMutation } from './security-session';
+import {
+  requireFirstPartyContinuationMutationReceipt,
+  type IdentityGenerationMutationReceipt,
+} from '../current-store/security-mutation-core';
 
-/** Requesting-device continuation uses the same SID, new generation/token and original provenance. */
+/**
+ * Requesting-device continuation with the same SID, a new generation and a NEW
+ * token, original provenance kept. First password still uses it until #7596
+ * B5c2; provider link and unlink use `continueProviderSessionInPlace`.
+ */
 export async function replaceProviderCanonicalContinuation(
   transaction: AuthorityTransaction,
   source: FirstPartySession,
@@ -75,6 +84,49 @@ export async function replaceProviderCanonicalContinuation(
       })
       .where(and(eq(authSession.id, source.authSessionId), eq(authSession.userId, source.userId)));
   } else if (sourceCredential.kind === 'canonical-token') throw new Error('PROVIDER_CONTINUATION_SOURCE_MISSING');
+  await revokeOtherFirstPartyCredentials(transaction, source, now);
+}
+
+/**
+ * Provider link and unlink (#7596): the requesting web session continues with
+ * the same id and token, its sign-in time and expiry untouched, at the
+ * account's new generation; every other first-party credential of the account
+ * ends. Call in the savepoint of the mutation, right after
+ * `recordIdentitySecurityMutation`, with its receipt; any refusal throws so the
+ * whole mutation rolls back.
+ */
+export async function continueProviderSessionInPlace(
+  transaction: AuthorityTransaction,
+  source: FirstPartySession,
+  token: string,
+  mutationReceipt: IdentityGenerationMutationReceipt,
+  expected: { readonly operationId: string; readonly kind: 'provider-link' | 'provider-unlink' },
+  now: Date,
+): Promise<{ readonly generation: number }> {
+  const generations = requireFirstPartyContinuationMutationReceipt(
+    transaction,
+    source.userId,
+    mutationReceipt,
+    expected,
+  );
+  if (generations.previousGeneration !== source.generation || generations.generation !== source.generation + 1)
+    throw new Error('PROVIDER_CONTINUATION_GENERATION_INVALID');
+  await keepCanonicalAfterSecurityMutation(transaction, source, token, generations.generation, now);
+  await revokeOtherFirstPartyCredentials(transaction, source, now);
+  return { generation: generations.generation };
+}
+
+/**
+ * Ends every first-party credential of the account but the requesting
+ * session: other web sessions, other legacy lineages, every native refresh
+ * token, and pending password-recovery and email-verification links (their
+ * purpose generations move, so a later link cannot revive an older one).
+ */
+async function revokeOtherFirstPartyCredentials(
+  transaction: AuthorityTransaction,
+  source: FirstPartySession,
+  now: Date,
+) {
   await transaction
     .update(authSession)
     .set({ expiresAt: now, updatedAt: now })

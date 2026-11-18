@@ -118,6 +118,84 @@ describe('deriveWorkoutStages', () => {
     expect(stages[1].tally).toEqual({ sent: 3, attempts: 2, skipped: 0, climbs: 2 });
   });
 
+  describe('a pyramid that comes back down on the same climbs (#6740)', () => {
+    // A B C B A: the way down repeats the way up under queue items of its own.
+    const pyramidPlan: SessionWorkoutPlan = {
+      version: 1,
+      stages: [
+        {
+          id: 'pyramid',
+          kind: 'pyramid',
+          items: [
+            { queueItemUuid: 'q-up-a', climbUuid: 'c-a', angle: 40 },
+            { queueItemUuid: 'q-up-b', climbUuid: 'c-b', angle: 40 },
+            { queueItemUuid: 'q-peak', climbUuid: 'c-c', angle: 40 },
+            { queueItemUuid: 'q-down-b', climbUuid: 'c-b', angle: 40 },
+            { queueItemUuid: 'q-down-a', climbUuid: 'c-a', angle: 40 },
+          ],
+        },
+      ],
+    };
+    const repsByItem = (ticks: SessionWorkoutTick[], tickMap: Parameters<typeof deriveWorkoutStages>[1] = []) =>
+      Object.fromEntries(
+        deriveWorkoutStages(pyramidPlan, tickMap, ticks).stages[0].climbs.map((climb) => [
+          climb.queueItemUuid,
+          climb.tickUuids,
+        ]),
+      );
+
+    it('puts each visit on its own item through the tick map, whatever the order', () => {
+      const ticks = [tick('up', 'c-a', 'send', 1), tick('down', 'c-a', 'attempt', 2)];
+      const tickMap = [
+        { tickUuid: 'down', queueItemUuid: 'q-down-a' },
+        { tickUuid: 'up', queueItemUuid: 'q-up-a' },
+      ];
+      expect(repsByItem(ticks, tickMap)).toMatchObject({ 'q-up-a': ['up'], 'q-down-a': ['down'] });
+    });
+
+    it('without a map, gives the way down its own tick after the way up got one', () => {
+      const ticks = ['c-a', 'c-b', 'c-c', 'c-b', 'c-a'].map((climbUuid, minute) =>
+        tick(`t${minute}`, climbUuid, 'send', minute),
+      );
+      expect(repsByItem(ticks)).toEqual({
+        'q-up-a': ['t0'],
+        'q-up-b': ['t1'],
+        'q-peak': ['t2'],
+        'q-down-b': ['t3'],
+        'q-down-a': ['t4'],
+      });
+    });
+
+    it('without a map, lands a way-down tick on the way down when the way up was skipped', () => {
+      const ticks = ['c-b', 'c-c', 'c-b', 'c-a'].map((climbUuid, minute) =>
+        tick(`t${minute}`, climbUuid, 'send', minute),
+      );
+      expect(repsByItem(ticks)).toEqual({
+        'q-up-a': [],
+        'q-up-b': ['t0'],
+        'q-peak': ['t1'],
+        'q-down-b': ['t2'],
+        'q-down-a': ['t3'],
+      });
+    });
+
+    it('places ticks with the same time by uuid, whatever order the query returned them in', () => {
+      const ticks = [tick('t-peak', 'c-c', 'send', 1), tick('t-z', 'c-a', 'attempt', 2), tick('t-a', 'c-a', 'send', 2)];
+      const listed = repsByItem(ticks);
+      expect(repsByItem([ticks[0], ticks[2], ticks[1]])).toEqual(listed);
+      expect(listed).toMatchObject({ 'q-up-a': ['t-z'], 'q-peak': ['t-peak'], 'q-down-a': ['t-a'] });
+    });
+
+    it('without a map, still fills an earlier copy left open when nothing after the last tick fits', () => {
+      const ticks = ['c-c', 'c-a'].map((climbUuid, minute) => tick(`t${minute}`, climbUuid, 'send', minute));
+      // The peak first, then A: the way-down A comes after it, so A lands there.
+      expect(repsByItem(ticks)).toMatchObject({ 'q-up-a': [], 'q-peak': ['t0'], 'q-down-a': ['t1'] });
+      const backwards = ['c-c', 'c-a', 'c-a'].map((climbUuid, minute) => tick(`t${minute}`, climbUuid, 'send', minute));
+      // A second A has no room after the last tick, so it fills the way-up A.
+      expect(repsByItem(backwards)).toMatchObject({ 'q-up-a': ['t2'], 'q-down-a': ['t1'] });
+    });
+  });
+
   it('falls back to climb and angle when the map names an item the plan lacks', () => {
     const { stages, offPlan } = deriveWorkoutStages(
       fourByFourPlan,

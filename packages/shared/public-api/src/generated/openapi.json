@@ -23,6 +23,8 @@
             "scopes": {
               "logbook:read": "Every tick the climber has logged, on every board, including ones they keep private on Boardsesh.",
               "profile:read": "The climber's display name and avatar.",
+              "workouts:read": "Read workouts your app created, including results.",
+              "workouts:write": "Create and cancel workouts for the climber.",
               "offline_access": "Receive a refresh token to keep accessing the other granted scopes while the climber is away."
             }
           }
@@ -459,7 +461,12 @@
               "not_found",
               "cursor_expired",
               "rate_limited",
-              "server_error"
+              "server_error",
+              "invalid_block",
+              "idempotency_mismatch",
+              "workout_limit",
+              "conflict",
+              "payload_too_large"
             ],
             "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
             "example": "invalid_cursor"
@@ -544,6 +551,1668 @@
           ],
           "cursor": "c3.eyJraW5kIjo",
           "hasMore": false
+        }
+      },
+      "WorkoutCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^wk_[A-Za-z0-9_-]+$"
+          },
+          "externalRef": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkoutStatus"
+          },
+          "launchUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "appUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutBlockSupport"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "externalRef",
+          "status",
+          "launchUrl",
+          "appUrl",
+          "expiresAt",
+          "blocks"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "id": "wk_example",
+          "externalRef": "session_88213",
+          "status": "created",
+          "launchUrl": "https://www.boardsesh.com/w/wk_example",
+          "appUrl": "com.boardsesh.app://w/wk_example",
+          "expiresAt": "2026-12-01T00:00:00Z",
+          "blocks": [
+            {
+              "index": 0,
+              "type": "volume",
+              "support": "native"
+            }
+          ]
+        }
+      },
+      "WorkoutStatus": {
+        "type": "string",
+        "x-extensible-enum": [
+          "created",
+          "opened",
+          "started",
+          "completed",
+          "auto_closed",
+          "cancelled",
+          "expired",
+          "revoked"
+        ],
+        "description": "Workout lifecycle. New statuses may be added; treat unknown statuses as unfinished.",
+        "example": "created"
+      },
+      "WorkoutBlockSupport": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11
+          },
+          "type": {
+            "type": "string",
+            "x-extensible-enum": [
+              "warmUp",
+              "volume",
+              "pyramid",
+              "ladder",
+              "gradeFocus",
+              "onTheMinute",
+              "fourByFour",
+              "limitBouldering",
+              "freeClimbing"
+            ],
+            "description": "Block type. New values may be added.",
+            "example": "volume"
+          },
+          "support": {
+            "type": "string",
+            "x-extensible-enum": [
+              "native",
+              "freeform"
+            ],
+            "description": "How the block runs. New values may be added.",
+            "example": "native"
+          }
+        },
+        "required": [
+          "index",
+          "type",
+          "support"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "index": 0,
+          "type": "volume",
+          "support": "native"
+        }
+      },
+      "WorkoutConflict": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "x-extensible-enum": [
+              "invalid_request",
+              "invalid_cursor",
+              "invalid_token",
+              "insufficient_scope",
+              "not_found",
+              "cursor_expired",
+              "rate_limited",
+              "server_error",
+              "invalid_block",
+              "idempotency_mismatch",
+              "workout_limit",
+              "conflict",
+              "payload_too_large"
+            ],
+            "description": "Machine-readable code. New codes may be added; branch on the HTTP status first.",
+            "example": "invalid_cursor"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For a human reading logs.",
+            "example": "cursor is not a value this API issued"
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Added for validation errors: the field that failed.",
+            "example": "limit"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Quote this when something looks wrong. Also sent as `Boardsesh-Request-Id`.",
+            "example": "req_7Hc2Pb9Xw1Lm"
+          },
+          "existing": {
+            "$ref": "#/components/schemas/WorkoutCreated"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "requestId"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "error": "conflict",
+          "message": "This reference already exists.",
+          "requestId": "req_example",
+          "existing": {
+            "id": "wk_example",
+            "externalRef": "session_88213",
+            "status": "created",
+            "launchUrl": "https://www.boardsesh.com/w/wk_example",
+            "appUrl": "com.boardsesh.app://w/wk_example",
+            "expiresAt": "2026-12-01T00:00:00Z",
+            "blocks": [
+              {
+                "index": 0,
+                "type": "volume",
+                "support": "native"
+              }
+            ]
+          }
+        }
+      },
+      "CreateWorkout": {
+        "type": "object",
+        "properties": {
+          "externalRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "scheduledFor": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "preferredBoard": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/components/schemas/BoardType"
+              },
+              "angle": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 90
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutBlock"
+            },
+            "minItems": 1,
+            "maxItems": 12
+          }
+        },
+        "required": [
+          "externalRef",
+          "title",
+          "blocks"
+        ],
+        "example": {
+          "externalRef": "session_88213",
+          "title": "Easy volume",
+          "blocks": [
+            {
+              "type": "volume",
+              "targetGrade": {
+                "scale": "v",
+                "value": 3
+              },
+              "climbCount": 8
+            }
+          ]
+        }
+      },
+      "WorkoutBlock": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "warmUp"
+                ]
+              },
+              "gradeRange": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "from": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      },
+                      "to": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "from",
+                      "to"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "from": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      },
+                      "to": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "from",
+                      "to"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "gradeRange"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "volume"
+                ]
+              },
+              "targetGrade": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  }
+                ]
+              },
+              "restSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "targetGrade"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "pyramid"
+                ]
+              },
+              "gradeRange": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "from": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      },
+                      "to": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "from",
+                      "to"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "from": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      },
+                      "to": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "from",
+                      "to"
+                    ]
+                  }
+                ]
+              },
+              "restSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "gradeRange"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ladder"
+                ]
+              },
+              "gradeRange": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "from": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      },
+                      "to": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "from",
+                      "to"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "from": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      },
+                      "to": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "from",
+                      "to"
+                    ]
+                  }
+                ]
+              },
+              "restSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "gradeRange"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "gradeFocus"
+                ]
+              },
+              "targetGrade": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  }
+                ]
+              },
+              "restSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "targetGrade"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "onTheMinute"
+                ]
+              },
+              "targetGrade": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  }
+                ]
+              },
+              "intervalSeconds": {
+                "type": "integer",
+                "minimum": 15,
+                "maximum": 3600,
+                "default": 60
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "targetGrade"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "fourByFour"
+                ]
+              },
+              "targetGrade": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  }
+                ]
+              },
+              "rounds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "restBetweenClimbsSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              },
+              "restBetweenRoundsSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "targetGrade",
+              "rounds",
+              "restBetweenClimbsSeconds",
+              "restBetweenRoundsSeconds"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "climbCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "limitBouldering"
+                ]
+              },
+              "targetGrade": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "v"
+                        ]
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 17
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scale": {
+                        "type": "string",
+                        "enum": [
+                          "font"
+                        ]
+                      },
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "3",
+                          "4",
+                          "5",
+                          "3+",
+                          "4+",
+                          "5+",
+                          "6A",
+                          "6A+",
+                          "6B",
+                          "6B+",
+                          "6C",
+                          "6C+",
+                          "7A",
+                          "7A+",
+                          "7B",
+                          "7B+",
+                          "7C",
+                          "7C+",
+                          "8A",
+                          "8A+",
+                          "8B",
+                          "8B+",
+                          "8C",
+                          "8C+",
+                          "9A"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scale",
+                      "value"
+                    ]
+                  }
+                ]
+              },
+              "restSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "required": [
+              "climbCount",
+              "type",
+              "targetGrade"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "freeClimbing"
+                ]
+              },
+              "durationSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ],
+        "example": {
+          "type": "volume",
+          "targetGrade": {
+            "scale": "v",
+            "value": 3
+          },
+          "climbCount": 8
+        }
+      },
+      "WorkoutList": {
+        "type": "object",
+        "properties": {
+          "workouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Workout"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workouts",
+          "cursor",
+          "hasMore"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "workouts": [],
+          "cursor": null,
+          "hasMore": false
+        }
+      },
+      "Workout": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^wk_[A-Za-z0-9_-]+$"
+          },
+          "externalRef": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkoutStatus"
+          },
+          "launchUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "appUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutBlockSupport"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "scheduledFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spec": {
+            "$ref": "#/components/schemas/CreateWorkout"
+          },
+          "openedByMismatch": {
+            "type": "boolean"
+          },
+          "results": {
+            "$ref": "#/components/schemas/WorkoutResults"
+          }
+        },
+        "required": [
+          "id",
+          "externalRef",
+          "status",
+          "launchUrl",
+          "appUrl",
+          "expiresAt",
+          "blocks",
+          "title",
+          "scheduledFor",
+          "notes",
+          "spec",
+          "openedByMismatch"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "id": "wk_example",
+          "externalRef": "session_88213",
+          "status": "created",
+          "launchUrl": "https://www.boardsesh.com/w/wk_example",
+          "appUrl": "com.boardsesh.app://w/wk_example",
+          "expiresAt": "2026-12-01T00:00:00Z",
+          "blocks": [
+            {
+              "index": 0,
+              "type": "volume",
+              "support": "native"
+            }
+          ],
+          "title": "Easy volume",
+          "scheduledFor": null,
+          "notes": null,
+          "openedByMismatch": false,
+          "spec": {
+            "externalRef": "session_88213",
+            "title": "Easy volume",
+            "blocks": [
+              {
+                "type": "volume",
+                "targetGrade": {
+                  "scale": "v",
+                  "value": 3
+                },
+                "climbCount": 8
+              }
+            ]
+          }
+        }
+      },
+      "WorkoutResults": {
+        "type": "object",
+        "properties": {
+          "completion": {
+            "type": "string",
+            "enum": [
+              "ended",
+              "auto_closed"
+            ]
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "startedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "endedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "durationSeconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "timezone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "board": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "$ref": "#/components/schemas/BoardType"
+                  },
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "layout": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "size": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "angle": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "name",
+                  "layout",
+                  "size",
+                  "angle"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "startedAt",
+              "endedAt",
+              "durationSeconds",
+              "timezone",
+              "notes",
+              "board"
+            ],
+            "additionalProperties": true
+          },
+          "ticks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Stable id of this tick. Never reused.",
+                  "example": "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77"
+                },
+                "climbedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the climber logged the climb, UTC. Ticks imported from other board apps carry the time that app recorded.",
+                  "example": "2026-10-20T18:42:11Z"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/TickStatus"
+                },
+                "attempts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Goes this tick represents. A `send` with `attempts: 3` went on the third go.",
+                  "example": 3
+                },
+                "angle": {
+                  "type": "integer",
+                  "description": "Wall angle in degrees.",
+                  "example": 40
+                },
+                "mirrored": {
+                  "type": "boolean",
+                  "description": "Climbed mirrored, on boards that support it.",
+                  "example": false
+                },
+                "stars": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "maximum": 5,
+                  "description": "The climber's 1 to 5 rating, or `null`.",
+                  "example": 4
+                },
+                "grade": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Grade"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The grade the climber gave it, or `null` if they did not give one."
+                },
+                "benchmark": {
+                  "type": "boolean",
+                  "description": "The climb is a benchmark on its board.",
+                  "example": false
+                },
+                "comment": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "description": "The climber's note, or `null` when they left none.",
+                  "example": "Finally stuck the cross-through"
+                },
+                "climb": {
+                  "$ref": "#/components/schemas/TickClimb"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When Boardsesh first stored this tick, UTC.",
+                  "example": "2026-10-20T18:42:15Z"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When Boardsesh last changed this tick, UTC.",
+                  "example": "2026-10-20T18:42:15Z"
+                },
+                "blockIndex": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 11
+                }
+              },
+              "required": [
+                "id",
+                "climbedAt",
+                "status",
+                "attempts",
+                "angle",
+                "mirrored",
+                "stars",
+                "grade",
+                "benchmark",
+                "comment",
+                "climb",
+                "createdAt",
+                "updatedAt",
+                "blockIndex"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 11
+                },
+                "type": {
+                  "type": "string",
+                  "x-extensible-enum": [
+                    "warmUp",
+                    "volume",
+                    "pyramid",
+                    "ladder",
+                    "gradeFocus",
+                    "onTheMinute",
+                    "fourByFour",
+                    "limitBouldering",
+                    "freeClimbing"
+                  ],
+                  "description": "Block type. New values may be added.",
+                  "example": "volume"
+                },
+                "support": {
+                  "type": "string",
+                  "x-extensible-enum": [
+                    "native",
+                    "freeform"
+                  ],
+                  "description": "How the block runs. New values may be added.",
+                  "example": "native"
+                },
+                "planned": {
+                  "$ref": "#/components/schemas/WorkoutBlock"
+                }
+              },
+              "required": [
+                "index",
+                "type",
+                "support",
+                "planned"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "completion",
+          "session",
+          "ticks",
+          "blocks"
+        ],
+        "additionalProperties": true,
+        "example": {
+          "completion": "ended",
+          "session": {
+            "startedAt": "2026-11-17T17:00:00Z",
+            "endedAt": "2026-11-17T18:00:00Z",
+            "durationSeconds": 3600,
+            "timezone": "Europe/Amsterdam",
+            "notes": null,
+            "board": {
+              "type": "kilter",
+              "name": "Homewall",
+              "layout": "Kilter Board Original",
+              "size": "12x12",
+              "angle": 40
+            }
+          },
+          "ticks": [],
+          "blocks": []
         }
       }
     },
@@ -1482,6 +3151,1954 @@
           },
           "404": {
             "description": "`not_found`: the tick was deleted or is not this climber's.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workouts": {
+      "post": {
+        "operationId": "createWorkout",
+        "summary": "Plan a workout",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "workouts:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkout"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created workout. Replayed keys return the original response.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing workout scope.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workout not found for this app and climber.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate reference, workout cap or lifecycle conflict. A duplicate includes the existing workout.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutConflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 64 KB.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid block or idempotency mismatch.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listWorkouts",
+        "summary": "Read your workouts",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "workouts:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "externalRef",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workouts for this app and climber.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing workout scope.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workout not found for this app and climber.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate reference, workout cap or lifecycle conflict. A duplicate includes the existing workout.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutConflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 64 KB.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid block or idempotency mismatch.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workouts/{id}": {
+      "get": {
+        "operationId": "getWorkout",
+        "summary": "Read a workout and its results",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "workouts:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workout and current results.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workout"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing workout scope.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workout not found for this app and climber.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate reference, workout cap or lifecycle conflict. A duplicate includes the existing workout.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutConflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 64 KB.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid block or idempotency mismatch.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: over the limit. Wait for `Retry-After`.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying."
+                },
+                "required": true,
+                "description": "Seconds to wait before retrying."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "`server_error`: our fault. Retry with backoff.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds to wait before retrying, when known."
+                },
+                "required": false,
+                "description": "Seconds to wait before retrying, when known."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cancelWorkout",
+        "summary": "Cancel an unstarted workout",
+        "security": [
+          {
+            "boardseshOAuth": [
+              "workouts:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cancelled.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: the access token expired or was revoked. Refresh once and retry; on `invalid_grant`, stop and reconnect.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing workout scope.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workout not found for this app and climber.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate reference, workout cap or lifecycle conflict. A duplicate includes the existing workout.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutConflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 64 KB.",
+            "headers": {
+              "Boardsesh-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Quote this when something looks wrong."
+                },
+                "required": true,
+                "description": "Quote this when something looks wrong."
+              },
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Request ceiling of the tightest limit that applies."
+                },
+                "required": true,
+                "description": "Request ceiling of the tightest limit that applies."
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Requests left in the current window."
+                },
+                "required": true,
+                "description": "Requests left in the current window."
+              },
+              "RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "description": "Seconds until the window resets."
+                },
+                "required": true,
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid block or idempotency mismatch.",
             "headers": {
               "Boardsesh-Request-Id": {
                 "schema": {

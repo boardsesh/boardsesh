@@ -2,6 +2,7 @@ import {
   PROVIDER_SECURITY_VERSION,
   providerSecurityCommandSchema,
   providerSecurityReplySchema,
+  type ProviderSecurityActor,
   type ProviderSecurityCommand,
   type ProviderSecurityReply,
 } from '@boardsesh/auth-protocol';
@@ -40,7 +41,7 @@ import {
 async function boundReauthenticationWork(
   database: AuthorityDatabase,
   runtime: ProviderSecurityRuntime,
-  input: ProviderSecurityCommand['payload']['actor'],
+  input: ProviderSecurityActor,
 ) {
   const actor = captureProviderActor(input, runtime.legacySecret);
   const userId = await withProviderSecurityAuthority(

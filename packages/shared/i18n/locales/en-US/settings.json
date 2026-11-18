@@ -588,7 +588,7 @@
       "gone": "This app isn't connected any more.",
       "loadFailed": "Couldn't load this app. Check your connection and try again.",
       "retry": "Try again",
-      "scopesHeading": "What {{app}} can see",
+      "scopesHeading": "What {{app}} can do",
       "unnamedApp": "Unnamed app",
       "publisher": "By {{publisher}}",
       "connected": "Connected {{date}}",
@@ -604,7 +604,9 @@
         "logbookSpraywall": "Climbs on someone else's Private or Link only Spraywall arrive without their names",
         "profileRead": "Sees your display name and profile photo",
         "offlineAccess": "Keeps this access until you disconnect it",
-        "other": "Other access: {{scope}}"
+        "other": "Other access: {{scope}}",
+        "workoutsRead": "Read the results of workouts this app planned",
+        "workoutsWrite": "Plan and cancel workouts for you"
       },
       "disconnect": "Disconnect",
       "disconnectA11y": "Disconnect {{app}}",

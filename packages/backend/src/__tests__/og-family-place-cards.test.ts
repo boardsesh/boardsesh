@@ -26,9 +26,8 @@ import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
 import { listCatalogueEntries } from '@boardsesh/board-render/render-version-projection';
 import type { SprayOgCardDeps, SprayOgWallRow } from '../services/spray-og-card';
 
-vi.mock('node:dns/promises', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('node:dns/promises')>()),
-  lookup: vi.fn(async () => [{ address: '104.18.0.1', family: 4 }]),
+vi.mock('../lib/resolve-addresses', () => ({
+  resolveAddresses: vi.fn(async () => [{ address: '104.18.0.1', family: 4 }]),
 }));
 
 const kilter: BoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };

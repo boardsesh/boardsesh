@@ -89,7 +89,7 @@ export function Button({
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, m3 } = useTheme();
+  const { brandColors, m3, systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
   // Every tier and size step sets its label in M3 labelLarge (14/20, weight 500),
   // the M3 Buttons spec. The @expo/ui Text has to be TOLD: it builds its own
@@ -136,6 +136,10 @@ export function Button({
     colors = isDestructive
       ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
       : tonalButtonColors(m3);
+  } else if (variant === 'outlined') {
+    // Label-coloured text on the neutral outline (#7695): violet stays for
+    // links, status and selection. An explicit tint still wins.
+    colors = { contentColor: isDestructive ? brandColors.error : (tintColor ?? (systemColors.label as string)) };
   } else {
     colors = { contentColor: isDestructive ? brandColors.error : accentColor };
   }
@@ -152,7 +156,7 @@ export function Button({
     // its content (and the spinner) is white (onPrimary), not error.
     spinnerColor = isDestructive ? brandColors.onPrimary : (colors.contentColor ?? brandColors.primary);
   } else {
-    spinnerColor = isDestructive ? brandColors.error : accentColor;
+    spinnerColor = isDestructive ? brandColors.error : (colors.contentColor ?? accentColor);
   }
 
   const Comp =

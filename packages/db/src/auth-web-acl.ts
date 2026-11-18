@@ -3,6 +3,19 @@ import { createHash } from 'node:crypto';
 
 export const WEB_ROLE = 'boardsesh_web';
 export const quoteIdentifier = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
+/** Partner state is served through backend APIs, never directly by the web database role. */
+export const BACKEND_ONLY_PARTNER_TABLES: readonly string[] = Object.freeze([
+  'partner_developer_emails',
+  'partner_connection_notices',
+  'partner_app_cap_audit',
+  'app_workouts',
+  'app_workout_requests',
+  'oauth_client_webhooks',
+  'partner_webhook_outbox',
+  'webhook_deliveries',
+  'partner_webhook_feed_state',
+  'partner_webhook_debounce',
+]);
 /** Identity tables outside the `auth_`/`oauth_` prefixes. The web role may read them, never write. */
 export const NAMED_IDENTITY_TABLES: readonly string[] = Object.freeze([
   'users',
@@ -18,6 +31,7 @@ export const NAMED_IDENTITY_TABLES: readonly string[] = Object.freeze([
   // Which board account a Boardsesh user is. Written by the backend and the
   // sync workers; the web only reads it (sitemap, profile).
   'user_board_mappings',
+  ...BACKEND_ONLY_PARTNER_TABLES,
 ]);
 export function protectedIdentityTable(name: string): boolean {
   return /^(auth_|oauth_)/.test(name) || NAMED_IDENTITY_TABLES.includes(name);
@@ -117,7 +131,9 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
       apply.push(`REVOKE ALL ON SEQUENCE ${target} FROM PUBLIC, ${role};`);
       // An identity table's own sequence stays closed: the web never inserts there.
       const identitySequence = !!relation.sequenceOwner && protectedIdentityTable(relation.sequenceOwner);
-      if (identitySequence) rollback.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
+      if (identitySequence && !BACKEND_ONLY_PARTNER_TABLES.includes(relation.sequenceOwner!))
+        rollback.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
+      else if (identitySequence) continue;
       else apply.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
       continue;
     }
@@ -129,6 +145,7 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
     const readable =
       relation.name !== 'auth_session' &&
       relation.name !== '__drizzle_migrations' &&
+      !BACKEND_ONLY_PARTNER_TABLES.includes(relation.name) &&
       ['r', 'p'].includes(relation.kind);
     if (readable) apply.push(`GRANT SELECT ON TABLE ${target} TO ${role};`);
     if (!identity && readable) apply.push(`GRANT INSERT, UPDATE, DELETE ON TABLE ${target} TO ${role};`);
@@ -187,7 +204,12 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     // attach an existing definer routine, so any of these three fails closed.
     if (relation.unreviewed) throw new Error('UNREVIEWED_TABLE_PRIVILEGE');
     if (relation.maintain) throw new Error('UNREVIEWED_MAINTAIN_PATH');
-    if ((relation.name === 'auth_session' || ['v', 'm', 'f'].includes(relation.kind)) && relation.reads)
+    if (
+      (relation.name === 'auth_session' ||
+        BACKEND_ONLY_PARTNER_TABLES.includes(relation.name) ||
+        ['v', 'm', 'f'].includes(relation.kind)) &&
+      relation.reads
+    )
       throw new Error('UNREVIEWED_READ_PATH');
   }
   const sequencePrivileges = await client<{ owner: string | null; usable: boolean; settable: boolean }[]>`
@@ -316,12 +338,26 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     ],
     indexes: [
       'CREATE INDEX logbook_changes_created_at_brin_idx ON public.logbook_changes USING brin (created_at)',
+      'CREATE INDEX logbook_changes_global_position_idx ON public.logbook_changes USING btree (txid, seq)',
       'CREATE UNIQUE INDEX logbook_changes_pkey ON public.logbook_changes USING btree (seq)',
       'CREATE INDEX logbook_changes_user_position_idx ON public.logbook_changes USING btree (user_id, txid, seq)',
     ],
     constraints: ['PRIMARY KEY (seq)'],
   };
-  if (!closure?.safe || JSON.stringify(closure.sink) !== JSON.stringify(expectedSink))
+  // Both reviewed shapes have identical privilege-bearing columns and constraints.
+  // The only difference is the plain read index added for milestone 4; historic
+  // credential proof fixtures intentionally predate it.
+  const historicalSink = {
+    ...expectedSink,
+    indexes: expectedSink.indexes.filter(
+      (definition) => !definition.startsWith('CREATE INDEX logbook_changes_global_position_idx '),
+    ),
+  };
+  if (
+    !closure?.safe ||
+    (JSON.stringify(closure.sink) !== JSON.stringify(expectedSink) &&
+      JSON.stringify(closure.sink) !== JSON.stringify(historicalSink))
+  )
     throw new Error('UNREVIEWED_LOGBOOK_SINK');
   const [paths] = await client<
     { cascade: boolean; routine: boolean; defaults: boolean; trigger: boolean; rule: boolean }[]

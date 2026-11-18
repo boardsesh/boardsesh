@@ -132,6 +132,9 @@ function isLocalHost(rawHost: string): boolean {
     .replace(/^\[|\]$/g, '')
     .replace(/\.$/, '');
   if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true;
+  // `.test` is reserved (RFC 6761): it never resolves outside a machine that maps it
+  // itself, as the browser-session e2e's proxy does.
+  if (host.endsWith('.test')) return true;
   // A single label (`postgres`, `redis`) is a container or LAN name; `.local` and
   // Tailscale's `.ts.net` are the dev database's other homes.
   if (!host.includes('.') && !isIP(host)) return true;

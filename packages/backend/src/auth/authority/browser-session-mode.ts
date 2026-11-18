@@ -43,6 +43,7 @@ export const BROWSER_ACCESS_TOKEN_SECRET_ENV = 'AUTH_BROWSER_ACCESS_TOKEN_SECRET
  * secret verifies short tokens and should stay free to rotate.
  */
 export const BRIDGE_TOKEN_SECRET_ENV = 'AUTH_BRIDGE_TOKEN_SECRET';
+const PROVIDER_SECURITY_MODE_ENV = 'CURRENT_STORE_PROVIDER_SECURITY_MODE';
 
 /**
  * Phase B work (#7596) that must land before a browser can be served a
@@ -80,6 +81,7 @@ export const BROWSER_SESSION_STARTUP_ERRORS = Object.freeze({
   bridgeTokenSecret: 'AUTH_BROWSER_SESSION_BRIDGE_TOKEN_SECRET_INVALID',
   secretReused: 'AUTH_BROWSER_SESSION_SECRET_REUSED',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE',
+  providerSecurityNeedsBrowserSession: 'AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED',
 } as const);
 
 export type BrowserSessionStartupErrorCode =
@@ -208,7 +210,15 @@ function distinctSecret(environment: Environment, name: string): string {
 export function browserSessionModeChecker(cutoverBlockers: readonly string[]) {
   const blockers = Object.freeze([...cutoverBlockers]);
   return (environment: Environment = process.env): void => {
-    if (readBrowserSessionMode(environment[BROWSER_SESSION_MODE_ENV]) === 'legacy') return;
+    const browserSessionMode = readBrowserSessionMode(environment[BROWSER_SESSION_MODE_ENV]);
+    // Provider link and unlink act for a canonical web session and refuse a
+    // legacy cookie (#7596 B5c1), so without `better-auth` nobody could link.
+    // `better-auth` is required first, not implied.
+    refuseUnless(
+      environment[PROVIDER_SECURITY_MODE_ENV] !== 'backend-staging' || browserSessionMode === 'better-auth',
+      BROWSER_SESSION_STARTUP_ERRORS.providerSecurityNeedsBrowserSession,
+    );
+    if (browserSessionMode === 'legacy') return;
     assertBetterAuthPreconditions(environment);
     if (blockers.length > 0)
       throw new BrowserSessionStartupError(BROWSER_SESSION_STARTUP_ERRORS.cutoverIncomplete, blockers.join(', '));

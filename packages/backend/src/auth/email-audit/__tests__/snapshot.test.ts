@@ -126,7 +126,9 @@ async function invokeCli(arguments_: string[], environment: NodeJS.ProcessEnv) {
     process.removeListener('exit', stopAtParentExit);
   }
   if (stopReason !== null || !groupDrained || outcome.signal !== null)
-    throw new Error('Owned email-audit CLI fixture did not close cleanly.');
+    throw new Error(
+      `Owned email-audit CLI fixture did not close cleanly: ${JSON.stringify({ stopReason, groupDrained, signal: outcome.signal, exitCode: outcome.code })}`,
+    );
   return { code: outcome.code, stdout, stderr, childCloseObserved: true, groupDrained };
 }
 

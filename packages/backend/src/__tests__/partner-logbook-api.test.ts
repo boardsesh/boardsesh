@@ -1127,6 +1127,8 @@ describe('the logbook routes', () => {
         '/v1/connection',
         '/v1/logbook/changes',
         '/v1/logbook/ticks/{id}',
+        '/v1/workouts',
+        '/v1/workouts/{id}',
       ]);
     });
 

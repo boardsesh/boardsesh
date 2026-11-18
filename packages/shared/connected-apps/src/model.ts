@@ -97,7 +97,7 @@ export interface ConnectedAppsSectionInput {
 }
 
 /** The section's order: what an app reads from the logbook leads, keeping access goes last. */
-const SCOPE_ORDER = ['logbook:read', 'profile:read', 'offline_access'];
+const SCOPE_ORDER = ['logbook:read', 'profile:read', 'workouts:write', 'workouts:read', 'offline_access'];
 
 /** Connected apps' "last used" is written at most once an hour, so anything newer reads as this hour. */
 const LAST_USED_RESOLUTION_MS = 60 * 60 * 1000;
@@ -136,6 +136,10 @@ export function describeConnectedAppScope(scope: string, t: ConnectedAppsTransla
       return { scope, label: t('settings:integrations.partnerApps.scopes.profileRead'), notes: [] };
     case 'offline_access':
       return { scope, label: t('settings:integrations.partnerApps.scopes.offlineAccess'), notes: [] };
+    case 'workouts:read':
+      return { scope, label: t('settings:integrations.partnerApps.scopes.workoutsRead'), notes: [] };
+    case 'workouts:write':
+      return { scope, label: t('settings:integrations.partnerApps.scopes.workoutsWrite'), notes: [] };
     default:
       return { scope, label: t('settings:integrations.partnerApps.scopes.other', { scope }), notes: [] };
   }

@@ -51,6 +51,8 @@ const WORKOUT_CASES: GeneratorOptions[] = [
   { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 0, mainSetClimbs: 6, mainSetVariability: 3 },
   { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 0, numberOfSteps: 5, climbsPerStep: 2 },
   { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 0, numberOfSteps: 4, climbsPerStep: 1 },
+  { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 0, numberOfSteps: 5, climbsPerStep: 2, repeatOnWayDown: true },
+  { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 0, numberOfSteps: 6, climbsPerStep: 1, repeatOnWayDown: true },
   { ...DEFAULT_LADDER_OPTIONS, targetGrade: 0, numberOfSteps: 5, climbsPerStep: 2 },
   { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 0, numberOfClimbs: 7 },
   { ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 0, numberOfClimbs: 6 },
@@ -124,6 +126,26 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
 
     expect(staged.filter((slot) => slot.section === 'warmUp').every((slot) => slot.stageId === 'stage-0')).toBe(true);
     expect(staged.filter((slot) => slot.section !== 'warmUp').every((slot) => slot.stageId === 'stage-1')).toBe(true);
+  });
+
+  it('points a repeat at its twin across the whole plan, past the stages before it', () => {
+    const plan = planFromBlocks(
+      [
+        { kind: 'warmUp', warmUpType: 'standard' },
+        workoutBlock({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 20, numberOfSteps: 5, repeatOnWayDown: true }),
+      ],
+      counterIds(),
+    );
+    const staged = generateStagedPlan(plan, DENSE_GRADES);
+    const pyramid = staged.filter((slot) => slot.stageId === 'stage-1');
+
+    // The standard warm-up plans 4 climbs, so the pyramid runs from index 4 to 8.
+    expect(pyramid.map((slot) => slot.index)).toEqual([4, 5, 6, 7, 8]);
+    expect(pyramid.map((slot) => slot.repeatOfIndex)).toEqual([undefined, undefined, undefined, 5, 4]);
+    for (const slot of pyramid) {
+      if (slot.repeatOfIndex === undefined) continue;
+      expect(staged.find((twin) => twin.index === slot.repeatOfIndex)?.grade).toBe(slot.grade);
+    }
   });
 
   it('keeps the lowest-grade warm-up length (#6233)', () => {

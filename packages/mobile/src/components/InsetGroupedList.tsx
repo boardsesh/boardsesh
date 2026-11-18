@@ -46,6 +46,7 @@ export type InsetGroupedListProps = {
 const SEPARATOR_INSETS = {
   compact: artRowTextStart('compact'),
   regular: artRowTextStart('regular'),
+  large: artRowTextStart('large'),
   gutter: ROW_GUTTER,
 } as const satisfies Record<ArtSize | 'gutter', number>;
 

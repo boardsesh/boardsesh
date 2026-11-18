@@ -17,6 +17,7 @@ const values = vi.hoisted(() => new Map<string, unknown>());
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const driver = vi.hoisted(() => ({ blockedReason: null as 'crewPassenger' | null }));
 const sound = vi.hoisted(() => ({ available: false }));
+const lockScreen = vi.hoisted(() => ({ supported: false }));
 const modeChange = vi.hoisted(() => ({ change: vi.fn(() => true) }));
 const windowSize = vi.hoisted(() => ({ fontScale: 1 }));
 const pairingSheet = vi.hoisted(() => ({
@@ -49,6 +50,11 @@ vi.mock('../../../../hooks/use-session-timer-driver', () => ({
 }));
 vi.mock('../../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: 'session-1' }) }));
 vi.mock('../../../../lib/rest-timer-cues', () => ({ isRestTimerSoundAvailable: () => sound.available }));
+vi.mock('../../../../lib/live-activity/live-activity-plugin', () => ({
+  get sessionPresenceSupportsRestTimer() {
+    return lockScreen.supported;
+  },
+}));
 vi.mock('../../../../lib/rest-timer-mode-change', () => ({ changeRestTimerMode: modeChange.change }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
@@ -117,6 +123,8 @@ beforeEach(() => {
   captured.model = null;
   driver.blockedReason = null;
   sound.available = false;
+  lockScreen.supported = false;
+  values.set('restTimerShowOnLockScreen', true);
   analytics.track.mockClear();
   modeChange.change.mockClear();
   pairingSheet.props = null;
@@ -200,11 +208,27 @@ describe('TimersSettingsScreen', () => {
     expect(row<MoreToggleRow>('autoAdvance', 'toggle').disabled).toBe(true);
   });
 
-  it('leaves the countdown row out while nothing reads it', () => {
+  it('shows the countdown switch from the saved setting and writes it', () => {
+    values.set('restTimerCountdownCues', true);
     render(<TimersSettingsScreen />);
-    expect(captured.model?.sections.flatMap((section) => section.rows).map((r) => r.key)).not.toContain(
-      'countdownCues',
-    );
+    const countdown = row<MoreToggleRow>('countdownCues', 'toggle');
+    expect(countdown.value).toBe(true);
+    countdown.onValueChange(false);
+    expect(values.get('restTimerCountdownCues')).toBe(false);
+  });
+
+  it('leaves the Lock Screen row out when the binary cannot draw it', () => {
+    render(<TimersSettingsScreen />);
+    expect(captured.model?.sections.flatMap((section) => section.rows).map((r) => r.key)).not.toContain('lockScreen');
+  });
+
+  it('shows the Lock Screen switch from the saved setting and writes it', () => {
+    lockScreen.supported = true;
+    render(<TimersSettingsScreen />);
+    const lock = row<MoreToggleRow>('lockScreen', 'toggle');
+    expect(lock.value).toBe(true);
+    lock.onValueChange(false);
+    expect(values.get('restTimerShowOnLockScreen')).toBe(false);
   });
 
   it('leaves the sound row out when this build cannot play one', () => {

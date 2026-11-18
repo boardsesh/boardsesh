@@ -13,29 +13,46 @@
 // surface pins the behaviour without the provider harness.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import type { AppWorkoutInitialSeed } from '../queue-contexts';
+import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
   storedActiveBoard: null as UserBoard | null,
+  boardRead: null as (() => Promise<UserBoard | null>) | null,
   activeBoardGeneration: 0,
+  credentialGeneration: 0,
   clearStoredQueueSnapshot: vi.fn(() => Promise.resolve()),
   clearStoredSessionId: vi.fn(() => Promise.resolve()),
   clearStoredCreatedSessionId: vi.fn(() => Promise.resolve()),
   execute: vi.fn(() => Promise.resolve({})),
   request: vi.fn(),
+  rememberPartnerWorkout: vi.fn(async (_sessionId: string, _workoutId: string) => undefined),
   setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
 
+vi.mock('../../../lib/pending-workout-store', () => ({
+  rememberPartnerWorkout: mocks.rememberPartnerWorkout,
+  clearActivePartnerWorkout: vi.fn(async () => undefined),
+}));
 vi.mock('../../../lib/active-board-store', () => ({
-  getStoredActiveBoard: () => Promise.resolve(mocks.storedActiveBoard),
+  getStoredActiveBoard: () => (mocks.boardRead ? mocks.boardRead() : Promise.resolve(mocks.storedActiveBoard)),
 }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   getActiveBoardWriteGeneration: () => mocks.activeBoardGeneration,
 }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('../../../lib/graphql/ws-client', () => ({ getWsClient: () => ({}) }));
-vi.mock('../../../lib/graphql/operations', () => ({ CREATE_SESSION: 'CreateSession', END_SESSION: 'EndSession' }));
+vi.mock('../../../lib/graphql/operations', () => ({
+  CREATE_SESSION: 'CreateSession',
+  CREATE_PARTNER_WORKOUT_SESSION: 'CreatePartnerWorkoutSession',
+  END_SESSION: 'EndSession',
+}));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({
+  getCredentialGeneration: () => mocks.credentialGeneration,
+  subscribeToCredentialChanges: () => () => undefined,
+}));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: () => null,
   isGraphqlRateLimitedError: () => false,
@@ -377,4 +394,211 @@ describe('clearSession after active board removal', () => {
     expect(mocks.request).not.toHaveBeenCalled();
     expect(mocks.clearStoredQueueSnapshot).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('partner initial seed recovery', () => {
+  const seed: AppWorkoutInitialSeed = {
+    queue: [{ uuid: 'candidate', climb: { uuid: 'candidate-climb', angle: 40 } } as ClimbQueueItem],
+    currentClimbQueueItem: null,
+    historyCount: 0,
+    plan: [{ index: 0, climbUuids: ['candidate-climb'] }],
+    sessionPlan: {
+      version: 1,
+      stages: [
+        {
+          id: 'wk:0',
+          kind: 'volume',
+          items: [{ queueItemUuid: 'candidate', climbUuid: 'candidate-climb', angle: 40 }],
+        },
+      ],
+    },
+  };
+  beforeEach(() => {
+    mocks.storedActiveBoard = homeBoard();
+    mocks.activeBoardGeneration = 0;
+    mocks.credentialGeneration = 0;
+    mocks.request.mockReset();
+    mocks.rememberPartnerWorkout.mockClear();
+    mocks.setStoredSessionId.mockClear();
+    mocks.clearStoredQueueSnapshot.mockClear();
+  });
+
+  it('after a lost response, hydrates only the original server winner without seeding again', async () => {
+    mocks.request.mockRejectedValueOnce(new Error('lost create reply')).mockResolvedValueOnce({
+      createSession: {
+        id: 'original-session',
+        isPublic: false,
+        queueState: {
+          sequence: 1,
+          historyCount: 2,
+          queue: [{ uuid: 'original-preview', climb: { uuid: 'original-climb', angle: 40 } }],
+          currentClimbQueueItem: null,
+        },
+      },
+    });
+    const { result, params } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBeNull();
+    });
+    expect(params.dispatch).not.toHaveBeenCalled();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBe(
+        'original-session',
+      );
+    });
+    expect(mocks.request).toHaveBeenLastCalledWith(
+      'CreatePartnerWorkoutSession',
+      expect.objectContaining({ input: expect.objectContaining({ appWorkoutSeed: seed }) }),
+    );
+    expect(params.dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: 'INITIAL_QUEUE_DATA',
+        serverSequence: 1,
+        payload: expect.objectContaining({
+          historyCount: 2,
+          queue: [expect.objectContaining({ uuid: 'original-preview' })],
+        }),
+      }),
+    );
+    expect(params.ensureJoined).not.toHaveBeenCalled();
+    expect(params.setQueueMutation).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionVisibility).toHaveBeenLastCalledWith('original-session', false);
+    expect(mocks.clearStoredQueueSnapshot).toHaveBeenCalledOnce();
+  });
+
+  it('does not hydrate a create reply after the account changes', async () => {
+    let resolveResponse: (response: unknown) => void = () => {};
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveResponse = resolve;
+        }),
+    );
+    const { result, params } = renderSessionCommands();
+    let start: Promise<string | null>;
+    await act(async () => {
+      start = result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed });
+      await Promise.resolve();
+    });
+    mocks.credentialGeneration += 1;
+    await act(async () => {
+      resolveResponse({ createSession: { id: 'old-account-session' } });
+      expect(await start!).toBeNull();
+    });
+    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(mocks.rememberPartnerWorkout).not.toHaveBeenCalled();
+    expect(params.setSessionId).not.toHaveBeenCalled();
+  });
+  it('can retry when storing the committed session id initially fails', async () => {
+    mocks.request.mockResolvedValue({
+      createSession: {
+        id: 'original-session',
+        isPublic: false,
+        queueState: { sequence: 1, queue: [], currentClimbQueueItem: null },
+      },
+    });
+    mocks.setStoredSessionId.mockRejectedValueOnce(new Error('storage unavailable'));
+    const { result, params } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBeNull();
+    });
+    expect(params.sessionIdRef.current).toBeNull();
+    expect(mocks.rememberPartnerWorkout).toHaveBeenCalledWith('original-session', 'wk');
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBe(
+        'original-session',
+      );
+    });
+    expect(params.setSessionId).toHaveBeenCalledExactlyOnceWith('original-session');
+  });
+
+  it('completes the committed Start even if deleting its old solo snapshot fails', async () => {
+    mocks.request.mockResolvedValue({
+      createSession: {
+        id: 'original-session',
+        isPublic: true,
+        queueState: { sequence: 1, queue: [], currentClimbQueueItem: null },
+      },
+    });
+    mocks.clearStoredQueueSnapshot.mockRejectedValueOnce(new Error('cleanup unavailable'));
+    const { result, params } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBe(
+        'original-session',
+      );
+    });
+    expect(params.sessionIdRef.current).toBe('original-session');
+    expect(params.setSessionId).toHaveBeenCalledWith('original-session');
+    expect(params.dispatch).toHaveBeenCalledOnce();
+  });
+
+  it('preserves another joined session that wins while the create request is pending', async () => {
+    let resolveResponse: (response: unknown) => void = () => {};
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveResponse = resolve;
+        }),
+    );
+    const { result, params } = renderSessionCommands();
+    let start: Promise<string | null>;
+    await act(async () => {
+      start = result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed });
+      await Promise.resolve();
+    });
+    (params.sessionIdRef as { current: string | null }).current = 'joined-session';
+    await act(async () => {
+      resolveResponse({
+        createSession: {
+          id: 'original-session',
+          isPublic: true,
+          queueState: { sequence: 1, queue: [], currentClimbQueueItem: null },
+        },
+      });
+      expect(await start!).toBeNull();
+    });
+    expect(mocks.rememberPartnerWorkout).toHaveBeenCalledWith('original-session', 'wk');
+    expect(params.sessionIdRef.current).toBe('joined-session');
+    expect(params.dispatch).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+  });
+
+  it.each(['board', 'account'])(
+    'clears the create flight after a %s change during the first board read',
+    async (scope) => {
+      let finishRead: (board: UserBoard | null) => void = () => {};
+      mocks.boardRead = () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        });
+      const { result, params } = renderSessionCommands();
+      let start: Promise<string | null>;
+      await act(async () => {
+        start = result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed });
+        await Promise.resolve();
+      });
+      if (scope === 'board') mocks.activeBoardGeneration += 1;
+      else mocks.credentialGeneration += 1;
+      await act(async () => {
+        finishRead(homeBoard());
+        expect(await start!).toBeNull();
+      });
+      expect(mocks.request).not.toHaveBeenCalled();
+      mocks.boardRead = null;
+      mocks.request.mockResolvedValue({
+        createSession: {
+          id: 'retry-session',
+          isPublic: true,
+          queueState: { sequence: 1, queue: [], currentClimbQueueItem: null },
+        },
+      });
+      await act(async () => {
+        expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBe(
+          'retry-session',
+        );
+      });
+      expect(params.setSessionId).toHaveBeenCalledWith('retry-session');
+    },
+  );
 });

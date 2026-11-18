@@ -1,0 +1,1 @@
+ALTER TABLE "board_session_queues" ADD COLUMN "initial_history_count" integer;

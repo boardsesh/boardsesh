@@ -49,6 +49,92 @@ describe('assignWorkoutTicks', () => {
     expect(assigned.crew.map((t) => t.uuid)).toEqual(['crew']);
   });
 
+  it('puts a way-down tick on the way-down copy of a climb, even when the way up was skipped (#6740)', () => {
+    // A B C B A, as deriveWorkoutStages placed it: way-up A skipped, the rest sent once.
+    const pyramid = {
+      userId: 'owner',
+      stages: [
+        {
+          climbs: [
+            { climbUuid: 'a', angle: 40, reps: [] },
+            { climbUuid: 'b', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'c', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'b', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'a', angle: 40, reps: ['send' as const] },
+          ],
+        },
+      ],
+    };
+    const ticks = [
+      tick('b-up', 'owner', 'b', 1),
+      tick('c', 'owner', 'c', 2),
+      tick('b-down', 'owner', 'b', 3),
+      tick('a-down', 'owner', 'a', 4),
+    ];
+
+    const assigned = assignWorkoutTicks(ticks, pyramid);
+
+    expect(assigned.byClimb[0].map((climb) => climb.map((t) => t.uuid))).toEqual([
+      [],
+      ['b-up'],
+      ['c'],
+      ['b-down'],
+      ['a-down'],
+    ]);
+    expect(assigned.offPlan).toEqual([]);
+  });
+
+  it('matches the way deriveWorkoutStages placed a climb queued twice, forwards from the last tick', () => {
+    // A B C B A where the climber did C, then A twice: derive put the first A on
+    // the way-down copy (after C) and the second on the way-up copy.
+    const pyramid = {
+      userId: 'owner',
+      stages: [
+        {
+          climbs: [
+            { climbUuid: 'a', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'b', angle: 40, reps: [] },
+            { climbUuid: 'c', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'b', angle: 40, reps: [] },
+            { climbUuid: 'a', angle: 40, reps: ['attempt' as const] },
+          ],
+        },
+      ],
+    };
+    const ticks = [tick('c', 'owner', 'c', 1), tick('a-first', 'owner', 'a', 2), tick('a-second', 'owner', 'a', 3)];
+
+    const assigned = assignWorkoutTicks(ticks, pyramid);
+
+    expect(assigned.byClimb[0].map((climb) => climb.map((t) => t.uuid))).toEqual([
+      ['a-second'],
+      [],
+      ['c'],
+      [],
+      ['a-first'],
+    ]);
+  });
+
+  it('groups ticks with the same time by uuid, whatever order they were listed in', () => {
+    const twice = {
+      userId: 'owner',
+      stages: [
+        {
+          climbs: [
+            { climbUuid: 'a', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'a', angle: 40, reps: ['attempt' as const] },
+          ],
+        },
+      ],
+    };
+    const first = tick('a-1', 'owner', 'a', 1);
+    const second = tick('a-2', 'owner', 'a', 1);
+    const grouped = (ticks: AssignableWorkoutTick[]) =>
+      assignWorkoutTicks(ticks, twice).byClimb[0].map((climb) => climb.map((t) => t.uuid));
+
+    expect(grouped([second, first])).toEqual([['a-1'], ['a-2']]);
+    expect(grouped([first, second])).toEqual([['a-1'], ['a-2']]);
+  });
+
   it('keeps a mirrored go off a climb planned the other way round', () => {
     const mirrored = {
       userId: 'owner',

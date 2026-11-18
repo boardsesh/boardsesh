@@ -92,6 +92,10 @@ Checked against GitHub on 2026-11-16. Every switch named here is listed in [bett
 | BA-09 #6983 | Open | [better-auth-rollout.md](./better-auth-rollout.md) lists every switch and the order. Left: restored-database and real-device evidence, then the switches. |
 | BA-10 #6984 | Open | NextAuth remains. No removal until the migration readiness gate passes. |
 
+### NextAuth import ratchet
+
+`scripts/__tests__/next-auth-import-ratchet.test.ts` stops NextAuth spreading while it waits for removal. It scans tracked source under `packages/{web,backend,shared,db,mobile}` and `scripts/`, plus every `package.json`, for `next-auth`, `next-auth/*`, `@next-auth/*` and `@auth/*` (including `@auth/drizzle-adapter`), type-only imports, mocks and dynamic imports included. A file may reference them only if it is listed in `scripts/__tests__/next-auth-import-ratchet.allowlist.txt`. The test fails when an unlisted file references NextAuth, and fails again when a listed file no longer does or no longer exists, so the list only shrinks. To shrink it, delete the paths the failure message names from the allowlist in the same PR that removes the imports. The test prints how many files still import next-auth. It runs with the other `scripts/__tests__` guards.
+
 ## Reproduce the delivered proofs
 
 Install with `vp install --frozen-lockfile`.

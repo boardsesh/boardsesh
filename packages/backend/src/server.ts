@@ -117,6 +117,8 @@ import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { startBackendMemoryMonitoring } from './services/memory-monitor';
 import { startClientUsageReporter, stopClientUsageReporter } from './services/client-usage';
+import { startPublicApiUsageReporter, stopPublicApiUsageReporter } from './services/public-api-usage';
+import { readPartnerOAuthMode } from './auth/partner/mode';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { captureFixedSystemOwnerOrderMode } from '@boardsesh/db/fixed-system-owner-order';
@@ -1026,6 +1028,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
 
     // Once-a-minute per-client operation summary (services/client-usage.ts).
     startClientUsageReporter();
+    if (readPartnerOAuthMode() !== 'off') startPublicApiUsageReporter();
 
     // Popular board configs have no boot step: a pg-boss job refreshes them
     // (services/popular-board-configs.ts), so a deploy costs the database
@@ -1077,6 +1080,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
 
     try {
       stopClientUsageReporter();
+      stopPublicApiUsageReporter();
     } catch (error) {
       logger.error('[Server] Error stopping client usage reporter:', error);
     }

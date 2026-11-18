@@ -49,12 +49,15 @@ function reportAcceptedPassword(existing: Provider, onPasswordAccepted: () => vo
 /**
  * A new closure per HTTP request; no verdict or private reply lives in options shared by requests.
  * `onPasswordAccepted` runs when the submitted password is right, so the
- * per-client limit can give that attempt back.
+ * per-client limit can give that attempt back. `clientAddress` is the visitor a
+ * trusted edge vouched for (`cloudflareVouchedVisitorAddress`), or null to let
+ * the backend use its per-process budget.
  */
 export function createPasswordCommandAuthRequest(
   base: NextAuthOptions,
   clientFactory: () => PasswordCommandClient = createPasswordCommandClient,
   onPasswordAccepted: () => void = () => {},
+  clientAddress: string | null = null,
 ) {
   let unavailable = false;
   let verdict: AuthenticatedReply | undefined;
@@ -86,7 +89,11 @@ export function createPasswordCommandAuthRequest(
       if (unavailable) return rejectUnavailable();
       if (!credentials?.email || !credentials.password) return null;
       try {
-        const reply = await clientFactory().password(credentials.email, credentials.password);
+        const reply = await clientFactory().password(
+          credentials.email,
+          credentials.password,
+          clientAddress ?? undefined,
+        );
         if (reply.outcome === 'invalid_credentials') return null;
         if (reply.outcome !== 'authenticated') return rejectUnavailable();
         verdict = reply;

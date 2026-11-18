@@ -28,7 +28,8 @@ module TickQueue {
     //                 body): SDK transport codes (< 0), 401 after the client's
     //                 own refresh, 404/429/5xx, masked INTERNAL_SERVER_ERROR,
     //                 SERVICE_UNAVAILABLE, UNAUTHENTICATED, the code-less
-    //                 "Authentication required ..." an expired token receives,
+    //                 "Authentication required ..." an expired token receives
+    //                 (after the client's own refresh and one retry),
     //                 and any reply shape not listed above.
 
     function savedUuid(code as Lang.Number, response) {
@@ -206,7 +207,70 @@ module TickQueue {
             BuildConfig.LEGACY_ADOPT_SKEW_SEC, BuildConfig.TICK_QUEUE_MAX));
     }
 
-    // [refused for this owner, held from older builds, dead-letter store full].
+    // The signed-in owner's refused entries, oldest first. Read-only.
+    function refusedEntries() as Lang.Array {
+        var context = TokenStore.snapshot();
+        var store = loadRejected();
+        return activeContext(context) && store != null ? RejectedTicks.forOwner(store, context["owner"]) : [];
+    }
+
+    // Other accounts' refused entries while the store is full; 0 below the
+    // cap or with no active login. Read-only.
+    function othersRefusedWhenFull() as Lang.Number {
+        var context = TokenStore.snapshot();
+        var store = loadRejected();
+        if (!activeContext(context) || store == null) { return 0; }
+        return RejectedTicks.countOthersWhenFull(store, context["owner"], BuildConfig.REJECTED_TICK_MAX);
+    }
+
+    // Retry: moves up to REFUSED_RETRY_BATCH of the owner's refused ticks back
+    // to the end of their queue, keeping REFUSED_RETRY_HEADROOM slots free for
+    // new logs. The outbox write comes FIRST: a
+    // failure after it leaves a copy in both stores, never in neither, and the
+    // next retry only drops the stale entry. Returns how many left the store.
+    function retryRefused(context) as Lang.Number {
+        if (!activeContext(context)) { return 0; }
+        var envelope = loadEnvelope();
+        var store = loadRejected();
+        if (envelope == null || store == null) { return 0; }
+        var result = RejectedTicks.requeue(envelope, store, context["owner"],
+            BuildConfig.TICK_QUEUE_MAX - BuildConfig.REFUSED_RETRY_HEADROOM, BuildConfig.REFUSED_RETRY_BATCH);
+        if (result == null || !persist(result["envelope"])) { return 0; }
+        persistRejected(result["store"]);
+        return result["moved"];
+    }
+
+    // Delete: drops the signed-in owner's refused ticks after the climber
+    // confirmed it on the watch. The only deletion without a server
+    // acknowledgement; other accounts' entries stay. Returns how many went.
+    function clearRefused(context) as Lang.Number {
+        if (!activeContext(context)) { return 0; }
+        var store = loadRejected();
+        if (store == null) { return 0; }
+        var count = RejectedTicks.countFor(store, context["owner"]);
+        if (count == 0 || !persistRejected(RejectedTicks.withoutOwner(store, context["owner"]))) { return 0; }
+        return count;
+    }
+
+    // Delete other accounts' refused ticks (#7636 decision 2), after its own
+    // confirmation. A full store keeps the signed-in climber's next refusal at
+    // the head of the queue, so this is their exit short of reinstalling.
+    // Only while the store is full; it removes only already-refused entries
+    // of accounts other than the signed-in owner, keeps every entry of that
+    // owner, and never reads or writes the outbox (bs.pendingTicks) of any
+    // account. Returns how many went; 0 below the cap or on a failed write.
+    function clearOtherOwnersRefused(context) as Lang.Number {
+        if (!activeContext(context)) { return 0; }
+        var store = loadRejected();
+        if (store == null) { return 0; }
+        var owner = context["owner"];
+        var count = RejectedTicks.countOthersWhenFull(store, owner, BuildConfig.REJECTED_TICK_MAX);
+        if (count == 0 || !persistRejected(RejectedTicks.onlyOwner(store, owner))) { return 0; }
+        return count;
+    }
+
+    // [refused for this owner, held from older builds, dead-letter store full,
+    // other accounts' refused entries while the store is full (0 otherwise)].
     // Read-only. A full store (any owner's entries) means the next refusal
     // stays queued and stops the drain, so it is worth showing.
     function surfaceCounts() as Lang.Array {
@@ -215,8 +279,17 @@ module TickQueue {
         var held = envelope != null ? envelope["unowned"].size() : 0;
         var store = loadRejected();
         var full = store != null && RejectedTicks.isFull(store, BuildConfig.REJECTED_TICK_MAX);
-        if (!activeContext(context) || store == null) { return [0, held, full]; }
-        return [RejectedTicks.countFor(store, context["owner"]), held, full];
+        if (!activeContext(context) || store == null) { return [0, held, full, 0]; }
+        var owner = context["owner"];
+        return [RejectedTicks.countFor(store, owner), held, full,
+            RejectedTicks.countOthersWhenFull(store, owner, BuildConfig.REJECTED_TICK_MAX)];
+    }
+
+    // The Session menu shows Refused ticks when the signed-in owner has any,
+    // or when the store is full with other accounts' entries: then the list
+    // offers deleting those, even if the owner has none.
+    function refusedMenuShown(counts as Lang.Array) as Lang.Boolean {
+        return counts[0] > 0 || counts[3] > 0;
     }
 
     // Leases belong to one request, owner, login scope and UUID. A stale

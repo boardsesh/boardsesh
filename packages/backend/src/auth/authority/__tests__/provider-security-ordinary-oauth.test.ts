@@ -106,17 +106,13 @@ describe('provider-security staging forbids ordinary OAuth linking before legacy
       await reserve(owner.userId);
       const [before] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
       const admission = await admitOwnedProviderForRenewal(environment.database, environment.runtime, {
-        actor: owner.actor,
+        actor: owner.webActor,
         provider: 'google',
         subject,
       });
-      expect(admission.credentialProof).toMatchObject({
-        userId: owner.userId,
-        authSessionId: owner.sid,
-        generation: 0,
-        authenticatedAt: owner.authenticatedAt?.toISOString(),
-        linkGuarded: true,
-      });
+      // Ownership admission only: it issues nothing and returns no credential proof.
+      expect(admission).toMatchObject({ outcome: 'owned', user: { id: owner.userId } });
+      expect(admission).not.toHaveProperty('credentialProof');
       const pending = await flow(owner.actor.credential);
       const result = await resolve(pending.flow, owner.actor.credential, subject);
       expect(result.outcome).toBe('resolved');
@@ -140,7 +136,7 @@ describe('provider-security staging forbids ordinary OAuth linking before legacy
       expect(
         (
           await admitOwnedProviderForRenewal(environment.database, environment.runtime, {
-            actor: owner.actor,
+            actor: owner.webActor,
             provider: 'google',
             subject,
           })
