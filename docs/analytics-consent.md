@@ -43,9 +43,19 @@ type ConsentRecord = {
 
 Every visitor without a current explicit answer is asked. Country, province,
 VPN, device locale and location-lookup failure have no effect on consent.
-The shared country lists, region-lookup clients and `consentRegion` GraphQL
-operation are removed. The backend's trusted edge-country code remains for
-functional feature-flag targeting; it no longer decides analytics permission.
+The shared consent-country lists and current-client region lookups are
+removed. The backend's trusted edge-country code remains for functional
+feature-flag targeting; it no longer decides analytics permission.
+
+The deprecated server-only `consentRegion` query remains for older installed
+and embedded bundles. It always returns `promptRequired: true`,
+`countryCode: null` and `globalPrivacyControl: false`, without reading location
+or request headers. Older clients convert a missing query to an unknown
+answer, which keeps a stored regional default switched off but never opens
+the prompt. The constant true response instead clears that default and asks.
+Current clients never call this query. Older bundles keep their embedded
+notice copy and dismissal behavior until updated; the nonblocking controls
+below are supplied by the updated client.
 
 The prompt does not block climbing or browsing. Closing it leaves consent
 unanswered and analytics off; navigation does not open it again on every

@@ -35,6 +35,16 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
     conditional: Boolean
   }
 
+  "Compatibility response for installed app bundles. No location is read; everyone must explicitly answer."
+  type ConsentRegion {
+    "Always null. Retained for installed app bundles."
+    countryCode: String
+    "Always true. A region default never authorizes analytics."
+    promptRequired: Boolean!
+    "Always false. Retained for old queries; current browsers read privacy signals directly."
+    globalPrivacyControl: Boolean!
+  }
+
   "Daily first-party active-user counts for one platform."
   type ActiveUsersPlatformCount {
     "web, ios, android or unknown."
@@ -66,6 +76,9 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
   }
 
   extend type Query {
+    "Compatibility only: makes installed app bundles discard regional defaults and ask for an explicit answer."
+    consentRegion: ConsentRegion!
+      @deprecated(reason: "Analytics is opt-in everywhere. Current clients must not query location for consent.")
     "The signed-in climber's current analytics consent, or null when they have never answered."
     myAnalyticsConsent: AnalyticsConsent
   }

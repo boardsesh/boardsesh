@@ -170,6 +170,11 @@ export async function readAnalyticsConsentForUser(userId: string): Promise<Analy
 }
 
 export const analyticsConsentQueries = {
+  // Installed/embedded bundles clear a legacy default only after a successful
+  // response saying to ask. A missing field becomes an unknown lookup in those
+  // clients, which stops capture but leaves their prompt closed. No location or
+  // request context is needed: every visitor must explicitly answer now.
+  consentRegion: () => ({ countryCode: null, promptRequired: true, globalPrivacyControl: false }),
   myAnalyticsConsent: async (_: unknown, _args: unknown, ctx: ConnectionContext): Promise<AnalyticsConsent | null> => {
     requireAuthenticated(ctx);
     return readAnalyticsConsentForUser(ctx.userId!);

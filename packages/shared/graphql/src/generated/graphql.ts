@@ -2450,6 +2450,17 @@ export type ConnectedApps = {
   partnerAppsEnabled: Scalars['Boolean']['output'];
 };
 
+/** Compatibility response for installed app bundles. No location is read; everyone must explicitly answer. */
+export type ConsentRegion = {
+  __typename?: 'ConsentRegion';
+  /** Always null. Retained for installed app bundles. */
+  countryCode?: Maybe<Scalars['String']['output']>;
+  /** Always false. Retained for old queries; current browsers read privacy signals directly. */
+  globalPrivacyControl: Scalars['Boolean']['output'];
+  /** Always true. A region default never authorizes analytics. */
+  promptRequired: Scalars['Boolean']['output'];
+};
+
 /**
  * One board owned by the account a controller API key belongs to, for a wall
  * device's setup screen (`controllerBoards`). Read-only identity and config.
@@ -7978,6 +7989,11 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
+  /**
+   * Compatibility only: makes installed app bundles discard regional defaults and ask for an explicit answer.
+   * @deprecated Analytics is opt-in everywhere. Current clients must not query location for consent.
+   */
+  consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
   /**
    * The boards the controller API key's owner owns (home boards and spray walls,

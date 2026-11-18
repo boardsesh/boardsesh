@@ -218,8 +218,9 @@ order to set them, and the `_NEXT` variable for rotation, are in
 ### Analytics consent
 
 Analytics consent is opt-in everywhere. Consent prompting no longer reads the
-visitor's country or province, and there is no consent-region lookup or
-`BOARDSESH_TRUST_EDGE_REGION_HEADER` setting. The former
+visitor's country or province. Current clients make no consent-region request;
+the deprecated compatibility query always asks older clients and reads no
+headers. There is no `BOARDSESH_TRUST_EDGE_REGION_HEADER` setting. The former
 `boardsesh:consent-region-header` transform is no longer declared; an existing
 edge rule is ignored by the backend. Country handling for functional feature
 flags and Observe remains separate from analytics consent.
