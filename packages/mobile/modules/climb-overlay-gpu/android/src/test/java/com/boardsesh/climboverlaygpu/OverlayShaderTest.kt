@@ -39,7 +39,75 @@ class OverlayShaderTest {
         }
     }
 
+    /**
+     * [OverlayShader.lookFragment] is [OverlayShader.fragment] plus marked look
+     * edits (see [OverlayShader]). Undoing the edits must give the base source
+     * byte for byte; nothing is normalised (no whitespace, comment or line-end
+     * folding), so an unmarked difference anywhere fails.
+     */
+    @Test
+    fun theLookProgramIsTheBaseProgramPlusItsMarkedEdits() {
+        assertEquals(OverlayShader.fragment, withoutLookEdits(OverlayShader.lookFragment))
+    }
+
+    @Test
+    fun theMarkersCannotHideAnEdit() {
+        // An unmarked look line, a stray end, an unclosed block and a base line with
+        // no block after it are each refused, so the comparison above means what it says.
+        assertTrue(failsToUndo("a\nlook only\nb"))
+        assertTrue(failsToUndo("a\n// look end\nb"))
+        assertTrue(failsToUndo("a\n// look begin\nx"))
+        assertTrue(failsToUndo("a\n// base: b\nc"))
+        assertEquals("a\n  b\nc", withoutLookEdits("a\n  // base: b\n  // look begin\n  b2\n  // look end\nc"))
+    }
+
+    private fun failsToUndo(source: String): Boolean =
+        try {
+            withoutLookEdits(source) != "a\nb"
+        } catch (_: IllegalStateException) {
+            true
+        }
+
+    /**
+     * Drops each `// look begin` … `// look end` block and turns each `// base: `
+     * line back into the line it holds, at its indentation. A `// base: ` line
+     * must be followed by more of them or by the block that replaces it.
+     */
+    private fun withoutLookEdits(source: String): String {
+        val lines = source.split("\n")
+        val base = mutableListOf<String>()
+        var inBlock = false
+        lines.forEachIndexed { number, line ->
+            val code = line.trim()
+            when {
+                code == LOOK_BEGIN -> {
+                    check(!inBlock) { "line ${number + 1}: a look block inside a look block" }
+                    inBlock = true
+                }
+                code == LOOK_END -> {
+                    check(inBlock) { "line ${number + 1}: a look end without a begin" }
+                    inBlock = false
+                }
+                inBlock -> Unit
+                code.startsWith(BASE_LINE) -> {
+                    val next = lines.getOrNull(number + 1)?.trim()
+                    check(next == LOOK_BEGIN || next?.startsWith(BASE_LINE) == true) {
+                        "line ${number + 1}: a replaced base line with no look block after it"
+                    }
+                    base += line.substringBefore(BASE_LINE) + line.substringAfter(BASE_LINE)
+                }
+                else -> base += line
+            }
+        }
+        check(!inBlock) { "a look block that never ends" }
+        return base.joinToString("\n")
+    }
+
     private companion object {
+        const val LOOK_BEGIN = "// look begin"
+        const val LOOK_END = "// look end"
+        const val BASE_LINE = "// base: "
+
         /** SHA-256 of origin/main's `OverlayShader.vertex` (1a52595646, the swap look's base). */
         const val VERTEX_SHA256 = "cfc608c382c0cc3fef0ef64d5492c83ef4e9bb02d978cb17cf9028d7ccb322df"
 

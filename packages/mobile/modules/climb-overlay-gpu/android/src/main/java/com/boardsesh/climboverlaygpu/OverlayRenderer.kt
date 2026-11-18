@@ -332,13 +332,15 @@ internal object OverlayRenderer {
      * Whether this context has the swap look's program, building it the first
      * time it is asked: at initialization when the module offered the look, else
      * on the first frame that wants it. A failure is logged once per process and
-     * leaves every frame on the base program; it is not a GPU failure.
+     * leaves every frame on the base program; it is not a GPU failure. A program
+     * that does not compile or link here also drops the probe's stored answer.
      */
     private fun lookProgramReady(): Boolean {
         if (lookProgramTried) return lookProgram != 0
         lookProgramTried = true
         val built = OverlaySwapLookProgram.build()
         var failure = built.failure
+        if (failure != null) OverlaySwapLookProgram.rendererBuildFailed()
         if (failure == null) {
             try {
                 lookBuffer = buffer(directBytes(OverlaySwapLook.GLES_BYTES), GLES31.GL_UNIFORM_BUFFER, GLES31.GL_DYNAMIC_DRAW)
@@ -837,6 +839,14 @@ internal object OverlayRenderer {
             if (!carrying && !eligible(session, request)) return false
             // The swap look replaces the per-side weights only in swap mode, on its own
             // program (OverlaySwapLook.frame); without it the base program draws.
+            // lookProgramReady() normally answers from initialization, which built
+            // the program because the module had already offered the look. It
+            // compiles here instead, on the render thread inside this frame, only if
+            // this context initialized before JS read `swapLookVersion` (`offered`
+            // was still false then). That is rare: JS reads the constant when
+            // gpu-native-capability.ts loads, before any GPU board mounts, and a
+            // context starts with a mounted view's first preparation; a frame with
+            // a look means JS has read it. It costs one compile per context, at most.
             val lookWanted = swap && controls.look != null
             val lookReady = lookWanted && lookProgramReady()
             if (lookWanted) session.view.swapLookShader(lookReady)

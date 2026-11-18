@@ -189,6 +189,7 @@ vi.mock('../../../lib/board-render/gpu-native-capability', () => ({
   get climbOverlaySwapLookVersion() {
     return controls.swapLookVersion;
   },
+  climbOverlaySwapLookProbe: null,
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => controls.reduceMotion }));
 vi.mock('../../../hooks/use-differentiate-without-color', () => ({

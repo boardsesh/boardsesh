@@ -34,9 +34,12 @@ class ClimbOverlayGPUModule : Module() {
         // (OverlaySwapLook, OverlaySwapCommand). JS reads it once, at import; the
         // probe started below has normally finished by then (OverlaySwapLookProgram).
         Constant("swapLookVersion") { OverlaySwapLookProgram.version() }
+        // How that probe ended ({ result, ms, failure? }): the board motion lab's
+        // status line and a Sentry breadcrumb say why the look is off. Android only.
+        Constant("swapLookProbe") { OverlaySwapLookProgram.constant() }
         OnCreate {
-            OverlaySwapLookProgram.probe()
             application = appContext.reactContext?.applicationContext
+            OverlaySwapLookProgram.probe(application)
             application?.registerComponentCallbacks(callbacks)
         }
         OnDestroy {

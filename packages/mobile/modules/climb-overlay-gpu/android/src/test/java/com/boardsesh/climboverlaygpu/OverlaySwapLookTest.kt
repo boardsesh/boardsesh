@@ -384,14 +384,6 @@ class OverlaySwapLookTest {
     }
 
     @Test
-    fun theModuleOffersTheLookOnlyWhenTheProbeBuiltItInTime() {
-        assertEquals(OverlaySwapLook.VERSION, OverlaySwapLookProgram.advertised(finished = true, built = true))
-        assertEquals("The program does not build here", 0, OverlaySwapLookProgram.advertised(finished = true, built = false))
-        assertEquals("The probe is still running", 0, OverlaySwapLookProgram.advertised(finished = false, built = true))
-        assertEquals(0, OverlaySwapLookProgram.advertised(finished = false, built = false))
-    }
-
-    @Test
     fun codesPagesAndSkippedClimbsKeepTheirFront() {
         // The lower page is the climb being left while the pair leans toward the upper one.
         assertEquals(0, OverlaySwapLook.pageCode(.25f, OverlaySwapLook.Arrivals(0, 1), upper = false))

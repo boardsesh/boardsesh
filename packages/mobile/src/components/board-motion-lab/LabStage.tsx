@@ -14,10 +14,15 @@ import { SwipeBoardCarousel } from '../play-drawer/SwipeBoardCarousel';
 import { usePlayerGpuBoard } from '../play-drawer/use-player-gpu-board';
 import { useSwipeNavigation, useSwipePager, useSwipePages } from '../play-drawer/use-swipe-pager';
 import { getBoardRenderData } from '../../lib/board-details';
-import { climbOverlayGpuApiVersion, climbOverlaySwapLookVersion } from '../../lib/board-render/gpu-native-capability';
+import {
+  climbOverlayGpuApiVersion,
+  climbOverlaySwapLookProbe,
+  climbOverlaySwapLookVersion,
+} from '../../lib/board-render/gpu-native-capability';
 import { AURA_GPU_FAMILIES, AURA_GPU_FLAG } from '../../lib/board-render/gpu-rollout';
 import { FeatureFlagsProvider, useGpuClimbOverlayEnabled } from '../../providers/feature-flags-provider';
 import { useSetting } from '../../settings/hooks';
+import { swapLookProbeText } from './controls/status-text';
 import { stageStatus } from './stage-status';
 import type { LabClimb, LabLookStatus, LabStageProps } from './types';
 import { useVirtualFinger } from './use-virtual-finger';
@@ -152,10 +157,15 @@ function LabBoardStage({
   const hasLook = transition.look !== undefined && transition.revealMode === 'swap';
   const currentLook = lookReport?.renderKey === renderKey ? lookReport.status : null;
   const look = useMemo<LabLookStatus | undefined>(() => {
-    if (!hasLook) return undefined;
     if (climbOverlaySwapLookVersion < SWAP_LOOK_NATIVE_VERSION) {
-      return { state: 'unsupported', swapLookVersion: climbOverlaySwapLookVersion };
+      // Android, where the probe turned the look off: say why on every variant,
+      // since the look variants are greyed out and cannot be picked to ask.
+      if (climbOverlaySwapLookProbe && swapLookProbeText(climbOverlaySwapLookProbe) !== null) {
+        return { state: 'unsupported', swapLookVersion: climbOverlaySwapLookVersion, probe: climbOverlaySwapLookProbe };
+      }
+      return hasLook ? { state: 'unsupported', swapLookVersion: climbOverlaySwapLookVersion } : undefined;
     }
+    if (!hasLook) return undefined;
     return currentLook ?? { state: 'waiting' };
   }, [hasLook, currentLook]);
   const currentTimings = timings?.renderKey === renderKey ? timings : null;

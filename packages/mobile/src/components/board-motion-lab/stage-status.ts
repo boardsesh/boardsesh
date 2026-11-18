@@ -23,7 +23,10 @@ export type StageStatusInput = {
   timings: { prepareMs: number; uploadMs: number } | null;
   /** The native reason the last trio failed, if it did since the last presentation. */
   gpuError: string | null;
-  /** Look variants only: the native swap look's state; undefined for A to C. */
+  /**
+   * Look variants: the native swap look's state. A to C: undefined, except on
+   * Android when the probe turned the look off, which every variant reports.
+   */
   look?: LabLookStatus;
 };
 

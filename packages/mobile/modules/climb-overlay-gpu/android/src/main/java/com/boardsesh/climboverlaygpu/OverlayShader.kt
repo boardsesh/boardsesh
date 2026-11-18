@@ -11,8 +11,16 @@ package com.boardsesh.climboverlaygpu
  *   look's per-hold numbers, read from uniform block `Look` at binding
  *   [OverlaySwapLook.GLES_BINDING] (a literal here, kept in step by a unit
  *   test, so the shader stays checkable with only the generated layout). A
- *   phone that cannot compile, link or validate it draws every frame with the
- *   base program and reports `swapLookVersion` 0 ([OverlaySwapLookProgram]).
+ *   phone that cannot compile or link it draws every frame with the base
+ *   program and reports `swapLookVersion` 0 ([OverlaySwapLookProgram]).
+ *
+ * [lookFragment] is a second copy of [fragment], kept honest by markers that
+ * `OverlayShaderTest` reads: every line only the look has sits between a
+ * `// look begin` and a `// look end` line, and a base line the look replaces
+ * stays in place as a `// base: ` comment (same indentation) just before the
+ * block that replaces it. Dropping the blocks and uncommenting the `// base: `
+ * lines must give [fragment] byte for byte, so a fix to one program that
+ * misses the other fails the test. Mark every look edit that way.
  */
 internal object OverlayShader {
     val vertex =
@@ -267,7 +275,10 @@ internal object OverlayShader {
         """
             .trimIndent()
 
-    /** The swap look's program: [fragment] with the look's per-hold mark, glow and reach (`look_hold`). */
+    /**
+     * The swap look's program: [fragment] with the look's per-hold mark, glow
+     * and reach (`look_hold`), each look edit marked (see the class comment).
+     */
     val lookFragment =
         """
         #version 310 es
@@ -306,11 +317,13 @@ internal object OverlayShader {
           layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_UPPER}) readonly buffer Upper { Hold upper[]; };
           layout(std430,binding=${OverlayPacketLayout.GLES_STORAGE_BINDINGS_RESOURCES}) readonly buffer Resources { uint resources[]; };
           layout(std140,binding=${OverlayPacketLayout.GLES_UNIFORM_BINDINGS_UNIFORMS}) uniform Parameters { Uniforms uniforms; };
+          // look begin
           // Swap look (swapLookVersion 2): Metal's fragment buffer 5, byte for byte. One
           // 16-bit (mark, glow, reach, 0) per union hold after a header; std140 gives each
           // array element 16 bytes, so two holds share a uvec4. Bound with every draw of
           // this program, which the renderer uses only for a frame that draws the look.
           layout(std140,binding=1) uniform Look { uvec4 look[129]; };
+          // look end
           layout(location=0) out vec4 outputColor;
           vec4 quantize(vec4 pixel) { return round(clamp(pixel,0.0,1.0)*255.0)/255.0; }
           vec4 over(vec4 under, vec4 above) {
@@ -378,6 +391,7 @@ internal object OverlayShader {
             if(membership==2.0) return upper ? max(2.0*reveal-1.0,0.0) : max(1.0-2.0*reveal,0.0);
             return upper ? reveal : 1.0-reveal;
           }
+          // look begin
           // Mark and glow weights in 1/65535 steps, glow reach in 1/32768 (reach 1
           // decodes exactly), scaled as Metal scales its ushort4.
           vec4 look_hold(uint index) {
@@ -387,8 +401,12 @@ internal object OverlayShader {
             return vec4(float(words.x&0xffffu),float(words.x>>16u),float(words.y&0xffffu),0.0)
               *vec4(1.0/65535.0,1.0/65535.0,1.0/32768.0,0.0);
           }
+          // look end
           vec4 scene_pixel(uvec2 point,
+              // base: uint lowerCount, uint upperCount, float maxReach, bool transitioning, float reachScale) {
+              // look begin
               uint lowerCount, uint upperCount, float maxReach, bool transitioning, float reachScale, bool shaped) {
+              // look end
             uint count=lowerCount+upperCount;
             uvec2 lowerRange=tile_range(point,uniforms.offsets.z,lowerCount);
             uvec2 upperRange=tile_range(point,uniforms.offsets.w,upperCount);
@@ -400,38 +418,51 @@ internal object OverlayShader {
               ? mix(lowerCount>0u ? 1.0 : 0.0,upperCount>0u ? 1.0 : 0.0,uniforms.motion.x) : 1.0;
             vec4 pixel = quantize(uniforms.veil*ambient);
             float coverage = 0.0;
+            // look begin
             // Shaped only: every visible hold's silhouette, so a halo never paints inside
             // a hold whose mark is fainter than its glow (a ghost). It comes in over a
             // hold's first 0.1 of glow, so a neighbour's halo never vanishes from inside
             // a ghost in one frame. Equal to coverage whenever every mark is whole.
             float mask = 0.0;
+            // look end
             float best = 1e20, second = 1e20;
             float bestScore=1e20, secondScore=1e20;
             int nearest = -1, runner = -1;
+            // look begin
             // Shaped only: the two nearest visible holds past their own reach, by plain
             // distance, and the nearest one's faint-field bias.
             float outside=1e20, outsideNext=1e20, outsideBias=0.0;
             int outsider=-1, outsiderNext=-1;
+            // look end
             for (uint ordinal=0u;ordinal<candidates;ordinal++) {
               uint index=tile_index(ordinal,lowerRange,upperRange,lowerCount);
               Hold hold = source_hold(index,lowerCount);
               if(hold.identity.z>0u) continue; // Annotation: no silhouette coverage or glow.
               int local = index_at(point,hold);
               if(local < 0) continue;
+              // base: float weight=transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0;
+              // base: if(weight<=0.0) continue;
+              // look begin
               vec4 shape=shaped ? look_hold(index) : vec4(0.0);
               float weight=shaped ? shape.x : (transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0);
               float glowWeight=shaped ? shape.y : weight;
               if(glowWeight<=0.0) continue;
+              // look end
               uint field = atlas[hold.offsets.x/4u+uint(local)];
               uint squared = field & 0x00ffffffu;
               float dist2 = squared==0x00ffffffu ? 1e20 : float(squared);
               float alpha = float(field>>24u)/255.0*weight;
               coverage = max(coverage,alpha);
+              // look begin
               if(shaped) mask=max(mask,float(field>>24u)/255.0*clamp(glowWeight*10.0,0.0,1.0));
+              // look end
               pixel = quantize(pixel*(1.0-alpha));
+              // base: float dilation = ceil(maxReach*(hold.numbers.y>0.0 ? reachScale : 1.0))+2.0;
+              // look begin
               // Shaped: never smaller than the still crop, so a hold whose halo pulls in
               // keeps the pixels it could still own at rest.
               float dilation = ceil(maxReach*(shaped ? max(shape.z,1.0) : (hold.numbers.y>0.0 ? reachScale : 1.0)))+2.0;
+              // look end
               // Match the CPU crop for THIS climb, even though the immutable atlas
               // carries enough padding for the widest hold in the layout.
               if(dist2>=1e20 || hold.numbers.x <= 0.0 || float(point.x)<floor(hold.bounds.x-dilation) ||
@@ -440,9 +471,13 @@ internal object OverlayShader {
               // Faint incoming fields must not steal an existing glow, even at d=0.
               // Keep real distance for falloff, and use a continuous positive fade
               // bias for ownership and seam interpolation during the reveal only.
+              // base: float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+hold.numbers.x*(1.0-weight)/max(weight,0.0001) : dist2;
+              // look begin
               float bias=hold.numbers.x*(1.0-glowWeight)/max(glowWeight,0.0001);
               float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+bias : dist2;
+              // look end
               if(transitioning && nearest>=0 && hold.identity.x==source_hold(uint(nearest),lowerCount).identity.x) continue;
+              // look begin
               // Shaped only: a hold past its own (scaled) reach lights nothing itself.
               // It is set aside and decided after the loop, by plain distance: a
               // neighbour's faint-field bias must never hand it a pixel, or it would cut
@@ -456,6 +491,7 @@ internal object OverlayShader {
                 }
                 continue;
               }
+              // look end
               if(score<bestScore) {
                 second=best;secondScore=bestScore;runner=nearest;
                 best=dist2;bestScore=score;nearest=int(index);
@@ -464,6 +500,7 @@ internal object OverlayShader {
                 second=dist2;secondScore=score;runner=int(index);
               }
             }
+            // look begin
             // Shaped only: the held-back hold, as the still compositor would rank it, so
             // a look frame at W = (1, 0) or (0, 1) draws the still frame exactly. It takes
             // the pixel where it is nearer than the owner's light, as at rest (where it
@@ -484,23 +521,31 @@ internal object OverlayShader {
                 second=outside;secondScore=outsideScore;runner=outsider;outsideRunner=true;
               }
             }
+            // look end
             int coverLocal=crop_index(point,uniforms.coverCrop);
             if(uniforms.offsets.x!=0xffffffffu && coverLocal>=0)
               pixel=stamp_over(pixel,read_rgba(uniforms.offsets.x+uint(coverLocal)*4u)*ambient);
             if(uniforms.size.w > 0.0 && nearest>=0) {
               Hold hold=source_hold(uint(nearest),lowerCount);
+              // base: float weight=transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount) : 1.0;
+              // base: float reach=hold.numbers.x*(hold.numbers.y>0.0 ? reachScale : 1.0);
+              // look begin
               vec4 shape=shaped ? look_hold(uint(nearest)) : vec4(0.0);
               float weight=shaped ? shape.y : (transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount) : 1.0);
               float reach=hold.numbers.x*(shaped ? shape.z : (hold.numbers.y>0.0 ? reachScale : 1.0));
+              // look end
               float distance=max(sqrt(best)-0.5,0.0);
               float fraction=distance/reach;
               vec3 color=hold.color.rgb;
               if(runner>=0) {
                 Hold other=source_hold(uint(runner),lowerCount);
+                // base: float otherDistance=transitioning ? distance+max(secondScore-bestScore,0.0) : max(sqrt(second)-0.5,0.0);
+                // look begin
                 // A held-back runner sits at its plain distance plus its own bias, never
                 // pulled closer by the owner's.
                 float otherDistance=outsideRunner ? secondScore
                   : (scored ? distance+max(secondScore-bestScore,0.0) : max(sqrt(second)-0.5,0.0));
+                // look end
                 if(all(equal(other.color.rgb,color))) {
                   float softness=uniforms.tuning.x*reach;
                   if(softness>0.0) {
@@ -509,7 +554,10 @@ internal object OverlayShader {
                   }
                 } else {
                   float band=uniforms.tuning.y*reach;
+                  // base: float gap=transitioning ? secondScore-bestScore : otherDistance-distance;
+                  // look begin
                   float gap=scored && !outsideRunner ? secondScore-bestScore : otherDistance-distance;
+                  // look end
                   if(band>0.0 && gap<band) {
                     float closeness=clamp(1.0-gap/band,0.0,1.0);
                     float amount=uniforms.tuning.z*pow(closeness,uniforms.tuning.w);
@@ -524,7 +572,10 @@ internal object OverlayShader {
                 float deepen=uniforms.tuning2.x*smoothstep(uniforms.tuning2.y,1.0,fraction);
                 vec3 deep=round(hold.color.rgb*255.0*0.35)/255.0;
                 color=round(mix(color,deep,deepen)*255.0)/255.0;
+                // base: alpha*=1.0-coverage;
+                // look begin
                 alpha*=1.0-(shaped ? mask : coverage);
+                // look end
                 alpha*=weight;
                 if(alpha>0.002) pixel=over(pixel,vec4(color*alpha,alpha));
               }
@@ -538,7 +589,10 @@ internal object OverlayShader {
                 Hold hold=source_hold(index,lowerCount);
                 bool annotation=hold.identity.z>0u;
                 if((layer==4u)!=annotation) continue;
+                // base: float weight=transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0;
+                // look begin
                 float weight=shaped ? look_hold(index).x : (transitioning ? reveal_weight(hold,index>=lowerCount) : 1.0);
+                // look end
                 if(weight<=0.0) continue;
                 uint passes=layer==1u ? 4u : (layer>=3u ? 2u : 1u);
                 for(uint pass=0u;pass<passes;pass++) {
@@ -567,6 +621,11 @@ internal object OverlayShader {
             uvec2 point = min(uvec2(vec2(gl_FragCoord.x,uniforms.viewport.y-gl_FragCoord.y)
               / uniforms.viewport.xy * uniforms.size.xy),uvec2(uniforms.size.xy)-1u);
             float progress=uniforms.motion.x;
+            // base: if(progress<=0.0) outputColor=scene_pixel(point,uint(uniforms.size.z),0u,uniforms.tuning2.z,false,uniforms.motion.w);
+            // base: else if(progress>=1.0) outputColor=scene_pixel(point,0u,uint(uniforms.other.x),uniforms.other.y,false,1.0);
+            // base: else outputColor=scene_pixel(point,uint(uniforms.size.z),uint(uniforms.other.x),
+              // base: max(uniforms.tuning2.z,uniforms.other.y),true,1.0);
+            // look begin
             if(progress<=0.0) outputColor=scene_pixel(point,uint(uniforms.size.z),0u,uniforms.tuning2.z,false,uniforms.motion.w,false);
             else if(progress>=1.0) outputColor=scene_pixel(point,0u,uint(uniforms.other.x),uniforms.other.y,false,1.0,false);
             else {
@@ -576,6 +635,7 @@ internal object OverlayShader {
               outputColor=scene_pixel(point,uint(uniforms.size.z),uint(uniforms.other.x),
                 max(uniforms.tuning2.z,uniforms.other.y),true,1.0,shaped);
             }
+            // look end
           }
 
         """
