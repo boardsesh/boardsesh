@@ -14,6 +14,7 @@ import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 import type { SharedValue } from 'react-native-reanimated';
 import type { BoardArtReadiness } from '../../../lib/board-render/ready-board-art';
 import type { BoardTransition } from '../board-transition';
+import type { BoardSwapFrame } from '../swap-look';
 import type { SwipePager } from '../use-swipe-pager';
 
 /**
@@ -246,7 +247,7 @@ function makePager() {
   } as unknown as SwipePager;
 }
 
-function mountCarousel(transition?: BoardTransition) {
+function mountCarousel(transition?: BoardTransition, swapFrameMirror?: SharedValue<BoardSwapFrame | null>) {
   const pager = makePager();
   const pageArt = runtime.makeShared<Readonly<Record<number, BoardArtReadiness>>>({});
   const element = (next?: BoardTransition) =>
@@ -263,6 +264,7 @@ function mountCarousel(transition?: BoardTransition) {
       zoomStyle: {},
       onUnavailable: () => {},
       transition: next,
+      swapFrameMirror,
     });
   const view = render(element(transition));
   return { pager, rerender: (next?: BoardTransition) => view.rerender(element(next)) };
@@ -446,5 +448,49 @@ describe('the player board’s swap look', () => {
     swipe(shipped.pager);
     expect(weightsShown(afterKill)).toEqual(weightsShown(controls.commands));
     for (const command of afterKill) expect(command).toHaveLength(5);
+  });
+});
+
+describe('the frost mirror (option I)', () => {
+  /** A mirror that records every value written to it. */
+  function recordingMirror() {
+    const written: (BoardSwapFrame | null)[] = [];
+    const mirror = {
+      get value() {
+        return written.at(-1) ?? null;
+      },
+      set value(next: BoardSwapFrame | null) {
+        written.push(next);
+      },
+    };
+    return { mirror: mirror as unknown as SharedValue<BoardSwapFrame | null>, written };
+  }
+
+  it('copies every frame the board draws, look codes included, for the wall button', () => {
+    runtime.reset();
+    controls.commands = [];
+    const { mirror, written } = recordingMirror();
+    const { pager } = mountCarousel(undefined, mirror);
+    swipe(pager);
+    // The board's own commands, without their sequence: the same frames, in order.
+    const boardFrames = controls.commands.map(([position, outgoing, incoming, shared, , out, into]) => [
+      position,
+      outgoing,
+      incoming,
+      shared,
+      out,
+      into,
+    ]);
+    expect(written.slice(-boardFrames.length)).toEqual(boardFrames);
+    cleanup();
+    expect(written.at(-1)).toBeNull();
+  });
+
+  it('writes null on a board that only wipes, so the frost runs its own release', () => {
+    runtime.reset();
+    controls.apiVersion = 5;
+    const { mirror, written } = recordingMirror();
+    mountCarousel(undefined, mirror);
+    expect(written).toEqual([null]);
   });
 });

@@ -4,6 +4,7 @@ const native = vi.hoisted(() => ({
   os: 'android',
   version: 33,
   present: true,
+  swapFrameApi: undefined as unknown,
   resolve: vi.fn(() => 'NativeFrostedBokehGPU'),
 }));
 vi.mock('react-native', () => ({
@@ -17,7 +18,7 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('expo-modules-core', () => ({
-  requireOptionalNativeModule: () => (native.present ? {} : null),
+  requireOptionalNativeModule: () => (native.present ? { swapFrameApi: native.swapFrameApi } : null),
   requireNativeViewManager: native.resolve,
 }));
 
@@ -25,6 +26,7 @@ afterEach(() => {
   vi.resetModules();
   native.resolve.mockClear();
   native.present = true;
+  native.swapFrameApi = undefined;
 });
 
 describe('native frost availability', () => {
@@ -40,6 +42,26 @@ describe('native frost availability', () => {
     const { NativeFrostedBokehGPU } = await import('../../../modules/frosted-bokeh-gpu/src/index');
     expect(NativeFrostedBokehGPU !== null).toBe(supported);
     expect(native.resolve).toHaveBeenCalledTimes(supported ? 1 : 0);
+  });
+
+  it.each([
+    [1, 1],
+    [undefined, 0],
+    ['1', 0],
+    [0, 0],
+  ] as const)('reads swapFrameApi %s as %s, so only newer binaries get the board frames', async (constant, api) => {
+    native.os = 'ios';
+    native.swapFrameApi = constant;
+    const { frostedBokehSwapFrameApi } = await import('../../../modules/frosted-bokeh-gpu/src/index');
+    expect(frostedBokehSwapFrameApi).toBe(api);
+  });
+
+  it('reads no swap-frame API where the renderer is not resolved', async () => {
+    native.os = 'android';
+    native.version = 32;
+    native.swapFrameApi = 1;
+    const { frostedBokehSwapFrameApi } = await import('../../../modules/frosted-bokeh-gpu/src/index');
+    expect(frostedBokehSwapFrameApi).toBe(0);
   });
 
   it('keeps older native binaries on the fallback', async () => {

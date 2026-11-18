@@ -69,8 +69,10 @@ import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
 import { formatWindowClock, useWallControlText, windowTimeValue } from './wall-control-text';
 import { useWallFrostMotionEnabled } from '../../providers/feature-flags-provider';
-import { frostedBokehMotionAvailable } from '../FrostedBokeh';
-import { WallGlow } from './WallGlow';
+import { frostedBokehFollowsSwap, frostedBokehMotionAvailable } from '../FrostedBokeh';
+import { WallGlow, type WallGlowSwap } from './WallGlow';
+import type { SharedValue } from 'react-native-reanimated';
+import type { BoardSwapFrame } from './swap-look';
 import { wallControlUsesFrost } from './wall-control-frost';
 import { WallSwipeWipe } from './WallSwipeWipe';
 import { useWallGlowLayer, type WallGlowInput, type WallGlowLayer } from './use-wall-glow';
@@ -100,6 +102,20 @@ const CHEVRON_FACE_GAP = 4;
  * brand violet: the mocks' 25% vanished on the dark tonal pill (Marco).
  */
 const CHEVRON_ALPHAS = [0.7, 0.4] as const;
+
+/**
+ * The player's board swap, for the frost to follow (option I): the board's
+ * frames (null while it draws none), the page this climb is on, and the
+ * neighbours' holds. Built once per pair; the frames never re-render.
+ */
+export type WallControlSwap = {
+  frames: SharedValue<BoardSwapFrame | null>;
+  centerPage: number;
+  previous: WallGlowInput | null;
+  next: WallGlowInput | null;
+  /** The board's encoded swap look, which its six-number frames use. */
+  look?: readonly number[];
+};
 
 /** A frozen frame of the swipe, for the stories: no gesture, no live peek. */
 export type WallSwipePreview = {
@@ -172,6 +188,8 @@ type WallControlButtonProps = {
    * Without it, or with no holds, driving uses the flat amber too.
    */
   glow?: WallGlowInput | null;
+  /** The player's board swap: the moving frost follows it where the binary can. */
+  swap?: WallControlSwap;
   /** The stories' frozen swipe frame. */
   swipePreview?: WallSwipePreview;
   /**
@@ -192,6 +210,7 @@ function WallControlButtonComponent({
   onSwipe,
   onSwipeCancel,
   glow = null,
+  swap,
   swipePreview,
   sample = false,
 }: WallControlButtonProps) {
@@ -240,18 +259,34 @@ function WallControlButtonComponent({
   const glowShown = frosted ? glow : null;
   // The filled bulb tracks this phone's ownership separately from driving frost.
   const holdsBoard = model.holder === 'self';
-  // The moving frost (native GPU): lights breathe while driving and glide to the
-  // next climb. Never on the preview card's picture or under Reduce Motion,
-  // and only on a binary with the native view; otherwise today's still frost.
+  // The moving frost (native GPU): lights breathe while driving and change
+  // climbs with the board's swap. Never on the preview card's picture or under
+  // Reduce Motion, and only on a binary with the native view; otherwise
+  // today's still frost.
   const frostMovingOffered = useWallFrostMotionEnabled();
   const frostMoving = frostMovingOffered && frostedBokehMotionAvailable && !sample && !reduceMotion;
-  const fullGlow = useWallGlowLayer(
-    glowShown,
+  const glowScheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const fullGlow = useWallGlowLayer(glowShown, size.w, size.h, glowScheme, 'center', frostMoving);
+  // The neighbours, at this pill's size, only where the frost follows the board.
+  const followsSwap = frostMoving && frostedBokehFollowsSwap && swap !== undefined && glowShown !== null;
+  const previousGlow = useWallGlowLayer(
+    followsSwap ? swap.previous : null,
     size.w,
     size.h,
-    colorScheme === 'dark' ? 'dark' : 'light',
+    glowScheme,
     'center',
     frostMoving,
+  );
+  const nextGlow = useWallGlowLayer(followsSwap ? swap.next : null, size.w, size.h, glowScheme, 'center', frostMoving);
+  const swapFrames = swap?.frames;
+  const swapCenterPage = swap?.centerPage;
+  const swapLook = swap?.look;
+  const glowSwap = useMemo<WallGlowSwap | undefined>(
+    () =>
+      followsSwap && swapFrames && swapCenterPage !== undefined
+        ? { frames: swapFrames, centerPage: swapCenterPage, previous: previousGlow, next: nextGlow, look: swapLook }
+        : undefined,
+    [followsSwap, swapFrames, swapCenterPage, previousGlow, nextGlow, swapLook],
   );
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
@@ -445,7 +480,7 @@ function WallControlButtonComponent({
           wrapped, so a timed drive turning open-ended never remounts the glow. */}
       {fullGlow ? (
         <WallWindowFrost width={size.w} reduceMotion={reduceMotion} timed={timed}>
-          <WallGlow layer={fullGlow} width={size.w} moving={frostMoving} />
+          <WallGlow layer={fullGlow} width={size.w} moving={frostMoving} swap={glowSwap} />
         </WallWindowFrost>
       ) : lit && timed ? (
         <WallWindowFrost width={size.w} reduceMotion={reduceMotion} timed>

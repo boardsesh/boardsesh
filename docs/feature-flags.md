@@ -229,10 +229,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   `wall-frost-motion` is a POSITIVE flag (read through `wallFrostMotionOffered`:
   unresolved or off means off in a store build; dev builds read it as on unless
   it is set to off; screenshot mode never moves). On, the driving wall button's
-  frost is drawn by the iOS Metal view in `modules/frosted-bokeh-gpu`: its lights
-  breathe while the climber drives and glide to the next climb on Next. It needs
-  a binary with that module, so Android, the web and older iOS binaries keep the
-  still frost whatever the flag says, and so does Reduce Motion. The view stops
+  frost is drawn by the Metal (iOS) or AGSL (Android 13+) view in
+  `modules/frosted-bokeh-gpu`: its lights breathe while the climber drives and
+  change climbs with the board's swap (`docs/mobile-motion.md`; binaries before
+  `swapFrameApi` glide instead). It needs a binary with that module, so older
+  Android, the web and older binaries keep the still frost whatever the flag
+  says, and so does Reduce Motion. The view stops
   drawing in the background, off screen and, for the breathing, in Low Power
   Mode. Off, the button draws exactly what it drew before.
   `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =

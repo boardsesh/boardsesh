@@ -624,8 +624,11 @@ way it looks like this:
   white at 20%: Marco wanted a simple border with the busy fill. Light scheme: a pale `#F6F3FB` the blobs multiply
   into at lower strength, a dark label, black hairline at 12%. Android below 10 can't screen-blend, so the blobs
   draw normally, fainter. With `wall-frost-motion` enabled, iOS and Android 13+ native builds breathe at 15 fps and
-  glide between climbs over 700 ms at up to 60 fps. Both use the same 3.5-point drift and 14% swell.
-  Reduce Motion disables motion; Battery Saver/Low Power Mode disables breathing. Hidden or
+  change climbs with the board's swap at up to 60 fps: the lights follow the drag, the release and Next as the
+  board's holds do (option I; see "The wall button's frost follows the swap" in `docs/mobile-motion.md`).
+  Binaries from before that glide between climbs over 700 ms. Both use the same 3.5-point drift and 14% swell.
+  Reduce Motion stops the breathing and the drag-following (the frost dissolves over 240 ms); Battery Saver/Low
+  Power Mode disables breathing. Hidden or
   backgrounded views stop scheduling frames. Older Android versions, binaries without the module,
   renderer failures, samples and screenshot mode retain the still renderer. That renderer cross-fades
   new climbs or playback frames over 200 ms (at once with Reduce Motion).
