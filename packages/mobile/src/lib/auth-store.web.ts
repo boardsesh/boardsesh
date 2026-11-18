@@ -38,6 +38,8 @@ type WsAuthResponse = {
   token?: unknown;
   userId?: unknown;
   authSessionId?: unknown;
+  /** When the token ends: only the 15-minute browser token has one (`better-auth`, #7596 B3b). */
+  expiresAt?: unknown;
 };
 
 type AuthTokenClearedMessageBase = {
@@ -58,6 +60,10 @@ type AuthTokenClearPayload =
   | { reason: 'confirmed-signout'; identity: WebAuthIdentity };
 
 let backendToken: string | null = null;
+/** When `backendToken` ends, in ms; null for the legacy JWE, which has no end the page knows. */
+let backendTokenExpiresAt: number | null = null;
+let accessTokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let accessTokenRefreshFailures = 0;
 let confirmedSessionIdentity: WebAuthIdentity | null | undefined;
 let sessionGeneration = 0;
 let synchronization: {
@@ -74,6 +80,76 @@ const FOCUS_SESSION_RECHECK_INTERVAL_MS = 30_000;
 const MAX_IDENTITY_PAIR_ATTEMPTS = 3;
 const AUTH_TOKEN_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';
+
+/** Refresh this long before a browser token ends: about 12 minutes into 15 (#7596 B3b). */
+const ACCESS_TOKEN_REFRESH_LEAD_MS = 3 * 60_000;
+/** Never sooner than this, even for a token capped by a short session. */
+const MIN_ACCESS_TOKEN_REFRESH_DELAY_MS = 30_000;
+/** Longest wait between refresh attempts while the token endpoint keeps failing. */
+const MAX_ACCESS_TOKEN_BACKOFF_MS = 5 * 60_000;
+
+function readTokenExpiry(expiresAt: unknown): number | null {
+  if (typeof expiresAt !== 'string') return null;
+  const parsed = Date.parse(expiresAt);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clearAccessTokenRefreshTimer(): void {
+  if (accessTokenRefreshTimer === null) return;
+  clearTimeout(accessTokenRefreshTimer);
+  accessTokenRefreshTimer = null;
+}
+
+/**
+ * The page's backend token, in memory only. A browser access token
+ * (`better-auth`) carries its end: the page refreshes it about three minutes
+ * before, through the one shared session read, and backs off while that read
+ * fails. The legacy JWE has no end and is never refreshed on a timer.
+ */
+function setBackendToken(token: string | null, expiresAt: number | null = null): void {
+  const replaced = token !== backendToken;
+  backendToken = token;
+  backendTokenExpiresAt = token === null ? null : expiresAt;
+  if (replaced || token === null) {
+    clearAccessTokenRefreshTimer();
+    if (token !== null) accessTokenRefreshFailures = 0;
+  }
+  if (token !== null && backendTokenExpiresAt !== null && accessTokenRefreshTimer === null)
+    scheduleAccessTokenRefresh(
+      Math.max(MIN_ACCESS_TOKEN_REFRESH_DELAY_MS, backendTokenExpiresAt - ACCESS_TOKEN_REFRESH_LEAD_MS - Date.now()),
+    );
+}
+
+function scheduleAccessTokenRefresh(delayMs: number): void {
+  clearAccessTokenRefreshTimer();
+  const token = backendToken;
+  const generation = sessionGeneration;
+  accessTokenRefreshTimer = setTimeout(() => {
+    accessTokenRefreshTimer = null;
+    if (backendToken !== token || generation !== sessionGeneration) return;
+    void synchronizeWebSession().then((result) => {
+      if (result.status !== 'unavailable' || backendToken !== token || generation !== sessionGeneration) return;
+      // The endpoint failed (503, timeout): keep the token while it lasts and try again later.
+      accessTokenRefreshFailures += 1;
+      scheduleAccessTokenRefresh(
+        Math.min(
+          MIN_ACCESS_TOKEN_REFRESH_DELAY_MS * 2 ** (accessTokenRefreshFailures - 1),
+          MAX_ACCESS_TOKEN_BACKOFF_MS,
+        ),
+      );
+    });
+  }, delayMs);
+}
+
+/** A browser access token within three minutes of its end. Never true for the legacy JWE. */
+function accessTokenNearExpiry(now = Date.now()): boolean {
+  return backendTokenExpiresAt !== null && now >= backendTokenExpiresAt - ACCESS_TOKEN_REFRESH_LEAD_MS;
+}
+
+/** A browser access token past its end: the backend refuses it, so it is not sent. */
+function accessTokenExpired(now = Date.now()): boolean {
+  return backendTokenExpiresAt !== null && now >= backendTokenExpiresAt;
+}
 
 function createAuthSignalSourceId(): string {
   try {
@@ -140,7 +216,7 @@ function notifyAuthTokenChange(token: string | null, source: AuthTokenChangeSour
 
 function clearInMemoryTokens(source: AuthTokenChangeSource): void {
   sessionGeneration += 1;
-  backendToken = null;
+  setBackendToken(null);
   invalidateCredentialSnapshots();
   synchronization?.controller.abort(new Error('Authentication session cleared'));
   synchronization = null;
@@ -224,32 +300,51 @@ createNextAuthStorageListener();
  * cookie (the NextAuth session GET rewrites it). `undefined` means unknown: an
  * outage is never evidence of a change.
  */
-async function readCookieIdentityWithoutCookieWrite(): Promise<WebAuthIdentity | null | undefined> {
+async function readCookieIdentityWithoutCookieWrite(): Promise<
+  { identity: WebAuthIdentity | null; accessToken?: { token: string; expiresAt: number } } | undefined
+> {
   try {
     const response = await fetch(webApiUrl('/api/internal/ws-auth'), {
       credentials: 'include',
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
+    // A 401 (only under `better-auth`, #7596 B3b): the cookie's session ended.
+    // That is a change for the full session read to confirm, never a sign-out by itself.
+    if (response.status === 401) return { identity: null };
     if (!response.ok) return undefined;
     const payload: unknown = await response.json();
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined;
     const candidate = payload as WsAuthResponse;
-    if (candidate.authenticated === false) return null;
+    if (candidate.authenticated === false) return { identity: null };
     if (candidate.authenticated !== true) return undefined;
-    return readWebAuthIdentity(candidate) ?? undefined;
+    const identity = readWebAuthIdentity(candidate);
+    if (identity === null) return undefined;
+    const expiresAt = readTokenExpiry(candidate.expiresAt);
+    return typeof candidate.token === 'string' && candidate.token && expiresAt !== null
+      ? { identity, accessToken: { token: candidate.token, expiresAt } }
+      : { identity };
   } catch {
     return undefined;
   }
 }
 
-/** Ask the provider for a full re-read only when the cookie moved to another login. */
+/**
+ * Ask the provider for a full re-read only when the cookie moved to another
+ * login. A browser access token the probe brought for the same login replaces
+ * the page's own, so a focus check also refreshes it; the legacy JWE is not
+ * taken from a probe.
+ */
 async function recheckSessionIdentity(): Promise<void> {
   lastSessionReadAt = Date.now();
   const generation = sessionGeneration;
   const observed = await readCookieIdentityWithoutCookieWrite();
   if (observed === undefined || generation !== sessionGeneration) return;
-  if (confirmedSessionIdentity !== undefined && sameIdentity(confirmedSessionIdentity, observed)) return;
+  if (confirmedSessionIdentity !== undefined && sameIdentity(confirmedSessionIdentity, observed.identity)) {
+    if (observed.accessToken && backendToken !== null)
+      setBackendToken(observed.accessToken.token, observed.accessToken.expiresAt);
+    return;
+  }
   notifyAuthTokenChange(backendToken, 'hint');
 }
 
@@ -259,7 +354,8 @@ function createSessionRecheckListeners(): void {
   // www reaches this page only through these re-reads (visibilitychange is
   // already an AppState re-read in the provider).
   window.addEventListener('focus', () => {
-    if (Date.now() - lastSessionReadAt < FOCUS_SESSION_RECHECK_INTERVAL_MS) return;
+    // A browser access token with under three minutes left is refreshed now, throttle or not.
+    if (Date.now() - lastSessionReadAt < FOCUS_SESSION_RECHECK_INTERVAL_MS && !accessTokenNearExpiry()) return;
     void recheckSessionIdentity();
   });
   window.addEventListener('pageshow', (event: PageTransitionEvent) => {
@@ -302,13 +398,13 @@ function rotateForConfirmedIdentity(
   observeConfirmedBrowserIdentity(identity);
   if (confirmedSessionIdentity === undefined) {
     confirmedSessionIdentity = identity;
-    if (identity === null) backendToken = null;
+    if (identity === null) setBackendToken(null);
     return { generation, changed: false };
   }
   if (sameIdentity(confirmedSessionIdentity, identity)) return { generation, changed: false };
 
   confirmedSessionIdentity = identity;
-  backendToken = null;
+  setBackendToken(null);
   sessionGeneration += 1;
   invalidateCredentialSnapshots();
   if (synchronization?.generation === generation) synchronization.generation = sessionGeneration;
@@ -319,7 +415,7 @@ function rotateForConfirmedIdentity(
 function invalidateUnscopedAuthenticatedIdentity(generation: number): number {
   if (confirmedSessionIdentity === undefined && backendToken === null) return generation;
   confirmedSessionIdentity = undefined;
-  backendToken = null;
+  setBackendToken(null);
   sessionGeneration += 1;
   invalidateCredentialSnapshots();
   if (synchronization?.generation === generation) synchronization.generation = sessionGeneration;
@@ -429,6 +525,9 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
         signal,
       );
       if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
+      // A 401 (only under `better-auth`, #7596 B3b): the session ended between
+      // the two reads. Read the session again; it answers who the cookie is now.
+      if (tokenResponse.status === 401 && attempt < MAX_IDENTITY_PAIR_ATTEMPTS) continue;
       if (!tokenResponse.ok) {
         return unavailable(
           new Error(`WebSocket auth endpoint failed: HTTP ${tokenResponse.status}`),
@@ -483,7 +582,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
         );
       }
 
-      backendToken = tokenPayload.token;
+      setBackendToken(tokenPayload.token, readTokenExpiry(tokenPayload.expiresAt));
       return { status: 'authenticated', token: tokenPayload.token, ...resolvedIdentity };
     }
 
@@ -640,6 +739,16 @@ export function broadcastConfirmedSignOut(
   });
 }
 
+/**
+ * No token, or a browser access token (`better-auth`) within three minutes of
+ * its end. The legacy JWE has no end the page knows, so for it this is only
+ * "no token", as before.
+ */
 export async function isTokenExpiringSoon(): Promise<boolean> {
-  return backendToken === null;
+  return backendToken === null || accessTokenNearExpiry();
+}
+
+/** Whether the page's token is a browser access token past its end (never the legacy JWE). */
+export function isAuthTokenExpired(): boolean {
+  return backendToken !== null && accessTokenExpired();
 }
