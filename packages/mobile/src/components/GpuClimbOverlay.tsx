@@ -47,6 +47,12 @@ export type GpuClimbTransition = {
   revealMode?: RevealMode;
   /** The swap's pair and three weights, one value (see play-drawer/wall-swap). */
   swapFrame?: SharedValue<WallSwapFrame>;
+  /** Board motion lab only: Reduce Motion as it chose; absent, the system setting. */
+  reduceMotion?: boolean;
+  /** Board motion lab only: this board presented a request, with the native timings. */
+  onRenderReady?: (ready: ClimbOverlayGPUReady) => void;
+  /** Board motion lab only: this board gave up on a request; the native reason. */
+  onRenderError?: (reason: string) => void;
 };
 
 const NO_GPU_PREFETCH_FRAMES: readonly string[] = [];
@@ -91,7 +97,10 @@ export function GpuClimbOverlay({
   onReset,
   onRelease,
 }: Props) {
-  const reduceMotion = useReduceMotion();
+  const systemReduceMotion = useReduceMotion();
+  const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
+  const onTransitionReady = transition?.onRenderReady;
+  const onTransitionError = transition?.onRenderError;
   const appActive = useIsAppActive();
   const pagePosition = transition?.pagePosition;
   const centerPage = transition?.centerPage ?? 0;
@@ -146,6 +155,7 @@ export function GpuClimbOverlay({
       answered.current = true;
       failureReported.current = true;
       if (__DEV__) console.info('[gpu-climb-live]', JSON.stringify({ requestId, reason: 'presentation-timeout' }));
+      onTransitionError?.('presentation-timeout');
       reportGpuFallback(
         { boardName, apiVersion: climbOverlayGpuApiVersion, surface: animateEdits ? 'editor' : 'player' },
         requestId,
@@ -155,7 +165,7 @@ export function GpuClimbOverlay({
       onFailure(requestId, configJson, 'presentation-timeout', 'context');
     }, 10000);
     return () => clearTimeout(timeout);
-  }, [requestId, configJson, onFailure, boardName, animateEdits, appActive]);
+  }, [requestId, configJson, onFailure, boardName, animateEdits, appActive, onTransitionError]);
   const ready = useCallback(
     ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUReady>) => {
       if (!isAppActiveNow() || currentRequest.current !== nativeEvent.requestId || answered.current) return;
@@ -164,6 +174,7 @@ export function GpuClimbOverlay({
         { boardName, apiVersion: climbOverlayGpuApiVersion, surface: animateEdits ? 'editor' : 'player' },
         nativeEvent,
       );
+      onTransitionReady?.(nativeEvent);
       if (__DEV__) {
         const {
           requestId,
@@ -196,7 +207,7 @@ export function GpuClimbOverlay({
       }
       onPresented(nativeEvent.requestId, configJson);
     },
-    [onPresented, configJson, animateEdits, reduceMotion, boardName],
+    [onPresented, configJson, animateEdits, reduceMotion, boardName, onTransitionReady],
   );
   const failed = useCallback(
     ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUFailure>) => {
@@ -218,9 +229,10 @@ export function GpuClimbOverlay({
         reason,
         failureScope,
       );
+      onTransitionError?.(nativeEvent.reason);
       onFailure(nativeEvent.requestId, configJson, reason, failureScope);
     },
-    [onFailure, configJson, boardName, animateEdits],
+    [onFailure, configJson, boardName, animateEdits, onTransitionError],
   );
   if (NativeMotionClimbOverlayGPU && AnimatedMotionOverlay) {
     return (
