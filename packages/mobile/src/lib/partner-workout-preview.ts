@@ -8,11 +8,11 @@ import type { CreateWorkout } from '@boardsesh/public-api';
 import {
   buildWorkoutRun,
   type GeneratorGradeScale,
-  type StagedSlot,
   type WorkoutPlan,
   type WorkoutRun,
 } from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { PartnerSlot } from './partner-workout-plan';
 import { MAX_SESSION_WORKOUT_ITEMS } from '@boardsesh/workout-summary';
 import {
   buildPreview,
@@ -31,11 +31,11 @@ export type PartnerWorkoutPreview = {
   /** How many slots the climbs were picked for: the plan, capped at what a session workout can hold. */
   selectionSlots: number;
   /** The slots and pools behind the rows, for `reselectPartnerWorkoutPreview`. */
-  slots: readonly StagedSlot[];
+  slots: readonly PartnerSlot[];
   built: BuiltPreview;
 };
 
-type PartnerPlan = { plan: WorkoutPlan; slots: readonly StagedSlot[] };
+type PartnerPlan = { plan: WorkoutPlan; slots: readonly PartnerSlot[] };
 
 /**
  * The run for `rows`. An untimed partner block can ask for a rest the app's own
@@ -56,7 +56,7 @@ function partnerRunFor(rows: readonly PreviewItem[], spec: CreateWorkout, plan: 
 }
 
 function toPartnerPreview(
-  slots: readonly StagedSlot[],
+  slots: readonly PartnerSlot[],
   built: BuiltPreview,
   spec: CreateWorkout,
   plan: WorkoutPlan,
@@ -97,9 +97,12 @@ export async function buildPartnerWorkoutPreview({
 
 /**
  * The preview again, from the pools it already fetched, passing over
- * `avoidClimbUuids`: the queue as it is when the climber adds the workout, which
- * can have gained climbs since the preview was built. A row whose climb is not
- * in it keeps its queue item; no request goes out.
+ * `avoidClimbUuids`: the queue as it is when the climber adds the workout. It
+ * re-picks every row whose climb is in the queue now, where the pools have
+ * another; a row whose climb is not keeps its queue item. No request goes out.
+ * A crewmate's add that reaches the server between this read and the append
+ * can still double a climb: the same race "Add a block" has
+ * (`docs/workout-stages.md`).
  */
 export function reselectPartnerWorkoutPreview(
   preview: PartnerWorkoutPreview,

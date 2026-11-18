@@ -39,8 +39,8 @@ import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { fetchGradePool } from './pre-session/select-climbs-for-plan';
 import { appendPartnerWorkout } from '../../lib/partner-workout-queue';
 import { buildPartnerWorkoutPreview, reselectPartnerWorkoutPreview } from '../../lib/partner-workout-preview';
-import { queuedClimbUuids, withoutQueuedItems } from './in-session/add-workout-block';
-import { useSearchGradeSourceActive } from '../../lib/graphql/hooks/search-grade-source';
+import { queuedClimbUuids } from './in-session/add-workout-block';
+import { useSearchGradeSourceActive, useSearchGradeSourceSettled } from '../../lib/graphql/hooks/search-grade-source';
 import {
   getWorkoutRunForSession,
   hydrateWorkoutRun,
@@ -126,6 +126,8 @@ export function PartnerWorkoutCard({
     };
   }, [active, sessionId, winningPlan.data, credentialGeneration]);
   const boardseshGrades = useSearchGradeSourceActive();
+  // Wait for the stored grade-source choice, so a cold open builds the preview once.
+  const gradeSourceSettled = useSearchGradeSourceSettled();
   const grades = useMemo(() => {
     const boardName = board ? toBoardName(board.boardType) : null;
     return boardName ? getGradesForBoard(boardName) : null;
@@ -143,7 +145,13 @@ export function PartnerWorkoutCard({
   // the pre-session builder does.
   const preview = useQuery({
     queryKey: ['partnerWorkoutPreview', credentialGeneration, pending?.id, board, sessionId, boardseshGrades],
-    enabled: enabled && pending !== null && pending.status !== 'started' && board != null && plan !== null,
+    enabled:
+      enabled &&
+      gradeSourceSettled &&
+      pending !== null &&
+      pending.status !== 'started' &&
+      board != null &&
+      plan !== null,
     retry: false,
     queryFn: async ({ signal }) => {
       if (!pending || !plan || !board || !grades) throw new Error('No workout board');
@@ -261,7 +269,7 @@ export function PartnerWorkoutCard({
       }
       // "Add a block"'s rule: pass over the climbs the queue holds now (it can
       // have gained some since the preview was built), from the pools already
-      // fetched, and never queue a queue item twice.
+      // fetched. A crewmate's add still in flight can race it, as with Add a block.
       const attached = plan
         ? reselectPartnerWorkoutPreview(preview.data, pending.spec, plan.plan, queuedClimbUuids(snapshot.queue))
         : preview.data;
@@ -270,7 +278,7 @@ export function PartnerWorkoutCard({
         partnerRun,
         combinedRun,
       } = appendPartnerWorkout({
-        items: withoutQueuedItems(attached.items, snapshot.queue),
+        items: attached.items,
         run: attached.run,
         existingRun: getWorkoutRunForSession(attachedSessionId),
         appendQueueItems,

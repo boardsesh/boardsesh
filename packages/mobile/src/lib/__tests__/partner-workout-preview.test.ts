@@ -86,6 +86,19 @@ describe('partner workout preview', () => {
     expect(built.built.items.map((row) => row.slot.grade)).toEqual([18, 19, 18, 19]);
   });
 
+  it('fills a thin half of a V band from the other half before the next V grade', async () => {
+    // V4 on Kilter is 6b (18) and 6b+ (19). 6b has one climb; 6a+ (17, V3) has
+    // plenty, but 6b+ is still V4 and has spare.
+    const built = await preview(
+      workout({ type: 'gradeFocus', climbCount: 4, targetGrade: { scale: 'v', value: 4 } }),
+      catalogue({ 18: 1, 19: 10, 17: 10 }),
+    );
+    expect(built.items).toHaveLength(4);
+    expect(built.built.items.map((row) => row.slot.grade).sort((left, right) => left - right)).toEqual([
+      18, 19, 19, 19,
+    ]);
+  });
+
   it('keeps the partner block rest on its stage', async () => {
     const built = await preview(
       workout({ type: 'volume', climbCount: 1, restSeconds: 90, targetGrade: { scale: 'font', value: '6B' } }),
@@ -94,7 +107,7 @@ describe('partner workout preview', () => {
     expect(built.run.stages[0].pacing).toEqual({ mode: 'afterTick', restSeconds: 90, advanceOn: 'tick' });
   });
 
-  it('re-picks only the rows whose climb was queued since, from the pools it has', async () => {
+  it('re-picks the rows whose climb is in the queue now, from the pools it has', async () => {
     const spec = workout({ type: 'gradeFocus', climbCount: 2, targetGrade: { scale: 'font', value: '6B' } });
     const fetchPool = catalogue({ 18: 4 });
     const built = await preview(spec, fetchPool);

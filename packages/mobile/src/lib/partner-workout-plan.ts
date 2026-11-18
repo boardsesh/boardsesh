@@ -47,15 +47,17 @@ export function resolvePartnerGrade(
 }
 
 /**
- * The grades a block's slots draw from: `from` and `to`, the lowest and highest
- * difficulty ids, with every V band whole, and `target`, the grade its stage is
- * labelled with (the lowest id of the target, or of the range's top, band).
- * `band` is set for a single target grade: its slots take turns across it.
+ * The grades a block's slots draw from, as `bands`, easiest first: the groups of
+ * difficulty ids a slot can pick from. A V grade is one band, every Font grade
+ * the board's table gives it; a Font grade is a band of one. A target grade is
+ * one band; a range is every band from its bottom to its top, V bands whole.
+ * `target` is the grade the block's stage is labelled with: the lowest id of the
+ * target band, or of the range's top band.
  */
 function rangeForBlock(
   block: WorkoutBlock,
   grades: readonly BoulderGrade[],
-): { from: number; to: number; target: number; band?: number[]; clamped: boolean } | null {
+): { bands: number[][]; target: number; clamped: boolean } | null {
   if ('gradeRange' in block) {
     const from = resolvePartnerGrade(
       { scale: block.gradeRange.scale, value: block.gradeRange.from } as RequestedGrade,
@@ -65,20 +67,28 @@ function rangeForBlock(
       { scale: block.gradeRange.scale, value: block.gradeRange.to } as RequestedGrade,
       grades,
     );
-    return { from: from.band[0], to: to.band.at(-1)!, target: to.grade, clamped: from.clamped || to.clamped };
+    const lowest = from.band[0];
+    const highest = to.band.at(-1)!;
+    const inRange = grades.filter((grade) => grade.difficulty_id >= lowest && grade.difficulty_id <= highest);
+    const bands: number[][] = [];
+    // A V range ramps over V grades, not Font grades, so V0's three Font
+    // grades do not crowd out V1's two. A Font range ramps over Font grades.
+    for (const [position, grade] of inRange.entries()) {
+      const sameBand = block.gradeRange.scale === 'v' && inRange[position - 1]?.v_grade === grade.v_grade;
+      if (sameBand) bands.at(-1)!.push(grade.difficulty_id);
+      else bands.push([grade.difficulty_id]);
+    }
+    return { bands: bands.length > 0 ? bands : [[to.grade]], target: to.grade, clamped: from.clamped || to.clamped };
   }
   if ('targetGrade' in block) {
     const target = resolvePartnerGrade(block.targetGrade, grades);
-    return {
-      from: target.band[0],
-      to: target.band.at(-1)!,
-      target: target.grade,
-      band: target.band,
-      clamped: target.clamped,
-    };
+    return { bands: [target.band], target: target.grade, clamped: target.clamped };
   }
   return null;
 }
+
+/** A planned slot, with the V band it may fill from (`PreviewSlot.band`). */
+export type PartnerSlot = StagedSlot & { band?: readonly number[] };
 
 export function partnerBlockRunsNatively(block: WorkoutBlock): boolean {
   return block.type !== 'fourByFour' && block.type !== 'limitBouldering' && block.type !== 'freeClimbing';
@@ -91,11 +101,11 @@ export function buildPartnerWorkoutPlan(
   workoutId: string,
 ): {
   plan: WorkoutPlan;
-  slots: StagedSlot[];
+  slots: PartnerSlot[];
   clampedBlocks: number[];
 } {
   const stages: WorkoutStage[] = [];
-  const slots: StagedSlot[] = [];
+  const slots: PartnerSlot[] = [];
   const clampedBlocks: number[] = [];
   for (const [index, block] of spec.blocks.entries()) {
     if (!partnerBlockRunsNatively(block) || !('climbCount' in block)) continue;
@@ -160,19 +170,26 @@ export function buildPartnerWorkoutPlan(
         };
     }
     stages.push(stage);
-    const available = grades.filter((grade) => grade.difficulty_id >= range.from && grade.difficulty_id <= range.to);
-    const { band } = range;
+    const { bands } = range;
+    // How many slots each band has given a grade so far: a band's slots take
+    // turns across its Font grades, so a V grade draws from each of them and a
+    // short one fills from its band mates first (`PreviewSlot.band`).
+    const usesByBand = bands.map(() => 0);
     for (let position = 0; position < block.climbCount; position++) {
       const progress = block.climbCount === 1 ? 1 : position / (block.climbCount - 1);
       const peakHeight = block.climbCount % 2 === 0 ? (block.climbCount - 2) / (block.climbCount - 1) : 1;
       const ramp =
         block.type === 'pyramid' && block.climbCount > 2 ? (1 - Math.abs(2 * progress - 1)) / peakHeight : progress;
-      // One target grade: the slots take turns across its band, so a V grade
-      // draws from each Font grade in it and a short one borrows from the next.
-      const grade = band
-        ? band[position % band.length]
-        : (available[Math.round(ramp * (available.length - 1))]?.difficulty_id ?? range.to);
-      slots.push({ index: slots.length, grade, section: block.type === 'warmUp' ? 'warmUp' : 'main', stageId: id });
+      const bandIndex = Math.round(ramp * (bands.length - 1));
+      const band = bands[bandIndex];
+      const grade = band[usesByBand[bandIndex]++ % band.length];
+      slots.push({
+        index: slots.length,
+        grade,
+        section: block.type === 'warmUp' ? 'warmUp' : 'main',
+        stageId: id,
+        ...(band.length > 1 ? { band } : {}),
+      });
     }
   }
   return { plan: { stages }, slots, clampedBlocks };
