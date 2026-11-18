@@ -19,6 +19,7 @@ import { CookieJar, ORIGIN, patchNextRequestIo, servedRequests } from './route-h
 import {
   DOMAIN,
   LEGACY,
+  LOGIN,
   browserSteps,
   createClimber,
   randomClientAddress,
@@ -240,6 +241,17 @@ describe('server renders under better-auth', () => {
       await readSession(`${LEGACY}=${credential}`, 'GET', '', { bridges: true })
     ).json()) as SessionJson;
     expect(sessionJson.authSessionId).toBe(authSessionId);
+  });
+
+  it('render as the session read does for the two cookie states the resolver decides (#7792 review, M4)', async () => {
+    const { climber, authSessionId, credential } = await legacyLogin();
+    // A plain-named legacy cookie in a secure context: signed out, as NextAuth reads only the secure name.
+    expect(await renderPage(`next-auth.session-token=${credential}`)).toEqual({ session: null, token: undefined });
+    // An unverifiable first-party cookie beside it: bridged without a cookie, the legacy cookie's login.
+    const beside = await renderPage(`${LOGIN}=not-a-signed-value; ${LEGACY}=${credential}`);
+    expect(beside.session?.user.id).toBe(climber.id);
+    expect(beside.session?.authSessionId).toBe(authSessionId);
+    expect((await graphqlViewer(beside.token ?? '')).body.data?.authenticatedUserId).toBe(climber.id);
   });
 
   it('answer as the session read does over the render budget: from the legacy cookie', async () => {

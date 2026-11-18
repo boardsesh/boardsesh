@@ -258,11 +258,58 @@ retry) and 4401 path (refresh, then reconnect) are unchanged. A ws-auth 401
 inside the session/token pair reads the session again. The legacy JWE has no
 lifetime and is used as before.
 
-Left for B4a: server renders (`getServerAuthToken`, `getAdmittedServerSession`)
-still forward and read the legacy cookie. Moving only the token would let one
-render fetch data as one login and show another, so both move together in B4a.
 Provider link and unlink have no www page under this mode yet (B5e); they
 should call `refreshAccessTokenAfterCredentialChange` as set-password does.
+
+### Server renders and private routes (B4a)
+
+`getAdmittedServerSession()` and `getServerAuthToken()` keep their signatures
+(`admitted-session.server.ts`, `server-auth.ts`), so every page, server action
+and `/api/internal/*` route that reads the viewer moves with them, including
+the three cookie-only routes behind the expected-viewer check (`controllers`,
+`profile`, `profile/[userId]`), set-password's identity read, `join`, the
+admin check and the feature-flag distinct id. With the mode unset, empty or
+`legacy` both read the admitted NextAuth cookie exactly as before: the mode is
+checked from the variable first, and nothing new is even loaded.
+
+Under `better-auth` both come from `server-browser-session.server.ts`: one
+`resolveBrowserSession` per render (React `cache`), with its own bridge budget
+per client address (`server-render-bridge:`), and at most one `access` call per
+render, made only when the page asks for a token. So a page never fetches data
+as one login and shows another.
+
+| The resolver says | Session | Token |
+| --- | --- | --- |
+| A live session (from the cookie, or a legacy-only browser bridged without a cookie) | The session JSON's fields in NextAuth's `Session` shape | The 15-minute access token for that same session |
+| Signed out (no cookie, a dead or conflicted first-party cookie, an oversized or plain-named legacy cookie, a denied bridge) | `null` | `undefined` |
+| Nothing known beyond the legacy cookie (its bridge over budget or failing) | The admitted legacy cookie's session, as the session read answers then | The admitted legacy cookie, as in `legacy` mode |
+| Backend unavailable, or an unknown mode value | `CredentialAuthorityUnavailable`, which each route already answers as its error (503), never as anonymous | the same |
+
+A render never writes or clears a cookie: the legacy-only browser's first
+document arrives before any session read and renders signed in from a
+cookie-less bridge; the session read that follows sets exactly that bridged
+cookie. The rollback twin beside a login cookie is never preferred: the
+resolver reads the login cookie first. The token never leaves the server: no
+page passes it to a client component, into an RSC payload or into cacheable
+HTML, and the client store only ever holds tokens from ws-auth.
+
+Private commands per page view under `better-auth`: a render that reads the
+viewer sends one `session` command, plus one `access` if it fetches data with
+the token (a legacy-only first document adds one `bridge` and one more
+`session`); the page's own session read sends one `session`, and its ws-auth
+two. These are www-to-backend commands, each one admission read on the backend
+(#7787's coalescer covers the per-request token reads that follow).
+
+Two readers stay on the legacy cookie on purpose: the native transfer callback
+(`api/auth/native/callback`) reads the legacy cookie in every mode, because it
+runs right after a Google or Apple sign-in that wrote that cookie (with
+`nativeOAuthCreationProof`, which no first-party session read carries) and,
+under `better-auth`, cleared both first-party names; issuing a first-party
+session there is B4c. The provider link guard (`oauth-link-guard.server.ts`)
+reads the cookie NextAuth's own provider callback links into, which stays the
+legacy cookie until B5. The partner sign-in and consent pages read the same
+render resolution (sign-in time and link guard from the session row, as
+partner consent does on the backend since B6).
 
 ## Signed-in browsers from before the switch
 
