@@ -16,12 +16,13 @@ import { expect, test } from './fixtures';
  * after a switch from A to B, going back never leaves A's page up.
  *
  * - Back/forward cache, `chromium-bfcache` only (WebKit under Playwright never
- *   restores a page, bfcache.spec.ts: a real-Safari check for the owner). A
- *   signed-in page that Chromium does keep (/help, served without no-store,
- *   with the climber in its header) is restored with `persisted: true`,
- *   re-reads the session and is replaced (`session-provider.tsx`'s `pageshow`
- *   listener). On the production build /settings is served `no-store` and is
- *   never kept: the spec asserts that reason and that back loads B.
+ *   restores a page, bfcache.spec.ts: a real-Safari check for the owner). On
+ *   the production build no signed-in page is restorable: www serves a
+ *   signed-in /help and /settings `no-store` (run 44325488834:
+ *   `response-cache-control-no-store`), so Chromium keeps neither, and the
+ *   spec asserts that reason and that back loads B. `next dev` sends no such
+ *   header, so there the page is restored with `persisted: true`, re-reads the
+ *   session and is replaced (`session-provider.tsx`'s `pageshow` listener).
  * - Router Cache: A's /settings left by a client-side navigation and returned
  *   to with back. Only the production build has the cache that matters.
  */
@@ -65,9 +66,10 @@ async function backAfterSwitch(page: Page, other: Page, path: string, a: SeededA
   return { restored, reasons, sessionReads };
 }
 
-test('back/forward cache: a restorable signed-in page of A comes back, re-reads the session and is replaced as B', async ({
+test('back/forward cache: a signed-in /help of A is never kept by the production build, and under next dev is replaced as B', async ({
   context,
   freshAccount,
+  stack,
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== 'chromium-bfcache',
@@ -78,8 +80,13 @@ test('back/forward cache: a restorable signed-in page of A comes back, re-reads 
   const other = await context.newPage();
   const back = await backAfterSwitch(page, other, '/help', freshAccount(), accountB);
   testInfo.annotations.push({ type: 'bfcache', description: `/help restored=${back.restored}` });
-  expect(back.restored, `/help was restored (notRestoredReasons ${back.reasons})`).toBe(true);
-  await expect.poll(() => back.sessionReads.length, { timeout: 30_000 }).toBeGreaterThan(0);
+  if (stack.wwwMode === 'production') {
+    expect(back.restored, 'no signed-in page is restorable on the production build').toBe(false);
+    expect(back.reasons).toContain('response-cache-control-no-store');
+  } else {
+    expect(back.restored, `/help was restored (notRestoredReasons ${back.reasons})`).toBe(true);
+    await expect.poll(() => back.sessionReads.length, { timeout: 30_000 }).toBeGreaterThan(0);
+  }
   await expect.poll(() => isSameDocument(page), { timeout: 60_000 }).toBe(false);
   expect(await readViewer(page)).toMatchObject({ authenticated: true, userId: accountB.userId });
 });

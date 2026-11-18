@@ -1968,14 +1968,30 @@ section 4).
 | --- | --- | --- |
 | `acceptance-1-reads-write-no-cookie.spec.ts` | 1: reads, csrf, ws-auth, private pages and set-password write no session cookie; the bridging read writes exactly the bridged cookie; renewal rolls the row with no cookie | Chromium, WebKit |
 | `acceptance-2-account-switch.spec.ts` | 2: A's token 401, A's socket closed (4401), the app tab reloads as B; #6979 sign-out across subdomains | Chromium, WebKit |
-| `acceptance-3-held-response.spec.ts` | 3: A's delete on www (with its toast) and A's GraphQL on the app are held, B signs in on the other host, the reply is released while A's page is up: for 3 s no toast, navigation or cache write, then focus reloads the tab as B | Chromium, WebKit |
-| `acceptance-3-back-forward.spec.ts` | 3: back/forward cache restore of a signed-in page, and `/settings` never kept under `no-store` (`chromium-bfcache` only); Router Cache after a soft navigation (production www only) | Chromium, WebKit, `chromium-bfcache` |
+| `acceptance-3-held-response.spec.ts` | 3: A's delete on www (with its toast) and A's GraphQL on the app are held, B signs in on the other host, the reply is released while A's page is up. www: for 3 s no toast, navigation or cache write, then focus reloads the tab as B; **marked `test.fail`**, see below. App: A's name never shows, and the tab ends as B (it reloads by itself or on focus) | Chromium, WebKit |
+| `acceptance-3-back-forward.spec.ts` | 3: on the production build no signed-in page is kept (`no-store`, asserted for `/help` and `/settings`) and back loads B; under `next dev` the page is restored and replaced (`chromium-bfcache` only); Router Cache after a soft navigation (production www only) | Chromium, WebKit, `chromium-bfcache` |
 | `acceptance-4-set-password.spec.ts` | 4: with provider security off, a bridged session asks for a new sign-in; a fresh login sets it with no reload or cookie and signs the other browser out | Chromium, WebKit |
 | `acceptance-4-first-password.spec.ts` | 4: first password on a bridged session: a made-up link completes nothing; another session presenting the emailed link changes nothing; the session that asked completes it, keeps its session id with no session Set-Cookie, and the other session is signed out | Chromium, WebKit |
 | `acceptance-5-legacy-shapes.spec.ts` | 5: normal, chunked and host-only cookies stay signed in with one bridged cookie; plain-named reads as signed out | Chromium, WebKit |
 | `acceptance-6-rollback.spec.ts` | 6: rollback to `legacy` and back by restart; the newer legacy login wins | Chromium, WebKit |
 | `acceptance-8-one-switch.spec.ts` | 8: two refused preconditions per service, by restart | Chromium |
 | `scripts/check-native-unchanged.ts` (workflow `web-lane-native-unchanged.yml`) | 7: no file that ships to phones changes in the web lane | not a browser test |
+
+**Found, not fixed (owner decision):** www's session guard learns of a
+switch only on focus, `pageshow`, a 401, a 409 `viewer_changed` or a
+same-origin message. A reply of A's released after B signed in on the other
+host is a plain 200, so the Settings card shows A's "Controller deleted
+successfully" toast (run 44325488834, both engines). The design says the
+caller is superseded and shows nothing. Dropping it needs the guard to re-read
+the session when an action's reply lands, one more session read per action.
+The www held-reply test is `test.fail` under
+`GUARD_PASSES_A_REPLY_RELEASED_AFTER_A_SWITCH_ON_ANOTHER_HOST` until then.
+
+**Found by the acceptance run, fixed:** the emailed first-password link opens
+a new tab whose status check left before the page's first session read, so
+the guard named nobody, the route refused the missing expected-viewer header,
+and the page always said "try again". Account-security calls now wait for
+that read (`account-security-client.ts`).
 
 **Found by the first run, fixed:** under `better-auth` every www session read
 answered 503, because the backend's `session` command joined `user_profiles` on

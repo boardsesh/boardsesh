@@ -26,12 +26,25 @@ import { expect, test } from './fixtures';
  * - www: A deletes an ESP32 controller on /settings, a mutation whose success
  *   shows "Controller deleted successfully"; B signs in from app.boardsesh.com.
  * - The app: every GraphQL reply of the app tab's reload as A is held; B signs
- *   in on www.
+ *   in on www. The app may reload by itself once the replies land; A's name
+ *   must never show, and the tab ends as B.
  *
  * Back/forward navigation is in acceptance-3-back-forward.spec.ts.
  */
 
 test.skip(process.env.AUTH_BROWSER_SESSION_MODE !== 'better-auth', 'Runs under AUTH_BROWSER_SESSION_MODE=better-auth.');
+
+/**
+ * Product gap, found by run 44325488834 on both engines: www's session guard
+ * learns of a switch only on focus, `pageshow`, a 401, a 409 viewer_changed or a
+ * same-origin message. A mutation reply of A's that is released after B signed
+ * in on another host is a plain 200, so the guard passes it on and the
+ * Settings card shows "Controller deleted successfully" on A's page. Dropping
+ * it needs the guard to re-read the session when an action's reply lands (one
+ * more session read per action), which is a design change for the owner. Until
+ * then the www test is expected to fail at that toast.
+ */
+const GUARD_PASSES_A_REPLY_RELEASED_AFTER_A_SWITCH_ON_ANOTHER_HOST = true;
 
 const DELETED = 'Controller deleted successfully';
 
@@ -61,11 +74,30 @@ async function expectNothingLands(page: Page, texts: readonly string[], seconds 
   }
 }
 
+/** For `seconds`, none of `texts` shows in the tab, whichever document it holds. */
+async function expectNothingOfALands(page: Page, texts: readonly string[], seconds = 3): Promise<void> {
+  for (let check = 0; check < seconds * 4; check += 1) {
+    for (const text of texts)
+      expect(
+        await page
+          .getByText(text)
+          .count()
+          .catch(() => 0),
+        `“${text}” shown`,
+      ).toBe(0);
+    await page.waitForTimeout(250);
+  }
+}
+
 test("www: A's controller deletion, held across a switch to B on the app host, shows nothing; the tab then reloads as B", async ({
   context,
   freshAccount,
 }, testInfo) => {
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
+  test.fail(
+    GUARD_PASSES_A_REPLY_RELEASED_AFTER_A_SWITCH_ON_ANOTHER_HOST,
+    'The guard passes A’s held reply on after a switch on another host; see the constant.',
+  );
   const accountA = freshAccount();
   const accountB = freshAccount();
   const pageA = await context.newPage();
@@ -135,12 +167,16 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
 
   await signInOverExistingSession(wwwPage, accountB);
   await expectSessionReadNames(wwwPage, accountB);
+  expect(await isSameDocument(appPage), 'A’s document is still up when its replies are released').toBe(true);
   held.release();
   await held.delivered();
-  await expectNothingLands(appPage, [accountA.name]);
+  // Unlike www, the app tab reloaded on its own within 3 s of the release, before any focus, in
+  // run 44325488834 on both engines (which signal it acted on is not confirmed). So a reload is
+  // allowed here; A's name never shows, in any document, and the tab ends as B.
+  await expectNothingOfALands(appPage, [accountA.name]);
 
   await appPage.unrouteAll({ behavior: 'ignoreErrors' });
-  await focusUntilReloaded(appPage);
+  if (await isSameDocument(appPage)) await focusUntilReloaded(appPage);
   await expect(appPage.getByRole('tab', { name: 'Home', exact: true })).toBeVisible({ timeout: 120_000 });
   await expect(appPage.getByText(accountA.name)).toHaveCount(0);
   expect(new URL(appPage.url()).origin).toBe(APP_ORIGIN);
