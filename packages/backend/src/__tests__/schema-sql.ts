@@ -100,7 +100,7 @@ const authUidPasswordRecoverySchema = readFileSync(
 );
 // Per-account password guess windows (#7656), straight from the generated migration.
 const authPasswordGuessWindowsSchema = readFileSync(
-  new URL('../../../db/drizzle/0325_password_guess_windows.sql', import.meta.url),
+  new URL('../../../db/drizzle/0327_password_guess_windows.sql', import.meta.url),
   'utf8',
 );
 const authWebOAuthIdentitySchema = readFileSync(
