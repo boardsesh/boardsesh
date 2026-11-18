@@ -69,6 +69,7 @@ export const BROWSER_SESSION_WEB_CUTOVER_BLOCKERS: readonly string[] = Object.fr
   // Apple link is refused (`APPLE_LINK_ENABLED`) until a stand-in proof drives Apple's form_post.
   'B5E1_APPLE_LINK_PROOF',
   'B6_PARTNER_CONSENT',
+  'B7_BROWSER_ACCEPTANCE',
 ]);
 
 type PreconditionCode =

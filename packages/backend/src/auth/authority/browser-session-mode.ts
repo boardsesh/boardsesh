@@ -101,6 +101,7 @@ export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze
   // vectors, so partner consent and the www session read cannot pick
   // different logins for one browser.
   'B6_PARTNER_CONSENT',
+  'B7_BROWSER_ACCEPTANCE',
 ]);
 
 /** One stable code per refusal, so a failed deploy names exactly what is missing. */
