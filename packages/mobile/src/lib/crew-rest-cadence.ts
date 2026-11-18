@@ -407,7 +407,33 @@ export function buildRestartInput(
   };
 }
 
-export type CrewAnchorRequest = 'KEEP' | 'NOW' | 'CLEAR';
+/**
+ * `KEEP_FRESH_TICK`: a new climb of the same stage is on the wall and only its
+ * rest length may change (a partner 4x4's round rest). Sent as KEEP while the
+ * crew clock has no anchor (the FIRE that moved the wall cleared it) or its
+ * last tick is on the climb now on the wall (a crewmate already logged it):
+ * a CLEAR would wipe that tick's anchor and the wall would wait for another.
+ * Any other anchor is the last climb's, and goes as CLEAR.
+ */
+export type CrewAnchorRequest = 'KEEP' | 'NOW' | 'CLEAR' | 'KEEP_FRESH_TICK';
+
+/** The clock's config and `next` differ at most in their rest length. */
+function onlyRestLengthDiffers(previous: CrewConfigFields | null, next: CrewConfigFields): boolean {
+  return previous !== null && sameCrewConfig({ ...previous, targetSeconds: next.targetSeconds }, next);
+}
+
+/** What a `KEEP_FRESH_TICK` request sends: KEEP only where no stale anchor could survive it. */
+function resolveFreshTickAnchor(
+  previous: CrewConfigFields | null,
+  config: CrewConfigFields,
+  state: RestTimerState,
+): 'KEEP' | 'CLEAR' {
+  const crew = state.crew;
+  if (crew === null || !onlyRestLengthDiffers(previous, config)) return 'CLEAR';
+  const wallQueueItemUuid = state.stagePacing?.queueItemUuid ?? null;
+  const tickOnTheWall = wallQueueItemUuid !== null && crew.lastTick?.queueItemUuid === wallQueueItemUuid;
+  return crew.anchorMs === null || tickOnTheWall ? 'KEEP' : 'CLEAR';
+}
 
 /**
  * The CONFIGURE a settings edit or a stage change sends: this phone's own
@@ -438,14 +464,15 @@ export function buildConfigureInput({
   nowMs: number;
 }): SessionRestCadenceInput | null {
   const config = normalizeCrewConfig(own);
-  let resolvedAnchor: SessionRestCadenceAnchor = anchor;
+  let resolvedAnchor: SessionRestCadenceAnchor =
+    anchor === 'KEEP_FRESH_TICK' ? resolveFreshTickAnchor(previous, config, state) : anchor;
   let fromMs = boundaryAtMs;
   // Entering on the minute always starts the beat now, also when this phone
   // cannot tell the mode the clock had: kept, an after-tick anchor (a tick from
   // a minute ago, or none) would become the grid (contracts §16, Fable's PACE
   // review). Leaving it for after the tick waits for the next tick.
   const entersOnTheMinute = config.mode === 'onTheMinute' && (previous === null || previous.mode !== 'onTheMinute');
-  if (anchor === 'KEEP' && (entersOnTheMinute || (previous !== null && previous.mode !== config.mode))) {
+  if (resolvedAnchor === 'KEEP' && (entersOnTheMinute || (previous !== null && previous.mode !== config.mode))) {
     resolvedAnchor = config.mode === 'onTheMinute' ? 'NOW' : 'CLEAR';
     fromMs = null;
   }

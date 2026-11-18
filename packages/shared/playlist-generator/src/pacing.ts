@@ -42,7 +42,16 @@ export type StageAdvanceOn = 'tick' | 'send' | 'set' | 'round';
  * `repsPerSet` times (a fall or a send, each one rep), then rests
  * `restBetweenSetsSeconds` and moves on.
  */
-export type StageSetPacing = { repsPerSet: number; restBetweenSetsSeconds: number };
+export type StageSetPacing = {
+  repsPerSet: number;
+  restBetweenSetsSeconds: number;
+  /**
+   * A partner app's 4x4 of one climb: each rep is one of the partner's rounds,
+   * so the readout says rounds, never reps and sets. Display only; the set runs
+   * as any other. Absent on the app's own 4x4. Older bundles ignore it.
+   */
+  asRounds?: true;
+};
 
 /**
  * A partner app's 4x4 rounds (#6734, workoutbash1 D1): `climbsPerRound`
@@ -209,7 +218,8 @@ function isStageSetPacing(candidate: unknown): candidate is StageSetPacing {
   const sets = candidate as Record<string, unknown>;
   return (
     isWholeNumberIn(sets.repsPerSet, MIN_STAGE_REPS_PER_SET, MAX_STAGE_REPS_PER_SET) &&
-    isWholeNumberIn(sets.restBetweenSetsSeconds, 0, MAX_STAGE_REST_SECONDS)
+    isWholeNumberIn(sets.restBetweenSetsSeconds, 0, MAX_STAGE_REST_SECONDS) &&
+    (sets.asRounds === undefined || sets.asRounds === true)
   );
 }
 

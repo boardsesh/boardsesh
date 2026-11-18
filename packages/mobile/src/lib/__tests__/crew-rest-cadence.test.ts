@@ -340,6 +340,65 @@ describe('inputs', () => {
     expect(configure('KEEP', null)).toMatchObject({ action: 'CONFIGURE', anchor: 'KEEP' });
   });
 
+  it('keeps a crewmate’s tick on the climb now on the wall when only the rest length changes inside a stage', () => {
+    // A partner 4x4's round boundary: the next climb of the stage takes the round rest instead of the climb rest.
+    armRestTimer('afterTick', T0, SESSION);
+    const climbRest: OwnRestPacing = {
+      mode: 'afterTick',
+      targetSeconds: 30,
+      autoAdvance: true,
+      advanceOn: 'tick',
+      source: 'stage',
+    };
+    const roundRest: OwnRestPacing = { ...climbRest, targetSeconds: 180 };
+    const onTheWall = (crewOverrides: Partial<SessionRestCadenceWire>) => ({
+      ...getRestTimerState(),
+      stagePacing: {
+        sessionId: SESSION,
+        stageId: 'wk:1',
+        kind: 'fourByFour' as const,
+        queueItemUuid: 'round-1-d',
+        mode: 'afterTick' as const,
+        targetSeconds: 180,
+        advanceOn: 'tick' as const,
+        closesSet: false,
+        closesRound: true as const,
+        stagePacing: { mode: 'afterTick' as const, restSeconds: 30, advanceOn: 'tick' as const },
+      },
+      crew: parseCrewRestCadence(
+        SESSION,
+        1,
+        wireClock({ targetSeconds: 30, advanceOn: 'tick', source: 'stage', ...crewOverrides }),
+      ),
+    });
+    const configure = (state: ReturnType<typeof onTheWall>, own: OwnRestPacing = roundRest) =>
+      buildConfigureInput({
+        own,
+        previous: climbRest,
+        anchor: 'KEEP_FRESH_TICK',
+        boundaryAtMs: null,
+        state,
+        nowMs: T0,
+      });
+
+    // A crewmate already logged the climb on the wall: KEEP carries the round rest and keeps their anchor.
+    expect(configure(onTheWall({ lastTickQueueItemUuid: 'round-1-d', lastTickStatus: 'attempt' }))).toEqual({
+      action: 'CONFIGURE',
+      config: toCrewConfigInput(roundRest),
+      anchor: 'KEEP',
+    });
+    // The FIRE that moved the wall cleared the anchor: KEEP, and the clock waits for the tick.
+    expect(configure(onTheWall({ anchorAt: null }))).toMatchObject({ anchor: 'KEEP' });
+    // The anchor is the last climb's (the wall moved by Next): it goes, as before.
+    expect(configure(onTheWall({ lastTickQueueItemUuid: 'round-1-c', lastTickStatus: 'send' }))).toMatchObject({
+      anchor: 'CLEAR',
+    });
+    // Anything more than the rest length changing is a boundary of its own: CLEAR.
+    expect(configure(onTheWall({ anchorAt: null }), { ...roundRest, advanceOn: 'send' })).toMatchObject({
+      anchor: 'CLEAR',
+    });
+  });
+
   it('moves the anchor when the mode changes, whatever was asked', () => {
     armRestTimer('afterTick', T0, SESSION);
     const fromOnTheMinute = buildConfigureInput({

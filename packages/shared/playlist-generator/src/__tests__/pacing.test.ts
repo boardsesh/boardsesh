@@ -312,6 +312,19 @@ describe('a partner app’s 4x4 rounds (#6734)', () => {
     return (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send') && pacing.sets === undefined;
   }
 
+  it('reads a 4x4 of one climb as a set whose reps are rounds, and only with a true flag', () => {
+    const oneClimb = {
+      mode: 'afterTick',
+      restSeconds: 180,
+      advanceOn: 'set',
+      sets: { repsPerSet: 4, restBetweenSetsSeconds: 30, asRounds: true },
+    };
+    expect(isWorkoutStagePacing(oneClimb)).toBe(true);
+    expect(isWorkoutStagePacing({ ...oneClimb, sets: { ...oneClimb.sets, asRounds: false } })).toBe(false);
+    expect(stageRestSeconds(oneClimb as WorkoutStagePacing, false)).toBe(180);
+    expect(stageRestSeconds(oneClimb as WorkoutStagePacing, true)).toBe(30);
+  });
+
   it('loses its pacing on a bundle from before rounds, which runs the climbs on the climber’s own rests', () => {
     expect(isPacingForABundleBeforeRounds(rounds)).toBe(false);
     expect(isPacingForABundleBeforeRounds(pacingForOptions(fourByFour))).toBe(true);

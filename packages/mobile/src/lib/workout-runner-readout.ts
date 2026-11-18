@@ -124,13 +124,20 @@ export type WorkoutRunnerRest = {
    * holds the wall.
    */
   staysOnClimb: boolean;
-  /** A 4x4 set with reps left: the rep this rest leads to. Null everywhere else. */
-  nextRep: { number: number; total: number } | null;
+  /**
+   * A 4x4 set with reps left: the rep this rest leads to. Null everywhere else.
+   * `asRounds`: a partner app's 4x4 of one climb, whose reps are its rounds.
+   */
+  nextRep: { number: number; total: number; asRounds?: true } | null;
   /** This phone may move the wall (`canAdvanceQueue`). In a crew, only the phone holding it does. */
   drivesWall: boolean;
   /** On the minute, on the last staged climb: its beat ends the workout. */
   endsWorkout: boolean;
-  /** Every rep of the current 4x4 set is logged, so this is the set rest. */
+  /**
+   * Every rep of the current 4x4 set is logged, so this is the set rest. False
+   * on a partner app's 4x4 of one climb (`asRounds`): its last rep ends the
+   * block, on its climb rest.
+   */
   closesSet: boolean;
   /** A partner app's 4x4 rounds: the current climb ends its round, so this is the round rest. */
   closesRound: boolean;
@@ -185,6 +192,11 @@ export function stageRepsPerSet(stage: Pick<WorkoutRunStage, 'pacing'> | undefin
   return stage?.pacing?.mode === 'afterTick' ? (stage.pacing.sets?.repsPerSet ?? null) : null;
 }
 
+/** A partner app's 4x4 of one climb: its set's reps are the partner's rounds (`StageSetPacing.asRounds`). */
+export function stageRepsAreRounds(stage: Pick<WorkoutRunStage, 'pacing'> | undefined): boolean {
+  return stage?.pacing?.mode === 'afterTick' && stage.pacing.sets?.asRounds === true;
+}
+
 function logByQueueItem(log: readonly WorkoutTickLogEntry[]): Map<string, ClimbLog> {
   const byUuid = new Map<string, ClimbLog>();
   for (const { queueItemUuid, status } of log) {
@@ -214,7 +226,8 @@ export function workoutClimbGo(
   const repsPerSet = stageRepsPerSet(stage);
   if (repsPerSet !== null) {
     const repsLogged = countWorkoutRunTicks(log, queueItemUuid);
-    return { kind: 'rep', number: Math.min(repsLogged + 1, repsPerSet), total: repsPerSet };
+    const go: WorkoutClimbGo = { kind: 'rep', number: Math.min(repsLogged + 1, repsPerSet), total: repsPerSet };
+    return stageRepsAreRounds(stage) ? { ...go, asRounds: true } : go;
   }
   if (!stageHoldsUntilSent(stage)) return null;
   let attempts = 0;
@@ -405,10 +418,21 @@ export function describeWorkoutRunner({
         advanceOn: stagePacing.advanceOn,
         advances: canAdvanceQueue && !staysOnClimb,
         staysOnClimb,
-        nextRep: repsLeft === null ? null : { number: repsLeft.logged + 1, total: repsLeft.perSet },
+        nextRep:
+          repsLeft === null
+            ? null
+            : {
+                number: repsLeft.logged + 1,
+                total: repsLeft.perSet,
+                ...(stagePacing.stagePacing.mode === 'afterTick' && stagePacing.stagePacing.sets?.asRounds === true
+                  ? { asRounds: true as const }
+                  : {}),
+              },
         drivesWall: canAdvanceQueue,
         endsWorkout: onTheMinute && onLastStaged,
-        closesSet: stagePacing.closesSet,
+        closesSet:
+          stagePacing.closesSet &&
+          !(stagePacing.stagePacing.mode === 'afterTick' && stagePacing.stagePacing.sets?.asRounds === true),
         closesRound: stagePacing.closesRound === true,
         armed: rest.armed,
         paused: rest.armed && !rest.isRunning,

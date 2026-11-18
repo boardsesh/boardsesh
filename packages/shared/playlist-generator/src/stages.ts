@@ -439,7 +439,8 @@ export type WorkoutRunPosition = {
 /**
  * A climb's place in a partner app's 4x4 rounds: round `number` of `total`,
  * climb `climb` of the `climbs` that round holds. `closesRound`: the climb is
- * its round's last, so the round rest follows it.
+ * its round's last (in `locateInRun`, its last still queued), so the round
+ * rest follows it unless no later round is left.
  */
 export type WorkoutRunRound = {
   number: number;
@@ -450,11 +451,10 @@ export type WorkoutRunRound = {
 };
 
 /**
- * Where the climb at 1-based `positionInStage` of a stage holding `stageSize`
- * queued climbs sits in its rounds of `climbsPerRound`. Like a 4x4's sets, it
- * follows the queue: the stage's climbs in queue order are round 1, then round
- * 2, and so on. A last round left short (a climb removed, or cut by the queue's
- * cap) holds what is left, so its last climb still closes it.
+ * Where the climb at 1-based `positionInStage` of a stage of `stageSize` climbs
+ * sits in its rounds of `climbsPerRound`, as planned: the run stage's climbs in
+ * order are round 1, then round 2, and so on. A last round planned short (cut
+ * by the queue's cap) holds what is left, so its last climb still closes it.
  */
 export const workoutRunRound = (
   positionInStage: number,
@@ -468,6 +468,29 @@ export const workoutRunRound = (
   const climbs = Math.min(perRound, size - (number - 1) * perRound);
   const climb = position - (number - 1) * perRound;
   return { number, total: Math.ceil(size / perRound), climb, climbs, closesRound: climb === climbs };
+};
+
+/**
+ * The round of `currentUuid`, anchored on its place in the run stage's own
+ * climbs (`itemUuids`, never pruned on the phone), not among the queued ones:
+ * a climb taken out of the queue, or trimmed off its front, leaves a gap in its
+ * round instead of moving every later round. The climb closes its round when
+ * no other climb of that round still in the queue comes after it.
+ */
+const roundInRunStage = (
+  itemUuids: readonly string[],
+  currentUuid: string,
+  climbsPerRound: number,
+  queuePositionByUuid: ReadonlyMap<string, number>,
+): WorkoutRunRound => {
+  const round = workoutRunRound(itemUuids.indexOf(currentUuid) + 1, itemUuids.length, climbsPerRound);
+  const perRound = Math.max(1, Math.floor(climbsPerRound));
+  const roundStart = (round.number - 1) * perRound;
+  const currentQueuePosition = queuePositionByUuid.get(currentUuid) ?? -1;
+  const laterInRound = itemUuids
+    .slice(roundStart, roundStart + perRound)
+    .some((uuid) => uuid !== currentUuid && (queuePositionByUuid.get(uuid) ?? -1) > currentQueuePosition);
+  return { ...round, closesRound: !laterInRound };
 };
 
 /**
@@ -516,8 +539,9 @@ export const locateInRun = (
     };
     if (queuedStage.kind === 'warmUp' && queuedStage.coolDown === true) position.isCoolDown = true;
     const rounds = queuedStage.pacing?.mode === 'afterTick' ? queuedStage.pacing.rounds : undefined;
-    if (rounds !== undefined) {
-      position.round = workoutRunRound(position.positionInStage, position.stageSize, rounds.climbsPerRound);
+    const runStage = run.stages.find((stage) => stage.id === queuedStage.id);
+    if (rounds !== undefined && runStage !== undefined) {
+      position.round = roundInRunStage(runStage.itemUuids, currentUuid, rounds.climbsPerRound, queuePositionByUuid);
     }
     return position;
   }

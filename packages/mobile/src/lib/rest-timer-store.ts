@@ -201,7 +201,14 @@ export type LocalRestTimerAction =
   | { type: 'fired'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter; spentAdvanceOnce?: true }
   | { type: 'reanchored'; sessionId: string | null }
   /** `atMs`: the instant an `anchorNow` transition started the beat at, so the crew's NOW counts from it. */
-  | { type: 'stagePacing'; sessionId: string | null; transition: RestTimerPacingTransition; atMs: number }
+  /** `withinStage`: the climb on the wall changed inside one workout stage (a partner 4x4's next round, say). */
+  | {
+      type: 'stagePacing';
+      sessionId: string | null;
+      transition: RestTimerPacingTransition;
+      atMs: number;
+      withinStage?: true;
+    }
   /** The climber changed the crew clock from the timer's controls: `crewPacingDraft` holds what to send. */
   | { type: 'crewPacingEdited'; sessionId: string | null };
 
@@ -693,9 +700,19 @@ export function applyRestTimerStagePacing(
   transition: RestTimerPacingTransition,
 ): void {
   if (sameStagePacing(state.stagePacing, next)) return;
+  const previous = state.stagePacing;
+  const withinStage =
+    previous !== null && next !== null && previous.sessionId === next.sessionId && previous.stageId === next.stageId;
+  const action: LocalRestTimerAction = {
+    type: 'stagePacing',
+    sessionId: state.armedForSessionId,
+    transition,
+    atMs: nowMs,
+    ...(withinStage ? { withinStage: true as const } : {}),
+  };
   if (!state.armed || transition === 'none') {
     setState({ ...state, stagePacing: next });
-    if (state.armed) announce({ type: 'stagePacing', sessionId: state.armedForSessionId, transition, atMs: nowMs });
+    if (state.armed) announce(action);
     return;
   }
   setState({
@@ -705,7 +722,7 @@ export function applyRestTimerStagePacing(
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
   });
-  announce({ type: 'stagePacing', sessionId: state.armedForSessionId, transition, atMs: nowMs });
+  announce(action);
 }
 
 function sameCrewTimerConfig(left: CrewRestCadence['config'], right: CrewRestCadence['config']): boolean {

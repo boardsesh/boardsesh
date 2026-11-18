@@ -121,23 +121,36 @@ const runsAsOneSet = (block: FourByFourBlock): boolean => block.climbCount === 1
 /**
  * How a partner `fourByFour` runs (#6734, workoutbash1 D1): as the partner wrote
  * it, `climbCount` climbs one go each, then the same climbs again for each of
- * its `rounds`, with the rest between climbs after every climb and the rest
- * between rounds after each round's last. Any logged go moves the wall on, a
- * fall included: a round is climbed straight through, one go a climb. A 4x4 of
- * one climb is one set (`runsAsOneSet`).
+ * its `rounds`, with the rest between rounds after each round's last climb and
+ * the rest between climbs after every other climb, the last round's last
+ * included: "between rounds" is none after the last one, so the block ends on
+ * its climb rest, as every block ends on its own rest after its last climb.
+ * Any logged go moves the wall on, a fall included: a round is climbed straight
+ * through, one go a climb.
+ *
+ * `filledClimbsPerRound`: how many different climbs round 1 actually got. A
+ * board short of climbs near the grade fills fewer than `climbCount`, and every
+ * round repeats only those, so the rounds are that long.
+ *
+ * A 4x4 of one climb is one set (`runsAsOneSet`) whose reps are its rounds
+ * (`asRounds`): the round rest between them, the climb rest after the last.
  */
-export function partnerFourByFourPacing(block: FourByFourBlock): WorkoutStagePacing {
+export function partnerFourByFourPacing(block: FourByFourBlock, filledClimbsPerRound?: number): WorkoutStagePacing {
   if (runsAsOneSet(block)) {
     const repsPerSet = Math.min(block.rounds, MAX_STAGE_REPS_PER_SET);
     return {
       mode: 'afterTick',
       restSeconds: block.restBetweenRoundsSeconds,
       advanceOn: 'set',
-      sets: { repsPerSet, restBetweenSetsSeconds: block.restBetweenRoundsSeconds },
+      sets: { repsPerSet, restBetweenSetsSeconds: block.restBetweenClimbsSeconds, asRounds: true },
     };
   }
+  const climbsPerRound =
+    filledClimbsPerRound !== undefined && filledClimbsPerRound >= 1
+      ? Math.min(filledClimbsPerRound, block.climbCount)
+      : block.climbCount;
   return roundPacing({
-    climbsPerRound: block.climbCount,
+    climbsPerRound,
     restBetweenClimbsSeconds: block.restBetweenClimbsSeconds,
     restBetweenRoundsSeconds: block.restBetweenRoundsSeconds,
   });

@@ -104,15 +104,17 @@ function climbTime(pacing: WorkoutStagePacing | undefined): { seconds: number; r
 /**
  * The time a stage of `climbCount` queued climbs takes, and the rest at its end.
  * A partner app's 4x4 rounds is one go per climb, with the round rest after
- * each round's last climb (`workoutRunRound`) and the climb rest after the rest.
+ * each round's last climb but the last (`workoutRunRound`) and the climb rest
+ * after every other climb.
  */
 function stageTime(pacing: WorkoutStagePacing | undefined, climbCount: number): { seconds: number; restAfter: number } {
   if (pacing?.mode === 'afterTick' && pacing.rounds !== undefined && climbCount > 0) {
     let seconds = 0;
     let restAfter = 0;
     for (let position = 1; position <= climbCount; position++) {
+      // No round rest after the last round: the stage ends on its climb rest.
       const { closesRound } = workoutRunRound(position, climbCount, pacing.rounds.climbsPerRound);
-      restAfter = stageRestSeconds(pacing, closesRound);
+      restAfter = stageRestSeconds(pacing, closesRound && position < climbCount);
       seconds += ESTIMATE_SECONDS_PER_TRY + restAfter;
     }
     return { seconds, restAfter };

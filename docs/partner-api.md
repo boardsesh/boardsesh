@@ -701,15 +701,21 @@ can say so in your UI.
 
 A `fourByFour` block runs as you wrote it
 ([#6734](https://github.com/boardsesh/boardsesh/issues/6734)): Boardsesh picks
-`climbCount` climbs at `targetGrade` and queues them, then queues the same
+`climbCount` climbs around `targetGrade` and queues them, then queues the same
 climbs again for each of the `rounds`, so 4 climbs and 4 rounds is 16 goes,
 A B C D four times. Each climb is one go: any logged tick, a fall included,
-moves the wall on. The rest timer runs `restBetweenClimbsSeconds` after a
-climb and `restBetweenRoundsSeconds` after a round's last climb; a rest of `0`
-still leaves 10 seconds to change climbs. With `climbCount: 1` the one climb
-stays on the wall and is climbed once per round, with the round rest between
-goes. Every go is its own tick, on the same climb in each round. This is a
-different shape from the app's own 4x4, which is reps × sets on one climb.
+moves the wall on. The rest timer runs `restBetweenRoundsSeconds` after a
+round's last climb and `restBetweenClimbsSeconds` after every other climb. The
+last round's last climb is followed by `restBetweenClimbsSeconds`, not the
+round rest: there is no round after it, and like every block, the block ends
+on its own rest before the next one starts. A rest of `0` still leaves 10
+seconds to change climbs. With `climbCount: 1` the one climb stays on the wall
+and is climbed once per round, with the round rest between goes. Boardsesh
+picks the climbs across the target grade's V band and borrows nearby grades
+when the board runs short; if it still finds fewer than `climbCount`, each
+round is the climbs it found. Every go is its own tick, on the same climb in
+each round. This is a different shape from the app's own 4x4, which is reps ×
+sets on one climb.
 
 Climbers on an app version from before this still get the card. For that
 reason `support` keeps reporting `freeform` for `fourByFour` for now; it

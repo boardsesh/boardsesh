@@ -31,14 +31,17 @@ import { resolveWorkoutRestCard } from '../../components/play-drawer/workout-run
 const kilterGrades = getGradesForBoard('kilter');
 const board = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as UserBoard;
 
-const fetchPool: FetchGradePool = async (grade: number) => ({
-  climbs: Array.from(
-    { length: 10 },
-    (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}`, angle: 40 }) as Climb,
-  ),
-  topUpTiers: NO_TOP_UPS,
-  exhausted: true,
-});
+/** A catalogue holding `countAt(grade)` climbs at each grade (10 everywhere by default). */
+const catalogue =
+  (countAt: (grade: number) => number = () => 10): FetchGradePool =>
+  async (grade: number) => ({
+    climbs: Array.from(
+      { length: countAt(grade) },
+      (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}`, angle: 40 }) as Climb,
+    ),
+    topUpTiers: NO_TOP_UPS,
+    exhausted: true,
+  });
 
 const fourByFour = (
   fields: Partial<Extract<CreateWorkout['blocks'][number], { type: 'fourByFour' }>> = {},
@@ -58,7 +61,7 @@ const fourByFour = (
   ],
 });
 
-async function queueWorkout(spec: CreateWorkout) {
+async function queueWorkout(spec: CreateWorkout, fetchPool: FetchGradePool = catalogue()) {
   return buildPartnerWorkoutPreview({
     spec,
     partnerPlan: buildPartnerWorkoutPlan(spec, kilterGrades, 'wk_four'),
@@ -103,22 +106,87 @@ describe('a partner 4x4 in the queue', () => {
     ]);
   });
 
-  it('runs a 4x4 of one climb as one set on one queue item, a rep per round', async () => {
+  it('runs a 4x4 of one climb as one set on one queue item, a rep per round, read in rounds', async () => {
     const { items, run } = await queueWorkout(fourByFour({ climbCount: 1, rounds: 4 }));
     expect(items).toHaveLength(1);
+    // The round rest between rounds; after the last round, the climb rest, as the block ends.
     expect(run.stages[0].pacing).toEqual({
       mode: 'afterTick',
       restSeconds: 180,
       advanceOn: 'set',
-      sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+      sets: { repsPerSet: 4, restBetweenSetsSeconds: 30, asRounds: true },
     });
+    const queue = [items[0].uuid];
+    const position = locateInRun(run, queue[0], queue);
+    if (!position) throw new Error('expected a position');
+    const log: WorkoutTickLogEntry[] = [
+      { queueItemUuid: queue[0], status: 'attempt', climbedAt: '2026-11-18T12:00:00Z' },
+    ];
+    const go = workoutClimbGo(run, position.stageId, queue[0], log);
+    expect(go).toEqual({ kind: 'rep', number: 2, total: 4, asRounds: true });
+    expect(formatWorkoutStageParts(position, go, t)).toEqual({
+      stage: 'mobile.session.preGeneratorFourByFour',
+      count: 'mobile.session.workoutStageRoundOnlyCount(round=2,rounds=4)',
+      accessibilityLabel:
+        'mobile.session.workoutStageTopBarRoundOnlyAria(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=4)',
+    });
+  });
+
+  it('leads a 4x4 of one climb back to it for the next round, in rounds', async () => {
+    const { items, run } = await queueWorkout(fourByFour({ climbCount: 1, rounds: 4 }));
+    const uuid = items[0].uuid;
+    const log: WorkoutTickLogEntry[] = [{ queueItemUuid: uuid, status: 'attempt', climbedAt: '2026-11-18T12:00:00Z' }];
+    const readout = describeWorkoutRunner({
+      run,
+      queueUuids: [uuid],
+      currentUuid: uuid,
+      nextUuid: null,
+      log,
+      rest: {
+        armed: true,
+        isRunning: true,
+        anchorMs: 1000,
+        lastTick: { status: 'attempt', queueItemUuid: uuid },
+        stagePacing: resolveStageRestPacing({
+          sessionId: 'session-1',
+          run,
+          position: locateInRun(run, uuid, [uuid]),
+          queueItemUuid: uuid,
+          repsLogged: 1,
+        }),
+        queueEnded: false,
+      },
+      canAdvanceQueue: true,
+    });
+    expect(readout?.rest).toMatchObject({ targetSeconds: 180, nextRep: { number: 2, total: 4, asRounds: true } });
+    expect(resolveWorkoutRestCard({ readout: readout!, nextItem: null, skipAllowed: true })?.caption).toEqual({
+      kind: 'nextRound',
+      round: 2,
+      rounds: 4,
+    });
+  });
+
+  it('reads a single climb climbed once as the block alone, with no "1 of 1"', async () => {
+    const { items, run } = await queueWorkout(fourByFour({ climbCount: 1, rounds: 1 }));
+    const queue = items.map((item) => item.uuid);
+    const position = locateInRun(run, queue[0], queue);
+    if (!position) throw new Error('expected a position');
+    expect(formatWorkoutStageParts(position, null, t)).toEqual({
+      stage: 'mobile.session.preGeneratorFourByFour',
+      count: null,
+      accessibilityLabel: 'mobile.session.workoutStageTopBarStageAria(stage=mobile.session.preGeneratorFourByFour)',
+    });
+    expect(formatWorkoutStagePositionWithGo(position, null, t)).toBe('mobile.session.preGeneratorFourByFour');
   });
 });
 
 describe('a partner 4x4 on the wall', () => {
-  async function onTheWall() {
-    const { items, run } = await queueWorkout(fourByFour());
-    const queue = items.map((item) => item.uuid);
+  async function onTheWall(
+    fetchPool?: FetchGradePool,
+    leaveOut: (uuid: string, position: number) => boolean = () => false,
+  ) {
+    const { items, run } = await queueWorkout(fourByFour(), fetchPool);
+    const queue = items.map((item) => item.uuid).filter((uuid, position) => !leaveOut(uuid, position));
     const pacingAt = (position: number, log: readonly WorkoutTickLogEntry[] = []) => {
       const uuid = queue[position - 1];
       return resolveStageRestPacing({
@@ -135,9 +203,38 @@ describe('a partner 4x4 on the wall', () => {
   it('rests between climbs after a climb, and between rounds after a round’s last climb', async () => {
     const { pacingAt } = await onTheWall();
     const rests = Array.from({ length: 12 }, (_, index) => pacingAt(index + 1)?.targetSeconds);
-    expect(rests).toEqual([30, 30, 30, 180, 30, 30, 30, 180, 30, 30, 30, 180]);
+    // No round rest after the last round: the block ends on its climb rest.
+    expect(rests).toEqual([30, 30, 30, 180, 30, 30, 30, 180, 30, 30, 30, 30]);
     expect(pacingAt(4)).toMatchObject({ advanceOn: 'tick', closesRound: true, closesSet: false });
     expect(pacingAt(3)?.closesRound).toBeUndefined();
+    // The last round's last climb ends the block: no round rest, no "Round 3 done".
+    expect(pacingAt(12)?.closesRound).toBeUndefined();
+  });
+
+  it('counts rounds from the climbs it found: three climbs for a 4-climb round', async () => {
+    // Only three climbs near 6B: every round is those three, so the round rest follows each third climb.
+    const { items, queue, pacingAt } = await onTheWall(catalogue((grade) => (grade === 18 ? 3 : 0)));
+    expect(items.map((item) => item.climb.uuid)).toEqual([
+      'g18-0',
+      'g18-1',
+      'g18-2',
+      'g18-0',
+      'g18-1',
+      'g18-2',
+      'g18-0',
+      'g18-1',
+      'g18-2',
+    ]);
+    const rests = queue.map((_uuid, index) => pacingAt(index + 1)?.targetSeconds);
+    expect(rests).toEqual([30, 30, 180, 30, 30, 180, 30, 30, 30]);
+  });
+
+  it('keeps later rounds in place when a climb is taken out of the queue', async () => {
+    // Round 2's B (the 6th climb) is removed: round 2 now ends on D, round 3 is untouched.
+    const { queue, pacingAt } = await onTheWall(undefined, (_uuid, position) => position === 5);
+    expect(queue).toHaveLength(11);
+    const rests = queue.map((_uuid, index) => pacingAt(index + 1)?.targetSeconds);
+    expect(rests).toEqual([30, 30, 30, 180, 30, 30, 180, 30, 30, 30, 30]);
   });
 
   it('moves on after any logged go, a fall included: a round is one go a climb', async () => {
@@ -155,19 +252,19 @@ describe('a partner 4x4 on the wall', () => {
     }
   });
 
-  it('reads "Round 2 of 3 · Climb 3 of 4" in the player and on the card', async () => {
+  it('reads "Climb 3 of 4 · Round 2 of 3" in the player and on the card, inner unit first', async () => {
     const { run, queue } = await onTheWall();
     const position = locateInRun(run, queue[6], queue);
     if (!position) throw new Error('expected a position');
     expect(workoutClimbGo(run, position.stageId, queue[6], [])).toBeNull();
     expect(formatWorkoutStageParts(position, null, t)).toEqual({
       stage: 'mobile.session.preGeneratorFourByFour',
-      count: 'mobile.session.workoutStageRoundCount(round=2,rounds=3,climb=3,climbs=4)',
+      count: 'mobile.session.workoutStageRoundCount(climb=3,climbs=4,round=2,rounds=3)',
       accessibilityLabel:
-        'mobile.session.workoutStageTopBarRoundAria(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=3,climb=3,climbs=4)',
+        'mobile.session.workoutStageTopBarRoundAria(stage=mobile.session.preGeneratorFourByFour,climb=3,climbs=4,round=2,rounds=3)',
     });
     expect(formatWorkoutStagePositionWithGo(position, null, t)).toBe(
-      'mobile.session.workoutStageRoundPosition(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=3,climb=3,climbs=4)',
+      'mobile.session.workoutStageRoundPosition(stage=mobile.session.preGeneratorFourByFour,climb=3,climbs=4,round=2,rounds=3)',
     );
   });
 

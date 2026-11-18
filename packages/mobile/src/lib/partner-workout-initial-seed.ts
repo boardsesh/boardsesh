@@ -109,7 +109,13 @@ export function restorePartnerWorkoutRun(
       ...(stage.targetGrade === undefined ? {} : { targetGrade: stage.targetGrade }),
       ...(stage.coolDown ? { coolDown: true as const } : {}),
       pacing:
-        (partner && partnerBlockPacing(partnerBlockForStage(partner.spec, partner.workoutId, stage.id))) ??
+        // Round 1's climbs are different (the preview never picks one twice) and
+        // later rounds copy them, so the distinct climbs are a round's length.
+        (partner &&
+          partnerBlockPacing(
+            partnerBlockForStage(partner.spec, partner.workoutId, stage.id),
+            new Set(stage.items.map((item) => item.climbUuid)).size,
+          )) ??
         savedPacing(stage),
     });
     for (const item of stage.items)

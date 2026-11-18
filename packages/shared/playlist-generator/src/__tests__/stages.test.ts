@@ -1291,13 +1291,22 @@ describe('locateInRun on a partner app’s 4x4 rounds (#6734)', () => {
     });
   });
 
-  it('follows the queue: a removed climb shortens the last round, which still closes', () => {
-    const shortQueue = ['a1', 'b1', 'a2', 'b2', 'a3'];
-    expect(locateInRun(ROUNDS_RUN, 'a3', shortQueue)?.round).toEqual({
-      number: 3,
+  it('keeps every round in place when a climb leaves the queue: its round closes on the last one left', () => {
+    // Round 2's B removed: round 2 closes on A, round 3 still holds A and B.
+    const gapQueue = ['a1', 'b1', 'a2', 'a3', 'b3'];
+    expect(locateInRun(ROUNDS_RUN, 'a2', gapQueue)?.round).toEqual({
+      number: 2,
       total: 3,
       climb: 1,
-      climbs: 1,
+      climbs: 2,
+      closesRound: true,
+    });
+    expect(locateInRun(ROUNDS_RUN, 'a3', gapQueue)?.round).toMatchObject({ number: 3, climb: 1, closesRound: false });
+    expect(locateInRun(ROUNDS_RUN, 'b3', gapQueue)?.round).toMatchObject({ number: 3, climb: 2, closesRound: true });
+    // Trimmed off the front (history), the later rounds keep their numbers.
+    expect(locateInRun(ROUNDS_RUN, 'b2', ['a2', 'b2', 'a3', 'b3'])?.round).toMatchObject({
+      number: 2,
+      climb: 2,
       closesRound: true,
     });
   });

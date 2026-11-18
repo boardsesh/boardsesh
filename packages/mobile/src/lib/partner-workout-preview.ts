@@ -51,9 +51,13 @@ type PartnerPlan = { plan: WorkoutPlan; slots: readonly PartnerSlot[] };
  *   changeover after every tick.
  * - `fourByFour` (D1): its rounds and two rests (`partnerFourByFourPacing`),
  *   always, so the stage never runs the app's own 4x4 sets its options name.
+ *   `filledClimbsPerRound` is how many different climbs round 1 got.
  */
-export function partnerBlockPacing(block: CreateWorkout['blocks'][number] | undefined): WorkoutStagePacing | undefined {
-  if (block?.type === 'fourByFour') return partnerFourByFourPacing(block);
+export function partnerBlockPacing(
+  block: CreateWorkout['blocks'][number] | undefined,
+  filledClimbsPerRound?: number,
+): WorkoutStagePacing | undefined {
+  if (block?.type === 'fourByFour') return partnerFourByFourPacing(block, filledClimbsPerRound);
   if (!block || !('restSeconds' in block) || !block.restSeconds) return undefined;
   return { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'send' };
 }
@@ -77,7 +81,11 @@ function partnerRunFor(rows: readonly PreviewItem[], spec: CreateWorkout, plan: 
     plan,
   );
   for (const stage of run.stages) {
-    const pacing = partnerBlockPacing(spec.blocks[Number(stage.id.split(':').at(-1))]);
+    // Round 1's climbs are the stage's rows that repeat nothing; every later round copies them.
+    const filledClimbsPerRound = rows.filter(
+      (row) => row.slot.stageId === stage.id && row.slot.repeatOfIndex === undefined,
+    ).length;
+    const pacing = partnerBlockPacing(spec.blocks[Number(stage.id.split(':').at(-1))], filledClimbsPerRound);
     if (pacing) stage.pacing = pacing;
   }
   return run;

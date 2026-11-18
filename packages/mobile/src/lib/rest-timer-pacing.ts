@@ -64,8 +64,9 @@ export type RestTimerStagePacing = {
   /** A 4x4 set's every rep is logged, so this is the set rest and then the wall moves on. */
   closesSet: boolean;
   /**
-   * A partner app's 4x4 rounds: the climb on the wall is its round's last, so
-   * the rest after its go is the round rest. Absent everywhere else.
+   * A partner app's 4x4 rounds: the climb on the wall is its round's last and
+   * another round follows, so the rest after its go is the round rest. Absent
+   * everywhere else.
    */
   closesRound?: true;
   /** Set on a 4x4 only: the climb stays on the wall until `logged` reaches `perSet`. */
@@ -288,9 +289,10 @@ export function resolveStageRestPacing({
   if (!stage || !stagePacing) return null;
   const sets = stagePacing.mode === 'afterTick' ? stagePacing.sets : undefined;
   const closesSet = sets !== undefined && repsLogged >= sets.repsPerSet;
-  // Rounds follow the climb's place in the queue (`locateInRun`), not its ticks:
-  // each climb of a round is one go.
-  const closesRound = position.round?.closesRound === true;
+  // Rounds follow the climb's place in the run (`locateInRun`), not its ticks:
+  // each climb of a round is one go. No round rest after the last round: with
+  // nothing of the stage left after it, the stage ends on its climb rest.
+  const closesRound = position.round?.closesRound === true && position.remainingInStage > 0;
   const restSeconds = stageRestSeconds(stagePacing, closesSet || closesRound);
   return {
     sessionId,
@@ -335,6 +337,7 @@ function sameWorkoutStagePacing(left: WorkoutStagePacing, right: WorkoutStagePac
     left.advanceOn === right.advanceOn &&
     left.sets?.repsPerSet === right.sets?.repsPerSet &&
     left.sets?.restBetweenSetsSeconds === right.sets?.restBetweenSetsSeconds &&
+    left.sets?.asRounds === right.sets?.asRounds &&
     left.rounds?.climbsPerRound === right.rounds?.climbsPerRound &&
     left.rounds?.restBetweenRoundsSeconds === right.rounds?.restBetweenRoundsSeconds
   );

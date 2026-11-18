@@ -409,7 +409,9 @@ function RestLine({ rest, nextItem }: { rest: WorkoutRunnerRest; nextItem: Climb
   const display = useRestTimerDisplay();
   const nextName = nextItem?.climb.name ?? null;
   const caption = rest.nextRep
-    ? t('mobile.workoutRunner.thenRep', { number: rest.nextRep.number, total: rest.nextRep.total })
+    ? rest.nextRep.asRounds === true
+      ? t('mobile.workoutRunner.thenRound', { number: rest.nextRep.number, total: rest.nextRep.total })
+      : t('mobile.workoutRunner.thenRep', { number: rest.nextRep.number, total: rest.nextRep.total })
     : rest.staysOnClimb
       ? t('mobile.workoutRunner.thenTryAgain')
       : !rest.drivesWall

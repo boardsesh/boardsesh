@@ -37,7 +37,9 @@ export function RestTimerWorkoutPacingRow({ stage, inset = true }: RestTimerWork
     driverBlockedReason !== null
       ? t('mobile.restTimer.autoAdvanceBlocked')
       : stage.reps !== undefined
-        ? t('mobile.restTimer.workoutPacingAdvanceSet')
+        ? stage.stagePacing.mode === 'afterTick' && stage.stagePacing.sets?.asRounds === true
+          ? t('mobile.restTimer.workoutPacingAdvanceOneClimbRounds')
+          : t('mobile.restTimer.workoutPacingAdvanceSet')
         : stage.advanceOn === 'send'
           ? t('mobile.restTimer.workoutPacingAdvanceSend')
           : stage.advanceOn === 'tick'
@@ -79,6 +81,13 @@ function pacingSummary(stage: RestTimerStagePacing, stageName: string, t: Transl
       count: stagePacing.rounds.climbsPerRound,
       climbRest: formatRestLength(stageRestSeconds(stagePacing, false)),
       roundRest: formatRestLength(stageRestSeconds(stagePacing, true)),
+    });
+  }
+  if (stagePacing.sets?.asRounds === true) {
+    return t('mobile.restTimer.workoutPacingOneClimbRounds', {
+      stage: stageName,
+      count: stagePacing.sets.repsPerSet,
+      roundRest: formatRestLength(stageRestSeconds(stagePacing, false)),
     });
   }
   if (stagePacing.sets !== undefined) {
