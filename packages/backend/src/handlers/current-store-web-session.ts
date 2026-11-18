@@ -36,7 +36,9 @@ import {
   accessWebSession,
   bridgeWebSession,
   presentedWebCredential,
+  profileDisplayReader,
   readWebSession,
+  type ProfileDisplayReader,
   signOutWebSession,
   type WebSessionSignOut,
 } from '../auth/authority/web-session';
@@ -85,6 +87,20 @@ function bridgeKeys() {
  * command with `webSession`. No CORS, cookie or public token reaches these,
  * and no reply sets a cookie: www owns the cookie.
  */
+/**
+ * The session read's profile fields, on the backend's ordinary application
+ * connection. Loaded on first use, so a test that injects its own database
+ * never builds the shared one; a failure to load it answers without a profile.
+ */
+const applicationProfileDisplay: ProfileDisplayReader = async (userId) => {
+  try {
+    const { db } = await import('../db/client');
+    return await profileDisplayReader(db)(userId);
+  } catch {
+    return undefined;
+  }
+};
+
 export async function handleCurrentStoreWebSession(
   request: IncomingMessage,
   response: ServerResponse,
@@ -130,7 +146,14 @@ export async function handleCurrentStoreWebSession(
     let reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionBridgeReply | WebSessionAccessReply;
     if (command.operation === 'session') {
       // Reads only: nothing is rolled, bridged or stamped.
-      const read = await readWebSession(commandDatabase, presentedWebCredential(command.payload.presented));
+      // The profile's display fields come from the application connection: the
+      // credential LOGIN may not read user_profiles, and they are cosmetic.
+      const read = await readWebSession(
+        commandDatabase,
+        presentedWebCredential(command.payload.presented),
+        new Date(),
+        database ? profileDisplayReader(database) : applicationProfileDisplay,
+      );
       reply = webSessionReadReplySchema.parse(
         read.status === 'active'
           ? {

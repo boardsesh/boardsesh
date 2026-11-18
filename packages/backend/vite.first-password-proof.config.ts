@@ -14,6 +14,7 @@ export default defineConfig({
       'src/auth/authority/__tests__/provider-security-http.proof.ts',
       'src/auth/authority/__tests__/first-password-http.proof.ts',
       'src/auth/authority/__tests__/web-oauth-session-http.proof.ts',
+      'src/auth/authority/__tests__/web-session-credential-writer.proof.ts',
     ],
     testTimeout: 30000,
     hookTimeout: 60000,

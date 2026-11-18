@@ -461,34 +461,86 @@ export type WebSessionRead =
   | { readonly status: 'active'; readonly session: FirstPartySession; readonly user: WebSessionUser }
   | { readonly status: 'unauthenticated' };
 
+/** A profile's display fields, which win over the account's own name and image. */
+export interface ProfileDisplay {
+  readonly displayName: string | null;
+  readonly avatarUrl: string | null;
+}
+
+/**
+ * Reads a profile's display fields for the session JSON. Cosmetic, after
+ * admission, and never on the credential connection: the credential LOGIN may
+ * not read `user_profiles` (packages/db/src/credential-writer-acl.ts). Undefined
+ * when there is no profile, or when the read failed or was too slow.
+ */
+export type ProfileDisplayReader = (userId: string) => Promise<ProfileDisplay | undefined>;
+
+/** How long the session read waits for the cosmetic profile read before answering without it. */
+export const PROFILE_DISPLAY_TIMEOUT_MS = 1_000;
+
+/**
+ * A `ProfileDisplayReader` on `database`, the backend's ordinary application
+ * connection. A failure or a read slower than PROFILE_DISPLAY_TIMEOUT_MS gives
+ * undefined, so the session is answered with the account's own name and image,
+ * as NextAuth's session callback does for an account with no profile.
+ */
+export function profileDisplayReader(
+  database: Pick<AuthorityDatabase, 'select'>,
+  timeoutMs = PROFILE_DISPLAY_TIMEOUT_MS,
+): ProfileDisplayReader {
+  return async (userId) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), timeoutMs);
+    });
+    // Any failure, even one thrown before the query starts, answers without the profile.
+    const read = (async () => {
+      try {
+        const [profile] = await database
+          .select({ displayName: userProfiles.displayName, avatarUrl: userProfiles.avatarUrl })
+          .from(userProfiles)
+          .where(eq(userProfiles.userId, userId));
+        return profile;
+      } catch {
+        return undefined;
+      }
+    })();
+    try {
+      return await Promise.race([read, timedOut]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
 /**
  * Read the session a cookie carries, by exactly the rules every request uses
  * (`readFirstPartySession`), and the user fields the NextAuth session JSON
  * shows. Only SELECTs: no roll, no last-seen time, no bridge. A legacy cookie
  * is answered by its own admission rules.
+ *
+ * Admission and the account's own fields are read on `database` (the
+ * credential connection). The profile's display name and avatar are read
+ * after that by `profileDisplay`, on another connection; without one, or when
+ * it gives nothing, the account's own name and image answer.
  */
 export async function readWebSession(
   database: Pick<AuthorityDatabase, 'select'>,
   credential: FirstPartyCredential,
   now = new Date(),
+  profileDisplay?: ProfileDisplayReader,
 ): Promise<WebSessionRead> {
   const outcome = await readFirstPartySession(database, credential, now);
   if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
   if (outcome.status === 'denied') return { status: 'unauthenticated' };
   const { session } = outcome;
   const [account] = await database
-    .select({
-      email: users.email,
-      name: users.name,
-      image: users.image,
-      displayName: userProfiles.displayName,
-      avatarUrl: userProfiles.avatarUrl,
-    })
+    .select({ email: users.email, name: users.name, image: users.image })
     .from(users)
-    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
     .where(eq(users.id, session.userId));
   // The reader admitted it a moment ago; an account gone since is signed out.
   if (!account) return { status: 'unauthenticated' };
+  const profile = profileDisplay ? await profileDisplay(session.userId) : undefined;
   return {
     status: 'active',
     session,
@@ -496,8 +548,8 @@ export async function readWebSession(
       id: session.userId,
       email: account.email,
       // As the NextAuth session callback: the profile's name and avatar win.
-      name: account.displayName || account.name,
-      image: account.avatarUrl || account.image,
+      name: profile?.displayName || account.name,
+      image: profile?.avatarUrl || account.image,
     },
   };
 }
