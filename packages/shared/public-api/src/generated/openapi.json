@@ -1042,7 +1042,9 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. A fall starts the rest and keeps the climb up; the next climb comes up once the rest after a flash or send runs out. 0 or absent: the climber's own rest-timer settings apply.",
+                "example": 120
               }
             },
             "required": [
@@ -1183,7 +1185,9 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. A fall starts the rest and keeps the climb up; the next climb comes up once the rest after a flash or send runs out. 0 or absent: the climber's own rest-timer settings apply.",
+                "example": 120
               }
             },
             "required": [
@@ -1324,7 +1328,9 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. A fall starts the rest and keeps the climb up; the next climb comes up once the rest after a flash or send runs out. 0 or absent: the climber's own rest-timer settings apply.",
+                "example": 120
               }
             },
             "required": [
@@ -1428,7 +1434,9 @@
               "restSeconds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 3600
+                "maximum": 3600,
+                "description": "Rest after each logged climb. A fall starts the rest and keeps the climb up; the next climb comes up once the rest after a flash or send runs out. 0 or absent: the climber's own rest-timer settings apply.",
+                "example": 120
               }
             },
             "required": [

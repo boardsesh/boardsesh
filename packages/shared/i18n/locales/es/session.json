@@ -1209,7 +1209,7 @@
     },
     "climbCount": "Bloques previstos: {{count}}",
     "rounds": "Rondas: {{count}} · Descanso entre bloques: {{climbRest}}s · Entre rondas: {{roundRest}}s",
-    "rest": "Descanso después de cada bloque: {{seconds}}s",
+    "rest": "Descanso de {{seconds}}s; pasas al siguiente bloque al encadenar",
     "queueFull": "Tu cola está llena. Haz sitio antes de añadir el entrenamiento.",
     "syncError": "El entrenamiento empezó, pero no se pudo guardar el plan. Mantén Boardsesh abierto e intenta sincronizar de nuevo.",
     "targetGrade": "Grado objetivo: {{grade}}",

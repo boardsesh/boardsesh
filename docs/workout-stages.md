@@ -1051,7 +1051,8 @@ the fetch, the pools, the preview and Start are unchanged.
   sets and reps), a name per shape ("Triples") in the readout, and a crew clock that counts
   reps itself instead of following the builder's phone.
 - **Per-stage pacing for untimed blocks.** Timed blocks pace the rest timer (see "Pacing"); a
-  volume, pyramid, ladder or grade-focus block still runs on the climber's own rest. A partner
-  `restSeconds` on those blocks would reach the same `WorkoutRunStage.pacing`.
+  volume, pyramid, ladder or grade-focus block built in the app still runs on the climber's own
+  rest. A partner `restSeconds` above 0 on those blocks already sets `WorkoutRunStage.pacing`,
+  advancing on `send` like limit bouldering (`docs/partner-workouts-internal.md`).
 - **Partner `plan_snapshot`.** Partner workouts (`docs/partner-workouts-internal.md`) map
   their blocks onto these stages and report what was queued per block.

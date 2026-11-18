@@ -10,6 +10,7 @@ import {
   type GeneratorGradeScale,
   type WorkoutPlan,
   type WorkoutRun,
+  type WorkoutStagePacing,
 } from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { PartnerSlot } from './partner-workout-plan';
@@ -38,19 +39,27 @@ export type PartnerWorkoutPreview = {
 type PartnerPlan = { plan: WorkoutPlan; slots: readonly PartnerSlot[] };
 
 /**
- * The run for `rows`. An untimed partner block can ask for a rest the app's own
- * builder does not offer yet; its stage paces the rest timer with it.
+ * The pacing a partner block's `restSeconds` gives its stage (workoutbash1 D4).
+ * Volume, pyramid, ladder and grade focus can ask for a rest the app's own
+ * builder does not offer yet. As on limit bouldering, a fall starts that rest
+ * and keeps the climb up; only a flash or a send moves the wall on once it runs
+ * out. A rest of 0 (or none) leaves the stage unpaced, so the climber's own
+ * rest-timer settings apply instead of a 10 s changeover after every tick.
  */
+function partnerBlockPacing(block: CreateWorkout['blocks'][number] | undefined): WorkoutStagePacing | undefined {
+  if (!block || !('restSeconds' in block) || !block.restSeconds) return undefined;
+  return { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'send' };
+}
+
+/** The run for `rows`, each stage paced by its partner block's rest. */
 function partnerRunFor(rows: readonly PreviewItem[], spec: CreateWorkout, plan: WorkoutPlan): WorkoutRun {
   const run = buildWorkoutRun(
     rows.map((row) => ({ uuid: row.item.uuid, stageId: row.slot.stageId! })),
     plan,
   );
   for (const stage of run.stages) {
-    const block = spec.blocks[Number(stage.id.split(':').at(-1))];
-    if (block && 'restSeconds' in block && block.restSeconds !== undefined) {
-      stage.pacing = { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'tick' };
-    }
+    const pacing = partnerBlockPacing(spec.blocks[Number(stage.id.split(':').at(-1))]);
+    if (pacing) stage.pacing = pacing;
   }
   return run;
 }

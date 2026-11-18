@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "date": "2026-11-18",
+      "documentSha256": "6ced9b3cc581c62fc5e00941d2812f6f68eb7c019ac1b068a215478dca67ec54",
+      "changes": [
+        "restSeconds on volume, pyramid, ladder and gradeFocus blocks: a fall now starts the rest and keeps the climb on the wall, and the next climb comes up only after the rest that follows a flash or send. Before, any logged climb moved the wall on.",
+        "restSeconds 0 on those blocks now means the climber's own rest-timer settings apply. Before, it moved the wall on 10 seconds after every logged climb. No field or shape changed."
+      ]
+    },
+    {
       "date": "2026-11-17",
       "documentSha256": "483a46cc328c7bfd68dac6d1ab14e4cd18aabe34bb8d374d4b12726553506de5",
       "changes": [

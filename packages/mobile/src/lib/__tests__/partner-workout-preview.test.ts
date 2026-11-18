@@ -13,9 +13,17 @@ const cryptoMock = vi.hoisted(() => {
 });
 vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 
+import { locateInRun } from '@boardsesh/playlist-generator';
 import { buildPartnerWorkoutPlan } from '../partner-workout-plan';
 import { buildPartnerWorkoutPreview, reselectPartnerWorkoutPreview } from '../partner-workout-preview';
 import { NO_TOP_UPS, type FetchGradePool } from '../../components/session-screen/pre-session/workout-preview-pool';
+import {
+  resolveEffectiveRestPacing,
+  resolveStageRestPacing,
+  restAdvanceAllowed,
+  type RestPacingSettings,
+  type RestTimerTickStatus,
+} from '../rest-timer-pacing';
 
 const kilterGrades = getGradesForBoard('kilter');
 const board = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as UserBoard;
@@ -99,14 +107,6 @@ describe('partner workout preview', () => {
     ]);
   });
 
-  it('keeps the partner block rest on its stage', async () => {
-    const built = await preview(
-      workout({ type: 'volume', climbCount: 1, restSeconds: 90, targetGrade: { scale: 'font', value: '6B' } }),
-      catalogue({ 18: 3 }),
-    );
-    expect(built.run.stages[0].pacing).toEqual({ mode: 'afterTick', restSeconds: 90, advanceOn: 'tick' });
-  });
-
   it('re-picks the rows whose climb is in the queue now, from the pools it has', async () => {
     const spec = workout({ type: 'gradeFocus', climbCount: 2, targetGrade: { scale: 'font', value: '6B' } });
     const fetchPool = catalogue({ 18: 4 });
@@ -120,5 +120,99 @@ describe('partner workout preview', () => {
     // The untouched row keeps its queue item.
     expect(again.items.find((item) => item.climb.uuid === second.climb.uuid)?.uuid).toBe(second.uuid);
     expect(again.run.stages[0].itemUuids).toEqual(again.items.map((item) => item.uuid));
+  });
+});
+
+// workoutbash1 D4: a partner block's rest moves the wall on after a send, like
+// limit bouldering; a fall rests and keeps the climb up. A rest of 0 hands the
+// timer back to the climber's own settings.
+describe('partner block rest', () => {
+  const climberSettings: RestPacingSettings = { targetSeconds: 150, mode: 'afterTick', autoAdvance: false };
+
+  /** The timer's pacing for the block's first climb, and whether a finished rest after `status` moves the wall. */
+  async function restAfter(block: CreateWorkout['blocks'][number], status: RestTimerTickStatus) {
+    const built = await preview(workout(block), catalogue({ 18: 3 }));
+    const queueItemUuid = built.items[0].uuid;
+    const stage = resolveStageRestPacing({
+      sessionId: 'session-1',
+      run: built.run,
+      position: locateInRun(
+        built.run,
+        queueItemUuid,
+        built.items.map((item) => item.uuid),
+      ),
+      queueItemUuid,
+      repsLogged: 1,
+    });
+    const pacing = resolveEffectiveRestPacing({ settings: climberSettings, stage, crew: null });
+    const movesOn = restAdvanceAllowed({
+      advanceOn: pacing.advanceOn,
+      currentQueueItemUuid: queueItemUuid,
+      lastTick: { status, queueItemUuid },
+      stage: pacing.stage,
+    });
+    return { pacing, movesOn };
+  }
+
+  const volume = (restSeconds?: number): CreateWorkout['blocks'][number] => ({
+    type: 'volume',
+    climbCount: 2,
+    targetGrade: { scale: 'font', value: '6B' },
+    ...(restSeconds === undefined ? {} : { restSeconds }),
+  });
+
+  it('rests 120 s after a fall and keeps the climb on the wall', async () => {
+    const { pacing, movesOn } = await restAfter(volume(120), 'attempt');
+    expect(pacing).toMatchObject({ source: 'stage', mode: 'afterTick', targetSeconds: 120, autoAdvance: true });
+    expect(movesOn).toBe(false);
+  });
+
+  it('moves the wall on once the 120 s rest after a send runs out', async () => {
+    for (const status of ['send', 'flash'] as const) {
+      const { pacing, movesOn } = await restAfter(volume(120), status);
+      expect(pacing).toMatchObject({ source: 'stage', targetSeconds: 120, advanceOn: 'send' });
+      expect(movesOn).toBe(true);
+    }
+  });
+
+  it('paces pyramid, ladder and grade focus the same way', async () => {
+    const gradeRange = { scale: 'font', from: '6B', to: '6B' } as const;
+    const blocks: CreateWorkout['blocks'] = [
+      { type: 'pyramid', climbCount: 3, gradeRange, restSeconds: 60 },
+      { type: 'ladder', climbCount: 2, gradeRange, restSeconds: 60 },
+      { type: 'gradeFocus', climbCount: 2, targetGrade: { scale: 'font', value: '6B' }, restSeconds: 60 },
+    ];
+    for (const block of blocks) {
+      expect((await restAfter(block, 'attempt')).movesOn).toBe(false);
+      expect((await restAfter(block, 'send')).movesOn).toBe(true);
+    }
+  });
+
+  it('leaves a limit block with a rest freeform: no climbs queued, nothing paced', async () => {
+    const built = await preview(
+      workout({
+        type: 'limitBouldering',
+        climbCount: 3,
+        restSeconds: 120,
+        targetGrade: { scale: 'font', value: '6B' },
+      }),
+      catalogue({ 18: 3 }),
+    );
+    expect(built.items).toEqual([]);
+    expect(built.run.stages.filter((stage) => stage.pacing !== undefined)).toEqual([]);
+  });
+
+  it("runs a rest of 0 on the climber's own settings, with no 10 s changeover", async () => {
+    for (const restSeconds of [0, undefined]) {
+      const { pacing } = await restAfter(volume(restSeconds), 'attempt');
+      expect(pacing).toEqual({
+        targetSeconds: 150,
+        mode: 'afterTick',
+        autoAdvance: false,
+        advanceOn: 'deadline',
+        source: 'settings',
+        stage: null,
+      });
+    }
   });
 });

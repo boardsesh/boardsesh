@@ -74,6 +74,7 @@ describe('atomic partner first seed', () => {
   });
 
   it('after restart restores the persisted winner and pacing, excluding a regenerated preview', () => {
+    // A run started before partner rests moved on after a send keeps its stored 'tick' rule.
     const winning = seed([item('winning')]).seed.sessionPlan;
     seed([item('regenerated')]);
     const restored = restorePartnerWorkoutRun(JSON.parse(JSON.stringify(winning)));

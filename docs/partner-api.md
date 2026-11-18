@@ -666,8 +666,16 @@ unknown fields are ignored, and a block the app cannot run yet is still shown
 | `restBetweenClimbsSeconds` | int, 0 to 3600             | `fourByFour`                                   |
 | `restBetweenRoundsSeconds` | int, 0 to 3600             | `fourByFour`                                   |
 | `intervalSeconds`          | int, 15 to 3600            | `onTheMinute` (default 60)                     |
-| `restSeconds`              | int, 0 to 3600             | `limitBouldering`, `volume`, `pyramid`, `ladder`, `gradeFocus` (rest after each climb) |
+| `restSeconds`              | int, 0 to 3600             | `limitBouldering`, `volume`, `pyramid`, `ladder`, `gradeFocus` (rest after each climb, see below) |
 | `durationSeconds`          | int, 1 to 86400            | `freeClimbing`, display only                   |
+
+`restSeconds` on `volume`, `pyramid`, `ladder` and `gradeFocus` paces the
+climber's rest timer for that block. Every logged climb starts the rest. A
+fall keeps the climb on the wall; once the rest after a flash or a send runs
+out, the next climb comes up on its own. `0`, or leaving the field out, means
+the block has no rest of its own and the climber's own rest-timer settings
+apply. Until 2026-11-18 any logged climb, a fall included, moved the wall on,
+and `0` moved it on 10 seconds after every logged climb.
 
 Block types, and how Boardsesh runs each one today:
 
