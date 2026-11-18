@@ -87,7 +87,12 @@ async function post(path: string, body: Record<string, unknown>) {
   return { status: response.status, body: (await response.json()) as unknown };
 }
 
+/** Each command and the credential shape it was sent with, so the last test can name what was never sent. */
+const sentCommands = new Set<string>();
+
 function sessionCommand(operation: keyof typeof WEB_SESSION_COMMAND_PATHS, payload: Record<string, unknown>) {
+  const presented = payload.presented as PresentedWebSession | undefined;
+  sentCommands.add(presented ? `${operation}:${presented.kind}` : operation);
   return post(WEB_SESSION_COMMAND_PATHS[operation], {
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     operation,
@@ -305,5 +310,44 @@ describe('web-session commands on the qualified credential LOGIN over real HTTP'
     // A login presenting the bridged session revokes it, on the LOGIN.
     await login(account.email, canonical(reply.token));
     expect((await sessionCommand('session', { presented: canonical(reply.token) })).status).toBe(401);
+  });
+
+  it('a pre-cutover cookie presented as itself is read and signed out on the LOGIN, and never bridges after', async () => {
+    const account = await climber('Legacy Account');
+    const authSessionId = randomUUID();
+    const credential = await jwt.encode({
+      secret: nextAuthSecret,
+      maxAge: 3600,
+      token: { sub: account.id, authSessionId, gen: 0, auth_time: Math.floor(Date.now() / 1000) - 600 },
+    });
+    const legacy: PresentedWebSession = { kind: 'legacy-jwe', credential };
+
+    const read = await sessionCommand('session', { presented: legacy });
+    expect(read.status).toBe(200);
+    expect(webSessionReadReplySchema.parse(read.body)).toMatchObject({
+      outcome: 'active',
+      userId: account.id,
+      authSessionId,
+      user: { id: account.id, name: 'Legacy Account' },
+    });
+
+    const signOut = await sessionCommand('signout', {
+      presented: legacy,
+      expectedUserId: account.id,
+      expectedAuthSessionId: authSessionId,
+    });
+    expect(signOut.status).toBe(200);
+    expect(webSessionSignOutReplySchema.parse(signOut.body)).toMatchObject({ outcome: 'signed_out' });
+    expect((await sessionCommand('session', { presented: legacy })).status).toBe(401);
+    // The denial of its id is written on the LOGIN: the cookie is never bridged afterwards.
+    const bridged = await sessionCommand('bridge', { credential });
+    expect(webSessionBridgeReplySchema.parse(bridged.body)).toMatchObject({ outcome: 'denied' });
+  });
+
+  it('sent every web-session command, and each read and sign-out with both credential shapes', () => {
+    const expected = Object.keys(WEB_SESSION_COMMAND_PATHS).flatMap((operation) =>
+      operation === 'bridge' ? [operation] : [`${operation}:canonical-token`, `${operation}:legacy-jwe`],
+    );
+    expect(expected.filter((command) => !sentCommands.has(command))).toEqual([]);
   });
 });
