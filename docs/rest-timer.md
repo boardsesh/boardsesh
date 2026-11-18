@@ -55,9 +55,9 @@ The timer runs on an `EffectiveRestPacing`: a rest length, a cadence (`afterTick
    the deadline, as the timer always has.
 
 `useEffectiveRestPacing()` (and `getEffectiveRestPacing()` outside React) is the only way to read
-it. The scheduler, the pill and hero clock, `RestTimerSessionSync` and the arm row read through
-it today; the tick path, the workout runner, the crew publisher and the Lock Screen countdown join
-as they land. A new source changes `rest-timer-pacing.ts` and the hook, never those readers. The
+it. The scheduler, the pill and hero clock, `RestTimerSessionSync`, the arm row and the Lock Screen
+countdown (which hands it to the session-timer snapshot it is built from) read through it today;
+the tick path, the workout runner and the crew publisher join as they land. A new source changes `rest-timer-pacing.ts` and the hook, never those readers. The
 sheet's controls keep writing the settings directly: they edit the climber's preferences, not the
 effective value.
 
@@ -467,7 +467,7 @@ agree. The root row shows the rest length (or Off).
 
 | Module | What it does |
 | --- | --- |
-| `snapshot.ts` | `buildSessionTimerSnapshot`: `off`, `waiting`, `paused`, or a live clock (`running`, `countUp`, `queueEnded`) with its cycle start, deadline and fixed-window period, plus `lastAdvanceMs` and `lastTickAt`. Same phase order as the pill and the Lock Screen payload. `getSessionTimerWakeMs` is the one moment it changes with no store write: a fixed window's end |
+| `snapshot.ts` | `buildSessionTimerSnapshot`: `off`, `waiting`, `paused`, or a live clock (`running`, `countUp`, `queueEnded`) with its cycle start, deadline and fixed-window period, plus `lastAdvanceMs` and `lastTickAt`. Same phase order as the pill; the Lock Screen payload is built from it. `getSessionTimerWakeMs` is the one moment it changes with no store write: a fixed window's end |
 | `commands.ts` | `deriveSessionTimerCommands(prev, next, nowMs)` diffs two snapshots into `restartCountUp` or `reset`; `deriveSessionTimerTickCommand` covers a tick with the rest timer off |
 | `command-queue.ts` | `createLatestWinsQueue`: one command at a time, the newest waiting one wins, and a command the one in flight already delivers is dropped |
 | `tick-events.ts` | `noteSessionTimerTick`: the tick saver tells the sinks about a committed tick, just before the rest timer hears of it, with the timestamp the rest timer stores as `lastTickAt`. Never from outbox replay |
@@ -513,8 +513,10 @@ What changed for the gym timer, which used to restart on every logged climb:
 - A climb backdated by more than a minute, or a tick read back from the session on a cold start or
   when the rest timer is switched on, no longer restarts it.
 
-The pill stays on `useRestTimerDisplay`. The Lock Screen countdown moves onto the snapshot after
-the release train's merge-back.
+The pill stays on `useRestTimerDisplay`. The Lock Screen countdown reads the snapshot too:
+`buildRestTimerLiveActivityPayload` maps the snapshot onto the native payload, adding only the
+frozen signed number, the Android captions and the Lock Screen's own gates (the "Show on Lock
+Screen" switch, and no payload without a session).
 
 ## Rogue gym timer
 
