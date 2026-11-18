@@ -158,10 +158,11 @@ describe('HomeCustomizeSheet', () => {
       `${SECTION_KEY}.beta`,
       `${SECTION_KEY}.feed`,
     ]);
+    // Climbing now is listed but off: the Session card leads with live sessions (#7689).
     expect(screen.getAllByRole('switch').map((element) => (element as HTMLInputElement).checked)).toEqual([
       true,
       true,
-      true,
+      false,
       true,
       true,
       false,

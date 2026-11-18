@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe('Home sections', () => {
-  it('defaults to This week, Session, Climbing now, Back to your projects, At your level, then the feed, with Your board and Fresh beta hidden', async () => {
+  it('defaults to This week, Session, Back to your projects, At your level, then the feed, with Climbing now, Your board and Fresh beta hidden', async () => {
     const { HOME_SECTIONS, homeSectionsStore, visibleTopHomeSections } = await loadHomeSections();
     expect(HOME_SECTIONS.defaults.order).toEqual([
       'week',
@@ -51,7 +51,7 @@ describe('Home sections', () => {
     expect(HOME_SECTIONS.defaults.visible).toEqual({
       week: true,
       session: true,
-      climbingNow: true,
+      climbingNow: false,
       projects: true,
       playlists: true,
       board: false,
@@ -59,12 +59,30 @@ describe('Home sections', () => {
       feed: true,
     });
     expect(homeSectionsStore.getLayout()).toEqual(HOME_SECTIONS.defaults);
+    expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual(['week', 'session', 'projects', 'playlists']);
+  });
+
+  it('keeps Climbing now for a climber who customised Home with it on (#7689)', async () => {
+    settings.values.set('homeSectionsV1', {
+      version: 1,
+      order: ['week', 'climbingNow', 'session', 'projects', 'playlists', 'board', 'beta', 'feed'],
+      visible: {
+        week: true,
+        climbingNow: true,
+        session: true,
+        projects: true,
+        playlists: false,
+        board: false,
+        beta: false,
+        feed: true,
+      },
+    });
+    const { homeSectionsStore, visibleTopHomeSections } = await loadHomeSections();
     expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual([
       'week',
-      'session',
       'climbingNow',
+      'session',
       'projects',
-      'playlists',
     ]);
   });
 
@@ -190,7 +208,7 @@ describe('Home sections', () => {
     settings.values.set('homeSectionsV1', {
       version: 1,
       order: ['board', 'session', 'playlists', 'climbingNow', 'feed'],
-      visible: { board: true, feed: false },
+      visible: { board: true, feed: false, climbingNow: true },
     });
     const { homeSectionsStore, focusedHomeLayout, isFocusedHomeLayout } = await loadHomeSections();
     expect(homeSectionsStore.getLayout().visible.feed).toBe(false);

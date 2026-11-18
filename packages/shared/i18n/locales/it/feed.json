@@ -49,7 +49,12 @@
           "lastWorkoutYesterday": "Ultimo allenamento · Ieri",
           "lastWorkoutOn": "Ultimo allenamento · {{day}}",
           "lastWorkoutSends_one": "{{count}} ripetizione",
-          "lastWorkoutSends_other": "{{count}} ripetizioni"
+          "lastWorkoutSends_other": "{{count}} ripetizioni",
+          "join": "Unisciti",
+          "joinName": "Unisciti a {{name}}",
+          "startOwn": "Inizia la tua",
+          "moreLive_one": "+ {{count}} altro in arrampicata ora",
+          "moreLive_other": "+ {{count}} altri in arrampicata ora"
         },
         "projects": {
           "title": "Torna ai tuoi progetti",
