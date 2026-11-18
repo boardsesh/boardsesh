@@ -193,6 +193,7 @@ const failure = z
     outcome: z.enum([
       'unauthenticated',
       'identity_changed',
+      'canonical_session_required',
       'reauthentication_required',
       'reauthentication_unavailable',
       'denied',
@@ -208,6 +209,7 @@ const failure = z
       'ownership_conflict',
       'last_usable_method',
       'authority_unavailable',
+      'canonical_session_required',
     ]),
   })
   .strict();
@@ -275,8 +277,6 @@ export const providerSecurityReplySchema = z.union([
       ...replyMetadata,
       operation: z.literal('owned-provider'),
       outcome: z.literal('owned'),
-      credentialProof: webCredentialProofSchema,
-      credentialExpiresAt: timestamp,
       user: providerUser,
     })
     .strict(),
@@ -354,6 +354,8 @@ export function providerSecurityReplyStatus(reply: ProviderSecurityReply): 200 |
       return 401;
     case 'identity_changed':
       return 409;
+    // A legacy cookie must be bridged to a canonical session first (#7596 B5c1).
+    case 'canonical_session_required':
     case 'reauthentication_required':
     case 'reauthentication_unavailable':
       return 403;

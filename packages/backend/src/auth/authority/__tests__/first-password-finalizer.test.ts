@@ -344,7 +344,7 @@ describe('UID-bound first-password buffered finalization', () => {
           if (kind === 'legacy-jwe') {
             await expect(
               createProviderSecurityIntent(environment.database, environment.runtime, linkCommand),
-            ).rejects.toMatchObject({ outcome: 'reauthentication_required', code: 'invalid_proof' });
+            ).rejects.toMatchObject({ outcome: 'canonical_session_required', code: 'canonical_session_required' });
             return;
           }
           const nextIntent = await createProviderSecurityIntent(environment.database, environment.runtime, linkCommand);

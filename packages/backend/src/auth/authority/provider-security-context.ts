@@ -15,6 +15,7 @@ export type ProviderSecurityIntent = typeof authProviderSecurityIntents.$inferSe
 export type ProviderSecurityFailureOutcome =
   | 'unauthenticated'
   | 'identity_changed'
+  | 'canonical_session_required'
   | 'reauthentication_required'
   | 'reauthentication_unavailable'
   | 'denied'
@@ -28,7 +29,8 @@ export type ProviderSecurityFailureCode =
   | 'provider_not_verified'
   | 'ownership_conflict'
   | 'last_usable_method'
-  | 'authority_unavailable';
+  | 'authority_unavailable'
+  | 'canonical_session_required';
 
 export class ProviderSecurityRefusal extends Error {
   constructor(
@@ -71,6 +73,18 @@ export function providerWebSessionIntentHash(intentHash: string): string {
   return createHash('sha256')
     .update(JSON.stringify(['provider-security-no-browser-intent-v1', intentHash]))
     .digest('hex');
+}
+/**
+ * A link, unlink or first password moves the account's generation and keeps
+ * the requesting session's token. A legacy NextAuth cookie carries its
+ * generation inside the cookie, so it could continue only by being re-issued,
+ * which only a login may do (#7596). www bridges it to a canonical session
+ * first; this refusal tells it to, apart from a missing reauthentication.
+ */
+export function requireCanonicalProviderActor(actor: CapturedProviderActor): { readonly token: string } {
+  if (actor.credential.kind !== 'canonical-token')
+    throw new ProviderSecurityRefusal('canonical_session_required', 'canonical_session_required');
+  return { token: actor.credential.token };
 }
 /** A web session has no browser version; the NOT NULL column holds this. */
 export const PROVIDER_WEB_SESSION_BROWSER_VERSION = 0;

@@ -660,8 +660,26 @@ every other web session, native refresh token, partner connection and pending
 recovery or verification link of the account ends. No candidate credential and
 no cookie write exist any more. A legacy NextAuth cookie can read its methods
 but cannot start a link or unlink: its generation lives in the cookie, so it
-could continue only by being re-issued, which only a login may do. www bridges
-it first (B2b). What the binding proved, the same browser across the OAuth
+could continue only by being re-issued, which only a login may do. The backend
+answers `canonical_session_required` (403), apart from
+`reauthentication_required`, so www knows to bridge it first (B2b) rather than
+ask for a password. The backend refuses to start with
+`CURRENT_STORE_PROVIDER_SECURITY_MODE=backend-staging` unless
+`AUTH_BROWSER_SESSION_MODE=better-auth`
+(`AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED`): without it nobody could
+link.
+
+Rollback after a link or unlink (accepted). During the 30-day rollback window
+a login also writes the legacy NextAuth cookie with the same session id
+(owner decision 2 of 2026-11-17). A link or unlink moves the account to a new
+generation and keeps only the canonical cookie's session alive, because only a
+login may write a cookie. The legacy cookie still names the old generation, so
+it is dead from that moment. If the mode is rolled back to `legacy` inside the
+window, that browser has to sign in again. This is the one exception to
+acceptance 6 ("rollback leaves every browser signed in"); it applies only to a
+browser that linked or unlinked a provider after cutover, and the alternative
+is a cookie write outside login, which this design does not allow. The same
+holds for first password once B5c2 keeps its token. What the binding proved, the same browser across the OAuth
 round trip, now comes from the session token every step presents plus the
 OAuth state hash bound to the intent (`bind`) and checked at `prepare`.
 

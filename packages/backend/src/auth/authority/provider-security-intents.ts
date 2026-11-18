@@ -22,6 +22,7 @@ import {
   providerWebSessionIntentHash,
   PROVIDER_WEB_SESSION_BROWSER_VERSION,
   ProviderSecurityRefusal,
+  requireCanonicalProviderActor,
 } from './provider-security-context';
 import {
   isUsableProviderIdentity,
@@ -116,13 +117,7 @@ export async function createProviderSecurityIntent(
     throw new ProviderSecurityRefusal('denied', 'provider_unavailable');
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
     const { session } = await admitProviderActorInTransaction(transaction, authority, actor);
-    // A link or unlink moves the account's generation and keeps the requesting
-    // session's token. A legacy NextAuth cookie carries its generation inside
-    // the cookie, so it could continue only by being re-issued, which only a
-    // login may do (#7596). www bridges it to a canonical session first; a real
-    // sign-in issues one too.
-    if (actor.credential.kind !== 'canonical-token')
-      throw new ProviderSecurityRefusal('reauthentication_required', 'invalid_proof');
+    requireCanonicalProviderActor(actor);
     const now = await providerDatabaseNow(transaction);
     let providerSubject: string | null = null;
     if (action === 'unlink') {

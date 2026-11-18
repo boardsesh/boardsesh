@@ -194,7 +194,7 @@ describe('operation-bound selected-authority actual password reauthentication', 
           provider: 'apple',
           methodId: null,
         }),
-      ).rejects.toMatchObject({ outcome: 'reauthentication_required', code: 'invalid_proof' });
+      ).rejects.toMatchObject({ outcome: 'canonical_session_required', code: 'canonical_session_required' });
       expect(
         await environment.database
           .select()

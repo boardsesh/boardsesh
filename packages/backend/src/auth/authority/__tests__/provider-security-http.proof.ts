@@ -422,8 +422,8 @@ describe('provider commands through default HTTP and the qualified provider LOGI
         (await post('owned-provider', { actor: owner.webActor, provider: 'google', subject })).body,
         'owned',
       );
-      expect(owned.credentialProof.authenticatedAt).toBe(owner.authenticatedAt?.toISOString());
-      expect(owned.credentialProof.generation).toBe(0);
+      expect(owned.user.id).toBe(owner.userId);
+      expect(owned).not.toHaveProperty('credentialProof');
       const affectedConnection = await partner(owner.userId);
       const unrelated = await driver.actor(selected, 'canonical-token');
       const unrelatedConnection = await partner(unrelated.userId);
@@ -554,7 +554,7 @@ describe('provider commands through default HTTP and the qualified provider LOGI
       });
       expect(refused).toMatchObject({
         status: 403,
-        body: { operation: 'intent', outcome: 'reauthentication_required', code: 'invalid_proof' },
+        body: { operation: 'intent', outcome: 'canonical_session_required', code: 'canonical_session_required' },
       });
     });
 

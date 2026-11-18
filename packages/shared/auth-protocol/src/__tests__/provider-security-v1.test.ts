@@ -257,6 +257,7 @@ it('ACK replies cannot return, reconstruct or smuggle a credential bearer', () =
 it.each([
   ['unauthenticated', 401],
   ['identity_changed', 409],
+  ['canonical_session_required', 403],
   ['reauthentication_required', 403],
   ['reauthentication_unavailable', 403],
   ['denied', 400],
@@ -270,6 +271,18 @@ it.each([
     code: 'invalid_proof',
   });
   expect(providerSecurityReplyStatus(reply)).toBe(expected);
+});
+
+it('tells a legacy cookie that must be bridged apart from a missing reauthentication', () => {
+  const reply = providerSecurityReplySchema.parse({
+    providerSecurityVersion: PROVIDER_SECURITY_VERSION,
+    requestId,
+    operation: 'intent',
+    outcome: 'canonical_session_required',
+    code: 'canonical_session_required',
+  });
+  expect(reply.outcome).not.toBe('reauthentication_required');
+  expect(providerSecurityReplyStatus(reply)).toBe(403);
 });
 
 it('keeps provider mutation dark by default and refuses unknown selectors', () => {

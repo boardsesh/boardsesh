@@ -8,6 +8,7 @@ import {
   providerDatabaseNow,
   providerTokenHash,
   ProviderSecurityRefusal,
+  requireCanonicalProviderActor,
   type ProviderSecurityIntent,
 } from './provider-security-context';
 import { lockProviderSecurityMutationContext } from './provider-security-locks';
@@ -169,10 +170,8 @@ export async function finalizeProviderSecurityMutation(
     ]);
     if (context.intent.preparationTokenHash !== providerTokenHash(preparationToken))
       throw new ProviderSecurityRefusal('denied', 'invalid_proof');
-    // Intent creation refuses any other actor; this keeps the token in scope.
-    if (command.actor.credential.kind !== 'canonical-token')
-      throw new ProviderSecurityRefusal('reauthentication_required', 'invalid_proof');
-    const { token } = command.actor.credential;
+    // Intent creation already refuses any other actor.
+    const { token } = requireCanonicalProviderActor(command.actor);
     const refused = policyFailure(context, runtime);
     await terminalize(transaction, context.intent, context.now);
     if (refused) return { outcome: 'denied' as const, code: refused };
