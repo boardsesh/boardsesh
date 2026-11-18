@@ -10,10 +10,12 @@ Written 2026-10-27, after the Sequence workout spec (#5530) and the DivePeaks
 logbook request. The target is that the cost of one more ordinary integration is
 zero engineering time on our side.
 
-Status, 2026-11-10: milestone 1 is built behind `PARTNER_OAUTH_MODE`, which is
-`off` in production. It shipped on the fast path: on today's identity system,
-ahead of the Better Auth migration (see [Roadmap](#roadmap)). Turning it on, and
-the stages that follow, are in [Running partner OAuth](#running-partner-oauth).
+Implementation status, 2026-11-18: milestones 1–4 are built behind the partner
+mode and workout gates. The implementation and review fixes do not change
+production modes or flags; check their deployed values before operating them.
+They use today's identity system, ahead of the Better Auth migration (see
+[Roadmap](#roadmap)). Activation and subsequent stages remain in
+[Running partner OAuth](#running-partner-oauth).
 
 | Doc | What it holds |
 | --- | --- |
@@ -441,16 +443,16 @@ native/watch aliases are owned by the migration doc, not this API contract.
 ### Routes and the mode switch
 
 `PARTNER_OAUTH_MODE` is read once, from the environment. No request can
-choose it. Five production modules outside `auth/partner/` may reach into that
-folder: `handlers/partner-auth.ts` (these routes), `handlers/public-api/router.ts`
-(the `/v1` API), `graphql/resolvers/oauth-clients/partner-registration.ts` (the
-developer console's operations, see [Self-service registration](#self-service-registration)),
-`services/partner-oauth-sweep.ts` (the [retention sweep](#retention-sweep)) and
-`graphql/resolvers/connected-apps/connected-apps.ts` ([Connected apps](#connected-apps)).
-With the mode `off` the first three answer nothing new, and none loads Better Auth.
-The sweep and Connected apps run in every mode, so they load only plain-SQL partner
-modules. `scripts/__tests__/better-auth-boundary.test.ts` holds that list and what each
-may import. Backend and web parse it with the same function
+choose it. `scripts/__tests__/better-auth-boundary.test.ts` maintains the
+approved production entry points outside `auth/partner/`, their exact imports
+and the allowed transitive dependencies. This includes OAuth and public API
+handlers, developer and connected-app resolvers, workout services, webhooks and
+maintenance. The loader is the only entry into the partner authority. With mode
+`off`, gated routes answer nothing new and do not load Better Auth. Connected
+apps, account deletion and retention remain available through their approved
+plain-SQL dependencies. Type-only dependencies cannot silently become runtime
+imports. The guard, rather than a fixed importer count in this document, owns
+that boundary. Backend and web parse it with the same function
 (`@boardsesh/auth-protocol/partner-oauth-mode`): an absent, empty or misspelled
 value is `off`.
 
@@ -470,7 +472,8 @@ a time, and the backend is inventory-only there.
 | --- | --- |
 | `off` (default, and any unrecognised value) | Every partner route is `404`, every developer console operation answers `NOT_FOUND`, and Better Auth is never loaded |
 | `hold` | Every partner route answers `503` with `Retry-After: 60`, and every console operation `SERVICE_UNAVAILABLE`, without loading Better Auth |
-| `allowlist`, `open` | The routes below are served. The two modes are meant to differ only in who can register an app; for now both register only developers the PostHog flag `developer-console` names (see below) |
+| `allowlist` | The routes below are served. Developer console operations require the PostHog `developer-console` invitation; creating an app also requires the account email verification check |
+| `open` | The routes below are served. Any signed-in account can open the console and complete independent proof of its exact current email. That proof admits console operations without consulting `developer-console`, including its overrides |
 
 Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
 `GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
@@ -1334,13 +1337,13 @@ Rules enforced without a human:
 
 | Rule | Value | Why |
 | --- | --- | --- |
-| Developer account | Signed in, email verified, and named by the PostHog flag `developer-console` until stage D | Accountability without paperwork |
+| Developer account | Signed in. In `allowlist`, invited by `developer-console`, with the account email check on creation. In `open`, independent ownership proof of the exact current account email replaces the invitation; legacy `emailVerified` is not proof | Accountability without paperwork |
 | Apps per developer | 10 | Bounds a single bad actor |
 | Redirect URIs per app | 10 | |
 | Redirect URI forms | `https://…` (any host); `http://127.0.0.1:{any port}/…` and `http://[::1]…` (loopback, RFC 8252 §7.3, port ignored when matching); private-use schemes with a dot, `com.example.app:/…` (RFC 8252 §7.1). Rejected: `http://` elsewhere, `javascript:`, `data:`, `file:`, fragments, wildcards, any URI on a `boardsesh.com` host, and the schemes `boardsesh` and `com.boardsesh*` (our own app's) | Loopback lets scripts and local AI-built tools integrate with no hosting |
 | Matching | Exact string, except the loopback port | |
 | Names | App and publisher names alike. Case-insensitive denylist: Boardsesh, Aurora, Moon Climbing, every board brand in `BOARD_TYPE_LABELS` (Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper, So iLL, Woods), and lookalikes | Consent phishing |
-| Connections per app | 25 live and 20 new in any 24 hours while registration is allowlisted (decision 22, the `oauth_app_policy` defaults). The owner raises one app's caps in its policy row; there is no request form in the console yet. The default for stage D is still open (200 new a day was the proposal) | Bounds the damage of a phishing app |
+| Connections per app | 25 live and 20 new in any rolling 24 hours, including stage D (`oauth_app_policy` defaults). Global admins can edit either app cap with an audit record. There is no developer request form | Bounds the damage of a phishing app |
 | Scopes | Any app may request any published scope. The consent page lists them | No approval tier |
 
 The consent screen shows: the app name, "Made by {publisher name}" when the app
@@ -1352,8 +1355,9 @@ the homepage domain with a `/.well-known/` file) is a later, automated
 addition, not an approval queue.
 
 Admin tools: suspend an app (with a reason the developer sees), list an app's
-connection count and error rate. The first version is a backend script under
-`packages/backend/src/scripts/`, like the other ops tools.
+connection count and error rate. Backend scripts remain available under
+`packages/backend/src/scripts/`; the global-admin app list also shows counts
+and supports audited connection-cap changes.
 
 ### What the backend does today (F12)
 
@@ -1363,11 +1367,14 @@ served by `graphql/resolvers/oauth-clients/partner-registration.ts` on the
 ordinary GraphQL pool. Each checks, in this order: the mode (`off` answers
 `NOT_FOUND`, `hold` answers `SERVICE_UNAVAILABLE`, before anything else); a
 signed-in Boardsesh account (first-party credentials only: a partner token is
-opaque and never authenticates GraphQL); the developer's own rate limit; the
-PostHog flag `developer-console` for the account's user id (below); then the
-per-address limit. Creating an app also needs `emailVerified`.
+opaque and never authenticates GraphQL); the developer's own rate limit;
+admission; then the per-address limit. In `allowlist`, admission checks the
+PostHog flag `developer-console` for the account's user id (below), and creating
+an app additionally accepts either the account's `emailVerified` or independent
+proof of its exact current email. In `open`, admission requires the independent
+proof alone before charging the app-operation address bucket.
 
-**Who is invited.** The same PostHog flag that shows www `/developers/apps`
+**Who is invited in `allowlist`.** The same PostHog flag that shows www `/developers/apps`
 (`PARTNER_DEVELOPER_CONSOLE_FLAG` in `@boardsesh/auth-protocol`, one key for
 both). Inviting a developer is one PostHog edit, with no variable and no deploy.
 `auth/partner/developer-access.ts` asks it before any transaction or Better Auth
@@ -1399,7 +1406,7 @@ work:
   with reason `ALLOWLIST_UNAVAILABLE`. Nobody gets in, and the console says "We
   couldn't check your invite" with a retry button instead of "invite-only". The
   backend logs one error per outage, which reaches Sentry.
-- `FEATURE_FLAG_OVERRIDES` (www's syntax) decides first when it names the flag.
+- In `allowlist`, `FEATURE_FLAG_OVERRIDES` (www's syntax) decides first when it names the flag.
   `developer-console=false` refuses everyone in every environment, production
   included: it is www's kill switch for the same pages, so the operations close
   with them. `developer-console` (on) lets every account in, but only when the
@@ -1411,22 +1418,30 @@ work:
   override nor a key, nobody gets in. `PARTNER_OAUTH_MODE=hold` stops the
   console too.
 
-Only the console asks. Consent, the token endpoint and `/v1` never call
-PostHog, so taking a developer out of the flag stops them listing, editing,
-rotating or deleting their apps, while those apps keep connecting climbers and
-serving `/v1`. To stop an app, suspend it ([admin commands](#admin-commands)).
+Only the console in `allowlist` asks. Consent, the token endpoint and `/v1`
+never call PostHog. Removing an invitation stops allowlisted console operations
+while the app keeps connecting climbers and serving `/v1`. To stop an app,
+suspend it ([admin commands](#admin-commands)).
 
-**`open` still means the allowlist.** `emailVerified` was stamped without proof
-while verification was off (BA-02 D3), so the fast path keeps open registration
-closed until BA-02 ships or registration sends its own email proof. Until one of
-those lands, `open` registers the same developers as `allowlist`: the ones the
-flag names.
+**`open` admits public self-service.** The earlier flag-only fallback is
+superseded by milestone 2's independent developer email proof. Any signed-in
+account can open the console and request that proof; `developer-console` and
+`FEATURE_FLAG_OVERRIDES` do not restrict admission in `open`, even when the
+override is false. A proof is bound to the user id and exact current account
+email. Its single-use challenge lasts 30 minutes, with a one-minute resend
+interval. App operations require the completed proof, not the legacy
+`emailVerified` stamp. Requesting email again after verification leaves that
+same-address proof intact and sends no new challenge. Changing the account
+email requires new proof. Selecting `open` is therefore a public-registration
+decision, after the stage D gates; it is not an alternate allowlist spelling.
 
 **Rate limits.** Writes: 10 a minute per developer and 30 per address. Reads:
 60 and 120. The developer's bucket is charged once the account is known, so only
-that account can spend it. The address bucket is charged only for an invited
-developer, so throwaway accounts behind the same address cannot fill it and lock
-a listed developer out. It is keyed by `ConnectionContext.trustedClientIp`
+that account can spend it. App-operation address buckets are charged only
+after invitation in `allowlist` or independent email proof in `open`.
+Email-status, request and confirmation operations use separate developer and
+address buckets with those same limits, so unverified accounts cannot spend
+verified developers' app-operation budgets. Each is keyed by `ConnectionContext.trustedClientIp`
 (`getTrustedClientIp`, the key the partner OAuth routes use): `cf-connecting-ip`
 counts only from a verified Cloudflare edge, otherwise the hop the private ingress
 appended, and an IPv6 client is its /64. GraphQL's older `clientIp` believes that
@@ -1553,9 +1568,10 @@ racing requests finish before the cascade), so there the step is a defensive
 guard that keeps both deletions in one order; its launch-suite test proves the
 requests queue behind the deletion, nothing more.
 
-**The console** (F15) is `/developers/apps` on www, behind the server flag
-`developer-console` (`packages/web/app/flags.ts`, fails closed; a signed-out
-visitor is sent to sign in first). It lists, registers, edits, rotates and deletes
+**The console** (F15) is `/developers/apps` on www. Signed-out visitors first
+sign in. In `allowlist`, the server flag `developer-console` fails closed;
+in `open`, the signed-in console bypasses that flag and presents independent
+email verification before app operations. It lists, registers, edits, rotates and deletes
 through the operations above. `OAuthClient.activeConnections` is the number of
 climbers connected now, counted the way the caps count (`connected_at` set,
 `revoked_at` empty); the delete confirmation states it. A new or rotated secret
@@ -2405,8 +2421,9 @@ What LEGAL.md implies:
   nothing on it lets an app control a board, run a session or browse the
   catalog. **Neither LEGAL.md nor `/legal` changes until the owner approves the
   text**; the proposal for both is in the description of #7411.
-- **Developer terms** at www `/developers/terms`, behind the same
-  `developer-console` flag as the console, English in every locale. They cover:
+- **Developer terms** at www `/developers/terms`, with the console's same
+  signed-in gate: `developer-console` in `allowlist`, public self-service in
+  `open`. They are English in every locale. They cover:
   use data only for what the climber connected the app for; no sale, rental,
   advertising or data brokering; the climb details a tick carries, including
   someone else's draft or unlisted climb, are for the climber's own logbook and
@@ -2757,10 +2774,11 @@ trigger calls, in READ COMMITTED. Details are in
 
 ---
 
-## Webhooks (later)
+## Webhooks
 
-Milestone 4, and only once an app asks. Shape, so nothing earlier has to
-change for it:
+Milestone 4 is implemented behind the partner mode and subscription gates.
+Production activation still requires the operator checks below. The original
+Sequence proposal is superseded by these implemented delivery rules:
 
 - Per-app settings: one HTTPS URL, a list of events, a signing secret shown
   once, a test-delivery button. Stored on a new `oauth_client_webhooks` table,
@@ -2778,15 +2796,19 @@ change for it:
   ```json
   { "id": "evt_…", "type": "logbook.changed", "occurredAt": "…", "user": "usr_…" }
   ```
-- Coalesced: at most one `logbook.changed` per (app, climber) per minute,
-  using a pg-boss `singletonKey`.
-- Signature, retry table and `410` handling as specified in partner-api.md
-  section 5 (`Boardsesh-Signature: t=…,v1=…`, HMAC-SHA256 over `t.rawBody`,
-  about 17 hours of backoff). These carry over from the Sequence plan
-  unchanged.
+- Coalesced: at most one `logbook.changed` per connection generation per
+  minute. `partner_webhook_debounce` stores the pending trailing change;
+  this is not a pg-boss singleton-key debounce. Each maintenance run processes
+  at most ten producer pages of 1,000 feed rows and 100 ready connections each,
+  and ten relay pages of 100 outbox events. The cursor and pending bits preserve
+  unfinished work for later runs.
+- Signature, retry table and `410` handling are specified in partner-api.md
+  section 5 (`Boardsesh-Signature: t=…,v1=…`, HMAC-SHA256 over `t.rawBody`).
+  Nine exponential retry delays total roughly 17–26 hours with jitter;
+  scheduling and endpoint time add to elapsed delivery time.
 - One pg-boss job per delivery, data = a `webhook_deliveries` ledger row id
   (`id`, `client_id`, `connection_id`, `connection_generation`, `event`,
-  `body jsonb`, `status`, `attempts`,
+  `raw_body text`, `status`, `attempts`,
   `last_status_code`, `last_error`, `delivered_at`). The handler re-checks the
   connection generation before sending, so a climber who disconnected between the event and a
   retry gets nothing sent, except `connection.revoked`, which skips that check
@@ -2798,12 +2820,31 @@ change for it:
   `retryBackoff: true`, `retryDelayMax: 32000`, `expireInSeconds: 30`. The
   explicit `retryDelayMax` matters: `DEFAULT_JOB_OPTIONS` in `job-queue.ts`
   caps every backoff at 120 seconds, which would turn 17 hours of retries into
-  about 18 minutes. The transient-error list is
-  shared with `web-revalidate.ts` and the Strava export job.
+  about 18 minutes. Reconciliation deletes exhausted or lost jobs and re-sends
+  the same delivery id with a computed `startAfter`; recovery retains exponential
+  backoff rather than retrying immediately every minute. Each backend replica
+  runs eight deliveries concurrently, at most two per client, with a 10-second
+  transport deadline. These are per-replica limits, not a global client quota.
+- Maintenance runs every minute. Producer, relay, disable/notify, reconciliation,
+  resealing, pruning and health reporting each catch their own faults; a failed
+  producer cannot skip workout/test delivery relay or the other steps. Any failed
+  step still fails the maintenance job after the remaining steps run.
+- Webhook secrets are sealed with `PARTNER_OAUTH_SECRETS`. Readable current and
+  still-valid previous signing secrets are re-sealed under the newest key on
+  delivery and by a sweep of up to 100 settings per maintenance run, scheduled
+  every minute, including idle/disabled endpoints. An unreadable previous
+  secret is skipped while the current secret signs. An unreadable current secret
+  retries as `signing_unavailable`, then settles failed at ten attempts. This
+  internal fault does not count as an endpoint failure or trigger its disable
+  email. Keep old sealing-key versions until the webhook resealing checks pass;
+  cursor expiry alone is not a safe retirement criterion.
 - **SSRF.** The URL is typed in by anyone. The sender resolves DNS itself,
   refuses private, loopback, link-local, CGNAT and cloud metadata ranges,
   connects to the address it checked, follows no redirects, and only speaks
-  HTTPS. Delivery runs on the Railway backend, never on the homelab workers
+  HTTPS. DNS uses a request-owned resolver: a five-second deadline cancels
+  that request's outstanding lookups, all returned addresses are checked, and
+  transport pins a checked address. Safe-image fetching shares this resolver.
+  Delivery runs on the Railway backend, never on the homelab workers
   ([homelab-deploys.md](./homelab-deploys.md)), where a bypass would reach
   the home network.
 - Ordering is not guaranteed. Every event means "go read", including
@@ -2811,8 +2852,10 @@ change for it:
   connection's tokens/data. The recipient probes current auth, refreshes once,
   and coordinates any deletion with reconnect/token replacement. Test delivery
   of an old revocation after reconnect and after a concurrent token replacement.
-- An app whose deliveries fail for three days is switched off and emailed;
-  the console has a re-enable button.
+- An app is switched off and emailed after a failure streak exceeding 72 hours,
+  with no success and no gap between failures longer than 24 hours. A failure
+  within the last 24 hours is required at disable time; quiet days alone do not
+  disable an endpoint. The console has a re-enable button.
 
 ---
 
@@ -3049,13 +3092,11 @@ bug: fix it and rerun.
 - **`source` on a tick** (`boardsesh` vs `imported`): left out; an app
   that also imports from Kilter directly could use it to de-duplicate. Add
   when one asks.
-- **Connection caps after stage D**: every app starts at 25 live and 20 new
-  connections a day (the `oauth_app_policy` defaults). What the default becomes
-  when registration opens, for an app that launches with a big audience, is
-  open; 200 new a day was the proposal. It is a column; the question is the
-  default.
+- **Connection caps after stage D** were resolved on 2026-11-17: retain 25
+  live and 20 new connections per rolling 24 hours. The earlier 200-new-a-day
+  proposal is superseded. Global admins can change either cap per app.
 - **How a developer asks for higher caps.** There is no request form in the
-  console; today the owner raises an app's caps in its policy row. Who handles
+  console; global admins now change caps through an audited operation. Who handles
   such requests once registration opens, and how fast, is open.
 
 ## Related docs
@@ -3128,7 +3169,26 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS logbook_changes_global_position_idx
 
 Migration 0321 uses `IF NOT EXISTS`, so fresh/test databases create it normally.
 This implementation does not execute the production command or activate partner
-modes. API error/cap and five-minute write-horizon alerts use sanitized
+modes.
+
+**O1 audit, 2026-11-18: unconfirmed.** The
+[production migration job](https://github.com/boardsesh/boardsesh/actions/runs/44268404240/job/134688439997)
+at deployed commit `b87bb473c9c576c852bced07a0e18ef71675dbe2` submitted 0321's
+ordinary `CREATE INDEX IF NOT EXISTS` at `2026-11-18T08:57:48.9059149Z`, then
+logged its ledger insert at `08:57:49.0345800Z`. The job completed successfully.
+Its SQL preview mentions `CONCURRENTLY` only in the preceding migration comment.
+Reviewed GitHub receipts and connected worker/DR logs contain no historical
+prebuild completion receipt; Railway PostgreSQL statement logs were unavailable
+to this audit. This establishes neither that the prebuild happened nor that it
+was omitted. Independent Astra review agreed with this evidence limit.
+Resolving O1 requires an operator receipt or database audit record identifying
+the production relation/index and successful `CREATE INDEX CONCURRENTLY`
+completion before `08:57:48.9059149Z`. Current index presence, validity or the
+migration's short duration cannot prove historical build mode or order. Retain
+the unconfirmed finding if that receipt cannot be recovered; do not recreate
+the index just to obtain a receipt.
+
+API error/cap and five-minute write-horizon alerts use sanitized
 error-level events through the existing Sentry transport with a 15-minute
 cooldown; PostHog summaries are measurement, not an alert subscription.
 
@@ -3208,3 +3268,38 @@ The email-audit CLI fixture retains its existing deadlines and process-group
 cleanup checks. Cleanup failures now report only the existing stop-reason enum,
 drain flag, signal and exit code, so a future failure can be diagnosed without
 logging child output, credentials or private report paths.
+
+## Review follow-ups (#7811, 2026-11-18)
+
+These implementation decisions supersede conflicting milestone 2–4 proposals;
+production activation and device QA remain separate operator gates.
+
+- Shared-session results expose the connected climber's own workout and ticks.
+  If that climber did not create the session, `session.notes`, `session.timezone`
+  and the creator's private board name are null. Permanent gym sessions refuse
+  workout attachment with `APP_WORKOUT_PERMANENT_SESSION`; start a personal
+  session instead. Scheduled expiry is the later of seven days after creation
+  and the scheduled date's UTC midnight plus two days, preserving the scheduled
+  day west of UTC.
+- Mobile persists the active `{sessionId, workoutId}` association and free-climb
+  timer under the signed-in account. Cold restoration refetches authorized
+  workout state; account changes/sign-out clear it, and session end removes it.
+  A committed Start/attach that wins after navigation moved still records its
+  association. Resume refetches current status and session before navigating;
+  stale UI never authorizes attaching the started workout somewhere else.
+- Public developer admission uses exact-current-email proof, preserves an
+  existing same-address proof on resend, and isolates verification budgets from
+  app-operation budgets. `open` bypasses the invite flag and its overrides;
+  `allowlist` retains them. Defaults remain 25 active and 20 new connections per
+  rolling day, editable by global admins with an audit record.
+- Connection email notices allow ten send attempts. Claiming up to ten notices
+  sets only a five-minute lease; attempts increase after each send outcome, so
+  a crash does not consume the remaining attempts of unsent notices. SMTP stays
+  outside the transaction and may produce a duplicate after a crash. Delivered
+  notices and exhausted retries are pruned after 30 days in batches of 1,000;
+  pending retryable notices remain durable. Partial indexes match those states.
+- The example sync CLI refuses a `Retry-After` wait longer than 60 seconds
+  and releases its file lock, preserving state for a later retry. Webhook
+  throughput, per-step fault isolation, key resealing and retirement,
+  bounded signing failures, sustained endpoint failures and recovered-job backoff
+  follow [Webhooks](#webhooks). O1 remains explicitly unconfirmed above.

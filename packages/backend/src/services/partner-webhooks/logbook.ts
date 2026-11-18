@@ -12,8 +12,8 @@ import { enqueuePartnerWebhookEvent } from './events';
 import { liveWebhookScopeCondition } from './authorization';
 
 /** Durable cursor and pending bit preserve the trailing change inside a debounce window. */
-export async function produceLogbookWebhookEvents(database: Database = db): Promise<void> {
-  await database.transaction(
+async function produceLogbookWebhookPage(database: Database): Promise<boolean> {
+  return database.transaction(
     async (transaction) => {
       await transaction.execute(
         sql`select set_config('statement_timeout', '5s', true), set_config('lock_timeout', '2s', true), set_config('idle_in_transaction_session_timeout', '10s', true)`,
@@ -51,7 +51,7 @@ export async function produceLogbookWebhookEvents(database: Database = db): Prom
           ),
         )
         .orderBy(asc(logbookChanges.txid), asc(logbookChanges.seq))
-        .limit(200);
+        .limit(1000);
       const changedUsers = [...new Set(changes.map((change) => change.userId))];
       if (stale || changedUsers.length > 0) {
         // INSERT SELECT marks every matching connection without fetching an unbounded roster.
@@ -123,11 +123,18 @@ export async function produceLogbookWebhookEvents(database: Database = db): Prom
         .update(partnerWebhookFeedState)
         .set({
           feedGeneration: feed.generation,
-          txid: changes.length === 200 && last ? last.txid : feed.horizon,
-          seq: changes.length === 200 && last ? last.seq : '0',
+          txid: changes.length === 1000 && last ? last.txid : feed.horizon,
+          seq: changes.length === 1000 && last ? last.seq : '0',
         })
         .where(eq(partnerWebhookFeedState.id, 1));
+      return changes.length === 1000 || ready.length === 100;
     },
     { isolationLevel: 'repeatable read' },
   );
+}
+
+export async function produceLogbookWebhookEvents(database: Database = db): Promise<void> {
+  for (let page = 0; page < 10; page++) {
+    if (!(await produceLogbookWebhookPage(database))) break;
+  }
 }

@@ -1166,6 +1166,8 @@
     "repAttempt": "Essai"
   },
   "partnerWorkouts": {
+    "openWebsite": "Ouvrir sur le site",
+    "personalSessionRequired": "Démarre une session personnelle pour utiliser cet entraînement.",
     "routeTitle": "Séance d’une application",
     "from": "De {{app}}",
     "unavailable": "Les séances d’applications ne sont pas encore disponibles.",
@@ -1176,9 +1178,9 @@
     "finished": "Cette séance est terminée ou n’est plus disponible.",
     "startError": "Impossible de commencer la séance. Réessaie.",
     "freeform": "Suis ces consignes à ton rythme.",
-    "clamped": "Les cotations ont été adaptées aux plus proches de ce pan.",
-    "chooseBoard": "Choisis ton pan ci-dessous pour commencer.",
-    "noClimbs": "Aucun bloc de ton pan ne correspond à ce programme.",
+    "clamped": "Les cotations ont été adaptées aux plus proches de cette board.",
+    "chooseBoard": "Choisis ta board ci-dessous pour commencer.",
+    "noClimbs": "Aucun bloc de ta board ne correspond à ce programme.",
     "shortfall": "{{found}} blocs disponibles sur {{planned}} prévus.",
     "start": "Commencer cette séance",
     "add": "Ajouter à cette séance",

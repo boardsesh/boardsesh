@@ -161,7 +161,6 @@ export function createPublicApiHandler({
     ledger: RateLimitLedger,
     requestId: string,
     authenticated: (clientId: string) => void,
-    requestBody?: unknown,
   ): Promise<ApiOutcome> {
     const bearer = parseBearerAuthorization(req.headers.authorization);
     if (bearer.problem !== undefined) {
@@ -169,7 +168,7 @@ export function createPublicApiHandler({
       return unauthorized(requestId, challenge, bearer.problem);
     }
 
-    const permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
+    let permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
     if (!permit) return unavailable(requestId);
     try {
       const result = await runtime.api.authenticate(bearer.token);
@@ -182,11 +181,24 @@ export function createPublicApiHandler({
       authenticated(principal.clientId);
       await ledger.consume(`${principal.clientId}:${principal.userId}`, 'api-connection', API_PER_CONNECTION);
       await ledger.consume(principal.clientId, 'api-app', API_PER_APP);
+      let requestBody: unknown;
+      if (route.kind === 'workouts-create') {
+        if (!principal.scopes.includes('workouts:write'))
+          return errorOutcome(403, 'insufficient_scope', 'This call needs workouts:write.', requestId, {
+            headers: { 'www-authenticate': 'Bearer error="insufficient_scope", scope="workouts:write"' },
+          });
+        // Only authenticated writers may reserve the body pool. Slow bodies
+        // hold no database admission permit; the write revalidates the bearer.
+        permit.release();
+        requestBody = await readWorkoutBody(req, identity.key);
+        permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
+        if (!permit) return unavailable(requestId);
+      }
       // Connected apps' "last used": a write at most once an hour per connection.
       await runtime.api.recordUse(principal);
-      return await serveForPrincipal(req, route, runtime, principal, requestId, () => permit.release(), requestBody);
+      return await serveForPrincipal(req, route, runtime, principal, requestId, () => permit?.release(), requestBody);
     } catch (error) {
-      if (error instanceof PartnerRateLimited) throw error;
+      if (error instanceof PartnerRateLimited || error instanceof WorkoutBodyError) throw error;
       if (runtime.api.isDatabaseBusy(error)) return unavailable(requestId);
       // Name and database code only: a Drizzle error's text carries the token hash.
       logger.error('Partner API request failed', {
@@ -197,7 +209,7 @@ export function createPublicApiHandler({
       });
       return serverError(requestId);
     } finally {
-      permit.release();
+      permit?.release();
     }
   }
 
@@ -257,21 +269,11 @@ export function createPublicApiHandler({
 
     let outcome: ApiOutcome;
     try {
-      const requestBody = route.kind === 'workouts-create' ? await readWorkoutBody(req, identity.key) : undefined;
       runtime = await loadRuntimeForRequest();
       outcome = runtime
-        ? await serveRequest(
-            req,
-            route,
-            runtime,
-            identity,
-            ledger,
-            requestId,
-            (authenticatedClientId) => {
-              clientId = authenticatedClientId;
-            },
-            requestBody,
-          )
+        ? await serveRequest(req, route, runtime, identity, ledger, requestId, (authenticatedClientId) => {
+            clientId = authenticatedClientId;
+          })
         : unavailable(requestId);
     } catch (error) {
       if (error instanceof WorkoutBodyError) {

@@ -50,6 +50,7 @@ export class AppWorkoutError extends Error {
     message: string,
     readonly existing?: WorkoutCreated,
     readonly field?: string,
+    readonly reason?: string,
   ) {
     super(message);
   }
@@ -58,7 +59,7 @@ export class AppWorkoutError extends Error {
 export function workoutExpiresAt(spec: CreateWorkout, now: Date): Date {
   const minimum = now.getTime() + 7 * DAY_MS;
   return new Date(
-    Math.max(minimum, spec.scheduledFor ? Date.parse(`${spec.scheduledFor}T00:00:00Z`) + DAY_MS : minimum),
+    Math.max(minimum, spec.scheduledFor ? Date.parse(`${spec.scheduledFor}T00:00:00Z`) + 2 * DAY_MS : minimum),
   );
 }
 
@@ -268,31 +269,54 @@ export async function listPartnerWorkouts(
   query: { externalRef?: string; limit: number; cursor?: string },
   resource = PARTNER_RESOURCE,
 ): Promise<{ workouts: WorkoutResponse[]; cursor: string | null; hasMore: boolean }> {
-  return runInPartnerTransaction(database, async (transaction) => {
+  await runInPartnerTransaction(database, async (transaction) => {
     await lockPrincipal(transaction, principal, 'workouts:read', resource);
-    const rows = await transaction
-      .select()
-      .from(appWorkouts)
+    await transaction
+      .update(appWorkouts)
+      .set({ status: 'expired' })
       .where(
         and(
           eq(appWorkouts.clientId, principal.clientId),
           eq(appWorkouts.userId, principal.userId),
-          query.externalRef ? eq(appWorkouts.externalRef, query.externalRef) : undefined,
-          query.cursor ? gt(appWorkouts.id, query.cursor) : undefined,
+          inArray(appWorkouts.status, ['created', 'opened']),
+          lte(appWorkouts.expiresAt, new Date()),
         ),
-      )
-      .orderBy(asc(appWorkouts.id))
-      .limit(query.limit + 1);
-    const page = rows.slice(0, query.limit);
-    const workouts: WorkoutResponse[] = [];
-    for (const row of page)
-      workouts.push(await presentWorkout(transaction, await refreshExpiry(transaction, row, new Date())));
-    return {
-      workouts,
-      cursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
-      hasMore: rows.length > query.limit,
-    };
+      );
   });
+  // All page rows, ticks, boards and plans share a snapshot without holding
+  // the connection fence that Disconnect, refresh and session End need.
+  const selected = await runInPartnerTransaction(
+    database,
+    async (transaction) => {
+      const rows = await transaction
+        .select()
+        .from(appWorkouts)
+        .where(
+          and(
+            eq(appWorkouts.clientId, principal.clientId),
+            eq(appWorkouts.userId, principal.userId),
+            query.externalRef ? eq(appWorkouts.externalRef, query.externalRef) : undefined,
+            query.cursor ? gt(appWorkouts.id, query.cursor) : undefined,
+          ),
+        )
+        .orderBy(asc(appWorkouts.id))
+        .limit(query.limit + 1);
+      const page = rows.slice(0, query.limit);
+      const workouts: WorkoutResponse[] = [];
+      for (const row of page) workouts.push(await presentWorkout(transaction, row));
+      return {
+        workouts,
+        cursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
+        hasMore: rows.length > query.limit,
+      };
+    },
+    { isolationLevel: 'repeatable read', accessMode: 'read only' },
+  );
+  // Reject a token, scope or connection generation revoked during result work.
+  await runInPartnerTransaction(database, (transaction) =>
+    lockPrincipal(transaction, principal, 'workouts:read', resource),
+  );
+  return selected;
 }
 
 export async function cancelPartnerWorkout(
@@ -367,6 +391,15 @@ export async function attachLockedAppWorkout(
   const [session] = await transaction.select().from(boardSessions).where(eq(boardSessions.id, sessionId)).for('update');
   if (!session || session.status === 'ended' || session.origin !== 'explicit')
     throw new AppWorkoutError(409, 'conflict', 'The session is no longer running.');
+  if (session.isPermanent)
+    throw new AppWorkoutError(
+      409,
+      'conflict',
+      'Start a personal session to use this workout.',
+      undefined,
+      undefined,
+      'APP_WORKOUT_PERMANENT_SESSION',
+    );
   if (session.createdByUserId !== workout.userId) {
     const [member] = await transaction
       .select({ userId: boardSessionParticipants.userId })

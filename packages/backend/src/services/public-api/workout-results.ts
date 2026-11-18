@@ -113,17 +113,18 @@ export async function buildWorkoutResults(
     : [];
   const boardType = BoardTypeSchema.parse(pathType ?? board?.type ?? rows[0]?.boardType ?? 'kilter');
   const angle = pathAngle ?? board?.angle ?? null;
+  const ownsSession = session.createdByUserId === workout.userId;
   return WorkoutResultsSchema.parse({
     completion: workout.status === 'auto_closed' ? 'auto_closed' : 'ended',
     session: {
       startedAt: session.startedAt.toISOString(),
       endedAt: session.endedAt.toISOString(),
       durationSeconds: Math.max(0, Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)),
-      timezone: session.timezone,
-      notes: session.notes,
+      timezone: ownsSession ? session.timezone : null,
+      notes: ownsSession ? session.notes : null,
       board: {
         type: boardType,
-        name: board?.name ?? null,
+        name: ownsSession ? (board?.name ?? null) : null,
         layout: board?.layout ?? null,
         size: board?.size ?? null,
         angle,

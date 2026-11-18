@@ -2276,6 +2276,20 @@
       "when": 1794960085736,
       "tag": "0324_partner_workout_initial_history",
       "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1794998979555,
+      "tag": "0325_partner_review_7811",
+      "breakpoints": true
+    },
+    {
+      "idx": 326,
+      "version": "7",
+      "when": 1794999983475,
+      "tag": "0326_partner_notice_retention_7811",
+      "breakpoints": true
     }
   ]
 }

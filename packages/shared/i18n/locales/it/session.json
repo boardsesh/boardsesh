@@ -1166,6 +1166,8 @@
     "repAttempt": "Tentativo"
   },
   "partnerWorkouts": {
+    "openWebsite": "Apri sul sito",
+    "personalSessionRequired": "Avvia una sessione personale per usare questo allenamento.",
     "routeTitle": "Allenamento da un’app",
     "from": "Da {{app}}",
     "unavailable": "Gli allenamenti dalle app non sono ancora disponibili.",

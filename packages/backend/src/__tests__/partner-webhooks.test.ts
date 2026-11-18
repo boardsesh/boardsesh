@@ -18,6 +18,7 @@ import {
   deliverPartnerWebhook,
   disableFailingPartnerWebhooks,
   prunePartnerWebhookHistory,
+  reconcilePartnerWebhookJobs,
   relayPartnerWebhookEvents,
   startPartnerWebhooks,
   webhookResponseAction,
@@ -184,6 +185,50 @@ describe('durable partner webhook lifecycle', () => {
     expect(settings.failingSince).toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
+  it('settles the tenth signing failure without blaming the partner, then lets its owner recover', async () => {
+    const state = await fixture();
+    const id = await pendingDelivery(state);
+    await db.update(webhookDeliveries).set({ attempts: 9 }).where(eq(webhookDeliveries.id, id));
+    await db
+      .update(oauthClientWebhooks)
+      .set({ previousSecretExpiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(oauthClientWebhooks.clientId, state.clientId));
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', '2:different-key-with-at-least-thirty-two-bytes');
+    const send = vi.fn().mockResolvedValue(204);
+    await deliverPartnerWebhook(id, db, send);
+    const [failed] = await db.select().from(webhookDeliveries).where(eq(webhookDeliveries.id, id));
+    expect(failed).toMatchObject({
+      attempts: 10,
+      status: 'failed',
+      lastError: 'signing_unavailable',
+      settledAt: expect.any(Date),
+    });
+    await rotateOwnedWebhookSecret(db as unknown as PartnerDatabase, state.owner, state.clientId, {
+      authenticatedAtMs: Date.now(),
+      linkGuarded: true,
+    });
+    await deliverPartnerWebhook(await pendingDelivery(state), db, send);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it('reseals a readable current key and signs when the overlap key is unavailable', async () => {
+    const state = await fixture();
+    await db
+      .update(oauthClientWebhooks)
+      .set({ previousSecret: 'unavailable', previousSecretExpiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(oauthClientWebhooks.clientId, state.clientId));
+    vi.stubEnv(
+      'PARTNER_OAUTH_SECRETS',
+      '2:different-key-with-at-least-thirty-two-bytes,1:partner-webhooks-test-secret-with-more-than-32-bytes',
+    );
+    const send = vi.fn().mockResolvedValue(204);
+    await deliverPartnerWebhook(await pendingDelivery(state), db, send);
+    expect(send.mock.calls[0][2]['Boardsesh-Signature'].split(',')).toHaveLength(2);
+    const [config] = await db
+      .select()
+      .from(oauthClientWebhooks)
+      .where(eq(oauthClientWebhooks.clientId, state.clientId));
+    expect(config.secret).toMatch(/^wh1\.2\./);
+  });
   it('preserves all 24 hours of the previous secret and rejects repeated rotation', async () => {
     const state = await fixture();
     const database = db as unknown as PartnerDatabase;
@@ -273,6 +318,43 @@ describe('durable partner webhook lifecycle', () => {
     await deliverPartnerWebhook(id, db, send);
     expect(send).not.toHaveBeenCalled();
   });
+  it('reaches the next climber after a 3,000-change import in one producer invocation', async () => {
+    const first = await fixture();
+    const second = await fixture();
+    await db.delete(partnerWebhookFeedState);
+    await produceLogbookWebhookEvents();
+    await db.delete(partnerWebhookDebounce);
+    await db.delete(partnerWebhookOutbox);
+    await db.execute(
+      sql`insert into logbook_changes (user_id, tick_uuid) select ${first.climber}, tick::text from generate_series(1,3000) tick`,
+    );
+    await db.execute(sql`insert into logbook_changes (user_id, tick_uuid) values (${second.climber}, 'next-tick')`);
+    await produceLogbookWebhookEvents();
+    const events = await db.select().from(partnerWebhookOutbox);
+    expect(events.map((event) => event.clientId).sort()).toEqual([first.clientId, second.clientId].sort());
+  });
+
+  it('relays queued jobs even when the producer cursor cannot be read', async () => {
+    const state = await fixture();
+    await db.delete(partnerWebhookFeedState);
+    await produceLogbookWebhookEvents();
+    await db.update(partnerWebhookFeedState).set({ txid: 'unreadable' });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
+    const work = vi.fn();
+    const insert = vi.fn();
+    await startPartnerWebhooks({ work, insert, schedule: vi.fn() } as unknown as PgBoss);
+    const maintain = work.mock.calls[0][1] as () => Promise<void>;
+    try {
+      await expect(maintain()).rejects.toThrow('Partner webhook maintenance failed');
+      expect(insert).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([expect.objectContaining({ group: { id: state.clientId } })]),
+        expect.anything(),
+      );
+    } finally {
+      await db.delete(partnerWebhookFeedState);
+    }
+  });
   it('discards pre-edit outbox events and keeps enqueue rollback atomic', async () => {
     const state = await fixture();
     await db.transaction((transaction) =>
@@ -284,9 +366,9 @@ describe('durable partner webhook lifecycle', () => {
       }),
     );
     await db.update(oauthClientWebhooks).set({ version: 2 }).where(eq(oauthClientWebhooks.clientId, state.clientId));
-    const send = vi.fn();
-    await relayPartnerWebhookEvents({ send } as unknown as PgBoss);
-    expect(send).not.toHaveBeenCalled();
+    const insert = vi.fn();
+    await relayPartnerWebhookEvents({ insert } as unknown as PgBoss);
+    expect(insert).not.toHaveBeenCalled();
     const count = (
       await db.select().from(partnerWebhookOutbox).where(eq(partnerWebhookOutbox.clientId, state.clientId))
     ).length;
@@ -305,6 +387,32 @@ describe('durable partner webhook lifecycle', () => {
       (await db.select().from(partnerWebhookOutbox).where(eq(partnerWebhookOutbox.clientId, state.clientId))).length,
     ).toBe(count);
   });
+  it('replaces an exhausted queue job with the same id, partner group and capped backoff', async () => {
+    const state = await fixture();
+    const id = await pendingDelivery(state);
+    await db
+      .update(webhookDeliveries)
+      .set({ createdAt: new Date(Date.now() - 120_000), attempts: 5 })
+      .where(eq(webhookDeliveries.id, id));
+    const boss = {
+      getJobById: vi.fn().mockResolvedValue({ state: 'failed', data: {}, retryCount: 9 }),
+      deleteJob: vi.fn(),
+      send: vi.fn(),
+    };
+    await reconcilePartnerWebhookJobs(boss as unknown as PgBoss);
+    expect(boss.deleteJob).toHaveBeenCalledOnce();
+    expect(boss.send).toHaveBeenCalledWith(
+      expect.any(String),
+      { deliveryId: id, recoveryAttempt: 10 },
+      expect.objectContaining({
+        id,
+        group: { id: state.clientId },
+        startAfter: 32_000,
+        retryLimit: 0,
+      }),
+    );
+  });
+
   it('disables after three failing days and prunes only terminal history', async () => {
     const state = await fixture();
     await db
@@ -312,6 +420,12 @@ describe('durable partner webhook lifecycle', () => {
       .set({ failingSince: new Date(Date.now() - 4 * 86_400_000) })
       .where(eq(oauthClientWebhooks.clientId, state.clientId));
     const notify = vi.fn().mockResolvedValue(undefined);
+    await disableFailingPartnerWebhooks(db, notify);
+    expect(notify).not.toHaveBeenCalled();
+    await db
+      .update(oauthClientWebhooks)
+      .set({ lastFailureAt: new Date() })
+      .where(eq(oauthClientWebhooks.clientId, state.clientId));
     await disableFailingPartnerWebhooks(db, notify);
     expect(notify).toHaveBeenCalled();
     const pending = await pendingDelivery(state);

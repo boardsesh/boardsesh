@@ -24,7 +24,7 @@ import { startClimbPopularityRefresh } from './services/climb-popularity-refresh
 import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
 import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
 import { startPartnerConnectionNotices } from './services/partner-connection-notices';
-import { startAppWorkoutMaintenance } from './services/app-workout-maintenance';
+import { startAppWorkoutMaintenance, startSessionInactivityMaintenance } from './services/app-workout-maintenance';
 import { startPartnerWebhooks } from './services/partner-webhooks/worker';
 import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
@@ -100,7 +100,16 @@ async function main() {
       errorName: error instanceof Error ? error.name : 'unknown',
     });
   });
-  await startAppWorkoutMaintenance(jobQueue);
+  await startSessionInactivityMaintenance(jobQueue).catch((error: unknown) => {
+    logger.error('[SessionInactivity] Could not register the inactivity job', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  });
+  await startAppWorkoutMaintenance(jobQueue).catch((error: unknown) => {
+    logger.error('[AppWorkoutMaintenance] Could not register the expiry job', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  });
   await startPartnerWebhooks(jobQueue).catch((error: unknown) => {
     logger.error('[PartnerWebhooks] Could not register delivery workers', {
       errorName: error instanceof Error ? error.name : 'unknown',

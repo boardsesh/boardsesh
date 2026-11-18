@@ -52,7 +52,12 @@ import type { CreateSessionInput } from '../shared/types';
 import { db } from '../../../db/client';
 import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
 import { sessionBoards, sessions } from '../../../db/schema';
-import { prepareAppWorkoutSessionStart, attachLockedAppWorkout } from '../../../services/public-api/workouts';
+import {
+  AppWorkoutError,
+  prepareAppWorkoutSessionStart,
+  attachLockedAppWorkout,
+} from '../../../services/public-api/workouts';
+import { appWorkoutGraphError } from '../app-workouts/errors';
 import { parseAppWorkoutSeed, persistInitialAppWorkoutSeed } from '../../../services/public-api/workout-seed';
 import type { PartnerDatabase } from '../../../auth/partner/tables';
 import { readPartnerOAuthMode } from '../../../auth/partner/mode';
@@ -312,7 +317,12 @@ export const sessionMutations = {
       if (input.appWorkoutId) {
         requireAuthenticated(ctx);
         const mode = readPartnerOAuthMode();
-        if (mode === 'off' || mode === 'hold') throw new Error('Partner workouts are unavailable.');
+        if (mode === 'off' || mode === 'hold')
+          throw new GraphQLError('Partner workouts are unavailable.', { extensions: { code: 'SERVICE_UNAVAILABLE' } });
+        if (input.isPermanent)
+          throw new GraphQLError('Start a personal session to use this workout.', {
+            extensions: { code: 'CONFLICT', reason: 'APP_WORKOUT_PERMANENT_SESSION' },
+          });
       }
       if (input.discoverable) requireAuthenticated(ctx);
 
@@ -528,6 +538,8 @@ export const sessionMutations = {
         createdByUserId: ctx.userId ?? null,
       };
     } catch (err) {
+      if (err instanceof AppWorkoutError) throw appWorkoutGraphError(err);
+      if (err instanceof GraphQLError) throw err;
       // Rate-limit hits are expected abuse-protection noise, not a session-start
       // bug — let them flow through without a Sentry event.
       if (err instanceof Error && err.message.startsWith('Rate limit exceeded')) throw err;

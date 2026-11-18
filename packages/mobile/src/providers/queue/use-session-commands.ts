@@ -1,3 +1,4 @@
+import { clearActivePartnerWorkout, rememberPartnerWorkout } from '../../lib/pending-workout-store';
 import { useCallback, useContext, useRef } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
@@ -162,8 +163,12 @@ export function useSessionCommands({
               },
             },
           );
-          if (!isPartnerScopeCurrent()) return null;
           const newId = response.createSession.id;
+          if (config?.appWorkoutId && credentialGeneration === getCredentialGeneration()) {
+            // The server committed even if the climber switched room during the request.
+            await rememberPartnerWorkout(newId, config.appWorkoutId);
+          }
+          if (!isPartnerScopeCurrent()) return null;
           const winningQueue = config?.appWorkoutSeed ? response.createSession.queueState : null;
           if (config?.appWorkoutSeed && !winningQueue)
             throw new Error('Partner session response omitted its committed queue');
@@ -273,6 +278,23 @@ export function useSessionCommands({
           });
           return newId;
         } catch (error) {
+          if (config?.appWorkoutId) {
+            const errors = (
+              error as { response?: { errors?: { extensions?: { reason?: string; code?: string } }[] } } | null
+            )?.response?.errors;
+            if (errors?.some((entry) => entry.extensions?.reason === 'APP_WORKOUT_PERMANENT_SESSION')) {
+              showToast(t('partnerWorkouts.personalSessionRequired'), 'error');
+              return null;
+            }
+            // The card refetches expected workout conflicts and offers Resume
+            // for a previous committed Start rather than treating it as a crash.
+            if (
+              errors?.some((entry) =>
+                ['CONFLICT', 'NOT_FOUND', 'BAD_USER_INPUT'].includes(entry.extensions?.code ?? ''),
+              )
+            )
+              return null;
+          }
           if (isGraphqlRateLimitedError(error)) {
             showToast(t('mobile.queue.rateLimited'), 'error');
             return null;
@@ -341,6 +363,10 @@ export function useSessionCommands({
       // now; an old removal must not clear that newer selection.
       if (sessionIdRef.current !== sessionToClear || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
       const snapshotRemoval = clearStoredQueueSnapshot();
+      if (sessionToClear)
+        void clearActivePartnerWorkout(sessionToClear).catch((error: unknown) => {
+          reportHandledError(error, { tags: { source: 'partner-workout', op: 'clear-session' } });
+        });
       // Any pending seed-failure guard belongs to the session we're tearing down
       // (it's keyed by id, so a stale value can't match the next session anyway —
       // this just keeps the ref tidy).

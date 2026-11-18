@@ -11,7 +11,13 @@ import { RELAXES_ANONYMOUS_ROUTES } from '../lib/routing/anonymous-auth-gate';
 import { isBoardLinkPath, parseBoardLinkPath } from '../lib/routing/board-deep-link';
 import { clearBoardLinkReplay, setBoardLinkReplay } from '../lib/routing/board-link-replay';
 import { useAuth } from './auth-provider';
-import { isAppWorkoutId, parseAppWorkoutId, PENDING_APP_WORKOUT_KEY } from '../lib/partner-workout-link';
+import {
+  parseAppWorkoutId,
+  PENDING_APP_WORKOUT_KEY,
+  readPendingAppWorkout,
+  serializePendingAppWorkout,
+} from '../lib/partner-workout-link';
+import { useAppWorkoutsFlag } from './feature-flags-provider';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
 // (auth-provider) redirects an unauthenticated cold-start to /auth/login and
@@ -131,6 +137,7 @@ export function parseJoinSessionId(url: string): string | null {
  */
 export function DeepLinkProvider({ children }: { children: ReactNode }) {
   const consentSettled = useConsentSettled();
+  const appWorkoutsEnabled = useAppWorkoutsFlag();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
 
@@ -212,10 +219,18 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
       if (workoutId) {
         if (isLaunchUrl && handledLaunchWorkoutUrl === url) return;
         if (isLaunchUrl) handledLaunchWorkoutUrl = url;
-        if (!isAuthenticatedRef.current || !getConsentSnapshot().settled) {
-          void AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, workoutId).catch((error: unknown) => {
-            reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-partner-workout' } });
+        if (!appWorkoutsEnabled) {
+          void AsyncStorage.removeItem(PENDING_APP_WORKOUT_KEY).catch((error: unknown) => {
+            reportHandledError(error, { tags: { source: 'deep-link', op: 'discard-disabled-partner-workout' } });
           });
+          return;
+        }
+        if (!isAuthenticatedRef.current || !getConsentSnapshot().settled) {
+          void AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, serializePendingAppWorkout(workoutId)).catch(
+            (error: unknown) => {
+              reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-partner-workout' } });
+            },
+          );
         } else if (!deferConsentDestination(`/w/${workoutId}`)) {
           router.navigate({ pathname: '/w/[workoutId]', params: { workoutId } });
         }
@@ -233,7 +248,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
       const boardPath = parseBoardLinkPath(url);
       if (boardPath) void handleBoardLink(url, boardPath, isLaunchUrl);
     },
-    [handleBoardLink, handleLegacyPreview, handleSessionId, router],
+    [appWorkoutsEnabled, handleBoardLink, handleLegacyPreview, handleSessionId, router],
   );
 
   // Cold start + warm links.
@@ -253,13 +268,15 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   // received while signed out that we stashed above). Clears the stash on
   // consume so it fires exactly once.
   useEffect(() => {
-    if (!isAuthenticated || !consentSettled) return;
+    if (appWorkoutsEnabled && (!isAuthenticated || !consentSettled)) return;
     let cancelled = false;
     void (async () => {
-      const workoutId = await AsyncStorage.getItem(PENDING_APP_WORKOUT_KEY);
-      if (cancelled || !isAppWorkoutId(workoutId)) return;
+      const stored = await AsyncStorage.getItem(PENDING_APP_WORKOUT_KEY);
+      if (cancelled || !stored) return;
       await AsyncStorage.removeItem(PENDING_APP_WORKOUT_KEY);
-      if (!deferConsentDestination(`/w/${workoutId}`))
+      if (cancelled || !appWorkoutsEnabled || !isAuthenticatedRef.current || !getConsentSnapshot().settled) return;
+      const workoutId = readPendingAppWorkout(stored);
+      if (workoutId && !deferConsentDestination(`/w/${workoutId}`))
         router.navigate({ pathname: '/w/[workoutId]', params: { workoutId } });
     })().catch((error: unknown) => {
       reportHandledError(error, { tags: { source: 'deep-link', op: 'replay-partner-workout' } });
@@ -267,7 +284,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, consentSettled, router]);
+  }, [appWorkoutsEnabled, isAuthenticated, consentSettled, router]);
 
   useEffect(() => {
     if (!isAuthenticated || !consentSettled) return;

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, request } from 'node:http';
+import * as Sentry from '@sentry/node';
+import * as workoutResults from '../services/public-api/workout-results';
 import type { AddressInfo } from 'node:net';
 import { and, eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { roomManager } from '../services/room-manager';
@@ -19,11 +21,13 @@ import {
   boardseshTicks,
   boardSessionQueues,
   sessionWorkouts,
+  userBoards,
 } from '@boardsesh/db/schema';
 import { oauthAccessToken, oauthClient, oauthResource, oauthConnections } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { findPartnerApiPrincipal, type PartnerApiPrincipal } from '../auth/partner/bearer';
 import type { PartnerDatabase } from '../auth/partner/tables';
+import { runInPartnerTransaction } from '../auth/partner/transaction';
 import { disconnectPartnerConnection } from '../auth/partner/connection';
 import {
   createPartnerTestEnvironment,
@@ -38,6 +42,7 @@ import { redisClientManager } from '../redis/client';
 import {
   createPartnerWorkout,
   readPartnerWorkout,
+  listPartnerWorkouts,
   cancelPartnerWorkout,
   lockAppWorkoutForUser,
   lockAppWorkoutSession,
@@ -52,6 +57,11 @@ import {
   lockSessionAppWorkouts,
 } from '../services/public-api/workout-lifecycle';
 import { inferWorkoutBlockIndex } from '../services/public-api/workout-results';
+
+vi.mock('@sentry/node', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sentry/node')>()),
+  captureException: vi.fn(),
+}));
 
 let environment: PartnerTestEnvironment;
 beforeAll(async () => {
@@ -321,6 +331,26 @@ describe('partner workouts', () => {
     expect(remaining).toEqual([{ key: liveKey }]);
   });
 
+  it('drains expired receipts in bounded batches while retaining live receipts', async () => {
+    const { principal } = await connected();
+    await create(principal);
+    const [template] = await db
+      .select()
+      .from(appWorkoutRequests)
+      .where(eq(appWorkoutRequests.clientId, principal.clientId));
+    await db.insert(appWorkoutRequests).values(
+      Array.from({ length: 1001 }, () => ({
+        ...template,
+        key: randomUUID(),
+        expiresAt: new Date(Date.now() - 1000),
+      })),
+    );
+    await db.transaction((tx) => expireAppWorkouts(tx as unknown as PartnerDatabase));
+    expect(await db.$count(appWorkoutRequests, eq(appWorkoutRequests.clientId, principal.clientId))).toBe(2);
+    await db.transaction((tx) => expireAppWorkouts(tx as unknown as PartnerDatabase));
+    expect(await db.$count(appWorkoutRequests, eq(appWorkoutRequests.clientId, principal.clientId))).toBe(1);
+  });
+
   it('returns the original session when Start is retried after its response was lost', async () => {
     const { principal } = await connected();
     const workout = await create(principal);
@@ -367,12 +397,134 @@ describe('partner workouts', () => {
     }
   });
 
+  it('refuses permanent session attachment and reports expected Start conflicts without Sentry', async () => {
+    const { principal } = await connected();
+    const workout = await create(principal);
+    const sessionId = randomUUID();
+    await db
+      .insert(boardSessions)
+      .values({ id: sessionId, createdByUserId: principal.userId, boardPath: 'kilter/1/1/1/40', isPermanent: true });
+    await expect(start(principal.userId, workout.id, sessionId)).rejects.toMatchObject({
+      code: 'conflict',
+      reason: 'APP_WORKOUT_PERMANENT_SESSION',
+    });
+    expect((await read(principal, workout.id)).status).toBe('created');
+    const capture = vi.mocked(Sentry.captureException);
+    capture.mockClear();
+    const previousMode = process.env.PARTNER_OAUTH_MODE;
+    process.env.PARTNER_OAUTH_MODE = 'allowlist';
+    try {
+      await cancelPartnerWorkout(environment.database, principal, workout.id, TEST_RESOURCE);
+      await expect(
+        sessionMutations.createSession(
+          null,
+          {
+            input: {
+              boardPath: 'kilter/1/1/1/40',
+              latitude: 0,
+              longitude: 0,
+              discoverable: false,
+              appWorkoutId: workout.id,
+            },
+          },
+          {
+            userId: principal.userId,
+            isAuthenticated: true,
+            connectionId: randomUUID(),
+            transport: 'http',
+          } as ConnectionContext,
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'CONFLICT' } });
+      expect(capture).not.toHaveBeenCalled();
+    } finally {
+      if (previousMode === undefined) delete process.env.PARTNER_OAUTH_MODE;
+      else process.env.PARTNER_OAUTH_MODE = previousMode;
+    }
+  });
+
+  it('preserves partner timeouts in a read-only repeatable-read results snapshot', async () => {
+    const settings = await runInPartnerTransaction(
+      environment.database,
+      (transaction) =>
+        transaction.execute(sql`
+      select current_setting('transaction_isolation') as isolation,
+             current_setting('transaction_read_only') as read_only,
+             current_setting('lock_timeout') as lock_timeout,
+             current_setting('statement_timeout') as statement_timeout,
+             current_setting('idle_in_transaction_session_timeout') as idle_timeout
+    `),
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    );
+    expect(settings[0]).toMatchObject({
+      isolation: 'repeatable read',
+      read_only: 'on',
+      lock_timeout: '2s',
+      statement_timeout: '5s',
+      idle_timeout: '10s',
+    });
+  });
+
+  it('releases the connection during list results and refuses a concurrent Disconnect', async () => {
+    const { principal } = await connected();
+    const workout = await create(principal);
+    const sessionId = await start(principal.userId, workout.id);
+    await db.update(boardSessions).set({ endedAt: new Date(), status: 'ended' }).where(eq(boardSessions.id, sessionId));
+    await db.update(appWorkouts).set({ status: 'completed' }).where(eq(appWorkouts.id, workout.id));
+    let reportBuilding!: () => void;
+    const building = new Promise<void>((resolve) => {
+      reportBuilding = resolve;
+    });
+    let releaseBuilder!: () => void;
+    const mayFinish = new Promise<void>((resolve) => {
+      releaseBuilder = resolve;
+    });
+    const original = workoutResults.buildWorkoutResults;
+    const builder = vi.spyOn(workoutResults, 'buildWorkoutResults').mockImplementation(async (transaction, row) => {
+      reportBuilding();
+      await mayFinish;
+      return original(transaction, row);
+    });
+    const listing = listPartnerWorkouts(environment.database, principal, { limit: 100 }, TEST_RESOURCE);
+    const refusal = expect(listing).rejects.toMatchObject({ status: 401, code: 'invalid_token' });
+    try {
+      await building;
+      // This must finish while result construction is paused: the old implementation deadlocked here.
+      await disconnectPartnerConnection(environment.database, {
+        userId: principal.userId,
+        clientId: principal.clientId,
+        reason: 'climber_disconnect',
+      });
+    } finally {
+      releaseBuilder();
+      await refusal;
+      builder.mockRestore();
+    }
+  });
+
   it('lets different party members run their own workouts in the same session', async () => {
     const first = await connected();
     const second = await connected();
     const firstWorkout = await create(first.principal);
     const secondWorkout = await create(second.principal);
     const sessionId = await start(first.principal.userId, firstWorkout.id);
+    const [privateBoard] = await db
+      .insert(userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: first.principal.userId,
+        name: 'Secret garage',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1',
+        angle: 40,
+      })
+      .returning();
+    await db
+      .update(boardSessions)
+      .set({ boardId: privateBoard.id, notes: 'Private recap', timezone: 'America/Los_Angeles' })
+      .where(eq(boardSessions.id, sessionId));
     await db.insert(boardSessionParticipants).values({ sessionId, userId: second.principal.userId });
     await start(second.principal.userId, secondWorkout.id, sessionId);
     await db.transaction(async (tx) => {
@@ -386,7 +538,19 @@ describe('partner workouts', () => {
       await completeSessionAppWorkouts(transaction, workouts, 'completed', new Date());
     });
     expect((await read(first.principal, firstWorkout.id)).status).toBe('completed');
-    expect((await read(second.principal, secondWorkout.id)).status).toBe('completed');
+    const ownResults = (await read(first.principal, firstWorkout.id)).results;
+    expect(ownResults?.session).toMatchObject({
+      notes: 'Private recap',
+      timezone: 'America/Los_Angeles',
+      board: { name: 'Secret garage' },
+    });
+    const guestResults = await read(second.principal, secondWorkout.id);
+    expect(guestResults.status).toBe('completed');
+    expect(guestResults.results?.session).toMatchObject({
+      notes: null,
+      timezone: null,
+      board: { name: null, type: 'kilter', angle: 40 },
+    });
     await expect(read(second.principal, firstWorkout.id)).rejects.toMatchObject({ status: 404 });
   });
 
@@ -477,6 +641,38 @@ describe('partner workouts', () => {
       'idempotency-key': randomUUID(),
     };
     try {
+      // Deliberately never send the declared body: anonymous callers must be
+      // refused before occupying a body slot or waiting for its five-second timeout.
+      const anonymousStatus = await new Promise<number>((resolve, reject) => {
+        const pending = request(
+          {
+            hostname: '127.0.0.1',
+            port,
+            path: '/v1/workouts',
+            method: 'POST',
+            headers: {
+              host: 'api.boardsesh.com',
+              'content-type': 'application/json',
+              'content-length': '100',
+            },
+          },
+          (response) => {
+            response.resume();
+            response.on('end', () => {
+              pending.destroy();
+              resolve(response.statusCode ?? 0);
+            });
+          },
+        );
+        pending.on('error', reject);
+        pending.flushHeaders();
+      });
+      expect(anonymousStatus).toBe(401);
+      const invalidToken = await sendTo(port, 'POST', '/v1/workouts', {
+        headers: { ...headers, authorization: 'Bearer junk-token' },
+        body: '{',
+      });
+      expect(invalidToken.status).toBe(401);
       const input = spec();
       const created = await sendTo(port, 'POST', '/v1/workouts', { headers, body: JSON.stringify(input) });
       expect(created.status).toBe(201);
@@ -724,11 +920,11 @@ describe('partner workouts', () => {
 });
 
 describe('workout contract boundaries', () => {
-  it('clamps lifetime to seven days or the day after the scheduled date and rejects impossible blocks', () => {
+  it('clamps lifetime to seven days or two UTC days after the scheduled date and rejects impossible blocks', () => {
     const now = new Date('2026-11-17T12:00:00Z');
     expect(workoutExpiresAt(spec(), now).toISOString()).toBe('2026-11-24T12:00:00.000Z');
     expect(workoutExpiresAt({ ...spec(), scheduledFor: '2026-12-01' }, now).toISOString()).toBe(
-      '2026-12-02T00:00:00.000Z',
+      '2026-12-03T00:00:00.000Z',
     );
     expect(
       CreateWorkoutSchema.safeParse({

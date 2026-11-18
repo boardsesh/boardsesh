@@ -14,6 +14,7 @@ export const oauthClientWebhooks = pgTable('oauth_client_webhooks', {
   enabled: boolean('enabled').default(true).notNull(),
   version: integer('version').default(1).notNull(),
   failingSince: timestamp('failing_since', { withTimezone: true }),
+  lastFailureAt: timestamp('last_failure_at', { withTimezone: true }),
   disabledReason: text('disabled_reason'),
   failureEmailPending: boolean('failure_email_pending').default(false).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -71,7 +72,12 @@ export const webhookDeliveries = pgTable(
     settledAt: timestamp('settled_at', { withTimezone: true }),
     nextReconcileAt: timestamp('next_reconcile_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('webhook_deliveries_client_created_idx').on(table.clientId, table.createdAt)],
+  (table) => [
+    index('webhook_deliveries_client_created_idx').on(table.clientId, table.createdAt),
+    index('webhook_deliveries_reconcile_idx')
+      .on(table.nextReconcileAt, table.id)
+      .where(sql`${table.status} in ('pending', 'retrying')`),
+  ],
 );
 
 export const partnerWebhookFeedState = pgTable('partner_webhook_feed_state', {

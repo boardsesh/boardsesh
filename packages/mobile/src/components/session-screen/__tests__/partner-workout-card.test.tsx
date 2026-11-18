@@ -16,7 +16,12 @@ const state = vi.hoisted(() => ({
   activate: vi.fn(),
   prepare: vi.fn(),
   setRun: vi.fn(),
+  navigate: vi.fn(),
+  pending: null as AppWorkout | null,
+  remember: vi.fn(async () => undefined),
+  setPending: vi.fn(),
 }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ navigate: state.navigate }) }));
 vi.mock('react-native', () => ({ View: 'div', StyleSheet: { create: (styles: unknown) => styles } }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12, 4: 16 } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -58,11 +63,15 @@ vi.mock('../../../lib/workout-run-store', () => ({
   setWorkoutRun: state.setRun,
 }));
 vi.mock('../../../lib/pending-workout-store', () => ({
-  usePendingWorkout: () => (state.active ? null : workout),
+  usePendingWorkout: () => (state.active ? null : (state.pending ?? workout)),
   useActivePartnerWorkout: () => state.active,
   getPendingWorkout: () => workout,
   activatePartnerWorkout: state.activate,
   clearPendingWorkout: vi.fn(),
+  setPendingWorkout: state.setPending,
+  rememberPartnerWorkout: state.remember,
+  getPartnerWorkoutTimer: () => null,
+  setPartnerWorkoutTimer: vi.fn(async () => undefined),
 }));
 vi.mock('../../Card', () => ({
   Card: ({ children }: { children: ReactNode }) => createElement('div', null, children),
@@ -91,10 +100,43 @@ beforeEach(() => {
   state.sessionId = null;
   state.active = null;
   state.run = null;
+  state.pending = null;
+  state.request.mockImplementation(async () => ({}));
   state.hydrate.mockResolvedValue('clean');
 });
 
 describe('partner workout card recovery', () => {
+  it('offers Resume after an attachment commits while the room changes', async () => {
+    state.sessionId = 'original-room';
+    const committed = { ...workout, status: 'started', sessionId: 'original-room' };
+    state.request.mockImplementation(async () => {
+      state.sessionId = 'new-room';
+      return { appWorkout: committed };
+    });
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.setPending).toHaveBeenCalledWith(committed));
+    expect(state.append).not.toHaveBeenCalled();
+    expect(state.remember).toHaveBeenCalledWith('original-room', workout.id);
+  });
+
+  it('refetches and offers Resume after a conflict from an earlier committed Start', async () => {
+    const committed = { ...workout, status: 'started', sessionId: 'original-room' };
+    state.request.mockRejectedValueOnce(new Error('409 conflict')).mockResolvedValueOnce({ appWorkout: committed });
+    state.sessionId = 'new-room';
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.add'));
+    await waitFor(() => expect(state.setPending).toHaveBeenCalledWith(committed));
+    expect(state.append).not.toHaveBeenCalled();
+  });
+
+  it('reopens authoritative workout details before confirming Resume', () => {
+    state.pending = { ...workout, status: 'started', sessionId: 'original-room' };
+    const view = render(createElement(PartnerWorkoutCard));
+    fireEvent.click(view.getByText('partnerWorkouts.resume'));
+    expect(state.navigate).toHaveBeenCalledWith({ pathname: '/w/[workoutId]', params: { workoutId: workout.id } });
+    expect(view.queryByText('partnerWorkouts.start')).toBeNull();
+  });
   it('starts with the selected privacy and an atomic empty freeform seed without local append', async () => {
     const view = render(
       createElement(PartnerWorkoutCard, { startConfig: { isPublic: false, audience: 'invite_only' } }),
