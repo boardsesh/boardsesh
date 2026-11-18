@@ -107,8 +107,8 @@ jobs:
       # The global setup prepares the database (the credential LOGIN and an
       # enforced authority manifest) and gives both servers every precondition;
       # BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow, honoured only on the .test
-      # hosts, empties the cutover blocker lists. A pull request runs the specs
-      # tagged @smoke (acceptance 1, 2 and 5); the nightly and a dispatch run all.
+      # hosts, empties the cutover blocker lists. Every run runs every spec: green,
+      # the whole set takes about 17 minutes of job time under next dev (#7810).
       - name: Run the browser-session acceptance specs in both engines
         env:
           # The nightly runs www as a production build (Router Cache and several auth
@@ -117,7 +117,6 @@ jobs:
           BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
           AUTH_BROWSER_SESSION_MODE: better-auth
           BROWSER_SESSION_E2E_REUSE_EXPORT: '1'
-          BROWSER_SESSION_E2E_GREP: ''
         # db:up (dev-db compose stack) and the web-runtime install come from the vp task graph.
         run: vp run test:e2e:browser-session
 

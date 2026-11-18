@@ -1955,12 +1955,14 @@ fields are now a cosmetic read on the application connection after admission
 (`profileDisplayReader`), and `web-session-credential-writer.proof.ts` runs
 every web-session command on the real LOGIN in CI.
 
-A pull request runs the tests tagged `@smoke` (items 1, 2 and 5); the nightly
-runs the legacy baseline and then every acceptance spec against a production
-build of www. Not covered here: Google and Apple sign-in through the browser
-(the Google stand-in, `auth-proofs/google-oidc-fixture.ts`, is not wired into
-the edge), the partner consent page (it needs the partner OAuth journey's own
-stack), and the cookie-order fixture, which B7c reruns.
+Every run, pull request or nightly, runs every acceptance spec: green, the set
+takes about 17 minutes of job time under `next dev` and 11 against the production
+build (#7810). The nightly first runs the legacy baseline, then the acceptance
+specs against a production build of www. Not covered here: Google and Apple
+sign-in through the browser (the Google stand-in,
+`auth-proofs/google-oidc-fixture.ts`, is not wired into the edge), the partner
+consent page (it needs the partner OAuth journey's own stack), and the
+cookie-order fixture, which B7c reruns.
 
 What the harness does not show:
 
