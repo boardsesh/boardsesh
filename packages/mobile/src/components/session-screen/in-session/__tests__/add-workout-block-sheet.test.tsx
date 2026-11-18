@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { Fragment, createElement, type ReactElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
@@ -413,12 +413,9 @@ describe('AddWorkoutBlockSheet', () => {
   });
 
   describe('block types', () => {
-    afterEach(() => vi.unstubAllGlobals());
     const ALL_TYPES = ['volume', 'pyramid', 'ladder', 'gradeFocus', 'onTheMinute', 'fourByFour', 'limitBouldering'];
 
-    // No flag value anywhere: a release build that has not fetched flags still offers every type.
-    it('offers every workout type in a release build, never a warm-up', () => {
-      vi.stubGlobal('__DEV__', false);
+    it('offers every workout type, never a warm-up', () => {
       setWorkoutRun('session-1', {
         stages: [{ id: 'stage-4x4', kind: 'fourByFour', itemUuids: ['f1'], targetGrade: 18 }],
       });

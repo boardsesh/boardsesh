@@ -367,9 +367,14 @@ diagnostic) applies on native. The whole surface lives in three files:
   `workout-timed-blocks` is retired in code (#5380). It gated the three timed
   workout blocks (4x4, Limit Bouldering, On the Minute); every build now offers all
   8 type chips on the Record tab's block card and 7 in "Add a block", with no flag
-  read. **Do not turn the PostHog flag off or delete it** until a native release
-  that embeds this change is widely adopted: older bundles read a missing flag as
-  false and would lose the three blocks. See `docs/workout-stages.md` → "Timed
+  read. **Keep the PostHog flag on at 100%. Do not turn it off or delete it** while
+  any active install still runs a bundle published before this change. Older
+  bundles read a missing flag as off and drop the three blocks. That covers every
+  store build on a runtime older than the first one this change reached by OTA
+  (they keep their last compatible OTA, with no automatic backport), and any
+  binary that falls back to its embedded bundle after an OTA rollback. Before you
+  retire the flag, check in PostHog that installs on those app versions are close
+  to zero. See `docs/workout-stages.md` → "Timed
   blocks".
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an

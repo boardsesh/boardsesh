@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, useState, type ReactNode, type Ref } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
@@ -16,7 +16,6 @@ import {
   type WorkoutBlock,
   type WorkoutFilters,
 } from '../workout-blocks';
-import { FeatureFlagsProvider, type FeatureFlags } from '../../../../providers/feature-flags-provider';
 
 const uuids = vi.hoisted(() => {
   let counter = 0;
@@ -185,9 +184,8 @@ function Harness({ initial }: { initial: GeneratorSelection }) {
   });
 }
 
-function renderList(blocks: WorkoutBlock[], flags?: FeatureFlags) {
-  const list = createElement(Harness, { initial: { ...NO_WORKOUT, blocks } });
-  return render(flags ? createElement(FeatureFlagsProvider, { flags, children: list }) : list);
+function renderList(blocks: WorkoutBlock[]) {
+  return render(createElement(Harness, { initial: { ...NO_WORKOUT, blocks } }));
 }
 
 function lastSelection(): GeneratorSelection {
@@ -392,23 +390,14 @@ describe('WorkoutBlockList', () => {
   });
 
   describe('timed block chips', () => {
-    afterEach(() => vi.unstubAllGlobals());
     const TIMED_CHIP_LABELS = [
       'Block 1, mobile.session.preGeneratorOnTheMinute',
       'Block 1, mobile.session.preGeneratorFourByFour',
       'Block 1, mobile.session.preGeneratorLimitBouldering',
     ];
 
-    // No flag provider and __DEV__ off: a release build that has not fetched flags.
-    it('are on every card in a release build with no flag value', () => {
-      vi.stubGlobal('__DEV__', false);
-      const screen = renderList([pyramid('first', 20)]);
-
-      for (const label of TIMED_CHIP_LABELS) expect(screen.getByLabelText(label)).toBeTruthy();
-    });
-
-    it('follow the untimed chips, and turn a block into a 4x4 at its grade', () => {
-      vi.stubGlobal('__DEV__', true);
+    // Rendered with no FeatureFlagsProvider: a phone that has not fetched flags still offers them.
+    it('are on every card with no flag provider, and turn a block into a 4x4 at its grade', () => {
       const screen = renderList([pyramid('first', 20)]);
 
       for (const label of TIMED_CHIP_LABELS) expect(screen.getByLabelText(label)).toBeTruthy();

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
@@ -109,17 +109,9 @@ describe('nextBlockType', () => {
 const UNTIMED_CHIPS = ['warmUp', 'volume', 'pyramid', 'ladder', 'gradeFocus'];
 
 describe('timed block types', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
-
   const TIMED_CHIPS = ['onTheMinute', 'fourByFour', 'limitBouldering'];
 
-  // No flag, no __DEV__: every build offers all eight chips.
-  it('are on every chip in a release build: 8 chips', () => {
-    vi.stubGlobal('__DEV__', false);
-
+  it('list all eight chips for the block card and seven for Add a block, in order', () => {
     expect(WORKOUT_BLOCK_TYPES).toEqual([...UNTIMED_CHIPS, ...TIMED_CHIPS]);
     expect(WORKOUT_BLOCK_TYPES).toHaveLength(8);
     expect(ADD_BLOCK_TYPES).toEqual([...UNTIMED_CHIPS.slice(1), ...TIMED_CHIPS]);
