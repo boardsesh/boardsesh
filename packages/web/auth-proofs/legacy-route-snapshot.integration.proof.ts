@@ -77,8 +77,12 @@ afterAll(async () => {
   await environment?.close();
 });
 
+/** A first-party cookie a browser could hold after a rollback, added to every request when set. */
+let carriedFirstParty = '';
+const cookieOf = (jar: CookieJar) => [jar.header(), carriedFirstParty].filter(Boolean).join('; ');
+
 async function csrf(jar: CookieJar): Promise<string> {
-  const response = await callRoute(authRoute, '/api/auth/csrf', { cookie: jar.header() });
+  const response = await callRoute(authRoute, '/api/auth/csrf', { cookie: cookieOf(jar) });
   jar.apply(response);
   const { csrfToken } = (await response.json()) as { csrfToken: string };
   return csrfToken;
@@ -87,7 +91,7 @@ async function csrf(jar: CookieJar): Promise<string> {
 async function login(jar: CookieJar, password: string) {
   const csrfToken = await csrf(jar);
   const response = await callRoute(authRoute, '/api/auth/callback/credentials', {
-    cookie: jar.header(),
+    cookie: cookieOf(jar),
     form: { csrfToken, email: CLIMBER.email, password, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
   });
   jar.apply(response);
@@ -97,7 +101,7 @@ async function login(jar: CookieJar, password: string) {
 async function signOut(jar: CookieJar, expectedAuthSessionId: string) {
   const csrfToken = await csrf(jar);
   return callRoute(authRoute, '/api/auth/signout', {
-    cookie: jar.header(),
+    cookie: cookieOf(jar),
     form: {
       csrfToken,
       callbackUrl: 'https://www.boardsesh.com/',
@@ -112,14 +116,16 @@ async function signOut(jar: CookieJar, expectedAuthSessionId: string) {
 async function routeAnswers() {
   const right = new CookieJar();
   const loginRight = await normalizedResponse(await login(right, PASSWORD));
-  const sessionSignedIn = await callRoute(authRoute, '/api/auth/session', { cookie: right.header() });
+  const sessionSignedIn = await callRoute(authRoute, '/api/auth/session', { cookie: cookieOf(right) });
   const { authSessionId } = (await sessionSignedIn.clone().json()) as { authSessionId: string };
   const wrong = new CookieJar();
   return {
     loginRight,
     loginWrong: await normalizedResponse(await login(wrong, 'not the password')),
     sessionSignedIn: await normalizedResponse(sessionSignedIn),
-    sessionAnonymous: await normalizedResponse(await callRoute(authRoute, '/api/auth/session')),
+    sessionAnonymous: await normalizedResponse(
+      await callRoute(authRoute, '/api/auth/session', carriedFirstParty ? { cookie: carriedFirstParty } : {}),
+    ),
     signOutOtherLogin: await normalizedResponse(await signOut(right, 'another-login')),
     signOutShownLogin: await normalizedResponse(await signOut(right, authSessionId)),
   };
@@ -215,5 +221,35 @@ describe('AUTH_BROWSER_SESSION_MODE off: the route answers as before B1c', () =>
     const unset = await routeAnswers();
     vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
     expect(await routeAnswers()).toEqual(unset);
+  });
+});
+
+describe('legacy mode with a first-party cookie left from before a rollback (review M2)', () => {
+  const FIRST_PARTY_CLEARS = [
+    '__Secure-boardsesh.session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+    '__Secure-boardsesh.session_token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+    '__Secure-boardsesh.bridged_session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+    '__Secure-boardsesh.bridged_session_token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+  ];
+  afterEach(() => {
+    carriedFirstParty = '';
+  });
+
+  it('adds the first-party clears to login and sign-out only, needing no cookie secret', async () => {
+    const plain = await routeAnswers();
+    const plainCsrf = await normalizedResponse(await callRoute(authRoute, '/api/auth/csrf'));
+    // Any value, verified or not: www holds no cookie secret in legacy mode.
+    carriedFirstParty = '__Secure-boardsesh.session_token=stale.value; __Secure-boardsesh.bridged_session_token=other';
+    const carried = await routeAnswers();
+    expect(carried.loginRight.setCookies).toEqual([...plain.loginRight.setCookies, ...FIRST_PARTY_CLEARS]);
+    expect(carried.signOutShownLogin.setCookies).toEqual([
+      ...plain.signOutShownLogin.setCookies,
+      ...FIRST_PARTY_CLEARS,
+    ]);
+    for (const unchanged of ['loginWrong', 'sessionSignedIn', 'sessionAnonymous', 'signOutOtherLogin'] as const)
+      expect(carried[unchanged]).toEqual(plain[unchanged]);
+    expect(
+      await normalizedResponse(await callRoute(authRoute, '/api/auth/csrf', { cookie: carriedFirstParty })),
+    ).toEqual(plainCsrf);
   });
 });

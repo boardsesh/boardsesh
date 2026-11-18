@@ -223,6 +223,48 @@ describe('login', () => {
   });
 });
 
+describe('every response that sets the login cookie (review M3 invariant)', () => {
+  /**
+   * Sets a legacy cookie naming the same session, or clears the legacy names.
+   * Rule (c) relies on it: a legacy cookie with another session id beside a
+   * login cookie is then always the later sign-in.
+   */
+  async function expectLegacyTwinOrClear(response: Response) {
+    const written = setCookies(response);
+    const loginValue = written
+      .filter((header) => header.startsWith(`${LOGIN}=`) && !header.startsWith(`${LOGIN}=;`))
+      .map((header) => header.split(';', 1)[0].slice(LOGIN.length + 1))[0];
+    if (loginValue === undefined) return;
+    const admitted = await readFirstPartySession(environment.database, {
+      kind: 'canonical-token',
+      token: loginValue.slice(0, loginValue.indexOf('.')),
+    });
+    if (admitted.status !== 'admitted') throw new Error('The login cookie names no live session');
+    const legacyValue = written
+      .filter((header) => header.startsWith(`${LEGACY}=`) && !header.startsWith(`${LEGACY}=;`))
+      .map((header) => header.split(';', 1)[0].slice(LEGACY.length + 1))[0];
+    if (legacyValue === undefined) {
+      expect(written.some((header) => header.startsWith(`${LEGACY}=;`))).toBe(true);
+      return;
+    }
+    expect((await decode({ token: legacyValue, secret }))?.authSessionId).toBe(admitted.session.authSessionId);
+  }
+
+  it('holds for a fresh login, a login over another account, a conflicted cookie and an oversized legacy cookie', async () => {
+    const [climberA, climberB] = [await climber(), await climber()];
+    const jar = new CookieJar();
+    await expectLegacyTwinOrClear(await login(jar, climberA.email));
+    await expectLegacyTwinOrClear(await login(jar, climberB.email));
+    const stray = signBrowserSessionCookie('login', randomBytes(32).toString('base64url'), COOKIE_SECRET);
+    await expectLegacyTwinOrClear(
+      await login(new CookieJar(), climberA.email, undefined, `${LOGIN}=${stray}; ${jar.header()}`),
+    );
+    const oversized = new CookieJar();
+    oversized.set(LEGACY, 'x'.repeat(12_289), DOMAIN);
+    await expectLegacyTwinOrClear(await login(oversized, climberB.email));
+  });
+});
+
 describe('session read', () => {
   it('answers the NextAuth JSON shape from the backend, with no session Set-Cookie on GET, POST or csrf', async () => {
     const climberA = await climber();

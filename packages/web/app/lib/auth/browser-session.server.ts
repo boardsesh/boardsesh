@@ -11,7 +11,12 @@ import {
 import { webLogger } from '@/app/lib/observability/logger';
 import { capturePresentedWebCredential } from './admitted-session.server';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
-import { PLAIN_SESSION_COOKIE_NAME, SECURE_SESSION_COOKIE_NAME } from './secure-cookies';
+import {
+  PLAIN_SESSION_COOKIE_NAME,
+  SECURE_SESSION_COOKIE_NAME,
+  isSecureCookieContext,
+  sessionCookieDomain,
+} from './secure-cookies';
 
 /**
  * The session a request arrived with, under `AUTH_BROWSER_SESSION_MODE=better-auth`.
@@ -39,15 +44,20 @@ export type RequestBrowserSession =
       presented: Extract<PresentedWebSession, { kind: 'canonical-token' }>;
     }
   | { kind: 'conflicted'; legacy: LegacyPresented | undefined }
-  | { kind: 'legacy'; presented: LegacyPresented }
+  /** `cookieName`: the name it arrived under; only the name this deployment writes is ever bridged. */
+  | { kind: 'legacy'; presented: LegacyPresented; cookieName: string }
   | { kind: 'oversized-legacy' }
   | { kind: 'none' };
 
-type LegacyRead = { kind: 'legacy'; presented: LegacyPresented } | { kind: 'oversized-legacy' } | { kind: 'none' };
+type LegacyRead =
+  | { kind: 'legacy'; presented: LegacyPresented; cookieName: string }
+  | { kind: 'oversized-legacy' }
+  | { kind: 'none' };
 
 const LEGACY_BASE_NAMES = [SECURE_SESSION_COOKIE_NAME, PLAIN_SESSION_COOKIE_NAME];
 
-function isLegacyCookieName(name: string): boolean {
+/** A legacy NextAuth session cookie name, either spelling, or one of its numbered chunks. */
+export function isLegacyCookieName(name: string): boolean {
   return LEGACY_BASE_NAMES.some(
     (base) => name === base || (/^\.\d+$/.test(name.slice(base.length)) && name.startsWith(base)),
   );
@@ -69,17 +79,30 @@ function cookiePairs(cookieHeader: string | null): { name: string; value: string
 }
 
 /**
- * A legacy cookie name (or chunk) sent twice with differing values: a host-only
- * copy left from before the shared domain beside the Domain one. Which copy a
- * reader would pick is not reliable, so the browser reads as signed out.
+ * Legacy cookies a reader cannot tell apart reliably, so the browser reads as
+ * signed out and nothing is bridged:
+ * - one name (or chunk) sent twice with differing values: a host-only copy left
+ *   from before the shared domain beside the Domain one;
+ * - a base name beside chunk names of the same family, which NextAuth would
+ *   join in no defined order;
+ * - the `__Secure-` and the plain family both present with differing values.
  */
 function legacyCookieConflicted(cookieHeader: string | null): boolean {
-  const seen = new Map<string, string>();
+  const families = new Map<string, Map<string, string>>();
   for (const { name, value } of cookiePairs(cookieHeader)) {
-    if (!isLegacyCookieName(name)) continue;
-    const earlier = seen.get(name);
+    const base = LEGACY_BASE_NAMES.find((candidate) => name === candidate || name.startsWith(`${candidate}.`));
+    if (!base || !isLegacyCookieName(name)) continue;
+    const family = families.get(base) ?? new Map<string, string>();
+    families.set(base, family);
+    const earlier = family.get(name);
     if (earlier !== undefined && earlier !== value) return true;
-    seen.set(name, value);
+    family.set(name, value);
+  }
+  for (const [base, family] of families)
+    if (family.has(base) && [...family.keys()].some((name) => name !== base)) return true;
+  if (families.size > 1) {
+    const [first, second] = [...families.values()].map((family) => JSON.stringify([...family.values()]));
+    if (first !== second) return true;
   }
   return false;
 }
@@ -102,7 +125,11 @@ async function readLegacyCookie(request: NextRequest): Promise<LegacyRead | { ki
   const legacy = await capturePresentedWebCredential(request);
   if (!legacy) return { kind: 'none' };
   if (legacy.credential.length > LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH) return { kind: 'oversized-legacy' };
-  return { kind: 'legacy', presented: { kind: 'legacy-jwe', credential: legacy.credential } };
+  return {
+    kind: 'legacy',
+    presented: { kind: 'legacy-jwe', credential: legacy.credential },
+    cookieName: legacy.cookieName,
+  };
 }
 
 /**
@@ -240,5 +267,38 @@ export function withoutSessionSetCookies(response: Response): Response {
   const kept = response.headers.getSetCookie().filter((header) => !isSessionCookieName(setCookieName(header)));
   response.headers.delete('Set-Cookie');
   for (const header of kept) response.headers.append('Set-Cookie', header);
+  return response;
+}
+
+/**
+ * `legacy` mode (review M2, owner option a): when a login or sign-out reply of
+ * the legacy route writes or clears the legacy session cookie and the request
+ * carried a first-party cookie of either name (any value, verified or not),
+ * clear both first-party names in both scopes too. Otherwise a first-party
+ * cookie left from before a rollback would outrank this newer login or outlive
+ * this sign-out once the mode is turned on again.
+ *
+ * It needs no secret and no `better-auth` precondition, and it never throws: a
+ * cookie domain the codec refuses leaves the reply as it was. A request with no
+ * first-party cookie (every request before the first cutover) gets the reply
+ * byte for byte. Session reads and csrf are never touched.
+ */
+export function withLegacyModeFirstPartyClears(request: NextRequest, action: string, response: Response): Response {
+  if (action === 'session' || action === 'csrf' || !carriesFirstPartyCookie(request)) return response;
+  const writesLegacyCookie = response.headers
+    .getSetCookie()
+    .some((header) => isLegacyCookieName(setCookieName(header)));
+  if (!writesLegacyCookie) return response;
+  let clears: string[];
+  try {
+    clears = browserSessionCookieClears({
+      domain: sessionCookieDomain(),
+      secure: isSecureCookieContext(),
+      requestCookieNames: request.cookies.getAll().map((requestCookie) => requestCookie.name),
+    });
+  } catch {
+    return response;
+  }
+  for (const clear of clears) response.headers.append('Set-Cookie', clear);
   return response;
 }
