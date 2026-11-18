@@ -587,6 +587,23 @@ export const SETTER_PATH_SEGMENT = '/setter/';
 export const SESSION_COOKIE_NAME_SUBSTRING = 'next-auth.session-token';
 
 /**
+ * The substrings of the first-party session cookies a signed-in browser holds
+ * under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596): the login cookie and
+ * the bridged cookie, each written as `__Secure-<name>` in production and as
+ * the bare name outside a secure context
+ * (`packages/shared/auth-protocol/src/browser-session-cookie.ts`). Neither is
+ * a substring of the other, so both are listed. A browser keeps one of these
+ * for 400 days while its legacy cookie ends 30 days after its last write, so
+ * without them a signed-in browser would read as anonymous here. No browser
+ * sends either name before the first cutover, so until then the clauses
+ * change nothing.
+ */
+export const FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS = Object.freeze([
+  'boardsesh.session_token',
+  'boardsesh.bridged_session_token',
+] as const);
+
+/**
  * Next's React Server Component request header, lowercased (Cloudflare
  * lowercases the keys of `http.request.headers`).
  *
@@ -691,6 +708,7 @@ export const WWW_HTML_CACHE_EXPRESSION =
     .map((pathPrefix) => `starts_with(http.request.uri.path, "${pathPrefix}")`)
     .join(' or ')})` +
   ` and not (http.cookie contains "${SESSION_COOKIE_NAME_SUBSTRING}")` +
+  FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS.map((name) => ` and not (http.cookie contains "${name}")`).join('') +
   ` and not (any(http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] != ""))` +
   ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}")` +
   ` and not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}")` +

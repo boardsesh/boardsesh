@@ -48,6 +48,7 @@ import {
   RSC_QUERY_PARAM,
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
+  FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS,
   SPRAY_WALL_CAPABILITY_QUERY,
   BOARD_INVITE_QUERY,
   WWW_HOSTNAME,
@@ -2425,6 +2426,24 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
       expect(cookieName).toContain(SESSION_COOKIE_NAME_SUBSTRING);
       expect(`${cookieName}.0`).toContain(SESSION_COOKIE_NAME_SUBSTRING);
     }
+  });
+
+  it('bypasses a signed-in request on both first-party session cookie names, secure and plain (#7596)', () => {
+    // Under better-auth the legacy cookie stops sliding and ends 30 days after
+    // its last write, while the first-party cookie lives on: without these
+    // clauses a signed-in response could fill the shared anonymous entry.
+    expect(expression).toContain('not (http.cookie contains "boardsesh.session_token")');
+    expect(expression).toContain('not (http.cookie contains "boardsesh.bridged_session_token")');
+    const codec = readFileSync('packages/shared/auth-protocol/src/browser-session-cookie.ts', 'utf8');
+    const baseNames = [codec.match(/login: '([^']+)'/)?.[1], codec.match(/bridged: '([^']+)'/)?.[1]];
+    expect(baseNames).toEqual(['boardsesh.session_token', 'boardsesh.bridged_session_token']);
+    for (const baseName of baseNames)
+      for (const cookieName of [`__Secure-${baseName}`, `${baseName}`])
+        expect(FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS.some((substring) => cookieName.includes(substring))).toBe(
+          true,
+        );
+    // Each name is matched by its own substring: neither covers the other.
+    expect('__Secure-boardsesh.bridged_session_token').not.toContain('boardsesh.session_token');
   });
 
   it('bypasses RSC requests on BOTH the header and the ?_rsc query', () => {
