@@ -165,6 +165,21 @@ function betterAuthPreconditions(
 export const E2E_BROWSER_SESSION_CUTOVER_ENV = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
 
 /**
+ * Variables Railway and Vercel set in every deployment they run. A prefix
+ * would be too wide: the Railway CLI sets `RAILWAY_HOME` on a laptop.
+ */
+const HOSTED_DEPLOYMENT_VARIABLES = [
+  'RAILWAY_PROJECT_ID',
+  'RAILWAY_ENVIRONMENT_ID',
+  'RAILWAY_ENVIRONMENT_NAME',
+  'RAILWAY_ENVIRONMENT',
+  'RAILWAY_SERVICE_ID',
+  'RAILWAY_DEPLOYMENT_ID',
+  'VERCEL',
+  'VERCEL_ENV',
+] as const;
+
+/**
  * The www cutover list this process enforces, or undefined when the e2e
  * switch is set where it must never be. The browser acceptance run (B7) has to
  * serve `better-auth` before its own entry can leave the list, so with
@@ -172,12 +187,14 @@ export const E2E_BROWSER_SESSION_CUTOVER_ENV = 'BOARDSESH_E2E_BROWSER_SESSION_CU
  * only when `NEXTAUTH_URL` is an https host under `boardsesh.test` and the
  * session cookie domain is under it too. `.test` is reserved (RFC 2606), so no
  * production host can be one. Set to anything on any other origin, every mode
- * answers unavailable and the boot fails; another value on a `.test` origin
- * changes nothing.
+ * answers unavailable and the boot fails; so it does on a host Railway or
+ * Vercel runs (`HOSTED_DEPLOYMENT_VARIABLES`), whatever origin is
+ * configured. Another value on a `.test` origin changes nothing.
  */
 function cutoverBlockersInEffect(blockers: readonly string[], environment: NodeJS.ProcessEnv) {
   const requested = environment[E2E_BROWSER_SESSION_CUTOVER_ENV];
   if (requested === undefined || requested === '') return blockers;
+  if (HOSTED_DEPLOYMENT_VARIABLES.some((name) => (environment[name] ?? '') !== '')) return undefined;
   let origin: URL | undefined;
   try {
     origin = new URL(environment.NEXTAUTH_URL ?? '');

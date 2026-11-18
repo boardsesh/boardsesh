@@ -483,6 +483,12 @@ export const PROFILE_DISPLAY_TIMEOUT_MS = 1_000;
  * connection. A failure or a read slower than PROFILE_DISPLAY_TIMEOUT_MS gives
  * undefined, so the session is answered with the account's own name and image,
  * as NextAuth's session callback does for an account with no profile.
+ *
+ * The deadline stops the wait, not the query: a slow SELECT keeps its pooled
+ * connection until Postgres answers or a statement timeout ends it (set on
+ * the role in production; `DB_STATEMENT_TIMEOUT_MS` in packages/db's client). It is one indexed primary-key read, so a pile-up needs the application
+ * database itself to be slow, and then the pool's limits apply as they do to
+ * every other read.
  */
 export function profileDisplayReader(
   database: Pick<AuthorityDatabase, 'select'>,

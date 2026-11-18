@@ -337,6 +337,16 @@ describe('the e2e cutover seam', () => {
     ['a look-alike host', { ...TEST_ORIGINS, BOARDSESH_URL: 'https://www.boardsesh.test.example.com' }],
     ['the bare parent', { ...TEST_ORIGINS, BOARDSESH_URL: 'https://boardsesh.test' }],
     [
+      'userinfo hiding a production host',
+      { ...TEST_ORIGINS, BOARDSESH_URL: 'https://www.boardsesh.test@boardsesh.com' },
+    ],
+    ['a trailing dot', { ...TEST_ORIGINS, BACKEND_PUBLIC_URL: 'https://ws.boardsesh.test.' }],
+    ['a suffix without the dot', { ...TEST_ORIGINS, BOARDSESH_URL: 'https://evilboardsesh.test' }],
+    ['a backslash path', { ...TEST_ORIGINS, BACKEND_PUBLIC_URL: 'https://ws.boardsesh.com\\.boardsesh.test' }],
+    ['a wss origin', { ...TEST_ORIGINS, BACKEND_PUBLIC_URL: 'wss://ws.boardsesh.test' }],
+    ['a .test origin on Railway', { ...TEST_ORIGINS, RAILWAY_ENVIRONMENT_NAME: 'production' }],
+    ['a .test origin on Vercel', { ...TEST_ORIGINS, VERCEL: '1' }],
+    [
       'a preview',
       { BACKEND_PUBLIC_URL: 'https://12.ws.preview.boardsesh.com', BOARDSESH_URL: 'https://12.preview.boardsesh.com' },
     ],

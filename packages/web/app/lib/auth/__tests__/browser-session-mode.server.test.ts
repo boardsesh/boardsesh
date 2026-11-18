@@ -33,7 +33,7 @@ const READY = {
 
 let logged: ReturnType<typeof vi.spyOn>;
 
-function stub(overrides: Partial<Record<keyof typeof READY, string>> = {}) {
+function stub(overrides: Partial<Record<string, string>> = {}) {
   for (const [name, value] of Object.entries({ ...READY, ...overrides })) vi.stubEnv(name, value);
 }
 
@@ -204,6 +204,13 @@ describe('the e2e cutover seam', () => {
     ['a .test origin with a host-only cookie', { ...TEST_HOST, AUTH_COOKIE_DOMAIN: '' }],
     ['plain http on .test', { ...TEST_HOST, NEXTAUTH_URL: 'http://www.boardsesh.test' }],
     ['a look-alike host', { ...TEST_HOST, NEXTAUTH_URL: 'https://www.boardsesh.test.example.com' }],
+    ['userinfo hiding a production host', { ...TEST_HOST, NEXTAUTH_URL: 'https://www.boardsesh.test@boardsesh.com' }],
+    ['a trailing dot', { ...TEST_HOST, NEXTAUTH_URL: 'https://www.boardsesh.test.' }],
+    ['a suffix without the dot', { ...TEST_HOST, NEXTAUTH_URL: 'https://evilboardsesh.test' }],
+    ['a backslash path', { ...TEST_HOST, NEXTAUTH_URL: 'https://www.boardsesh.com\\.boardsesh.test' }],
+    ['a look-alike cookie domain', { ...TEST_HOST, AUTH_COOKIE_DOMAIN: '.evilboardsesh.test' }],
+    ['a .test origin on Railway', { ...TEST_HOST, RAILWAY_ENVIRONMENT_NAME: 'production' }],
+    ['a .test origin on Vercel', { ...TEST_HOST, VERCEL_ENV: 'preview' }],
     ['a preview', { NEXTAUTH_URL: 'https://12.preview.boardsesh.com' }],
     ['no origin at all', { NEXTAUTH_URL: '' }],
   ])('fails the boot in every mode when set on %s', (_label, overrides) => {

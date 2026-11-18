@@ -273,18 +273,41 @@ function distinctSecret(environment: Environment, name: string): string {
 export const E2E_BROWSER_SESSION_CUTOVER_ENV = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
 
 /**
+ * Variables Railway and Vercel set in every deployment they run. A prefix
+ * would be too wide: the Railway CLI sets `RAILWAY_HOME` on a laptop.
+ */
+const HOSTED_DEPLOYMENT_VARIABLES = [
+  'RAILWAY_PROJECT_ID',
+  'RAILWAY_ENVIRONMENT_ID',
+  'RAILWAY_ENVIRONMENT_NAME',
+  'RAILWAY_ENVIRONMENT',
+  'RAILWAY_SERVICE_ID',
+  'RAILWAY_DEPLOYMENT_ID',
+  'VERCEL',
+  'VERCEL_ENV',
+] as const;
+
+/** True on a host Railway or Vercel runs. The acceptance run never runs there, whatever origin is configured. */
+function hostedDeployment(environment: Environment): boolean {
+  return HOSTED_DEPLOYMENT_VARIABLES.some((name) => (environment[name] ?? '') !== '');
+}
+
+/**
  * The cutover list this process enforces. The browser acceptance run (B7) has
  * to boot `better-auth` before its own entry can leave the list, so with
  * `BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow` the list counts as empty, and
  * only when this backend's public origin (`BACKEND_PUBLIC_URL`) and the www
  * origin it serves (`BOARDSESH_URL`) are both https hosts under
  * `boardsesh.test`. `.test` is reserved (RFC 2606), so no production host can
- * be one. Set to anything on any other origin, it refuses to start in every
- * mode; another value on a `.test` origin changes nothing.
+ * be one. Set to anything on any other origin, or on a host that Railway or
+ * Vercel runs (`hostedDeployment`), it refuses to start in every mode; another
+ * value on a `.test` origin changes nothing.
  */
 export function cutoverBlockersInEffect(blockers: readonly string[], environment: Environment): readonly string[] {
   const requested = environment[E2E_BROWSER_SESSION_CUTOVER_ENV];
   if (requested === undefined || requested === '') return blockers;
+  if (hostedDeployment(environment))
+    throw new BrowserSessionStartupError(BROWSER_SESSION_STARTUP_ERRORS.e2eCutoverOutsideTest);
   const onReservedTestDomain = (origin: string | undefined) => {
     try {
       const url = new URL(origin ?? '');
