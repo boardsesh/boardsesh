@@ -145,7 +145,10 @@ The watch authenticates with a short-lived **mobile JWT**. To obtain one:
    verified `{ jwt, refreshToken, expiresAt, userId }` response in one versioned
    auth value, then resolves the active session and opens the climb screen.
 
-Tokens are refreshed on a `401` via `POST /auth/native/refresh`. The auth envelope
+Tokens are refreshed on a `401` via `POST /auth/native/refresh`. `/graphql`
+answers an expired access token with HTTP 200 and the code-less error
+`Authentication required to perform this operation` (the server reads the
+bearer as anonymous), so that reply takes the same refresh and one retry. The auth envelope
 binds credentials to the verified response owner, login scope and credential
 revision. Requests capture their own JWT and scope; an old request never retries
 with another login's credentials. Concurrent refreshes share only their own
@@ -206,7 +209,7 @@ own data dead-letter it; anything that would refuse every tick alike retries.
 | 2xx, no `errors`, `data.saveTick.uuid` equals the sent UUID (a UUID the account already saved answers the stored tick) | Acknowledged | Removes it, sends the next |
 | 2xx whose every error is `CLIMB_NOT_FOUND` (spray climb deleted or hidden), `TICK_UUID_CONFLICT` (another account owns the UUID), or the code-less `Invalid input: …` from `SaveTickInputSchema` | Refused | Moves it to the dead-letter store, sends the next |
 | HTTP 400 whose every error is yoga's `got invalid value null at "input.<field>"` for a field the watch copies from session state (`boardType`, `climbUuid`, `angle`, `isMirror`, `isBenchmark`) | Refused | Same |
-| Every other 400 (no body, unparseable body, unknown or missing input field, a constant field refused), `GRAPHQL_VALIDATION_FAILED` on the fixed query, SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets, an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
+| Every other 400 (no body, unparseable body, unknown or missing input field, a constant field refused), `GRAPHQL_VALIDATION_FAILED` on the fixed query, SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets (after the client's own refresh and retry), an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
 
 Auth failures and transport errors never dead-letter a tick: an unknown reply
 costs a stuck queue until the next drain, never a refused effort. Whether the
