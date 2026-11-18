@@ -267,7 +267,6 @@ describe('HomeSettingsScreen', () => {
     expect(visibleTopHomeSections(homeSectionsStore.getLayout())).toEqual([
       'week',
       'session',
-      'climbingNow',
       'projects',
       'playlists',
       'beta',

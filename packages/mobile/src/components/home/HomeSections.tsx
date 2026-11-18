@@ -16,9 +16,9 @@ type HomeSectionsProps = {
    * wait for that first visit, so launching on Climbs costs Home nothing.
    */
   cardsReady: boolean;
-  /** Climbing now's scope: the selected board in gym mode, null in crew mode. */
+  /** Live sessions' scope (Session card, Climbing now): the selected board in gym mode, null in crew mode. */
   liveBoardUuid: string | null;
-  /** False until Home's scope has settled, so a cold start fetches Climbing now and Fresh beta once. */
+  /** False until Home's scope has settled, so a cold start fetches live sessions and Fresh beta once. */
   liveEnabled: boolean;
   /** Fresh beta's board: Home's selected board, in either mode. Null is every board. */
   betaBoardType: string | null;
@@ -49,7 +49,9 @@ export const HomeSections = memo(function HomeSections({
       case 'board':
         return cardsReady ? <HomeBoardSection key={sectionId} /> : null;
       case 'session':
-        return cardsReady ? <HomeSessionSection key={sectionId} /> : null;
+        return cardsReady ? (
+          <HomeSessionSection key={sectionId} liveBoardUuid={liveBoardUuid} liveEnabled={liveEnabled} />
+        ) : null;
       case 'projects':
         return cardsReady ? <HomeProjectsSection key={sectionId} /> : null;
       case 'playlists':

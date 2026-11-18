@@ -49,7 +49,12 @@
           "lastWorkoutYesterday": "Dernier entraînement · Hier",
           "lastWorkoutOn": "Dernier entraînement · {{day}}",
           "lastWorkoutSends_one": "{{count}} croix",
-          "lastWorkoutSends_other": "{{count}} croix"
+          "lastWorkoutSends_other": "{{count}} croix",
+          "join": "Rejoindre",
+          "joinName": "Rejoindre {{name}}",
+          "startOwn": "Démarrer la mienne",
+          "moreLive_one": "+ {{count}} autre en train de grimper",
+          "moreLive_other": "+ {{count}} autres en train de grimper"
         },
         "projects": {
           "title": "Retour à tes projets",
