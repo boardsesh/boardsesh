@@ -124,10 +124,13 @@ describe('browser-session-e2e.yml', () => {
 });
 
 describe('the browser-session harness', () => {
-  it('never retries a spec: only the two named harness retries exist, and a run past two fails', () => {
+  it('retries a spec only after WebKit lost its context: three named harness retries, and a run past two fails', () => {
     expect(playwrightConfig).toContain('retries: 0,');
+    // The one test-level retry: WebKit only, and the reporter refuses it after any other failure.
+    expect(playwrightConfig).toContain("{ name: 'webkit', retries: 1,");
+    expect(playwrightConfig).toContain("['./harness-retry-reporter.ts']");
     const retries = readFileSync('packages/web/e2e/browser-session/harness-retries.ts', 'utf8');
-    expect(retries).toContain("'restart-www-timeout' | 'webkit-internal-error'");
+    expect(retries).toContain("'restart-www-timeout' | 'webkit-internal-error' | 'webkit-network-process-lost'");
     expect(retries).toContain('MAX_HARNESS_RETRIES = 2');
   });
 
