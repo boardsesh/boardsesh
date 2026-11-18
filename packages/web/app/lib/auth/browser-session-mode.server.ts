@@ -171,7 +171,9 @@ export const E2E_BROWSER_SESSION_CUTOVER_ENV = 'BOARDSESH_E2E_BROWSER_SESSION_CU
 
 /**
  * Variables Railway and Vercel set in every deployment they run. A prefix
- * would be too wide: the Railway CLI sets `RAILWAY_HOME` on a laptop.
+ * would be too wide: the Railway CLI sets `RAILWAY_HOME` on a laptop, and
+ * `VERCEL_ENV=development` is in www's committed `.env.local`. Vercel sets
+ * `VERCEL=1` on every build and function.
  */
 const HOSTED_DEPLOYMENT_VARIABLES = [
   'RAILWAY_PROJECT_ID',
@@ -181,7 +183,6 @@ const HOSTED_DEPLOYMENT_VARIABLES = [
   'RAILWAY_SERVICE_ID',
   'RAILWAY_DEPLOYMENT_ID',
   'VERCEL',
-  'VERCEL_ENV',
 ] as const;
 
 /**

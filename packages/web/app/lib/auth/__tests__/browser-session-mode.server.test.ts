@@ -181,6 +181,12 @@ describe('the e2e cutover seam', () => {
     expect(browserSessionBootRefusal(production)).toBeUndefined();
   });
 
+  it('empties it too with the VERCEL_ENV=development of the committed .env.local, which is no deployment', () => {
+    stub({ ...TEST_HOST, VERCEL_ENV: 'development' });
+    vi.stubEnv(E2E, 'allow');
+    expect(production()).toMatchObject({ kind: 'better-auth' });
+  });
+
   it('still checks every precondition under allow', () => {
     stub({ ...TEST_HOST, CURRENT_STORE_WEB_OAUTH_MODE: 'legacy' });
     vi.stubEnv(E2E, 'allow');
@@ -216,7 +222,7 @@ describe('the e2e cutover seam', () => {
     ['a backslash path', { ...TEST_HOST, NEXTAUTH_URL: 'https://www.boardsesh.com\\.boardsesh.test' }],
     ['a look-alike cookie domain', { ...TEST_HOST, AUTH_COOKIE_DOMAIN: '.evilboardsesh.test' }],
     ['a .test origin on Railway', { ...TEST_HOST, RAILWAY_ENVIRONMENT_NAME: 'production' }],
-    ['a .test origin on Vercel', { ...TEST_HOST, VERCEL_ENV: 'preview' }],
+    ['a .test origin on Vercel', { ...TEST_HOST, VERCEL: '1' }],
     ['a preview', { NEXTAUTH_URL: 'https://12.preview.boardsesh.com' }],
     ['no origin at all', { NEXTAUTH_URL: '' }],
   ])('fails the boot in every mode when set on %s', (_label, overrides) => {
