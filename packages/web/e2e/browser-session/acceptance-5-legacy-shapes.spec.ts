@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { openApp, readSession, readViewer } from './helpers';
+import { fetchWsAuth, openApp, readSession, readViewer } from './helpers';
 import type { LegacySessionShape } from './legacy-session';
 import { BRIDGED_COOKIE, COOKIE_DOMAIN, LOGIN_COOKIE, WWW_HOST, WWW_ORIGIN } from './stack';
 import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixtures';
@@ -36,6 +36,13 @@ for (const shape of SUPPORTED) {
     const visit = await edgeCookies.during(async () => {
       await page.goto(`${WWW_ORIGIN}/settings`);
       await expect.poll(async () => (await readSession(page)).userId, { timeout: 20_000 }).toBe(account.userId);
+      // The app learns the session from ws-auth; check it here so a broken read fails in seconds, not minutes.
+      await expect
+        .poll(async () => (await fetchWsAuth(page)).status, {
+          timeout: 20_000,
+          message: 'ws-auth for the bridged session',
+        })
+        .toBe(200);
       const appPage = await context.newPage();
       await openApp(appPage);
       await expect(homeTab(appPage)).toBeVisible({ timeout: 120_000 });

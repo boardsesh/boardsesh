@@ -117,7 +117,7 @@ jobs:
           BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
           AUTH_BROWSER_SESSION_MODE: better-auth
           BROWSER_SESSION_E2E_REUSE_EXPORT: '1'
-          BROWSER_SESSION_E2E_GREP: ''
+          BROWSER_SESSION_E2E_GREP: ${{ github.event_name == 'pull_request' && '@smoke' || '' }}
         # db:up (dev-db compose stack) and the web-runtime install come from the vp task graph.
         run: vp run test:e2e:browser-session
 

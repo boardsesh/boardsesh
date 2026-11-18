@@ -105,6 +105,10 @@ describe('browser-session-e2e.yml', () => {
     expect(acceptance?.if).toBeUndefined();
     expect(acceptance?.env?.AUTH_BROWSER_SESSION_MODE).toBe('better-auth');
     expect(acceptance?.env?.BROWSER_SESSION_E2E_REUSE_EXPORT).toBe('1');
+    // A full run took 29 minutes on its first green pass (#7806); a pull request runs the smoke subset.
+    expect(acceptance?.env?.BROWSER_SESSION_E2E_GREP).toBe(
+      "${{ github.event_name == 'pull_request' && '@smoke' || '' }}",
+    );
   });
 
   it('cancels a superseded PR run but never a nightly or a dispatch', () => {
