@@ -87,7 +87,7 @@ jobs:
           # The nightly runs www as a production build (Router Cache and several auth
           # branches differ from next dev); a pull request keeps next dev, which
           # starts minutes sooner. A dispatch chooses.
-          BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
+          BROWSER_SESSION_E2E_WWW: production
         # db:up (dev-db compose stack) and the web-runtime install come from the vp task graph.
         run: vp run test:e2e:browser-session
 
