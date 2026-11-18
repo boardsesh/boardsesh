@@ -214,6 +214,24 @@ describe('ad pixels in the browser', () => {
     expect(cookieWrites).toContain('_rdt_uuid=; Max-Age=0; Path=/; Domain=www.boardsesh.com');
   });
 
+  it('discards queued pixel events when consent is withdrawn before the scripts arrive', async () => {
+    grant();
+    const pixels = await loadModule();
+    pixels.syncAdPixels('/');
+    pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
+    expect(testWindow().fbq?.queue).toContainEqual(['track', 'PageView']);
+    expect(testWindow().rdt?.callQueue).toContainEqual(['track', 'PageVisit']);
+
+    harness.record = { ...ALLOW_AFTER_COPY, analytics: 'denied' };
+    harness.authorized = false;
+    pixels.syncAdPixels('/');
+    pixels.syncAdPixels('/gyms');
+    pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
+    // These are the commands a late vendor script would drain on arrival.
+    expect(testWindow().fbq?.queue).toEqual([['consent', 'revoke']]);
+    expect(testWindow().rdt?.callQueue).toEqual([]);
+  });
+
   it('withdraws when Global Privacy Control turns up on a region default', async () => {
     grant({ ...ALLOW_AFTER_COPY, basis: 'region_default' });
     harness.gpc = true;
@@ -235,8 +253,7 @@ describe('ad pixels in the browser', () => {
     pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
     const metaQueue = testWindow().fbq?.queue ?? [];
     expect(metaQueue.at(-1)).toEqual(['consent', 'revoke']);
-    expect((testWindow().rdt?.callQueue ?? []).at(-1)).toEqual(['track', 'PageVisit']);
-    expect(testWindow().rdt?.callQueue).toHaveLength(2);
+    expect(testWindow().rdt?.callQueue).toEqual([]);
   });
 
   it('never loads inside the Capacitor app', async () => {

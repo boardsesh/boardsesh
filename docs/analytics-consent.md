@@ -785,7 +785,8 @@ in Meta Events Manager and in Reddit Ads' pixel settings, or the pixels could
 read an email typed into the sign-in modal.
 
 **Withdrawal.** On any definitive no (record above says off) `syncAdPixels`
-calls `fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
+clears event queues for pixel scripts that have not loaded, calls
+`fbq('consent', 'revoke')` and expires `_fbp`, `_fbc`, `_rdt_uuid` and
 `_rdt_cid` on the host and every parent domain. Every event re-checks the live
 cookie first, so a No thanks in Privacy choices, another tab or
 app.boardsesh.com stops the next event. A transient hold (account still
