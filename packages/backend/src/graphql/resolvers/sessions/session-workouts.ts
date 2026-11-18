@@ -16,6 +16,7 @@ import type {
 import {
   deriveWorkoutStages,
   mainWorkoutStages,
+  MAX_SESSION_WORKOUT_ITEMS,
   parseSessionWorkoutPlan,
   parseSessionWorkoutTickMap,
   restrictDerivedWorkout,
@@ -53,6 +54,13 @@ export const MAX_SESSION_WORKOUT_HEADLINE_IDS = 50;
 const RATE_LIMIT_RECORD_SESSION_WORKOUT = 60;
 const RATE_LIMIT_SESSION_WORKOUT_HEADLINES = 120;
 const MAX_REVISION = 2_147_483_647;
+/**
+ * Most tick-map entries kept for ticks the server doesn't have yet. Real ones
+ * are a handful (a dead-lettered tick, a spray tick held behind its climb
+ * write), so the plan's own item cap is plenty; past it the newest win, the
+ * same rule the phone uses when it trims its map.
+ */
+export const MAX_PENDING_TICK_MAP_ENTRIES = MAX_SESSION_WORKOUT_ITEMS;
 
 const REP_OUTCOME: Record<RepOutcome, SessionWorkoutRepOutcome> = {
   flash: 'FLASH',
@@ -176,10 +184,11 @@ export const sessionWorkoutMutations = {
    * a tick is not enough, since `saveTick` accepts any existing session id.
    * Written only when the revision is higher than the stored one; an equal or
    * lower revision is a no-op that still answers true, so an outbox replay is
-   * idempotent. Tick-map entries naming another climber's tick, or the
-   * caller's tick in another session, are dropped. An entry naming a tick the
-   * server doesn't have yet is kept, so a tick that arrives after the workout
-   * still lands on its block.
+   * idempotent. Tick-map entries naming another climber's tick, the caller's
+   * tick in another session, or a queue item the plan doesn't hold are
+   * dropped. An entry naming a tick the server doesn't have yet is kept (the
+   * last MAX_PENDING_TICK_MAP_ENTRIES of them), so a tick that arrives after
+   * the workout still lands on its block.
    */
   recordSessionWorkout: async (
     _: unknown,
@@ -215,14 +224,20 @@ export const sessionWorkoutMutations = {
       throw new GraphQLError('Not a participant of this session', { extensions: { code: 'FORBIDDEN' } });
     }
 
+    // An entry naming a queue item the plan doesn't hold does nothing on read
+    // (the tick falls back to climb matching), and the phone never sends one.
+    const planQueueItemUuids = new Set(plan.stages.flatMap((stage) => stage.items.map((item) => item.queueItemUuid)));
+    const planTickMap = tickMap.filter((entry) => planQueueItemUuids.has(entry.queueItemUuid));
+
     // Looked up by uuid alone: a tick still on its way (a retried dead letter,
     // or a spray tick held behind its climb write) has no row yet, and its
     // entry is kept so the tick lands on its block when it arrives. Readers only
     // ever apply the map to the owner's ticks in this session, so a pending
     // entry does nothing until then. An entry naming a tick that exists but is
-    // someone else's, or the caller's in another session, is dropped.
+    // someone else's, or the caller's in another session, is dropped. Pending
+    // entries are capped, keeping the last ones in submitted order.
     const namedTicks =
-      tickMap.length === 0
+      planTickMap.length === 0
         ? []
         : await db
             .select({
@@ -234,13 +249,21 @@ export const sessionWorkoutMutations = {
             .where(
               inArray(
                 dbSchema.boardseshTicks.uuid,
-                tickMap.map((entry) => entry.tickUuid),
+                planTickMap.map((entry) => entry.tickUuid),
               ),
             );
-    const foreignTickUuids = new Set(
-      namedTicks.filter((tick) => tick.userId !== userId || tick.sessionId !== sessionId).map((tick) => tick.uuid),
+    const namedTickByUuid = new Map(namedTicks.map((tick) => [tick.uuid, tick]));
+    const keptPendingTickUuids = new Set(
+      planTickMap
+        .filter((entry) => !namedTickByUuid.has(entry.tickUuid))
+        .slice(-MAX_PENDING_TICK_MAP_ENTRIES)
+        .map((entry) => entry.tickUuid),
     );
-    const ownTickMap = tickMap.filter((entry) => !foreignTickUuids.has(entry.tickUuid));
+    const ownTickMap = planTickMap.filter((entry) => {
+      const namedTick = namedTickByUuid.get(entry.tickUuid);
+      if (!namedTick) return keptPendingTickUuids.has(entry.tickUuid);
+      return namedTick.userId === userId && namedTick.sessionId === sessionId;
+    });
 
     const now = new Date();
     await db.transaction(async (tx) => {

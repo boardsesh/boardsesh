@@ -175,7 +175,12 @@ climber's tick, or the caller's tick in another session. It keeps an entry namin
 does not have yet, so a tick that reaches the server after the workout write (a dead-lettered
 tick retried later, or a spray-wall tick held behind its climb write) still lands on its
 block. Readers only apply the map to the owner's ticks in the session, so a kept entry does
-nothing until its tick lands. The 4000-entry cap bounds what can be stored. A write
+nothing until its tick lands. Two limits keep free entries small. An entry naming a queue
+item the plan doesn't hold is dropped: a reader would ignore it, and the phone never sends
+one. Entries for ticks the server doesn't have yet are capped at 300
+(`MAX_PENDING_TICK_MAP_ENTRIES`, the plan's item cap), keeping the last ones in submitted
+order, which is the phone's newest-last log order. Entries for the caller's own ticks in
+the session have only the 4000-entry cap. A write
 lands only when its revision is higher than the stored one; an equal or lower revision is
 a no-op that still answers true, so an outbox replay never rolls a newer plan back. Both
 the mutation and the headline query are rate limited. An unknown session and a malformed plan answer `BAD_USER_INPUT` and a stranger
