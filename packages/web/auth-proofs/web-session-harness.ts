@@ -221,9 +221,10 @@ export function browserSteps(route: AuthRoute) {
 }
 
 /**
- * The response writes the viewer marker for `authSessionId` exactly once, as
- * its last `Set-Cookie`, in the production shape: Domain, the session
- * cookie's Max-Age, SameSite=Lax, Secure, and never HttpOnly.
+ * The response writes the viewer marker for `authSessionId` exactly once,
+ * after the session cookie it rides with, in the production shape: Domain,
+ * the session cookie's Max-Age, SameSite=Lax, Secure, and never HttpOnly.
+ * (A provider callback appends NextAuth's own nonce clear after both.)
  */
 export function expectViewerMarkerFor(response: Response, authSessionId: string): void {
   const headers = setCookies(response);
@@ -231,7 +232,11 @@ export function expectViewerMarkerFor(response: Response, authSessionId: string)
   expect(writes).toEqual([
     `${MARKER}=${viewerMarkerValue(authSessionId)}; Path=/; Domain=.boardsesh.com; Max-Age=34560000; SameSite=Lax; Secure`,
   ]);
-  expect(headers.at(-1)).toBe(writes[0]);
+  const isSessionWrite = (header: string) =>
+    [LOGIN, BRIDGED].some((name) => header.startsWith(`${name}=`) && !header.startsWith(`${name}=;`));
+  const sessionWrite = headers.map(isSessionWrite).lastIndexOf(true);
+  expect(sessionWrite).toBeGreaterThanOrEqual(0);
+  expect(headers.indexOf(writes[0] ?? '')).toBeGreaterThan(sessionWrite);
 }
 
 /** The raw session token inside the Domain-scoped login cookie the jar holds. */
