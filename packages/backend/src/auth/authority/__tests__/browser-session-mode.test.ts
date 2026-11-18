@@ -84,6 +84,17 @@ const cases: ReadonlyArray<readonly [BrowserSessionStartupErrorCode, string, Cha
   [errors.legacyBridgeUntil, 'the bridge end date is not a time', { AUTH_LEGACY_BRIDGE_UNTIL: 'next month' }],
   [
     errors.legacyBridgeUntil,
+    'the bridge end date is 30 February',
+    { AUTH_LEGACY_BRIDGE_UNTIL: '2026-02-30T00:00:00Z' },
+  ],
+  [errors.legacyBridgeUntil, 'the bridge end date is T24:00', { AUTH_LEGACY_BRIDGE_UNTIL: '2026-12-01T24:00:00Z' }],
+  [
+    errors.legacyBridgeUntil,
+    'the bridge end date has no offset',
+    { AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 86_400_000).toISOString().replace('Z', '') },
+  ],
+  [
+    errors.legacyBridgeUntil,
     'the bridge end date is more than 45 days away',
     { AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 46 * 86_400_000).toISOString() },
   ],

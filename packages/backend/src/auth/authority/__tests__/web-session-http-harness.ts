@@ -101,6 +101,8 @@ export function stubCommandEnvironment(): void {
     // Web bridging never reads the native bridge switch.
     AUTH_LEGACY_BRIDGE_MODE: 'off',
     AUTH_BRIDGE_TOKEN_SECRET: bridgeSecret,
+    // The bridge needs an end date in every mode; cutover plus 30 days, as the runbook sets it.
+    AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     EMAIL_VERIFICATION_ENABLED: 'false',
     NEXTAUTH_SECRET: nextAuthSecret,
     DEBUG_SQL: 'false',

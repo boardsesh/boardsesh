@@ -14,7 +14,8 @@
  *   generation read where the credential was verified; under `better-auth` www
  *   never stamps a sign-in from its own read; a moved, zero or missing stamp is
  *   denied by the bridge and by admission; a no-SID cookie is never bridged into
- *   an account cutoff, and its sign-out is honoured even before it was bridged.
+ *   an account cutoff, and its sign-out (web-session command) ends the presented
+ *   cookie's id and its rotations even before it was bridged.
  *   What no code can show stays as HISTORICAL_WEB_ISSUER_RETIREMENT.
  */
 export const HISTORICAL_WEB_ISSUER_RETIREMENT = 'HISTORICAL_WEB_ISSUER_RETIREMENT';
@@ -24,9 +25,9 @@ export const HISTORICAL_WEB_ISSUER_RETIREMENT = 'HISTORICAL_WEB_ISSUER_RETIREMEN
  * - HISTORICAL_WEB_ISSUER_RETIREMENT: owner only. The owner confirms that the
  *   old Vercel project's deployments and every rollback issuer that could still
  *   mint a web cookie under the old rules are retired; a reviewed PR that
- *   records that confirmation removes the entry. It also holds the backend's
- *   web SID denial writer (`CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging`) at
- *   startup. It is not a `better-auth` precondition.
+ *   records that confirmation removes the entry. It is not a `better-auth`
+ *   precondition: the bridge and the staged login write only under an enforced
+ *   manifest, and only `activate`, which this list blocks, writes one.
  */
 export const AUTHORITY_ACTIVATION_BLOCKERS: readonly string[] = Object.freeze([
   'GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION',

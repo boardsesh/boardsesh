@@ -297,14 +297,23 @@ describe('the bridge command switches', () => {
     expect((await rows(id)).sessions).toEqual([]);
   });
 
-  it('ends at AUTH_LEGACY_BRIDGE_UNTIL: denied after it with nothing written, bridged before it, 503 for a bad value', async () => {
+  it('ends at AUTH_LEGACY_BRIDGE_UNTIL: denied after it with nothing written, bridged before it, 503 unset or invalid', async () => {
     const { id } = await climber();
     const credential = await legacyCookie(id, { claims: { authSessionId: randomUUID() } });
     vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', new Date(Date.now() - 1000).toISOString());
     expect(await bridge(credential)).toMatchObject({ outcome: 'denied' });
     expect((await rows(id)).sessions).toEqual([]);
-    vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', 'next month');
-    expect(await bridge(credential)).toMatchObject({ outcome: 'error', code: 'unavailable' });
+    // Unset, or not an exact time with an offset: 503, never an open-ended bridge and never a denial.
+    for (const invalid of [
+      undefined,
+      'next month',
+      '2027-02-30T00:00:00Z',
+      '2027-01-01T24:00:00Z',
+      '2027-01-01T00:00:00',
+    ]) {
+      vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', invalid);
+      expect(await bridge(credential), String(invalid)).toMatchObject({ outcome: 'error', code: 'unavailable' });
+    }
     expect((await rows(id)).sessions).toEqual([]);
     vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', new Date(Date.now() + 86_400_000).toISOString());
     expect(await bridge(credential)).toMatchObject({ outcome: 'bridged' });

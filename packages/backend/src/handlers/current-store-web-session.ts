@@ -152,10 +152,11 @@ export async function handleCurrentStoreWebSession(
       });
     } else if (command.operation === 'bridge') {
       // After AUTH_LEGACY_BRIDGE_UNTIL the bridge is over: denied, nothing read or written.
-      // A value that is not a time throws here and answers 503, never a denial.
+      // Unset or not a time throws here and answers 503, never a denial: no open-ended bridge.
       const until = legacyBridgeUntil(process.env);
+      if (until === undefined) throw new Error('Web bridge has no end date');
       const bridged =
-        until !== undefined && Date.now() >= until.getTime()
+        Date.now() >= until.getTime()
           ? ({ status: 'denied' } as const)
           : await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
       reply = webSessionBridgeReplySchema.parse(

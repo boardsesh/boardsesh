@@ -1,6 +1,5 @@
 import { requiresWebSignOutForwarding, setPasswordMode } from '@boardsesh/auth-protocol';
 import { parseCutoffEnforcement } from '../credential-cutoffs';
-import { AUTHORITY_ACTIVATION_BLOCKERS, HISTORICAL_WEB_ISSUER_RETIREMENT } from '../authority/activation-gates';
 import { currentStoreRpcSecret } from './authority-configuration';
 
 /** Before listeners/jobs. SID denials remain independent of bridge rollback. */
@@ -18,20 +17,13 @@ export function assertWebSessionWriterConfiguration(
   }
 }
 
-/**
- * No environment bypass. The web SID denial writer waits on the activation
- * entry HISTORICAL_WEB_ISSUER_RETIREMENT: the owner's confirmation that the old
- * web sign-in issuers are retired. Old no-SID safety is closed in code (#7596
- * B2c). The refusal lifts when a reviewed PR removes that entry; `blockers` is
- * a parameter for tests only.
- */
+/** No environment bypass: historical issuer/old no-SID safety is not qualified. */
 export function assertWebSessionWriterActivationConfiguration(
   environment: Readonly<Record<string, string | undefined>> = process.env,
-  blockers: readonly string[] = AUTHORITY_ACTIVATION_BLOCKERS,
 ): void {
   assertWebSessionWriterConfiguration(environment);
-  if (requiresWebSignOutForwarding(environment) && blockers.includes(HISTORICAL_WEB_ISSUER_RETIREMENT))
+  if (requiresWebSignOutForwarding(environment))
     throw new Error(
-      `Web SID denial activation blocked: ${HISTORICAL_WEB_ISSUER_RETIREMENT}, the owner confirming historical issuer retirement`,
+      'Web SID denial activation blocked: historical issuer retirement and old no-SID safety proof required',
     );
 }

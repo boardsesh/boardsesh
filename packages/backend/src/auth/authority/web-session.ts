@@ -65,7 +65,8 @@ export interface WebSessionIssue {
    * The admitted first-party session that arrived on the login request, legacy
    * cookie or canonical, of any account, exactly as `readFirstPartySession`
    * returned it in this transaction. Revoked here when it has its own session
-   * id; one that `requiresAccountCutoff` is left alone.
+   * id; one that `requiresAccountCutoff` ends by its own id only (row if any,
+   * denial of the id), never by an account cutoff.
    */
   readonly presented?: FirstPartySession;
   readonly now: Date;
@@ -161,9 +162,10 @@ export async function lockWebSessionAccounts(
  * `AuthSubjectDeniedError`, as native issuance does, and a moved authority
  * with `STALE_AUTHORITY`. A presented session is revoked only through its own
  * session id. One that `requiresAccountCutoff` (a no-SID legacy cookie, or the
- * bridged row of one) ends only the row the bridge made from it, matched by
- * exact id and lineage, if there is one; nothing else of it is written, so a
- * login never cuts off an account and never moves its generation.
+ * bridged row of one) ends by that id alone: the row the bridge made from it,
+ * matched by exact id and lineage, if there is one, and a denial of the id, so
+ * the cookie is never bridged afterwards. A login never cuts off an account and
+ * never moves its generation.
  */
 export async function issueWebSession(
   transaction: AuthorityTransaction,

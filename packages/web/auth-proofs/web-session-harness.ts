@@ -91,6 +91,7 @@ export function stubBetterAuthEnvironment(backendOrigin: string): void {
     AUTH_BROWSER_SESSION_MODE: 'better-auth',
     AUTH_BROWSER_SESSION_COOKIE_SECRET: COOKIE_SECRET,
     AUTH_BRIDGE_TOKEN_SECRET: 'web-session-proof-bridge-token-secret-7596-b2b',
+    AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     CURRENT_STORE_AUTH_BACKEND_ORIGIN: backendOrigin,
     CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
     CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',

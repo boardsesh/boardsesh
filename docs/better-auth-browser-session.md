@@ -304,9 +304,10 @@ returns `{ sessionId, token, expiresAt, generation }`.
   own session id is revoked in the same transaction by
   `denyFirstPartySessionInTransaction`: it loses its row and gets a denial, so
   every reader refuses it. One that `requiresAccountCutoff` (a no-SID legacy
-  cookie, or the bridged row of one) is left alone: ending it would cut off the
-  whole account, phones included, so a login never does that and never moves
-  the generation.
+  cookie, or the bridged row of one) ends by its own id alone: the row the
+  bridge made from it, if any, and a denial of that id (#7596 B2c). It is never
+  ended by cutting off the whole account, phones included, so a login never
+  does that and never moves the generation.
 - It refuses before writing anything: a deleted or missing account with
   `AuthSubjectDeniedError`, as native issuance does, and a sign-in time later
   than `now` or an unknown `freshness` with `INVALID_COMMAND`. So a caller that
@@ -557,9 +558,12 @@ The bridge ends at `AUTH_LEGACY_BRIDGE_UNTIL`, a time the owner sets to the
 cutover plus 30 days (the legacy cookie's lifetime) and may move once. From
 then on `/bridge` answers `denied` and writes nothing, so www reads a browser
 holding only a legacy cookie as signed out and clears that cookie, as for any
-other denied cookie. Under `better-auth` the backend refuses to start unless
-the time is set and at most 45 days ahead; unset leaves the bridge open, which
-tests and a backend not on `better-auth` rely on.
+other denied cookie. Unset, or not an exact time with an offset, `/bridge`
+answers 503 in every mode, so no combination of switches runs an open-ended
+bridge. Under `better-auth` the backend also refuses to start unless the time
+is set and at most 45 days ahead. The one move is for a rollback: legacy
+cookies a rollback rolled live 30 days from the roll-forward, so move the date
+to the roll-forward plus 30 days.
 
 Owner decision 4 split the activation gate `STAGED_WEB_PROOF_GENERATION_STAMP`.
 Its code half is closed, each point with a named test (the table is under
@@ -571,12 +575,17 @@ missing stamp is denied by the bridge and by admission; a no-session-id cookie
 is never bridged into an account cutoff. Its sign-out now writes a denial of
 that cookie's own id even when nothing was bridged yet, so a bridge that
 follows or races the sign-out is refused (a login presenting such a cookie
-does the same). The owner-only half remains as `HISTORICAL_WEB_ISSUER_RETIREMENT`:
-the owner confirms on #7430 that the old Vercel deployments and rollback
-issuers are retired, and a reviewed PR removes the entry. It blocks `activate`,
-the identity mirror and the import, and holds the web SID denial writer
-(`CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging`) at startup; it is not a
-`better-auth` precondition.
+does the same). That ends the presented cookie's id and its own rotations, not
+an independent older copy of the same login, which has another id: the same as
+NextAuth's sign-out today, and the price of never cutting off the account. The
+owner-only half remains as `HISTORICAL_WEB_ISSUER_RETIREMENT`: the owner
+confirms on #7430 that the old Vercel deployments and rollback issuers are
+retired, and a reviewed PR removes the entry. It blocks `activate`, the
+identity mirror and the import. It is not a `better-auth` precondition (why
+that is safe: "Code gates" in the rollout doc). The legacy sign-out writer,
+`CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging`, keeps its own unconditional
+startup refusal: its no-SID path still cuts off the whole account, which is
+not approved.
 
 ## One guard in each browser client
 
