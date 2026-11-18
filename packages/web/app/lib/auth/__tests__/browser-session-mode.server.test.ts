@@ -134,6 +134,12 @@ describe('browserSessionRouteMode', () => {
     expect(logged).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the browser acceptance run and the cookie-order fixture listed until both have run (#7596 B7, B7c)', () => {
+    expect(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS).toEqual(
+      expect.arrayContaining(['B7_BROWSER_ACCEPTANCE', 'B7C_COOKIE_ORDER_FIXTURE']),
+    );
+  });
+
   it('keeps better-auth unavailable while www cutover work is listed, even with every precondition met', () => {
     stub();
     expect(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS.length).toBeGreaterThan(0);

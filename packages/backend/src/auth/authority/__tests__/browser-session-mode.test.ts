@@ -288,6 +288,12 @@ describe('the cutover refusal', () => {
     expect(() => assertBrowserSessionModeConfiguration(READY)).toThrow(BROWSER_SESSION_CUTOVER_BLOCKERS[0]);
   });
 
+  it('keeps the browser acceptance run and the cookie-order fixture listed until both have run (#7596 B7, B7c)', () => {
+    expect(BROWSER_SESSION_CUTOVER_BLOCKERS).toEqual(
+      expect.arrayContaining(['B7_BROWSER_ACCEPTANCE', 'B7C_COOKIE_ORDER_FIXTURE']),
+    );
+  });
+
   it('cannot be turned off from the environment', () => {
     for (const name of ['BROWSER_SESSION_CUTOVER_BLOCKERS', 'AUTH_BROWSER_SESSION_CUTOVER', 'NODE_ENV'])
       for (const content of ['', 'off', 'test', '[]'])
