@@ -1,0 +1,1 @@
+ALTER TABLE `logbook_states` ADD `in_flight` integer DEFAULT true NOT NULL;

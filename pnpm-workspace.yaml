@@ -101,6 +101,8 @@ patchedDependencies:
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.
 allowBuilds:
+  # Local MCP SQLite driver; ships platform prebuilds, with native build fallback.
+  better-sqlite3: true
   # Downloads the platform sentry-cli binary. Native build phases invoke it.
   '@sentry/cli': true
   # Direct native image dependency used by web/backend/db/board rendering.

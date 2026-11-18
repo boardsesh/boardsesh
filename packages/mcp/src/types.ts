@@ -1,0 +1,52 @@
+export const API_ORIGIN = 'https://api.boardsesh.com';
+export const ISSUER = `${API_ORIGIN}/api/auth`;
+export const RESOURCE = `${API_ORIGIN}/v1`;
+export const SCOPES = ['logbook:read', 'workouts:read', 'workouts:write', 'offline_access'];
+
+export interface Profile {
+  issuer: string;
+  clientId: string;
+  subject: string;
+  accountId: string;
+  generation: string;
+  authStatus: 'connected' | 'reconnect_required' | 'logged_out';
+  scopes: string[];
+}
+
+export interface ProfileStore {
+  getProfile(): Profile | undefined;
+  setProfile(profile: Profile): void;
+  assertProfile(generation: string): Profile;
+  resetSync(profile: Profile): void;
+}
+
+/** Network methods are called while holding the shared profile lock. */
+export interface PartnerClient {
+  request(
+    profile: Profile,
+    path: string,
+    options?: { method?: string; body?: unknown; idempotencyKey?: string },
+  ): Promise<unknown>;
+}
+
+export class McpError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = 'McpError';
+  }
+}
+
+export class PartnerError extends McpError {
+  constructor(
+    readonly status: number,
+    code: string,
+    message: string,
+    retryAfterSeconds?: number,
+  ) {
+    super(code, message, retryAfterSeconds);
+  }
+}
