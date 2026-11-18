@@ -1219,16 +1219,21 @@ start through `/api/auth/signin/*` is an explicit sign-in
   starts the sign-in again. `email_conflict` and `email_required` keep today's
   pages and change no cookie.
 - One response publishes the sign-in: NextAuth's legacy twin with the proof's
-  session id (no `auth_time` and no `link_guarded` for a `carried` login), the
+  session id (checked again when the twin is encoded: another id publishes
+  nothing) (no `auth_time` and no `link_guarded` for a `carried` login), the
   host-only legacy clear, clears of every other legacy name or chunk the
-  request carried, clears of the bridged name in both scopes, then the login
+  request carried (and of the host-only copy of each chunk the twin rewrites), clears of the bridged name in both scopes, then the login
   cookie. So no legacy cookie with another id stays beside the new login cookie,
   which rule (c) would otherwise follow: a fresh Google login's
   `authenticatedAt` is Google's `auth_time`, up to five minutes before the
   login, and a leftover legacy cookie written in that gap would look newer.
 - Google freshness (#7655, #7590). NextAuth's `nonce` check is on for these
-  flows: a 32-byte random nonce goes to Google and into a sealed host-only
-  HttpOnly cookie of the flow, and the ID token must carry it. The intent's
+  flows: a 32-byte random nonce goes to Google and into a sealed HttpOnly
+  cookie of the flow, `__Host-next-auth.nonce.<scope>` in a secure context
+  (host-only, Secure, `Path=/`, so a sibling subdomain cannot plant a copy;
+  the plain name on local http), and the ID token must carry it. A withheld
+  reply (503, 404, lost) and a retired flow clear it with the name and options
+  it was written with. The intent's
   `flow` is the SHA-256 hex of `JSON.stringify(["web-oauth-google-nonce-v1",
   nonce])`, and `resolve` forwards the raw ID token and the nonce. Every sign-in
   asks Google for `max_age=31536000`, so the token carries `auth_time` without
@@ -1247,7 +1252,11 @@ start through `/api/auth/signin/*` is an explicit sign-in
 the real route against a loopback stand-in that signs real ID tokens, the real
 backend web OAuth and web-session handlers and real PostgreSQL. Apple runs the
 same code with no nonce, but is not driven end to end there, so
-`B5B_WWW_PROVIDER_SIGN_IN` stays on the www cutover list.
+`B5B_WWW_PROVIDER_SIGN_IN` stays on the www cutover list. A Google ID token
+without `auth_time` (Google ignoring `max_age`) signs in as `carried`
+(proven). Runbook note: a Google flow started in one mode and finished in the
+other answers the outage page; it lasts 15 minutes at most, and starting again
+works.
 
 **Signed in, an unknown provider identity is `link_required` (decision D1,
 B5e1).** When `resolve` with `webSession` presents a live session (canonical,

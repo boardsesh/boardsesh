@@ -264,6 +264,8 @@ export function createWebOAuthIdentityAuthRequest(
           });
           if (claims?.sub !== outcome.user.id || typeof claims.authSessionId !== 'string' || !claims.authSessionId)
             return rejectUnavailable();
+          // The legacy twin must name the session this sign-in issued, or nothing is published.
+          if (webSession && claims.authSessionId !== outcome.webSession?.sessionId) return rejectUnavailable();
           encoded = result;
           return result;
         } catch {

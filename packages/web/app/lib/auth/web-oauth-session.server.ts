@@ -57,6 +57,19 @@ function isStrongNonce(nonce: string): boolean {
   return /^[A-Za-z0-9_-]{22,1024}$/.test(nonce);
 }
 
+type CookieOption = NonNullable<NonNullable<NextAuthOptions['cookies']>['nonce']>;
+
+/**
+ * The Google nonce cookie of a session sign-in: host-only, and in a secure
+ * context under the `__Host-` prefix, which a browser accepts only without a
+ * Domain and with Secure and `Path=/`, so a sibling subdomain cannot plant a
+ * copy. On local http the plain name stays (no prefix is possible there).
+ */
+export function hostOnlyNonceCookie(cookie: CookieOption): CookieOption {
+  const name = cookie.name.startsWith('__Secure-') ? `__Host-${cookie.name.slice('__Secure-'.length)}` : cookie.name;
+  return { ...cookie, name, options: { ...cookie.options, domain: undefined, path: '/' } };
+}
+
 /**
  * Request-local options for a session sign-in: for Google, NextAuth's nonce
  * check on, the nonce cookie host-only, and `max_age` so the ID token carries
@@ -70,7 +83,7 @@ export function sessionSignInOptions(options: NextAuthOptions, provider: WebOAut
     ...options,
     cookies: {
       ...options.cookies,
-      ...(nonceCookie ? { nonce: { ...nonceCookie, options: { ...nonceCookie.options, domain: undefined } } } : {}),
+      ...(nonceCookie ? { nonce: hostOnlyNonceCookie(nonceCookie) } : {}),
     },
     providers: options.providers.map((configured) => {
       if (configured.type !== 'oauth' || (configured.options?.id ?? configured.id) !== 'google') return configured;
