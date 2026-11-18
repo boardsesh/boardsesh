@@ -20,6 +20,8 @@ const secureLogin = '__Secure-boardsesh.session_token';
 const secureBridged = '__Secure-boardsesh.bridged_session_token';
 const plainLogin = 'boardsesh.session_token';
 const plainBridged = 'boardsesh.bridged_session_token';
+const secureMarker = '__Secure-boardsesh.viewer';
+const plainMarker = 'boardsesh.viewer';
 const none = { conflicted: [] };
 
 describe('cookie names', () => {
@@ -375,21 +377,27 @@ describe('serializeBrowserSessionCookie', () => {
 describe('browserSessionCookieClears', () => {
   const clear = (name: string, domain: string | undefined, secure: boolean) =>
     `${name}=; Path=/${domain ? `; Domain=${domain}` : ''}; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+  // The viewer marker is written without HttpOnly, so its clears carry none either.
+  const markerClear = (name: string, domain: string | undefined, secure: boolean) =>
+    `${name}=; Path=/${domain ? `; Domain=${domain}` : ''}; Max-Age=0; SameSite=Lax${secure ? '; Secure' : ''}`;
   const domain = '.boardsesh.com';
 
-  it('clears both secure names in the Domain and host-only scopes in production', () => {
+  it('clears both secure names and the marker in the Domain and host-only scopes in production', () => {
     expect(browserSessionCookieClears({ domain, secure: true, requestCookieNames: [] })).toEqual([
       clear(secureLogin, undefined, true),
       clear(secureLogin, domain, true),
       clear(secureBridged, undefined, true),
       clear(secureBridged, domain, true),
+      markerClear(secureMarker, undefined, true),
+      markerClear(secureMarker, domain, true),
     ]);
   });
 
-  it('clears both secure names host-only on a preview', () => {
+  it('clears both secure names and the marker host-only on a preview', () => {
     expect(browserSessionCookieClears({ secure: true, requestCookieNames: [] })).toEqual([
       clear(secureLogin, undefined, true),
       clear(secureBridged, undefined, true),
+      markerClear(secureMarker, undefined, true),
     ]);
   });
 
@@ -401,17 +409,24 @@ describe('browserSessionCookieClears', () => {
       clear(secureBridged, domain, true),
       clear(plainBridged, undefined, true),
       clear(plainBridged, domain, true),
+      markerClear(secureMarker, undefined, true),
+      markerClear(secureMarker, domain, true),
     ]);
   });
 
   it('clears a plain name the request carried, without Secure on local http', () => {
     expect(
-      browserSessionCookieClears({ secure: false, requestCookieNames: ['other', plainLogin, plainBridged] }),
+      browserSessionCookieClears({
+        secure: false,
+        requestCookieNames: ['other', plainLogin, plainBridged, plainMarker],
+      }),
     ).toEqual([
       clear(secureLogin, undefined, true),
       clear(secureBridged, undefined, true),
       clear(plainLogin, undefined, false),
       clear(plainBridged, undefined, false),
+      markerClear(secureMarker, undefined, true),
+      markerClear(plainMarker, undefined, false),
     ]);
   });
 
@@ -425,9 +440,18 @@ describe('browserSessionCookieClears', () => {
     expect(
       browserSessionCookieClears({
         secure: false,
-        requestCookieNames: [`${plainLogin}.0`, plainLogin.toUpperCase(), 'next-auth.session-token'],
+        requestCookieNames: [
+          `${plainLogin}.0`,
+          plainLogin.toUpperCase(),
+          'next-auth.session-token',
+          'boardsesh.viewer.0',
+        ],
       }),
-    ).toEqual([clear(secureLogin, undefined, true), clear(secureBridged, undefined, true)]);
+    ).toEqual([
+      clear(secureLogin, undefined, true),
+      clear(secureBridged, undefined, true),
+      markerClear(secureMarker, undefined, true),
+    ]);
   });
 
   it('emits each clear once when the request repeated a name', () => {
@@ -435,6 +459,7 @@ describe('browserSessionCookieClears', () => {
       clear(secureLogin, undefined, true),
       clear(secureBridged, undefined, true),
       clear(plainLogin, undefined, false),
+      markerClear(secureMarker, undefined, true),
     ]);
   });
 

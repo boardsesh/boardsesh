@@ -40,10 +40,16 @@ describe('check-native-unchanged', () => {
   });
 
   it('exempts auth-protocol only while no native file imports it', () => {
-    const change = ['packages/shared/auth-protocol/src/web-session.ts'];
+    const change = [
+      'packages/shared/auth-protocol/src/web-session.ts',
+      // The viewer marker (#7596): an auth-protocol subpath; its Expo web copy is a `.web` file.
+      'packages/shared/auth-protocol/src/viewer-marker.ts',
+      'packages/mobile/src/lib/viewer-marker.web.ts',
+    ];
     expect(nativeChangeViolations(change, [])).toEqual([]);
     expect(nativeChangeViolations(change, ['packages/mobile/src/lib/sentry.ts'])).toEqual([
       'packages/shared/auth-protocol/src/web-session.ts: auth-protocol is imported by native code (packages/mobile/src/lib/sentry.ts)',
+      'packages/shared/auth-protocol/src/viewer-marker.ts: auth-protocol is imported by native code (packages/mobile/src/lib/sentry.ts)',
     ]);
   });
 

@@ -37,6 +37,11 @@
       "import": "./src/browser-session-cookie.ts",
       "default": "./src/browser-session-cookie.ts"
     },
+    "./viewer-marker": {
+      "types": "./src/viewer-marker.ts",
+      "import": "./src/viewer-marker.ts",
+      "default": "./src/viewer-marker.ts"
+    },
     "./legacy-login-precedence": {
       "types": "./src/legacy-login-precedence.ts",
       "import": "./src/legacy-login-precedence.ts",
