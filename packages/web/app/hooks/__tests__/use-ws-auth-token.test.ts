@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createQueryWrapper } from '@/app/test-utils/test-providers';
 import { useWsAuthToken } from '../use-ws-auth-token';
-import { resetBrowserAccessTokensForTests } from '@/app/lib/auth/browser-access-token';
+import { resetBrowserAccessTokensForTests, socketCredentialHandle } from '@/app/lib/auth/browser-access-token';
 import { WEB_SESSION_REFRESH_EVENT } from '@/app/lib/auth/web-session-events';
 
 const mockUseSession = vi.fn();
@@ -313,7 +313,7 @@ describe('useWsAuthToken with a 15-minute browser token (#7596 B3b)', () => {
     await waitFor(() => expect(first.result.current.token).toBe('browser-token-2'));
     expect(mockFetch).toHaveBeenCalledTimes(2);
     // The socket keeps its handle across the refresh.
-    expect(first.result.current.socketToken).toBe('browser-token-1');
+    expect(socketCredentialHandle(first.result.current.token)).toBe('browser-token-1');
   });
 
   it('keeps the token through a 503 and backs off instead of signing out', async () => {

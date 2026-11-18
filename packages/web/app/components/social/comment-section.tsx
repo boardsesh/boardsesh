@@ -7,6 +7,7 @@ import MuiTypography from '@mui/material/Typography';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { socketCredentialHandle } from '@/app/lib/auth/browser-access-token';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
@@ -32,7 +33,9 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
   const { t } = useTranslation('common');
   const [refreshKey, setRefreshKey] = useState(0);
   const { data: session } = useSession();
-  const { token, socketToken, isAuthenticated } = useWsAuthToken();
+  const { token, isAuthenticated } = useWsAuthToken();
+  // The same while the viewer is, so a token refresh keeps the live socket (#7596 B3b).
+  const socketToken = socketCredentialHandle(token);
   const currentUserId = session?.user?.id ?? null;
   const { showMessage } = useSnackbar();
   const resolvedTitle = title ?? t('comment.discussionTitle');

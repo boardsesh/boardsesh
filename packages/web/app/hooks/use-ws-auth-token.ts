@@ -12,7 +12,6 @@ import {
   noteAccessTokenRefreshFailed,
   registerAccessTokenRefresher,
   rememberBrowserAccessToken,
-  socketCredentialHandle,
   wsAuthTokenExpiry,
 } from '@/app/lib/auth/browser-access-token';
 
@@ -72,9 +71,9 @@ function refetchIntervalOf(query: WsAuthQuery): number | false {
  * Under `AUTH_BROWSER_SESSION_MODE=better-auth` the token lives 15 minutes
  * (#7596 B3b): it is refreshed about three minutes before its end, on focus or
  * `pageshow` once fewer than three minutes remain, and once after the backend
- * refuses it (`browser-access-token.ts`). `socketToken` is what a socket is
- * keyed and opened by: the same while the viewer is, so a refresh does not
- * reopen it. With the mode off both are today's NextAuth token.
+ * refuses it (`browser-access-token.ts`). A socket is keyed and opened by
+ * `socketCredentialHandle(token)`, which stays the same while the viewer
+ * does, so a refresh does not reopen it. With the mode off it is the token.
  */
 export function useWsAuthToken(enabled = true) {
   const { data: session, status } = useSession();
@@ -153,10 +152,8 @@ export function useWsAuthToken(enabled = true) {
     errorMessage = data?.error ?? null;
   }
 
-  const token = enabled ? (data?.token ?? null) : null;
   return {
-    token,
-    socketToken: socketCredentialHandle(token),
+    token: enabled ? (data?.token ?? null) : null,
     isAuthenticated: enabled ? (data?.authenticated ?? false) : false,
     isLoading: enabled && (isLoading || status === 'loading'),
     error: enabled ? errorMessage : null,

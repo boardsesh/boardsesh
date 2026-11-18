@@ -66,9 +66,8 @@ vi.mock('@/app/components/kiosk/kiosk-reliability', () => ({
   KioskBoardFeedBridge: () => null,
 }));
 
-const useWsAuthTokenSpy = vi.fn<() => { token: string | null; socketToken: string | null; isLoading: boolean }>(() => ({
+const useWsAuthTokenSpy = vi.fn<() => { token: string | null; isLoading: boolean }>(() => ({
   token: null,
-  socketToken: null,
   isLoading: false,
 }));
 
@@ -92,7 +91,7 @@ describe('KioskPresenceHub (display routes)', () => {
     createdClients.length = 0;
     createGraphQLClientSpy.mockClear();
     useWsAuthTokenSpy.mockClear();
-    useWsAuthTokenSpy.mockReturnValue({ token: null, socketToken: null, isLoading: false });
+    useWsAuthTokenSpy.mockReturnValue({ token: null, isLoading: false });
   });
 
   it('connects anonymously without consulting the ws-auth bridge', () => {
@@ -111,7 +110,7 @@ describe('KioskPresenceHub (display routes)', () => {
   // Positive control for the assertion above: without this, "the ws-auth hook
   // was never called" would stay green even if the mock were wired to nothing.
   it('the viewer hub DOES consult the ws-auth bridge and forwards its token', () => {
-    useWsAuthTokenSpy.mockReturnValue({ token: 'jwt-1', socketToken: 'jwt-1', isLoading: false });
+    useWsAuthTokenSpy.mockReturnValue({ token: 'jwt-1', isLoading: false });
 
     render(
       <ViewerKioskPresenceHub boardIds={[7]}>
@@ -144,7 +143,7 @@ describe('KioskPresenceHub (display routes)', () => {
   });
 
   it('holds the socket until the viewer auth lookup settles', () => {
-    useWsAuthTokenSpy.mockReturnValue({ token: null, socketToken: null, isLoading: true });
+    useWsAuthTokenSpy.mockReturnValue({ token: null, isLoading: true });
 
     const { rerender } = render(
       <ViewerKioskPresenceHub boardIds={[7]}>
@@ -154,7 +153,7 @@ describe('KioskPresenceHub (display routes)', () => {
 
     expect(createGraphQLClientSpy).toHaveBeenCalledTimes(0);
 
-    useWsAuthTokenSpy.mockReturnValue({ token: 'jwt-1', socketToken: 'jwt-1', isLoading: false });
+    useWsAuthTokenSpy.mockReturnValue({ token: 'jwt-1', isLoading: false });
     act(() => {
       rerender(
         <ViewerKioskPresenceHub boardIds={[7]}>

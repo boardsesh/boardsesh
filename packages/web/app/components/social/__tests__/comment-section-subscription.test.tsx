@@ -19,13 +19,7 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
-let mockAuthState = {
-  token: 'test-token',
-  socketToken: 'test-token',
-  isLoading: false,
-  isAuthenticated: true,
-  error: null,
-};
+let mockAuthState = { token: 'test-token', isLoading: false, isAuthenticated: true, error: null };
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => mockAuthState,
 }));
@@ -72,23 +66,11 @@ describe('CommentSection live updates', () => {
     mockAcquireRealtimeClient.mockClear();
     mockRelease.mockClear();
     mockSubscribe.mockClear();
-    mockAuthState = {
-      token: 'test-token',
-      socketToken: 'test-token',
-      isLoading: false,
-      isAuthenticated: true,
-      error: null,
-    };
+    mockAuthState = { token: 'test-token', isLoading: false, isAuthenticated: true, error: null };
   });
 
   it('opens no WebSocket for an anonymous reader', async () => {
-    mockAuthState = {
-      token: null as unknown as string,
-      socketToken: null as unknown as string,
-      isLoading: false,
-      isAuthenticated: false,
-      error: null,
-    };
+    mockAuthState = { token: null as unknown as string, isLoading: false, isAuthenticated: false, error: null };
 
     render(<CommentSection entityType="climb" entityId="climb-1" />);
 
