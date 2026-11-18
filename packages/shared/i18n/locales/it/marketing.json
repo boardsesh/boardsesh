@@ -291,7 +291,7 @@
   "legal": {
     "intro": {
       "title": "Note legali e proprietà intellettuale",
-      "p1": "Boardsesh è un'alternativa gratuita, open source e costruita dalla community per consultare e usare i pannelli LED standardizzati per l'allenamento in arrampicata (Kilter Board, Tension Board, MoonBoard e altri). Non ha scopo commerciale ed è mantenuta interamente da volontari.",
+      "p1": "Boardsesh è un’app gratuita, open source e creata dalla community per trovare blocchi e usare pannelli compatibili, tra cui Kilter, Tension e MoonBoard.",
       "p2": "Crediamo che i climber debbano essere liberi di scegliere come usare l'hardware che hanno acquistato, e che i dati creati dalla community debbano restare accessibili alla community."
     },
     "climbData": {
@@ -379,11 +379,7 @@
       "licenseLink": "CC BY 4.0",
       "copyright": ". Copyright 2024 Fonticons, Inc."
     },
-    "footer": "Questo documento è fornito a scopo informativo e non costituisce consulenza legale. Ultimo aggiornamento: 10-08-2026",
-    "buildPlans": {
-      "title": "Progetti di costruzione",
-      "body": "Boardsesh vende progetti CNC per una parete domestica: file di taglio generati per una parete e concessi in licenza per una sola parete, senza cederne la proprietà. Il generatore che li produce è a codice chiuso e non viene distribuito; l'app rimane gratuita e open source. I progetti sono compatibili con la disposizione dei fori di Kilter Homewall: una dichiarazione sulle posizioni dei fori, senza alcun rapporto con i produttori. Le condizioni complete sono nella pagina della <licence>licenza di fabbricazione dei progetti di costruzione</licence>."
-    }
+    "footer": "Questo documento è fornito a scopo informativo e non costituisce consulenza legale. Ultimo aggiornamento: 10-08-2026"
   },
   "help": {
     "clip": {
