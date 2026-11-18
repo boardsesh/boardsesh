@@ -899,6 +899,8 @@
         "countdownCuesHint": "Una vibración en cada uno de los últimos segundos, para que estés en las presas cuando se encienda el siguiente bloque.",
         "sound": "Sonido",
         "soundHint": "Reproduce un tono con los avisos. Suena aunque el móvil esté en silencio y no corta tu música.",
+        "lockScreen": "Mostrar en la pantalla de bloqueo",
+        "lockScreenHint": "Mira cómo baja tu descanso sin abrir la app.",
         "rogueTitle": "Temporizador del rocódromo",
         "rogueFooter": "Vincula un temporizador Rogue a un plafón y su cronómetro vuelve a empezar con tu descanso: al registrar un bloque, cuando la cola avanza y en cada ventana del ritmo fijo. Solo lo controla el móvil conectado al plafón.",
         "rogueNotPaired": "Sin vincular",
