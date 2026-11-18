@@ -1213,7 +1213,7 @@
     },
     "climbCount": "Blocchi previsti: {{count}}",
     "rounds": "Giri: {{count}} · Riposo tra blocchi: {{climbRest}}s · Tra giri: {{roundRest}}s",
-    "rest": "Riposo dopo ogni blocco: {{seconds}}s",
+    "rest": "Riposo {{seconds}}s, blocco successivo quando lo chiudi",
     "queueFull": "La coda è piena. Libera spazio prima di aggiungere questo allenamento.",
     "syncError": "L’allenamento è iniziato, ma il programma non è stato salvato. Tieni Boardsesh aperto e riprova la sincronizzazione.",
     "targetGrade": "Grado obiettivo: {{grade}}",

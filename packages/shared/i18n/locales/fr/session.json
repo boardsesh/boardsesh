@@ -1213,7 +1213,7 @@
     },
     "climbCount": "Blocs prévus : {{count}}",
     "rounds": "Tours : {{count}} · Repos entre blocs : {{climbRest}} s · Entre tours : {{roundRest}} s",
-    "rest": "Repos après chaque bloc : {{seconds}} s",
+    "rest": "Repos de {{seconds}} s, bloc suivant une fois enchaîné",
     "queueFull": "Ta file est pleine. Fais de la place avant d’ajouter cette séance.",
     "syncError": "Ta séance a commencé, mais son programme n’a pas pu être enregistré. Garde Boardsesh ouvert et réessaie la synchronisation.",
     "targetGrade": "Cotation cible : {{grade}}",
