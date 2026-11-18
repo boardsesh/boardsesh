@@ -7,7 +7,12 @@ import {
   workoutBlockSupport,
   type WorkoutResults,
 } from '@boardsesh/public-api';
-import { parseSessionWorkoutPlan } from '@boardsesh/workout-summary';
+import {
+  deriveWorkoutStages,
+  parseSessionWorkoutPlan,
+  parseSessionWorkoutTickMap,
+  type SessionWorkoutRepOutcome,
+} from '@boardsesh/workout-summary';
 import {
   appWorkouts,
   boardSessions,
@@ -24,8 +29,12 @@ import {
   logbookFeedAliasJoin,
   logbookVisibleTicksFilter,
   type FeedTransaction,
+  type LogbookFeedTick,
 } from '../logbook-feed';
-import { readLogbookClimbMetadata, serializeLogbookTick } from '../logbook-tick-serializer';
+import { readLogbookClimbMetadata, serializeLogbookTick, utcTimestamp } from '../logbook-tick-serializer';
+
+/** A workout started this long after its session was added to a session already running. */
+const ATTACHED_TO_RUNNING_SESSION_MS = 5_000;
 
 /** A repeated climb cannot prove which block produced its tick. */
 export function inferWorkoutBlockIndex(
@@ -36,38 +45,88 @@ export function inferWorkoutBlockIndex(
   return matching.length === 1 ? matching[0].index : null;
 }
 
-export async function buildWorkoutResults(
+/** What placing and scoping a tick reads; `status` is the stored tick status. */
+type SessionTick = Pick<
+  LogbookFeedTick,
+  'uuid' | 'climbUuid' | 'canonicalClimbUuid' | 'angle' | 'isMirror' | 'climbedAt'
+> & { status: SessionWorkoutRepOutcome };
+
+/**
+ * The workout's ticks and the block each landed on, by the climber's stored
+ * session workout: the same plan, tick map and `deriveWorkoutStages` the app's
+ * session detail uses. The phone names a partner block's stage
+ * `${workoutId}:${blockIndex}`. A tick counts when it was logged during the
+ * workout or the tick map pins it to one of those stages, and only
+ * those ticks are placed, so an earlier climb of a block's climb neither
+ * counts nor takes the block's slot. A tick on any other stage, or off the
+ * plan, is on no block. Null when the session holds no stored plan with one of
+ * this workout's blocks (a lost write), so the caller falls back to
+ * `plan_snapshot`.
+ */
+async function placeTicksByStoredTickMap(
   transaction: PartnerDatabase,
-  workout: typeof appWorkouts.$inferSelect,
-): Promise<WorkoutResults | undefined> {
-  if (!workout.sessionId) return undefined;
-  const [session] = await transaction.select().from(boardSessions).where(eq(boardSessions.id, workout.sessionId));
-  if (!session?.startedAt || !session.endedAt) return undefined;
-  const spec = CreateWorkoutSchema.parse(workout.spec);
-  const rows = await transaction
-    .select(logbookFeedTickColumns)
-    .from(boardseshTicks)
-    .leftJoin(boardClimbAliases, logbookFeedAliasJoin)
-    .where(and(eq(boardseshTicks.sessionId, workout.sessionId), logbookVisibleTicksFilter(workout.userId)))
-    .orderBy(asc(boardseshTicks.climbedAt), asc(boardseshTicks.uuid));
-  const metadata = await readLogbookClimbMetadata(transaction as unknown as FeedTransaction, workout.userId, rows);
-  let plan = WorkoutPlanSchema.safeParse(workout.planSnapshot).data ?? [];
-  if (plan.length === 0) {
-    const [stored] = await transaction
-      .select({ plan: sessionWorkouts.plan })
-      .from(sessionWorkouts)
-      .where(and(eq(sessionWorkouts.sessionId, workout.sessionId), eq(sessionWorkouts.userId, workout.userId)));
-    const sessionPlan = parseSessionWorkoutPlan(stored?.plan);
-    plan =
-      sessionPlan?.stages.flatMap((stage) => {
-        const prefix = `${workout.id}:`;
-        if (!stage.id.startsWith(prefix)) return [];
-        const index = Number(stage.id.slice(prefix.length));
-        return Number.isInteger(index) && index >= 0 && index < spec.blocks.length
-          ? [{ index, climbUuids: stage.items.map((item) => item.climbUuid) }]
-          : [];
-      }) ?? [];
+  { workoutId, userId, sessionId }: { workoutId: string; userId: string; sessionId: string },
+  blockCount: number,
+  ticks: ReadonlyArray<SessionTick>,
+  loggedDuringWorkout: (tick: SessionTick) => boolean,
+): Promise<{ workoutTickUuids: Set<string>; blockIndexByTick: Map<string, number> } | null> {
+  const [stored] = await transaction
+    .select({ plan: sessionWorkouts.plan, tickMap: sessionWorkouts.tickMap })
+    .from(sessionWorkouts)
+    .where(and(eq(sessionWorkouts.sessionId, sessionId), eq(sessionWorkouts.userId, userId)));
+  const sessionPlan = parseSessionWorkoutPlan(stored?.plan);
+  if (!sessionPlan) return null;
+  const stagePrefix = `${workoutId}:`;
+  const blockIndexByStage = new Map<string, number>();
+  const workoutQueueItems = new Set<string>();
+  for (const stage of sessionPlan.stages) {
+    if (!stage.id.startsWith(stagePrefix)) continue;
+    const blockIndexText = stage.id.slice(stagePrefix.length);
+    const blockIndex = Number(blockIndexText);
+    if (/^\d+$/.test(blockIndexText) && blockIndex < blockCount) {
+      blockIndexByStage.set(stage.id, blockIndex);
+      for (const item of stage.items) workoutQueueItems.add(item.queueItemUuid);
+    }
   }
+  if (blockIndexByStage.size === 0) return null;
+  // An unreadable map pins nothing; ticks are then placed by climb.
+  const tickMap = parseSessionWorkoutTickMap(stored?.tickMap) ?? [];
+  const pinnedTickUuids = new Set(
+    tickMap.filter((entry) => workoutQueueItems.has(entry.queueItemUuid)).map((entry) => entry.tickUuid),
+  );
+  const workoutTicks = ticks.filter((tick) => pinnedTickUuids.has(tick.uuid) || loggedDuringWorkout(tick));
+  const derived = deriveWorkoutStages(
+    sessionPlan,
+    tickMap,
+    workoutTicks.map((tick) => ({
+      uuid: tick.uuid,
+      climbUuid: tick.climbUuid,
+      angle: tick.angle,
+      isMirror: tick.isMirror,
+      status: tick.status,
+      climbedAt: utcTimestamp(tick.climbedAt),
+    })),
+  );
+  const blockIndexByTick = new Map<string, number>();
+  for (const stage of derived.stages) {
+    const blockIndex = blockIndexByStage.get(stage.id);
+    if (blockIndex === undefined) continue;
+    for (const climb of stage.climbs) {
+      for (const tickUuid of climb.tickUuids) blockIndexByTick.set(tickUuid, blockIndex);
+    }
+  }
+  return { workoutTickUuids: new Set(workoutTicks.map((tick) => tick.uuid)), blockIndexByTick };
+}
+
+/**
+ * Today's guess for a session with no stored plan: a block only when exactly
+ * one block of `plan_snapshot` queued the tick's climb (aliases followed).
+ */
+async function blockIndexBySnapshotClimb(
+  transaction: PartnerDatabase,
+  planSnapshot: unknown,
+): Promise<(tick: SessionTick) => number | null> {
+  const plan = WorkoutPlanSchema.safeParse(planSnapshot).data ?? [];
   const aliasUuids = [...new Set(plan.flatMap((block) => block.climbUuids))];
   const aliases = aliasUuids.length
     ? await transaction
@@ -80,6 +139,62 @@ export async function buildWorkoutResults(
     ...block,
     climbUuids: block.climbUuids.map((uuid) => canonicalByAlias.get(uuid) ?? uuid),
   }));
+  return (tick) => inferWorkoutBlockIndex(tick.canonicalClimbUuid, canonicalPlan);
+}
+
+/**
+ * Logged once the workout was running, by the time the climber logged it
+ * (`climbedAt`), not the time it reached the server: ticks logged offline
+ * before the workout and synced after it started stay out.
+ */
+function loggedSince(tick: SessionTick, workoutStartedAt: Date): boolean {
+  return Date.parse(utcTimestamp(tick.climbedAt)) >= workoutStartedAt.getTime();
+}
+
+/**
+ * The workout's results: only that workout's own ticks. A tick counts when it
+ * was logged after the workout started or the stored tick map pins it to one
+ * of the workout's blocks, so "Add to this session" never hands the app the
+ * climbs from before it. The session's times start at the workout.
+ */
+export async function buildWorkoutResults(
+  transaction: PartnerDatabase,
+  workout: typeof appWorkouts.$inferSelect,
+): Promise<WorkoutResults | undefined> {
+  const { sessionId } = workout;
+  if (!sessionId) return undefined;
+  const [session] = await transaction.select().from(boardSessions).where(eq(boardSessions.id, sessionId));
+  if (!session?.startedAt || !session.endedAt) return undefined;
+  const spec = CreateWorkoutSchema.parse(workout.spec);
+  // Start creates a session and attaches the workout in one transaction, a few
+  // ms apart, so the session holds nothing from before the workout. Only a
+  // workout added to a session already running has earlier ticks to leave out;
+  // a new session keeps every tick, whatever the phone's clock said.
+  const attachedToRunningSession =
+    workout.startedAt !== null &&
+    workout.startedAt.getTime() - session.startedAt.getTime() > ATTACHED_TO_RUNNING_SESSION_MS;
+  const workoutStartedAt = attachedToRunningSession && workout.startedAt ? workout.startedAt : session.startedAt;
+  const loggedDuringWorkout = (tick: SessionTick) => !attachedToRunningSession || loggedSince(tick, workoutStartedAt);
+  const sessionTicks = await transaction
+    .select(logbookFeedTickColumns)
+    .from(boardseshTicks)
+    .leftJoin(boardClimbAliases, logbookFeedAliasJoin)
+    .where(and(eq(boardseshTicks.sessionId, sessionId), logbookVisibleTicksFilter(workout.userId)))
+    .orderBy(asc(boardseshTicks.climbedAt), asc(boardseshTicks.uuid));
+  const storedPlacement = await placeTicksByStoredTickMap(
+    transaction,
+    { workoutId: workout.id, userId: workout.userId, sessionId },
+    spec.blocks.length,
+    sessionTicks,
+    loggedDuringWorkout,
+  );
+  const rows = sessionTicks.filter((tick) =>
+    storedPlacement ? storedPlacement.workoutTickUuids.has(tick.uuid) : loggedDuringWorkout(tick),
+  );
+  const blockIndexOf = storedPlacement
+    ? (tick: SessionTick) => storedPlacement.blockIndexByTick.get(tick.uuid) ?? null
+    : await blockIndexBySnapshotClimb(transaction, workout.planSnapshot);
+  const metadata = await readLogbookClimbMetadata(transaction as unknown as FeedTransaction, workout.userId, rows);
   const pathParts = session.boardPath?.split('/') ?? [];
   const pathType = BoardTypeSchema.safeParse(pathParts[0]).data;
   const pathLayoutId = pathParts[1] && /^\d+$/.test(pathParts[1]) ? Number(pathParts[1]) : null;
@@ -117,9 +232,9 @@ export async function buildWorkoutResults(
   return WorkoutResultsSchema.parse({
     completion: workout.status === 'auto_closed' ? 'auto_closed' : 'ended',
     session: {
-      startedAt: session.startedAt.toISOString(),
+      startedAt: workoutStartedAt.toISOString(),
       endedAt: session.endedAt.toISOString(),
-      durationSeconds: Math.max(0, Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)),
+      durationSeconds: Math.max(0, Math.floor((session.endedAt.getTime() - workoutStartedAt.getTime()) / 1000)),
       timezone: ownsSession ? session.timezone : null,
       notes: ownsSession ? session.notes : null,
       board: {
@@ -132,7 +247,7 @@ export async function buildWorkoutResults(
     },
     ticks: rows.map((tick) => ({
       ...serializeLogbookTick(tick, metadata),
-      blockIndex: inferWorkoutBlockIndex(tick.canonicalClimbUuid, canonicalPlan),
+      blockIndex: blockIndexOf(tick),
     })),
     blocks: spec.blocks.map((block, index) => ({
       index,

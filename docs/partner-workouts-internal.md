@@ -298,11 +298,12 @@ climb to its block, so the player and the session card can say
 The existing `session_workouts` write and durable mobile outbox store the run
 on the server. `recordAppWorkoutPlan` records its per-block climb snapshot at
 Start; the normal session-workout write reconstructs the same canonical snapshot
-if that response is lost. Empty freeform blocks remain in the snapshot. Results can infer a block only when the tick's climb matches
-exactly one block in that snapshot. A climb never queued, or queued in more
-than one block, gets `blockIndex: null`; warm-up and volume can contain the
-same climb. Exact attribution requires a queue-item/stage identity recorded
-on each tick, which this milestone does not invent.
+if that response is lost. Empty freeform blocks remain in the snapshot. Each
+partner block's run stage is named `${workoutId}:${blockIndex}`, and the
+`session_workouts` row keeps that stage id beside its tick map, so results
+place ticks from the stored row (see "Results"). The snapshot is only the
+fallback when no stored row holds the workout's stages: a tick then gets a
+block only when its climb matches exactly one block in the snapshot.
 
 If a session is already running when the workout lands, the card offers
 "End current session" or "Add to this session". Adding attaches the workout id
@@ -426,9 +427,42 @@ the workout's session filtered to the workout's `user_id`, the way the
 `sessionHealthExport` resolver does. A party session has other climbers'
 ticks on it and none of those may reach an app. `generateSessionSummary` is
 viewer-scoped too, but scoped to whoever is calling, which for an API request
-is an app, not a climber; the builder takes the user id explicitly. Each tick
-goes through the same serializer as the logbook feed, plus `blockIndex` from
-`plan_snapshot`. Session notes, timezone and the private board name are
+is an app, not a climber; the builder takes the user id explicitly.
+
+Block placement uses the same derivation as the app's session detail. The
+builder reads the climber's own `session_workouts` row (plan and tick map),
+runs `deriveWorkoutStages` from `@boardsesh/workout-summary` over the
+workout's ticks (below), and gives every tick on a stage named
+`${workoutId}:${index}` that `blockIndex`. A tick on any other stage (the
+climber's own block in "Add to this session") or off the plan gets `null`. So
+the tick map, a kept entry for a tick that lands late (#7819) and the
+forward-first rule for repeated climbs (#7822) all reach apps. The two can
+still differ when an earlier, unpinned tick on the same climb exists (below).
+When no stored row
+holds one of the workout's stages (a lost write), the builder falls back to
+`plan_snapshot`: a block only when exactly one block queued the tick's climb.
+
+Results hold only the workout's own ticks (consent: "Read the results of
+workouts this app planned"). When the workout started its own session (Start
+creates the session and attaches the workout in one transaction, so
+`started_at` is within 5 s of the session start), every tick in the session
+counts. When it was added to a session already running, a tick stays when its
+`climbedAt` is at or after `app_workouts.started_at`, or when the tick map
+pins it to a queue item on one of the workout's stages; every other tick in
+the session is dropped before the derivation runs, so inclusion and placement
+agree. The phone's `climbedAt` is used rather than the server's `created_at`,
+so ticks logged offline before the workout and synced after Start stay out.
+That compares phone time with server time: a phone clock running ahead lets
+in unpinned ticks from a few seconds before the attach, and one running
+behind drops unpinned ticks from the first few seconds after it. A pinned
+tick stays either way. An earlier tick on a
+climb a partner block queued later, with no map entry, stays out and does not
+take that block's slot. The app's own session detail derives over every tick
+in the session, so it may still show such a tick on that block. In the
+snapshot fallback only the time rule applies. `session.startedAt` is
+`started_at` for a workout added to a running session and the session start
+otherwise, and `durationSeconds` runs from it. Each tick goes through the same serializer as the logbook feed, plus
+`blockIndex`. Session notes, timezone and the private board name are
 included only if `session.created_by_user_id === workout.user_id`; all three
 are `null` for another climber's workout in a shared session. Public board
 configuration remains available.
@@ -468,7 +502,9 @@ Acceptance for milestone 3:
    starts a session with `appWorkoutId`, logs ticks from the climber and from
    a second climber in the same session, ends it, and `GET` returns only the
    climber's ticks with the right `blockIndex` values. Repeat a climb across
-   two blocks and assert its ticks have `blockIndex: null`.
+   two blocks: the stored tick map puts each tick on its own block, and
+   without a stored plan both get `blockIndex: null`. Ticks from before
+   "Add to this session" stay out.
 2. Replaying the create with the same `Idempotency-Key` returns the same
    response; a different body returns 422; a reused `externalRef` returns 409.
 3. An abandoned session ends as `auto_closed` with results.
@@ -492,17 +528,16 @@ Telemetry, in `@boardsesh/analytics` `SHARED_EVENTS`: `App Workout Opened`,
 The contract promises a position within a block, rest adherence and an
 effort rating "later". Concretely:
 
-- `blockIndex` is an inference from the plan snapshot, with `null` for missing
-  or ambiguous block matches; it is not exact for every native block. #5379 gave every queued climb a
-  stage, but on the phone only (`docs/workout-stages.md` says why there is no
-  wire field), so the server still cannot read a stage off a tick. Exact
-  attribution needs the stage recorded on the tick itself; until then the
-  snapshot is the source.
-- Position within a 4x4 needs #5380: a queue that knows it is one climb done
-  for every rep, set after set, and a tick that knows which rep and set it
-  was. The field is added when that exists, not reserved as `null` before.
-- Rest adherence (planned rest vs actual per block) needs both, plus the rest
-  timer's arm state or fire times on the server. Today the timer is client-only
+- `blockIndex` comes from the stored `session_workouts` tick map and
+  `deriveWorkoutStages`, the same placement the app shows (see "Results").
+  A partner `fourByFour` still runs freeform with nothing queued, so its
+  ticks are `null` until the native partner 4x4 mapping lands.
+- Position within a partner 4x4 arrives with the native partner 4x4 mapping
+  (`climbCount` climbs repeated for `rounds` rounds on the repeat slots from
+  #7822). Results then gain an additive `position` field, not reserved as
+  `null` before.
+- Rest adherence (planned rest vs actual per block) needs the rest timer's
+  arm state or fire times on the server. Today the timer is client-only
   (`rest-timer-store.ts` is deliberately not persisted). Apps can compute gaps
   between ticks from `climbedAt` meanwhile.
 - RPE has no column anywhere. If we add it, it is a nullable field on
