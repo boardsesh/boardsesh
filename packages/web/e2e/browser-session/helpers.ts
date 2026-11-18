@@ -159,7 +159,17 @@ export async function signInOverExistingSession(page: Page, account: SeededAccou
     { email: account.email, password: account.password },
   );
   expect(status).toBe(200);
-  await page.goto(`${WWW_ORIGIN}/settings`);
+  // The tab's own guard may already be reloading it for the new account, which aborts a navigation
+  // started at the same moment; that reload is the design, so go to /settings once it is done.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await page.goto(`${WWW_ORIGIN}/settings`);
+      return;
+    } catch (error) {
+      if (attempt >= 2 || !(error instanceof Error) || !error.message.includes('ERR_ABORTED')) throw error;
+      await page.waitForLoadState('load');
+    }
+  }
 }
 
 /**
