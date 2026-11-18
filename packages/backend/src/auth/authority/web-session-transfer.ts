@@ -1,13 +1,13 @@
-import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import {
   WEB_CREDENTIAL_PROOF_VERSION,
   type PresentedWebSession,
   type WebCredentialProof,
 } from '@boardsesh/auth-protocol';
-import { authSessionDenials, userProfiles, users, verificationTokens } from '@boardsesh/db/schema/auth';
+import { authSessionDenials, userProfiles, users } from '@boardsesh/db/schema/auth';
 import { AuthSubjectDeniedError, requireHumanSubjectForIssuance } from '../human-admission';
-import { transactionSettings } from '../current-store/command-context';
+import { claimNativeTransferToken, transactionSettings } from '../current-store/command-context';
+import { markTokenConsumed } from '../native-transfer-replay';
 import { CurrentStoreFoundationError, type ExpectedCurrentStoreAuthority } from '../current-store/foundation-context';
 import { readLockedWebSubjectState } from '../current-store/web-credential-state';
 import { verifyNativeTransferToken } from '../native-transfer-token';
@@ -22,8 +22,7 @@ import {
   type WebSessionUser,
 } from './web-session';
 
-/** Marks a spent transfer token; the row outlives the token's last accepted second. */
-const SPENT_TRANSFER_PREFIX = 'native-transfer:';
+/** The durable spent marker outlives the token's last accepted second. */
 const SPENT_TRANSFER_RETENTION_MS = 5 * 60 * 1000;
 
 export type WebSessionTransfer =
@@ -65,15 +64,17 @@ export async function transferWebSession(
   nextAuthSecret: string | undefined,
   now = new Date(),
 ): Promise<WebSessionTransfer> {
-  const transferToken = input.transferToken;
-  const verified = verifyNativeTransferToken(transferToken);
+  const verified = verifyNativeTransferToken(input.transferToken);
   if (!verified) return { status: 'denied' };
   // A transfer without a verified sign-in time has nothing to carry.
   if (!verified.authenticatedAt) return { status: 'sign-in-required' };
   const signedInAt = new Date(Math.min(verified.authenticatedAt.getTime(), now.getTime()));
-  const spentKey = createHash('sha256')
-    .update(transferToken.split('.')[1] ?? '')
-    .digest('hex');
+  // One spent marker across paths: the native exchange's replay store, keyed
+  // on the recomputed signature. A token redeemed there is refused here, and
+  // the reverse. The `verificationTokens` row below is the durable half.
+  const consumed = await markTokenConsumed(verified.replayKey);
+  if (consumed === 'replay') return { status: 'denied' };
+  if (consumed === 'overloaded') throw new Error('Transfer replay store unavailable');
   const receipt = await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     return captureIdentityAuthority(transaction, {
@@ -99,16 +100,12 @@ export async function transferWebSession(
           .where(eq(authSessionDenials.sessionId, verified.authSessionId));
         if (denial) throw new TransferDenied();
       }
-      const spent = await transaction
-        .insert(verificationTokens)
-        .values({
-          identifier: `${SPENT_TRANSFER_PREFIX}${spentKey}`,
-          token: spentKey,
-          expires: new Date(verified.validUntil + SPENT_TRANSFER_RETENTION_MS),
-        })
-        .onConflictDoNothing()
-        .returning({ token: verificationTokens.token });
-      if (spent.length !== 1) throw new TransferDenied();
+      const spent = await claimNativeTransferToken(
+        transaction,
+        verified.replayKey,
+        new Date(verified.validUntil + SPENT_TRANSFER_RETENTION_MS),
+      );
+      if (!spent) throw new TransferDenied();
       const session = await issueWebSession(transaction, {
         userId: verified.userId,
         authenticatedAt: signedInAt,
@@ -129,6 +126,8 @@ export async function transferWebSession(
         .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
         .where(eq(users.id, verified.userId));
       if (!account) throw new AuthSubjectDeniedError();
+      // As the native issuer does: the token must still be valid at the end.
+      if (Date.now() >= verified.validUntil) throw new TransferDenied();
       return {
         status: 'issued',
         session,

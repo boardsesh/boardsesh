@@ -16,7 +16,6 @@ import {
   currentNativeRevocationMode,
   parseNativeRevocationMode,
 } from '../auth/authority/native-revocation-configuration';
-import { legacyBridgeMode } from '../auth/authority/bridge';
 import { cleanupNativeRefreshRows } from '../auth/authority/native-refresh-retention';
 import { bindNativeRefreshSession } from '../auth/authority/native-session';
 import { revokeNativeCredentials } from '../auth/authority/native-revocation';
@@ -26,6 +25,12 @@ import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AccountCreationReceipt } from '@boardsesh/analytics';
 import { verifyNativeTransferToken as verifyTransferToken } from '../auth/native-transfer-token';
+import {
+  fillConsumedTransferTokensForTests,
+  isTokenConsumed,
+  markTokenConsumed,
+  resetConsumedTransferTokensForTests,
+} from '../auth/native-transfer-replay';
 import { eq, and, isNull, DrizzleQueryError, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
@@ -90,101 +95,6 @@ const JWT_ISSUER = 'boardsesh';
 
 /** JWT audience claim for mobile tokens. */
 const JWT_AUDIENCE = 'boardsesh-mobile';
-
-// ---------------------------------------------------------------------------
-// Transfer token replay prevention
-// ---------------------------------------------------------------------------
-
-/**
- * In-memory fallback for consumed transfer token signatures when Redis is
- * unavailable. When Redis is connected, tokens are stored with SET NX EX for
- * atomic, multi-instance-safe replay prevention.
- */
-const consumedTransferTokens = new Map<string, number>();
-
-/** TTL for consumed token entries (125s — slightly longer than the 120s token TTL). */
-// At most 125 signed seconds + two 5-second verification tolerances, plus
-// 60 seconds of clock offset in each replica, is 255 seconds. Five minutes
-// also covers whole-second rounding and scheduling margin across replicas.
-const CONSUMED_TOKEN_TTL_SECONDS = 5 * 60;
-const CONSUMED_TOKEN_TTL_MS = CONSUMED_TOKEN_TTL_SECONDS * 1000;
-
-/** Cleanup interval for expired consumed token entries. */
-const CONSUMED_TOKEN_CLEANUP_INTERVAL_MS = 60_000;
-
-/** Max entries before triggering early eviction. */
-const MAX_CONSUMED_TOKENS = 10_000;
-
-/** Redis key prefix for consumed transfer tokens. */
-const CONSUMED_TOKEN_REDIS_PREFIX = 'boardsesh:native-auth:consumed:';
-
-/** Evict stale entries from the consumed-token map. */
-function evictStaleConsumedTokens(): void {
-  const cutoff = Date.now() - CONSUMED_TOKEN_TTL_MS;
-  for (const [signature, timestamp] of consumedTransferTokens) {
-    if (timestamp < cutoff) consumedTransferTokens.delete(signature);
-  }
-}
-
-// Periodically evict stale consumed-token entries so the map doesn't grow unbounded.
-const consumedTokenEvictionHandle = setInterval(evictStaleConsumedTokens, CONSUMED_TOKEN_CLEANUP_INTERVAL_MS);
-if (typeof consumedTokenEvictionHandle.unref === 'function') consumedTokenEvictionHandle.unref();
-
-/**
- * Attempt to mark a transfer token signature as consumed.
- * Returns 'consumed' if freshly consumed, 'replay' if already used, 'overloaded' if map is full.
- *
- * When Redis is connected, uses SET NX EX for atomic multi-instance replay prevention.
- * Falls back to the in-memory map otherwise (single-instance only).
- */
-async function markTokenConsumed(tokenSignature: string): Promise<'consumed' | 'replay' | 'overloaded'> {
-  if (redisClientManager.isRedisConnected()) {
-    try {
-      const { publisher } = redisClientManager.getClients();
-      const redisKey = `${CONSUMED_TOKEN_REDIS_PREFIX}${tokenSignature}`;
-      // Keep the replay key beyond the latest accepted signed expiry plus skew.
-      const result = await publisher.set(redisKey, '1', 'EX', CONSUMED_TOKEN_TTL_SECONDS, 'NX');
-      return result === 'OK' ? 'consumed' : 'replay';
-    } catch {
-      // Redis failure: fall through to in-memory map so the endpoint stays available.
-      logger.warn('[NativeAuth] Redis replay store unavailable', { code: 'REDIS_REPLAY_WRITE_UNAVAILABLE' });
-    }
-  }
-
-  if (legacyBridgeMode(process.env) === 'on') return 'overloaded';
-  // In-memory fallback (single-instance only)
-  if (consumedTransferTokens.has(tokenSignature)) {
-    return 'replay';
-  }
-
-  if (consumedTransferTokens.size >= MAX_CONSUMED_TOKENS) {
-    evictStaleConsumedTokens();
-    if (consumedTransferTokens.size >= MAX_CONSUMED_TOKENS) {
-      return 'overloaded';
-    }
-  }
-
-  consumedTransferTokens.set(tokenSignature, Date.now());
-  return 'consumed';
-}
-
-/**
- * Check if a transfer token signature has already been consumed (read-only check).
- * Used for the early-reject path before verifying the HMAC.
- */
-async function isTokenConsumed(tokenSignature: string): Promise<boolean> {
-  if (redisClientManager.isRedisConnected()) {
-    try {
-      const { publisher } = redisClientManager.getClients();
-      const redisKey = `${CONSUMED_TOKEN_REDIS_PREFIX}${tokenSignature}`;
-      const result = await publisher.exists(redisKey);
-      return result === 1;
-    } catch {
-      logger.warn('[NativeAuth] Redis replay check unavailable', { code: 'REDIS_REPLAY_READ_UNAVAILABLE' });
-    }
-  }
-  return consumedTransferTokens.has(tokenSignature);
-}
 
 // ---------------------------------------------------------------------------
 // Per-instance auth rate limiting (IP or presented-refresh digest)
@@ -676,7 +586,8 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
 
   // Atomically mark the token as consumed. If another request consumed it
   // between the EXISTS check above and now, markTokenConsumed returns 'replay'.
-  const consumeResult = await markTokenConsumed(tokenSignature);
+  // Keyed on the recomputed signature, shared with the web transfer sign-in.
+  const consumeResult = await markTokenConsumed(verified.replayKey);
   if (consumeResult === 'replay') {
     logger.warn('[NativeAuth] Transfer token replay attempt detected (race)');
     sendJson(res, 409, { error: 'Transfer token has already been used' });
@@ -2051,15 +1962,12 @@ export function __resetNativeAuthStateForTests(): void {
   refreshRateLimitMap.clear();
   invalidRefreshRateLimitMap.clear();
   invalidRefreshCapacityRetryAt = 0;
-  consumedTransferTokens.clear();
+  resetConsumedTransferTokensForTests();
 }
 
 /** Fill the consumed-token map with fresh entries for capacity testing. Test-only. */
 export function __fillConsumedTokenMapForTests(count: number): void {
-  const now = Date.now();
-  for (let i = 0; i < count; i++) {
-    consumedTransferTokens.set(`test-sig-${String(i)}`, now);
-  }
+  fillConsumedTransferTokensForTests(count);
 }
 
 /** Fill the rate-limit map with non-expired entries for capacity testing. Test-only. */

@@ -140,6 +140,27 @@ export async function claimLegacyLink(
  * Runs apart from the commands themselves: their database role may only append
  * to this table, and a failed cleanup must never fail a sign-in.
  */
+/**
+ * Spends a native OAuth transfer token once, as the durable half of its single
+ * use (the native exchange's replay store is the other). Same table and
+ * prefix as command claims, in its own hash domain, so the expiry sweep
+ * (`deleteExpiredCommandClaims`) removes it. `replayKey` is the recomputed
+ * signature, never presented bytes.
+ */
+export async function claimNativeTransferToken(
+  transaction: CurrentStoreTransaction,
+  replayKey: string,
+  expires: Date,
+): Promise<boolean> {
+  const claimHash = createHash('sha256').update(`native-transfer\0${replayKey}`).digest('hex');
+  const claimed = await transaction
+    .insert(verificationTokens)
+    .values({ identifier: `${WEB_AUTH_COMMAND_IDENTIFIER_PREFIX}${claimHash}`, token: claimHash, expires })
+    .onConflictDoNothing()
+    .returning({ token: verificationTokens.token });
+  return claimed.length === 1;
+}
+
 export async function deleteExpiredCommandClaims(
   database: DbInstance,
   batchSize: number = EXPIRED_COMMAND_CLAIMS_PER_RUN,

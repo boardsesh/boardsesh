@@ -16,8 +16,16 @@ const CLOCK_SKEW_TOLERANCE_SECONDS = 5;
  */
 const MAX_TRANSFER_TOKEN_LIFETIME_SECONDS = 125;
 
+/** A base64url payload, a dot, and the 43-character base64url HMAC-SHA256. Nothing else. */
+const TRANSFER_TOKEN_SHAPE = /^([A-Za-z0-9_-]{1,8192})\.([A-Za-z0-9_-]{43})$/;
+
 /** What a verified transfer token carries. */
 export interface VerifiedNativeTransfer {
+  /**
+   * The token's single-use key: the RECOMPUTED signature, never the presented
+   * bytes, so every spelling a verifier could accept spends the same key.
+   */
+  replayKey: string;
   userId: string;
   generation: number;
   authSessionId: string | null;
@@ -45,33 +53,26 @@ type TransferPayload = {
 /**
  * Verifies a native OAuth transfer token (mirrors packages/web
  * native-oauth-transfer.ts): the HMAC under `NEXTAUTH_SECRET`, the issue and
- * expiry times, and the claims. Single use is the caller's job. Throws
- * unavailable without the secret.
+ * expiry times, and the claims. Single use is the caller's job, keyed on
+ * `replayKey`. Throws unavailable without the secret.
  */
 export function verifyNativeTransferToken(token: string): VerifiedNativeTransfer | null {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new AuthAdmissionUnavailableError();
 
-  const parts = token.split('.');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    return null;
-  }
-  const [encodedPayload, signature] = parts;
+  // Exactly `<payload>.<signature>`, both canonical base64url: no padding,
+  // whitespace, trailing bytes or third segment, so one token has one spelling.
+  const match = TRANSFER_TOKEN_SHAPE.exec(token);
+  if (!match) return null;
+  const [, encodedPayload, signature] = match;
+  if (Buffer.from(encodedPayload, 'base64url').toString('base64url') !== encodedPayload) return null;
 
   const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
-
-  const sigBuffer = Buffer.from(signature);
-  const expectedSigBuffer = Buffer.from(expectedSignature);
-
-  // Pad both buffers to the same length so the comparison is always
-  // constant-time — no length oracle, no JIT short-circuit.
-  const maxLen = Math.max(sigBuffer.length, expectedSigBuffer.length);
-  const paddedSig = Buffer.alloc(maxLen);
-  const paddedExpected = Buffer.alloc(maxLen);
-  sigBuffer.copy(paddedSig);
-  expectedSigBuffer.copy(paddedExpected);
-
-  if (!crypto.timingSafeEqual(paddedSig, paddedExpected)) {
+  // The signature's length is public (43 characters); a different length is
+  // refused before the constant-time comparison of equal-length buffers.
+  const sigBuffer = Buffer.from(signature, 'utf8');
+  const expectedSigBuffer = Buffer.from(expectedSignature, 'utf8');
+  if (sigBuffer.length !== expectedSigBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)) {
     return null;
   }
 
@@ -130,6 +131,7 @@ export function verifyNativeTransferToken(token: string): VerifiedNativeTransfer
       ? new Date(authenticationTime * 1000)
       : null;
   return {
+    replayKey: expectedSignature,
     userId: payload.userId,
     generation,
     authSessionId: sourceSessionId,

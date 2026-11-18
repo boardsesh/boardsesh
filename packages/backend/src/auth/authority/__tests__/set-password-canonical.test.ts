@@ -4,7 +4,7 @@
  * ends everything else, as the legacy cookie form always has. Only a `login`
  * under five minutes old may do it.
  */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
@@ -18,12 +18,16 @@ import {
 import {
   accounts,
   authEmailProjection,
+  authEmailVerificationState,
+  authEmailVerificationTokens,
   authSession,
+  authSessionDenials,
   authSubjectCutoffs,
   mobileRefreshTokens,
   userCredentials,
   users,
 } from '@boardsesh/db/schema';
+import { normalizeAccountEmail } from '@boardsesh/auth-protocol/account-email';
 import {
   canonical,
   command,
@@ -174,7 +178,51 @@ async function written(userId: string) {
     credentials: await database.select().from(userCredentials).where(eq(userCredentials.userId, userId)),
     cutoffs: await database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
     sessions: await database.select().from(authSession).where(eq(authSession.userId, userId)).orderBy(authSession.id),
+    refreshTokens: await database.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, userId)),
+    denials: await database.select().from(authSessionDenials).where(eq(authSessionDenials.userId, userId)),
   };
+}
+
+async function signOut(userId: string, session: { sessionId: string; token: string }) {
+  return post(
+    WEB_SESSION_COMMAND_PATHS.signout,
+    command('signout', { token: session.token, expectedUserId: userId, expectedAuthSessionId: session.sessionId }),
+  );
+}
+
+/** A pending email verification link, as `email-verification.ts` issues it, at generation 0. */
+async function pendingVerificationLink(userId: string) {
+  const [user] = await harnessDatabase().select({ email: users.email }).from(users).where(eq(users.id, userId));
+  const token = `ev1_${randomBytes(32).toString('base64url')}`;
+  await harnessDatabase()
+    .insert(authEmailVerificationState)
+    .values({ userId, purpose: 'email-verification', generation: 1 })
+    .onConflictDoNothing();
+  await harnessDatabase()
+    .insert(authEmailVerificationTokens)
+    .values({
+      tokenHash: createHash('sha256').update(`email-verification-v1\0${token}`).digest('hex'),
+      userId,
+      purpose: 'email-verification',
+      deliveredEmail: user.email,
+      normalizedEmail: normalizeAccountEmail(user.email),
+      subjectGeneration: 0,
+      issuanceGeneration: 1,
+      issuedAt: new Date(),
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+  return token;
+}
+
+async function verifyEmail(token: string) {
+  const { body } = await post(AUTH_COMMAND_PATHS['verify-email'], {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
+    operation: 'verify-email',
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    payload: { token },
+  });
+  return (body as { outcome?: string }).outcome;
 }
 
 describe('set-password on a canonical session', () => {
@@ -192,7 +240,14 @@ describe('set-password on a canonical session', () => {
     const { status, reply } = await setPassword(userId, session.sessionId, canonical(session.token));
     expect(status).toBe(200);
     if (reply.outcome !== 'set') throw new Error(`Set-password answered ${reply.outcome}`);
-    expect(reply.credentialProof).toMatchObject({ userId, authSessionId: session.sessionId, generation: 1 });
+    // The proof only names the new generation: never fresh, and www writes no cookie from it.
+    expect(reply.credentialProof).toMatchObject({
+      userId,
+      authSessionId: session.sessionId,
+      generation: 1,
+      authenticatedAt: null,
+      linkGuarded: false,
+    });
     expect(JSON.stringify(reply)).not.toContain(session.token);
 
     const [row] = await harnessDatabase().select().from(authSession).where(eq(authSession.id, session.sessionId));
@@ -254,5 +309,52 @@ describe('set-password on a canonical session', () => {
       outcome: 'set',
       credentialProof: { userId, authSessionId: sessionId, generation: 1, linkGuarded: true },
     });
+  });
+
+  it('ends a pending email verification link, as the legacy form does', async () => {
+    const control = await providerClimber();
+    expect(await verifyEmail(await pendingVerificationLink(control))).toBe('verified');
+    const userId = await providerClimber();
+    const link = await pendingVerificationLink(userId);
+    const session = await sessionFor(userId);
+    expect((await setPassword(userId, session.sessionId, canonical(session.token))).reply.outcome).toBe('set');
+    expect(await verifyEmail(link)).toBe('invalid_token');
+  });
+
+  it('sets once when one session asks twice at once', async () => {
+    const userId = await providerClimber();
+    const session = await sessionFor(userId);
+    const replies = await Promise.all([
+      setPassword(userId, session.sessionId, canonical(session.token)),
+      setPassword(userId, session.sessionId, canonical(session.token)),
+    ]);
+    const outcomes = replies.map(({ reply }) => reply.outcome);
+    expect(outcomes.filter((outcome) => outcome === 'set')).toHaveLength(1);
+    // The loser saw either the password or the moved generation.
+    expect(['already_set', 'unauthenticated']).toContain(outcomes.find((outcome) => outcome !== 'set'));
+    const after = await written(userId);
+    expect(after.credentials).toHaveLength(1);
+    expect(after.cutoffs.map((cutoff) => cutoff.generation)).toEqual([1]);
+    const [row] = after.sessions;
+    expect(row).toMatchObject({ token: sessionTokenDigest(session.token), revocationGeneration: 1 });
+  });
+
+  it('leaves the session ended whichever wins when set-password crosses its sign-out', async () => {
+    const userId = await providerClimber();
+    const session = await sessionFor(userId);
+    const [setReply, signedOut] = await Promise.all([
+      setPassword(userId, session.sessionId, canonical(session.token)),
+      signOut(userId, session),
+    ]);
+    expect(signedOut.status).toBe(200);
+    expect(['set', 'unauthenticated']).toContain(setReply.reply.outcome);
+    const read = await post(
+      WEB_SESSION_COMMAND_PATHS.session,
+      command('session', { presented: canonical(session.token) }),
+    );
+    expect(read.status).toBe(401);
+    const after = await written(userId);
+    expect(after.sessions).toEqual([]);
+    expect(after.credentials).toHaveLength(setReply.reply.outcome === 'set' ? 1 : 0);
   });
 });

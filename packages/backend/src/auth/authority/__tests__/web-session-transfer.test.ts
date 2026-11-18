@@ -4,8 +4,8 @@
  * time, is never fresh, spends the token once and revokes the session the
  * browser presented.
  */
-import { createHmac, randomUUID } from 'node:crypto';
-import { eq, like } from 'drizzle-orm';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   WEB_SESSION_COMMAND_PATHS,
@@ -29,6 +29,8 @@ import {
   stubCommandEnvironment,
 } from './web-session-http-harness';
 import { readFirstPartySession, requireFreshAuthentication } from '../session-reader';
+import { isTokenConsumed, markTokenConsumed } from '../../native-transfer-replay';
+import { users } from '@boardsesh/db/schema';
 
 vi.mock('../../admission-pool', async () => {
   const { harnessDatabase: database } = await import('./web-session-http-harness');
@@ -88,8 +90,21 @@ async function issued(token: string, presented?: PresentedWebSession) {
 const readStatus = async (token: string) =>
   (await post(WEB_SESSION_COMMAND_PATHS.session, command('session', { presented: canonical(token) }))).status;
 
-const spentTransfers = () =>
-  harnessDatabase().select().from(verificationTokens).where(like(verificationTokens.identifier, 'native-transfer:%'));
+/** The durable spent markers of these tokens (command-claim prefix, transfer hash domain). */
+const spentRows = (...tokens: string[]) =>
+  harnessDatabase()
+    .select()
+    .from(verificationTokens)
+    .where(
+      inArray(
+        verificationTokens.token,
+        tokens.map((token) =>
+          createHash('sha256')
+            .update(`native-transfer\0${token.split('.')[1]}`)
+            .digest('hex'),
+        ),
+      ),
+    );
 
 describe('the transfer command', () => {
   it('issues a carried session with the native sign-in time and a proof that is never fresh', async () => {
@@ -173,7 +188,7 @@ describe('the transfer command', () => {
       .insert(authSessionDenials)
       .values({ sessionId: signedOutSource, userId: signedOut.id, expiresAt: new Date(Date.now() + 86_400_000) });
     const plain = await climber();
-    const spentBefore = (await spentTransfers()).length;
+    const tokens: string[] = [];
     for (const [label, userId, token] of [
       ['deleted account', deleted.id, transferToken(deleted.id)],
       ['moved generation', moved.id, transferToken(moved.id, { gen: 0 })],
@@ -181,11 +196,12 @@ describe('the transfer command', () => {
       ['expired token', plain.id, transferToken(plain.id, { ageSeconds: 600 })],
       ['another key', plain.id, transferToken(plain.id, { secret: 'an-attacker-chosen-nextauth-secret-0123' })],
     ] as const) {
+      tokens.push(token);
       const before = await rows(userId);
       expect((await transfer(token)).outcome, label).toBe('denied');
       expect(await rows(userId), label).toEqual(before);
     }
-    expect((await spentTransfers()).length).toBe(spentBefore);
+    expect(await spentRows(...tokens)).toEqual([]);
   });
 
   it('sends a transfer with no verified sign-in time to sign in', async () => {
@@ -206,4 +222,96 @@ describe('the transfer command', () => {
       body: { error: 'disabled' },
     });
   });
+
+  it('refuses every other spelling of a good token, which then still works once', async () => {
+    const { id } = await climber();
+    const token = transferToken(id);
+    const [payload, signature] = token.split('.');
+    for (const [label, variant] of [
+      ['one trailing NUL', `${token}\u0000`],
+      ['two trailing NULs', `${token}\u0000\u0000`],
+      ['padding', `${token}=`],
+      ['padded payload', `${payload}=.${signature}`],
+      ['a space', `${payload}. ${signature}`],
+      ['a trailing newline', `${token}\n`],
+      ['a third segment', `${token}.x`],
+    ] as const) {
+      const reply = await post(WEB_SESSION_COMMAND_PATHS.transfer, command('transfer', { transferToken: variant }));
+      expect(webSessionTransferReplySchema.parse(reply.body).outcome, label).toBe('denied');
+    }
+    expect((await rows(id)).sessions).toEqual([]);
+    expect((await issued(token)).user.id).toBe(id);
+    expect((await transfer(token)).outcome).toBe('denied');
+    expect((await rows(id)).sessions).toHaveLength(1);
+    expect(await spentRows(token)).toHaveLength(1);
+  });
+
+  it('shares one spent marker with the native exchange, in both orders', async () => {
+    const { id } = await climber();
+    // Redeemed by the app first: the exchange marks the recomputed signature.
+    const redeemedNatively = transferToken(id);
+    expect(await markTokenConsumed(redeemedNatively.split('.')[1])).toBe('consumed');
+    expect((await transfer(redeemedNatively)).outcome).toBe('denied');
+    expect((await rows(id)).sessions).toEqual([]);
+    // Redeemed here first: the exchange's own check then sees it spent.
+    const redeemedHere = transferToken(id);
+    await issued(redeemedHere);
+    expect(await isTokenConsumed(redeemedHere.split('.')[1])).toBe(true);
+    expect(await markTokenConsumed(redeemedHere.split('.')[1])).toBe('replay');
+  });
+
+  it('issues one session for one token redeemed twice at once', async () => {
+    const { id } = await climber();
+    const token = transferToken(id);
+    const replies = await Promise.all([transfer(token), transfer(token)]);
+    expect(replies.map((reply) => reply.outcome).sort()).toEqual(['denied', 'issued']);
+    expect((await rows(id)).sessions).toHaveLength(1);
+  });
+
+  it('ends with no live session when a transfer crosses a generation move', async () => {
+    const { id } = await climber();
+    const [reply] = await Promise.all([
+      transfer(transferToken(id)),
+      harnessDatabase().transaction(async (transaction) => {
+        // A reset holds the account like this while it moves the generation.
+        await transaction.select({ id: users.id }).from(users).where(eq(users.id, id)).for('update');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await moveGenerationIn(transaction, id);
+      }),
+    ]);
+    if (reply.outcome === 'issued') expect(await readStatus(reply.webSession.token)).toBe(401);
+    else expect(reply.outcome).toBe('denied');
+  });
+
+  it('revokes the presented session whichever wins when a transfer crosses its sign-out', async () => {
+    const [transferred, previous] = [await climber(), await climber()];
+    const previousSession = await login(previous.email);
+    const [reply, signedOut] = await Promise.all([
+      transfer(transferToken(transferred.id), canonical(previousSession.token)),
+      post(
+        WEB_SESSION_COMMAND_PATHS.signout,
+        command('signout', {
+          token: previousSession.token,
+          expectedUserId: previous.id,
+          expectedAuthSessionId: previousSession.sessionId,
+        }),
+      ),
+    ]);
+    expect(signedOut.status).toBe(200);
+    expect(await readStatus(previousSession.token)).toBe(401);
+    if (reply.outcome !== 'issued') throw new Error(`Transfer answered ${reply.outcome}`);
+    expect(await readStatus(reply.webSession.token)).toBe(200);
+    expect((await rows(previous.id)).cutoffs).toEqual([]);
+  });
 });
+
+/** A generation move as a reset writes it, inside the caller's transaction. */
+async function moveGenerationIn(
+  transaction: Parameters<Parameters<ReturnType<typeof harnessDatabase>['transaction']>[0]>[0],
+  userId: string,
+) {
+  const { authSubjectCutoffs } = await import('@boardsesh/db/schema');
+  await transaction
+    .insert(authSubjectCutoffs)
+    .values({ userId, generation: 1, revokedThrough: new Date(), lastOperationId: randomUUID() });
+}

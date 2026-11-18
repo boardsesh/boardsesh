@@ -141,8 +141,10 @@ export async function setWebPassword(
         userId: locked.session.userId,
         authSessionId: locked.session.authSessionId,
         generation: cutoff.generation,
-        authenticatedAt: locked.session.authenticatedAt?.toISOString() ?? null,
-        linkGuarded: locked.session.linkGuarded,
+        // A kept canonical session writes no cookie, so its proof is only the
+        // new generation: never fresh, in case a caller wrote a twin from it.
+        authenticatedAt: canonicalToken !== undefined ? null : (locked.session.authenticatedAt?.toISOString() ?? null),
+        linkGuarded: canonicalToken !== undefined ? false : locked.session.linkGuarded,
       },
     };
   });
