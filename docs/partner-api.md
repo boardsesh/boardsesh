@@ -943,9 +943,11 @@ afterwards.
 You may receive `workout.completed` more than once for the same workout: a tick
 that reaches Boardsesh after End, or a tick the climber edits or deletes, sends
 it again for seven days after End. Each repeat has a new event `id` and delivery
-id and the same `workoutId`; its `occurredAt` is when the results changed, not
-when the workout ended (that is `results.session.endedAt`). Handle every one the
-same way: `GET` the workout and treat that read as authoritative.
+id and the same `workoutId`; its `occurredAt` is when Boardsesh noticed the
+change (normally within a minute or two of it), not when the workout ended (that
+is `results.session.endedAt`). A repeat can also arrive when nothing visible
+changed. Handle every one the same way: `GET` the workout and treat that read as
+authoritative.
 
 For `connection.revoked`, a delayed event must not erase a newer connection.
 In your background handler, call `GET /v1/me` with the currently stored access
