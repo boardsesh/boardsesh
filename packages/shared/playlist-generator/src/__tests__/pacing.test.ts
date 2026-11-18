@@ -17,6 +17,7 @@ import {
   type WorkoutStagePacing,
   isWorkoutStagePacing,
   pacingForOptions,
+  roundPacing,
   stageRestSeconds,
 } from '../index';
 
@@ -252,5 +253,80 @@ describe('a 4x4 read by a bundle from before sets', () => {
   it('keeps the pacing of every other timed type readable there', () => {
     expect(isPacingForABundleBeforeSets(pacingForOptions(onTheMinute))).toBe(true);
     expect(isPacingForABundleBeforeSets(pacingForOptions(limitBouldering))).toBe(true);
+  });
+});
+
+describe('a partner app’s 4x4 rounds (#6734)', () => {
+  const rounds = roundPacing({ climbsPerRound: 4, restBetweenClimbsSeconds: 30, restBetweenRoundsSeconds: 180 });
+
+  it('paces every climb one go, then the climb rest, and the round rest after a round’s last climb', () => {
+    expect(rounds).toEqual({
+      mode: 'afterTick',
+      restSeconds: 30,
+      advanceOn: 'round',
+      rounds: { climbsPerRound: 4, restBetweenRoundsSeconds: 180 },
+    });
+    expect(stageRestSeconds(rounds, false)).toBe(30);
+    expect(stageRestSeconds(rounds, true)).toBe(180);
+  });
+
+  it('never runs either rest under the changeover: both move the wall', () => {
+    const backToBack = roundPacing({ climbsPerRound: 4, restBetweenClimbsSeconds: 0, restBetweenRoundsSeconds: 0 });
+    expect(stageRestSeconds(backToBack, false)).toBe(STAGE_CHANGEOVER_SECONDS);
+    expect(stageRestSeconds(backToBack, true)).toBe(STAGE_CHANGEOVER_SECONDS);
+  });
+
+  it('rounds and clamps what a partner sent, so the run never stores pacing it cannot read back', () => {
+    const odd = roundPacing({ climbsPerRound: 90, restBetweenClimbsSeconds: -3, restBetweenRoundsSeconds: 4000.4 });
+    expect(odd).toMatchObject({ restSeconds: 0, rounds: { climbsPerRound: 40, restBetweenRoundsSeconds: 3600 } });
+    expect(isWorkoutStagePacing(odd)).toBe(true);
+    expect(isWorkoutStagePacing(JSON.parse(JSON.stringify(rounds)))).toBe(true);
+  });
+
+  it.each([
+    ['the round rule with no rounds', { mode: 'afterTick', restSeconds: 30, advanceOn: 'round' }],
+    ['rounds beside sets', { ...rounds, sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 } }],
+    ['rounds beside the tick rule', { ...rounds, advanceOn: 'tick' }],
+    [
+      'rounds beside the set rule',
+      { ...rounds, advanceOn: 'set', sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 } },
+    ],
+    ['no climbs a round', { ...rounds, rounds: { climbsPerRound: 0, restBetweenRoundsSeconds: 180 } }],
+    ['41 climbs a round', { ...rounds, rounds: { climbsPerRound: 41, restBetweenRoundsSeconds: 180 } }],
+    ['a round rest over an hour', { ...rounds, rounds: { climbsPerRound: 4, restBetweenRoundsSeconds: 3601 } }],
+    ['no round rest', { ...rounds, rounds: { climbsPerRound: 4 } }],
+  ])('rejects %s', (_label, candidate) => {
+    expect(isWorkoutStagePacing(candidate)).toBe(false);
+  });
+
+  /**
+   * `isWorkoutStagePacing` as the bundles with sets but before rounds ship it:
+   * the store bundle a rollback lands on.
+   */
+  function isPacingForABundleBeforeRounds(candidate: unknown): boolean {
+    if (typeof candidate !== 'object' || candidate === null) return false;
+    const pacing = candidate as Record<string, unknown>;
+    if (pacing.mode !== 'afterTick') return pacing.mode === 'onTheMinute';
+    if (pacing.restBetweenRoundsSeconds !== undefined) return false;
+    if (pacing.advanceOn === 'set') return typeof pacing.sets === 'object' && pacing.sets !== null;
+    return (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send') && pacing.sets === undefined;
+  }
+
+  it('reads a 4x4 of one climb as a set whose reps are rounds, and only with a true flag', () => {
+    const oneClimb = {
+      mode: 'afterTick',
+      restSeconds: 180,
+      advanceOn: 'set',
+      sets: { repsPerSet: 4, restBetweenSetsSeconds: 30, asRounds: true },
+    };
+    expect(isWorkoutStagePacing(oneClimb)).toBe(true);
+    expect(isWorkoutStagePacing({ ...oneClimb, sets: { ...oneClimb.sets, asRounds: false } })).toBe(false);
+    expect(stageRestSeconds(oneClimb as WorkoutStagePacing, false)).toBe(180);
+    expect(stageRestSeconds(oneClimb as WorkoutStagePacing, true)).toBe(30);
+  });
+
+  it('loses its pacing on a bundle from before rounds, which runs the climbs on the climber’s own rests', () => {
+    expect(isPacingForABundleBeforeRounds(rounds)).toBe(false);
+    expect(isPacingForABundleBeforeRounds(pacingForOptions(fourByFour))).toBe(true);
   });
 });

@@ -387,7 +387,8 @@ function restLabel(rest: WorkoutRunnerRest, t: TranslateWorkoutStage): string {
   if (rest.mode === 'onTheMinute') {
     return rest.endsWorkout ? t('mobile.workoutRunner.workoutEndsLabel') : t('mobile.workoutRunner.nextBeatLabel');
   }
-  return rest.closesSet ? t('mobile.workoutRunner.setRestLabel') : t('mobile.workoutRunner.restLabel');
+  if (rest.closesSet) return t('mobile.workoutRunner.setRestLabel');
+  return rest.closesRound ? t('mobile.workoutRunner.roundRestLabel') : t('mobile.workoutRunner.restLabel');
 }
 
 /**
@@ -408,7 +409,9 @@ function RestLine({ rest, nextItem }: { rest: WorkoutRunnerRest; nextItem: Climb
   const display = useRestTimerDisplay();
   const nextName = nextItem?.climb.name ?? null;
   const caption = rest.nextRep
-    ? t('mobile.workoutRunner.thenRep', { number: rest.nextRep.number, total: rest.nextRep.total })
+    ? rest.nextRep.asRounds === true
+      ? t('mobile.workoutRunner.thenRound', { number: rest.nextRep.number, total: rest.nextRep.total })
+      : t('mobile.workoutRunner.thenRep', { number: rest.nextRep.number, total: rest.nextRep.total })
     : rest.staysOnClimb
       ? t('mobile.workoutRunner.thenTryAgain')
       : !rest.drivesWall

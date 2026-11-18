@@ -307,7 +307,14 @@ export function createCrewRestPublisher({
         }
         case 'stagePacing':
           requestConfigure({
-            anchor: action.transition === 'anchorNow' ? 'NOW' : action.transition === 'waitForTick' ? 'CLEAR' : 'KEEP',
+            anchor:
+              action.transition === 'anchorNow'
+                ? 'NOW'
+                : action.transition === 'waitForTick'
+                  ? action.withinStage === true
+                    ? 'KEEP_FRESH_TICK'
+                    : 'CLEAR'
+                  : 'KEEP',
             boundaryAtMs: action.transition === 'anchorNow' ? action.atMs : null,
           });
           return;

@@ -63,6 +63,12 @@ export type RestTimerStagePacing = {
   advanceOn: RestAdvanceRule;
   /** A 4x4 set's every rep is logged, so this is the set rest and then the wall moves on. */
   closesSet: boolean;
+  /**
+   * A partner app's 4x4 rounds: the climb on the wall is its round's last and
+   * another round follows, so the rest after its go is the round rest. Absent
+   * everywhere else.
+   */
+  closesRound?: true;
   /** Set on a 4x4 only: the climb stays on the wall until `logged` reaches `perSet`. */
   reps?: RestTimerSetReps;
   /**
@@ -261,7 +267,8 @@ export function anchorAfterFire({
  * (`stageRestSeconds`): the changeover for a rest of 0, the interval on the
  * minute, and on a 4x4 the rest between reps until the set's last rep is
  * logged, then the set rest (`closesSet`). A rest of 0 between reps is none
- * at all, so null.
+ * at all, so null. On a partner app's 4x4 rounds, the rest between climbs, or
+ * the round rest after a round's last climb (`closesRound`).
  */
 export function resolveStageRestPacing({
   sessionId,
@@ -282,7 +289,11 @@ export function resolveStageRestPacing({
   if (!stage || !stagePacing) return null;
   const sets = stagePacing.mode === 'afterTick' ? stagePacing.sets : undefined;
   const closesSet = sets !== undefined && repsLogged >= sets.repsPerSet;
-  const restSeconds = stageRestSeconds(stagePacing, closesSet);
+  // Rounds follow the climb's place in the run (`locateInRun`), not its ticks:
+  // each climb of a round is one go. No round rest after the last round: with
+  // nothing of the stage left after it, the stage ends on its climb rest.
+  const closesRound = position.round?.closesRound === true && position.remainingInStage > 0;
+  const restSeconds = stageRestSeconds(stagePacing, closesSet || closesRound);
   return {
     sessionId,
     stageId: stage.id,
@@ -292,6 +303,7 @@ export function resolveStageRestPacing({
     targetSeconds: restSeconds > 0 ? restSeconds : null,
     advanceOn: restAdvanceRuleForStage(stagePacing),
     closesSet,
+    ...(closesRound ? { closesRound: true as const } : {}),
     // Capped at the set: an extra go during the set rest is no rep of a next
     // set, and the readout never says "4 of 3".
     ...(sets !== undefined
@@ -306,11 +318,14 @@ export function resolveStageRestPacing({
  * The timer's advance rule for a stage. On the minute the beat itself moves the
  * wall: logged or not, the next climb comes up on time. A 4x4 set (`set`) runs
  * on `tick`, the rule a crew clock carries too: what holds it until the set's
- * last rep is its `reps` (`stageHasRepsLeft`), not the rule.
+ * last rep is its `reps` (`stageHasRepsLeft`), not the rule. A partner app's
+ * 4x4 rounds (`round`) is `tick` too: each climb is one go, so any logged go
+ * moves on, and the round rest is only a longer rest (`closesRound`), which a
+ * crew clock carries as its rest length.
  */
 function restAdvanceRuleForStage(stagePacing: WorkoutStagePacing): RestAdvanceRule {
   if (stagePacing.mode === 'onTheMinute') return 'deadline';
-  return stagePacing.advanceOn === 'set' ? 'tick' : stagePacing.advanceOn;
+  return stagePacing.advanceOn === 'set' || stagePacing.advanceOn === 'round' ? 'tick' : stagePacing.advanceOn;
 }
 
 function sameWorkoutStagePacing(left: WorkoutStagePacing, right: WorkoutStagePacing): boolean {
@@ -321,7 +336,10 @@ function sameWorkoutStagePacing(left: WorkoutStagePacing, right: WorkoutStagePac
     left.restSeconds === right.restSeconds &&
     left.advanceOn === right.advanceOn &&
     left.sets?.repsPerSet === right.sets?.repsPerSet &&
-    left.sets?.restBetweenSetsSeconds === right.sets?.restBetweenSetsSeconds
+    left.sets?.restBetweenSetsSeconds === right.sets?.restBetweenSetsSeconds &&
+    left.sets?.asRounds === right.sets?.asRounds &&
+    left.rounds?.climbsPerRound === right.rounds?.climbsPerRound &&
+    left.rounds?.restBetweenRoundsSeconds === right.rounds?.restBetweenRoundsSeconds
   );
 }
 
@@ -342,6 +360,7 @@ export function sameStagePacing(left: RestTimerStagePacing | null, right: RestTi
     left.targetSeconds === right.targetSeconds &&
     left.advanceOn === right.advanceOn &&
     left.closesSet === right.closesSet &&
+    left.closesRound === right.closesRound &&
     left.reps?.logged === right.reps?.logged &&
     left.reps?.perSet === right.reps?.perSet &&
     // `isCoolDown` is display-only and deliberately not compared.

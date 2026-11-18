@@ -250,11 +250,20 @@ describe('local actions', () => {
     expect(actions).toEqual([]);
     armRestTimer('afterTick', T0, SESSION);
     applyRestTimerStagePacing({ ...stage, queueItemUuid: 'item-2' }, T0 + 1_000, 'anchorNow');
+    // The next climb of the same stage says so: the crew clock may keep a fresh anchor.
     expect(actions.at(-1)).toEqual({
       type: 'stagePacing',
       sessionId: SESSION,
       transition: 'anchorNow',
       atMs: T0 + 1_000,
+      withinStage: true,
+    });
+    applyRestTimerStagePacing({ ...stage, stageId: 'stage-2', queueItemUuid: 'item-3' }, T0 + 2_000, 'anchorNow');
+    expect(actions.at(-1)).toEqual({
+      type: 'stagePacing',
+      sessionId: SESSION,
+      transition: 'anchorNow',
+      atMs: T0 + 2_000,
     });
   });
 });

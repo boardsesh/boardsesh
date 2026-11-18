@@ -32,8 +32,13 @@ export type WorkoutStageReadout = {
  * that stays until the climb is sent (limit bouldering), attempts so far plus
  * one. `rep`: a 4x4 set, reps logged so far plus one, never past the set's
  * last.
+ *
+ * `asRounds` on a rep: a partner app's 4x4 of one climb, whose reps are the
+ * partner's rounds, so it reads "Round 2 of 4", never reps and sets.
  */
-export type WorkoutClimbGo = { kind: 'try'; number: number } | { kind: 'rep'; number: number; total: number };
+export type WorkoutClimbGo =
+  | { kind: 'try'; number: number }
+  | { kind: 'rep'; number: number; total: number; asRounds?: true };
 
 export type WorkoutRunReadout = {
   /** Stages with queued climbs, in the order the climber will reach them. */
@@ -113,9 +118,12 @@ export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStag
  * "Warm-up · 2 of 5", the player's subtitle part for a workout climb, or
  * "Cool-down · 2 of 5" after the last block. On a 4x4 each climb is a set; with
  * no go to show (`formatWorkoutStagePositionWithGo`) it reads like any stage.
+ * A partner app's 4x4 rounds reads "4x4 · Climb 3 of 4 · Round 2 of 4".
  */
 export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: TranslateWorkoutStage): string {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
+  const rounds = partnerRoundNumbers(position, null);
+  if (rounds) return roundPosition(stage, rounds, t);
   return t('mobile.session.workoutStagePosition', {
     stage,
     position: position.positionInStage,
@@ -135,6 +143,8 @@ export function formatWorkoutStagePositionWithGo(
   go: WorkoutClimbGo | null,
   t: TranslateWorkoutStage,
 ): string {
+  const rounds = partnerRoundNumbers(position, go);
+  if (rounds) return roundPosition(workoutStageName(position.kind, t, position.isCoolDown === true), rounds, t);
   if (go?.kind === 'rep') {
     return t('mobile.session.workoutStageSetPosition', {
       stage: workoutStageName(position.kind, t, position.isCoolDown === true),
@@ -144,6 +154,42 @@ export function formatWorkoutStagePositionWithGo(
   const stagePosition = formatWorkoutStagePosition(position, t);
   if (go === null) return stagePosition;
   return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: go.number });
+}
+
+/**
+ * A partner app's 4x4 climb's numbers, inner unit first like a 4x4's reps
+ * before sets: the climb of its round, then the round. Only the round when a
+ * round is one climb (a 4x4 of one climb, its reps being the rounds); nothing
+ * past the block's name for a single climb climbed once, which "1 of 1" would
+ * only clutter. Null on every other stage, and on a single round of several
+ * climbs, which reads like any block ("3 of 4").
+ */
+type PartnerRoundNumbers =
+  | { kind: 'climbAndRound'; climb: number; climbs: number; round: number; rounds: number }
+  | { kind: 'round'; round: number; rounds: number }
+  | { kind: 'none' };
+
+function partnerRoundNumbers(position: WorkoutRunPosition, go: WorkoutClimbGo | null): PartnerRoundNumbers | null {
+  if (go?.kind === 'rep' && go.asRounds === true) return { kind: 'round', round: go.number, rounds: go.total };
+  const { round } = position;
+  if (!round) return null;
+  if (round.total === 1) return round.climbs === 1 ? { kind: 'none' } : null;
+  if (round.climbs === 1) return { kind: 'round', round: round.number, rounds: round.total };
+  return { kind: 'climbAndRound', climb: round.climb, climbs: round.climbs, round: round.number, rounds: round.total };
+}
+
+/** "4x4 · Climb 3 of 4 · Round 2 of 4", "4x4 · Round 2 of 4", or just "4x4". */
+function roundPosition(stage: string, rounds: PartnerRoundNumbers, t: TranslateWorkoutStage): string {
+  switch (rounds.kind) {
+    case 'climbAndRound': {
+      const { climb, climbs, round, rounds: total } = rounds;
+      return t('mobile.session.workoutStageRoundPosition', { stage, climb, climbs, round, rounds: total });
+    }
+    case 'round':
+      return t('mobile.session.workoutStageRoundOnlyPosition', { stage, round: rounds.round, rounds: rounds.rounds });
+    case 'none':
+      return stage;
+  }
 }
 
 /** A 4x4 climb's numbers: which rep, and which set (one climb each) it is of. */
@@ -158,15 +204,37 @@ function repAndSet(
  * Where a workout climb sits, as the two pieces the player's top bar lays out:
  * the stage's name, which may be cut, and its numbers, which never are (#6745).
  * "Warm-up" and "2 of 5" ("Cool-down" after the last block), or on a 4x4 "4x4"
- * and "Rep 3 of 4 · Set 2 of 4". A limit climb's try rides with the numbers:
+ * and "Rep 3 of 4 · Set 2 of 4" ("Climb 3 of 4 · Round 2 of 4" on a partner
+ * app's 4x4 rounds). A limit climb's try rides with the numbers:
  * "2 of 3 · Try 3". VoiceOver gets the numbers in words, not "·".
  */
 export function formatWorkoutStageParts(
   position: WorkoutRunPosition,
   go: WorkoutClimbGo | null,
   t: TranslateWorkoutStage,
-): { stage: string; count: string; accessibilityLabel: string } {
+): { stage: string; count: string | null; accessibilityLabel: string } {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
+  const rounds = partnerRoundNumbers(position, go);
+  if (rounds?.kind === 'climbAndRound') {
+    const { climb, climbs, round, rounds: total } = rounds;
+    const numbers = { climb, climbs, round, rounds: total };
+    return {
+      stage,
+      count: t('mobile.session.workoutStageRoundCount', numbers),
+      accessibilityLabel: t('mobile.session.workoutStageTopBarRoundAria', { stage, ...numbers }),
+    };
+  }
+  if (rounds?.kind === 'round') {
+    const numbers = { round: rounds.round, rounds: rounds.rounds };
+    return {
+      stage,
+      count: t('mobile.session.workoutStageRoundOnlyCount', numbers),
+      accessibilityLabel: t('mobile.session.workoutStageTopBarRoundOnlyAria', { stage, ...numbers }),
+    };
+  }
+  if (rounds?.kind === 'none') {
+    return { stage, count: null, accessibilityLabel: t('mobile.session.workoutStageTopBarStageAria', { stage }) };
+  }
   if (go?.kind === 'rep') {
     const numbers = repAndSet(position, go);
     return {

@@ -213,6 +213,8 @@ export function restCardHeadingText(heading: WorkoutRestCardHeading, t: TFunctio
       return sameLine(t('mobile.workoutRunner.timerPausedLabel'));
     case 'setDone':
       return sameLine(t('mobile.workoutRunner.restCardSetDone', { set: heading.set }));
+    case 'roundDone':
+      return sameLine(t('mobile.workoutRunner.restCardRoundDone', { round: heading.round }));
     case 'stageDone': {
       const stage = workoutStageName(heading.stage, t, heading.isCoolDown);
       return {
@@ -240,6 +242,8 @@ export function restCardCaptionText(
   { gradeOf, role, pacerDisplayName }: CaptionContext,
 ): RestCardLine {
   switch (caption.kind) {
+    case 'nextRound':
+      return sameLine(t('mobile.workoutRunner.restCardThenRound', { round: caption.round, rounds: caption.rounds }));
     case 'nextRep': {
       const values = { rep: caption.rep, reps: caption.reps, set: caption.set, sets: caption.sets };
       return {

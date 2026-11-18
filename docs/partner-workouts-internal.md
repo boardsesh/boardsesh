@@ -29,10 +29,9 @@ production activation. The remaining rollout and device checks are below.
 The workout runner it uses is
 [epic #5399](https://github.com/boardsesh/boardsesh/issues/5399). The stage
 model from [#5379](https://github.com/boardsesh/boardsesh/issues/5379) exists
-on the phone (`docs/workout-stages.md`); native 4x4 reps and sets remain tied
-to [#5380](https://github.com/boardsesh/boardsesh/issues/5380). This
-integration supports those blocks as freeform until that work lands (see
-"What waits on the workouts epic").
+on the phone (`docs/workout-stages.md`). A partner `fourByFour` runs on it as
+rounds (#6734, see "Launch on mobile"); `limitBouldering` is still freeform
+(see "What waits on the workouts epic").
 
 ### What changed on 2026-10-27
 
@@ -186,12 +185,14 @@ still enforces 64 KB, five seconds, 128 readers globally and eight per client
 address. Unread bodies force `Connection: close`, including early refusals.
 
 `support` per block is computed server-side from a static map, so the
-response is stable regardless of which app build the climber has. That map
-is the one place to flip `fourByFour` to `native` when #5380 ships. The
-phone's 4x4 is reps × sets on one climb (a set is one climb done for every
-rep, then the rest between sets), so flipping it also decides how the block's
-`climbCount`, `rounds` and two rests map onto `sets`, `repsPerSet`,
-`restBetweenRepsSeconds` and `restBetweenSetsSeconds`.
+response is stable regardless of which app build the climber has. It is
+computed when read, so flipping a block type in that map would also relabel
+every finished workout that ran it freeform. That is why `fourByFour` still
+says `freeform` although the phone now runs it as rounds (#6734, workoutbash1
+D1): the flip waits for per-block support frozen in the plan snapshot at Start
+(workoutbash1 D6). The mapping itself is settled: the partner's rounds run as
+written, not as the app's own reps × sets (`docs/workout-stages.md`, "A
+partner app's 4x4: rounds").
 
 ---
 
@@ -265,7 +266,8 @@ the workout to `started`. Then the blocks are turned into a queue:
 | `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, the shared preview pipeline (`buildPreview`) fills it, `appendQueueItems` queues it |
 | `onTheMinute`                                    | A native `onTheMinute` stage (`partner-workout-plan.ts`) with `numberOfClimbs` and `intervalSeconds` from the block                                       |
 | `freeClimbing`, and any `freeform` block         | Nothing is queued. The block card stays visible in the in-session view with the instructions, and ticks land in the session as usual                    |
-| `fourByFour`, `limitBouldering`                  | Freeform. The card shows rounds and rests as text. The app's own 4x4 and limit blocks are native stages now, but the partner mapping is undecided (`docs/partner-api.md`) |
+| `fourByFour`                                     | A native `fourByFour` stage paced as rounds (#6734): `climbCount` climbs, then the same climbs again for each round as repeat slots (`repeatOfIndex`), the rest between rounds after each round's last climb but the last round's, the rest between climbs after every other climb. Any logged go moves on. A round is as long as round 1 actually got. One climb runs as one set of the app's own 4x4 (a rep per round, read as rounds). The run's pacing comes from the block (`partnerBlockPacing`), also when the run is restored from the server's copy |
+| `limitBouldering`                                | Freeform. The card shows its rest as text. The app's own limit block is a native stage now, but the partner mapping waits for frozen support (F4) |
 
 Grades arrive as `{ scale, value }` and the generator wants a board difficulty
 id, so the mapping happens on device against the board's grade table from
@@ -473,7 +475,7 @@ Implementation and remaining launch gates:
 | Mobile | Link route, persisted active association, card, atomic Start, attachment and plan recovery | Real-device sign-in, cold-start, Resume and session-change QA with the flag enabled |
 | Web | Public source app name, scheme/store links, no private workout content, `noindex` | Verify browser fallback and per-visitor lookup through deployed ingress |
 | Android | `/w/` intent filter in app config | Ship and install a native build containing it; validate verified links |
-| Advanced blocks | Honest freeform support | Native `fourByFour`, rep/set attribution and related pacing remain separate work |
+| Advanced blocks | `fourByFour` runs as rounds on the phone; `limitBouldering` is freeform | Freeze per-block support at Start, then flip `fourByFour` (and limit) to `native`; a tick `position` in results |
 
 Acceptance for milestone 3:
 
@@ -496,7 +498,9 @@ Telemetry, in `@boardsesh/analytics` `SHARED_EVENTS`: `App Workout Opened`,
 `App Workout Started`, `App Workout Completed`, each with `clientId`,
 `blockTypes`, `nativeBlockCount`, `freeformBlockCount`, and on Completed
 `completion`. Per the board-render rule, never pool these across
-`board_name`.
+`board_name`. `freeformBlockCount` counts the blocks the climber's app build
+left freeform: limit bouldering, and before the rounds OTA (#6734) 4x4 too, so
+split it by app version when comparing across that release.
 
 ---
 
@@ -511,9 +515,11 @@ effort rating "later". Concretely:
   wire field), so the server still cannot read a stage off a tick. Exact
   attribution needs the stage recorded on the tick itself; until then the
   snapshot is the source.
-- Position within a 4x4 needs #5380: a queue that knows it is one climb done
-  for every rep, set after set, and a tick that knows which rep and set it
-  was. The field is added when that exists, not reserved as `null` before.
+- Position within a 4x4: the phone now queues each round's climbs as their own
+  queue items, and the tick map places each go on its round's item, so results
+  can say which round and climb a tick was (`position: { round, climb }`,
+  additive). That needs results built from the tick map (workoutbash1 F5) and
+  lands after it, not reserved as `null` before.
 - Rest adherence (planned rest vs actual per block) needs both, plus the rest
   timer's arm state or fire times on the server. Today the timer is client-only
   (`rest-timer-store.ts` is deliberately not persisted). Apps can compute gaps

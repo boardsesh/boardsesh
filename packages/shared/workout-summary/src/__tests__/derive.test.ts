@@ -196,6 +196,76 @@ describe('deriveWorkoutStages', () => {
     });
   });
 
+  describe('a partner app’s 4x4 rounds: the same climbs every round (#6734)', () => {
+    // Two climbs, three rounds: A B A B A B, each visit its own queue item. The
+    // phone stores the round rule as `advanceOn: 'round'` with no reps per set,
+    // so every item holds one go.
+    const roundsPlan: SessionWorkoutPlan = {
+      version: 1,
+      stages: [
+        {
+          id: 'rounds',
+          kind: 'fourByFour',
+          targetGrade: 20,
+          pacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'round' },
+          items: ['1', '2', '3'].flatMap((round) => [
+            { queueItemUuid: `q-a${round}`, climbUuid: 'c-a', angle: 40 },
+            { queueItemUuid: `q-b${round}`, climbUuid: 'c-b', angle: 40 },
+          ]),
+        },
+      ],
+    };
+    const goesByItem = (ticks: SessionWorkoutTick[], tickMap: Parameters<typeof deriveWorkoutStages>[1] = []) =>
+      Object.fromEntries(
+        deriveWorkoutStages(roundsPlan, tickMap, ticks).stages[0].climbs.map((climb) => [
+          climb.queueItemUuid,
+          climb.tickUuids,
+        ]),
+      );
+
+    it('puts each round’s go on that round’s item, a fall included', () => {
+      const ticks = ['c-a', 'c-b', 'c-a', 'c-b', 'c-a', 'c-b'].map((climbUuid, minute) =>
+        tick(`t${minute}`, climbUuid, minute === 2 ? 'attempt' : 'send', minute),
+      );
+      expect(goesByItem(ticks)).toEqual({
+        'q-a1': ['t0'],
+        'q-b1': ['t1'],
+        'q-a2': ['t2'],
+        'q-b2': ['t3'],
+        'q-a3': ['t4'],
+        'q-b3': ['t5'],
+      });
+      const { stages } = deriveWorkoutStages(roundsPlan, [], ticks);
+      expect(stages[0]).toMatchObject({ kind: 'fourByFour', restSeconds: 30 });
+      expect(stages[0].repsPerSet).toBeUndefined();
+      expect(stages[0].tally).toEqual({ sent: 5, attempts: 1, skipped: 0, climbs: 6 });
+    });
+
+    it('follows the tick map, whatever order the ticks came in', () => {
+      const ticks = [tick('late-a', 'c-a', 'send', 1), tick('early-a', 'c-a', 'send', 2)];
+      const tickMap = [
+        { tickUuid: 'late-a', queueItemUuid: 'q-a3' },
+        { tickUuid: 'early-a', queueItemUuid: 'q-a1' },
+      ];
+      expect(goesByItem(ticks, tickMap)).toMatchObject({ 'q-a1': ['early-a'], 'q-a2': [], 'q-a3': ['late-a'] });
+    });
+
+    it('leaves a skipped round’s climb empty and puts the next go on the next round', () => {
+      // Round 1 done, round 2's A skipped, then B and round 3.
+      const ticks = ['c-a', 'c-b', 'c-b', 'c-a', 'c-b'].map((climbUuid, minute) =>
+        tick(`t${minute}`, climbUuid, 'send', minute),
+      );
+      expect(goesByItem(ticks)).toEqual({
+        'q-a1': ['t0'],
+        'q-b1': ['t1'],
+        'q-a2': [],
+        'q-b2': ['t2'],
+        'q-a3': ['t3'],
+        'q-b3': ['t4'],
+      });
+    });
+  });
+
   it('falls back to climb and angle when the map names an item the plan lacks', () => {
     const { stages, offPlan } = deriveWorkoutStages(
       fourByFourPlan,

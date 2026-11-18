@@ -23,6 +23,7 @@ import {
   type PreviewFetchContext,
   type PreviewItem,
 } from '../components/session-screen/pre-session/workout-preview-pool';
+import { partnerFourByFourPacing } from './partner-workout-plan';
 
 export type PartnerWorkoutPreview = {
   /** The queue items the workout adds, in plan order. */
@@ -39,26 +40,52 @@ export type PartnerWorkoutPreview = {
 type PartnerPlan = { plan: WorkoutPlan; slots: readonly PartnerSlot[] };
 
 /**
- * The pacing a partner block's `restSeconds` gives its stage (workoutbash1 D4).
- * Volume, pyramid, ladder and grade focus can ask for a rest the app's own
- * builder does not offer yet. As on limit bouldering, a fall starts that rest
- * and keeps the climb up; only a flash or a send moves the wall on once it runs
- * out. A rest of 0 (or none) leaves the stage unpaced, so the climber's own
- * rest-timer settings apply instead of a 10 s changeover after every tick.
+ * The pacing a partner block gives its stage, where the block says more than
+ * the app's own options would.
+ *
+ * - `restSeconds` on volume, pyramid, ladder and grade focus (workoutbash1 D4):
+ *   a rest the app's own builder does not offer yet. As on limit bouldering, a
+ *   fall starts that rest and keeps the climb up; only a flash or a send moves
+ *   the wall on once it runs out. A rest of 0 (or none) leaves the stage
+ *   unpaced, so the climber's own rest-timer settings apply instead of a 10 s
+ *   changeover after every tick.
+ * - `fourByFour` (D1): its rounds and two rests (`partnerFourByFourPacing`),
+ *   always, so the stage never runs the app's own 4x4 sets its options name.
+ *   `filledClimbsPerRound` is how many different climbs round 1 got.
  */
-function partnerBlockPacing(block: CreateWorkout['blocks'][number] | undefined): WorkoutStagePacing | undefined {
+export function partnerBlockPacing(
+  block: CreateWorkout['blocks'][number] | undefined,
+  filledClimbsPerRound?: number,
+): WorkoutStagePacing | undefined {
+  if (block?.type === 'fourByFour') return partnerFourByFourPacing(block, filledClimbsPerRound);
   if (!block || !('restSeconds' in block) || !block.restSeconds) return undefined;
   return { mode: 'afterTick', restSeconds: block.restSeconds, advanceOn: 'send' };
 }
 
-/** The run for `rows`, each stage paced by its partner block's rest. */
+/** The spec's block a partner stage was built from: its id is `${workoutId}:${index}`. */
+export function partnerBlockForStage(
+  spec: CreateWorkout,
+  workoutId: string,
+  stageId: string,
+): CreateWorkout['blocks'][number] | undefined {
+  const prefix = `${workoutId}:`;
+  if (!stageId.startsWith(prefix)) return undefined;
+  const index = Number(stageId.slice(prefix.length));
+  return Number.isInteger(index) ? spec.blocks[index] : undefined;
+}
+
+/** The run for `rows`, each stage paced by its partner block. */
 function partnerRunFor(rows: readonly PreviewItem[], spec: CreateWorkout, plan: WorkoutPlan): WorkoutRun {
   const run = buildWorkoutRun(
     rows.map((row) => ({ uuid: row.item.uuid, stageId: row.slot.stageId! })),
     plan,
   );
   for (const stage of run.stages) {
-    const pacing = partnerBlockPacing(spec.blocks[Number(stage.id.split(':').at(-1))]);
+    // Round 1's climbs are the stage's rows that repeat nothing; every later round copies them.
+    const filledClimbsPerRound = rows.filter(
+      (row) => row.slot.stageId === stage.id && row.slot.repeatOfIndex === undefined,
+    ).length;
+    const pacing = partnerBlockPacing(spec.blocks[Number(stage.id.split(':').at(-1))], filledClimbsPerRound);
     if (pacing) stage.pacing = pacing;
   }
   return run;
