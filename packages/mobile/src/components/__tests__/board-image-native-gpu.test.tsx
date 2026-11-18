@@ -130,6 +130,7 @@ vi.mock('../../lib/board-render/gpu-native-capability', () => ({
   get climbOverlaySwapLookVersion() {
     return controls.swapLookVersion;
   },
+  climbOverlaySwapLookProbe: null,
 }));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
   climbOverlayGpuApiVersion: 5,

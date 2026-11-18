@@ -270,7 +270,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'player-swap-look-kill',
     label: 'Plain climb swap on the player board',
     description:
-      "Kill switch for the player board's swap look on iPhone and iPad: dragging dims the old holds into standby rings from the edge the next climb comes from and shows the next climb as faint halos behind that front; letting go fills them in along the same sweep. With it on, the board swaps climbs exactly as before, a plain fade. Also the QA switch for comparing the two; it takes effect on the open board. Android, older iOS builds and Reduce Motion always get the plain fade. Unresolved reads as enabled.",
+      "Kill switch for the player board's swap look: dragging dims the old holds into standby rings from the edge the next climb comes from and shows the next climb as faint halos behind that front; letting go fills them in along the same sweep. With it on, the board swaps climbs exactly as before, a plain fade. Also the QA switch for comparing the two; it takes effect on the open board. Older builds, Reduce Motion and Differentiate Without Color always get the plain fade. Unresolved reads as enabled.",
   },
   {
     key: 'early-updates',

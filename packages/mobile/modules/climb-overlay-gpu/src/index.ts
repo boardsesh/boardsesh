@@ -87,11 +87,11 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
         incomingArrives: number,
       ];
   /**
-   * `swapLookVersion` 2 (iOS) only: the swap look (`encodeSwapLook` in
-   * play-drawer/swap-look.ts). The player sends `PLAYER_SWAP_LOOK`'s; the board
-   * motion lab sends its variant's, again when a slider is released. Null or
-   * absent draws the API 7 swap; Reduce Motion and Differentiate Without Color
-   * turn it off natively. Android takes the prop and ignores it.
+   * `swapLookVersion` 2 (iOS and Android) only: the swap look (`encodeSwapLook`
+   * in play-drawer/swap-look.ts). The player sends `PLAYER_SWAP_LOOK`'s; the
+   * board motion lab sends its variant's, again when a slider is released. Null
+   * or absent draws the API 7 swap; Reduce Motion turns it off natively, and on
+   * iOS so does Differentiate Without Color.
    */
   swapLook?: readonly number[] | null;
   /**

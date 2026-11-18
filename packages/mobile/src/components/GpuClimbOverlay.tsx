@@ -1,10 +1,12 @@
 import {
   climbOverlayGpuApiVersion,
   climbOverlaySwapCommandApi,
+  climbOverlaySwapLookProbe,
   climbOverlaySwapLookVersion,
   type ClimbOverlayGPUFailure,
   type ClimbOverlayGPUFailureScope,
 } from '../lib/board-render/gpu-native-capability';
+import { noteSwapLookProbe } from '../lib/board-render/swap-look-probe';
 import { useCallback, useEffect, useLayoutEffect, useRef, type Component, type FunctionComponent } from 'react';
 import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
 import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
@@ -120,6 +122,8 @@ export function GpuClimbOverlay({
   onReset,
   onRelease,
 }: Props) {
+  // Once per process: why Android's probe left the swap look off, for any later error report.
+  useEffect(() => noteSwapLookProbe(climbOverlaySwapLookProbe), []);
   const systemReduceMotion = useReduceMotion();
   const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
   const onTransitionReady = transition?.onRenderReady;

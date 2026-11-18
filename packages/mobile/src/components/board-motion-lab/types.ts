@@ -4,6 +4,7 @@
  * sliders retune it live, and plays the same scripted swipes for every variant
  * so recordings compare like with like. See docs/board-motion-lab.md.
  */
+import type { ClimbOverlaySwapLookProbe } from '../../lib/board-render/gpu-native-capability';
 import type { BoardTransition } from '../play-drawer/board-transition';
 import type { SwapLookStatus } from '../play-drawer/swap-look';
 
@@ -39,7 +40,7 @@ export type BoardMotionVariant = {
   createTransition(params: ParamValues): BoardTransition;
   /** The native overlay API this variant needs; greyed out with the reason on older binaries. */
   requiresNativeApi?: number;
-  /** A native lab shader mode (`'swap-look'`, iOS `swapLookVersion` 1); greyed out when the binary lacks it. */
+  /** A native lab shader mode (`'swap-look'`, `swapLookVersion` 2 on iOS and Android); greyed out when the binary lacks it. */
   requiresNativeLab?: string;
 };
 
@@ -78,11 +79,15 @@ export type LabClimb = { id: string; name: string; frames: string };
 export type LabClimbSet = { id: string; label: string; climbs: readonly LabClimb[] };
 
 /**
- * The native swap look, for look variants: unsupported by this build, sent
- * but not yet answered (a build without the look's event never answers), or
- * what the native view last said.
+ * The native swap look, for look variants: unsupported by this build (on
+ * Android, with the probe that turned it off, which the stage reports on every
+ * variant), sent but not yet answered (a build without the look's event never
+ * answers), or what the native view last said.
  */
-export type LabLookStatus = { state: 'unsupported'; swapLookVersion: number } | { state: 'waiting' } | SwapLookStatus;
+export type LabLookStatus =
+  | { state: 'unsupported'; swapLookVersion: number; probe?: ClimbOverlaySwapLookProbe }
+  | { state: 'waiting' }
+  | SwapLookStatus;
 
 /** What the stage reports about how the board is being drawn. */
 export type LabRenderStatus =

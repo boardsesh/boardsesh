@@ -1,11 +1,11 @@
 /**
  * The swap look: a way to give each hold its own timing and glow during the
- * wall swap. Native iOS (`swapLookVersion` 2) turns the swap's per-side weights
+ * wall swap. Native code (`swapLookVersion` 2, iOS and Android) turns the swap's per-side weights
  * into per-hold weights with a front, a glow-only ghost, a mark that trails its
  * glow and a glow reach that swells, focuses or tightens
- * (`ClimbOverlaySwapLook.swift`). The player draws `PLAYER_SWAP_LOOK`
+ * (`ClimbOverlaySwapLook.swift`, `OverlaySwapLook.kt`). The player draws `PLAYER_SWAP_LOOK`
  * (`player-swap-look.ts`) where the binary has it; the board motion lab draws
- * any look. Android advertises version 0, ignores the look and draws the
+ * any look. Older binaries advertise version 0, ignore the look and draw the
  * shipped swap.
  *
  * Pure and worklet-safe.
