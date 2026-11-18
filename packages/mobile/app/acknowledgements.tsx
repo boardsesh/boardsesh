@@ -92,7 +92,7 @@ export default function AcknowledgementsScreen() {
   // else the same message goes out as plain, unlinked text. See donation-links.ts.
   const donationLinksAllowed = useDonationLinksAllowed();
 
-  const handleOpenProfile = useCallback((url: string) => {
+  const handleOpenCreditLink = useCallback((url: string) => {
     void openExternalUrl(url, 'acknowledgements');
   }, []);
   const handleSupport = useCallback(() => {
@@ -155,6 +155,25 @@ export default function AcknowledgementsScreen() {
         </View>
 
         <View style={styles.section}>
+          <SectionHeader title={t('mobile.acknowledgements.openSourceRootsTitle')} />
+          <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
+            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
+              {t('mobile.acknowledgements.openSourceRootsBody')}
+            </Text>
+            <View style={styles.chips}>
+              <Chip
+                label="Climbdex"
+                onPress={() => handleOpenCreditLink('https://github.com/lemeryfertitta/Climbdex')}
+              />
+              <Chip
+                label="BoardLib"
+                onPress={() => handleOpenCreditLink('https://github.com/lemeryfertitta/BoardLib')}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <SectionHeader title={t('mobile.acknowledgements.contributorsTitle')} />
           <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
@@ -165,7 +184,7 @@ export default function AcknowledgementsScreen() {
                 <Chip
                   key={contributor.login}
                   label={contributor.name ?? contributor.login}
-                  onPress={() => handleOpenProfile(contributor.htmlUrl)}
+                  onPress={() => handleOpenCreditLink(contributor.htmlUrl)}
                 />
               ))}
             </View>
@@ -185,7 +204,7 @@ export default function AcknowledgementsScreen() {
                     key={sponsor.login}
                     icon="favorite.fill"
                     label={sponsor.name ?? sponsor.login}
-                    onPress={() => handleOpenProfile(sponsor.url)}
+                    onPress={() => handleOpenCreditLink(sponsor.url)}
                   />
                 ))}
               </View>

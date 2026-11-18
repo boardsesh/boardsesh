@@ -713,6 +713,8 @@
     "acknowledgements": {
       "title": "Acknowledgements",
       "intro": "Boardsesh exists because of the people who build it, back it, and put up with endless board talk. Thank you.",
+      "openSourceRootsTitle": "Open source roots",
+      "openSourceRootsBody": "I started with a fork of Climbdex. As the idea grew, I started a separate repo for Boardsesh. Climbdex and BoardLib laid the groundwork for how we import climbs. Thanks to Luke Emery-Fertitta for creating both.",
       "contributorsTitle": "Contributors",
       "contributorsBody": "Everyone who's shipped code, fixes, and ideas on GitHub.",
       "sponsorsTitle": "Sponsors",

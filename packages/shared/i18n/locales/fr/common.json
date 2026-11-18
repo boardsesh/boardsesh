@@ -713,6 +713,8 @@
     "acknowledgements": {
       "title": "Remerciements",
       "intro": "Boardsesh existe grâce aux personnes qui le construisent, le soutiennent et supportent que je parle sans fin de boards. Merci.",
+      "openSourceRootsTitle": "Des racines open source",
+      "openSourceRootsBody": "J'ai commencé avec un fork de Climbdex. Comme l'idée prenait de l'ampleur, j'ai créé un dépôt à part pour Boardsesh. Climbdex et BoardLib ont servi de base à notre système d'importation de blocs. Merci à Luke Emery-Fertitta d'avoir créé ces deux projets.",
       "contributorsTitle": "Contributeurs",
       "contributorsBody": "Toutes les personnes qui ont apporté du code, des correctifs et des idées sur GitHub.",
       "sponsorsTitle": "Sponsors",
