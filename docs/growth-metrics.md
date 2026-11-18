@@ -1727,3 +1727,51 @@ and edge-case results, so a calculation edit needs fresh execution evidence.
 Fixtures contain synthetic identities and synthetic spending only; do not put
 actual campaign finances in repository fixtures. Reconcile live campaign and
 ad-group delivery totals and inspect coverage before publishing the dashboard.
+
+## Website refresh journeys (#7844, #7868)
+
+The refresh owner waived the historical-baseline prerequisite. The event names
+below describe clicks, not completed installs, app loads or donations. All use
+www's existing consent and production-host checks; a declined or unanswered
+visitor sends none of them. There is no new consent-answer counter.
+
+| Journey | Event and bounded properties | Outcome to inspect separately |
+| --- | --- | --- |
+| Install | `App Install Click {platform, source, placement}` | Store-link attribution; never call a click an install |
+| Browser app | `Web App Opened {placement}` | A later app climb opened or successfully lit |
+| Compatibility | `Compatibility Board Selected {board, source}` | Store clicks by the selected board |
+| Import | `Import Path Chosen {source}` (`account-link` or `aurora-export`) | `Board Account Linked` |
+| Spray wall | `Spraywall Path Clicked {placement}` | `Board Created {boardType: spray}`, then `Climb Created` |
+| Navigation | `Nav Link Clicked {area, target}` | The bounded destination chosen in header, menu or footer |
+| Support | Existing `Support CTA Clicked {cadence, currency, src, option, placement}` | A donation completion, only when a payment provider confirms it |
+
+The shared builders are in `@boardsesh/analytics`; www's
+`website-journey-analytics.ts` bridge applies the existing analytics gate.
+`StartClimbingButton` defaults to the hero placement; header and footer pass
+explicit placements. Same-tab app handoffs use the existing 250 ms flush bound;
+new-tab and modified clicks keep normal browser behavior. Store links keep every
+historic placement, including `bring-your-logbook`, and add the refresh's new
+placements without renaming past attribution.
+
+Use the populations, internal cohort 295337 and www crawler rules above when
+building insights. Behavioural conversion measures cover consenting people;
+first-party active-account snapshots use a different denominator. Board
+activation means a successful board send or logged tick within seven days of
+an observed first app visit. Spray-wall activation means creating a spray wall
+and its first climb within fourteen days of that visit. Week-two return means
+an observed app activity on days 7–13 after that visit; count only cohorts whose
+whole window has elapsed. Do not divide a mature numerator by immature arrivals.
+
+A website click cannot be joined to an iOS install person via App Store campaign
+tokens. Android link IDs permit aggregate attribution by placement, not proof
+that the clicked browser and installing phone belong to the same person. Keep
+website clicks, store reporting and app activation as separately labelled
+observations unless verified shared identity exists. Assisted spray-wall setup
+cannot be separated from self-service without an explicit assistance signal.
+
+New pages should call the shared builders when adding their actual CTA. Partner
+enquiry submission and completed donations are not inferred from email or
+external-link clicks. Card giving and running-cost publication remain deferred
+in #7877. No synthetic events, baseline figures or human comprehension results
+are created by this change. These events fire only on deliberate clicks; no
+new render, scroll, timer or hover events consume the event budget.

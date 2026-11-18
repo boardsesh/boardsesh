@@ -1,5 +1,7 @@
 'use client';
 
+import { navLinkClicked, webAppOpened, type WebsiteNavTarget } from '@boardsesh/analytics';
+import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
 import React, { useCallback, useState } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
@@ -206,7 +208,14 @@ export default function MarketingHeader() {
   }, [profileHeaderConfig, profileHeaderShare.displayName, profileHeaderShare.isActive, showMessage, t]);
 
   const brandLink = (
-    <Button component={LocaleLink} href="/" aria-label={t('ariaLabels.home')} sx={BRAND_SX} disableRipple>
+    <Button
+      component={LocaleLink}
+      href="/"
+      onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', '/'))}
+      aria-label={t('ariaLabels.home')}
+      sx={BRAND_SX}
+      disableRipple
+    >
       <BrandLockup eager />
     </Button>
   );
@@ -214,7 +223,7 @@ export default function MarketingHeader() {
   // The four destinations www still owns. `/boards` is deliberately absent —
   // the route does not exist, and the climbing UI it would have pointed at
   // moved to the app in W-16.
-  const navLinks: { href: string; label: string }[] = [
+  const navLinks: { href: WebsiteNavTarget; label: string }[] = [
     { href: '/gyms', label: t('header.nav.gyms') },
     { href: '/playlists', label: t('header.nav.playlists') },
     { href: '/about', label: t('header.nav.about') },
@@ -233,6 +242,7 @@ export default function MarketingHeader() {
             key={href}
             component={LocaleLink}
             href={href}
+            onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', href))}
             variant="body2"
             aria-current={isNavigationActive(pathname, href) ? 'page' : undefined}
             sx={NAV_LINK_SX}
@@ -265,7 +275,10 @@ export default function MarketingHeader() {
               href={href}
               selected={isNavigationActive(pathname, href)}
               aria-current={isNavigationActive(pathname, href) ? 'page' : undefined}
-              onClick={() => setNavMenuAnchor(null)}
+              onClick={() => {
+                trackWebsiteJourneyEvent(navLinkClicked('header-menu', href));
+                setNavMenuAnchor(null);
+              }}
             >
               {label}
             </MenuItem>
@@ -273,7 +286,10 @@ export default function MarketingHeader() {
           <MenuItem
             component="a"
             href={APP_URL}
-            onClick={() => setNavMenuAnchor(null)}
+            onClick={(click) => {
+              trackWebsiteJourneyLinkClick(click, webAppOpened('header-menu'));
+              setNavMenuAnchor(null);
+            }}
             className={styles.mobileAppLink}
           >
             {t('header.startClimbing')}
@@ -292,12 +308,19 @@ export default function MarketingHeader() {
       <IconButton
         component={LocaleLink}
         href={`/profile/${session.user.id}`}
+        onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', 'profile'))}
         aria-label={t('ariaLabels.yourProfile')}
         size="small"
       >
         <PersonOutlined />
       </IconButton>
-      <IconButton component={LocaleLink} href="/settings" aria-label={t('ariaLabels.settings')} size="small">
+      <IconButton
+        component={LocaleLink}
+        href="/settings"
+        onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', '/settings'))}
+        aria-label={t('ariaLabels.settings')}
+        size="small"
+      >
         <SettingsOutlined />
       </IconButton>
     </>
@@ -305,6 +328,7 @@ export default function MarketingHeader() {
     <Button
       component={LocaleLink}
       href="/auth/login"
+      onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', '/auth/login'))}
       aria-label={t('header.signIn')}
       size="small"
       className={styles.signIn}
@@ -382,6 +406,7 @@ export default function MarketingHeader() {
           label={t('header.startClimbing')}
           ariaLabel={t('ariaLabels.startClimbing')}
           size="small"
+          placement="header"
           sx={HEADER_START_CLIMBING_SX}
         />
       </Box>

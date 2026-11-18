@@ -1,5 +1,7 @@
 'use client';
 
+import { spraywallPathClicked } from '@boardsesh/analytics';
+import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
 import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
@@ -76,7 +78,15 @@ export default function HelpContent() {
               <Box component="li" key={key} className={wide ? `${styles.tile} ${styles.tileWide}` : styles.tile}>
                 <Box className={styles.tileText}>
                   <Typography component="h3" className={styles.tileTitle}>
-                    <MuiLink component={LocaleLink} href={href} underline="none" className={styles.tileLink}>
+                    <MuiLink
+                      component={LocaleLink}
+                      href={href}
+                      underline="none"
+                      onClick={() => {
+                        if (key === 'spray') trackWebsiteJourneyEvent(spraywallPathClicked('help'));
+                      }}
+                      className={styles.tileLink}
+                    >
                       {t(`help.hub.guides.${key}.title`)}
                     </MuiLink>
                   </Typography>

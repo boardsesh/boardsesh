@@ -66,6 +66,19 @@ export const APP_INSTALL_PLACEMENTS = [
   'bring-your-logbook',
   'join-page',
   'site-banner',
+  'header',
+  'setter',
+  'playlist',
+  'playlists',
+  'board-compat',
+  'home-chip',
+  'help-spray',
+  'logbook-import',
+  'sticky-bar',
+  'about',
+  'support',
+  'spraywalls',
+  'run-a-wall',
 ] as const;
 
 /**
