@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "date": "2026-11-18",
+      "documentSha256": "40d9c1f2394b44dc0efe11ca92f935f76b4c8320e5c67fba3fc5267bf40f9be5",
+      "changes": [
+        "Workout results hold only that workout's ticks: ticks on one of its blocks plus ticks logged after it started. When a climber adds a workout to a session already running, the climbs from before it are left out, and session.startedAt and durationSeconds start at the workout.",
+        "blockIndex now follows the block the climber's session recorded each tick on, so a climb queued in two blocks, or also in the climber's own block, lands on the right one instead of null or a guess. The results shape is unchanged."
+      ]
+    },
+    {
       "date": "2026-11-17",
       "documentSha256": "483a46cc328c7bfd68dac6d1ab14e4cd18aabe34bb8d374d4b12726553506de5",
       "changes": [

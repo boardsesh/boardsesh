@@ -212,6 +212,9 @@ stages with their tallies, climbs with name, grade, frames and the board to draw
 `offPlanTickUuids`, so a client groups the session's ticks under the right block without
 guessing by climb and angle. Both list only ticks the viewer may see: they pass through
 the same filter as the climbs and tallies.
+Partner workout results (`docs/partner-workouts-internal.md`, "Results") read the same
+row and derivation: a tick on a stage named `${workoutId}:${blockIndex}` reports that block
+to the app.
 `sessionWorkoutHeadlines(sessionIds)` gives feed cards one line per workout for up to 50
 sessions: the main block's kind and grade, the second main block's kind, the block count
 and how many main blocks follow the first. Warm-ups and cool-downs are main only when they

@@ -61,8 +61,11 @@ the link back to the planned session.
 | `comment` | Notes |
 | Workout `results.session.notes` | Session notes |
 
-For an interval-style exercise (a 4x4, on-the-minute), count ticks per
-`blockIndex` in the workout results.
+Count an interval-style exercise per `blockIndex` in the workout results.
+That works today for on-the-minute, which queues its climbs. A `fourByFour`
+block still runs freeform with nothing queued, so its ticks come back with
+`blockIndex: null` until the native partner 4x4 lands; that change brings
+per-block attribution for 4x4 ticks.
 
 ### Their Strava-style opt-out: two separate choices
 

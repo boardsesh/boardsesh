@@ -874,16 +874,24 @@ includes:
 ```
 
 - `completion` is `ended` (they pressed End) or `auto_closed`.
-- `ticks` are the climber's own ticks from that session, in time order, in
-  the tick shape from section 3, plus `blockIndex`. Other climbers in a shared
-  session are never included. With `logbook:read` the same ticks also arrive
-  through the logbook feed with the same `id`, so de-duplicate on it.
-- `blockIndex` is inferred from the recorded plan when a tick's climb matches
-  exactly one block. It is `null` when no block matches or more than one does
-  (for example, the same climb in both warm-up and volume). A plan snapshot
-  alone does not prove which stage produced a tick. Compute rest gaps and
-  per-block counts from
-  `climbedAt` and `blockIndex`.
+- `session.startedAt` is when the workout started. That is the session's
+  start, or later when the climber added your workout to a session that was
+  already running. `durationSeconds` runs from `startedAt` to `endedAt`.
+- `ticks` are the climber's own ticks from this workout, in time order, in
+  the tick shape from section 3, plus `blockIndex`. A tick belongs to the
+  workout when it is on one of the workout's blocks, or when the climber
+  logged it (`climbedAt`) after the workout started. Ticks from earlier in
+  the same session are left out, and so are other climbers' ticks in a shared
+  session. With `logbook:read` the same ticks also arrive through the logbook
+  feed with the same `id`, so de-duplicate on it.
+- `blockIndex` is the block the climber logged the tick on, as their session
+  recorded it: the same placement the climber sees on the session in
+  Boardsesh. So a climb queued in two blocks lands on the block it was climbed
+  in. It is `null` for a tick on none of your blocks: a climb they added
+  themselves, or a tick during a freeform block, which queues nothing. In the
+  rare session with no record of its blocks, a tick gets a block only when
+  exactly one block queued that climb. Compute rest gaps and per-block counts
+  from `climbedAt` and `blockIndex`.
 - `blocks[].planned` echoes the block as you sent it.
 - `session.notes`, `session.timezone` and `session.board.name` describe the
   session creator's recap, timezone and board label. They are returned only

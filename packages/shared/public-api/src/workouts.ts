@@ -203,9 +203,12 @@ export const WorkoutResultsSchema = z
     completion: z.enum(['ended', 'auto_closed']),
     session: z
       .strictObject({
-        startedAt: z.iso.datetime(),
+        startedAt: z.iso.datetime().openapi({
+          description:
+            'When the workout started: the session start, or later when the workout was added to a session already running.',
+        }),
         endedAt: z.iso.datetime(),
-        durationSeconds: z.number().int().nonnegative(),
+        durationSeconds: z.number().int().nonnegative().openapi({ description: 'Seconds from startedAt to endedAt.' }),
         timezone: z.string().nullable(),
         notes: z.string().nullable(),
         board: z
@@ -219,11 +222,22 @@ export const WorkoutResultsSchema = z
           .openapi({ additionalProperties: true }),
       })
       .openapi({ additionalProperties: true }),
-    ticks: z.array(
-      z.strictObject({ ...TickSchema.shape, blockIndex: z.number().int().min(0).max(11).nullable() }).openapi({
-        additionalProperties: true,
+    ticks: z
+      .array(
+        z
+          .strictObject({
+            ...TickSchema.shape,
+            blockIndex: z.number().int().min(0).max(11).nullable().openapi({
+              description:
+                "The block the climber logged this tick on, as their session recorded it. `null` when the tick is on none of this workout's blocks, or the block cannot be told.",
+            }),
+          })
+          .openapi({ additionalProperties: true }),
+      )
+      .openapi({
+        description:
+          "The climber's own ticks from this workout, in time order: every tick on one of its blocks, plus every tick logged after the workout started. Ticks from earlier in the same session are left out.",
       }),
-    ),
     blocks: z.array(
       z
         .strictObject({ ...WorkoutBlockSupportSchema.shape, planned: WorkoutBlockSchema })
