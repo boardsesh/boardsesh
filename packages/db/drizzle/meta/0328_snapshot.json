@@ -1,5 +1,5 @@
 {
-  "id": "4bf2c142-fa27-4ad7-9e36-ace8e3dc709c",
+  "id": "3e264699-8f04-459a-ac2c-8176c5808a8f",
   "prevId": "b8950954-75e9-4f2e-98ec-a7db7072582a",
   "version": "7",
   "dialect": "postgresql",
@@ -24431,6 +24431,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_workouts_finished_user_idx": {
+          "name": "app_workouts_finished_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "completed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"app_workouts\".\"status\" IN ('completed', 'auto_closed')",
           "concurrently": false,
           "method": "btree",
           "with": {}

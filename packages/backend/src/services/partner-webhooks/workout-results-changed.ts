@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, lt, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lt, notExists, sql, type SQL } from 'drizzle-orm';
 import {
   appWorkouts,
   boardseshTicks,
@@ -19,23 +19,18 @@ type TickChange = { userId: string; tickUuid: string };
 type FinishedWorkout = { id: string; userId: string; sessionId: string | null; completedAt: Date | null };
 
 /**
- * Marks finished workouts whose results a page of `logbook_changes` touched:
- * a tick of the workout's climber in the workout's session, inserted, edited
- * or deleted. The page sits below the feed horizon, so every change in it has
- * committed.
- *
- * A workout whose completion event is still unsent is skipped: that event
- * reaches the app after this change committed, so the app's read already sees
- * it. That also covers the common case of a last tick saved just before End.
+ * Finished workouts an app could be told about again: ended under seven days
+ * ago, for an app with an enabled `workout.completed` subscription, and with no
+ * completion event still waiting to be relayed. That waiting event reaches the
+ * app after the change committed, so the app's read already sees it; this also
+ * covers the common case of a last tick saved just before End.
  */
-export async function markChangedWorkoutResults(
+function resendableWorkouts(
   transaction: FeedTransaction,
-  changes: readonly TickChange[],
-  now = new Date(),
-): Promise<void> {
-  if (changes.length === 0) return;
-  const changedUserIds = [...new Set(changes.map((change) => change.userId))];
-  const workouts: FinishedWorkout[] = await transaction
+  scope: SQL | undefined,
+  now: Date,
+): Promise<FinishedWorkout[]> {
+  return transaction
     .select({
       id: appWorkouts.id,
       userId: appWorkouts.userId,
@@ -46,7 +41,7 @@ export async function markChangedWorkoutResults(
     .innerJoin(oauthClientWebhooks, eq(oauthClientWebhooks.clientId, appWorkouts.clientId))
     .where(
       and(
-        inArray(appWorkouts.userId, changedUserIds),
+        scope,
         inArray(appWorkouts.status, FINISHED_WORKOUT_STATUSES),
         gt(appWorkouts.completedAt, new Date(now.getTime() - WORKOUT_RESULT_RESEND_WINDOW_MS)),
         eq(oauthClientWebhooks.enabled, true),
@@ -65,6 +60,61 @@ export async function markChangedWorkoutResults(
         ),
       ),
     );
+}
+
+/** Queues a re-send for each workout; the minute job sends it once its spacing allows. */
+export async function markWorkoutResultsChanged(
+  transaction: FeedTransaction,
+  workouts: ReadonlyArray<Pick<FinishedWorkout, 'id' | 'completedAt'>>,
+  now = new Date(),
+): Promise<void> {
+  if (workouts.length === 0) return;
+  await transaction
+    .insert(partnerWorkoutResultDebounce)
+    .values(
+      workouts.map((workout) => ({
+        workoutId: workout.id,
+        // End's own event counts as the first send of the interval.
+        lastEnqueuedAt: workout.completedAt ?? now,
+        pending: true,
+      })),
+    )
+    .onConflictDoUpdate({ target: partnerWorkoutResultDebounce.workoutId, set: { pending: true } });
+}
+
+/**
+ * For a write that changes a climber's results in one session without a tick
+ * change: the session's tick map or plan (`recordSessionWorkout`), which places
+ * ticks on blocks. Call inside that write's transaction.
+ */
+export async function markSessionWorkoutResultsChanged(
+  transaction: FeedTransaction,
+  sessionId: string,
+  userId: string,
+  now = new Date(),
+): Promise<void> {
+  const workouts = await resendableWorkouts(
+    transaction,
+    and(eq(appWorkouts.sessionId, sessionId), eq(appWorkouts.userId, userId)),
+    now,
+  );
+  await markWorkoutResultsChanged(transaction, workouts, now);
+}
+
+/**
+ * Marks finished workouts whose results a page of `logbook_changes` touched:
+ * a tick of the workout's climber in the workout's session, inserted, edited
+ * or deleted. The page sits below the feed horizon, so every change in it has
+ * committed.
+ */
+export async function markChangedWorkoutResults(
+  transaction: FeedTransaction,
+  changes: readonly TickChange[],
+  now = new Date(),
+): Promise<void> {
+  if (changes.length === 0) return;
+  const changedUserIds = [...new Set(changes.map((change) => change.userId))];
+  const workouts = await resendableWorkouts(transaction, inArray(appWorkouts.userId, changedUserIds), now);
   if (workouts.length === 0) return;
 
   const workoutsByUser = new Map<string, FinishedWorkout[]>();
@@ -84,6 +134,9 @@ export async function markChangedWorkoutResults(
     // A deleted tick (or one handed to another climber) no longer names the
     // session it was in, so it counts against every recent workout of its
     // climber. A repeat costs the app one extra read; a miss loses a tick.
+    // A tick moved to another session is seen only by the session it joined:
+    // safe while ticks never leave an explicit session (inferred-sessions
+    // reconcile refuses to) and workouts bind only explicit sessions.
     const leftClimber = !tick || tick.userId !== change.userId;
     for (const workout of workoutsByUser.get(change.userId) ?? []) {
       if (leftClimber || (workout.sessionId !== null && tick.sessionId === workout.sessionId)) {
@@ -91,19 +144,7 @@ export async function markChangedWorkoutResults(
       }
     }
   }
-  if (changedWorkouts.size === 0) return;
-
-  await transaction
-    .insert(partnerWorkoutResultDebounce)
-    .values(
-      [...changedWorkouts.values()].map((workout) => ({
-        workoutId: workout.id,
-        // End's own event counts as the first send of the interval.
-        lastEnqueuedAt: workout.completedAt ?? now,
-        pending: true,
-      })),
-    )
-    .onConflictDoUpdate({ target: partnerWorkoutResultDebounce.workoutId, set: { pending: true } });
+  await markWorkoutResultsChanged(transaction, [...changedWorkouts.values()], now);
 }
 
 /**

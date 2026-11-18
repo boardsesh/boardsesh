@@ -33,6 +33,12 @@ import { readLogbookFeedState } from '../services/logbook-feed';
 import { completeSessionAppWorkouts } from '../services/public-api/workout-lifecycle';
 import { buildWorkoutResults } from '../services/public-api/workout-results';
 import type { PgBoss } from 'pg-boss';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { sessionWorkoutMutations } from '../graphql/resolvers/sessions/session-workouts';
+
+vi.mock('../utils/redis-rate-limiter', () => ({
+  checkRateLimitRedis: vi.fn().mockResolvedValue(undefined),
+}));
 
 const RESOURCE = 'https://api.boardsesh.com/v1';
 async function fixture() {
@@ -650,6 +656,65 @@ describe('workout.completed after results change', () => {
     await db.delete(boardseshTicks).where(eq(boardseshTicks.uuid, tick));
     await produceAfterCommittedChanges();
     expect(await completionEvents(finished.workoutId)).toHaveLength(3);
+  });
+  it("sends again when the climber's tick map places a tick on a block after End", async () => {
+    const finished = await finishedWorkout();
+    const tick = await logTick(finished.climber, finished.sessionId);
+    await produceAfterCommittedChanges();
+    await end(finished);
+    // A tick-map write changes no tick, so it adds no logbook_changes row.
+    await sessionWorkoutMutations.recordSessionWorkout(
+      null,
+      {
+        input: {
+          sessionId: finished.sessionId,
+          revision: 1,
+          stages: [
+            {
+              id: `${finished.workoutId}:0`,
+              kind: 'volume',
+              items: [{ queueItemUuid: 'qi-late', climbUuid: randomUUID(), angle: 40 }],
+            },
+          ],
+          ticks: [{ tickUuid: tick, queueItemUuid: 'qi-late' }],
+        },
+      },
+      {
+        connectionId: `webhooks-${randomUUID()}`,
+        isAuthenticated: true,
+        userId: finished.climber,
+      } as ConnectionContext,
+    );
+    await produceAfterCommittedChanges();
+    expect(await completionEvents(finished.workoutId)).toHaveLength(2);
+  });
+  it('keeps a minute between sends when prune clears a settled row and a change recreates it', async () => {
+    const finished = await finishedWorkout();
+    await end(finished);
+    await logTick(finished.climber, finished.sessionId);
+    await produceAfterCommittedChanges();
+    await sendQueued(finished.workoutId);
+    const debounceRows = () =>
+      db
+        .select()
+        .from(partnerWorkoutResultDebounce)
+        .where(eq(partnerWorkoutResultDebounce.workoutId, finished.workoutId));
+    // A settled row is kept for its minute.
+    await prunePartnerWebhookHistory();
+    expect(await debounceRows()).toHaveLength(1);
+    // After the minute prune removes it, and the next change sends at once.
+    await ageLastSend(finished.workoutId);
+    await prunePartnerWebhookHistory();
+    expect(await debounceRows()).toHaveLength(0);
+    await logTick(finished.climber, finished.sessionId);
+    await produceAfterCommittedChanges();
+    expect(await completionEvents(finished.workoutId)).toHaveLength(3);
+    // The recreated row spaces the one after it again.
+    await sendQueued(finished.workoutId);
+    await logTick(finished.climber, finished.sessionId);
+    await produceAfterCommittedChanges();
+    expect(await completionEvents(finished.workoutId)).toHaveLength(3);
+    expect((await debounceRows())[0].pending).toBe(true);
   });
   it.each([
     ['without a workout.completed subscription', true, 'connection.revoked'],
