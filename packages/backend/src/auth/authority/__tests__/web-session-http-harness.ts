@@ -16,6 +16,7 @@ import {
   AUTH_COMMAND_PATHS,
   AUTH_PROTOCOL_VERSION,
   WEB_SESSION_COMMAND_PATHS,
+  WEB_CREDENTIAL_PROOF_VERSION,
   WEB_SESSION_PROTOCOL_VERSION,
   passwordReplySchema,
   webSessionBridgeReplySchema,
@@ -97,7 +98,8 @@ export function stubCommandEnvironment(): void {
     CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
     CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
     CURRENT_STORE_DELETED_EMAIL_KEY: 'synthetic-web-session-bridge-retired-mailbox-key',
-    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'off',
+    // A session is never issued without its proof (#7793 review, M1): the backend side of `required`.
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'compatible',
     AUTH_CUTOFF_ENFORCEMENT: 'enforce',
     // Web bridging never reads the native bridge switch.
     AUTH_LEGACY_BRIDGE_MODE: 'off',
@@ -154,6 +156,7 @@ export async function login(email: string, presented?: PresentedWebSession) {
     requestId: randomUUID(),
     issuedAt: Date.now(),
     webSession: presented ? { presented } : {},
+    credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION,
     payload: { email, password: PASSWORD },
   });
   expect(status).toBe(200);

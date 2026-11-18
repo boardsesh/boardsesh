@@ -21,6 +21,7 @@ const READY = {
   CURRENT_STORE_AUTH_BACKEND_ORIGIN: 'https://backend.boardsesh.test',
   CURRENT_STORE_AUTH_RPC_SECRET: 'instrumentation-test-private-rpc-secret-00000001',
   CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
+  CURRENT_STORE_WEB_OAUTH_MODE: 'backend-staging',
   CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
   NEXTAUTH_SECRET: 'instrumentation-test-nextauth-secret-00000000001',
   NEXTAUTH_URL: 'https://www.boardsesh.com',
