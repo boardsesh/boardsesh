@@ -984,6 +984,59 @@ constant, and `web-fork-export-parity.test.ts` checks the pair. Expo web has
 no central router seam, so navigation gating is open question 8. A3's tests
 run the same flows as `ios` and `android` and expect today's behaviour.
 
+### The viewer marker: learning of a switch on another host
+
+A reply that lands in a tab on www after the browser signed in as another
+account on the other host (app.boardsesh.com, or the reverse) is a plain 200:
+no 401, no 409 and no same-origin message reaches the tab. To catch it when
+the reply lands, without one more request on the normal path, the server
+writes a readable marker beside the session cookie (decision of 2026-11-18 on
+#7596, "how the guard learns of an account switch on another host").
+
+| | |
+| --- | --- |
+| Name | `__Secure-boardsesh.viewer`; `boardsesh.viewer` on local http |
+| Value | the first 16 characters of `base64url(sha256("boardsesh-viewer-v1:" + authSessionId))` |
+| Attributes | the session cookie's `Path=/`, `Domain` (exactly when the session cookie in the same response has it), `Max-Age=34560000`, `SameSite=Lax`, `Secure`; **not** HttpOnly |
+| Written | last, by password login, Google and Apple publish, and the one bridging session read, for the session id they issue |
+| Cleared | in both scopes, by sign-out, the session read's first-party clears, and legacy mode's first-party clears (only when the request carried a first-party cookie) |
+| Code | `@boardsesh/auth-protocol/viewer-marker` (name, WebCrypto digest, `document.cookie` reader); the server value and the cookie in `browser-session-cookie.ts`; Expo web keeps a `.web` copy (`viewer-marker.web.ts`) held to the same value vector, so the app package takes no new dependency |
+
+`withoutSessionSetCookies` strips it like a session cookie, so session reads,
+csrf, ws-auth, set-password and provider link never carry it. The server never
+reads it (`viewer-marker-server-reads.test.ts`), and it is not the token: it
+cannot be turned back into the session id. In `legacy` mode, or with the mode
+unset, no marker is ever written.
+
+Each guard computes the marker it expects from its accepted login and reads
+`document.cookie` when a reply lands (www: `guardedFetch` and the `isCurrent`
+gate toasts and navigation use; Expo web: `admitSessionResponse`):
+
+- **Match:** deliver.
+- **Missing, or two differing copies:** unknown, as before the marker. A tab
+  that saw its own marker and now sees none treats that as a mismatch (a
+  sign-out on the other host).
+- **Mismatch:** hold the reply and run the existing session check (www: the
+  ws-auth probe, then a session read if it differs; Expo web: the shared
+  `synchronizeWebSession`). Another account: the reply is superseded and the
+  page clears its caches and reloads from the root. The same login confirmed:
+  the reply is delivered and that value is remembered. Nothing proven (an
+  outage): the reply is superseded; a later reply under that value is
+  delivered.
+- An anonymous tab, or a login with no `authSessionId` yet, checks nothing.
+
+Bounds against cookie tossing from a sibling host: one check per false value,
+at most four per document; a fifth false value turns the check off for that
+document. The marker alone never signs out or reloads; only a session read
+that names another account retires a page. Making the marker match A hides a
+switch, which is the behaviour without the marker. On previews and locally
+the marker is host-only on www, so the app host never sees it and stays on
+focus, `pageshow`, 401 and the BroadcastChannel. A rollback leaves a stale
+marker, which costs at most one extra check per page load. Accepted: any
+script on a `boardsesh.com` host can read a stable per-login label for up to
+400 days; it is a truncated hash the server ignores, and analytics send no
+cookies.
+
 ### Re-reading the session
 
 Both clients re-read the session on `pageshow` from the back/forward cache, on
@@ -1153,6 +1206,7 @@ What stays open:
 | Next Router Cache (soft back and forward) | No `pageshow` fires. The reload on a change made elsewhere, or the full navigation of this tab's own sign-in or sign-out, drops the cache. | A2 |
 | Login on www while an app tab is open | Phase A: the app tab notices on focus, visibility or `pageshow`, because BroadcastChannel and `storage` events do not cross origins. Phase B: the login revokes A's session, so A's next request gets a 401 and the tab reloads as B. | A3, B1 |
 | Login on app.boardsesh.com while a www tab is open, which then calls a cookie-only `/api/internal/*` route | The route answers 409 `viewer_changed` before it reads or writes; the guard re-checks at once and the tab reloads as B. A soft navigation to a private server page is not covered (see "Expected viewer on cookie routes"). | Decision 4 |
+| A reply of A's, already answered, lands after B signed in on the other host | The viewer marker no longer names A's login, so the guard holds the reply and runs the session check; it names B, the reply is superseded and the tab reloads from the root as B, with no focus. | Viewer marker |
 | A delayed session read or set-password response overwrites a later login's cookie | Remains in Phase A, because NextAuth writes on every read. In Phase B only the read that bridges a legacy cookie still writes, so the race stays for that read (open question 3). | B1, B2, B4 |
 | Two logins in two tabs at nearly the same moment | Accepted, see below. | none |
 | Backend or auth outage | No identity change, so no reload and no cleanup. | A2, A3 |
@@ -1899,9 +1953,12 @@ the evidence is that run's log.
 **Retries.** Playwright retries are off (`retries: 0`): this suite tests
 races, and a blanket retry would hide one. The harness retries exactly two
 named infrastructure errors once each (`harness-retries.ts`): a `restartStack`
-that timed out waiting for www, and WebKit failing a navigation with
-"internal error". Each logs a `[harness-retry]` line, and teardown fails the
-run when there were more than two.
+that timed out waiting for www, and WebKit failing a navigation, its
+document or one of the scripts it loads with "internal error" (a script that
+fails that way leaves the app tab blank, as run 44329764195 showed once). Each
+logs a `[harness-retry]` line, and teardown fails the run when there were more
+than two. Every request WebKit fails is logged with its URL (`[webkit] request
+failed`), so a failure outside that class shows in the run log.
 
 **Probes.** `websocket.spec.ts`: the app tab opens `wss://ws.boardsesh.test/graphql`
 through the proxy and gets `connection_ack`, in both engines. `bfcache.spec.ts`,
@@ -1966,9 +2023,9 @@ section 4).
 
 | Spec | #7596 acceptance item | Engines |
 | --- | --- | --- |
-| `acceptance-1-reads-write-no-cookie.spec.ts` | 1: reads, csrf, ws-auth, private pages and set-password write no session cookie; the bridging read writes exactly the bridged cookie; renewal rolls the row with no cookie | Chromium, WebKit |
+| `acceptance-1-reads-write-no-cookie.spec.ts` | 1: reads, csrf, ws-auth, private pages and set-password write no session cookie and no viewer marker; the login writes the marker with its session's value and the session cookie's scope, readable on www and the app, and sign-out clears it in both scopes; the bridging read writes exactly the bridged cookie and its marker; renewal rolls the row with no cookie | Chromium, WebKit |
 | `acceptance-2-account-switch.spec.ts` | 2: A's token 401, A's socket closed (4401), the app tab reloads as B; #6979 sign-out across subdomains | Chromium, WebKit |
-| `acceptance-3-held-response.spec.ts` | 3: A's delete on www (with its toast) and A's GraphQL on the app are held, B signs in on the other host, the reply is released while A's page is up. www: for 3 s no toast, navigation or cache write, then focus reloads the tab as B; **marked `test.fail`**, see below. App: A's name never shows, and the tab ends as B (it reloads by itself or on focus) | Chromium, WebKit |
+| `acceptance-3-held-response.spec.ts` | 3: A's delete on www (with its toast) and A's GraphQL on the app are held, B signs in on the other host, the reply is released while A's page is up. For 3 s no toast and none of A's data shows in any document the tab holds, and the tab ends as B, reloaded from the root by itself with no focus (the viewer marker) | Chromium, WebKit |
 | `acceptance-3-back-forward.spec.ts` | 3: on the production build no signed-in page is kept (`no-store`, asserted for `/help` and `/settings`) and back loads B; under `next dev` the page is restored and replaced (`chromium-bfcache` only); Router Cache after a soft navigation (production www only) | Chromium, WebKit, `chromium-bfcache` |
 | `acceptance-4-set-password.spec.ts` | 4: with provider security off, a bridged session asks for a new sign-in; a fresh login sets it with no reload or cookie and signs the other browser out | Chromium, WebKit |
 | `acceptance-4-first-password.spec.ts` | 4: first password on a bridged session: a made-up link completes nothing; another session presenting the emailed link changes nothing; the session that asked completes it, keeps its session id with no session Set-Cookie, and the other session is signed out | Chromium, WebKit |
@@ -1977,15 +2034,19 @@ section 4).
 | `acceptance-8-one-switch.spec.ts` | 8: two refused preconditions per service, by restart | Chromium |
 | `scripts/check-native-unchanged.ts` (workflow `web-lane-native-unchanged.yml`) | 7: no file that ships to phones changes in the web lane | not a browser test |
 
-**Found, not fixed (owner decision):** www's session guard learns of a
-switch only on focus, `pageshow`, a 401, a 409 `viewer_changed` or a
-same-origin message. A reply of A's released after B signed in on the other
-host is a plain 200, so the Settings card shows A's "Controller deleted
-successfully" toast (run 44325488834, both engines). The design says the
-caller is superseded and shows nothing. Dropping it needs the guard to re-read
-the session when an action's reply lands, one more session read per action.
-The www held-reply test is `test.fail` under
-`GUARD_PASSES_A_REPLY_RELEASED_AFTER_A_SWITCH_ON_ANOTHER_HOST` until then.
+**Found by the acceptance run, fixed (decision of 2026-11-18):** www's session
+guard learned of a switch only on focus, `pageshow`, a 401, a 409
+`viewer_changed` or a same-origin message. A reply of A's released after B
+signed in on the other host is a plain 200, so the Settings card showed A's
+"Controller deleted successfully" toast (run 44325488834, both engines). The
+viewer marker (see "The viewer marker" above) closes it: the guard holds the
+reply, the session check names B, the reply is superseded and the tab reloads
+as B by itself. The held-reply test runs strict on both hosts.
+
+**Found by the acceptance run, fixed:** the bridged set-password request in
+acceptance 1 left out the expected login the Settings card sends in its body,
+so the route answered 409 `identity_changed` before it reached the backend's
+bridged-session refusal (run 44329764195). A spec fix; the route was right.
 
 **Found by the acceptance run, fixed:** the emailed first-password link opens
 a new tab whose status check left before the page's first session read, so
