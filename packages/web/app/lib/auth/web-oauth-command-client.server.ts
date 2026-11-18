@@ -14,6 +14,7 @@ import {
   type WebOAuthIntentReply,
   type WebOAuthResolveCommand,
   type WebOAuthResolveReply,
+  type WebOAuthSessionRequest,
 } from '@boardsesh/auth-protocol';
 import {
   AuthBackendUnavailableError,
@@ -31,7 +32,27 @@ export function webOAuthMode(environment: AuthServiceEnvironment = process.env) 
 
 export interface WebOAuthCommandClient {
   intent(payload: WebOAuthIntentCommand['payload']): Promise<WebOAuthIntentReply>;
-  resolve(payload: WebOAuthResolveCommand['payload']): Promise<WebOAuthResolveReply>;
+  /**
+   * With `webSession` (#7596 B5b, `better-auth` only) the backend also issues a
+   * first-party web session, revoking `presented`. The command then always
+   * asks for the credential proof, and a resolved reply counts only with both
+   * the session and a proof naming the same session id and generation.
+   */
+  resolve(
+    payload: WebOAuthResolveCommand['payload'],
+    webSession?: WebOAuthSessionRequest,
+  ): Promise<WebOAuthResolveReply>;
+}
+
+function sessionMatchesProof(reply: Extract<WebOAuthResolveReply, { outcome: 'resolved' }>): boolean {
+  const { webSession, credentialProof } = reply;
+  return (
+    webSession !== undefined &&
+    credentialProof !== undefined &&
+    credentialProof.userId === reply.user.id &&
+    credentialProof.authSessionId === webSession.sessionId &&
+    credentialProof.generation === webSession.generation
+  );
 }
 
 /** Identity-only commands; never retry an outcome that may have committed. */
@@ -76,6 +97,12 @@ export function createWebOAuthCommandClient(
         (!reply.credentialProof || reply.credentialProof.userId !== reply.user.id)
       )
         throw new AuthBackendUnavailableError();
+      // A session asked for must come back with a proof that names it: the
+      // legacy twin written beside the login cookie carries the proof's id.
+      if (request.operation === 'resolve' && reply.outcome === 'resolved') {
+        if (request.webSession === undefined ? reply.webSession !== undefined : !sessionMatchesProof(reply))
+          throw new AuthBackendUnavailableError();
+      }
       return reply;
     } catch {
       throw new AuthBackendUnavailableError();
@@ -92,13 +119,14 @@ export function createWebOAuthCommandClient(
         payload,
       })) as WebOAuthIntentReply;
     },
-    async resolve(payload) {
+    async resolve(payload, webSession) {
       return (await command({
         webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
         operation: 'resolve',
-        ...(webCredentialProofMode(environment) === 'required'
+        ...(webSession !== undefined || webCredentialProofMode(environment) === 'required'
           ? { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }
           : {}),
+        ...(webSession !== undefined ? { webSession } : {}),
         requestId: randomUUID(),
         issuedAt: new Date().toISOString(),
         payload,

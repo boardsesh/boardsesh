@@ -94,6 +94,7 @@ export function stubBetterAuthEnvironment(backendOrigin: string): void {
     CURRENT_STORE_AUTH_BACKEND_ORIGIN: backendOrigin,
     CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
     CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
+    CURRENT_STORE_WEB_OAUTH_MODE: 'backend-staging',
     CURRENT_STORE_WEB_SESSION_MODE: 'backend-staging',
     CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
     CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,

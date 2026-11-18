@@ -236,9 +236,12 @@ export async function routeBrowserSessionAuth(
   if (action === 'session') return readSession(request, mode.cookies, legacy.legacyRoute);
   if (action === 'csrf') return withoutSessionSetCookies(await legacy.legacyRoute());
   const response = await legacy.legacyRoute();
-  // Google, Apple and the native transfer still sign in on the legacy cookie
-  // alone. That reply is a login, so it also ends any first-party cookie the
-  // browser holds; a stale one would otherwise outrank this newer login.
+  // Google and Apple publish their own first-party session with the legacy
+  // twin (B5b, `web-oauth-session.server.ts`). Any other provider login (the
+  // native transfer, until B4c) still signs in on the legacy cookie alone;
+  // that reply is a login, so it also ends any first-party cookie the browser
+  // holds, as a stale one would otherwise outrank this newer login.
+  if (provider === 'google' || provider === 'apple') return response;
   if (responseSetsSessionCookie(response))
     for (const clear of signOutBrowserSessionCookieClears(mode.cookies, requestCookieNames(request)))
       response.headers.append('Set-Cookie', clear);

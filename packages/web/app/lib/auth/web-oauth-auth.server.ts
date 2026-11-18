@@ -2,7 +2,14 @@ import 'server-only';
 import type { NextAuthOptions } from 'next-auth';
 import type { Adapter, AdapterUser } from 'next-auth/adapters';
 import { decode, encode } from 'next-auth/jwt';
-import type { WebOAuthProvider, WebOAuthResolveDenialCode, WebOAuthResolveReply } from '@boardsesh/auth-protocol';
+import type {
+  IssuedWebSessionReply,
+  PresentedWebSession,
+  WebOAuthProvider,
+  WebOAuthResolveDenialCode,
+  WebOAuthResolveReply,
+  WebOAuthSessionRequest,
+} from '@boardsesh/auth-protocol';
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { createWebOAuthCommandClient, type WebOAuthCommandClient } from './web-oauth-command-client.server';
 
@@ -16,6 +23,14 @@ export interface WebOAuthRequestBinding {
   provider: WebOAuthProvider;
   flow: string;
   actorCookie: string | null;
+  /**
+   * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B5b): this sign-in
+   * also issues a first-party web session, revoking `presented`, the session
+   * the callback arrived with. `googleNonce` is the nonce this Google flow
+   * sent; with the callback's ID token it lets the backend verify a fresh
+   * sign-in. Never set together with an actor cookie.
+   */
+  webSession?: { presented?: PresentedWebSession; googleNonce?: string };
 }
 
 export function createWebOAuthLogger(onError: () => void = () => {}): NonNullable<NextAuthOptions['logger']> {
@@ -63,7 +78,8 @@ export function createWebOAuthIdentityAuthRequest(
   binding: WebOAuthRequestBinding,
   clientFactory: () => WebOAuthCommandClient = createWebOAuthCommandClient,
 ) {
-  const { provider, flow, actorCookie } = binding;
+  const { provider, flow, actorCookie, webSession } = binding;
+  if (webSession && actorCookie !== null) throw new AuthBackendUnavailableError();
   let outcome: ResolvedIdentity | undefined;
   let unavailable = false;
   let encoded: string | undefined;
@@ -145,15 +161,25 @@ export function createWebOAuthIdentityAuthRequest(
         if (!account || account.type !== 'oauth' || account.provider !== provider || !account.providerAccountId)
           return rejectUnavailable();
         try {
-          const reply = await clientFactory().resolve({
-            provider,
-            flow,
-            actorCookie,
-            subject: account.providerAccountId,
-            email: parameters.user.email ?? null,
-            name: parameters.user.name ?? null,
-            image: parameters.user.image ?? null,
-          });
+          const idToken = typeof account.id_token === 'string' && account.id_token ? account.id_token : undefined;
+          const sessionRequest: WebOAuthSessionRequest | undefined = webSession && {
+            ...(webSession.presented ? { presented: webSession.presented } : {}),
+            ...(provider === 'google' && webSession.googleNonce && idToken
+              ? { googleAuthentication: { idToken, nonce: webSession.googleNonce } }
+              : {}),
+          };
+          const reply = await clientFactory().resolve(
+            {
+              provider,
+              flow,
+              actorCookie,
+              subject: account.providerAccountId,
+              email: parameters.user.email ?? null,
+              name: parameters.user.name ?? null,
+              image: parameters.user.image ?? null,
+            },
+            sessionRequest,
+          );
           if (reply.outcome === 'denied') return ACTIONABLE_DENIAL_REDIRECTS[reply.code] ?? false;
           outcome = reply;
           return true;
@@ -243,6 +269,8 @@ export function createWebOAuthIdentityAuthRequest(
     options,
     unavailable: () => unavailable,
     resolved: () => outcome !== undefined,
+    /** The first-party session this sign-in issued, when it asked for one (B5b). */
+    issuedWebSession: (): IssuedWebSessionReply | undefined => (unavailable ? undefined : outcome?.webSession),
     publicationMatches(response: Response): boolean {
       try {
         if (!outcome || unavailable || !encoded || response.status >= 400) return false;

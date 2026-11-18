@@ -44,6 +44,7 @@ export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
   modeInvalid: 'AUTH_BROWSER_SESSION_MODE_INVALID',
   backendChannel: 'AUTH_BROWSER_SESSION_WEB_BACKEND_CHANNEL_INVALID',
   webAuthMode: 'AUTH_BROWSER_SESSION_WEB_AUTH_MODE_REQUIRED',
+  webOAuthMode: 'AUTH_BROWSER_SESSION_WEB_OAUTH_MODE_REQUIRED',
   credentialProof: 'AUTH_BROWSER_SESSION_WEB_CREDENTIAL_PROOF_REQUIRED',
   nextAuthSecret: 'AUTH_BROWSER_SESSION_WEB_NEXTAUTH_SECRET_INVALID',
   cookieSecret: 'AUTH_BROWSER_SESSION_WEB_COOKIE_SECRET_INVALID',
@@ -77,6 +78,7 @@ const CHECKED_VARIABLES = [
   'CURRENT_STORE_AUTH_BACKEND_ORIGIN',
   'CURRENT_STORE_AUTH_RPC_SECRET',
   'CURRENT_STORE_WEB_AUTH_MODE',
+  'CURRENT_STORE_WEB_OAUTH_MODE',
   'CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE',
   'NEXTAUTH_SECRET',
   'CRON_SECRET',
@@ -117,6 +119,13 @@ function betterAuthPreconditions(
       return { failed: errors.webAuthMode };
   } catch {
     return { failed: errors.webAuthMode };
+  }
+  // Google and Apple issue a first-party session only through the backend's web OAuth commands (B5b).
+  try {
+    if (parseWebAuthMode(environment.CURRENT_STORE_WEB_OAUTH_MODE) !== 'backend-staging')
+      return { failed: errors.webOAuthMode };
+  } catch {
+    return { failed: errors.webOAuthMode };
   }
   try {
     if (webCredentialProofMode(environment) !== 'required') return { failed: errors.credentialProof };
