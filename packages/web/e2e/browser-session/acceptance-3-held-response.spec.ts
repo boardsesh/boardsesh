@@ -156,6 +156,14 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
     if (!/\/(?:api\/auth\/session|api\/internal\/ws-auth|graphql)$/.test(url.pathname)) return;
     console.info(`[held-app] +${Date.now() - started} ms ${response.status()} ${url.host}${url.pathname}`);
   });
+  // Until the release, A's document opens no real socket: B's login revokes A's session and
+  // the backend's sweep closes A's socket within a second, which reloads the app (acceptance
+  // 2) before its held replies could land, so they would land nowhere (run 44355396120,
+  // attempt 2). Sockets of any later document connect as usual.
+  let socketsReachServer = false;
+  await appPage.routeWebSocket(/\/graphql$/, (socket) => {
+    if (socketsReachServer) socket.connectToServer();
+  });
   const held = await holdReplies(appPage, `https://${WS_HOST}/graphql`);
   await appPage.reload({ waitUntil: 'commit' });
   await markDocument(appPage);
@@ -167,6 +175,7 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
   console.info(
     `[held-app] +${Date.now() - started} ms releasing ${held.count()} replies; the app tab holds a marker: ${await appPage.evaluate(() => document.cookie.includes('boardsesh.viewer='))}`,
   );
+  socketsReachServer = true;
   held.release();
   await held.delivered();
   // A's name never shows, in any document the tab holds for 3 s.

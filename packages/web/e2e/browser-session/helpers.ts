@@ -130,7 +130,17 @@ export async function isSameDocument(page: Page): Promise<boolean> {
  */
 export async function expectSessionReadNames(page: Page, account: SeededAccount): Promise<void> {
   await expect
-    .poll(async () => readSession(page), { timeout: 20_000, message: 'www session read (GET /api/auth/session)' })
+    .poll(
+      // The tab's own guard may reload it for the new account while a read is out (the
+      // viewer marker, or focus); that read is lost with its document, so ask again.
+      async () =>
+        readSession(page).catch((error: unknown) => {
+          if (error instanceof Error && /Execution context was destroyed|navigation/i.test(error.message))
+            return { status: 0, userId: null, authSessionId: null };
+          throw error;
+        }),
+      { timeout: 20_000, message: 'www session read (GET /api/auth/session)' },
+    )
     .toMatchObject({ status: 200, userId: account.userId });
 }
 
