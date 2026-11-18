@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { webSessionMode } from '@boardsesh/auth-protocol';
+import { browserSessionCookieName } from '@boardsesh/auth-protocol/browser-session-cookie';
 import { loadPartnerAuthority } from '../auth/partner/load-authority';
 import { readPartnerOAuthMode, type PartnerOAuthMode } from '../auth/partner/mode';
 import {
@@ -64,8 +65,17 @@ const COOKIE_READING_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['authorize
 /** The routes the www consent screen calls with the climber's cookie. JSON bodies, no app credentials. */
 const CONSENT_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['consent', 'consent-details']);
 const NEXTAUTH_SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/;
-/** The first-party login and bridged cookies (#7596, B6), read only while the web session mode is on. */
-const FIRST_PARTY_SESSION_COOKIE = /(?:^|;\s*)__Secure-boardsesh\.(?:session_token|bridged_session_token)=/;
+/**
+ * The first-party login and bridged cookies (#7596, B6), read only while the
+ * web session mode is on. Built from the codec's names, with the spacing the
+ * codec accepts around a name (space and tab), so a cookie the consent would
+ * read always gets the authorize transaction.
+ */
+const FIRST_PARTY_SESSION_COOKIE = new RegExp(
+  `(?:^|;)[ \\t]*(?:${(['login', 'bridged'] as const)
+    .map((kind) => browserSessionCookieName(kind, true).replaceAll('.', '\\.'))
+    .join('|')})[ \\t]*=`,
+);
 
 /** Same reading as the consent hook's: an unknown value is off. */
 function webSessionModeOn(): boolean {

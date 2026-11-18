@@ -57,6 +57,11 @@ export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze
   'B3_BROWSER_ACCESS_TOKEN',
   'B4_SERVER_RENDERS_ON_CANONICAL_SESSION',
   'B5_PROVIDER_SIGN_IN',
+  // Until www imports the shared precedence function
+  // (`@boardsesh/auth-protocol/legacy-login-precedence`) and runs the shared
+  // vectors, so partner consent and the www session read cannot pick
+  // different logins for one browser.
+  'B6_PARTNER_CONSENT',
   'B7_BROWSER_ACCEPTANCE',
 ]);
 

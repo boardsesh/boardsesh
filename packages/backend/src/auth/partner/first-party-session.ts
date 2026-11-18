@@ -84,6 +84,17 @@ export function firstPartyCookieSecret(
   }
 }
 
+/**
+ * The legacy cookie name this deployment writes: the `__Secure-` spelling (and
+ * its chunks). Only it may outrank a first-party cookie; a plain-named copy
+ * needs no `Secure` and is never honoured over one, as on www.
+ */
+const DEPLOYED_LEGACY_COOKIE_NAME = /^__Secure-next-auth\.session-token(?:\.\d+)?$/;
+
+function writtenByThisDeployment(legacy: VerifiedLegacyWebCredential): boolean {
+  return legacy.cookieNames.length > 0 && legacy.cookieNames.every((name) => DEPLOYED_LEGACY_COOKIE_NAME.test(name));
+}
+
 /** What a consent needs from a sign-in, whichever cookie proved it. */
 interface ConsentSignIn {
   readonly userId: string;
@@ -131,8 +142,9 @@ function canonicalSignIn(session: FirstPartySession): ConsentSignIn {
  * conflicted login cookie, or a conflicted bridged one with no login cookie,
  * is signed out; so is a verified cookie whose session is no longer live,
  * whatever legacy cookie is also there. The one exception is the stale-cookie
- * rule www applies (`isNewerLegacyLogin`): a legacy cookie that is a newer
- * login than the live session is used instead. Without a first-party cookie
+ * rule www applies (`isNewerLegacyLogin`, by the first-party cookie's kind): a
+ * legacy cookie under the deployed `__Secure-` name that is a newer login than
+ * the live session is used instead. Without a first-party cookie
  * the legacy cookie is read as before. Nothing here writes a cookie or
  * bridges.
  *
@@ -164,6 +176,7 @@ export async function resolveFirstPartySession(
       const legacy = await verifyLegacyWebCookie(cookieHeader, nextAuthSecret, now);
       const newerLegacy =
         legacy !== null &&
+        writtenByThisDeployment(legacy) &&
         isNewerLegacyLogin(
           {
             authSessionId: legacy.authSessionId ?? undefined,
@@ -173,6 +186,8 @@ export async function resolveFirstPartySession(
             issuedAt: Math.floor(legacy.issuedAt.getTime() / 1000),
           },
           { authSessionId: read.session.authSessionId, authenticatedAt: read.session.authenticatedAt },
+          // The kind comes from the cookie's name, never from the session's source.
+          cookies.login !== undefined ? 'login' : 'bridged',
         );
       return consentFor(newerLegacy ? legacySignIn(legacy) : canonicalSignIn(read.session), transaction, now);
     }

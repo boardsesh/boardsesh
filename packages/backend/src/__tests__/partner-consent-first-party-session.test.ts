@@ -321,28 +321,178 @@ describe('consent with the web session mode on', () => {
   );
 });
 
+describe('consent with the web session mode on, cookie by cookie', () => {
+  async function bridgedCookieFor(userId: string, claims: { authTime?: number; webMode?: string } = {}) {
+    const legacy = await signInOnWeb(userId, {
+      webMode: claims.webMode ?? 'allowlist',
+      ...(claims.authTime !== undefined ? { authTime: claims.authTime } : {}),
+    });
+    const bridged = await bridgeLegacyCredential(
+      db,
+      legacyValue(legacy),
+      process.env.NEXTAUTH_SECRET ?? '',
+      BRIDGE_KEY,
+      'on',
+    );
+    if (bridged.status !== 'bridged') throw new Error(`Bridge answered ${bridged.status}`);
+    return {
+      legacy,
+      bridged,
+      cookie: `${BRIDGED_NAME}=${signBrowserSessionCookie('bridged', bridged.token, COOKIE_SECRET)}`,
+    };
+  }
+
+  it(
+    'consents as the newer legacy login of another account beside a bridged cookie',
+    async () => {
+      const [first, second] = [await createAccount('bridged-a'), await createAccount('legacy-c')];
+      // A's bridged sign-in is the later one: beside a bridged cookie there is no time test.
+      const bridgedA = await bridgedCookieFor(first, { authTime: nowSeconds() - 10 });
+      const legacyC = await signInOnWeb(second, { webMode: 'allowlist', authTime: nowSeconds() - 3600 });
+      expect((await authorize([bridgedA.cookie, legacyC])).landing).toBe('consent');
+      expect(await partnerSessions(first)).toEqual([]);
+      expect(await partnerSessions(second)).toHaveLength(1);
+    },
+    DEADLINE_MS,
+  );
+
+  it(
+    'consents as the legacy login beside a bridged cookie whose sign-in time is unknown',
+    async () => {
+      const [first, second] = [await createAccount('unguarded-a'), await createAccount('legacy-c2')];
+      // Bridged from a cookie the web wrote with its link guard off: no sign-in time.
+      const bridgedA = await bridgedCookieFor(first, { webMode: 'off' });
+      expect(bridgedA.bridged.session.originalAuthenticatedAt).toBeNull();
+      const legacyC = await signInOnWeb(second, { webMode: 'allowlist' });
+      expect((await authorize([bridgedA.cookie, legacyC])).landing).toBe('consent');
+      expect(await partnerSessions(second)).toHaveLength(1);
+      expect(await partnerSessions(first)).toEqual([]);
+    },
+    DEADLINE_MS,
+  );
+
+  it(
+    'never lets a plain-named legacy cookie outrank a first-party one',
+    async () => {
+      const userId = await createAccount('plain-legacy');
+      const login = await loginSession(userId, 10 * 60_000);
+      const newer = await signInOnWeb(userId, { webMode: 'allowlist', authTime: nowSeconds() - 5 });
+      const plain = `next-auth.session-token=${legacyValue(newer)}`;
+      expect((await authorize([login.cookie, plain])).landing).toBe('consent');
+      const [row] = await db.select().from(authSession).where(eq(authSession.id, login.sessionId));
+      expect(await partnerSessions(userId)).toEqual([
+        partnerSessionId(userId, login.sessionId, Math.floor((row.originalAuthenticatedAt?.getTime() ?? 0) / 1000)),
+      ]);
+    },
+    DEADLINE_MS,
+  );
+
+  it(
+    'reads a lone conflicted bridged cookie as signed out, and ignores a plain-named first-party cookie',
+    async () => {
+      const userId = await createAccount('bridged-conflict');
+      const [first, second] = [await bridgedCookieFor(userId), await bridgedCookieFor(userId)];
+      expect((await authorize([first.cookie, second.cookie, first.legacy])).landing).toBe('sign-in');
+      const login = await loginSession(userId);
+      const plainName = `${browserSessionCookieName('login', false)}=${signBrowserSessionCookie('login', login.token, COOKIE_SECRET)}`;
+      expect((await authorize([plainName])).landing).toBe('sign-in');
+    },
+    DEADLINE_MS,
+  );
+
+  it(
+    'sends a bridged session of a cookie without a session id to sign in, as that cookie did',
+    async () => {
+      const userId = await createAccount('no-sid-consent');
+      const noSid = await signInOnWeb(userId, { webMode: 'allowlist', migrated: { withoutLoginId: true } });
+      expect((await authorize([noSid])).landing).toBe('sign-in');
+      const bridged = await bridgeLegacyCredential(
+        db,
+        legacyValue(noSid),
+        process.env.NEXTAUTH_SECRET ?? '',
+        BRIDGE_KEY,
+        'on',
+      );
+      if (bridged.status !== 'bridged') throw new Error('Bridge refused');
+      expect(bridged.session.id).toMatch(/^credential:/);
+      const cookie = `${BRIDGED_NAME}=${signBrowserSessionCookie('bridged', bridged.token, COOKIE_SECRET)}`;
+      expect((await authorize([cookie])).landing).toBe('sign-in');
+      expect(await partnerSessions(userId)).toEqual([]);
+    },
+    DEADLINE_MS,
+  );
+
+  it(
+    'refuses the consent post once the session that opened the screen has ended',
+    async () => {
+      const userId = await createAccount('ended-post');
+      const login = await loginSession(userId);
+      const opened = await authorize([login.cookie]);
+      expect(opened.landing).toBe('consent');
+      const live = (await selectLiveSessions(db, [login.sessionId], new Date())).get(login.sessionId);
+      if (!live) throw new Error('Synthetic session not live');
+      await denyFirstPartySession(db, live);
+      const refused = await approve(opened.location, [login.cookie]);
+      expect(refused.status).toBe(401);
+      expect(refused.body.error).toBe('login_required');
+    },
+    DEADLINE_MS,
+  );
+});
+
 describe('consent with the web session mode off', () => {
   it(
-    'ignores first-party cookies entirely and reads the legacy cookie as before',
+    'answers a first-party-only request byte for byte as a cookie-less one, outside a transaction',
     async () => {
       const userId = await createAccount('mode-off-consent');
       const login = await loginSession(userId);
       const legacy = await signInOnWeb(userId, { webMode: 'allowlist' });
-      for (const mode of ['legacy', '', 'not-a-mode']) {
-        vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', mode);
-        // Even an unusable cookie secret changes nothing while the mode is off.
-        vi.stubEnv('AUTH_BROWSER_SESSION_COOKIE_SECRET', '');
-        const url = await authorizeUrl();
-        const withFirstParty = await authorize([login.cookie], url);
-        const withNothing = await authorize([], url);
-        expect({ ...withFirstParty, location: new URL(withFirstParty.location).pathname }).toEqual({
-          ...withNothing,
-          location: new URL(withNothing.location).pathname,
-        });
-        expect(withNothing.landing).toBe('sign-in');
-        expect((await authorize([login.cookie, legacy])).landing).toBe('consent');
+      const opened = await authorize([legacy]);
+      expect(opened.landing).toBe('consent');
+      const { getPartnerAuthorityRuntime } = await import('../auth/partner/authority');
+      const runtime = await getPartnerAuthorityRuntime();
+      const handled = vi.spyOn(runtime, 'handleRequest');
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        for (const mode of [undefined, 'legacy', '', 'not-a-mode']) {
+          vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', mode);
+          // Even an unusable cookie secret changes nothing while the mode is off.
+          vi.stubEnv('AUTH_BROWSER_SESSION_COOKIE_SECRET', '');
+          const url = await authorizeUrl();
+          // Frozen at the real now: both requests see the same clock.
+          vi.setSystemTime(new Date(Math.floor(Date.now() / 1000) * 1000));
+          handled.mockClear();
+          const withFirstParty = await authorize([login.cookie], url);
+          const withNothing = await authorize([], url);
+          expect(withFirstParty, String(mode)).toEqual(withNothing);
+          expect(withNothing.landing).toBe('sign-in');
+          // Authorize never opened a transaction for the first-party cookie.
+          expect(handled.mock.calls.map(([, options]) => options?.transaction)).toEqual([false, false]);
+          for (const path of ['/api/auth/oauth2/consent', '/api/auth/oauth2/consent-details']) {
+            const answers = [];
+            for (const cookies of [[login.cookie], []]) {
+              const reply = await server.send('POST', path, {
+                clientIp: freshClientIp(),
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(cookies.length ? { Cookie: cookies.join('; ') } : {}),
+                  Origin: WEB_ORIGIN,
+                },
+                body: JSON.stringify({ oauth_query: new URL(opened.location).search.slice(1), accept: true }),
+              });
+              answers.push({ status: reply.status, body: reply.body });
+            }
+            expect(answers[0], `${path} ${String(mode)}`).toEqual(answers[1]);
+            expect(answers[0].status).toBe(401);
+          }
+          vi.useRealTimers();
+          expect((await authorize([login.cookie, legacy])).landing).not.toBe('sign-in');
+          vi.useFakeTimers({ toFake: ['Date'] });
+        }
+      } finally {
+        vi.useRealTimers();
+        handled.mockRestore();
       }
-      expect(await partnerSessions(userId)).toHaveLength(1);
     },
     DEADLINE_MS,
   );

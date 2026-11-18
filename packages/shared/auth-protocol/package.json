@@ -47,6 +47,11 @@
       "import": "./src/legacy-login-precedence.ts",
       "default": "./src/legacy-login-precedence.ts"
     },
+    "./legacy-login-precedence-vectors": {
+      "types": "./src/legacy-login-precedence-vectors.ts",
+      "import": "./src/legacy-login-precedence-vectors.ts",
+      "default": "./src/legacy-login-precedence-vectors.ts"
+    },
     "./browser-session-mode": {
       "types": "./src/browser-session-mode.ts",
       "import": "./src/browser-session-mode.ts",

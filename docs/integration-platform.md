@@ -667,8 +667,18 @@ and admitted by the same live-session read every request uses
 a bridged one with no login cookie, is signed out, never a fallback; so is a
 verified cookie whose session has ended, even beside a legacy cookie. The one
 exception is www's stale-cookie rule, shared as `isNewerLegacyLogin`
-(`@boardsesh/auth-protocol/legacy-login-precedence`): a legacy cookie that is a
-newer login than the live session is used. Without a first-party cookie the
+(`@boardsesh/auth-protocol/legacy-login-precedence`, vectors in
+`legacy-login-precedence-vectors`), decided by the first-party cookie's kind
+(its name, never the session's `source`): beside a login cookie, a legacy
+cookie with another session id and a later sign-in time wins; beside a bridged
+cookie, a legacy cookie with another string session id wins with no time test.
+Only the deployed `__Secure-next-auth.session-token` name counts; a plain-named
+legacy cookie never outranks a first-party one. www may answer the older
+session for a moment where api picks the newer login: when its bridge of the
+newer cookie fails or is rate limited, and on a POST session read, which does
+not apply the rule. That is transient, and api's answer is the newer login.
+`B6_PARTNER_CONSENT` stays a cutover blocker until www imports the shared
+function and runs the shared vectors. Without a first-party cookie the
 NextAuth cookie is read as before. A bridged session keeps the legacy cookie's
 session id and guarded sign-in time, so it names the same partner session as
 that cookie did and nobody consents again at cutover; a login session uses its
