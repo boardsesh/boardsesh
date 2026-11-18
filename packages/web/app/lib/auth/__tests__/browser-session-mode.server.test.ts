@@ -1,9 +1,17 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-vi.mock('server-only', () => ({}));
 
 import { webLogger } from '@/app/lib/observability/logger';
-import { BROWSER_SESSION_WEB_PRECONDITION_ERRORS, browserSessionRouteMode } from '../browser-session-mode.server';
+import {
+  BROWSER_SESSION_WEB_CUTOVER_BLOCKERS,
+  BROWSER_SESSION_WEB_PRECONDITION_ERRORS,
+  browserSessionBootRefusal,
+  browserSessionRouteMode,
+  browserSessionRouteModeResolver,
+} from '../browser-session-mode.server';
+
+/** The preconditions alone, as the later PRs will see them once the www list is empty. */
+let resolveWithoutBlockers: ReturnType<typeof browserSessionRouteModeResolver>;
 
 const READY = {
   AUTH_BROWSER_SESSION_MODE: 'better-auth',
@@ -29,6 +37,7 @@ function stub(overrides: Partial<Record<keyof typeof READY, string>> = {}) {
 
 beforeEach(() => {
   logged = vi.spyOn(webLogger, 'error').mockImplementation(() => {});
+  resolveWithoutBlockers = browserSessionRouteModeResolver([]);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -47,7 +56,10 @@ describe('browserSessionRouteMode', () => {
 
   it.each(['Better-Auth', ' better-auth', 'on', 'true'])('answers an unknown value %j as unavailable', (mode) => {
     stub({ AUTH_BROWSER_SESSION_MODE: mode });
-    expect(browserSessionRouteMode()).toEqual({ kind: 'unavailable' });
+    expect(resolveWithoutBlockers()).toEqual({
+      kind: 'unavailable',
+      code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.modeInvalid,
+    });
     expect(logged).toHaveBeenCalledWith('browser session mode unavailable', {
       code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.modeInvalid,
     });
@@ -55,7 +67,7 @@ describe('browserSessionRouteMode', () => {
 
   it('turns on with every precondition met: secure names and the shared domain on production www', () => {
     stub();
-    expect(browserSessionRouteMode()).toEqual({
+    expect(resolveWithoutBlockers()).toEqual({
       kind: 'better-auth',
       cookies: { secret: READY.AUTH_BROWSER_SESSION_COOKIE_SECRET, secure: true, domain: '.boardsesh.com' },
     });
@@ -63,7 +75,7 @@ describe('browserSessionRouteMode', () => {
 
   it('is host-only on a preview host', () => {
     stub({ NEXTAUTH_URL: 'https://12.preview.boardsesh.com' });
-    expect(browserSessionRouteMode()).toMatchObject({ kind: 'better-auth', cookies: { domain: undefined } });
+    expect(resolveWithoutBlockers()).toMatchObject({ kind: 'better-auth', cookies: { domain: undefined } });
   });
 
   const errors = BROWSER_SESSION_WEB_PRECONDITION_ERRORS;
@@ -94,7 +106,7 @@ describe('browserSessionRouteMode', () => {
     ['a cookie domain the codec refuses', { AUTH_COOKIE_DOMAIN: 'boardsesh.com; Path=/x' }, errors.cookieDomain],
   ])('answers unavailable with %s, logging only the code', (_case, overrides, code) => {
     stub(overrides);
-    expect(browserSessionRouteMode()).toEqual({ kind: 'unavailable' });
+    expect(resolveWithoutBlockers()).toEqual({ kind: 'unavailable', code });
     expect(logged).toHaveBeenCalledWith('browser session mode unavailable', { code });
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-for-mode-tests');
   });
@@ -105,7 +117,7 @@ describe('browserSessionRouteMode', () => {
       NEXTAUTH_URL: 'http://localhost:3000',
       CURRENT_STORE_AUTH_BACKEND_ORIGIN: 'http://localhost:8080',
     });
-    expect(browserSessionRouteMode()).toMatchObject({
+    expect(resolveWithoutBlockers()).toMatchObject({
       kind: 'better-auth',
       cookies: { secure: false, domain: undefined },
     });
@@ -113,8 +125,28 @@ describe('browserSessionRouteMode', () => {
 
   it('checks a configuration once and logs a refusal once', () => {
     stub({ AUTH_BROWSER_SESSION_COOKIE_SECRET: 'short' });
-    browserSessionRouteMode();
-    browserSessionRouteMode();
+    resolveWithoutBlockers();
+    resolveWithoutBlockers();
     expect(logged).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps better-auth unavailable while www cutover work is listed, even with every precondition met', () => {
+    stub();
+    expect(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS.length).toBeGreaterThan(0);
+    expect(Object.isFrozen(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS)).toBe(true);
+    const code = BROWSER_SESSION_WEB_PRECONDITION_ERRORS.cutoverIncomplete;
+    expect(browserSessionRouteMode()).toEqual({ kind: 'unavailable', code });
+    expect(logged).toHaveBeenCalledWith('browser session mode unavailable', {
+      code,
+      blockers: BROWSER_SESSION_WEB_CUTOVER_BLOCKERS.join(', '),
+    });
+  });
+
+  it('refuses a boot exactly when the mode is unavailable', () => {
+    stub();
+    expect(browserSessionBootRefusal()).toEqual(new Error(BROWSER_SESSION_WEB_PRECONDITION_ERRORS.cutoverIncomplete));
+    expect(browserSessionBootRefusal(resolveWithoutBlockers)).toBeUndefined();
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', 'legacy');
+    expect(browserSessionBootRefusal()).toBeUndefined();
   });
 });

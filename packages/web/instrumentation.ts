@@ -40,6 +40,22 @@ export async function register() {
       process.exit(1);
     }
 
+    // AUTH_BROWSER_SESSION_MODE: unset, empty or `legacy` boots as before. A
+    // value that would answer 503 on every /api/auth route (a typo, a missing
+    // precondition, www cutover work still listed) fails the deploy instead, so
+    // the previous one keeps serving, as the backend refuses to start.
+    const { browserSessionBootRefusal } = await import('./app/lib/auth/browser-session-mode.server');
+    const browserSessionRefusal = browserSessionBootRefusal();
+    if (browserSessionRefusal) {
+      console.error(
+        `${browserSessionRefusal.message}: AUTH_BROWSER_SESSION_MODE cannot serve sign-in on this deployment. ` +
+          'Set it to legacy or meet its preconditions (docs/better-auth-rollout.md).',
+      );
+      Sentry.captureException(browserSessionRefusal);
+      await Sentry.flush(2000).catch(() => {});
+      process.exit(1);
+    }
+
     if (canonicalOriginDiagnosis.level === 'warn') {
       console.warn(canonicalOriginDiagnosis.message);
     } else if (canonicalOriginDiagnosis.level === 'fatal') {

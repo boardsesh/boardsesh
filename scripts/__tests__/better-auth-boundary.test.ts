@@ -165,6 +165,24 @@ describe('first-party authority boundary', () => {
   });
 });
 
+describe('www browser session cutover list', () => {
+  const MODE_MODULE = 'packages/web/app/lib/auth/browser-session-mode.server.ts';
+  const RESOLVER_CALL = /browserSessionRouteModeResolver\(([^)]*)\)/g;
+
+  it('builds the production resolver from the frozen list, and only tests and proofs pass another', () => {
+    const callers = trackedSourceFiles.filter((path) =>
+      readRepoFile(path).includes('browserSessionRouteModeResolver('),
+    );
+    for (const path of callers) {
+      const lists = [...readRepoFile(path).matchAll(RESOLVER_CALL)].map(([, argument]) => argument.trim());
+      if (!isProductionSource(path) || path.startsWith('packages/web/auth-proofs/')) continue;
+      expect(path).toBe(MODE_MODULE);
+      expect(lists).toEqual(['cutoverBlockers: readonly string[]', 'BROWSER_SESSION_WEB_CUTOVER_BLOCKERS']);
+    }
+    expect(callers).toContain(MODE_MODULE);
+  });
+});
+
 describe('partner folder resolution', () => {
   const importer = 'packages/backend/src/auth/session.ts';
 

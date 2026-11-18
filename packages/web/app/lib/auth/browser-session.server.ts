@@ -20,16 +20,31 @@ import { PLAIN_SESSION_COOKIE_NAME, SECURE_SESSION_COOKIE_NAME } from './secure-
  *   bridged one. Which one it was says nothing about the session (freshness and
  *   source come from the backend's session row), so it is not carried on.
  * - `conflicted`: the login cookie arrived as differing copies. The browser is
- *   signed out; neither the bridged nor the legacy cookie stands in for it.
+ *   signed out; neither the bridged nor the legacy cookie stands in for it. A
+ *   login still presents the legacy cookie from the same request, when there is
+ *   one, so the session it names ends.
  * - `legacy`: no first-party cookie, and a NextAuth cookie no longer than the
- *   command accepts. An oversized one is dropped here, before any command.
+ *   command accepts.
+ * - `oversized-legacy`: a NextAuth cookie longer than any command accepts. It
+ *   reads as signed out and is never sent to the backend.
  * - `none`.
  */
+type LegacyPresented = Extract<PresentedWebSession, { kind: 'legacy-jwe' }>;
 export type RequestBrowserSession =
   | { kind: 'canonical'; presented: Extract<PresentedWebSession, { kind: 'canonical-token' }> }
-  | { kind: 'conflicted' }
-  | { kind: 'legacy'; presented: Extract<PresentedWebSession, { kind: 'legacy-jwe' }> }
+  | { kind: 'conflicted'; legacy: LegacyPresented | undefined }
+  | { kind: 'legacy'; presented: LegacyPresented }
+  | { kind: 'oversized-legacy' }
   | { kind: 'none' };
+
+type LegacyRead = { kind: 'legacy'; presented: LegacyPresented } | { kind: 'oversized-legacy' } | { kind: 'none' };
+
+async function readLegacyCookie(request: NextRequest): Promise<LegacyRead> {
+  const legacy = await capturePresentedWebCredential(request);
+  if (!legacy) return { kind: 'none' };
+  if (legacy.credential.length > LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH) return { kind: 'oversized-legacy' };
+  return { kind: 'legacy', presented: { kind: 'legacy-jwe', credential: legacy.credential } };
+}
 
 /**
  * Reads the request's session cookies. The `Cookie` header is passed to the
@@ -43,18 +58,18 @@ export async function readRequestBrowserSession(
   const read = readBrowserSessionCookies(request.headers.get('cookie'), cookies.secret, cookies.secure);
   if (read.conflicted.includes('login')) {
     webLogger.warn('browser session cookie conflicted', { kinds: read.conflicted.join(',') });
-    return { kind: 'conflicted' };
+    const legacy = await readLegacyCookie(request);
+    return { kind: 'conflicted', legacy: legacy.kind === 'legacy' ? legacy.presented : undefined };
   }
   const token = read.login ?? read.bridged;
   if (token !== undefined) return { kind: 'canonical', presented: { kind: 'canonical-token', token } };
-  const legacy = await capturePresentedWebCredential(request);
-  if (!legacy || legacy.credential.length > LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH) return { kind: 'none' };
-  return { kind: 'legacy', presented: { kind: 'legacy-jwe', credential: legacy.credential } };
+  return readLegacyCookie(request);
 }
 
 /** What a login presents for revocation, or undefined for nothing. */
 export function presentedForLogin(session: RequestBrowserSession): PresentedWebSession | undefined {
-  return session.kind === 'canonical' || session.kind === 'legacy' ? session.presented : undefined;
+  if (session.kind === 'canonical' || session.kind === 'legacy') return session.presented;
+  return session.kind === 'conflicted' ? session.legacy : undefined;
 }
 
 function isDomainScoped(setCookie: string): boolean {

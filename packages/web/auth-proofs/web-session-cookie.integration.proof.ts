@@ -1,28 +1,35 @@
 // @vitest-environment node
 /**
- * #7596 B1c with `AUTH_BROWSER_SESSION_MODE=better-auth`: the real
- * `/api/auth/[...nextauth]` route exports write and clear the first-party
- * session cookie, and read the session, against the real backend handlers
- * over HTTP and real PostgreSQL. Nothing scripts a backend reply: an outage is
- * the real handler switched off, and the transport's 401 is the real handler
- * refusing a request that carries an `Origin`.
+ * #7596 B1c with `AUTH_BROWSER_SESSION_MODE=better-auth`: login and the session
+ * read through the real `/api/auth/[...nextauth]` route exports, against the
+ * real backend handlers over HTTP and real PostgreSQL. Nothing scripts a
+ * backend reply: an outage is the real handler switched off, and the
+ * transport's 401 is the real handler refusing a request with an `Origin`.
+ * The www cutover list is replaced through its test seam, never from the env.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { Socket } from 'node:net';
-import { hash } from 'bcryptjs';
 import { decode, encode } from 'next-auth/jwt';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { signBrowserSessionCookie } from '@boardsesh/auth-protocol/browser-session-cookie';
-import { authEmailProjection, userCredentials, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
-import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../backend/src/auth/current-store/foundation-context';
-import { createPasswordCompareGate } from '../../backend/src/auth/current-store/password-compare-gate';
-import { createPasswordLoginLimiter } from '../../backend/src/auth/current-store/password-login-limits';
-import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
-import { handleCurrentStoreWebSession } from '../../backend/src/handlers/current-store-web-session';
-import { CookieJar, callRoute, patchNextRequestIo, setCookieNames, setCookies } from './route-harness';
+import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
+import {
+  BRIDGED,
+  COOKIE_SECRET,
+  DOMAIN,
+  LEGACY,
+  LOGIN,
+  browserSteps,
+  canonicalStatus,
+  createClimber,
+  legacyStatus,
+  loginToken,
+  sessionCookieNamesIn,
+  startWebSessionBackend,
+  stubBetterAuthEnvironment,
+  type WebSessionBackend,
+} from './web-session-harness';
 
 const holder = vi.hoisted(() => {
   // auth-options reads both when it loads: production www, shared Domain cookie.
@@ -53,88 +60,30 @@ vi.mock('../app/lib/auth/credential-admission.server', async (original) => ({
     return result.status === 'admitted' ? result.session.userId : null;
   },
 }));
+// The test seam: the preconditions alone, as once the www cutover list is empty.
+vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
+  const actual = await original<typeof import('../app/lib/auth/browser-session-mode.server')>();
+  return { ...actual, browserSessionRouteMode: actual.browserSessionRouteModeResolver([]) };
+});
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
+import { issueNativeOAuthTransferToken } from '../app/lib/auth/native-oauth-transfer';
 
 const secret = 'web-session-cookie-proof-nextauth-secret-7596';
-const cookieSecret = 'web-session-cookie-proof-browser-cookie-secret-7596';
-const rpcSecret = randomBytes(32).toString('base64url');
-const projectionId = 'web-session-cookie-proof-projection';
-const PASSWORD = 'web session cookie proof password';
-const LOGIN = '__Secure-boardsesh.session_token';
-const BRIDGED = '__Secure-boardsesh.bridged_session_token';
-const LEGACY = '__Secure-next-auth.session-token';
-const SESSION_COOKIE_NAMES = [LOGIN, BRIDGED, LEGACY, 'next-auth.session-token'];
-
+const { csrf, login, readSession } = browserSteps(authRoute);
 let environment: Awaited<ReturnType<typeof createEnvironment>>;
-let backend: Server;
-let originRefusingBackend: Server;
-let origin: string;
-let refusingOrigin: string;
-const sockets = new Set<Socket>();
-
-async function listen(handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) {
-  const server = createServer((request, response) => {
-    void handle(request, response).catch(() => {
-      if (!response.headersSent) response.writeHead(500);
-      response.end();
-    });
-  });
-  server.on('connection', (socket) => {
-    sockets.add(socket);
-    socket.once('close', () => sockets.delete(socket));
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Owned command server failed to bind');
-  return { server, origin: `http://127.0.0.1:${address.port}` };
-}
+let backend: WebSessionBackend;
+const climber = (options?: { verified?: boolean }) => createClimber(environment.database, options);
+const statusOf = (token: string) => canonicalStatus(environment.database, token);
 
 beforeAll(async () => {
   environment = await createEnvironment();
   holder.database = environment.database;
-  await environment.database.insert(authEmailProjection).values({
-    projectionId,
-    normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
-    writerEpoch: 1,
-    phase: 'enforced',
-    preparedAt: new Date(),
-  });
-  const guards = { limits: createPasswordLoginLimiter({ redis: () => null }), gate: createPasswordCompareGate() };
-  const real = await listen((request, response) =>
-    request.url?.startsWith('/api/internal/auth/current-store/web-session/v1/')
-      ? handleCurrentStoreWebSession(request, response, environment.database)
-      : handleCurrentStoreWebAuth(request, response, environment.database, guards),
-  );
-  backend = real.server;
-  origin = real.origin;
-  // The real handler, reached with a browser Origin: it answers its own 401 { error: 'unauthorized' }.
-  const refusing = await listen((request, response) => {
-    request.headers.origin = 'https://www.boardsesh.com';
-    return handleCurrentStoreWebSession(request, response, environment.database);
-  });
-  originRefusingBackend = refusing.server;
-  refusingOrigin = refusing.origin;
+  backend = await startWebSessionBackend(environment.database);
   patchNextRequestIo();
 });
 beforeEach(() => {
-  for (const [name, content] of Object.entries({
-    AUTH_BROWSER_SESSION_MODE: 'better-auth',
-    AUTH_BROWSER_SESSION_COOKIE_SECRET: cookieSecret,
-    CURRENT_STORE_AUTH_BACKEND_ORIGIN: origin,
-    CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
-    CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
-    CURRENT_STORE_WEB_SESSION_MODE: 'backend-staging',
-    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
-    CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
-    CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
-    CURRENT_STORE_DELETED_EMAIL_KEY: 'web-session-cookie-proof-retired-mailbox-key',
-    AUTH_CUTOFF_ENFORCEMENT: 'enforce',
-    EMAIL_VERIFICATION_ENABLED: 'false',
-    DEBUG_SQL: 'false',
-    PARTNER_OAUTH_MODE: 'off',
-  }))
-    vi.stubEnv(name, content);
+  stubBetterAuthEnvironment(backend.origin);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => {
@@ -143,72 +92,12 @@ afterEach(() => {
 });
 afterAll(async () => {
   vi.restoreAllMocks();
-  for (const socket of sockets) socket.destroy();
-  for (const server of [backend, originRefusingBackend])
-    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+  await backend?.close();
   await environment?.close();
 });
 
-async function climber() {
-  const id = randomUUID();
-  const email = `web-session-cookie-${id}@example.test`;
-  await environment.database.insert(users).values({ id, email, name: 'Climber', emailVerified: new Date() });
-  await environment.database.insert(userCredentials).values({ userId: id, passwordHash: await hash(PASSWORD, 4) });
-  return { id, email };
-}
-
-async function csrf(jar: CookieJar): Promise<string> {
-  const response = await callRoute(authRoute, '/api/auth/csrf', { cookie: jar.header() });
-  expect(setCookieNames(response).filter((name) => SESSION_COOKIE_NAMES.includes(name))).toEqual([]);
-  jar.apply(response);
-  return ((await response.json()) as { csrfToken: string }).csrfToken;
-}
-
-async function login(jar: CookieJar, email: string, password = PASSWORD) {
-  const csrfToken = await csrf(jar);
-  const response = await callRoute(authRoute, '/api/auth/callback/credentials', {
-    cookie: jar.header(),
-    form: { csrfToken, email, password, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
-  });
-  jar.apply(response);
-  return response;
-}
-
-async function readSession(cookie: string, method: 'GET' | 'POST' = 'GET', csrfToken = '') {
-  const response = await callRoute(authRoute, '/api/auth/session', {
-    cookie,
-    ...(method === 'POST' ? { form: { csrfToken } } : {}),
-  });
-  expect(setCookieNames(response).filter((name) => SESSION_COOKIE_NAMES.includes(name))).toEqual([]);
-  return response;
-}
-
-async function signOut(jar: CookieJar, expected: { userId: string; authSessionId: string }, csrfToken?: string) {
-  const token = csrfToken ?? (await csrf(jar));
-  return callRoute(authRoute, '/api/auth/signout', {
-    cookie: jar.header(),
-    form: {
-      csrfToken: token,
-      callbackUrl: 'https://www.boardsesh.com/',
-      json: 'true',
-      expectedUserId: expected.userId,
-      expectedAuthSessionId: expected.authSessionId,
-    },
-  });
-}
-
-/** The raw session token inside the login cookie the jar holds (Domain scope). */
-function loginToken(jar: CookieJar): string {
-  const signed = jar.get(LOGIN, '.boardsesh.com');
-  if (!signed) throw new Error('No login cookie');
-  return signed.slice(0, signed.indexOf('.'));
-}
-
-async function canonicalStatus(token: string) {
-  return (await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status;
-}
-
 type SessionJson = { user?: { id: string }; authSessionId?: string };
+const sessionOf = async (cookie: string) => (await (await readSession(cookie)).json()) as SessionJson;
 
 describe('login', () => {
   it('writes the login cookie, clears the bridged name and the host-only login copy, and keeps the legacy cookie on the same session', async () => {
@@ -229,11 +118,11 @@ describe('login', () => {
       `${BRIDGED}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`,
       `${BRIDGED}=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure`,
     ]);
-    const session = (await (await readSession(jar.header())).json()) as SessionJson;
+    const session = await sessionOf(jar.header());
     expect(session.user?.id).toBe(climberA.id);
-    const legacy = await decode({ token: jar.get(LEGACY, '.boardsesh.com') ?? '', secret });
+    const legacy = await decode({ token: jar.get(LEGACY, DOMAIN) ?? '', secret });
     expect(legacy?.authSessionId).toBe(session.authSessionId);
-    expect(await canonicalStatus(loginToken(jar))).toBe('admitted');
+    expect(await statusOf(loginToken(jar))).toBe('admitted');
   });
 
   it("as B while holding A's cookies revokes A's session and sets B's cookie", async () => {
@@ -241,16 +130,25 @@ describe('login', () => {
     const jar = new CookieJar();
     await login(jar, climberA.email);
     const tokenA = loginToken(jar);
-    const legacyA = jar.get(LEGACY, '.boardsesh.com') ?? '';
+    const legacyA = jar.get(LEGACY, DOMAIN) ?? '';
     await login(jar, climberB.email);
-    expect(((await (await readSession(jar.header())).json()) as SessionJson).user?.id).toBe(climberB.id);
-    expect(await canonicalStatus(tokenA)).not.toBe('admitted');
-    const legacyStatus = await readFirstPartySession(environment.database, {
-      kind: 'legacy-jwe',
-      credential: legacyA,
-      secret,
-    });
-    expect(legacyStatus.status).not.toBe('admitted');
+    expect((await sessionOf(jar.header())).user?.id).toBe(climberB.id);
+    expect(await statusOf(tokenA)).not.toBe('admitted');
+    expect(await legacyStatus(environment.database, legacyA, secret)).not.toBe('admitted');
+  });
+
+  it("with a conflicted login cookie presents the request's legacy cookie, so A's session ends", async () => {
+    const [climberA, climberB] = [await climber(), await climber()];
+    const jarA = new CookieJar();
+    await login(jarA, climberA.email);
+    const tokenA = loginToken(jarA);
+    const legacyA = jarA.get(LEGACY, DOMAIN) ?? '';
+    const stray = signBrowserSessionCookie('login', randomBytes(32).toString('base64url'), COOKIE_SECRET);
+    const conflicted = `${LOGIN}=${jarA.get(LOGIN, DOMAIN)}; ${LOGIN}=${stray}; ${LEGACY}=${legacyA}`;
+    const response = await login(new CookieJar(), climberB.email, undefined, conflicted);
+    expect(response.status).toBe(200);
+    expect(await legacyStatus(environment.database, legacyA, secret)).not.toBe('admitted');
+    expect(await statusOf(tokenA)).not.toBe('admitted');
   });
 
   it('with a wrong password changes nothing and writes no session cookie', async () => {
@@ -260,27 +158,66 @@ describe('login', () => {
     const before = jar.header();
     const response = await login(jar, climberA.email, 'not the password');
     expect(response.status).toBe(401);
-    expect(setCookieNames(response).filter((name) => SESSION_COOKIE_NAMES.includes(name))).toEqual([]);
-    expect(await canonicalStatus(loginToken(jar))).toBe('admitted');
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+    expect(await statusOf(loginToken(jar))).toBe('admitted');
     expect(jar.header()).toBe(before);
+  });
+
+  it('awaiting email verification goes to the verification page and writes no session cookie', async () => {
+    vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
+    const unverified = await climber({ verified: false });
+    const response = await login(new CookieJar(), unverified.email);
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+    expect(((await response.json()) as { url: string }).url).toContain('/auth/verify-request?error=EmailNotVerified');
   });
 
   it('drops an oversized legacy cookie before the command and still signs in', async () => {
     const climberA = await climber();
     const jar = new CookieJar();
-    jar.set(LEGACY, 'x'.repeat(12_289), '.boardsesh.com');
+    jar.set(LEGACY, 'x'.repeat(12_289), DOMAIN);
     const response = await login(jar, climberA.email);
     expect(response.status).toBe(200);
-    expect(((await (await readSession(jar.header())).json()) as SessionJson).user?.id).toBe(climberA.id);
+    expect((await sessionOf(jar.header())).user?.id).toBe(climberA.id);
   });
 
   it('answers 503 and writes nothing when the backend is off', async () => {
     const climberA = await climber();
-    const jar = new CookieJar();
     vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'legacy');
-    const response = await login(jar, climberA.email);
+    const response = await login(new CookieJar(), climberA.email);
     expect(response.status).toBe(503);
     expect(setCookies(response)).toEqual([]);
+  });
+
+  it('on the legacy cookie alone (the native transfer) also clears the first-party names, so a stale login cookie cannot outrank it', async () => {
+    const [climberA, climberB] = [await climber(), await climber()];
+    const jar = new CookieJar();
+    await login(jar, climberA.email);
+    const transferToken = issueNativeOAuthTransferToken({
+      userId: climberB.id,
+      nextPath: '/',
+      credentialProof: {
+        version: 1,
+        userId: climberB.id,
+        authSessionId: randomUUID(),
+        generation: 0,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+    });
+    const csrfToken = await csrf(jar);
+    const response = await callRoute(authRoute, '/api/auth/callback/native-oauth', {
+      cookie: jar.header(),
+      form: { csrfToken, transferToken, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
+    });
+    expect(response.status).toBe(200);
+    const cleared = setCookies(response).filter((header) => /^[^=]+=;/.test(header));
+    for (const name of [LOGIN, BRIDGED]) {
+      expect(cleared).toContain(`${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
+      expect(cleared).toContain(`${name}=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
+    }
+    jar.apply(response);
+    expect(jar.get(LOGIN, DOMAIN)).toBeUndefined();
+    expect((await sessionOf(jar.header())).user?.id).toBe(climberB.id);
   });
 });
 
@@ -313,17 +250,39 @@ describe('session read', () => {
     expect(await response.json()).toMatchObject({ user: { id: climberA.id }, authSessionId });
   });
 
+  it('reads a valid legacy cookie too long for any command as signed out', async () => {
+    const climberA = await climber();
+    const padding = 'p'.repeat(13_000);
+    const legacy = await encode({
+      token: { sub: climberA.id, authSessionId: randomUUID(), padding },
+      secret,
+      maxAge: 3600,
+    });
+    const response = await readSession(`${LEGACY}=${legacy}`);
+    expect(await response.json()).toEqual({});
+  });
+
+  it('reads a dead first-party session as signed out, with the denied header and no fall back to the legacy cookie', async () => {
+    const climberA = await climber();
+    const jar = new CookieJar();
+    await login(jar, climberA.email);
+    const held = jar.header();
+    await login(jar, climberA.email);
+    const response = await readSession(held);
+    expect(await response.json()).toEqual({});
+    expect(response.headers.get('x-boardsesh-credential-authority')).toBe('denied');
+  });
+
   it('reads a conflicted login cookie as signed out, never falling back to the bridged or legacy cookie', async () => {
     const climberA = await climber();
     const jar = new CookieJar();
     await login(jar, climberA.email);
     const token = loginToken(jar);
-    const bridged = signBrowserSessionCookie('bridged', token, cookieSecret);
     const cookie = [
-      `${LOGIN}=${jar.get(LOGIN, '.boardsesh.com')}`,
-      `${LOGIN}=${signBrowserSessionCookie('login', randomBytes(32).toString('base64url'), cookieSecret)}`,
-      `${BRIDGED}=${bridged}`,
-      `${LEGACY}=${jar.get(LEGACY, '.boardsesh.com')}`,
+      `${LOGIN}=${jar.get(LOGIN, DOMAIN)}`,
+      `${LOGIN}=${signBrowserSessionCookie('login', randomBytes(32).toString('base64url'), COOKIE_SECRET)}`,
+      `${BRIDGED}=${signBrowserSessionCookie('bridged', token, COOKIE_SECRET)}`,
+      `${LEGACY}=${jar.get(LEGACY, DOMAIN)}`,
     ].join('; ');
     const response = await readSession(cookie);
     expect(response.status).toBe(200);
@@ -337,72 +296,19 @@ describe('session read', () => {
     vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'legacy');
     expect((await readSession(jar.header())).status).toBe(503);
     vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'backend-staging');
-    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', refusingOrigin);
+    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', backend.refusingOrigin);
     expect((await readSession(jar.header())).status).toBe(503);
   });
 });
 
-describe('sign-out', () => {
-  async function signedIn() {
-    const climberA = await climber();
-    const jar = new CookieJar();
-    await login(jar, climberA.email);
-    const session = (await (await readSession(jar.header())).json()) as { authSessionId: string };
-    return { jar, expected: { userId: climberA.id, authSessionId: session.authSessionId } };
-  }
-
-  it('answers 409 and clears nothing when the cookie carries another login', async () => {
-    const { jar, expected } = await signedIn();
-    const response = await signOut(jar, { ...expected, authSessionId: randomUUID() });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'signout_identity_changed' });
-    expect(setCookies(response)).toEqual([]);
-    expect(await canonicalStatus(loginToken(jar))).toBe('admitted');
-  });
-
-  it('ends the session and clears all four session cookie names', async () => {
-    const { jar, expected } = await signedIn();
-    const token = loginToken(jar);
-    const response = await signOut(jar, expected);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ url: 'https://www.boardsesh.com/' });
-    const cleared = setCookies(response).filter((header) => /^[^=]+=;/.test(header));
-    for (const name of [LOGIN, BRIDGED, LEGACY, 'next-auth.session-token']) {
-      expect(cleared.some((header) => header.startsWith(`${name}=;`) && !/Domain=/.test(header))).toBe(true);
-      expect(cleared.some((header) => header.startsWith(`${name}=;`) && /Domain=\.boardsesh\.com/.test(header))).toBe(
-        true,
-      );
-    }
-    expect(await canonicalStatus(token)).not.toBe('admitted');
-  });
-
-  it('signs out a browser holding only the login cookie', async () => {
-    const { jar, expected } = await signedIn();
-    const token = loginToken(jar);
-    const onlyLogin = new CookieJar();
-    onlyLogin.set(LOGIN, jar.get(LOGIN, '.boardsesh.com') ?? '', '.boardsesh.com');
-    const response = await signOut(onlyLogin, expected);
-    expect(response.status).toBe(200);
-    expect(setCookieNames(response)).toContain(LOGIN);
-    expect(await canonicalStatus(token)).not.toBe('admitted');
-  });
-
-  it("keeps NextAuth's CSRF refusal: nothing ends and nothing is cleared", async () => {
-    const { jar, expected } = await signedIn();
-    await csrf(jar);
-    const response = await signOut(jar, expected, 'not-the-csrf-token');
-    expect(setCookieNames(response).filter((name) => SESSION_COOKIE_NAMES.includes(name))).toEqual([]);
-    expect(await canonicalStatus(loginToken(jar))).toBe('admitted');
-  });
-
-  it('answers 503 and clears nothing when the backend is off', async () => {
-    const { jar, expected } = await signedIn();
-    vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'legacy');
-    const response = await signOut(jar, expected);
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: 'signout_authority_unavailable' });
-    expect(setCookies(response)).toEqual([]);
-    vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'backend-staging');
-    expect(await canonicalStatus(loginToken(jar))).toBe('admitted');
+describe('the www cutover list', () => {
+  it('keeps every auth route at 503 in production code while work is listed', async () => {
+    const { browserSessionRouteModeResolver, BROWSER_SESSION_WEB_CUTOVER_BLOCKERS } = await vi.importActual<
+      typeof import('../app/lib/auth/browser-session-mode.server')
+    >('../app/lib/auth/browser-session-mode.server');
+    expect(browserSessionRouteModeResolver(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS)()).toMatchObject({
+      kind: 'unavailable',
+      code: 'AUTH_BROWSER_SESSION_WEB_CUTOVER_INCOMPLETE',
+    });
   });
 });

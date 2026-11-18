@@ -1,0 +1,180 @@
+/**
+ * Shared setup for the `better-auth` proofs (#7596): the real backend
+ * password and web-session handlers over HTTP, the environment both sides
+ * read, climbers in PostgreSQL, and the browser steps against the real route.
+ * Each proof file declares its own `vi.mock` calls and passes its route in.
+ */
+import { randomBytes, randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { Socket } from 'node:net';
+import { hash } from 'bcryptjs';
+import { expect, vi } from 'vite-plus/test';
+import { authEmailProjection, userCredentials, users } from '@boardsesh/db/schema';
+import type { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
+import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
+import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../backend/src/auth/current-store/foundation-context';
+import { createPasswordCompareGate } from '../../backend/src/auth/current-store/password-compare-gate';
+import { createPasswordLoginLimiter } from '../../backend/src/auth/current-store/password-login-limits';
+import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
+import { handleCurrentStoreWebSession } from '../../backend/src/handlers/current-store-web-session';
+import { CookieJar, callRoute, setCookieNames, type AuthRoute } from './route-harness';
+
+type Database = Awaited<ReturnType<typeof createEnvironment>>['database'];
+
+export const COOKIE_SECRET = 'web-session-proof-browser-cookie-secret-7596-b1c';
+export const PASSWORD = 'web session proof password';
+export const LOGIN = '__Secure-boardsesh.session_token';
+export const BRIDGED = '__Secure-boardsesh.bridged_session_token';
+export const LEGACY = '__Secure-next-auth.session-token';
+export const SESSION_COOKIE_NAMES = [LOGIN, BRIDGED, LEGACY, 'next-auth.session-token'];
+export const DOMAIN = '.boardsesh.com';
+
+const rpcSecret = randomBytes(32).toString('base64url');
+const projectionId = `web-session-proof-${randomUUID()}`;
+const sockets = new Set<Socket>();
+
+async function listen(handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) {
+  const server = createServer((request, response) => {
+    void handle(request, response).catch(() => {
+      if (!response.headersSent) response.writeHead(500);
+      response.end();
+    });
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Owned command server failed to bind');
+  return { server, origin: `http://127.0.0.1:${address.port}` };
+}
+
+export type WebSessionBackend = { origin: string; refusingOrigin: string; close: () => Promise<void> };
+
+/**
+ * The real handlers, plus the real web-session handler reached with a browser
+ * `Origin`, which answers its own transport 401 `{ error: 'unauthorized' }`.
+ */
+export async function startWebSessionBackend(database: Database): Promise<WebSessionBackend> {
+  await database.insert(authEmailProjection).values({
+    projectionId,
+    normalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+    writerEpoch: 1,
+    phase: 'enforced',
+    preparedAt: new Date(),
+  });
+  const guards = { limits: createPasswordLoginLimiter({ redis: () => null }), gate: createPasswordCompareGate() };
+  const real = await listen((request, response) =>
+    request.url?.startsWith('/api/internal/auth/current-store/web-session/v1/')
+      ? handleCurrentStoreWebSession(request, response, database)
+      : handleCurrentStoreWebAuth(request, response, database, guards),
+  );
+  const refusing = await listen((request, response) => {
+    request.headers.origin = 'https://www.boardsesh.com';
+    return handleCurrentStoreWebSession(request, response, database);
+  });
+  return {
+    origin: real.origin,
+    refusingOrigin: refusing.origin,
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      for (const server of [real.server, refusing.server])
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+/** Both sides' variables for `better-auth`, on www and on the backend in this one process. */
+export function stubBetterAuthEnvironment(backendOrigin: string): void {
+  for (const [name, content] of Object.entries({
+    AUTH_BROWSER_SESSION_MODE: 'better-auth',
+    AUTH_BROWSER_SESSION_COOKIE_SECRET: COOKIE_SECRET,
+    CURRENT_STORE_AUTH_BACKEND_ORIGIN: backendOrigin,
+    CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
+    CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
+    CURRENT_STORE_WEB_SESSION_MODE: 'backend-staging',
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
+    CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
+    CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
+    CURRENT_STORE_DELETED_EMAIL_KEY: 'web-session-proof-retired-mailbox-key',
+    AUTH_CUTOFF_ENFORCEMENT: 'enforce',
+    EMAIL_VERIFICATION_ENABLED: 'false',
+    DEBUG_SQL: 'false',
+    PARTNER_OAUTH_MODE: 'off',
+  }))
+    vi.stubEnv(name, content);
+}
+
+export async function createClimber(database: Database, { verified = true } = {}) {
+  const id = randomUUID();
+  const email = `web-session-proof-${id}@example.test`;
+  await database.insert(users).values({ id, email, name: 'Climber', emailVerified: verified ? new Date() : null });
+  await database.insert(userCredentials).values({ userId: id, passwordHash: await hash(PASSWORD, 4) });
+  return { id, email };
+}
+
+export function sessionCookieNamesIn(response: Response): string[] {
+  return setCookieNames(response).filter((name) => SESSION_COOKIE_NAMES.includes(name));
+}
+
+/** A browser's steps against the real route. */
+export function browserSteps(route: AuthRoute) {
+  async function csrf(jar: CookieJar): Promise<string> {
+    const response = await callRoute(route, '/api/auth/csrf', { cookie: jar.header() });
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+    jar.apply(response);
+    return ((await response.json()) as { csrfToken: string }).csrfToken;
+  }
+  async function login(jar: CookieJar, email: string, password = PASSWORD, cookie?: string) {
+    const csrfToken = await csrf(jar);
+    const response = await callRoute(route, '/api/auth/callback/credentials', {
+      cookie: cookie === undefined ? jar.header() : `${cookie}; ${jar.header()}`,
+      form: { csrfToken, email, password, json: 'true', callbackUrl: 'https://www.boardsesh.com/' },
+    });
+    jar.apply(response);
+    return response;
+  }
+  /** Session GET or POST; asserts no session cookie is written or cleared. */
+  async function readSession(cookie: string, method: 'GET' | 'POST' = 'GET', csrfToken = '') {
+    const response = await callRoute(route, '/api/auth/session', {
+      cookie,
+      ...(method === 'POST' ? { form: { csrfToken } } : {}),
+    });
+    expect(sessionCookieNamesIn(response)).toEqual([]);
+    return response;
+  }
+  async function signOut(
+    jar: CookieJar,
+    expected: { userId: string; authSessionId: string },
+    options: { csrfToken?: string; cookie?: string } = {},
+  ) {
+    const csrfToken = options.csrfToken ?? (await csrf(jar));
+    return callRoute(route, '/api/auth/signout', {
+      cookie: options.cookie === undefined ? jar.header() : `${options.cookie}; ${jar.header()}`,
+      form: {
+        csrfToken,
+        callbackUrl: 'https://www.boardsesh.com/',
+        json: 'true',
+        expectedUserId: expected.userId,
+        expectedAuthSessionId: expected.authSessionId,
+      },
+    });
+  }
+  return { csrf, login, readSession, signOut };
+}
+
+/** The raw session token inside the Domain-scoped login cookie the jar holds. */
+export function loginToken(jar: CookieJar): string {
+  const signed = jar.get(LOGIN, DOMAIN);
+  if (!signed) throw new Error('No login cookie');
+  return signed.slice(0, signed.indexOf('.'));
+}
+
+export async function canonicalStatus(database: Database, token: string) {
+  return (await readFirstPartySession(database, { kind: 'canonical-token', token })).status;
+}
+
+export async function legacyStatus(database: Database, credential: string, secret: string) {
+  return (await readFirstPartySession(database, { kind: 'legacy-jwe', credential, secret })).status;
+}

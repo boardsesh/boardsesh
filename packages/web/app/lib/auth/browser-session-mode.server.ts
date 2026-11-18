@@ -1,6 +1,14 @@
-import 'server-only';
+// Server code (node:crypto), but without `import 'server-only'`: `instrumentation.ts`
+// runs this check at boot, outside the React server layer that package needs.
+// Nothing here imports a module that does.
 import { createHash } from 'node:crypto';
-import { WEB_SESSION_COMMAND_PATHS, webCredentialProofMode } from '@boardsesh/auth-protocol';
+import {
+  AUTH_COMMAND_ENV,
+  WEB_SESSION_COMMAND_PATHS,
+  parseWebAuthMode,
+  webCredentialProofMode,
+} from '@boardsesh/auth-protocol';
+import { createPrivateAuthCommandTransport } from '@boardsesh/auth-protocol/transport';
 import {
   BROWSER_SESSION_COOKIE_MIN_SECRET_BYTES,
   browserSessionCookieClears,
@@ -8,8 +16,6 @@ import {
 } from '@boardsesh/auth-protocol/browser-session-cookie';
 import { BROWSER_SESSION_MODE_ENV, parseBrowserSessionMode } from '@boardsesh/auth-protocol/browser-session-mode';
 import { webLogger } from '@/app/lib/observability/logger';
-import { createAuthCommandTransport } from './auth-command-transport.server';
-import { webPasswordMode } from './password-command-client.server';
 import { isSecureCookieContext, sessionCookieDomain } from './secure-cookies';
 
 /** www's own secret for the signed session cookie. Used for nothing else. */
@@ -27,8 +33,11 @@ export type BrowserSessionCookieConfiguration = Readonly<{
 export type BrowserSessionRouteMode =
   | { kind: 'legacy' }
   | { kind: 'better-auth'; cookies: BrowserSessionCookieConfiguration }
-  /** An unknown mode value, or `better-auth` without its preconditions: the auth routes answer 503. */
-  | { kind: 'unavailable' };
+  /**
+   * An unknown mode value, or `better-auth` without its preconditions or with
+   * www cutover work still listed: the auth routes answer 503 and a boot fails.
+   */
+  | { kind: 'unavailable'; code: PreconditionCode };
 
 /** One code per missing precondition, logged once per configuration so a failed turn-on names what is missing. */
 export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
@@ -41,7 +50,25 @@ export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
   secretReused: 'AUTH_BROWSER_SESSION_WEB_SECRET_REUSED',
   insecure: 'AUTH_BROWSER_SESSION_WEB_INSECURE_IN_PRODUCTION',
   cookieDomain: 'AUTH_BROWSER_SESSION_WEB_COOKIE_DOMAIN_INVALID',
+  cutoverIncomplete: 'AUTH_BROWSER_SESSION_WEB_CUTOVER_INCOMPLETE',
 });
+
+/**
+ * www work (#7596 Phase B) that must land before a browser can be served the
+ * first-party session end to end. While any entry remains, `better-auth`
+ * resolves to `unavailable` even with every precondition met, as the backend's
+ * `BROWSER_SESSION_CUTOVER_BLOCKERS` refuses to start. Each later www PR
+ * deletes its own entry. No environment variable or flag removes one; only
+ * tests build a resolver with another list (`browserSessionRouteModeResolver`).
+ */
+export const BROWSER_SESSION_WEB_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([
+  'B2B_WWW_LEGACY_COOKIE_BRIDGE',
+  'B3B_WWW_BROWSER_ACCESS_TOKEN',
+  'B4_WWW_SERVER_RENDERS_ON_CANONICAL_SESSION',
+  'B5B_WWW_PROVIDER_SIGN_IN',
+  'B6_PARTNER_CONSENT',
+  'B7_BROWSER_ACCEPTANCE',
+]);
 
 type PreconditionCode =
   (typeof BROWSER_SESSION_WEB_PRECONDITION_ERRORS)[keyof typeof BROWSER_SESSION_WEB_PRECONDITION_ERRORS];
@@ -75,12 +102,21 @@ function betterAuthPreconditions(
 ): { cookies: BrowserSessionCookieConfiguration } | { failed: PreconditionCode } {
   const errors = BROWSER_SESSION_WEB_PRECONDITION_ERRORS;
   try {
-    createAuthCommandTransport({ environment, paths: Object.values(WEB_SESSION_COMMAND_PATHS) });
+    // The same channel rules as `createAuthCommandTransport`, checked without sending anything.
+    createPrivateAuthCommandTransport({
+      environment,
+      fetch,
+      paths: Object.values(WEB_SESSION_COMMAND_PATHS),
+      originKey: AUTH_COMMAND_ENV.origin,
+      secretKey: AUTH_COMMAND_ENV.secret,
+      disallowedSecretKeys: ['NEXTAUTH_SECRET', 'CRON_SECRET'],
+    });
   } catch {
     return { failed: errors.backendChannel };
   }
   try {
-    if (webPasswordMode(environment) !== 'backend-staging') return { failed: errors.webAuthMode };
+    if (parseWebAuthMode(environment[AUTH_COMMAND_ENV.mode]) !== 'backend-staging')
+      return { failed: errors.webAuthMode };
   } catch {
     return { failed: errors.webAuthMode };
   }
@@ -118,41 +154,76 @@ function digest(text: string | undefined): string {
     .digest('base64url');
 }
 
-let checked: { key: string; mode: BrowserSessionRouteMode } | undefined;
+/**
+ * A resolver for `AUTH_BROWSER_SESSION_MODE` that holds `cutoverBlockers`.
+ * Production code uses `browserSessionRouteMode`, built with
+ * `BROWSER_SESSION_WEB_CUTOVER_BLOCKERS`; a boundary test keeps every other
+ * list in tests and proofs.
+ */
+export function browserSessionRouteModeResolver(cutoverBlockers: readonly string[]): () => BrowserSessionRouteMode {
+  const blockers = Object.freeze([...cutoverBlockers]);
+  let checked: { key: string; mode: BrowserSessionRouteMode } | undefined;
+  return () => {
+    const environment = process.env;
+    let mode: ReturnType<typeof parseBrowserSessionMode>;
+    try {
+      mode = parseBrowserSessionMode(environment[BROWSER_SESSION_MODE_ENV]);
+    } catch {
+      const code = BROWSER_SESSION_WEB_PRECONDITION_ERRORS.modeInvalid;
+      logUnavailable(code, digest(environment[BROWSER_SESSION_MODE_ENV]));
+      return { kind: 'unavailable', code };
+    }
+    if (mode === 'legacy') return { kind: 'legacy' };
+    // The cache key is a digest of the checked values; the cached result does
+    // hold the cookie secret itself, in memory, as the environment does.
+    const key = digest(JSON.stringify(CHECKED_VARIABLES.map((name) => environment[name] ?? null)));
+    if (checked?.key === key) return checked.mode;
+    const result = betterAuthPreconditions(environment);
+    let resolved: BrowserSessionRouteMode;
+    if ('failed' in result) resolved = { kind: 'unavailable', code: result.failed };
+    else if (blockers.length > 0)
+      resolved = { kind: 'unavailable', code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.cutoverIncomplete };
+    else resolved = { kind: 'better-auth', cookies: result.cookies };
+    if (resolved.kind === 'unavailable') logUnavailable(resolved.code, key, blockers);
+    checked = { key, mode: resolved };
+    return resolved;
+  };
+}
 
 /**
  * `AUTH_BROWSER_SESSION_MODE`, read on the server for each auth request (never
  * a `NEXT_PUBLIC_*` value, so a rollback needs no rebuild). Unset, empty or
  * `legacy` is `legacy` and touches nothing else: no codec, no secret, no check.
- * `better-auth` checks www's own preconditions once per configuration; with
- * any missing, the auth routes answer 503. Any other value is 503 too.
+ * `better-auth` checks www's own preconditions once per configuration and then
+ * the www cutover list; with a precondition missing or work still listed, the
+ * auth routes answer 503. Any other value is 503 too.
  */
-export function browserSessionRouteMode(): BrowserSessionRouteMode {
-  const environment = process.env;
-  let mode: ReturnType<typeof parseBrowserSessionMode>;
-  try {
-    mode = parseBrowserSessionMode(environment[BROWSER_SESSION_MODE_ENV]);
-  } catch {
-    logUnavailable(BROWSER_SESSION_WEB_PRECONDITION_ERRORS.modeInvalid, digest(environment[BROWSER_SESSION_MODE_ENV]));
-    return { kind: 'unavailable' };
-  }
-  if (mode === 'legacy') return { kind: 'legacy' };
-  // A digest, so no secret is kept beside the result.
-  const key = digest(JSON.stringify(CHECKED_VARIABLES.map((name) => environment[name] ?? null)));
-  if (checked?.key === key) return checked.mode;
-  const result = betterAuthPreconditions(environment);
-  const resolved: BrowserSessionRouteMode =
-    'cookies' in result ? { kind: 'better-auth', cookies: result.cookies } : { kind: 'unavailable' };
-  if ('failed' in result) logUnavailable(result.failed, key);
-  checked = { key, mode: resolved };
-  return resolved;
+export const browserSessionRouteMode = browserSessionRouteModeResolver(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS);
+
+/**
+ * For `instrumentation.ts`: the error that must stop this process from serving,
+ * or undefined. `legacy` (unset, empty) boots as before. A mode that resolves
+ * to `unavailable` fails the boot, so a typo or a missing precondition keeps
+ * the previous deployment serving instead of a healthy-looking one answering
+ * 503 on every auth route.
+ */
+export function browserSessionBootRefusal(
+  resolve: () => BrowserSessionRouteMode = browserSessionRouteMode,
+): Error | undefined {
+  const mode = resolve();
+  return mode.kind === 'unavailable' ? new Error(mode.code) : undefined;
 }
 
 let lastLogged: string | undefined;
-function logUnavailable(code: PreconditionCode, configurationKey: string): void {
+function logUnavailable(code: PreconditionCode, configurationKey: string, blockers: readonly string[] = []): void {
   const marker = `${code}:${configurationKey}`;
   if (lastLogged === marker) return;
   lastLogged = marker;
-  // The code only; never a value.
-  webLogger.error('browser session mode unavailable', { code });
+  // The code (and, for an incomplete cutover, the listed work); never a value.
+  webLogger.error(
+    'browser session mode unavailable',
+    code === BROWSER_SESSION_WEB_PRECONDITION_ERRORS.cutoverIncomplete
+      ? { code, blockers: blockers.join(', ') }
+      : { code },
+  );
 }

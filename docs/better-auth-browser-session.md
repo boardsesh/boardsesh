@@ -342,30 +342,54 @@ least 32 bytes, the cookie secret used for nothing else, a secure context
 whenever `NODE_ENV=production`, and a cookie domain the codec accepts). With
 one missing, or with any other mode value, every `/api/auth/*` route answers
 503 and the log names one `AUTH_BROWSER_SESSION_WEB_*` code, never a value.
+Even with every precondition met, `better-auth` stays `unavailable` while
+`BROWSER_SESSION_WEB_CUTOVER_BLOCKERS` lists www work that has not landed (B2b
+to B7), as the backend's own list refuses to start; each later www PR deletes
+its entry. Only tests build a resolver with another list
+(`browserSessionRouteModeResolver`), which `better-auth-boundary.test.ts`
+checks. `instrumentation.ts` runs the same check at boot and exits when the
+mode would be `unavailable`, so a typo or a missing precondition keeps the
+previous deployment serving instead of a healthy one answering 503. Unset,
+empty and `legacy` boot as before.
 
 Reading the cookies (`browser-session.server.ts`). The `Cookie` header goes to
 the codec as received. A verified login cookie outranks a bridged one. A login
 name sent as differing copies means signed out: neither the bridged nor the
-legacy cookie stands in for it. With no first-party cookie, the legacy NextAuth
-cookie (joined from its chunks) is presented, unless it is longer than
-`LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH` (12,288), in which case nothing is
-presented and the login still goes through. The cookie name never decides
+legacy cookie stands in for it, though a login still presents the legacy
+cookie of the same request so the session it names ends. With no first-party
+cookie, the legacy NextAuth cookie (joined from its chunks) is presented. One
+longer than `LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH` (12,288) is never sent:
+the session read answers signed out, a login goes through presenting nothing,
+and sign-out clears every session cookie without a backend call. The cookie name never decides
 anything about the session; freshness and source come from the session row.
 
 | Request | Under `better-auth` |
 | --- | --- |
 | `POST /api/auth/callback/credentials` | The staged password command with `webSession: { presented }` and the trusted `clientAddress`. A verified login must come back with the session and a credential proof naming the same session id and generation, so NextAuth's unchanged reply writes the legacy cookie for the rollback window on the same session. After NextAuth's own headers come the host-only legacy clear (as today), clears of the bridged name in both scopes, the host-only copy of the login name where the login cookie is written with a Domain (left out on host-only deployments, where it would delete the cookie just written), and the login cookie last. The login cookie name comes from how the session was obtained in this request, never from a session read's `source`. A wrong password or a login awaiting email verification changes no session cookie. A session issued without NextAuth writing its cookie, or the reverse, answers 503. |
-| `POST /api/auth/signout` | The same form fields and the same 400, 409 and 503 answers as today. No session, or a conflicted login cookie, is 409. NextAuth's own handler still checks the CSRF token; a refusal goes back without revocation or clears. The backend `signout` command gets the first-party token when there is one, else the legacy cookie, with the expected viewer. `signed_out` clears both legacy names with every chunk (today's clears) and both first-party names in both scopes, plus the plain names the request carried. `identity_changed` is 409 and an outage is 503, and neither clears anything. |
+| `POST /api/auth/signout` | The same form fields and the same 400, 409 and 503 answers as today. No session, or a conflicted login cookie, is 409. NextAuth's own handler still checks the CSRF token; a refusal goes back without revocation or clears. The backend `signout` command gets the first-party token when there is one, else the legacy cookie, with the expected viewer. `signed_out` clears both legacy names with every chunk (today's clears) and both first-party names in both scopes, plus the plain names the request carried. `identity_changed` is 409 and an outage is 503, and neither clears anything. NextAuth refuses a bad CSRF token by answering exactly `<NEXTAUTH_URL>/api/auth/signout?csrf=true`; only that answer counts as a refusal. |
 | `GET` or `POST /api/auth/session` | With a first-party cookie, the backend `session` command answers in today's JSON shape: `user { name, email, image, id }`, `expires`, `authGeneration` and `authSessionId`, which the session guard keys on. No live session is `{}`, an outage is 503. With only a legacy cookie, the legacy path answers as today (B2 bridges it). Neither writes or clears a session cookie: NextAuth's rewrite of the legacy cookie is removed. |
 | `GET /api/auth/csrf` | The legacy path with every session `Set-Cookie` removed. |
-| Everything else | The legacy path unchanged. Google, Apple and the native transfer still write only the legacy cookie until B4c and B5. |
+| Everything else | The legacy path unchanged. Google, Apple and the native transfer still write only the legacy cookie until B4c and B5; when such a reply writes it, both first-party names are cleared in both scopes too, because it is a login and a stale login cookie would otherwise outrank it. |
 
 A command reply counts only when its body parses as that command's reply, with
 the status that reply is sent with. The transport's 401
 `{ "error": "unauthorized" }`, a 404 `disabled` and any unparseable body are
 unavailable (503), never signed out, so no cookie is cleared on a status
-alone. `packages/web/auth-proofs/web-session-cookie.integration.proof.ts` runs
-the route against the real backend handlers over HTTP and real PostgreSQL.
+alone. `packages/web/auth-proofs/web-session-cookie.integration.proof.ts` and
+`web-session-signout.integration.proof.ts` run the route against the real
+backend handlers over HTTP and real PostgreSQL, with the www list replaced
+through the test seam.
+
+Two costs of keeping NextAuth from rewriting a legacy-only cookie under
+`better-auth`: the profile claims it would have refreshed are never stored, so
+after their five-minute TTL every session read and server render on such a
+browser runs the `userProfiles` query; and the legacy cookie's expiry stops
+sliding, so it ends 30 days after its last write. A rollback keeps such a
+browser signed in only inside that window. A half-published login (the backend
+issued a session but NextAuth wrote no cookie, or the new legacy cookie was not
+admitted) answers 503 with the presented session already ended: the browser is
+signed out and a retry works. This needs the backend's `verification.required`
+and www's `EMAIL_VERIFICATION_ENABLED` set from the same value.
 
 ## One guard in each browser client
 

@@ -24,6 +24,7 @@ export default defineConfig(async (environment) => {
         'auth-proofs/web-credential-proof.integration.proof.ts',
         'auth-proofs/legacy-route-snapshot.integration.proof.ts',
         'auth-proofs/web-session-cookie.integration.proof.ts',
+        'auth-proofs/web-session-signout.integration.proof.ts',
       ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30000,

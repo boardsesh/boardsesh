@@ -8,6 +8,8 @@
     "web-credential-proof.integration.proof.ts",
     "legacy-route-snapshot.integration.proof.ts",
     "web-session-cookie.integration.proof.ts",
+    "web-session-signout.integration.proof.ts",
+    "web-session-harness.ts",
     "route-harness.ts",
     "credential-proof.vite.config.ts",
     "../app/lib/auth/types.ts"

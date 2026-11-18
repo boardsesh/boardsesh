@@ -27,6 +27,7 @@ import {
   sessionCookieNameCandidates,
 } from './secure-cookies';
 import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
+import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import { createWebSessionCommandClient } from './web-session-command-client.server';
 import { responseClearsNextAuthSession } from './web-signout-command.server';
 
@@ -107,9 +108,15 @@ async function nextAuthAcceptedSignOut(response: Response, legacyCookiePresent: 
   }
   if (!destination) return false;
   try {
-    // NextAuth answers a refused CSRF token with its own sign-out page and `csrf=true`.
+    // NextAuth answers a refused CSRF token with exactly `${NEXTAUTH_URL}/api/auth/signout?csrf=true`
+    // (next-auth/core/index.js, POST signout); anything else is the caller's own callbackUrl.
     const url = new URL(destination);
-    return !(url.pathname.endsWith('/signout') && url.searchParams.get('csrf') === 'true');
+    const publicOrigin = resolvePublicAuthOrigin();
+    const refusal =
+      url.pathname === '/api/auth/signout' &&
+      url.search === '?csrf=true' &&
+      (publicOrigin === undefined || url.origin === publicOrigin);
+    return !refusal;
   } catch {
     return false;
   }
@@ -144,6 +151,13 @@ async function signOut(
   // Signed out, or a conflicted login cookie: not the login the tab shows.
   if (session.kind === 'none' || session.kind === 'conflicted')
     return guardedSignOutResponse(409, 'signout_identity_changed');
+  const carriedNames = requestCookieNames(request);
+  const clearEverySessionCookie = (cleared: Response): Response => {
+    appendSignOutSessionCookieClears(cleared, carriedNames);
+    for (const clear of signOutBrowserSessionCookieClears(cookies, carriedNames))
+      cleared.headers.append('Set-Cookie', clear);
+    return cleared;
+  };
 
   const options: NextAuthOptions = {
     ...authOptions,
@@ -159,6 +173,9 @@ async function signOut(
   response.headers.set('Cache-Control', PRIVATE['Cache-Control']);
   // A CSRF refusal goes back as NextAuth wrote it, with no revocation and no clears.
   if (!(await nextAuthAcceptedSignOut(response, legacyCookie !== null))) return withoutSessionSetCookies(response);
+  // A legacy cookie too long for any command reads as signed out everywhere, so
+  // there is no session to end: clearing it is the whole sign-out.
+  if (session.kind === 'oversized-legacy') return clearEverySessionCookie(response);
 
   let outcome: 'signed_out' | 'identity_changed';
   try {
@@ -167,11 +184,7 @@ async function signOut(
     return guardedSignOutResponse(503, 'signout_authority_unavailable');
   }
   if (outcome === 'identity_changed') return guardedSignOutResponse(409, 'signout_identity_changed');
-  const carriedNames = requestCookieNames(request);
-  appendSignOutSessionCookieClears(response, carriedNames);
-  for (const clear of signOutBrowserSessionCookieClears(cookies, carriedNames))
-    response.headers.append('Set-Cookie', clear);
-  return response;
+  return clearEverySessionCookie(response);
 }
 
 /**
@@ -191,7 +204,9 @@ async function readSession(
   } catch {
     return unavailableCredentialResponse();
   }
-  if (session.kind === 'conflicted') return NextResponse.json({}, { headers: PRIVATE });
+  // A conflicted login cookie, or a legacy cookie no command accepts, is signed out.
+  if (session.kind === 'conflicted' || session.kind === 'oversized-legacy')
+    return NextResponse.json({}, { headers: PRIVATE });
   if (session.kind !== 'canonical') return withoutSessionSetCookies(await legacyRoute());
   try {
     const read = await createWebSessionCommandClient().read(session.presented);
@@ -234,5 +249,12 @@ export async function routeBrowserSessionAuth(
   if (request.method === 'POST' && action === 'signout') return signOut(request, context, mode.cookies, legacy);
   if (action === 'session') return readSession(request, mode.cookies, legacy.legacyRoute);
   if (action === 'csrf') return withoutSessionSetCookies(await legacy.legacyRoute());
-  return legacy.legacyRoute();
+  const response = await legacy.legacyRoute();
+  // Google, Apple and the native transfer still sign in on the legacy cookie
+  // alone. That reply is a login, so it also ends any first-party cookie the
+  // browser holds; a stale one would otherwise outrank this newer login.
+  if (responseSetsSessionCookie(response))
+    for (const clear of signOutBrowserSessionCookieClears(mode.cookies, requestCookieNames(request)))
+      response.headers.append('Set-Cookie', clear);
+  return response;
 }
