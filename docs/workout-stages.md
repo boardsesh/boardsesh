@@ -83,8 +83,8 @@ too (`intervalSeconds`, `restSeconds`); only the partner's `climbCount` becomes
 `numberOfClimbs`. A 4x4 is the exception: its fields name sets and reps (`sets`,
 `repsPerSet`, `restBetweenRepsSeconds`, `restBetweenSetsSeconds`), since a set is one
 climb done for every rep. The partner `fourByFour` block (`climbCount`, `rounds` and two
-rests) is still freeform, and how its fields map onto sets and reps is settled when it runs
-natively. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
+rests) keeps its own shape: a `fourByFour` stage paced as rounds, never as sets (see "A
+partner app's 4x4: rounds" below). `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
 Every build offers the three timed kinds (see "Timed blocks" below), so the block card has
@@ -637,6 +637,47 @@ agree on these points:
   onto the climb on the wall counts as a rep too; it never moves the wall by itself (the last
   tick that does has to be fresh), but it can be the set's last.
 
+### A partner app's 4x4: rounds
+
+A partner app's `fourByFour` (#6734, workoutbash1 D1: Marco, 2026-11-18) runs as the coach
+wrote it: `climbCount` different climbs, one go each, then the same climbs again for each of
+its `rounds`, "4 problems, 4 times". The app's own 4x4 (reps × sets on one climb) is
+untouched; this is a pacing variant of the same stage kind, set only by the partner mapping
+(`partner-workout-plan.ts`, `partner-workout-preview.ts`).
+
+- **Queue.** Round 1 is `climbCount` slots at the target grade (across its V band). Every
+  later round is repeat slots (`repeatOfIndex`, see "Building a workout"), so round 2's A
+  is round 1's A under a queue item of its own: its own place in the run, its own ticks in
+  the tick log, its own row in the summary. A repeat is a whole round after its twin, so one
+  climb never fills two pages in a row. A 4x4 of one climb would do exactly that, so it runs
+  as one set of the app's own 4x4 instead: one queue item, a rep per round, the round rest
+  between reps.
+- **Pacing.** `advanceOn: 'round'` with `rounds: { climbsPerRound, restBetweenRoundsSeconds }`
+  (`roundPacing`, `StageRoundPacing`); `restSeconds` is the rest between climbs. Any logged go
+  moves the wall on, a fall included (the timer's `tick` rule): a round is climbed straight
+  through, one go a climb, and a coach's 4x4 counts falls as goes. The rest after a round's
+  last climb is the round rest, after any other climb the climb rest, both at least the 10 s
+  changeover since both move the wall. A climb's round follows its place among the stage's
+  queued climbs, like a 4x4's set (`workoutRunRound`, `WorkoutRunPosition.round`): a removed
+  climb shortens the last round, whose last climb still closes it.
+- **Rollback.** `round` is its own advance value, so every older bundle fails
+  `isWorkoutStagePacing` on it and runs the climbs as an ordinary block on the climber's own
+  rests.
+- **Readout.** "4x4 · Round 2 of 4 · Climb 3 of 4" in the player's top bar and the run card;
+  the rest card after a round's last climb reads "Round 2 done", the run card's clock "Round
+  rest", and the sheet's "Set by your workout" row "4x4 · 4 climbs a round, 0:30 between
+  climbs, 3:00 between rounds".
+- **Crew.** The builder's phone hands each climb's pacing to the crew clock as the climb on
+  the wall changes, so a round's last climb reaches it as the `tick` rule with the round rest
+  as its rest length. No new crew field: the clock already carries a rest length per climb.
+  If the builder's phone sleeps, the crew keeps the last rest it sent, as for any stage.
+- **On the server.** The stored plan keeps `advanceOn: 'round'` and the climb rest; the plan
+  input has no field for the rounds, so a run restored from the server's copy takes its
+  pacing from the partner's own block (`restorePartnerWorkoutRun` with the workout's spec).
+  Each item holds one go (no `repsPerSet`), so the tick map, and the forward-first match for
+  a tick the map lacks, put each round's go on that round's queue item. Session surfaces show
+  the block as "4x4 at V4" with climbs sent of climbs.
+
 ## Building a workout
 
 **Before Start.** The Record tab shows the workout as a list of block cards, and it
@@ -656,8 +697,8 @@ queue A B C D C B A and 5 steps of two climbs queue A B C D E F D C B A. Every w
 carries `repeatOfIndex`, the plan index of its way-up twin (`PlannedClimbSlot`); only
 `decreasing` slots repeat. An even step count plans two peak steps, and those stay two
 different climbs (6 steps queue A B C D B A), so one climb never sits on two pages in a row.
-The slot field is generic on purpose: OTM rounds (#6736) and climb sources (#6739) can mark
-repeats the same way.
+The slot field is generic on purpose: a partner app's 4x4 rounds use it (see "A partner app's
+4x4: rounds"), and OTM rounds (#6736) and climb sources (#6739) can mark repeats the same way.
 
 In the preview (`workout-preview-pool.ts`), a repeat slot takes no climb from a pool and asks
 none for one: once every other slot is filled it copies its twin's climb under a queue item
@@ -1047,8 +1088,8 @@ the fetch, the pools, the preview and Start are unchanged.
   reps × sets on one climb, with a rest between reps and another between sets, which runs the
   doubles, triples, "four more" and laps shapes there (2 to 10 reps, rests from none to an
   hour), logs every go on the right climb and counts both rests in the time estimate. Still
-  open there: a `repeats` partner block (and how the partner `fourByFour` fields map onto
-  sets and reps), a name per shape ("Triples") in the readout, and a crew clock that counts
+  open there: a `repeats` partner block offering the app's reps × sets to partner apps (the
+  partner `fourByFour` runs as rounds instead, see "A partner app's 4x4: rounds"), a name per shape ("Triples") in the readout, and a crew clock that counts
   reps itself instead of following the builder's phone.
 - **Per-stage pacing for untimed blocks.** Timed blocks pace the rest timer (see "Pacing"); a
   volume, pyramid, ladder or grade-focus block built in the app still runs on the climber's own

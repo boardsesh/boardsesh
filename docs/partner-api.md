@@ -687,7 +687,7 @@ Block types, and how Boardsesh runs each one today:
 | `ladder`          | Up the grades, then stop                                                  | yes                 |
 | `gradeFocus`      | N climbs all at the target grade                                          | yes                 |
 | `onTheMinute`     | One climb per interval, the wall advances on its own                      | yes                 |
-| `fourByFour`      | A card with your label and instructions, climbed freestyle (see below)    | no, freeform        |
+| `fourByFour`      | `climbCount` climbs, then the same climbs again for each round (see below) | rolling out, `support` still `freeform` |
 | `limitBouldering` | A few hard problems, long rests, attempts count more than sends           | later               |
 | `freeClimbing`    | Just the instructions text and a timer; the climber picks their own climbs| yes                 |
 
@@ -699,15 +699,23 @@ in the results, so nothing is lost; the app just does not pace those blocks
 for them yet. The create response tells you which is which per block, so you
 can say so in your UI.
 
-A 4x4 built in the app is reps × sets on one climb: a set is one climb done
-once for every rep (a fall counts as a rep), with an optional rest between
-reps, then the rest between sets, and the wall moves to the next climb for the
-next set. There are no rounds of several climbs. A `fourByFour` block keeps
-the fields above and stays freeform, a card with your `label` and
-`instructions`, until we decide how `climbCount`, `rounds` and the two rests
-map onto reps per set, sets and the two rests (tracked in
-[#6734](https://github.com/boardsesh/boardsesh/issues/6734)). That mapping is
-announced before `fourByFour` runs natively.
+A `fourByFour` block runs as you wrote it
+([#6734](https://github.com/boardsesh/boardsesh/issues/6734)): Boardsesh picks
+`climbCount` climbs at `targetGrade` and queues them, then queues the same
+climbs again for each of the `rounds`, so 4 climbs and 4 rounds is 16 goes,
+A B C D four times. Each climb is one go: any logged tick, a fall included,
+moves the wall on. The rest timer runs `restBetweenClimbsSeconds` after a
+climb and `restBetweenRoundsSeconds` after a round's last climb; a rest of `0`
+still leaves 10 seconds to change climbs. With `climbCount: 1` the one climb
+stays on the wall and is climbed once per round, with the round rest between
+goes. Every go is its own tick, on the same climb in each round. This is a
+different shape from the app's own 4x4, which is reps × sets on one climb.
+
+Climbers on an app version from before this still get the card. For that
+reason `support` keeps reporting `freeform` for `fourByFour` for now; it
+changes to `native` once each workout records what the climber's app actually
+ran, so a workout that ran freeform keeps saying so. Both changes are
+announced in the changelog.
 
 ### Grades in a request
 
@@ -1098,10 +1106,9 @@ alongside the public developer guides.
 
 On the roadmap and shaped so none of them changes what is described above:
 
-- `fourByFour` and `limitBouldering` running natively. For `fourByFour` the
-  field mapping onto the app's reps × sets on one climb is decided first
-  (#6734); until then the block stays freeform. When it runs natively, ticks
-  in results gain a position within the block, announced with the mapping.
+- `limitBouldering` running natively, and `support` saying `native` for
+  `fourByFour` (see "Blocks"). Ticks in a `fourByFour` block's results then
+  gain an additive position within the block (round and climb).
 - Rest adherence per block (planned rest vs actual), once blocks are tracked
   on the server instead of inferred from tick timing.
 - Optional effort rating on the session.
