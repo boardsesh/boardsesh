@@ -184,7 +184,10 @@ climb until it holds one tick): the first such climb at or after the one the tic
 went to, in plan order, else the first such climb anywhere, else the last matching one. So a
 climb queued twice fills its first slot before its second, and a tick on a pyramid's way
 down never lands on a way-up copy the climber skipped. `assignWorkoutTicks` groups a
-session's ticks by the same rule when the server sends no tick uuids. A tick that matches nothing
+session's ticks by the same rule when the server sends no tick uuids, given each stage's
+`repsPerSet` (an exhaustive test over small plans holds the two together). Both walk ticks
+oldest first, equal times by tick uuid (`ticksInTimeOrder`), because the tick queries return
+equal times in no fixed order. A tick that matches nothing
 counts as off plan.
 Each climb's reps are its ticks in time order. Every tally counts ticks, the unit the
 session totals use: `sent` is flash plus send ticks, `attempts` is attempt ticks, `skipped`
