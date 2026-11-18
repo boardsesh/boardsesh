@@ -9,12 +9,18 @@ import {
 } from '@boardsesh/auth-protocol';
 import type { CurrentStoreTransaction } from './foundation-context';
 
-/** Caller already holds the gate and subject lock. Never read generation after the reply. */
+/**
+ * Caller already holds the gate and subject lock. Never read generation after
+ * the reply. `authSessionId` is the first-party web session the same command
+ * issued, so the proof and that session share one id; without one the proof
+ * names a fresh id of its own.
+ */
 export async function issueWebCredentialProof(
   transaction: CurrentStoreTransaction,
   userId: string,
   requestedVersion: 1 | undefined,
   provedGeneration?: number,
+  authSessionId: string = randomUUID(),
 ): Promise<WebCredentialProof | undefined> {
   const mode = webCredentialProofMode(process.env);
   if (requestedVersion === undefined) {
@@ -33,7 +39,7 @@ export async function issueWebCredentialProof(
   return {
     version: WEB_CREDENTIAL_PROOF_VERSION,
     userId,
-    authSessionId: randomUUID(),
+    authSessionId,
     generation: provedGeneration ?? cutoff?.generation ?? 0,
     authenticatedAt: new Date(clock.authenticated_at).toISOString(),
     linkGuarded: true,

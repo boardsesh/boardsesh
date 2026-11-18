@@ -175,6 +175,22 @@ function sameSessionEvidence(left: FirstPartySession, right: FirstPartySession):
     left.requiresAccountCutoff === right.requiresAccountCutoff
   );
 }
+/**
+ * The fields a binding row stores. It has no `source`, so a binding session
+ * carries none (never fresh); a commit returns this projection too, so it and
+ * every later read of the binding agree.
+ */
+function storedSession(session: FirstPartySession): FirstPartySession {
+  return Object.freeze({
+    userId: session.userId,
+    authSessionId: session.authSessionId,
+    generation: session.generation,
+    authenticatedAt: session.authenticatedAt,
+    expiresAt: session.expiresAt,
+    requiresAccountCutoff: session.requiresAccountCutoff,
+    linkGuarded: session.linkGuarded,
+  });
+}
 function boundedSession(original: FirstPartySession, current: FirstPartySession): FirstPartySession {
   return Object.freeze({
     ...original,
@@ -269,7 +285,7 @@ async function applySelection(
     (session && session.expiresAt.getTime() <= finished.getTime())
   )
     throw new Error('BROWSER_SELECTION_DEADLINE_PASSED');
-  return { status: 'committed' as const, cursor: cursor(updated), session };
+  return { status: 'committed' as const, cursor: cursor(updated), session: session && storedSession(session) };
 }
 function replay(intent: IntentRow, binding: BindingRow): BrowserBindingCommitResult | undefined {
   if (intent.consumedAt === null) return undefined;
@@ -455,7 +471,7 @@ export async function acknowledgeAnonymousBrowserLoginInTransaction(
   )
     return { status: 'denied' };
   await revalidateIdentityAuthority(transaction, authority);
-  return { status: 'already-committed', cursor: cursor(binding), session: admitted.session };
+  return { status: 'already-committed', cursor: cursor(binding), session: storedSession(admitted.session) };
 }
 
 /** Anonymous login only. Do not look up or lock a selected owner merely to

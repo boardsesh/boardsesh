@@ -320,7 +320,12 @@ describe('dark stable browser binding under the selected identity authority', ()
           linkGuarded: false,
           requiresAccountCutoff: true,
         });
-        if (admitted.status === 'admitted') expect(selected.session).toEqual(admitted.session);
+        if (admitted.status === 'admitted') {
+          // The binding row keeps the evidence fields only; the reader's source stays with the reader.
+          const { source, ...evidence } = admitted.session;
+          expect(source).toBe('login');
+          expect(selected.session).toEqual(evidence);
+        }
         const [stored] = await environment.database.select().from(authBrowserBindings);
         expect(stored.id).toBe(created.cursor.bindingId);
         expect(JSON.stringify(stored)).not.toContain(created.token);
