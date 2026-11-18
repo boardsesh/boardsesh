@@ -83,26 +83,6 @@ interface Fixtures {
 
 const WEB_DIRECTORY = resolve(__dirname, '../..');
 
-/**
- * Product bug found by this suite (#7596 B7b, run 44264579510): under
- * `better-auth` every www session read answers 503. The backend's session read
- * command (`readWebSession`, packages/backend/src/auth/authority/web-session.ts)
- * joins `user_profiles` for the display name and avatar, but it runs on the
- * dedicated credential LOGIN, and no reviewed credential-writer contract
- * (packages/db/src/credential-writer-acl.ts) grants SELECT on `user_profiles`:
- * only INSERT. The handler opens its database only through that LOGIN, so the
- * read fails and is answered `unavailable`. The integration proofs pass because
- * they inject the owner's connection. Every spec that needs a session read is
- * marked with this until the read or the contract is fixed; then they must pass.
- */
-export const SESSION_READ_GRANT_BUG =
-  'Product bug: the web session read selects user_profiles, which the credential LOGIN may not read (503 on every session read)';
-
-/** Marks the running test as failing on SESSION_READ_GRANT_BUG; Playwright flags it once it passes. */
-export function failsOnSessionReadGrant(): void {
-  test.fail(true, SESSION_READ_GRANT_BUG);
-}
-
 /** `database.ts` under tsx, as the global setup runs it. Returns what it printed. */
 function databaseStep<T>(stack: BrowserSessionStack, args: string[]): T {
   const output = execFileSync('vp', ['exec', 'tsx', 'e2e/browser-session/database.ts', ...args], {

@@ -1,7 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { isSameDocument, markDocument, openApp, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
 import { APP_ORIGIN, WS_HOST, WWW_ORIGIN } from './stack';
-import { expect, failsOnSessionReadGrant, test } from './fixtures';
+import { expect, test } from './fixtures';
 
 /**
  * #7596 acceptance 3, under AUTH_BROWSER_SESSION_MODE=better-auth: a response
@@ -65,7 +65,6 @@ test("www: a set-password reply of A's held across a switch to B shows no toast 
   freshAccount,
   accountDatabase,
 }, testInfo) => {
-  failsOnSessionReadGrant();
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
   const accountA = freshAccount();
   const accountB = freshAccount();
@@ -97,7 +96,6 @@ test("app: GraphQL replies of A's held across a switch to B land nowhere and the
   context,
   freshAccount,
 }, testInfo) => {
-  failsOnSessionReadGrant();
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
   const accountA = freshAccount();
   const accountB = freshAccount();
@@ -137,7 +135,6 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
   context,
   freshAccount,
 }, testInfo) => {
-  failsOnSessionReadGrant();
   test.skip(
     testInfo.project.name !== 'chromium-bfcache',
     'Only chromium-bfcache restores pages; WebKit under Playwright never does (bfcache.spec.ts): a real-Safari check.',
@@ -180,7 +177,6 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
   freshAccount,
   stack,
 }, testInfo) => {
-  failsOnSessionReadGrant();
   test.skip(testInfo.project.name === 'chromium-bfcache', 'The back/forward cache project runs the test above.');
   test.skip(
     stack.wwwMode !== 'production',

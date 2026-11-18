@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { openApp, readSession, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
 import { BRIDGED_COOKIE, LEGACY_COOKIE, LOGIN_COOKIE, WWW_ORIGIN } from './stack';
-import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixtures';
+import { expect, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 6, in Chromium and WebKit, by restarting both servers with
@@ -42,7 +42,6 @@ test('rollback keeps browsers signed in through the legacy twin, and a newer leg
   restartStack,
   edgeCookies,
 }) => {
-  failsOnSessionReadGrant();
   const first = freshAccount();
   const second = freshAccount();
   const bystander = await (await openContext()).newPage();
@@ -98,7 +97,6 @@ test('a newer legacy login beside a stale first-party login cookie replaces it',
   legacySession,
   edgeCookies,
 }) => {
-  failsOnSessionReadGrant();
   const stale = freshAccount();
   const newer = freshAccount();
   await signInOnWww(page, stale);

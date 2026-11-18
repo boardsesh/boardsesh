@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { isSameDocument, markDocument, readViewer, signInOnWww, expectSessionReadNames } from './helpers';
 import { WWW_HOST, WWW_ORIGIN } from './stack';
-import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixtures';
+import { expect, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 4, under AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium
@@ -36,7 +36,6 @@ test('on a bridged session it asks for a new sign-in and sets nothing', async ({
   legacySession,
   edgeCookies,
 }) => {
-  failsOnSessionReadGrant();
   const account = freshAccount();
   accountDatabase.removePassword(account);
   const minted = await legacySession.addTo(context, account, 'normal');
@@ -64,7 +63,6 @@ test('on a fresh login it succeeds with no reload and no cookie, and signs the o
   accountDatabase,
   edgeCookies,
 }) => {
-  failsOnSessionReadGrant();
   const account = freshAccount();
   const otherBrowser = await (await openContext()).newPage();
   await signInOnWww(otherBrowser, account);

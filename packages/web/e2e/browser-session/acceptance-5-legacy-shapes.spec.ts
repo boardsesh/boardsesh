@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { fetchWsAuth, openApp, readSession, readViewer } from './helpers';
 import type { LegacySessionShape } from './legacy-session';
 import { BRIDGED_COOKIE, COOKIE_DOMAIN, LOGIN_COOKIE, WWW_HOST, WWW_ORIGIN } from './stack';
-import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixtures';
+import { expect, sessionSetCookies, test } from './fixtures';
 
 /**
  * #7596 acceptance 5 (and #6979 criterion 1), under
@@ -30,7 +30,6 @@ for (const shape of SUPPORTED) {
     legacySession,
     edgeCookies,
   }) => {
-    failsOnSessionReadGrant();
     const account = freshAccount();
     const minted = await legacySession.addTo(context, account, shape);
     const visit = await edgeCookies.during(async () => {

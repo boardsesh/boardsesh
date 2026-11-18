@@ -11,7 +11,7 @@ import {
   expectSessionReadNames,
 } from './helpers';
 import { WS_HOST, WWW_ORIGIN } from './stack';
-import { expect, failsOnSessionReadGrant, test } from './fixtures';
+import { expect, test } from './fixtures';
 
 /**
  * #7596 acceptance 2, under AUTH_BROWSER_SESSION_MODE=better-auth, in Chromium
@@ -78,7 +78,6 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
   openContext,
   freshAccount,
 }) => {
-  failsOnSessionReadGrant();
   const accountA = freshAccount();
   const accountB = freshAccount();
   const wwwPage = await context.newPage();
@@ -130,7 +129,6 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
 });
 
 test('a sign-out on www signs the app subdomain out at its next load', async ({ context, freshAccount }) => {
-  failsOnSessionReadGrant();
   const account = freshAccount();
   const wwwPage = await context.newPage();
   await signInOnWww(wwwPage, account);
