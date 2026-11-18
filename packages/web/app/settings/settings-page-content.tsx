@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import ControllersSection from '@/app/components/account/controllers-section';
 import SetPasswordSection from '@/app/components/account/set-password-section';
+import SignInMethodsSection from '@/app/components/account/sign-in-methods-section';
 import ConnectedAppsSection from '@/app/components/account/connected-apps-section';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -46,7 +47,15 @@ type UserProfile = {
   linkedProviders: string[];
 };
 
-export default function SettingsPageContent() {
+type SettingsPageContentProps = {
+  /**
+   * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B5e2) the sign-in
+   * methods card replaces the set-password card. Off, the page is as before.
+   */
+  signInMethods?: boolean;
+};
+
+export default function SettingsPageContent({ signInMethods = false }: SettingsPageContentProps = {}) {
   const { data: session, status, update } = useSession();
   const router = useLocaleRouter();
   const { t, i18n } = useTranslation('settings');
@@ -169,17 +178,21 @@ export default function SettingsPageContent() {
         <ConsentSettingsCard />
         <MuiDivider sx={{ my: 2 }} />
         <Box id="password">
-          <SetPasswordSection
-            hasPassword={profile?.hasPassword ?? false}
-            userEmail={profile?.email || session?.user?.email || ''}
-            linkedProviders={profile?.linkedProviders ?? []}
-            expectedSession={{
-              userId: profile?.id ?? session?.user?.id ?? '',
-              authSessionId: session?.authSessionId ?? '',
-            }}
-            onAccountChanged={refreshAccount}
-            onPasswordSet={fetchProfile}
-          />
+          {signInMethods ? (
+            <SignInMethodsSection />
+          ) : (
+            <SetPasswordSection
+              hasPassword={profile?.hasPassword ?? false}
+              userEmail={profile?.email || session?.user?.email || ''}
+              linkedProviders={profile?.linkedProviders ?? []}
+              expectedSession={{
+                userId: profile?.id ?? session?.user?.id ?? '',
+                authSessionId: session?.authSessionId ?? '',
+              }}
+              onAccountChanged={refreshAccount}
+              onPasswordSet={fetchProfile}
+            />
+          )}
         </Box>
 
         {/* Draws its own divider, and nothing at all while it has nothing to show. */}

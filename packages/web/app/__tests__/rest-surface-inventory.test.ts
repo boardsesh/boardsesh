@@ -48,7 +48,7 @@ const API_ROOT = join(WEB_ROOT, 'app', 'api');
 type Verdict = 'keep-external' | 'keep-caller';
 
 const VERDICTS: Record<string, Verdict> = {
-  // --- /api/auth/* (11) — session/OAuth/registration, called by www and by
+  // --- /api/auth/* (12) — session/OAuth/registration, called by www and by
   // the mobile app's web auth path (and, for resend-verification, the native
   // store fleet too via the plain app/auth/register.tsx). ---
   'app/api/auth/[...nextauth]/route.ts': 'keep-caller',
@@ -68,6 +68,8 @@ const VERDICTS: Record<string, Verdict> = {
   // The forced re-sign-in's start and its same-account return check (#7596
   // B5e1); 404 with the browser session mode unset. Called by www's own page.
   'app/api/auth/reauthenticate/[action]/route.ts': 'keep-caller',
+  // First password for Apple-only accounts (#7596 B5e2); 404 with the mode unset.
+  'app/api/auth/first-password/[...step]/route.ts': 'keep-caller',
 
   // --- /api/health (1) — Railway's healthcheck target (railway.web.toml).
   // Polled by the platform on every deploy and periodically after; nothing
@@ -268,7 +270,7 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged browser routes it once counted went with #7596; the closed audit
     // stays historical. #7596 B5e1 added the forced re-sign-in route and the
-    // provider-security route.
-    expect(derived.size).toBe(41);
+    // provider-security route; B5e2 the first-password route.
+    expect(derived.size).toBe(42);
   });
 });

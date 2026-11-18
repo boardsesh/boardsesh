@@ -66,8 +66,6 @@ export const BROWSER_SESSION_WEB_CUTOVER_BLOCKERS: readonly string[] = Object.fr
   'B4_WWW_SERVER_RENDERS_ON_CANONICAL_SESSION',
   // Apple sign-in under the mode has no end-to-end proof yet (#7800 review, #7596 B5e1).
   'B5B_WWW_PROVIDER_SIGN_IN',
-  // The Settings page that drives link, unlink and reauthentication, and the first-password page.
-  'B5E2_WWW_PROVIDER_SETTINGS_UI',
   // Apple link is refused (`APPLE_LINK_ENABLED`) until a stand-in proof drives Apple's form_post.
   'B5E1_APPLE_LINK_PROOF',
   'B6_PARTNER_CONSENT',

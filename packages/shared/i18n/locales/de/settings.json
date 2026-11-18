@@ -51,6 +51,10 @@
     "settings": {
       "title": "Einstellungen",
       "description": "Verwalte dein Boardsesh-Konto, dein Profil und deine Einstellungen"
+    },
+    "firstPassword": {
+      "title": "Passwort hinzufügen",
+      "description": "Füge einem Konto, das sich mit Apple anmeldet, ein Passwort hinzu"
     }
   },
   "title": "Einstellungen",
@@ -704,5 +708,56 @@
   },
   "writeRefused": {
     "tryAgain": "Das hat nicht geklappt. Versuch es nochmal."
+  },
+  "signInMethods": {
+    "title": "Anmeldemethoden",
+    "description": "So meldest du dich bei Boardsesh an. Jede Änderung fragt nach, ob du es bist, und meldet dich auf deinen anderen Geräten ab.",
+    "password": "Passwort",
+    "passwordSet": "Festgelegt",
+    "passwordNotSet": "Nicht festgelegt",
+    "connect": "{{provider}} verbinden",
+    "disconnect": "Trennen",
+    "notAvailableYet": "Noch nicht verfügbar",
+    "onlyMethod": "Das ist deine einzige Anmeldemethode. Füge eine weitere hinzu, bevor du sie trennst.",
+    "appleOnly": "Du meldest dich nur mit Apple an. Lege zuerst ein Passwort fest, dann kannst du andere Anmeldemethoden verbinden oder trennen.",
+    "setPassword": "Passwort festlegen",
+    "confirmLink": "Bestätige, dass du es bist, um {{provider}} zu verbinden.",
+    "confirmUnlink": "Bestätige, dass du es bist, um {{provider}} zu trennen.",
+    "passwordLabel": "Passwort",
+    "confirm": "Bestätigen",
+    "continueWithGoogle": "Weiter mit Google",
+    "cancel": "Abbrechen",
+    "wrongPassword": "Dieses Passwort hat nicht funktioniert. Versuch es erneut.",
+    "tryAgainSoon": "Das hat nicht geklappt. Versuch es in einer Minute erneut.",
+    "loadFailed": "Wir konnten deine Anmeldemethoden nicht laden.",
+    "retry": "Erneut versuchen",
+    "results": {
+      "linked": "{{provider}} ist verbunden. Deine anderen Geräte fragen dich erneut nach der Anmeldung.",
+      "unlinked": "{{provider}} ist getrennt. Deine anderen Geräte fragen dich erneut nach der Anmeldung.",
+      "cancelled": "Nichts geändert: Du hast beim Anbieter abgebrochen.",
+      "expired": "Das hat zu lange gedauert. Fang noch einmal an.",
+      "state_mismatch": "Diese Antwort passt nicht zu dieser Anfrage. Fang noch einmal an.",
+      "session_required": "Melde dich erneut an und fang dann noch einmal an.",
+      "identity_changed": "Du bist jetzt mit einem anderen Konto angemeldet.",
+      "provider_not_verified": "Der Anbieter konnte dieses Konto nicht bestätigen. Versuch es erneut.",
+      "unavailable": "Das hat nicht geklappt. Versuch es in einer Minute erneut.",
+      "reauthentication_required": "Diese Anmeldung war nicht frisch genug. Bestätige noch einmal, dass du es bist.",
+      "last_usable_method": "Du kannst deine einzige Anmeldemethode nicht entfernen.",
+      "ownership_conflict": "Dieses Konto ist schon mit einem anderen Boardsesh-Konto verbunden.",
+      "too_many_pending": "Zu viele Änderungen warten noch. Versuch es in 15 Minuten erneut.",
+      "provider_unavailable": "Dieser Anbieter ist gerade nicht verfügbar.",
+      "replayed": "Diese Anfrage wurde schon verwendet. Fang noch einmal an.",
+      "failed": "Das hat nicht funktioniert. Versuch es erneut."
+    }
+  },
+  "firstPassword": {
+    "title": "Passwort hinzufügen",
+    "description": "Wir schicken einen Link an {{email}}. Öffne ihn innerhalb von fünf Minuten in diesem Browser, um dein Passwort zu wählen.",
+    "send": "Link per E-Mail schicken",
+    "sendAgain": "Neuen Link schicken",
+    "sent": "Link an {{email}} geschickt. Öffne ihn innerhalb von fünf Minuten in diesem Browser.",
+    "notEligible": "Dieses Konto hat schon ein Passwort oder eine andere Anmeldemethode. Verwalte es in den Einstellungen.",
+    "tryAgainSoon": "Wir konnten den Link nicht schicken. Versuch es in einer Minute erneut.",
+    "back": "Zurück zu den Einstellungen"
   }
 }

@@ -18,7 +18,9 @@ The request returns a **private mail plan** to an authenticated backend service 
 
 Preparation checks the actual actor and confirmation token before bcrypt work, hashes outside transactions, then locks and rechecks all eligibility and challenge bindings under a new authority receipt. It stores only the pending bcrypt hash and opaque hashes; the selected password remains absent and the challenge unconsumed. It predicts the existing email-verification timestamp, or the stored preparation clock for the confirmed current address, without changing the shared user yet. It mints no token: the presented session continues through finalize, and the prepared row records that token's hash as the credential that continues.
 
-## Web layer (removed in #7596)
+## Web layer (removed in #7596, rebuilt in B5e2)
+
+The rebuilt layer is described in [better-auth-browser-session.md](better-auth-browser-session.md#settings-and-first-password-on-www-b5e2): `/api/auth/first-password/*` (request, status, confirm, recover), `/settings/first-password` and `/auth/confirm-first-password`, under `AUTH_BROWSER_SESSION_MODE=better-auth` only. www calls `sendFirstPasswordConfirmationEmail` with the plan's recipient and token; the operation key is a digest of the challenge token. What follows describes the removed layer.
 
 > **Partly superseded by #7596.** The five routes, the operation cookie and the proof-cookie acknowledgement in this section are the web layer that A5 deletes and B5 rebuilds. `/auth/confirm-first-password` may answer 404 in between; it serves no live flow today. The finalize transaction paragraph is backend core and stays, apart from its browser replacement step. See [better-auth-browser-session.md](better-auth-browser-session.md).
 

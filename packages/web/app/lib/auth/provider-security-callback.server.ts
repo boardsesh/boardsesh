@@ -37,9 +37,17 @@ import { SealedCookieTooLarge } from './sealed-cookie.server';
 const RESUME_PARAM = 'resume';
 const MAX_FORM_BYTES = 16_384;
 
-function redirectTo(context: RouteContext, path: string, result: string, setCookies: readonly string[] = []): Response {
+function redirectTo(
+  context: RouteContext,
+  path: string,
+  result: string,
+  setCookies: readonly string[] = [],
+  provider?: ProviderSecurityProvider,
+): Response {
   const destination = new URL(path, context.publicOrigin);
   destination.searchParams.set('providerSecurity', result);
+  // Which provider the result is about, for the page's copy.
+  if (provider) destination.searchParams.set('provider', provider);
   const response = new Response(null, {
     status: 303,
     headers: { Location: destination.href, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' },
@@ -58,7 +66,13 @@ async function resultRedirect(
   const clear = [clearProviderFlowCookie(context.cookies, record.sameSite)];
   switch (result.kind) {
     case 'committed':
-      return redirectTo(context, record.returnTo, record.action === 'link' ? 'linked' : 'unlinked', clear);
+      return redirectTo(
+        context,
+        record.returnTo,
+        record.action === 'link' ? 'linked' : 'unlinked',
+        clear,
+        record.provider,
+      );
     case 'redirect': {
       const response = new Response(null, {
         status: 303,
@@ -71,7 +85,13 @@ async function resultRedirect(
       const { outcome, code } = result.reply;
       // A flow that ends here gives its intent's slot back (#7805 review, L2).
       if (!result.keep) await abortQuietly(context.client, actor, record.intentToken);
-      return redirectTo(context, record.returnTo, outcome === 'denied' ? code : outcome, result.keep ? [] : clear);
+      return redirectTo(
+        context,
+        record.returnTo,
+        outcome === 'denied' ? code : outcome,
+        result.keep ? [] : clear,
+        record.provider,
+      );
     }
     case 'unavailable':
       // A lost reply may have committed: keep the record so the page can ask `recover`.

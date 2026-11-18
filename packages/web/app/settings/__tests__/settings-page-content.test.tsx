@@ -59,6 +59,10 @@ vi.mock('@/app/components/account/set-password-section', () => ({
   default: () => <div data-testid="set-password-section" />,
 }));
 
+vi.mock('@/app/components/account/sign-in-methods-section', () => ({
+  default: () => <div data-testid="sign-in-methods-section" />,
+}));
+
 // Connected apps fetches its own list; its render coverage is in
 // `components/account/__tests__/connected-apps-section.test.tsx`.
 vi.mock('@/app/components/account/connected-apps-section', () => ({
@@ -92,6 +96,17 @@ describe('SettingsPageContent', () => {
     expect(screen.getByTestId('set-password-section')).toBeTruthy();
     expect(screen.getByTestId('controllers-section')).toBeTruthy();
     expect(screen.getByTestId('connected-apps-section')).toBeTruthy();
+  });
+
+  it('shows no sign-in methods card unless the browser session mode is on (#7596 B5e2)', async () => {
+    await renderSettings();
+    expect(screen.queryByTestId('sign-in-methods-section')).toBeNull();
+  });
+
+  it('under the browser session mode, shows the sign-in methods card instead of set-password', async () => {
+    render(<SettingsPageContent signInMethods />);
+    expect(await screen.findByTestId('sign-in-methods-section')).toBeTruthy();
+    expect(screen.queryByTestId('set-password-section')).toBeNull();
   });
 
   it('renders the page title', async () => {

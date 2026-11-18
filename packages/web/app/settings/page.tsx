@@ -3,6 +3,7 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
+import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
 import SettingsPageContent from './settings-page-content';
 
 export async function generateMetadata() {
@@ -19,7 +20,8 @@ export default async function SettingsPage() {
   const locale = await getLocale();
   return (
     <I18nProvider locale={locale} namespaces={['settings']}>
-      <SettingsPageContent />
+      {/* The sign-in methods card exists only under the browser session mode (#7596 B5e2). */}
+      <SettingsPageContent signInMethods={browserSessionRouteMode().kind === 'better-auth'} />
     </I18nProvider>
   );
 }

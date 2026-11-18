@@ -1458,7 +1458,7 @@ recovered; reauthentication by password and by a fresh Google sign-in work, a
 Google sign-in older than five minutes does not; the last sign-in method stays;
 the mode unset answers 404. Apple is not driven end to end.
 
-**What B5e2 builds on this.** The Settings card (linked identities from
+**What B5e2 builds on this** (done, below). The Settings card (linked identities from
 `methods`, connect and disconnect buttons that POST `start` and then
 `reauthenticate/password` or `reauthenticate/google`, follow `redirect`,
 call `refreshAccessTokenAfterCredentialChange` on `committed`, re-read the
@@ -1466,6 +1466,60 @@ session and retry once on `canonical_session_required`, and read
 `providerSecurity` on return) and the first-password page for Apple-only
 accounts. It removes `B5E2_WWW_PROVIDER_SETTINGS_UI` from the www cutover
 list.
+
+### Settings and first password on www (B5e2)
+
+**Sign-in methods card.** Under `better-auth` the www Settings page shows the
+card "Sign-in methods" in place of the set-password card
+(`sign-in-methods-section.tsx`; with the mode unset the page is as before,
+pinned by a test). It reads `methods` and shows the password state and each
+configured provider: connected (Disconnect), not connected (Connect), or "Not
+available yet" (Apple link, see `APPLE_LINK_ENABLED`). The only sign-in method
+cannot be disconnected and says why. A change runs `start`, then the password
+or "Continue with Google" (which follows the returned redirect), then the
+result: `committed` fetches a new 15-minute token
+(`refreshAccessTokenAfterCredentialChange`), reads `methods` again and says
+so; a wrong password keeps the flow; `unavailable` asks `recover` once and
+then says "try again in a minute" (the backend answers 503 past five
+reauthentication tries a minute per account, so that is not shown as an
+outage); `identity_changed` reloads from the locale root; every other refusal
+has its own message. Back from a provider, the card reads `providerSecurity`
+(and `provider`) from the address, says what happened and removes both. Every
+call goes through the www guard (expected-viewer header) and re-reads the
+session once on `canonical_session_required` (`account-security-client.ts`).
+An Apple-only account (no password, no Google) is sent to set a password
+first.
+
+**First password** (`first-password-route.server.ts`). Routes under
+`/api/auth/first-password/*`, all POST with this site's `Origin`, the
+expected-viewer header, the raw `Cookie` header and the canonical session only;
+404 with the mode unset, 503 unless www's `CURRENT_STORE_FIRST_PASSWORD_MODE`
+is `backend-staging`; no reply writes a session cookie:
+
+| Step | What it does |
+|---|---|
+| `request` | Backend `request` for the live session; www emails the plan's link through `@boardsesh/email` (`sendFirstPasswordConfirmationEmail`) and writes the sealed `__Host-boardsesh.first-password-flow` cookie (challenge and recovery tokens, the account and session that asked). No email, no cookie: asking again supersedes the challenge |
+| `status` `{ operation }` | Whether the emailed link belongs to this browser and session; backend `read` (no write) |
+| `confirm` `{ operation, token, password, confirmPassword }` | Backend `prepare` then `finalize`; on a lost reply one `recover`. `committed` carries `refreshAccessToken: true` |
+| `recover` `{ operation }` | Asks `recover` with the sealed preparation token |
+
+The emailed link is `/auth/confirm-first-password#token=…&operation=…`. The
+fragment never reaches a server, so the GET changes nothing; the page takes
+it out of the address, asks `status`, and shows the password form. A link
+opened in another browser (no flow cookie, or another operation key) answers
+`other_browser`; one opened by another account or another session of the same
+account answers `other_account`; both change nothing and the page says what to
+do. The operation key is a digest of the challenge, never the challenge. The
+same session that asked must finish (the backend checks the token hash too).
+The page `/settings/first-password` asks for the email ("we sent you a link").
+
+`first-password.integration.proof.ts` drives the routes over the real backend
+handlers and real PostgreSQL (only the mail transport is replaced, to read the
+link): the password is set, the session keeps its token and moves its
+generation, a second session ends, the new password signs in; the link fails
+for another session, another account and another browser; a replay is
+refused; a lost `finalize` reply is recovered; a legacy-only browser gets
+`canonical_session_required`; the mode unset answers 404.
 
 ## What is removed, and why
 
