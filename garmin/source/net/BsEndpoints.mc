@@ -100,7 +100,7 @@ module BsEndpoints {
         // note that angle "comes straight from state". climb["angle"] is the
         // climb's native angle and is intentionally NOT used here. Confirm the
         // backend expects the board angle on saveTick.
-        return {
+        var input = {
             "uuid"         => tickUuid,
             "boardType"    => state["boardType"],
             "climbUuid"    => climb["climbUuid"],
@@ -118,5 +118,18 @@ module BsEndpoints {
             "sizeId"       => state["sizeId"],
             "setIds"       => state["setIds"]
         };
+        // The board's own uuid, the field the phone fills from its active
+        // board. On an unlisted spray wall it is the share-link capability
+        // saveTick checks. Forward-compatible: no server puts it in session
+        // state today, and an unlisted spray wall's uuid never will (#7636
+        // decision 1). Only a UUID-length string is sent: the input schema
+        // refuses null or a malformed value (UUIDSchema.optional()), which
+        // would dead-letter a valid send. State without one leaves the body
+        // exactly as before.
+        var boardUuid = state["boardUuid"];
+        if (boardUuid instanceof Lang.String && boardUuid.length() == 36) {
+            input["boardUuid"] = boardUuid;
+        }
+        return input;
     }
 }
