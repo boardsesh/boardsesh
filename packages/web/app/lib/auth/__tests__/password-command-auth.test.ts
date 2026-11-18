@@ -182,6 +182,80 @@ describe('request-local backend password verdict', () => {
   });
 });
 
+describe('a login that asks for a first-party web session (#7596)', () => {
+  const session = { sessionId: 'session-1', token: 'token-1', expiresAt: '2026-12-18T00:00:00.000Z', generation: 3 };
+  const proof = {
+    version: 1 as const,
+    userId: 'selected',
+    authSessionId: 'session-1',
+    generation: 3,
+    authenticatedAt: '2026-11-18T00:00:00.000Z',
+    linkGuarded: true,
+  };
+  const verified = { userId: 'selected', required: false, verified: true };
+  const presented = { kind: 'canonical-token' as const, token: 'previous-token' };
+
+  async function loginWith(answer: PasswordReply) {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    const password = vi.fn(async () => answer);
+    const scoped = createPasswordCommandAuthRequest(base(), () => ({ password, register: vi.fn() }), undefined, null, {
+      presented,
+    });
+    await provider(scoped.options)
+      .authorize({ email: reply.user.email, password: 'x' }, { headers: {} })
+      .catch(() => null);
+    return { scoped, password };
+  }
+
+  it('sends the presented session and keeps the issued one', async () => {
+    const { scoped, password } = await loginWith({
+      ...reply,
+      verification: verified,
+      credentialProof: proof,
+      webSession: session,
+    });
+    expect(password).toHaveBeenCalledWith(reply.user.email, 'x', undefined, { presented });
+    await expect(scoped.options.callbacks?.signIn?.(parameters('selected'))).resolves.toBe(true);
+    expect(scoped.unavailable()).toBe(false);
+    expect(scoped.issuedWebSession()).toEqual(session);
+  });
+
+  it.each([
+    ['no session', { verification: verified, credentialProof: proof }],
+    ['no proof', { verification: verified, webSession: session }],
+    [
+      'a proof for another session',
+      { verification: verified, credentialProof: { ...proof, authSessionId: 'other' }, webSession: session },
+    ],
+    [
+      'a proof at another generation',
+      { verification: verified, credentialProof: { ...proof, generation: 4 }, webSession: session },
+    ],
+    ['a session for an account awaiting verification', { webSession: session, credentialProof: proof }],
+  ])('treats a verified-looking reply with %s as unavailable', async (_case, fields) => {
+    const { scoped } = await loginWith({ ...reply, ...fields });
+    expect(scoped.unavailable()).toBe(true);
+    expect(scoped.issuedWebSession()).toBeUndefined();
+  });
+
+  it('issues nothing and keeps the verification redirect for an account awaiting verification', async () => {
+    const { scoped } = await loginWith(reply);
+    await expect(scoped.options.callbacks?.signIn?.(parameters('selected'))).resolves.toBe(
+      '/auth/verify-request?error=EmailNotVerified',
+    );
+    expect(scoped.unavailable()).toBe(false);
+    expect(scoped.issuedWebSession()).toBeUndefined();
+  });
+
+  it('never asks for a session when the caller did not', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    const password = vi.fn(async () => reply);
+    const scoped = createPasswordCommandAuthRequest(base(), () => ({ password, register: vi.fn() }));
+    await provider(scoped.options).authorize({ email: reply.user.email, password: 'x' }, { headers: {} });
+    expect(password).toHaveBeenCalledWith(reply.user.email, 'x', undefined);
+  });
+});
+
 describe('on the standalone server, whose request URL is its bind address', () => {
   const bindAddress = 'https://0.0.0.0:3000/api/auth/callback/credentials';
   const www = 'https://www.boardsesh.com/auth/error?error=AuthBackendUnavailable';
