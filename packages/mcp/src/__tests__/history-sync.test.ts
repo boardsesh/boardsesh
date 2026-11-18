@@ -227,7 +227,7 @@ describe('local SQLite logbook', () => {
     ).toEqual(['first', 'second']);
   });
 
-  it('marks an interrupted network page dirty before awaiting the backend', async () => {
+  it('marks a network page dirty while awaiting, then clean after a handled failure', async () => {
     const { store, account } = connected();
     await expect(
       syncLogbook(
@@ -241,7 +241,54 @@ describe('local SQLite logbook', () => {
         account,
       ),
     ).rejects.toThrow('connection interrupted');
-    expect(store.getSyncState(account).inFlight).toBe(true);
+    expect(store.getSyncState(account).inFlight).toBe(false);
+  });
+
+  it.each([new McpError('network_unavailable', 'Offline'), new PartnerError(429, 'rate_limited', 'Retry later', 60)])(
+    'resumes committed bootstrap after a handled $code error and CLI exit',
+    async (failure) => {
+      const { store, account } = connected();
+      const { client, paths } = fixtureClient([
+        page([upsert('first')], 'snapshot', true),
+        failure,
+        page([upsert('second')], 'complete'),
+      ]);
+      await expect(syncLogbook(store, client, account)).rejects.toBe(failure);
+      expect(store.getSyncState(account)).toMatchObject({ cursor: 'snapshot', inFlight: false });
+      store.db
+        .update(logbookStates)
+        .set({ stagingOwner: '2147483647' })
+        .where(eq(logbookStates.accountId, account.accountId))
+        .run();
+      store.close();
+      const nextProcess = openStore(store.dataDir);
+      await syncLogbook(nextProcess, client, account);
+      expect(paths[2]).toContain('cursor=snapshot');
+      expect(
+        searchLogbook(nextProcess, account)
+          .ticks.map((entry) => entry.id)
+          .sort((first, second) => String(first).localeCompare(String(second))),
+      ).toEqual(['first', 'second']);
+    },
+  );
+
+  it('does not clear another profile sync marker after switching during a request', async () => {
+    const { store, account } = connected();
+    const replacement = profile({ accountId: 'two', subject: 'usr_two' });
+    await expect(
+      syncLogbook(
+        store,
+        fixtureClient([
+          () => {
+            store.setProfile(replacement);
+            store.beginSync(replacement);
+            throw new McpError('profile_changed', 'Account changed');
+          },
+        ]).client,
+        account,
+      ),
+    ).rejects.toThrow('Account changed');
+    expect(store.getSyncState(replacement).inFlight).toBe(true);
   });
 
   it('opens read-only cache without initializing missing storage or allowing mutations', async () => {
@@ -403,6 +450,57 @@ describe('local SQLite logbook', () => {
     expect(summary.totals).toMatchObject({ ticks: 2, attempts: 4, flashes: 1, sends: 1 });
     expect(summary.groups.map((group) => group.board)).toEqual(['kilter', 'tension']);
     expect(summarizeLogbook(store, account, { board: 'tension' }).totals?.ticks).toBe(1);
+  });
+
+  it('normalizes human board names for searches, summaries and cursor filters', async () => {
+    const { store, account } = connected();
+    await syncLogbook(store, fixtureClient([page([upsert('one'), upsert('two')], 'c1')]).client, account);
+    const first = searchLogbook(store, account, { board: ' Kilter ', limit: 1 });
+    expect(first.ticks).toHaveLength(1);
+    expect(first.filters.board).toBe('kilter');
+    expect(searchLogbook(store, account, { board: 'KILTER', cursor: first.cursor!, limit: 1 }).ticks).toHaveLength(1);
+    expect(summarizeLogbook(store, account, { board: 'Kilter' }).totals?.ticks).toBe(2);
+    expect(() => searchLogbook(store, account, { board: 'kiltre' })).toThrow();
+  });
+
+  it('drops other accounts history on login but keeps the current account mirror', async () => {
+    const { store, account } = connected();
+    await syncLogbook(store, fixtureClient([page([upsert('private-one')], 'c1')]).client, account);
+    const other = profile({ accountId: 'two', subject: 'usr_two' });
+    store.setProfile(other);
+    await syncLogbook(store, fixtureClient([page([upsert('private-two')], 'c2')]).client, other);
+    const reconnected = { ...other, generation: randomUUID() };
+    store.activateProfile(reconnected);
+    expect(store.getProfile()).toEqual(reconnected);
+    expect(
+      store.db
+        .select()
+        .from(logbookTicks)
+        .all()
+        .map((row) => row.tickId),
+    ).toEqual(['private-two']);
+    expect(
+      store.db
+        .select()
+        .from(logbookStates)
+        .all()
+        .map((row) => row.accountId),
+    ).toEqual(['two']);
+    store.activateProfile({ ...account, generation: randomUUID() });
+    expect(store.db.select().from(logbookTicks).all()).toEqual([]);
+    expect(store.getSyncStatus(store.getProfile()!).complete).toBe(false);
+  });
+
+  it('rolls back profile publication and account cleanup when login sync reset fails', async () => {
+    const { store, account } = connected();
+    await syncLogbook(store, fixtureClient([page([upsert('keep-private-one')], 'c1')]).client, account);
+    store.database.exec(`CREATE TRIGGER reject_sync_state BEFORE INSERT ON logbook_states
+      BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END`);
+    const replacement = profile({ accountId: 'two', subject: 'usr_two' });
+    expect(() => store.activateProfile(replacement)).toThrow('injected storage failure');
+    expect(store.getProfile()).toEqual(account);
+    expect(searchLogbook(store, account).ticks.map((entry) => entry.id)).toEqual(['keep-private-one']);
+    expect(store.getSyncState(account).cursor).toBe('c1');
   });
 
   it('binds drafts to account and generation and preserves immutable create identity', () => {

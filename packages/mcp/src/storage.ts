@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, ne } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import type { CreateWorkout } from '@boardsesh/public-api';
@@ -103,6 +103,26 @@ export class LocalStore implements ProfileStore {
         set: { profile },
       })
       .run();
+  }
+
+  /** Publish login and discard other accounts' local history in one transaction. */
+  activateProfile(profile: Profile): void {
+    this.assertWritable();
+    if (profile.authStatus !== 'connected')
+      throw new McpError('invalid_profile', 'Only a connected account can become the active profile.');
+    this.db.transaction((transaction) => {
+      transaction.delete(logbookTicks).where(ne(logbookTicks.accountId, profile.accountId)).run();
+      transaction.delete(logbookStates).where(ne(logbookStates.accountId, profile.accountId)).run();
+      transaction
+        .insert(localSettings)
+        .values({ key: 'profile', profile })
+        .onConflictDoUpdate({
+          target: localSettings.key,
+          set: { profile },
+        })
+        .run();
+      this.resetSync(profile);
+    });
   }
 
   assertProfile(generation: string): Profile {
@@ -242,10 +262,31 @@ export class LocalStore implements ProfileStore {
       throw new McpError('profile_changed', 'The draft belongs to another account.');
     const expiresAt = Date.parse(draft.expiresAt);
     if (!Number.isFinite(expiresAt)) throw new McpError('invalid_input', 'Draft expiry must be an ISO timestamp.');
-    this.db
-      .insert(workoutDrafts)
-      .values({ ...draft, expiresAt })
-      .run();
+    this.db.transaction((transaction) => {
+      // Expired requests may still need reconciliation after an ambiguous POST.
+      // Keep a full seven days after expiry, and retain known remote identities.
+      const expired = transaction
+        .select({ id: workoutDrafts.id })
+        .from(workoutDrafts)
+        .where(and(lt(workoutDrafts.expiresAt, Date.now() - 7 * 86_400_000), isNull(workoutDrafts.result)))
+        .orderBy(asc(workoutDrafts.expiresAt), asc(workoutDrafts.id))
+        .limit(100)
+        .all();
+      if (expired.length > 0)
+        transaction
+          .delete(workoutDrafts)
+          .where(
+            inArray(
+              workoutDrafts.id,
+              expired.map(({ id }) => id),
+            ),
+          )
+          .run();
+      transaction
+        .insert(workoutDrafts)
+        .values({ ...draft, expiresAt })
+        .run();
+    });
   }
 
   getDraft(id: string, profile: Profile): WorkoutDraft | undefined {

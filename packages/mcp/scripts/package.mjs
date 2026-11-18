@@ -3,6 +3,7 @@ import { copyFile, mkdir, chmod, rm, mkdtemp, cp, readFile, writeFile } from 'no
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -49,7 +50,13 @@ try {
   // Stream the archive so GNU tar never interprets a Windows drive-letter
   // filename as a remote host. cwd is resolved by Node on every platform.
   const archive = execFileSync('tar', ['-czf', '-', 'package'], { cwd: stage, maxBuffer: 16 * 1024 * 1024 });
-  await writeFile(path.join(artifacts, `boardsesh-mcp-${manifest.version}.tgz`), archive);
+  const archiveName = `boardsesh-mcp-${manifest.version}.tgz`;
+  await writeFile(path.join(artifacts, archiveName), archive);
+  await writeFile(
+    path.join(artifacts, `${archiveName}.sha256`),
+    `${createHash('sha256').update(archive).digest('hex')}  ${archiveName}\n`,
+  );
+  await copyFile(path.join(packageRoot, 'README.md'), path.join(artifacts, 'INSTALL.md'));
 } finally {
   await rm(stage, { recursive: true, force: true });
 }

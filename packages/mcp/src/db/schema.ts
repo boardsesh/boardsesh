@@ -47,12 +47,16 @@ export const logbookTicks = sqliteTable(
   ],
 );
 
-export const workoutDrafts = sqliteTable('workout_drafts', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  generation: text('generation').notNull(),
-  body: text('body', { mode: 'json' }).$type<CreateWorkout>().notNull(),
-  idempotencyKey: text('idempotency_key').notNull(),
-  expiresAt: integer('expires_at').notNull(),
-  result: text('result', { mode: 'json' }).$type<unknown>(),
-});
+export const workoutDrafts = sqliteTable(
+  'workout_drafts',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    generation: text('generation').notNull(),
+    body: text('body', { mode: 'json' }).$type<CreateWorkout>().notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    result: text('result', { mode: 'json' }).$type<unknown>(),
+  },
+  (table) => [index('workout_drafts_cleanup').on(table.result, table.expiresAt, table.id)],
+);

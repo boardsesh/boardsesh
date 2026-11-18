@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, gte, lte, lt, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
+import { BOARD_TYPES } from '@boardsesh/public-api';
 import { logbookTicks } from './db/schema';
 import { LocalStore } from './storage';
 import { McpError, type Profile } from './types';
@@ -8,7 +9,13 @@ import { McpError, type Profile } from './types';
 const HistoryFilterSchema = z.object({
   since: z.iso.datetime().optional().describe('Inclusive UTC timestamp; defaults to 28 days ago.'),
   until: z.iso.datetime().optional().describe('Inclusive UTC timestamp; defaults to now.'),
-  board: z.string().min(1).max(64).optional(),
+  board: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(z.enum(BOARD_TYPES))
+    .optional()
+    .describe(`Board type (case-insensitive): ${BOARD_TYPES.join(', ')}.`),
   angle: z.number().int().min(0).max(90).optional(),
   status: z.enum(['flash', 'send', 'attempt']).optional(),
   text: z.string().trim().min(1).max(200).optional().describe('Literal substring of climb name or your note.'),

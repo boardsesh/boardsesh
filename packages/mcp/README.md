@@ -6,7 +6,7 @@ Search your Boardsesh logbook in Claude Desktop or Codex, turn a workout screens
 
 This proof of concept includes the Boardsesh MCP **public/native** OAuth client ID. Climbers sign in with their Boardsesh account; they never need a client secret or their own app registration.
 
-Requires Node 22.18 or newer. Build with `vp run package:mcp`; the installable archive is `packages/mcp/artifacts/boardsesh-mcp-0.1.0.tgz`. Install the archive using your package manager, then:
+Requires Node 22.18 or newer. Download the archive, its `.sha256` checksum, and `INSTALL.md` from [GitHub Releases](https://github.com/boardsesh/boardsesh/releases?q=mcp-v). MCP releases are named `mcp-v<VERSION>` and the initial proof-of-concept releases are marked prerelease. After verifying the checksum, install the archive using your package manager. To build from source, run `vp run package:mcp`; the archive is written to `packages/mcp/artifacts/`. Then:
 
 ```sh
 boardsesh-mcp login
@@ -16,7 +16,7 @@ boardsesh-mcp status
 
 Login opens your system browser. `--no-browser` prints a URL instead. The callback listens only on `127.0.0.1` for five minutes. Your password is never entered in the terminal or chat. Sign-in asks for logbook reading, workout reading/writing and continued access through refresh tokens.
 
-An existing profile remembers its client ID. Developers can use `--client-id` or `BOARDSESH_MCP_CLIENT_ID` to select another public/native registration; explicit overrides take precedence over the saved profile and built-in default.
+Developers can use `--client-id` or `BOARDSESH_MCP_CLIENT_ID` to select another public/native registration. Explicit selections are remembered. A normal `login` uses the client ID bundled with the installed release, so a replacement official registration takes effect at the next login. Existing tokens keep their original registration until then. Profiles from the first build with a custom ID retain it as an override.
 
 ## Claude Desktop and Codex
 
@@ -51,7 +51,9 @@ Sync runs at startup and every 15 minutes while the server runs. Initial imports
 
 Offline reads work after the first complete sync. A remote disconnect cannot be detected offline. On confirmed credential invalidation, all clients sharing this profile stop returning cached history until you reconnect. Network outages and rate limits preserve the cache. An uncertain refresh requires login again rather than risking reuse of a spent refresh token.
 
-`logout` disables local access and attempts to revoke this installation's saved refresh token. Its output tells you whether remote revocation succeeded. It does not disconnect every installation of the app. Use Boardsesh Connected apps to end the whole connection. Cached files are retained locally, inaccessible through logged-out tools; remove the data directory yourself if you want to erase them.
+`logout` disables local access and attempts to revoke this installation's saved refresh token. Its output tells you whether remote revocation succeeded. It does not disconnect every installation of the app. Use Boardsesh Connected apps to end the whole connection. Cached files are retained locally, inaccessible through logged-out tools. Logging in as another account removes the previous account's tick rows and sync state; old draft records remain account-isolated. Unresolved drafts are pruned in bounded batches once their expiry is more than seven days old; saved creation results are retained to avoid duplicate workouts. SQLite deletion is not secure disk erasure; remove the data directory yourself if you want to remove the whole profile.
+
+Windows verifies private file permissions on each credential read. This can add PowerShell startup latency; permission verdicts are not cached against file timestamps because ACL changes need not change those timestamps.
 
 ## Tools and limits
 
@@ -71,6 +73,8 @@ Drafts expire after 24 hours and belong to the current account/login generation.
 
 The built-in client is registered through the normal developer console as **public/native**, with `http://127.0.0.1/oauth/boardsesh` as the redirect (runtime ports vary). A Boardsesh global admin can create or edit their registration using **Boardsesh MCP**, the **Boardsesh** publisher, and Boardsesh homepage/privacy URLs. Other developers must use their own branding and URLs. Admin registrations retain the normal ownership, terms, scope, consent, PKCE and connection-limit requirements.
 
-The public client ID is safe to distribute. The standard build includes it; set `BOARDSESH_MCP_PUBLIC_CLIENT_ID` when running `vp run package:mcp` to package a different registration. Never set a client secret. Publication and production partner activation are separate from creating a local build. Follow the partner platform rollout gates and connection limits before inviting climbers.
+The public client ID is safe to distribute. The standard build includes it; set `BOARDSESH_MCP_PUBLIC_CLIENT_ID` when running `vp run package:mcp` to package a different registration. Never set a client secret. Follow the partner platform rollout gates and connection limits before inviting climbers.
+
+After an MCP change merges into `main`, the `Local MCP` workflow builds and tests the archive on Linux, macOS and Windows, verifies Windows credential permissions, then publishes a GitHub prerelease with the archive, SHA-256 checksum and this installation guide. Pull requests and manual validation runs never publish. Release assets come from that same tested workflow artifact. Bump `packages/mcp/package.json` for each new public version; an already-published version is left unchanged. Failed uploads leave a draft that a rerun for the same commit can finish. This does not publish to npm or activate partner access.
 
 Validate with `vp run typecheck:mcp`, `vp test run --project mcp --reporter=agent`, `vp run package:mcp`, and `vp exec node packages/mcp/scripts/smoke.mjs`. Loopback-login tests require permission to listen locally. The desktop CI matrix checks the installed archive on Linux, macOS and Windows. Live consent and phone workout handoff still require an enabled partner environment and a test account.

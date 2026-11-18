@@ -10,7 +10,7 @@ import { Runtime } from './runtime';
 import { login, logout } from './auth';
 import { withProfileLock } from './profile-lock';
 import { LocalStore } from './storage';
-import { McpError, PUBLIC_CLIENT_ID } from './types';
+import { LEGACY_PUBLIC_CLIENT_IDS, McpError, PUBLIC_CLIENT_ID, type Profile } from './types';
 
 declare const __BOARDSESH_MCP_CLIENT_ID__: string;
 const releaseClientId =
@@ -57,17 +57,44 @@ function reportError(error: unknown): void {
   );
 }
 
+export function selectClient(
+  explicit: string | undefined,
+  environment: string | undefined,
+  profile: Profile | undefined,
+  bundled = releaseClientId,
+): { clientId: string; clientIdSource: 'bundled' | 'override' } {
+  const override = explicit ?? environment;
+  if (override !== undefined) return { clientId: override, clientIdSource: 'override' };
+  // The first release stored no provenance. Preserve its custom registrations,
+  // while treating its known official ID as the bundled default.
+  if (
+    profile?.clientIdSource === 'override' ||
+    (profile && !profile.clientIdSource && !LEGACY_PUBLIC_CLIENT_IDS.includes(profile.clientId))
+  ) {
+    return { clientId: profile.clientId, clientIdSource: 'override' };
+  }
+  return { clientId: bundled, clientIdSource: 'bundled' };
+}
+
+export function parseCommandArguments(argumentsList: string[]) {
+  try {
+    return parseArgs({
+      args: argumentsList,
+      allowPositionals: true,
+      options: {
+        'data-dir': { type: 'string' },
+        'client-id': { type: 'string' },
+        'no-browser': { type: 'boolean' },
+        help: { type: 'boolean' },
+      },
+    });
+  } catch {
+    throw new McpError('invalid_command', 'Unknown option or missing option value. Use --help for options.');
+  }
+}
+
 export async function main(argumentsList = process.argv.slice(2)): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args: argumentsList,
-    allowPositionals: true,
-    options: {
-      'data-dir': { type: 'string' },
-      'client-id': { type: 'string' },
-      'no-browser': { type: 'boolean' },
-      help: { type: 'boolean' },
-    },
-  });
+  const { values, positionals } = parseCommandArguments(argumentsList);
   if (values.help) {
     process.stdout.write(help);
     return;
@@ -130,8 +157,11 @@ export async function main(argumentsList = process.argv.slice(2)): Promise<void>
       const store = new LocalStore(dataDir, () => guard.assertHeld());
       try {
         if (command === 'logout') return await logout({ dataDir, store, guard });
-        const clientId =
-          values['client-id'] ?? process.env.BOARDSESH_MCP_CLIENT_ID ?? store.getProfile()?.clientId ?? releaseClientId;
+        const { clientId, clientIdSource } = selectClient(
+          values['client-id'],
+          process.env.BOARDSESH_MCP_CLIENT_ID,
+          store.getProfile(),
+        );
         if (!clientId)
           throw new McpError(
             'client_not_configured',
@@ -142,6 +172,7 @@ export async function main(argumentsList = process.argv.slice(2)): Promise<void>
           store,
           guard,
           clientId,
+          clientIdSource,
           onAuthorizationUrl: (url) => {
             process.stderr.write(`Open this URL in your system browser:\n${url}\n`);
             if (!values['no-browser']) openBrowser(url);

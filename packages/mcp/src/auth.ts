@@ -85,11 +85,37 @@ async function refusal(response: Response): Promise<PartnerError> {
 async function fetchBounded(fetcher: typeof fetch, url: string, options: RequestInit = {}): Promise<Response> {
   try {
     return await fetcher(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(30_000) });
-  } catch {
-    throw new McpError(
+  } catch (cause) {
+    const error = new McpError(
       'network_unavailable',
       'Boardsesh could not be reached. Cached history is still available unless reconnection is required.',
     );
+    Object.defineProperty(error, 'cause', { value: cause, enumerable: false });
+    throw error;
+  }
+}
+
+/** Only connection establishment failures prove the refresh request was never sent. */
+function failedBeforeSend(error: unknown, depth = 0): boolean {
+  if (!record(error) || depth > 5) return false;
+  if (Array.isArray(error.errors)) {
+    return error.errors.length > 0 && error.errors.every((entry) => failedBeforeSend(entry, depth + 1));
+  }
+  if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN' || error.code === 'UND_ERR_CONNECT_TIMEOUT') return true;
+  if ((error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') && error.syscall === 'connect') return true;
+  if (typeof error.code === 'string' && error.code !== 'network_unavailable') return false;
+  return failedBeforeSend(error.cause, depth + 1);
+}
+
+async function revokeIssuedFamily(fetcher: typeof fetch, clientId: string, refreshToken: string): Promise<void> {
+  try {
+    const response = await fetchBounded(fetcher, `${ISSUER}/oauth2/revoke`, {
+      method: 'POST',
+      body: new URLSearchParams({ token: refreshToken, token_type_hint: 'refresh_token', client_id: clientId }),
+    });
+    await response.body?.cancel();
+  } catch {
+    // Best effort cleanup must never replace the original login error or expose tokens.
   }
 }
 
@@ -225,8 +251,16 @@ export class ApiClient implements PartnerClient {
             resource: RESOURCE,
           }),
         });
-      } catch {
-        return reconnect(this.options, profile);
+      } catch (error) {
+        if (!failedBeforeSend(error)) return reconnect(this.options, profile);
+        this.current(profile);
+        await writeCredentials(
+          this.options.dataDir,
+          { ...credentials, refreshOwnerPid: undefined },
+          this.options.guard,
+        );
+        resolved = true;
+        throw error;
       }
       this.current(profile);
       if (!response.ok) {
@@ -346,6 +380,7 @@ export class ApiClient implements PartnerClient {
 
 export interface LoginOptions extends AuthOptions {
   clientId: string;
+  clientIdSource?: 'bundled' | 'override';
   onAuthorizationUrl?: (url: string) => void | Promise<void>;
   timeoutMs?: number;
 }
@@ -480,46 +515,51 @@ export async function login(options: LoginOptions): Promise<Profile> {
   const tokens = TokenResponseSchema.safeParse(await readJson(exchange, 65_536));
   if (!tokens.success)
     throw new McpError('invalid_response', 'OAuth did not return usable access and refresh tokens. Restart login.');
-  const identity = await fetchBounded(fetcher, `${API_ORIGIN}/v1/me`, {
-    headers: { Authorization: `Bearer ${tokens.data.access_token}` },
-  });
-  if (!identity.ok) throw await refusal(identity);
-  const climber = await readJson(identity, 65_536);
-  if (!record(climber) || typeof climber.id !== 'string' || !climber.id) {
-    throw new McpError('invalid_response', 'Boardsesh did not return a partner account identity.');
-  }
-  assertUnchanged();
-  const profile: Profile = {
-    issuer: ISSUER,
-    clientId: options.clientId,
-    subject: climber.id,
-    accountId: createHash('sha256')
-      .update(JSON.stringify([ISSUER, options.clientId, climber.id]))
-      .digest('hex'),
-    generation: randomUUID(),
-    authStatus: 'connected',
-    scopes: tokens.data.scope?.split(' ').filter(Boolean) ?? [...SCOPES],
-  };
-  // A crash between the file and DB writes leaves a generation mismatch; network
-  // access then requires reconnect rather than accidentally using another account.
-  await writeCredentials(
-    options.dataDir,
-    {
-      version: 1,
+  try {
+    const identity = await fetchBounded(fetcher, `${API_ORIGIN}/v1/me`, {
+      headers: { Authorization: `Bearer ${tokens.data.access_token}` },
+    });
+    if (!identity.ok) throw await refusal(identity);
+    const climber = await readJson(identity, 65_536);
+    if (!record(climber) || typeof climber.id !== 'string' || !climber.id) {
+      throw new McpError('invalid_response', 'Boardsesh did not return a partner account identity.');
+    }
+    assertUnchanged();
+    const profile: Profile = {
       issuer: ISSUER,
-      clientId: profile.clientId,
-      accountId: profile.accountId,
-      generation: profile.generation,
-      accessToken: tokens.data.access_token,
-      refreshToken: tokens.data.refresh_token,
-      refreshPending: false,
-    },
-    options.guard,
-  );
-  assertUnchanged();
-  options.store.setProfile(profile);
-  options.store.resetSync(profile);
-  return profile;
+      clientId: options.clientId,
+      clientIdSource: options.clientIdSource ?? 'override',
+      subject: climber.id,
+      accountId: createHash('sha256')
+        .update(JSON.stringify([ISSUER, options.clientId, climber.id]))
+        .digest('hex'),
+      generation: randomUUID(),
+      authStatus: 'connected',
+      scopes: tokens.data.scope?.split(' ').filter(Boolean) ?? [...SCOPES],
+    };
+    // A crash between the file and DB writes leaves a generation mismatch; network
+    // access then requires reconnect rather than accidentally using another account.
+    await writeCredentials(
+      options.dataDir,
+      {
+        version: 1,
+        issuer: ISSUER,
+        clientId: profile.clientId,
+        accountId: profile.accountId,
+        generation: profile.generation,
+        accessToken: tokens.data.access_token,
+        refreshToken: tokens.data.refresh_token,
+        refreshPending: false,
+      },
+      options.guard,
+    );
+    assertUnchanged();
+    options.store.activateProfile(profile);
+    return profile;
+  } catch (error) {
+    await revokeIssuedFamily(fetcher, options.clientId, tokens.data.refresh_token);
+    throw error;
+  }
 }
 
 export async function logout(options: AuthOptions): Promise<{ remoteRevoked: boolean }> {

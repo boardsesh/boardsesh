@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalStore } from '../storage';
 import { prepareWorkout, createWorkout, cancelWorkout, getWorkout, listWorkouts } from '../workouts';
+import { workoutDrafts } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { ISSUER, McpError, PartnerError, type Profile, type PartnerClient } from '../types';
 
 const profile: Profile = {
@@ -126,6 +128,66 @@ describe('workout handoff', () => {
     store.setProfile(other);
     await expect(createWorkout(store, client, other, draft.draftId, now)).rejects.toThrow('does not belong');
     expect(client.request).not.toHaveBeenCalled();
+  });
+
+  it('prunes at most 100 expired unresolved drafts while preserving reconciliation and saved results', () => {
+    const cutoff = Date.now() - 7 * 86_400_000;
+    const template = {
+      accountId: profile.accountId,
+      generation: profile.generation,
+      body: { ...plan, externalRef: 'original-external-ref' },
+      idempotencyKey: 'original-key',
+    };
+    const old = Array.from({ length: 101 }, (_, index) => ({
+      ...template,
+      id: `old-${index}`,
+      expiresAt: cutoff - 1,
+    }));
+    store.db
+      .insert(workoutDrafts)
+      .values([
+        ...old,
+        { ...template, id: 'reconcile-seven-days', expiresAt: cutoff + 60_000 },
+        { ...template, id: 'saved-result', expiresAt: cutoff - 86_400_000, result: { id: 'wk_original' } },
+      ])
+      .run();
+    prepareWorkout(store, profile, plan);
+    const remaining = store.db.select().from(workoutDrafts).all();
+    expect(remaining.filter((draft) => draft.id.startsWith('old-'))).toHaveLength(1);
+    expect(store.getDraft('reconcile-seven-days', profile)).toMatchObject({
+      body: template.body,
+      idempotencyKey: 'original-key',
+    });
+    expect(store.getDraft('saved-result', profile)?.result).toEqual({ id: 'wk_original' });
+    prepareWorkout(store, profile, plan);
+    expect(
+      store.db
+        .select()
+        .from(workoutDrafts)
+        .all()
+        .filter((draft) => draft.id.startsWith('old-')),
+    ).toHaveLength(0);
+    expect(store.getDraft('saved-result', profile)?.result).toEqual({ id: 'wk_original' });
+  });
+
+  it('keeps a near-seven-day ambiguous request reconcilable after preparing another workout', async () => {
+    const prepared = prepareWorkout(store, profile, plan);
+    store.db
+      .update(workoutDrafts)
+      .set({ expiresAt: Date.now() - 6 * 86_400_000 })
+      .where(eq(workoutDrafts.id, prepared.draftId))
+      .run();
+    const original = store.getDraft(prepared.draftId, profile)!;
+    prepareWorkout(store, profile, plan);
+    const request = vi.fn<PartnerClient['request']>().mockResolvedValue({
+      workouts: [readWorkout(prepared)],
+      cursor: null,
+      hasMore: false,
+    });
+    const recovered = await createWorkout(store, { request }, profile, prepared.draftId);
+    expect(recovered.id).toBe('wk_example');
+    expect(request.mock.calls.every(([, , options]) => options?.method !== 'POST')).toBe(true);
+    expect(store.getDraft(prepared.draftId, profile)?.idempotencyKey).toBe(original.idempotencyKey);
   });
 
   it('does not turn a started-workout cancellation conflict into success', async () => {

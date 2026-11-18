@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import * as fileSystem from 'node:fs/promises';
+import { chmod, lstat, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,11 @@ import { readCredentials, writeCredentials } from '../credentials';
 import * as credentialsModule from '../credentials';
 import { ensurePrivateDirectory, withProfileLock, type ProfileLock } from '../profile-lock';
 import { API_ORIGIN, ISSUER, RESOURCE, SCOPES, McpError, type Profile, type ProfileStore } from '../types';
+import { createPrivateWindowsFile } from '../windows-security';
+
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs/promises')>()),
+}));
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -22,6 +28,10 @@ class MemoryStore implements ProfileStore {
   }
   setProfile(profile: Profile) {
     this.profile = profile;
+  }
+  activateProfile(profile: Profile) {
+    this.profile = profile;
+    this.resetSync();
   }
   assertProfile(generation: string) {
     if (!this.profile || this.profile.generation !== generation || this.profile.authStatus !== 'connected') {
@@ -212,7 +222,7 @@ describe('OAuth API credentials', () => {
     });
   });
 
-  it.each(['invalid_grant', 'lost-response', 'malformed-success', 'server-error'])(
+  it.each(['invalid_grant', 'lost-response', 'malformed-success', 'server-error', 'gateway-error'])(
     'blocks local reads after %s during refresh without replay',
     async (failure) => {
       const { dataDir, store, profile } = await fixture();
@@ -222,6 +232,7 @@ describe('OAuth API credentials', () => {
           if (failure === 'lost-response') throw new Error('secret old-refresh must not leak');
           if (failure === 'malformed-success') return json({ access_token: 'incomplete' });
           if (failure === 'server-error') return json({ error: 'server_error' }, 503);
+          if (failure === 'gateway-error') return json({ error: 'bad_gateway' }, 502);
           return json({ error: 'invalid_grant' }, 400);
         });
         const options = { dataDir, store, guard, fetch: fetcher };
@@ -234,6 +245,62 @@ describe('OAuth API credentials', () => {
       });
     },
   );
+
+  it.each([
+    { code: 'ENOTFOUND' },
+    { code: 'EAI_AGAIN' },
+    { code: 'ECONNREFUSED', syscall: 'connect' },
+    { code: 'ETIMEDOUT', syscall: 'connect' },
+    { code: 'UND_ERR_CONNECT_TIMEOUT' },
+    new AggregateError([{ code: 'ECONNREFUSED', syscall: 'connect' }, { code: 'ENOTFOUND' }]),
+  ])('keeps a refresh token usable after a proven pre-send failure %j', async (cause) => {
+    const { dataDir, store, profile } = await fixture();
+    await withProfileLock(dataDir, async (guard) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ error: 'invalid_token' }, 401))
+        .mockRejectedValueOnce(new TypeError('fetch failed', { cause }))
+        .mockResolvedValueOnce(json({ error: 'invalid_token' }, 401))
+        .mockResolvedValueOnce(json({ token_type: 'Bearer', access_token: 'new-access', refresh_token: 'new-refresh' }))
+        .mockResolvedValueOnce(json({ id: 'usr_climber' }));
+      const options = { dataDir, store, guard, fetch: fetcher };
+      await seed(options, profile);
+      const client = new ApiClient(options);
+      await expect(client.request(profile, '/v1/me')).rejects.toMatchObject({ code: 'network_unavailable' });
+      expect(await readCredentials(dataDir)).toMatchObject({ refreshPending: false, refreshToken: 'old-refresh' });
+      expect(await readCredentials(dataDir)).not.toHaveProperty('refreshOwnerPid');
+      await expect(assertCachedCredentials({ dataDir, store })).resolves.toEqual(profile);
+      await expect(client.request(profile, '/v1/me')).resolves.toEqual({ id: 'usr_climber' });
+      const refreshCalls = fetcher.mock.calls.filter(([url]) => requestUrl(url).endsWith('/oauth2/token'));
+      expect(refreshCalls).toHaveLength(2);
+      expect(
+        refreshCalls.map(([, request]) => (request?.body as URLSearchParams | undefined)?.get('refresh_token')),
+      ).toEqual(['old-refresh', 'old-refresh']);
+    });
+  });
+
+  it.each([
+    { code: 'ECONNRESET' },
+    { code: 'ETIMEDOUT', syscall: 'write' },
+    { code: 'UND_ERR_HEADERS_TIMEOUT' },
+    { code: 'UND_ERR_SOCKET' },
+    { code: 'ECONNRESET', cause: { code: 'ENOTFOUND' } },
+    new AggregateError([{ code: 'ENOTFOUND' }, { code: 'ECONNRESET' }]),
+  ])('never retries a possibly sent refresh after %j', async (cause) => {
+    const { dataDir, store, profile } = await fixture();
+    await withProfileLock(dataDir, async (guard) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ error: 'invalid_token' }, 401))
+        .mockRejectedValueOnce(new TypeError('fetch failed', { cause }));
+      const options = { dataDir, store, guard, fetch: fetcher };
+      await seed(options, profile);
+      const client = new ApiClient(options);
+      await expect(client.request(profile, '/v1/me')).rejects.toMatchObject({ code: 'reconnect_required' });
+      await expect(client.request(profile, '/v1/me')).rejects.toMatchObject({ code: 'reconnect_required' });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+  });
 
   it('recovers an interrupted refresh before offline reads or further network activity', async () => {
     const { dataDir, store, profile } = await fixture();
@@ -420,6 +487,7 @@ describe('browser login', () => {
         accessToken: 'new-access',
       });
       expect(store.resetCount).toBe(1);
+      expect(connected.clientIdSource).toBe('override');
       expect(fetcher).toHaveBeenCalledTimes(3);
     });
   });
@@ -461,6 +529,90 @@ describe('browser login', () => {
     });
   });
 
+  it.each(['identity-failure', 'identity-malformed', 'profile-change', 'revocation-offline', 'activation-failure'])(
+    'revokes only the newly issued family after login cannot finish: %s',
+    async (failure) => {
+      const { dataDir, store, profile } = await fixture();
+      await withProfileLock(dataDir, async (guard) => {
+        await seed({ dataDir, store, guard }, profile);
+        if (failure === 'activation-failure') {
+          store.activateProfile = () => {
+            throw new McpError('storage_unavailable', 'Profile transaction failed.');
+          };
+        }
+        const revoked: URLSearchParams[] = [];
+        const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+          const address = requestUrl(input);
+          if (address.includes('.well-known'))
+            return json({
+              issuer: ISSUER,
+              authorization_endpoint: `${ISSUER}/oauth2/authorize`,
+              token_endpoint: `${ISSUER}/oauth2/token`,
+              code_challenge_methods_supported: ['S256'],
+            });
+          if (address.endsWith('/oauth2/token'))
+            return json({ token_type: 'Bearer', access_token: 'new-access', refresh_token: 'new-refresh' });
+          if (address.endsWith('/oauth2/revoke')) {
+            revoked.push(init?.body as URLSearchParams);
+            if (failure === 'revocation-offline') throw new Error('offline');
+            return new Response(null, { status: 200 });
+          }
+          if (failure === 'profile-change') {
+            store.setProfile({ ...profile, generation: randomUUID() });
+            return json({ id: 'usr_new_climber' });
+          }
+          if (failure === 'activation-failure') return json({ id: 'usr_new_climber' });
+          if (failure === 'identity-malformed') return json({ name: 'no ID' });
+          return json({ error: 'temporarily_unavailable' }, 503);
+        });
+        await expect(
+          login({
+            dataDir,
+            store,
+            guard,
+            clientId: 'new-client',
+            fetch: fetcher,
+            onAuthorizationUrl: async (address) => {
+              const authorization = new URL(address);
+              const callback = new URL(authorization.searchParams.get('redirect_uri')!);
+              callback.search = new URLSearchParams({
+                code: 'one-use-code',
+                state: authorization.searchParams.get('state')!,
+                iss: ISSUER,
+              }).toString();
+              await (await fetch(callback)).text();
+            },
+          }),
+        ).rejects.toMatchObject({
+          code:
+            failure === 'profile-change'
+              ? 'profile_changed'
+              : failure === 'identity-malformed'
+                ? 'invalid_response'
+                : failure === 'activation-failure'
+                  ? 'storage_unavailable'
+                  : 'temporarily_unavailable',
+        });
+        expect(revoked.map((body) => Object.fromEntries(body))).toEqual([
+          { token: 'new-refresh', token_type_hint: 'refresh_token', client_id: 'new-client' },
+        ]);
+        if (failure === 'activation-failure') {
+          expect(await readCredentials(dataDir)).toMatchObject({ refreshToken: 'new-refresh' });
+          expect(store.getProfile()).toEqual(profile);
+          await expect(assertCachedCredentials({ dataDir, store })).rejects.toMatchObject({
+            code: 'reconnect_required',
+          });
+        } else {
+          expect(await readCredentials(dataDir)).toMatchObject({
+            refreshToken: 'old-refresh',
+            generation: profile.generation,
+          });
+        }
+        expect(store.resetCount).toBe(0);
+      });
+    },
+  );
+
   it('fences a callback if the profile changed before token exchange', async () => {
     const { dataDir, store, profile } = await fixture();
     await withProfileLock(dataDir, async (guard) => {
@@ -500,6 +652,56 @@ describe('browser login', () => {
 });
 
 describe('local credential files and locking', () => {
+  it('retries an atomic credential replacement without blocking cached history', async () => {
+    const { dataDir, store, profile } = await fixture();
+    await withProfileLock(dataDir, async (guard) => seed({ dataDir, store, guard }, profile));
+    const filename = join(dataDir, 'credentials.json');
+    const replacement = join(dataDir, 'replacement.json');
+    const credentials = await readCredentials(dataDir);
+    await createPrivateWindowsFile(replacement);
+    await writeFile(replacement, JSON.stringify({ ...credentials, refreshToken: 'rotated-refresh' }), { mode: 0o600 });
+    const originalOpen = fileSystem.open;
+    const opening = vi.spyOn(fileSystem, 'open').mockImplementationOnce(async (...argumentsList) => {
+      await rename(replacement, filename);
+      return originalOpen(...argumentsList);
+    });
+    try {
+      await expect(assertCachedCredentials({ dataDir, store })).resolves.toEqual(profile);
+      expect(opening).toHaveBeenCalledTimes(2);
+    } finally {
+      opening.mockRestore();
+    }
+    expect(await readCredentials(dataDir)).toMatchObject({ refreshToken: 'rotated-refresh' });
+  });
+
+  it('bounds repeated inode races and never retries unsafe replacement permissions', async () => {
+    const { dataDir, store, profile } = await fixture();
+    await withProfileLock(dataDir, async (guard) => seed({ dataDir, store, guard }, profile));
+    const filename = join(dataDir, 'credentials.json');
+    const contents = await readFile(filename, 'utf8');
+    const originalOpen = fileSystem.open;
+    let mode = 0o600;
+    const opening = vi.spyOn(fileSystem, 'open').mockImplementation(async (...argumentsList) => {
+      const replacement = join(dataDir, `${randomUUID()}.json`);
+      await createPrivateWindowsFile(replacement);
+      await writeFile(replacement, contents, { mode });
+      await rename(replacement, filename);
+      return originalOpen(...argumentsList);
+    });
+    try {
+      await expect(readCredentials(dataDir)).rejects.toMatchObject({ code: 'credentials_changed' });
+      expect(opening).toHaveBeenCalledTimes(3);
+      if (process.platform !== 'win32') {
+        opening.mockClear();
+        mode = 0o644;
+        await expect(readCredentials(dataDir)).rejects.toMatchObject({ code: 'unsafe_credentials' });
+        expect(opening).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      opening.mockRestore();
+    }
+  });
+
   it('writes owner-only credentials and rejects symlinks or broad permissions', async () => {
     const { dataDir, store, profile } = await fixture();
     await withProfileLock(dataDir, async (guard) => {

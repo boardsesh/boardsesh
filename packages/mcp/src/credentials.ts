@@ -21,30 +21,47 @@ const CredentialsSchema = z.object({
 export type Credentials = z.infer<typeof CredentialsSchema>;
 
 export async function readCredentials(directory: string): Promise<Credentials | undefined> {
+  // The writer atomically replaces this file while lock-free cache readers run.
+  // Retry only that identity race; permissions and malformed data fail at once.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await readCredentialSnapshot(directory);
+    } catch (error) {
+      if (!(error instanceof McpError) || error.code !== 'credentials_changed' || attempt === 2) throw error;
+    }
+  }
+  throw new McpError('credentials_changed', 'Credentials changed while being opened. Retry the operation.');
+}
+
+async function readCredentialSnapshot(directory: string): Promise<Credentials | undefined> {
   const filename = join(directory, 'credentials.json');
   const attributes = await lstat(filename).catch((error: unknown) => {
     if (isMissing(error)) return undefined;
     throw error;
   });
   if (!attributes) return undefined;
+  const assertSafe = (entry: typeof attributes) => {
+    if (
+      !entry.isFile() ||
+      entry.isSymbolicLink() ||
+      entry.size > 65_536 ||
+      (process.getuid && entry.uid !== process.getuid()) ||
+      (process.platform !== 'win32' && (entry.mode & 0o077) !== 0)
+    ) {
+      throw new McpError(
+        'unsafe_credentials',
+        'Credentials must be an owner-readable regular file. Run login again after correcting its permissions.',
+      );
+    }
+  };
+  assertSafe(attributes);
   await assertPrivateWindowsFile(filename);
-  if (
-    !attributes.isFile() ||
-    attributes.isSymbolicLink() ||
-    attributes.size > 65_536 ||
-    (process.getuid && attributes.uid !== process.getuid()) ||
-    (process.platform !== 'win32' && (attributes.mode & 0o077) !== 0)
-  ) {
-    throw new McpError(
-      'unsafe_credentials',
-      'Credentials must be an owner-readable regular file. Run login again after correcting its permissions.',
-    );
-  }
   const handle = await open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const opened = await handle.stat();
-    if (opened.ino !== attributes.ino || opened.dev !== attributes.dev || opened.size > 65_536) {
-      throw new McpError('unsafe_credentials', 'Credentials changed while being opened. Retry login.');
+    assertSafe(opened);
+    if (opened.ino !== attributes.ino || opened.dev !== attributes.dev) {
+      throw new McpError('credentials_changed', 'Credentials changed while being opened. Retry the operation.');
     }
     const parsed: unknown = JSON.parse(await handle.readFile('utf8'));
     const result = CredentialsSchema.safeParse(parsed);
