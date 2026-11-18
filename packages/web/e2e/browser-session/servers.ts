@@ -26,8 +26,15 @@ export interface ServerSpec {
   environment: Environment;
 }
 
-/** Names to a value, or to null to unset one. Applies to both servers. */
+/** Names to a value, or to null to unset one. */
 export type EnvironmentOverrides = Record<string, string | null>;
+
+/** `env` applies to both servers; `backendEnv` and `webEnv` to one each, after `env`. */
+export interface RestartOverrides {
+  env?: EnvironmentOverrides;
+  backendEnv?: EnvironmentOverrides;
+  webEnv?: EnvironmentOverrides;
+}
 
 /** Pages www compiles on first use under `next dev`, visited once so no spec pays for it. */
 const WARM_PATHS = ['/settings', '/auth/signout', '/api/auth/csrf', '/api/auth/session', '/api/internal/ws-auth'];
@@ -63,9 +70,12 @@ export class ServerSet {
     return this.running;
   }
 
-  async start(overrides: EnvironmentOverrides = {}): Promise<void> {
+  async start({ env = {}, backendEnv = {}, webEnv = {} }: RestartOverrides = {}): Promise<void> {
     this.running = this.specs.map((spec) => {
-      const environment = withOverrides(spec.environment, overrides);
+      const environment = withOverrides(
+        withOverrides(spec.environment, env),
+        spec.name === 'backend' ? backendEnv : webEnv,
+      );
       // The same guard the first start went through: an override cannot point a server off this machine.
       assertLocalOnly(spec.name, { environment, forcedCredentials: [] });
       return startProcess(spec.name, spec.command, spec.args, spec.cwd, environment, this.logDirectory);
@@ -90,7 +100,7 @@ export class ServerSet {
   }
 
   /** Stops both servers and starts them again; one at a time, however many callers ask. */
-  restart(overrides: EnvironmentOverrides = {}): Promise<void> {
+  restart(overrides: RestartOverrides = {}): Promise<void> {
     const next = this.queue.then(async () => {
       await this.stop();
       await this.start(overrides);

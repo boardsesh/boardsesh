@@ -1581,7 +1581,9 @@ that shows it working in legacy mode in both engines:
 | `accountA`, `accountB` | `{ userId, email, password, name }` for the dev database's test user and a second account made at global setup (`database.ts`: the same two inserts the partner journey uses, deleted at teardown). `openContext()` opens another context set up like `context`. Sign in with `helpers.ts` `signInOnWww(page, account)`. | `accounts.spec.ts` |
 | `edgeCookies` | `begin()` then `end()`, or `during(action)`: every response the edge relayed in the window, as `{ host, method, path, status, setCookies: [{ name, attributes, clears }] }`. Names and attributes only, never a value (`edge.ts` drops it). A response with no Set-Cookie is still listed, so "emitted none" differs from "never ran". `sessionSetCookies(records)` keeps the session cookies. | `set-cookie-recording.spec.ts` |
 | `legacySession.addTo(context, account, shape)` | A NextAuth cookie minted with `encode` from `next-auth/jwt` and the run's `NEXTAUTH_SECRET`: `normal`, `chunked` (three `.0` to `.2` pieces), `host-only` (no Domain, www only) or `plain-named` (`next-auth.session-token`, no `Secure`). Returns the cookie names. | `legacy-session.spec.ts` |
-| `restartStack({ env })` | Stops both servers and starts them again with `env` set over the run's own environment (null unsets; no argument goes back to it). The database, edge, browser contexts and ports stay. The setup process does it, so the specs reach it through a loopback control server with a per-run token. Allow minutes under `next dev`. | `restart.spec.ts` |
+| `restartStack({ env, backendEnv, webEnv })` | Stops both servers and starts them again with `env` set over the run's own environment on both, and `backendEnv` or `webEnv` on one (null unsets; no argument goes back to it). The database, edge, browser contexts and ports stay. The setup process does it, so the specs reach it through a loopback control server with a per-run token. A start that fails rejects with the last lines of the failing server's log, so a spec can assert a refusal code. Allow minutes under `next dev`. | `restart.spec.ts`, `acceptance-8-one-switch.spec.ts` |
+| `freshAccount()` | A new account for one test, made through `database.ts create` (the same two inserts as account B), with its own id under the run's prefix, so teardown deletes it with B. Tests that sign in, switch and sign out use their own accounts, so no test revokes another's session or shares its rate-limit history. | the acceptance specs |
+| `accountDatabase` | Three steps on a run's own account: `removePassword` (a climber who only used Google), `ageSession(account, sessionId, days)` and `sessionExpiry(account, sessionId)`, for the renewal check. | `acceptance-1`, `acceptance-4` |
 
 Legacy mode rewrites the session cookie on every `/api/auth/session` read, as
 well as at sign-in (both show in `set-cookie-recording.spec.ts`), and
@@ -1612,6 +1614,60 @@ spec cannot rely on a WebKit restore. `chromium-bfcache` runs only
 `bfcache.spec.ts`; a spec that needs a restore uses it. A restored page runs no
 script and sends no request, and `goBack` must wait for `commit`, since a
 restore fires no `load`.
+
+### The acceptance run under `better-auth` (B7b)
+
+`AUTH_BROWSER_SESSION_MODE=better-auth vp run test:e2e:browser-session` starts
+both servers in the new mode. The global setup does three things first:
+
+1. **The database.** `browser-session-e2e-database.ts` (a backend test fixture,
+   run with tsx from `packages/backend`) creates the `boardsesh_identity_writer`
+   LOGIN and grants it the `private-first-password-v1` contract with the
+   credential-writer fixture CI's `test-credential-writer` job uses, then makes
+   the authority manifest `enforced` the way the backend suites do
+   (`prepareProjectionUnderUsersTableLock`, then the phase). The private web
+   commands open their database only through that LOGIN, and the staged writers
+   need the enforced manifest. Both change the database for good, so the step
+   runs only on CI or with `BROWSER_SESSION_E2E_PREPARE_DATABASE=1` on a dev
+   database you can recreate. The narrower `private-web-v1` contract does not
+   qualify on the current schema (0313 onward), as the credential-writer doc
+   says.
+2. **Every precondition** both startup checks read
+   (`better-auth-environment.ts`): the staged web auth, OAuth, session and
+   set-password modes, proof mode `required`, cutoff enforcement, the RPC
+   secret, projection id and writer epoch, the deleted-email key, the cookie,
+   access-token and bridge-token secrets (all made for the run, all
+   different), `AUTH_LEGACY_BRIDGE_UNTIL` 30 days ahead, and the credential
+   LOGIN's URL. Nothing forces a check to pass.
+3. **One https channel** from www to the backend (`backend-relay.ts`): the
+   private command transport takes plain http only from loopback under
+   `NODE_ENV` development or test, so the production build of www needs
+   https, as production does. The relay terminates TLS on 127.0.0.1 with the
+   run's certificate, which www trusts through `NODE_EXTRA_CA_CERTS`.
+
+The one test-only switch is `BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow`,
+which empties the backend's and www's cutover blocker lists, and only when the
+service's own origins are https hosts under `boardsesh.test`; set anywhere
+else, both services refuse to start ([rollout doc](./better-auth-rollout.md),
+section 4).
+
+| Spec | #7596 acceptance item | Engines |
+| --- | --- | --- |
+| `acceptance-1-reads-write-no-cookie.spec.ts` | 1: reads, csrf, ws-auth, private pages and set-password write no session cookie; the bridging read writes exactly the bridged cookie; renewal rolls the row with no cookie | Chromium, WebKit |
+| `acceptance-2-account-switch.spec.ts` | 2: A's token 401, A's socket closed (4401), the app tab reloads as B; #6979 sign-out across subdomains | Chromium, WebKit |
+| `acceptance-3-held-response.spec.ts` | 3: held replies across a switch on www and the app; back/forward cache restore (`chromium-bfcache` only); Router Cache (production www only) | Chromium, WebKit, `chromium-bfcache` |
+| `acceptance-4-set-password.spec.ts` | 4: bridged session asks for a new sign-in; a fresh login sets it with no reload or cookie and signs the other browser out | Chromium, WebKit |
+| `acceptance-5-legacy-shapes.spec.ts` | 5: normal, chunked and host-only cookies stay signed in with one bridged cookie; plain-named reads as signed out | Chromium, WebKit |
+| `acceptance-6-rollback.spec.ts` | 6: rollback to `legacy` and back by restart; the newer legacy login wins | Chromium, WebKit |
+| `acceptance-8-one-switch.spec.ts` | 8: two refused preconditions per service, by restart | Chromium |
+| `scripts/check-native-unchanged.ts` (workflow `web-lane-native-unchanged.yml`) | 7: no file that ships to phones changes in the web lane | not a browser test |
+
+A pull request runs the tests tagged `@smoke` (items 1, 2 and 5); the nightly
+runs the legacy baseline and then every acceptance spec against a production
+build of www. Not covered here: Google and Apple sign-in through the browser
+(the Google stand-in, `auth-proofs/google-oidc-fixture.ts`, is not wired into
+the edge), the partner consent page (it needs the partner OAuth journey's own
+stack), and the cookie-order fixture, which B7c reruns.
 
 What the harness does not show:
 

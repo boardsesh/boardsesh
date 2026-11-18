@@ -40,9 +40,10 @@ export default defineConfig({
     {
       // The one project with the back/forward cache on: the full Chromium build
       // (the headless shell cannot have it) without playwright's
-      // `--disable-back-forward-cache`. Runs only the probe that needs it.
+      // `--disable-back-forward-cache`. Runs only the probe and the acceptance-3
+      // spec, whose back/forward cache test needs a restore.
       name: 'chromium-bfcache',
-      testMatch: /bfcache\.spec\.ts$/,
+      testMatch: /(?:bfcache|acceptance-3-held-response)\.spec\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
         channel: 'chromium',

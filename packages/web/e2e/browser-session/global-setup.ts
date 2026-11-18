@@ -11,6 +11,8 @@ import {
   type Environment,
   type EnvironmentFile,
 } from '../../partner-oauth-e2e/server-environment';
+import { startBackendRelay } from './backend-relay';
+import { betterAuthEnvironments, type BetterAuthDatabase } from './better-auth-environment';
 import { createCertificate } from './certificate';
 import { SetCookieLog, startControlServer } from './control-server';
 import { freePort, readEnvironmentFile } from './processes';
@@ -70,19 +72,46 @@ const LOG_DIRECTORY = resolve(WEB_DIRECTORY, 'test-results/browser-session');
 const STALE_RUN_DIRECTORY_MS = 60 * 60 * 1000;
 const WWW_BUILD_MS = 20 * 60 * 1000;
 
-/** `database.ts` under tsx, with the database URL and nothing secret. */
-function runDatabaseStep(databaseUrl: string, args: string[]): string {
-  return execFileSync('vp', ['exec', 'tsx', 'e2e/browser-session/database.ts', ...args], {
-    cwd: WEB_DIRECTORY,
+/** The backend fixture that prepares the database for `better-auth` (run from the backend package). */
+const BETTER_AUTH_DATABASE_STEP = {
+  cwd: BACKEND_DIRECTORY,
+  script: 'src/auth/authority/__tests__/fixtures/browser-session-e2e-database.ts',
+};
+
+/** A harness script under tsx, with the database URL and nothing secret. */
+function runDatabaseStep(
+  databaseUrl: string,
+  args: string[],
+  { cwd, script } = { cwd: WEB_DIRECTORY, script: 'e2e/browser-session/database.ts' },
+): string {
+  return execFileSync('vp', ['exec', 'tsx', script, ...args], {
+    cwd,
     env: {
       ...inheritedEnvironment(process.env),
       DATABASE_URL: databaseUrl,
       TEST_USER_EMAIL: process.env.TEST_USER_EMAIL,
       TEST_USER_PASSWORD: process.env.TEST_USER_PASSWORD,
+      BROWSER_SESSION_E2E_PREPARE_DATABASE: process.env.BROWSER_SESSION_E2E_PREPARE_DATABASE,
+      GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
     } as unknown as NodeJS.ProcessEnv,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
   });
+}
+
+/** The JSON a harness script printed after SEED_OUTPUT_PREFIX. */
+function printedResult<T>(output: string): T {
+  const line = output.split('\n').find((candidate) => candidate.startsWith(SEED_OUTPUT_PREFIX));
+  if (!line) throw new Error('The database step printed no result.');
+  return JSON.parse(line.slice(SEED_OUTPUT_PREFIX.length)) as T;
+}
+
+/** `legacy` (unset) unless the caller asks for `better-auth`; anything else stops the run. */
+function readBrowserSessionMode(): 'legacy' | 'better-auth' {
+  const requested = process.env.AUTH_BROWSER_SESSION_MODE ?? '';
+  if (requested === '' || requested === 'legacy') return 'legacy';
+  if (requested === 'better-auth') return requested;
+  throw new Error('AUTH_BROWSER_SESSION_MODE must be legacy or better-auth for this run.');
 }
 
 /**
@@ -139,6 +168,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     );
   }
   const wwwMode = readWwwMode();
+  const browserSessionMode = readBrowserSessionMode();
 
   mkdirSync(LOG_DIRECTORY, { recursive: true });
   for (const name of ['backend.log', 'web.log']) rmSync(join(LOG_DIRECTORY, name), { force: true });
@@ -146,7 +176,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   mkdirSync(runsDirectory, { recursive: true });
   sweepStaleRunDirectories(runsDirectory);
   const workDirectory = mkdtempSync(join(runsDirectory, 'run-'));
-  const accountBId = `${ACCOUNT_ID_PREFIX}${randomUUID()}`;
+  // Every account this run makes, B and each test's own, shares one prefix, so teardown removes them together.
+  const runAccountPrefix = `${ACCOUNT_ID_PREFIX}${randomUUID().slice(0, 8)}-`;
+  const accountBId = `${runAccountPrefix}${randomUUID()}`;
   const servers: Server[] = [];
   let serverSet: ServerSet | undefined;
   let edge: Edge | undefined;
@@ -155,13 +187,15 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await serverSet?.stop();
     await edge?.close();
     await Promise.all(servers.map((server) => new Promise<void>((done) => server.close(() => done()))));
-    if (accountBSeeded) runDatabaseStep(databaseUrl, ['cleanup', accountBId]);
+    if (accountBSeeded) runDatabaseStep(databaseUrl, ['cleanup', `${runAccountPrefix}%`]);
     rmSync(workDirectory, { recursive: true, force: true });
   };
 
   try {
     const certificate = createCertificate(workDirectory);
     const [backendPort, webPort] = [await freePort(), await freePort()];
+    const backendRelay = await startBackendRelay(certificate, backendPort);
+    servers.push(backendRelay.server);
     const nextAuthSecret = randomBytes(32).toString('base64url');
     const shared: Environment = {
       ...inheritedEnvironment(process.env),
@@ -180,10 +214,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       // No outside service, even if an environment file names one: blank wins over a file.
       READ_REPLICA_URL: '',
       SMTP_HOST: '',
-      // Today's mode (NextAuth) unless a caller asks for another one.
-      ...(process.env.AUTH_BROWSER_SESSION_MODE
-        ? { AUTH_BROWSER_SESSION_MODE: process.env.AUTH_BROWSER_SESSION_MODE }
-        : {}),
     };
 
     const backendEnvironment = serverEnvironment(
@@ -234,14 +264,22 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
     // Account A is the dev database's test user; account B is made for this run.
     accountBSeeded = true;
-    const seedOutput = runDatabaseStep(databaseUrl, ['seed', accountBId])
-      .split('\n')
-      .find((line) => line.startsWith(SEED_OUTPUT_PREFIX));
-    if (!seedOutput) throw new Error('database.ts printed no seed result.');
-    const accounts = JSON.parse(seedOutput.slice(SEED_OUTPUT_PREFIX.length)) as {
-      accountA: SeededAccount;
-      accountB: SeededAccount;
-    };
+    const accounts = printedResult<{ accountA: SeededAccount; accountB: SeededAccount }>(
+      runDatabaseStep(databaseUrl, ['seed', accountBId]),
+    );
+
+    // `better-auth`: the database it needs, then every precondition both services check.
+    if (browserSessionMode === 'better-auth') {
+      const database = printedResult<BetterAuthDatabase>(runDatabaseStep(databaseUrl, [], BETTER_AUTH_DATABASE_STEP));
+      const betterAuth = betterAuthEnvironments(database, {
+        backendRelayOrigin: backendRelay.origin,
+        certificatePath: certificate.certificatePath,
+      });
+      Object.assign(backendEnvironment.environment, betterAuth.backend);
+      Object.assign(webEnvironment.environment, betterAuth.web);
+      assertLocalOnly('backend', backendEnvironment);
+      assertLocalOnly('web server', webEnvironment);
+    }
 
     if (wwwMode === 'production') buildWww(webEnvironment.environment);
 
@@ -299,10 +337,15 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       accounts,
       nextAuthSecret,
       wwwMode,
+      browserSessionMode,
+      databaseUrl,
+      runAccountPrefix,
       control: { url: control.url, token: control.token },
     };
     process.env[STACK_ENVIRONMENT_VARIABLE] = JSON.stringify(stack);
-    console.info(`[browser-session] stack up (www: ${wwwMode}): ${WWW_ORIGIN} ${APP_ORIGIN} ${BACKEND_ORIGIN}`);
+    console.info(
+      `[browser-session] stack up (www: ${wwwMode}, mode: ${browserSessionMode}): ${WWW_ORIGIN} ${APP_ORIGIN} ${BACKEND_ORIGIN}`,
+    );
     return teardown;
   } catch (error) {
     await teardown();

@@ -37,7 +37,9 @@ test('shows a sign-in writing the session cookie, a session read rolling it, the
   page,
   accountA,
   edgeCookies,
+  stack,
 }) => {
+  test.skip(stack.browserSessionMode !== 'legacy', 'Legacy behaviour; reads-write-nothing.spec.ts covers better-auth.');
   const signIn = await edgeCookies.during(() => signInOnWww(page, accountA));
   const written = sessionSetCookies(signIn.records).filter((cookie) => !cookie.clears);
   // The credentials callback writes it first. Legacy NextAuth also rewrites it on each /api/auth/session read.

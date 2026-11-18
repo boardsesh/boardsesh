@@ -63,12 +63,28 @@ export interface BrowserSessionStack {
   /** This run's NextAuth secret, to mint legacy sessions with. It guards a throwaway database and dies with the run. */
   nextAuthSecret: string;
   wwwMode: WwwMode;
+  /** The `AUTH_BROWSER_SESSION_MODE` the run started both servers in. `restartStack` can change it. */
+  browserSessionMode: 'legacy' | 'better-auth';
+  /** The local dev database, for the specs' own database steps (`database.ts`). Never a remote one. */
+  databaseUrl: string;
+  /** The id prefix of every account this run makes; teardown deletes them together. */
+  runAccountPrefix: string;
   /** The setup process's control server: restarts and the Set-Cookie log. Loopback only, token required. */
   control: { url: string; token: string };
 }
 
-/** Session cookies of either auth stack, chunks included (`__Secure-next-auth.session-token.1`, ...). */
-export const SESSION_COOKIE_NAME = /(?:next-auth|better-auth)\.session[_-]?token(?:\.\d+)?$/;
+/**
+ * Session cookies of either auth stack, chunks included: NextAuth's
+ * (`__Secure-next-auth.session-token`, `.1`, ...) and the first-party login and
+ * bridged cookies (`__Secure-boardsesh.session_token`,
+ * `__Secure-boardsesh.bridged_session_token`).
+ */
+export const SESSION_COOKIE_NAME = /(?:next-auth|better-auth|boardsesh)\.(?:bridged_)?session[_-]?token(?:\.\d+)?$/;
+
+/** The first-party cookie names in a secure context (`@boardsesh/auth-protocol/browser-session-cookie`). */
+export const LOGIN_COOKIE = '__Secure-boardsesh.session_token';
+export const BRIDGED_COOKIE = '__Secure-boardsesh.bridged_session_token';
+export const LEGACY_COOKIE = '__Secure-next-auth.session-token';
 
 export function readStack(): BrowserSessionStack {
   const raw = process.env[STACK_ENVIRONMENT_VARIABLE];

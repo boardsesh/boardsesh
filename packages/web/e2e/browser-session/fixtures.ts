@@ -1,9 +1,13 @@
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
 import { test as base, expect, type Browser, type BrowserContext } from '@playwright/test';
 import { addLegacySession, type LegacySessionShape, type MintedLegacySession } from './legacy-session';
 import {
   PARENT_DOMAIN,
   readStack,
+  SEED_OUTPUT_PREFIX,
   SESSION_COOKIE_NAME,
   type BrowserSessionStack,
   type SeededAccount,
@@ -26,6 +30,8 @@ import {
  *   edgeCookies          a window over the Set-Cookie names every response carried
  *   legacySession        mints a legacy NextAuth session cookie and adds it to a context
  *   restartStack         restarts the backend and www with a changed environment
+ *   freshAccount         a new account made for this one test, so tests never share sessions or limits
+ *   accountDatabase      the few database steps a spec needs on its own accounts (database.ts)
  */
 
 /** One window over the edge's log: `end()` returns every response relayed since `begin()`. */
@@ -44,9 +50,23 @@ export interface LegacySessionFixture {
   addTo(context: BrowserContext, account: SeededAccount, shape: LegacySessionShape): Promise<MintedLegacySession>;
 }
 
-/** Variables to set on both servers (null unsets one), over the environment the run started them with. */
+/**
+ * Variables over the environment the run started the servers with (null unsets
+ * one): `env` on both, `backendEnv` and `webEnv` on one each.
+ */
 export interface RestartOptions {
   env?: Record<string, string | null>;
+  backendEnv?: Record<string, string | null>;
+  webEnv?: Record<string, string | null>;
+}
+
+export interface AccountDatabase {
+  /** Deletes the account's password row, as for a climber who only ever used Google. */
+  removePassword(account: SeededAccount): void;
+  /** Moves the session row's expiry to `days` ahead. */
+  ageSession(account: SeededAccount, sessionId: string, days: number): void;
+  /** The session row's expiry, or null when there is no row. */
+  sessionExpiry(account: SeededAccount, sessionId: string): Date | null;
 }
 
 interface Fixtures {
@@ -57,6 +77,23 @@ interface Fixtures {
   edgeCookies: EdgeCookies;
   legacySession: LegacySessionFixture;
   restartStack: (options?: RestartOptions) => Promise<void>;
+  freshAccount: () => SeededAccount;
+  accountDatabase: AccountDatabase;
+}
+
+const WEB_DIRECTORY = resolve(__dirname, '../..');
+
+/** `database.ts` under tsx, as the global setup runs it. Returns what it printed. */
+function databaseStep<T>(stack: BrowserSessionStack, args: string[]): T {
+  const output = execFileSync('vp', ['exec', 'tsx', 'e2e/browser-session/database.ts', ...args], {
+    cwd: WEB_DIRECTORY,
+    env: { ...process.env, DATABASE_URL: stack.databaseUrl },
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  const line = output.split('\n').find((candidate) => candidate.startsWith(SEED_OUTPUT_PREFIX));
+  if (!line) throw new Error(`database.ts ${args[0]} printed no result.`);
+  return JSON.parse(line.slice(SEED_OUTPUT_PREFIX.length)) as T;
 }
 
 async function control<T>(stack: BrowserSessionStack, path: string, init?: RequestInit): Promise<T> {
@@ -158,9 +195,41 @@ export const test = base.extend<Fixtures>({
     });
   },
 
+  freshAccount: async ({ stack }, use) => {
+    await use(() => databaseStep<SeededAccount>(stack, ['create', `${stack.runAccountPrefix}${randomUUID()}`]));
+  },
+
+  accountDatabase: async ({ stack }, use) => {
+    await use({
+      removePassword: (account) => {
+        databaseStep(stack, ['remove-password', account.userId]);
+      },
+      ageSession: (account, sessionId, days) => {
+        const { aged } = databaseStep<{ aged: number }>(stack, [
+          'age-session',
+          account.userId,
+          sessionId,
+          String(days),
+        ]);
+        if (aged !== 1) throw new Error(`No session row ${sessionId} for ${account.userId}.`);
+      },
+      sessionExpiry: (account, sessionId) => {
+        const { expiresAt } = databaseStep<{ expiresAt: string | null }>(stack, [
+          'session-expiry',
+          account.userId,
+          sessionId,
+        ]);
+        return expiresAt === null ? null : new Date(expiresAt);
+      },
+    });
+  },
+
   restartStack: async ({ stack }, use) => {
-    await use(async ({ env = {} } = {}) => {
-      await control<{ state: string }>(stack, '/restart', { method: 'POST', body: JSON.stringify({ env }) });
+    await use(async ({ env = {}, backendEnv = {}, webEnv = {} } = {}) => {
+      await control<{ state: string }>(stack, '/restart', {
+        method: 'POST',
+        body: JSON.stringify({ env, backendEnv, webEnv }),
+      });
       for (;;) {
         const { state, error } = await control<{ state: string; error?: string }>(stack, '/restart/status');
         if (state === 'ready') return;

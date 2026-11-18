@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { EdgeResponseObservation } from '../../partner-oauth-e2e/edge';
-import type { EnvironmentOverrides, ServerSet } from './servers';
+import type { EnvironmentOverrides, RestartOverrides, ServerSet } from './servers';
 import type { SetCookieRecord } from './stack';
 
 /**
@@ -15,7 +15,8 @@ import type { SetCookieRecord } from './stack';
  *
  *   GET  /set-cookies/mark          { mark }       how many responses are logged so far
  *   GET  /set-cookies?since=<mark>  { records }    every response logged after the mark
- *   POST /restart  { env }          { state }      starts restarting both servers with `env` over their base
+ *   POST /restart  { env, backendEnv, webEnv }  { state }  starts restarting both servers with `env` (both)
+ *                                                   and `backendEnv` / `webEnv` (one each) over their base
  *                                                   environment (null unsets); answers at once
  *   GET  /restart/status            { state, error? }  `running`, then `ready` or `failed`; a restart can take
  *                                                   minutes, longer than one HTTP request should be held open
@@ -52,16 +53,25 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(JSON.stringify(body));
 }
 
-function parseOverrides(body: string): EnvironmentOverrides {
-  const parsed: unknown = body ? JSON.parse(body) : {};
-  const env = typeof parsed === 'object' && parsed !== null && 'env' in parsed ? parsed.env : {};
-  if (typeof env !== 'object' || env === null || Array.isArray(env)) throw new Error('env must be an object');
+function parseEnvironment(field: string, env: unknown): EnvironmentOverrides {
+  if (env === undefined) return {};
+  if (typeof env !== 'object' || env === null || Array.isArray(env)) throw new Error(`${field} must be an object`);
   const overrides: EnvironmentOverrides = {};
   for (const [name, value] of Object.entries(env)) {
-    if (typeof value !== 'string' && value !== null) throw new Error(`env.${name} must be a string or null`);
+    if (typeof value !== 'string' && value !== null) throw new Error(`${field}.${name} must be a string or null`);
     overrides[name] = value;
   }
   return overrides;
+}
+
+function parseOverrides(body: string): RestartOverrides {
+  const parsed: unknown = body ? JSON.parse(body) : {};
+  const fields = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  return {
+    env: parseEnvironment('env', fields.env),
+    backendEnv: parseEnvironment('backendEnv', fields.backendEnv),
+    webEnv: parseEnvironment('webEnv', fields.webEnv),
+  };
 }
 
 export async function startControlServer(
