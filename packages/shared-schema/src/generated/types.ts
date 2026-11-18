@@ -2454,20 +2454,6 @@ export type ConnectedApps = {
 };
 
 /**
- * Whether this visitor is asked before analytics runs, from the Cloudflare
- * country of the request. See docs/analytics-consent.md.
- */
-export type ConsentRegion = {
-  __typename?: 'ConsentRegion';
-  /** The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted. */
-  countryCode?: Maybe<Scalars['String']['output']>;
-  /** True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions. */
-  globalPrivacyControl: Scalars['Boolean']['output'];
-  /** True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown. */
-  promptRequired: Scalars['Boolean']['output'];
-};
-
-/**
  * One board owned by the account a controller API key belongs to, for a wall
  * device's setup screen (`controllerBoards`). Read-only identity and config.
  */
@@ -7995,8 +7981,6 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
-  /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
-  consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
   /**
    * The boards the controller API key's owner owns (home boards and spray walls,
@@ -13831,7 +13815,6 @@ export type ResolversTypes = ResolversObject<{
   CommunityStats: ResolverTypeWrapper<CommunityStats>;
   ConnectedApp: ResolverTypeWrapper<ConnectedApp>;
   ConnectedApps: ResolverTypeWrapper<ConnectedApps>;
-  ConsentRegion: ResolverTypeWrapper<ConsentRegion>;
   ControllerBoard: ResolverTypeWrapper<ControllerBoard>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
   ControllerGymBoard: ResolverTypeWrapper<ControllerGymBoard>;
@@ -14442,7 +14425,6 @@ export type ResolversParentTypes = ResolversObject<{
   CommunityStats: CommunityStats;
   ConnectedApp: ConnectedApp;
   ConnectedApps: ConnectedApps;
-  ConsentRegion: ConsentRegion;
   ControllerBoard: ControllerBoard;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
   ControllerGymBoard: ControllerGymBoard;
@@ -16179,16 +16161,6 @@ export type ConnectedAppsResolvers<
 > = ResolversObject<{
   apps?: Resolver<Array<ResolversTypes['ConnectedApp']>, ParentType, ContextType>;
   partnerAppsEnabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type ConsentRegionResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['ConsentRegion'] = ResolversParentTypes['ConsentRegion'],
-> = ResolversObject<{
-  countryCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  globalPrivacyControl?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
-  promptRequired?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -19319,7 +19291,6 @@ export type QueryResolvers<
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
   communityStats?: Resolver<ResolversTypes['CommunityStats'], ParentType, ContextType>;
-  consentRegion?: Resolver<ResolversTypes['ConsentRegion'], ParentType, ContextType>;
   contentAudience?: Resolver<
     ResolversTypes['PrivacyContentAudience'],
     ParentType,
@@ -21956,7 +21927,6 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommunityStats?: CommunityStatsResolvers<ContextType>;
   ConnectedApp?: ConnectedAppResolvers<ContextType>;
   ConnectedApps?: ConnectedAppsResolvers<ContextType>;
-  ConsentRegion?: ConsentRegionResolvers<ContextType>;
   ControllerBoard?: ControllerBoardResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
   ControllerGymBoard?: ControllerGymBoardResolvers<ContextType>;

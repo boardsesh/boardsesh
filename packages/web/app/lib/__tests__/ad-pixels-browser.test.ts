@@ -87,7 +87,13 @@ afterEach(() => {
 });
 
 describe('ad pixels in the browser', () => {
-  it('loads nothing and sends nothing without consent', async () => {
+  it.each([
+    null,
+    { ...ALLOW_AFTER_COPY, analytics: 'denied' as const },
+    { ...ALLOW_AFTER_COPY, basis: 'region_default' as const },
+  ])('loads nothing and sends nothing without an explicit yes: %j', async (record) => {
+    harness.record = record;
+    harness.authorized = true;
     const pixels = await loadModule();
     pixels.syncAdPixels('/');
     pixels.reportAdLead({ platform: 'ios', placement: 'hero' });
@@ -171,7 +177,7 @@ describe('ad pixels in the browser', () => {
     expect(testWindow().rdt).toBeUndefined();
   });
 
-  it('pauses without withdrawing while the account or region is still resolving', async () => {
+  it('pauses without withdrawing while the account is still resolving', async () => {
     grant();
     cookieJar.set('_fbp', 'fb.1.1.1');
     harness.authorized = false;

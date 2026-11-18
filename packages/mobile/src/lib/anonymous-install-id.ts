@@ -6,8 +6,8 @@ import { getPreference, setPreference } from './preference-store';
  * never sits in the PostHog SDK's storage, and is never sent next to an account
  * id.
  *
- * Two uses, both without analytics consent (docs/analytics-consent.md, "Legal
- * basis per tracker"):
+ * Two uses (docs/analytics-consent.md, "Legal basis per tracker"):
+ * Feature flags remain functional without analytics consent; OTA health needs it.
  *
  * - **Feature flags for a signed-out climber** (`posthog-client.ts`). A
  *   percentage rollout buckets on the flag request's distinct id. A new id per

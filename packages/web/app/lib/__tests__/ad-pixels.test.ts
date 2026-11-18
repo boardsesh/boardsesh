@@ -24,7 +24,7 @@ function input(overrides: Partial<AdPixelInput> = {}): AdPixelInput {
   return {
     metaPixelId: META_ID,
     redditPixelId: REDDIT_ID,
-    record: regionDefault,
+    record: record(),
     analyticsAuthorized: true,
     globalPrivacyControl: false,
     pathname: '/',
@@ -38,7 +38,7 @@ const NONE = { meta: null, reddit: null };
 describe('isAdMeasurementPermitted (record-level consent table)', () => {
   it.each<[string, ConsentRecord | null, boolean, boolean]>([
     ['no answer', null, false, false],
-    ['region default', regionDefault, false, true],
+    ['region default', regionDefault, false, false],
     // The website never writes a default under GPC; a stale one must not count either.
     ['region default + GPC', regionDefault, true, false],
     ['explicit web Allow on the copy date', record({ decidedAt: AD_MEASUREMENT_COPY_SINCE }), false, true],
@@ -57,8 +57,8 @@ describe('isAdMeasurementPermitted (record-level consent table)', () => {
 });
 
 describe('resolveAdPixels', () => {
-  it('loads both pixels on a confirmed region default', () => {
-    expect(resolveAdPixels(input())).toEqual(BOTH);
+  it('never loads pixels on a legacy region default', () => {
+    expect(resolveAdPixels(input({ record: regionDefault }))).toEqual(NONE);
   });
 
   it('loads both pixels on a web Allow given after the copy date', () => {
@@ -70,7 +70,7 @@ describe('resolveAdPixels', () => {
     ['region default + GPC', { globalPrivacyControl: true }],
     ['explicit Allow before the copy date', { record: record({ decidedAt: BEFORE_COPY }) }],
     ['explicit No thanks', { record: record({ analytics: 'denied' }) }],
-    // Account still resolving, or the region lookup has not confirmed the default yet.
+    // Account consent has not resolved yet.
     ['analytics not yet authorized this page load', { analyticsAuthorized: false }],
     ['both ids unset', { metaPixelId: undefined, redditPixelId: undefined }],
     ['both ids empty', { metaPixelId: '', redditPixelId: '' }],

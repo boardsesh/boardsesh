@@ -2451,20 +2451,6 @@ export type ConnectedApps = {
 };
 
 /**
- * Whether this visitor is asked before analytics runs, from the Cloudflare
- * country of the request. See docs/analytics-consent.md.
- */
-export type ConsentRegion = {
-  __typename?: 'ConsentRegion';
-  /** The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted. */
-  countryCode?: Maybe<Scalars['String']['output']>;
-  /** True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions. */
-  globalPrivacyControl: Scalars['Boolean']['output'];
-  /** True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown. */
-  promptRequired: Scalars['Boolean']['output'];
-};
-
-/**
  * One board owned by the account a controller API key belongs to, for a wall
  * device's setup screen (`controllerBoards`). Read-only identity and config.
  */
@@ -7992,8 +7978,6 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
-  /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
-  consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
   /**
    * The boards the controller API key's owner owns (home boards and spray walls,
@@ -14259,18 +14243,6 @@ export type SetAnalyticsConsentMutation = {
   };
 };
 
-export type GetConsentRegionQueryVariables = Exact<{ [key: string]: never }>;
-
-export type GetConsentRegionQuery = {
-  __typename?: 'Query';
-  consentRegion: {
-    __typename?: 'ConsentRegion';
-    countryCode?: string | null;
-    promptRequired: boolean;
-    globalPrivacyControl: boolean;
-  };
-};
-
 export type AppWorkoutQueryVariables = Exact<{
   id: Scalars['ID']['input'];
 }>;
@@ -19685,33 +19657,6 @@ export const SetAnalyticsConsentDocument = {
     },
   ],
 } as unknown as DocumentNode<SetAnalyticsConsentMutation, SetAnalyticsConsentMutationVariables>;
-export const GetConsentRegionDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'GetConsentRegion' },
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'consentRegion' },
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                { kind: 'Field', name: { kind: 'Name', value: 'countryCode' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'promptRequired' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'globalPrivacyControl' } },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<GetConsentRegionQuery, GetConsentRegionQueryVariables>;
 export const AppWorkoutDocument = {
   kind: 'Document',
   definitions: [

@@ -42,8 +42,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetClimbLostHolds',
   'GetClimbProposals',
   'GetComments',
-  // Screenshot mode skips the consent gate, so the region is never asked.
-  'GetConsentRegion',
   'GetDeleteAccountInfo',
   'GetFollowers',
   'GetFollowing',

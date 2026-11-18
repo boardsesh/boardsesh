@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CONSENT_VERSION,
   createConsentSyncCoordinator,
-  createRegionDefaultConsent,
   isAnalyticsGranted,
   isRegionDefaultConsent,
   isSameConsentRecord,
@@ -15,7 +14,13 @@ import {
   type ConsentRecord,
 } from '../index';
 
-const regionDefault = createRegionDefaultConsent('ios', new Date('2026-10-11T09:00:00.000Z'));
+const regionDefault: ConsentRecord = {
+  analytics: 'granted',
+  version: CONSENT_VERSION,
+  source: 'ios',
+  decidedAt: '2026-10-11T09:00:00.000Z',
+  basis: 'region_default',
+};
 const accountGrant: ConsentRecord = {
   analytics: 'granted',
   version: CONSENT_VERSION,
@@ -45,8 +50,8 @@ function signedInCoordinator(initialRecord: ConsentRecord | null, account: Conse
   return { coordinator, readAccountConsent, writeAccountConsent, persistLocalConsent };
 }
 
-describe('the region default record', () => {
-  it('is a current grant that needs no prompt', () => {
+describe('legacy region-default migration', () => {
+  it('never enables analytics and requires an explicit answer', () => {
     expect(regionDefault).toEqual({
       analytics: 'granted',
       version: CONSENT_VERSION,
@@ -55,8 +60,8 @@ describe('the region default record', () => {
       basis: 'region_default',
     });
     expect(isRegionDefaultConsent(regionDefault)).toBe(true);
-    expect(needsPrompt(regionDefault)).toBe(false);
-    expect(isAnalyticsGranted(regionDefault)).toBe(true);
+    expect(needsPrompt(regionDefault)).toBe(true);
+    expect(isAnalyticsGranted(regionDefault)).toBe(false);
   });
 
   it('reads a record without a basis as explicit, so stored answers stay valid', () => {
@@ -64,17 +69,14 @@ describe('the region default record', () => {
     expect(isRegionDefaultConsent(null)).toBe(false);
   });
 
-  it('round-trips through the cookie with a fifth part, and an explicit answer keeps four', () => {
-    const value = serializeConsentCookieValue(createRegionDefaultConsent('web', new Date('2026-01-01T00:00:00.000Z')));
-    expect(value).toBe('v1.granted.1767225600.web.region');
-    expect(parseConsentCookieValue(value)).toEqual({
-      analytics: 'granted',
-      version: 1,
-      decidedAt: '2026-01-01T00:00:00.000Z',
-      source: 'web',
-      basis: 'region_default',
-    });
+  it('reads the old region-default cookie as unanswered and preserves explicit cookies', () => {
+    expect(parseConsentCookieValue('v1.granted.1767225600.web.region')).toBeNull();
     expect(serializeConsentCookieValue({ ...accountGrant, basis: 'explicit' }).split('.')).toHaveLength(4);
+    for (const analytics of ['granted', 'denied'] as const) {
+      const explicit = { ...accountGrant, analytics };
+      expect(parseConsentCookieValue(serializeConsentCookieValue(explicit))?.analytics).toBe(analytics);
+      expect(needsPrompt(explicit)).toBe(false);
+    }
   });
 
   it.each(['v1.denied.1767225600.web.region', 'v1.granted.1767225600.web.explicit', 'v1.granted.1767225600.web.'])(
@@ -106,15 +108,15 @@ describe('resolveConsent with a region default', () => {
     expect(resolveConsent(regionDefault, accountGrant)).toBe(accountGrant);
   });
 
-  it('keeps it when the account has no answer', () => {
-    expect(resolveConsent(regionDefault, null)).toBe(regionDefault);
+  it('drops it when the account has no answer', () => {
+    expect(resolveConsent(regionDefault, null)).toBeNull();
   });
 });
 
 describe('mergeAccountConsent with a region default', () => {
-  it('keeps the region default when the account has no answer, and writes nothing', () => {
+  it('drops the old default when the account has no answer, and writes nothing', () => {
     const merged = mergeAccountConsent(regionDefault, null, 'account-a');
-    expect(merged.record).toBe(regionDefault);
+    expect(merged.record).toBeNull();
     expect(merged.push).toBeNull();
   });
 
@@ -133,7 +135,7 @@ describe('mergeAccountConsent with a region default', () => {
 
   it('is never pushed, even if storage bound it to this account with a write token', () => {
     const bound = { ...regionDefault, ownerAccountId: 'account-a', basedOnDecidedAt: null };
-    expect(mergeAccountConsent(bound, null, 'account-a')).toEqual({ record: bound, push: null });
+    expect(mergeAccountConsent(bound, null, 'account-a')).toEqual({ record: null, push: null });
   });
 });
 
@@ -154,30 +156,31 @@ describe('isSameConsentRecord and basis', () => {
 describe('account sync with a region default', () => {
   it('never writes the region default to an empty account', async () => {
     const { coordinator, writeAccountConsent } = signedInCoordinator(regionDefault, null);
+    expect(coordinator.getSnapshot().record).toBeNull();
     await coordinator.sync();
     expect(writeAccountConsent).not.toHaveBeenCalled();
-    expect(coordinator.getSnapshot().record).toBe(regionDefault);
+    expect(coordinator.getSnapshot().record).toBeNull();
     expect(coordinator.getSnapshot().accountResolved).toBe(true);
   });
 
-  it('never writes a region default adopted while signed in', async () => {
+  it('rejects a region default introduced after the account read', async () => {
     const { coordinator, readAccountConsent, writeAccountConsent } = signedInCoordinator(null, null);
     await coordinator.sync();
     coordinator.replaceLocalRecord(regionDefault);
-    expect(coordinator.getSnapshot().accountResolved).toBe(false);
+    expect(coordinator.getSnapshot().accountResolved).toBe(true);
     await coordinator.sync();
     expect(readAccountConsent).toHaveBeenCalledTimes(2);
     expect(writeAccountConsent).not.toHaveBeenCalled();
-    expect(coordinator.getSnapshot().record).toBe(regionDefault);
+    expect(coordinator.getSnapshot().record).toBeNull();
   });
 
-  it('keeps the region default across repeated account reads without a write', async () => {
+  it('keeps the device unanswered across repeated account reads without a write', async () => {
     const { coordinator, readAccountConsent, writeAccountConsent } = signedInCoordinator(regionDefault, null);
     await coordinator.sync();
     await coordinator.sync();
     expect(readAccountConsent).toHaveBeenCalledTimes(2);
     expect(writeAccountConsent).not.toHaveBeenCalled();
-    expect(coordinator.getSnapshot().record).toBe(regionDefault);
+    expect(coordinator.getSnapshot().record).toBeNull();
   });
 
   it('gives way to an account grant and writes nothing', async () => {

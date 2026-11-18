@@ -2,7 +2,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { expect, it, vi } from 'vitest';
-import { isAnalyticsGranted, isRegionDefaultConsent, type ConsentRecord } from '@boardsesh/consent';
+import { isAnalyticsGranted, type ConsentRecord } from '@boardsesh/consent';
 import { GET_MY_ANALYTICS_CONSENT, SET_ANALYTICS_CONSENT } from '@boardsesh/graphql/operations/analytics-consent';
 
 const network = vi.hoisted(() => ({ request: vi.fn() }));
@@ -31,13 +31,7 @@ vi.mock('../../lib/preference-store', () => {
     },
   };
 });
-import {
-  ConsentProvider,
-  applyRegionDefaultConsent,
-  clearRegionDefaultConsent,
-  decideAnalyticsConsent,
-  getConsentCoordinator,
-} from '../consent-provider';
+import { ConsentProvider, decideAnalyticsConsent, getConsentCoordinator } from '../consent-provider';
 import { getConsentSnapshot, updateConsentState } from '../../lib/consent-state';
 
 function consentCookie(): string | undefined {
@@ -48,7 +42,7 @@ function consentCookie(): string | undefined {
     ?.slice('boardsesh-consent='.length);
 }
 
-it('keeps the region default on the device, and a Settings toggle turns it into an explicit answer', async () => {
+it('keeps analytics off until a Settings decision, and syncs explicit choices', async () => {
   const writes: unknown[] = [];
   network.request.mockImplementation(
     async ({ document, variables }: { document: string; variables?: { input: ConsentRecord } }) => {
@@ -76,54 +70,21 @@ it('keeps the region default on the device, and a Settings toggle turns it into 
     await controller.sync();
   });
 
-  // Outside the prompt regions: analytics on, on this device only.
-  await act(async () => {
-    applyRegionDefaultConsent('web');
-    await controller.sync();
-  });
-  expect(isRegionDefaultConsent(getConsentSnapshot().record)).toBe(true);
-  expect(isAnalyticsGranted(getConsentSnapshot().record)).toBe(true);
-  expect(consentCookie()).toMatch(/^v1\.granted\.\d+\.web\.region$/);
+  expect(isAnalyticsGranted(getConsentSnapshot().record)).toBe(false);
+  expect(consentCookie()).toBeUndefined();
   expect(writes).toEqual([]);
 
-  // A region default never overwrites an answer, and clearing never drops one.
+  // A Settings denial is an explicit answer.
   await act(async () => {
     await decideAnalyticsConsent('denied', 'web');
   });
   expect(writes).toEqual([expect.objectContaining({ analytics: 'denied', source: 'web' })]);
-  expect(isRegionDefaultConsent(getConsentSnapshot().record)).toBe(false);
   expect(consentCookie()).toMatch(/^v1\.denied\.\d+\.web$/);
-  act(() => {
-    applyRegionDefaultConsent('web');
-    clearRegionDefaultConsent();
-  });
-  expect(getConsentSnapshot().record?.analytics).toBe('denied');
-  expect(consentCookie()).toMatch(/^v1\.denied\.\d+\.web$/);
-
   // Switching it back on in Settings is an explicit grant that syncs as today.
   await act(async () => {
     await decideAnalyticsConsent('granted', 'web');
   });
   expect(writes).toHaveLength(2);
   expect(writes[1]).toMatchObject({ analytics: 'granted' });
-  expect(isRegionDefaultConsent(getConsentSnapshot().record)).toBe(false);
   view.unmount();
-});
-
-it('drops only a region default when a prompt region asks again', async () => {
-  network.request.mockReset().mockResolvedValue({ myAnalyticsConsent: null });
-  const controller = getConsentCoordinator()!;
-  act(() => {
-    controller.setAccount(null);
-    controller.replaceLocalRecord(null);
-  });
-  act(() => {
-    applyRegionDefaultConsent('ios');
-  });
-  expect(isRegionDefaultConsent(getConsentSnapshot().record)).toBe(true);
-  act(() => {
-    clearRegionDefaultConsent();
-  });
-  expect(getConsentSnapshot().record).toBeNull();
-  expect(consentCookie() ?? '').toBe('');
 });

@@ -120,6 +120,26 @@ afterEach(() => {
 });
 
 describe('browser consent with real encrypted-session credentials', () => {
+  it('migrates an old region-default cookie to unanswered without writing account consent', async () => {
+    document.cookie = 'boardsesh-consent=v1.granted.1791698400.web.region; Path=/';
+    document.cookie = '_fbp=old-pixel; Path=/';
+    document.cookie = '_rdt_uuid=old-pixel; Path=/';
+    const browser = await loadBrowserConsent();
+    expect(browser.state.getConsentSnapshot().record).toBeNull();
+    expect(browser.state.isProductAnalyticsGranted()).toBe(false);
+    expect(document.cookie).not.toContain('boardsesh-consent=');
+    expect(document.cookie).not.toContain('_fbp=');
+    expect(document.cookie).not.toContain('_rdt_uuid=');
+    expect(fixtures.request).not.toHaveBeenCalled();
+  });
+
+  it.each([grant, denial])('keeps a previous explicit $analytics cookie', async (record) => {
+    document.cookie = `boardsesh-consent=${serializeConsentCookieValue(record)}; Path=/`;
+    const browser = await loadBrowserConsent();
+    expect(browser.state.getConsentSnapshot().record).toMatchObject({ analytics: record.analytics });
+    expect(fixtures.request).not.toHaveBeenCalled();
+  });
+
   it('resolves the account denial instead of leaving browser consent unresolved', async () => {
     document.cookie = `boardsesh-consent=${serializeConsentCookieValue(grant)}; Path=/`;
     accountRecord = denial;

@@ -55,8 +55,6 @@ export type PrivacyModelInput = {
   analytics: {
     /** The consent choice the switch shows. */
     preference: boolean;
-    /** Analytics is on by default where this climber is, so say so. */
-    regionDefault: boolean;
     /**
      * The browser app: its consent cookie is shared with www, where analytics
      * also runs the Meta and Reddit ad pixels, so the footer must name them.
@@ -264,11 +262,7 @@ export function buildPrivacyModel(input: PrivacyModelInput): MoreFormModel {
   sections.push({
     key: 'analytics',
     title: t('consent:settingsTitle'),
-    footer: [
-      input.analytics.regionDefault ? t('consent:regionDefaultNote') : null,
-      t('consent:settingsBody'),
-      input.analytics.adMeasurement ? t('consent:adMeasurement') : null,
-    ]
+    footer: [t('consent:settingsBody'), input.analytics.adMeasurement ? t('consent:adMeasurement') : null]
       .filter((part): part is string => part !== null)
       .join(' '),
     rows: [

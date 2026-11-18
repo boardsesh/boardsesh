@@ -23,15 +23,6 @@ export type SetAnalyticsConsentInput = {
   conditional?: boolean | null;
 };
 
-/** Whether the analytics prompt is shown for the request's country. */
-export type ConsentRegion = {
-  /** ISO 3166-1 alpha-2, or null when the edge country is unknown or untrusted. */
-  countryCode: string | null;
-  promptRequired: boolean;
-  /** The request carried `Sec-GPC: 1`. */
-  globalPrivacyControl: boolean;
-};
-
 export type ActiveUsersPlatform = 'web' | 'ios' | 'android' | 'unknown';
 
 export type ActiveUsersPlatformCount = {

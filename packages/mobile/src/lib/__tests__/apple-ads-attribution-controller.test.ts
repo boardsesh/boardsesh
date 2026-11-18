@@ -49,7 +49,6 @@ function fixture(accountId: string | null = OWNER, cache: unknown = null) {
     accountId,
     sdkReady: true,
     flagsResolved: true,
-    regionConfirmed: true,
     record: { analytics: 'granted', version: 1, source: 'ios', decidedAt: '2026-10-10T07:59:00Z' },
   };
   const authority = () =>

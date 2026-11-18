@@ -36,11 +36,7 @@ export function createAuthAnalyticsHandoff({
   const origin = getConsentSnapshot();
   const signedInAt = new Date();
   const deadline = signedInAt.getTime() + AUTH_CONVERSION_WAIT_MS;
-  let valid =
-    origin.loaded &&
-    !origin.killed &&
-    isAnalyticsGranted(origin.record) &&
-    (!isRegionDefaultConsent(origin.record) || origin.regionConfirmed);
+  let valid = origin.loaded && !origin.killed && isAnalyticsGranted(origin.record);
   let owner: string | null = null;
   let boundEpoch: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -62,7 +58,6 @@ export function createAuthAnalyticsHandoff({
       !current.loaded ||
       current.killed ||
       current.record?.analytics === 'denied' ||
-      (isRegionDefaultConsent(origin.record) && !current.regionConfirmed) ||
       (boundEpoch !== null && current.authEpoch !== boundEpoch) ||
       (owner !== null && current.accountId !== null && current.accountId !== owner)
     ) {

@@ -14,16 +14,14 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { useConsent } from './consent-provider';
-import { useConsentRegionPrompt } from './use-consent-region-prompt';
+import { needsPrompt } from '@boardsesh/consent';
 
 export default function ConsentBanner() {
   const { t } = useTranslation('consent');
-  const { decide, dialogOpen, closeChoices, syncFailed } = useConsent();
+  const { snapshot, decide, dialogOpen, closeChoices, syncFailed, promptDismissed, dismissPrompt } = useConsent();
   const pathname = usePathnameWithoutLocale();
   const chromeLess = isChromeLessPath(pathname.toLowerCase());
-  // The banner asks only in the prompt regions (or an unknown one). Privacy
-  // choices in the footer and Settings open the dialog below for everyone.
-  const promptRegion = useConsentRegionPrompt(!chromeLess);
+  const showPrompt = snapshot.ready && needsPrompt(snapshot.record) && !promptDismissed;
   if (chromeLess) return null;
   const choose = (choice: 'granted' | 'denied') => {
     void decide(choice);
@@ -44,7 +42,7 @@ export default function ConsentBanner() {
   );
   return (
     <>
-      {promptRegion && (
+      {showPrompt && (
         <Box
           className="analytics-consent-banner"
           role="region"
@@ -74,6 +72,9 @@ export default function ConsentBanner() {
                 </Button>
                 <Button variant="outlined" fullWidth onClick={() => choose('denied')}>
                   {t('deny')}
+                </Button>
+                <Button fullWidth onClick={dismissPrompt}>
+                  {t('later')}
                 </Button>
               </Stack>
             </Stack>

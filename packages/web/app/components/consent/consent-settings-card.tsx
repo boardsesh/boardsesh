@@ -4,11 +4,10 @@ import CardContent from '@mui/material/CardContent';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
-import { isRegionDefaultConsent } from '@boardsesh/consent';
 import { useConsent } from './consent-provider';
 export default function ConsentSettingsCard() {
   const { t } = useTranslation('consent');
-  const { granted, openChoices, snapshot } = useConsent();
+  const { granted, openChoices } = useConsent();
   return (
     <Card>
       <CardContent>
@@ -17,11 +16,6 @@ export default function ConsentSettingsCard() {
           {t('settingsBody')} {t('adMeasurement')}
         </Typography>
         <Typography variant="body2">{granted ? t('enabled') : t('disabled')}</Typography>
-        {isRegionDefaultConsent(snapshot.record) && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('regionDefaultNote')}
-          </Typography>
-        )}
         <Button onClick={openChoices} sx={{ mt: 2 }}>
           {t('privacyChoices')}
         </Button>

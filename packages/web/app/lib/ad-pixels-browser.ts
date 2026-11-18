@@ -198,8 +198,7 @@ export function syncAdPixels(pathname: string): void {
   refreshWebConsent();
 
   // A definitive no (No thanks, no answer, an Allow older than the copy, GPC)
-  // withdraws. A transient hold (account still resolving, region lookup not
-  // back yet) only pauses: deleting the browser id there would reset it on
+  // withdraws. A transient hold (account still resolving) only pauses: deleting the browser id there would reset it on
   // every page load.
   if (!isAdMeasurementPermitted(getWebConsentRecord(), isGlobalPrivacyControlEnabled())) {
     withdrawAdPixels();

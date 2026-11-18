@@ -1,8 +1,9 @@
+import { hasAnalyticsConsent } from './consent';
 import { getBackendHttpUrl } from './backend-url';
 import { isProductionHost } from './production-hosts';
 /** Operational display health: no SDK storage, page URLs, referrers, user or session IDs. */
 export function captureKioskPageLoad(): void {
-  if (typeof window === 'undefined' || !isProductionHost(window.location.hostname)) return;
+  if (typeof window === 'undefined' || !isProductionHost(window.location.hostname) || !hasAnalyticsConsent()) return;
   const apiKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   const backendUrl = getBackendHttpUrl();
   if (!apiKey || !backendUrl) return;

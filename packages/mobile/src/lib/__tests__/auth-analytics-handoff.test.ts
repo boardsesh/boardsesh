@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createConsentSyncCoordinator, createRegionDefaultConsent } from '@boardsesh/consent';
+import { createConsentSyncCoordinator } from '@boardsesh/consent';
 import { grantAnalyticsForTest, grantedConsent } from '../../../test/consent-fixture';
 import { getConsentSnapshot, invalidateConsentAccount, updateConsentState } from '../consent-state';
 import { isAttributionAuthorityGranted, isAttributionPublicationGranted } from '../consent-state';
@@ -33,7 +33,6 @@ beforeEach(() => {
   cancelAuthAnalyticsHandoffs();
   credentialGeneration = 1;
   grantAnalyticsForTest();
-  updateConsentState({ regionConfirmed: true });
 });
 afterEach(() => {
   cancelAuthAnalyticsHandoffs();
@@ -134,13 +133,20 @@ describe('verified authentication analytics handoff', () => {
     expect(context.bindAccount(OWNER)).toBe(false);
   });
 
-  it('requires original regional authority and never uses a default for Apple attribution', () => {
-    updateConsentState({ record: createRegionDefaultConsent('ios'), regionConfirmed: false });
+  it('never uses a legacy default for analytics or Apple attribution', () => {
+    updateConsentState({
+      record: {
+        analytics: 'granted',
+        version: 1,
+        source: 'ios',
+        decidedAt: '2026-10-11T09:00:00.000Z',
+        basis: 'region_default',
+      },
+    });
     const unconfirmed = handoff();
-    updateConsentState({ regionConfirmed: true });
     expect(unconfirmed.isCurrent()).toBe(false);
     const confirmed = handoff();
-    expect(confirmed.isCurrent()).toBe(true);
+    expect(confirmed.isCurrent()).toBe(false);
     expect(getAttributionAuthHandoff()).toBeNull();
   });
 

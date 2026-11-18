@@ -18,6 +18,7 @@ import { grantAnalyticsForTest, grantedConsent } from '../../../../test/consent-
 beforeEach(() => {
   installReferrer.maybeFetchAndAttachInstallReferrer.mockClear();
   platform.OS = 'android';
+  grantAnalyticsForTest();
 });
 
 describe('InstallReferrerTracker', () => {
@@ -38,15 +39,14 @@ describe('InstallReferrerTracker', () => {
     expect(installReferrer.maybeFetchAndAttachInstallReferrer).not.toHaveBeenCalled();
   });
 
-  it('runs again when an explicit Allow replaces the region default', async () => {
-    // Analytics already on outside the prompt regions; the referrer needs the climber's own Allow.
+  it('waits for an explicit Allow when a legacy default is stored', async () => {
     grantAnalyticsForTest();
-    updateConsentState({ record: { ...grantedConsent, basis: 'region_default' }, regionConfirmed: true });
+    updateConsentState({ record: { ...grantedConsent, basis: 'region_default' } });
     render(createElement(InstallReferrerTracker));
-    await waitFor(() => expect(installReferrer.maybeFetchAndAttachInstallReferrer).toHaveBeenCalledTimes(1));
+    expect(installReferrer.maybeFetchAndAttachInstallReferrer).not.toHaveBeenCalled();
 
     act(() => grantAnalyticsForTest());
 
-    await waitFor(() => expect(installReferrer.maybeFetchAndAttachInstallReferrer).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(installReferrer.maybeFetchAndAttachInstallReferrer).toHaveBeenCalledTimes(1));
   });
 });
