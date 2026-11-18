@@ -523,12 +523,16 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
       const raw = await Promise.all([0, 1].map(() => encode({ token: { sub: accepted.id }, secret, maxAge: 3600 })));
       const decodedRaw = await Promise.all(raw.map((credential) => decode({ token: credential, secret })));
       expect(decodedRaw[0]?.jti).not.toBe(decodedRaw[1]?.jti);
+      // The row stores a digest, so only the bridge call that created a row
+      // hands out its raw token; a later bridge of the same row answers null.
       const canonicalAliases: string[] = [];
+      const bridgedSessionIds = new Set<string>();
       async function bridge(credential: string) {
         const outcome = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
         expect(outcome.status).toBe('bridged');
         if (outcome.status !== 'bridged') throw new Error('Synthetic alias was refused');
-        canonicalAliases.push(outcome.session.token);
+        bridgedSessionIds.add(outcome.session.id);
+        if (outcome.token) canonicalAliases.push(outcome.token);
         return outcome.session;
       }
       await Promise.all(raw.map(bridge));
@@ -543,6 +547,7 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
       );
       const childAliases = await Promise.all(children.map(bridge));
       expect(childAliases[0].id).not.toBe(childAliases[1].id);
+      expect(canonicalAliases).toHaveLength(bridgedSessionIds.size);
       if (removeOptionalLineage)
         await environment.database.delete(authCredentialLineage).where(eq(authCredentialLineage.userId, accepted.id));
       for (const token of canonicalAliases) {
@@ -570,8 +575,9 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
           const credential = await encode({ token: renewal, secret, maxAge: 3600 });
           concurrentChildren.push(credential);
           const outcome = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
-          if (outcome.status === 'bridged') canonicalAliases.push(outcome.session.token);
-          else expect(outcome.status).toBe('denied');
+          if (outcome.status === 'bridged') {
+            if (outcome.token) canonicalAliases.push(outcome.token);
+          } else expect(outcome.status).toBe('denied');
         }),
       ]);
       children.push(...concurrentChildren);

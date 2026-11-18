@@ -34,6 +34,7 @@ import {
   type BrowserSelectionCredential,
 } from '../browser-binding';
 import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+import { sessionTokenDigest } from '../session-token';
 
 // These writers run with the mirror on and no backend boot (function-level mirror).
 recordFunctionLevelIdentityMirrorForTests();
@@ -268,7 +269,7 @@ describe('private-browser-v1 on the actual restricted credential LOGIN', () => {
           if (source.kind === 'canonical-token')
             await environment.ownerDatabase.insert(authSession).values({
               id: sid,
-              token: source.token,
+              token: sessionTokenDigest(source.token),
               userId,
               expiresAt,
               updatedAt: new Date(),
@@ -367,7 +368,7 @@ describe('private-browser-v1 on the actual restricted credential LOGIN', () => {
             if (candidate.kind === 'canonical-token')
               await transaction
                 .update(authSession)
-                .set({ token: candidate.token, revocationGeneration: 1 })
+                .set({ token: sessionTokenDigest(candidate.token), revocationGeneration: 1 })
                 .where(eq(authSession.id, sid));
             return commitPreparedBrowserReplacementInTransaction(
               transaction,

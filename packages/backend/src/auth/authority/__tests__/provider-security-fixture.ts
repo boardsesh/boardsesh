@@ -19,6 +19,7 @@ import {
 } from '../provider-security-intents';
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { prepareProviderSecurityMutation } from '../provider-security-finalizer';
+import { sessionTokenDigest } from '../session-token';
 
 const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
 const jwt = requireWeb('next-auth/jwt') as {
@@ -134,7 +135,7 @@ export async function createProviderSecurityDriver(input: {
       await environment.database.insert(authSession).values({
         id: sid,
         userId,
-        token: raw,
+        token: sessionTokenDigest(raw),
         expiresAt,
         updatedAt: new Date(),
         originalAuthenticatedAt: authenticatedAt,

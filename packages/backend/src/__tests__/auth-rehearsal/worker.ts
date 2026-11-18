@@ -160,7 +160,7 @@ async function initialize(message: Initialization) {
         );
         result = {
           status: bridge.status,
-          ...(bridge.status === 'bridged' ? { canonicalToken: bridge.session.token } : {}),
+          ...(bridge.status === 'bridged' ? { canonicalToken: bridge.token } : {}),
         };
       } else if (candidate.command === 'canonical-read') {
         const admitted = await readFirstPartySession(database, {

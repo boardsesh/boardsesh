@@ -7,6 +7,7 @@ import { beginBrowserIntent, commitBrowserLoginInTransaction, readBrowserBinding
 import { captureIdentityAuthority } from '../router';
 import { transactionSettings } from '../../current-store/command-context';
 import { providerTokenHash } from '../provider-security-context';
+import { sessionTokenDigest } from '../session-token';
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 
@@ -37,7 +38,7 @@ async function attempt(selected: 'current-store' | 'better-auth') {
       await transaction.insert(authSession).values({
         id: candidateSessionId,
         userId: target.userId,
-        token: candidate.token,
+        token: sessionTokenDigest(candidate.token),
         expiresAt: new Date(now.getTime() + 3_600_000),
         updatedAt: now,
         originalAuthenticatedAt: null,

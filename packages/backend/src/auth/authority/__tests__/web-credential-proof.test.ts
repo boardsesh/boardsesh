@@ -442,8 +442,9 @@ describe('backend-issued web generation/freshness proofs', () => {
     const owner = await fixture();
     const credential = await cookie(owner.userId, owner.sessionId);
     const bridged = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
-    if (bridged.status !== 'bridged') throw new Error('Expected owned canonical session');
+    if (bridged.status !== 'bridged' || !bridged.token) throw new Error('Expected owned canonical session');
     const old = bridged.session;
+    const oldToken = bridged.token;
     expect((await setWebPassword(environment.database, authority, command(owner, credential))).outcome).toBe('set');
     const [next] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sessionId));
     expect(next.token).not.toBe(old.token);
@@ -452,11 +453,12 @@ describe('backend-issued web generation/freshness proofs', () => {
     expect(next.createdAt).toEqual(old.createdAt);
     expect(next.expiresAt.getTime()).toBeLessThanOrEqual(old.expiresAt.getTime());
     expect(
-      (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: old.token })).status,
+      (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: oldToken })).status,
     ).toBe('denied');
+    // The rotated row holds only a digest; read from the table, it is not a token.
     expect(
       (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: next.token })).status,
-    ).toBe('admitted');
+    ).toBe('denied');
   });
 
   it('the exported server refuses unqualified SID activation before external initialization', async () => {

@@ -34,6 +34,7 @@ import { captureIdentityAuthority, switchIdentityAuthority, type IdentityAuthori
 import { bindIdentityAuthority } from '../identity-authority';
 import { providerSecurityConfiguration } from '../provider-security-configuration';
 import { providerTokenHash } from '../provider-security-context';
+import { sessionTokenDigest } from '../session-token';
 import { handleProviderSecurity } from '../../../handlers/provider-security';
 
 vi.mock('../../../db/client', () => ({
@@ -654,7 +655,7 @@ describe('provider commands through default HTTP and the qualified provider LOGI
     ).toHaveLength(0);
     expect(
       (await environment.ownerDatabase.select().from(authSession).where(eq(authSession.id, owner.sid)))[0],
-    ).toMatchObject({ token: owner.actor.credential, revocationGeneration: 0 });
+    ).toMatchObject({ token: sessionTokenDigest(owner.actor.credential), revocationGeneration: 0 });
     expect(
       (
         await environment.ownerDatabase
