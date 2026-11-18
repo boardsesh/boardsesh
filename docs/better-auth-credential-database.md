@@ -68,17 +68,18 @@ backend's ordinary 404. Nothing called the service in production: its only
 caller was the www binding client, which no live www code imported. See
 [better-auth-browser-session.md](better-auth-browser-session.md).
 
-What stays until B5 rebuilds provider sign-in, provider security and first
-password on the new browser session: the backend binding core
-(`auth/authority/browser-binding.ts`) and the binding-table readers those
-cores use, the `@boardsesh/auth-protocol/browser-binding-v1` contract,
-`CURRENT_STORE_BROWSER_BINDING_MODE` in the startup check for staged writers,
-and the `private-browser-v1` database profile below. `browser-credential-writer.proof.ts`
-still runs the binding core on the restricted LOGIN.
+B5 rebuilt provider sign-in, provider security and first password on the new
+browser session, and B5d deleted what was left: the backend binding core
+(`auth/authority/browser-binding.ts`), the
+`@boardsesh/auth-protocol/browser-binding-v1` contract,
+`CURRENT_STORE_BROWSER_BINDING_MODE` and `browser-credential-writer.proof.ts`.
+No code reads the binding tables any more. The tables, their grants and the
+`private-browser-v1` database profile below stay (no migration).
 
 `AUTH_IDENTITY_DATABASE_CONTRACT` defaults to the unchanged `private-web-v1`
 profile. `private-browser-v1` adds the reviewed browser-binding/intent table
-closure that the kept cores read. A pool qualified for that profile can also
+closure; since B5d no code reads those tables, but the grants stay with the
+tables until a migration drops both. A pool qualified for that profile can also
 serve the existing web commands. Unknown profiles, a mismatched qualification
 receipt or contract changes while the pool is cached refuse without a
 content-pool fallback. The connection budget remains two retained writer

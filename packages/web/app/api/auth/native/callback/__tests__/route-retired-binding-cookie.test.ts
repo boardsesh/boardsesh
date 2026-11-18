@@ -56,7 +56,6 @@ beforeEach(async () => {
   vi.stubEnv('NEXTAUTH_SECRET', fixtureSecret);
   vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
   vi.stubEnv('BACKEND_INTERNAL_URL', authorityUrl);
-  vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', '');
   vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', '');
   authorityBearers.length = 0;
   controls.session.mockReset().mockResolvedValue({

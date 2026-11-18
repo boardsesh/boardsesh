@@ -907,8 +907,7 @@ Nothing in this doc was run. The Better Auth mechanisms were read in the
 installed 1.7.17 source, not executed. Also unchecked: Safari and WebKit handling of the shared-domain
 cookie between www and app; live DNS and which hosts receive the cookie;
 whether preview deployments are still manual dispatch only; the production
-values of `AUTH_LEGACY_BRIDGE_MODE`, `CURRENT_STORE_BROWSER_BINDING_MODE` and
-the sign-out mode ("off" comes from code defaults); whether
+values of `AUTH_LEGACY_BRIDGE_MODE` and the sign-out mode ("off" comes from code defaults); whether
 `/api/internal/ws-auth` sets a cookie on any path (A2 checks); and whether the
 #7439 denial reader is deployed on every backend. Owner decisions 14 and 23
 have no written source other than #7596.
