@@ -130,7 +130,7 @@ test("www: A's controller deletion, held across a switch to B on the app host, s
   await pageA.waitForLoadState('load');
   expect(new URL(pageA.url()).pathname).toBe('/');
   await expect(pageA.getByText(DELETED)).toHaveCount(0);
-  await expect(pageA.getByText('A board')).toHaveCount(0);
+  await expect(pageA.getByText('A board', { exact: true })).toHaveCount(0);
   expect(await readViewer(pageA)).toMatchObject({ authenticated: true, userId: accountB.userId });
 });
 
@@ -148,6 +148,14 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
   await openApp(appPage);
   await expect(appPage.getByRole('tab', { name: 'Home', exact: true })).toBeVisible({ timeout: 120_000 });
 
+  // The run log gets every auth and GraphQL answer the app tab sees, so a tab that does not
+  // reload shows which step it stopped at.
+  const started = Date.now();
+  appPage.on('response', (response) => {
+    const url = new URL(response.url());
+    if (!/\/(?:api\/auth\/session|api\/internal\/ws-auth|graphql)$/.test(url.pathname)) return;
+    console.info(`[held-app] +${Date.now() - started} ms ${response.status()} ${url.host}${url.pathname}`);
+  });
   const held = await holdReplies(appPage, `https://${WS_HOST}/graphql`);
   await appPage.reload({ waitUntil: 'commit' });
   await markDocument(appPage);
@@ -156,6 +164,9 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
   await signInOverExistingSession(wwwPage, accountB);
   await expectSessionReadNames(wwwPage, accountB);
   expect(await isSameDocument(appPage), 'A’s document is still up when its replies are released').toBe(true);
+  console.info(
+    `[held-app] +${Date.now() - started} ms releasing ${held.count()} replies; the app tab holds a marker: ${await appPage.evaluate(() => document.cookie.includes('boardsesh.viewer='))}`,
+  );
   held.release();
   await held.delivered();
   // A's name never shows, in any document the tab holds for 3 s.

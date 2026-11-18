@@ -170,6 +170,8 @@ function retryWebKitInternalError(page: Page, stack: BrowserSessionStack): void 
   let failedLoads: string[] = [];
   page.on('requestfailed', (request) => {
     const failure = request.failure()?.errorText ?? 'no detail';
+    // A request the page itself cancelled (a navigation, an abort) is not a network failure.
+    if (/cancelled/i.test(failure)) return;
     console.info(`[webkit] request failed: ${request.method()} ${request.url().slice(0, 200)} (${failure})`);
     if (WEBKIT_INTERNAL_ERROR.test(failure) && ['document', 'script'].includes(request.resourceType()))
       failedLoads.push(request.url());
