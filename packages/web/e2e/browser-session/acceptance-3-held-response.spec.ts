@@ -133,6 +133,7 @@ test("app: GraphQL replies of A's held across a switch to B land nowhere and the
 test('back/forward cache: a page of A restored after the switch re-reads the session and is replaced', async ({
   context,
   freshAccount,
+  stack,
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== 'chromium-bfcache',
@@ -169,6 +170,25 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
     .evaluate(() => (window as unknown as { __restored?: boolean }).__restored === true)
     .catch(() => false);
   testInfo.annotations.push({ type: 'bfcache', description: `restored=${restored}` });
+  if (!restored && stack.wwwMode === 'production') {
+    // The production build serves /settings with `Cache-Control: no-store`, and Chromium never
+    // keeps such a page (notRestoredReasons says which rule). The stale page this test guards
+    // against cannot come back there: the back navigation loads a new document, as B.
+    const reasons = await pageA.evaluate(() =>
+      JSON.stringify(
+        (
+          performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming & {
+            notRestoredReasons?: unknown;
+          }
+        ).notRestoredReasons ?? null,
+      ),
+    );
+    console.info(`[bfcache] production /settings not restored: ${reasons}`);
+    expect(reasons).toContain('no-store');
+    expect(await isSameDocument(pageA)).toBe(false);
+    expect(await readViewer(pageA)).toMatchObject({ userId: accountB.userId });
+    return;
+  }
   expect(restored, 'the back navigation restored the page from the back/forward cache').toBe(true);
   // The restored page asks who is signed in, finds B, and goes: the guard's reload from the root.
   await expect.poll(() => sessionReads.length, { timeout: 30_000 }).toBeGreaterThan(0);
