@@ -199,6 +199,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'frozen_now',
       'upload',
       'publish_baseline',
+      'content_baseline',
       'cpp_target',
       'cpp_action',
       'cpp_keyword_ids',
@@ -215,6 +216,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     ]);
     expect(dispatch.inputs?.gate.default).toBe('full');
     expect(dispatch.inputs?.publish_baseline.default).toBe(false);
+    expect(dispatch.inputs?.content_baseline.default).toBe('compare');
+    expect(dispatch.inputs?.content_baseline.options).toEqual(['compare', 'floor-only']);
     expect(dispatch.inputs?.cpp_target.default).toBe('none');
     expect(dispatch.inputs?.cpp_action.default).toBe('capture');
     expect(dispatch.inputs?.cpp_keyword_ids.default).toBe('');
@@ -626,6 +629,26 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       }
     },
   );
+
+  it('lets only a dispatch skip the content gate baseline ratio', () => {
+    const contentStep = workflow.jobs['ios-finalize'].steps?.find((step) => step.name === 'Assert screenshot content');
+    const mode = (event: string, input: string | undefined) =>
+      runInNewContext(
+        flatten(contentStep?.env?.CONTENT_BASELINE)
+          .replace(/^\$\{\{\s*/, '')
+          .replace(/\s*\}\}$/, ''),
+        { github: { event_name: event }, inputs: { content_baseline: input } },
+      );
+    expect(mode('workflow_run', undefined)).toBe('compare');
+    expect(mode('workflow_run', 'floor-only')).toBe('compare');
+    expect(mode('workflow_dispatch', 'compare')).toBe('compare');
+    expect(mode('workflow_dispatch', 'floor-only')).toBe('floor-only');
+    // Floor-only drops the ratio, never the floor, and says so in the summary.
+    const floorOnlyBranch = contentStep?.run?.split('elif')[0] ?? '';
+    expect(floorOnlyBranch).toContain('vp run screenshot:assert-content -- --dir app-stores/apple/screenshots');
+    expect(floorOnlyBranch).not.toContain('--baseline-dir');
+    expect(floorOnlyBranch).toContain('GITHUB_STEP_SUMMARY');
+  });
 
   it('keeps the native simulator-app identity in ios-build', () => {
     const buildSteps = workflow.jobs['ios-build'].steps ?? [];
