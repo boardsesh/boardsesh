@@ -35,6 +35,12 @@ export async function openApp(page: Page): Promise<void> {
   await page.addLocatorHandler(consentPrompt, async () => {
     await consentPrompt.click();
   });
+  // WebKit has left the app tab blank (nothing rendered for two minutes) in a few runs; its own
+  // errors go to the run log so the next one says why.
+  page.on('pageerror', (error) => console.info(`[app-tab] page error: ${error.name}: ${error.message}`));
+  page.on('console', (message) => {
+    if (message.type() === 'error') console.info(`[app-tab] console error: ${message.text().slice(0, 300)}`);
+  });
   await page.goto(`${APP_ORIGIN}/`);
 }
 
