@@ -50,6 +50,7 @@ export const ALL_NAMESPACES = [
   'boards',
   'kiosk',
   'gyms',
+  'devTools',
   'oauth',
   'developers',
   'cnc',

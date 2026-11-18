@@ -16,17 +16,27 @@ import { getPreference, setPreference } from './preference-store';
 const STORAGE_KEY = 'useBoardseshGrades';
 const DEFAULT_USE_BOARDSESH_GRADES = false;
 
-type BoardseshGradesSnapshot = { enabled: boolean; loaded: boolean };
+/**
+ * `loadFailed`: the last read of the stored choice threw, so `enabled` is the
+ * default (OFF) until a later mount reads it. A caller waiting for `loaded`
+ * before it searches can go ahead on the upstream grade instead of waiting forever.
+ */
+type BoardseshGradesSnapshot = { enabled: boolean; loaded: boolean; loadFailed: boolean };
 
 let current = DEFAULT_USE_BOARDSESH_GRADES;
 let hasLoaded = false;
-let snapshot: BoardseshGradesSnapshot = { enabled: current, loaded: hasLoaded };
+let loadFailed = false;
+let snapshot: BoardseshGradesSnapshot = { enabled: current, loaded: hasLoaded, loadFailed };
 const listeners = new Set<() => void>();
 
-const SERVER_SNAPSHOT: BoardseshGradesSnapshot = { enabled: DEFAULT_USE_BOARDSESH_GRADES, loaded: false };
+const SERVER_SNAPSHOT: BoardseshGradesSnapshot = {
+  enabled: DEFAULT_USE_BOARDSESH_GRADES,
+  loaded: false,
+  loadFailed: false,
+};
 
 function notify(): void {
-  snapshot = { enabled: current, loaded: hasLoaded };
+  snapshot = { enabled: current, loaded: hasLoaded, loadFailed };
   for (const listener of listeners) listener();
 }
 
@@ -40,6 +50,7 @@ export async function loadBoardseshGradesPreference(): Promise<boolean> {
   // OFF so Boardsesh grades are opt-in only.
   current = typeof stored === 'boolean' ? stored : DEFAULT_USE_BOARDSESH_GRADES;
   hasLoaded = true;
+  loadFailed = false;
   notify();
   return current;
 }
@@ -47,6 +58,7 @@ export async function loadBoardseshGradesPreference(): Promise<boolean> {
 export async function setBoardseshGradesPreference(enabled: boolean): Promise<void> {
   current = enabled;
   hasLoaded = true;
+  loadFailed = false;
   notify();
   await setPreference(STORAGE_KEY, enabled);
 }
@@ -59,6 +71,10 @@ function ensureBoardseshGradesLoaded(): Promise<boolean> {
       // singleton so the next mount retries instead of staying stuck at the
       // default until the app restarts.
       loadPromise = null;
+      if (!hasLoaded) {
+        loadFailed = true;
+        notify();
+      }
       throw error;
     });
   }
@@ -83,9 +99,10 @@ function getServerSnapshot(): BoardseshGradesSnapshot {
 export function useBoardseshGradesPreference(): {
   enabled: boolean;
   loaded: boolean;
+  loadFailed: boolean;
   setEnabled: (enabled: boolean) => void;
 } {
-  const { enabled, loaded } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { enabled, loaded, loadFailed: readFailed } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
     // Swallow read failures here — the load already clears its cached promise so
@@ -97,5 +114,5 @@ export function useBoardseshGradesPreference(): {
     void setBoardseshGradesPreference(next);
   }, []);
 
-  return { enabled, loaded, setEnabled };
+  return { enabled, loaded, loadFailed: readFailed, setEnabled };
 }

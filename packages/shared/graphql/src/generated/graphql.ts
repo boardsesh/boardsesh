@@ -17012,6 +17012,7 @@ export type GetSessionWorkoutHeadlinesQuery = {
     userId: string;
     mainKind?: string | null;
     mainTargetGrade?: string | null;
+    mainTargetBoardType?: string | null;
     secondMainKind?: string | null;
     blockCount: number;
     extraMainBlocks: number;
@@ -27042,6 +27043,7 @@ export const GetSessionWorkoutHeadlinesDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'mainKind' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'mainTargetGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'mainTargetBoardType' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'secondMainKind' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'blockCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'extraMainBlocks' } },

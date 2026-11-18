@@ -216,6 +216,13 @@ when these sets were recorded. It composes with the `sprayImport` adapter above.
 A recording that already holds the field, a copy anywhere but after `hasLeds`,
 and every other document change still fail the drift check.
 
+`GetSessionWorkoutHeadlines` accepts the exact addition of the nullable
+`mainTargetBoardType` straight after `mainTargetGrade` (#7027), and replays it as
+`null` on every headline, so a workout card reads its grade on the shared scale,
+as it did when recorded. A recording that already holds the field, a copy
+anywhere else or a second copy, and every other document change still fail the
+drift check.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

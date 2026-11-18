@@ -1,6 +1,49 @@
 {
-  "generatedAt": "2026-11-18T09:24:54.068Z",
+  "generatedAt": "2026-11-18T15:03:27.688Z",
   "entries": [
+    {
+      "prNumber": 7812,
+      "category": "new",
+      "title": "Turn the last-seconds countdown buzz off, and choose whether your rest shows on the Lock Screen, right from Settings › Timers.",
+      "mergedAt": "2026-11-18T14:27:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7812"
+    },
+    {
+      "prNumber": 7813,
+      "category": "improved",
+      "title": "Swipe between climbs on Android with fewer accidental scrolls.",
+      "mergedAt": "2026-11-18T14:27:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7813"
+    },
+    {
+      "prNumber": 7818,
+      "category": "new",
+      "title": "Your workout builder always offers 4x4, Limit Bouldering and On the Minute, even right after opening the app.",
+      "mergedAt": "2026-11-18T14:26:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7818"
+    },
+    {
+      "prNumber": 7819,
+      "category": "fixed",
+      "title": "A climb you logged during a workout now lands on the right block, even when it saves after the session ends.",
+      "mergedAt": "2026-11-18T14:26:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7819"
+    },
+    {
+      "prNumber": 7822,
+      "category": "new",
+      "title": "Pyramids can come back down on the same climbs. Turn on Same climbs down to retrace your way up.",
+      "mergedAt": "2026-11-18T14:25:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7822"
+    },
+    {
+      "prNumber": 7823,
+      "category": "fixed",
+      "title": "Resume a partner workout after restarting Boardsesh, with your progress and timer intact.",
+      "mergedAt": "2026-11-18T14:25:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7823",
+      "body": "Crew workouts keep your private notes and board name to you."
+    },
     {
       "prNumber": 7801,
       "category": "new",

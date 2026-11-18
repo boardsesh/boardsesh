@@ -59,6 +59,7 @@ export const GET_SESSION_WORKOUT_HEADLINES = gql`
       userId
       mainKind
       mainTargetGrade
+      mainTargetBoardType
       secondMainKind
       blockCount
       extraMainBlocks
@@ -119,6 +120,8 @@ export type SessionWorkoutHeadlineResult = {
   userId: string;
   mainKind: string | null;
   mainTargetGrade: string | null;
+  /** The board whose grade scale `mainTargetGrade` is on; null exactly when it is. */
+  mainTargetBoardType: string | null;
   secondMainKind: string | null;
   blockCount: number;
   extraMainBlocks: number;
