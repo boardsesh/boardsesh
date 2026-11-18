@@ -1354,7 +1354,9 @@ status mapping; a lost or 503 reply is 503 `{ status: 'unavailable' }`.
   `identity_changed` and lost replies change no cookie; a wrong password keeps
   the flow so the climber can try again.
 
-**Forced re-sign-in** (`/auth/reauthenticate?callbackUrl=…`, #7655 item 6).
+### Forced re-sign-in (B5e1)
+
+`/auth/reauthenticate?callbackUrl=…` (#7655 item 6).
 One page for Settings, the developer console and partner pages, under
 `better-auth` only (404 otherwise; signed-out browsers go to the login page
 first). It is a real sign-in of the account already signed in: its password
@@ -1364,12 +1366,21 @@ backend issues a new session whose sign-in time is now (Google only with a
 signed `auth_time` under five minutes old) and ends the old one, and the
 browser returns to the `callbackUrl`, reduced to a same-origin path
 (`safeCallbackUrl`). A silent Google sign-in cannot satisfy a five-minute
-check. Apple-only accounts are told to set a password first. Settings itself
-uses the per-intent reauthentication above, which does not touch the
-session's sign-in time; the console and partner pages need the session's own
-sign-in time, which only a login moves.
+check. Apple-only accounts are told to set a password first. Settings' link
+and unlink use the per-intent reauthentication of the provider-security
+commands instead, which does not touch the session's sign-in time; the console
+and partner pages need the session's own sign-in time, which only a login
+moves. The page asks the provider-security `methods` read which ways the
+account can confirm, and offers both when it does not answer.
 
-**Owner checks against the real providers** (none of this has been seen
+Owner check against real Google, before the mode goes on: Google accepts
+`max_age=0` with `prompt=select_account consent` (no 400), asks for the
+password, and the ID token's `auth_time` moves to that moment (#7590).
+`web-provider-session.integration.proof.ts` proves the rest against the
+stand-in: the start sends both values, the answer is a login with its twin,
+and only a fresh `auth_time` passes a five-minute check.
+
+**Owner checks for link, unlink and reauthentication against the real providers** (none of this has been seen
 outside the stand-in):
 
 1. Register `https://www.boardsesh.com/api/auth/provider-security/callback/google`

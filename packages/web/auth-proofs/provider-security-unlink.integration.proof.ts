@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
-import { readFirstPartySession, requireFreshAuthentication } from '../../backend/src/auth/authority/session-reader';
+import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { CookieJar, patchNextRequestIo } from './route-harness';
 import {
   PASSWORD,
@@ -18,7 +18,6 @@ import {
   canonicalStatus,
   createClimber,
   loginToken,
-  sessionCookieNamesIn,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
   type WebSessionBackend,
@@ -64,7 +63,6 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
 import * as providerSecurityRoute from '../app/api/auth/provider-security/[...step]/route';
 import { authOptions } from '../app/lib/auth/auth-options';
-import { GOOGLE_FORCED_REAUTHENTICATION } from '../app/lib/auth/google-forced-reauthentication';
 
 const secret = 'provider-security-unlink-proof-nextauth-secret-7596';
 const { csrf, login } = browserSteps(authRoute);
@@ -206,37 +204,5 @@ describe('provider unlink and reauthentication under better-auth', () => {
     const aborted = await steps.post('abort', jar);
     expect(await aborted.json()).toEqual({ status: 'aborted' });
     expect(jar.get(FLOW_COOKIE)).toBeUndefined();
-  });
-});
-
-describe('the forced re-sign-in (#7655 item 6) under better-auth', () => {
-  it('asks Google for a fresh sign-in, and only a fresh auth_time makes the new session pass a five-minute check', async () => {
-    const subject = `google-${randomUUID()}`;
-    const jar = new CookieJar();
-    await steps.googleSignIn(jar, identityAt(subject, 2 * 60 * 60), await csrf(jar));
-    const outcomes: boolean[] = [];
-    for (const authAgoSeconds of [2 * 60 * 60, 15]) {
-      const before = loginToken(jar);
-      const { url, response } = await steps.googleSignIn(
-        jar,
-        identityAt(subject, authAgoSeconds),
-        await csrf(jar),
-        GOOGLE_FORCED_REAUTHENTICATION,
-      );
-      const authorization = new URL(url);
-      expect(authorization.searchParams.get('max_age')).toBe('0');
-      expect(authorization.searchParams.get('prompt')).toBe('select_account consent');
-      // A re-sign-in is a login: it writes the login cookie and ends the session it arrived with.
-      expect(sessionCookieNamesIn(response)).toContain('__Secure-boardsesh.session_token');
-      expect(await canonicalStatus(environment.database, before)).not.toBe('admitted');
-      const read = await readFirstPartySession(environment.database, {
-        kind: 'canonical-token',
-        token: loginToken(jar),
-      });
-      if (read.status !== 'admitted') throw new Error('The re-sign-in session is not live');
-      outcomes.push(requireFreshAuthentication(read.session));
-    }
-    // Google's own auth_time decides: a silent answer never passes, a real sign-in does.
-    expect(outcomes).toEqual([false, true]);
   });
 });

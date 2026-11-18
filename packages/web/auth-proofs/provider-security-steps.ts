@@ -110,14 +110,8 @@ export function providerSecuritySteps(route: StepRoute, authRoute: AuthRoute, go
   }
 
   /** A Google sign-in through NextAuth's route (B5b), as the login page's button starts it. */
-  async function googleSignIn(
-    jar: CookieJar,
-    identity: GoogleIdentity,
-    csrfToken: string,
-    authorizationParams: Readonly<Record<string, string>> = {},
-  ) {
-    const query = new URLSearchParams({ ...authorizationParams }).toString();
-    const start = await callRoute(authRoute, `/api/auth/signin/google${query ? `?${query}` : ''}`, {
+  async function googleSignIn(jar: CookieJar, identity: GoogleIdentity, csrfToken: string) {
+    const start = await callRoute(authRoute, '/api/auth/signin/google', {
       cookie: jar.header(),
       form: { csrfToken, callbackUrl: `${ORIGIN}/`, json: 'true' },
       headers: { 'x-forwarded-for': randomClientAddress() },

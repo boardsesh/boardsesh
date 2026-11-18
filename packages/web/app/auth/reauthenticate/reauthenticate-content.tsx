@@ -19,7 +19,11 @@ import { themeTokens } from '@/app/theme/theme-config';
 type ReauthenticateContentProps = { email: string; callbackUrl: string };
 type Methods = { password: boolean; google: boolean };
 
-/** Which ways this account can confirm it is the climber: the provider-security methods read, or both when unknown. */
+/**
+ * Which ways this account can confirm it is the climber: the provider-security
+ * methods read (#7596 B5e1), or both when it does not answer (its route is off
+ * or not deployed yet).
+ */
 function useReauthenticationMethods(): Methods | undefined {
   const [methods, setMethods] = useState<Methods>();
   useEffect(() => {

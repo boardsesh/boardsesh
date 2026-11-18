@@ -15,7 +15,7 @@ import { decode, encode } from 'next-auth/jwt';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { authSession, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
-import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
+import { readFirstPartySession, requireFreshAuthentication } from '../../backend/src/auth/authority/session-reader';
 import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
 import {
   BRIDGED,
@@ -73,6 +73,7 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
 import { authOptions } from '../app/lib/auth/auth-options';
+import { GOOGLE_FORCED_REAUTHENTICATION } from '../app/lib/auth/google-forced-reauthentication';
 
 const secret = 'web-provider-session-proof-nextauth-secret-7596';
 const ACCESS_SECRET = 'web-provider-session-proof-access-secret-7596-b5b';
@@ -137,10 +138,15 @@ const newGoogleIdentity = (authAgoSeconds?: number): GoogleIdentity => {
 };
 
 /** A browser's whole Google sign-in: start, Google's answer, the callback. */
-async function googleSignIn(jar: CookieJar, identity: GoogleIdentity) {
+async function googleSignIn(
+  jar: CookieJar,
+  identity: GoogleIdentity,
+  authorizationParams: Readonly<Record<string, string>> = {},
+) {
   const clientAddress = randomClientAddress();
   const csrfToken = await csrf(jar);
-  const start = await callRoute(authRoute, '/api/auth/signin/google', {
+  const query = new URLSearchParams({ ...authorizationParams }).toString();
+  const start = await callRoute(authRoute, `/api/auth/signin/google${query ? `?${query}` : ''}`, {
     cookie: jar.header(),
     form: { csrfToken, callbackUrl: 'https://www.boardsesh.com/', json: 'true' },
     headers: { 'x-forwarded-for': clientAddress },
@@ -361,5 +367,38 @@ describe('Google sign-in under better-auth', () => {
     const jar = new CookieJar();
     const response = await login(jar, climber.email);
     await expectTwinBesideLogin(response, jar);
+  });
+});
+
+describe('the forced re-sign-in (#7655 item 6) under better-auth', () => {
+  beforeEach(betterAuth);
+
+  it('asks Google for a fresh sign-in, and only a fresh auth_time makes the new session pass a five-minute check', async () => {
+    const identity = newGoogleIdentity(2 * 60 * 60);
+    const jar = new CookieJar();
+    await googleSignIn(jar, identity);
+    const passes: boolean[] = [];
+    for (const authAgoSeconds of [2 * 60 * 60, 15]) {
+      const before = loginToken(jar);
+      const { response } = await googleSignIn(
+        jar,
+        { ...identity, authTimeSeconds: nowSeconds() - authAgoSeconds },
+        GOOGLE_FORCED_REAUTHENTICATION,
+      );
+      const authorization = google.authorizations().at(-1);
+      expect(authorization?.get('max_age')).toBe('0');
+      expect(authorization?.get('prompt')).toBe('select_account consent');
+      // A re-sign-in is a login: it writes the login cookie and ends the session it arrived with.
+      await expectTwinBesideLogin(response, jar);
+      expect(await canonicalStatus(environment.database, before)).not.toBe('admitted');
+      const read = await readFirstPartySession(environment.database, {
+        kind: 'canonical-token',
+        token: loginToken(jar),
+      });
+      if (read.status !== 'admitted') throw new Error('The re-sign-in session is not live');
+      passes.push(requireFreshAuthentication(read.session));
+    }
+    // Google's own auth_time decides: a silent answer never passes, a real sign-in does.
+    expect(passes).toEqual([false, true]);
   });
 });
