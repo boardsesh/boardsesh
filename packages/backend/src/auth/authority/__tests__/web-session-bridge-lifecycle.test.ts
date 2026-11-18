@@ -143,7 +143,7 @@ describe('login and sign-out against a bridged session', () => {
     expect(phone.revokedAt).toBeNull();
   });
 
-  it('writes nothing when a no-SID legacy cookie that was never bridged signs out', async () => {
+  it('denies a never-bridged no-SID cookie that signs out, so a later bridge of it is refused (review Low 4)', async () => {
     const { id } = await climber();
     const cookie = await legacyCookie(id);
     const other = await bridged(await legacyCookie(id, { lifetimeSeconds: 7200 }));
@@ -160,7 +160,12 @@ describe('login and sign-out against a bridged session', () => {
       read.session.authSessionId,
     );
     expect(reply.status).toBe(200);
-    expect(await rows(id)).toEqual(before);
+    const after = await rows(id);
+    // One denial of this cookie's own id and nothing else: no cutoff, no other row.
+    expect(after.denials.map((denial) => denial.sessionId)).toEqual([read.session.authSessionId]);
+    expect({ ...after, denials: [] }).toEqual({ ...before, denials: [] });
+    expect((await bridge(cookie)).outcome).toBe('denied');
+    expect(await legacyStatus(cookie)).toBe('denied');
     expect(await readStatus(other.token)).toBe(200);
   });
 });
@@ -177,6 +182,30 @@ describe('races and password changes against a bridged session', () => {
     expect(signOutReply.status).toBe(200);
     const after = await rows(id);
     expect(after.sessions).toEqual([]);
+    expect(after.denials.map((denial) => denial.sessionId)).toEqual([sessionId]);
+    if (bridgeReply.outcome === 'bridged') expect(await readStatus(bridgeReply.token)).toBe(401);
+    else expect(bridgeReply.outcome).toBe('denied');
+    expect((await bridge(cookie)).outcome).toBe('denied');
+  });
+
+  it('ends a no-SID cookie whichever wins when a bridge races its sign-out, with no account cutoff', async () => {
+    const { id } = await climber();
+    const cookie = await legacyCookie(id);
+    const read = await readFirstPartySession(harnessDatabase(), {
+      kind: 'legacy-jwe',
+      credential: cookie,
+      secret: nextAuthSecret,
+    });
+    if (read.status !== 'admitted') throw new Error('Synthetic cookie refused');
+    const sessionId = read.session.authSessionId;
+    const [bridgeReply, signOutReply] = await Promise.all([
+      bridge(cookie),
+      signOut({ presented: { kind: 'legacy-jwe', credential: cookie } }, id, sessionId),
+    ]);
+    expect(signOutReply.status).toBe(200);
+    const after = await rows(id);
+    expect(after.sessions).toEqual([]);
+    expect(after.cutoffs).toEqual([]);
     expect(after.denials.map((denial) => denial.sessionId)).toEqual([sessionId]);
     if (bridgeReply.outcome === 'bridged') expect(await readStatus(bridgeReply.token)).toBe(401);
     else expect(bridgeReply.outcome).toBe('denied');

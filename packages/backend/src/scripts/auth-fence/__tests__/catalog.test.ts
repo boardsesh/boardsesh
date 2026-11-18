@@ -151,9 +151,10 @@ describe('authority operator safety', () => {
       ),
     ).toThrow();
     expect(() => assertAuthorityActivationGates()).toThrow('ACTIVATION_CODE_GATES_OPEN');
+    // STAGED_WEB_PROOF_GENERATION_STAMP closed in code (#7596 B2c); only the owner's confirmation remains.
     expect(AUTHORITY_ACTIVATION_BLOCKERS).toEqual([
       'GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION',
-      'STAGED_WEB_PROOF_GENERATION_STAMP',
+      'HISTORICAL_WEB_ISSUER_RETIREMENT',
     ]);
   });
   it('denies future auth tables, preserves cutoff reads and prints rollback', () => {

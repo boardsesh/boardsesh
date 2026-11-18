@@ -29,6 +29,7 @@ import type { ExpectedCurrentStoreAuthority } from '../auth/current-store/founda
 import {
   browserAccessTokenKeyFromEnvironment,
   bridgeTokenKeyFromEnvironment,
+  legacyBridgeUntil,
 } from '../auth/authority/browser-session-mode';
 import {
   accessWebSession,
@@ -174,7 +175,14 @@ export async function handleCurrentStoreWebSession(
           : { ...base, operation: 'access', outcome: 'unauthenticated', reason: access.reason },
       );
     } else {
-      const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
+      // After AUTH_LEGACY_BRIDGE_UNTIL the bridge is over: denied, nothing read or written.
+      // Unset or not a time throws here and answers 503, never a denial: no open-ended bridge.
+      const until = legacyBridgeUntil(process.env);
+      if (until === undefined) throw new Error('Web bridge has no end date');
+      const bridged =
+        Date.now() >= until.getTime()
+          ? ({ status: 'denied' } as const)
+          : await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
       reply = webSessionBridgeReplySchema.parse(
         bridged.status === 'bridged'
           ? {

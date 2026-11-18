@@ -47,6 +47,46 @@ const PROVIDER_SECURITY_MODE_ENV = 'CURRENT_STORE_PROVIDER_SECURITY_MODE';
 const FIRST_PASSWORD_MODE_ENV = 'CURRENT_STORE_FIRST_PASSWORD_MODE';
 
 /**
+ * The end of the web bridge (#7596 B2c): an exact ISO 8601 time with `Z` or an
+ * explicit offset. From that instant `/web-session/v1/bridge` answers `denied`
+ * and writes nothing, so www treats a browser holding only a legacy cookie as
+ * signed out. Unset or invalid, `/bridge` answers 503 in every mode, so no
+ * combination of switches runs an open-ended bridge; under `better-auth` the
+ * backend also refuses to start unless it is set at most 45 days ahead. The
+ * owner sets it to cutover plus 30 days and may move it once, after a rollback.
+ */
+export const LEGACY_BRIDGE_UNTIL_ENV = 'AUTH_LEGACY_BRIDGE_UNTIL';
+export const LEGACY_BRIDGE_UNTIL_MAX_DAYS = 45;
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
+
+/**
+ * The instant, or undefined for a value that is not an exact time: every field
+ * in range, the day real for its month (no `2027-02-30`), no `T24:00`, and an
+ * offset or `Z`. A lenient parser would roll those over silently.
+ */
+function exactInstant(raw: string): Date | undefined {
+  const match = ISO_INSTANT.exec(raw);
+  if (!match) return undefined;
+  const [, , , , , , , sign, offsetHoursText, offsetMinutesText] = match;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map((field) => Number(field ?? '0'));
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return undefined;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day > daysInMonth) return undefined;
+  if (sign && (Number(offsetHoursText) > 23 || Number(offsetMinutesText) > 59)) return undefined;
+  const instant = new Date(raw);
+  return Number.isNaN(instant.getTime()) ? undefined : instant;
+}
+
+/** The configured end of the bridge, undefined when unset. Throws on a value that is not an exact instant. */
+export function legacyBridgeUntil(environment: Environment = process.env): Date | undefined {
+  const raw = environment[LEGACY_BRIDGE_UNTIL_ENV];
+  if (raw === undefined || raw === '') return undefined;
+  const until = exactInstant(raw);
+  if (!until) throw new Error(`Invalid ${LEGACY_BRIDGE_UNTIL_ENV}`);
+  return until;
+}
+
+/**
  * Phase B work (#7596) that must land before a browser can be served a
  * backend session end to end. While any entry remains, `better-auth` refuses
  * to start even with every precondition met. Each later PR deletes its own
@@ -54,7 +94,6 @@ const FIRST_PASSWORD_MODE_ENV = 'CURRENT_STORE_FIRST_PASSWORD_MODE';
  * no environment variable or flag removes an entry.
  */
 export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([
-  'B2_LEGACY_COOKIE_BRIDGE',
   'B3_BROWSER_ACCESS_TOKEN',
   'B4_SERVER_RENDERS_ON_CANONICAL_SESSION',
   'B5_PROVIDER_SIGN_IN',
@@ -83,6 +122,7 @@ export const BROWSER_SESSION_STARTUP_ERRORS = Object.freeze({
   cookieSecret: 'AUTH_BROWSER_SESSION_COOKIE_SECRET_INVALID',
   accessTokenSecret: 'AUTH_BROWSER_SESSION_ACCESS_TOKEN_SECRET_INVALID',
   bridgeTokenSecret: 'AUTH_BROWSER_SESSION_BRIDGE_TOKEN_SECRET_INVALID',
+  legacyBridgeUntil: 'AUTH_BROWSER_SESSION_LEGACY_BRIDGE_UNTIL_INVALID',
   secretReused: 'AUTH_BROWSER_SESSION_SECRET_REUSED',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE',
   providerSecurityNeedsBrowserSession: 'AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED',
@@ -167,6 +207,17 @@ function assertBetterAuthPreconditions(environment: Environment): void {
     new Set(browserSecrets).size === browserSecrets.length &&
       !browserSecrets.some((secret) => otherSecrets.includes(secret)),
     errors.secretReused,
+  );
+  // Set, and at most 45 days ahead: production never runs an open-ended bridge.
+  let until: Date | undefined;
+  try {
+    until = legacyBridgeUntil(environment);
+  } catch {
+    until = undefined;
+  }
+  refuseUnless(
+    until !== undefined && until.getTime() - Date.now() <= LEGACY_BRIDGE_UNTIL_MAX_DAYS * 86_400_000,
+    errors.legacyBridgeUntil,
   );
 }
 

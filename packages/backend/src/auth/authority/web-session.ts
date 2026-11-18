@@ -67,7 +67,8 @@ export interface WebSessionIssue {
    * The admitted first-party session that arrived on the login request, legacy
    * cookie or canonical, of any account, exactly as `readFirstPartySession`
    * returned it in this transaction. Revoked here when it has its own session
-   * id; one that `requiresAccountCutoff` is left alone.
+   * id; one that `requiresAccountCutoff` ends by its own id only (row if any,
+   * denial of the id), never by an account cutoff.
    */
   readonly presented?: FirstPartySession;
   readonly now: Date;
@@ -190,9 +191,10 @@ export async function readPresentedWebSession(
  * `AuthSubjectDeniedError`, as native issuance does, and a moved authority
  * with `STALE_AUTHORITY`. A presented session is revoked only through its own
  * session id. One that `requiresAccountCutoff` (a no-SID legacy cookie, or the
- * bridged row of one) ends only the row the bridge made from it, matched by
- * exact id and lineage, if there is one; nothing else of it is written, so a
- * login never cuts off an account and never moves its generation.
+ * bridged row of one) ends by that id alone: the row the bridge made from it,
+ * matched by exact id and lineage, if there is one, and a denial of the id, so
+ * the cookie is never bridged afterwards. A login never cuts off an account and
+ * never moves its generation.
  */
 export async function issueWebSession(
   transaction: AuthorityTransaction,
@@ -355,7 +357,8 @@ export interface WebSessionSignOut {
  * A legacy cookie with its own session id gets a denial of that id, which
  * ends that login and no other. A legacy cookie without one could only be
  * ended by cutting off its whole account, phones included, so it is answered
- * `signed-out` and only the row the bridge made from it, if any, ends: www
+ * `signed-out` and only its own id ends: the row the bridge made from it, if
+ * any, and a denial of that id, so the cookie is never bridged afterwards. www
  * clears the cookie, as NextAuth's own sign-out does today. A bridged row of
  * such a cookie, presented by its token, is ended as that row alone. It never
  * performs an account cutoff.
@@ -396,9 +399,12 @@ export async function signOutWebSession(
 /**
  * The row the bridge made from a legacy cookie without a session id: its id is
  * the session id the reader gave the cookie and its lineage is the cookie's
- * own. That row, if it exists, ends alone (row, lineage, denial of its id), as
- * a sign-out presenting its token ends it; never by an account cutoff. The
- * caller holds the gate and the account FOR UPDATE.
+ * own. That id ends alone (row if any, lineage, denial of the id), as a
+ * sign-out presenting its token ends it; never by an account cutoff. The
+ * denial is written even when no row exists yet (review of #7789, Low 4), so a
+ * bridge of this cookie that follows or races the sign-out is refused: the
+ * bridge reads denials of the id first. The caller holds the gate and the
+ * account FOR UPDATE.
  */
 async function endBridgedRowAlone(
   transaction: AuthorityTransaction,
@@ -408,17 +414,12 @@ async function endBridgedRowAlone(
 ): Promise<void> {
   const lineageId = session.lineageId;
   if (!lineageId?.startsWith('credential:') || lineageId.startsWith('credential:native-refresh:')) return;
-  const [bridged] = await transaction
-    .select({ id: authSession.id })
+  // A row under this id that the bridge did not make from this cookie is never touched.
+  const [existing] = await transaction
+    .select({ userId: authSession.userId, legacyLineageId: authSession.legacyLineageId })
     .from(authSession)
-    .where(
-      and(
-        eq(authSession.id, session.authSessionId),
-        eq(authSession.userId, session.userId),
-        eq(authSession.legacyLineageId, lineageId),
-      ),
-    );
-  if (!bridged) return;
+    .where(eq(authSession.id, session.authSessionId));
+  if (existing && (existing.userId !== session.userId || existing.legacyLineageId !== lineageId)) return;
   await denyFirstPartySessionInTransaction(
     transaction,
     { ...session, requiresAccountCutoff: false },

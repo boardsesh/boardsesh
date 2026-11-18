@@ -318,6 +318,7 @@ describe('private RPC default credential database selection', () => {
       NEXTAUTH_SECRET: 'owned-nextauth-private-rpc-key',
       AUTH_BRIDGE_TOKEN_SECRET: 'owned-private-rpc-bridge-token-secret-32-bytes',
       AUTH_BROWSER_ACCESS_TOKEN_SECRET: 'owned-private-rpc-browser-access-token-secret',
+      AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       CURRENT_STORE_AUTH_PROJECTION_ID: 'owned-private-rpc-projection',
       CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
       CURRENT_STORE_DELETED_EMAIL_KEY: 'owned-private-rpc-deleted-email-key-at-least-32-bytes',

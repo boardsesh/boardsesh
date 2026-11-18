@@ -293,7 +293,7 @@ describe('login through the staged password command', () => {
 });
 
 describe('no account cutoff', () => {
-  it('leaves a presented no-SID legacy cookie alone and still signs in', async () => {
+  it('ends only a presented no-SID legacy cookie (its own id denied, no cutoff) and still signs in', async () => {
     const { id, email } = await climber();
     const other = (await login(email)).webSession!;
     await phone(id);
@@ -311,7 +311,8 @@ describe('no account cutoff', () => {
       ),
     );
     expect(await sessionStatus(other.token)).toBe('admitted');
-    expect((await readFirstPartySession(environment.database, legacy)).status).toBe('admitted');
+    // The login revokes the session it was presented, by that cookie's own id only (#7596 B2c).
+    expect((await readFirstPartySession(environment.database, legacy)).status).toBe('denied');
   });
 
   it('signs out a bridged no-SID row alone', async () => {
