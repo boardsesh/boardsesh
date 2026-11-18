@@ -1,6 +1,6 @@
 import 'server-only';
 import type { NextRequest } from 'next/server';
-import type { ProviderSecurityProvider } from '@boardsesh/auth-protocol';
+import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import { authOptions } from './auth-options';
 import {
   clearProviderFlowCookie,
@@ -11,6 +11,7 @@ import {
 } from './provider-flow-cookie.server';
 import { providerClient, redeemAuthorizationCode, type VerifiedProviderIdentity } from './provider-oidc.server';
 import {
+  abortQuietly,
   continueAfterReauthentication,
   finishLink,
   providerSecurityCallbackUrl,
@@ -20,6 +21,7 @@ import {
   type StepResult,
 } from './provider-security-flow.server';
 import { DEFAULT_RETURN_PATH, liveSession, type RouteContext } from './provider-security-context.server';
+import { SealedCookieTooLarge } from './sealed-cookie.server';
 
 /**
  * The provider callbacks of link and Google reauthentication (#7596 B5e1):
@@ -47,7 +49,12 @@ function redirectTo(context: RouteContext, path: string, result: string, setCook
 }
 
 /** The path a step's result sends the browser to, and what happens to the flow cookie. */
-function resultRedirect(context: RouteContext, record: ProviderFlowRecord, result: StepResult): Response {
+async function resultRedirect(
+  context: RouteContext,
+  record: ProviderFlowRecord,
+  result: StepResult,
+  actor: ProviderSecurityActor,
+): Promise<Response> {
   const clear = [clearProviderFlowCookie(context.cookies, record.sameSite)];
   switch (result.kind) {
     case 'committed':
@@ -62,6 +69,8 @@ function resultRedirect(context: RouteContext, record: ProviderFlowRecord, resul
     }
     case 'refused': {
       const { outcome, code } = result.reply;
+      // A flow that ends here gives its intent's slot back (#7805 review, L2).
+      if (!result.keep) await abortQuietly(context.client, actor, record.intentToken);
       return redirectTo(context, record.returnTo, outcome === 'denied' ? code : outcome, result.keep ? [] : clear);
     }
     case 'unavailable':
@@ -104,7 +113,15 @@ async function holdApplePost(request: NextRequest, context: RouteContext, record
     status: 303,
     headers: { Location: resume.href, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' },
   });
-  response.headers.append('Set-Cookie', sealProviderFlowCookie(context.cookies, held));
+  try {
+    response.headers.append('Set-Cookie', sealProviderFlowCookie(context.cookies, held));
+  } catch (error) {
+    if (!(error instanceof SealedCookieTooLarge)) throw error;
+    // No session rides on this cross-site POST, so the intent cannot be ended here; it expires.
+    return redirectTo(context, record.returnTo, 'unavailable', [
+      clearProviderFlowCookie(context.cookies, record.sameSite),
+    ]);
+  }
   return response;
 }
 
@@ -157,19 +174,43 @@ export async function handleProviderSecurityCallback(
   if (session.userId !== record.userId || session.authSessionId !== record.authSessionId)
     return redirectTo(context, record.returnTo, 'identity_changed', clear);
 
+  try {
+    return await finishArrival(context, pending, arrival, session.actor);
+  } catch (error) {
+    if (!(error instanceof SealedCookieTooLarge)) throw error;
+    await abortQuietly(context.client, session.actor, record.intentToken);
+    return redirectTo(context, record.returnTo, 'unavailable', clear);
+  }
+}
+
+async function finishArrival(
+  context: RouteContext,
+  pending: ProviderFlowRecord,
+  arrival: Arrival,
+  actor: ProviderSecurityActor,
+): Promise<Response> {
+  const record = pending;
+  const clear = [clearProviderFlowCookie(context.cookies, record.sameSite)];
   if (arrival.code === null) {
-    await context.client
-      .send('abort', { actor: session.actor, intentToken: record.intentToken, preparationToken: null, flowHash: null })
-      .catch(() => undefined);
+    // A cancelled Google reauthentication keeps the intent: the climber can still use the password (L6).
+    if (arrival.leg === 'reauthenticate')
+      return redirectTo(context, record.returnTo, 'cancelled', [
+        sealProviderFlowCookie(context.cookies, { ...record, reauthentication: undefined }),
+      ]);
+    await abortQuietly(context.client, actor, record.intentToken);
     return redirectTo(context, record.returnTo, 'cancelled', clear);
   }
   const client = providerClient(authOptions, arrival.leg === 'reauthenticate' ? 'google' : record.provider);
-  if (!client) return redirectTo(context, record.returnTo, 'unavailable', clear);
+  if (!client) {
+    await abortQuietly(context.client, actor, record.intentToken);
+    return redirectTo(context, record.returnTo, 'unavailable', clear);
+  }
   const redirectUri = providerSecurityCallbackUrl(context.publicOrigin, client.provider);
   let identity: VerifiedProviderIdentity;
   try {
     identity = await redeemAuthorizationCode(client, arrival.roundTrip, redirectUri, arrival.code);
   } catch {
+    await abortQuietly(context.client, actor, record.intentToken);
     return redirectTo(context, record.returnTo, 'provider_not_verified', clear);
   }
 
@@ -177,13 +218,14 @@ export async function handleProviderSecurityCallback(
     return resultRedirect(
       context,
       pending,
-      await finishLink(context.client, session.actor, pending, arrival.state, identity),
+      await finishLink(context.client, actor, pending, arrival.state, identity),
+      actor,
     );
 
   let proved;
   try {
     proved = await context.client.send('reauthenticate-google', {
-      actor: session.actor,
+      actor,
       intentToken: record.intentToken,
       flowHash: reauthenticationFlowHash(arrival.state),
       nonce: arrival.roundTrip.nonce,
@@ -192,7 +234,7 @@ export async function handleProviderSecurityCallback(
   } catch {
     return redirectTo(context, record.returnTo, 'unavailable', [sealProviderFlowCookie(context.cookies, pending)]);
   }
-  if (proved.outcome !== 'proved') return resultRedirect(context, pending, refusedStep(proved));
+  if (proved.outcome !== 'proved') return resultRedirect(context, pending, refusedStep(proved), actor);
   const withProof: ProviderFlowRecord = {
     ...pending,
     reauthentication: undefined,
@@ -201,6 +243,7 @@ export async function handleProviderSecurityCallback(
   return resultRedirect(
     context,
     withProof,
-    await continueAfterReauthentication(context.client, authOptions, session.actor, withProof, context.publicOrigin),
+    await continueAfterReauthentication(context.client, authOptions, actor, withProof, context.publicOrigin),
+    actor,
   );
 }

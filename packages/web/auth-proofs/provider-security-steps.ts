@@ -41,10 +41,16 @@ export function providerSecuritySteps(route: StepRoute, authRoute: AuthRoute, go
     method: 'GET' | 'POST',
     path: string,
     jar: CookieJar,
-    options: { body?: unknown; viewer?: string | null; origin?: string | null; cookie?: string } = {},
+    options: {
+      body?: unknown;
+      viewer?: string | null;
+      origin?: string | null;
+      cookie?: string;
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<Response> {
     const url = new URL(`/api/auth/provider-security/${path}`, ORIGIN);
-    const headers = new Headers({ 'x-forwarded-for': randomClientAddress() });
+    const headers = new Headers({ 'x-forwarded-for': randomClientAddress(), ...options.headers });
     headers.set('cookie', options.cookie ?? jar.header());
     if (method === 'POST') {
       if (options.origin !== null) headers.set('origin', options.origin ?? ORIGIN);
@@ -139,6 +145,7 @@ export function providerSecuritySteps(route: StepRoute, authRoute: AuthRoute, go
       passwordUsable: boolean;
       providers: { methodId: string; provider: string; canUnlink: boolean }[];
       reauthentication: { password: boolean; google: boolean; apple: boolean };
+      linking: Record<'google' | 'apple', { available: boolean; reason?: string }>;
     };
   }
 

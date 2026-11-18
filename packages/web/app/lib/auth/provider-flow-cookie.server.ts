@@ -1,9 +1,10 @@
 import 'server-only';
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { stringifySetCookie } from 'cookie';
 import { z } from 'zod';
 import { providerSecurityProviderSchema } from '@boardsesh/auth-protocol';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
+import { cookieCopies, openCookieValue, sealCookieValue } from './sealed-cookie.server';
 
 /**
  * Flow custody for provider link, unlink and reauthentication (#7596 B5e1).
@@ -33,10 +34,6 @@ const SECURE_NAME = '__Host-boardsesh.provider-flow';
 const PLAIN_NAME = 'boardsesh.provider-flow';
 /** The backend intent lives 15 minutes; the cookie never outlives it. */
 export const PROVIDER_FLOW_MAX_AGE_SECONDS = 15 * 60;
-const IV_BYTES = 12;
-const TAG_BYTES = 16;
-/** A sealed record is a few hundred bytes; anything far larger is not ours. */
-const MAX_SEALED_LENGTH = 3072;
 
 const backendToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 /** State, nonce and PKCE verifier: 32 random bytes each, base64url. */
@@ -69,7 +66,7 @@ const flowRecordSchema = z
      * the climber cancelled at Apple.
      */
     heldCallback: z
-      .object({ code: z.string().min(1).max(2048).nullable(), state: z.string().min(1).max(1024) })
+      .object({ code: z.string().min(1).max(1024).nullable(), state: z.string().min(1).max(1024) })
       .strict()
       .optional(),
   })
@@ -80,10 +77,6 @@ export type ProviderFlowRoundTrip = z.infer<typeof roundTripSchema>;
 
 export function providerFlowCookieName(secure: boolean): string {
   return secure ? SECURE_NAME : PLAIN_NAME;
-}
-
-function flowKey(secret: string): Buffer {
-  return Buffer.from(hkdfSync('sha256', Buffer.from(secret, 'utf8'), Buffer.alloc(0), KEY_LABEL, 32));
 }
 
 /** 32 random bytes, base64url: a state, a nonce or a PKCE verifier (256 bits). */
@@ -101,15 +94,11 @@ function cookieAttributes(cookies: Pick<BrowserSessionCookieConfiguration, 'secu
   return { httpOnly: true, secure: cookies.secure, path: '/', sameSite: effective } as const;
 }
 
-/** The `Set-Cookie` that writes (or rewrites) the flow's record. */
+/** The `Set-Cookie` that writes (or rewrites) the flow's record. Throws `SealedCookieTooLarge` rather than write what the reader refuses. */
 export function sealProviderFlowCookie(cookies: BrowserSessionCookieConfiguration, record: ProviderFlowRecord): string {
   const parsed = flowRecordSchema.parse(record);
   const name = providerFlowCookieName(cookies.secure);
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv('aes-256-gcm', flowKey(cookies.secret), iv);
-  cipher.setAAD(Buffer.from(name, 'utf8'));
-  const sealed = Buffer.concat([cipher.update(JSON.stringify(parsed), 'utf8'), cipher.final(), cipher.getAuthTag()]);
-  const value = Buffer.concat([iv, sealed]).toString('base64url');
+  const value = sealCookieValue(cookies.secret, KEY_LABEL, name, JSON.stringify(parsed));
   const maxAge = Math.max(
     0,
     Math.min(PROVIDER_FLOW_MAX_AGE_SECONDS, Math.floor((parsed.expiresAt - Date.now()) / 1000)),
@@ -149,24 +138,13 @@ export function readProviderFlowCookie(
   now = Date.now(),
 ): ProviderFlowRead {
   const name = providerFlowCookieName(cookies.secure);
-  const copies = (cookieHeader ?? '')
-    .split(';')
-    .map((pair) => pair.replace(/^[ \t]+|[ \t]+$/g, ''))
-    .filter((pair) => pair.slice(0, pair.indexOf('=')) === name)
-    .map((pair) => pair.slice(pair.indexOf('=') + 1));
+  const copies = cookieCopies(cookieHeader, name);
   if (copies.length === 0) return { kind: 'none' };
-  if (copies.length !== 1 || !copies[0] || copies[0].length > MAX_SEALED_LENGTH) return { kind: 'invalid' };
+  if (copies.length !== 1) return { kind: 'invalid' };
+  const opened = openCookieValue(cookies.secret, KEY_LABEL, name, copies[0]);
+  if (opened === undefined) return { kind: 'invalid' };
   try {
-    const bytes = Buffer.from(copies[0], 'base64url');
-    if (bytes.length <= IV_BYTES + TAG_BYTES) return { kind: 'invalid' };
-    const decipher = createDecipheriv('aes-256-gcm', flowKey(cookies.secret), bytes.subarray(0, IV_BYTES));
-    decipher.setAAD(Buffer.from(name, 'utf8'));
-    decipher.setAuthTag(bytes.subarray(bytes.length - TAG_BYTES));
-    const opened = Buffer.concat([
-      decipher.update(bytes.subarray(IV_BYTES, bytes.length - TAG_BYTES)),
-      decipher.final(),
-    ]);
-    const record = flowRecordSchema.parse(JSON.parse(opened.toString('utf8')));
+    const record = flowRecordSchema.parse(JSON.parse(opened));
     if (record.expiresAt <= now) return { kind: 'invalid' };
     return { kind: 'open', record };
   } catch {
