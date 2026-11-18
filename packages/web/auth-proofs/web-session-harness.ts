@@ -90,6 +90,7 @@ export function stubBetterAuthEnvironment(backendOrigin: string): void {
   for (const [name, content] of Object.entries({
     AUTH_BROWSER_SESSION_MODE: 'better-auth',
     AUTH_BROWSER_SESSION_COOKIE_SECRET: COOKIE_SECRET,
+    AUTH_BRIDGE_TOKEN_SECRET: 'web-session-proof-bridge-token-secret-7596-b2b',
     CURRENT_STORE_AUTH_BACKEND_ORIGIN: backendOrigin,
     CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
     CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
@@ -118,6 +119,12 @@ export function sessionCookieNamesIn(response: Response): string[] {
   return setCookieNames(response).filter((name) => SESSION_COOKIE_NAMES.includes(name));
 }
 
+/** A documentation-range IPv6 address in its own /64, so each caller gets its own limit bucket. */
+export function randomClientAddress(): string {
+  const group = () => randomBytes(2).toString('hex');
+  return `2001:db8:${group()}:${group()}::1`;
+}
+
 /** A browser's steps against the real route. */
 export function browserSteps(route: AuthRoute) {
   async function csrf(jar: CookieJar): Promise<string> {
@@ -135,13 +142,29 @@ export function browserSteps(route: AuthRoute) {
     jar.apply(response);
     return response;
   }
-  /** Session GET or POST; asserts no session cookie is written or cleared. */
-  async function readSession(cookie: string, method: 'GET' | 'POST' = 'GET', csrfToken = '') {
+  /**
+   * Session GET or POST, from its own client address unless one is given (the
+   * bridge limit keys on it). Asserts no session cookie is written or cleared,
+   * apart from the bridged cookie when `bridges` is set; `writes` leaves the
+   * `Set-Cookie` list to the caller (a bridge that clears cookies).
+   */
+  async function readSession(
+    cookie: string,
+    method: 'GET' | 'POST' = 'GET',
+    csrfToken = '',
+    {
+      bridges = false,
+      writes = false,
+      clientAddress = randomClientAddress(),
+    }: { bridges?: boolean; writes?: boolean; clientAddress?: string } = {},
+  ) {
     const response = await callRoute(route, '/api/auth/session', {
       cookie,
+      headers: { 'x-forwarded-for': clientAddress },
       ...(method === 'POST' ? { form: { csrfToken } } : {}),
     });
-    expect(sessionCookieNamesIn(response)).toEqual([]);
+    const allowed = bridges ? [BRIDGED] : [];
+    if (!writes) expect(sessionCookieNamesIn(response).filter((name) => !allowed.includes(name))).toEqual([]);
     return response;
   }
   async function signOut(

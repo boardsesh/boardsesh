@@ -6,7 +6,9 @@ import { authOptions } from './auth-options';
 import { capturePresentedWebCredential } from './admitted-session.server';
 import { withAuthResponseAdmission } from './auth-response-admission.server';
 import type { BrowserSessionCookieConfiguration, BrowserSessionRouteMode } from './browser-session-mode.server';
+import { bridgeOnSessionRead, legacyAnswer, newerLegacyLogin, sessionJson } from './browser-session-bridge.server';
 import {
+  carriesFirstPartyCookie,
   loginSessionCookies,
   presentedForLogin,
   readRequestBrowserSession,
@@ -28,7 +30,7 @@ import {
 } from './secure-cookies';
 import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
-import { createWebSessionCommandClient } from './web-session-command-client.server';
+import { createWebSessionCommandClient, type ActiveWebSession } from './web-session-command-client.server';
 import { responseClearsNextAuthSession } from './web-signout-command.server';
 
 type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
@@ -190,8 +192,12 @@ async function signOut(
 /**
  * `/api/auth/session` (GET, and POST for `update()`) under `better-auth`. A
  * first-party cookie is answered by the backend's session read in today's JSON
- * shape. A legacy cookie alone is answered by the legacy path as today (B2
- * bridges it). No answer writes or clears a session cookie.
+ * shape. A GET with a legacy cookie and no first-party cookie of either name
+ * (verified or not) bridges it (B2b, `bridgeOnSessionRead`); so does a GET
+ * whose active login cookie is older than a legacy login beside it (a login
+ * made during a rollback). POST never bridges and answers a legacy cookie from
+ * the legacy path. Apart from the bridged cookie, no answer writes or clears a
+ * session cookie.
  */
 async function readSession(
   request: NextRequest,
@@ -204,28 +210,43 @@ async function readSession(
   } catch {
     return unavailableCredentialResponse();
   }
-  // A conflicted login cookie, or a legacy cookie no command accepts, is signed out.
+  // A conflicted cookie, or a legacy cookie no command accepts, is signed out.
   if (session.kind === 'conflicted' || session.kind === 'oversized-legacy')
     return NextResponse.json({}, { headers: PRIVATE });
+  const bridging = request.method === 'GET';
+  if (session.kind === 'legacy' && bridging && !carriesFirstPartyCookie(request))
+    return bridgeOnSessionRead(request, cookies, session.presented, {
+      replacesLoginCookie: false,
+      fallback: legacyAnswer(legacyRoute),
+      onDenied: () => NextResponse.json({}, { headers: PRIVATE }),
+    });
   if (session.kind !== 'canonical') return withoutSessionSetCookies(await legacyRoute());
+  let active: ActiveWebSession;
   try {
     const read = await createWebSessionCommandClient().read(session.presented);
     if (read.status === 'signed-out')
       return NextResponse.json({}, { headers: { ...PRIVATE, [CREDENTIAL_AUTHORITY_HEADER]: 'denied' } });
-    const active = read.session;
+    active = read.session;
     if (active.user.id !== active.userId) return unavailableCredentialResponse();
-    return NextResponse.json(
-      {
-        user: { name: active.user.name, email: active.user.email, image: active.user.image, id: active.userId },
-        expires: active.expiresAt,
-        authGeneration: active.generation,
-        authSessionId: active.authSessionId,
-      },
-      { headers: PRIVATE },
-    );
   } catch {
     return unavailableCredentialResponse();
   }
+  const activeAnswer = () => NextResponse.json(sessionJson(active), { headers: PRIVATE });
+  if (bridging && session.cookieKind === 'login') {
+    let newer: Awaited<ReturnType<typeof newerLegacyLogin>>;
+    try {
+      newer = await newerLegacyLogin(request, active);
+    } catch {
+      newer = undefined;
+    }
+    if (newer)
+      return bridgeOnSessionRead(request, cookies, newer, {
+        replacesLoginCookie: true,
+        fallback: async () => activeAnswer(),
+        onDenied: activeAnswer,
+      });
+  }
+  return activeAnswer();
 }
 
 /**

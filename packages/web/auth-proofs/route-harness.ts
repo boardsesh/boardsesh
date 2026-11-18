@@ -35,12 +35,14 @@ export type RouteCall = {
   /** The raw `Cookie` header, exactly as a browser would send it. */
   cookie?: string;
   form?: Record<string, string>;
+  /** Other request headers, such as the `X-Forwarded-For` hop a client limit keys on. */
+  headers?: Record<string, string>;
 };
 
 /** Calls the real route export the way Next would, with the catch-all params it derives from the path. */
 export async function callRoute(route: AuthRoute, path: string, call: RouteCall = {}): Promise<Response> {
   const method = call.method ?? (call.form ? 'POST' : 'GET');
-  const headers = new Headers();
+  const headers = new Headers(call.headers);
   if (call.cookie) headers.set('cookie', call.cookie);
   if (call.form) headers.set('content-type', 'application/x-www-form-urlencoded');
   const request = new NextRequest(new URL(path, ORIGIN), {

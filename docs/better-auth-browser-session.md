@@ -411,7 +411,7 @@ whenever `NODE_ENV=production`, and a cookie domain the codec accepts). With
 one missing, or with any other mode value, every `/api/auth/*` route answers
 503 and the log names one `AUTH_BROWSER_SESSION_WEB_*` code, never a value.
 Even with every precondition met, `better-auth` stays `unavailable` while
-`BROWSER_SESSION_WEB_CUTOVER_BLOCKERS` lists www work that has not landed (B2b
+`BROWSER_SESSION_WEB_CUTOVER_BLOCKERS` lists www work that has not landed (B3b
 to B7), as the backend's own list refuses to start; each later www PR deletes
 its entry. Only tests build a resolver with another list
 (`browserSessionRouteModeResolver`), which `better-auth-boundary.test.ts`
@@ -435,7 +435,7 @@ anything about the session; freshness and source come from the session row.
 | --- | --- |
 | `POST /api/auth/callback/credentials` | The staged password command with `webSession: { presented }` and the trusted `clientAddress`. A verified login must come back with the session and a credential proof naming the same session id and generation, so NextAuth's unchanged reply writes the legacy cookie for the rollback window on the same session. After NextAuth's own headers come the host-only legacy clear (as today), clears of the bridged name in both scopes, the host-only copy of the login name where the login cookie is written with a Domain (left out on host-only deployments, where it would delete the cookie just written), and the login cookie last. The login cookie name comes from how the session was obtained in this request, never from a session read's `source`. A wrong password or a login awaiting email verification changes no session cookie. A session issued without NextAuth writing its cookie, or the reverse, answers 503. |
 | `POST /api/auth/signout` | The same form fields and the same 400, 409 and 503 answers as today. No session, or a conflicted login cookie, is 409. NextAuth's own handler still checks the CSRF token; a refusal goes back without revocation or clears. The backend `signout` command gets the first-party token when there is one, else the legacy cookie, with the expected viewer. `signed_out` clears both legacy names with every chunk (today's clears) and both first-party names in both scopes, plus the plain names the request carried. `identity_changed` is 409 and an outage is 503, and neither clears anything. NextAuth refuses a bad CSRF token by answering exactly `<NEXTAUTH_URL>/api/auth/signout?csrf=true`; only that answer counts as a refusal. |
-| `GET` or `POST /api/auth/session` | With a first-party cookie, the backend `session` command answers in today's JSON shape: `user { name, email, image, id }`, `expires`, `authGeneration` and `authSessionId`, which the session guard keys on. No live session is `{}`, an outage is 503. With only a legacy cookie, the legacy path answers as today (B2 bridges it). Neither writes or clears a session cookie: NextAuth's rewrite of the legacy cookie is removed. |
+| `GET` or `POST /api/auth/session` | With a first-party cookie, the backend `session` command answers in today's JSON shape: `user { name, email, image, id }`, `expires`, `authGeneration` and `authSessionId`, which the session guard keys on. No live session is `{}`, an outage is 503. A GET with only a legacy cookie bridges it (B2b, below); a POST answers it from the legacy path as before. Apart from the bridged cookie, nothing writes or clears a session cookie: NextAuth's rewrite of the legacy cookie is removed. |
 | `GET /api/auth/csrf` | The legacy path with every session `Set-Cookie` removed. |
 | Everything else | The legacy path unchanged. Google, Apple and the native transfer still write only the legacy cookie until B4c and B5; when such a reply writes it, both first-party names are cleared in both scopes too, because it is a login and a stale login cookie would otherwise outrank it. |
 
@@ -458,6 +458,55 @@ issued a session but NextAuth wrote no cookie, or the new legacy cookie was not
 admitted) answers 503 with the presented session already ended: the browser is
 signed out and a retry works. This needs the backend's `verification.required`
 and www's `EMAIL_VERIFICATION_ENABLED` set from the same value.
+
+### Bridging on the session read (B2b)
+
+`browser-session-bridge.server.ts`. A `GET /api/auth/session` bridges when the
+request carries a legacy cookie and no first-party cookie of either name,
+verified or not. csrf, a POST session read and every other route never bridge.
+A legacy cookie sent twice under one name with differing values (a host-only
+copy beside the Domain one), a conflicted bridged name with no verified login
+cookie, and a legacy cookie over 12,288 characters all read as signed out and
+bridge nothing. Bridging is limited to 20 a minute per client address, keyed
+as the sign-in limit keys (`trustedClientRateLimitKey`, #7760); over it, the
+read answers from the legacy path.
+
+The command is `/web-session/v1/bridge` with the joined cookie as received
+(#7781). www acts only on a reply that parses:
+
+- `bridged`: the answer is the backend's own read of the bridged session, in
+  today's JSON shape, with the legacy cookie's session id as `authSessionId`.
+  The bridged cookie is appended after every other session `Set-Cookie` was
+  removed, with `Cache-Control: private, no-store`. This is the one planned
+  exception to HARD RULE 2. The legacy cookie is kept: the rollback window
+  needs it, and the next read sends the bridged cookie and writes nothing.
+- `denied`: the read is signed out and the legacy cookie's names and chunks
+  are cleared in both scopes. This includes the rollback cookie a login wrote
+  under `better-auth` once its first-party cookie is gone: its session id is a
+  `login` (or `carried`) row, which the bridge never re-keys. The cost: a
+  browser that lost its first-party cookie but kept that legacy cookie signs in
+  again.
+- 503, a timeout, 400 or the transport's 401: the legacy path's answer as
+  before, and no cookie changes. The bridged token is the same on every bridge
+  of the same login, so a lost reply is recovered by the next read.
+
+A stale login cookie after a rollback. While the mode was back on `legacy`, a
+login wrote only the legacy cookie and left the old first-party login cookie in
+place. When a verified login cookie reads `active` and the request also
+carries a legacy cookie with another session id whose sign-in time (`auth_time`,
+else its issue time) is later than the session's `authenticatedAt`, the legacy
+login is the newer one: the read bridges it and, on `bridged`, clears the login
+cookie in both scopes and sets the bridged cookie. With the same session id, an
+older legacy cookie or an unknown `authenticatedAt`, the login cookie wins as
+usual; a `denied` or failed bridge also leaves the login cookie's answer. So a
+rollback and a later roll-forward sign nobody out, and no secret rotation is
+needed after one.
+
+Bridge and login race (`web-session-bridge.integration.proof.ts`). A delayed
+bridge reply for A that lands after a login as B sets a bridged cookie for a
+session B's login revoked; the login cookie outranks it, so B stays signed in.
+If the login revoked A first, the late read is `denied` and clears the legacy
+names, and B's login cookie still answers.
 
 ## One guard in each browser client
 

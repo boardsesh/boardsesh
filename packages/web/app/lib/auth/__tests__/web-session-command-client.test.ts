@@ -94,4 +94,25 @@ describe('web session command client', () => {
     const changed = backend(409, (command) => ({ ...replyBase(command), outcome: 'identity_changed' }));
     await expect(changed.client.signOut(presented, expected)).resolves.toBe('identity_changed');
   });
+
+  it('bridges a legacy cookie, and treats denied and every unparsed answer apart', async () => {
+    const bridged = backend(200, (command) => ({
+      ...replyBase(command),
+      outcome: 'bridged',
+      userId: 'user-1',
+      sessionId: 'session-1',
+      token: 'bridged-token',
+      expiresAt: '2026-12-18T00:00:00.000Z',
+      generation: 0,
+    }));
+    await expect(bridged.client.bridge('legacy-cookie')).resolves.toMatchObject({ status: 'bridged' });
+    expect(bridged.sent[0].url).toBe(`https://backend.boardsesh.test${WEB_SESSION_COMMAND_PATHS.bridge}`);
+    expect(bridged.sent[0].body).toMatchObject({ operation: 'bridge', payload: { credential: 'legacy-cookie' } });
+    const denied = backend(401, (command) => ({ ...replyBase(command), outcome: 'denied' }));
+    await expect(denied.client.bridge('legacy-cookie')).resolves.toEqual({ status: 'denied' });
+    const refused = backend(401, () => ({ error: 'unauthorized' }));
+    await expect(refused.client.bridge('legacy-cookie')).rejects.toThrow('AuthBackendUnavailable');
+    const wrongStatus = backend(200, (command) => ({ ...replyBase(command), outcome: 'denied' }));
+    await expect(wrongStatus.client.bridge('legacy-cookie')).rejects.toThrow('AuthBackendUnavailable');
+  });
 });

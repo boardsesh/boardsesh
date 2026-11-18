@@ -3,10 +3,12 @@ import { randomUUID } from 'node:crypto';
 import {
   WEB_SESSION_COMMAND_PATHS,
   WEB_SESSION_PROTOCOL_VERSION,
+  webSessionBridgeReplySchema,
   webSessionReadReplySchema,
   webSessionReplyStatus,
   webSessionSignOutReplySchema,
   type PresentedWebSession,
+  type WebSessionBridgeReply,
   type WebSessionReadReply,
 } from '@boardsesh/auth-protocol';
 import {
@@ -22,7 +24,14 @@ export type ActiveWebSession = Extract<WebSessionReadReply, { outcome: 'active' 
 /** A live session, or a confirmed "no live session". Anything else throws `AuthBackendUnavailableError`. */
 export type WebSessionReadResult = { status: 'active'; session: ActiveWebSession } | { status: 'signed-out' };
 
+export type BridgedWebSession = Extract<WebSessionBridgeReply, { outcome: 'bridged' }>;
+
+/** The bridged session, or a confirmed "this cookie cannot be bridged". Anything else throws. */
+export type WebSessionBridgeResult = { status: 'bridged'; session: BridgedWebSession } | { status: 'denied' };
+
 export type WebSessionCommandClient = {
+  /** The joined legacy NextAuth cookie, as received; at most `LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH`. */
+  bridge(credential: string): Promise<WebSessionBridgeResult>;
   read(presented: PresentedWebSession): Promise<WebSessionReadResult>;
   signOut(
     presented: PresentedWebSession,
@@ -31,7 +40,7 @@ export type WebSessionCommandClient = {
 };
 
 /**
- * The backend's `session` and `signout` web-session commands (#7596), on the
+ * The backend's `session`, `signout` and `bridge` web-session commands (#7596), on the
  * same private channel and secret as the staged password command. One request
  * each, no retry: a lost sign-out reply may follow a commit.
  *
@@ -53,6 +62,20 @@ export function createWebSessionCommandClient(
   }
 
   return {
+    async bridge(credential) {
+      try {
+        const command = { ...metadata(), operation: 'bridge' as const, payload: { credential } };
+        const response = await transport.post(WEB_SESSION_COMMAND_PATHS.bridge, command);
+        const reply = webSessionBridgeReplySchema.parse(response.body);
+        if (reply.requestId !== command.requestId || webSessionReplyStatus(reply) !== response.status)
+          throw new AuthBackendUnavailableError();
+        if (reply.outcome === 'bridged') return { status: 'bridged', session: reply };
+        if (reply.outcome === 'denied') return { status: 'denied' };
+        throw new AuthBackendUnavailableError();
+      } catch {
+        throw new AuthBackendUnavailableError();
+      }
+    },
     async read(presented) {
       try {
         const command = { ...metadata(), operation: 'session' as const, payload: { presented } };

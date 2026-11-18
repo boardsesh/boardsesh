@@ -217,7 +217,9 @@ describe('login', () => {
     }
     jar.apply(response);
     expect(jar.get(LOGIN, DOMAIN)).toBeUndefined();
-    expect((await sessionOf(jar.header())).user?.id).toBe(climberB.id);
+    // The legacy cookie alone is now bridged on the read (B2b).
+    const bridged = await readSession(jar.header(), 'GET', '', { bridges: true });
+    expect(((await bridged.json()) as SessionJson).user?.id).toBe(climberB.id);
   });
 });
 
@@ -241,11 +243,14 @@ describe('session read', () => {
     expect(await viaPost.json()).toEqual(body);
   });
 
-  it('answers a legacy-only cookie from the legacy path, without rewriting it', async () => {
+  it('answers a legacy-only cookie on POST from the legacy path, without rewriting or bridging it', async () => {
     const climberA = await climber();
     const authSessionId = randomUUID();
     const legacy = await encode({ token: { sub: climberA.id, authSessionId, gen: 0 }, secret, maxAge: 3600 });
-    const response = await readSession(`${LEGACY}=${legacy}`);
+    const jar = new CookieJar();
+    jar.set(LEGACY, legacy, DOMAIN);
+    const csrfToken = await csrf(jar);
+    const response = await readSession(jar.header(), 'POST', csrfToken);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ user: { id: climberA.id }, authSessionId });
   });
