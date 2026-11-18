@@ -199,14 +199,16 @@ describe('owned credential writer CI boundary', () => {
       false,
     );
     expect(proofConfiguration).toContain('credential-writer-acl.proof.ts');
-    expect(proofConfiguration).toContain('browser-credential-writer.proof.ts');
+    // The browser binding core and its restricted-role proof left in #7596 B5d.
+    expect(proofConfiguration).not.toContain('browser-credential-writer.proof.ts');
+    expect(existsSync('packages/backend/src/auth/authority/__tests__/browser-credential-writer.proof.ts')).toBe(false);
     expect(proofConfiguration).not.toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-security-http.proof.ts');
     for (const file of [
       'provider-security-http.proof.ts',
       'first-password-http.proof.ts',
-      'anonymous-provider-http.proof.ts',
+      'web-oauth-session-http.proof.ts',
     ]) {
       expect(browserRenewalConfiguration).toContain(file);
       expect(existsSync(`packages/backend/src/auth/authority/__tests__/${file}`)).toBe(true);
@@ -216,7 +218,7 @@ describe('owned credential writer CI boundary', () => {
     for (const file of [
       'provider-security-http.proof.ts',
       'first-password-http.proof.ts',
-      'anonymous-provider-http.proof.ts',
+      'web-oauth-session-http.proof.ts',
     ])
       expect(nativeHandoffConfiguration).toContain(file);
     for (const file of [

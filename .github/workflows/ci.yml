@@ -1676,7 +1676,7 @@ jobs:
           PGDATABASE: epic6975_credential_historical_ci
           CREDENTIAL_WRITER_PROOF_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/epic6975_credential_historical_ci
         run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh --historical-private-browser-v1
-      - name: Run complete historical web and browser credential proofs serially
+      - name: Run complete historical web credential proofs serially
         env:
           PGDATABASE: epic6975_credential_historical_ci
           CREDENTIAL_WRITER_PROOF_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/epic6975_credential_historical_ci

@@ -5,7 +5,6 @@ import postgres from 'postgres';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
-  authBrowserBindings,
   authEmailReservationMembers,
   authEmailReservations,
   authFirstPasswordChallenges,
@@ -34,7 +33,8 @@ import {
   prepareFirstPasswordChallenge,
 } from '../first-password-finalizer';
 import { bindIdentityAuthority } from '../identity-authority';
-import { readBrowserBinding } from '../browser-binding';
+import { readFirstPartySession, type FirstPartyCredential } from '../session-reader';
+import { readLockedWebSubjectState } from '../../current-store/web-credential-state';
 import { createProviderSecurityIntent } from '../provider-security-intents';
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { normalizeAccountEmail } from '../../normalize-email';
@@ -98,15 +98,17 @@ async function partner(userId: string) {
   });
   return { connectionId, tokenId };
 }
+async function admit(credential: FirstPartyCredential) {
+  return environment.database.transaction((transaction) =>
+    readFirstPartySession(transaction, credential, new Date(), (userId) =>
+      readLockedWebSubjectState(transaction, userId),
+    ),
+  );
+}
 async function setup(owner: Owner) {
   const recipient = await reserve(owner);
-  const issued = await requestFirstPasswordChallenge(environment.database, runtime(), { actor: owner.actor });
-  const bound = {
-    actor: owner.actor,
-    challengeToken: issued.challengeToken,
-    browserIntentToken: issued.browserIntentToken,
-  };
-  return { ...issued, ...bound, recipient };
+  const issued = await requestFirstPasswordChallenge(environment.database, runtime(), { actor: owner.webActor });
+  return { ...issued, actor: owner.webActor, challengeToken: issued.challengeToken, recipient };
 }
 async function prepare(owner: Owner) {
   const issued = await setup(owner);
@@ -116,8 +118,7 @@ async function prepare(owner: Owner) {
     password,
     confirmPassword: password,
   });
-  const candidate = await environment.candidate(prepared, owner.actor.kind);
-  return { ...issued, ...prepared, candidate };
+  return { ...issued, ...prepared };
 }
 async function snapshot(owner: Owner, challengeToken: string) {
   return {
@@ -132,10 +133,6 @@ async function snapshot(owner: Owner, challengeToken: string) {
       .select()
       .from(authSecurityMutationEvents)
       .where(eq(authSecurityMutationEvents.userId, owner.userId)),
-    bindings: await environment.database
-      .select()
-      .from(authBrowserBindings)
-      .where(eq(authBrowserBindings.userId, owner.userId)),
     sessions: await environment.database.select().from(authSession).where(eq(authSession.userId, owner.userId)),
     native: await environment.database
       .select()
@@ -169,188 +166,171 @@ describe('UID-bound first-password buffered finalization', () => {
   afterAll(async () => environment?.close());
 
   for (const selected of ['current-store', 'better-auth'] as const) {
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
-      for (const mirror of ['on', 'off'] as const) {
-        it(`${selected}/${kind}/mirror-${mirror}: sets the first password only after candidate preparation and preserves original possession`, async () => {
-          vi.stubEnv('AUTH_IDENTITY_MIRROR', mirror);
-          const owner = await environment.actor(selected, kind, {
-            password: false,
-            provider: 'apple',
-            unknownAge: true,
-          });
-          const original = await readBrowserBinding(
-            environment.database,
-            environment.qualification,
-            owner.actor.browserBindingToken,
-            { version: owner.actor.browserVersion, credential: owner.credential },
-          );
-          if (original.status !== 'admitted') throw new Error('Owned source did not admit');
-          const issued = await setup(owner);
-          expect(issued.mailPlan).toMatchObject({ kind: 'uid-first-password-v1', recipient: issued.recipient });
-          expect(await selectedPassword(owner.userId)).toBeNull();
-          const pending = await stored(issued.challengeToken);
-          const cutoff = await environment.database
-            .select()
-            .from(authSubjectCutoffs)
-            .where(eq(authSubjectCutoffs.userId, owner.userId));
-          expect(cutoff).toHaveLength(0);
-          expect(pending).toMatchObject({ phase: 'pending', pendingPasswordHash: null, consumedAt: null });
-          const beforeRead = JSON.stringify(pending);
-          expect(await readFirstPasswordChallenge(environment.database, runtime(), issued)).toMatchObject({
-            outcome: 'pending',
-          });
-          expect(JSON.stringify(await stored(issued.challengeToken))).toBe(beforeRead);
-          const encodedPending = JSON.stringify(pending);
-          for (const secret of [
-            issued.recipient,
-            owner.actor.credential,
-            issued.challengeToken,
-            issued.mailPlan.token,
-            issued.recoveryToken,
-          ])
-            expect(encodedPending).not.toContain(secret);
-
-          const prepared = await prepareFirstPasswordChallenge(environment.database, runtime(), {
-            ...issued,
-            confirmationToken: issued.mailPlan.token,
-            password,
-            confirmPassword: password,
-          });
-          expect(await selectedPassword(owner.userId)).toBeNull();
-          const beforePublication = await stored(issued.challengeToken);
-          expect(beforePublication).toMatchObject({ phase: 'prepared', consumedAt: null });
-          expect(await compare(password, beforePublication.pendingPasswordHash ?? '')).toBe(true);
-          expect(prepared.credentialProof).toMatchObject({
-            userId: owner.userId,
-            authSessionId: owner.sid,
-            generation: 1,
-            authenticatedAt: null,
-            linkGuarded: false,
-          });
-          expect(prepared.credentialExpiresAt).toEqual(original.session.expiresAt);
-          expect(prepared.user.emailVerified).toEqual(beforePublication.preparedAt);
-          const [beforeUser] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
-          expect(beforeUser.emailVerified).toBeNull();
-          const candidate = await environment.candidate(prepared, kind);
-          const affected = await partner(owner.userId);
-          const unrelatedId = randomUUID();
-          await environment.database.insert(users).values({ id: unrelatedId, email: `${unrelatedId}@example.test` });
-          const unrelated = await partner(unrelatedId);
-          const nativeId = randomUUID();
-          await environment.database.insert(mobileRefreshTokens).values({
-            id: nativeId,
-            userId: owner.userId,
-            tokenHash: randomBytes(32).toString('hex'),
-            expiresAt: new Date(Date.now() + 3_600_000),
-          });
-          const command = { ...issued, ...prepared, candidate };
-          const providerReceiptsBefore = await environment.database.select().from(authProviderReauthenticationReceipts);
-          const committed = await finalizeFirstPasswordChallenge(environment.database, runtime(), command);
-          expect(committed.outcome).toBe('committed');
-          const chosenPassword = await selectedPassword(owner.userId);
-          expect(chosenPassword?.generation).toBe(1);
-          expect(await compare(password, chosenPassword?.passwordHash ?? '')).toBe(true);
-          const legacy = await environment.database
-            .select()
-            .from(userCredentials)
-            .where(eq(userCredentials.userId, owner.userId));
-          // Canonical authority always maintains its mandatory rollback copy;
-          // the flag controls the opposite, legacy-to-canonical direction.
-          expect(legacy).toHaveLength(1);
-          expect(await compare(password, legacy[0].passwordHash)).toBe(true);
-          const completed = await stored(issued.challengeToken);
-          expect(completed).toMatchObject({ phase: 'committed', pendingPasswordHash: null });
-          expect(completed.consumedAt).toBeInstanceOf(Date);
-          const [afterUser] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
-          expect(afterUser.emailVerified).toEqual(prepared.user.emailVerified);
-          const credential =
-            candidate.kind === 'canonical-token'
-              ? { kind: candidate.kind, token: candidate.credential }
-              : { kind: candidate.kind, credential: candidate.credential, secret: environment.secret };
-          const continuation = await readBrowserBinding(
-            environment.database,
-            environment.qualification,
-            owner.actor.browserBindingToken,
-            { version: owner.actor.browserVersion + 1, credential },
-          );
-          if (continuation.status !== 'admitted') throw new Error('Prepared continuation did not admit');
-          expect(continuation.session).toEqual({ ...original.session, generation: 1 });
-          expect(
-            await readBrowserBinding(environment.database, environment.qualification, owner.actor.browserBindingToken, {
-              version: owner.actor.browserVersion,
-              credential: owner.credential,
-            }),
-          ).toMatchObject({ status: 'denied' });
-          expect(await acknowledgeFirstPasswordResult(environment.database, runtime(), command)).toEqual({
-            outcome: 'recovered',
-            candidateCredentialHash: committed.candidateCredentialHash,
-            browserCursor: committed.browserCursor,
-          });
-          await expect(
-            acknowledgeFirstPasswordResult(environment.database, runtime(), {
-              ...command,
-              candidate: { kind, credential: randomBytes(32).toString('base64url') },
-            }),
-          ).rejects.toMatchObject({ outcome: 'denied', code: 'invalid_proof' });
-          const [native] = await environment.database
-            .select()
-            .from(mobileRefreshTokens)
-            .where(eq(mobileRefreshTokens.id, nativeId));
-          expect(native.revokedAt).toBeInstanceOf(Date);
-          const [affectedConnection] = await environment.database
-            .select()
-            .from(oauthConnections)
-            .where(eq(oauthConnections.id, affected.connectionId));
-          expect(affectedConnection).toMatchObject({ generation: 1, revocationReason: 'account_security_revocation' });
-          expect(affectedConnection.revokedAt).toBeInstanceOf(Date);
-          expect(
-            await environment.database
-              .select()
-              .from(oauthRefreshToken)
-              .where(eq(oauthRefreshToken.id, affected.tokenId)),
-          ).toHaveLength(0);
-          const [unrelatedConnection] = await environment.database
-            .select()
-            .from(oauthConnections)
-            .where(eq(oauthConnections.id, unrelated.connectionId));
-          expect(unrelatedConnection).toMatchObject({ generation: 0, revokedAt: null });
-          expect(
-            await environment.database
-              .select()
-              .from(oauthRefreshToken)
-              .where(eq(oauthRefreshToken.id, unrelated.tokenId)),
-          ).toHaveLength(1);
-
-          // Email confirmation itself never manufactures provider freshness.
-          expect(await environment.database.select().from(authProviderReauthenticationReceipts)).toEqual(
-            providerReceiptsBefore,
-          );
-          const nextActor = {
-            ...owner.actor,
-            credential: candidate.credential,
-            browserVersion: committed.browserCursor.version,
-          };
-          const nextIntent = await createProviderSecurityIntent(environment.database, environment.runtime, {
-            actor: nextActor,
-            action: 'link',
-            provider: 'google',
-            methodId: null,
-          });
-          const providerCommand = { ...nextIntent, actor: nextActor };
-          await expect(
-            reauthenticateProviderWithPassword(environment.database, environment.runtime, {
-              ...providerCommand,
-              password: 'a different password',
-            }),
-          ).rejects.toMatchObject({ outcome: 'reauthentication_required', code: 'invalid_proof' });
-          expect(
-            await reauthenticateProviderWithPassword(environment.database, environment.runtime, {
-              ...providerCommand,
-              password,
-            }),
-          ).toMatchObject({ reauthenticationToken: expect.any(String) });
+    for (const mirror of ['on', 'off'] as const) {
+      it(`${selected}/mirror-${mirror}: sets the first password only after preparation and keeps this session and its token`, async () => {
+        vi.stubEnv('AUTH_IDENTITY_MIRROR', mirror);
+        const owner = await environment.actor(selected, 'canonical-token', {
+          password: false,
+          provider: 'apple',
+          unknownAge: true,
         });
-      }
+        const original = await admit(owner.credential);
+        if (original.status !== 'admitted') throw new Error('Owned source did not admit');
+        const [originalRow] = await environment.database
+          .select()
+          .from(authSession)
+          .where(eq(authSession.id, owner.sid));
+        const issued = await setup(owner);
+        expect(issued.mailPlan).toMatchObject({ kind: 'uid-first-password-v1', recipient: issued.recipient });
+        expect(await selectedPassword(owner.userId)).toBeNull();
+        const pending = await stored(issued.challengeToken);
+        const cutoff = await environment.database
+          .select()
+          .from(authSubjectCutoffs)
+          .where(eq(authSubjectCutoffs.userId, owner.userId));
+        expect(cutoff).toHaveLength(0);
+        expect(pending).toMatchObject({
+          phase: 'pending',
+          pendingPasswordHash: null,
+          consumedAt: null,
+          browserVersion: 0,
+        });
+        const beforeRead = JSON.stringify(pending);
+        expect(await readFirstPasswordChallenge(environment.database, runtime(), issued)).toMatchObject({
+          outcome: 'pending',
+        });
+        expect(JSON.stringify(await stored(issued.challengeToken))).toBe(beforeRead);
+        const encodedPending = JSON.stringify(pending);
+        for (const secret of [
+          issued.recipient,
+          owner.actor.credential,
+          issued.challengeToken,
+          issued.mailPlan.token,
+          issued.recoveryToken,
+        ])
+          expect(encodedPending).not.toContain(secret);
+
+        const prepared = await prepareFirstPasswordChallenge(environment.database, runtime(), {
+          ...issued,
+          confirmationToken: issued.mailPlan.token,
+          password,
+          confirmPassword: password,
+        });
+        expect(await selectedPassword(owner.userId)).toBeNull();
+        const beforePublication = await stored(issued.challengeToken);
+        expect(beforePublication).toMatchObject({ phase: 'prepared', consumedAt: null });
+        expect(await compare(password, beforePublication.pendingPasswordHash ?? '')).toBe(true);
+        // No token is minted: the presented one continues.
+        expect(beforePublication.proposedCredentialHash).toBe(beforePublication.actorCredentialHash);
+        expect(prepared).not.toHaveProperty('proposedCanonicalToken');
+        expect(prepared).not.toHaveProperty('credentialProof');
+        expect(prepared.user.emailVerified).toEqual(beforePublication.preparedAt);
+        const [beforeUser] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
+        expect(beforeUser.emailVerified).toBeNull();
+        const affected = await partner(owner.userId);
+        const unrelatedId = randomUUID();
+        await environment.database.insert(users).values({ id: unrelatedId, email: `${unrelatedId}@example.test` });
+        const unrelated = await partner(unrelatedId);
+        const nativeId = randomUUID();
+        await environment.database.insert(mobileRefreshTokens).values({
+          id: nativeId,
+          userId: owner.userId,
+          tokenHash: randomBytes(32).toString('hex'),
+          expiresAt: new Date(Date.now() + 3_600_000),
+        });
+        const other = await environment.secondSession(owner);
+        const command = { ...issued, ...prepared };
+        const providerReceiptsBefore = await environment.database.select().from(authProviderReauthenticationReceipts);
+        expect(await finalizeFirstPasswordChallenge(environment.database, runtime(), command)).toEqual({
+          outcome: 'committed',
+          generation: 1,
+        });
+        const chosenPassword = await selectedPassword(owner.userId);
+        expect(chosenPassword?.generation).toBe(1);
+        expect(await compare(password, chosenPassword?.passwordHash ?? '')).toBe(true);
+        const legacy = await environment.database
+          .select()
+          .from(userCredentials)
+          .where(eq(userCredentials.userId, owner.userId));
+        // Canonical authority always maintains its mandatory rollback copy;
+        // the flag controls the opposite, legacy-to-canonical direction.
+        expect(legacy).toHaveLength(1);
+        expect(await compare(password, legacy[0].passwordHash)).toBe(true);
+        const completed = await stored(issued.challengeToken);
+        expect(completed).toMatchObject({ phase: 'committed', pendingPasswordHash: null });
+        expect(completed.candidateCredentialHash).toBe(completed.actorCredentialHash);
+        expect(completed.consumedAt).toBeInstanceOf(Date);
+        const [afterUser] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
+        expect(afterUser.emailVerified).toEqual(prepared.user.emailVerified);
+        // The same token continues: same id, sign-in time and expiry, new generation.
+        const continuation = await admit(owner.credential);
+        if (continuation.status !== 'admitted') throw new Error('The requesting session did not survive');
+        expect(continuation.session).toEqual({ ...original.session, generation: 1 });
+        const [afterRow] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
+        expect(afterRow).toEqual({ ...originalRow, revocationGeneration: 1, updatedAt: afterRow.updatedAt });
+        // Every other session of the account ends.
+        expect(await admit(other.credential)).toEqual({ status: 'denied' });
+        expect(await acknowledgeFirstPasswordResult(environment.database, runtime(), command)).toEqual({
+          outcome: 'recovered',
+          generation: 1,
+        });
+        await expect(
+          acknowledgeFirstPasswordResult(environment.database, runtime(), {
+            ...command,
+            recoveryToken: randomBytes(32).toString('base64url'),
+          }),
+        ).rejects.toMatchObject({ outcome: 'denied', code: 'invalid_proof' });
+        const [native] = await environment.database
+          .select()
+          .from(mobileRefreshTokens)
+          .where(eq(mobileRefreshTokens.id, nativeId));
+        expect(native.revokedAt).toBeInstanceOf(Date);
+        const [affectedConnection] = await environment.database
+          .select()
+          .from(oauthConnections)
+          .where(eq(oauthConnections.id, affected.connectionId));
+        expect(affectedConnection).toMatchObject({ generation: 1, revocationReason: 'account_security_revocation' });
+        expect(affectedConnection.revokedAt).toBeInstanceOf(Date);
+        expect(
+          await environment.database.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.id, affected.tokenId)),
+        ).toHaveLength(0);
+        const [unrelatedConnection] = await environment.database
+          .select()
+          .from(oauthConnections)
+          .where(eq(oauthConnections.id, unrelated.connectionId));
+        expect(unrelatedConnection).toMatchObject({ generation: 0, revokedAt: null });
+        expect(
+          await environment.database
+            .select()
+            .from(oauthRefreshToken)
+            .where(eq(oauthRefreshToken.id, unrelated.tokenId)),
+        ).toHaveLength(1);
+
+        // Email confirmation itself never manufactures provider freshness.
+        expect(await environment.database.select().from(authProviderReauthenticationReceipts)).toEqual(
+          providerReceiptsBefore,
+        );
+        // The same session goes on to link a provider, proving the new password.
+        const nextIntent = await createProviderSecurityIntent(environment.database, environment.runtime, {
+          actor: owner.webActor,
+          action: 'link',
+          provider: 'google',
+          methodId: null,
+        });
+        const providerCommand = { ...nextIntent, actor: owner.webActor };
+        await expect(
+          reauthenticateProviderWithPassword(environment.database, environment.runtime, {
+            ...providerCommand,
+            password: 'a different password',
+          }),
+        ).rejects.toMatchObject({ outcome: 'reauthentication_required', code: 'invalid_proof' });
+        expect(
+          await reauthenticateProviderWithPassword(environment.database, environment.runtime, {
+            ...providerCommand,
+            password,
+          }),
+        ).toMatchObject({ reauthenticationToken: expect.any(String) });
+      });
     }
 
     it(`${selected}: wrong confirmation and changed current email preserve password absence and the unconsumed challenge`, async () => {
@@ -387,10 +367,14 @@ describe('UID-bound first-password buffered finalization', () => {
       await environment.database.update(users).set({ emailVerified: verifiedAt }).where(eq(users.id, owner.userId));
       const command = await prepare(owner);
       expect(command.user.emailVerified).toEqual(verifiedAt);
-      expect(command.credentialProof.authenticatedAt).toBe(owner.authenticatedAt?.toISOString());
       await finalizeFirstPasswordChallenge(environment.database, runtime(), command);
       const [user] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
       expect(user.emailVerified).toEqual(verifiedAt);
+      // Setting the password never moves the session's sign-in time.
+      expect(await admit(owner.credential)).toMatchObject({
+        status: 'admitted',
+        session: { authenticatedAt: owner.authenticatedAt, generation: 1 },
+      });
     });
 
     it(`${selected}: account deletion cascades prepared bcrypt material and the old challenge cannot replay`, async () => {
@@ -410,17 +394,14 @@ describe('UID-bound first-password buffered finalization', () => {
           .where(eq(authFirstPasswordChallenges.userId, owner.userId)),
       ).toHaveLength(0);
       expect(
-        await environment.database
-          .select()
-          .from(authBrowserBindings)
-          .where(eq(authBrowserBindings.userId, owner.userId)),
-      ).toHaveLength(1);
+        await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, owner.userId)),
+      ).toHaveLength(0);
     });
 
     it(`${selected}: superseding a prepared challenge scrubs its hash and changed owned email cannot reuse the old confirmation`, async () => {
       const owner = await environment.actor(selected, 'canonical-token', { password: false, provider: 'apple' });
       const first = await prepare(owner);
-      const next = await requestFirstPasswordChallenge(environment.database, runtime(), { actor: owner.actor });
+      const next = await requestFirstPasswordChallenge(environment.database, runtime(), { actor: owner.webActor });
       expect(await stored(first.challengeToken)).toMatchObject({
         phase: 'terminal',
         pendingPasswordHash: null,
@@ -444,7 +425,7 @@ describe('UID-bound first-password buffered finalization', () => {
       const before = await stored(next.challengeToken);
       await expect(
         prepareFirstPasswordChallenge(environment.database, runtime(), {
-          actor: owner.actor,
+          actor: owner.webActor,
           ...next,
           confirmationToken: next.mailPlan.token,
           password,
@@ -455,9 +436,10 @@ describe('UID-bound first-password buffered finalization', () => {
       expect(await selectedPassword(owner.userId)).toBeNull();
     });
 
-    it(`${selected}: wrong prepared token, candidate, source and actor cannot set a password or consume the challenge`, async () => {
+    it(`${selected}: wrong prepared token, another session and a wrong actor cannot set a password or consume the challenge`, async () => {
       const owner = await environment.actor(selected, 'canonical-token', { password: false, provider: 'apple' });
       const command = await prepare(owner);
+      const other = await environment.secondSession(owner);
       const before = await snapshot(owner, command.challengeToken);
       await expect(
         finalizeFirstPasswordChallenge(environment.database, runtime(), {
@@ -466,17 +448,8 @@ describe('UID-bound first-password buffered finalization', () => {
         }),
       ).rejects.toMatchObject({ outcome: 'denied', code: 'invalid_proof' });
       await expect(
-        finalizeFirstPasswordChallenge(environment.database, runtime(), {
-          ...command,
-          candidate: { kind: 'canonical-token', credential: randomBytes(32).toString('base64url') },
-        }),
-      ).rejects.toMatchObject({ outcome: 'denied', code: 'invalid_proof' });
-      await expect(
-        finalizeFirstPasswordChallenge(environment.database, runtime(), {
-          ...command,
-          candidate: { kind: 'legacy-jwe', credential: 'wrong-format' },
-        }),
-      ).rejects.toMatchObject({ outcome: 'denied', code: 'invalid_proof' });
+        finalizeFirstPasswordChallenge(environment.database, runtime(), { ...command, actor: other.webActor }),
+      ).rejects.toMatchObject({ outcome: 'identity_changed', code: 'invalid_proof' });
       await expect(
         finalizeFirstPasswordChallenge(environment.database, runtime(), {
           ...command,
@@ -486,7 +459,10 @@ describe('UID-bound first-password buffered finalization', () => {
       await expect(
         finalizeFirstPasswordChallenge(environment.database, runtime(), {
           ...command,
-          actor: { ...command.actor, credential: randomBytes(32).toString('base64url') },
+          actor: {
+            ...command.actor,
+            presented: { kind: 'canonical-token', token: randomBytes(32).toString('base64url') },
+          },
         }),
       ).rejects.toMatchObject({ outcome: 'unauthenticated', code: 'invalid_proof' });
       expect(await snapshot(owner, command.challengeToken)).toEqual(before);
@@ -564,7 +540,7 @@ describe('UID-bound first-password buffered finalization', () => {
       }
     });
 
-    it(`${selected}: exact-candidate ACK is bounded by confirmation expiry and never survives canonical primary removal`, async () => {
+    it(`${selected}: the ACK is bounded by confirmation expiry and never survives canonical primary removal`, async () => {
       const owner = await environment.actor(selected, 'canonical-token', { password: false, provider: 'apple' });
       const command = await prepare(owner);
       await environment.database.execute(
@@ -586,8 +562,9 @@ describe('UID-bound first-password buffered finalization', () => {
       const laterCommand = await prepare(later);
       await finalizeFirstPasswordChallenge(environment.database, runtime(), laterCommand);
       await environment.database.delete(authSession).where(eq(authSession.id, later.sid));
+      // The session is gone, so it is not admitted at all.
       await expect(acknowledgeFirstPasswordResult(environment.database, runtime(), laterCommand)).rejects.toMatchObject(
-        { outcome: 'identity_changed', code: 'invalid_proof' },
+        { outcome: 'unauthenticated', code: 'invalid_proof' },
       );
     });
   }

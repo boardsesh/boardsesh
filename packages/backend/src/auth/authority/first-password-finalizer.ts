@@ -2,14 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { hash } from 'bcryptjs';
 import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
-import { setPasswordCommandSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
+import { setPasswordCommandSchema } from '@boardsesh/auth-protocol';
 import { authFirstPasswordChallenges } from '@boardsesh/db/schema/auth';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
-import {
-  prepareBrowserReplacementInTransaction,
-  commitPreparedBrowserReplacementInTransaction,
-  readBrowserBindingInTransaction,
-} from './browser-binding';
 import {
   captureFirstPasswordCommand,
   firstPasswordTokenHash,
@@ -24,48 +19,29 @@ import {
   FIRST_PASSWORD_RECOVERY_LIFETIME_MS,
   type FirstPasswordRuntime,
 } from './first-password-policy';
-import { providerDatabaseNow, providerTokenHash, ProviderSecurityRefusal } from './provider-security-context';
 import {
-  providerCandidateCredentialSchema,
-  providerCredentialHash,
-  type ProviderCandidateCredential,
-} from './provider-security-result';
+  admitProviderActorInTransaction,
+  providerDatabaseNow,
+  providerWebSessionHash,
+  ProviderSecurityRefusal,
+  requireCanonicalProviderActor,
+} from './provider-security-context';
 import { recordIdentityPasswordMutation } from './password-mutation';
-import { replaceProviderCanonicalContinuation } from './provider-security-continuation';
+import { continueProviderSessionInPlace } from './provider-security-continuation';
 import { revalidateIdentityAuthority } from './router';
 
 type Context = Awaited<ReturnType<typeof loadFirstPasswordChallenge>>;
 function contextDeadline(context: Context): number {
-  return Math.min(
-    context.challenge.expiresAt.getTime(),
-    context.session.expiresAt.getTime(),
-    context.cursor.bindingExpiresAt.getTime(),
-    context.browserIntent.expiresAt.getTime(),
-  );
+  return Math.min(context.challenge.expiresAt.getTime(), context.session.expiresAt.getTime());
 }
 async function requireLastClock(transaction: AuthorityTransaction, expiresAt: number): Promise<void> {
   if (!Number.isSafeInteger(expiresAt) || (await providerDatabaseNow(transaction)).getTime() >= expiresAt)
     throw new FirstPasswordRefusal('denied', 'expired');
 }
-function credentialProof(context: Context): WebCredentialProof {
-  return {
-    version: 1,
-    userId: context.session.userId,
-    authSessionId: context.session.authSessionId,
-    generation: context.session.generation + 1,
-    authenticatedAt: context.session.authenticatedAt?.toISOString() ?? null,
-    linkGuarded: context.session.linkGuarded,
-    ...(context.session.requiresAccountCutoff ? { requiresAccountCutoff: true as const } : {}),
-  };
-}
-function presentedCandidate(candidate: ProviderCandidateCredential, runtime: FirstPasswordRuntime) {
-  if (candidate.kind === 'canonical-token') return { kind: candidate.kind, token: candidate.credential };
-  if (!runtime.legacySecret) throw new ProviderSecurityRefusal('unavailable', 'authority_unavailable');
-  return { kind: candidate.kind, credential: candidate.credential, secret: runtime.legacySecret };
-}
 
 /** Email ownership permits only preparing a first password. It creates no
- * provider reauthentication receipt and never changes original session age. */
+ * provider reauthentication receipt, mints no token and never changes the
+ * original session age. */
 export async function prepareFirstPasswordChallenge(
   database: AuthorityDatabase,
   runtimeInput: FirstPasswordRuntime,
@@ -90,8 +66,6 @@ export async function prepareFirstPasswordChallenge(
   });
   const passwordHash = await hash(password, PASSWORD_HASH_COST);
   const preparationToken = randomBytes(32).toString('base64url');
-  const proposedCanonicalToken =
-    command.actor.input.kind === 'canonical-token' ? randomBytes(32).toString('base64url') : null;
   return withFirstPasswordAuthority(database, runtime, async (transaction, authority) => {
     await revalidateIdentityAuthority(transaction, originalAuthority);
     const context = await loadFirstPasswordChallenge(transaction, authority, runtime, command);
@@ -105,9 +79,9 @@ export async function prepareFirstPasswordChallenge(
         pendingPasswordHash: passwordHash,
         preparedAt: context.now,
         preparationTokenHash: firstPasswordTokenHash('preparation', preparationToken),
-        proposedCredentialHash: proposedCanonicalToken
-          ? providerCredentialHash({ kind: 'canonical-token', credential: proposedCanonicalToken })
-          : null,
+        // No token is minted: the credential that continues is the presented
+        // one, and a prepared canonical row must name it.
+        proposedCredentialHash: context.challenge.actorCredentialHash,
         // Preparation may shorten the original bound; it can never extend it.
         expiresAt,
       })
@@ -124,11 +98,7 @@ export async function prepareFirstPasswordChallenge(
     return {
       outcome: 'prepared' as const,
       preparationToken,
-      credentialProof: credentialProof(context),
-      credentialExpiresAt: context.session.expiresAt,
       expiresAt,
-      browserCursor: context.cursor,
-      proposedCanonicalToken,
       user: {
         id: context.user.id,
         email: context.user.email,
@@ -143,24 +113,23 @@ export async function prepareFirstPasswordChallenge(
   });
 }
 
-/** Invoke only after the exact continuation cookie and complete response are
- * buffered. Every password/mirror/cutoff/revocation/selection/challenge write
- * below uses this one physical transaction and rolls back on any late refusal. */
+/**
+ * Every password/mirror/cutoff/revocation/challenge write below uses this one
+ * physical transaction and rolls back on any late refusal. The requesting
+ * session keeps its id, token, sign-in time and expiry and moves to the
+ * account's new generation; every other first-party credential ends.
+ */
 export async function finalizeFirstPasswordChallenge(
   database: AuthorityDatabase,
   runtimeInput: FirstPasswordRuntime,
-  input: FirstPasswordBoundInput & {
-    readonly preparationToken: string;
-    readonly candidate: ProviderCandidateCredential;
-  },
+  input: FirstPasswordBoundInput & { readonly preparationToken: string },
 ) {
   const runtime = captureFirstPasswordRuntime(runtimeInput);
   const command = captureFirstPasswordCommand(input, runtime);
   const { preparationToken } = input;
-  const candidate = providerCandidateCredentialSchema.parse({ ...input.candidate });
-  if (candidate.kind !== command.actor.input.kind) throw new FirstPasswordRefusal('denied', 'invalid_proof');
   return withFirstPasswordAuthority(database, runtime, async (transaction, authority) => {
     const context = await loadFirstPasswordChallenge(transaction, authority, runtime, command, ['prepared']);
+    const { token } = requireCanonicalProviderActor(command.actor);
     if (
       !context.challenge.pendingPasswordHash ||
       !context.challenge.preparedAt ||
@@ -169,18 +138,9 @@ export async function finalizeFirstPasswordChallenge(
         context.challenge.preparationTokenHash,
         firstPasswordTokenHash('preparation', preparationToken),
       ) ||
-      (candidate.kind === 'canonical-token' &&
-        !equalFirstPasswordDigest(context.challenge.proposedCredentialHash ?? '', providerCredentialHash(candidate)))
+      !equalFirstPasswordDigest(context.challenge.proposedCredentialHash ?? '', context.challenge.actorCredentialHash)
     )
       throw new FirstPasswordRefusal('denied', 'invalid_proof');
-    const browserPreparation = await prepareBrowserReplacementInTransaction(transaction, authority, {
-      bindingToken: command.actor.input.browserBindingToken,
-      intentToken: command.browserIntentToken,
-      actor: { version: command.actor.input.browserVersion, credential: command.actor.credential },
-      candidate: presentedCandidate(candidate, runtime),
-      operationId: context.challenge.operationId,
-      kind: 'password-set',
-    });
     await context.identity.verifyEmail(
       context.session.userId,
       context.user.email,
@@ -210,33 +170,27 @@ export async function finalizeFirstPasswordChallenge(
     // idempotent call also covers canonical primary with legacy mirroring off.
     await transaction.execute(sql`SELECT public.partner_revoke_user(${context.session.userId})`);
     const now = await providerDatabaseNow(transaction);
-    await replaceProviderCanonicalContinuation(
+    const continued = await continueProviderSessionInPlace(
       transaction,
       context.session,
-      command.actor.credential,
-      candidate,
-      mutation.cutoff.generation,
-      now,
-    );
-    const browser = await commitPreparedBrowserReplacementInTransaction(
-      transaction,
-      authority,
-      browserPreparation,
+      token,
       mutation.identityGenerationReceipt,
+      { operationId: context.challenge.operationId, kind: 'password-set' },
+      now,
     );
     const finished = await providerDatabaseNow(transaction);
     const recoveryExpiresAt = new Date(
       Math.min(finished.getTime() + FIRST_PASSWORD_RECOVERY_LIFETIME_MS, contextDeadline(context)),
     );
     if (recoveryExpiresAt.getTime() <= finished.getTime()) throw new FirstPasswordRefusal('denied', 'expired');
-    const candidateCredentialHash = providerCredentialHash(candidate);
     const [consumed] = await transaction
       .update(authFirstPasswordChallenges)
       .set({
         phase: 'committed',
         pendingPasswordHash: null,
         consumedAt: finished,
-        candidateCredentialHash,
+        // The credential that continues is the presented one.
+        candidateCredentialHash: context.challenge.actorCredentialHash,
         recoveryExpiresAt,
       })
       .where(
@@ -250,46 +204,44 @@ export async function finalizeFirstPasswordChallenge(
     if (!consumed) throw new FirstPasswordRefusal('denied', 'replayed');
     await revalidateIdentityAuthority(transaction, authority);
     await requireLastClock(transaction, Math.min(contextDeadline(context), recoveryExpiresAt.getTime()));
-    return { outcome: 'committed' as const, candidateCredentialHash, browserCursor: browser.cursor };
+    return { outcome: 'committed' as const, generation: continued.generation };
   });
 }
 
-/** Lost backend ACK only; no old actor/confirmation token can retrieve a bearer. */
+/**
+ * Lost backend ACK only: answers whether this exact challenge committed, for
+ * the session that made it, at the generation it then got. No old actor or
+ * confirmation token retrieves a bearer.
+ */
 export async function acknowledgeFirstPasswordResult(
   database: AuthorityDatabase,
   runtimeInput: FirstPasswordRuntime,
-  input: FirstPasswordBoundInput & {
-    readonly preparationToken: string;
-    readonly recoveryToken: string;
-    readonly candidate: ProviderCandidateCredential;
-  },
+  input: FirstPasswordBoundInput & { readonly preparationToken: string; readonly recoveryToken: string },
 ) {
   const runtime = captureFirstPasswordRuntime(runtimeInput);
   const command = captureFirstPasswordCommand(input, runtime);
   const { preparationToken, recoveryToken } = input;
-  const candidate = providerCandidateCredentialSchema.parse({ ...input.candidate });
-  const candidateHash = providerCredentialHash(candidate);
-  const credential = presentedCandidate(candidate, runtime);
   const matches = (challenge: FirstPasswordChallenge | undefined) =>
     challenge !== undefined &&
     challenge.phase === 'committed' &&
     challenge.purpose === 'first-password' &&
-    challenge.actorCredentialKind === command.actor.input.kind &&
-    candidate.kind === challenge.actorCredentialKind &&
+    challenge.actorCredentialKind === command.actor.input.presented.kind &&
     equalFirstPasswordDigest(challenge.actorCredentialHash, command.actor.credentialHash) &&
     challenge.userId === command.actor.input.expectedUserId &&
     challenge.actorSessionId === command.actor.input.expectedAuthSessionId &&
-    challenge.browserBindingHash === providerTokenHash(command.actor.input.browserBindingToken) &&
-    challenge.browserVersion === command.actor.input.browserVersion &&
-    challenge.browserIntentHash === providerTokenHash(command.browserIntentToken) &&
+    // These two compare stored values with stored values: they check the row's
+    // shape (a web-session row, not a binding row), not the caller. The caller
+    // is proven by the token hash and ids above and the admission below.
+    challenge.browserBindingHash === providerWebSessionHash(challenge.actorSessionId) &&
     equalFirstPasswordDigest(
       challenge.preparationTokenHash ?? '',
       firstPasswordTokenHash('preparation', preparationToken),
     ) &&
     equalFirstPasswordDigest(challenge.recoveryTokenHash, firstPasswordTokenHash('recovery', recoveryToken)) &&
-    equalFirstPasswordDigest(challenge.candidateCredentialHash ?? '', candidateHash);
+    equalFirstPasswordDigest(challenge.candidateCredentialHash ?? '', challenge.actorCredentialHash);
   return withFirstPasswordAuthority(database, runtime, async (transaction, authority) => {
     const challengeHash = firstPasswordTokenHash('challenge', command.challengeToken);
+    // A preliminary read; user admission precedes the challenge row lock.
     const [observed] = await transaction
       .select()
       .from(authFirstPasswordChallenges)
@@ -302,21 +254,14 @@ export async function acknowledgeFirstPasswordResult(
       observed.writerEpoch !== authority.epoch
     )
       throw new ProviderSecurityRefusal('unavailable', 'authority_unavailable');
-    const admitted = await readBrowserBindingInTransaction(transaction, authority, {
-      bindingToken: command.actor.input.browserBindingToken,
-      actor: { version: observed.browserVersion + 1, credential },
-    });
-    if (admitted.status === 'unavailable') throw new ProviderSecurityRefusal('unavailable', 'authority_unavailable');
+    const { session } = await admitProviderActorInTransaction(transaction, authority, command.actor);
     if (
-      admitted.status !== 'admitted' ||
-      admitted.cursor.version !== observed.browserVersion + 1 ||
-      admitted.session.userId !== observed.userId ||
-      admitted.session.authSessionId !== observed.actorSessionId ||
-      admitted.session.generation !== observed.actorGeneration + 1 ||
-      admitted.session.authenticatedAt?.getTime() !== observed.actorAuthenticatedAt?.getTime() ||
-      admitted.session.linkGuarded !== observed.actorLinkGuarded ||
-      admitted.session.requiresAccountCutoff !== observed.actorRequiresAccountCutoff ||
-      admitted.session.expiresAt.getTime() !== observed.actorExpiresAt.getTime()
+      session.userId !== observed.userId ||
+      session.authSessionId !== observed.actorSessionId ||
+      session.generation !== observed.actorGeneration + 1 ||
+      session.authenticatedAt?.getTime() !== observed.actorAuthenticatedAt?.getTime() ||
+      session.linkGuarded !== observed.actorLinkGuarded ||
+      session.requiresAccountCutoff !== observed.actorRequiresAccountCutoff
     )
       throw new FirstPasswordRefusal('identity_changed', 'invalid_proof');
     const [challenge] = await transaction
@@ -328,6 +273,6 @@ export async function acknowledgeFirstPasswordResult(
       throw new FirstPasswordRefusal('denied', 'replayed');
     await revalidateIdentityAuthority(transaction, authority);
     await requireLastClock(transaction, Math.min(challenge.expiresAt.getTime(), challenge.recoveryExpiresAt.getTime()));
-    return { outcome: 'recovered' as const, candidateCredentialHash: candidateHash, browserCursor: admitted.cursor };
+    return { outcome: 'recovered' as const, generation: session.generation };
   });
 }

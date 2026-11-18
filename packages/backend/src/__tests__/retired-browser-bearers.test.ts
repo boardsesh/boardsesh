@@ -47,7 +47,6 @@ beforeEach(() => {
   // The removed branches read these before anything else and answered 503
   // when they were missing, which is how production runs today.
   vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
-  vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', '');
   vi.stubEnv('AUTH_IDENTITY_DATABASE_URL', '');
 });
 

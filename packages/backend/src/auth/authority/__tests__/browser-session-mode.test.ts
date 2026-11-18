@@ -136,9 +136,14 @@ describe('the better-auth startup preconditions', () => {
     expect(refusal(() => preconditions({ ...READY, ...change }))).toBe(code);
   });
 
-  it('have a case for every code but the cutover one', () => {
+  it('have a case for every code but the cutover and provider-security ones', () => {
     const tested = new Set<string>(cases.map(([code]) => code));
-    expect(Object.values(errors).filter((code) => code !== errors.cutoverIncomplete && !tested.has(code))).toEqual([]);
+    const ownDescribe = new Set<string>([
+      errors.cutoverIncomplete,
+      errors.providerSecurityNeedsBrowserSession,
+      errors.firstPasswordNeedsBrowserSession,
+    ]);
+    expect(Object.values(errors).filter((code) => !ownDescribe.has(code) && !tested.has(code))).toEqual([]);
   });
 
   it('do not need the legacy bridge or the web sign-out writer', () => {
@@ -187,6 +192,60 @@ describe('the browser access token key', () => {
   });
 });
 
+// #7596 B5c2: first password acts only for a canonical web session too.
+describe('first password needs better-auth first', () => {
+  it.each([{}, { AUTH_BROWSER_SESSION_MODE: 'legacy' }])(
+    'refuses first password backend-staging with %j',
+    (environment) => {
+      expect(
+        refusal(() =>
+          assertBrowserSessionModeConfiguration({
+            ...environment,
+            CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging',
+          }),
+        ),
+      ).toBe(errors.firstPasswordNeedsBrowserSession);
+    },
+  );
+
+  it('passes first password backend-staging under better-auth, which then meets its own checks', () => {
+    expect(
+      refusal(() => preconditions({ ...READY, CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging' })),
+    ).toBeUndefined();
+  });
+
+  it.each([undefined, '', 'legacy'])('leaves first password %j alone on a legacy start', (mode) => {
+    expect(() => assertBrowserSessionModeConfiguration({ CURRENT_STORE_FIRST_PASSWORD_MODE: mode })).not.toThrow();
+  });
+});
+
+// #7596 B5c1: provider link and unlink act only for a canonical web session.
+describe('provider security needs better-auth first', () => {
+  it.each([{}, { AUTH_BROWSER_SESSION_MODE: 'legacy' }, { AUTH_BROWSER_SESSION_MODE: '' }])(
+    'refuses provider security backend-staging with %j',
+    (environment) => {
+      expect(
+        refusal(() =>
+          assertBrowserSessionModeConfiguration({
+            ...environment,
+            CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging',
+          }),
+        ),
+      ).toBe(errors.providerSecurityNeedsBrowserSession);
+    },
+  );
+
+  it('passes provider security backend-staging under better-auth, which then meets its own checks', () => {
+    expect(
+      refusal(() => preconditions({ ...READY, CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging' })),
+    ).toBeUndefined();
+  });
+
+  it.each([undefined, '', 'legacy'])('leaves provider security %j alone on a legacy start', (mode) => {
+    expect(() => assertBrowserSessionModeConfiguration({ CURRENT_STORE_PROVIDER_SECURITY_MODE: mode })).not.toThrow();
+  });
+});
+
 describe('the cutover refusal', () => {
   it('still refuses better-auth with every precondition met, naming what has not landed', () => {
     expect(BROWSER_SESSION_CUTOVER_BLOCKERS.length).toBeGreaterThan(0);
@@ -209,6 +268,16 @@ describe('backend startup', () => {
     ['an unknown value', { AUTH_BROWSER_SESSION_MODE: 'better_auth' }, 'AUTH_BROWSER_SESSION_MODE_INVALID'],
     ['better-auth missing a precondition', { ...READY, CURRENT_STORE_WEB_SESSION_MODE: '' }, errors.webSessionMode],
     ['better-auth with every precondition met', READY, errors.cutoverIncomplete],
+    [
+      'provider security staged without better-auth',
+      { CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging' },
+      errors.providerSecurityNeedsBrowserSession,
+    ],
+    [
+      'first password staged without better-auth',
+      { CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging' },
+      errors.firstPasswordNeedsBrowserSession,
+    ],
   ])('refuses %s before any external initialization', async (_label, environment, refusalCode) => {
     for (const [name, content] of Object.entries(environment)) vi.stubEnv(name, content);
     // The database client is built on import but never connects here.

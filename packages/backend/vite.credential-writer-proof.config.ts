@@ -10,7 +10,6 @@ export default defineConfig({
     env: { AUTH_CREDENTIAL_HTTP_CONTRACT: '' },
     include: [
       'src/auth/authority/__tests__/credential-writer-acl.proof.ts',
-      'src/auth/authority/__tests__/browser-credential-writer.proof.ts',
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',
     ],
     testTimeout: 30000,

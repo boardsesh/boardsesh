@@ -168,6 +168,12 @@ export async function handleCurrentStoreWebAuth(
   // A login that asks for a web session needs its own mode, checked before any
   // limiter key, bcrypt or database work.
   if (command.operation === 'password' && command.webSession !== undefined) {
+    // A session is never issued without the proof that gives its legacy
+    // rollback cookie the same session id (#7596 B5a review, M1).
+    if (command.credentialProofVersion === undefined) {
+      sendJson(response, 400, { error: 'invalid_request' });
+      return;
+    }
     try {
       if (webSessionMode(process.env) !== 'backend-staging') {
         sendJson(response, 404, { error: 'disabled' });

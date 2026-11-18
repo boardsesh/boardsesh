@@ -61,18 +61,11 @@ export function isAppleOnlyFirstPasswordInventory(
 }
 
 /** Confirmation bounds a command; it does not create an authentication age. */
-export function firstPasswordDeadline(
-  databaseNow: Date,
-  sourceExpiresAt: Date,
-  bindingExpiresAt: Date,
-  browserIntentExpiresAt: Date,
-): Date {
-  const [now, source, binding, intent] = [databaseNow, sourceExpiresAt, bindingExpiresAt, browserIntentExpiresAt].map(
-    (clock) => clock.getTime(),
-  );
-  if ([now, source, binding, intent].some((clock) => !Number.isSafeInteger(clock) || clock <= 0))
+export function firstPasswordDeadline(databaseNow: Date, sourceExpiresAt: Date): Date {
+  const [now, source] = [databaseNow, sourceExpiresAt].map((clock) => clock.getTime());
+  if ([now, source].some((clock) => !Number.isSafeInteger(clock) || clock <= 0))
     throw new Error('FIRST_PASSWORD_AUTHORITY_UNAVAILABLE');
-  const expiresAt = Math.min(now + FIRST_PASSWORD_CHALLENGE_LIFETIME_MS, source, binding, intent);
+  const expiresAt = Math.min(now + FIRST_PASSWORD_CHALLENGE_LIFETIME_MS, source);
   if (expiresAt <= now) throw new Error('FIRST_PASSWORD_EXPIRED');
   return new Date(expiresAt);
 }

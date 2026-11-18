@@ -12,14 +12,11 @@ const metadata = {
   issuedAt: '2026-11-14T17:00:00.000Z',
 };
 const actor = {
-  kind: 'canonical-token',
-  credential: 'source-held-by-caller',
+  presented: { kind: 'canonical-token', token: 'source-held-by-caller' },
   expectedUserId: 'fixed-uid',
   expectedAuthSessionId: 'fixed-sid',
-  browserBindingToken: 'b'.repeat(43),
-  browserVersion: 1,
 };
-const bound = { actor, challengeToken: 'c'.repeat(43), browserIntentToken: 'd'.repeat(43) };
+const bound = { actor, challengeToken: 'c'.repeat(43) };
 const candidate = { kind: 'canonical-token', credential: 'candidate-held-by-caller' };
 describe('UID-bound first-password private v1 protocol', () => {
   it.each([
@@ -29,8 +26,8 @@ describe('UID-bound first-password private v1 protocol', () => {
       'prepare',
       { ...bound, confirmationToken: 'e'.repeat(43), password: ' new password ', confirmPassword: ' new password ' },
     ],
-    ['finalize', { ...bound, preparationToken: 'f'.repeat(43), candidate }],
-    ['recover', { ...bound, preparationToken: 'f'.repeat(43), recoveryToken: 'g'.repeat(43), candidate }],
+    ['finalize', { ...bound, preparationToken: 'f'.repeat(43) }],
+    ['recover', { ...bound, preparationToken: 'f'.repeat(43), recoveryToken: 'g'.repeat(43) }],
   ])('pins explicit %s command without user/email lookup alternatives', (operation, payload) => {
     expect(firstPasswordCommandSchema.safeParse({ ...metadata, operation, payload }).success).toBe(true);
     expect(FIRST_PASSWORD_COMMAND_PATHS).toHaveProperty(String(operation));
@@ -44,38 +41,53 @@ describe('UID-bound first-password private v1 protocol', () => {
         firstPasswordCommandSchema.safeParse({ ...metadata, operation, payload: { ...payload, ...extra } }).success,
       ).toBe(false);
   });
-  it('bounds each actual source/candidate by UTF8 bytes before authority work', () => {
-    const fits = '🧗'.repeat(4096);
-    for (const raw of [fits, 'a'.repeat(16384)]) {
+  it('takes the web session, never a browser binding, a browser intent or a candidate credential', () => {
+    const bindingActor = {
+      kind: 'canonical-token',
+      credential: 'source-held-by-caller',
+      expectedUserId: 'fixed-uid',
+      expectedAuthSessionId: 'fixed-sid',
+      browserBindingToken: 'b'.repeat(43),
+      browserVersion: 1,
+    };
+    expect(
+      firstPasswordCommandSchema.safeParse({ ...metadata, operation: 'request', payload: { actor: bindingActor } })
+        .success,
+    ).toBe(false);
+    expect(
+      firstPasswordCommandSchema.safeParse({
+        ...metadata,
+        operation: 'read',
+        payload: { ...bound, browserIntentToken: 'd'.repeat(43) },
+      }).success,
+    ).toBe(false);
+    for (const operation of ['finalize', 'recover'] as const)
       expect(
         firstPasswordCommandSchema.safeParse({
           ...metadata,
-          operation: 'finalize',
-          payload: {
-            ...bound,
-            actor: { ...actor, credential: raw },
-            preparationToken: 'f'.repeat(43),
-            candidate: { ...candidate, credential: raw },
-          },
-        }).success,
-      ).toBe(true);
-    }
-    for (const raw of ['🧗'.repeat(4097), 'a'.repeat(16385)]) {
-      expect(
-        firstPasswordCommandSchema.safeParse({
-          ...metadata,
-          operation: 'request',
-          payload: { actor: { ...actor, credential: raw } },
-        }).success,
-      ).toBe(false);
-      expect(
-        firstPasswordCommandSchema.safeParse({
-          ...metadata,
-          operation: 'finalize',
-          payload: { ...bound, preparationToken: 'f'.repeat(43), candidate: { ...candidate, credential: raw } },
+          operation,
+          payload: { ...bound, preparationToken: 'f'.repeat(43), recoveryToken: 'g'.repeat(43), candidate },
         }).success,
       ).toBe(false);
-    }
+    expect(
+      firstPasswordCommandSchema.safeParse({
+        ...metadata,
+        operation: 'request',
+        payload: { actor: { ...actor, presented: { kind: 'legacy-jwe', credential: 'joined-nextauth-cookie' } } },
+      }).success,
+    ).toBe(true);
+  });
+  it('bounds the presented session before authority work', () => {
+    const request = (presented: unknown) =>
+      firstPasswordCommandSchema.safeParse({
+        ...metadata,
+        operation: 'request',
+        payload: { actor: { ...actor, presented } },
+      }).success;
+    expect(request({ kind: 'canonical-token', token: 'a'.repeat(4096) })).toBe(true);
+    expect(request({ kind: 'canonical-token', token: 'a'.repeat(4097) })).toBe(false);
+    expect(request({ kind: 'legacy-jwe', credential: 'a'.repeat(12_288) })).toBe(true);
+    expect(request({ kind: 'legacy-jwe', credential: 'a'.repeat(12_289) })).toBe(false);
   });
   it('recovery replies acknowledge only a caller-held hash, never a bearer', () => {
     const reply = {
@@ -83,8 +95,7 @@ describe('UID-bound first-password private v1 protocol', () => {
       requestId: metadata.requestId,
       operation: 'recover',
       outcome: 'recovered',
-      candidateCredentialHash: 'a'.repeat(64),
-      browserCursor: { bindingId: 'b'.repeat(64), version: 2, bindingExpiresAt: metadata.issuedAt },
+      generation: 2,
     };
     expect(firstPasswordReplySchema.safeParse(reply).success).toBe(true);
     for (const extra of [
@@ -92,6 +103,7 @@ describe('UID-bound first-password private v1 protocol', () => {
       { credential: candidate.credential },
       { confirmationToken: 'e'.repeat(43) },
       { mailPlan: { recipient: 'example@example.test' } },
+      { browserCursor: { bindingId: 'b'.repeat(64), version: 2, bindingExpiresAt: metadata.issuedAt } },
     ])
       expect(firstPasswordReplySchema.safeParse({ ...reply, ...extra }).success).toBe(false);
     expect(firstPasswordReplySchema.safeParse({ ...reply, operation: 'finalize' }).success).toBe(false);
@@ -99,6 +111,7 @@ describe('UID-bound first-password private v1 protocol', () => {
   it.each([
     ['unauthenticated', 401],
     ['identity_changed', 409],
+    ['canonical_session_required', 403],
     ['denied', 400],
     ['unavailable', 503],
   ] as const)('preserves exact %s refusal status', (outcome, status) => {
@@ -107,7 +120,12 @@ describe('UID-bound first-password private v1 protocol', () => {
       requestId: metadata.requestId,
       operation: 'read',
       outcome,
-      code: outcome === 'unavailable' ? 'authority_unavailable' : 'invalid_proof',
+      code:
+        outcome === 'unavailable'
+          ? 'authority_unavailable'
+          : outcome === 'canonical_session_required'
+            ? 'canonical_session_required'
+            : 'invalid_proof',
     });
     expect(firstPasswordReplyStatus(reply)).toBe(status);
   });

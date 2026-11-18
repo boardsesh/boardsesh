@@ -1,5 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -12,7 +11,6 @@ import {
   authProviderSecurityIntents,
   authSession,
   authSubjectCutoffs,
-  authWebOAuthIntents,
   oauthClient,
   oauthConnections,
   oauthRefreshToken,
@@ -22,7 +20,6 @@ import {
   PROVIDER_SECURITY_COMMAND_PATHS,
   PROVIDER_SECURITY_VERSION,
   providerSecurityReplySchema,
-  type ProviderSecurityActor,
   type ProviderSecurityCommand,
   type ProviderSecurityReply,
 } from '@boardsesh/auth-protocol';
@@ -58,10 +55,6 @@ vi.mock('../../../db/client', () => ({
 
 const rpcSecret = 'owned-provider-http-service-secret-6975';
 const sourceSecret = 'owned-provider-http-source-secret-6975';
-const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
-const jwt = requireWeb('next-auth/jwt') as {
-  encode(input: { secret: string; token: Record<string, unknown>; maxAge: number }): Promise<string>;
-};
 const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
 if (
   selectedHttpContract &&
@@ -119,7 +112,7 @@ function expectedReply<Outcome extends MutationReply['outcome']>(
   if (reply.outcome !== outcome) throw new Error('Owned provider HTTP operation refused');
   return reply as Extract<MutationReply, { outcome: Outcome }>;
 }
-async function actor(selected: IdentityAuthorityName, kind: ProviderSecurityActor['kind'] = 'canonical-token') {
+async function actor(selected: IdentityAuthorityName, kind: 'legacy-jwe' | 'canonical-token' = 'canonical-token') {
   await environment.ownerDatabase.transaction(async (transaction) => {
     const [manifest] = await transaction
       .select()
@@ -146,7 +139,7 @@ async function prepare(owner: Awaited<ReturnType<typeof actor>>['owner']) {
   const intent = expectedReply(
     (
       await post('intent', {
-        actor: owner.actor,
+        actor: owner.webActor,
         action: 'link',
         provider: 'apple',
         methodId: null,
@@ -154,7 +147,7 @@ async function prepare(owner: Awaited<ReturnType<typeof actor>>['owner']) {
     ).body,
     'recorded',
   );
-  const bound = { actor: owner.actor, intentToken: intent.intentToken, browserIntentToken: intent.browserIntentToken };
+  const bound = { actor: owner.webActor, intentToken: intent.intentToken };
   const proof = expectedReply(
     (await post('reauthenticate-password', { ...bound, password: ' exact password ' })).body,
     'proved',
@@ -267,13 +260,23 @@ describe('provider commands through default HTTP and the qualified provider LOGI
       body: { error: 'unauthorized' },
     });
     const placeholder = {
-      kind: 'canonical-token',
-      credential: 'owned-placeholder',
+      presented: { kind: 'canonical-token', token: 'owned-placeholder' },
       expectedUserId: 'owned',
       expectedAuthSessionId: 'owned',
-      browserBindingToken: 'a'.repeat(43),
-      browserVersion: 1,
     };
+    // The browser-binding actor shape is refused by provider link and unlink.
+    expect(
+      await post('methods', {
+        actor: {
+          kind: 'canonical-token',
+          credential: 'owned-placeholder',
+          expectedUserId: 'owned',
+          expectedAuthSessionId: 'owned',
+          browserBindingToken: 'a'.repeat(43),
+          browserVersion: 1,
+        },
+      }),
+    ).toMatchObject({ status: 400, body: { error: 'invalid_request' } });
     expect(
       await post('methods', { actor: placeholder }, { issuedAt: new Date(Date.now() - 180_000).toISOString() }),
     ).toMatchObject({ status: 400, body: { error: 'expired_request' } });
@@ -295,266 +298,160 @@ describe('provider commands through default HTTP and the qualified provider LOGI
   });
 
   for (const selected of ['current-store', 'better-auth'] as const)
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const)
-      it(`${selected}/${kind}: qualified LOGIN performs owned-B login and exact ACK without implicit linking or fresh-age promotion`, async () => {
-        const { driver, owner } = await actor(selected, kind);
-        const subject = randomUUID();
-        const target = await driver.actor(selected, kind, { provider: 'apple', subject, password: false });
-        const nonce = randomBytes(32).toString('base64url');
-        const flowHash = randomBytes(32).toString('hex');
-        const startReply = await post('signin-intent', {
-          actor: owner.actor,
-          provider: 'apple',
-          flowHash,
-          nonceHash: providerTokenHash(nonce),
-        });
-        expect(startReply.status).toBe(200);
-        const intent = providerSecurityReplySchema.parse(startReply.body);
-        if (intent.operation !== 'signin-intent' || intent.outcome !== 'recorded')
-          throw new Error('Owned login intent refused');
-        const bound = {
-          actor: owner.actor,
-          intentToken: intent.intentToken,
-          browserIntentToken: intent.browserIntentToken,
-          flowHash,
-          nonceHash: providerTokenHash(nonce),
-        };
-        const beforeFlow = await environment.ownerDatabase
+    it(`${selected}: actual password proof links and unlinks, keeps this device's session and token, and revokes only affected partner credentials`, async () => {
+      const { driver, owner, subject } = await actor(selected);
+      const principal = await executeFirstRow<{ role: string; sessionRole: string }>(
+        await getCredentialDatabase('private-provider-v1'),
+        sql`SELECT current_user AS role,session_user AS "sessionRole"`,
+      );
+      expect(principal).toEqual({ role: 'boardsesh_identity_writer', sessionRole: 'boardsesh_identity_writer' });
+      const beforeUser = (await environment.ownerDatabase.select().from(users).where(eq(users.id, owner.userId)))[0];
+      const beforeSession = (
+        await environment.ownerDatabase.select().from(authSession).where(eq(authSession.id, owner.sid))
+      )[0];
+      const owned = expectedReply(
+        (await post('owned-provider', { actor: owner.webActor, provider: 'google', subject })).body,
+        'owned',
+      );
+      expect(owned.user.id).toBe(owner.userId);
+      expect(owned).not.toHaveProperty('credentialProof');
+      const affectedConnection = await partner(owner.userId);
+      const unrelated = await driver.actor(selected, 'canonical-token');
+      const unrelatedConnection = await partner(unrelated.userId);
+      const beforeUnrelated = (
+        await environment.ownerDatabase
           .select()
-          .from(authWebOAuthIntents)
-          .where(eq(authWebOAuthIntents.actorUserId, owner.userId));
-        const unknown = await post('signin-prepare', {
-          ...bound,
-          providerProof: { provider: 'apple', subject: randomUUID(), idToken: null, nonce },
-        });
-        expect(unknown.status).toBe(400);
-        expect(unknown.body).toMatchObject({ outcome: 'denied', code: 'ownership_conflict' });
-        expect(
+          .from(oauthConnections)
+          .where(eq(oauthConnections.id, unrelatedConnection))
+      )[0];
+      const pending = await prepare(owner);
+      const finalPayload = {
+        ...pending.bound,
+        reauthenticationToken: pending.proof.reauthenticationToken,
+        preparationToken: pending.prepared.preparationToken,
+      };
+      expect(expectedReply((await post('finalize', finalPayload)).body, 'committed').generation).toBe(1);
+      expect((await environment.ownerDatabase.select().from(users).where(eq(users.id, owner.userId)))[0]).toEqual(
+        beforeUser,
+      );
+      expect(
+        (
           await environment.ownerDatabase
             .select()
-            .from(authWebOAuthIntents)
-            .where(eq(authWebOAuthIntents.actorUserId, owner.userId)),
-        ).toEqual(beforeFlow);
-        const preparationReply = await post('signin-prepare', {
-          ...bound,
-          providerProof: { provider: 'apple', subject, idToken: null, nonce },
-        });
-        expect(preparationReply.status).toBe(200);
-        const prepared = providerSecurityReplySchema.parse(preparationReply.body);
-        if (prepared.operation !== 'signin-prepare' || prepared.outcome !== 'prepared')
-          throw new Error('Owned B preparation refused');
-        const proof = prepared.preparation.credentialProof;
-        expect(proof).toMatchObject({ userId: target.userId, authenticatedAt: null, linkGuarded: false });
-        const candidate = {
-          kind,
-          credential:
-            kind === 'canonical-token'
-              ? prepared.proposedCanonicalToken!
-              : await jwt.encode({
-                  secret: sourceSecret,
-                  maxAge: Date.parse(prepared.preparation.credentialExpiresAt) / 1000 - Math.floor(Date.now() / 1000),
-                  token: { sub: proof.userId, authSessionId: proof.authSessionId, gen: proof.generation },
-                }),
-        };
-        const finalPayload = {
-          ...bound,
-          preparationToken: prepared.preparationToken,
-          preparation: prepared.preparation,
-          candidate,
-        };
-        const committed = await post('signin-finalize', finalPayload);
-        expect(committed.status).toBe(200);
-        expect(committed.body).toMatchObject({
-          operation: 'signin-finalize',
-          outcome: 'committed',
-          candidateCredentialHash: expect.any(String),
-          browserCursor: { version: owner.actor.browserVersion + 1 },
-        });
-        if (kind === 'canonical-token') {
-          await environment.owner`REVOKE SELECT ON public.auth_session FROM boardsesh_identity_writer`;
-          try {
-            const unavailable = await post('signin-finalize', finalPayload);
-            expect(unavailable.status).toBe(503);
-            expect(unavailable.body).toMatchObject({ outcome: 'unavailable', code: 'authority_unavailable' });
-            expect(JSON.stringify(unavailable.body)).not.toContain('candidateCredentialHash');
-            expect(JSON.stringify(unavailable.body)).not.toContain(candidate.credential);
-          } finally {
-            await environment.owner`GRANT SELECT ON public.auth_session TO boardsesh_identity_writer`;
-          }
-        }
-        const recovered = await post('signin-finalize', finalPayload);
-        expect(recovered.status).toBe(200);
-        expect(recovered.body).toMatchObject({
-          operation: 'signin-finalize',
-          outcome: 'recovered',
-          candidateCredentialHash: (committed.body as { candidateCredentialHash: string }).candidateCredentialHash,
-        });
-        const principal = await executeFirstRow<{ role: string; sessionRole: string }>(
-          await getCredentialDatabase('private-provider-v1'),
-          sql`SELECT current_user AS role, session_user AS "sessionRole"`,
-        );
-        expect(principal).toEqual({ role: 'boardsesh_identity_writer', sessionRole: 'boardsesh_identity_writer' });
-      });
-
-  for (const selected of ['current-store', 'better-auth'] as const)
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const)
-      it(`${selected}/${kind}: actual password proof links and unlinks, keeps this device, and revokes only affected partner credentials`, async () => {
-        const { driver, owner, subject } = await actor(selected, kind);
-        const principal = await executeFirstRow<{ role: string; sessionRole: string }>(
-          await getCredentialDatabase('private-provider-v1'),
-          sql`SELECT current_user AS role,session_user AS "sessionRole"`,
-        );
-        expect(principal).toEqual({ role: 'boardsesh_identity_writer', sessionRole: 'boardsesh_identity_writer' });
-        const beforeUser = (await environment.ownerDatabase.select().from(users).where(eq(users.id, owner.userId)))[0];
-        const owned = expectedReply(
-          (await post('owned-provider', { actor: owner.actor, provider: 'google', subject })).body,
-          'owned',
-        );
-        expect(owned.credentialProof.authenticatedAt).toBe(owner.authenticatedAt?.toISOString());
-        expect(owned.credentialProof.generation).toBe(0);
-        const affectedConnection = await partner(owner.userId);
-        const unrelated = await driver.actor(selected, 'canonical-token');
-        const unrelatedConnection = await partner(unrelated.userId);
-        const beforeUnrelated = (
+            .from(oauthConnections)
+            .where(eq(oauthConnections.id, affectedConnection))
+        )[0],
+      ).toMatchObject({ generation: 1, revocationReason: 'account_security_revocation' });
+      expect(
+        (
           await environment.ownerDatabase
             .select()
             .from(oauthConnections)
             .where(eq(oauthConnections.id, unrelatedConnection))
-        )[0];
-        const pending = await prepare(owner);
-        expect(pending.prepared.credentialProof).toMatchObject({
-          userId: owner.userId,
-          authSessionId: owner.sid,
-          generation: 1,
-          authenticatedAt: owner.authenticatedAt?.toISOString(),
-        });
-        const candidate = await driver.candidate(
-          { ...pending.prepared, credentialExpiresAt: new Date(pending.prepared.credentialExpiresAt) },
-          kind,
-        );
-        const finalPayload = {
-          ...pending.bound,
-          reauthenticationToken: pending.proof.reauthenticationToken,
-          preparationToken: pending.prepared.preparationToken,
-          candidate,
-        };
-        const committed = expectedReply((await post('finalize', finalPayload)).body, 'committed');
-        expect(committed.browserCursor.version).toBe(owner.actor.browserVersion + 1);
-        expect((await environment.ownerDatabase.select().from(users).where(eq(users.id, owner.userId)))[0]).toEqual(
-          beforeUser,
-        );
-        expect(
-          (
-            await environment.ownerDatabase
-              .select()
-              .from(oauthConnections)
-              .where(eq(oauthConnections.id, affectedConnection))
-          )[0],
-        ).toMatchObject({ generation: 1, revocationReason: 'account_security_revocation' });
-        expect(
-          (
-            await environment.ownerDatabase
-              .select()
-              .from(oauthConnections)
-              .where(eq(oauthConnections.id, unrelatedConnection))
-          )[0],
-        ).toEqual(beforeUnrelated);
-        expect(
-          await environment.ownerDatabase
-            .select()
-            .from(oauthRefreshToken)
-            .where(eq(oauthRefreshToken.userId, owner.userId)),
-        ).toHaveLength(0);
-        expect(
-          await environment.ownerDatabase
-            .select()
-            .from(oauthRefreshToken)
-            .where(eq(oauthRefreshToken.userId, unrelated.userId)),
-        ).toHaveLength(1);
-        const recover = {
-          ...pending.bound,
-          reauthenticationToken: pending.proof.reauthenticationToken,
-          recoveryToken: pending.intent.recoveryToken,
-          candidate,
-        };
-        expect(expectedReply((await post('recover', recover)).body, 'recovered').candidateCredentialHash).toBe(
-          committed.candidateCredentialHash,
-        );
-        const continued: ProviderSecurityActor = {
-          ...owner.actor,
-          credential: candidate.credential,
-          browserVersion: committed.browserCursor.version,
-        };
-        const methods = expectedReply((await post('methods', { actor: continued })).body, 'available');
-        const linked = methods.providers.find((method) => method.provider === 'apple');
-        if (!linked) throw new Error('Owned linked method not visible');
-        const unlink = expectedReply(
-          (await post('intent', { actor: continued, action: 'unlink', provider: 'apple', methodId: linked.methodId }))
-            .body,
-          'recorded',
-        );
-        const unlinkBound = {
-          actor: continued,
-          intentToken: unlink.intentToken,
-          browserIntentToken: unlink.browserIntentToken,
-        };
-        const password = expectedReply(
-          (await post('reauthenticate-password', { ...unlinkBound, password: ' exact password ' })).body,
-          'proved',
-        );
-        const prepared = expectedReply(
-          (
-            await post('prepare', {
-              ...unlinkBound,
-              reauthenticationToken: password.reauthenticationToken,
-              flowHash: null,
-              providerProof: null,
-            })
-          ).body,
-          'prepared',
-        );
-        expect(prepared.credentialProof).toMatchObject({
-          generation: 2,
-          authSessionId: owner.sid,
-          authenticatedAt: owner.authenticatedAt?.toISOString(),
-        });
-        expect(prepared.credentialExpiresAt).toBe(pending.prepared.credentialExpiresAt);
-        const replacement = await driver.candidate(
-          { ...prepared, credentialExpiresAt: new Date(prepared.credentialExpiresAt) },
-          kind,
-        );
+        )[0],
+      ).toEqual(beforeUnrelated);
+      expect(
+        await environment.ownerDatabase
+          .select()
+          .from(oauthRefreshToken)
+          .where(eq(oauthRefreshToken.userId, owner.userId)),
+      ).toHaveLength(0);
+      expect(
+        await environment.ownerDatabase
+          .select()
+          .from(oauthRefreshToken)
+          .where(eq(oauthRefreshToken.userId, unrelated.userId)),
+      ).toHaveLength(1);
+      const recover = {
+        ...pending.bound,
+        reauthenticationToken: pending.proof.reauthenticationToken,
+        recoveryToken: pending.intent.recoveryToken,
+      };
+      expect(expectedReply((await post('recover', recover)).body, 'recovered').generation).toBe(1);
+      // The same cookie keeps working: no token was written.
+      const methods = expectedReply((await post('methods', { actor: owner.webActor })).body, 'available');
+      const linked = methods.providers.find((method) => method.provider === 'apple');
+      if (!linked) throw new Error('Owned linked method not visible');
+      const unlink = expectedReply(
+        (
+          await post('intent', {
+            actor: owner.webActor,
+            action: 'unlink',
+            provider: 'apple',
+            methodId: linked.methodId,
+          })
+        ).body,
+        'recorded',
+      );
+      const unlinkBound = { actor: owner.webActor, intentToken: unlink.intentToken };
+      const password = expectedReply(
+        (await post('reauthenticate-password', { ...unlinkBound, password: ' exact password ' })).body,
+        'proved',
+      );
+      const prepared = expectedReply(
+        (
+          await post('prepare', {
+            ...unlinkBound,
+            reauthenticationToken: password.reauthenticationToken,
+            flowHash: null,
+            providerProof: null,
+          })
+        ).body,
+        'prepared',
+      );
+      expect(
         expectedReply(
           (
             await post('finalize', {
               ...unlinkBound,
               reauthenticationToken: password.reauthenticationToken,
               preparationToken: prepared.preparationToken,
-              candidate: replacement,
             })
           ).body,
           'committed',
+        ).generation,
+      ).toBe(2);
+      const remaining = await environment.ownerDatabase.transaction(async (transaction) => {
+        const identity = bindIdentityAuthority(
+          transaction,
+          await captureIdentityAuthority(transaction, driver.qualification),
         );
-        const remaining = await environment.ownerDatabase.transaction(async (transaction) => {
-          const identity = bindIdentityAuthority(
-            transaction,
-            await captureIdentityAuthority(transaction, driver.qualification),
-          );
-          return identity.findProvider('apple', pending.subject);
-        });
-        expect(remaining).toBeNull();
-        expect(
-          (
-            await environment.ownerDatabase
-              .select()
-              .from(authSubjectCutoffs)
-              .where(eq(authSubjectCutoffs.userId, owner.userId))
-          )[0].generation,
-        ).toBe(2);
+        return identity.findProvider('apple', pending.subject);
       });
+      expect(remaining).toBeNull();
+      expect(
+        (
+          await environment.ownerDatabase
+            .select()
+            .from(authSubjectCutoffs)
+            .where(eq(authSubjectCutoffs.userId, owner.userId))
+        )[0].generation,
+      ).toBe(2);
+      const afterSession = (
+        await environment.ownerDatabase.select().from(authSession).where(eq(authSession.id, owner.sid))
+      )[0];
+      expect(afterSession).toEqual({ ...beforeSession, revocationGeneration: 2, updatedAt: afterSession.updatedAt });
+    });
+
+  for (const selected of ['current-store', 'better-auth'] as const)
+    it(`${selected}: a legacy NextAuth cookie reads its methods but cannot start a link it could not survive`, async () => {
+      const { owner } = await actor(selected, 'legacy-jwe');
+      expectedReply((await post('methods', { actor: owner.webActor })).body, 'available');
+      const refused = await post('intent', {
+        actor: owner.webActor,
+        action: 'link',
+        provider: 'apple',
+        methodId: null,
+      });
+      expect(refused).toMatchObject({
+        status: 403,
+        body: { operation: 'intent', outcome: 'canonical_session_required', code: 'canonical_session_required' },
+      });
+    });
 
   it('canonical ownership admission refuses expired proof and returns bounded unavailable on primary failure or oversized UTF8 replies', async () => {
     const { owner, subject } = await actor('better-auth');
-    const payload = { actor: owner.actor, provider: 'google', subject };
+    const payload = { actor: owner.webActor, provider: 'google', subject };
     expectedReply((await post('owned-provider', payload)).body, 'owned');
     await environment.owner`REVOKE SELECT ON public.auth_session FROM boardsesh_identity_writer`;
     try {
@@ -582,16 +479,12 @@ describe('provider commands through default HTTP and the qualified provider LOGI
   it('a lost-success ACK stays unavailable while its current primary credential cannot be read', async () => {
     const { owner } = await actor('better-auth');
     const pending = await prepare(owner);
-    const proposal = pending.prepared.proposedCanonicalToken;
-    if (!proposal) throw new Error('Owned canonical proposal missing');
-    const candidate = { kind: 'canonical-token' as const, credential: proposal };
     const committed = expectedReply(
       (
         await post('finalize', {
           ...pending.bound,
           reauthenticationToken: pending.proof.reauthenticationToken,
           preparationToken: pending.prepared.preparationToken,
-          candidate,
         })
       ).body,
       'committed',
@@ -600,35 +493,28 @@ describe('provider commands through default HTTP and the qualified provider LOGI
       ...pending.bound,
       reauthenticationToken: pending.proof.reauthenticationToken,
       recoveryToken: pending.intent.recoveryToken,
-      candidate,
     };
     await environment.owner`REVOKE SELECT ON public.auth_session FROM boardsesh_identity_writer`;
     try {
       const reply = await post('recover', recovery);
       expect(reply.status).toBe(503);
       expect(expectedReply(reply.body, 'unavailable')).toMatchObject({ code: 'authority_unavailable' });
-      expect(reply.body).not.toHaveProperty('candidateCredentialHash');
+      expect(reply.body).not.toHaveProperty('generation');
     } finally {
       await environment.owner`GRANT SELECT ON public.auth_session TO boardsesh_identity_writer`;
     }
-    expect(expectedReply((await post('recover', recovery)).body, 'recovered').candidateCredentialHash).toBe(
-      committed.candidateCredentialHash,
-    );
+    expect(expectedReply((await post('recover', recovery)).body, 'recovered').generation).toBe(committed.generation);
   });
 
-  it('a real restricted-role late revocation failure rolls back provider, cutoff and candidate writes, leaving only terminal intent', async () => {
+  it('a real restricted-role late revocation failure rolls back provider, cutoff and session writes, leaving only terminal intent', async () => {
     const { owner } = await actor('better-auth');
     const pending = await prepare(owner);
-    const proposal = pending.prepared.proposedCanonicalToken;
-    if (!proposal) throw new Error('Owned canonical proposal missing');
-    const candidate = { kind: 'canonical-token' as const, credential: proposal };
     await environment.owner`REVOKE EXECUTE ON FUNCTION public.partner_revoke_user(text) FROM boardsesh_identity_writer`;
     try {
       const reply = await post('finalize', {
         ...pending.bound,
         reauthenticationToken: pending.proof.reauthenticationToken,
         preparationToken: pending.prepared.preparationToken,
-        candidate,
       });
       expect(reply.status).toBe(503);
       expectedReply(reply.body, 'unavailable');

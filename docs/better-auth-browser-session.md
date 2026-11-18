@@ -528,11 +528,9 @@ first-party cookies before the legacy one while `CURRENT_STORE_WEB_SESSION_MODE`
 is on; the order, the stale-cookie rule and the 503 are in
 [integration-platform.md](./integration-platform.md), "Who is signed in". Provider link and unlink need
 their own reauthentication receipt (`provider-reauthentication-evidence.ts`),
-never the session's age, so they did not change. Provider security and first
-password compare the actor session's expiry exactly
-(`provider-security-context.ts:114`, `provider-security-finalizer.ts:208`,
-`first-password-challenges.ts:98`), so a flow that spans a roll is refused.
-B5 drops those comparisons when it rebuilds the flows.
+never the session's age, so they did not change. Since B5c1, provider security
+compares the actor on session id and generation, not expiry, so a link that
+spans a roll goes through. First password does the same since B5c2.
 
 What B1 does with the token: put it in the signed session cookie, Max-Age
 34,560,000 (decision 2), only after the command answers; never log it or hand
@@ -1058,9 +1056,104 @@ only a signed `auth_time` in a verified ID token counts
 ([provider security adoption](./better-auth-provider-security-adoption.md)).
 Apple-only accounts set a first password after email confirmation, which is
 not provider reauthentication. Facebook sign-in and linking stay removed;
-stored Facebook identities stay. The backend `authority/browser-binding.ts` and
-the binding-table readers those cores use stay until B5. Drizzle schema exports
-and merged migrations stay, and this work writes no migrations.
+stored Facebook identities stay. Drizzle schema exports and merged migrations
+stay, and this work writes no migrations.
+
+Since B5c1, provider link, unlink, reauthentication and the ownership check
+take the first-party web session (`presented`: the canonical token or the
+legacy cookie, plus the user and session id the tab expects), read by
+`readFirstPartySession`, never a browser binding. Every step presents the same
+session token; the intent stores its hash and refuses any other. The intent's
+NOT NULL binding columns hold values keyed by the session:
+`browser_binding_hash` is the SHA-256 of
+`["provider-security-web-session-v1", sessionId]`, `browser_version` is 0,
+`browser_intent_hash` is derived from the intent itself, and
+`browser_binding_expires_at` is the session's expiry when the intent was made.
+Finalize keeps the session's id, token, sign-in time and expiry and moves only
+its generation to the account's new one (`keepCanonicalAfterSecurityMutation`);
+every other web session, native refresh token, partner connection and pending
+recovery or verification link of the account ends. No candidate credential and
+no cookie write exist any more. A legacy NextAuth cookie can read its methods
+but cannot start a link or unlink: its generation lives in the cookie, so it
+could continue only by being re-issued, which only a login may do. The backend
+answers `canonical_session_required` (403), apart from
+`reauthentication_required`, so www knows to bridge it first (B2b) rather than
+ask for a password. The backend refuses to start with
+`CURRENT_STORE_PROVIDER_SECURITY_MODE=backend-staging` unless
+`AUTH_BROWSER_SESSION_MODE=better-auth`
+(`AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED`): without it nobody could
+link.
+
+Rollback after a link or unlink (accepted). During the 30-day rollback window
+a login also writes the legacy NextAuth cookie with the same session id
+(owner decision 2 of 2026-11-17). A link or unlink moves the account to a new
+generation and keeps only the canonical cookie's session alive, because only a
+login may write a cookie. The legacy cookie still names the old generation, so
+it is dead from that moment. If the mode is rolled back to `legacy` inside the
+window, that browser has to sign in again. This is the one exception to
+acceptance 6 ("rollback leaves every browser signed in"); it applies only to a
+browser that linked or unlinked a provider after cutover, and the alternative
+is a cookie write outside login, which this design does not allow. The same
+holds for first password, which keeps its token since B5c2. The backend
+refuses to start with `CURRENT_STORE_FIRST_PASSWORD_MODE=backend-staging`
+unless `AUTH_BROWSER_SESSION_MODE=better-auth`
+(`AUTH_FIRST_PASSWORD_BROWSER_SESSION_REQUIRED`). What the binding proved, the same browser across the OAuth
+round trip, now comes from the session token every step presents plus the
+OAuth state hash bound to the intent (`bind`) and checked at `prepare`.
+
+Since B5c2, first password (`first-password-*.ts`) is keyed the same way:
+the same admission, the same refusal for a legacy cookie, the same columns
+(`auth_first_password_challenges`), and finalize keeps the session's token
+through the `password-set` receipt. The emailed confirmation link must be
+completed by the session token that asked for it. Nothing deletes intents or
+challenges (the credential role has no DELETE), so both are bounded at
+creation: one session holds at most five unexpired pending or prepared provider
+intents (`PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION`, refusal
+`too_many_pending`), and an account holds one live first-password challenge (a
+new request ends the old one; `auth_first_password_active_user_idx`).
+
+Google and Apple sign-in (B5a). The web OAuth `resolve` command takes an
+optional `webSession: { presented?, googleAuthentication? }`. With it (and
+`CURRENT_STORE_WEB_SESSION_MODE=backend-staging`, else 404), `resolve` issues a
+first-party web session for the resolved account with `issueWebSession`, in
+the transaction that resolved the identity, revoking `presented`; the reply
+adds `webSession: { sessionId, token, expiresAt, generation }`, and the
+credential proof names the same session id and generation. `users` rows are
+locked in one pass through `lockWebSessionAccounts` (the provider's owner FOR
+UPDATE, since resolution writes its rows, and the presented account FOR
+UPDATE), after the provider-subject lock, so crossed sign-ins queue. A session
+request needs `actorCookie: null`: a sign-in never links a provider to the
+account it arrived as, and an unknown provider creates a new account as a
+signed-out sign-in does. Freshness: Google is a `login` only when the backend
+verifies a signed `auth_time` under five minutes old for this subject
+(`CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE=auth-time-staging`), with the
+nonce bound into the intent's `flow` (`flow` = SHA-256 hex of
+`JSON.stringify(["web-oauth-google-nonce-v1", nonce])`); otherwise, and always
+for Apple, the session is `carried`: it keeps this sign-in's time for the
+30-day rules but never passes a five-minute check. The proof tells www the
+same thing: `authenticatedAt: null, linkGuarded: false` for a carried session,
+so the legacy rollback cookie carries no `auth_time`; the verified `auth_time`
+and `linkGuarded: true` for a fresh one. Without `webSession` the command and
+reply are unchanged. The browser-binding `signin-*` commands and the
+anonymous-provider protocol are deleted.
+
+B5d deleted the binding core: `authority/browser-binding.ts`, its tests and
+restricted-role proof, the `browser-binding-v1` protocol, and
+`CURRENT_STORE_BROWSER_BINDING_MODE`. No migration and no DROP: the
+`auth_browser_bindings` and `auth_browser_intents` tables, their grants and
+their Drizzle exports stay, unread. The NOT NULL `browser_*` columns of
+`auth_provider_security_intents` and `auth_first_password_challenges` stay
+too and keep their derived values (`browser_binding_hash` = the prefixed
+session hash, `browser_version` 0, `browser_intent_hash` derived from the row,
+`browser_binding_expires_at` = the session's expiry at creation), and so do
+`proposed_credential_hash` and `candidate_credential_hash` (the presented
+token's hash). They remain because dropping them needs a generated migration
+plus new pinned credential-writer catalogs, for no behaviour gain, and because
+`browser_binding_hash` is what tells a row written under the session keying
+from one written under the binding (the readers refuse the latter). Dropping
+them is a separate decision, after counting zero binding-era rows in both
+tables. Log redaction for the old `__Host-boardsesh.*` cookie families stays
+(`text-redaction/src/password-recovery.ts`): browsers may still send one.
 
 The web publication layer for these flows is deleted in A5 and rebuilt on the
 new session in B5: the provider Settings UI and its server code, the
@@ -1118,23 +1211,18 @@ web clients used: the four iframe coordinator subpaths (`browser-coordinator`,
 `-runner`, `-channel`, `-dom`) with the renewal message schema they shared,
 `browser-delegation-v1`, and the ten `browser-backend-*` lease, HTTP and
 WebSocket modules. Nothing outside the package imported them any more, and
-`packages/mobile` no longer depends on the package. What stays until B5: the
-backend binding core (`authority/browser-binding.ts`) and the binding-table
-readers the kept provider-security and first-password cores use,
-`@boardsesh/auth-protocol/browser-binding-v1` (nothing outside the package
-imports it since the private route went; B5 deletes it with the backend core),
-the `private-browser-v1` database profile, and
-`CURRENT_STORE_BROWSER_BINDING_MODE`, which the startup check for staged
-writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads. One dead branch
-also stays on phones: `isCancellation` in
-`packages/mobile/src/lib/error-reporting.ts` still drops a
-`BrowserBackendConsumerError` whose status is `superseded`, and
+`packages/mobile` no longer depends on the package. B5d then deleted the
+backend binding core (`authority/browser-binding.ts`),
+`@boardsesh/auth-protocol/browser-binding-v1` and
+`CURRENT_STORE_BROWSER_BINDING_MODE`; the `private-browser-v1` database
+profile and the binding tables stay (no migration). One dead branch also stays
+on phones: `isCancellation` in `packages/mobile/src/lib/error-reporting.ts`
+still drops a `BrowserBackendConsumerError` whose status is `superseded`, and
 `packages/mobile/src/lib/__tests__/error-reporting.test.ts` keeps a stand-in
-class for it.
-A5 deleted the `browser-backend-consumer` module that defined the error, so
-nothing throws it, but the file has no `.web` suffix and ships to phones by
-OTA, so Phase A leaves it alone. B5 deletes the branch, the stand-in class and
-the test case that uses it.
+class for it. A5 deleted the `browser-backend-consumer` module that defined
+the error, so nothing throws it, but the file has no `.web` suffix and ships to
+phones by OTA, so the backend-only Phase B PRs leave it alone; a mobile PR
+deletes the branch, the stand-in class and the test case that uses it.
 
 Kept, per #7596: BA-04 cutoffs, SID denials and the legacy bridge; BA-06
 native and Garmin work; the backend provider and first-password cores. Some
@@ -1235,8 +1323,7 @@ Nothing in this doc was run. The Better Auth mechanisms were read in the
 installed 1.7.17 source, not executed. Also unchecked: Safari and WebKit handling of the shared-domain
 cookie between www and app; live DNS and which hosts receive the cookie;
 whether preview deployments are still manual dispatch only; the production
-values of `AUTH_LEGACY_BRIDGE_MODE`, `CURRENT_STORE_BROWSER_BINDING_MODE` and
-the sign-out mode ("off" comes from code defaults); whether
+values of `AUTH_LEGACY_BRIDGE_MODE` and the sign-out mode ("off" comes from code defaults); whether
 `/api/internal/ws-auth` sets a cookie on any path (A2 checks); and whether the
 #7439 denial reader is deployed on every backend. Owner decisions 14 and 23
 have no written source other than #7596.

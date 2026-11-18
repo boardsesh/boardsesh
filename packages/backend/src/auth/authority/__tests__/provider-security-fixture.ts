@@ -2,8 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { hash } from 'bcryptjs';
-import { vi } from 'vite-plus/test';
-import { authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
+import { authCredentialLineage, authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
 import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import { createEnvironment } from './environment';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
@@ -11,7 +10,6 @@ import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-
 import { captureIdentityAuthority, switchIdentityAuthority, type IdentityAuthorityName } from '../router';
 import { bindIdentityAuthority } from '../identity-authority';
 import type { AuthorityDatabase } from '../adapter';
-import { beginBrowserIntent, commitBrowserLogin, createUnpublishedBrowserBinding } from '../browser-binding';
 import {
   bindProviderSecurityFlow,
   createProviderSecurityIntent,
@@ -20,6 +18,7 @@ import {
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { prepareProviderSecurityMutation } from '../provider-security-finalizer';
 import { sessionTokenDigest } from '../session-token';
+import { CARRIED_WEB_SESSION_LINEAGE_PREFIX } from '../web-session';
 
 const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
 const jwt = requireWeb('next-auth/jwt') as {
@@ -91,18 +90,24 @@ export async function createProviderSecurityDriver(input: {
   }
   async function actor(
     selected: IdentityAuthorityName,
-    kind: ProviderSecurityActor['kind'],
+    kind: 'legacy-jwe' | 'canonical-token',
     options: {
       readonly password?: boolean;
       readonly provider?: ProviderSecurityProvider;
       readonly subject?: string;
       readonly unknownAge?: boolean;
+      /** A canonical row's source: `login` (no lineage, the default), `bridge` (a live lineage) or `carried`. */
+      readonly source?: 'login' | 'bridge' | 'carried';
+      /** Seconds since the sign-in. Defaults to a day. */
+      readonly signedInSecondsAgo?: number;
     } = {},
   ) {
     await selectAuthority(selected);
     const userId = randomUUID();
     const sid = randomUUID();
-    const authenticatedAt = options.unknownAge ? null : new Date(Math.floor(Date.now() / 1000) * 1000 - 86_400_000);
+    const authenticatedAt = options.unknownAge
+      ? null
+      : new Date(Math.floor(Date.now() / 1000) * 1000 - (options.signedInSecondsAgo ?? 86_400) * 1000);
     await environment.database
       .insert(users)
       .values({ id: userId, email: `provider-final-${userId}@example.test`, name: null });
@@ -131,7 +136,13 @@ export async function createProviderSecurityDriver(input: {
             },
           })
         : randomBytes(32).toString('base64url');
-    if (kind === 'canonical-token')
+    const legacyLineageId =
+      options.source === 'bridge'
+        ? `session:${sid}`
+        : options.source === 'carried'
+          ? `${CARRIED_WEB_SESSION_LINEAGE_PREFIX}${sid}`
+          : null;
+    if (kind === 'canonical-token') {
       await environment.database.insert(authSession).values({
         id: sid,
         userId,
@@ -140,49 +151,56 @@ export async function createProviderSecurityDriver(input: {
         updatedAt: new Date(),
         originalAuthenticatedAt: authenticatedAt,
         revocationGeneration: 0,
+        legacyLineageId,
       });
+      if (options.source === 'bridge')
+        await environment.database.insert(authCredentialLineage).values({
+          id: `session:${sid}`,
+          userId,
+          sessionId: sid,
+          originalAuthenticatedAt: authenticatedAt,
+          originalExpiresAt: expiresAt,
+        });
+    }
     const credential = kind === 'legacy-jwe' ? { kind, credential: raw, secret } : { kind, token: raw };
-    const binding = await createUnpublishedBrowserBinding(
-      environment.database,
-      qualification,
-      new Date(Date.now() + 86_400_000),
-    );
-    if (binding.status !== 'created') throw new Error('Owned binding initialization failed');
-    const login = await beginBrowserIntent(environment.database, qualification, binding.token, {
-      operation: 'login',
-      expectedVersion: 0,
-    });
-    if (login.status !== 'prepared') throw new Error('Owned login intent failed');
-    const admitted = await commitBrowserLogin(
-      environment.database,
-      qualification,
-      binding.token,
-      login.intentToken,
-      credential,
-    );
-    if (admitted.status !== 'committed') throw new Error('Owned issuance did not admit');
-    const presented: ProviderSecurityActor = {
-      kind,
-      credential: raw,
+    // The raw cookie value and its kind.
+    const presented = { kind, credential: raw };
+    // The web-session actor of provider link, unlink and reauthentication.
+    const webActor: ProviderSecurityActor = {
+      presented: kind === 'legacy-jwe' ? { kind, credential: raw } : { kind, token: raw },
       expectedUserId: userId,
       expectedAuthSessionId: sid,
-      browserBindingToken: binding.token,
-      browserVersion: admitted.cursor.version,
     };
-    return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor: presented, credential };
+    return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor: presented, webActor, credential };
+  }
+  /** A new login of the same account: another live canonical session, and its credential. */
+  async function secondSession(owner: Awaited<ReturnType<typeof actor>>) {
+    const sessionId = randomUUID();
+    const token = randomBytes(32).toString('base64url');
+    await environment.database.insert(authSession).values({
+      id: sessionId,
+      userId: owner.userId,
+      token: sessionTokenDigest(token),
+      expiresAt: new Date(Date.now() + 3_600_000),
+      updatedAt: new Date(),
+      originalAuthenticatedAt: new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000),
+      revocationGeneration: 0,
+    });
+    const webActor: ProviderSecurityActor = {
+      presented: { kind: 'canonical-token', token },
+      expectedUserId: owner.userId,
+      expectedAuthSessionId: sessionId,
+    };
+    return { sessionId, webActor, credential: { kind: 'canonical-token' as const, token } };
   }
   async function prepareLink(owner: Awaited<ReturnType<typeof actor>>, provider: ProviderSecurityProvider = 'apple') {
     const intent = await createProviderSecurityIntent(environment.database, runtime, {
-      actor: owner.actor,
+      actor: owner.webActor,
       action: 'link',
       provider,
       methodId: null,
     });
-    const bound = {
-      actor: owner.actor,
-      intentToken: intent.intentToken,
-      browserIntentToken: intent.browserIntentToken,
-    };
+    const bound = { actor: owner.webActor, intentToken: intent.intentToken };
     const proof = await reauthenticateProviderWithPassword(environment.database, runtime, {
       ...bound,
       password: ' exact password ',
@@ -199,39 +217,5 @@ export async function createProviderSecurityDriver(input: {
     if (prepared.outcome !== 'prepared') throw new Error('Owned provider preparation refused');
     return { ...intent, ...bound, ...proof, ...prepared, subject };
   }
-  async function candidate(
-    prepared: Pick<
-      Awaited<ReturnType<typeof prepareLink>>,
-      'proposedCanonicalToken' | 'credentialProof' | 'credentialExpiresAt'
-    >,
-    kind: ProviderSecurityActor['kind'],
-  ) {
-    if (kind === 'canonical-token') {
-      if (!prepared.proposedCanonicalToken) throw new Error('Missing private canonical proposal');
-      return { kind, credential: prepared.proposedCanonicalToken };
-    }
-    const proof = prepared.credentialProof;
-    const fixedMilliseconds = Math.floor(Date.now() / 1000) * 1000;
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(fixedMilliseconds);
-    try {
-      return {
-        kind,
-        credential: await jwt.encode({
-          secret,
-          maxAge: prepared.credentialExpiresAt.getTime() / 1000 - fixedMilliseconds / 1000,
-          token: {
-            sub: proof.userId,
-            authSessionId: proof.authSessionId,
-            gen: proof.generation,
-            ...(proof.authenticatedAt ? { auth_time: Date.parse(proof.authenticatedAt) / 1000 } : {}),
-            ...(proof.linkGuarded ? { link_guarded: true } : {}),
-            ...(proof.requiresAccountCutoff ? { legacy_no_sid: true } : {}),
-          },
-        }),
-      };
-    } finally {
-      clock.mockRestore();
-    }
-  }
-  return { runtime, qualification, secret, passwordHash, actor, selectAuthority, prepareLink, candidate };
+  return { runtime, qualification, secret, passwordHash, actor, secondSession, selectAuthority, prepareLink };
 }
