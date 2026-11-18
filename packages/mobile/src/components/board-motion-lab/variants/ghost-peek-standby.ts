@@ -3,7 +3,7 @@ import { lookVariant } from './look-variant';
 
 /**
  * I: the round-2 pick (motion designer, climber and GPU reviews), and since
- * 2026-11-18 the player's look on iOS. E's ghosts with G's standby ring on the
+ * 2026-11-18 the player's look on iOS and Android. E's ghosts with G's standby ring on the
  * climb being left: while dragging, the old holds dim and pull their glow in
  * from the edge the next climb comes from, and the next climb shows behind that
  * front as glow-only halos; letting go fills them in along the same sweep.

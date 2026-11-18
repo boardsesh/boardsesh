@@ -39,7 +39,7 @@ export type BoardMotionVariant = {
   createTransition(params: ParamValues): BoardTransition;
   /** The native overlay API this variant needs; greyed out with the reason on older binaries. */
   requiresNativeApi?: number;
-  /** A native lab shader mode (`'swap-look'`, iOS `swapLookVersion` 1); greyed out when the binary lacks it. */
+  /** A native lab shader mode (`'swap-look'`, `swapLookVersion` 2 on iOS and Android); greyed out when the binary lacks it. */
   requiresNativeLab?: string;
 };
 
