@@ -66,7 +66,7 @@ function run(operations: readonly Operation[], driver: BoardTransitionDriver, re
       input = {
         ...input,
         swapMs: Math.min(input.swapMs + operation.tick, swapClockMs(steppedState)),
-        settleMs: Math.min(input.settleMs + operation.tick, WALL_SWAP.settleMs),
+        settleMs: Math.min(input.settleMs + operation.tick, steppedState.settleDurationMs),
       };
     }
     if ('reset' in operation)
@@ -82,7 +82,7 @@ function run(operations: readonly Operation[], driver: BoardTransitionDriver, re
         wallSwapSharedWeight(before.state, input.reduceMotion, WALL_SWAP),
       ],
       startSwapMs: before.startSwap ? swapClockMs(before.state) : null,
-      startSettleMs: before.startSettle ? WALL_SWAP.settleMs : null,
+      startSettleMs: before.startSettleMs,
     });
     const step = driver.step(driverState, input);
     driverState = step.state;
@@ -90,7 +90,7 @@ function run(operations: readonly Operation[], driver: BoardTransitionDriver, re
     expect(step.state).toStrictEqual(before.state);
 
     if (before.startSwap) input = { ...input, swapMs: 0 };
-    if (before.startSettle) input = { ...input, settleMs: 0 };
+    if (before.startSettleMs !== null) input = { ...input, settleMs: 0 };
   }
   return { stepped, driven };
 }

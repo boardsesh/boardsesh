@@ -3,8 +3,13 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { hash } from 'bcryptjs';
 import { vi } from 'vite-plus/test';
-import { authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
-import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
+import { authCredentialLineage, authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
+import type {
+  BrowserBindingActor,
+  ProviderSecurityActor,
+  ProviderSecurityProvider,
+  WebCredentialProof,
+} from '@boardsesh/auth-protocol';
 import { createEnvironment } from './environment';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
 import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-reservations';
@@ -20,6 +25,7 @@ import {
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { prepareProviderSecurityMutation } from '../provider-security-finalizer';
 import { sessionTokenDigest } from '../session-token';
+import { CARRIED_WEB_SESSION_LINEAGE_PREFIX } from '../web-session';
 
 const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
 const jwt = requireWeb('next-auth/jwt') as {
@@ -91,18 +97,24 @@ export async function createProviderSecurityDriver(input: {
   }
   async function actor(
     selected: IdentityAuthorityName,
-    kind: ProviderSecurityActor['kind'],
+    kind: BrowserBindingActor['kind'],
     options: {
       readonly password?: boolean;
       readonly provider?: ProviderSecurityProvider;
       readonly subject?: string;
       readonly unknownAge?: boolean;
+      /** A canonical row's source: `login` (no lineage, the default), `bridge` (a live lineage) or `carried`. */
+      readonly source?: 'login' | 'bridge' | 'carried';
+      /** Seconds since the sign-in. Defaults to a day. */
+      readonly signedInSecondsAgo?: number;
     } = {},
   ) {
     await selectAuthority(selected);
     const userId = randomUUID();
     const sid = randomUUID();
-    const authenticatedAt = options.unknownAge ? null : new Date(Math.floor(Date.now() / 1000) * 1000 - 86_400_000);
+    const authenticatedAt = options.unknownAge
+      ? null
+      : new Date(Math.floor(Date.now() / 1000) * 1000 - (options.signedInSecondsAgo ?? 86_400) * 1000);
     await environment.database
       .insert(users)
       .values({ id: userId, email: `provider-final-${userId}@example.test`, name: null });
@@ -131,7 +143,13 @@ export async function createProviderSecurityDriver(input: {
             },
           })
         : randomBytes(32).toString('base64url');
-    if (kind === 'canonical-token')
+    const legacyLineageId =
+      options.source === 'bridge'
+        ? `session:${sid}`
+        : options.source === 'carried'
+          ? `${CARRIED_WEB_SESSION_LINEAGE_PREFIX}${sid}`
+          : null;
+    if (kind === 'canonical-token') {
       await environment.database.insert(authSession).values({
         id: sid,
         userId,
@@ -140,7 +158,17 @@ export async function createProviderSecurityDriver(input: {
         updatedAt: new Date(),
         originalAuthenticatedAt: authenticatedAt,
         revocationGeneration: 0,
+        legacyLineageId,
       });
+      if (options.source === 'bridge')
+        await environment.database.insert(authCredentialLineage).values({
+          id: `session:${sid}`,
+          userId,
+          sessionId: sid,
+          originalAuthenticatedAt: authenticatedAt,
+          originalExpiresAt: expiresAt,
+        });
+    }
     const credential = kind === 'legacy-jwe' ? { kind, credential: raw, secret } : { kind, token: raw };
     const binding = await createUnpublishedBrowserBinding(
       environment.database,
@@ -161,7 +189,9 @@ export async function createProviderSecurityDriver(input: {
       credential,
     );
     if (admitted.status !== 'committed') throw new Error('Owned issuance did not admit');
-    const presented: ProviderSecurityActor = {
+    // The browser-binding actor: first password and the owned-provider sign-in
+    // still take it (#7596 B5c2, B5a).
+    const presented: BrowserBindingActor = {
       kind,
       credential: raw,
       expectedUserId: userId,
@@ -169,20 +199,22 @@ export async function createProviderSecurityDriver(input: {
       browserBindingToken: binding.token,
       browserVersion: admitted.cursor.version,
     };
-    return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor: presented, credential };
+    // The web-session actor of provider link, unlink and reauthentication.
+    const webActor: ProviderSecurityActor = {
+      presented: kind === 'legacy-jwe' ? { kind, credential: raw } : { kind, token: raw },
+      expectedUserId: userId,
+      expectedAuthSessionId: sid,
+    };
+    return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor: presented, webActor, credential };
   }
   async function prepareLink(owner: Awaited<ReturnType<typeof actor>>, provider: ProviderSecurityProvider = 'apple') {
     const intent = await createProviderSecurityIntent(environment.database, runtime, {
-      actor: owner.actor,
+      actor: owner.webActor,
       action: 'link',
       provider,
       methodId: null,
     });
-    const bound = {
-      actor: owner.actor,
-      intentToken: intent.intentToken,
-      browserIntentToken: intent.browserIntentToken,
-    };
+    const bound = { actor: owner.webActor, intentToken: intent.intentToken };
     const proof = await reauthenticateProviderWithPassword(environment.database, runtime, {
       ...bound,
       password: ' exact password ',
@@ -200,11 +232,12 @@ export async function createProviderSecurityDriver(input: {
     return { ...intent, ...bound, ...proof, ...prepared, subject };
   }
   async function candidate(
-    prepared: Pick<
-      Awaited<ReturnType<typeof prepareLink>>,
-      'proposedCanonicalToken' | 'credentialProof' | 'credentialExpiresAt'
-    >,
-    kind: ProviderSecurityActor['kind'],
+    prepared: {
+      readonly proposedCanonicalToken: string | null;
+      readonly credentialProof: WebCredentialProof;
+      readonly credentialExpiresAt: Date;
+    },
+    kind: BrowserBindingActor['kind'],
   ) {
     if (kind === 'canonical-token') {
       if (!prepared.proposedCanonicalToken) throw new Error('Missing private canonical proposal');

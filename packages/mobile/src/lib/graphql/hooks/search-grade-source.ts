@@ -50,14 +50,16 @@ export function useSearchGradeSourceActive(): boolean {
 }
 
 /**
- * Whether `useSearchGradeSourceActive` has its final value: the flag is off, so
- * the preference cannot turn it on, or the stored preference has been read. A
- * search that should run once, not again when the preference lands, waits for it.
+ * Whether `useSearchGradeSourceActive` has its value for now: the flag is off,
+ * so the preference cannot turn it on, the stored preference has been read, or
+ * reading it threw, so the search goes out on the upstream grade, as every other
+ * search does until a read succeeds. A search that should run once, not again
+ * when the preference lands, waits for it.
  */
 export function useSearchGradeSourceSettled(): boolean {
   const flagEnabled = useBoardseshGradeEnabled();
-  const { loaded } = useBoardseshGradesPreference();
-  return !flagEnabled || loaded;
+  const { loaded, loadFailed } = useBoardseshGradesPreference();
+  return !flagEnabled || loaded || loadFailed;
 }
 
 /** `withGradeSource` bound to `useSearchGradeSourceActive`. */
