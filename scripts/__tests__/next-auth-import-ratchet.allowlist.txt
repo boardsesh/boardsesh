@@ -92,7 +92,12 @@ packages/web/app/components/social/comment-section.tsx
 packages/web/app/components/ui/__tests__/account-follow-button.test.tsx
 packages/web/app/components/ui/account-follow-button.tsx
 packages/web/app/developers/apps/__tests__/developer-apps-content.test.tsx
+packages/web/app/developers/apps/__tests__/verify-developer-email.test.tsx
+packages/web/app/developers/apps/__tests__/webhook-dialog.test.tsx
 packages/web/app/developers/apps/developer-apps-content.tsx
+packages/web/app/developers/apps/developer-email-panel.tsx
+packages/web/app/developers/apps/verify-email/verify-developer-email.tsx
+packages/web/app/developers/apps/webhook-dialog.tsx
 packages/web/app/gym/[gym_slug]/__tests__/gym-follow-button-visibility.test.tsx
 packages/web/app/gym/[gym_slug]/__tests__/gym-follow-button.test.tsx
 packages/web/app/gym/[gym_slug]/__tests__/gym-report-duplicate-cta.test.tsx
@@ -156,4 +161,5 @@ packages/web/auth-proofs/legacy-route-snapshot.integration.proof.ts
 packages/web/auth-proofs/web-credential-proof.integration.proof.ts
 packages/web/auth-proofs/web-session-cookie.integration.proof.ts
 packages/web/auth-proofs/web-session-signout.integration.proof.ts
+packages/web/e2e/browser-session/legacy-session.ts
 packages/web/package.json
