@@ -63,4 +63,30 @@ describe('I18nProvider in the browser', () => {
     expect(mountedInstances).toHaveLength(3);
     expect(new Set(mountedInstances).size).toBe(1);
   });
+  it('merges different page subtrees in an already loaded namespace', async () => {
+    function PageProbe({ section }: { section: 'home' | 'about' }) {
+      const { t } = useTranslation('marketing');
+      return <span>{section === 'home' ? t('home.hero.title') : t('about.title')}</span>;
+    }
+    const home = render(
+      <I18nProvider locale="en-US" resources={{ marketing: { home: { hero: { title: 'Home island' } } } }}>
+        <PageProbe section="home" />
+      </I18nProvider>,
+    );
+    await home.findByText('Home island');
+    home.unmount();
+    const about = render(
+      <I18nProvider locale="en-US" resources={{ marketing: { about: { title: 'About island' } } }}>
+        <PageProbe section="about" />
+      </I18nProvider>,
+    );
+    await about.findByText('About island');
+    about.unmount();
+    const homeAgain = render(
+      <I18nProvider locale="en-US" resources={{}}>
+        <PageProbe section="home" />
+      </I18nProvider>,
+    );
+    await homeAgain.findByText('Home island');
+  });
 });

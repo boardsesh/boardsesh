@@ -86,14 +86,18 @@ function getClientInstance(
     // don't narrow the spread.
     const inherited =
       (parentInstance?.language === locale ? parentInstance.getDataByLanguage(locale) : undefined) ?? {};
-    return createConfiguredInstance(locale, { ...inherited, ...resources });
+    const instance = createConfiguredInstance(locale, inherited);
+    for (const [namespace, bundle] of Object.entries(resources)) {
+      instance.addResourceBundle(locale, namespace, bundle, true, true);
+    }
+    return instance;
   }
 
   if (clientInstance) {
     for (const [ns, bundle] of Object.entries(resources)) {
-      if (!clientInstance.hasResourceBundle(locale, ns)) {
-        clientInstance.addResourceBundle(locale, ns, bundle, true, true);
-      }
+      // A route may seed another subtree of a namespace already loaded by the
+      // preceding page. Merge it without discarding the earlier route's copy.
+      clientInstance.addResourceBundle(locale, ns, bundle, true, true);
     }
     if (clientInstance.language !== locale) {
       void clientInstance.changeLanguage(locale);
