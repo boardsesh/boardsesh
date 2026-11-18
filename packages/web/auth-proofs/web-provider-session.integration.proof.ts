@@ -181,16 +181,24 @@ async function expectTwinBesideLogin(response: Response, jar: CookieJar) {
   return { twin, session: read.session };
 }
 
-describe('Google sign-in with the mode unset (as on main)', () => {
-  it('writes only the legacy cookie and asks the backend for no session', async () => {
-    stubBetterAuthEnvironment(backend.origin);
-    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', '');
-    const jar = new CookieJar();
-    const { response } = await googleSignIn(jar, newGoogleIdentity(30));
-    expect(sessionCookieNamesIn(response)).toContain(LEGACY);
-    expect(sessionCookieNamesIn(response)).not.toContain(LOGIN);
-    expect(resolveSessionRequests).toEqual([undefined]);
-  });
+describe('Google sign-in with the mode unset, empty or legacy (as on main)', () => {
+  it.each([undefined, '', 'legacy'])(
+    'asks Google for no max_age and no nonce, writes only the legacy cookie and asks for no session (mode %j)',
+    async (mode) => {
+      stubBetterAuthEnvironment(backend.origin);
+      vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode ?? '');
+      if (mode === undefined) delete process.env.AUTH_BROWSER_SESSION_MODE;
+      const jar = new CookieJar();
+      const { start, response } = await googleSignIn(jar, newGoogleIdentity(30));
+      const authorization = google.authorizations().at(-1);
+      expect(authorization?.has('max_age')).toBe(false);
+      expect(authorization?.has('nonce')).toBe(false);
+      expect(setCookies(start).some((header) => header.includes('next-auth.nonce.'))).toBe(false);
+      expect(sessionCookieNamesIn(response)).toContain(LEGACY);
+      expect(sessionCookieNamesIn(response)).not.toContain(LOGIN);
+      expect(resolveSessionRequests).toEqual([undefined]);
+    },
+  );
 });
 
 describe('Google sign-in under better-auth', () => {
@@ -205,7 +213,10 @@ describe('Google sign-in under better-auth', () => {
     expect(authorization?.get('max_age')).toBeTruthy();
     expect(authorization?.get('nonce')?.length).toBeGreaterThanOrEqual(22);
     const nonceCookie = setCookies(start).find((header) => header.includes('next-auth.nonce.'));
+    // `__Host-`: host-only, Secure, Path=/, so a sibling subdomain cannot plant a copy.
+    expect(nonceCookie?.startsWith('__Host-next-auth.nonce.')).toBe(true);
     expect(nonceCookie).toMatch(/HttpOnly/i);
+    expect(nonceCookie).toMatch(/Secure/i);
     expect(nonceCookie).not.toMatch(/Domain=/i);
     expect(resolveSessionRequests).toHaveLength(1);
     expect(resolveSessionRequests[0]).toMatchObject({ googleAuthentication: { nonce: authorization?.get('nonce') } });
@@ -237,6 +248,19 @@ describe('Google sign-in under better-auth', () => {
       .from(authSession)
       .where(eq(authSession.id, session.authSessionId));
     expect(row.legacyLineageId?.startsWith('carried:')).toBe(true);
+  });
+
+  it('publishes a Google sign-in whose ID token has no auth_time (Google ignored max_age) as carried', async () => {
+    const jar = new CookieJar();
+    const { response } = await googleSignIn(jar, newGoogleIdentity());
+    const { twin, session } = await expectTwinBesideLogin(response, jar);
+    expect(twin?.auth_time).toBeUndefined();
+    expect(twin?.link_guarded).toBeUndefined();
+    const [row] = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.id, session.authSessionId));
+    expect(row.legacyLineageId).toBe(`carried:${session.authSessionId}`);
   });
 
   it.each([
@@ -290,6 +314,11 @@ describe('Google sign-in under better-auth', () => {
     const off = await googleSignIn(jar, newGoogleIdentity(30));
     expect(sessionCookieNamesIn(off.response)).toEqual([]);
     expect(off.response.headers.get('location')).toContain('/auth/error');
+    // The withheld reply still retires the flow's nonce cookie, with the options it was written with.
+    const nonceClear = setCookies(off.response).find((header) => header.startsWith('__Host-next-auth.nonce.'));
+    expect(nonceClear).toMatch(/Max-Age=0/i);
+    expect(nonceClear).not.toMatch(/Domain=/i);
+    expect(jar.names().some((name) => name.startsWith('__Host-next-auth.nonce.'))).toBe(false);
     betterAuth();
     await reserveClimberEmail(environment.database, climberA);
     // A new Google subject with the email of an existing account: today's page, no cookie change.

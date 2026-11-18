@@ -153,8 +153,9 @@ export function appendSignOutSessionCookieClears(response: Response, requestCook
 /**
  * A provider sign-in that wrote a new legacy twin (#7596 B5b): clears, in
  * every scope, each legacy session cookie name (base or chunk, either
- * spelling) the request carried that the response does not write again, so
- * no legacy cookie with another session id stays beside the new login.
+ * spelling) the request carried that the response does not write again, and
+ * the host-only copy of each name it does write when the twin is Domain
+ * scoped, so no legacy cookie with another session id stays beside the new login.
  */
 export function appendStaleLegacySessionCookieClears(response: Response, requestCookieNames: readonly string[]): void {
   const written = new Set(
@@ -169,7 +170,13 @@ export function appendStaleLegacySessionCookieClears(response: Response, request
     const legacy = [SECURE_SESSION_COOKIE_NAME, PLAIN_SESSION_COOKIE_NAME].some(
       (baseName) => name === baseName || name.startsWith(`${baseName}.`),
     );
-    if (!legacy || written.has(name)) continue;
+    if (!legacy) continue;
+    if (written.has(name)) {
+      // Written again in the Domain scope: a host-only copy (base or chunk) of
+      // another login, left from before the shared domain, still goes.
+      if (domain) response.headers.append('Set-Cookie', sessionCookieClear(name, undefined));
+      continue;
+    }
     response.headers.append('Set-Cookie', sessionCookieClear(name, undefined));
     if (domain) response.headers.append('Set-Cookie', sessionCookieClear(name, domain));
   }

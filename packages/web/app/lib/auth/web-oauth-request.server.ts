@@ -31,6 +31,7 @@ import { trustedClientRateLimitKey } from './trusted-client-ip.server';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
 import {
   googleSessionFlow,
+  hostOnlyNonceCookie,
   nonceOfAuthorizationUrl,
   presentedForProviderSignIn,
   publishProviderSignIn,
@@ -56,7 +57,13 @@ function boundedFlowCookies(base: NextAuthOptions, scope: string): NextAuthOptio
   return cookies;
 }
 
-/** Retire only this authenticated flow, even when a buffered handler response is withheld. */
+/**
+ * Retire only this authenticated flow, even when a buffered handler response is
+ * withheld. Each cookie is cleared with the name and options it was written
+ * with: the session sign-in's Google nonce cookie is host-only (`__Host-` in
+ * a secure context), and a clear carrying a Domain would not delete it. Both
+ * configurations are tried, so a flow started in the other mode is retired too.
+ */
 function clearObservedFlowCookies(
   response: Response,
   request: NextRequest,
@@ -64,15 +71,18 @@ function clearObservedFlowCookies(
   scope: string,
 ): Response {
   const observed = new Set((request.headers.get('cookie') ?? '').split(';').map((part) => part.trim().split('=')[0]));
-  for (const key of flowCookieKeys) {
-    const configured = base.cookies?.[key];
+  const nonce = base.cookies?.nonce;
+  const configurations = [...flowCookieKeys.map((key) => base.cookies?.[key]), nonce && hostOnlyNonceCookie(nonce)];
+  const cleared = new Set<string>();
+  for (const configured of configurations) {
     if (!configured) continue;
     const name = `${configured.name}.${scope}`;
-    if (observed.has(name))
-      response.headers.append(
-        'Set-Cookie',
-        stringifySetCookie({ ...configured.options, name, value: '', maxAge: 0, expires: new Date(0) }),
-      );
+    if (!observed.has(name) || cleared.has(name)) continue;
+    cleared.add(name);
+    response.headers.append(
+      'Set-Cookie',
+      stringifySetCookie({ ...configured.options, name, value: '', maxAge: 0, expires: new Date(0) }),
+    );
   }
   return response;
 }
