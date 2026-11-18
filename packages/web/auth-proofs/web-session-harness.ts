@@ -24,6 +24,7 @@ import { createPasswordLoginLimiter } from '../../backend/src/auth/current-store
 import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
 import { handleCurrentStoreWebSession } from '../../backend/src/handlers/current-store-web-session';
 import { handleCurrentStoreWebOAuth } from '../../backend/src/handlers/current-store-web-oauth';
+import { handleProviderSecurity } from '../../backend/src/handlers/provider-security';
 import { CookieJar, callRoute, setCookieNames, type AuthRoute } from './route-harness';
 
 type Database = Awaited<ReturnType<typeof createEnvironment>>['database'];
@@ -77,7 +78,9 @@ export async function startWebSessionBackend(database: Database): Promise<WebSes
       ? handleCurrentStoreWebSession(request, response, database)
       : request.url?.startsWith('/api/internal/auth/current-store/web-oauth/v1/')
         ? handleCurrentStoreWebOAuth(request, response, database)
-        : handleCurrentStoreWebAuth(request, response, database, guards),
+        : request.url?.startsWith('/api/internal/auth/current-store/provider-security/v1/')
+          ? handleProviderSecurity(request, response, database)
+          : handleCurrentStoreWebAuth(request, response, database, guards),
   );
   const refusing = await listen((request, response) => {
     request.headers.origin = 'https://www.boardsesh.com';

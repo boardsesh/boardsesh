@@ -237,7 +237,7 @@ describe('independent web OAuth identity v1 contract', () => {
     ).toBe(false);
   });
 
-  it.each(['email_conflict', 'email_required'])('lets only resolve carry the %s denial', (code) => {
+  it.each(['email_conflict', 'email_required', 'link_required'])('lets only resolve carry the %s denial', (code) => {
     const reply = webOAuthReplySchema.parse({ ...metadata, operation: 'resolve', outcome: 'denied', code });
     expect(webOAuthReplyStatus(reply)).toBe(409);
     expect(webOAuthReplySchema.safeParse({ ...metadata, operation: 'intent', outcome: 'denied', code }).success).toBe(

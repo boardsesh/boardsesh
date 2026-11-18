@@ -10,6 +10,7 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import CancelOutlined from '@mui/icons-material/CancelOutlined';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import BackButton from '@/app/components/back-button';
@@ -20,6 +21,13 @@ export default function AuthErrorContent() {
   const { t } = useTranslation('auth');
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
+  const { data: session } = useSession();
+  const signedInEmail = session?.user?.email;
+  // A sign-in that would have made a second account while signed in (#7596 B5e1).
+  const message =
+    error === 'OAuthLinkRequired' && signedInEmail
+      ? t('error.linkRequiredSignedInAs', { email: signedInEmail })
+      : getAuthErrorMessage(error, t);
 
   return (
     <Box sx={{ minHeight: '100vh', background: 'var(--semantic-background)' }}>
@@ -57,7 +65,7 @@ export default function AuthErrorContent() {
             <Stack spacing={3} sx={{ width: '100%' }}>
               <CancelOutlined sx={{ fontSize: 48, color: 'var(--color-error)', mx: 'auto' }} />
               <Typography variant="h3">{t('error.title')}</Typography>
-              <MuiAlert severity="error">{getAuthErrorMessage(error, t)}</MuiAlert>
+              <MuiAlert severity="error">{message}</MuiAlert>
               <Button variant="contained" href="/auth/login" fullWidth size="large">
                 {t('error.back')}
               </Button>

@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { decode, encode } from 'next-auth/jwt';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { authSession } from '@boardsesh/db/schema';
+import { authSession, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
@@ -254,6 +254,8 @@ describe('Google sign-in under better-auth', () => {
       const jar = new CookieJar();
       jar.set(LEGACY, leftover, domain);
       const identity = newGoogleIdentity(4 * 60);
+      // A known identity: beside a live leftover session an unknown one would be link_required (D1).
+      await googleSignIn(new CookieJar(), identity);
       const { response } = await googleSignIn(jar, identity);
       await expectTwinBesideLogin(response, jar);
       expect(jar.get(LEGACY, '')).toBeUndefined();
@@ -270,7 +272,9 @@ describe('Google sign-in under better-auth', () => {
     await login(jar, climberA.email);
     const tokenA = loginToken(jar);
     const legacyA = jar.get(LEGACY, DOMAIN) ?? '';
+    // B's Google identity belongs to account B already (D1: an unknown one would be link_required).
     const identityB = newGoogleIdentity(30);
+    await googleSignIn(new CookieJar(), identityB);
     const { response } = await googleSignIn(jar, identityB);
     await expectTwinBesideLogin(response, jar);
     expect(await canonicalStatus(environment.database, tokenA)).not.toBe('admitted');
@@ -292,13 +296,36 @@ describe('Google sign-in under better-auth', () => {
     expect(off.response.headers.get('location')).toContain('/auth/error');
     betterAuth();
     await reserveClimberEmail(environment.database, climberA);
-    // A new Google subject with the email of an existing account: today's page, no cookie change.
-    const conflict = await googleSignIn(jar, { ...newGoogleIdentity(30), email: climberA.email });
+    // Signed out, a new Google subject with the email of an existing account: today's page, no cookie change.
+    const signedOut = new CookieJar();
+    const conflict = await googleSignIn(signedOut, { ...newGoogleIdentity(30), email: climberA.email });
     expect(sessionCookieNamesIn(conflict.response)).toEqual([]);
     expect(conflict.response.headers.get('location')).toContain('OAuthAccountNotLinked');
     expect(await canonicalStatus(environment.database, loginToken(jar))).toBe('admitted');
     expect(jar.header()).toContain(before.split('; ').find((pair) => pair.startsWith(`${LOGIN}=`)) ?? 'missing');
   });
+
+  it.each([
+    ['a new address', false],
+    ['the address of the signed-in account', true],
+  ])(
+    'signed in as A, an unknown Google identity (%s) is link_required: no account, no cookie change, A kept (D1)',
+    async (_case, sameAddress) => {
+      const climberA = await createClimber(environment.database);
+      await reserveClimberEmail(environment.database, climberA);
+      const jar = new CookieJar();
+      await login(jar, climberA.email);
+      const tokenA = loginToken(jar);
+      const identity = newGoogleIdentity(30);
+      const { response } = await googleSignIn(jar, sameAddress ? { ...identity, email: climberA.email } : identity);
+      expect(sessionCookieNamesIn(response)).toEqual([]);
+      expect(response.headers.get('location')).toContain('/auth/error?error=OAuthLinkRequired');
+      expect(loginToken(jar)).toBe(tokenA);
+      expect(await canonicalStatus(environment.database, tokenA)).toBe('admitted');
+      expect(await environment.database.select().from(users).where(eq(users.email, identity.email))).toEqual([]);
+      expect(resolveSessionRequests.at(-1)).toMatchObject({ presented: { kind: 'canonical-token', token: tokenA } });
+    },
+  );
 
   it('keeps the invariant for a password login too: login cookie and twin with one id', async () => {
     const climber = await createClimber(environment.database);

@@ -83,8 +83,13 @@ export const webOAuthResolveCommandSchema = z
 export const webOAuthCommandSchema = z.union([webOAuthIntentCommandSchema, webOAuthResolveCommandSchema]);
 
 const GENERIC_DENIAL_CODES = ['identity_unavailable', 'replayed'] as const;
-/** Only `resolve` sees a provider profile, so only it can name these two outcomes. */
-const RESOLVE_DENIAL_CODES = [...GENERIC_DENIAL_CODES, 'email_conflict', 'email_required'] as const;
+/**
+ * Only `resolve` sees a provider profile, so only it can name these outcomes.
+ * `link_required` (#7596 B5e1, decision D1): a session sign-in presented a live
+ * session and no account owns the provider identity. Nothing is created and the
+ * presented session is kept; the climber connects the provider from Settings.
+ */
+const RESOLVE_DENIAL_CODES = [...GENERIC_DENIAL_CODES, 'email_conflict', 'email_required', 'link_required'] as const;
 
 function deniedReply<
   Operation extends keyof typeof WEB_OAUTH_COMMAND_PATHS,
