@@ -613,6 +613,13 @@ describe('workout.completed after results change', () => {
     await logTick(finished.climber, finished.sessionId);
     await produceAfterCommittedChanges();
     expect(await completionEvents(finished.workoutId)).toHaveLength(1);
+    // Nothing is held back for later either: End's event already covers the tick.
+    expect(
+      await db
+        .select()
+        .from(partnerWorkoutResultDebounce)
+        .where(eq(partnerWorkoutResultDebounce.workoutId, finished.workoutId)),
+    ).toHaveLength(0);
   });
   it('stays quiet once End is more than seven days old', async () => {
     const finished = await finishedWorkout({ endedMsAgo: 8 * 86_400_000 });
