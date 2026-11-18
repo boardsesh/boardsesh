@@ -160,14 +160,19 @@ const WEBKIT_INTERNAL_ERROR = /WebKit encountered an internal error/;
 /** How long a navigation to the app may stay blank before a WebKit network failure is read as the cause. */
 const APP_RENDER_WAIT_MS = 30_000;
 
+/**
+ * Whether the app shows anything a climber could use: a tab, a button or a
+ * text field. A tab left on the loading splash shows none (its text may still
+ * be in the DOM, hidden, so text alone does not count).
+ */
 async function appRenderedSomething(page: Page): Promise<boolean> {
-  const deadline = Date.now() + APP_RENDER_WAIT_MS;
-  while (Date.now() < deadline) {
-    const rendered = await page.evaluate(() => (document.body?.innerText ?? '').trim().length > 0).catch(() => false);
-    if (rendered) return true;
-    await page.waitForTimeout(500);
+  const usableControl = page.getByRole('tab').or(page.getByRole('button')).or(page.getByRole('textbox')).first();
+  try {
+    await usableControl.waitFor({ state: 'visible', timeout: APP_RENDER_WAIT_MS });
+    return true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 /**
