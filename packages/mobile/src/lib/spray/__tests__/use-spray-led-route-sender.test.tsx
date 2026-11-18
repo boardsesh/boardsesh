@@ -76,7 +76,8 @@ vi.mock('../spray-wall-registry', () => ({
   },
 }));
 vi.mock('../spray-privacy-generation', () => ({ sprayPrivacyGeneration: () => mocks.privacy }));
-vi.mock('../spray-wall-loader', () => ({ fetchSprayWallUuid: mocks.uuid, fetchSprayWallRenderData: mocks.payload }));
+vi.mock('../spray-wall-loader', () => ({ fetchSprayWallUuid: mocks.uuid }));
+vi.mock('../spray-led-route-geometry', () => ({ loadSprayLedRouteGeometry: mocks.payload }));
 vi.mock('../use-spray-wall-led-settings', () => ({ loadSprayWallLedSettings: mocks.settings }));
 vi.mock('../spray-wall-tnut-store', () => ({ loadSprayWallTnutLayout: mocks.layout }));
 
@@ -85,6 +86,7 @@ import { sprayLedPhotoKey } from '../spray-led-photo-key';
 
 const homography = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 const payload = {
+  frame: { width: 1000, height: 800 },
   wall: { layoutId: 42, currentVersion: { id: 3 } },
   boardWidth: 1000,
   boardHeight: 800,

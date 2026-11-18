@@ -13,7 +13,9 @@ const storage = vi.hoisted(() => ({
 }));
 
 const auth = vi.hoisted(() => ({ token: 'token' as string | null }));
+const connectivity = vi.hoisted(() => ({ effectiveOffline: false }));
 vi.mock('../../auth-store', () => ({ getAuthToken: async () => auth.token }));
+vi.mock('../../connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => connectivity }));
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => backend }));
 vi.mock('../../preference-store', () => ({
   getPreference: async (key: string) => (storage.records.has(key) ? storage.records.get(key) : null),
@@ -40,6 +42,7 @@ import {
 } from '../spray-wall-led-cache';
 import {
   markSprayWallLedSaveStarted,
+  prepareSprayWallLedEdit,
   prepareSprayWallLedRead,
   queueSprayWallLedUpload,
   recheckSprayWallLedAccess,
@@ -117,6 +120,7 @@ const unsubscribes: Array<() => void> = [];
 
 beforeEach(() => {
   auth.token = 'token';
+  connectivity.effectiveOffline = false;
   backend.request.mockReset().mockResolvedValue(answering(true, null));
   storage.records.clear();
   storage.writes.length = 0;
@@ -304,6 +308,92 @@ describe('reading a wall’s LED setup', () => {
     await settle();
     expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ enabled: false, controller: { url: '' } });
     expect(configurationEvents).toEqual([WALL]);
+  });
+});
+
+describe('taking the editor\u2019s initial layout snapshot', () => {
+  it.each([false, true])('joins a delayed playback refresh when offline is %s', async (offline) => {
+    storage.records.set(LAYOUT_KEY, layout('old-copy'));
+    const answer = deferred<unknown>();
+    backend.request.mockReturnValueOnce(answer.promise);
+    await prepareSprayWallLedRead(WALL, 'layout');
+    connectivity.effectiveOffline = offline;
+    let ready = false;
+    const editing = prepareSprayWallLedEdit(WALL).then(() => {
+      ready = true;
+    });
+    await settle();
+    expect(ready).toBe(false);
+    expect(operations()).toEqual(['GetSprayWallLedSetup']);
+    answer.resolve(answering(true, rowFor({ layout: layout('new-server-copy') })));
+    await editing;
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('new-server-copy'));
+  });
+
+  it('refreshes even while the playback copy is still fresh', async () => {
+    backend.request.mockResolvedValueOnce(answering(true, rowFor({ layout: layout('old-copy') })));
+    await prepareSprayWallLedRead(WALL, 'layout');
+    backend.request.mockResolvedValueOnce(answering(true, rowFor({ layout: layout('new-server-copy') })));
+    await prepareSprayWallLedEdit(WALL);
+    expect(operations()).toEqual(['GetSprayWallLedSetup', 'GetSprayWallLedSetup']);
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('new-server-copy'));
+  });
+
+  it('opens the cached layout immediately when already offline without a pending refresh', async () => {
+    storage.records.set(LAYOUT_KEY, layout('offline-copy'));
+    connectivity.effectiveOffline = true;
+    await prepareSprayWallLedEdit(WALL);
+    expect(backend.request).not.toHaveBeenCalled();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+  });
+
+  it('keeps the cached layout when the backend refresh fails', async () => {
+    storage.records.set(LAYOUT_KEY, layout('offline-copy'));
+    backend.request.mockRejectedValueOnce(new Error('offline'));
+    await prepareSprayWallLedEdit(WALL);
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+  });
+
+  it('bounds a stalled refresh and never applies its late answer over the editor', async () => {
+    vi.useFakeTimers();
+    try {
+      storage.records.set(LAYOUT_KEY, layout('offline-copy'));
+      const answer = deferred<unknown>();
+      backend.request.mockReturnValueOnce(answer.promise);
+      const editing = prepareSprayWallLedEdit(WALL);
+      await vi.waitFor(() => expect(backend.request).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(20_000);
+      await editing;
+      expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+      answer.resolve(answering(true, rowFor({ layout: layout('late-server-copy') })));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['account', 'wall'])(
+    'rejects the initial snapshot if %s access changes during the refresh',
+    async (scope) => {
+      storage.records.set(LAYOUT_KEY, layout('old-copy'));
+      const answer = deferred<unknown>();
+      backend.request.mockReturnValueOnce(answer.promise);
+      const editing = expect(prepareSprayWallLedEdit(WALL)).rejects.toThrow('access changed');
+      await settle();
+      if (scope === 'account') await eraseAllSprayWallLedCaches();
+      else await eraseSprayWallLedCache(WALL);
+      answer.resolve(answering(true, rowFor({ layout: layout('old-account-answer') })));
+      await editing;
+      expect(storage.records.size).toBe(0);
+    },
+  );
+
+  it('rejects a snapshot after the server withdraws wall access', async () => {
+    storage.records.set(LAYOUT_KEY, layout('old-copy'));
+    backend.request.mockResolvedValueOnce({ sprayWallLedSetup: null });
+    await expect(prepareSprayWallLedEdit(WALL)).rejects.toThrow('access changed');
+    expect(storage.records.size).toBe(0);
   });
 });
 

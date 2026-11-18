@@ -138,7 +138,7 @@ function SetupLoader({ wallUuid }: { wallUuid: string }) {
           });
         const [payload, saved] = await Promise.all([
           fetchSprayWallRenderData(queryClient, wallUuid),
-          loadSprayWallTnutLayout(wallUuid),
+          loadSprayWallTnutLayout(wallUuid, { forEditing: true }),
         ]);
         if (!active) return;
         // Any climber can light this wall; changing the setup follows Edit board.

@@ -277,7 +277,10 @@ vi.mock('../SprayPhotoStage', () => ({
 
 import { SprayWallLedSetupScreen } from '../SprayWallLedSetupScreen';
 import { SprayLedMapEditor } from '../SprayLedMapEditor';
-import { notifySprayWallLedUploadOutcome } from '../../../lib/spray/spray-wall-led-cache';
+import {
+  notifySprayWallLedServerChange,
+  notifySprayWallLedUploadOutcome,
+} from '../../../lib/spray/spray-wall-led-cache';
 
 const photoSource: SprayLookPreviewSource = {
   layoutId: 12,
@@ -484,6 +487,52 @@ describe('Light and tap controller acknowledgement', () => {
 });
 
 describe('SprayWallLedSetupScreen', () => {
+  it('waits for the refreshed layout before opening and never saves the older cached snapshot', async () => {
+    const cached = savedLayout();
+    const latest = {
+      ...savedLayout(),
+      holes: [
+        { x: 0.4, y: 0.5 },
+        { x: 0.7, y: 0.8 },
+      ],
+    };
+    let finishRefresh!: (layout: TnutLayout) => void;
+    const refresh = new Promise<TnutLayout>((resolve) => {
+      finishRefresh = resolve;
+    });
+    storage.load.mockImplementation(async (_wallUuid: string, options?: { forEditing?: boolean }) =>
+      options?.forEditing ? refresh : cached,
+    );
+    render(<SprayWallLedSetupScreen wallUuid="wall-1" />);
+    await waitFor(() => expect(storage.load).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('sprayLedSetup.patternTitle')).toBeNull();
+    expect(storage.save).not.toHaveBeenCalled();
+    await act(async () => finishRefresh(latest));
+    await screen.findByText('sprayLedSetup.patternTitle');
+    next();
+    next();
+    expect(controls.editor?.holes).toEqual(latest.holes);
+    next();
+    await waitFor(() => expect(storage.save).toHaveBeenCalledTimes(1));
+    expect(lastSaved().holes).toEqual(latest.holes);
+  });
+
+  it('keeps active hole edits when another server-change notification arrives', async () => {
+    storage.load.mockResolvedValue(savedLayout());
+    await open();
+    next();
+    next();
+    fireEvent.click(button('add'));
+    tap({ x: 0.7, y: 0.8 });
+    const editedHoles = structuredClone(controls.editor?.holes);
+    act(() => notifySprayWallLedServerChange('wall-1'));
+    expect(storage.load).toHaveBeenCalledTimes(1);
+    expect(controls.editor?.holes).toEqual(editedHoles);
+    next();
+    await waitFor(() => expect(storage.save).toHaveBeenCalledTimes(1));
+    expect(lastSaved().holes).toEqual(editedHoles);
+  });
+
   it('migrates eight plus seven offset columns to fifteen without moving edited holes', async () => {
     storage.load.mockResolvedValue({ ...savedLayout(), pattern: 'offset' });
     await open();
@@ -878,7 +927,7 @@ describe('SprayWallLedSetupScreen', () => {
   it('loads the managed wall photo, aligns an 8×8 grid and saves canonical coordinates before LED placement selection', async () => {
     await open();
     expect(radio('grid').getAttribute('aria-checked')).toBe('true');
-    expect(storage.load).toHaveBeenCalledWith('wall-1');
+    expect(storage.load).toHaveBeenCalledWith('wall-1', { forEditing: true });
     expect(backend.cache).toHaveBeenCalledWith(
       { layoutId: 12, versionId: 34 },
       { url: photoSource.photoUrl, expiresAt: photoSource.photoExpiresAt },

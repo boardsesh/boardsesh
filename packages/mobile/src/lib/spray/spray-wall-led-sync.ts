@@ -56,11 +56,13 @@ const authToken = () => import('../auth-store').then(({ getAuthToken }) => getAu
 const FRESH_FOR_MS = 10 * 60 * 1000;
 /** Usually a dropped connection. An older backend that lacks the query fails every time. */
 const RETRY_AFTER_FAILURE_MS = 30 * 1000;
+const EDITOR_REFRESH_TIMEOUT_MS = 20_000;
 
 type Freshness = { settledAtMs: number; freshForMs: number };
 type UploadQueue = { dirty: Set<SprayWallLedField> };
+type ServerRead = { promise: Promise<void>; boundNetworkWait: () => void };
 
-const fetches = new Map<string, Promise<void>>();
+const fetches = new Map<string, ServerRead>();
 const freshness = new Map<string, Freshness>();
 const uploads = new Map<string, UploadQueue>();
 const fieldGenerations = new Map<string, Partial<Record<SprayWallLedField, number>>>();
@@ -239,19 +241,38 @@ async function mergeServerAnswer(
   if (isCurrent() && (settingsChanged || layoutChanged)) publishServerChange(wallUuid);
 }
 
-function refreshFromServer(wallUuid: string): Promise<void> {
+function refreshFromServer(wallUuid: string, forEditing = false): Promise<void> {
   const inFlight = fetches.get(wallUuid);
-  if (inFlight) return inFlight;
+  if (inFlight) {
+    if (forEditing) inFlight.boundNetworkWait();
+    return inFlight.promise;
+  }
   const startedAt = { epoch, generation: generationOf(wallUuid) };
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let rejectDeadline!: (error: Error) => void;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    rejectDeadline = reject;
+  });
+  const boundNetworkWait = () => {
+    if (deadlineTimer !== undefined) return;
+    // Editing needs the latest copy before its first snapshot. Bound this wait
+    // even when the general interactive-request deadline has been switched off.
+    deadlineTimer = setTimeout(
+      () => rejectDeadline(new Error('LED setup refresh timed out')),
+      EDITOR_REFRESH_TIMEOUT_MS,
+    );
+  };
+  const readServer = async () => {
+    // Reading needs an account: signed out there is nothing to ask.
+    if ((await authToken()) === null) return null;
+    const client = await httpClient();
+    return client.request<GetSprayWallLedSetupQueryResponse>(GET_SPRAY_WALL_LED_SETUP, { boardUuid: wallUuid });
+  };
   const request: Promise<void> = (async () => {
     let freshForMs = RETRY_AFTER_FAILURE_MS;
     try {
-      // Reading needs an account: signed out there is nothing to ask.
-      if ((await authToken()) === null) return;
-      const client = await httpClient();
-      const response = await client.request<GetSprayWallLedSetupQueryResponse>(GET_SPRAY_WALL_LED_SETUP, {
-        boardUuid: wallUuid,
-      });
+      const response = await Promise.race([readServer(), deadline]);
+      if (response === null) return;
       freshForMs = FRESH_FOR_MS;
       // Erasure owns its own lane; nesting it inside a write would deadlock.
       if (response.sprayWallLedSetup === null) {
@@ -264,9 +285,11 @@ function refreshFromServer(wallUuid: string): Promise<void> {
     }
     if (epoch === startedAt.epoch) freshness.set(wallUuid, { settledAtMs: Date.now(), freshForMs });
   })().finally(() => {
-    if (fetches.get(wallUuid) === request) fetches.delete(wallUuid);
+    clearTimeout(deadlineTimer);
+    if (fetches.get(wallUuid)?.promise === request) fetches.delete(wallUuid);
   });
-  fetches.set(wallUuid, request);
+  fetches.set(wallUuid, { promise: request, boundNetworkWait });
+  if (forEditing) boundNetworkWait();
   return request;
 }
 
@@ -304,6 +327,23 @@ export async function prepareSprayWallLedRead(wallUuid: string, field: SprayWall
   void refresh.then(() => retryUnsent(wallUuid));
   if (await hasCachedCopy(field, wallUuid)) return;
   await refresh;
+}
+
+/**
+ * The editor takes one snapshot and can save the whole layout. Unlike playback,
+ * it must finish refreshing before taking that snapshot, even inside the normal
+ * freshness window. No later refresh is applied over the climber's active edits.
+ * Known offline and failed reads retain the phone's copy.
+ */
+export async function prepareSprayWallLedEdit(wallUuid: string): Promise<void> {
+  if (isLocalOnlyWall(wallUuid)) return;
+  const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
+  const { getConnectivitySnapshot } = await import('../connectivity/connectivity-store');
+  if (!getConnectivitySnapshot().effectiveOffline || fetches.has(wallUuid)) {
+    await refreshFromServer(wallUuid, true);
+    void retryUnsent(wallUuid);
+  }
+  if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED setup access changed');
 }
 
 /**

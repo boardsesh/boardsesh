@@ -196,9 +196,9 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       x: Math.max(0, Math.min(1, led.x + dx)),
       y: Math.max(0, Math.min(1, led.y + dy)),
     });
-    const target = moved(dragged);
-    const occupied = nearestPhotoPointIndex(leds, target, renderWidth, renderHeight, 6);
-    if (occupied >= 0 && occupied !== index && leds[occupied].id !== partner) return;
+    const movingIds = new Set(moving.map((led) => led.id));
+    const stationary = leds.filter((led) => !movingIds.has(led.id));
+    if (moving.some((led) => nearestPhotoPointIndex(stationary, moved(led), renderWidth, renderHeight, 6) >= 0)) return;
     change({
       ledPositions: leds.map((led, entry) => (entry === index || led.id === partner ? { ...led, ...moved(led) } : led)),
     });
@@ -430,13 +430,16 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   function extend(ids: string[]) {
     setPreviewWiring(null);
     if (mode !== 'draw' || !wiring) return;
-    // One history step per LED, so Undo removes only the last connection.
+    // One history step per stop: Undo keeps pairs whole, including along a drag.
     const steps: Partial<TnutLayout>[] = [];
+    const wiredIds = new Set(indices.keys());
     let current = wiring;
-    for (const id of withLedPartners(ids, pairs, new Set(indices.keys()))) {
-      const next = extendWiring(current, [id]);
+    for (const id of ids) {
+      const members = withLedPartners([id], pairs, wiredIds);
+      const next = extendWiring(current, members);
       if (next === current) continue;
       steps.push({ wiring: next });
+      for (const member of members) wiredIds.add(member);
       current = next;
     }
     changeSteps(steps);

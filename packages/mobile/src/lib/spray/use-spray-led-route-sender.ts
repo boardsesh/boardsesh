@@ -10,7 +10,6 @@ import { getCredentialGeneration, subscribeToCredentialChanges } from '../privac
 import { hexToRgb, type HoldColorOverrides } from '../hold-color-overrides';
 import { subscribeSprayLedConfiguration } from './spray-led-config-events';
 import { sprayLedPhotoKey } from './spray-led-photo-key';
-import { lookPreviewSourceFromRenderData } from './spray-look-preview';
 import { getSprayWall, sprayWallRemovalGeneration, subscribeToSprayWallWithdrawals } from './spray-wall-registry';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
@@ -147,13 +146,15 @@ export function useSprayLedRouteSender({
         // Load network modules only for a spray-wall write, keeping native BLE's
         // existing boot/module graph independent of private spray-wall queries.
         const [
-          { fetchSprayWallUuid, fetchSprayWallRenderData },
+          { fetchSprayWallUuid },
           { loadSprayWallLedSettings },
           { loadSprayWallTnutLayout },
+          { loadSprayLedRouteGeometry },
         ] = await Promise.all([
           import('./spray-wall-loader'),
           import('./use-spray-wall-led-settings'),
           import('./spray-wall-tnut-store'),
+          import('./spray-led-route-geometry'),
         ]);
         const wallUuid = getSprayWall(layoutId)?.wallUuid ?? (await fetchSprayWallUuid(queryClient, layoutId));
         if (!isCurrent() || !wallUuid) return false;
@@ -194,19 +195,13 @@ export function useSprayLedRouteSender({
         }
         if (!isCurrent()) return false;
         if (!frames) return settled(await current.session.clear());
-        const [payload, layout] = await Promise.all([
-          fetchSprayWallRenderData(queryClient, wallUuid),
+        const [geometry, layout] = await Promise.all([
+          loadSprayLedRouteGeometry(queryClient, wallUuid, layoutId),
           loadSprayWallTnutLayout(wallUuid),
         ]);
         if (!isCurrent()) return false;
-        if (!payload || payload.wall.layoutId !== layoutId || !layout?.wiring) return fail();
-        const source = lookPreviewSourceFromRenderData(payload, {
-          layoutId,
-          versionId: payload.wall.currentVersion?.id,
-        });
-        if (!source || layout.photoKey !== sprayLedPhotoKey(source)) return fail();
-        const holds = payload.holds.map(({ id, cx, cy, r, outline }) => ({ id, cx, cy, r, outline }));
-        const mapping = buildSprayLedMapping(layout, source.frame, holds);
+        if (!geometry || !layout?.wiring || layout.photoKey !== sprayLedPhotoKey(geometry)) return fail();
+        const mapping = buildSprayLedMapping(layout, geometry.frame, geometry.holds);
         const byHold = new Map(mapping.holds.map((hold) => [hold.holdId, hold]));
         const litHolds = accumulateFramesToMaps(toFlatFrames(frames, 'spray'), 'spray')[0];
         if (!litHolds || Object.keys(litHolds).length === 0) return fail();

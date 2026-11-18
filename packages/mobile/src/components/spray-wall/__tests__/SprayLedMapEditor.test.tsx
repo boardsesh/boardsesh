@@ -221,6 +221,26 @@ describe('LED pairs behind a hold', () => {
     expect(latest().ledPositions?.map((led) => led.id)).toEqual(['c']);
   });
 
+  it.each([
+    { partnerX: 0.3, otherX: 0.4, destinationX: 0.3, nearest: 'partner' },
+    { partnerX: 0.6, otherX: 0.62, destinationX: 0.21, nearest: 'dragged LED' },
+    { partnerX: 0.3, otherX: 0.5, destinationX: 0.4, nearest: 'no LED' },
+  ])('rejects a partner collision when the dragged target is nearest $nearest', (scenario) => {
+    const initial: TnutLayout = {
+      ...paired,
+      ledPositions: [
+        { id: 'a', x: 0.2, y: 0.5 },
+        { id: 'b', x: scenario.partnerX, y: 0.5 },
+        { id: 'c', x: scenario.otherX, y: 0.5 },
+      ],
+    };
+    render(<Editor initial={initial} />);
+    fireEvent.click(screen.getByText('move'));
+    act(() => controls.canvas?.onMove?.({ x: 0.2, y: 0.5 }, { x: scenario.destinationX, y: 0.5 }, 400, 400));
+    expect(controls.changed).not.toHaveBeenCalled();
+    expect(controls.layout).toBe(initial);
+  });
+
   it('stops a pair at the photo edge without changing the space between its LEDs', () => {
     const nearEdge: TnutLayout = {
       ...paired,
@@ -368,6 +388,48 @@ describe('paired cable actions', () => {
     ]);
     fireEvent.click(screen.getByText('sprayLedSetup.connectCable'));
     expect(controls.layout?.wiring?.paths).toEqual(grouped.wiring?.paths);
+  });
+
+  it('undoes a tapped pair together and keeps its cable connections editable', () => {
+    render(
+      <Editor initial={{ ...grouped, wiring: { ...grouped.wiring!, paths: [['e']], skips: [] } }} kind="wiring" />,
+    );
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.2, 0.2);
+    expect(controls.layout?.wiring?.paths).toEqual([['e', 'a', 'b']]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([['e']]);
+
+    fireEvent.click(screen.getByText('sprayLedSetup.selectLeds'));
+    tap(0.8, 0.8);
+    tap(0.2, 0.2);
+    const connect = screen.getByText('sprayLedSetup.connectCable') as HTMLButtonElement;
+    expect(connect.disabled).toBe(false);
+    fireEvent.click(connect);
+    expect(controls.layout?.wiring?.paths).toEqual([['e', 'a', 'b']]);
+    const cut = screen.getByText('sprayLedSetup.cutCable') as HTMLButtonElement;
+    expect(cut.disabled).toBe(false);
+    fireEvent.click(cut);
+    expect(controls.layout?.wiring?.paths).toEqual([['e'], ['a', 'b']]);
+  });
+
+  it('undoes each pair stop separately after a cable drag crosses both pairs', () => {
+    render(<Editor initial={{ ...grouped, wiring: { ...grouped.wiring!, paths: [], skips: [] } }} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    act(() =>
+      controls.canvas?.onTrace?.(
+        [
+          { x: 0.2, y: 0.2 },
+          { x: 0.2, y: 0.7 },
+        ],
+        0.01,
+      ),
+    );
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'c', 'd']]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b']]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([]);
   });
 
   it('wires a pair atomically, skips before it, advances twice and undoes both LEDs', async () => {

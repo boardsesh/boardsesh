@@ -112,7 +112,9 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    the next step and still count toward the cable's physical LED numbers.
    A selected LED gets a larger purple ring, and the selection
    is listed below the photo by cable position (for example 3 → 4). Undo
-   restores edits. Open the cable editor fullscreen in portrait or landscape.
+   restores edits, keeping both LEDs of a pair together when laying cable.
+   A drag across several pairs can be undone one pair at a time.
+   Open the cable editor fullscreen in portrait or landscape.
    In landscape, the controls sit to the right of the photo.
 11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a
     connection to select it. The photo rings the LEDs at both ends, including
@@ -299,6 +301,18 @@ a failure). When the server's copy really differs from the phone's, the copy is
 replaced and `notifySprayLedConfiguration` blanks and relights the wall; a no-change
 refresh fires nothing. Reading the setup only ever touches the backend. The first
 LAN request still has to follow a climber's press.
+
+Route lighting also uses the current viewer's cached published geometry, or the
+owner-gated offline wall mirror, when the backend is unreachable. The mirror's
+holds stay in canonical coordinates; the photo-coordinate registry is not used
+for LED matching. A server access denial never falls back to an older copy.
+The saved calibration must still match the wall's frame and homography.
+
+Opening LED setup refreshes the saved layout before the editor takes its first
+snapshot, including when playback's cached copy is still fresh. Offline reads
+and failed refreshes retain the local copy. The refresh wait is bounded, and a
+response arriving after that deadline cannot replace the editor's snapshot.
+Once editing begins, a background response never resets the climber's edits.
 
 **Saves** write the copy, then upload. One upload runs per wall at a time and it
 reads the newest copy when it goes, so step saves collapse and cannot land out of
