@@ -2,7 +2,12 @@ import { readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry'
 import { getPreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
 import { sprayWallLedCacheGeneration, sprayWallLedLayoutKey } from './spray-wall-led-cache';
-import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from './spray-wall-led-sync';
+import {
+  markSprayWallLedSaveStarted,
+  prepareSprayWallLedEdit,
+  prepareSprayWallLedRead,
+  queueSprayWallLedUpload,
+} from './spray-wall-led-sync';
 
 const pendingWrites = new Map<string, Promise<void>>();
 
@@ -10,9 +15,13 @@ const pendingWrites = new Map<string, Promise<void>>();
  * Separate from controller settings: opening either editor cannot overwrite the
  * other. Each is saved to the wall on its own, and the phone keeps a copy of each.
  */
-export async function loadSprayWallTnutLayout(wallUuid: string): Promise<TnutLayout | null> {
+export async function loadSprayWallTnutLayout(
+  wallUuid: string,
+  options?: { forEditing?: boolean },
+): Promise<TnutLayout | null> {
   await pendingWrites.get(wallUuid)?.catch(() => undefined);
-  await prepareSprayWallLedRead(wallUuid, 'layout');
+  if (options?.forEditing) await prepareSprayWallLedEdit(wallUuid);
+  else await prepareSprayWallLedRead(wallUuid, 'layout');
   const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
   if (stored === null) return null;
   const layout = readTnutLayout(stored);
