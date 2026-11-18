@@ -130,8 +130,17 @@ private let swapLookLog = Logger(subsystem: "com.boardsesh.climb-overlay-gpu",ca
 final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   let onRenderReady = EventDispatcher()
   let onRenderError = EventDispatcher()
-  /// Board motion lab only: whether the swap look is drawing, sent when that changes.
+  /// Whether the swap look is drawing, sent when that changes, and only while
+  /// `swapLookStateEvents` is on (the board motion lab's readout; the player leaves it off).
   let onSwapLookState = EventDispatcher()
+  /// The app listens for `onSwapLookState`. On, it gets the state at once and on every change.
+  var swapLookStateEvents = false {
+    didSet {
+      guard swapLookStateEvents != oldValue else { return }
+      swapLookLastReport = [:]
+      reportSwapLook()
+    }
+  }
   var configJson = "" {
     didSet { if configJson != oldValue { configRevision &+= 1; preparation?.cancel();cancelPrefetch();cpuSession = nil;carryOver = nil } }
   }
@@ -159,14 +168,12 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var outgoingWeight: Float = 1
   private var incomingWeight: Float = 0
   private var sharedWeight: Float = 1
-  /// Board motion lab only: the swap look and which climbs arrive this frame.
-  /// Nil (the player) draws API 7's swap.
+  /// The swap look (the player's or the lab's) and which climbs arrive this frame.
+  /// Nil draws API 7's swap.
   private var swapLook: ClimbOverlaySwapLook.Look?
   private var arrivals = ClimbOverlayMotion.SwapArrivals()
-  /// A seven-number frame's shared floor, for the look; nil for the player's frames.
+  /// A seven-number frame's shared floor, for the look; nil for the shipped four-number frames.
   private var sharedFloor: Float?
-  /// Set once the app has sent any look, so the player (which sends none) never gets a state event.
-  private var swapLookRequested = false
   private var swapLookRejected = false
   /// Holds in the last look drawn since the look last changed; nil until one is drawn.
   private var swapLookAppliedHolds: Int?
@@ -231,6 +238,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     NotificationCenter.default.addObserver(self, selector: #selector(suspend), name: UIApplication.willResignActiveNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(resume), name: UIApplication.didBecomeActiveNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(motionPolicyChanged), name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(motionPolicyChanged), name: UIAccessibility.differentiateWithoutColorDidChangeNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(motionPolicyChanged), name: .NSProcessInfoPowerStateDidChange, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(motionPolicyChanged), name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
   }
@@ -321,11 +329,10 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     requestDraw()
   }
 
-  /// Board motion lab only: the swap look's numbers (`ClimbOverlaySwapLook.Look`),
-  /// set when a slider is released. Nil or malformed turns the look off.
+  /// The swap look's numbers (`ClimbOverlaySwapLook.Look`): the player's once, the
+  /// lab's again whenever a slider is released. Nil or malformed turns the look off.
   func setSwapLook(_ values: [Double]?) {
     let look = values.flatMap { ClimbOverlaySwapLook.Look($0) }
-    swapLookRequested = swapLookRequested || values != nil
     swapLookRejected = values != nil && look == nil
     if look != swapLook {
       swapLook = look
@@ -340,6 +347,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     if swapLook == nil { return swapLookRejected ? "look rejected" : "no look prop" }
     if revealMode != ClimbOverlayMotion.revealModeSwap { return "not swap mode" }
     if suppressMotion { return "Reduce Motion" }
+    // A ghost shows a hold's role colour without its role shape (HIG Color).
+    if UIAccessibility.shouldDifferentiateWithoutColor { return "Differentiate Without Color" }
     return nil
   }
 
@@ -350,9 +359,9 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   }
 
   /// Tells the lab whether the look is off (with why), ready, or drawn (with its
-  /// hold count), only when that changes. Never sent to a view that got no look.
+  /// hold count), only when that changes, and only while it listens.
   private func reportSwapLook() {
-    guard swapLookRequested else { return }
+    guard swapLookStateEvents else { return }
     var report: [String: AnyHashable]
     if let reason = swapLookOffReason {
       swapLookAppliedHolds = nil
@@ -383,17 +392,25 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var swapLookReachAllowed: Bool { swapLookReachOffReason == nil }
 
   /// This frame's swap-look buffer, or its zero header (API 7's swap): no look,
-  /// the wipe, a single climb on show, or Reduce Motion, which turns the look
-  /// off here whatever the app sends.
+  /// the wipe, a single climb on show, or Reduce Motion or Differentiate Without
+  /// Color, which turn the look off here whatever the app sends.
   private func swapLookWords(_ packet: ClimbOverlayMetalPacket,selection: ClimbOverlayMotion.Selection,
                              weights: ClimbOverlayMotion.SwapWeights) -> [UInt16] {
-    guard let look = swapLook, revealMode == ClimbOverlayMotion.revealModeSwap, !suppressMotion,
+    guard swapLookOffReason == nil, let look = swapLook,
       selection.lowerOffset != selection.upperOffset else { return ClimbOverlaySwapLook.off }
+    let lowerSlot = ClimbOverlayMotion.slot(selection.lowerOffset)
+    let upperSlot = ClimbOverlayMotion.slot(selection.upperOffset)
+    let lower = packet.swapLookScene(slot: lowerSlot,upper: false)
+    let upper = packet.swapLookScene(slot: upperSlot,upper: true)
+    // The shader reads one entry for every hold the packet draws: a scene that
+    // could not be read whole draws API 7's swap rather than read past the look.
+    guard lower.holds.count == packet.header.scenes[lowerSlot].count,
+      upper.holds.count == packet.header.scenes[upperSlot].count else { return ClimbOverlaySwapLook.off }
     let codes = ClimbOverlaySwapLook.sides(progress: selection.progress,
       outgoing: arrivals.outgoing,incoming: arrivals.incoming)
     return ClimbOverlaySwapLook.encode(
-      lower: packet.swapLookScene(slot: ClimbOverlayMotion.slot(selection.lowerOffset),upper: false),
-      upper: packet.swapLookScene(slot: ClimbOverlayMotion.slot(selection.upperOffset),upper: true),
+      lower: lower,
+      upper: upper,
       lowerSide: ClimbOverlaySwapLook.Side(weight: weights.lower,code: codes.lower),
       upperSide: ClimbOverlaySwapLook.Side(weight: weights.upper,code: codes.upper),
       sharedFloor: sharedFloor ?? weights.shared,look: look,mirrored: displayMirrored,allowReach: swapLookReachAllowed)
@@ -423,6 +440,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     unsafeBitCast(method_getImplementation(method), to: CommandHandler.self)(self, selector, commandName, args)
   }
 
+  /// Reduce Motion, Differentiate Without Color, Low Power Mode or the thermal state changed.
   @objc private func motionPolicyChanged() {
     // Power and thermal notifications can arrive off the main thread.
     guard Thread.isMainThread else { DispatchQueue.main.async { [weak self] in self?.motionPolicyChanged() };return }

@@ -31,6 +31,7 @@ const controls = vi.hoisted(() => ({
     configJson: string;
     reduceMotion?: boolean;
     swapLook?: readonly number[] | null;
+    swapLookStateEvents?: boolean;
     onSwapLookState?: (event: { nativeEvent: Record<string, unknown> }) => void;
     previousFrames?: string | null;
     nextFrames?: string | null;
@@ -608,6 +609,9 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     controls.dispatchCommand.mockClear();
     render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
     expect(controls.props?.swapLook).toEqual(look);
+    // Nobody listens (the player): the view is told not to send its state.
+    expect(controls.props?.swapLookStateEvents).toBe(false);
+    expect(controls.props?.onSwapLookState).toBeUndefined();
     expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.6, 0.2, 1, 0, 0, 1] });
     act(() => controls.runSwapReaction?.());
     expect(controls.dispatchCommand).toHaveBeenLastCalledWith(
@@ -644,6 +648,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     };
     render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
     expect(controls.props?.swapLook).toEqual(look);
+    expect(controls.props?.swapLookStateEvents).toBe(true);
     act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'off', reason: 'Reduce Motion' } }));
     expect(onSwapLookState).toHaveBeenLastCalledWith({ state: 'off', reason: 'Reduce Motion' });
     act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'on', holds: 24, reachOff: 'Low Power' } }));

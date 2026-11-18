@@ -56,7 +56,10 @@ export type GpuClimbTransition = {
   swapFrame?: SwapFrameSource;
   /** The encoded swap look (`encodeSwapLook`) its six-number frames are drawn with: the player's or the lab's. */
   swapLook?: readonly number[];
-  /** Board motion lab only: the native look's state, when it changes. */
+  /**
+   * Board motion lab only: the native look's state, when it changes. Without it
+   * the view is never asked for the event (`swapLookStateEvents`).
+   */
   onSwapLookState?: (status: SwapLookStatus) => void;
   /** Board motion lab only: Reduce Motion as it chose; absent, the system setting. */
   reduceMotion?: boolean;
@@ -282,7 +285,13 @@ export function GpuClimbOverlay({
           ? { prefetchFrames: transition?.prefetchFrames ?? NO_GPU_PREFETCH_FRAMES }
           : {})}
         {...(climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
-        {...(swapLook ? { swapLook, onSwapLookState: swapLookState } : {})}
+        {...(swapLook
+          ? {
+              swapLook,
+              swapLookStateEvents: onTransitionLook !== undefined,
+              ...(onTransitionLook ? { onSwapLookState: swapLookState } : {}),
+            }
+          : {})}
         centerPage={centerPage}
         ref={swapCommandTarget}
         animatedProps={animatedProps}

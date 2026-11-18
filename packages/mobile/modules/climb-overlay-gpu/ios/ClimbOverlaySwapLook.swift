@@ -1,9 +1,9 @@
 import Foundation
 
-/// The swap look (board motion lab, `swapLookVersion` 1): how the wall swap's
-/// two side weights become, for each hold, a mark weight, a glow weight and a
-/// glow reach. Without a look the shader runs API 7's `reveal_weight` and none
-/// of this exists.
+/// The swap look (the player's and the board motion lab's, `swapLookVersion` 2):
+/// how the wall swap's two side weights become, for each hold, a mark weight, a
+/// glow weight and a glow reach. Without a look the shader runs API 7's
+/// `reveal_weight` and none of this exists.
 ///
 /// The app keeps sending one weight per side from the wall-swap state machine,
 /// so re-flicks, reversals and cancels stay in JS. Here a side's weight W turns

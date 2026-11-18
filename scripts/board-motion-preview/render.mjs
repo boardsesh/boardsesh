@@ -1,9 +1,11 @@
 // Board motion lab previews, step 2: compile PreviewRender.swift with the real
 // shader and swap look sources, render every prepared frame on this Mac's GPU,
 // lay each contact sheet out, encode the motion previews and their A-vs-variant
-// side-by-sides. With --golden, also prove the shader with no look bound is
-// byte-identical to the shader at --baseline (default: where this branch leaves
-// origin/main) on the Aura transition golden's 42 samples. See README.md.
+// side-by-sides, and check that a look frame at W = (1, 0) and (0, 1) draws the
+// still frame pixel for pixel on I's sheets. With --golden, also prove the shader
+// with no look bound is byte-identical to the shader at --baseline (default:
+// where this branch leaves origin/main) on the Aura transition golden's 42
+// samples. See README.md.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -133,11 +135,23 @@ for (const name of readdirSync(motion).filter((file) => file.endsWith('.mp4') &&
   sideBySide.push(target);
 }
 
+// The swap's two ends against the still compositor. Written to the summary
+// either way; a difference fails the run once the summary is out.
+const endpointRun = spawnSync(executable, ['endpoints', work, join(out, 'endpoints')], {
+  encoding: 'utf8',
+  timeout: 600_000,
+});
+const endpoints = JSON.parse(readFileSync(join(out, 'endpoints', 'endpoints.json'), 'utf8'));
+console.log(endpointRun.stdout.trim());
+
 let parity = null;
 if (golden) {
   parity = JSON.parse(run(executable, ['parity', golden, join(out, 'parity')], { timeout: 600_000 }).trim());
   console.log(JSON.stringify(parity));
 }
 const stats = JSON.parse(readFileSync(join(rendered, 'stats.json'), 'utf8'));
-writeFileSync(join(out, 'summary.json'), JSON.stringify({ parity, stats, sideBySide }, null, 2));
+writeFileSync(join(out, 'summary.json'), JSON.stringify({ parity, endpoints, stats, sideBySide }, null, 2));
 console.log(JSON.stringify({ sheets: readdirSync(sheetDirectory).length, videos: readdirSync(motion).length }));
+if (endpointRun.status !== 0) {
+  throw new Error(`A look frame at W = (1, 0) or (0, 1) differs from the still frame: ${join(out, 'endpoints')}`);
+}

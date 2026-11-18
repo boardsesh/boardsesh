@@ -117,6 +117,7 @@ const controls = vi.hoisted(() => ({
   swapLookVersion: 2,
   killed: false,
   reduceMotion: false,
+  differentiateWithoutColor: 'off' as 'on' | 'off' | 'unknown',
   /** Every `swapFrame` command the native view received, in order. */
   commands: [] as number[][],
   /** The native view's last props. */
@@ -184,6 +185,9 @@ vi.mock('../../../lib/board-render/gpu-native-capability', () => ({
   },
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => controls.reduceMotion }));
+vi.mock('../../../hooks/use-differentiate-without-color', () => ({
+  useDifferentiateWithoutColor: () => controls.differentiateWithoutColor,
+}));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   usePlayerSwapLookEnabled: () => !controls.killed,
 }));
@@ -321,6 +325,7 @@ beforeEach(() => {
   controls.swapLookVersion = 2;
   controls.killed = false;
   controls.reduceMotion = false;
+  controls.differentiateWithoutColor = 'off';
 });
 afterEach(() => cleanup());
 
@@ -349,6 +354,7 @@ describe('the player board’s swap look', () => {
   it.each([
     ['the kill switch is on', () => (controls.killed = true)],
     ['Reduce Motion is on', () => (controls.reduceMotion = true)],
+    ['Differentiate Without Color is on', () => (controls.differentiateWithoutColor = 'on')],
     ['the binary is Android (swapLookVersion 0)', () => (controls.swapLookVersion = 0)],
     ['the binary is an older iOS one (swapLookVersion 1)', () => (controls.swapLookVersion = 1)],
     ['the binary has no swap command', () => (controls.swapCommandApi = 0)],
@@ -359,6 +365,11 @@ describe('the player board’s swap look', () => {
     expect(player.swapLook).toBeUndefined();
     expect(player.commands).toEqual(shipped.commands);
     for (const command of player.commands) expect(command).toHaveLength(5);
+  });
+
+  it('keeps the look while Differentiate Without Color is not read yet: native turns it off if the setting is on', () => {
+    controls.differentiateWithoutColor = 'unknown';
+    expect(sent().swapLook).toBeDefined();
   });
 
   it('under Reduce Motion the frames are the shipped dissolve: no dim while dragging, shared holds whole', () => {

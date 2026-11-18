@@ -1,8 +1,11 @@
 import Foundation
+import Metal
 
 /// Run with swiftc plus ../ClimbOverlaySwapLook.swift, ../ClimbOverlayMotion.swift,
 /// ../ClimbOverlayShader.swift and ../ClimbOverlayPacketLayout.swift. No Expo
-/// runtime or GPU needed; scripts/board-motion-preview renders the look on Metal.
+/// runtime needed. With a Metal device it also compiles the shader, so a syntax
+/// error fails here rather than on a phone; without one that check is skipped.
+/// scripts/board-motion-preview renders the look on Metal.
 @main enum ClimbOverlaySwapLookTests {
   typealias Look = ClimbOverlaySwapLook.Look
   typealias Hold = ClimbOverlaySwapLook.Hold
@@ -278,6 +281,20 @@ import Foundation
     precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9])!.arrivals == .init())
     precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, 0]) == nil)
     precondition(ClimbOverlayMotion.sequencedSwapFrame([4.25, 0.4, 0.2, 1, 9, .nan, 1]) == nil)
+
+    // The shader source compiles, as the app compiles it at runtime, with both entry points.
+    var shaderCompiled = "no Metal device, shader compile skipped"
+    if let device = MTLCreateSystemDefaultDevice() {
+      do {
+        let library = try device.makeLibrary(source: ClimbOverlayShader.source, options: nil)
+        precondition(library.makeFunction(name: "overlay_vertex") != nil
+          && library.makeFunction(name: "overlay_fragment") != nil, "The shader keeps both entry points")
+        shaderCompiled = "shader compiled on \(device.name)"
+      } catch {
+        preconditionFailure("The Metal shader does not compile: \(error)")
+      }
+    }
+    print(shaderCompiled)
 
     print("Swap look guards passed: prop parsing, W = 1/floor/0 uniform for every key and look, monotone fronts, mark under glow, reach in [0.6, 1.35], plain look = API 7 weights, swipe-edge and mirror direction, climb-up keys, ghosts, swell, buffer layout and seven-number frames")
   }

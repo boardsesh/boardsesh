@@ -273,12 +273,17 @@ export function swapLookDriver(options: SwapLookDriverOptions): BoardTransitionD
       }
     }
 
-    // The incoming weight on screen: a ghost while dragging toward a climb. Not
-    // while the machine is still easing an old pair out (a pull-back or a catch).
+    // The incoming weight on screen: a ghost while dragging toward a climb. While
+    // the machine eases into the drag (a pair switch, a catch, a finger still down
+    // on arrival), the ghost grows with that settle's own ease, from nothing on
+    // the frame it starts, so it never appears whole in one frame.
     let incoming = state.incoming;
-    if (ghostDrag && !calmDrag && !state.swapping && !state.settling && state.dir !== 0) {
+    if (ghostDrag && !calmDrag && !state.swapping && state.dir !== 0) {
       const dimmed = tuning.dimFloor < 1 ? (1 - state.outgoing) / (1 - tuning.dimFloor) : 0;
-      const ghost = ghostFloor * clampUnit(dimmed);
+      let eased = 1;
+      if (machine.startSettle) eased = 0;
+      else if (state.settling && tuning.settleMs > 0) eased = easeOut(input.settleMs / tuning.settleMs, tuning);
+      const ghost = ghostFloor * clampUnit(dimmed) * eased;
       if (ghost > incoming) incoming = ghost;
     }
 

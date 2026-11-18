@@ -14,6 +14,16 @@ The Boardsesh drawing instead offers its existing role-glyph suggestion. Android
 has no corresponding queryable setting; high-contrast text does not describe hold
 roles, so it does not change the marker default.
 
+The player's swap look (`play-drawer/player-swap-look.ts`) is off while it is on,
+exactly like Reduce Motion: its ghosts show the next climb's role colours as
+glow-only halos, without the role shapes, so the board changes climbs with the
+shipped wall swap instead. JS reads the setting through
+`useDifferentiateWithoutColor` and sends no look while it reads `'on'`; the GPU
+view also checks `UIAccessibility.shouldDifferentiateWithoutColor` on every frame
+and follows its change notification, so a binary whose JS has not read the setting
+yet, or the board motion lab, never draws a ghost either. The lab reports this as
+`look off (Differentiate Without Color)`.
+
 Persistent climb labels in `ClimbCapsule` and `NativeAccessoryClimbRow` retain
 their chrome text cap and use a native Large Content Viewer at accessibility text
 sizes. Long-pressing the label reveals its full climb name and grade; releasing

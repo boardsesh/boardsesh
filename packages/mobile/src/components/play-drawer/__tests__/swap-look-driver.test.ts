@@ -35,6 +35,25 @@ function driverOf(spec: SwapLookSpec): BoardTransitionDriver {
 
 const PLAYER = driverOf(PLAYER_SWAP_LOOK);
 
+/**
+ * The largest change of any climb's weight between two frames when only the
+ * clocks moved (an 8 ms tick). A settle at 120 ms moves a weight by at most
+ * about 0.035 a tick; a ghost that appears whole in one frame moves 0.2 or more.
+ */
+const MAX_TICK_STEP = 0.06;
+function largestTickStep(operations: readonly Operation[], frames: ReturnType<typeof runDriver>): number {
+  let largest = 0;
+  for (let index = 1; index < frames.length; index++) {
+    if (!('tick' in operations[index])) continue;
+    const before = pages(frames[index - 1]);
+    for (const [page, now] of pages(frames[index])) {
+      const then = before.get(page);
+      if (then) largest = Math.max(largest, Math.abs(now.weight - then.weight));
+    }
+  }
+  return largest;
+}
+
 /** No ghosts, no runs, shared holds dipping: the side weights are the machine's alone. */
 const PLAIN: SwapLookSpec = {
   ...PLAYER_SWAP_LOOK,
@@ -119,6 +138,32 @@ describe('swap look driver', () => {
       PLAYER,
     );
     expect(cancelled.at(-1)?.slice(0, 3)).toEqual([0, 1, 0]);
+  });
+
+  it('grows the ghost with a settle instead of showing it whole when the settle ends', () => {
+    // Drag to −60, cross to +40 and hold: the pair switches and eases into the new side's dim.
+    const crossed: Operation[] = [{ drag: -60 }, { drag: 40 }, ...ticks(24)];
+    const crossedFrames = runDriver(crossed, PLAYER);
+    expect(crossedFrames[1][2]).toBe(0);
+    expect(crossedFrames[2][2]).toBeGreaterThan(0);
+    // At 40 pt the dim is halfway to the floor, so the ghost is half the arrival floor.
+    expect(crossedFrames.at(-1)?.[2]).toBeCloseTo(0.2, 6);
+    expect(largestTickStep(crossed, crossedFrames)).toBeLessThan(MAX_TICK_STEP);
+
+    const across = SEQUENCES['drag across the middle'];
+    const acrossFrames = runDriver(across, PLAYER);
+    // The finger crosses, then holds for eight ticks: the new side's ghost comes in during the settle.
+    expect(acrossFrames[9][2]).toBeGreaterThan(0.1);
+    expect(largestTickStep(across, acrossFrames)).toBeLessThan(MAX_TICK_STEP);
+
+    // A fling caught short and held past the commit distance: the climb it left
+    // comes back as a ghost over the settle, ending at the drag floor.
+    const caught = SEQUENCES['caught and pulled back'];
+    const caughtFrames = runDriver(caught, PLAYER);
+    expect(largestTickStep(caught, caughtFrames)).toBeLessThan(MAX_TICK_STEP);
+    const pulledBack = caughtFrames.at(-1);
+    expect(pulledBack?.[1]).toBeCloseTo(PLAYER_SWAP_LOOK.tuning.dimFloor, 6);
+    expect(pulledBack?.[2]).toBeCloseTo(PLAYER_SWAP_LOOK.tuning.dimFloor, 6);
   });
 
   it('a reversal mid-swap keeps every climb’s weight and flag: the same pixels, played back', () => {

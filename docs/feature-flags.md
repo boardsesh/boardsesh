@@ -257,8 +257,8 @@ diagnostic) applies on native. The whole surface lives in three files:
   `docs/board-motion-lab.md`). It ships at 100% with no A/B test. On, the board
   swaps climbs exactly as before, the shipped wall swap, and the change reaches
   an open board at once, so it is also the QA switch for comparing the two.
-  Android, iOS binaries without `swapLookVersion` 2 and Reduce Motion get the
-  shipped swap whatever it says.
+  Android, iOS binaries without `swapLookVersion` 2, Reduce Motion and
+  Differentiate Without Color get the shipped swap whatever it says.
   `picker-auto-scan-kill` is a kill switch (read through
   `usePickerAutoScanEnabled`, unresolved = enabled) for the board picker's In
   range slot scanning over Bluetooth by itself when the picker opens

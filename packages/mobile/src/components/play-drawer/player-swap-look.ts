@@ -14,8 +14,10 @@
  *
  * Everywhere else the board runs the shipped wall swap (`wall-swap.ts`) exactly
  * as before: Android until its GLES port, older iOS binaries, Reduce Motion
- * (the shipped 120 ms dissolve, no look) and the `player-swap-look-kill` switch,
- * which is also the QA switch for comparing the two.
+ * (the shipped 120 ms dissolve, no look), Differentiate Without Color (a ghost
+ * shows a hold's role colour without its role shape) and the
+ * `player-swap-look-kill` switch, which is also the QA switch for comparing the
+ * two. The native view turns the look off for both settings too.
  *
  * To change the look, change `PLAYER_SWAP_LOOK`. The lab's I starts from it, so
  * the lab shows the player's look and its sliders retune it live
@@ -76,6 +78,8 @@ export type PlayerSwapLookInputs = {
   killed: boolean;
   /** The system's Reduce Motion. */
   reduceMotion: boolean;
+  /** iOS Differentiate Without Color is on (not 'unknown': native turns the look off there as well). */
+  differentiateWithoutColor: boolean;
 };
 
 /**
@@ -99,7 +103,7 @@ export function binaryDrawsPlayerSwapLook(
  * nothing turned it off; absent everywhere else, which is the shipped wall swap.
  */
 export function playerBoardTransition(inputs: PlayerSwapLookInputs): BoardTransition | undefined {
-  if (inputs.killed || inputs.reduceMotion) return undefined;
+  if (inputs.killed || inputs.reduceMotion || inputs.differentiateWithoutColor) return undefined;
   return binaryDrawsPlayerSwapLook(inputs.apiVersion, inputs.swapCommandApi, inputs.swapLookVersion)
     ? PLAYER_SWAP_LOOK_TRANSITION
     : undefined;

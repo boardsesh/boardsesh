@@ -179,7 +179,9 @@ final class LoadedPacket {
 
   /// The uniforms Rust's `encode_uniforms` writes for this pair and swap: its base for the
   /// pair with the weights, progress, shared-weight word and stamp layers patched in.
-  func uniforms(lower: Int, upper: Int, swap: [Float]) throws -> Data {
+  /// `transitioning` keeps the progress strictly between 0 and 1, as Rust does when shared
+  /// holds dip, so a pair at W = (1, 0) or (0, 1) still takes the shader's swap path.
+  func uniforms(lower: Int, upper: Int, swap: [Float], transitioning: Bool = false) throws -> Data {
     let same = lower == upper
     var bytes = try rustUniforms(same ? "still-\(lower)" : (lower == 0 ? "base-0-2" : "base-1-0"))
     let (weightLower, weightUpper, shared) = (swap[0], swap[1], swap[2])
@@ -188,7 +190,9 @@ final class LoadedPacket {
     if same { progress = 0 }
     else if lowerCount > 0 && upperCount == 0 { progress = 1 - weightLower }
     else if lowerCount == 0 && upperCount > 0 { progress = weightUpper }
-    else if shared < 1 { progress = min(max((1 - weightLower + weightUpper) * 0.5, Float.ulpOfOne), 1 - Float.ulpOfOne) }
+    else if shared < 1 || transitioning {
+      progress = min(max((1 - weightLower + weightUpper) * 0.5, Float.ulpOfOne), 1 - Float.ulpOfOne)
+    }
     else { progress = (1 - weightLower + weightUpper) * 0.5 }
     func put(_ word: Int, _ value: UInt32) {
       withUnsafeBytes(of: value.littleEndian) { bytes.replaceSubrange((word * 4)..<(word * 4 + 4), with: $0) }
@@ -326,8 +330,8 @@ final class VideoWriter {
 @main enum BoardMotionPreview {
   static func main() throws {
     let arguments = CommandLine.arguments
-    guard arguments.count == 4, ["render", "parity"].contains(arguments[1]) else {
-      throw PreviewError(description: "Usage: render|parity <work dir> <fresh output dir>")
+    guard arguments.count == 4, ["render", "parity", "endpoints"].contains(arguments[1]) else {
+      throw PreviewError(description: "Usage: render|parity|endpoints <work dir> <fresh output dir>")
     }
     let work = URL(fileURLWithPath: arguments[2], isDirectory: true)
     let output = URL(fileURLWithPath: arguments[3], isDirectory: true)
@@ -335,7 +339,93 @@ final class VideoWriter {
       throw PreviewError(description: "Output exists: \(output.path)")
     }
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-    if arguments[1] == "render" { try render(work: work, output: output) } else { try parity(work: work, output: output) }
+    switch arguments[1] {
+    case "render": try render(work: work, output: output)
+    case "parity": try parity(work: work, output: output)
+    default: try endpoints(work: work, output: output)
+    }
+  }
+
+  /// The swap's two ends against the still compositor, pixel for pixel: a look frame at
+  /// W = (1, 0) must draw exactly the lower climb at rest, and at W = (0, 1) exactly the
+  /// upper one, or a pixel would change on the first drag frame and again on the swap's
+  /// last frame. Every pair I's sheets draw, with each sheet's own look (Subtle and Bold,
+  /// recorded Kilter climbs, shared-hold and role-change sets, MoonBoard).
+  static func endpoints(work: URL, output: URL) throws {
+    let plan = try JSONDecoder().decode(Plan.self, from: read(work.appendingPathComponent("plan.json")))
+    let renderer = try Renderer()
+    let pipeline = try renderer.pipeline(ClimbOverlayShader.source)
+    var packets: [String: LoadedPacket] = [:]
+    var rows: [[String: Any]] = []
+    var seen = Set<String>()
+    var differing = 0
+    for sheet in plan.sheets where sheet.id.hasPrefix("I-") {
+      for frame in sheet.frames where frame.lower != frame.upper {
+        guard let values = frame.look, let look = ClimbOverlaySwapLook.Look(values) else {
+          throw PreviewError(description: "\(sheet.id) has no look")
+        }
+        let key = "\(values)|\(frame.packet)|\(frame.lower)|\(frame.upper)"
+        guard seen.insert(key).inserted else { continue }
+        guard let description = plan.packets[frame.packet], let board = plan.boards[description.board] else {
+          throw PreviewError(description: "No packet \(frame.packet)")
+        }
+        let loaded = try packets[frame.packet] ?? LoadedPacket(description, board: board, work: work, renderer: renderer)
+        packets[frame.packet] = loaded
+        let lowerScene = loaded.lookScene(frame.lower, upper: false)
+        let upperScene = loaded.lookScene(frame.upper, upper: true)
+        for (name, whole) in [("W=(1,0)", frame.lower), ("W=(0,1)", frame.upper)] {
+          let lowerWhole = whole == frame.lower
+          let swap: [Float] = lowerWhole ? [1, 0, 1] : [0, 1, 1]
+          // The whole climb is the one being left (the first drag frame); the dark one arrives
+          // from its slot's edge. A hold at W = 1 or 0 draws the same either way round.
+          let words = ClimbOverlaySwapLook.encode(lower: lowerScene, upper: upperScene,
+            lowerSide: ClimbOverlaySwapLook.Side(weight: swap[0], code: lowerWhole ? 0 : 2),
+            upperSide: ClimbOverlaySwapLook.Side(weight: swap[1], code: lowerWhole ? 1 : 0),
+            sharedFloor: 1, look: look, mirrored: false, allowReach: true)
+          let shaped = try renderer.draw(pipeline, width: loaded.width, height: loaded.height, pixels: loaded.pixels,
+            descriptors: loaded.descriptors, lowerOffset: loaded.scenes[frame.lower].offset,
+            upperOffset: loaded.scenes[frame.upper].offset,
+            uniforms: loaded.uniforms(lower: frame.lower, upper: frame.upper, swap: swap, transitioning: true),
+            resources: loaded.resources, look: words)
+          let still = try renderer.draw(pipeline, width: loaded.width, height: loaded.height, pixels: loaded.pixels,
+            descriptors: loaded.descriptors, lowerOffset: loaded.scenes[whole].offset,
+            upperOffset: loaded.scenes[whole].offset,
+            uniforms: loaded.uniforms(lower: whole, upper: whole, swap: [1, 0, 1]), resources: loaded.resources,
+            look: ClimbOverlaySwapLook.off)
+          let changed = changedPixels(shaped, still)
+          var largest = 0
+          shaped.withUnsafeBytes { first in still.withUnsafeBytes { second in
+            for index in 0..<first.count { largest = max(largest, abs(Int(first[index]) - Int(second[index]))) }
+          } }
+          if changed.any > 0 {
+            differing += 1
+            // Where they differ, eight times brighter, on black.
+            var difference = Data(count: shaped.count)
+            difference.withUnsafeMutableBytes { target in shaped.withUnsafeBytes { first in still.withUnsafeBytes { second in
+              for index in stride(from: 0, to: first.count, by: 4) {
+                for channel in 0..<3 {
+                  target[index + channel] = UInt8(min(255, abs(Int(first[index + channel]) - Int(second[index + channel])) * 8))
+                }
+                target[index + 3] = 255
+              }
+            } } }
+            let stem = "\(sheet.id)-\(frame.lower)-\(frame.upper)-\(lowerWhole ? "start" : "end")"
+            try Images.savePNG(Images.image(difference, width: loaded.width, height: loaded.height),
+              to: output.appendingPathComponent("\(stem)-difference.png"))
+          }
+          rows.append(["sheet": sheet.id, "packet": frame.packet, "lower": frame.lower, "upper": frame.upper,
+            "weights": name, "changedPixels": changed.any, "visiblyChangedPixels": changed.visible,
+            "maxChannelDifference": largest])
+        }
+      }
+    }
+    guard !rows.isEmpty else { throw PreviewError(description: "No pairs on I's sheets") }
+    let status = differing == 0 ? "PASS_ENDPOINTS_MATCH_STILL" : "FAIL_ENDPOINTS_DIFFER"
+    try JSONSerialization.data(withJSONObject: ["status": status, "device": renderer.device.name, "checks": rows.count,
+      "differing": differing, "rows": rows], options: [.prettyPrinted, .sortedKeys])
+      .write(to: output.appendingPathComponent("endpoints.json"))
+    print("{\"status\":\"\(status)\",\"checks\":\(rows.count),\"differing\":\(differing)}")
+    if differing > 0 { throw PreviewError(description: "A look frame at W = (1, 0) or (0, 1) differs from the still frame") }
   }
 
   static func render(work: URL, output: URL) throws {

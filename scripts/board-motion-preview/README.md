@@ -24,6 +24,13 @@ What it renders:
   look's ownership fix and through today's, full frames and 3× crops.
 - **Stats** (`summary.json`): pixels each variant changes against A per frame,
   and the glow (mean chroma) at the darkest moment after each commit against A's.
+- **Endpoints**: every pair I's sheets draw, through the look at W = (1, 0) and
+  (0, 1), against the still frame of the climb at rest, pixel for pixel. A
+  difference would light or drop a pixel on the first drag frame or the swap's
+  last frame. Any difference fails the run after `summary.json` is written, with
+  an eight-times-brighter difference image per pair in `<out>/endpoints/`. Run it
+  alone with the built executable: `<out>/build/board-motion-preview endpoints
+  <work> <fresh dir>`.
 - **Parity**: with `--golden`, the shader with no look bound against the shader
   at `--baseline` on the Aura transition golden's 42 samples, byte for byte.
 

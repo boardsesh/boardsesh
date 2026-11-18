@@ -105,8 +105,8 @@ behind that front as glow-only halos up to 40%. Letting go fills the halos in al
 same sweep over 220 ms while the rings go out by 150 ms; arriving halos swell by at most
 5%. A commit within 400 ms of the last one is a flick run: no halos, no drag dim, no
 swell, a 140 ms swap. Shared holds never dip. Android, older iOS binaries, Reduce Motion
-(the 120 ms dissolve above, no look) and the `player-swap-look-kill` switch get the
-shipped swap, frame for frame. The numbers are one constant, `PLAYER_SWAP_LOOK`; the lab's
+(the 120 ms dissolve above, no look), Differentiate Without Color and the
+`player-swap-look-kill` switch get the shipped swap, frame for frame. The numbers are one constant, `PLAYER_SWAP_LOOK`; the lab's
 I reads it (`docs/board-motion-lab.md`).
 
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual

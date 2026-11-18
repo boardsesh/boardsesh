@@ -102,9 +102,9 @@ enum ClimbOverlayShader {
     if(membership==2) return upper ? max(2*reveal-1,0.0) : max(1-2*reveal,0.0);
     return upper ? reveal : 1-reveal;
   }
-  // Swap look (swapLookVersion 1): Swift writes one ushort4 per union hold after
-  // a header: mark and glow weights in 1/65535 steps, glow reach in 1/32768
-  // (reach 1 decodes exactly).
+  // Swap look (ClimbOverlaySwapLook): Swift writes one ushort4 per union hold
+  // after a header: mark and glow weights in 1/65535 steps, glow reach in
+  // 1/32768 (reach 1 decodes exactly).
   float4 look_hold(constant ushort4* look, uint index) {
     return float4(look[1u+index])*float4(1.0/65535.0,1.0/65535.0,1.0/32768.0,0.0);
   }
@@ -123,13 +123,18 @@ enum ClimbOverlayShader {
       ? mix(lowerCount>0 ? 1.0 : 0.0,upperCount>0 ? 1.0 : 0.0,uniforms.motion.x) : 1;
     float4 pixel = quantize(uniforms.veil*ambient);
     float coverage = 0;
-    // Shaped only: every visible hold's whole silhouette, so a halo never paints
-    // inside a hold whose mark is fainter than its glow (a ghost). Equal to
-    // coverage whenever every mark is whole.
+    // Shaped only: every visible hold's silhouette, so a halo never paints inside
+    // a hold whose mark is fainter than its glow (a ghost). It comes in over a
+    // hold's first 0.1 of glow, so a neighbour's halo never vanishes from inside
+    // a ghost in one frame. Equal to coverage whenever every mark is whole.
     float mask = 0;
     float best = 1e20, second = 1e20;
     float bestScore=1e20, secondScore=1e20;
     int nearest = -1, runner = -1;
+    // Shaped only: the two nearest visible holds past their own reach, by plain
+    // distance, and the nearest one's faint-field bias.
+    float outside=1e20, outsideNext=1e20, outsideBias=0;
+    int outsider=-1, outsiderNext=-1;
     for (uint ordinal=0;ordinal<candidates;ordinal++) {
       uint index=tile_index(ordinal,lowerRange,upperRange,lowerCount,lut);
       Hold hold = source_hold(index,lowerCount,lower,upper);
@@ -146,9 +151,11 @@ enum ClimbOverlayShader {
       float dist2 = squared==0x00ffffffu ? 1e20 : float(squared);
       float alpha = float(field >> 24)/255.0*weight;
       coverage = max(coverage,alpha);
-      if(shaped) mask=max(mask,float(field >> 24)/255.0);
+      if(shaped) mask=max(mask,float(field >> 24)/255.0*saturate(glowWeight*10.0));
       pixel = quantize(pixel*(1.0-alpha));
-      float dilation = ceil(maxReach*(shaped ? shape.z : (hold.numbers.y>0 ? reachScale : 1)))+2;
+      // Shaped: never smaller than the still crop, so a hold whose halo pulls in
+      // keeps the pixels it could still own at rest.
+      float dilation = ceil(maxReach*(shaped ? max(shape.z,1.0) : (hold.numbers.y>0 ? reachScale : 1)))+2;
       // Match the CPU crop for THIS climb, even though the immutable atlas
       // carries enough padding for the widest hold in the layout.
       if(dist2>=1e20 || hold.numbers.x <= 0 || float(point.x)<floor(hold.bounds.x-dilation) ||
@@ -157,18 +164,48 @@ enum ClimbOverlayShader {
       // Faint incoming fields must not steal an existing glow, even at d=0.
       // Keep real distance for falloff, and use a continuous positive fade
       // bias for ownership and seam interpolation during the reveal only.
-      // Shaped only: a hold never owns a pixel past its own (scaled) reach. It
-      // could not light it, and owning it would cut a neighbour's halo, such as a
-      // ghost beside a lit hold of the same colour, along this hold's crop box.
-      if(shaped && max(sqrt(dist2)-0.5,0.0)>=hold.numbers.x*shape.z) continue;
-      float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+hold.numbers.x*(1-glowWeight)/max(glowWeight,0.0001) : dist2;
+      float bias=hold.numbers.x*(1-glowWeight)/max(glowWeight,0.0001);
+      float score=transitioning ? max(sqrt(dist2)-0.5,0.0)+bias : dist2;
       if(transitioning && nearest>=0 && hold.identity.x==source_hold(uint(nearest),lowerCount,lower,upper).identity.x) continue;
+      // Shaped only: a hold past its own (scaled) reach lights nothing itself.
+      // It is set aside and decided after the loop, by plain distance: a
+      // neighbour's faint-field bias must never hand it a pixel, or it would cut
+      // that neighbour's halo (a ghost beside a lit hold) along its crop box.
+      if(shaped && max(sqrt(dist2)-0.5,0.0)>=hold.numbers.x*shape.z) {
+        if(dist2<outside) {
+          outsideNext=outside;outsiderNext=outsider;
+          outside=dist2;outsideBias=bias;outsider=int(index);
+        } else if(dist2<outsideNext) {
+          outsideNext=dist2;outsiderNext=int(index);
+        }
+        continue;
+      }
       if(score<bestScore) {
         second=best;secondScore=bestScore;runner=nearest;
         best=dist2;bestScore=score;nearest=int(index);
       } else if(score<secondScore && (!transitioning || runner<0 ||
           hold.identity.x!=source_hold(uint(runner),lowerCount,lower,upper).identity.x)) {
         second=dist2;secondScore=score;runner=int(index);
+      }
+    }
+    // Shaped only: the held-back hold, as the still compositor would rank it, so
+    // a look frame at W = (1, 0) or (0, 1) draws the still frame exactly. It takes
+    // the pixel where it is nearer than the owner's light, as at rest (where it
+    // can light only through a same-colour merge), or else it may be the runner.
+    // Its own bias fades both as its glow does, so neither ends in a pop, and it
+    // takes no pixel past the owner's unscaled reach, which its crop box covers.
+    bool scored=transitioning;
+    bool outsideRunner=false;
+    if(outsider>=0) {
+      float outsideScore=max(sqrt(outside)-0.5,0.0)+outsideBias;
+      if(nearest<0 || (sqrt(outside)+outsideBias<sqrt(best) &&
+          max(sqrt(outside)-0.5,0.0)<source_hold(uint(nearest),lowerCount,lower,upper).numbers.x)) {
+        bool nextFirst=outsiderNext>=0 && (nearest<0 || outsideNext<best);
+        second=nextFirst ? outsideNext : best;
+        runner=nextFirst ? outsiderNext : nearest;
+        best=outside;nearest=outsider;scored=false;
+      } else if(runner<0 || outsideScore<secondScore) {
+        second=outside;secondScore=outsideScore;runner=outsider;outsideRunner=true;
       }
     }
     int coverLocal=crop_index(point,uniforms.coverCrop);
@@ -184,7 +221,10 @@ enum ClimbOverlayShader {
       float3 color=hold.color.rgb;
       if(runner>=0) {
         Hold other=source_hold(uint(runner),lowerCount,lower,upper);
-        float otherDistance=transitioning ? distance+max(secondScore-bestScore,0.0) : max(sqrt(second)-0.5,0.0);
+        // A held-back runner sits at its plain distance plus its own bias, never
+        // pulled closer by the owner's.
+        float otherDistance=outsideRunner ? secondScore
+          : (scored ? distance+max(secondScore-bestScore,0.0) : max(sqrt(second)-0.5,0.0));
         if(all(other.color.rgb==color)) {
           float softness=uniforms.tuning.x*reach;
           if(softness>0) {
@@ -193,7 +233,7 @@ enum ClimbOverlayShader {
           }
         } else {
           float band=uniforms.tuning.y*reach;
-          float gap=transitioning ? secondScore-bestScore : otherDistance-distance;
+          float gap=scored && !outsideRunner ? secondScore-bestScore : otherDistance-distance;
           if(band>0 && gap<band) {
             float closeness=clamp(1-gap/band,0.0,1.0);
             float amount=uniforms.tuning.z*pow(closeness,uniforms.tuning.w);

@@ -31,6 +31,7 @@ public class ClimbOverlayGPUModule: Module {
       Prop("revealMode") { (view: ClimbOverlayGPUView, mode: String?) in view.setRevealMode(mode) }
       Prop("swapFrame") { (view: ClimbOverlayGPUView, frame: [Double]) in view.setSwapFrame(frame) }
       Prop("swapLook") { (view: ClimbOverlayGPUView, look: [Double]?) in view.setSwapLook(look) }
+      Prop("swapLookStateEvents") { (view: ClimbOverlayGPUView, events: Bool?) in view.swapLookStateEvents = events ?? false }
       Prop("animateEdits") { (view: ClimbOverlayGPUView, animate: Bool) in view.animateEdits = animate }
       Prop("reduceMotion") { (view: ClimbOverlayGPUView, reduce: Bool) in view.reduceMotion = reduce }
       Prop("displayMirrored") { (view: ClimbOverlayGPUView, mirrored: Bool) in view.displayMirrored = mirrored }
