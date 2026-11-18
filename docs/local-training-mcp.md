@@ -14,7 +14,8 @@ The two proof flows are:
 2. Interpret a screenshot in the host LLM, clarify uncertain details, prepare a
    structured workout, and create it through the same partner API.
 
-OAuth uses a single operator-registered public/native client and loopback PKCE.
+OAuth uses the built-in Boardsesh public/native client ID and loopback PKCE.
+Run `boardsesh-mcp login`; users need no client secret or app registration.
 Each installation holds its own token family; clients sharing a local data
 directory share that profile. API keys, hosted MCP, live board control, and
 ChatGPT tunnelling are outside this implementation.
@@ -34,5 +35,8 @@ disabling its tool access; users can explicitly remove the profile directory.
 The `Local MCP` workflow runs the protocol/security tests and exercises the
 standalone package with native SQLite on Linux, macOS and Windows. A real partner
 consent and phone workout round trip remains a release gate. The default client
-ID must come from ordinary registration and be embedded during packaging; source
-builds accept a developer-provided client ID and never invent one.
+ID comes from the normal developer console and is included in source and release
+builds. Global Boardsesh admins can use Boardsesh branding and URLs for their
+registrations; ordinary developers retain the reserved-brand restrictions.
+Developers can override the client ID explicitly, or use the ID saved in their
+profile. Packaging also supports an operator-supplied public client ID.

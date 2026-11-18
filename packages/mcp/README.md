@@ -4,19 +4,19 @@ Search your Boardsesh logbook in Claude Desktop or Codex, turn a workout screens
 
 ## Connect
 
-This source build is a proof of concept. Before distributing it, the operator must register one **public/native** OAuth application and include its public client ID in the release. Climbers never need a client secret or their own app registration. Until that registration exists, a developer can supply `--client-id`.
+This proof of concept includes the Boardsesh MCP **public/native** OAuth client ID. Climbers sign in with their Boardsesh account; they never need a client secret or their own app registration.
 
 Requires Node 22.18 or newer. Build with `vp run package:mcp`; the installable archive is `packages/mcp/artifacts/boardsesh-mcp-0.1.0.tgz`. Install the archive using your package manager, then:
 
 ```sh
-boardsesh-mcp login --client-id YOUR_PUBLIC_CLIENT_ID
+boardsesh-mcp login
 boardsesh-mcp sync
 boardsesh-mcp status
 ```
 
 Login opens your system browser. `--no-browser` prints a URL instead. The callback listens only on `127.0.0.1` for five minutes. Your password is never entered in the terminal or chat. Sign-in asks for logbook reading, workout reading/writing and continued access through refresh tokens.
 
-For a release with an embedded ID, use `boardsesh-mcp login` without `--client-id`. An existing profile remembers its ID. `BOARDSESH_MCP_CLIENT_ID` is also supported for developer overrides.
+An existing profile remembers its client ID. Developers can use `--client-id` or `BOARDSESH_MCP_CLIENT_ID` to select another public/native registration; explicit overrides take precedence over the saved profile and built-in default.
 
 ## Claude Desktop and Codex
 
@@ -69,8 +69,8 @@ Drafts expire after 24 hours and belong to the current account/login generation.
 
 ## Operator registration and release
 
-Register through the normal developer console with a permitted neutral name such as **Climb Training Connector**, your publisher name, and HTTPS homepage/privacy documentation. Register it as **public/native**, with `http://127.0.0.1/oauth/boardsesh` as the redirect (runtime ports vary). The current console rejects Boardsesh-branded app names and `boardsesh.com` URLs; do not seed a privileged client to bypass this.
+The built-in client is registered through the normal developer console as **public/native**, with `http://127.0.0.1/oauth/boardsesh` as the redirect (runtime ports vary). A Boardsesh global admin can create or edit their registration using **Boardsesh MCP**, the **Boardsesh** publisher, and Boardsesh homepage/privacy URLs. Other developers must use their own branding and URLs. Admin registrations retain the normal ownership, terms, scope, consent, PKCE and connection-limit requirements.
 
-The public client ID is safe to distribute. Set `BOARDSESH_MCP_PUBLIC_CLIENT_ID` when running `vp run package:mcp` to embed it in the artifact. Never set a client secret. Publication and production partner activation are separate from creating a local build. Follow the partner platform rollout gates and connection limits before inviting climbers.
+The public client ID is safe to distribute. The standard build includes it; set `BOARDSESH_MCP_PUBLIC_CLIENT_ID` when running `vp run package:mcp` to package a different registration. Never set a client secret. Publication and production partner activation are separate from creating a local build. Follow the partner platform rollout gates and connection limits before inviting climbers.
 
 Validate with `vp run typecheck:mcp`, `vp test run --project mcp --reporter=agent`, `vp run package:mcp`, and `vp exec node packages/mcp/scripts/smoke.mjs`. Loopback-login tests require permission to listen locally. The desktop CI matrix checks the installed archive on Linux, macOS and Windows. Live consent and phone workout handoff still require an enabled partner environment and a test account.

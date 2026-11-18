@@ -18,6 +18,11 @@ const NAME_MIN_LENGTH = 3;
 const NAME_MAX_LENGTH = 50;
 const URL_MAX_LENGTH = 2048;
 
+/** Server-derived registration policy, never read from submitted app fields. */
+export interface PartnerRegistrationPolicy {
+  allowBoardseshBranding?: boolean;
+}
+
 export const PARTNER_APP_APPLICATION_TYPES = ['web', 'native'] as const;
 export type PartnerAppApplicationType = (typeof PARTNER_APP_APPLICATION_TYPES)[number];
 
@@ -130,6 +135,8 @@ const PRIVATE_USE_SCHEME = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/;
 /**
  * Why a redirect URI cannot be registered for this kind of app, or null when it can.
  *
+ * Default developer policy; global admins may use Boardsesh hosts/schemes.
+ * URI safety and shape requirements apply to every developer.
  * Allowed, and matched as exact strings (only a loopback port may differ):
  * - `https://` on any host but `boardsesh.com` and its subdomains, and never a
  *   loopback host. Web and native apps.
@@ -143,7 +150,11 @@ const PRIVATE_USE_SCHEME = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/;
  * `#`), no wildcard `*`, no user name or password, no whitespace or control
  * characters, at most 2048 characters.
  */
-export function partnerRedirectUriProblem(uri: string, applicationType: PartnerAppApplicationType): string | null {
+export function partnerRedirectUriProblem(
+  uri: string,
+  applicationType: PartnerAppApplicationType,
+  policy: PartnerRegistrationPolicy = {},
+): string | null {
   if (uri.length === 0 || uri.length > URL_MAX_LENGTH)
     return `A redirect URI must be 1 to ${URL_MAX_LENGTH} characters.`;
   if (/\s/.test(uri) || CONTROL_OR_FORMAT_CHARACTER.test(uri))
@@ -156,7 +167,8 @@ export function partnerRedirectUriProblem(uri: string, applicationType: PartnerA
   if (parsed.username || parsed.password) return 'A redirect URI cannot carry a user name or password.';
 
   if (parsed.protocol === 'https:') {
-    if (isBoardseshHost(parsed.hostname)) return 'A redirect URI cannot point at boardsesh.com.';
+    if (!policy.allowBoardseshBranding && isBoardseshHost(parsed.hostname))
+      return 'A redirect URI cannot point at boardsesh.com.';
     if (isLoopbackHost(parsed.hostname)) return 'A loopback redirect URI must use http://127.0.0.1 or http://[::1].';
     return null;
   }
@@ -172,7 +184,8 @@ export function partnerRedirectUriProblem(uri: string, applicationType: PartnerA
   const scheme = parsed.protocol.slice(0, -1);
   if (!PRIVATE_USE_SCHEME.test(scheme))
     return 'A custom scheme must be a reverse domain name with a dot, such as com.example.app.';
-  if (scheme.includes('boardsesh')) return 'A redirect URI cannot use a Boardsesh scheme.';
+  if (!policy.allowBoardseshBranding && scheme.includes('boardsesh'))
+    return 'A redirect URI cannot use a Boardsesh scheme.';
   const afterScheme = uri.slice(parsed.protocol.length);
   const authorityFree = afterScheme.startsWith('/') && !afterScheme.startsWith('//');
   const withHostAndPath = parsed.host.length > 0 && parsed.pathname.startsWith('/');
@@ -184,6 +197,7 @@ export function partnerRedirectUriProblem(uri: string, applicationType: PartnerA
 export function validatePartnerRedirectUris(
   redirectUris: unknown,
   applicationType: PartnerAppApplicationType,
+  policy: PartnerRegistrationPolicy = {},
 ): string[] {
   if (!Array.isArray(redirectUris) || !redirectUris.every((uri): uri is string => typeof uri === 'string')) {
     invalid('Redirect URIs must be a list of strings.');
@@ -194,7 +208,7 @@ export function validatePartnerRedirectUris(
   }
   if (new Set(redirectUris).size !== redirectUris.length) invalid('A redirect URI is listed twice.');
   for (const uri of redirectUris) {
-    const problem = partnerRedirectUriProblem(uri, applicationType);
+    const problem = partnerRedirectUriProblem(uri, applicationType, policy);
     if (problem) invalid(problem);
   }
   return [...redirectUris];
@@ -286,7 +300,12 @@ const DENIED_NAME_SKELETONS = PARTNER_APP_NAME_DENYLIST.map((term) => ({ term, s
  * denylist as "lter"; refusing the mix closes that whole class. A name written
  * entirely in one of those scripts is fine.
  */
-function validateConsentScreenName(rawName: unknown, field: string, missing: string): string {
+function validateConsentScreenName(
+  rawName: unknown,
+  field: string,
+  missing: string,
+  policy: PartnerRegistrationPolicy,
+): string {
   if (typeof rawName !== 'string') invalid(missing);
   if (CONTROL_OR_FORMAT_CHARACTER.test(rawName)) invalid(`The ${field} cannot contain control characters.`);
   const name = rawName.normalize('NFKC').trim().replace(/\s+/g, ' ');
@@ -295,7 +314,9 @@ function validateConsentScreenName(rawName: unknown, field: string, missing: str
   }
   if (!/[\p{L}\p{N}]/u.test(name)) invalid(`The ${field} needs at least one letter or number.`);
   const skeleton = nameSkeleton(name);
-  const denied = DENIED_NAME_SKELETONS.find((entry) => skeleton.includes(entry.skeleton));
+  const denied = DENIED_NAME_SKELETONS.find(
+    (entry) => !(policy.allowBoardseshBranding && entry.term === 'Boardsesh') && skeleton.includes(entry.skeleton),
+  );
   if (denied) invalid(`The ${field} cannot use or imitate "${denied.term}".`);
   if (LATIN_LETTER.test(name) && LATIN_LOOKALIKE_SCRIPT.test(name)) {
     invalid(`The ${field} cannot mix Latin letters with Greek, Cyrillic, Armenian or Cherokee ones.`);
@@ -303,20 +324,20 @@ function validateConsentScreenName(rawName: unknown, field: string, missing: str
   return name;
 }
 
-export function validatePartnerAppName(rawName: unknown): string {
-  return validateConsentScreenName(rawName, 'app name', 'Give the app a name.');
+export function validatePartnerAppName(rawName: unknown, policy: PartnerRegistrationPolicy = {}): string {
+  return validateConsentScreenName(rawName, 'app name', 'Give the app a name.', policy);
 }
 
 /**
  * The person or company that makes the app, shown as "Made by". Public, so it
- * follows the app-name rules: a publisher cannot pass as Boardsesh or a board maker.
+ * follows the app-name rules, including the server-authorized Boardsesh exception.
  */
-export function validatePartnerPublisherName(rawName: unknown): string {
-  return validateConsentScreenName(rawName, 'publisher name', 'Say who makes the app: a person or a company.');
+export function validatePartnerPublisherName(rawName: unknown, policy: PartnerRegistrationPolicy = {}): string {
+  return validateConsentScreenName(rawName, 'publisher name', 'Say who makes the app: a person or a company.', policy);
 }
 
-/** A link shown on the consent screen: https, no credentials, not on boardsesh.com. Returned as the parser writes it. */
-export function validatePartnerAppLink(rawUrl: unknown, label: string): string {
+/** A consent-screen HTTPS link without credentials. Boardsesh hosts require the server-authorized exception. */
+export function validatePartnerAppLink(rawUrl: unknown, label: string, policy: PartnerRegistrationPolicy = {}): string {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0 || rawUrl.length > URL_MAX_LENGTH) {
     invalid(`The ${label} must be a URL of 1 to ${URL_MAX_LENGTH} characters.`);
   }
@@ -326,7 +347,8 @@ export function validatePartnerAppLink(rawUrl: unknown, label: string): string {
   const parsed = new URL(rawUrl);
   if (parsed.protocol !== 'https:') invalid(`The ${label} must start with https://.`);
   if (parsed.username || parsed.password) invalid(`The ${label} cannot carry a user name or password.`);
-  if (isBoardseshHost(parsed.hostname)) invalid(`The ${label} cannot point at boardsesh.com.`);
+  if (!policy.allowBoardseshBranding && isBoardseshHost(parsed.hostname))
+    invalid(`The ${label} cannot point at boardsesh.com.`);
   return parsed.href;
 }
 
@@ -363,7 +385,11 @@ function validateAcceptedTermsVersion(raw: unknown, termsVersion: string): strin
  * `termsVersion` is the deployment's current developer terms. While they are a
  * draft, every registration is refused before anything else is checked.
  */
-export function normalizePartnerAppInput(raw: Record<string, unknown>, termsVersion: string): PartnerAppInput {
+export function normalizePartnerAppInput(
+  raw: Record<string, unknown>,
+  termsVersion: string,
+  policy: PartnerRegistrationPolicy = {},
+): PartnerAppInput {
   if (isDraftDeveloperTermsVersion(termsVersion)) {
     throw new PartnerRegistrationError(
       'terms_unpublished',
@@ -372,16 +398,16 @@ export function normalizePartnerAppInput(raw: Record<string, unknown>, termsVers
   }
   const applicationType = validateApplicationType(raw.applicationType);
   return {
-    name: validatePartnerAppName(raw.name),
-    publisherName: validatePartnerPublisherName(raw.publisherName),
+    name: validatePartnerAppName(raw.name, policy),
+    publisherName: validatePartnerPublisherName(raw.publisherName, policy),
     homepageUrl:
       raw.homepageUrl === undefined || raw.homepageUrl === null || raw.homepageUrl === ''
         ? null
-        : validatePartnerAppLink(raw.homepageUrl, 'homepage URL'),
-    privacyPolicyUrl: validatePartnerAppLink(raw.privacyPolicyUrl, 'privacy policy URL'),
+        : validatePartnerAppLink(raw.homepageUrl, 'homepage URL', policy),
+    privacyPolicyUrl: validatePartnerAppLink(raw.privacyPolicyUrl, 'privacy policy URL', policy),
     applicationType,
     tokenEndpointAuthMethod: validateAuthMethod(raw.tokenEndpointAuthMethod),
-    redirectUris: validatePartnerRedirectUris(raw.redirectUris, applicationType),
+    redirectUris: validatePartnerRedirectUris(raw.redirectUris, applicationType, policy),
     acceptedTermsVersion: validateAcceptedTermsVersion(raw.acceptedTermsVersion, termsVersion),
   };
 }
@@ -390,24 +416,25 @@ export function normalizePartnerAppInput(raw: Record<string, unknown>, termsVers
 export function normalizePartnerAppPatch(
   raw: Record<string, unknown>,
   applicationType: PartnerAppApplicationType,
+  policy: PartnerRegistrationPolicy = {},
 ): PartnerAppPatch {
   const patch: PartnerAppPatch = {};
-  if (raw.name !== undefined && raw.name !== null) patch.name = validatePartnerAppName(raw.name);
+  if (raw.name !== undefined && raw.name !== null) patch.name = validatePartnerAppName(raw.name, policy);
   // Required at registration, so an edit can change it but never clear it.
   if (raw.publisherName !== undefined && raw.publisherName !== null) {
-    patch.publisherName = validatePartnerPublisherName(raw.publisherName);
+    patch.publisherName = validatePartnerPublisherName(raw.publisherName, policy);
   }
   if (raw.homepageUrl !== undefined) {
     patch.homepageUrl =
       raw.homepageUrl === null || raw.homepageUrl === ''
         ? null
-        : validatePartnerAppLink(raw.homepageUrl, 'homepage URL');
+        : validatePartnerAppLink(raw.homepageUrl, 'homepage URL', policy);
   }
   if (raw.privacyPolicyUrl !== undefined && raw.privacyPolicyUrl !== null) {
-    patch.privacyPolicyUrl = validatePartnerAppLink(raw.privacyPolicyUrl, 'privacy policy URL');
+    patch.privacyPolicyUrl = validatePartnerAppLink(raw.privacyPolicyUrl, 'privacy policy URL', policy);
   }
   if (raw.redirectUris !== undefined && raw.redirectUris !== null) {
-    patch.redirectUris = validatePartnerRedirectUris(raw.redirectUris, applicationType);
+    patch.redirectUris = validatePartnerRedirectUris(raw.redirectUris, applicationType, policy);
   }
   if (Object.keys(patch).length === 0) invalid('Change at least one field.');
   return patch;

@@ -10,10 +10,11 @@ import { Runtime } from './runtime';
 import { login, logout } from './auth';
 import { withProfileLock } from './profile-lock';
 import { LocalStore } from './storage';
-import { McpError } from './types';
+import { McpError, PUBLIC_CLIENT_ID } from './types';
 
 declare const __BOARDSESH_MCP_CLIENT_ID__: string;
-const releaseClientId = typeof __BOARDSESH_MCP_CLIENT_ID__ === 'string' ? __BOARDSESH_MCP_CLIENT_ID__ : '';
+const releaseClientId =
+  (typeof __BOARDSESH_MCP_CLIENT_ID__ === 'string' && __BOARDSESH_MCP_CLIENT_ID__) || PUBLIC_CLIENT_ID;
 const help = `boardsesh-mcp [serve|login|sync|status|logout] [options]
 
   serve                  Serve MCP over stdio (default); no interactive login
@@ -130,13 +131,11 @@ export async function main(argumentsList = process.argv.slice(2)): Promise<void>
       try {
         if (command === 'logout') return await logout({ dataDir, store, guard });
         const clientId =
-          values['client-id'] ??
-          process.env.BOARDSESH_MCP_CLIENT_ID ??
-          (releaseClientId || store.getProfile()?.clientId);
+          values['client-id'] ?? process.env.BOARDSESH_MCP_CLIENT_ID ?? store.getProfile()?.clientId ?? releaseClientId;
         if (!clientId)
           throw new McpError(
             'client_not_configured',
-            'This development build has no registered public client ID. Use login --client-id ID. Release builds must include the operator-registered public ID; no client secret is needed.',
+            'The public client ID cannot be empty. Omit --client-id to use the registered MCP app; no client secret is needed.',
           );
         const profile = await login({
           dataDir,

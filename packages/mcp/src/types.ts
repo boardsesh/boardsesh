@@ -1,4 +1,6 @@
 export const API_ORIGIN = 'https://api.boardsesh.com';
+/** Public/native app identity, shared by installations; never a client secret. */
+export const PUBLIC_CLIENT_ID = 'IsrNoYVHWCQaBEREJawWEDMrNTXMdzQq';
 export const ISSUER = `${API_ORIGIN}/api/auth`;
 export const RESOURCE = `${API_ORIGIN}/v1`;
 export const SCOPES = ['logbook:read', 'workouts:read', 'workouts:write', 'offline_access'];
