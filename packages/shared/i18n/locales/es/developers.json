@@ -224,7 +224,7 @@
       },
       "open": {
         "title": "Registra tu app",
-        "body": "Inicia sesión como desarrollador habilitado, acepta los términos de desarrollador y crea una app en la consola. Recibes un client ID al instante, y un client secret si tu servidor intercambia el código. Si tu cuenta aún no está habilitada, la consola te lo dice.",
+        "body": "Inicia sesión, verifica tu correo de desarrollador y acepta los términos para crear una aplicación en la consola. Recibirás un client ID y, si el intercambio ocurre en tu servidor, un client secret. No necesitas una invitación.",
         "action": "Abre la consola de desarrolladores"
       }
     },
@@ -322,5 +322,146 @@
         "support": "Pregunta al equipo de Boardsesh"
       }
     }
+  },
+  "emailVerification": {
+    "title": "Verifica tu correo de desarrollador",
+    "lead": "Confirma tu correo antes de registrar una aplicación.",
+    "description": "Envía un enlace de confirmación a {{email}}. Cada correo nuevo sustituye el enlace anterior.",
+    "send": "Enviar correo de confirmación",
+    "sending": "Enviando…",
+    "sent": "Revisa tu bandeja de entrada. El enlace caduca en 30 minutos.",
+    "failed": "No se pudo enviar el correo. Espera un minuto y vuelve a intentarlo.",
+    "confirmDescription": "Confirma solo si solicitaste este correo para la cuenta con la que has iniciado sesión.",
+    "signInHelp": "Inicia sesión en otra pestaña y vuelve aquí. Usa la cuenta que solicitó este correo.",
+    "signIn": "Iniciar sesión",
+    "confirm": "Confirmar correo de desarrollador",
+    "confirming": "Confirmando…",
+    "verified": "Tu correo de desarrollador está verificado. Ya puedes registrar una aplicación.",
+    "invalid": "Este enlace ha caducado, se ha sustituido o pertenece a otra cuenta. Solicita otro correo en la consola de desarrollador.",
+    "back": "Abrir aplicaciones de desarrollador"
+  },
+  "guides": {
+    "labels": {
+      "home": "Resumen para desarrolladores",
+      "related": "Sigue leyendo",
+      "markdown": "Leer en Markdown",
+      "openapi": "Descargar OpenAPI 3.1",
+      "example": "Descargar el ejemplo de sincronización",
+      "loading": "Cargando referencia de la API…",
+      "invitation": "El registro es por invitación. Escribe a support@boardsesh.com para solicitar acceso."
+    },
+    "auth": {
+      "title": "Conecta a un escalador con OAuth",
+      "description": "Registra una aplicación, autoriza con PKCE y guarda las credenciales rotadas de forma segura.",
+      "registration": {
+        "title": "Registra tu aplicación",
+        "body": "Inicia sesión en /developers/apps y verifica tu correo de desarrollador. Usa una aplicación pública nativa para herramientas de terminal, móviles o escritorio; pública web para el navegador; confidencial cuando tu servidor intercambia el código. Guarda el secreto solo en ese servidor.\n\nRegistra la URI de retorno exacta. Las aplicaciones nativas admiten http://127.0.0.1:8765/oauth/boardsesh y http://[::1]:8765/oauth/boardsesh; el puerto de bucle local no se compara. Se permiten https y esquemas privados con un punto. Se rechazan localhost, comodines, fragmentos y los dominios y esquemas de Boardsesh. Máximo: 10 aplicaciones por cuenta y 10 retornos por aplicación. Límites iniciales: 25 escaladores conectados y 20 conexiones nuevas en 24 horas. Para ampliarlos, escribe a support@boardsesh.com."
+      },
+      "authorize": {
+        "title": "Autoriza en el navegador del sistema",
+        "body": "Descubre los endpoints en https://api.boardsesh.com/.well-known/oauth-authorization-server/api/auth. El emisor es https://api.boardsesh.com/api/auth y el recurso es exactamente https://api.boardsesh.com/v1. Incluye resource al autorizar, intercambiar y renovar.\n\nGenera un verificador PKCE aleatorio, su desafío S256 y al menos 128 bits aleatorios para state. Solicita logbook:read y offline_access; añade profile:read solo para el nombre y avatar. Abre la autorización en el navegador del sistema. Comprueba state e iss antes del intercambio. Los códigos duran 60 segundos y se usan una vez. Si no conoces el resultado del intercambio, reinicia la autorización."
+      },
+      "credentials": {
+        "title": "Guarda cada token rotado antes de usarlo",
+        "body": "Los tokens de acceso duran una hora; los de renovación, 90 días. Cada renovación sustituye el token anterior. Serializa las renovaciones por escalador y guarda el nuevo par de forma duradera antes de usarlo. Reutilizar un token consumido invalida su familia. Si falla la red y no conoces el resultado de la renovación, vuelve a conectar; no repitas ese token.\n\nAnte un 401, renueva una vez y repite la petición. invalid_grant requiere volver a conectar y dejar de usar esa credencial. Conserva el método registrado: none, client_secret_post o client_secret_basic. CORS admite los orígenes https de retorno registrados. No guardes credenciales en las preferencias del navegador."
+      },
+      "disconnect": {
+        "title": "Desconecta la conexión completa",
+        "body": "DELETE /v1/connection no necesita otro alcance. Un 204 confirma la desconexión: elimina las credenciales y la copia del escalador, salvo que te haya pedido conservarla. Un 401 no confirma un DELETE anterior. Renueva una vez y repite; si las credenciales ya no sirven, pide que compruebe Aplicaciones conectadas en Boardsesh. Revocar un token OAuth no desconecta todas las familias. Cambiar la contraseña o eliminar la cuenta también desconecta aplicaciones."
+      }
+    },
+    "sync": {
+      "title": "Mantén sincronizado el diario completo",
+      "description": "Descarga una instantánea completa, guarda cambios y cursores juntos y recupera la sincronización tras una caducidad.",
+      "snapshot": {
+        "title": "Prepara primero una copia de reemplazo",
+        "body": "GET /v1/logbook/changes sin cursor inicia una instantánea completa, incluidas las salidas antiguas sin cambios y anteriores a esta API. Sigue todos los cursores hasta hasMore: false. La última página de instantánea entra en la actualización incremental con hasMore: true. Una página vacía también puede tener hasMore: true. limit va de 1 a 200; por defecto, 100.\n\nPrepara una copia aparte y publícala junto con su cursor final en una transacción duradera. Conserva la copia anterior hasta entonces. Tras un cierre durante la descarga inicial, descarta el reemplazo incompleto y empieza sin cursor. Nunca apliques páginas de instantánea como cambios incrementales a la copia anterior."
+      },
+      "changes": {
+        "title": "Guarda cada página junto con su cursor",
+        "body": "Con logbook:read, inserta o actualiza las entradas tick por tick.id y elimina tick.deleted por id, aunque no hayas visto esa salida. Aplica las entradas en orden e ignora tipos de cambio desconocidos. Guarda las mutaciones de la página y su cursor de forma atómica; serializa la sincronización de cada escalador.\n\nCada salida contiene sus intentos, grado, estrellas y comentario. El grado del catálogo puede cambiar sin modificar la salida. Una página incremental vacía no indica eliminación. GET /v1/me devuelve un ID estable para tu aplicación, distinto en otras aplicaciones. Separa las copias por aplicación y cuenta."
+      },
+      "recovery": {
+        "title": "Recupérate de un 410 conservando la copia anterior",
+        "body": "Un 410 cursor_expired exige un reemplazo completo, no solo reiniciar el cursor de la copia antigua. Guarda primero un indicador duradero de sincronización completa pendiente. Los cursores de instantánea caducan en una hora y pertenecen a una conexión. La retención incremental depende del límite de poda; no descartes cursores solo por su antigüedad.\n\nEl ejemplo guarda credenciales, salidas, cursor e indicador en un archivo JSON privado. Bloquea el archivo durante cada comando, sustituye mediante renombrado atómico, serializa renovaciones y reintenta fallos de red, 429 y 5xx con esperas crecientes. Tras un cierre, comprueba que el comando terminó antes de eliminar su archivo .lock."
+      },
+      "poll": {
+        "title": "Sincroniza cuando haga falta",
+        "body": "Sincroniza cuando el escalador abra tu aplicación; en segundo plano, como máximo cada 15 minutos por escalador. Respeta Retry-After en respuestas 429 y 503 temporales. Los webhooks opcionales logbook.changed indican que debes ejecutar esta misma sincronización; no sustituyen el feed.\n\nMantén privadas las salidas privadas. En el Spraywall no público de otra persona se ocultan el nombre del bloque y la identidad del Spraywall. No construyas un catálogo ni publiques borradores o bloques no listados de otros equipadores a partir del diario."
+      }
+    },
+    "errors": {
+      "title": "Gestiona errores y límites de la API",
+      "description": "Distingue cuándo renovar, reconstruir el diario, esperar o volver a conectar.",
+      "status": {
+        "title": "Comprueba primero el estado HTTP",
+        "body": "400 indica una petición o cursor incorrectos. Ante 401 invalid_token, renueva una vez; invalid_grant al renovar exige volver a conectar. 403 insufficient_scope requiere autorizar ese alcance. 404 oculta recursos de otras aplicaciones o escaladores. 409 indica conflicto, como externalRef repetido o cancelar un entrenamiento iniciado. 410 cursor_expired exige sincronización completa. 413 indica más de 64 KB; 422, validación o discrepancia de idempotencia.\n\nReintenta 429 y 5xx respetando Retry-After y con esperas exponenciales limitadas. Un fallo de red no demuestra revocación. Tolera nuevos códigos y campos en v1. Los errores llevan error, message y requestId; la validación puede añadir field. OAuth usa error y error_description."
+      },
+      "limits": {
+        "title": "Lee las cabeceras de respuesta",
+        "body": "La API permite 120 peticiones por minuto y aplicación/escalador, y 6.000 por aplicación. Renovación: 10 por minuto y conexión. Intercambio y revocación: 60 por minuto y aplicación/IP. Cada aplicación nueva admite 25 escaladores activos y 20 conexiones nuevas cada 24 horas. Un administrador puede ajustar esos límites.\n\nRateLimit-Limit, RateLimit-Remaining y RateLimit-Reset describen el límite más estricto. Retry-After indica segundos de espera. Boardsesh-Request-Id identifica la petición para soporte. Nunca envíes tokens, códigos ni secretos a soporte."
+      },
+      "versions": {
+        "title": "Acepta cambios aditivos",
+        "body": "v1 puede añadir campos, rutas, alcances, eventos y valores de enumeraciones. Ignora lo desconocido. Eliminar o renombrar campos requiere v2; v1 continúa al menos seis meses con una cabecera Sunset. Cada cambio del contrato aparece en el historial.\n\nGenera clientes o simula la API con OpenAPI 3.1. La simulación muestra formatos, no seguridad OAuth ni cursores reales. Prueba la autorización y sincronización con tu propia cuenta antes de publicar."
+      }
+    },
+    "reference": {
+      "title": "Referencia de la API para aplicaciones",
+      "description": "Explora la API REST con alcances y descarga su contrato OpenAPI 3.1.",
+      "contract": {
+        "title": "Usa el contrato publicado",
+        "body": "El host es https://api.boardsesh.com. /v1 usa un token Bearer opaco para el recurso https://api.boardsesh.com/v1. Los endpoints OAuth y sus metadatos son independientes del contrato REST. Esta referencia usa el mismo documento OpenAPI versionado que el backend.\n\nGenera un cliente o ejecuta la simulación Prism. Los ejemplos son ilustrativos. La simulación no autoriza aplicaciones, renueva tokens, mantiene instantáneas ni comprueba propietarios. Prueba esos flujos con tu cuenta."
+      }
+    },
+    "changelog": {
+      "title": "Historial de la API de Boardsesh",
+      "description": "Consulta los cambios del contrato, del más reciente al más antiguo.",
+      "contract": {
+        "title": "Cambios del contrato",
+        "body": "Las entradas proceden del mismo historial versionado que CI compara con el documento OpenAPI generado. Campos y rutas nuevos continúan en v1; eliminaciones y cambios de nombre requieren una versión principal nueva. Consulta esta página al actualizar tu cliente."
+      }
+    }
+  },
+  "webhooks": {
+    "open": "Webhooks",
+    "title": "Webhooks de {{app}}",
+    "description": "Recibe un aviso cuando cambie un diario, termine un entrenamiento o finalice una conexión. Los avisos no contienen datos de escalada.",
+    "loading": "Cargando ajustes de webhooks…",
+    "failed": "No se pudieron guardar o cargar los ajustes. Vuelve a intentarlo.",
+    "retry": "Reintentar",
+    "url": "URL HTTPS del endpoint",
+    "urlHelp": "HTTPS público por el puerto 443. Se rechazan direcciones privadas y redirecciones.",
+    "events": "Eventos de notificación",
+    "enabled": "Activar entregas",
+    "save": "Guardar webhook",
+    "saving": "Guardando…",
+    "saved": "Webhook guardado.",
+    "testQueued": "Entrega de prueba en cola. Actualiza la lista para ver el resultado.",
+    "secretOnce": "Copia este secreto ahora. No se volverá a mostrar.",
+    "secret": "Secreto de firma del webhook",
+    "rotationHelp": "Tras rotar, las peticiones llevan firmas de ambos secretos durante 24 horas. Actualiza tu receptor antes de que caduque el antiguo.",
+    "rotate": "Rotar secreto de firma",
+    "test": "Enviar prueba",
+    "disable": "Desactivar entregas",
+    "enable": "Reactivar entregas",
+    "deliveries": "Entregas recientes",
+    "refresh": "Actualizar entregas",
+    "noDeliveries": "Aún no hay entregas.",
+    "delivery": "{{event}} · {{status}} · {{attempts}} intentos · HTTP {{code}}",
+    "noResponse": "sin respuesta",
+    "close": "Cerrar",
+    "endpointGone": "El endpoint respondió HTTP 410. Corrígelo y reactiva las entregas.",
+    "failuresDisabled": "Las entregas se desactivaron por fallos repetidos. Corrige el endpoint y reactívalas.",
+    "reauthBody": "Cambiar los ajustes o rotar el secreto requiere haber iniciado sesión en los últimos {{minutes}} minutos. Vuelve a iniciar sesión para proteger el destino de los avisos.",
+    "reauthForm": "Volver a iniciar sesión abandona esta página y descarta los cambios sin guardar. Copia la URL del endpoint antes de continuar.",
+    "deliveryStatus": {
+      "delivered": "Entregado",
+      "failed": "Fallido",
+      "cancelled": "Cancelado",
+      "retrying": "Reintentando",
+      "pending": "Pendiente"
+    },
+    "rotationAvailableAfter": "Puedes volver a rotar el secreto después de {{time}}."
   }
 }

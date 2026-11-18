@@ -1,4 +1,5 @@
 import { useEffect, useMemo, type ComponentType, type RefObject } from 'react';
+import { Platform } from 'react-native';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import {
   cancelAnimation,
@@ -27,6 +28,10 @@ import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
  * somewhere.
  */
 const DRAG_RESISTANCE = 0.3;
+
+// Give a swipe that starts with a little vertical drift four more points
+// to show its direction before the carousel yields to Android's native scroll.
+const ANDROID_VERTICAL_HANDOFF_THRESHOLD = 14;
 
 /**
  * How much faster than the finger the board may move to close a gap that opened
@@ -78,15 +83,30 @@ type UseCarouselGestureOptions = {
   isZoomedSV?: SharedValue<boolean>;
   /** Mounted pages whose backgrounds and holds have actually displayed. */
   pageArt?: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
-  /** RNGH ref to the surrounding scroll. Simultaneous recognition lets native
-   *  vertical scrolling start immediately while horizontal swipes still drive
-   *  the carousel. */
+  /** RNGH ref to the surrounding scroll. On Android it waits for the carousel
+   *  to decide the direction. Elsewhere both gestures can recognize together. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
+};
+
+/**
+ * UI-thread worklets that drive the swipe like a finger, for the board motion
+ * lab's scripted swipes: `down`, then `move` to each translation (board points,
+ * left is negative, toward the next climb), then `up` with the release velocity
+ * (points per second).
+ */
+export type CarouselVirtualFinger = {
+  down: () => void;
+  move: (translationX: number) => void;
+  up: (velocityX: number) => void;
 };
 
 type UseCarouselGestureReturn = {
   gesture: GestureType;
+  virtualFinger: CarouselVirtualFinger;
 };
+
+/** What the pan's handlers read of RNGH's event. */
+type PanTravel = { translationX: number; velocityX?: number };
 
 type PendingSwipeRelease = {
   direction: 1 | -1;
@@ -141,6 +161,8 @@ export function useCarouselGesture({
   pageArt,
   scrollRef,
 }: UseCarouselGestureOptions): UseCarouselGestureReturn {
+  const deferNativeScroll = Platform.OS === 'android' && scrollRef !== undefined;
+  const verticalThreshold = deferNativeScroll ? ANDROID_VERTICAL_HANDOFF_THRESHOLD : DIRECTION_THRESHOLD;
   const {
     translateX,
     isAnimating,
@@ -210,7 +232,7 @@ export function useCarouselGesture({
     hapticMedium();
   };
 
-  // Lock direction on first significant move. Once locked horizontal, the gesture
+  // Lock once movement shows the direction. Once locked horizontal, the gesture
   // stays committed even if the user drifts vertically. failOffsetY would
   // otherwise kill a horizontal swipe the moment Y drift crossed 10px, making
   // carousel swipes finicky. Vertical-locked gestures fail so the touch falls
@@ -234,8 +256,11 @@ export function useCarouselGesture({
   // Where the finger put the page at the last update, before any side held it
   // back: what the next update's finger movement is measured from.
   const dragRaw = useSharedValue(0);
+  // The virtual finger is down, and its translation at its last move.
+  const virtualTouch = useSharedValue(false);
+  const virtualTravel = useSharedValue(0);
 
-  const { gesture, startFling, waitForArt, dropPendingRelease } = useMemo(() => {
+  const { gesture, startFling, waitForArt, dropPendingRelease, virtualFinger } = useMemo(() => {
     /** Whether the page one step that way is mounted. The JS thread mounts one each side of ITS middle page. */
     const hasMountedPage = (direction: 1 | -1) => {
       'worklet';
@@ -427,6 +452,175 @@ export function useCarouselGesture({
       );
     };
 
+    /**
+     * The pan's three phases, called by the gesture below and by the virtual
+     * finger, so a scripted swipe runs exactly what a touch runs. Activation:
+     * the finger takes the board, from rest or from a running fling.
+     */
+    const panStart = (event: PanTravel) => {
+      'worklet';
+      dropPendingRelease(true);
+      touchCancelled.value = false;
+      hasTriggeredHaptic.value = false;
+      dragGeneration.value = resetGeneration.value;
+      if (isAnimating.value) {
+        takeOverFling(event.translationX);
+      } else {
+        dragBase.value = 0;
+        dragOrigin.value = 0;
+      }
+      dragRaw.value = dragBase.value;
+    };
+
+    /** The finger moved: the board follows it, or gives where it cannot go. */
+    const panUpdate = (event: PanTravel) => {
+      'worklet';
+      let shown = translateX.value;
+      if (dragGeneration.value !== resetGeneration.value) {
+        dragGeneration.value = resetGeneration.value;
+        dragBase.value = 0;
+        dragOrigin.value = event.translationX;
+        dragRaw.value = 0;
+        shown = 0;
+      }
+      // What the finger has done in THIS swipe, and where that puts the page.
+      // They differ for a swipe that took over a fling: it starts with the
+      // offset still on the far side of 0.
+      const travel = event.translationX - dragOrigin.value;
+      const raw = dragBase.value + travel;
+
+      // Toward a climb whose board is still painting, or past the list's last
+      // climb toward the end card, the board gives a little: the swipe is
+      // heard, and its release will go. Anywhere else with nowhere to go, it
+      // stays put. See `followFinger`.
+      const offset = followFinger(shown, raw, raw - dragRaw.value);
+      dragRaw.value = raw;
+      translateX.value = offset;
+
+      if (
+        Math.abs(travel) >= SWIPE_THRESHOLD &&
+        !hasTriggeredHaptic.value &&
+        (hasMountedPage(travel < 0 ? 1 : -1) || (travel < 0 && offset < 0 && trackEndOpen()))
+      ) {
+        hasTriggeredHaptic.value = true;
+        runOnJS(triggerHaptic)();
+      }
+    };
+
+    /** The finger lifted: step, hold the release for its page, or settle back. */
+    const panEnd = (event: PanTravel) => {
+      'worklet';
+      // A navigation reset can arrive after the final update. That finger
+      // travel belongs to the page the pager has already abandoned.
+      if (dragGeneration.value !== resetGeneration.value) return;
+      const offset = translateX.value;
+      const velocity = event.velocityX ?? 0;
+      // Judged on the finger's own travel, like the haptic: a hard flick must
+      // count however little of a taken-over offset it had undone by
+      // finger-up.
+      //
+      // The handler's `success` argument is deliberately not consulted, as it
+      // never was. It is false for a touch the system cancelled, and a swipe
+      // that was far enough along still changes the climb then. Gating on it
+      // was tried and is wrong for a second reason: strokes sent back to back
+      // by the UI test driver end unsuccessfully, all but the last, and nine
+      // of ten scripted swipes sprang back.
+      const travel = event.translationX - dragOrigin.value;
+      const commitDirection = carouselCommitDirection(travel, velocity, SWIPE_THRESHOLD);
+      const direction = commitDirection === 'next' ? 1 : commitDirection === 'previous' ? -1 : 0;
+      // Only the release right after the touch that cancelled it carries it on.
+      const cancelled = cancelledRelease.value;
+      cancelledRelease.value = null;
+
+      if (direction !== 0 && canStep(direction)) {
+        // Onto a board that failed: nothing to wait for, but worth counting.
+        startFling(direction, velocity, artOf(direction) === 'failed' ? { artState: 'failed', waitedMs: 0 } : null);
+        return;
+      }
+      // A fast second release can beat the render that mounts its neighbour,
+      // and a mounted neighbour can still be painting. Keep its intent, and
+      // step once that render confirms the page and its board has painted, or
+      // `RELEASE_ART_DEADLINE_MS` after the page is mounted, whichever comes
+      // first. A swipe repeated toward the same climb keeps the first one's
+      // clock: swiping again never makes the wait longer.
+      if (
+        direction !== 0 &&
+        !touchCancelled.value &&
+        enabledSV.value &&
+        !isZoomedSV?.value &&
+        (jsState.value.processedStep !== uiSteps.value || hasMountedPage(direction))
+      ) {
+        const release: PendingSwipeRelease = {
+          direction,
+          velocity,
+          anchor: anchorPage.value,
+          step: uiSteps.value,
+          generation: resetGeneration.value,
+          releasedAt: Date.now(),
+          mountedAt: null,
+          expired: false,
+        };
+        const again = cancelled !== null && sameTarget(cancelled, release) ? cancelled : null;
+        if (again !== null) {
+          release.releasedAt = again.releasedAt;
+          release.mountedAt = again.mountedAt;
+        }
+        const mountedAt = release.mountedAt ?? (pageConfirmed(direction) ? Date.now() : null);
+        if (mountedAt === null) {
+          pendingRelease.value = release;
+        } else {
+          waitForArt(release, mountedAt);
+        }
+        // A forward swipe past the list's last climb shows the end card only
+        // once React has confirmed that this really is the end of the track.
+      } else if (
+        direction === 1 &&
+        !hasMountedPage(1) &&
+        trackEndAvailable.value &&
+        jsState.value.center === anchorPage.value
+      ) {
+        runOnJS(reachTrackEnd)();
+      }
+      // The same settle as a step, so a swipe let go short comes back
+      // without the 8% overshoot the interactive spring gave it.
+      if (offset !== 0) {
+        translateX.value = withSpring(0, pagingSpring(offset, 0, velocity));
+      }
+    };
+
+    /**
+     * The same phases with no touch. A scripted finger is horizontal from its
+     * first point, so it skips only the touch's direction lock; like a touch,
+     * it is refused while the swipe is disabled or the board zoomed, and a
+     * finger already down ends when either changes.
+     */
+    const virtualFinger: CarouselVirtualFinger = {
+      down: () => {
+        'worklet';
+        if (virtualTouch.value || !enabledSV.value || isZoomedSV?.value) return;
+        virtualTouch.value = true;
+        virtualTravel.value = 0;
+        panStart({ translationX: 0 });
+      },
+      move: (translationX: number) => {
+        'worklet';
+        if (!virtualTouch.value) return;
+        if (!enabledSV.value || isZoomedSV?.value) {
+          virtualTouch.value = false;
+          panEnd({ translationX: virtualTravel.value, velocityX: 0 });
+          return;
+        }
+        virtualTravel.value = translationX;
+        panUpdate({ translationX });
+      },
+      up: (velocityX: number) => {
+        'worklet';
+        if (!virtualTouch.value) return;
+        virtualTouch.value = false;
+        panEnd({ translationX: virtualTravel.value, velocityX });
+      },
+    };
+
     const pan = Gesture.Pan()
       .manualActivation(true)
       .maxPointers(1)
@@ -469,10 +663,10 @@ export function useCarouselGesture({
         // Bias toward horizontal: lock vertical only when the motion is clearly
         // vertical (absY ≥ absX × VERTICAL_LOCK_RATIO). Keeps near-vertical
         // scroll/dismiss working while protecting slightly-diagonal climb swipes.
-        // This mirrors decideSwipeDirection(dx, dy, threshold, VERTICAL_LOCK_RATIO)
-        // in @boardsesh/play-view (the canonical spec + web's path) — inlined here
-        // because the worklet can't call it; keep the two in sync if either changes.
+        // This uses the ratio from decideSwipeDirection in @boardsesh/play-view.
+        // Android's scroll handoff also waits for a little more vertical travel.
         if (absY >= absX * VERTICAL_LOCK_RATIO) {
+          if (absY <= verticalThreshold) return;
           directionLock.value = -1;
           state.fail();
         } else {
@@ -482,129 +676,15 @@ export function useCarouselGesture({
       })
       .onStart((event) => {
         'worklet';
-        dropPendingRelease(true);
-        touchCancelled.value = false;
-        hasTriggeredHaptic.value = false;
-        dragGeneration.value = resetGeneration.value;
-        if (isAnimating.value) {
-          takeOverFling(event.translationX);
-        } else {
-          dragBase.value = 0;
-          dragOrigin.value = 0;
-        }
-        dragRaw.value = dragBase.value;
+        panStart(event);
       })
       .onUpdate((event) => {
         'worklet';
-        let shown = translateX.value;
-        if (dragGeneration.value !== resetGeneration.value) {
-          dragGeneration.value = resetGeneration.value;
-          dragBase.value = 0;
-          dragOrigin.value = event.translationX;
-          dragRaw.value = 0;
-          shown = 0;
-        }
-        // What the finger has done in THIS swipe, and where that puts the page.
-        // They differ for a swipe that took over a fling: it starts with the
-        // offset still on the far side of 0.
-        const travel = event.translationX - dragOrigin.value;
-        const raw = dragBase.value + travel;
-
-        // Toward a climb whose board is still painting, or past the list's last
-        // climb toward the end card, the board gives a little: the swipe is
-        // heard, and its release will go. Anywhere else with nowhere to go, it
-        // stays put. See `followFinger`.
-        const offset = followFinger(shown, raw, raw - dragRaw.value);
-        dragRaw.value = raw;
-        translateX.value = offset;
-
-        if (
-          Math.abs(travel) >= SWIPE_THRESHOLD &&
-          !hasTriggeredHaptic.value &&
-          (hasMountedPage(travel < 0 ? 1 : -1) || (travel < 0 && offset < 0 && trackEndOpen()))
-        ) {
-          hasTriggeredHaptic.value = true;
-          runOnJS(triggerHaptic)();
-        }
+        panUpdate(event);
       })
       .onEnd((event) => {
         'worklet';
-        // A navigation reset can arrive after the final update. That finger
-        // travel belongs to the page the pager has already abandoned.
-        if (dragGeneration.value !== resetGeneration.value) return;
-        const offset = translateX.value;
-        const velocity = event.velocityX ?? 0;
-        // Judged on the finger's own travel, like the haptic: a hard flick must
-        // count however little of a taken-over offset it had undone by
-        // finger-up.
-        //
-        // The handler's `success` argument is deliberately not consulted, as it
-        // never was. It is false for a touch the system cancelled, and a swipe
-        // that was far enough along still changes the climb then. Gating on it
-        // was tried and is wrong for a second reason: strokes sent back to back
-        // by the UI test driver end unsuccessfully, all but the last, and nine
-        // of ten scripted swipes sprang back.
-        const travel = event.translationX - dragOrigin.value;
-        const commitDirection = carouselCommitDirection(travel, velocity, SWIPE_THRESHOLD);
-        const direction = commitDirection === 'next' ? 1 : commitDirection === 'previous' ? -1 : 0;
-        // Only the release right after the touch that cancelled it carries it on.
-        const cancelled = cancelledRelease.value;
-        cancelledRelease.value = null;
-
-        if (direction !== 0 && canStep(direction)) {
-          // Onto a board that failed: nothing to wait for, but worth counting.
-          startFling(direction, velocity, artOf(direction) === 'failed' ? { artState: 'failed', waitedMs: 0 } : null);
-          return;
-        }
-        // A fast second release can beat the render that mounts its neighbour,
-        // and a mounted neighbour can still be painting. Keep its intent, and
-        // step once that render confirms the page and its board has painted, or
-        // `RELEASE_ART_DEADLINE_MS` after the page is mounted, whichever comes
-        // first. A swipe repeated toward the same climb keeps the first one's
-        // clock: swiping again never makes the wait longer.
-        if (
-          direction !== 0 &&
-          !touchCancelled.value &&
-          enabledSV.value &&
-          !isZoomedSV?.value &&
-          (jsState.value.processedStep !== uiSteps.value || hasMountedPage(direction))
-        ) {
-          const release: PendingSwipeRelease = {
-            direction,
-            velocity,
-            anchor: anchorPage.value,
-            step: uiSteps.value,
-            generation: resetGeneration.value,
-            releasedAt: Date.now(),
-            mountedAt: null,
-            expired: false,
-          };
-          const again = cancelled !== null && sameTarget(cancelled, release) ? cancelled : null;
-          if (again !== null) {
-            release.releasedAt = again.releasedAt;
-            release.mountedAt = again.mountedAt;
-          }
-          const mountedAt = release.mountedAt ?? (pageConfirmed(direction) ? Date.now() : null);
-          if (mountedAt === null) {
-            pendingRelease.value = release;
-          } else {
-            waitForArt(release, mountedAt);
-          }
-          // A forward swipe past the list's last climb shows the end card only
-          // once React has confirmed that this really is the end of the track.
-        } else if (
-          direction === 1 &&
-          !hasMountedPage(1) &&
-          trackEndAvailable.value &&
-          jsState.value.center === anchorPage.value
-        ) {
-          runOnJS(reachTrackEnd)();
-        }
-        // The same settle as a step, so a swipe let go short comes back
-        // without the 8% overshoot the interactive spring gave it.
-        if (offset !== 0) {
-          translateX.value = withSpring(0, pagingSpring(offset, 0, velocity));
-        }
+        panEnd(event);
       })
       // manualActivation hands the touch lifecycle to these worklets, so a touch
       // cancelled mid-swipe (a sheet/route presents over the board, the OS steals
@@ -623,11 +703,16 @@ export function useCarouselGesture({
         'worklet';
         directionLock.value = 0;
       });
+    if (scrollRef) {
+      if (deferNativeScroll) pan.blocksExternalGesture(scrollRef);
+      else pan.simultaneousWithExternalGesture(scrollRef);
+    }
     return {
-      gesture: scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan,
+      gesture: pan,
       startFling,
       waitForArt,
       dropPendingRelease,
+      virtualFinger,
     };
   }, [
     boardWidthSV,
@@ -659,6 +744,10 @@ export function useCarouselGesture({
     touchCancelled,
     releaseDeadline,
     scrollRef,
+    deferNativeScroll,
+    verticalThreshold,
+    virtualTouch,
+    virtualTravel,
   ]);
 
   useAnimatedReaction(
@@ -739,5 +828,5 @@ export function useCarouselGesture({
     ],
   );
 
-  return { gesture };
+  return { gesture, virtualFinger };
 }

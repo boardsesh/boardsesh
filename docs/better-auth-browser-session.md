@@ -847,6 +847,127 @@ Unit tests cannot show real cookie order across www and app, the back/forward
 cache or the Router Cache; only B7 can. There is no account-switching browser
 test in `packages/web/e2e/` today.
 
+## Browser-session e2e harness
+
+`vp run test:e2e:browser-session` runs www and the Expo web app on two real
+HTTPS subdomains of one parent domain, in Chromium and WebKit, against the real
+backend and the dev Postgres. B7b to B7d put the acceptance specs on it. It
+needs the dev database (`vp run db:up` runs as a task dependency) and
+`vp exec playwright install chromium webkit` once. Add `-- --project=webkit` to
+run one engine, and `BROWSER_SESSION_E2E_REUSE_EXPORT=1` to skip the Expo
+export when one is already built. It is not part of per-PR CI. The workflow
+`browser-session-e2e.yml` runs it nightly, on dispatch, and on a pull request
+that touches the harness or the web or backend auth it exercises.
+
+What starts, from `scripts/browser-session-e2e.ts` and
+`packages/web/e2e/browser-session/global-setup.ts`:
+
+| Host | Served by |
+| --- | --- |
+| `https://www.boardsesh.test` | `next dev`, with `NEXTAUTH_URL` on that origin and `AUTH_COOKIE_DOMAIN=.boardsesh.test` |
+| `https://app.boardsesh.test` | the standalone Expo export (baseUrl `/`, SPA fallback), with the www, app and backend origins baked in |
+| `https://ws.boardsesh.test` | the backend (`src/index.ts`), with `BOARDSESH_URL` and `APP_ORIGIN` set to the two origins above |
+
+**How the browsers reach the hosts.** One TLS edge (`partner-oauth-e2e/edge.ts`,
+shared with the partner OAuth journey) holds a self-signed certificate for all
+the hosts, generated at run time under the ignored `.boardsesh/browser-session/`
+and deleted at teardown, so no key is committed. Each Playwright context is
+given the edge's HTTP proxy (`fixtures.ts`). The proxy answers CONNECT only for
+these hosts, so the browser never resolves the names and nothing needs
+`/etc/hosts`, `--host-resolver-rules` or a root-owned CA. It is the same
+mechanism in Chromium and WebKit, because both honour a per-context proxy.
+`ignoreHTTPSErrors` trusts the certificate. `.test` is reserved (RFC 6761), so
+the names can never reach a real site.
+
+**No new production override.** The parent cookie domain comes from the existing
+`AUTH_COOKIE_DOMAIN` (`secure-cookies.ts`), and the origins from the existing
+`NEXT_PUBLIC_APP_URL`, `APP_ORIGIN` and `BOARDSESH_URL`. The only code change
+outside the harness is that the partner journey's local-only check accepts
+`.test` hosts (`server-environment.ts`).
+
+**What the specs check.**
+
+- `cookie-domain.spec.ts` asks each engine, with no Boardsesh code involved,
+  whether a `__Secure-` cookie with `Secure; HttpOnly; SameSite=Lax;
+  Domain=.boardsesh.test` set by one host is stored, sent to a sibling host,
+  and removed by an expiring `Set-Cookie`, and that one without a `Domain`
+  stays on its host. Public-suffix rules and `Secure` handling with ignored
+  HTTPS errors differ by engine, so this is tested, not assumed. Result, first
+  run (PR #7767, Playwright 1.62.1 on Linux): all three pass in Chromium and
+  WebKit, so `.boardsesh.test` is a registrable domain in both and a `Secure`
+  cookie is stored and sent over the ignored-error certificate. When another
+  spec fails in only one engine, read this one first.
+- `legacy-mode.spec.ts` is the baseline in today's mode
+  (`AUTH_BROWSER_SESSION_MODE` unset): sign in on www as the seeded test user
+  (`test@boardsesh.com`), open the app subdomain in the same context and see
+  the same `userId` and `authSessionId` from www's cookie route, then sign out
+  on www and see the app tab show the sign-in form after a reload. It skips
+  itself when `AUTH_BROWSER_SESSION_MODE` is set.
+
+The global setup forwards `AUTH_BROWSER_SESSION_MODE` from the caller's
+environment when it is set, so a Phase B spec can run the same stack under
+`better-auth`. Server logs and the HTML report land in
+`packages/web/test-results/browser-session/` and
+`packages/web/playwright-report/browser-session/`.
+
+### What a spec can use
+
+Fixtures from `packages/web/e2e/browser-session/fixtures.ts`, each with a spec
+that shows it working in legacy mode in both engines:
+
+| Fixture | What it gives a spec | Spec |
+| --- | --- | --- |
+| `accountA`, `accountB` | `{ userId, email, password, name }` for the dev database's test user and a second account made at global setup (`database.ts`: the same two inserts the partner journey uses, deleted at teardown). `openContext()` opens another context set up like `context`. Sign in with `helpers.ts` `signInOnWww(page, account)`. | `accounts.spec.ts` |
+| `edgeCookies` | `begin()` then `end()`, or `during(action)`: every response the edge relayed in the window, as `{ host, method, path, status, setCookies: [{ name, attributes, clears }] }`. Names and attributes only, never a value (`edge.ts` drops it). A response with no Set-Cookie is still listed, so "emitted none" differs from "never ran". `sessionSetCookies(records)` keeps the session cookies. | `set-cookie-recording.spec.ts` |
+| `legacySession.addTo(context, account, shape)` | A NextAuth cookie minted with `encode` from `next-auth/jwt` and the run's `NEXTAUTH_SECRET`: `normal`, `chunked` (three `.0` to `.2` pieces), `host-only` (no Domain, www only) or `plain-named` (`next-auth.session-token`, no `Secure`). Returns the cookie names. | `legacy-session.spec.ts` |
+| `restartStack({ env })` | Stops both servers and starts them again with `env` set over the run's own environment (null unsets; no argument goes back to it). The database, edge, browser contexts and ports stay. The setup process does it, so the specs reach it through a loopback control server with a per-run token. Allow minutes under `next dev`. | `restart.spec.ts` |
+
+Legacy mode rewrites the session cookie on every `/api/auth/session` read, as
+well as at sign-in (both show in `set-cookie-recording.spec.ts`), and
+`/api/internal/ws-auth` writes none.
+
+**www as a production build.** `BROWSER_SESSION_E2E_WWW=production` (or
+`vp run test:e2e:browser-session -- --www-production`) runs `next build` and
+`next start` instead of `next dev`. Router Cache behaviour and several auth
+branches differ under `NODE_ENV=production`. The nightly uses it and a pull
+request run does not, because the build adds minutes; a dispatch has a `www`
+input. The build writes `packages/web/.next`, so do not start it while
+`vp run dev` is running.
+
+**Probes.** `websocket.spec.ts`: the app tab opens `wss://ws.boardsesh.test/graphql`
+through the proxy and gets `connection_ack`, in both engines. `bfcache.spec.ts`,
+below.
+
+**Back/forward cache.** From playwright-core 1.62.1: Chromium is launched with
+`--disable-back-forward-cache`, so no Chromium page is restored from the cache.
+Dropping that flag is not enough with the default headless shell, which reports
+`BackForwardCacheDisabledForDelegate`. The `chromium-bfcache` project uses the
+full Chromium build (`channel: 'chromium'`) with
+`ignoreDefaultArgs: ['--disable-back-forward-cache']`, and a back navigation
+there fires `pageshow` with `persisted: true`. The other Chromium project stays
+`false`. WebKit's launcher passes no such flag, and its Linux build fired
+`persisted: false` in the first CI run; I found no supported switch for it, so a
+spec cannot rely on a WebKit restore. `chromium-bfcache` runs only
+`bfcache.spec.ts`; a spec that needs a restore uses it. A restored page runs no
+script and sends no request, and `goBack` must wait for `commit`, since a
+restore fires no `load`.
+
+What the harness does not show:
+
+- Safari's seven-day cap on a server-set cookie (owner decision 2) cannot
+  trigger here. Playwright's WebKit has no intelligent tracking prevention, and
+  every host resolves through one proxy to 127.0.0.1, so no site looks
+  cross-site to a tracker list. It still needs a real Safari check.
+- The back/forward cache differs by engine, as above: no WebKit restore at all,
+  and a Chromium restore only in `chromium-bfcache`.
+- A pull request runs www under `next dev`. Behaviour that differs in a
+  production build is checked only by the nightly, or a dispatch with
+  `www=production`.
+- One auth mode per run. `AUTH_BROWSER_SESSION_MODE` is read when the setup
+  starts the servers, so a spec that needs the other mode calls
+  `restartStack({ env: { AUTH_BROWSER_SESSION_MODE: ... } })`, and every
+  restart is a cold start for the servers.
+
 ## Open questions
 
 1. Session lifetime. Decided 2026-11-17 (decision 2): 30-day rolling, a

@@ -41,8 +41,9 @@ function makeInput(
       ...overrides.rest,
     },
     cues: {
-      countdownCues: null,
+      countdownCues: { enabled: true, onChange: vi.fn() },
       sound: null,
+      lockScreen: null,
       ...overrides.cues,
     },
     rogue: overrides.rogue ?? null,
@@ -60,14 +61,14 @@ function find<T>(input: TimersModelInput, key: string, kind: string): T {
 }
 
 describe('buildTimersModel', () => {
-  it('leaves the cues section out when it has no rows', () => {
-    expect(buildTimersModel(makeInput()).sections.map((section) => section.key)).toEqual(['rest']);
-  });
-
-  it('runs the rest section, then the cues when one is available', () => {
-    const input = makeInput({ cues: { sound: { enabled: true, onChange: vi.fn() } } });
-    expect(buildTimersModel(input).sections.map((section) => section.key)).toEqual(['rest', 'cues']);
-    expect(rowsOf(makeInput()).map((row) => row.key)).toEqual(['restLength', 'restMode', 'autoAdvance']);
+  it('runs the rest section, then the cues, which always hold the countdown', () => {
+    expect(buildTimersModel(makeInput()).sections.map((section) => section.key)).toEqual(['rest', 'cues']);
+    expect(rowsOf(makeInput()).map((row) => row.key)).toEqual([
+      'restLength',
+      'restMode',
+      'autoAdvance',
+      'countdownCues',
+    ]);
   });
 
   describe('rest length', () => {
@@ -197,8 +198,24 @@ describe('buildTimersModel', () => {
       expect(onChange).toHaveBeenCalledWith(false);
     });
 
-    it('leaves the countdown row out until something reads it', () => {
-      expect(rowsOf(makeInput()).map((row) => row.key)).not.toContain('countdownCues');
+    it('always shows the countdown row', () => {
+      expect(rowsOf(makeInput()).map((row) => row.key)).toContain('countdownCues');
+    });
+
+    it('has no Lock Screen row on a binary that cannot draw it', () => {
+      expect(rowsOf(makeInput()).map((row) => row.key)).not.toContain('lockScreen');
+    });
+
+    it('adds the Lock Screen row and writes it', () => {
+      const onChange = vi.fn();
+      const row = find<MoreToggleRow>(
+        makeInput({ cues: { lockScreen: { enabled: true, onChange } } }),
+        'lockScreen',
+        'toggle',
+      );
+      expect(row.value).toBe(true);
+      row.onValueChange(false);
+      expect(onChange).toHaveBeenCalledWith(false);
     });
   });
 });
@@ -290,6 +307,7 @@ describe('the gym timer section', () => {
       'restLength',
       'restMode',
       'autoAdvance',
+      'countdownCues',
       'rogueBoard:paired',
       'rogueRemove:paired',
       'rogueBoard:board-1',

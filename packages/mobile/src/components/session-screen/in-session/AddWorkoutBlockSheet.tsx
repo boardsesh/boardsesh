@@ -32,7 +32,6 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { useAuth } from '../../../providers/auth-provider';
 import { useQueueActions, useQueueSessionId } from '../../../providers/queue-provider';
-import { useWorkoutTimedBlocksFlag } from '../../../providers/feature-flags-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import {
   getWorkoutRunForSession,
@@ -55,10 +54,9 @@ import { useWorkoutPreview } from '../pre-session/use-workout-preview';
 import {
   DEFAULT_WORKOUT_FILTERS,
   NO_WORKOUT,
-  addBlockTypes,
+  ADD_BLOCK_TYPES,
   buildDefaultOptions,
   singleBlockSelection,
-  timedWorkoutBlocksOffered,
   withAvailableSizeFilters,
   type GeneratorSelection,
   type WorkoutBlockType,
@@ -101,7 +99,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const railGrades = useMemo(() => toRailGrades(boardName), [boardName]);
   const { tall, wide } = sizeFilterAvailability(boardName, activeBoard?.layoutId ?? null, activeBoard?.sizeId ?? null);
   const sizeFilters = useMemo(() => ({ tall, wide }), [tall, wide]);
-  const timedBlocksOffered = timedWorkoutBlocksOffered(useWorkoutTimedBlocksFlag());
 
   // The block being edited. Null while the sheet is closed, so a closed sheet
   // builds no preview and fetches nothing. Seeded on every open from the run's
@@ -121,10 +118,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const wasVisibleRef = useRef(false);
   const runRef = useRef(run);
   runRef.current = run;
-  // Read when the sheet opens only: a flag landing while it is open changes the
-  // chips, never the block the climber is editing.
-  const timedBlocksOfferedRef = useRef(timedBlocksOffered);
-  timedBlocksOfferedRef.current = timedBlocksOffered;
   // Latest values for the confirm to re-check after it awaits the store.
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -132,9 +125,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   sessionIdRef.current = sessionId;
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
-      setOptions(
-        defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName), timedBlocksOfferedRef.current),
-      );
+      setOptions(defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName)));
       setFilters(defaultMidSessionFilters(runRef.current));
       setError(null);
       submittedRef.current = false;
@@ -381,7 +372,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               railGrades={railGrades}
               groupLabel={title}
               // Workout types only: mid-session the climber is already warm.
-              blockTypes={addBlockTypes(timedBlocksOffered)}
+              blockTypes={ADD_BLOCK_TYPES}
               filters={effectiveFilters}
               sizeFilters={sizeFilters}
               onTypeChange={handleTypeChange}
@@ -421,7 +412,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       boardName,
       railGrades,
       title,
-      timedBlocksOffered,
       filters,
       sizeFilters,
       handleTypeChange,

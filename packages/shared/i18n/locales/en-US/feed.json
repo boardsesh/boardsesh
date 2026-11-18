@@ -51,6 +51,13 @@
           "lastWorkoutSends_one": "{{count}} send",
           "lastWorkoutSends_other": "{{count}} sends"
         },
+        "projects": {
+          "title": "Back to your projects",
+          "tries_one": "{{count}} try",
+          "tries_other": "{{count}} tries",
+          "seeAll": "See all",
+          "unknownClimb": "Unknown climb"
+        },
         "playlists": {
           "title": "At your level, unsent",
           "all": "All playlists"

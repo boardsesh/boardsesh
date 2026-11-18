@@ -66,7 +66,9 @@
       "logbookUnlisted": "Auch nicht gelistete Boulder und Entwürfe von anderen, die du eingetragen hast",
       "logbookSpraywall": "Boulder von der Spraywall einer anderen Person mit „Privat“ oder „Nur mit Link“ kommen ohne Namen an",
       "offlineAccess": "Diesen Zugriff behalten, bis du die App trennst",
-      "other": "Weiterer Zugriff: {{scope}}"
+      "other": "Weiterer Zugriff: {{scope}}",
+      "workoutsRead": "Ergebnisse der von dieser App geplanten Trainings lesen",
+      "workoutsWrite": "Trainings für dich planen und absagen"
     },
     "cannot": "Die App kann nichts in deinem Konto ändern und sieht nie dein Passwort.",
     "notReviewed": "Boardsesh hat diese App nicht geprüft. Verbinde nur Apps, denen du vertraust.",

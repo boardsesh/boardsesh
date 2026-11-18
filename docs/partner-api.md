@@ -11,17 +11,21 @@ OAuth consent screen, and then:
 There is no application process and no commercial agreement. Every app gets
 the same API, the same scopes and the same limits.
 
-Status: draft v1. The milestone 1 endpoints are built and not yet open to
-apps. Early access is by invitation: registration is open only to developer
-accounts the Boardsesh team has added, and each app starts with small connection
-caps (section 1). Field names and semantics here are what we intend to ship. Questions go to the Boardsesh team
-until milestone 2 publishes a support channel with the docs. Each section says which milestone
-of [integration-platform.md](./integration-platform.md) delivers it: the
-logbook first (milestone 1), workouts next (milestone 3), webhooks after that
-(milestone 4). This file becomes the public developer docs at
-`https://www.boardsesh.com/developers` in milestone 2. The design behind it is
-in [integration-platform.md](./integration-platform.md); the workouts internals
-are in [partner-workouts-internal.md](./partner-workouts-internal.md).
+Status: v1 is implemented through milestones 2–4: developer guides and
+self-service registration, workouts and webhooks. This describes the
+implemented contract; it does not announce production activation. Availability
+and registration remain controlled by the staged rollout in
+[integration-platform.md](./integration-platform.md). In allowlist mode, only
+invited developer accounts can register; open mode requires a separate email
+verification. Each app starts with the connection caps in section 1.
+
+The developer overview, guides, reference and changelog are implemented at
+`https://www.boardsesh.com/developers`, with Markdown guides and `/llms.txt` for
+coding agents. Section milestone labels record delivery order. Operator launch
+checks, partner trials and device verification still apply before rollout.
+Questions go to support@boardsesh.com. The design is in
+[integration-platform.md](./integration-platform.md); workout internals are in
+[partner-workouts-internal.md](./partner-workouts-internal.md).
 
 Everything is HTTPS.
 
@@ -663,7 +667,7 @@ unknown fields are ignored, and a block the app cannot run yet is still shown
 | `restBetweenRoundsSeconds` | int, 0 to 3600             | `fourByFour`                                   |
 | `intervalSeconds`          | int, 15 to 3600            | `onTheMinute` (default 60)                     |
 | `restSeconds`              | int, 0 to 3600             | `limitBouldering`, `volume`, `pyramid`, `ladder`, `gradeFocus` (rest after each climb) |
-| `durationSeconds`          | int                        | `freeClimbing`, display only                   |
+| `durationSeconds`          | int, 1 to 86400            | `freeClimbing`, display only                   |
 
 Block types, and how Boardsesh runs each one today:
 
@@ -729,10 +733,12 @@ climber ends up on. Results use the grade object from section 3.
 ```
 
 `support` is `native` or `freeform` per the table above. A workout that is
-never started expires seven days after creation (or the day after
-`scheduledFor`, whichever is later), whether or not the climber opened it. `scheduledFor` more than 90 days out
-is rejected with `422`, so the longest an unstarted workout can live is 91
-days.
+never started expires at the later of seven days after creation or
+`scheduledFor` at 00:00 UTC plus two days. The extra UTC day covers the full
+scheduled local day west of UTC. Opening the workout does not extend its
+lifetime. `scheduledFor` more than 90 calendar days ahead of the creation UTC
+date is rejected with `422 invalid_block`, so an unstarted workout lives at
+most 92 days.
 
 ### Idempotency and duplicates
 
@@ -741,8 +747,8 @@ body within 24 hours returns the original response. Same key, different body:
 `422`.
 
 Creating a second workout with an `externalRef` that already exists for this
-climber returns `409` with the existing workout in the body. Cancel the old
-one first if the plan changed.
+climber returns `409` with the existing workout in the body. If the plan changes, cancel the old workout and use a new externalRef for
+the replacement. Cancelling does not release the original externalRef.
 
 ### Reading and cancelling
 
@@ -754,7 +760,24 @@ DELETE /v1/workouts/{id}
 
 `GET` returns the workout, its current `status`, and once it has finished, a
 `results` object. `DELETE` cancels a workout that has not been started; after
-`started` it returns `409`. You only ever see workouts your app created.
+`started` it returns `409`. You only ever see workouts your app created for
+the climber identified by the bearer token.
+
+The list accepts these query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `externalRef` | Optional exact match for your reference, 1–200 characters |
+| `limit` | 1–100 workouts per page, default 50 |
+| `cursor` | The `cursor` returned by the preceding page; omit for the first page |
+
+The list response is `{ workouts, cursor, hasMore }`. Each entry in `workouts`
+has the same shape as `GET /v1/workouts/{id}`, including results when available.
+When `hasMore` is `true`, request another page with the returned non-null
+`cursor`, keeping any `externalRef` filter. The last page returns
+`hasMore: false` and `cursor: null`. Pages are ordered by workout id, not by
+creation time; treat the cursor as an opaque continuation value. Each page
+reads a consistent snapshot, rather than freezing the whole list across requests.
 
 ### Workout status
 
@@ -789,10 +812,11 @@ Put an "Open in Boardsesh" button on the planned session. When tapped:
    `com.boardsesh.app` in `LSApplicationQueriesSchemes` and check
    `canOpenURL` first; on Android an intent for the scheme resolves without
    extra setup.
-2. Otherwise open `launchUrl` in the browser. That page shows the workout
-   title, an "Open in Boardsesh" button that retries the scheme, and App Store
-   / Play links. On iOS the universal link opens the app directly when it is
-   installed. On Android the universal link opens the app only on builds that
+2. Otherwise open `launchUrl` in the browser. That page shows your app's
+   name when its public lookup succeeds, an "Open in Boardsesh" button that
+   retries the scheme, and App Store / Play links. It does not expose the
+   workout title, blocks or coach's notes. On iOS the universal link opens
+   the app directly when it is installed. On Android the universal link opens the app only on builds that
    carry the `/w` intent filter; until that build is in the store, the scheme
    is the reliable path there.
 
@@ -809,10 +833,12 @@ A few cases worth handling in your UI:
   lands on the workout. Nothing for you to do.
 - Signed in as a different Boardsesh account than the one that connected your
   app. The app says the workout was sent to a different account and offers to
-  switch. The workout stays `created` and `GET` shows
+  switch. This does not change the workout's status; `GET` shows
   `"openedByMismatch": true`, so you can prompt them to reconnect.
 - Already in the middle of a session. Boardsesh offers to end that session or
-  add the workout to it.
+  add the workout to it. Permanent gym sessions cannot accept a workout;
+  the climber must start a personal session instead. A rejected attachment
+  leaves the workout unstarted.
 
 ### Results
 
@@ -859,7 +885,11 @@ includes:
   per-block counts from
   `climbedAt` and `blockIndex`.
 - `blocks[].planned` echoes the block as you sent it.
-- `session.notes` is what the climber wrote on the session summary.
+- `session.notes`, `session.timezone` and `session.board.name` describe the
+  session creator's recap, timezone and board label. They are returned only
+  when that creator is the climber who received the workout. When the climber
+  joins someone else's shared session, all three fields are `null`; the board
+  type, layout, size and angle remain available.
 - There is no effort rating (RPE or RIR); Boardsesh does not collect one. If
   that changes it arrives as an optional `session.effort`.
 - There is no session id or session link. A Boardsesh session link invites
@@ -938,8 +968,10 @@ function verify(rawBody, header, secret) {
 }
 ```
 
-Sign over the raw request body, not a re-serialised copy. While you rotate
-the secret we send two `v1` entries; accept the header if either matches.
+Sign over the raw request body, not a re-serialised copy. During the 24-hour
+secret-rotation overlap, we normally send two `v1` entries; accept the header
+if either matches. If the previous secret is unavailable, delivery continues
+with the current secret alone.
 
 ### Retries
 
@@ -947,12 +979,19 @@ the secret we send two `v1` entries; accept the header if either matches.
 | ---------------------- | ---------------------------------------------- |
 | `2xx`                  | Mark delivered                                 |
 | `410 Gone`             | Stop sending to this URL until you re-enable it in the console |
-| `408`, `429`, `5xx`, timeout, connection error | Retry with exponential backoff: about 2 min, then doubling, nine retries over roughly 17 hours |
+| `408`, `429`, `5xx`, timeout, connection error | Retry with exponential backoff: about 2 min, then doubling, nine retries over about 17–26 hours with jitter |
 | Any other `4xx`        | Give up on this delivery immediately           |
 
-If every delivery to your URL fails for three days we switch webhooks off for
-your app and email you. Nothing is lost: everything an event pointed at is
-still readable through the API.
+We switch webhooks off and email you after a failure streak longer than
+three days, with another failure in the preceding 24 hours. A successful
+delivery clears the streak. A gap longer than 24 hours between failures starts
+a new streak, so one failed delivery followed by quiet days does not disable
+your endpoint. Everything an event pointed at remains readable through the API.
+
+If Boardsesh cannot open the current signing secret, it makes no unsigned
+request. The delivery is retried up to ten total attempts, then marked failed
+with `signing_unavailable`; this server-side failure does not count against
+your endpoint's failure streak.
 
 ## 6. Limits, errors, versioning
 
@@ -966,7 +1005,8 @@ still readable through the API.
 | API, failed token lookups        | 600 per minute per client IP; past that, `429` instead of `401` |
 | Starting a full sync             | 2 per minute per connected climber  |
 | Connected climbers (early access) | 25 at once, 20 new in any 24 hours, per app |
-| Page size (`limit`)              | 200                                 |
+| Logbook page size (`limit`)      | 200 maximum, default 100            |
+| Workout page size (`limit`)      | 100 maximum, default 50             |
 | Unfinished workouts per climber  | 20 per app                          |
 | Blocks per workout               | 12                                  |
 | Request body                     | 64 KB, sent within 5 seconds        |
@@ -999,12 +1039,15 @@ wrong.
 Errors are JSON:
 
 ```json
-{ "error": "invalid_block", "message": "blocks[1].rounds must be between 1 and 10", "field": "blocks[1].rounds", "requestId": "req_7Hc2…" }
+{ "error": "invalid_block", "message": "rounds must be between 1 and 10", "field": "blocks.1.rounds", "requestId": "req_7Hc2…" }
 ```
+
+Workout validation fields use dot-separated paths, including numeric array
+indices: `blocks.1.rounds` identifies `rounds` on the second block.
 
 | HTTP  | `error`               | Cause                                                  |
 | ----- | --------------------- | ------------------------------------------------------ |
-| `400` | `invalid_request`     | Malformed JSON, missing required field, bad parameter  |
+| `400` | `invalid_request`     | Malformed JSON, invalid `Idempotency-Key`, bad query parameter |
 | `400` | `invalid_cursor`      | A cursor this API did not issue                        |
 | `401` | `invalid_token`       | Expired, revoked, or unknown access token              |
 | `403` | `insufficient_scope`  | Token lacks the scope this call needs                  |
@@ -1013,7 +1056,8 @@ Errors are JSON:
 | `409` | `workout_limit`       | This climber already has 20 unfinished workouts from your app |
 | `410` | `cursor_expired`      | Start a full sync (section 3)                          |
 | `413` | `payload_too_large`   | Body over 64 KB                                        |
-| `422` | `invalid_block`, `idempotency_mismatch` | Body fails validation                |
+| `422` | `invalid_block`       | Workout body fails schema validation, including missing required fields |
+| `422` | `idempotency_mismatch` | The same key was used with a different body within 24 hours |
 | `429` | `rate_limited`        | See limits                                             |
 | `5xx` | `server_error`        | Our fault. Retry with backoff                          |
 
@@ -1035,8 +1079,9 @@ fields, new routes, new scopes, new event types, new enum values. Read what
 you know and ignore the rest. Anything that removes or renames a field becomes
 `v2`, with `v1` kept running for at least six months and a `Sunset` header on
 its responses for that whole time. Every contract change is listed on the
-changelog page at `https://www.boardsesh.com/developers/changelog`, which
-arrives with the public developer docs in milestone 2.
+changelog page at `https://www.boardsesh.com/developers/changelog`. That page
+and its Markdown version are implemented from the checked-in contract changelog
+alongside the public developer guides.
 
 ## Later
 

@@ -1,26 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock dns.lookup before importing the module under test so the lookup call
-// is intercepted. The real resolver returns external IPs for IG/TikTok hosts
-// in CI, but we want tests to run offline and to deterministically exercise
-// the private-IP rejection path.
 const { mockDnsLookup } = vi.hoisted(() => ({
-  mockDnsLookup: vi.fn<typeof import('node:dns/promises').lookup>(),
+  mockDnsLookup: vi.fn<typeof import('../lib/resolve-addresses').resolveAddresses>(),
 }));
 
-vi.mock('node:dns/promises', () => ({
-  lookup: mockDnsLookup,
-}));
+vi.mock('../lib/resolve-addresses', () => ({ resolveAddresses: mockDnsLookup }));
 
 import { assertAllowedImageHost, fetchAllowedImage, isPrivateIp, UnsafeImageHostError } from '../lib/safe-image-fetch';
 
 const lookupResolves = (addr: string, family = 4) => {
-  // dns.lookup overload returning all addresses when called with `{ all: true }`.
-  // The default overload signature returns a single address; we cast via
-  // unknown to mock the all-addresses overload our module uses.
-  mockDnsLookup.mockResolvedValue([{ address: addr, family }] as unknown as Awaited<
-    ReturnType<typeof import('node:dns/promises').lookup>
-  >);
+  mockDnsLookup.mockResolvedValue([{ address: addr, family }]);
 };
 
 describe('isPrivateIp', () => {

@@ -61,6 +61,14 @@ describe('when there is nothing to show', () => {
     expect(build({ sessionId: null })).toBeNull();
   });
 
+  it('is null for a solo arm with no session, which the session-timer snapshot still counts', () => {
+    // The gym timer follows a solo climber's rest; the Lock Screen card hangs
+    // off a session, so it stays empty until one starts.
+    armRestTimer('afterTick', T0, null);
+    noteRestTimerTick(tickAt(0), 'afterTick', T0);
+    expect(build({ sessionId: null, nowMs: T0 + 30_000 })).toBeNull();
+  });
+
   it('is null for a timer armed for another session, and carries a pre-session arm into this one', () => {
     armRestTimer('afterTick', T0, 'other-session');
     expect(build()).toBeNull();
@@ -178,6 +186,22 @@ describe('frozen states', () => {
     pauseRestTimer(T0 + 42_000);
     expect(build({ targetSeconds: null })).toMatchObject({ status: 'paused', frozenSignedSeconds: 42 });
   });
+
+  it('pauses a fixed window on the time left in the current window', () => {
+    armRestTimer('onTheMinute', T0, SESSION);
+    // 3:50 in: the fourth window is 50 s along, so 10 s of it are left.
+    pauseRestTimer(T0 + 230_000);
+    expect(build({ mode: 'onTheMinute', targetSeconds: 60, nowMs: T0 + 300_000 })).toEqual({
+      sessionId: SESSION,
+      status: 'paused',
+      startMs: null,
+      deadlineMs: null,
+      periodSeconds: null,
+      targetSeconds: 60,
+      frozenSignedSeconds: 10,
+      androidCaption: 'mobile.restTimer.clockCaptionPaused',
+    });
+  });
 });
 
 describe('queue ended', () => {
@@ -234,6 +258,20 @@ describe('no rest length', () => {
   it('counts up from the tick with no deadline', () => {
     armAndTick('afterTick', 0);
     expect(build({ targetSeconds: null, nowMs: T0 + 30_000 })).toEqual({
+      sessionId: SESSION,
+      status: 'countUp',
+      startMs: T0,
+      deadlineMs: null,
+      periodSeconds: null,
+      targetSeconds: null,
+      frozenSignedSeconds: null,
+      androidCaption: 'mobile.restTimer.clockCaptionCountUp',
+    });
+  });
+
+  it.each([0, -5])('treats a %s s fixed window as no rest length and counts up', (targetSeconds) => {
+    armRestTimer('onTheMinute', T0, SESSION);
+    expect(build({ mode: 'onTheMinute', targetSeconds, nowMs: T0 + 30_000 })).toEqual({
       sessionId: SESSION,
       status: 'countUp',
       startMs: T0,

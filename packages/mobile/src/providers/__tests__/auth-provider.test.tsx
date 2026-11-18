@@ -10,6 +10,8 @@ import { createConsentSyncCoordinator } from '@boardsesh/consent';
 import { cancelAuthAnalyticsHandoffs, createAuthAnalyticsHandoff } from '../../lib/auth-analytics-handoff';
 
 const redirectMock = vi.hoisted(() => vi.fn());
+const setPartnerWorkoutOwnerMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/pending-workout-store', () => ({ setPartnerWorkoutOwner: setPartnerWorkoutOwnerMock }));
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
 const routerState = vi.hoisted(() => ({ segments: [] as string[] }));
 const appStateState = vi.hoisted(() => ({
@@ -488,6 +490,19 @@ describe('AuthProvider loading state', () => {
     // letting the tree swap from the splash to the app children.
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
+  });
+
+  it('binds durable partner workouts to the native token account before mounting children', async () => {
+    getAuthTokenMock.mockResolvedValue(`header.${btoa(JSON.stringify({ sub: 'workout-owner' }))}.signature`);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(setPartnerWorkoutOwnerMock).toHaveBeenCalledWith('workout-owner');
   });
 
   it('renders the splash placeholder (not a blank tree) while auth resolves, then swaps to children', async () => {
@@ -3454,6 +3469,14 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
       </QueryClientProvider>,
     );
   }
+
+  it('lets a signed-out workout link reach its public fallback and route-owned sign-in', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    routerState.segments = ['w', '[workoutId]'];
+    const { queryByTestId } = renderGate();
+    await waitFor(() => expect(queryByTestId('child')).not.toBeNull());
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
 
   it.each([...READ_ONLY_PATHS, ...GATED_PATHS])(
     'redirects a signed-out visitor at %s to the bare login route',

@@ -424,6 +424,71 @@ describe('useWorkoutPreview stages', () => {
     expect(countingFetchPool).toHaveBeenCalledTimes(fetchCount);
   });
 
+  it('queues a pyramid that comes back down on the same climbs as its own items, and refreshes twins together', async () => {
+    const pyramid: PyramidOptions = {
+      ...DEFAULT_PYRAMID_OPTIONS,
+      targetGrade: 20,
+      warmUp: 'none',
+      numberOfSteps: 5,
+      climbsPerStep: 1,
+      repeatOnWayDown: true,
+    };
+    const { result } = renderHook(() =>
+      useWorkoutPreview(
+        selectionOf([warmUpBlock('warm'), workoutBlock('pyramid', pyramid)]),
+        board,
+        { isAuthenticated: false },
+        { fetchPool, grades },
+      ),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const { items, run } = result.current.toStagedQueueItems();
+    const pyramidUuids = run?.stages[1].itemUuids ?? [];
+    const pyramidClimbs = pyramidUuids.map((uuid) => items.find((item) => item.uuid === uuid)?.climb.uuid);
+    expect(pyramidClimbs).toHaveLength(5);
+    expect(pyramidClimbs[3]).toBe(pyramidClimbs[1]);
+    expect(pyramidClimbs[4]).toBe(pyramidClimbs[0]);
+    expect(new Set(pyramidClimbs.slice(0, 3)).size).toBe(3);
+    // Every visit is its own queue item, so the run, the queue and the ticks keep them apart.
+    expect(new Set(items.map((item) => item.uuid)).size).toBe(items.length);
+
+    const wayUp = result.current.items.find((preview) => preview.item.uuid === pyramidUuids[0]);
+    act(() => {
+      result.current.refreshSlot(pyramidUuids[0]);
+    });
+    await waitFor(() =>
+      expect(result.current.items.find((preview) => preview.item.uuid === pyramidUuids[0])?.item.climb.uuid).not.toBe(
+        wayUp?.item.climb.uuid,
+      ),
+    );
+    const byUuid = new Map(result.current.items.map((preview) => [preview.item.uuid, preview.item.climb.uuid]));
+    expect(byUuid.get(pyramidUuids[4])).toBe(byUuid.get(pyramidUuids[0]));
+    await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
+  });
+
+  it('rebuilds a pyramid when Same climbs down is switched on', async () => {
+    const pyramid: PyramidOptions = { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 20, warmUp: 'none' };
+    const { result, rerender } = renderHook(
+      ({ current }: { current: GeneratorSelection }) =>
+        useWorkoutPreview(current, board, { isAuthenticated: false }, { fetchPool, grades }),
+      { initialProps: { current: selectionOf([workoutBlock('pyramid', pyramid)]) } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const climbs = () => result.current.items.map((preview) => preview.item.climb.uuid);
+    expect(climbs()[4]).not.toBe(climbs()[0]);
+
+    rerender({ current: selectionOf([workoutBlock('pyramid', { ...pyramid, repeatOnWayDown: true })]) });
+
+    await waitFor(() =>
+      expect(result.current.plannedSlots.some((slot) => slot.repeatOfIndex !== undefined)).toBe(true),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    // The way up keeps its climbs; the way down now retraces them.
+    expect(climbs()[4]).toBe(climbs()[0]);
+    expect(climbs()[3]).toBe(climbs()[1]);
+  });
+
   it('starts empty with no blocks', () => {
     const { result } = renderHook(() =>
       useWorkoutPreview(NO_WORKOUT, board, { isAuthenticated: false }, { fetchPool, grades }),

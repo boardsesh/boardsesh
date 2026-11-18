@@ -13,6 +13,7 @@ import {
 } from './app/lib/observability/sentry-tracing';
 import { tagPostgresError } from '@/app/lib/observability/postgres-error-tags';
 import { redactShareCapabilitiesFromEvent } from '@/app/lib/observability/redact-share-capabilities';
+import { redactOriginProof } from '@/app/lib/observability/redact-origin-proof';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -31,7 +32,10 @@ Sentry.init({
   // Normalise postgres.js and Drizzle wrapper shapes into queryable SQLSTATE
   // tags. Production alerts can now match `postgres.error_code:53300` without
   // relying on an English message or one particular error wrapper.
-  beforeSend: tagPostgresError,
+  // The last steps before an event leaves, so nothing added later can carry the
+  // Cloudflare origin proof header (#7766). See redact-origin-proof.ts.
+  beforeSend: (event, hint) => redactOriginProof(tagPostgresError(event, hint)),
+  beforeSendTransaction: redactOriginProof,
 
   // Enable logs to be sent to Sentry
   enableLogs: true,
@@ -58,7 +62,7 @@ Sentry.init({
 
   // Keeps OAuth codes and session ids out of span URLs now that spans record
   // one per sampled request. See the constant's doc comment.
-  beforeSendSpan: redactSensitiveSpanUrls,
+  beforeSendSpan: (span) => redactOriginProof(redactSensitiveSpanUrls(span)),
 
   // Next.js render internals, the tunnel's forward to Sentry, and GraphQL
   // document parsing. ~2.2M stored spans in 14 days. See the constant.

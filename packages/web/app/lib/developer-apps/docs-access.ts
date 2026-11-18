@@ -10,9 +10,8 @@ import { parsePartnerOAuthMode } from '@boardsesh/auth-protocol/partner-oauth-mo
  * - `invitation`: `allowlist`. Apps work, but only developer accounts the
  *   Boardsesh team added can register one. The page is served and noindex.
  * - `open`: `open`. The only state the page is indexable and in the sitemap.
- *   Today the backend still registers allowlisted developers only in this mode
- *   (docs/integration-platform.md, "Stages"), so the page says the console
- *   tells a developer whether their account is enabled.
+ *   Registration requires the independent developer email proof; the historical
+ *   users.emailVerified stamp alone never opens developer access.
  */
 export type DeveloperDocsState = 'unavailable' | 'invitation' | 'open';
 

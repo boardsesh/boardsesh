@@ -1,0 +1,136 @@
+name: Browser Session E2E
+
+# The browser-session harness (#7596, B7a): www and the Expo web app on two real
+# HTTPS subdomains of one parent domain (www.boardsesh.test, app.boardsesh.test),
+# in Chromium and WebKit, against the real backend and Postgres, so a `Domain=`
+# cookie on the parent is shared between them. `vp run test:e2e:browser-session`
+# builds the Expo export and starts its own backend, www and TLS proxy, so this
+# job needs only the dev database stack that the task's `db:up` dependency
+# brings up.
+#
+# Three ways in, none of them per-PR heavy work:
+#   - schedule: nightly on main, off the Expo-web smoke's 15:23 slot and the
+#     partner OAuth journey's 16:47 slot.
+#   - workflow_dispatch: on demand, on any branch.
+#   - pull_request: only when the harness, or the web or backend auth it
+#     exercises, changes.
+# A red nightly posts to the Discord deploy channel; a PR or dispatch run has a
+# person watching it, so it does not.
+on:
+  workflow_dispatch:
+    inputs:
+      www:
+        description: 'How www runs: next dev, or next build + next start (the nightly default)'
+        type: choice
+        options: [dev, production]
+        default: dev
+  schedule:
+    - cron: '41 17 * * *' # daily, 17:41 UTC
+  pull_request:
+    paths:
+      - 'packages/web/e2e/browser-session/**'
+      - 'scripts/browser-session-e2e.ts'
+      - 'packages/web/partner-oauth-e2e/edge.ts'
+      - 'packages/web/partner-oauth-e2e/server-environment.ts'
+      - 'packages/web/app/lib/auth/**'
+      - 'packages/web/app/api/auth/**'
+      - 'packages/web/app/api/internal/ws-auth/**'
+      - 'packages/backend/src/auth/**'
+      - 'packages/shared/auth-protocol/src/**'
+      - 'packages/mobile/src/lib/auth*.web.ts'
+      - 'packages/mobile/src/**/user-storage-owner.web.ts'
+      - 'packages/mobile/src/lib/graphql/use-auth-token.web.ts'
+      - '.github/workflows/browser-session-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-session-e2e-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  browser-session:
+    name: Browser session (Chromium and WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      # Cache the pnpm store, not node_modules (see e2e-tests.yml for why).
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Install Playwright chromium and webkit
+        run: vp exec playwright install --with-deps chromium webkit
+        working-directory: packages/web
+
+      - name: Run the browser-session specs in both engines
+        env:
+          # The nightly runs www as a production build (Router Cache and several auth
+          # branches differ from next dev); a pull request keeps next dev, which
+          # starts minutes sooner. A dispatch chooses.
+          BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
+        # db:up (dev-db compose stack) and the web-runtime install come from the vp task graph.
+        run: vp run test:e2e:browser-session
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-browser-session
+          path: packages/web/playwright-report/browser-session/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test results and server logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results-browser-session
+          path: packages/web/test-results/browser-session/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # DISCORD_DEPLOY_WEBHOOK is an environment secret (Production), so the post
+  # lives in its own job, as in e2e-tests.yml. Production admits main, the only
+  # ref the schedule runs on.
+  notify-nightly:
+    name: Report a red nightly browser-session e2e
+    needs: [browser-session]
+    if: ${{ always() && github.event_name == 'schedule' && needs.browser-session.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+    steps:
+      - name: Tell Discord the nightly browser-session e2e failed
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The nightly browser-session e2e failed but DISCORD_DEPLOY_WEBHOOK is not readable here."
+            exit 0
+          fi
+          jq -n --arg content "The nightly browser-session e2e failed on main: ${RUN_URL}" \
+            '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"

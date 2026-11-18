@@ -11,7 +11,7 @@ import {
   PARTNER_DEVELOPER_CONSOLE_FLAG,
 } from '@boardsesh/auth-protocol/partner-oauth';
 import type { ConnectionContext, CreateOAuthClientInput } from '@boardsesh/shared-schema';
-import { oauthClient, users } from '@boardsesh/db/schema/auth';
+import { oauthClient, partnerDeveloperEmails, users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { API_HOSTNAME } from '../handlers/api-host';
 import { redisClientManager } from '../redis/client';
@@ -692,7 +692,7 @@ describe('the other modes', () => {
     expect(posthog.asked(developerId)).toBe(0);
   });
 
-  it('still registers only allowlisted developers in open, until developer email has a real proof', async () => {
+  it('opens registration only after independent email proof, without an invite', async () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
     vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
     const listed = await createDeveloper();
@@ -704,15 +704,99 @@ describe('the other modes', () => {
         { input: { ...APP_INPUT, applicationType: 'WEB', tokenEndpointAuthMethod: 'NONE' } },
         context(verifiedOutsider),
       ),
-    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' } });
+    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' } });
+    await db.insert(partnerDeveloperEmails).values({
+      userId: verifiedOutsider,
+      email: `${verifiedOutsider}@example.invalid`,
+      requestedAt: new Date(),
+      verifiedAt: new Date(),
+    });
     const created = await oauthClientMutations.createOAuthClient(
       undefined,
       { input: { ...APP_INPUT, applicationType: 'WEB', tokenEndpointAuthMethod: 'NONE' } },
-      context(listed),
+      context(verifiedOutsider),
     );
     expect(created.clientSecret).toBeNull();
     expect(created.client.tokenEndpointAuthMethod).toBe('NONE');
   });
+
+  it('keeps unverified open-mode app requests out of shared app address budgets', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
+    const unverified = await createDeveloper(false);
+    const sharedAddress = randomClientIp();
+    const caller = { ...context(unverified), trustedClientIp: sharedAddress };
+    await enoughWindowLeft();
+    await expect(oauthClientQueries.myOAuthClients(undefined, {}, caller)).rejects.toMatchObject({
+      extensions: { reason: 'EMAIL_NOT_VERIFIED' },
+    });
+    await expect(oauthClientMutations.createOAuthClient(undefined, { input: APP_INPUT }, caller)).rejects.toMatchObject(
+      {
+        extensions: { reason: 'EMAIL_NOT_VERIFIED' },
+      },
+    );
+    expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientRead')).toBeNull();
+    expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientWrite')).toBeNull();
+  });
+
+  it(
+    'limits email traffic separately while preserving a verified developer’s app budget',
+    async () => {
+      vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
+      vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
+      const sharedAddress = randomClientIp();
+      await enoughWindowLeft(20_000);
+      // Invalid confirmations never send email, and four accounts exceed the shared thirty-write budget.
+      for (let account = 0; account < 4; account += 1) {
+        const unverified = await createDeveloper(false);
+        const caller = { ...context(unverified), trustedClientIp: sharedAddress };
+        for (let attempt = 0; attempt < (account < 3 ? 10 : 1); attempt += 1) {
+          const confirmation = oauthClientMutations.confirmPartnerDeveloperEmail(
+            undefined,
+            { token: 'invalid' },
+            caller,
+          );
+          if (account < 3) await expect(confirmation).resolves.toBe(false);
+          else
+            await expect(confirmation).rejects.toMatchObject({
+              extensions: { code: 'RATE_LIMITED', operation: 'oauthClientEmailWrite' },
+            });
+        }
+        expect(await limiterCount(unverified, 'oauthClientWrite')).toBeNull();
+        expect(await db.$count(partnerDeveloperEmails, eq(partnerDeveloperEmails.userId, unverified))).toBe(0);
+      }
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientEmailWrite')).toBe(31);
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientWrite')).toBeNull();
+      await seedLimiter(`oauth-client-ip:${sharedAddress}`, 'oauthClientEmailRead', 120);
+      const verified = await createDeveloper();
+      await db.insert(partnerDeveloperEmails).values({
+        userId: verified,
+        email: `${verified}@example.invalid`,
+        requestedAt: new Date(),
+        verifiedAt: new Date(),
+      });
+      const caller = { ...context(verified), trustedClientIp: sharedAddress };
+      await expect(oauthClientQueries.partnerDeveloperEmailStatus(undefined, {}, caller)).rejects.toMatchObject({
+        extensions: { code: 'RATE_LIMITED', operation: 'oauthClientEmailRead' },
+      });
+      expect(await limiterCount(verified, 'oauthClientRead')).toBeNull();
+      expect(await limiterCount(verified, 'oauthClientEmailRead')).toBe(1);
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientRead')).toBeNull();
+      await expect(oauthClientQueries.myOAuthClients(undefined, {}, caller)).resolves.toEqual([]);
+      const created = await oauthClientMutations.createOAuthClient(
+        undefined,
+        {
+          input: { ...APP_INPUT, tokenEndpointAuthMethod: 'NONE' },
+        },
+        caller,
+      );
+      expect(created.client.clientId).toBeTruthy();
+      expect(await limiterCount(verified, 'oauthClientWrite')).toBe(1);
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientWrite')).toBe(1);
+      expect(await limiterCount(`oauth-client-ip:${sharedAddress}`, 'oauthClientRead')).toBe(1);
+    },
+    TEST_DEADLINE_MS,
+  );
 
   it('refuses an allowlisted developer whose email is not verified', async () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');

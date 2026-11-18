@@ -106,6 +106,16 @@ export function buildDeveloperModel(input: DeveloperModelInput): MoreFormModel {
         onPress: () => onNavigate('/settings/outline-editor'),
       });
     }
+    rows.push({
+      kind: 'nav',
+      key: 'boardMotionLab',
+      // i18n-ignore-next-line — tester-only dev tooling
+      label: 'Board motion lab',
+      // i18n-ignore-next-line
+      subtitle: 'Compare climb-to-climb board transitions',
+      icon: 'boardLook',
+      onPress: () => onNavigate('/settings/board-motion-lab'),
+    });
     if (devTools.showSentryDiagnostics) {
       rows.push({
         kind: 'nav',

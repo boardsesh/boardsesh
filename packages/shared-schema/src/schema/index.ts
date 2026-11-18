@@ -40,6 +40,10 @@ import { sessionWorkoutsTypeDefs } from './session-workouts';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { oauthClientsTypeDefs } from './oauth-clients';
+import { partnerDeveloperEmailTypeDefs } from './partner-developer-email';
+import { adminPartnerAppsTypeDefs } from './admin-partner-apps';
+import { partnerWebhooksTypeDefs } from './partner-webhooks';
+import { appWorkoutsTypeDefs } from './app-workouts';
 import { connectedAppsTypeDefs } from './connected-apps';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
@@ -93,5 +97,9 @@ export const typeDefs = [
   userDataExportTypeDefs,
   analyticsConsentTypeDefs,
   oauthClientsTypeDefs,
+  partnerDeveloperEmailTypeDefs,
+  adminPartnerAppsTypeDefs,
+  partnerWebhooksTypeDefs,
+  appWorkoutsTypeDefs,
   connectedAppsTypeDefs,
 ];
