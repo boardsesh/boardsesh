@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { and, eq, gt, lt, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   authPasswordGuessWindows,
@@ -20,6 +20,10 @@ import { DELETED_EMAIL_KEY_ENV } from './current-store/authority-configuration';
  * Every function here fails open. If the store errors or does not answer in
  * 250 ms the result says `unavailable`, a metric and a rate-limited warning
  * record it, and the caller proceeds on its existing per-address limits.
+ *
+ * Unknown emails are counted like known ones, so every typed address can add
+ * rows: the table's size is set by whoever sends sign-ins, which is why the
+ * prune deletes in bounded batches.
  */
 
 const HOUR_MS = 3_600_000;
@@ -34,8 +38,10 @@ export const PASSWORD_GUESS_LIMITS: Readonly<
     Object.freeze({ window: 'hour', limit: 10 }),
     Object.freeze({ window: 'day', limit: 20 }),
   ]),
-  // A recognised device loses its exemption for the hour after 20 rejected passwords.
-  device_token: Object.freeze([Object.freeze({ window: 'hour', limit: 20 })]),
+  // An account's recognised devices share 20 rejected passwords an hour, then lose
+  // their exemption for the rest of the hour. Per account, not per token id:
+  // refresh and exchange mint a new id on every reply.
+  account_digest: Object.freeze([Object.freeze({ window: 'hour', limit: 20 })]),
 });
 
 /** How long the store gets before a call fails open. */
@@ -45,10 +51,9 @@ export const PASSWORD_GUESS_DEADLINE_MS = 250;
 export const PASSWORD_GUESS_EMAIL_KEY_ENV = 'AUTH_ACCOUNT_GUESS_LIMIT_EMAIL_KEY';
 
 const WINDOW_MS: Readonly<Record<PasswordGuessWindowKind, number>> = { hour: HOUR_MS, day: DAY_MS };
-const DEVICE_TOKEN_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const WARNING_INTERVAL_MS = 60_000;
 
-/** Whose guesses a call counts. Build one with `passwordGuessEmailSubject` or `passwordGuessDeviceSubject`. */
+/** Whose guesses a call counts. Build one with `passwordGuessEmailSubject` or `passwordGuessAccountSubject`. */
 export interface PasswordGuessSubject {
   readonly kind: PasswordGuessSubjectKind;
   readonly key: string;
@@ -181,14 +186,27 @@ export function passwordGuessEmailSubject(
 ): PasswordGuessSubject | null {
   const key = passwordGuessEmailKey(environment);
   if (key === null) return null;
-  const digest = createHmac('sha256', key).update(normalizeAccountEmail(email), 'utf8').digest('hex');
-  return Object.freeze({ kind: 'email_digest', key: digest });
+  return Object.freeze({ kind: 'email_digest', key: subjectDigest(key, 'email', normalizeAccountEmail(email)) });
 }
 
-/** The subject for a verified device token's id (16 random bytes, base64url). */
-export function passwordGuessDeviceSubject(tokenId: string): PasswordGuessSubject {
-  if (!DEVICE_TOKEN_ID_PATTERN.test(tokenId)) throw new Error('Invalid device token id');
-  return Object.freeze({ kind: 'device_token', key: tokenId });
+/**
+ * The subject every recognised device of one account shares: HMAC-SHA256 of
+ * the user id under the same key. Null when the limit is off.
+ */
+export function passwordGuessAccountSubject(
+  userId: string,
+  environment: Environment = process.env,
+): PasswordGuessSubject | null {
+  const key = passwordGuessEmailKey(environment);
+  if (key === null || !userId) return null;
+  return Object.freeze({ kind: 'account_digest', key: subjectDigest(key, 'account', userId) });
+}
+
+/** The domain goes into the MAC, so an address and a user id with the same text never share a digest. */
+function subjectDigest(key: string, domain: 'email' | 'account', value: string): string {
+  return createHmac('sha256', key)
+    .update(JSON.stringify(['boardsesh-password-guess', domain, value]), 'utf8')
+    .digest('hex');
 }
 
 function windowStart(kind: PasswordGuessWindowKind, now: Date): Date {
@@ -231,8 +249,9 @@ async function runWithDeadline<Result>(
     const remaining = deadlineMs - (Date.now() - startedAt);
     if (remaining <= 0) throw new DeadlinePassed();
     const budget = String(Math.max(1, Math.ceil(remaining)));
-    await transaction.execute(sql`SELECT set_config('statement_timeout', ${budget}, true)`);
-    await transaction.execute(sql`SELECT set_config('lock_timeout', ${budget}, true)`);
+    await transaction.execute(
+      sql`SELECT set_config('statement_timeout', ${budget}, true), set_config('lock_timeout', ${budget}, true)`,
+    );
     return work(transaction);
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -328,38 +347,63 @@ export async function reservePasswordGuess(
   }
 }
 
-const givenBack = new WeakSet<ReservedPasswordGuess>();
+/** A give-back that committed (`done`) or is running (its promise). A failed one is forgotten, so a retry writes. */
+const giveBacks = new WeakMap<ReservedPasswordGuess, 'done' | Promise<PasswordGuessWriteResult>>();
 
 /**
  * Uncounts a reservation: a right password, a shed or abandoned compare, or no
- * verdict at all. Only a rejected password stays counted. Safe to call twice;
- * never throws. Uncounts the windows the reservation counted, even after the
- * clock has moved on; a window already pruned has nothing to uncount.
+ * verdict at all. Only a rejected password stays counted. Never throws.
+ * Uncounts the windows the reservation counted, even after the clock has moved
+ * on; a window already pruned has nothing to uncount.
+ *
+ * Once it has succeeded, another call answers `done` and writes nothing; a call
+ * while one is running shares its result. After `unavailable` a call retries.
  */
 export async function giveBackPasswordGuess(
   store: PasswordGuessStore,
   reservation: ReservedPasswordGuess,
   options: { readonly deadlineMs?: number } = {},
 ): Promise<PasswordGuessWriteResult> {
-  if (givenBack.has(reservation)) return 'done';
-  givenBack.add(reservation);
-  const { subject, windows } = reservation;
-  return runWrite('give_back', store, options.deadlineMs, async (transaction) => {
-    for (const window of windows) {
-      await transaction
-        .update(authPasswordGuessWindows)
-        .set({ failures: sql`${authPasswordGuessWindows.failures} - 1` })
-        .where(
-          and(
-            eq(authPasswordGuessWindows.subjectKind, subject.kind),
-            eq(authPasswordGuessWindows.subjectKey, subject.key),
-            eq(authPasswordGuessWindows.windowKind, window.kind),
-            eq(authPasswordGuessWindows.windowStart, window.start),
-            gt(authPasswordGuessWindows.failures, 0),
-          ),
-        );
-    }
+  const previous = giveBacks.get(reservation);
+  if (previous !== undefined) return previous;
+  const running = writeGiveBack(store, reservation, options.deadlineMs).then((result) => {
+    if (result === 'done') giveBacks.set(reservation, 'done');
+    else if (giveBacks.get(reservation) === running) giveBacks.delete(reservation);
+    return result;
   });
+  giveBacks.set(reservation, running);
+  return running;
+}
+
+function writeGiveBack(
+  store: PasswordGuessStore,
+  reservation: ReservedPasswordGuess,
+  deadlineMs: number | undefined,
+): Promise<PasswordGuessWriteResult> {
+  const { subject, windows } = reservation;
+  return runWrite(
+    'give_back',
+    store,
+    deadlineMs,
+    async (transaction) => {
+      for (const window of windows) {
+        await transaction
+          .update(authPasswordGuessWindows)
+          .set({ failures: sql`${authPasswordGuessWindows.failures} - 1` })
+          .where(
+            and(
+              eq(authPasswordGuessWindows.subjectKind, subject.kind),
+              eq(authPasswordGuessWindows.subjectKey, subject.key),
+              eq(authPasswordGuessWindows.windowKind, window.kind),
+              eq(authPasswordGuessWindows.windowStart, window.start),
+              gt(authPasswordGuessWindows.failures, 0),
+            ),
+          );
+      }
+    },
+    // A give-back that commits after its caller was told `unavailable` still counts as done.
+    () => giveBacks.set(reservation, 'done'),
+  );
 }
 
 /**
@@ -388,35 +432,73 @@ export async function clearPasswordGuesses(
   });
 }
 
-/** How long the minute maintenance tick gives one prune. */
-const PRUNE_DEADLINE_MS = 5_000;
+/** How long the minute maintenance tick gives one prune, across all its batches. */
+const PRUNE_BUDGET_MS = 5_000;
+/** Rows one prune statement deletes at most. */
+const PRUNE_BATCH_SIZE = 5_000;
+
+export interface PasswordGuessPruneResult {
+  /** `unavailable` when a batch failed or missed its deadline; earlier batches stay deleted. */
+  readonly result: PasswordGuessWriteResult;
+  readonly deleted: number;
+  readonly batches: number;
+  /** True when the last batch found fewer ended windows than it could delete. */
+  readonly drained: boolean;
+}
 
 /**
  * Deletes every window that has ended: an hour window an hour after it began,
  * a day window a day after. Runs on the backend's minute auth maintenance tick
- * (`clearExpiredAuthRecords`), so a window is gone within a minute of ending.
+ * (`clearExpiredAuthRecords`). Each batch is its own short transaction of at
+ * most `batchSize` rows, so a flood of distinct emails still makes progress
+ * every tick; whatever is left after the time budget waits for the next one.
  */
 export async function prunePasswordGuessWindows(
   store: PasswordGuessStore,
-  options: { readonly now?: Date; readonly deadlineMs?: number } = {},
-): Promise<PasswordGuessWriteResult> {
+  options: { readonly now?: Date; readonly batchSize?: number; readonly budgetMs?: number } = {},
+): Promise<PasswordGuessPruneResult> {
   const now = (options.now ?? new Date()).getTime();
-  return runWrite('prune', store, options.deadlineMs ?? PRUNE_DEADLINE_MS, async (transaction) => {
-    await transaction
-      .delete(authPasswordGuessWindows)
-      .where(
-        or(
-          and(
-            eq(authPasswordGuessWindows.windowKind, 'hour'),
-            lte(authPasswordGuessWindows.windowStart, new Date(now - HOUR_MS)),
+  const batchSize = options.batchSize ?? PRUNE_BATCH_SIZE;
+  const budgetMs = options.budgetMs ?? PRUNE_BUDGET_MS;
+  const startedAt = Date.now();
+  const ended = or(
+    and(
+      eq(authPasswordGuessWindows.windowKind, 'hour'),
+      lte(authPasswordGuessWindows.windowStart, new Date(now - HOUR_MS)),
+    ),
+    and(
+      eq(authPasswordGuessWindows.windowKind, 'day'),
+      lte(authPasswordGuessWindows.windowStart, new Date(now - DAY_MS)),
+    ),
+  );
+  let deleted = 0;
+  let batches = 0;
+  for (;;) {
+    const remaining = budgetMs - (Date.now() - startedAt);
+    if (remaining <= 0) return { result: 'done', deleted, batches, drained: false };
+    let batchDeleted = 0;
+    const result = await runWrite('prune', store, remaining, async (transaction) => {
+      // `ctid` bounds one DELETE without a key to page on; the subquery re-checks `ended`.
+      const removed = await transaction
+        .delete(authPasswordGuessWindows)
+        .where(
+          inArray(
+            sql`ctid`,
+            transaction
+              .select({ ctid: sql`ctid` })
+              .from(authPasswordGuessWindows)
+              .where(ended)
+              .limit(batchSize),
           ),
-          and(
-            eq(authPasswordGuessWindows.windowKind, 'day'),
-            lte(authPasswordGuessWindows.windowStart, new Date(now - DAY_MS)),
-          ),
-        ),
-      );
-  });
+        )
+        .returning({ windowKind: authPasswordGuessWindows.windowKind });
+      batchDeleted = removed.length;
+    });
+    if (result === 'unavailable') return { result, deleted, batches, drained: false };
+    deleted += batchDeleted;
+    batches += 1;
+    if (batchDeleted < batchSize) return { result, deleted, batches, drained: true };
+  }
 }
 
 async function runWrite(
@@ -424,9 +506,10 @@ async function runWrite(
   store: PasswordGuessStore,
   deadlineMs: number | undefined,
   work: (transaction: PasswordGuessTransaction) => Promise<void>,
+  onLate: () => void = () => {},
 ): Promise<PasswordGuessWriteResult> {
   try {
-    const outcome = await runWithDeadline(store, deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS, work, () => {});
+    const outcome = await runWithDeadline(store, deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS, work, onLate);
     if (outcome.kind === 'late') {
       recordUnavailable(operation, 'deadline');
       return 'unavailable';

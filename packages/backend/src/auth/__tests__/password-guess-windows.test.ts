@@ -9,7 +9,7 @@ import {
   clearPasswordGuesses,
   giveBackPasswordGuess,
   PASSWORD_GUESS_EMAIL_KEY_ENV,
-  passwordGuessDeviceSubject,
+  passwordGuessAccountSubject,
   passwordGuessEmailKey,
   passwordGuessEmailSubject,
   passwordGuessMetrics,
@@ -103,10 +103,16 @@ describe('password guess windows (#7656)', () => {
       expect(passwordGuessEmailKey(environment)).toBe(EMAIL_KEY);
     });
 
-    it('accepts only a 16-byte base64url device token id', () => {
-      const tokenId = randomBytes(16).toString('base64url');
-      expect(passwordGuessDeviceSubject(tokenId)).toEqual({ kind: 'device_token', key: tokenId });
-      expect(() => passwordGuessDeviceSubject('not a token')).toThrow();
+    it('keys recognised devices by a digest of the account, never colliding with an email digest', () => {
+      const account = passwordGuessAccountSubject('user-1', environment);
+      expect(account?.kind).toBe('account_digest');
+      expect(account?.key).toMatch(/^[0-9a-f]{64}$/);
+      expect(account?.key).not.toContain('user-1');
+      expect(passwordGuessAccountSubject('user-1', environment)).toEqual(account);
+      expect(passwordGuessAccountSubject('user-2', environment)?.key).not.toBe(account?.key);
+      // The same text as an email and as a user id digests differently.
+      expect(passwordGuessEmailSubject('user-1', environment)?.key).not.toBe(account?.key);
+      expect(passwordGuessAccountSubject('user-1', {})).toBeNull();
     });
   });
 
@@ -193,6 +199,37 @@ describe('password guess windows (#7656)', () => {
       expect((await reservePasswordGuess(db, subject, { now: MORNING, ...PATIENT })).outcome).toBe('refused');
     });
 
+    it('retries for real after a failed give-back, then stays given back', async () => {
+      vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const subject = freshEmailSubject();
+      await reserveMany(subject, 2, MORNING);
+      const right = await reservePasswordGuess(db, subject, { now: MORNING, ...PATIENT });
+      if (right.outcome !== 'reserved') throw new Error('Expected a reservation');
+      const broken = {
+        transaction: () => Promise.reject(new Error('connection refused')),
+      } as unknown as PasswordGuessStore;
+      expect(await giveBackPasswordGuess(broken, right.reservation, PATIENT)).toBe('unavailable');
+      expect((await windowRows(subject)).map(({ failures }) => failures)).toEqual([3, 3]);
+      expect(await giveBackPasswordGuess(db, right.reservation, PATIENT)).toBe('done');
+      expect((await windowRows(subject)).map(({ failures }) => failures)).toEqual([2, 2]);
+      expect(await giveBackPasswordGuess(db, right.reservation, PATIENT)).toBe('done');
+      expect((await windowRows(subject)).map(({ failures }) => failures)).toEqual([2, 2]);
+    });
+
+    it('runs one write for two give-backs in flight at once', async () => {
+      const subject = freshEmailSubject();
+      await reserveMany(subject, 2, MORNING);
+      const right = await reservePasswordGuess(db, subject, { now: MORNING, ...PATIENT });
+      if (right.outcome !== 'reserved') throw new Error('Expected a reservation');
+      expect(
+        await Promise.all([
+          giveBackPasswordGuess(db, right.reservation, PATIENT),
+          giveBackPasswordGuess(db, right.reservation, PATIENT),
+        ]),
+      ).toEqual(['done', 'done']);
+      expect((await windowRows(subject)).map(({ failures }) => failures)).toEqual([2, 2]);
+    });
+
     it('uncounts the windows it counted after the clock moves on', async () => {
       const subject = freshEmailSubject();
       const early = await reservePasswordGuess(db, subject, { now: atHour(10, 59), ...PATIENT });
@@ -220,9 +257,11 @@ describe('password guess windows (#7656)', () => {
     });
   });
 
-  describe('device tokens', () => {
-    it('suspends a device after 20 rejected passwords in an hour, for that hour only', async () => {
-      const device = passwordGuessDeviceSubject(randomBytes(16).toString('base64url'));
+  describe('recognised devices', () => {
+    it('share 20 rejected passwords an hour per account, however many token ids they hold', async () => {
+      // Refresh and exchange mint a new token id on every reply, so the bucket is the account's.
+      const device = passwordGuessAccountSubject(randomUUID(), environment);
+      if (!device) throw new Error('Expected an account subject');
       const results = await Promise.all(
         Array.from({ length: 30 }, () => reservePasswordGuess(db, device, { now: MORNING, ...PATIENT })),
       );
@@ -239,13 +278,59 @@ describe('password guess windows (#7656)', () => {
       const subject = freshEmailSubject();
       await reserveMany(subject, 1, atHour(9));
       await reserveMany(subject, 1, atHour(10));
-      expect(await prunePasswordGuessWindows(db, { now: atHour(10, 30) })).toBe('done');
+      expect(await prunePasswordGuessWindows(db, { now: atHour(10, 30) })).toMatchObject({
+        result: 'done',
+        drained: true,
+      });
       expect((await windowRows(subject)).map(({ windowKind, windowStart }) => `${windowKind} ${windowStart}`)).toEqual([
         'day 2026-11-17T00:00:00.000Z',
         'hour 2026-11-17T10:00:00.000Z',
       ]);
       await prunePasswordGuessWindows(db, { now: new Date('2026-11-18T00:00:00.000Z') });
       expect(await windowRows(subject)).toEqual([]);
+    });
+
+    it('deletes in bounded batches until nothing has ended, so a flood cannot stall it', async () => {
+      // Unknown emails create rows too, so a flood of addresses is many small subjects.
+      const flood = Array.from({ length: 25 }, () => freshEmailSubject());
+      await db.insert(authPasswordGuessWindows).values(
+        flood.map((subject) => ({
+          subjectKind: subject.kind,
+          subjectKey: subject.key,
+          windowKind: 'hour' as const,
+          windowStart: new Date('2020-01-01T00:00:00.000Z'),
+          failures: 1,
+        })),
+      );
+      const live = freshEmailSubject();
+      await reserveMany(live, 1, MORNING);
+      const pruned = await prunePasswordGuessWindows(db, { now: atHour(10, 30), batchSize: 10 });
+      expect(pruned).toMatchObject({ result: 'done', drained: true });
+      expect(pruned.batches).toBeGreaterThanOrEqual(3);
+      expect(pruned.deleted).toBeGreaterThanOrEqual(25);
+      for (const subject of flood) expect(await windowRows(subject)).toEqual([]);
+      expect(await windowRows(live)).toHaveLength(2);
+    });
+
+    it('stops at its time budget and leaves the rest for the next tick', async () => {
+      const flood = Array.from({ length: 5 }, () => freshEmailSubject());
+      await db.insert(authPasswordGuessWindows).values(
+        flood.map((subject) => ({
+          subjectKind: subject.kind,
+          subjectKey: subject.key,
+          windowKind: 'hour' as const,
+          windowStart: new Date('2020-01-01T00:00:00.000Z'),
+          failures: 1,
+        })),
+      );
+      expect(await prunePasswordGuessWindows(db, { now: atHour(10, 30), budgetMs: 0 })).toEqual({
+        result: 'done',
+        deleted: 0,
+        batches: 0,
+        drained: false,
+      });
+      expect(await prunePasswordGuessWindows(db, { now: atHour(10, 30) })).toMatchObject({ drained: true });
+      for (const subject of flood) expect(await windowRows(subject)).toEqual([]);
     });
   });
 
