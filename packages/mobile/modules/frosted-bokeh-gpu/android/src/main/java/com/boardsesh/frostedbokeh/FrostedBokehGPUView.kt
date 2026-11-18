@@ -17,9 +17,12 @@ import com.facebook.react.common.LifecycleState
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
+import expo.modules.kotlin.views.ExpoViewCommandReceiver
+import kotlin.math.roundToInt
 
 /** Native-only motion; RN owns all overlays, text, clipping and control behaviour. */
-class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(context, appContext), LifecycleEventListener {
+class FrostedBokehGPUView(context: Context, appContext: AppContext) :
+    ExpoView(context, appContext), LifecycleEventListener, ExpoViewCommandReceiver {
     private val onRenderError by EventDispatcher()
     var pendingBlobs: List<GPUBlobRecord> = emptyList()
     var pendingBase = "#0E0D12"
@@ -28,7 +31,11 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
     var pendingReduceMotion = false
     var pendingDrift = 0.0
     var pendingSwell = 0.0
-    var pendingGlideMs = 0.0
+    var pendingSwapClimbs: GPUSwapClimbsRecord? = null
+    var pendingSwapLook: List<Double>? = null
+    var pendingReleaseMs = 220.0
+    var pendingReleaseOutMs = 150.0
+    var pendingDissolveMs = 240.0
 
     private val motion = BokehMotion()
     private var painter: BokehPainter? = null
@@ -45,6 +52,7 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
     private var lowPower = false
     private var framePending = false
     private var lastVisible = false
+    private var lastFrameAt = -1.0
     private val visibleBounds = Rect()
     private val startedAt = now()
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -93,16 +101,58 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
             reduceMotion = pendingReduceMotion
             drift = pendingDrift.toFloat().coerceAtLeast(0f)
             swell = pendingSwell.toFloat().coerceAtLeast(0f)
-            val next = pendingBlobs.take(MAX_BLOBS).map { blob ->
-                val color = rgba(blob.color)
-                BokehBlob(blob.x.toFloat(), blob.y.toFloat(), blob.r.toFloat(), blob.peak.toFloat(), color[0], color[1], color[2])
+            motion.reduceMotion = reduceMotion
+            motion.look = BokehSwapLook.parse(pendingSwapLook)
+            motion.releaseSeconds = (pendingReleaseMs / 1000).coerceAtLeast(0.001)
+            motion.fadeSeconds = (pendingReleaseOutMs / 1000).coerceAtLeast(0.001)
+            motion.dissolveSeconds = (pendingDissolveMs / 1000).coerceAtLeast(0.001)
+            val current = BokehClimb(pendingKey, lights(pendingBlobs))
+            val pages = mutableMapOf<Int, BokehClimb>()
+            pendingSwapClimbs?.let { climbs ->
+                val center = climbs.centerPage.roundToInt()
+                pages[center] = current
+                climbs.previous?.let { pages[center - 1] = BokehClimb(it.key, lights(it.blobs)) }
+                climbs.next?.let { pages[center + 1] = BokehClimb(it.key, lights(it.blobs)) }
             }
-            motion.update(pendingKey, next, now(), pendingGlideMs / 1000, reduceMotion)
+            motion.setClimbs(current, pages, now())
             refresh()
         } catch (_: Exception) {
             reportError("pipeline")
         }
     }
+
+    /** The board's swap frame, from the `swapFrame` command or prop. */
+    fun setSwapFrame(values: List<Double>) {
+        if (failed || disposed) return
+        val timestamp = now()
+        if (!motion.applyFrame(values, timestamp)) return
+        lastFrameAt = timestamp
+        refresh()
+    }
+
+    /**
+     * Fabric view commands, forwarded by the patched expo-modules-core view manager on the
+     * main thread, so a pending React commit cannot hold a swap frame back (as the board).
+     */
+    override fun receiveViewCommand(commandId: String, args: List<Any?>): Boolean {
+        if (commandId != "swapFrame") return false
+        val values = args.map { arg -> (arg as? Number)?.toDouble() ?: return true }
+        setSwapFrame(values)
+        return true
+    }
+
+    private fun lights(records: List<GPUBlobRecord>): List<BokehBlob> = records.take(MAX_BLOBS).map { record ->
+        val color = rgba(record.color)
+        val x = record.x.toFloat()
+        val y = record.y.toFloat()
+        BokehBlob(x, y, record.r.toFloat(), record.peak.toFloat(), color[0], color[1], color[2],
+            id = if (record.id >= 0 && record.id.isFinite()) record.id.toLong() else -1,
+            seed = if (record.seed >= 0 && record.seed.isFinite()) record.seed.toFloat() else positionSeed(x, y))
+    }
+
+    /** Swap frames arrive only while the board moves; this long after the last one the loop slows down. */
+    private fun moving(timestamp: Double): Boolean =
+        motion.transitioning(timestamp) || (lastFrameAt >= 0 && timestamp - lastFrameAt < FRAME_QUIET_SECONDS)
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -132,7 +182,7 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
         windowVisibility == VISIBLE && isShown && width > 0 && height > 0 && getGlobalVisibleRect(visibleBounds)
 
     private fun scheduleFrame() {
-        val fps = bokehFrameRate(visible(), reduceMotion, lowPower, motion.gliding(now()), drift + swell > 0)
+        val fps = bokehFrameRate(visible(), reduceMotion, lowPower, moving(now()), drift + swell > 0)
         if (fps == 0) {
             stopFrames()
         } else if (!framePending) {
@@ -204,11 +254,6 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
         refresh()
     }
 
-    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
-        super.onSizeChanged(width, height, oldWidth, oldHeight)
-        refresh()
-    }
-
     override fun onHostResume() {
         foreground = true
         lowPower = powerManager.isPowerSaveMode
@@ -230,7 +275,14 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
         post { if (!disposed) onRenderError(mapOf("reason" to reason)) }
     }
 
+    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight)
+        motion.width = width / (resources.displayMetrics.density.takeIf { it > 0f } ?: 1f)
+        refresh()
+    }
+
     companion object {
+        private const val FRAME_QUIET_SECONDS = 0.1
         private fun now() = SystemClock.elapsedRealtimeNanos() / 1_000_000_000.0
         private fun rgba(hex: String): FloatArray {
             var clean = hex.trim().removePrefix("#")

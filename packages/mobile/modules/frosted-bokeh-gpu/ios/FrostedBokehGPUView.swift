@@ -4,6 +4,7 @@ import UIKit
 
 /// One blob as the shader reads it. Layout matches `Blob` in the shader:
 /// float2 (8) + float + float, then float4 on a 16-byte boundary = 32 bytes.
+/// The colour's alpha carries the light's breathing seed.
 struct GPUBlob {
   var pos: SIMD2<Float>
   var r: Float
@@ -30,9 +31,10 @@ struct GPUUniforms {
 
 /// Draws the blobs and moves them. It redraws only while something moves:
 /// 15 fps for the breathing (a light's fastest drift is about 2 pt/s, a tenth
-/// of a point a frame), 60 fps while gliding to the next climb, and nothing at
-/// all when the view is off screen, the app is in the background, Reduce Motion
-/// is on (no breathing, no glide) or Low Power Mode is on (no breathing).
+/// of a point a frame), 60 fps while the board's swap frames arrive or a
+/// release runs (`BokehMotion`), and nothing at all when the view is off
+/// screen or the app is in the background. Reduce Motion stops the breathing
+/// and keeps the dissolve; Low Power Mode stops the breathing only.
 final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   let onRenderError = EventDispatcher()
 
@@ -44,25 +46,27 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   var pendingReduceMotion = false
   var pendingDrift = 0.0
   var pendingSwell = 0.0
-  var pendingGlideMs = 0.0
+  var pendingSwapClimbs: GPUSwapClimbsRecord?
+  var pendingSwapLook: [Double]?
+  var pendingReleaseMs = 220.0
+  var pendingReleaseOutMs = 150.0
+  var pendingDissolveMs = 240.0
 
   private static let breathingFramesPerSecond = 15
-  private static let glidingFramesPerSecond = 60
+  private static let movingFramesPerSecond = 60
+  /// Swap frames arrive only while the board moves; this long after the last one the loop slows down.
+  private static let frameQuiet: CFTimeInterval = 0.1
 
   private let mtkView: MTKView
   private let startTime = CACurrentMediaTime()
+  private let motion = BokehMotion()
 
   private var blend: Float = 0
   private var base = SIMD4<Float>(0, 0, 0, 1)
-  private var key: String?
   private var reduceMotion = false
   private var drift: Float = 0
   private var swell: Float = 0
-  private var glideDuration: CFTimeInterval = 0
-  private var target: [GPUBlob] = []
-  /// What a glide starts from, until it finishes.
-  private var source: [GPUBlob]?
-  private var glideStart: CFTimeInterval = 0
+  private var lastFrameAt: CFTimeInterval = -1
   private var inBackground = UIApplication.shared.applicationState == .background
   private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
   private var reportedError = false
@@ -95,6 +99,7 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   override func layoutSubviews() {
     super.layoutSubviews()
     mtkView.frame = bounds
+    motion.width = Float(bounds.width)
     updateScale()
     mtkView.setNeedsDisplay()
   }
@@ -123,27 +128,76 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     reduceMotion = pendingReduceMotion
     drift = Float(max(0, pendingDrift))
     swell = Float(max(0, pendingSwell))
-    glideDuration = max(0, pendingGlideMs) / 1000
-    let next = pendingBlobs.prefix(BokehRenderer.maxBlobs).map {
-      GPUBlob(
-        pos: SIMD2(Float($0.x), Float($0.y)),
-        r: Float($0.r),
-        peak: Float($0.peak),
-        color: Self.rgba($0.color)
-      )
+    motion.reduceMotion = reduceMotion
+    motion.look = BokehSwapLook(pendingSwapLook)
+    motion.releaseSeconds = max(0.001, pendingReleaseMs / 1000)
+    motion.fadeSeconds = max(0.001, pendingReleaseOutMs / 1000)
+    motion.dissolveSeconds = max(0.001, pendingDissolveMs / 1000)
+    let current = BokehClimb(key: pendingKey, lights: Self.lights(pendingBlobs))
+    var pages: [Int: BokehClimb] = [:]
+    if let climbs = pendingSwapClimbs {
+      let center = Int(climbs.centerPage.rounded())
+      pages[center] = current
+      if let previous = climbs.previous { pages[center - 1] = BokehClimb(key: previous.key, lights: Self.lights(previous.blobs)) }
+      if let next = climbs.next { pages[center + 1] = BokehClimb(key: next.key, lights: Self.lights(next.blobs)) }
     }
-    if let key, key != pendingKey, !reduceMotion, glideDuration > 0 {
-      // Glide from what is on screen right now, a glide in progress included.
-      source = blobs(at: now)
-      glideStart = now
-    } else if key != pendingKey || reduceMotion {
-      source = nil
-    }
-    key = pendingKey
-    target = Array(next)
+    motion.setClimbs(current: current, pages: pages, now: now)
     updateLoop(now: now)
     if !inBackground {
       mtkView.setNeedsDisplay()
+    }
+  }
+
+  /// The board's swap frame, from the `swapFrame` command or prop.
+  func setSwapFrame(_ values: [Double]) {
+    let now = CACurrentMediaTime()
+    guard motion.applyFrame(values, now: now) else { return }
+    lastFrameAt = now
+    updateLoop(now: now)
+    if !inBackground {
+      mtkView.setNeedsDisplay()
+    }
+  }
+
+  /// Fabric view commands. Reanimated's `dispatchCommand` reaches here through
+  /// RCTMountingManager, inline on the main thread when it dispatches from the
+  /// UI runtime, without waiting for a React commit (as `ClimbOverlayGPUView`).
+  /// Swift sees ExpoFabricViewObjC as a plain UIView, so this names the
+  /// selector that RCTViewComponentView implements; anything but `swapFrame`
+  /// goes to that.
+  @objc(handleCommand:args:)
+  func handleViewCommand(_ commandName: NSString, args: NSArray) {
+    guard commandName as String == "swapFrame" else {
+      forwardViewCommand(commandName, args: args)
+      return
+    }
+    var values: [Double] = []
+    for arg in args {
+      guard let number = arg as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return }
+      values.append(number.doubleValue)
+    }
+    setSwapFrame(values)
+  }
+
+  private func forwardViewCommand(_ commandName: NSString, args: NSArray) {
+    typealias CommandHandler = @convention(c) (AnyObject, Selector, NSString, NSArray) -> Void
+    let selector = #selector(handleViewCommand(_:args:))
+    guard let parent = FrostedBokehGPUView.superclass(),
+      let method = class_getInstanceMethod(parent, selector)
+    else { return }
+    unsafeBitCast(method_getImplementation(method), to: CommandHandler.self)(self, selector, commandName, args)
+  }
+
+  private static func lights(_ records: [GPUBlobRecord]) -> [BokehLight] {
+    records.prefix(BokehMotion.maxLights).map { record in
+      let color = rgba(record.color)
+      let x = Float(record.x)
+      let y = Float(record.y)
+      return BokehLight(
+        id: record.id >= 0 && record.id.isFinite ? Int64(record.id) : -1,
+        seed: record.seed >= 0 && record.seed.isFinite ? Float(record.seed) : BokehLight.positionSeed(x: x, y: y),
+        x: x, y: y, r: Float(record.r), peak: Float(record.peak),
+        red: color.x, green: color.y, blue: color.z)
     }
   }
 
@@ -153,46 +207,16 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     !reduceMotion && !lowPower && drift + swell > 0
   }
 
-  /// 0...1 through the current glide, or nil when there is none.
-  private func glideProgress(at now: CFTimeInterval) -> Double? {
-    guard source != nil, glideDuration > 0 else { return nil }
-    let progress = (now - glideStart) / glideDuration
-    return progress >= 1 ? nil : max(0, progress)
+  private func moving(at now: CFTimeInterval) -> Bool {
+    motion.transitioning(now) || (lastFrameAt >= 0 && now - lastFrameAt < Self.frameQuiet)
   }
 
   private func updateLoop(now: CFTimeInterval) {
-    let gliding = glideProgress(at: now) != nil
-    let running = window != nil && !inBackground && (breathing || gliding)
-    mtkView.preferredFramesPerSecond = gliding ? Self.glidingFramesPerSecond : Self.breathingFramesPerSecond
+    let moving = moving(at: now)
+    let running = window != nil && !inBackground && (breathing || moving)
+    mtkView.preferredFramesPerSecond = moving ? Self.movingFramesPerSecond : Self.breathingFramesPerSecond
     mtkView.enableSetNeedsDisplay = !running
     mtkView.isPaused = !running
-  }
-
-  /// The blobs for one frame: the target, or the glide's in-between. Lights
-  /// pair by index (the shared geometry orders them along the board); a light
-  /// with no partner fades out where it was, or in where it lands.
-  private func blobs(at now: CFTimeInterval) -> [GPUBlob] {
-    guard let source, let progress = glideProgress(at: now) else { return target }
-    let eased = Float(progress * progress * (3 - 2 * progress))
-    var out: [GPUBlob] = []
-    out.reserveCapacity(max(source.count, target.count))
-    for index in 0..<max(source.count, target.count) {
-      let from = index < source.count ? source[index] : nil
-      let to = index < target.count ? target[index] : nil
-      if let from, let to {
-        out.append(GPUBlob(
-          pos: from.pos + (to.pos - from.pos) * eased,
-          r: from.r + (to.r - from.r) * eased,
-          peak: from.peak + (to.peak - from.peak) * eased,
-          color: from.color + (to.color - from.color) * eased
-        ))
-      } else if let from {
-        out.append(GPUBlob(pos: from.pos, r: from.r, peak: from.peak * (1 - eased), color: from.color))
-      } else if let to {
-        out.append(GPUBlob(pos: to.pos, r: to.r, peak: to.peak * eased, color: to.color))
-      }
-    }
-    return out
   }
 
   @objc private func didEnterBackground() {
@@ -233,10 +257,9 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     // there can block the main thread. willEnterForeground redraws.
     guard !inBackground else { return }
     let now = CACurrentMediaTime()
-    if source != nil, glideProgress(at: now) == nil {
-      source = nil
+    var frame = motion.lights(now).map {
+      GPUBlob(pos: SIMD2($0.x, $0.y), r: $0.r, peak: $0.peak, color: SIMD4($0.red, $0.green, $0.blue, $0.seed))
     }
-    var frame = blobs(at: now)
     let count = Int32(frame.count)
     if frame.isEmpty {
       // setFragmentBytes needs a non-empty buffer; count 0 draws only the base.
@@ -281,8 +304,8 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
 /// per launch (a few milliseconds), so no metallib has to survive CocoaPods
 /// packaging.
 enum BokehRenderer {
-  /// `MAX_BOKEH_BLOBS` in `@boardsesh/frosted-bokeh`, doubled for headroom.
-  static let maxBlobs = 30
+  /// `MAX_GPU_BOKEH_LIGHTS` in `@boardsesh/frosted-bokeh`: two climbs of `MAX_BOKEH_BLOBS`.
+  static let maxBlobs = BokehMotion.maxLights
 
   static let device = MTLCreateSystemDefaultDevice()
   private static let queue = device?.makeCommandQueue()

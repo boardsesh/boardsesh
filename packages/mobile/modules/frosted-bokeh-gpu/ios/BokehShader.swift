@@ -3,8 +3,10 @@
 /// per blob, composited over the base in sRGB space with the CSS blend the
 /// React Native views use. `motion` adds the breathing: each light drifts on
 /// its own slow orbit (radius `drift` points) and swells by up to `swell` of
-/// its peak. Gliding between climbs happens on the CPU, which hands this pass
-/// the in-between blobs.
+/// its peak. The orbit's phase is the light's own seed, in the colour's alpha
+/// (a hash of its hold), so a light never jumps when its slot changes.
+/// Changing climbs happens on the CPU (`BokehMotion`), which hands this pass
+/// each frame's lights.
 ///
 /// Compiled from source at runtime (`BokehRenderer`), so no metallib has to
 /// survive CocoaPods packaging. Layouts must match `GPUBlob` / `GPUUniforms`.
@@ -50,7 +52,7 @@ fragment float4 bokehFragment(VOut in [[stage_in]],
   float3 value = u.base.rgb;
   for (int i = 0; i < u.count; i++) {
     Blob b = blobs[i];
-    float fi = float(i);
+    float fi = b.color.a;
     float2 centre = b.pos;
     float peak = b.peak;
     if (u.motion > 0.5) {
