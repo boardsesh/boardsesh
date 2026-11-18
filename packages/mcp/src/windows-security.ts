@@ -10,32 +10,48 @@ $ErrorActionPreference = 'Stop'
 $target = $env:BOARDSESH_MCP_ACL_PATH
 $operation = $env:BOARDSESH_MCP_ACL_OPERATION
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$directoryAcl = [System.Security.AccessControl.DirectorySecurity]::new()
+$directoryAcl.SetOwner($identity)
+$directoryAcl.SetAccessRuleProtection($true, $false)
+$inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+$directoryRule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
+$directoryAcl.AddAccessRule($directoryRule)
+if ($operation -eq 'secure-directory' -and -not (Test-Path -LiteralPath $target)) {
+  # Specify the security descriptor at creation. An elevated token's default
+  # owner may be Administrators rather than WindowsIdentity.User.
+  [System.IO.Directory]::CreateDirectory($target, $directoryAcl) | Out-Null
+} elseif ($operation -eq 'create-file') {
+  $fileAcl = [System.Security.AccessControl.FileSecurity]::new()
+  $fileAcl.SetOwner($identity)
+  $fileAcl.SetAccessRuleProtection($true, $false)
+  $fileRule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, [System.Security.AccessControl.AccessControlType]::Allow)
+  $fileAcl.AddAccessRule($fileRule)
+  $stream = [System.IO.FileStream]::new($target, [System.IO.FileMode]::CreateNew, [System.Security.AccessControl.FileSystemRights]::FullControl, [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::None, $fileAcl)
+  $stream.Dispose()
+}
 $entry = Get-Item -LiteralPath $target -Force
-if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Reparse points are not private storage' }
+if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'mcp-acl:reparse-point' }
 $acl = Get-Acl -LiteralPath $target
 $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
-if ($owner.Value -ne $identity.Value) { throw 'Storage belongs to another account' }
+if ($owner.Value -ne $identity.Value) { throw 'mcp-acl:wrong-owner' }
 if ($operation -eq 'secure-directory') {
-  if (-not $entry.PSIsContainer) { throw 'Storage must be a directory' }
-  $acl = [System.Security.AccessControl.DirectorySecurity]::new()
-  $acl.SetOwner($identity)
-  $acl.SetAccessRuleProtection($true, $false)
-  $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
-  $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
-  $acl.AddAccessRule($rule)
-  Set-Acl -LiteralPath $target -AclObject $acl
+  if (-not $entry.PSIsContainer) { throw 'mcp-acl:not-directory' }
+  Set-Acl -LiteralPath $target -AclObject $directoryAcl
   $acl = Get-Acl -LiteralPath $target
-  if (-not $acl.AreAccessRulesProtected) { throw 'Directory permissions are inherited' }
-} elseif ($operation -ne 'check-file') { throw 'Unknown ACL operation' }
+  if (-not $acl.AreAccessRulesProtected) { throw 'mcp-acl:inherited-directory' }
+} elseif ($operation -ne 'check-file' -and $operation -ne 'create-file') { throw 'mcp-acl:unknown-operation' }
 $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
-if ($rules.Count -lt 1) { throw 'No private access rule' }
+if ($rules.Count -lt 1) { throw 'mcp-acl:no-access-rules' }
 foreach ($rule in $rules) {
-  if ($rule.IdentityReference.Value -ne $identity.Value -or $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'Storage permits another account' }
+  if ($rule.IdentityReference.Value -ne $identity.Value -or $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'mcp-acl:nonprivate-access' }
 }
-if ($operation -eq 'check-file' -and $entry.PSIsContainer) { throw 'Credentials must be a file' }
+if ($operation -ne 'secure-directory' -and $entry.PSIsContainer) { throw 'mcp-acl:not-file' }
 `;
 
-async function runPrivateAcl(path: string, operation: 'secure-directory' | 'check-file'): Promise<void> {
+async function runPrivateAcl(
+  path: string,
+  operation: 'secure-directory' | 'check-file' | 'create-file',
+): Promise<void> {
   try {
     await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', PRIVATE_ACL_SCRIPT], {
       env: { ...process.env, BOARDSESH_MCP_ACL_PATH: path, BOARDSESH_MCP_ACL_OPERATION: operation },
@@ -43,11 +59,24 @@ async function runPrivateAcl(path: string, operation: 'secure-directory' | 'chec
       maxBuffer: 16_384,
       windowsHide: true,
     });
-  } catch {
-    throw new McpError(
+  } catch (error) {
+    const stderr =
+      typeof error === 'object' && error !== null && 'stderr' in error && typeof error.stderr === 'string'
+        ? error.stderr
+        : '';
+    const reason = /mcp-acl:([a-z-]+)/.exec(stderr)?.[1] ?? 'powershell-failed';
+    const failure = new McpError(
       'unsafe_permissions',
-      'Windows private-storage permissions could not be verified. Use a directory owned by your Windows account with PowerShell available.',
+      `Windows private-storage permissions could not be verified (${reason}). Use a directory owned by your Windows account with PowerShell available.`,
     );
+    // Test runners can print the underlying script failure. User-facing CLI and
+    // MCP errors emit only the sanitized message above; no credential contents
+    // are ever passed to PowerShell.
+    Object.defineProperty(failure, 'cause', {
+      value: new Error(stderr || 'PowerShell could not be executed.'),
+      enumerable: false,
+    });
+    throw failure;
   }
 }
 
@@ -57,4 +86,9 @@ export async function secureWindowsDirectory(path: string): Promise<void> {
 
 export async function assertPrivateWindowsFile(path: string): Promise<void> {
   if (process.platform === 'win32') await runPrivateAcl(path, 'check-file');
+}
+
+/** Exclusive empty-file creation with an explicit current-user owner and DACL. */
+export async function createPrivateWindowsFile(path: string): Promise<void> {
+  if (process.platform === 'win32') await runPrivateAcl(path, 'create-file');
 }

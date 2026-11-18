@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
 const packageRoot = process.argv[2] ? path.resolve(process.argv[2]) : fileURLToPath(new URL('..', import.meta.url));
-const profile = await mkdtemp(path.join(tmpdir(), 'boardsesh-mcp-smoke-'));
+const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'boardsesh-mcp-smoke-'));
+const profile = path.join(temporaryRoot, 'profile');
 const client = new Client({ name: 'boardsesh-package-smoke', version: '1.0.0' });
 const transport = new StdioClientTransport({
   command: process.execPath,
@@ -37,5 +38,5 @@ try {
 } finally {
   await client.close();
   await transport.close();
-  await rm(profile, { recursive: true, force: true });
+  await rm(temporaryRoot, { recursive: true, force: true });
 }

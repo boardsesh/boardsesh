@@ -18,8 +18,15 @@ export async function ensurePrivateDirectory(directory: string): Promise<void> {
   if (existing?.isSymbolicLink() || (existing && !existing.isDirectory())) {
     throw new McpError('unsafe_directory', 'The data directory must be a real directory, not a symlink.');
   }
-  await mkdir(absolute, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') {
+    // The Windows helper creates the leaf with its security descriptor already
+    // attached; Node mkdir would first assign the token's possibly-group owner.
+    await mkdir(dirname(absolute), { recursive: true });
+  } else {
+    await mkdir(absolute, { recursive: true, mode: 0o700 });
+  }
   const canonical = join(await realpath(dirname(absolute)), basename(absolute));
+  if (process.platform === 'win32') await secureWindowsDirectory(canonical);
   const attributes = await lstat(canonical);
   if (attributes.isSymbolicLink() || !attributes.isDirectory()) {
     throw new McpError('unsafe_directory', 'The data directory must be a real directory.');
@@ -28,7 +35,6 @@ export async function ensurePrivateDirectory(directory: string): Promise<void> {
     throw new McpError('unsafe_directory', 'The data directory must belong to the current user.');
   }
   if (process.platform !== 'win32') await chmod(canonical, 0o700);
-  else await secureWindowsDirectory(canonical);
 }
 
 export function isMissing(error: unknown): boolean {

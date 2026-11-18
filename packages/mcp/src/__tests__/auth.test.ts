@@ -35,8 +35,10 @@ class MemoryStore implements ProfileStore {
 }
 
 async function fixture() {
-  const dataDir = await mkdtemp(join(tmpdir(), 'boardsesh-mcp-auth-'));
-  directories.push(dataDir);
+  const directory = await mkdtemp(join(tmpdir(), 'boardsesh-mcp-auth-'));
+  directories.push(directory);
+  const dataDir = join(directory, 'private-profile');
+  await ensurePrivateDirectory(dataDir);
   const store = new MemoryStore();
   const profile: Profile = {
     issuer: ISSUER,

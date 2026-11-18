@@ -1,10 +1,13 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ensurePrivateDirectory } from '../profile-lock';
+import { readCredentials, writeCredentials } from '../credentials';
+import { ensurePrivateDirectory, withProfileLock } from '../profile-lock';
+import { ISSUER } from '../types';
 import { assertPrivateWindowsFile } from '../windows-security';
 
 const execute = promisify(execFile);
@@ -24,8 +27,10 @@ async function powershell(path: string, script: string): Promise<string> {
 
 describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () => {
   it('protects a private directory and rejects credentials readable by Everyone', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'boardsesh-mcp-acl-'));
-    directories.push(directory);
+    const parent = await mkdtemp(join(tmpdir(), 'boardsesh-mcp-acl-'));
+    directories.push(parent);
+    const directory = join(parent, 'private-profile');
+    await ensurePrivateDirectory(directory);
     await ensurePrivateDirectory(directory);
     const directoryVerdict = await powershell(
       directory,
@@ -42,7 +47,23 @@ describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () 
     );
     expect(directoryVerdict).toBe('private');
     const credentials = join(directory, 'credentials.json');
-    await writeFile(credentials, '{}');
+    await withProfileLock(directory, async (guard) => {
+      await writeCredentials(
+        directory,
+        {
+          version: 1,
+          issuer: ISSUER,
+          clientId: 'public-client',
+          accountId: 'test-account',
+          generation: randomUUID(),
+          accessToken: 'test-access',
+          refreshToken: 'test-refresh',
+          refreshPending: false,
+        },
+        guard,
+      );
+    });
+    expect(await readCredentials(directory)).toMatchObject({ clientId: 'public-client' });
     await expect(assertPrivateWindowsFile(credentials)).resolves.toBeUndefined();
     await powershell(
       credentials,
@@ -55,6 +76,45 @@ describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () 
       Set-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH -AclObject $acl
     `,
     );
-    await expect(assertPrivateWindowsFile(credentials)).rejects.toMatchObject({ code: 'unsafe_permissions' });
+    await expect(assertPrivateWindowsFile(credentials)).rejects.toMatchObject({
+      code: 'unsafe_permissions',
+      message: expect.stringContaining('(nonprivate-access)'),
+      cause: expect.any(Error),
+    });
+  }, 30_000);
+
+  it('rejects an existing Administrators-owned directory without changing its owner', async (context) => {
+    const parent = await mkdtemp(join(tmpdir(), 'boardsesh-mcp-acl-owner-'));
+    directories.push(parent);
+    const directory = join(parent, 'existing-profile');
+    await ensurePrivateDirectory(directory);
+    const owner = await powershell(
+      directory,
+      String.raw`
+      $ErrorActionPreference = 'Stop'
+      $principal = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent())
+      if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { Write-Output 'not-elevated'; exit }
+      $acl = Get-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH
+      $acl.SetOwner([System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+      Set-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH -AclObject $acl
+      Write-Output 'S-1-5-32-544'
+    `,
+    );
+    if (owner === 'not-elevated') context.skip();
+    expect(owner).toBe('S-1-5-32-544');
+    await expect(ensurePrivateDirectory(directory)).rejects.toMatchObject({
+      code: 'unsafe_permissions',
+      message: expect.stringContaining('(wrong-owner)'),
+      cause: expect.any(Error),
+    });
+    const remainingOwner = await powershell(
+      directory,
+      String.raw`
+      $ErrorActionPreference = 'Stop'
+      $acl = Get-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH
+      Write-Output $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    `,
+    );
+    expect(remainingOwner).toBe(owner);
   }, 30_000);
 });

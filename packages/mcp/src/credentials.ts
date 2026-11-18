@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { isMissing, type ProfileLock } from './profile-lock';
 import { ISSUER, McpError } from './types';
-import { assertPrivateWindowsFile } from './windows-security';
+import { assertPrivateWindowsFile, createPrivateWindowsFile } from './windows-security';
 
 const CredentialsSchema = z.object({
   version: z.literal(1),
@@ -61,7 +61,8 @@ export async function readCredentials(directory: string): Promise<Credentials | 
 export async function writeCredentials(directory: string, credentials: Credentials, guard: ProfileLock): Promise<void> {
   guard.assertHeld();
   const temporary = join(directory, `.credentials-${randomUUID()}.json`);
-  const handle = await open(temporary, 'wx', 0o600);
+  if (process.platform === 'win32') await createPrivateWindowsFile(temporary);
+  const handle = await open(temporary, process.platform === 'win32' ? 'r+' : 'wx', 0o600);
   try {
     await handle.writeFile(JSON.stringify(CredentialsSchema.parse(credentials)));
     await handle.sync();
