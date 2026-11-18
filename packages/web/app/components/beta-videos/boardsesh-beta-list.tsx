@@ -42,7 +42,7 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
   priorityFirstCard = false,
 }) => {
   const { t } = useTranslation('common');
-  const visibleLinks = links.filter((link) => Boolean(link.thumbnail));
+  const visibleLinks = source === 'home' ? links.filter((link) => Boolean(link.thumbnail)) : links;
   // `data-source` is what the stylesheet reads to drop the inline inset on the
   // home rail, which already sits inside the page container's own padding.
   return (

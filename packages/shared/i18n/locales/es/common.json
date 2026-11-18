@@ -270,7 +270,8 @@
   "betaVideos": {
     "empty": "Sin vídeos de beta todavía",
     "openClimb": "Ver {{climb}} y su beta",
-    "openVideo": "Ver la beta de {{creator}} en {{platform}}"
+    "openVideo": "Ver la beta de {{creator}} en {{platform}}",
+    "watchOn": "Ver beta en {{platform}}"
   },
   "board": {
     "resetZoom": "Restablecer zoom"

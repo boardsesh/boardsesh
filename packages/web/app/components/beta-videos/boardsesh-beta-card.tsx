@@ -75,7 +75,26 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
 
   const opensClimb = source === 'home' && Boolean(climbHrefEffective);
   const mainHref = opensClimb && climbHrefEffective ? climbHrefEffective : link.link;
-  if (!thumbnailSrc) return null;
+  if (!thumbnailSrc) {
+    if (source === 'home') return null;
+    return (
+      <article className={`${styles.card} ${styles.textCard}`}>
+        <a
+          href={link.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.textLink}
+          onClick={() =>
+            track('Beta Video Link Clicked', { platform: analyticsPlatform, climbUuid: link.climb_uuid, source })
+          }
+        >
+          {link.foreign_username
+            ? t('betaVideos.openVideo', { creator: link.foreign_username, platform: displayPlatform })
+            : t('betaVideos.watchOn', { platform: displayPlatform })}
+        </a>
+      </article>
+    );
+  }
 
   return (
     <article className={styles.card}>

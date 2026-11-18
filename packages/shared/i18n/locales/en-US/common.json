@@ -1219,7 +1219,8 @@
   "betaVideos": {
     "empty": "No beta videos yet",
     "openClimb": "See {{climb}} and its beta",
-    "openVideo": "Watch {{creator}}’s beta on {{platform}}"
+    "openVideo": "Watch {{creator}}’s beta on {{platform}}",
+    "watchOn": "Watch beta on {{platform}}"
   },
   "ascents": {
     "deleteTitle": "Delete ascent",

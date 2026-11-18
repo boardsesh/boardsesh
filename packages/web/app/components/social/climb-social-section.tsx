@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useSession } from 'next-auth/react';
+import { usePathname } from 'next/navigation';
 import VoteButton from './vote-button';
 import CommentSection from './comment-section';
 import ProposalSection from './proposal-section';
@@ -29,6 +30,8 @@ export default function ClimbSocialSection({
 }: ClimbSocialSectionProps) {
   const { t } = useTranslation('common');
   const { status } = useSession();
+  const pathname = usePathname();
+  const signInHref = `/auth/login?callbackUrl=${encodeURIComponent(pathname ?? '/')}`;
   return (
     <Box>
       {status === 'authenticated' && boardType && angle != null && (
@@ -47,7 +50,7 @@ export default function ClimbSocialSection({
         ) : (
           <MuiLink
             component={LocaleLink}
-            href="/auth/login"
+            href={signInHref}
             sx={{ minHeight: 44, display: 'inline-flex', alignItems: 'center' }}
           >
             {t('comment.signInToSuggestGrade')}

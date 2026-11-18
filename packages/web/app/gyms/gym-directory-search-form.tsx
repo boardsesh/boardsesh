@@ -8,6 +8,7 @@ export default function GymDirectorySearchForm(props: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   locale: Locale;
+  focusSearch?: boolean;
   /** The board filter panel; rendered inside the same GET form. */
   children?: React.ReactNode;
 }) {

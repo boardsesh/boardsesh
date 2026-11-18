@@ -86,7 +86,12 @@ function getClientInstance(
     // don't narrow the spread.
     const inherited =
       (parentInstance?.language === locale ? parentInstance.getDataByLanguage(locale) : undefined) ?? {};
-    const instance = createConfiguredInstance(locale, inherited);
+    // i18next deep-merges into an existing bundle. Copy inherited bundles
+    // into an empty store so a nested page cannot mutate its parent's copy.
+    const instance = createConfiguredInstance(locale, {});
+    for (const [namespace, bundle] of Object.entries(inherited)) {
+      instance.addResourceBundle(locale, namespace, bundle, true, true);
+    }
     for (const [namespace, bundle] of Object.entries(resources)) {
       instance.addResourceBundle(locale, namespace, bundle, true, true);
     }

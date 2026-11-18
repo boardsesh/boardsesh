@@ -163,4 +163,19 @@ describe('I18nProvider server rendering', () => {
     );
     expect(html.replaceAll('<!-- -->', '')).toContain('Startseite|Über uns');
   });
+  it('keeps a child namespace slice out of its parent and siblings', async () => {
+    function ParentProbe() {
+      const { i18n } = useTranslation('marketing');
+      return <span>{String(i18n.exists('about.title', { ns: 'marketing' }))}</span>;
+    }
+    const html = await renderRequest(
+      <I18nProvider locale="de" resources={{ marketing: { home: { title: 'Startseite' } } }}>
+        <I18nProvider locale="de" resources={{ marketing: { about: { title: 'Über uns' } } }}>
+          <span>Child</span>
+        </I18nProvider>
+        <ParentProbe />
+      </I18nProvider>,
+    );
+    expect(html).toContain('<span>false</span>');
+  });
 });

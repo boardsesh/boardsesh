@@ -27,6 +27,7 @@ import {
   DIRECTORY_PAGE_SIZE,
   FACET_BASE_PATHS,
   buildFacetSwitchHref,
+  buildDirectoryHref,
   isSearchApplication,
   parseDirectoryQuery,
   type DirectoryFacet,
@@ -83,6 +84,9 @@ export async function generateGymDirectoryMetadata(facet: DirectoryFacet): Promi
 export async function renderGymDirectory(facet: DirectoryFacet, props: DirectoryRouteProps) {
   const searchParams = await props.searchParams;
   const query = parseDirectoryQuery(facet, searchParams);
+  const focusSearch = searchParams.claim === '1';
+  const currentSearchHref = buildDirectoryHref(facet, query, 1);
+  const claimSearchHref = `${currentSearchHref}${currentSearchHref.includes('?') ? '&' : '?'}claim=1#gym-directory-query`;
 
   // Past the crawl-trap ceiling, before spending a query on it. A 404 rather
   // than a clamp: clamping serves a 200 whose URL and highlighted page disagree.
@@ -196,7 +200,10 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         }
       >
         <Typography component="p" variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {t('directory.source')} <MuiLink href="#gym-directory-search">{t('claim.topAction')}</MuiLink>
+          {t('directory.source')}{' '}
+          <MuiLink component={LocaleLink} href={claimSearchHref}>
+            {t('claim.topAction')}
+          </MuiLink>
         </Typography>
 
         {/* The anchor the closing claim prompt jumps back to. Same clearance
@@ -210,7 +217,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
           }}
         >
-          <GymDirectorySearchForm facet={facet} query={query} locale={locale}>
+          <GymDirectorySearchForm facet={facet} query={query} locale={locale} focusSearch={focusSearch}>
             {/* Inside the form on purpose: layout, size and angle are
                 checkboxes, and a closed <details> still submits them, so one
                 "Show gyms" applies the text, the place and the wall together. */}
