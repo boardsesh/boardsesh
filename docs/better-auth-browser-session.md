@@ -1802,16 +1802,17 @@ backend and the dev Postgres. B7b to B7d put the acceptance specs on it. It
 needs the dev database (`vp run db:up` runs as a task dependency) and
 `vp exec playwright install chromium webkit` once. Add `-- --project=webkit` to
 run one engine, and `BROWSER_SESSION_E2E_REUSE_EXPORT=1` to skip the Expo
-export when one is already built. It is not part of per-PR CI. The workflow
-`browser-session-e2e.yml` runs it nightly, on dispatch, and on a pull request
-that touches the harness or the web or backend auth it exercises.
+export when one is already built. The workflow `browser-session-e2e.yml` runs
+it nightly, on dispatch, and on a pull request that touches the harness or the
+web or backend auth it exercises, always against a production build of www
+(below).
 
 What starts, from `scripts/browser-session-e2e.ts` and
 `packages/web/e2e/browser-session/global-setup.ts`:
 
 | Host | Served by |
 | --- | --- |
-| `https://www.boardsesh.test` | `next dev`, with `NEXTAUTH_URL` on that origin and `AUTH_COOKIE_DOMAIN=.boardsesh.test` |
+| `https://www.boardsesh.test` | `next start` on a production build (CI), or `next dev` (a local run's default), with `NEXTAUTH_URL` on that origin and `AUTH_COOKIE_DOMAIN=.boardsesh.test` |
 | `https://app.boardsesh.test` | the standalone Expo export (baseUrl `/`, SPA fallback), with the www, app and backend origins baked in |
 | `https://ws.boardsesh.test` | the backend (`src/index.ts`), with `BOARDSESH_URL` and `APP_ORIGIN` set to the two origins above |
 
@@ -1869,7 +1870,8 @@ that shows it working in legacy mode in both engines:
 | `legacySession.addTo(context, account, shape)` | A NextAuth cookie minted with `encode` from `next-auth/jwt` and the run's `NEXTAUTH_SECRET`: `normal`, `chunked` (three `.0` to `.2` pieces), `host-only` (no Domain, www only) or `plain-named` (`next-auth.session-token`, no `Secure`). Returns the cookie names. | `legacy-session.spec.ts` |
 | `restartStack({ env, backendEnv, webEnv })` | Stops both servers and starts them again with `env` set over the run's own environment on both, and `backendEnv` or `webEnv` on one (null unsets; no argument goes back to it). The database, edge, browser contexts and ports stay. The setup process does it, so the specs reach it through a loopback control server with a per-run token. A start that fails rejects with the last lines of the failing server's log, so a spec can assert a refusal code. Allow minutes under `next dev`. | `restart.spec.ts`, `acceptance-8-one-switch.spec.ts` |
 | `freshAccount()` | A new account for one test, made through `database.ts create` (the same two inserts as account B), with its own id under the run's prefix, so teardown deletes it with B. Tests that sign in, switch and sign out use their own accounts, so no test revokes another's session or shares its rate-limit history. | the acceptance specs |
-| `accountDatabase` | Three steps on a run's own account: `removePassword` (a climber who only used Google), `ageSession(account, sessionId, days)` and `sessionExpiry(account, sessionId)`, for the renewal check. | `acceptance-1`, `acceptance-4` |
+| `accountDatabase` | Steps on a run's own account: `removePassword` (a climber who only used Google), `ageSession(account, sessionId, days)` and `sessionExpiry(account, sessionId)` for the renewal check, `firstPasswordAccount(account)` (no password, a Google identity, an `@example.test` address and its owned reservation: the rows the backend's first-password proof makes) and `hasPassword(account)`. | `acceptance-1`, `acceptance-4` |
+| `mailbox` | What the run's mail sink took (`mail-sink.ts`, under `better-auth` only): `firstPasswordLink(email)` waits up to 20 s for the emailed first-password link and returns its token and operation key; `count(email)`. The sink is an SMTPS listener on 127.0.0.1 with the run's certificate and its own user and password; www's shared mailer sends to it unchanged, and it delivers nothing anywhere. | `acceptance-4-first-password` |
 
 Legacy mode rewrites the session cookie on every `/api/auth/session` read, as
 well as at sign-in (both show in `set-cookie-recording.spec.ts`), and
@@ -1878,10 +1880,28 @@ well as at sign-in (both show in `set-cookie-recording.spec.ts`), and
 **www as a production build.** `BROWSER_SESSION_E2E_WWW=production` (or
 `vp run test:e2e:browser-session -- --www-production`) runs `next build` and
 `next start` instead of `next dev`. Router Cache behaviour and several auth
-branches differ under `NODE_ENV=production`. The nightly uses it and a pull
-request run does not, because the build adds minutes; a dispatch has a `www`
-input. The build writes `packages/web/.next`, so do not start it while
-`vp run dev` is running.
+branches differ under `NODE_ENV=production`, so CI runs only this: every pull
+request run and the nightly. `next dev` stays the local default and a dispatch
+option (`www=dev`). The build writes `packages/web/.next`, so do not start it
+while `vp run dev` is running.
+
+**404s after a `next dev` restart: a harness artefact, fixed.** In run
+44314377751, after a `restartStack`, `next dev` answered 404 for routes that
+exist (`/auth/login`, `/api/auth/session`) once it recompiled. `next dev` keeps
+a Turbopack cache on disk (`turbopackFileSystemCacheForDev`, on by default in
+Next 16) and writes it while it runs; the harness stops the dev server with a
+signal mid-run, and the next server started on that cache. No production build
+run (`next start`, no such cache) showed it across the same restarts, and no
+deployment restarts `next dev`, so it is not a product bug. Each dev start now
+deletes `packages/web/.next/dev` first (`servers.ts`). Not reproduced locally;
+the evidence is that run's log.
+
+**Retries.** Playwright retries are off (`retries: 0`): this suite tests
+races, and a blanket retry would hide one. The harness retries exactly two
+named infrastructure errors once each (`harness-retries.ts`): a `restartStack`
+that timed out waiting for www, and WebKit failing a navigation with
+"internal error". Each logs a `[harness-retry]` line, and teardown fails the
+run when there were more than two.
 
 **Probes.** `websocket.spec.ts`: the app tab opens `wss://ws.boardsesh.test/graphql`
 through the proxy and gets `connection_ack`, in both engines. `bfcache.spec.ts`,
@@ -1897,7 +1917,10 @@ there fires `pageshow` with `persisted: true`. The other Chromium project stays
 `false`. WebKit's launcher passes no such flag, and its Linux build fired
 `persisted: false` in the first CI run; I found no supported switch for it, so a
 spec cannot rely on a WebKit restore. `chromium-bfcache` runs only
-`bfcache.spec.ts`; a spec that needs a restore uses it. A restored page runs no
+`bfcache.spec.ts` and `acceptance-3-back-forward.spec.ts`. On the production
+build Chromium keeps a signed-in `/help` (no `no-store`) and never keeps
+`/settings`, which is served `no-store` (`notRestoredReasons`:
+`response-cache-control-no-store`); the spec asserts both. A restored page runs no
 script and sends no request, and `goBack` must wait for `commit`, since a
 restore fires no `load`.
 
@@ -1930,6 +1953,10 @@ both servers in the new mode. The global setup does three things first:
    `NODE_ENV` development or test, so the production build of www needs
    https, as production does. The relay terminates TLS on 127.0.0.1 with the
    run's certificate, which www trusts through `NODE_EXTRA_CA_CERTS`.
+4. **A mail sink** (`mail-sink.ts`) for www's shared mailer, over TLS with the
+   same certificate (`SMTP_HOST=127.0.0.1` and the sink's port, user and
+   password on www only), so the emailed first-password link can be read
+   without an inbox and without changing the product.
 
 The one test-only switch is `BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow`,
 which empties the backend's and www's cutover blocker lists, and only when the
@@ -1941,8 +1968,10 @@ section 4).
 | --- | --- | --- |
 | `acceptance-1-reads-write-no-cookie.spec.ts` | 1: reads, csrf, ws-auth, private pages and set-password write no session cookie; the bridging read writes exactly the bridged cookie; renewal rolls the row with no cookie | Chromium, WebKit |
 | `acceptance-2-account-switch.spec.ts` | 2: A's token 401, A's socket closed (4401), the app tab reloads as B; #6979 sign-out across subdomains | Chromium, WebKit |
-| `acceptance-3-held-response.spec.ts` | 3: held replies across a switch on www and the app; back/forward cache restore (`chromium-bfcache` only); Router Cache (production www only) | Chromium, WebKit, `chromium-bfcache` |
-| `acceptance-4-set-password.spec.ts` | 4: bridged session asks for a new sign-in; a fresh login sets it with no reload or cookie and signs the other browser out | Chromium, WebKit |
+| `acceptance-3-held-response.spec.ts` | 3: A's delete on www (with its toast) and A's GraphQL on the app are held, B signs in on the other host, the reply is released while A's page is up: for 3 s no toast, navigation or cache write, then focus reloads the tab as B | Chromium, WebKit |
+| `acceptance-3-back-forward.spec.ts` | 3: back/forward cache restore of a signed-in page, and `/settings` never kept under `no-store` (`chromium-bfcache` only); Router Cache after a soft navigation (production www only) | Chromium, WebKit, `chromium-bfcache` |
+| `acceptance-4-set-password.spec.ts` | 4: with provider security off, a bridged session asks for a new sign-in; a fresh login sets it with no reload or cookie and signs the other browser out | Chromium, WebKit |
+| `acceptance-4-first-password.spec.ts` | 4: first password on a bridged session: a made-up link completes nothing; another session presenting the emailed link changes nothing; the session that asked completes it, keeps its session id with no session Set-Cookie, and the other session is signed out | Chromium, WebKit |
 | `acceptance-5-legacy-shapes.spec.ts` | 5: normal, chunked and host-only cookies stay signed in with one bridged cookie; plain-named reads as signed out | Chromium, WebKit |
 | `acceptance-6-rollback.spec.ts` | 6: rollback to `legacy` and back by restart; the newer legacy login wins | Chromium, WebKit |
 | `acceptance-8-one-switch.spec.ts` | 8: two refused preconditions per service, by restart | Chromium |
@@ -1955,14 +1984,15 @@ fields are now a cosmetic read on the application connection after admission
 (`profileDisplayReader`), and `web-session-credential-writer.proof.ts` runs
 every web-session command on the real LOGIN in CI.
 
-Every run, pull request or nightly, runs every acceptance spec: green, the set
-takes about 17 minutes of job time under `next dev` and 11 against the production
-build (#7810). The nightly first runs the legacy baseline, then the acceptance
-specs against a production build of www. Not covered here: Google and Apple
-sign-in through the browser (the Google stand-in,
-`auth-proofs/google-oidc-fixture.ts`, is not wired into the edge), the partner
-consent page (it needs the partner OAuth journey's own stack), and the
-cookie-order fixture, which B7c reruns.
+Every run, pull request or nightly, runs every acceptance spec against a
+production build of www, in Chromium, WebKit and `chromium-bfcache`: green,
+about 11 minutes of job time (#7810). The nightly first runs the legacy
+baseline. Not covered here: Google and Apple sign-in through the browser (the
+Google stand-in, `auth-proofs/google-oidc-fixture.ts`, is not wired into the
+edge), the partner consent page (it needs the partner OAuth journey's own
+stack), and the cookie-order fixture, which is not yet rerun on this design
+(`B7C_COOKIE_ORDER_FIXTURE` on both cutover lists; what is missing is in
+[better-auth-browser-cookie-order.md](./better-auth-browser-cookie-order.md)).
 
 What the harness does not show:
 
@@ -1972,9 +2002,8 @@ What the harness does not show:
   cross-site to a tracker list. It still needs a real Safari check.
 - The back/forward cache differs by engine, as above: no WebKit restore at all,
   and a Chromium restore only in `chromium-bfcache`.
-- A pull request runs www under `next dev`. Behaviour that differs in a
-  production build is checked only by the nightly, or a dispatch with
-  `www=production`.
+- CI runs www only as a production build. Behaviour that only `next dev` has
+  is checked by a local run or a dispatch with `www=dev`.
 - One auth mode per run. `AUTH_BROWSER_SESSION_MODE` is read when the setup
   starts the servers, so a spec that needs the other mode calls
   `restartStack({ env: { AUTH_BROWSER_SESSION_MODE: ... } })`, and every
