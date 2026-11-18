@@ -3167,3 +3167,21 @@ store advances it synchronously at credential boundaries, before storage
 awaits. This preserves account isolation without importing native SecureStore
 into queue commands or their transport-only tests. Regression coverage keeps
 account-change rejection and exercises the real offline/rejoin provider stack.
+
+Astra's trigger-guard decision preserves the usual `public, pg_catalog` path
+for functions with unqualified public dependencies. The two lifecycle functions
+in migration 0322 qualify those dependencies and use `pg_catalog` alone. The
+textual guard accepts that narrower path only for their exact identities in
+the complete reviewed migration (SHA-256
+`4299773d153d91534002be3e51f643e71f427535274924349d3ff0b28ce7c73c`).
+Catalog guards also require the reviewed function-body hashes, PL/pgSQL,
+security-definer status, zero arguments and the exact configuration array.
+Missing paths, changed bodies and later unsafe alterations remain failures.
+No migration history is rewritten.
+
+Developer registration and webhook settings take the same per-developer
+advisory lock and verify recent sign-in through
+`auth/partner/developer-change.ts`. This keeps the webhook worker and GraphQL
+registration entry points importable with partner OAuth off. The boundary test
+pins each caller's runtime and type-only dependencies. Only the gated loader
+imports the partner authority.

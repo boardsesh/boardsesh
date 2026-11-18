@@ -387,6 +387,7 @@ jobs:
               - 'packages/shared/playlist-generator/**'
               - 'packages/shared/playlists-react/**'
               - 'packages/shared/profile-stats/**'
+              - 'packages/shared/public-api/**'
               - 'packages/shared/queue/**'
               - 'packages/shared/queue-react/**'
               - 'packages/shared/queue-runtime/**'

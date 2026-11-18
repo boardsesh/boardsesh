@@ -9,7 +9,7 @@ import type {
 } from '@boardsesh/shared-schema';
 import { oauthAppPolicy, oauthClient } from '@boardsesh/db/schema/auth';
 import { oauthClientWebhooks, partnerWebhookOutbox, webhookDeliveries } from '@boardsesh/db/schema/app';
-import { lockDeveloper, requireRecentSignIn } from '../../auth/partner/registration';
+import { lockDeveloper, requireRecentSignIn } from '../../auth/partner/developer-change';
 import { PartnerRegistrationError } from '../../auth/partner/registration-rules';
 import { runInPartnerTransaction } from '../../auth/partner/transaction';
 import type { PartnerDatabase } from '../../auth/partner/tables';
