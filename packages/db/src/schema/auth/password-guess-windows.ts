@@ -1,8 +1,11 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
 
-/** Who a counted guess is charged to: an email (by keyed digest) or a recognised device's token. */
-export type PasswordGuessSubjectKind = 'email_digest' | 'device_token';
+/**
+ * Who a counted guess is charged to: a typed email, or the recognised devices of
+ * one account (#7656). Both are keyed HMAC digests, of the address or of the user id.
+ */
+export type PasswordGuessSubjectKind = 'email_digest' | 'account_digest';
 /** A fixed UTC window: the clock hour, or the UTC day. */
 export type PasswordGuessWindowKind = 'hour' | 'day';
 
@@ -11,9 +14,10 @@ export type PasswordGuessWindowKind = 'hour' | 'day';
  * subject and window, so one conditional upsert reserves a guess atomically
  * and a parallel burst can only take the slots that are left.
  *
- * Holds no address and no user id: an email is a keyed HMAC digest and a
- * device is its token's random id. Rows are useless a day after their window
- * starts and the backend's auth maintenance deletes them.
+ * Holds no address and no user id, only keyed HMAC digests of them. Unknown
+ * emails get rows too, so the table's size is driven by whoever sends sign-ins;
+ * rows are useless a day after their window starts and the backend's auth
+ * maintenance deletes them in batches.
  */
 export const authPasswordGuessWindows = pgTable(
   'auth_password_guess_windows',
@@ -30,11 +34,8 @@ export const authPasswordGuessWindows = pgTable(
       columns: [table.subjectKind, table.subjectKey, table.windowKind, table.windowStart],
     }),
     index('auth_password_guess_windows_start_idx').on(table.windowStart),
-    check('auth_password_guess_windows_subject_kind', sql`${table.subjectKind} IN ('email_digest', 'device_token')`),
-    check(
-      'auth_password_guess_windows_subject_key',
-      sql`(${table.subjectKind} = 'email_digest' AND ${table.subjectKey} ~ '^[0-9a-f]{64}$') OR (${table.subjectKind} = 'device_token' AND ${table.subjectKey} ~ '^[A-Za-z0-9_-]{22}$')`,
-    ),
+    check('auth_password_guess_windows_subject_kind', sql`${table.subjectKind} IN ('email_digest', 'account_digest')`),
+    check('auth_password_guess_windows_subject_key', sql`${table.subjectKey} ~ '^[0-9a-f]{64}$'`),
     check('auth_password_guess_windows_window_kind', sql`${table.windowKind} IN ('hour', 'day')`),
     check('auth_password_guess_windows_failures', sql`${table.failures} >= 0`),
   ],
