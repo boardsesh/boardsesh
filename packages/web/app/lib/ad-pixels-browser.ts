@@ -176,8 +176,10 @@ function withdrawAdPixels(): void {
   const pixelWindow = window as PixelWindow;
   if (metaInitialized !== null || redditInitialized !== null) {
     // A late script must not drain events queued before the withdrawal.
-    if (pixelWindow.fbq && !pixelWindow.fbq.callMethod) pixelWindow.fbq.queue.length = 0;
-    if (pixelWindow.rdt && !pixelWindow.rdt.sendEvent) pixelWindow.rdt.callQueue.length = 0;
+    if (pixelWindow.fbq && !pixelWindow.fbq.callMethod && Array.isArray(pixelWindow.fbq.queue))
+      pixelWindow.fbq.queue.length = 0;
+    if (pixelWindow.rdt && !pixelWindow.rdt.sendEvent && Array.isArray(pixelWindow.rdt.callQueue))
+      pixelWindow.rdt.callQueue.length = 0;
     if (pixelWindow.fbq && metaInitialized !== null) pixelWindow.fbq('consent', 'revoke');
     withdrawnThisPage = true;
   }

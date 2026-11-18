@@ -232,6 +232,18 @@ describe('ad pixels in the browser', () => {
     expect(testWindow().rdt?.callQueue).toEqual([]);
   });
 
+  it('can withdraw when a content blocker replaced the pixel globals with empty functions', async () => {
+    Object.defineProperty(window, 'fbq', { configurable: true, value: vi.fn() });
+    Object.defineProperty(window, 'rdt', { configurable: true, value: vi.fn() });
+    grant();
+    const pixels = await loadModule();
+    pixels.syncAdPixels('/');
+    harness.record = null;
+    harness.authorized = false;
+    expect(() => pixels.syncAdPixels('/')).not.toThrow();
+    expect(pixelScripts()).toEqual([]);
+  });
+
   it('withdraws when Global Privacy Control turns up on a region default', async () => {
     grant({ ...ALLOW_AFTER_COPY, basis: 'region_default' });
     harness.gpc = true;
