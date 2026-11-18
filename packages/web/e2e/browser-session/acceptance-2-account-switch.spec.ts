@@ -98,6 +98,11 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
   await openSocketWithToken(probePage, tokenA.token);
   await markDocument(appPage);
 
+  // Every document the app tab loads from here on, to see the reload start from the root.
+  const appDocuments: string[] = [];
+  appPage.on('request', (request) => {
+    if (request.resourceType() === 'document') appDocuments.push(new URL(request.url()).pathname);
+  });
   // B logs in on www in the same context, presenting A's cookie.
   await signInOverExistingSession(wwwPage, accountB);
   await expectSessionReadNames(wwwPage, accountB);
@@ -121,7 +126,8 @@ test("@smoke a login as B on www gives A's token a 401, closes A's socket and re
     )
     .toBe(false);
   await expect(homeTab(appPage)).toBeVisible({ timeout: 120_000 });
-  expect(new URL(appPage.url()).pathname).toBe('/');
+  // The reload starts at the root; the app then lands on its first tab as usual.
+  expect(appDocuments[0]).toBe('/');
   expect(await readViewer(appPage)).toMatchObject({ authenticated: true, userId: accountB.userId });
   const tokenB = await fetchWsAuth(appPage);
   expect(tokenB.userId).toBe(accountB.userId);
