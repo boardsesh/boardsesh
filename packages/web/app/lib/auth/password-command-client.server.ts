@@ -9,6 +9,7 @@ import {
   authCommandReplySchema,
   authCommandReplyStatus,
   parseWebAuthMode,
+  passwordCommandSchema,
   type AuthCommand,
   type AuthCommandReply,
   type PasswordReply,
@@ -57,8 +58,24 @@ export function registrationMailOrigin(requestOrigin: string, environment: AuthE
 
 export type PasswordCommandClient = {
   register(payload: unknown): Promise<RegisterReply>;
-  password(email: string, password: string): Promise<PasswordReply>;
+  /**
+   * `clientAddress` is the visitor a trusted edge vouched for. The backend keys
+   * its per-client sign-in limit on it; without it the sign-in takes the
+   * backend's per-process budget.
+   */
+  password(email: string, password: string, clientAddress?: string): Promise<PasswordReply>;
 };
+/**
+ * The address to send, or undefined for one the command schema would refuse
+ * (Node accepts a zone index such as `%en0`; the schema does not). A refused
+ * command answers 400 and fails the sign-in, while a missing address only
+ * moves it to the backend's per-process budget.
+ */
+function sendableClientAddress(clientAddress: string | undefined): string | undefined {
+  const parsed = passwordCommandSchema.shape.clientAddress.safeParse(clientAddress);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export type EmailVerificationCommandClient = {
   verifyEmail(token: string, email?: string): Promise<VerifyEmailReply>;
   resendVerification(payload: unknown): Promise<ResendVerificationReply>;
@@ -140,13 +157,15 @@ export function createPasswordCommandClient(
         payload,
       })) as RegisterReply;
     },
-    async password(email, password) {
+    async password(email, password, clientAddress) {
+      const sendableAddress = sendableClientAddress(clientAddress);
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'password',
         ...(webCredentialProofMode(environment) === 'required'
           ? { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }
           : {}),
+        ...(sendableAddress ? { clientAddress: sendableAddress } : {}),
         requestId: randomUUID(),
         issuedAt: Date.now(),
         payload: { email, password },

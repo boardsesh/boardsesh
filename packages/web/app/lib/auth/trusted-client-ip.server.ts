@@ -1,6 +1,8 @@
 import 'server-only';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIPv6 } from 'node:net';
 import { isCloudflareEdgeAddress, normalizeIpAddress } from '@boardsesh/consent/edge-country';
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from './origin-proof-header';
 import { webPasswordMode } from './password-command-client.server';
 
 /** One bucket for edge requests with no usable visitor, whichever edge address carried them. */
@@ -35,6 +37,81 @@ function clientBucket(address: string): string {
   return `${networkGroups.join(':')}::/64`;
 }
 
+export { CLOUDFLARE_ORIGIN_PROOF_HEADER };
+/** The web env var holding the proof our zone's transform adds. At least 32 bytes, or it counts as unset. */
+export const CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV = 'CLOUDFLARE_ORIGIN_PROOF_SECRET';
+/**
+ * A second accepted value, so a rotation has no gap: set this to the new value,
+ * change the Cloudflare rule, then move it to the primary and unset this. Same
+ * 32-byte rule.
+ */
+export const CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV = 'CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT';
+const MIN_ORIGIN_PROOF_SECRET_BYTES = 32;
+/** How often the log may say a Cloudflare request arrived without our zone's proof. */
+const UNPROVEN_WARNING_INTERVAL_MS = 60_000;
+
+type OriginProof = 'unconfigured' | 'proven' | 'unproven';
+
+function sha256(value: string): Buffer {
+  return createHash('sha256').update(value, 'utf8').digest();
+}
+
+function usableSecret(name: string): string | null {
+  const secret = process.env[name]?.trim();
+  return secret && Buffer.byteLength(secret, 'utf8') >= MIN_ORIGIN_PROOF_SECRET_BYTES ? secret : null;
+}
+
+let lastUnprovenWarningAt = Number.NEGATIVE_INFINITY;
+let unprovenSinceLastWarning = 0;
+
+/**
+ * A Cloudflare last hop without our zone's proof is either a caller that skipped
+ * our zone or a sign that the transform rule is missing or holds another value.
+ * The owner's turn-on check is that this never appears for real sign-ins.
+ */
+function warnUnprovenEdgeRequest(request: Request): void {
+  unprovenSinceLastWarning += 1;
+  const now = Date.now();
+  if (now - lastUnprovenWarningAt < UNPROVEN_WARNING_INTERVAL_MS) return;
+  lastUnprovenWarningAt = now;
+  console.warn(
+    JSON.stringify({
+      event: 'cloudflare_origin_proof_missing',
+      path: new URL(request.url).pathname,
+      unprovenSinceLastWarning,
+    }),
+  );
+  unprovenSinceLastWarning = 0;
+}
+
+/**
+ * Whether our zone added this request's proof. `unconfigured` while neither
+ * secret is set to at least 32 bytes. Call once per helper call: an unproven
+ * request with a Cloudflare last hop is counted toward the warning.
+ */
+function originProof(request: Request): OriginProof {
+  const secrets = [CLOUDFLARE_ORIGIN_PROOF_SECRET_ENV, CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET_ENV]
+    .map(usableSecret)
+    .filter((secret): secret is string => secret !== null);
+  if (secrets.length === 0) return 'unconfigured';
+  const presented = request.headers.get(CLOUDFLARE_ORIGIN_PROOF_HEADER)?.trim();
+  // Digests have one length, so the comparison time says nothing about a secret.
+  // Every secret is compared, so the time does not say which one matched either.
+  const presentedDigest = presented ? sha256(presented) : null;
+  const matches = secrets.map((secret) => presentedDigest !== null && timingSafeEqual(presentedDigest, sha256(secret)));
+  if (matches.includes(true)) return 'proven';
+  if (isCloudflareEdgeAddress(lastForwardedHop(request))) warnUnprovenEdgeRequest(request);
+  return 'unproven';
+}
+
+function lastForwardedHop(request: Request): string | undefined {
+  return normalizeIpAddress(request.headers.get('x-forwarded-for')?.split(',').at(-1));
+}
+
+function reportedVisitor(request: Request): string | undefined {
+  return normalizeIpAddress(request.headers.get('cf-connecting-ip') ?? undefined);
+}
+
 /**
  * Rate-limit key a caller cannot choose. See docs/cloudflare.md and the staged
  * requirements in docs/better-auth-web-password-delegation.md.
@@ -44,19 +121,47 @@ function clientBucket(address: string): string {
  * reach. When that hop is a Cloudflare edge, the visitor is `CF-Connecting-IP`.
  * Otherwise the request went straight to the origin and the last hop is the
  * caller itself, whatever `CF-Connecting-IP` it sent.
+ *
+ * Once the origin proof secret is set (#7766), a Cloudflare last hop without our
+ * zone's proof is keyed on that hop, never on the `CF-Connecting-IP` a Worker
+ * could have written. While it is unset this behaves exactly as before.
  */
 export function trustedClientRateLimitKey(request: Request): string {
-  const lastHop = normalizeIpAddress(request.headers.get('x-forwarded-for')?.split(',').at(-1));
+  const lastHop = lastForwardedHop(request);
   if (!lastHop) return 'unknown';
   if (!isCloudflareEdgeAddress(lastHop)) return clientBucket(lastHop);
-  const visitor = normalizeIpAddress(request.headers.get('cf-connecting-ip') ?? undefined);
+  if (originProof(request) === 'unproven') return clientBucket(lastHop);
+  const visitor = reportedVisitor(request);
   return visitor ? clientBucket(visitor) : EDGE_WITHOUT_VISITOR_KEY;
 }
 
 /**
- * The visitor's own address, but only when a Cloudflare edge vouches for it:
- * the last `X-Forwarded-For` hop is a Cloudflare edge and `CF-Connecting-IP`
- * holds a usable address. Otherwise null.
+ * The visitor's address, exactly as Cloudflare reported it, when our own zone
+ * vouches for it: the last `X-Forwarded-For` hop is a Cloudflare edge, the
+ * request carries our zone's origin proof, and `CF-Connecting-IP` holds a usable
+ * address. Otherwise null, including always while the proof secret is unset. Not
+ * grouped: an IPv6 visitor keeps its whole address, for a caller that groups by
+ * `/64` itself.
+ *
+ * Production reaches us as browser, Cloudflare (www is a proxied record in
+ * infra/cloudflare/config.ts), the Railway edge, then this server. A caller can
+ * also skip Cloudflare and hit the Railway domain directly, from anywhere,
+ * including from a Worker inside Cloudflare's ranges that writes its own
+ * `CF-Connecting-IP`. The proof is what tells our zone's traffic from that.
+ * Railway's edge appends the peer it saw as the last hop; that was checked for the
+ * backend service on 2026-11-10, not yet for this one
+ * (docs/better-auth-web-password-delegation.md). If it appends its own address
+ * instead, no last hop is a Cloudflare edge and this is always null.
+ */
+export function cloudflareVouchedVisitorAddress(request: Request): string | null {
+  if (originProof(request) !== 'proven') return null;
+  const lastHop = lastForwardedHop(request);
+  if (!lastHop || !isCloudflareEdgeAddress(lastHop)) return null;
+  return reportedVisitor(request) ?? null;
+}
+
+/**
+ * The bucket of a visitor a Cloudflare edge reports, or null.
  *
  * `trustedClientRateLimitKey` falls back to values every caller can share: the
  * constant `unknown` with no forwarded hop, one fixed bucket for an edge request
@@ -65,11 +170,20 @@ export function trustedClientRateLimitKey(request: Request): string {
  * yet checked which one the web service sees in production (see
  * docs/better-auth-web-password-delegation.md), so a limit that must never put
  * every visitor in one bucket keys on this instead and skips when it is null.
+ *
+ * While the origin proof secret is unset this behaves exactly as before: any
+ * Cloudflare last hop is believed, which a Worker can exploit (#7766). Once it
+ * is set, a request without our zone's proof is keyed on its last hop (or
+ * `unknown`), never null, so the legacy sign-in limit cannot be skipped by
+ * leaving the proof out or using a path the rule misses.
  */
 export function cloudflareVisitorRateLimitKey(request: Request): string | null {
-  const lastHop = normalizeIpAddress(request.headers.get('x-forwarded-for')?.split(',').at(-1));
+  const lastHop = lastForwardedHop(request);
+  // Configured and unproven: not our zone's traffic, since real visitors carry
+  // the proof. Limit it on the hop our ingress saw; never skip it.
+  if (originProof(request) === 'unproven') return lastHop ? clientBucket(lastHop) : 'unknown';
   if (!lastHop || !isCloudflareEdgeAddress(lastHop)) return null;
-  const visitor = normalizeIpAddress(request.headers.get('cf-connecting-ip') ?? undefined);
+  const visitor = reportedVisitor(request);
   return visitor ? clientBucket(visitor) : null;
 }
 
