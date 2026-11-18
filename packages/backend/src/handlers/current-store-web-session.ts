@@ -3,6 +3,8 @@ import type { DbInstance } from '@boardsesh/db/client';
 import {
   WEB_SESSION_COMMAND_PATHS,
   WEB_SESSION_PROTOCOL_VERSION,
+  webSessionAccessCommandSchema,
+  webSessionAccessReplySchema,
   webSessionBridgeCommandSchema,
   webSessionBridgeReplySchema,
   webSessionMode,
@@ -13,6 +15,7 @@ import {
   webSessionRollReplySchema,
   webSessionSignOutCommandSchema,
   webSessionSignOutReplySchema,
+  type WebSessionAccessReply,
   type WebSessionBridgeReply,
   type WebSessionReadReply,
   type WebSessionRollReply,
@@ -26,8 +29,12 @@ import {
 } from '../auth/current-store/authority-configuration';
 import { isWebPasswordCommandFresh } from '../auth/current-store/command-context';
 import type { ExpectedCurrentStoreAuthority } from '../auth/current-store/foundation-context';
-import { bridgeTokenKeyFromEnvironment } from '../auth/authority/browser-session-mode';
 import {
+  browserAccessTokenKeyFromEnvironment,
+  bridgeTokenKeyFromEnvironment,
+} from '../auth/authority/browser-session-mode';
+import {
+  accessWebSession,
   bridgeWebSession,
   presentedWebCredential,
   readWebSession,
@@ -44,6 +51,7 @@ const COMMAND_SCHEMAS = {
   signout: webSessionSignOutCommandSchema,
   roll: webSessionRollCommandSchema,
   bridge: webSessionBridgeCommandSchema,
+  access: webSessionAccessCommandSchema,
 } as const;
 type WebSessionOperation = keyof typeof COMMAND_SCHEMAS;
 
@@ -75,7 +83,8 @@ function bridgeKeys() {
 
 /**
  * Default-off private commands for the first-party web session (#7596):
- * session read, guarded sign-out, roll and the legacy cookie bridge. Login is the staged password
+ * session read, guarded sign-out, roll, the legacy cookie bridge and the
+ * browser access token. Login is the staged password
  * command with `webSession`. No CORS, cookie or public token reaches these,
  * and no reply sets a cookie: www owns the cookie.
  */
@@ -121,7 +130,12 @@ export async function handleCurrentStoreWebSession(
   const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId: command.requestId };
   try {
     const commandDatabase = database ?? (await getCredentialDatabase());
-    let reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply | WebSessionBridgeReply;
+    let reply:
+      | WebSessionReadReply
+      | WebSessionSignOutReply
+      | WebSessionRollReply
+      | WebSessionBridgeReply
+      | WebSessionAccessReply;
     if (command.operation === 'session') {
       // Reads only: nothing is rolled, bridged or stamped.
       const read = await readWebSession(commandDatabase, presentedWebCredential(command.payload.presented));
@@ -150,6 +164,25 @@ export async function handleCurrentStoreWebSession(
         operation: 'signout',
         outcome: outcome === 'signed-out' ? 'signed_out' : 'identity_changed',
       });
+    } else if (command.operation === 'access') {
+      // A missing or reused signing secret is unavailable (503), never a signed-out answer.
+      const tokenKey = browserAccessTokenKeyFromEnvironment(process.env);
+      const access = await accessWebSession(commandDatabase, command.payload.presented, tokenKey);
+      reply = webSessionAccessReplySchema.parse(
+        access.status === 'active'
+          ? {
+              ...base,
+              operation: 'access',
+              outcome: 'active',
+              userId: access.session.userId,
+              authSessionId: access.session.authSessionId,
+              expiresAt: access.session.expiresAt.toISOString(),
+              rolled: access.rolled,
+              accessToken: access.accessToken,
+              accessTokenExpiresAt: access.accessTokenExpiresAt.toISOString(),
+            }
+          : { ...base, operation: 'access', outcome: 'unauthenticated', reason: access.reason },
+      );
     } else if (command.operation === 'bridge') {
       const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
       reply = webSessionBridgeReplySchema.parse(

@@ -21,6 +21,7 @@ const dependencies = vi.hoisted(() => ({
   webSessionRoll: vi.fn(),
   webSessionRead: vi.fn(),
   webSessionBridge: vi.fn(),
+  webSessionAccess: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('../../credential-database', () => ({ getCredentialDatabase: dependencies.database }));
@@ -54,6 +55,7 @@ vi.mock('../web-session', async (importOriginal) => ({
   refreshWebSession: dependencies.webSessionRoll,
   readWebSession: dependencies.webSessionRead,
   bridgeWebSession: dependencies.webSessionBridge,
+  accessWebSession: dependencies.webSessionAccess,
 }));
 
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
@@ -73,7 +75,8 @@ interface Route {
     | 'webSessionSignout'
     | 'webSessionRoll'
     | 'webSessionRead'
-    | 'webSessionBridge';
+    | 'webSessionBridge'
+    | 'webSessionAccess';
   readonly mode: string;
   readonly path: string;
   readonly handle: Handler;
@@ -84,7 +87,10 @@ interface Route {
   result?(command: Record<string, unknown>): unknown;
 }
 const SESSION_EXPIRES_AT = new Date(Date.now() + 86_400_000);
-function webSessionCommand(operation: 'session' | 'signout' | 'roll' | 'bridge', payload: Record<string, unknown>) {
+function webSessionCommand(
+  operation: 'session' | 'signout' | 'roll' | 'bridge' | 'access',
+  payload: Record<string, unknown>,
+) {
   return () => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     operation,
@@ -93,7 +99,10 @@ function webSessionCommand(operation: 'session' | 'signout' | 'roll' | 'bridge',
     payload,
   });
 }
-function webSessionReply(operation: 'session' | 'signout' | 'roll' | 'bridge', fields: Record<string, unknown>) {
+function webSessionReply(
+  operation: 'session' | 'signout' | 'roll' | 'bridge' | 'access',
+  fields: Record<string, unknown>,
+) {
   return (command: Record<string, unknown>) => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     requestId: command.requestId,
@@ -268,6 +277,30 @@ const routes: Route[] = [
       generation: 0,
     }),
   },
+  {
+    name: 'webSessionAccess',
+    mode: 'CURRENT_STORE_WEB_SESSION_MODE',
+    path: WEB_SESSION_COMMAND_PATHS.access,
+    handle: handleCurrentStoreWebSession,
+    command: webSessionCommand('access', { presented: { kind: 'canonical-token', token: 'owned-synthetic-token' } }),
+    unavailable: webSessionReply('access', { outcome: 'error', code: 'unavailable' }),
+    success: webSessionReply('access', {
+      outcome: 'active',
+      userId: 'owned-user',
+      authSessionId: 'owned-session',
+      expiresAt: SESSION_EXPIRES_AT.toISOString(),
+      rolled: false,
+      accessToken: 'owned-synthetic-access-token',
+      accessTokenExpiresAt: SESSION_EXPIRES_AT.toISOString(),
+    }),
+    result: () => ({
+      status: 'active',
+      session: { userId: 'owned-user', authSessionId: 'owned-session', expiresAt: SESSION_EXPIRES_AT },
+      rolled: false,
+      accessToken: 'owned-synthetic-access-token',
+      accessTokenExpiresAt: SESSION_EXPIRES_AT,
+    }),
+  },
 ];
 
 async function invoke(route: Route, command: unknown, options: { authorization?: string; database?: DbInstance } = {}) {
@@ -314,6 +347,7 @@ describe('private RPC default credential database selection', () => {
       CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
       NEXTAUTH_SECRET: 'owned-nextauth-private-rpc-key',
       AUTH_BRIDGE_TOKEN_SECRET: 'owned-private-rpc-bridge-token-secret-32-bytes',
+      AUTH_BROWSER_ACCESS_TOKEN_SECRET: 'owned-private-rpc-browser-access-token-secret',
       CURRENT_STORE_AUTH_PROJECTION_ID: 'owned-private-rpc-projection',
       CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
       CURRENT_STORE_DELETED_EMAIL_KEY: 'owned-private-rpc-deleted-email-key-at-least-32-bytes',
@@ -332,6 +366,7 @@ describe('private RPC default credential database selection', () => {
     dependencies.webSessionRoll.mockReset();
     dependencies.webSessionRead.mockReset();
     dependencies.webSessionBridge.mockReset();
+    dependencies.webSessionAccess.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 

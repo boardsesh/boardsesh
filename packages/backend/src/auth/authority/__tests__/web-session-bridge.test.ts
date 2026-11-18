@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   WEB_SESSION_COMMAND_PATHS,
+  webSessionAccessReplySchema,
   webSessionBridgeReplySchema,
   webSessionReadReplySchema,
   webSessionRollReplySchema,
@@ -317,12 +318,14 @@ describe('the bridge command switches', () => {
       signout: webSessionSignOutReplySchema,
       roll: webSessionRollReplySchema,
       bridge: webSessionBridgeReplySchema,
+      access: webSessionAccessReplySchema,
     } as const;
     const payloads = {
       session: { presented: canonical('t') },
       signout: { token: 't', expectedUserId: 'u', expectedAuthSessionId: 's' },
       roll: { token: 't' },
       bridge: { credential: 'a.b.c.d.e' },
+      access: { presented: canonical('t') },
     } as const;
     for (const operation of Object.keys(schemas) as (keyof typeof schemas)[]) {
       for (const authorization of ['Bearer wrong-secret-of-the-wrong-length', `Bearer ${rpcSecret}x`, '']) {

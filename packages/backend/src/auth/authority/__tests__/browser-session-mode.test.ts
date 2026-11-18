@@ -6,6 +6,7 @@ import {
   BrowserSessionStartupError,
   browserSessionModeChecker,
   bridgeTokenKeyFromEnvironment,
+  browserAccessTokenKeyFromEnvironment,
   readBrowserSessionMode,
   type BrowserSessionStartupErrorCode,
 } from '../browser-session-mode';
@@ -163,6 +164,25 @@ describe('the bridge key', () => {
   ])('refuses a secret that is %s, without its value in the message', (_label, value) => {
     expect(() => bridgeTokenKeyFromEnvironment({ ...READY, AUTH_BRIDGE_TOKEN_SECRET: value })).toThrow(
       'Invalid AUTH_BRIDGE_TOKEN_SECRET',
+    );
+  });
+});
+
+describe('the browser access token key', () => {
+  it.each([
+    ['unset', undefined],
+    ['short', short],
+    ['the bridge secret', READY.AUTH_BRIDGE_TOKEN_SECRET],
+    ['NEXTAUTH_SECRET', READY.NEXTAUTH_SECRET],
+  ])('refuses a secret that is %s, without its value in the message', (_label, value) => {
+    expect(() => browserAccessTokenKeyFromEnvironment({ ...READY, AUTH_BROWSER_ACCESS_TOKEN_SECRET: value })).toThrow(
+      'Invalid AUTH_BROWSER_ACCESS_TOKEN_SECRET',
+    );
+  });
+
+  it('reads a valid one whatever the browser session mode', () => {
+    expect(browserAccessTokenKeyFromEnvironment({ ...READY, AUTH_BROWSER_SESSION_MODE: undefined }).kind).toBe(
+      'browser-access-token-key',
     );
   });
 });
