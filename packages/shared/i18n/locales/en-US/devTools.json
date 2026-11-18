@@ -12,17 +12,18 @@
   "lengthHint": "{{original}} → {{replacement}} characters. Longer copy may wrap differently.",
   "protectedTokens": "Keep these formatting tokens:",
   "formatError": "Keep every variable, tag, and line break. Variables must stay inside the same tags and lines. Empty text cannot be saved.",
-  "formatHint": "Saving reloads the page. Check the wording at narrow and wide widths afterward.",
+  "formatHint": "Saving updates the page without reloading. Check the wording at narrow and wide widths afterward.",
   "ambiguous": "Several keys use this text. Choose the correct key before editing.",
   "searchLabel": "Search wording or namespace:key",
   "results_one": "{{count}} matching string",
   "results_other": "{{count}} matching strings",
   "narrowSearch": "Showing the first 50 matches. Narrow your search to see more.",
-  "conflict": "This string changed since you opened it. Reload to load the latest version before editing again.",
+  "conflict": "This string changed since you opened it. Load the latest version, compare it with your draft, then save again.",
   "requestError": "Could not read or save translations. Check the dev-server terminal and try again.",
   "back": "Back to strings",
   "close": "Close",
-  "reload": "Reload page",
   "saving": "Saving…",
-  "saveAndReload": "Save and reload"
+  "loadLatest": "Load latest version",
+  "save": "Save",
+  "saved": "Saved. The page updates in place."
 }

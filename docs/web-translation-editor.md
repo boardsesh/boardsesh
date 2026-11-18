@@ -3,7 +3,7 @@
 1. Open the running Next.js app at its printed dev URL or through localhost.
 2. Select **Edit translations** in the bottom-right corner.
 3. Hover over copy and select **Edit**, or click the copy while inspection is enabled.
-4. Change the text and select **Save and reload**.
+4. Change the text and select **Save**.
 5. Check the resulting page at narrow and wide widths. Press Escape to stop inspecting.
 
 The editor uses the page's current language. Use the website language selector to
@@ -29,8 +29,12 @@ edited key. The editor UI, API, and development disk loader exist only in the
 Next.js app; native and Expo web do not gain an editor. A separate `devTools`
 namespace keeps editor copy out of mobile bundles.
 
-The page reloads after saving, resetting both server-rendered text and the browser
-i18n singleton. The development server reads catalogs directly from disk so saves
+Saving updates the browser i18n store immediately, then refreshes server-rendered
+content in place through the Next.js router. The document, scroll position, and
+editor stay open; the saved text becomes the baseline for another edit. A success
+message confirms the save. If another edit causes a conflict, **Load latest
+version** updates the current translation while preserving your draft for comparison.
+Neither action reloads the page. The development server reads catalogs directly from disk so saves
 do not wait for JSON module invalidation. Production retains the bundled loader.
 Saves are serialized within the development process and written through a temporary
 file plus atomic rename. A stale edit gets a conflict instead of overwriting a newer

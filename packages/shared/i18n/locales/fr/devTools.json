@@ -12,17 +12,18 @@
   "lengthHint": "{{original}} → {{replacement}} caractères. Un texte plus long peut occuper plus de lignes.",
   "protectedTokens": "Conserve ces éléments de mise en forme :",
   "formatError": "Conserve chaque variable, balise et saut de ligne. Les variables doivent rester dans les mêmes balises et lignes. Un texte vide ne peut pas être enregistré.",
-  "formatHint": "L’enregistrement recharge la page. Vérifie ensuite le texte sur un écran étroit et un écran large.",
+  "formatHint": "L’enregistrement actualise la page sans la recharger. Vérifie ensuite le texte sur un écran étroit et un écran large.",
   "ambiguous": "Plusieurs clés utilisent ce texte. Choisis la bonne clé avant de modifier.",
   "searchLabel": "Chercher un texte ou espaceDeNoms:clé",
   "results_one": "{{count}} texte correspondant",
   "results_other": "{{count}} textes correspondants",
   "narrowSearch": "Les 50 premiers résultats sont affichés. Précise ta recherche pour en voir davantage.",
-  "conflict": "Ce texte a changé depuis son ouverture. Recharge la page pour obtenir la dernière version avant de le modifier à nouveau.",
+  "conflict": "Ce texte a changé depuis son ouverture. Charge la dernière version, compare-la à ton brouillon, puis enregistre à nouveau.",
   "requestError": "Impossible de lire ou d’enregistrer les traductions. Consulte le terminal du serveur de développement et réessaie.",
   "back": "Retour aux textes",
   "close": "Fermer",
-  "reload": "Recharger la page",
   "saving": "Enregistrement…",
-  "saveAndReload": "Enregistrer et recharger"
+  "loadLatest": "Charger la dernière version",
+  "save": "Enregistrer",
+  "saved": "Enregistré. La page est actualisée sans rechargement."
 }
