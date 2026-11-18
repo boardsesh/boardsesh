@@ -7,6 +7,7 @@ import {
   type PasswordGuessWindowKind,
 } from '@boardsesh/db/schema/auth';
 import { BATCH_SYSTEM_USER_COMMAND_ENV } from '@boardsesh/auth-protocol';
+import { DEVICE_TOKEN_SECRET_ENV } from '@boardsesh/auth-protocol/device-token';
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { normalizeAccountEmail } from './normalize-email';
@@ -158,7 +159,7 @@ export function passwordGuessEmailKey(environment: Environment = process.env): s
     environment.CURRENT_STORE_AUTH_RPC_SECRET,
     environment[BATCH_SYSTEM_USER_COMMAND_ENV.secret],
     environment[DELETED_EMAIL_KEY_ENV],
-    environment.AUTH_DEVICE_TOKEN_SECRET,
+    environment[DEVICE_TOKEN_SECRET_ENV],
   ];
   if (
     key !== key.trim() ||

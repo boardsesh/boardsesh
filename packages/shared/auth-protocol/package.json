@@ -71,6 +71,11 @@
       "types": "./src/native-v1.ts",
       "import": "./src/native-v1.ts",
       "default": "./src/native-v1.ts"
+    },
+    "./device-token": {
+      "types": "./src/device-token.ts",
+      "import": "./src/device-token.ts",
+      "default": "./src/device-token.ts"
     }
   },
   "scripts": {

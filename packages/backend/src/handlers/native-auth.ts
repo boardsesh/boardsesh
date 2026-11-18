@@ -60,6 +60,7 @@ import {
 } from '../auth/current-store/command-context';
 import { CurrentStoreFoundationError, lockIdentityManifest } from '../auth/current-store/foundation-context';
 import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
+import { withNativeDeviceToken } from '../auth/device-token';
 import {
   resolveReservedNativeOAuthIdentity,
   resolveNativeOAuthDisplayName as resolveDisplayName,
@@ -845,10 +846,14 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
       capabilityExpiresAt: verified.validUntil,
     });
     logger.info('[NativeAuth] Token exchange successful');
-    sendJson(res, 200, {
-      ...tokenPair,
-      ...(verified.accountCreation ? { accountCreation: verified.accountCreation } : {}),
-    });
+    sendJson(
+      res,
+      200,
+      await withNativeDeviceToken({
+        ...tokenPair,
+        ...(verified.accountCreation ? { accountCreation: verified.accountCreation } : {}),
+      }),
+    );
   } catch (error) {
     if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Token generation failed', { code: 'TOKEN_ISSUANCE_FAILED' });
@@ -923,7 +928,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     });
     logger.info('[NativeAuth] Credentials sign-in successful');
     const accountCreation = accountCreationReceipt(authenticatedUserId, false, 'email', authenticatedUser.createdAt);
-    sendJson(res, 200, { ...tokenPair, ...(accountCreation ? { accountCreation } : {}) });
+    sendJson(res, 200, await withNativeDeviceToken({ ...tokenPair, ...(accountCreation ? { accountCreation } : {}) }));
   } catch (error) {
     if (error instanceof PasswordProofStaleError) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
@@ -1043,7 +1048,7 @@ export async function handleNativeAuthRegister(
     });
 
     logger.info('[NativeAuth] Registration successful');
-    sendJson(res, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
+    sendJson(res, 201, await withNativeDeviceToken({ ...result.tokenPair, accountCreation: result.accountCreation }));
   } catch (error) {
     // Race: a concurrent request created this email between the pre-check and
     // insert. PostgreSQL unique-violation code is '23505'. NOTE: users.email has
@@ -1132,7 +1137,11 @@ async function handleReservedNativeRegistration(
       return;
     }
     logger.info('[NativeAuth] Reserved registration successful', { category: 'created' });
-    sendJson(response, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
+    sendJson(
+      response,
+      201,
+      await withNativeDeviceToken({ ...result.tokenPair, accountCreation: result.accountCreation }),
+    );
   } catch (error) {
     if (respondReservedNativeAdmissionFailure(response, error)) return;
     const unavailable = isNativeAuthInfrastructureFailure(error);
@@ -1572,10 +1581,14 @@ export async function handleNativeAuthOAuth(
       return;
     }
     logger.info('[NativeAuth] Provider sign-in successful', { provider });
-    sendJson(res, 200, {
-      ...result.tokenPair,
-      ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
-    });
+    sendJson(
+      res,
+      200,
+      await withNativeDeviceToken({
+        ...result.tokenPair,
+        ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
+      }),
+    );
   } catch (error) {
     if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] OAuth sign-in failed', { code: 'OAUTH_SIGNIN_FAILED' });
@@ -1642,10 +1655,14 @@ async function handleReservedNativeOAuth(
     } else if (result.outcome === 'deleted') {
       sendJson(response, 401, { error: 'Account is not available' });
     } else {
-      sendJson(response, 200, {
-        ...result.tokenPair,
-        ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
-      });
+      sendJson(
+        response,
+        200,
+        await withNativeDeviceToken({
+          ...result.tokenPair,
+          ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
+        }),
+      );
     }
   } catch (error) {
     reportReservedNativeOAuthFailure(response, error);
@@ -1784,7 +1801,7 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
     return;
   }
   logger.info('[NativeAuth] Token refresh successful');
-  sendJson(res, 200, result.tokenPair);
+  sendJson(res, 200, await withNativeDeviceToken(result.tokenPair));
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import postgres from 'postgres';
 import { schemaSQL } from '../schema-sql';
 
+/** The synthetic device-token secret every native-contract fixture runs with. */
+export const DEVICE_TOKEN_SECRET = 'native-contract-only-synthetic-device-token-key';
+
 type NativeHandler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 
 /** Refuse ambient application URLs; own a brand-new synthetic database per run. */
@@ -54,6 +57,9 @@ export async function createNativeHttpFixture() {
     process.env.READ_REPLICA_URL = '';
     process.env.REDIS_URL = redisUrl.toString();
     process.env.NEXTAUTH_SECRET = 'native-contract-only-synthetic-signing-key';
+    // Device tokens on (#7656), so every released client below parses replies
+    // that carry the additive `deviceToken` field.
+    process.env.AUTH_DEVICE_TOKEN_SECRET = DEVICE_TOKEN_SECRET;
     process.env.CURRENT_STORE_NATIVE_REGISTRATION_MODE = '';
     process.env.CURRENT_STORE_NATIVE_OAUTH_MODE = '';
     const connection = postgres(databaseUrl.toString(), { max: 1, connect_timeout: 3, onnotice: () => {} });
@@ -111,6 +117,7 @@ export async function createNativeHttpFixture() {
     if (!address || typeof address === 'string') throw new Error('Native-contract HTTP listener unavailable');
     const origin = `http://127.0.0.1:${address.port}`;
     const requests: { path: string; method: string; body: unknown; authorization: string | null }[] = [];
+    const responses: { path: string; status: number; body: unknown }[] = [];
     const network: typeof fetch = async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       requests.push({
@@ -119,7 +126,19 @@ export async function createNativeHttpFixture() {
         body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : null,
         authorization: new Headers(init?.headers).get('authorization'),
       });
-      return fetch(`${origin}${url.pathname}${url.search}`, { ...init, signal: AbortSignal.timeout(7000) });
+      const response = await fetch(`${origin}${url.pathname}${url.search}`, {
+        ...init,
+        signal: AbortSignal.timeout(7000),
+      });
+      const text = await response.clone().text();
+      let body: unknown = text;
+      try {
+        body = JSON.parse(text) as unknown;
+      } catch {
+        // Not JSON: keep the text.
+      }
+      responses.push({ path: url.pathname, status: response.status, body });
+      return response;
     };
     return {
       db,
@@ -128,6 +147,7 @@ export async function createNativeHttpFixture() {
       redis: redisClientManager,
       origin,
       requests,
+      responses,
       network,
       ownership: { databaseName, postgresHost: adminUrl.host, createdFreshByThisInvocation: true as const },
       mount(path: string, handler: NativeHandler) {
