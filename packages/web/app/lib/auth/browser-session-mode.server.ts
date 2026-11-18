@@ -64,7 +64,10 @@ export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
  * tests build a resolver with another list (`browserSessionRouteModeResolver`).
  */
 export const BROWSER_SESSION_WEB_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([
+  // Apple sign-in under the mode has no end-to-end proof yet (#7800 review, #7596 B5e1).
   'B5B_WWW_PROVIDER_SIGN_IN',
+  // Apple link is refused (`APPLE_LINK_ENABLED`) until a stand-in proof drives Apple's form_post.
+  'B5E1_APPLE_LINK_PROOF',
   'B6_PARTNER_CONSENT',
   'B7_BROWSER_ACCEPTANCE',
 ]);

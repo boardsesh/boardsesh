@@ -1225,8 +1225,9 @@ The backend cores stay. Google and Apple link and unlink require real
 reauthentication within five minutes (owner decision, 2026-11-13); for Google
 only a signed `auth_time` in a verified ID token counts
 ([provider security adoption](./better-auth-provider-security-adoption.md)).
-Apple-only accounts set a first password after email confirmation, which is
-not provider reauthentication. Facebook sign-in and linking stay removed;
+Accounts with no password and a Google or Apple identity set a first
+password after email confirmation (Apple-only at first; widened by the
+decision of 2026-11-18 on #7596), which is not provider reauthentication. Facebook sign-in and linking stay removed;
 stored Facebook identities stay. Drizzle schema exports and merged migrations
 stay, and this work writes no migrations.
 
@@ -1294,8 +1295,9 @@ locked in one pass through `lockWebSessionAccounts` (the provider's owner FOR
 UPDATE, since resolution writes its rows, and the presented account FOR
 UPDATE), after the provider-subject lock, so crossed sign-ins queue. A session
 request needs `actorCookie: null`: a sign-in never links a provider to the
-account it arrived as, and an unknown provider creates a new account as a
-signed-out sign-in does. Freshness: Google is a `login` only when the backend
+account it arrived as. An unknown provider creates a new account as a
+signed-out sign-in does, unless a live session is presented: then it is
+`link_required` (decision D1, B5e1, below). Freshness: Google is a `login` only when the backend
 verifies a signed `auth_time` under five minutes old for this subject
 (`CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE=auth-time-staging`), with the
 nonce bound into the intent's `flow` (`flow` = SHA-256 hex of
@@ -1366,25 +1368,29 @@ start through `/api/auth/signin/*` is an explicit sign-in
   starts the sign-in again. `email_conflict` and `email_required` keep today's
   pages and change no cookie.
 - One response publishes the sign-in: NextAuth's legacy twin with the proof's
-  session id (no `auth_time` and no `link_guarded` for a `carried` login), the
+  session id (checked again when the twin is encoded: another id publishes
+  nothing) (no `auth_time` and no `link_guarded` for a `carried` login), the
   host-only legacy clear, clears of every other legacy name or chunk the
-  request carried, clears of the bridged name in both scopes, then the login
+  request carried (and of the host-only copy of each chunk the twin rewrites), clears of the bridged name in both scopes, then the login
   cookie. So no legacy cookie with another id stays beside the new login cookie,
   which rule (c) would otherwise follow: a fresh Google login's
   `authenticatedAt` is Google's `auth_time`, up to five minutes before the
   login, and a leftover legacy cookie written in that gap would look newer.
 - Google freshness (#7655, #7590). NextAuth's `nonce` check is on for these
-  flows: a 32-byte random nonce goes to Google and into a sealed host-only
-  HttpOnly cookie of the flow, and the ID token must carry it. The intent's
+  flows: a 32-byte random nonce goes to Google and into a sealed HttpOnly
+  cookie of the flow, `__Host-next-auth.nonce.<scope>` in a secure context
+  (host-only, Secure, `Path=/`, so a sibling subdomain cannot plant a copy;
+  the plain name on local http), and the ID token must carry it. A withheld
+  reply (503, 404, lost) and a retired flow clear it with the name and options
+  it was written with. The intent's
   `flow` is the SHA-256 hex of `JSON.stringify(["web-oauth-google-nonce-v1",
   nonce])`, and `resolve` forwards the raw ID token and the nonce. Every sign-in
   asks Google for `max_age=31536000`, so the token carries `auth_time` without
   making a climber already signed in to Google sign in again. The backend counts
   the session as a fresh login only when Google's own `auth_time` is under five
   minutes old; a silent sign-in is `carried` and never passes a five-minute
-  check. A forced reauthentication (`max_age=0`) is B5e1's entry point
-  (`googleSessionAuthorizationParams({ reauthenticate: true })`). Apple
-  sign-ins are always `carried`.
+  check. A forced reauthentication (`max_age=0`) is B5e1's re-sign-in page
+  (`/auth/reauthenticate`, below). Apple sign-ins are always `carried`.
 - The B1c rule that cleared the first-party names on a legacy provider login
   is gone: Google and Apple publish their own session, and the native transfer
   provider is refused under `better-auth` (B4c-web).
@@ -1394,7 +1400,287 @@ start through `/api/auth/signin/*` is an explicit sign-in
 `web-provider-session.integration.proof.ts` drives Google end to end through
 the real route against a loopback stand-in that signs real ID tokens, the real
 backend web OAuth and web-session handlers and real PostgreSQL. Apple runs the
-same code with no nonce, but is not driven end to end there.
+same code with no nonce, but is not driven end to end there, so
+`B5B_WWW_PROVIDER_SIGN_IN` stays on the www cutover list. A Google ID token
+without `auth_time` (Google ignoring `max_age`) signs in as `carried`
+(proven). Runbook note: a Google flow started in one mode and finished in the
+other answers the outage page; it lasts 15 minutes at most, and starting again
+works.
+
+**Signed in, an unknown provider identity is `link_required` (decision D1,
+B5e1).** When `resolve` with `webSession` presents a live session (canonical,
+bridged or legacy, admitted by the reader) and no account owns the verified
+provider subject, the backend answers the denial code `link_required` (409):
+no account and no provider row are created, the presented session is kept,
+and the intent is consumed like any other end. A known subject still signs in
+and ends the presented session; with no live presented session an unknown
+subject still creates an account. www sends the browser to
+`/auth/error?error=OAuthLinkRequired` ("You're signed in as X. To sign in with
+this Google or Apple account, connect it from Settings first.") and changes no
+cookie. It is checked before the email rule, so a signed-in climber who brings
+an unknown identity with another account's address also gets `link_required`;
+signed out, that is still `email_conflict`.
+
+### Link, unlink and reauthentication on www (B5e1)
+
+Under `AUTH_BROWSER_SESSION_MODE=better-auth`, www serves
+`/api/auth/provider-security/*` (`provider-security-route.server.ts`, Node
+runtime) on the backend's `provider-security-v1` commands. With the mode unset,
+empty or `legacy` every one of these routes answers 404. Under `better-auth`
+they answer 503 unless www's own `CURRENT_STORE_PROVIDER_SECURITY_MODE` is
+`backend-staging`.
+
+| Route | Method | What it does | Answers |
+|---|---|---|---|
+| `methods` | GET | The signed-in account's methods: password usable, linked Google/Apple identities (`methodId`, `canUnlink`), configured providers, which reauthentication methods work (`password`, `google`; `apple` is always false), and `linking` per provider (`{ available }`, or `{ available: false, reason }` with `not_configured` or `apple_link_unproven`) | 200 `{ status: 'methods', … }` |
+| `start` | POST `{ action, provider, methodId?, returnTo? }` | Creates the backend intent with the canonical session as actor (never the legacy cookie, never with `webSession`), and writes the sealed flow cookie. `link` + `apple` is refused (`provider_unavailable`) while `APPLE_LINK_ENABLED` is false | 200 `{ status: 'reauthentication_required', action, provider, expiresAt }` |
+| `reauthenticate/password` | POST `{ password }` | `reauthenticate-password`; then an unlink prepares and finalizes, and a link binds its provider round trip | 200 `committed` (unlink) or `{ status: 'redirect', url }` (link) |
+| `reauthenticate/google` | POST | `bind-google-reauthentication` and Google's URL with `max_age=0` and `prompt=select_account consent` (#7590) | 200 `{ status: 'redirect', url }` |
+| `reauthenticate/apple` | POST | Always refused: the backend verifies no Apple ID token, so Apple cannot prove a fresh sign-in (#7655 item 3). Apple-only accounts reauthenticate by setting a first password (B5e2) | 403 `reauthentication_unavailable` |
+| `callback/google` | GET | Finishes a Google reauthentication (`reauthenticate-google` with the raw ID token, nonce and the hash of the query `state`) or a Google link (`prepare` with the verified identity and the hash of the query `state`, then `finalize`) | 303 to `returnTo?providerSecurity=…` |
+| `callback/apple` | POST, then GET `?resume=1` | Apple's cross-site `form_post` is held in the flow cookie after its state matches; the same-site GET (which carries the Lax session cookie) finishes the link. Unreachable while Apple link is off | 303 as above |
+| `abort` | POST | Ends the open intent and the flow cookie | 200 `{ status: 'aborted' }` |
+| `recover` | POST | Asks `recover` about a link or unlink whose reply was lost | 200 `committed` or a refusal |
+
+A callback's `providerSecurity` is `linked`, `unlinked`, `cancelled`,
+`unavailable`, `expired`, `state_mismatch`, `session_required`,
+`identity_changed`, `provider_not_verified` or the backend's refusal code
+(`reauthentication_required`, `last_usable_method`, `ownership_conflict`, …).
+JSON refusals are `{ status: 'refused', outcome, code }` with the backend's
+status mapping; a lost or 503 reply is 503 `{ status: 'unavailable' }`.
+
+- **Intent and origin.** Every start and every state change is a POST whose
+  `Origin` is the public site (and `Sec-Fetch-Site: same-origin` where sent),
+  and it needs the expected-viewer header the www guard adds (409 otherwise).
+  The `.boardsesh.com` session cookie rides on any top-level request, so it
+  proves no intent. The callbacks are the exception; their sealed flow cookie
+  and state stand in.
+- **Flow custody** (`provider-flow-cookie.server.ts`). The intent, recovery and
+  reauthentication tokens and every round trip's state, nonce and PKCE verifier
+  (32 random bytes each) live in one cookie, `__Host-boardsesh.provider-flow`:
+  AES-256-GCM under a key derived by HKDF-SHA256 from
+  `AUTH_BROWSER_SESSION_COOKIE_SECRET` with the label
+  `boardsesh-provider-security-flow-cookie-v1`, the cookie name as associated
+  data; HttpOnly, Secure, Path=/, no Domain, at most 15 minutes; SameSite=Lax,
+  or None for an Apple link (Apple answers by `form_post`). It is cleared with
+  the attributes it was written with, and a seal larger than the reader
+  accepts (3,072 characters) is never written: the intent is aborted and the
+  answer is 503. The PKCE verifier and every backend token stay sealed. The
+  state, the nonce and the S256 code challenge are part of the authorization
+  URL, which the JSON `redirect` answer hands to page JavaScript to follow;
+  that is what an OAuth redirect is, and none of them lets anyone redeem the
+  code without the sealed verifier. The preparation token lives only inside
+  the one request that prepares and finalizes. The record names the account
+  and session that started the flow; every later step and callback compares
+  them with the session the request presents now (`identity_changed`, flow
+  cookie cleared, otherwise), and the backend compares the presented token with
+  the one the intent stores.
+- **Round trips** (`provider-oidc.server.ts`). www's own start and callback,
+  never `/api/auth/signin/*`. Endpoints and client credentials come from the
+  providers NextAuth is configured with. Each round trip sends state, nonce and
+  an S256 PKCE challenge; the callback redeems the code with the verifier and
+  checks the ID token's RS256 signature against the issuer's keys, issuer,
+  audience, authorized party, expiry, issue time and nonce. The flow hash
+  bound to the intent is the SHA-256 of
+  `["web-oauth-provider-link-state-v1", provider, state]` for a link and
+  `["web-oauth-google-reauthentication-state-v1", state]` for a Google
+  reauthentication, computed from the state the callback carried, never from
+  the sealed copy; a sign-in's tag is `web-oauth-google-nonce-v1`, and a
+  sign-in's callback cannot open this flow cookie, so neither can finish the
+  other. A callback whose state matches no round trip of the flow ends
+  nothing (`state_mismatch`).
+- **No session cookie (HARD RULE 2).** No reply of these routes sets or clears
+  a session cookie of any name. A link or unlink keeps the session's token and
+  sign-in time and moves its generation: the JSON answer carries
+  `refreshAccessToken: true`, and the page fetches a new 15-minute token
+  (`refreshAccessTokenAfterCredentialChange`) without a reload; a callback's
+  303 is a full page load, which fetches one anyway. Access tokens minted
+  before the change are refused, and every other session of the account ends
+  server-side. The legacy twin keeps its older generation, so after a link it
+  is dead (see "Rollback after a link or unlink" above).
+- **Legacy-only browsers.** A request that presents only a legacy cookie gets
+  403 `canonical_session_required`; the page re-reads the session (which
+  bridges it) and retries once.
+- **Apple link is off** (`APPLE_LINK_ENABLED = false` in
+  `provider-security-route.server.ts`) until a proof drives Apple's
+  `form_post` round trip against an Apple stand-in. The www cutover list names
+  it (`B5E1_APPLE_LINK_PROOF`). Apple-only accounts can still unlink after a
+  first password, and Apple sign-in is unchanged.
+- **Failed round trips give their slot back.** A code exchange that fails
+  (`provider_not_verified`), a provider with no client, and any refusal that
+  ends the flow call `abort` before clearing the flow cookie, so failures never
+  pile up to `too_many_pending`. A cancelled Google reauthentication keeps the
+  intent, so the climber can still use the password; a cancelled link ends it.
+  The issuer's signing keys are cached for an hour and fetched again on an
+  unknown `kid`.
+- **Lost replies.** A lost or 503 `finalize` reply is followed by one `recover`
+  with the same session; `recovered` counts as committed. When that is lost
+  too, the flow cookie stays, the answer is `unavailable`, and `POST recover`
+  can ask again. `too_many_pending`, `reauthentication_required`,
+  `identity_changed` and lost replies change no cookie; a wrong password keeps
+  the flow so the climber can try again.
+
+### Forced re-sign-in (B5e1)
+
+`/auth/reauthenticate?callbackUrl=…` (#7655 item 6).
+One page for Settings, the developer console and partner pages, under
+`better-auth` only (404 otherwise; signed-out browsers go to the login page
+first). It is a real sign-in of the account already signed in: its password
+through the credentials login, or Google through the sign-in route with
+`max_age=0` and `prompt=select_account consent`. Either is a login, so the
+backend issues a new session whose sign-in time is now (Google only with a
+signed `auth_time` under five minutes old) and ends the old one, and the
+browser returns to the `callbackUrl`, reduced to a same-origin path
+(`safeCallbackUrl`). A silent Google sign-in cannot satisfy a five-minute
+check. Apple-only accounts are told to set a password first.
+
+It ends as the account that started it, or not at all. Before the sign-in,
+the page POSTs `/api/auth/reauthenticate/start` (same `Origin`, the
+expected-viewer header), which writes `__Host-boardsesh.reauthenticate`:
+sealed like the provider flow cookie (its own HKDF label), HttpOnly, Lax, ten
+minutes, holding `startedAs` (the signed-in user id) and the return path. Both
+sign-ins come back to `GET /api/auth/reauthenticate/return`, which clears it
+and forwards to the return path only when the browser is now signed in as
+`startedAs`. Another account (Google offered a different one and the climber
+picked it) goes to `/auth/reauthenticate?outcome=other_account`, which says so
+and offers Sign out and the home page; a missing or expired record goes to
+`outcome=expired`. Neither value can be chosen through a URL. An unknown
+Google account ends on `link_required`; while a re-sign-in is in progress the
+error page says that Google account is not connected to this Boardsesh
+account and offers to try again, instead of the Settings advice. The Google
+start sends the account's email as `login_hint`; Google preselects it only
+when it is the connected address (the backend does not store the Google
+address, so nothing better is known). The page shows sign-in buttons only from
+a successful `methods` read (a legacy-only browser re-reads the session and
+asks once more); any other answer is an error with a retry, so an Apple-only
+account is never offered Google. A wrong password, a rate limit (429) and an
+outage each get their own message.
+
+Return to app.boardsesh.com is not supported: `callbackUrl` is reduced to a
+path on www (`safeCallbackUrl` without an origin), so an absolute Expo web URL
+falls back to `/`. Nothing on app.boardsesh.com sends climbers here today; if
+it ever does, that return needs its own allowlist.
+
+Deploy order: `link_required` is a new value in the `resolve` reply. A www
+without it refuses such a reply and shows the outage page, so www deploys
+before the backend or with it.
+
+Settings' link
+and unlink use the per-intent reauthentication of the provider-security
+commands instead, which does not touch the session's sign-in time; the console
+and partner pages need the session's own sign-in time, which only a login
+moves. The page asks the provider-security `methods` read which ways the
+account can confirm, and offers both when it does not answer.
+
+Owner check against real Google, before the mode goes on: Google accepts
+`max_age=0` with `prompt=select_account consent` (no 400), asks for the
+password, and the ID token's `auth_time` moves to that moment (#7590).
+`web-provider-session.integration.proof.ts` proves the rest against the
+stand-in: the start sends both values, the answer is a login with its twin,
+and only a fresh `auth_time` passes a five-minute check.
+
+**Owner checks for link, unlink and reauthentication against the real providers** (none of this has been seen
+outside the stand-in):
+
+1. Register `https://www.boardsesh.com/api/auth/provider-security/callback/google`
+   as a redirect URI of the Google client and
+   `https://www.boardsesh.com/api/auth/provider-security/callback/apple` as a
+   return URL of the Apple service id.
+2. Google accepts `max_age=0` with `prompt=select_account consent` (no 400),
+   asks for the password, and the ID token's `auth_time` moves to that moment.
+   Record it in #7590.
+3. The `__Host-` flow cookie comes back on Google's redirect (SameSite=Lax) and
+   on Apple's `form_post` (SameSite=None) in Chrome, Safari and Firefox, and in
+   the iOS and Android in-app browsers.
+4. A link and an unlink on real Google; on real Apple, a link (Apple only
+   links; it cannot reauthenticate).
+
+`provider-security-link.integration.proof.ts` and
+`provider-security-unlink.integration.proof.ts` drive these routes over the
+real backend handlers, real PostgreSQL and the Google stand-in: a link keeps
+the token, moves the generation, ends a second session, writes no session
+cookie, and the old access token is refused while a new one works; another
+account's session holding A's flow cookie is refused at a step and at the
+callback; a sign-in round trip cannot finish a link and the reverse; a
+mismatched and a replayed callback are refused; a lost `finalize` reply is
+recovered; reauthentication by password and by a fresh Google sign-in work, a
+Google sign-in older than five minutes does not; the last sign-in method stays;
+the mode unset answers 404. Apple is not driven end to end.
+
+**What B5e2 builds on this** (done, below). The Settings card (linked identities from
+`methods`, connect and disconnect buttons that POST `start` and then
+`reauthenticate/password` or `reauthenticate/google`, follow `redirect`,
+call `refreshAccessTokenAfterCredentialChange` on `committed`, re-read the
+session and retry once on `canonical_session_required`, and read
+`providerSecurity` on return) and the first-password page for accounts
+without a password. It removes `B5E2_WWW_PROVIDER_SETTINGS_UI` from the www cutover
+list.
+
+### Settings and first password on www (B5e2)
+
+**Sign-in methods card.** Under `better-auth`, and only when www's
+`CURRENT_STORE_PROVIDER_SECURITY_MODE` is `backend-staging` too, the www
+Settings page shows the card "Sign-in methods" in place of the set-password
+card (`sign-in-methods-section.tsx`). Otherwise the page is as before, pinned
+by a test. It reads `methods` and shows the password state and each
+configured provider: connected (Disconnect), not connected (Connect), or "Not
+available yet" (Apple link, see `APPLE_LINK_ENABLED`). The only sign-in method
+cannot be disconnected and says why. A change runs `start`, then the password
+or "Continue with Google" (which follows the returned redirect), then the
+result: `committed` fetches a new 15-minute token
+(`refreshAccessTokenAfterCredentialChange`), reads `methods` again and says
+so; a wrong password keeps the flow; `unavailable` asks `recover` once, and
+when there is nothing to recover (the backend answers 503 past five
+reauthentication tries a minute per account) the flow stays open with "try
+again in a minute"; `identity_changed` reloads from the locale root; every
+other refusal has its own message, and the route aborts the intent of any
+flow it ends, so closed flows never pile up. `too_many_pending` offers
+"Cancel pending changes", which aborts this browser's open change. Back from a provider, the card reads `providerSecurity`
+(and `provider`) from the address, says what happened and removes both. Every
+call goes through the www guard (expected-viewer header) and re-reads the
+session once on `canonical_session_required` (`account-security-client.ts`).
+Every account without a usable password is offered "Set a password", a link
+to `/settings/first-password` (decision of 2026-11-18 on #7596: first
+password is open to any account with no password and a Google or Apple
+identity). Connect and Disconnect stay enabled whenever the account can
+confirm a change (a password, or a fresh Google sign-in). The backend
+accepts them (`isFirstPasswordInventory`), with a durable cap of 5 emails an
+hour and 10 a day per account; the www proof drives a Google-only account end
+to end.
+
+**First password** (`first-password-route.server.ts`). Routes under
+`/api/auth/first-password/*`, all POST with this site's `Origin`, the
+expected-viewer header, the raw `Cookie` header and the canonical session only;
+404 with the mode unset, 503 unless www's `CURRENT_STORE_FIRST_PASSWORD_MODE`
+is `backend-staging`; no reply writes a session cookie:
+
+| Step | What it does |
+|---|---|
+| `request` | Backend `request` for the live session; www seals the `__Host-boardsesh.first-password-flow` cookie (challenge and recovery tokens, the account and session that asked; ids capped at 128 characters) first, then emails the plan's link through `@boardsesh/email` (`sendFirstPasswordConfirmationEmail`). The link's origin is the configured canonical origin only: with none configured every step answers 503. No email, no cookie: asking again supersedes the challenge |
+| `status` `{ operation }` | Whether the emailed link belongs to this browser and session; backend `read` (no write) |
+| `confirm` `{ operation, token, password, confirmPassword }` | Backend `prepare` then `finalize`; on a lost reply one `recover`. `committed` carries `refreshAccessToken: true` |
+| `recover` `{ operation }` | Asks `recover` with the sealed preparation token |
+
+The emailed link is `/auth/confirm-first-password#token=…&operation=…`. The
+fragment never reaches a server, so the GET changes nothing; the page takes
+it out of the address, asks `status`, and shows the password form. A link
+opened in another browser (no flow cookie, or another operation key) answers
+`other_browser`; one opened by another account or another session of the same
+account answers `other_account`; both change nothing and the page says what to
+do. The operation key is a digest of the challenge, never the challenge. The
+same session that asked must finish (the backend checks the token hash too).
+The page `/settings/first-password` asks for the email ("we sent you a link").
+The confirmation page loads no product analytics (`isProductAnalyticsFreeUrl`),
+and telemetry redaction also covers the `status`, `confirm` and `recover`
+route names. A lost `prepare` reply keeps the password form for another try.
+
+`first-password.integration.proof.ts` drives the routes over the real backend
+handlers and real PostgreSQL (only the mail transport is replaced, to read the
+link): the password is set, the session keeps its token and moves its
+generation, a second session ends, the new password signs in; the link fails
+for another session, another account and another browser; a replay is
+refused; a lost `finalize` reply is recovered; a legacy-only browser gets
+`canonical_session_required`; the mode unset answers 404.
 
 ## What is removed, and why
 

@@ -431,6 +431,11 @@ export async function resolveWebOAuthIdentity(
           new Date(await nowMilliseconds(transaction)),
         );
         const owner = await bindIdentityAuthority(transaction, receipt).findProvider(provider, subject);
+        // Decision D1 (#7596 B5e1): a browser signed in as a live session that
+        // brings a provider identity no account owns is asking to connect it,
+        // not to make a second account. Refuse with nothing created and the
+        // presented session kept; the intent stays consumed, as on any end.
+        if (!owner && presentedSession) return denied('resolve', requestId, 'link_required');
         await lockWebSessionAccounts(
           transaction,
           owner ? eq(users.id, owner.userId) : sql`false`,

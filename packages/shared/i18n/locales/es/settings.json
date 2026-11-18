@@ -51,6 +51,10 @@
     "settings": {
       "title": "Ajustes",
       "description": "Gestiona tu cuenta de Boardsesh, tu perfil y tus preferencias"
+    },
+    "firstPassword": {
+      "title": "Añadir una contraseña",
+      "description": "Añade una contraseña a tu cuenta de Boardsesh"
     }
   },
   "title": "Ajustes",
@@ -704,5 +708,59 @@
   },
   "writeRefused": {
     "tryAgain": "No se completó. Inténtalo de nuevo."
+  },
+  "signInMethods": {
+    "title": "Formas de iniciar sesión",
+    "description": "Cómo inicias sesión en Boardsesh. Cada cambio te pide confirmar que eres tú y cierra tu sesión en tus otros dispositivos.",
+    "password": "Contraseña",
+    "passwordSet": "Configurada",
+    "passwordNotSet": "Sin configurar",
+    "connect": "Conectar {{provider}}",
+    "disconnect": "Desconectar",
+    "notAvailableYet": "Aún no disponible",
+    "onlyMethod": "Es tu única forma de iniciar sesión. Añade otra antes de desconectarla.",
+    "noPassword": "Aún no tienes contraseña. Añade una para iniciar sesión con tu correo y para confirmar cambios aquí.",
+    "setPassword": "Crear contraseña",
+    "confirmLink": "Confirma que eres tú para conectar {{provider}}.",
+    "confirmUnlink": "Confirma que eres tú para desconectar {{provider}}.",
+    "passwordLabel": "Contraseña",
+    "confirm": "Confirmar",
+    "continueWithGoogle": "Continuar con Google",
+    "cancel": "Cancelar",
+    "wrongPassword": "Esa contraseña no funcionó. Inténtalo otra vez.",
+    "tryAgainSoon": "No se pudo completar. Inténtalo en un minuto.",
+    "loadFailed": "No pudimos cargar tus formas de iniciar sesión.",
+    "retry": "Reintentar",
+    "results": {
+      "linked": "{{provider}} está conectado. Tus otros dispositivos te pedirán iniciar sesión otra vez.",
+      "unlinked": "{{provider}} está desconectado. Tus otros dispositivos te pedirán iniciar sesión otra vez.",
+      "cancelled": "No cambió nada: cancelaste en el proveedor.",
+      "expired": "Tardó demasiado. Empieza otra vez.",
+      "state_mismatch": "Esa respuesta no corresponde a esta solicitud. Empieza otra vez.",
+      "session_required": "Vuelve a iniciar sesión y empieza de nuevo.",
+      "identity_changed": "Ahora tienes la sesión iniciada con otra cuenta.",
+      "provider_not_verified": "El proveedor no pudo confirmar esa cuenta. Inténtalo otra vez.",
+      "unavailable": "No se pudo completar. Inténtalo en un minuto.",
+      "reauthentication_required": "Ese inicio de sesión no era lo bastante reciente. Confirma otra vez que eres tú.",
+      "last_usable_method": "No puedes quitar tu única forma de iniciar sesión.",
+      "ownership_conflict": "Esa cuenta ya está conectada a otra cuenta de Boardsesh.",
+      "too_many_pending": "Hay demasiados cambios pendientes. Inténtalo en 15 minutos.",
+      "provider_unavailable": "Ese proveedor no está disponible ahora.",
+      "replayed": "Esa solicitud ya se usó. Empieza otra vez.",
+      "failed": "No funcionó. Inténtalo otra vez."
+    },
+    "disconnectProvider": "Desconectar {{provider}}",
+    "cancelPending": "Cancelar cambios pendientes",
+    "pendingCancelled": "Cancelado. Inténtalo ahora; lo que siga pendiente termina en menos de 15 minutos."
+  },
+  "firstPassword": {
+    "title": "Añadir una contraseña",
+    "description": "Te enviaremos un enlace a {{email}}. Ábrelo en este navegador en menos de cinco minutos para elegir tu contraseña.",
+    "send": "Envíame un enlace",
+    "sendAgain": "Enviar otro enlace",
+    "sent": "Enlace enviado a {{email}}. Ábrelo en este navegador en menos de cinco minutos.",
+    "notEligible": "No podemos añadir una contraseña a esta cuenta desde aquí. Si ya tiene una, inicia sesión con ella.",
+    "tryAgainSoon": "No pudimos enviar el enlace. Inténtalo más tarde.",
+    "back": "Volver a Ajustes"
   }
 }

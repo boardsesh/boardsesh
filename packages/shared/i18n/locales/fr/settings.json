@@ -51,6 +51,10 @@
     "settings": {
       "title": "Paramètres",
       "description": "Gérez votre compte Boardsesh, votre profil et vos préférences"
+    },
+    "firstPassword": {
+      "title": "Ajouter un mot de passe",
+      "description": "Ajoutez un mot de passe à votre compte Boardsesh"
     }
   },
   "title": "Paramètres",
@@ -704,5 +708,59 @@
   },
   "writeRefused": {
     "tryAgain": "Ça n’a pas abouti. Réessaie."
+  },
+  "signInMethods": {
+    "title": "Moyens de connexion",
+    "description": "Comment vous vous connectez à Boardsesh. Chaque changement vous demande de confirmer votre identité et vous déconnecte de vos autres appareils.",
+    "password": "Mot de passe",
+    "passwordSet": "Défini",
+    "passwordNotSet": "Non défini",
+    "connect": "Lier {{provider}}",
+    "disconnect": "Délier",
+    "notAvailableYet": "Pas encore disponible",
+    "onlyMethod": "C'est votre seul moyen de connexion. Ajoutez-en un autre avant de le délier.",
+    "noPassword": "Vous n'avez pas encore de mot de passe. Ajoutez-en un pour vous connecter avec votre e-mail et confirmer les changements ici.",
+    "setPassword": "Définir un mot de passe",
+    "confirmLink": "Confirmez votre identité pour lier {{provider}}.",
+    "confirmUnlink": "Confirmez votre identité pour délier {{provider}}.",
+    "passwordLabel": "Mot de passe",
+    "confirm": "Confirmer",
+    "continueWithGoogle": "Continuer avec Google",
+    "cancel": "Annuler",
+    "wrongPassword": "Ce mot de passe n'a pas fonctionné. Réessayez.",
+    "tryAgainSoon": "Cela n'a pas abouti. Réessayez dans une minute.",
+    "loadFailed": "Impossible de charger vos moyens de connexion.",
+    "retry": "Réessayer",
+    "results": {
+      "linked": "{{provider}} est lié. Vos autres appareils vous demanderont de vous reconnecter.",
+      "unlinked": "{{provider}} est délié. Vos autres appareils vous demanderont de vous reconnecter.",
+      "cancelled": "Rien n'a changé : vous avez annulé chez le fournisseur.",
+      "expired": "Cela a pris trop de temps. Recommencez.",
+      "state_mismatch": "Cette réponse ne correspond pas à cette demande. Recommencez.",
+      "session_required": "Reconnectez-vous, puis recommencez.",
+      "identity_changed": "Vous êtes maintenant connecté avec un autre compte.",
+      "provider_not_verified": "Le fournisseur n'a pas pu confirmer ce compte. Réessayez.",
+      "unavailable": "Cela n'a pas abouti. Réessayez dans une minute.",
+      "reauthentication_required": "Cette connexion n'était pas assez récente. Confirmez à nouveau votre identité.",
+      "last_usable_method": "Vous ne pouvez pas retirer votre seul moyen de connexion.",
+      "ownership_conflict": "Ce compte est déjà lié à un autre compte Boardsesh.",
+      "too_many_pending": "Trop de changements sont en attente. Réessayez dans 15 minutes.",
+      "provider_unavailable": "Ce fournisseur n'est pas disponible pour le moment.",
+      "replayed": "Cette demande a déjà servi. Recommencez.",
+      "failed": "Cela n'a pas fonctionné. Réessayez."
+    },
+    "disconnectProvider": "Délier {{provider}}",
+    "cancelPending": "Annuler les changements en attente",
+    "pendingCancelled": "Annulé. Réessayez maintenant ; ce qui reste en attente se termine dans les 15 minutes."
+  },
+  "firstPassword": {
+    "title": "Ajouter un mot de passe",
+    "description": "Nous enverrons un lien à {{email}}. Ouvrez-le dans ce navigateur dans les cinq minutes pour choisir votre mot de passe.",
+    "send": "M'envoyer un lien",
+    "sendAgain": "Envoyer un autre lien",
+    "sent": "Lien envoyé à {{email}}. Ouvrez-le dans ce navigateur dans les cinq minutes.",
+    "notEligible": "Impossible d'ajouter un mot de passe à ce compte depuis ici. S'il en a déjà un, connectez-vous avec.",
+    "tryAgainSoon": "Impossible d'envoyer le lien. Réessayez plus tard.",
+    "back": "Retour aux Paramètres"
   }
 }

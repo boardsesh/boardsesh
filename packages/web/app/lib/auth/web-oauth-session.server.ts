@@ -32,18 +32,17 @@ import { appendLegacyHostOnlySessionCookieClear, appendStaleLegacySessionCookieC
  * year, so a climber already signed in to Google is not asked again, and the
  * session is `carried` unless Google's `auth_time` is itself under five
  * minutes old. That silent sign-in can never pass a five-minute check, which
- * is what #7655 asks. A forced reauthentication entry point (`max_age=0`) is
- * B5e1's, through `googleSessionAuthorizationParams({ reauthenticate: true })`.
+ * is what #7655 asks. The forced re-sign-in page (`/auth/reauthenticate`,
+ * B5e1) sends `max_age=0` and `prompt=select_account consent` as the start's
+ * query (`GOOGLE_FORCED_REAUTHENTICATION`), which NextAuth puts over these.
  */
 
 /** Long enough that a climber signed in to Google is not asked to sign in again; any value makes Google send `auth_time`. */
 export const GOOGLE_SIGN_IN_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
-/** The authorization parameters a session sign-in adds for Google. `reauthenticate` forces a fresh Google login (B5e1). */
-export function googleSessionAuthorizationParams({ reauthenticate = false }: { reauthenticate?: boolean } = {}) {
-  return reauthenticate
-    ? { max_age: 0, prompt: 'select_account consent' }
-    : { max_age: GOOGLE_SIGN_IN_MAX_AGE_SECONDS };
+/** The authorization parameters a session sign-in adds for Google. */
+export function googleSessionAuthorizationParams() {
+  return { max_age: GOOGLE_SIGN_IN_MAX_AGE_SECONDS };
 }
 
 /** The intent `flow` of a Google session sign-in: the SHA-256 hex of the domain-tagged nonce. */
@@ -56,6 +55,19 @@ export function googleSessionFlow(nonce: string): string {
 /** At least 128 random bits, as NextAuth's generator (base64url) makes them; nothing else is accepted as a nonce. */
 function isStrongNonce(nonce: string): boolean {
   return /^[A-Za-z0-9_-]{22,1024}$/.test(nonce);
+}
+
+type CookieOption = NonNullable<NonNullable<NextAuthOptions['cookies']>['nonce']>;
+
+/**
+ * The Google nonce cookie of a session sign-in: host-only, and in a secure
+ * context under the `__Host-` prefix, which a browser accepts only without a
+ * Domain and with Secure and `Path=/`, so a sibling subdomain cannot plant a
+ * copy. On local http the plain name stays (no prefix is possible there).
+ */
+export function hostOnlyNonceCookie(cookie: CookieOption): CookieOption {
+  const name = cookie.name.startsWith('__Secure-') ? `__Host-${cookie.name.slice('__Secure-'.length)}` : cookie.name;
+  return { ...cookie, name, options: { ...cookie.options, domain: undefined, path: '/' } };
 }
 
 /**
@@ -71,7 +83,7 @@ export function sessionSignInOptions(options: NextAuthOptions, provider: WebOAut
     ...options,
     cookies: {
       ...options.cookies,
-      ...(nonceCookie ? { nonce: { ...nonceCookie, options: { ...nonceCookie.options, domain: undefined } } } : {}),
+      ...(nonceCookie ? { nonce: hostOnlyNonceCookie(nonceCookie) } : {}),
     },
     providers: options.providers.map((configured) => {
       if (configured.type !== 'oauth' || (configured.options?.id ?? configured.id) !== 'google') return configured;

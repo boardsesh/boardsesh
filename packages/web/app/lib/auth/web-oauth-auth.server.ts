@@ -18,6 +18,8 @@ type ResolvedIdentity = Extract<WebOAuthResolveReply, { outcome: 'resolved' }>;
 const ACTIONABLE_DENIAL_REDIRECTS: Partial<Record<WebOAuthResolveDenialCode, string>> = {
   email_conflict: '/auth/error?error=OAuthAccountNotLinked',
   email_required: '/auth/error?error=OAuthEmailRequired',
+  // Signed in, and no account has this provider identity yet (D1, #7596 B5e1).
+  link_required: '/auth/error?error=OAuthLinkRequired',
 };
 export interface WebOAuthRequestBinding {
   provider: WebOAuthProvider;
@@ -262,6 +264,8 @@ export function createWebOAuthIdentityAuthRequest(
           });
           if (claims?.sub !== outcome.user.id || typeof claims.authSessionId !== 'string' || !claims.authSessionId)
             return rejectUnavailable();
+          // The legacy twin must name the session this sign-in issued, or nothing is published.
+          if (webSession && claims.authSessionId !== outcome.webSession?.sessionId) return rejectUnavailable();
           encoded = result;
           return result;
         } catch {

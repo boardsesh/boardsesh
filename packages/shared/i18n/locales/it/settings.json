@@ -51,6 +51,10 @@
     "settings": {
       "title": "Impostazioni",
       "description": "Gestisci il tuo account Boardsesh, il profilo e le preferenze"
+    },
+    "firstPassword": {
+      "title": "Aggiungi una password",
+      "description": "Aggiungi una password al tuo account Boardsesh"
     }
   },
   "title": "Impostazioni",
@@ -704,5 +708,59 @@
   },
   "writeRefused": {
     "tryAgain": "Non è andato a buon fine. Riprova."
+  },
+  "signInMethods": {
+    "title": "Metodi di accesso",
+    "description": "Come accedi a Boardsesh. Ogni modifica ti chiede di confermare che sei tu e ti disconnette dagli altri dispositivi.",
+    "password": "Password",
+    "passwordSet": "Impostata",
+    "passwordNotSet": "Non impostata",
+    "connect": "Collega {{provider}}",
+    "disconnect": "Scollega",
+    "notAvailableYet": "Non ancora disponibile",
+    "onlyMethod": "È il tuo unico metodo di accesso. Aggiungine un altro prima di scollegarlo.",
+    "noPassword": "Non hai ancora una password. Aggiungine una per accedere con la tua email e confermare le modifiche qui.",
+    "setPassword": "Imposta una password",
+    "confirmLink": "Conferma che sei tu per collegare {{provider}}.",
+    "confirmUnlink": "Conferma che sei tu per scollegare {{provider}}.",
+    "passwordLabel": "Password",
+    "confirm": "Conferma",
+    "continueWithGoogle": "Continua con Google",
+    "cancel": "Annulla",
+    "wrongPassword": "Questa password non ha funzionato. Riprova.",
+    "tryAgainSoon": "Non è andata a buon fine. Riprova tra un minuto.",
+    "loadFailed": "Non siamo riusciti a caricare i tuoi metodi di accesso.",
+    "retry": "Riprova",
+    "results": {
+      "linked": "{{provider}} è collegato. Gli altri dispositivi ti chiederanno di accedere di nuovo.",
+      "unlinked": "{{provider}} è scollegato. Gli altri dispositivi ti chiederanno di accedere di nuovo.",
+      "cancelled": "Nessuna modifica: hai annullato presso il provider.",
+      "expired": "Ci è voluto troppo tempo. Ricomincia.",
+      "state_mismatch": "Questa risposta non corrisponde a questa richiesta. Ricomincia.",
+      "session_required": "Accedi di nuovo, poi ricomincia.",
+      "identity_changed": "Ora hai effettuato l'accesso con un altro account.",
+      "provider_not_verified": "Il provider non ha potuto confermare quell'account. Riprova.",
+      "unavailable": "Non è andata a buon fine. Riprova tra un minuto.",
+      "reauthentication_required": "Quell'accesso non era abbastanza recente. Conferma di nuovo che sei tu.",
+      "last_usable_method": "Non puoi rimuovere il tuo unico metodo di accesso.",
+      "ownership_conflict": "Quell'account è già collegato a un altro account Boardsesh.",
+      "too_many_pending": "Troppe modifiche in attesa. Riprova tra 15 minuti.",
+      "provider_unavailable": "Quel provider ora non è disponibile.",
+      "replayed": "Quella richiesta è già stata usata. Ricomincia.",
+      "failed": "Non ha funzionato. Riprova."
+    },
+    "disconnectProvider": "Scollega {{provider}}",
+    "cancelPending": "Annulla le modifiche in sospeso",
+    "pendingCancelled": "Annullato. Riprova ora; quello che resta in sospeso termina entro 15 minuti."
+  },
+  "firstPassword": {
+    "title": "Aggiungi una password",
+    "description": "Invieremo un link a {{email}}. Aprilo in questo browser entro cinque minuti per scegliere la tua password.",
+    "send": "Inviami un link",
+    "sendAgain": "Invia un altro link",
+    "sent": "Link inviato a {{email}}. Aprilo in questo browser entro cinque minuti.",
+    "notEligible": "Non possiamo aggiungere una password a questo account da qui. Se ne ha già una, accedi con quella.",
+    "tryAgainSoon": "Non siamo riusciti a inviare il link. Riprova più tardi.",
+    "back": "Torna alle Impostazioni"
   }
 }

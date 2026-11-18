@@ -13,10 +13,11 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { decode, encode } from 'next-auth/jwt';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { authSession } from '@boardsesh/db/schema';
+import { authSession, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
-import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
-import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
+import { readFirstPartySession, requireFreshAuthentication } from '../../backend/src/auth/authority/session-reader';
+import { NextRequest } from 'next/server';
+import { CookieJar, ORIGIN, callRoute, patchNextRequestIo, servedRequests, setCookies } from './route-harness';
 import {
   BRIDGED,
   DOMAIN,
@@ -72,7 +73,9 @@ vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
 });
 
 import * as authRoute from '../app/api/auth/[...nextauth]/route';
+import * as reauthenticationRoute from '../app/api/auth/reauthenticate/[action]/route';
 import { authOptions } from '../app/lib/auth/auth-options';
+import { GOOGLE_FORCED_REAUTHENTICATION } from '../app/lib/auth/google-forced-reauthentication';
 
 const secret = 'web-provider-session-proof-nextauth-secret-7596';
 const ACCESS_SECRET = 'web-provider-session-proof-access-secret-7596-b5b';
@@ -137,10 +140,15 @@ const newGoogleIdentity = (authAgoSeconds?: number): GoogleIdentity => {
 };
 
 /** A browser's whole Google sign-in: start, Google's answer, the callback. */
-async function googleSignIn(jar: CookieJar, identity: GoogleIdentity) {
+async function googleSignIn(
+  jar: CookieJar,
+  identity: GoogleIdentity,
+  authorizationParams: Readonly<Record<string, string>> = {},
+) {
   const clientAddress = randomClientAddress();
   const csrfToken = await csrf(jar);
-  const start = await callRoute(authRoute, '/api/auth/signin/google', {
+  const query = new URLSearchParams({ ...authorizationParams }).toString();
+  const start = await callRoute(authRoute, `/api/auth/signin/google${query ? `?${query}` : ''}`, {
     cookie: jar.header(),
     form: { csrfToken, callbackUrl: 'https://www.boardsesh.com/', json: 'true' },
     headers: { 'x-forwarded-for': clientAddress },
@@ -181,16 +189,24 @@ async function expectTwinBesideLogin(response: Response, jar: CookieJar) {
   return { twin, session: read.session };
 }
 
-describe('Google sign-in with the mode unset (as on main)', () => {
-  it('writes only the legacy cookie and asks the backend for no session', async () => {
-    stubBetterAuthEnvironment(backend.origin);
-    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', '');
-    const jar = new CookieJar();
-    const { response } = await googleSignIn(jar, newGoogleIdentity(30));
-    expect(sessionCookieNamesIn(response)).toContain(LEGACY);
-    expect(sessionCookieNamesIn(response)).not.toContain(LOGIN);
-    expect(resolveSessionRequests).toEqual([undefined]);
-  });
+describe('Google sign-in with the mode unset, empty or legacy (as on main)', () => {
+  it.each([undefined, '', 'legacy'])(
+    'asks Google for no max_age and no nonce, writes only the legacy cookie and asks for no session (mode %j)',
+    async (mode) => {
+      stubBetterAuthEnvironment(backend.origin);
+      vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode ?? '');
+      if (mode === undefined) delete process.env.AUTH_BROWSER_SESSION_MODE;
+      const jar = new CookieJar();
+      const { start, response } = await googleSignIn(jar, newGoogleIdentity(30));
+      const authorization = google.authorizations().at(-1);
+      expect(authorization?.has('max_age')).toBe(false);
+      expect(authorization?.has('nonce')).toBe(false);
+      expect(setCookies(start).some((header) => header.includes('next-auth.nonce.'))).toBe(false);
+      expect(sessionCookieNamesIn(response)).toContain(LEGACY);
+      expect(sessionCookieNamesIn(response)).not.toContain(LOGIN);
+      expect(resolveSessionRequests).toEqual([undefined]);
+    },
+  );
 });
 
 describe('Google sign-in under better-auth', () => {
@@ -205,7 +221,10 @@ describe('Google sign-in under better-auth', () => {
     expect(authorization?.get('max_age')).toBeTruthy();
     expect(authorization?.get('nonce')?.length).toBeGreaterThanOrEqual(22);
     const nonceCookie = setCookies(start).find((header) => header.includes('next-auth.nonce.'));
+    // `__Host-`: host-only, Secure, Path=/, so a sibling subdomain cannot plant a copy.
+    expect(nonceCookie?.startsWith('__Host-next-auth.nonce.')).toBe(true);
     expect(nonceCookie).toMatch(/HttpOnly/i);
+    expect(nonceCookie).toMatch(/Secure/i);
     expect(nonceCookie).not.toMatch(/Domain=/i);
     expect(resolveSessionRequests).toHaveLength(1);
     expect(resolveSessionRequests[0]).toMatchObject({ googleAuthentication: { nonce: authorization?.get('nonce') } });
@@ -239,6 +258,19 @@ describe('Google sign-in under better-auth', () => {
     expect(row.legacyLineageId?.startsWith('carried:')).toBe(true);
   });
 
+  it('publishes a Google sign-in whose ID token has no auth_time (Google ignored max_age) as carried', async () => {
+    const jar = new CookieJar();
+    const { response } = await googleSignIn(jar, newGoogleIdentity());
+    const { twin, session } = await expectTwinBesideLogin(response, jar);
+    expect(twin?.auth_time).toBeUndefined();
+    expect(twin?.link_guarded).toBeUndefined();
+    const [row] = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.id, session.authSessionId));
+    expect(row.legacyLineageId).toBe(`carried:${session.authSessionId}`);
+  });
+
   it.each([
     ['a Domain', DOMAIN],
     ['a host-only', ''],
@@ -254,6 +286,8 @@ describe('Google sign-in under better-auth', () => {
       const jar = new CookieJar();
       jar.set(LEGACY, leftover, domain);
       const identity = newGoogleIdentity(4 * 60);
+      // A known identity: beside a live leftover session an unknown one would be link_required (D1).
+      await googleSignIn(new CookieJar(), identity);
       const { response } = await googleSignIn(jar, identity);
       await expectTwinBesideLogin(response, jar);
       expect(jar.get(LEGACY, '')).toBeUndefined();
@@ -270,7 +304,9 @@ describe('Google sign-in under better-auth', () => {
     await login(jar, climberA.email);
     const tokenA = loginToken(jar);
     const legacyA = jar.get(LEGACY, DOMAIN) ?? '';
+    // B's Google identity belongs to account B already (D1: an unknown one would be link_required).
     const identityB = newGoogleIdentity(30);
+    await googleSignIn(new CookieJar(), identityB);
     const { response } = await googleSignIn(jar, identityB);
     await expectTwinBesideLogin(response, jar);
     expect(await canonicalStatus(environment.database, tokenA)).not.toBe('admitted');
@@ -290,20 +326,141 @@ describe('Google sign-in under better-auth', () => {
     const off = await googleSignIn(jar, newGoogleIdentity(30));
     expect(sessionCookieNamesIn(off.response)).toEqual([]);
     expect(off.response.headers.get('location')).toContain('/auth/error');
+    // The withheld reply still retires the flow's nonce cookie, with the options it was written with.
+    const nonceClear = setCookies(off.response).find((header) => header.startsWith('__Host-next-auth.nonce.'));
+    expect(nonceClear).toMatch(/Max-Age=0/i);
+    expect(nonceClear).not.toMatch(/Domain=/i);
+    expect(jar.names().some((name) => name.startsWith('__Host-next-auth.nonce.'))).toBe(false);
     betterAuth();
     await reserveClimberEmail(environment.database, climberA);
-    // A new Google subject with the email of an existing account: today's page, no cookie change.
-    const conflict = await googleSignIn(jar, { ...newGoogleIdentity(30), email: climberA.email });
+    // Signed out, a new Google subject with the email of an existing account: today's page, no cookie change.
+    const signedOut = new CookieJar();
+    const conflict = await googleSignIn(signedOut, { ...newGoogleIdentity(30), email: climberA.email });
     expect(sessionCookieNamesIn(conflict.response)).toEqual([]);
     expect(conflict.response.headers.get('location')).toContain('OAuthAccountNotLinked');
     expect(await canonicalStatus(environment.database, loginToken(jar))).toBe('admitted');
     expect(jar.header()).toContain(before.split('; ').find((pair) => pair.startsWith(`${LOGIN}=`)) ?? 'missing');
   });
 
+  it.each([
+    ['a new address', false],
+    ['the address of the signed-in account', true],
+  ])(
+    'signed in as A, an unknown Google identity (%s) is link_required: no account, no cookie change, A kept (D1)',
+    async (_case, sameAddress) => {
+      const climberA = await createClimber(environment.database);
+      await reserveClimberEmail(environment.database, climberA);
+      const jar = new CookieJar();
+      await login(jar, climberA.email);
+      const tokenA = loginToken(jar);
+      const identity = newGoogleIdentity(30);
+      const { response } = await googleSignIn(jar, sameAddress ? { ...identity, email: climberA.email } : identity);
+      expect(sessionCookieNamesIn(response)).toEqual([]);
+      expect(response.headers.get('location')).toContain('/auth/error?error=OAuthLinkRequired');
+      expect(loginToken(jar)).toBe(tokenA);
+      expect(await canonicalStatus(environment.database, tokenA)).toBe('admitted');
+      expect(await environment.database.select().from(users).where(eq(users.email, identity.email))).toEqual([]);
+      expect(resolveSessionRequests.at(-1)).toMatchObject({ presented: { kind: 'canonical-token', token: tokenA } });
+    },
+  );
+
   it('keeps the invariant for a password login too: login cookie and twin with one id', async () => {
     const climber = await createClimber(environment.database);
     const jar = new CookieJar();
     const response = await login(jar, climber.email);
     await expectTwinBesideLogin(response, jar);
+  });
+});
+
+describe('the forced re-sign-in (#7655 item 6) under better-auth', () => {
+  beforeEach(betterAuth);
+
+  it('asks Google for a fresh sign-in, and only a fresh auth_time makes the new session pass a five-minute check', async () => {
+    const identity = newGoogleIdentity(2 * 60 * 60);
+    const jar = new CookieJar();
+    await googleSignIn(jar, identity);
+    const passes: boolean[] = [];
+    for (const authAgoSeconds of [2 * 60 * 60, 15]) {
+      const before = loginToken(jar);
+      const { response } = await googleSignIn(
+        jar,
+        { ...identity, authTimeSeconds: nowSeconds() - authAgoSeconds },
+        GOOGLE_FORCED_REAUTHENTICATION,
+      );
+      const authorization = google.authorizations().at(-1);
+      expect(authorization?.get('max_age')).toBe('0');
+      expect(authorization?.get('prompt')).toBe('select_account consent');
+      // A re-sign-in is a login: it writes the login cookie and ends the session it arrived with.
+      await expectTwinBesideLogin(response, jar);
+      expect(await canonicalStatus(environment.database, before)).not.toBe('admitted');
+      const read = await readFirstPartySession(environment.database, {
+        kind: 'canonical-token',
+        token: loginToken(jar),
+      });
+      if (read.status !== 'admitted') throw new Error('The re-sign-in session is not live');
+      passes.push(requireFreshAuthentication(read.session));
+    }
+    // Google's own auth_time decides: a silent answer never passes, a real sign-in does.
+    expect(passes).toEqual([false, true]);
+  });
+});
+
+/** The forced re-sign-in's own two routes, as the page calls them. */
+async function reauthenticationStep(action: 'start' | 'return', jar: CookieJar, callbackUrl = '/developers/apps') {
+  const headers = new Headers({ cookie: jar.header(), 'x-forwarded-for': randomClientAddress() });
+  if (action === 'start') {
+    const read = await readSession(jar.header());
+    const session = (await read.json()) as { user?: { id?: string }; authSessionId?: string };
+    headers.set('origin', ORIGIN);
+    headers.set('content-type', 'application/json');
+    headers.set('X-Boardsesh-Expected-Viewer', `${session.user?.id}:${session.authSessionId}`);
+  }
+  const request = new NextRequest(new URL(`/api/auth/reauthenticate/${action}`, ORIGIN), {
+    method: action === 'start' ? 'POST' : 'GET',
+    headers,
+    ...(action === 'start' ? { body: JSON.stringify({ callbackUrl }) } : {}),
+  });
+  const context = { params: Promise.resolve({ action }) };
+  const response = await servedRequests.run(request, () =>
+    action === 'start' ? reauthenticationRoute.POST(request, context) : reauthenticationRoute.GET(request, context),
+  );
+  expect(sessionCookieNamesIn(response)).toEqual([]);
+  jar.apply(response);
+  return response;
+}
+
+describe('the forced re-sign-in comes back only as the account that started it (#7804 review M1)', () => {
+  it.each(['', 'legacy'])('its routes answer 404 with the mode %j', async (mode) => {
+    stubBetterAuthEnvironment(backend.origin);
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
+    const jar = new CookieJar();
+    expect((await reauthenticationStep('return', jar)).status).toBe(404);
+  });
+
+  it('forwards to the return path after the same account signs in, and not after another one', async () => {
+    betterAuth();
+    const identityA = newGoogleIdentity(2 * 60 * 60);
+    const identityB = newGoogleIdentity(2 * 60 * 60);
+    await googleSignIn(new CookieJar(), identityB);
+    const jar = new CookieJar();
+    await googleSignIn(jar, identityA);
+
+    expect((await reauthenticationStep('start', jar)).status).toBe(200);
+    await googleSignIn(jar, { ...identityA, authTimeSeconds: nowSeconds() - 10 }, GOOGLE_FORCED_REAUTHENTICATION);
+    const same = await reauthenticationStep('return', jar);
+    expect(same.status).toBe(303);
+    expect(new URL(same.headers.get('location') ?? '').pathname).toBe('/developers/apps');
+
+    expect((await reauthenticationStep('start', jar)).status).toBe(200);
+    // Google offered another (known) account, and the climber picked it.
+    await googleSignIn(jar, { ...identityB, authTimeSeconds: nowSeconds() - 10 }, GOOGLE_FORCED_REAUTHENTICATION);
+    const other = await reauthenticationStep('return', jar);
+    const location = new URL(other.headers.get('location') ?? '');
+    expect(location.pathname).toBe('/auth/reauthenticate');
+    expect(location.searchParams.get('outcome')).toBe('other_account');
+
+    // Without a started re-sign-in nothing is forwarded either.
+    const expired = await reauthenticationStep('return', jar);
+    expect(new URL(expired.headers.get('location') ?? '').searchParams.get('outcome')).toBe('expired');
   });
 });

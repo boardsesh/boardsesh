@@ -11,6 +11,7 @@ export const KNOWN_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
   'EmailCreateAccount',
   'Callback',
   'OAuthAccountNotLinked',
+  'OAuthLinkRequired',
   'SessionRequired',
 ]);
 
