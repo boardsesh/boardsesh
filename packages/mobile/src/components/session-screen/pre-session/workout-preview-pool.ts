@@ -562,9 +562,11 @@ export async function borrowForShortSlots(
     // The rows each pool fills now, by pool key, so a pool searched again is
     // asked for every one of them as well as the slots still short.
     const rowsByPoolKey = new Map<string, number>();
+    // A repeat row shows its twin's climb and takes none from the pool.
+    const rowSlotIndexes = new Set(items.map((row) => row.slot.index));
     for (const row of items) {
-      // A repeat row shows its twin's climb and takes none from the pool.
-      if (leadRowOf(items, row) !== row) continue;
+      const { repeatOfIndex } = row.slot;
+      if (repeatOfIndex !== undefined && rowSlotIndexes.has(repeatOfIndex)) continue;
       const rowPoolKey = poolKeyForSlot(row.slot);
       rowsByPoolKey.set(rowPoolKey, (rowsByPoolKey.get(rowPoolKey) ?? 0) + 1);
     }

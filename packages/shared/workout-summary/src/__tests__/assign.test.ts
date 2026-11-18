@@ -114,6 +114,27 @@ describe('assignWorkoutTicks', () => {
     ]);
   });
 
+  it('groups ticks with the same time by uuid, whatever order they were listed in', () => {
+    const twice = {
+      userId: 'owner',
+      stages: [
+        {
+          climbs: [
+            { climbUuid: 'a', angle: 40, reps: ['send' as const] },
+            { climbUuid: 'a', angle: 40, reps: ['attempt' as const] },
+          ],
+        },
+      ],
+    };
+    const first = tick('a-1', 'owner', 'a', 1);
+    const second = tick('a-2', 'owner', 'a', 1);
+    const grouped = (ticks: AssignableWorkoutTick[]) =>
+      assignWorkoutTicks(ticks, twice).byClimb[0].map((climb) => climb.map((t) => t.uuid));
+
+    expect(grouped([second, first])).toEqual([['a-1'], ['a-2']]);
+    expect(grouped([first, second])).toEqual([['a-1'], ['a-2']]);
+  });
+
   it('keeps a mirrored go off a climb planned the other way round', () => {
     const mirrored = {
       userId: 'owner',

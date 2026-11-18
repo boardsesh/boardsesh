@@ -254,9 +254,10 @@ export type PlannedClimbSlot = {
   /**
    * Set on a slot that climbs an earlier slot's climb again: that slot's
    * `index`. The app fills it with the same climb under a queue item of its own,
-   * so a tick on each visit stays on its own item, and changing either climb
-   * changes both. Never set on the slot right after its twin, so the player
-   * never shows one climb on two pages in a row. Absent on every other slot.
+   * so a tick on each visit stays on its own item. In the preview, changing
+   * either climb changes both; once queued, the two are independent queue
+   * items. Never set on the slot right after its twin, so the player never
+   * shows one climb on two pages in a row. Absent on every other slot.
    */
   repeatOfIndex?: number;
 };

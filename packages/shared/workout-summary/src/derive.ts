@@ -10,13 +10,9 @@ import type {
   SessionWorkoutTickMapEntry,
   WorkoutHeadline,
 } from './types';
+import { ticksInTimeOrder } from './tick-order';
 
 const WARM_UP_KIND = 'warmUp';
-
-const toMillis = (climbedAt: string | Date): number => {
-  const millis = climbedAt instanceof Date ? climbedAt.getTime() : Date.parse(climbedAt);
-  return Number.isNaN(millis) ? 0 : millis;
-};
 
 /** Mirror only splits two climbs when both sides say which way round they were. */
 const sameMirror = (item: SessionWorkoutPlanItem, tick: SessionWorkoutTick): boolean =>
@@ -68,7 +64,7 @@ function deriveStage(stage: SessionWorkoutPlanStage, climbs: DerivedWorkoutClimb
  * So a climb queued twice fills its first slot before its second, and a tick on
  * the second visit never lands on a first visit the climber skipped. A tick
  * matching no item counts as off plan. Ticks are placed in time order
- * (`climbedAt`, ties in input order) and reps keep that order. Every stage of
+ * (`ticksInTimeOrder`: `climbedAt`, ties by uuid) and reps keep that order. Every stage of
  * the plan is kept, a stage with no ticks included.
  */
 export function deriveWorkoutStages(
@@ -100,15 +96,13 @@ export function deriveWorkoutStages(
     if (!queueItemByTick.has(entry.tickUuid)) queueItemByTick.set(entry.tickUuid, entry.queueItemUuid);
   }
 
-  const orderedTicks = ticks
-    .map((tick, index) => ({ tick, index, millis: toMillis(tick.climbedAt) }))
-    .sort((left, right) => left.millis - right.millis || left.index - right.index)
-    .map(({ tick }) => tick);
+  const orderedTicks = ticksInTimeOrder(ticks);
 
+  const itemsWithPosition = itemsInPlanOrder.map((entry, position) => ({ ...entry, position }));
   const planPositionByQueueItem = new Map<string, number>();
-  itemsInPlanOrder.forEach(({ item }, position) => {
+  for (const { item, position } of itemsWithPosition) {
     if (!planPositionByQueueItem.has(item.queueItemUuid)) planPositionByQueueItem.set(item.queueItemUuid, position);
-  });
+  }
   // Where the last placed tick went in the plan. The climber works through the
   // plan forwards, so a climb queued twice (a pyramid coming back down on the
   // same climbs) gives a tick to the copy at or after it before an earlier one:
@@ -116,9 +110,9 @@ export function deriveWorkoutStages(
   let lastPlanPosition = -1;
 
   const matchByClimb = (tick: SessionWorkoutTick): DerivedWorkoutClimb | undefined => {
-    const matching = itemsInPlanOrder
-      .map((entry, position) => ({ ...entry, position }))
-      .filter(({ item }) => item.climbUuid === tick.climbUuid && item.angle === tick.angle && sameMirror(item, tick));
+    const matching = itemsWithPosition.filter(
+      ({ item }) => item.climbUuid === tick.climbUuid && item.angle === tick.angle && sameMirror(item, tick),
+    );
     const hasRoom = ({ item, capacity }: { item: SessionWorkoutPlanItem; capacity: number }) =>
       (climbsByQueueItem.get(item.queueItemUuid)?.reps.length ?? 0) < capacity;
     const chosen =

@@ -9,12 +9,14 @@
 // could hand a crewmate's go on the same climb to the owner.
 //
 // Without them (an older payload), the owner's ticks are matched back the way
-// `deriveWorkoutStages` placed them: oldest first, each to the first climb with
-// the same climb, angle (and mirror, when both say) that still has fewer ticks
-// than its reps, at or after the climb the tick before it went to in plan
-// order, else the first such climb anywhere. Owner ticks left over are off
-// plan; everyone else's go to the crew.
+// `deriveWorkoutStages` placed them, by the same rule: oldest first (ties by
+// uuid), each to a climb with the same climb, angle (and mirror, when both say)
+// that has room, at or after the climb the tick before it went to in plan
+// order, else one with room anywhere, else the last matching one. A climb only
+// takes as many ticks as it has reps. Owner ticks left over are off plan;
+// everyone else's go to the crew.
 
+import { ticksInTimeOrder } from './tick-order';
 import type { SessionWorkoutRepOutcome } from './types';
 
 /** The fields of a listed tick the matching reads. */
@@ -53,29 +55,26 @@ const sameClimb = (climb: AssignableWorkoutClimb, tick: AssignableWorkoutTick): 
   return climb.isMirror === tick.isMirror;
 };
 
-const toMillis = (iso: string): number => {
-  const millis = Date.parse(iso);
-  return Number.isNaN(millis) ? 0 : millis;
-};
-
 export function assignWorkoutTicks<Tick extends AssignableWorkoutTick>(
   ticks: ReadonlyArray<Tick>,
   workout: {
     userId: string;
-    stages: ReadonlyArray<{ climbs: ReadonlyArray<AssignableWorkoutClimb> }>;
+    /** `repsPerSet`: a 4x4 stage's reps per set, the ticks each climb holds before the next copy takes them. */
+    stages: ReadonlyArray<{ climbs: ReadonlyArray<AssignableWorkoutClimb>; repsPerSet?: number | null }>;
     offPlanTickUuids?: ReadonlyArray<string> | null;
   },
 ): AssignedWorkoutTicks<Tick> {
   const byClimb: Tick[][][] = workout.stages.map((stage) => stage.climbs.map(() => []));
   const slots = workout.stages.flatMap((stage, stageIndex) =>
-    stage.climbs.map((climb, climbIndex) => ({ climb, ticks: byClimb[stageIndex][climbIndex] })),
+    stage.climbs.map((climb, climbIndex) => ({
+      climb,
+      capacity: stage.repsPerSet ?? 1,
+      ticks: byClimb[stageIndex][climbIndex],
+    })),
   );
   const offPlan: Tick[] = [];
   const crew: Tick[] = [];
-  const sorted = ticks
-    .map((tick, index) => ({ tick, index, millis: toMillis(tick.climbedAt) }))
-    .sort((left, right) => left.millis - right.millis || left.index - right.index)
-    .map(({ tick }) => tick);
+  const sorted = ticksInTimeOrder(ticks);
 
   const hasTickMap =
     !!workout.offPlanTickUuids || workout.stages.some((stage) => stage.climbs.some((climb) => !!climb.tickUuids));
@@ -93,17 +92,28 @@ export function assignWorkoutTicks<Tick extends AssignableWorkoutTick>(
     return { byClimb, offPlan, crew };
   }
 
-  // Forwards from the slot the last tick went to first, as the derivation does.
+  // The derivation's three tiers, each limited to climbs whose reps are not all
+  // claimed yet: a climb with room (fewer ticks than its stage's capacity) at or
+  // after the slot the last tick went to, else one with room anywhere, else the
+  // last matching climb, where the derivation piles what is left over.
   let lastSlotPosition = -1;
   for (const tick of sorted) {
     if (tick.userId !== workout.userId) {
       crew.push(tick);
       continue;
     }
-    const isOpen = (slot: (typeof slots)[number]) =>
-      slot.ticks.length < slot.climb.reps.length && sameClimb(slot.climb, tick);
-    const forwardPosition = slots.findIndex((slot, position) => position >= lastSlotPosition && isOpen(slot));
-    const openPosition = forwardPosition >= 0 ? forwardPosition : slots.findIndex(isOpen);
+    type Slot = (typeof slots)[number];
+    const isOpen = (slot: Slot) => slot.ticks.length < slot.climb.reps.length && sameClimb(slot.climb, tick);
+    const hasRoom = (slot: Slot) => isOpen(slot) && slot.ticks.length < slot.capacity;
+    let openPosition = slots.findIndex((slot, position) => position >= lastSlotPosition && hasRoom(slot));
+    if (openPosition < 0) openPosition = slots.findIndex(hasRoom);
+    if (openPosition < 0) {
+      let lastMatching = -1;
+      slots.forEach((slot, position) => {
+        if (sameClimb(slot.climb, tick)) lastMatching = position;
+      });
+      if (lastMatching >= 0 && isOpen(slots[lastMatching])) openPosition = lastMatching;
+    }
     if (openPosition < 0) {
       offPlan.push(tick);
       continue;

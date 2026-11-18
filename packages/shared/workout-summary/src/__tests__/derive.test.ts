@@ -179,6 +179,13 @@ describe('deriveWorkoutStages', () => {
       });
     });
 
+    it('places ticks with the same time by uuid, whatever order the query returned them in', () => {
+      const ticks = [tick('t-peak', 'c-c', 'send', 1), tick('t-z', 'c-a', 'attempt', 2), tick('t-a', 'c-a', 'send', 2)];
+      const listed = repsByItem(ticks);
+      expect(repsByItem([ticks[0], ticks[2], ticks[1]])).toEqual(listed);
+      expect(listed).toMatchObject({ 'q-up-a': ['t-z'], 'q-peak': ['t-peak'], 'q-down-a': ['t-a'] });
+    });
+
     it('without a map, still fills an earlier copy left open when nothing after the last tick fits', () => {
       const ticks = ['c-c', 'c-a'].map((climbUuid, minute) => tick(`t${minute}`, climbUuid, 'send', minute));
       // The peak first, then A: the way-down A comes after it, so A lands there.

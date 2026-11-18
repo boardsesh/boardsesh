@@ -757,7 +757,7 @@
       "preGeneratorHardestFirstDescription": "Starte bei deiner Top-Schwierigkeit und arbeite dich runter.",
       "preGeneratorBlockSummaryHardestFirst": "schwerste zuerst",
       "preGeneratorSameClimbsDown": "Dieselben Boulder runter",
-      "preGeneratorSameClimbsDownDescription": "Auf dem Weg runter kletterst du dieselben Boulder wie hoch.",
+      "preGeneratorSameClimbsDownDescription": "Auf dem Weg runter kletterst du dieselben Boulder wie auf dem Weg hoch.",
       "preGeneratorBlockSummarySameClimbsDown": "dieselben Boulder runter",
       "preGeneratorNumberOfClimbs": "Boulder",
       "preGeneratorSets": "Sätze",
