@@ -106,7 +106,7 @@ describe('provider-security staging forbids ordinary OAuth linking before legacy
       await reserve(owner.userId);
       const [before] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
       const admission = await admitOwnedProviderForRenewal(environment.database, environment.runtime, {
-        actor: owner.actor,
+        actor: owner.webActor,
         provider: 'google',
         subject,
       });
@@ -140,7 +140,7 @@ describe('provider-security staging forbids ordinary OAuth linking before legacy
       expect(
         (
           await admitOwnedProviderForRenewal(environment.database, environment.runtime, {
-            actor: owner.actor,
+            actor: owner.webActor,
             provider: 'google',
             subject,
           })

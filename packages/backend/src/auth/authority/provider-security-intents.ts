@@ -1,9 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { authBrowserIntents, authProviderSecurityIntents } from '@boardsesh/db/schema/auth';
+import { authProviderSecurityIntents } from '@boardsesh/db/schema/auth';
 import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
-import { beginBrowserIntent } from './browser-binding';
 import { bindIdentityAuthority } from './identity-authority';
 import {
   captureIdentityAuthority,
@@ -19,6 +18,9 @@ import {
   loadProviderIntentInTransaction,
   providerDatabaseNow,
   providerTokenHash,
+  providerWebSessionHash,
+  providerWebSessionIntentHash,
+  PROVIDER_WEB_SESSION_BROWSER_VERSION,
   ProviderSecurityRefusal,
 } from './provider-security-context';
 import {
@@ -112,33 +114,16 @@ export async function createProviderSecurityIntent(
   const operationId = randomUUID();
   if (action === 'link' && !runtime.methods.configuredProviders.includes(provider))
     throw new ProviderSecurityRefusal('denied', 'provider_unavailable');
-  const browser = await beginBrowserIntent(database, runtime.qualification, actor.input.browserBindingToken, {
-    operation: 'replacement',
-    expectedVersion: actor.input.browserVersion,
-    expectedIdentity: { userId: actor.input.expectedUserId, authSessionId: actor.input.expectedAuthSessionId },
-    presented: { version: actor.input.browserVersion, credential: actor.credential },
-  });
-  if (browser.status === 'unavailable') throw new ProviderSecurityRefusal('unavailable', 'authority_unavailable');
-  if (browser.status !== 'prepared') throw new ProviderSecurityRefusal('identity_changed', 'invalid_proof');
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
-    const { session, cursor } = await admitProviderActorInTransaction(transaction, authority, actor);
-    const [browserIntent] = await transaction
-      .select()
-      .from(authBrowserIntents)
-      .where(eq(authBrowserIntents.id, providerTokenHash(browser.intentToken)));
+    const { session } = await admitProviderActorInTransaction(transaction, authority, actor);
+    // A link or unlink moves the account's generation and keeps the requesting
+    // session's token. A legacy NextAuth cookie carries its generation inside
+    // the cookie, so it could continue only by being re-issued, which only a
+    // login may do (#7596). www bridges it to a canonical session first; a real
+    // sign-in issues one too.
+    if (actor.credential.kind !== 'canonical-token')
+      throw new ProviderSecurityRefusal('reauthentication_required', 'invalid_proof');
     const now = await providerDatabaseNow(transaction);
-    if (
-      !browserIntent ||
-      browserIntent.formatVersion !== 2 ||
-      browserIntent.operation !== 'replacement' ||
-      browserIntent.expectedVersion !== cursor.version ||
-      browserIntent.consumedAt !== null ||
-      browserIntent.projectionId !== authority.projectionId ||
-      browserIntent.authority !== authority.authority ||
-      browserIntent.epoch !== authority.epoch ||
-      browserIntent.expiresAt.getTime() <= now.getTime()
-    )
-      throw new ProviderSecurityRefusal('unavailable', 'authority_unavailable');
     let providerSubject: string | null = null;
     if (action === 'unlink') {
       const methods = await bindIdentityAuthority(transaction, authority).listProviders(session.userId);
@@ -152,25 +137,22 @@ export async function createProviderSecurityIntent(
       providerSubject = selected[0].subject;
     } else if (methodId !== null) throw new ProviderSecurityRefusal('denied', 'invalid_intent');
     const expiresAt = new Date(
-      Math.min(
-        now.getTime() + PROVIDER_SECURITY_INTENT_LIFETIME_MS,
-        browserIntent.expiresAt.getTime(),
-        session.expiresAt.getTime(),
-        cursor.bindingExpiresAt.getTime(),
-      ),
+      Math.min(now.getTime() + PROVIDER_SECURITY_INTENT_LIFETIME_MS, session.expiresAt.getTime()),
     );
     if (expiresAt.getTime() <= now.getTime()) throw new ProviderSecurityRefusal('denied', 'expired');
+    const intentHash = providerTokenHash(intentToken);
     await transaction.insert(authProviderSecurityIntents).values({
-      intentHash: providerTokenHash(intentToken),
+      intentHash,
       operationId,
       userId: session.userId,
-      actorCredentialKind: actor.input.kind,
+      actorCredentialKind: actor.input.presented.kind,
       actorCredentialHash: actor.credentialHash,
       recoveryTokenHash: providerTokenHash(recoveryToken),
-      browserBindingHash: cursor.bindingId,
-      browserVersion: cursor.version,
-      browserIntentHash: browserIntent.id,
-      browserBindingExpiresAt: cursor.bindingExpiresAt,
+      // The NOT NULL binding columns, keyed by the web session (no migration).
+      browserBindingHash: providerWebSessionHash(session.authSessionId),
+      browserVersion: PROVIDER_WEB_SESSION_BROWSER_VERSION,
+      browserIntentHash: providerWebSessionIntentHash(intentHash),
+      browserBindingExpiresAt: session.expiresAt,
       actorSessionId: session.authSessionId,
       actorGeneration: session.generation,
       actorAuthenticatedAt: session.authenticatedAt,
@@ -187,7 +169,7 @@ export async function createProviderSecurityIntent(
       issuedAt: now,
       expiresAt,
     });
-    return { intentToken, recoveryToken, browserIntentToken: browser.intentToken, browserCursor: cursor, expiresAt };
+    return { intentToken, recoveryToken, expiresAt };
   });
 }
 
@@ -198,7 +180,6 @@ export async function bindProviderSecurityFlow(
   input: {
     readonly actor: ProviderSecurityActor;
     readonly intentToken: string;
-    readonly browserIntentToken: string;
     readonly flowHash: string;
     readonly nonceHash?: string;
   },

@@ -15,6 +15,12 @@ const metadata = {
 };
 const token = 'A'.repeat(43);
 const actor = {
+  presented: { kind: 'canonical-token', token: 'exact-presented-session-token' },
+  expectedUserId: 'current-owner',
+  expectedAuthSessionId: 'current-session',
+};
+const bound = { actor, intentToken: token };
+const bindingActor = {
   kind: 'legacy-jwe',
   credential: 'exact-presented-raw-cookie',
   expectedUserId: 'current-owner',
@@ -22,9 +28,14 @@ const actor = {
   browserBindingToken: token,
   browserVersion: 7,
 };
-const bound = { actor, intentToken: token, browserIntentToken: token };
 const candidate = { kind: 'legacy-jwe', credential: 'exact-locally-buffered-candidate' };
-const signinBound = { ...bound, flowHash: 'c'.repeat(64), nonceHash: 'd'.repeat(64) };
+const signinBound = {
+  actor: bindingActor,
+  intentToken: token,
+  browserIntentToken: token,
+  flowHash: 'c'.repeat(64),
+  nonceHash: 'd'.repeat(64),
+};
 
 it('ordinary owned-provider login accepts only verified-provider transport fields, never callback freshness claims', () => {
   const providerProof = {
@@ -149,13 +160,14 @@ it('preserves actual password bytes and captures a nested request copy', () => {
   const submitted = {
     ...metadata,
     operation: 'reauthenticate-password',
-    payload: { ...bound, actor: { ...actor }, password: ' exact password bytes ' },
+    payload: { ...bound, actor: { ...actor, presented: { ...actor.presented } }, password: ' exact password bytes ' },
   };
   const parsed = providerSecurityCommandSchema.parse(submitted);
-  submitted.payload.actor.credential = 'later-cookie';
+  submitted.payload.actor.presented.token = 'later-cookie';
   submitted.payload.password = 'later-password';
-  expect(parsed.payload.actor.credential).toBe(actor.credential);
-  if (parsed.operation !== 'reauthenticate-password') throw new Error('Unexpected command narrowing');
+  if (parsed.operation !== 'reauthenticate-password' || parsed.payload.actor.presented.kind !== 'canonical-token')
+    throw new Error('Unexpected command narrowing');
+  expect(parsed.payload.actor.presented.token).toBe(actor.presented.token);
   expect(parsed.payload.password).toBe(' exact password bytes ');
 });
 
@@ -179,12 +191,47 @@ it('does not accept a caller-supplied verified subject or authentication time in
     ).toBe(false);
 });
 
-it('requires caller-held exact candidate bytes for ACK recovery', () => {
-  const payload = { ...bound, recoveryToken: token, reauthenticationToken: token };
-  expect(providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'recover', payload }).success).toBe(false);
+it('link, unlink and their ACK recovery keep the session token: no candidate credential is accepted', () => {
+  const recover = { ...bound, recoveryToken: token, reauthenticationToken: token };
+  expect(providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'recover', payload: recover }).success).toBe(
+    true,
+  );
+  const finalize = { ...bound, reauthenticationToken: token, preparationToken: token };
   expect(
-    providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'recover', payload: { ...payload, candidate } })
-      .success,
+    providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'finalize', payload: finalize }).success,
+  ).toBe(true);
+  for (const [operation, payload] of [
+    ['recover', recover],
+    ['finalize', finalize],
+  ] as const)
+    expect(
+      providerSecurityCommandSchema.safeParse({ ...metadata, operation, payload: { ...payload, candidate } }).success,
+    ).toBe(false);
+});
+
+it('provider security takes the web session, never a browser binding or a browser intent', () => {
+  const payload = { actor, action: 'link', provider: 'google', methodId: null };
+  expect(providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'intent', payload }).success).toBe(true);
+  for (const stale of [
+    { ...payload, actor: bindingActor },
+    { ...payload, actor: { ...actor, browserBindingToken: token, browserVersion: 7 } },
+  ])
+    expect(providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'intent', payload: stale }).success).toBe(
+      false,
+    );
+  expect(
+    providerSecurityCommandSchema.safeParse({
+      ...metadata,
+      operation: 'bind',
+      payload: { ...bound, browserIntentToken: token, flowHash: 'a'.repeat(64) },
+    }).success,
+  ).toBe(false);
+  expect(
+    providerSecurityCommandSchema.safeParse({
+      ...metadata,
+      operation: 'methods',
+      payload: { actor: { ...actor, presented: { kind: 'legacy-jwe', credential: 'joined-nextauth-cookie' } } },
+    }).success,
   ).toBe(true);
 });
 
@@ -194,12 +241,17 @@ it('ACK replies cannot return, reconstruct or smuggle a credential bearer', () =
     requestId,
     operation: 'recover',
     outcome: 'recovered',
-    candidateCredentialHash: 'a'.repeat(64),
-    browserCursor: { bindingId: 'b'.repeat(64), version: 8, bindingExpiresAt: '2026-11-14T12:00:00.000Z' },
+    generation: 3,
   };
   expect(providerSecurityReplySchema.safeParse(reply).success).toBe(true);
   expect(providerSecurityReplySchema.safeParse({ ...reply, candidate }).success).toBe(false);
   expect(providerSecurityReplySchema.safeParse({ ...reply, token }).success).toBe(false);
+  expect(
+    providerSecurityReplySchema.safeParse({
+      ...reply,
+      browserCursor: { bindingId: 'b'.repeat(64), version: 8, bindingExpiresAt: '2026-11-14T12:00:00.000Z' },
+    }).success,
+  ).toBe(false);
 });
 
 it.each([

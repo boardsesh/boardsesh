@@ -11,7 +11,7 @@ import {
   firstPasswordReplySchema,
   type FirstPasswordOperation,
   type FirstPasswordReply,
-  type ProviderSecurityActor,
+  type BrowserBindingActor,
 } from '@boardsesh/auth-protocol';
 import {
   authEmailProjection,
@@ -119,7 +119,7 @@ function success<Operation extends FirstPasswordOperation>(
   if (reply.operation !== operation || 'code' in reply) throw new Error('Owned first-password HTTP command refused');
   return reply as Extract<FirstPasswordReply, { operation: Operation }>;
 }
-async function actor(selected: IdentityAuthorityName, kind: ProviderSecurityActor['kind']) {
+async function actor(selected: IdentityAuthorityName, kind: BrowserBindingActor['kind']) {
   const qualification = {
     expectedProjectionId: projectionId,
     expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
@@ -159,7 +159,7 @@ async function actor(selected: IdentityAuthorityName, kind: ProviderSecurityActo
   await environment.ownerDatabase.insert(authEmailReservationMembers).values({ normalizedEmail, userId: owner.userId });
   return { owner, driver };
 }
-async function prepare(selected: IdentityAuthorityName, kind: ProviderSecurityActor['kind']) {
+async function prepare(selected: IdentityAuthorityName, kind: BrowserBindingActor['kind']) {
   const fixture = await actor(selected, kind);
   const issuedReply = await post('request', { actor: fixture.owner.actor });
   expect(issuedReply.status).toBe(200);

@@ -33,7 +33,7 @@ export async function admitOwnedProviderForRenewal(
     await lockProviderSubject(transaction, provider, subject);
     const identity = bindIdentityAuthority(transaction, authority);
     const observed = await identity.findProvider(provider, subject);
-    const { session, cursor } = await admitProviderActorInTransaction(transaction, authority, actor);
+    const { session } = await admitProviderActorInTransaction(transaction, authority, actor);
     const owner = await identity.findProvider(provider, subject, 'update');
     if (
       !observed ||
@@ -47,8 +47,7 @@ export async function admitOwnedProviderForRenewal(
     const [user] = await transaction.select().from(users).where(eq(users.id, session.userId));
     if (!user) throw new ProviderSecurityRefusal('unauthenticated', 'invalid_proof');
     const now = await providerDatabaseNow(transaction);
-    if (now.getTime() >= session.expiresAt.getTime() || now.getTime() >= cursor.bindingExpiresAt.getTime())
-      throw new ProviderSecurityRefusal('unauthenticated', 'expired');
+    if (now.getTime() >= session.expiresAt.getTime()) throw new ProviderSecurityRefusal('unauthenticated', 'expired');
     const credentialProof: WebCredentialProof = {
       version: 1,
       userId: session.userId,
@@ -62,7 +61,6 @@ export async function admitOwnedProviderForRenewal(
       outcome: 'owned' as const,
       credentialProof,
       credentialExpiresAt: session.expiresAt,
-      browserCursor: cursor,
       user: {
         id: user.id,
         email: user.email,

@@ -1,12 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { authProviderReauthenticationReceipts, authProviderSecurityIntents, users } from '@boardsesh/db/schema/auth';
-import type { ProviderSecurityActor, ProviderSecurityProvider, WebCredentialProof } from '@boardsesh/auth-protocol';
+import type { ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
-import {
-  commitPreparedBrowserReplacementInTransaction,
-  prepareBrowserReplacementInTransaction,
-} from './browser-binding';
 import {
   captureProviderBoundCommand,
   providerDatabaseNow,
@@ -25,21 +21,14 @@ import {
   isUsableProviderPassword,
   PROVIDER_RESULT_RECOVERY_LIFETIME_MS,
 } from './provider-security-policy';
-import {
-  providerCandidateCredentialSchema,
-  providerCredentialHash,
-  type ProviderCandidateCredential,
-} from './provider-security-result';
-import { replaceProviderCanonicalContinuation } from './provider-security-continuation';
+import { continueProviderSessionInPlace } from './provider-security-continuation';
 import { recordIdentitySecurityMutation } from './security-mutation';
 import { bindIdentityAuthority } from './identity-authority';
 import { revalidateIdentityAuthority } from './router';
-import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 
 interface BoundInput {
   readonly actor: ProviderSecurityActor;
   readonly intentToken: string;
-  readonly browserIntentToken: string;
   readonly reauthenticationToken: string;
 }
 type Context = Awaited<ReturnType<typeof lockProviderSecurityMutationContext>>;
@@ -76,9 +65,8 @@ async function terminalize(transaction: AuthorityTransaction, intent: ProviderSe
 }
 
 /**
- * No provider, generation or credential writes happen here. The real callback
- * must finish JWT/encode/events/redirect/error/body work into a bounded buffer
- * before passing its exact candidate to finalize.
+ * No provider, generation or credential writes happen here. Nothing is minted
+ * either: the requesting session keeps its token through finalize.
  */
 export async function prepareProviderSecurityMutation(
   database: AuthorityDatabase,
@@ -98,8 +86,6 @@ export async function prepareProviderSecurityMutation(
   const { reauthenticationToken, flowHash } = input;
   const providerProof = input.providerProof ? Object.freeze({ ...input.providerProof }) : null;
   const preparationToken = randomBytes(32).toString('base64url');
-  const proposedCanonicalToken =
-    command.actor.input.kind === 'canonical-token' ? randomBytes(32).toString('base64url') : null;
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
     const context = await lockProviderSecurityMutationContext(
       transaction,
@@ -141,32 +127,16 @@ export async function prepareProviderSecurityMutation(
         preparationTokenHash: providerTokenHash(preparationToken),
         providerSubject: context.targetSubject,
         reauthenticationReceiptHash: context.proof.receiptHash,
-        proposedCredentialHash:
-          proposedCanonicalToken === null
-            ? null
-            : providerCredentialHash({ kind: 'canonical-token', credential: proposedCanonicalToken }),
+        proposedCredentialHash: null,
       })
       .where(eq(authProviderSecurityIntents.intentHash, context.intent.intentHash));
-    const credentialProof: WebCredentialProof = {
-      version: 1,
-      userId: context.session.userId,
-      authSessionId: context.session.authSessionId,
-      generation: context.session.generation + 1,
-      authenticatedAt: context.session.authenticatedAt?.toISOString() ?? null,
-      linkGuarded: context.session.linkGuarded,
-      ...(context.session.requiresAccountCutoff ? { requiresAccountCutoff: true as const } : {}),
-    };
     const now = await providerDatabaseNow(transaction);
     if (now.getTime() >= context.proof.expiresAt.getTime())
       throw new ProviderSecurityRefusal('reauthentication_required', 'expired');
     return {
       outcome: 'prepared' as const,
       preparationToken,
-      credentialProof,
-      credentialExpiresAt: context.session.expiresAt,
       expiresAt: new Date(Math.min(context.proof.expiresAt.getTime(), context.intent.expiresAt.getTime())),
-      browserCursor: context.cursor,
-      proposedCanonicalToken,
       user: {
         id: user.id,
         email: user.email,
@@ -179,74 +149,36 @@ export async function prepareProviderSecurityMutation(
   });
 }
 
-async function validateCandidate(
-  context: Context,
-  candidate: ProviderCandidateCredential,
-  legacySecret: string | undefined,
-) {
-  if (candidate.kind !== context.intent.actorCredentialKind)
-    throw new ProviderSecurityRefusal('denied', 'invalid_proof');
-  if (candidate.kind === 'canonical-token') {
-    if (
-      !/^[A-Za-z0-9_-]{43}$/.test(candidate.credential) ||
-      context.intent.proposedCredentialHash !== providerCredentialHash(candidate)
-    )
-      throw new ProviderSecurityRefusal('denied', 'invalid_proof');
-    return { kind: 'canonical-token' as const, token: candidate.credential };
-  }
-  if (!legacySecret) throw new ProviderSecurityRefusal('unavailable', 'authority_unavailable');
-  const proof = await verifyLegacyNextAuthJwe(candidate.credential, legacySecret, context.now);
-  if (
-    !proof ||
-    proof.userId !== context.session.userId ||
-    (proof.authSessionId ?? proof.lineageId) !== context.session.authSessionId ||
-    proof.generation !== context.session.generation + 1 ||
-    proof.linkGuarded !== context.session.linkGuarded ||
-    proof.requiresAccountCutoff !== context.session.requiresAccountCutoff ||
-    (proof.linkGuarded ? proof.originalAuthenticatedAt?.getTime() : undefined) !==
-      context.session.authenticatedAt?.getTime() ||
-    proof.expiresAt.getTime() !== context.session.expiresAt.getTime()
-  )
-    throw new ProviderSecurityRefusal('denied', 'invalid_proof');
-  return { kind: 'legacy-jwe' as const, credential: candidate.credential, secret: legacySecret };
-}
-
 /**
- * Only call after the complete final response and exact candidate are buffered.
  * The validated intent is terminal on failure; the savepoint rolls back every
- * identity/credential/cutoff/partner write. After COMMIT the caller may only
- * return the already-constructed bytes, with no later codec/hook/admission I/O.
+ * identity/credential/cutoff/partner write. The requesting session keeps its
+ * id, token, sign-in time and expiry and moves to the account's new
+ * generation; every other first-party credential of the account ends.
  */
 export async function finalizeProviderSecurityMutation(
   database: AuthorityDatabase,
   runtimeInput: ProviderSecurityRuntime,
-  input: BoundInput & { readonly preparationToken: string; readonly candidate: ProviderCandidateCredential },
+  input: BoundInput & { readonly preparationToken: string },
 ) {
   const runtime = captureProviderSecurityRuntime(runtimeInput);
   const command = captureProviderBoundCommand(input, runtime.legacySecret);
   const { reauthenticationToken, preparationToken } = input;
-  const candidate = providerCandidateCredentialSchema.parse({ ...input.candidate });
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
     const context = await lockProviderSecurityMutationContext(transaction, authority, command, reauthenticationToken, [
       'prepared',
     ]);
     if (context.intent.preparationTokenHash !== providerTokenHash(preparationToken))
       throw new ProviderSecurityRefusal('denied', 'invalid_proof');
-    const credential = await validateCandidate(context, candidate, runtime.legacySecret);
+    // Intent creation refuses any other actor; this keeps the token in scope.
+    if (command.actor.credential.kind !== 'canonical-token')
+      throw new ProviderSecurityRefusal('reauthentication_required', 'invalid_proof');
+    const { token } = command.actor.credential;
     const refused = policyFailure(context, runtime);
     await terminalize(transaction, context.intent, context.now);
     if (refused) return { outcome: 'denied' as const, code: refused };
     try {
       return await transaction.transaction(async (mutation) => {
         const kind = context.intent.operation === 'link' ? ('provider-link' as const) : ('provider-unlink' as const);
-        const browserPreparation = await prepareBrowserReplacementInTransaction(mutation, authority, {
-          bindingToken: command.actor.input.browserBindingToken,
-          intentToken: command.browserIntentToken,
-          actor: { version: command.actor.input.browserVersion, credential: command.actor.credential },
-          candidate: credential,
-          operationId: context.intent.operationId,
-          kind,
-        });
         const selected = bindIdentityAuthority(mutation, authority);
         if (context.intent.operation === 'link')
           await selected.insertProvider(
@@ -261,7 +193,7 @@ export async function finalizeProviderSecurityMutation(
         )
           throw new ProviderSecurityRefusal('denied', 'ownership_conflict');
         // Bind all generation/mirror work to this exact savepoint object, which
-        // is also the browser preparation's and mutation receipt's identity.
+        // is also the mutation receipt's identity.
         if (
           !(await selected.findProvider(context.intent.provider, context.targetSubject)) &&
           context.intent.operation === 'link'
@@ -282,19 +214,13 @@ export async function finalizeProviderSecurityMutation(
           authority,
         );
         const now = await providerDatabaseNow(mutation);
-        await replaceProviderCanonicalContinuation(
+        const continued = await continueProviderSessionInPlace(
           mutation,
           context.session,
-          command.actor.credential,
-          candidate,
-          result.cutoff.generation,
-          now,
-        );
-        const browser = await commitPreparedBrowserReplacementInTransaction(
-          mutation,
-          authority,
-          browserPreparation,
+          token,
           result.identityGenerationReceipt,
+          { operationId: context.intent.operationId, kind },
+          now,
         );
         const [consumed] = await mutation
           .update(authProviderReauthenticationReceipts)
@@ -318,15 +244,21 @@ export async function finalizeProviderSecurityMutation(
         );
         if (recoveryExpiresAt.getTime() <= finished.getTime())
           throw new ProviderSecurityRefusal('reauthentication_required', 'expired');
-        const candidateCredentialHash = providerCredentialHash(candidate);
+        // The credential that continues is the presented one: its hash fills the
+        // NOT NULL column a committed intent requires.
         await mutation
           .update(authProviderSecurityIntents)
-          .set({ phase: 'committed', consumedAt: finished, candidateCredentialHash, recoveryExpiresAt })
+          .set({
+            phase: 'committed',
+            consumedAt: finished,
+            candidateCredentialHash: context.intent.actorCredentialHash,
+            recoveryExpiresAt,
+          })
           .where(eq(authProviderSecurityIntents.intentHash, context.intent.intentHash));
         await revalidateIdentityAuthority(mutation, authority);
         if ((await providerDatabaseNow(mutation)).getTime() >= context.proof.expiresAt.getTime())
           throw new ProviderSecurityRefusal('reauthentication_required', 'expired');
-        return { outcome: 'committed' as const, candidateCredentialHash, browserCursor: browser.cursor };
+        return { outcome: 'committed' as const, generation: continued.generation };
       });
     } catch (error) {
       if (error instanceof ProviderSecurityRefusal) return { outcome: error.outcome, code: error.code };

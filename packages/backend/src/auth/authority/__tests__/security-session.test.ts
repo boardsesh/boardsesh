@@ -6,11 +6,12 @@ import {
   authCredentialLineage,
   authSubjectCutoffs,
   authSecurityMutationEvents,
+  authSessionDenials,
   users,
 } from '@boardsesh/db/schema';
 import { createEnvironment } from './environment';
-import { replaceCanonicalAfterSecurityMutation } from '../security-session';
-import { readFirstPartySession } from '../session-reader';
+import { keepCanonicalAfterSecurityMutation, replaceCanonicalAfterSecurityMutation } from '../security-session';
+import { readFirstPartySession, type FirstPartySession } from '../session-reader';
 import { sessionTokenDigest } from '../session-token';
 
 describe('post-mutation canonical replacement and event constraints', () => {
@@ -91,6 +92,100 @@ describe('post-mutation canonical replacement and event constraints', () => {
         )
       ).status,
     ).toBe('admitted');
+  });
+  async function keptSession() {
+    const userId = randomUUID();
+    const authSessionId = randomUUID();
+    const token = randomUUID();
+    const age = new Date(Date.now() - 120000);
+    const expiresAt = new Date(Date.now() + 3600000);
+    await environment.database.insert(users).values({ id: userId, email: `keep-${userId}@example.com` });
+    await environment.database.insert(authSession).values({
+      id: authSessionId,
+      token: sessionTokenDigest(token),
+      userId,
+      expiresAt,
+      createdAt: age,
+      updatedAt: age,
+      originalAuthenticatedAt: age,
+      revocationGeneration: 0,
+    });
+    const actor: FirstPartySession = {
+      userId,
+      authSessionId,
+      generation: 0,
+      requiresAccountCutoff: false,
+      authenticatedAt: age,
+      linkGuarded: true,
+      expiresAt,
+      source: 'login',
+    };
+    const keep = (presented: string, generation = 1) =>
+      environment.database.transaction(async (transaction) => {
+        await transaction.select().from(users).where(eq(users.id, userId)).for('update');
+        await transaction
+          .insert(authSubjectCutoffs)
+          .values({ userId, generation: 1, revokedThrough: new Date(), lastOperationId: randomUUID() });
+        await keepCanonicalAfterSecurityMutation(transaction, actor, presented, generation);
+      });
+    return { userId, authSessionId, token, age, expiresAt, keep };
+  }
+  it('in place: keeps the id, token, sign-in time and expiry and moves only the generation', async () => {
+    const kept = await keptSession();
+    const [before] = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.id, kept.authSessionId));
+    await kept.keep(kept.token);
+    const [after] = await environment.database.select().from(authSession).where(eq(authSession.id, kept.authSessionId));
+    expect(after).toEqual({ ...before, revocationGeneration: 1, updatedAt: after.updatedAt });
+    expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+    const readSubject = async () => ({ generation: 1, nativeGeneration: 0, deniedSessionKeys: new Set<string>() });
+    expect(
+      await readFirstPartySession(
+        environment.database,
+        { kind: 'canonical-token', token: kept.token },
+        new Date(),
+        readSubject,
+      ),
+    ).toMatchObject({
+      status: 'admitted',
+      session: {
+        authSessionId: kept.authSessionId,
+        generation: 1,
+        authenticatedAt: kept.age,
+        expiresAt: kept.expiresAt,
+      },
+    });
+  });
+  it('in place: refuses another token, a skipped generation, a denied row and a moved sign-in time, writing nothing', async () => {
+    const kept = await keptSession();
+    const [before] = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.id, kept.authSessionId));
+    await expect(kept.keep(randomUUID())).rejects.toThrow('SESSION_CONTINUATION_SOURCE_MISMATCH');
+    await expect(kept.keep(kept.token, 2)).rejects.toThrow('SESSION_CONTINUATION_GENERATION_MISMATCH');
+    await environment.database
+      .update(authSession)
+      .set({ originalAuthenticatedAt: new Date() })
+      .where(eq(authSession.id, kept.authSessionId));
+    await expect(kept.keep(kept.token)).rejects.toThrow('SESSION_CONTINUATION_SOURCE_MISMATCH');
+    await environment.database
+      .update(authSession)
+      .set({ originalAuthenticatedAt: kept.age })
+      .where(eq(authSession.id, kept.authSessionId));
+    await environment.database
+      .insert(authSessionDenials)
+      .values({ sessionId: kept.authSessionId, userId: kept.userId, expiresAt: kept.expiresAt });
+    await expect(kept.keep(kept.token)).rejects.toThrow('SESSION_CONTINUATION_DENIED');
+    // updatedAt moved only with this test's own direct writes above.
+    expect(
+      (await environment.database.select().from(authSession).where(eq(authSession.id, kept.authSessionId)))[0],
+    ).toEqual({ ...before, updatedAt: expect.any(Date) });
+    expect(
+      await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, kept.userId)),
+    ).toHaveLength(0);
   });
   it.each(['legacy-signout', 'native-signout', 'admin-revocation', 'password-reset'] as const)(
     'retains migrated domain and epoch constraints for %s',
