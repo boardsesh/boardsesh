@@ -587,6 +587,16 @@ export const SETTER_PATH_SEGMENT = '/setter/';
 export const SESSION_COOKIE_NAME_SUBSTRING = 'next-auth.session-token';
 
 /**
+ * The www auth and token endpoints: `/api/auth/*` (session read, csrf, login,
+ * sign-out) and `/api/internal/ws-auth` (the 15-minute browser token, #7596).
+ * Every answer is per browser (200 with a session or a token, 401, 503), so
+ * none may ever enter a shared cache. No cache rule's path list reaches them
+ * today; the www HTML rule also excludes all of `/api/` by name, so a later
+ * path prefix cannot bring them in by accident.
+ */
+export const WWW_API_PATH_PREFIX = '/api/';
+
+/**
  * The substrings of the first-party session cookies a signed-in browser holds
  * under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596): the login cookie and
  * the bridged cookie, each written as `__Secure-<name>` in production and as
@@ -598,16 +608,6 @@ export const SESSION_COOKIE_NAME_SUBSTRING = 'next-auth.session-token';
  * sends either name before the first cutover, so until then the clauses
  * change nothing.
  */
-/**
- * The www auth and token endpoints: `/api/auth/*` (session read, csrf, login,
- * sign-out) and `/api/internal/ws-auth` (the 15-minute browser token, #7596).
- * Every answer is per browser (200 with a session or a token, 401, 503), so
- * none may ever enter a shared cache. No cache rule's path list reaches them
- * today; the www HTML rule also excludes all of `/api/` by name, so a later
- * path prefix cannot bring them in by accident.
- */
-export const WWW_API_PATH_PREFIX = '/api/';
-
 export const FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS = Object.freeze([
   'boardsesh.session_token',
   'boardsesh.bridged_session_token',

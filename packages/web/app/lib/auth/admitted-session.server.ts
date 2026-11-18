@@ -62,28 +62,33 @@ const admitServerCredentialForRender = cache(async () => {
 });
 
 /**
- * Who reads the session: by default the browser's session as the mode resolves
- * it. `legacyCookie` reads the admitted legacy NextAuth cookie in every mode:
- * only for the native transfer callback, which runs right after a provider
- * login that wrote that cookie (and, under `better-auth`, cleared the
- * first-party names), and needs its claims (B4c moves it).
+ * Who reads the session, and how. By default the browser's session as the
+ * mode resolves it. `method`: a route handler's request method; under
+ * `better-auth` only a GET or HEAD may bridge a legacy-only browser (a write
+ * answers it from the admitted legacy cookie, as the session read does for a
+ * POST). Without it, a server action (Next's `Next-Action` header) counts as a
+ * write and anything else as a read. `legacyCookie` reads the admitted legacy
+ * NextAuth cookie in every mode: only for the native transfer callback, which
+ * runs right after a provider login that wrote that cookie (and, under
+ * `better-auth`, cleared the first-party names), and needs its claims (B4c).
  */
-export type AdmittedSessionSource = { readonly legacyCookie?: boolean };
+export type AdmittedSessionSource = { readonly legacyCookie?: boolean; readonly method?: string };
 
 /**
- * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B4a) the render's one
+ * Under `AUTH_BROWSER_SESSION_MODE=better-auth` (#7596 B4a) the request's one
  * resolution, from `server-browser-session.server.ts`; undefined in `legacy`
  * mode or when asked for the legacy cookie. Loaded on first use, so `legacy`
  * mode loads and runs exactly what it did before.
  */
-async function resolvedForRender(source: AdmittedSessionSource) {
-  if (source.legacyCookie) return { render: undefined, module: undefined };
+async function resolvedForRequest(source: AdmittedSessionSource) {
+  if (source.legacyCookie) return undefined;
   // Unset, empty and `legacy` are `legacy` to `browserSessionRouteMode` as
   // well; any other value goes there and gets its answer (503 when invalid).
   const rawMode = process.env[BROWSER_SESSION_MODE_ENV];
-  if (rawMode === undefined || rawMode === '' || rawMode === 'legacy') return { render: undefined, module: undefined };
+  if (rawMode === undefined || rawMode === '' || rawMode === 'legacy') return undefined;
   const module = await import('./server-browser-session.server');
-  return { render: await module.serverBrowserSessionForRender(), module };
+  const resolved = await module.serverBrowserSession(source.method === undefined ? {} : { method: source.method });
+  return resolved === undefined ? undefined : { resolved, module };
 }
 
 async function getLegacyAdmittedRawServerToken(): Promise<string | undefined> {
@@ -93,24 +98,21 @@ async function getLegacyAdmittedRawServerToken(): Promise<string | undefined> {
 /**
  * The credential a server render forwards to the backend as a bearer. In
  * `legacy` mode the admitted NextAuth cookie, as before. Under `better-auth`
- * the backend's 15-minute access token for the session this render shows, or
+ * the backend's 15-minute access token of the request's one resolution, or
  * the admitted legacy cookie when the session read would answer from it too.
  * Never sets or clears a cookie.
  */
 export async function getAdmittedRawServerToken(source: AdmittedSessionSource = {}): Promise<string | undefined> {
-  const { render, module } = await resolvedForRender(source);
-  if (!render || !module) return getLegacyAdmittedRawServerToken();
-  if (render.kind === 'legacy') return getLegacyAdmittedRawServerToken();
-  if (render.kind === 'signed-out') return undefined;
-  return module.serverAccessTokenForRender();
+  const held = await resolvedForRequest(source);
+  if (!held || held.resolved.kind === 'legacy') return getLegacyAdmittedRawServerToken();
+  return held.resolved.kind === 'active' ? held.resolved.accessToken : undefined;
 }
 
 /** Never mint a session or silently turn an authority outage into anonymity. */
 export async function getAdmittedServerSession(source: AdmittedSessionSource = {}) {
-  const { render, module } = await resolvedForRender(source);
-  if (render && module && render.kind !== 'legacy')
-    return render.kind === 'active' ? module.sessionFromActive(render.session) : null;
-  return getLegacyAdmittedServerSession();
+  const held = await resolvedForRequest(source);
+  if (!held || held.resolved.kind === 'legacy') return getLegacyAdmittedServerSession();
+  return held.resolved.kind === 'active' ? held.module.sessionFromActive(held.resolved.session) : null;
 }
 
 async function getLegacyAdmittedServerSession() {

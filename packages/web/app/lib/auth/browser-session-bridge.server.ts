@@ -32,6 +32,13 @@ const PRIVATE = { 'Cache-Control': 'private, no-store' } as const;
  * A browser bridges once; a reload loop or a scripted caller stops here.
  */
 export const BRIDGES_PER_CLIENT = 20;
+/**
+ * A browser whose first-party cookie never verifies (another secret, a bad
+ * signature) beside a valid legacy cookie is bridged without a cookie on every
+ * read and can never get one written (#7792 review, M4b). Its own, higher
+ * budget per client, so link prefetches do not turn into an outage of its own.
+ */
+export const COOKIELESS_BRIDGES_PER_CLIENT = 120;
 const BRIDGE_WINDOW_MS = 60_000;
 
 /** Today's session JSON shape, as the session read answers it. */
@@ -117,10 +124,12 @@ async function bridgeLegacyLogin(
   request: NextRequest,
   legacy: LegacyPresented,
   bucket: BridgeBucket,
+  writesNoCookie = false,
 ): Promise<BridgeOutcome> {
   const clientKey = trustedClientRateLimitKey(request);
-  const limitKey = `${BRIDGE_LIMIT_PREFIXES[bucket]}:${clientKey}`;
-  if (checkRateLimit(limitKey, BRIDGES_PER_CLIENT, BRIDGE_WINDOW_MS).limited) return { kind: 'failed' };
+  const limitKey = `${BRIDGE_LIMIT_PREFIXES[bucket]}${writesNoCookie ? '-cookieless' : ''}:${clientKey}`;
+  const limit = writesNoCookie ? COOKIELESS_BRIDGES_PER_CLIENT : BRIDGES_PER_CLIENT;
+  if (checkRateLimit(limitKey, limit, BRIDGE_WINDOW_MS).limited) return { kind: 'failed' };
   const client = createWebSessionCommandClient();
   let bridged: Awaited<ReturnType<typeof client.bridge>>;
   try {
@@ -173,6 +182,13 @@ export type BrowserSessionResolution =
       session: ActiveWebSession;
       token: string;
       bridged?: { replaces: 'nothing' | BrowserSessionCookieKind };
+      /**
+       * This stale first-party session stands because a newer legacy login
+       * beside it could not be bridged now (budget or outage). The session
+       * read answers it and retries next time; a page that must never name the
+       * wrong account (partner consent) treats the browser as signed out.
+       */
+      newerLegacyLoginUnresolved?: true;
     }
   | {
       kind: 'signed-out';
@@ -213,7 +229,7 @@ export async function resolveBrowserSession(
     // never get a cookie written (M4b). It is bridged without one; a denial is
     // signed out with nothing cleared, and an outage is an outage.
     const writesNoCookie = carriesFirstPartyCookie(request);
-    const outcome = await bridgeLegacyLogin(request, session.presented, bucket);
+    const outcome = await bridgeLegacyLogin(request, session.presented, bucket, writesNoCookie);
     if (outcome.kind === 'bridged')
       return writesNoCookie
         ? { kind: 'active', session: outcome.session, token: outcome.token }
@@ -254,7 +270,7 @@ export async function resolveBrowserSession(
     return { kind: 'signed-out', reason: 'bridge-denied', clears: 'first-party-and-legacy' };
   if (outcome.kind === 'mismatch') return { kind: 'signed-out', reason: 'session-ended', clears: 'none' };
   // A failed bridge keeps this request's answer; the next read retries.
-  return fromCookie;
+  return { kind: 'active', session: active, token: session.presented.token, newerLegacyLoginUnresolved: true };
 }
 
 /**
