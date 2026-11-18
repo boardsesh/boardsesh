@@ -416,7 +416,7 @@ is an app, not a climber; the builder takes the user id explicitly.
 Block placement uses the same derivation as the app's session detail. The
 builder reads the climber's own `session_workouts` row (plan and tick map),
 runs `deriveWorkoutStages` from `@boardsesh/workout-summary` over the
-climber's ticks in the session, and gives every tick on a stage named
+workout's ticks (below), and gives every tick on a stage named
 `${workoutId}:${index}` that `blockIndex`. A tick on any other stage (the
 climber's own block in "Add to this session") or off the plan gets `null`. So
 the tick map, a kept entry for a tick that lands late (#7819) and the
@@ -426,13 +426,17 @@ holds one of the workout's stages (a lost write), the builder falls back to
 `plan_snapshot`: a block only when exactly one block queued the tick's climb.
 
 Results hold only the workout's own ticks (consent: "Read the results of
-workouts this app planned"). A tick stays when the derivation puts it on one
-of the workout's blocks, or when its `climbedAt` is at or after
-`app_workouts.started_at`; every other tick in the session is dropped. The
-phone's `climbedAt` is used rather than the server's `created_at`, so ticks
-logged offline before the workout and synced after Start stay out. A tick the
-tick map puts on a block stays even when the phone clock ran a little behind.
-In the snapshot fallback only the time rule applies. `session.startedAt` is
+workouts this app planned"). A tick stays when its `climbedAt` is at or after
+`app_workouts.started_at`, or when the tick map pins it to a queue item on one
+of the workout's stages; every other tick in the session is dropped before
+the derivation runs, so inclusion and placement agree. The phone's
+`climbedAt` is used rather than the server's `created_at`, so ticks logged
+offline before the workout and synced after Start stay out. A pinned tick
+stays even when the phone clock ran a little behind. An earlier tick on a
+climb a partner block queued later, with no map entry, stays out and does not
+take that block's slot. The app's own session detail derives over every tick
+in the session, so it may still show such a tick on that block. In the
+snapshot fallback only the time rule applies. `session.startedAt` is
 the later of the session start and `started_at`, and `durationSeconds` runs
 from it. Each tick goes through the same serializer as the logbook feed, plus
 `blockIndex`. Session notes, timezone and the private board name are

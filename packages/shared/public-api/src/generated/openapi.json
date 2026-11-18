@@ -2141,7 +2141,7 @@
               ],
               "additionalProperties": true
             },
-            "description": "The climber's own ticks from this workout, in time order: every tick on one of its blocks, plus every tick logged after the workout started. Ticks from earlier in the same session are left out."
+            "description": "The climber's own ticks from this workout, in time order: every tick logged after the workout started, or logged on one of its queued climbs. Ticks from earlier in the same session are left out."
           },
           "blocks": {
             "type": "array",

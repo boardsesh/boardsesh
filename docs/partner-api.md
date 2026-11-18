@@ -879,10 +879,10 @@ includes:
   already running. `durationSeconds` runs from `startedAt` to `endedAt`.
 - `ticks` are the climber's own ticks from this workout, in time order, in
   the tick shape from section 3, plus `blockIndex`. A tick belongs to the
-  workout when it is on one of the workout's blocks, or when the climber
-  logged it (`climbedAt`) after the workout started. Ticks from earlier in
-  the same session are left out, and so are other climbers' ticks in a shared
-  session. With `logbook:read` the same ticks also arrive through the logbook
+  workout when the climber logged it (`climbedAt`) after the workout started,
+  or logged it on one of the workout's queued climbs. Ticks from earlier in
+  the same session are left out, even on a climb one of your blocks queued
+  later, and so are other climbers' ticks in a shared session. With `logbook:read` the same ticks also arrive through the logbook
   feed with the same `id`, so de-duplicate on it.
 - `blockIndex` is the block the climber logged the tick on, as their session
   recorded it: the same placement the climber sees on the session in
