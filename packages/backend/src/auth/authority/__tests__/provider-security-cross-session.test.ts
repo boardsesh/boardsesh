@@ -16,6 +16,7 @@ import { bindProviderSecurityFlow, createProviderSecurityIntent } from '../provi
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { abortProviderSecurityMutation, acknowledgeProviderSecurityResult } from '../provider-security-terminal';
 import { providerTokenHash } from '../provider-security-context';
+import { PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION } from '../provider-security-policy';
 import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
 
 // #7596 B5c1 review S2-1: what the browser binding proved, the session token,
@@ -310,6 +311,24 @@ describe('provider security across sessions, callbacks and replays (#7596 B5c1)'
     ).rejects.toMatchObject({ outcome: 'identity_changed' });
     expect(await snapshot(link.intentToken, [owner.userId])).toEqual(after);
     expect(after.cutoffs[0].generation).toBe(1);
+  });
+
+  it('one session holds at most five live intents; ending one frees a slot', async () => {
+    const owner = await environment.actor('better-auth', 'canonical-token');
+    const live = [];
+    for (let index = 0; index < PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION; index++)
+      live.push(await intent(owner.webActor));
+    await expect(intent(owner.webActor)).rejects.toMatchObject({ outcome: 'denied', code: 'too_many_pending' });
+    // Another session of the same account has its own slots.
+    const other = await environment.secondSession(owner);
+    await intent(other.webActor);
+    await abortProviderSecurityMutation(environment.database, environment.runtime, {
+      ...live[0].bound,
+      preparationToken: null,
+      flowHash: null,
+    });
+    await intent(owner.webActor);
+    await expect(intent(owner.webActor)).rejects.toMatchObject({ code: 'too_many_pending' });
   });
 
   it('two tabs, one session: both prepare, the first finalizes, the second is refused and writes nothing', async () => {

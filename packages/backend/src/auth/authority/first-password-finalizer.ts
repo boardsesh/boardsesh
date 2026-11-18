@@ -229,6 +229,9 @@ export async function acknowledgeFirstPasswordResult(
     equalFirstPasswordDigest(challenge.actorCredentialHash, command.actor.credentialHash) &&
     challenge.userId === command.actor.input.expectedUserId &&
     challenge.actorSessionId === command.actor.input.expectedAuthSessionId &&
+    // These two compare stored values with stored values: they check the row's
+    // shape (a web-session row, not a binding row), not the caller. The caller
+    // is proven by the token hash and ids above and the admission below.
     challenge.browserBindingHash === providerWebSessionHash(challenge.actorSessionId) &&
     equalFirstPasswordDigest(
       challenge.preparationTokenHash ?? '',

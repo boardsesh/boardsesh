@@ -3,13 +3,20 @@ import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import type { ProviderSecurityActor } from '@boardsesh/auth-protocol';
 import {
+  authCredentialLineage,
   authEmailReservationMembers,
   authEmailReservations,
+  authEmailVerificationState,
+  authEmailVerificationTokens,
   authFirstPasswordChallenges,
+  authPasswordRecoveryState,
+  authPasswordRecoveryTokens,
   authSession,
   authSubjectCutoffs,
   users,
 } from '@boardsesh/db/schema/auth';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { createProviderSecurityIntent, bindProviderSecurityFlow } from '../provider-security-intents';
 import { createProviderSecurityEnvironment } from './provider-security-fixture';
 import { captureFirstPasswordRuntime } from '../first-password-policy';
 import { withFirstPasswordAuthority } from '../first-password-context';
@@ -58,8 +65,12 @@ const runtime = () =>
   });
 
 /** An Apple-only account that owns its email reservation: eligible for a first password. */
-async function eligible() {
-  const owner = await environment.actor('better-auth', 'canonical-token', { password: false, provider: 'apple' });
+async function eligible(source: 'login' | 'bridge' | 'carried' = 'login') {
+  const owner = await environment.actor('better-auth', 'canonical-token', {
+    password: false,
+    provider: 'apple',
+    source,
+  });
   const [user] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
   const normalizedEmail = normalizeAccountEmail(user.email);
   await environment.database.insert(authEmailReservations).values({
@@ -275,5 +286,151 @@ describe('first password keyed by the first-party web session (#7596 B5c2)', () 
     expect(await snapshot(command.challengeToken, [owner.userId])).toEqual(before);
     expect(await passwordOf(owner.userId)).toBeNull();
     expect(before.challenge[0].phase).toBe('prepared');
+  });
+
+  it('finalize ends pending reset and verify links, other lineages and pending provider intents of the session', async () => {
+    const owner = await eligible();
+    const [user] = await environment.database.select().from(users).where(eq(users.id, owner.userId));
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt.getTime() + 1_800_000);
+    const link = {
+      userId: owner.userId,
+      deliveredEmail: user.email,
+      normalizedEmail: normalizeAccountEmail(user.email),
+    };
+    await environment.database
+      .insert(authPasswordRecoveryState)
+      .values({ userId: owner.userId, purpose: 'password-reset', generation: 1 });
+    const resetHash = randomBytes(32).toString('hex');
+    await environment.database.insert(authPasswordRecoveryTokens).values({
+      ...link,
+      tokenHash: resetHash,
+      purpose: 'password-reset',
+      subjectGeneration: 0,
+      issuanceGeneration: 1,
+      issuedAt,
+      expiresAt,
+    });
+    await environment.database
+      .insert(authEmailVerificationState)
+      .values({ userId: owner.userId, purpose: 'email-verification', generation: 1 });
+    const verifyHash = randomBytes(32).toString('hex');
+    await environment.database.insert(authEmailVerificationTokens).values({
+      ...link,
+      tokenHash: verifyHash,
+      purpose: 'email-verification',
+      subjectGeneration: 0,
+      issuanceGeneration: 1,
+      issuedAt,
+      expiresAt,
+    });
+    const otherLineage = `session:${randomUUID()}`;
+    await environment.database.insert(authCredentialLineage).values({
+      id: otherLineage,
+      userId: owner.userId,
+      sessionId: randomUUID(),
+      originalAuthenticatedAt: owner.authenticatedAt,
+      originalExpiresAt: expiresAt,
+    });
+    // A provider link this same session started before setting the password.
+    const pendingLink = await createProviderSecurityIntent(environment.database, environment.runtime, {
+      actor: owner.webActor,
+      action: 'link',
+      provider: 'google',
+      methodId: null,
+    });
+    const command = await prepared(owner);
+    expect(await finalizeFirstPasswordChallenge(environment.database, runtime(), command)).toEqual({
+      outcome: 'committed',
+      generation: 1,
+    });
+    const [reset] = await environment.database
+      .select()
+      .from(authPasswordRecoveryTokens)
+      .where(eq(authPasswordRecoveryTokens.tokenHash, resetHash));
+    const [verify] = await environment.database
+      .select()
+      .from(authEmailVerificationTokens)
+      .where(eq(authEmailVerificationTokens.tokenHash, verifyHash));
+    expect(reset.supersededAt).toBeInstanceOf(Date);
+    expect(verify.supersededAt).toBeInstanceOf(Date);
+    expect(
+      (
+        await environment.database
+          .select()
+          .from(authPasswordRecoveryState)
+          .where(eq(authPasswordRecoveryState.userId, owner.userId))
+      )[0].generation,
+    ).toBe(2);
+    expect(
+      (
+        await environment.database
+          .select()
+          .from(authEmailVerificationState)
+          .where(eq(authEmailVerificationState.userId, owner.userId))
+      )[0].generation,
+    ).toBe(2);
+    const [lineage] = await environment.database
+      .select()
+      .from(authCredentialLineage)
+      .where(eq(authCredentialLineage.id, otherLineage));
+    expect(lineage.revokedAt).toBeInstanceOf(Date);
+    // The intent was made at generation 0; the session is at 1 now.
+    await expect(
+      bindProviderSecurityFlow(environment.database, environment.runtime, {
+        actor: owner.webActor,
+        intentToken: pendingLink.intentToken,
+        flowHash: randomBytes(32).toString('hex'),
+      }),
+    ).rejects.toMatchObject({ outcome: 'identity_changed' });
+  });
+
+  for (const source of ['bridge', 'carried'] as const)
+    it(`a ${source} session sets the first password and keeps its source, token and lineage`, async () => {
+      const owner = await eligible(source);
+      const before = await admit(owner);
+      expect(before).toMatchObject({ status: 'admitted', session: { source: 'bridge' } });
+      const command = await prepared(owner);
+      expect(await finalizeFirstPasswordChallenge(environment.database, runtime(), command)).toEqual({
+        outcome: 'committed',
+        generation: 1,
+      });
+      expect(await passwordOf(owner.userId)).not.toBeNull();
+      expect(await admit(owner)).toMatchObject({
+        status: 'admitted',
+        session: { source: 'bridge', generation: 1, authenticatedAt: owner.authenticatedAt },
+      });
+      const [row] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
+      expect(row.legacyLineageId).toBe(source === 'bridge' ? `session:${owner.sid}` : `carried:${owner.sid}`);
+      if (source === 'bridge') {
+        const [lineage] = await environment.database
+          .select()
+          .from(authCredentialLineage)
+          .where(eq(authCredentialLineage.sessionId, owner.sid));
+        expect(lineage.revokedAt).toBeNull();
+      }
+    });
+
+  it('an account holds one live challenge: a second request ends the first', async () => {
+    const owner = await eligible();
+    const first = await requested(owner);
+    const second = await requested(owner);
+    const [ended] = (await snapshot(first.challengeToken, [owner.userId])).challenge;
+    expect(ended).toMatchObject({ phase: 'terminal' });
+    expect(
+      await environment.database
+        .select()
+        .from(authFirstPasswordChallenges)
+        .where(eq(authFirstPasswordChallenges.userId, owner.userId)),
+    ).toHaveLength(2);
+    await expect(
+      prepareFirstPasswordChallenge(environment.database, runtime(), {
+        ...first,
+        confirmationToken: first.mailPlan.token,
+        password,
+        confirmPassword: password,
+      }),
+    ).rejects.toMatchObject({ outcome: 'denied', code: 'replayed' });
+    expect((await snapshot(second.challengeToken, [owner.userId])).challenge[0].phase).toBe('pending');
   });
 });

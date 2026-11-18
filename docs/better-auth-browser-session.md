@@ -689,7 +689,12 @@ Since B5c2, first password (`first-password-*.ts`) is keyed the same way:
 the same admission, the same refusal for a legacy cookie, the same columns
 (`auth_first_password_challenges`), and finalize keeps the session's token
 through the `password-set` receipt. The emailed confirmation link must be
-completed by the session token that asked for it. Only the sign-in commands
+completed by the session token that asked for it. Nothing deletes intents or
+challenges (the credential role has no DELETE), so both are bounded at
+creation: one session holds at most five unexpired pending or prepared provider
+intents (`PROVIDER_SECURITY_LIVE_INTENTS_PER_SESSION`, refusal
+`too_many_pending`), and an account holds one live first-password challenge (a
+new request ends the old one; `auth_first_password_active_user_idx`). Only the sign-in commands
 (`provider-owned-signin.ts`, through `provider-binding-actor.ts`, and
 `anonymous-provider-signin.ts`) still use `authority/browser-binding.ts`,
 until B5a; B5d deletes the binding core.
