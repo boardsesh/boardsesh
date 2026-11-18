@@ -178,6 +178,8 @@ export const boardSessionQueues = pgTable('board_session_queues', {
   version: integer('version').default(1).notNull(),
   // Sequence number for event ordering (separate from version used for optimistic locking)
   sequence: integer('sequence').default(0).notNull(),
+  /** Only consulted at version 1 for an atomic partner Start; later queue versions use ordinary restore rules. */
+  initialHistoryCount: integer('initial_history_count'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 

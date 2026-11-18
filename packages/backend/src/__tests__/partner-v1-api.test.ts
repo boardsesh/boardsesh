@@ -1612,6 +1612,11 @@ describe('the public /v1 API', () => {
       const climber = await environment.createClimber();
       const authorization = await environment.authorize(client, { climber });
       const accessToken = (await environment.exchange(client, authorization)).body.access_token!;
+      // Redemption normally ensures this row. Remove it to exercise the
+      // defensive lazy-insert race for historical connections without one.
+      await db
+        .delete(oauthSubjects)
+        .where(and(eq(oauthSubjects.clientId, client.clientId), eq(oauthSubjects.userId, climber.userId)));
       const deleter = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
       let commit: () => void = () => {};
       let deletion: Promise<unknown> | undefined;
@@ -1724,7 +1729,7 @@ describe('the public /v1 API', () => {
       ['the tick route with two segments', 'GET', '/v1/logbook/ticks/a/b'],
       ['DELETE on a tick', 'DELETE', '/v1/logbook/ticks/a'],
       ['POST on the OpenAPI document', 'POST', '/v1/openapi.json'],
-      ['a route that does not exist yet', 'GET', '/v1/workouts'],
+      ['an unknown route', 'GET', '/v1/not-a-route'],
     ])('refuses %s with the API host 404', async (_label, method, path) => {
       const refused = await apiHost.send(method, path, { token: 'whatever' });
       expect(refused.status).toBe(404);

@@ -1,20 +1,25 @@
 import { canServeLocalUserData, getLocalUserId, type SqlExecutor } from '@boardsesh/offline-sync';
-import type { WeekActivityEntry } from '@boardsesh/profile-stats';
+import type { ProjectTickEntry, WeekActivityEntry } from '@boardsesh/profile-stats';
 
-/** One tick for Home's "This week" card, with what the record line needs to name and open its climb. */
-export type WeekActivityTick = WeekActivityEntry & {
-  climbUuid: string;
-  angle: number;
-  /** Null when the board's catalogue is not on this phone. */
-  climbName: string | null;
-  layoutId: number | null;
-};
+/**
+ * One tick for Home's own-climbing cards: This week (#7690) and Back to your
+ * projects (#7691), with what each needs to name and open its climb.
+ */
+export type ActivityTick = WeekActivityEntry &
+  ProjectTickEntry & {
+    climbUuid: string;
+    angle: number;
+    /** Null when the board's catalogue is not on this phone. */
+    climbName: string | null;
+    layoutId: number | null;
+  };
 
 type WeekActivityRow = {
   climb_uuid: string;
   board_type: string;
   angle: number;
-  status: WeekActivityTick['status'];
+  status: ActivityTick['status'];
+  attempt_count: number | null;
   climbed_at: string;
   difficulty: number | null;
   climb_name: string | null;
@@ -22,9 +27,10 @@ type WeekActivityRow = {
 };
 
 /**
- * Every tick the signed-in climber logged, on every board, for Home's "This
- * week" card (#7690). Local, so the card draws on a cold start and with no
- * signal, where the You tab's network stats show a skeleton.
+ * Every tick the signed-in climber logged, on every board, for Home's This week
+ * card (#7690) and projects shelf (#7691), which share this one read. Local, so
+ * both draw on a cold start and with no signal, where the You tab's network
+ * stats show a skeleton.
  *
  * Follows the auth-scoping contract in docs/offline-reads.md, as
  * `readTickRowsLocal` does: it serves only when `canServeLocalUserData` says the
@@ -36,14 +42,14 @@ type WeekActivityRow = {
  * the board's catalogue is on the phone. A tick with neither still counts as a
  * session and a send; it just cannot be the week's hardest or a record.
  */
-export async function readWeekActivityLocal(db: SqlExecutor, viewerId: string): Promise<WeekActivityTick[] | null> {
+export async function readActivityTicksLocal(db: SqlExecutor, viewerId: string): Promise<ActivityTick[] | null> {
   if (!(await canServeLocalUserData(db, viewerId))) return null;
   const ownerUserId = await getLocalUserId(db);
   // Recheck after the asynchronous gate: a sign-out in between must not let the
   // next owner's rows answer.
   if (ownerUserId !== viewerId) return null;
   const rows = await db.getAllAsync<WeekActivityRow>(
-    `SELECT t.climb_uuid, t.board_type, t.angle, t.status, t.climbed_at,
+    `SELECT t.climb_uuid, t.board_type, t.angle, t.status, t.attempt_count, t.climbed_at,
        COALESCE(t.difficulty, CAST(ROUND(s.display_difficulty) AS INTEGER)) AS difficulty,
        c.name AS climb_name, c.layout_id
      FROM boardsesh_ticks t
@@ -65,6 +71,7 @@ export async function readWeekActivityLocal(db: SqlExecutor, viewerId: string): 
     boardType: row.board_type,
     angle: row.angle,
     status: row.status,
+    attemptCount: row.attempt_count,
     climbedAt: row.climbed_at,
     difficulty: row.difficulty,
     climbName: row.climb_name,

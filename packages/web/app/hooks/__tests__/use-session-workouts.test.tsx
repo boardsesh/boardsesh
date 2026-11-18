@@ -22,6 +22,7 @@ const headline = (sessionId: string, userId = 'user-1') => ({
   userId,
   mainKind: 'fourByFour',
   mainTargetGrade: '6b/V4',
+  mainTargetBoardType: 'kilter',
   secondMainKind: null,
   blockCount: 3,
   extraMainBlocks: 0,

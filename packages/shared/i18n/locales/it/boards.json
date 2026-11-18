@@ -199,26 +199,26 @@
       "card": {
         "title": "Illumina i blocchi su {{board}}",
         "titleNoName": "Illumina i blocchi sul tuo pannello",
-        "body": "Collega questo telefono al pannello, tocca un blocco e poi Illumina il pannello per illuminarlo.",
-        "bodyAlwaysDrive": "Collega questo telefono al pannello e lo guidi tu: ogni blocco che scegli si illumina in parete.",
+        "body": "Collega questo telefono, tocca un blocco, poi tocca Illumina il pannello.",
+        "bodyAlwaysDrive": "Collega questo telefono al pannello e si illumina ogni blocco che scegli.",
         "connect": "Connetti",
         "tryAgain": "Riprova",
         "noLights": "Questo pannello non ha luci",
         "notNow": "Non ora",
         "connecting": "Connessione a {{board}}…",
         "connectingNoName": "Connessione al tuo pannello…",
-        "failed": "Non ancora connesso a {{board}}. Riprova quando vuoi.",
-        "failedNoName": "Non ancora connesso al tuo pannello. Riprova quando vuoi."
+        "failed": "Non ancora connesso a {{board}}. Riprova.",
+        "failedNoName": "Non ancora connesso al tuo pannello. Riprova."
       },
       "confirm": {
         "title": "Connesso a {{board}}",
         "titleNoName": "Connesso al tuo pannello",
-        "bodyAlwaysDrive": "Guida sempre il pannello è attivo: ogni blocco che scegli si illumina in parete finché non tocchi Guidi tu il pannello per smettere.",
-        "bodyWindow": "Con Illumina il pannello guidi tu il pannello: per {{seconds}} secondi dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
-        "bodyWindowMinute": "Con Illumina il pannello guidi tu il pannello: per 1 minuto dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
-        "bodyWindowMinutes": "Con Illumina il pannello guidi tu il pannello: per {{minutes}} minuti dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
-        "bodyUntilStop": "Con Illumina il pannello guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non tocchi il pulsante per smettere.",
-        "bodyPutOnBoard": "Tocca un blocco e poi Illumina il pannello per illuminarlo in parete.",
+        "bodyAlwaysDrive": "Guida sempre il pannello è attivo. Si illumina ogni blocco che scegli finché non tocchi Guidi tu il pannello.",
+        "bodyWindow": "Illumina il pannello illumina un blocco. Si illumina anche ogni blocco che scegli nei prossimi {{seconds}} secondi. Poi tocca di nuovo Illumina il pannello.",
+        "bodyWindowMinute": "Illumina il pannello illumina un blocco. Si illumina anche ogni blocco che scegli nel prossimo minuto. Poi tocca di nuovo Illumina il pannello.",
+        "bodyWindowMinutes": "Illumina il pannello illumina un blocco. Si illumina anche ogni blocco che scegli nei prossimi {{minutes}} minuti. Poi tocca di nuovo Illumina il pannello.",
+        "bodyUntilStop": "Illumina il pannello illumina un blocco. Poi si illumina ogni blocco che scegli finché non tocchi Guidi tu il pannello.",
+        "bodyPutOnBoard": "Tocca un blocco, poi Illumina il pannello per illuminarlo.",
         "gotIt": "Ok"
       }
     },
@@ -1079,10 +1079,10 @@
       "tap": "Tocca un cerchio per sceglierlo. Toccalo di nuovo per disattivarlo.",
       "maybe": "I cerchi tratteggiati sono dubbi. Tocca un cerchio, poi tocca Mantieni.",
       "longPress": "Tieni premuto un cerchio, poi scorri per spostarlo.",
-      "addHold": "Tieni premuto per aggiungere una presa.",
+      "addHold": "Tieni premuto su un punto vuoto per aggiungere una presa.",
       "dismiss": "Nascondi il suggerimento",
       "replay": "Mostra i suggerimenti",
-      "pencil": "L'Apple Pencil aggiunge e attiva le prese. Le dita si muovono sulla foto e scelgono una presa."
+      "pencil": "L'Apple Pencil aggiunge e attiva le prese. Le dita spostano la vista e scelgono le prese."
     },
     "a11y": {
       "wall": "La foto della tua Spraywall: {{summary}}",

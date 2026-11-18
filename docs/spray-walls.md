@@ -616,7 +616,7 @@ kept per device (`boardsesh_spray_editor_pencil_only`).
   Pencil hovers (iPad Pro M2 and later, and the Pencil Pro models); elsewhere
   nothing arrives and nothing draws.
 - **The Pencil hint** ("Apple Pencil adds and switches holds. Fingers move
-  around and pick a hold.") is asked for by the first Pencil touch or hover,
+  the view and pick holds.") is asked for by the first Pencil touch or hover,
   and again by each later wizard step once one has been seen, and goes ahead
   of every other hint. It is used up when a finger then picks a
   ring, or when it is closed (`onboarding_tip_spray_pencil_seen`).
@@ -1972,7 +1972,7 @@ What the editor does with a wall is decided by this document rather than by tast
 - **First-run hints, one at a time** (`use-spray-editor-hints.ts`): tap a
   ring to pick it and again to switch it, then (only with maybes on the wall)
   tap a dashed maybe and Keep it, then after three edits press and hold to move
-  a ring. A fourth, "Press and hold to add a hold.", waits to be asked: the
+  a ring. A fourth, "Press and hold an empty spot to add a hold.", waits to be asked: the
   first tap on bare wall with nothing picked shows it ahead of the others, and
   adding a hold (a press and hold, or add mode) or closing it uses it up. Each is marked seen when the climber does the thing
   or closes it, never just for showing; picking a ring or tapping bare wall is

@@ -20,7 +20,7 @@ import {
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import {
   DEFAULT_WORKOUT_FILTERS,
-  addBlockTypes,
+  ADD_BLOCK_TYPES,
   buildDefaultOptions,
   type WorkoutFilters,
 } from '../pre-session/workout-blocks';
@@ -36,6 +36,30 @@ export type AddWorkoutBlockResult = {
   /** The block's stages that got at least one climb. */
   addedStageCount: number;
 };
+
+/**
+ * The climbs a block added to a live session passes over while its pools have
+ * others: every climb already in the queue. A restored queue can carry an item
+ * whose climb has not resolved yet; it names none.
+ */
+export function queuedClimbUuids(queue: readonly ClimbQueueItem[]): Set<string> {
+  const climbUuids = new Set<string>();
+  for (const queueItem of queue) {
+    const climb: ClimbQueueItem['climb'] | undefined = queueItem.climb;
+    if (climb) climbUuids.add(climb.uuid);
+  }
+  return climbUuids;
+}
+
+/**
+ * `items` without any queue item already in `queue`, so an add never queues one
+ * twice: a reopen, or a retry after a lost reply, can still hold a preview that
+ * is already queued.
+ */
+export function withoutQueuedItems(items: ClimbQueueItem[], queue: readonly ClimbQueueItem[]): ClimbQueueItem[] {
+  const queuedUuids = new Set(queue.map((queueItem) => queueItem.uuid));
+  return items.filter((item) => !queuedUuids.has(item.uuid));
+}
 
 /**
  * Adds a block's stages to the end of the session's run, keeping only the
@@ -96,25 +120,18 @@ export function addWorkoutBlock({
  * workout stage (none yet, only a warm-up left, or stored before stages kept
  * their grade) falls back to a volume block at `fallbackGrade`. Never a warm-up:
  * mid-session the climber is already warm. A last stage of a type the sheet has
- * no chip for (`addBlockTypes`: a timed block where `timedBlocksOffered` is off,
- * or a kind from a newer bundle read after an OTA rollback) opens on volume at
- * that stage's grade, so the sheet never shows fields for a type it does not
- * offer. `timedBlocksOffered` is `timedWorkoutBlocksOffered`, which the sheet
- * reads with the flag.
+ * no chip for (`ADD_BLOCK_TYPES`: a kind from a newer bundle read after an OTA
+ * rollback) opens on volume at that stage's grade, so the sheet never shows
+ * fields for a type it does not offer.
  */
-export function defaultMidSessionBlock(
-  run: WorkoutRun | null,
-  fallbackGrade: number,
-  timedBlocksOffered: boolean,
-): GeneratorOptions {
+export function defaultMidSessionBlock(run: WorkoutRun | null, fallbackGrade: number): GeneratorOptions {
   let type: WorkoutType = 'volume';
   let targetGrade = fallbackGrade;
-  const offeredTypes = addBlockTypes(timedBlocksOffered);
   const stages = run?.stages ?? [];
   for (let position = stages.length - 1; position >= 0; position--) {
     const stage = stages[position];
     if (stage.kind === 'warmUp') continue;
-    if (offeredTypes.includes(stage.kind)) type = stage.kind;
+    if (ADD_BLOCK_TYPES.includes(stage.kind)) type = stage.kind;
     targetGrade = stage.targetGrade ?? fallbackGrade;
     break;
   }

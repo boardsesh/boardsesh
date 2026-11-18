@@ -1,6 +1,7 @@
 import { hashKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { useBoardseshGradesActive } from '../../../hooks/use-display-grade';
+import { useBoardseshGradeEnabled } from '../../../providers/feature-flags-provider';
 import { useBoardseshGradesPreference } from '../../boardsesh-grades-preference';
 
 /**
@@ -46,6 +47,19 @@ export function useSearchGradeSourceActive(): boolean {
   const boardseshGradesActive = useBoardseshGradesActive();
   const { loaded } = useBoardseshGradesPreference();
   return boardseshGradesActive && loaded;
+}
+
+/**
+ * Whether `useSearchGradeSourceActive` has its value for now: the flag is off,
+ * so the preference cannot turn it on, the stored preference has been read, or
+ * reading it threw, so the search goes out on the upstream grade, as every other
+ * search does until a read succeeds. A search that should run once, not again
+ * when the preference lands, waits for it.
+ */
+export function useSearchGradeSourceSettled(): boolean {
+  const flagEnabled = useBoardseshGradeEnabled();
+  const { loaded, loadFailed } = useBoardseshGradesPreference();
+  return !flagEnabled || loaded || loadFailed;
 }
 
 /** `withGradeSource` bound to `useSearchGradeSourceActive`. */

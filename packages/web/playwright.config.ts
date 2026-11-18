@@ -109,7 +109,9 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       // `production/` runs against a deployed host under its own config
       // (playwright.production.config.ts) — never against the local dev server.
-      testIgnore: ['**/layout-screenshots.spec.ts', '**/expo-web/**', '**/production/**'],
+      // `browser-session/` boots its own HTTPS two-subdomain stack under its own
+      // config (e2e/browser-session/playwright.config.ts).
+      testIgnore: ['**/layout-screenshots.spec.ts', '**/expo-web/**', '**/production/**', '**/browser-session/**'],
     },
 
     // Expo-web smoke — drives the mobile app compiled for the browser at /app.

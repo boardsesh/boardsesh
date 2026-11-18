@@ -11,18 +11,18 @@ import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage
 /**
  * The spray editor's first-run hints, in the order they can appear:
  *
- * 1. `tap`: on open. "Tap a ring to pick it. Tap it again to switch it off."
+ * 1. `tap`: on open. "Tap a ring to pick it. Tap again to switch it off."
  * 2. `maybe`: once hint 1 is out of the way, and only while the wall has maybes.
  * 3. `longPress`: after a few edits. "Press and hold a ring, then slide to move it."
  *
- * And one that waits to be asked: `addHold`, "Press and hold to add a hold.",
+ * And one that waits to be asked: `addHold`, "Press and hold an empty spot to add a hold.",
  * shown the first time a tap on bare wall with nothing picked meets no hold —
  * the tap that used to add one. It jumps the queue, because it answers the
  * climber's own question, and it is marked seen by adding a hold (a press and
  * hold, or add mode) or closing it.
  *
  * And one for the iPad: `pencil`, "Apple Pencil adds and switches holds.
- * Fingers move around and pick a hold.", shown the first time a Pencil touches
+ * Fingers move the view and pick holds.", shown the first time a Pencil touches
  * or hovers over the wall (which is also when "Pencil only" turns itself on).
  * It goes ahead of everything, because the rules just changed under the
  * climber's hand. It is marked seen when a finger picks a ring after that —

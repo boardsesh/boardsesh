@@ -60,6 +60,50 @@ export interface EdgeOptions {
    * local server would forward that to the real Sentry project. The edge stops it.
    */
   refusedPathPrefixes?: Record<string, readonly string[]>;
+  /**
+   * Called once for every response the edge relays to a browser or a server-side
+   * caller, with what each Set-Cookie header says and never what it holds.
+   * Observation only: nothing it does changes the response.
+   */
+  onResponse?: (observation: EdgeResponseObservation) => void;
+}
+
+/** One Set-Cookie header, as names and attributes only. The value never leaves this file. */
+export interface EdgeSetCookie {
+  name: string;
+  /** The attributes in the order sent, e.g. `Domain=.boardsesh.test`, `Secure`, `Max-Age=0`. */
+  attributes: string[];
+  /** True when the header deletes the cookie: an empty value, `Max-Age` of 0 or less, or an `Expires` in the past. */
+  clears: boolean;
+}
+
+export interface EdgeResponseObservation {
+  host: string;
+  method: string;
+  /** The path without its query string, which can carry tokens. */
+  path: string;
+  status: number;
+  setCookies: EdgeSetCookie[];
+}
+
+/** Reduces a raw Set-Cookie header to its name and attributes. Exported for the harness's own test. */
+export function describeSetCookie(header: string): EdgeSetCookie {
+  const [pair = '', ...attributeParts] = header.split(';');
+  const separator = pair.indexOf('=');
+  const name = (separator === -1 ? '' : pair.slice(0, separator)).trim();
+  const value = separator === -1 ? '' : pair.slice(separator + 1).trim();
+  const attributes = attributeParts.map((part) => part.trim()).filter((part) => part.length > 0);
+  const lookup = (attributeName: string): string | undefined =>
+    attributes
+      .find((attribute) => attribute.toLowerCase().startsWith(`${attributeName}=`))
+      ?.slice(attributeName.length + 1);
+  const maxAge = lookup('max-age');
+  const expires = lookup('expires');
+  const clears =
+    value === '' ||
+    (maxAge !== undefined && Number(maxAge) <= 0) ||
+    (expires !== undefined && Date.parse(expires) < Date.now());
+  return { name, attributes, clears };
 }
 
 export interface Edge {
@@ -163,6 +207,13 @@ function forward(options: EdgeOptions, clientAddress: string, incoming: Incoming
         if (headerValue !== undefined && !DROPPED_RESPONSE_HEADERS.has(name)) headers[name] = headerValue;
       }
       outgoing.writeHead(response.statusCode ?? 502, headers);
+      options.onResponse?.({
+        host: hostname,
+        method: incoming.method ?? 'GET',
+        path: (incoming.url ?? '/').split('?')[0],
+        status: response.statusCode ?? 502,
+        setCookies: (response.headers['set-cookie'] ?? []).map(describeSetCookie),
+      });
       response.pipe(outgoing);
     },
   );

@@ -29,6 +29,14 @@ export const frostedBokehMotionAvailable = NativeFrostedBokehGPU != null;
 
 const CROSS_FADE_MS = 200;
 
+/**
+ * Story captures (the store screenshots) draw the GPU frost still: the real
+ * shader with no breathing and no glide, so every capture of a climb is the
+ * same picture and the screenshot baseline compare stays meaningful. Dev-only:
+ * `__DEV__` drops it from store bundles.
+ */
+export const FROST_STILL_FOR_CAPTURE = __DEV__ && process.env.EXPO_PUBLIC_STORY_MODE === '1';
+
 function BokehBlobs({
   layer,
   opacity,
@@ -123,9 +131,9 @@ function FrostedBokehComponent({ layer, beforeFrost, testID = 'frosted-bokeh', m
           blend={layer.blend}
           layerKey={layer.key}
           reduceMotion={reduceMotion}
-          drift={BOKEH_DRIFT}
-          swell={BOKEH_SWELL}
-          glideMs={BOKEH_GLIDE_MS}
+          drift={FROST_STILL_FOR_CAPTURE ? 0 : BOKEH_DRIFT}
+          swell={FROST_STILL_FOR_CAPTURE ? 0 : BOKEH_SWELL}
+          glideMs={FROST_STILL_FOR_CAPTURE ? 0 : BOKEH_GLIDE_MS}
           onRenderError={handleRenderError}
           testID={`${testID}-gpu`}
         />

@@ -1,4 +1,4 @@
-# Workouts over the API: the design behind it
+# Workouts over the API: implementation and launch gates
 
 [partner-api.md](./partner-api.md) section 4 is the workouts contract we hand
 to app developers. This file is the other half: which tables hold a workout,
@@ -21,13 +21,18 @@ climbs, and their Sequence logbook fills itself in. What Sequence needs is in
 [integration-consumers.md](./integration-consumers.md). Nothing below is
 specific to Sequence; any app with `workouts:write` gets the same thing.
 
-Status: design, nothing merged. The workout runner it leans on is
-[epic #5399](https://github.com/boardsesh/boardsesh/issues/5399); the stage
-model is [#5379](https://github.com/boardsesh/boardsesh/issues/5379), which
-now exists on the phone (`docs/workout-stages.md`), and 4x4 reps and sets are
-[#5380](https://github.com/boardsesh/boardsesh/issues/5380). This integration
-does not wait for #5380 and degrades honestly until it lands (see "What waits
-on the workouts epic").
+Status: the workout API, mobile handoff, results and webhook completion
+path are implemented. The mobile `app-workouts` flag defaults off; backend
+availability follows `PARTNER_OAUTH_MODE`. This document does not announce
+production activation. The remaining rollout and device checks are below.
+
+The workout runner it uses is
+[epic #5399](https://github.com/boardsesh/boardsesh/issues/5399). The stage
+model from [#5379](https://github.com/boardsesh/boardsesh/issues/5379) exists
+on the phone (`docs/workout-stages.md`); native 4x4 reps and sets remain tied
+to [#5380](https://github.com/boardsesh/boardsesh/issues/5380). This
+integration supports those blocks as freeform until that work lands (see
+"What waits on the workouts epic").
 
 ### What changed on 2026-10-27
 
@@ -49,9 +54,8 @@ Sequence plan"). In short:
 - The results payload lost `session.id` and `session.url` (a session id is its
   invite link), and the derived fields `restBeforeSeconds`, `totals`,
   `blocks[].done` and `round`. Ticks in results use the logbook tick shape.
-- Names lost "partner": `partner_workouts` → `app_workouts`, the
-  `partner-workouts` flag → `app-workouts`, `PartnerWorkoutCard` →
-  `AppWorkoutCard`.
+- The table is `app_workouts` and the mobile flag is `app-workouts`.
+  The current mobile card component is `PartnerWorkoutCard`.
 
 ---
 
@@ -100,10 +104,13 @@ that explicit connection, not a provider-internal grant or browser session.
 
 | Table | Holds | Why a table |
 | --- | --- | --- |
-| `app_workouts` | `id`, `client_id`, `connection_id`, `connection_generation`, `user_id`, `external_ref`, `title`, `spec jsonb`, `plan_snapshot jsonb`, `status`, `session_id`, `opened_at`, `started_at`, `completed_at`, `expires_at`, `opened_by_mismatch`, `idempotency_key`, `idempotency_body_hash`, `idempotency_response jsonb` | Unique on `(client_id, user_id, external_ref)` gives the 409. `plan_snapshot` is what the app actually queued at Start, so results can attribute ticks to blocks |
+| `app_workouts` | `id`, `client_id`, `connection_id`, `connection_generation`, `user_id`, `external_ref`, `title`, `spec jsonb`, `plan_snapshot jsonb`, `status`, `session_id`, `opened_at`, `started_at`, `completed_at`, `expires_at`, `opened_by_mismatch` | Unique on `(client_id, user_id, external_ref)` gives the 409. `plan_snapshot` is what the app actually queued at Start, so results can attribute ticks to blocks |
 
-Plus one column: `board_sessions.app_workout_id`, nullable, FK to
-`app_workouts`, set by `createSession` when the app passes it.
+Attachment uses `app_workouts.session_id`, unique with `user_id`. Each climber
+in a shared session can attach one workout. The session foreign key uses
+`RESTRICT`, preserving completed partner results. `app_workout_requests` stores
+the 24-hour idempotency key, body hash, original response, connection generation
+and expiry separately, keyed by app, climber and idempotency key.
 
 `connection_id` and `connection_generation` bind a workout to the authorization
 that created it. Creating, opening, attaching and starting a workout recheck
@@ -148,16 +155,35 @@ succeed:
 | `started` | `completed`   | `endSession`                                                 |
 | `started` | `auto_closed` | The inactivity job                                           |
 | `created`, `opened` | `cancelled` | App `DELETE`; from `started` it is a 409               |
-| `created`, `opened` | `expired` | A daily scheduled job, `expires_at` passed. `opened` expires too, or a workout looked at and never started would count against the cap forever |
+| `created`, `opened` | `expired` | A minute-scheduled job, `expires_at` passed. `opened` expires too, or a workout looked at and never started would count against the cap forever |
 | `created`, `opened`, `started` | `revoked` | Whole-connection disconnect or security revocation. Token revocation alone leaves workouts unchanged. Finished workouts keep their status |
 
-`Idempotency-Key` is stored on the row with a hash of the body and the
-response; a replay within 24 hours returns the stored response, a different
+`Idempotency-Key` is stored in `app_workout_requests` with a hash of the body
+and the response; a replay within 24 hours returns the stored response, a different
 body returns 422. The unique index on `(client_id, user_id, external_ref)`
 produces the 409 and returns the existing row so the app can decide. A
 create when the climber already has 20 unfinished workouts from this app
 answers `409 workout_limit`; the count is one indexed query on
 `(client_id, user_id, status)`.
+
+Expiry is the later of creation plus seven days or `scheduledFor` at 00:00 UTC
+plus two days, preserving the full scheduled local day west of UTC. Request
+paths also refresh expired unstarted workouts, so enforcement does not depend
+on the maintenance schedule. Each minute, `app-workout-expiry` expires at most
+1,000 workouts and deletes at most 1,000 expired idempotency receipts in one
+bounded transaction; later runs continue any backlog.
+
+Workout list pages have `limit` 1–100 (default 50), `cursor` and `hasMore`.
+They briefly fence the connection to authenticate and expire old rows, build
+the page and its results in a read-only repeatable-read transaction without
+that fence, then revalidate the live bearer, scopes and connection generation
+before returning. All three transactions retain the partner timeout bounds; token
+refresh, Disconnect and session End do not wait for a page of result builds.
+
+Create-body buffering starts only after authentication, scope checks and rate
+limits. The body reader holds no database admission permit while waiting and
+still enforces 64 KB, five seconds, 128 readers globally and eight per client
+address. Unread bodies force `Connection: close`, including early refusals.
 
 `support` per block is computed server-side from a static map, so the
 response is stable regardless of which app build the climber has. That map
@@ -199,18 +225,32 @@ the public API.
 `PreSessionView` keeps its generator selection in component state, which a
 route cannot reach. So there is a small module store,
 `packages/mobile/src/lib/pending-workout-store.ts`, the same
-`useSyncExternalStore` singleton shape as `rest-timer-store.ts`: `set`,
-`clear`, `usePendingWorkout()`. It is not persisted. If the app is killed
-before Start, the climber taps the link again; the workout row on the server
-is the durable copy.
+`useSyncExternalStore` singleton shape as `rest-timer-store.ts`:
+`setPendingWorkout`, `clearPendingWorkout`, `usePendingWorkout()`. The pending pre-Start payload stays in memory;
+if the app is killed before Start, the climber opens the link again.
+
+After a successful Start or attachment, the app persists the account-scoped
+`{ sessionId, workoutId }` association before fetching the workout or checking
+whether the displayed session changed. A running free-climbing timer also
+persists its block index and end deadline. Private notes, instructions and
+stage payloads are fetched from the server rather than copied into this
+preference record.
+
+`PartnerWorkoutEntry` rehydrates through `appWorkout(id)` on cold start and
+session changes. A matching running session restores the card, instructions,
+server-backed workout stages and timer deadline. If Start committed in another
+session, the pending card offers Resume instead of trying to start it again.
+Credential changes and session teardown clear the association; hydration checks
+the account generation and current session before applying late responses.
+Signed-out deep-link stashes expire after 24 hours, and flag-off links are not
+saved for a later sign-in.
 
 ### What the pre-session view does with it
 
-`PreSessionView` renders an `AppWorkoutCard` above `BoardSummaryCard` when
-the store has something: the source app's name (from its registered app metadata)
-with a lettered avatar, the title, the coach's notes, then one row per block
-with its label and, for freeform blocks, the instructions. The board is
-whatever `useActiveBoard()` returns, or the picker if there is none,
+`PreSessionHeaderView` mounts `PartnerWorkoutEntry`, which shows
+`PartnerWorkoutCard` when the store has a workout: the source app's registered
+name, the title, the coach's notes, then one row per block with its label and
+instructions. The board is whatever `useActiveBoard()` returns, or the picker if there is none,
 unchanged from today. `preferredBoard` from the spec is only used to pre-sort
 the picker.
 
@@ -222,15 +262,28 @@ the workout to `started`. Then the blocks are turned into a queue:
 
 | Block type                                       | What runs it today                                                                                                                                   |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, `selectClimbsForPlan` fills it, `appendQueueItems` queues it |
-| `onTheMinute`                                    | One `gradeFocus` block for the climbs plus `armRestTimer('onTheMinute', ...)` with `intervalSeconds` as the target                                       |
+| `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, the shared preview pipeline (`buildPreview`) fills it, `appendQueueItems` queues it |
+| `onTheMinute`                                    | A native `onTheMinute` stage (`partner-workout-plan.ts`) with `numberOfClimbs` and `intervalSeconds` from the block                                       |
 | `freeClimbing`, and any `freeform` block         | Nothing is queued. The block card stays visible in the in-session view with the instructions, and ticks land in the session as usual                    |
-| `fourByFour`, `limitBouldering`                  | Freeform until #5380. The card shows rounds and rests as text                                                                                            |
+| `fourByFour`, `limitBouldering`                  | Freeform. The card shows rounds and rests as text. The app's own 4x4 and limit blocks are native stages now, but the partner mapping is undecided (`docs/partner-api.md`) |
 
 Grades arrive as `{ scale, value }` and the generator wants a board difficulty
 id, so the mapping happens on device against the board's grade table from
-`@boardsesh/board-config`, once the board is known. A target the board cannot
-express (V0 on a MoonBoard) clamps to the nearest grade and the card says so.
+`@boardsesh/board-config`, once the board is known. A V target spans its whole
+band on that board's own table: Kilter V4 is 6b and 6b+, and the block's slots
+take turns across them. A slot short at its own Font grade fills from the other
+grades in its band before any nearby grade (`PreviewSlot.band`). MoonBoard labels
+6A as V2, so its V3 is 6A+ alone. A V range (a warm-up, pyramid or ladder) ramps
+over V grades, then takes turns across the Font grades inside each, so a Kilter
+V0 to V3 warm-up of four reads V0, V1, V2, V3. A Font target is one grade. A target the board cannot express (V0 on a MoonBoard)
+clamps to the nearest grade and the card says so.
+
+The card fills the blocks through the app's own preview pipeline
+(`buildPreview` in `workout-preview-pool.ts`, called from
+`lib/partner-workout-preview.ts`), the one the workout builder and "Add a block"
+use: a grade that runs short borrows from the nearest grade (#6759), top-ups
+come last, and, added to a running session, the climbs that session already
+queued are passed over.
 
 The native blocks run through the stage model #5379 built
 (`docs/workout-stages.md`). The app already treats every part of a workout as
@@ -242,10 +295,10 @@ pools fill them, and the phone keeps a `WorkoutRun` that maps every queued
 climb to its block, so the player and the session card can say
 "Volume · 3 of 8".
 
-That run stays on the phone and the server never sees a stage, so what was
-actually queued, per block, is still written back as `plan_snapshot` through a
-`recordAppWorkoutPlan` mutation at Start. The snapshot can be built straight
-from the run. Results can infer a block only when the tick's climb matches
+The existing `session_workouts` write and durable mobile outbox store the run
+on the server. `recordAppWorkoutPlan` records its per-block climb snapshot at
+Start; the normal session-workout write reconstructs the same canonical snapshot
+if that response is lost. Empty freeform blocks remain in the snapshot. Results can infer a block only when the tick's climb matches
 exactly one block in that snapshot. A climb never queued, or queued in more
 than one block, gets `blockIndex: null`; warm-up and volume can contain the
 same climb. Exact attribution requires a queue-item/stage identity recorded
@@ -257,22 +310,35 @@ to the live session and appends the blocks behind the current queue, the same
 way "Add a block" adds a stage mid-session today (`add-workout-block.ts`: no
 `activateFirstWhenIdle`, so it does not move the wall on this phone, then the
 stages join the run; it shares Add to queue's crew race, see
-`docs/workout-stages.md`).
+`docs/workout-stages.md`). It shares "Add a block"'s rules too: at the tap it
+re-picks, from the pools it already fetched, every row whose climb is in the
+queue now (`queuedClimbUuids`), and arms the rest timer on its own blocks only
+when no workout waits for its Start (`armRestTimerForAddedBlock`). Permanent gym sessions reject attachment before
+changing the workout state; `createSession` also refuses `isPermanent` with
+`appWorkoutId`. Both paths return GraphQL `CONFLICT` with
+`reason: APP_WORKOUT_PERMANENT_SESSION`, and the card asks for a personal
+session. Expected workout conflicts and unavailable states receive typed
+GraphQL errors without reporting failed session starts to Sentry.
+
+If the session changes after the server commits Start or attachment, the card
+refetches the committed workout and offers Resume for the winning session.
+It does not append the old preview into the newly displayed session.
 
 ### The web page behind the universal link
 
 `packages/web/app/w/[workoutId]/page.tsx`, patterned on the `/join` page. It
-is deliberately dumb: title, the source app's name, an "Open in Boardsesh"
-button that fires the custom scheme, store links, and `robots: noindex`. It
-never shows the blocks or notes, because the page is reachable by anyone with
-the id and the workout may carry a coach's private notes.
+renders a generic heading, an "Open in Boardsesh" button that fires the custom
+scheme, store links, and `robots: noindex`. A browser-side public lookup adds
+the source app's name when available. This uses the visitor's real backend
+ingress for rate limits instead of grouping all SSR requests under the web
+server's address. It never shows the workout title, blocks or notes, because
+the page is reachable by anyone with the id and the workout may carry a coach's private notes.
 
-Android is the honest gap. `packages/mobile/app.config.ts` lists `/join`,
-`/preview`, `/b/`, `/auth/reset-password` and the board-name prefixes in its
-intent filters, so `https://www.boardsesh.com/w/...` opens Chrome until a
-native build adds a `{ host: 'www.boardsesh.com', pathPrefix: '/w/' }` entry.
-That is a release/next change. The launch link must use the `www` host: the
-apex answers `assetlinks.json` with a redirect, so Android cannot verify it and
+`packages/mobile/app.config.ts` includes
+`{ host: 'www.boardsesh.com', pathPrefix: '/w/' }` in the Android intent filter.
+Installed Android builds must include that native manifest change before
+`https://www.boardsesh.com/w/...` can open the app; an OTA update cannot add it.
+The launch link must use the `www` host: the apex answers `assetlinks.json` with a redirect, so Android cannot verify it and
 the manifest never claims it. Meanwhile the scheme works on every build,
 which is why the contract tells apps to try `appUrl` first and why the web
 page has a scheme button.
@@ -321,11 +387,15 @@ Jobs this design needs, and where the older candidates stand:
 
 | Job | State | Shape |
 | --- | --- | --- |
-| `session-inactivity` | Still the 60 s `setInterval` in `room-manager.ts`; tracked in #5542 | Scheduled every minute, fixed `singletonKey`. Workouts need its handler to close `started` workouts as `auto_closed` |
+| `session-inactivity` | Implemented in `app-workout-maintenance.ts` | Scheduled every minute on an exclusive queue; closes inactive sessions and attached `started` workouts as `auto_closed` |
 | Auth credential cleanup | Existing `startRefreshTokenCleanup` in `native-auth.ts`; #5544 | Coordinate migration with the maintained native/Garmin compatibility API. Better Auth and partner credential cleanup must follow the supported schema and retention policy proven in milestone 1 |
 | `integration-export` | Strava still fire-and-forget; #5545 | Not a workouts dependency |
-| `app-workout-expiry` | New, milestone 3 | Scheduled daily, moves `created` and `opened` past `expires_at` to `expired` |
-| webhook delivery | New, milestone 4 | Platform-wide; see the platform doc |
+| `app-workout-expiry` | Implemented in `app-workout-maintenance.ts` | Scheduled every minute; expires at most 1,000 `created`/`opened` workouts and prunes at most 1,000 expired receipts per run |
+| webhook delivery | Implemented | Platform-wide; see the platform doc |
+
+Session inactivity and workout expiry register independently at startup, each
+with a caught registration failure. A failed workout job registration cannot
+prevent backend startup or skip inactivity registration.
 
 Tests: the backend suite already boots Postgres, so pg-boss runs for real
 under Vitest. Tests that end a session drain the queue or assert on rows, so
@@ -339,11 +409,11 @@ no test depends on a timer.
 
 `endSession` in `packages/backend/src/graphql/resolvers/sessions/mutations.ts`
 ends a session and then fire-and-forgets `autoSyncSessionToIntegrations`.
-Workout completion goes in the same place but not the same way: inside the
-transaction that marks the session ended, if `app_workout_id` is set, the
-resolver moves the workout to `completed` (and, from milestone 4, enqueues a
-`workout.completed` event on the same transaction). Results are not
-materialized at that point; they are built on read.
+Workout completion belongs to `room-manager/session-discovery.ts`, where the
+session is actually ended. A session advisory fence serializes attachment and
+End; all participating users are locked before their connection rows. The same
+transaction completes attached workouts and writes the webhook outbox. Results
+are built on read, so subsequent tick edits and deletions remain visible.
 
 Abandoned sessions need no new machinery. `endStaleInactiveSessions` in
 `packages/backend/src/services/room-manager/room-manager.ts` already ends a
@@ -358,7 +428,10 @@ ticks on it and none of those may reach an app. `generateSessionSummary` is
 viewer-scoped too, but scoped to whoever is calling, which for an API request
 is an app, not a climber; the builder takes the user id explicitly. Each tick
 goes through the same serializer as the logbook feed, plus `blockIndex` from
-`plan_snapshot`.
+`plan_snapshot`. Session notes, timezone and the private board name are
+included only if `session.created_by_user_id === workout.user_id`; all three
+are `null` for another climber's workout in a shared session. Public board
+configuration remains available.
 
 Building on read means a tick the climber edits or deletes after End shows
 up correctly in the next `GET`, with no stored payload to invalidate.
@@ -367,22 +440,27 @@ up correctly in the next `GET`, with no stored payload to invalidate.
 
 ## Rolling it out
 
-The mobile side sits behind an `app-workouts` flag in
-`FEATURE_FLAG_DEFINITIONS` (`packages/mobile/src/providers/feature-flags-provider.tsx`),
-with `EXPO_PUBLIC_APP_WORKOUTS=true` as the static-build override, the same
-pair `strava-integration` uses. Off, the `/w/` route shows "not available
-yet". The backend needs no flag: until the `workouts:*` scopes are published
-in `@boardsesh/public-api`, no app can be granted them.
+The mobile side sits behind `app-workouts` in `FEATURE_FLAG_DEFINITIONS`
+(`packages/mobile/src/providers/feature-flags-provider.tsx`), default off,
+with `EXPO_PUBLIC_APP_WORKOUTS=true` as the static-build override. Off, the
+`/w/` route shows "not available yet" and does not stash the workout for a
+later sign-in. Backend REST and workout GraphQL paths follow
+`PARTNER_OAUTH_MODE`: `off` returns REST 404 or GraphQL `NOT_FOUND`; `hold`
+refuses them as temporarily unavailable, and `allowlist`/`open` serve the implemented contract subject to
+their usual authentication checks. REST calls require app bearer tokens and
+workout scopes; first-party GraphQL requires the climber's credential, except
+for the public app-name lookup. Publishing `workouts:*` in the shared contract
+does not itself activate production access.
 
-Milestone 3 PR order, after milestone 1 has shipped the OAuth core:
+Implementation and remaining launch gates:
 
-| Step | PR | Why this order |
+| Surface | Implemented | Remaining check |
 | --- | --- | --- |
-| 1 | `session-inactivity` on pg-boss (#5542) | Completion for abandoned sessions hangs off it |
-| 2 | `app_workouts` table, `/v1/workouts` routes, results builder, expiry job, `workouts:*` scopes in the contract | Testable end to end with `curl` before any mobile code |
-| 3 | Mobile `/w/` route, pending store, `AppWorkoutCard`, `appWorkoutId` on `createSession`, `recordAppWorkoutPlan`, web landing page | JS-only, ships by OTA |
-| 4 | Android `/w` intent filter | Native, rides release/next; the scheme covers Android until then |
-| 5 | `fourByFour` native, position-in-block in results | After #5380 |
+| Backend | Workout storage, REST routes, results, scopes, completion outbox and maintenance | Complete staged partner rollout and monitor worker registration before activation |
+| Mobile | Link route, persisted active association, card, atomic Start, attachment and plan recovery | Real-device sign-in, cold-start, Resume and session-change QA with the flag enabled |
+| Web | Public source app name, scheme/store links, no private workout content, `noindex` | Verify browser fallback and per-visitor lookup through deployed ingress |
+| Android | `/w/` intent filter in app config | Ship and install a native build containing it; validate verified links |
+| Advanced blocks | Honest freeform support | Native `fourByFour`, rep/set attribution and related pacing remain separate work |
 
 Acceptance for milestone 3:
 

@@ -50,8 +50,10 @@ vi.mock('next-auth/providers/credentials', () => ({
 
 // Mock native-oauth transfer verification
 const mockVerifyNativeOAuthTransferToken = vi.fn();
+const mockNativeOAuthTransferSpentMarker = vi.fn();
 vi.mock('../native-oauth-transfer', () => ({
   verifyNativeOAuthTransferToken: (...args: unknown[]) => mockVerifyNativeOAuthTransferToken(...args),
+  nativeOAuthTransferSpentMarker: (...args: unknown[]) => mockNativeOAuthTransferSpentMarker(...args),
 }));
 
 // Mock bcrypt
@@ -65,7 +67,10 @@ vi.mock('bcryptjs', () => ({
 
 // --- DB mock ---
 // We need to be able to swap return values per-test, so keep a mutable reference.
-const mockDbInsertValues = vi.fn(() => ({ onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }));
+type MockInsertChain = { onConflictDoNothing: () => unknown };
+const mockDbInsertValues = vi.fn((_values?: unknown): MockInsertChain => ({
+  onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+}));
 const mockDbUpdate = vi.fn();
 const mockDbSet = vi.fn();
 const mockDbUpdateWhere = vi.fn();
@@ -1034,13 +1039,26 @@ describe('CredentialsProvider.authorize — email/password', () => {
 // =============================================================================
 
 describe('CredentialsProvider.authorize — native-oauth', () => {
+  const spentMarker = { identifier: 'ba03-web-auth:abc', token: 'abc', expires: new Date('2026-04-03T12:07:05Z') };
+  const mockClaimReturning = vi.fn();
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockNativeOAuthTransferSpentMarker.mockReturnValue(spentMarker);
+    mockClaimReturning.mockResolvedValue([{ token: spentMarker.token }]);
+    mockDbInsertValues.mockImplementation(() => ({
+      onConflictDoNothing: vi.fn(() => ({ returning: mockClaimReturning })),
+    }));
 
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
     mockDbFrom.mockReturnValue({ where: mockDbWhere });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    mockDbInsertValues.mockImplementation(() => ({ onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }));
   });
 
   it('returns null when transferToken is missing', async () => {
@@ -1087,6 +1105,29 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
       image: '/img.png',
       nativeOAuthSourceGeneration: 0,
     });
+    expect(mockDbInsertValues).toHaveBeenCalledWith(spentMarker);
+  });
+
+  it('refuses a transfer token that was already spent', async () => {
+    const user = { id: 'user-1', email: 'user@example.com', name: 'Test', image: '/img.png' };
+    mockVerifyNativeOAuthTransferToken.mockReturnValue({ userId: 'user-1', nextPath: '/feed' });
+    mockDbLimit.mockResolvedValue([user]);
+    mockClaimReturning.mockResolvedValue([]);
+
+    const provider = getNativeOAuthProvider();
+    expect(await provider.authorize?.({ transferToken: 'valid.token' })).toBeNull();
+    expect(mockDbInsertValues).toHaveBeenCalledWith(spentMarker);
+  });
+
+  it('refuses when no spent marker can be derived', async () => {
+    const user = { id: 'user-1', email: 'user@example.com', name: 'Test', image: '/img.png' };
+    mockVerifyNativeOAuthTransferToken.mockReturnValue({ userId: 'user-1', nextPath: '/feed' });
+    mockDbLimit.mockResolvedValue([user]);
+    mockNativeOAuthTransferSpentMarker.mockReturnValue(null);
+
+    const provider = getNativeOAuthProvider();
+    expect(await provider.authorize?.({ transferToken: 'valid.token' })).toBeNull();
+    expect(mockDbInsertValues).not.toHaveBeenCalled();
   });
 });
 

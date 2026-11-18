@@ -1,0 +1,115 @@
+// Reviewed PostgreSQL catalog shapes for the partner lifecycle trigger closure after migration 0325.
+export default [
+  {
+    name: 'app_workouts',
+    shape: {
+      columns: [
+        ['id', 'text', true, '', '', null],
+        ['client_id', 'text', true, '', '', null],
+        ['user_id', 'text', true, '', '', null],
+        ['connection_id', 'text', true, '', '', null],
+        ['connection_generation', 'integer', true, '', '', null],
+        ['external_ref', 'text', true, '', '', null],
+        ['title', 'text', true, '', '', null],
+        ['spec', 'jsonb', true, '', '', null],
+        ['plan_snapshot', 'jsonb', false, '', '', null],
+        ['status', 'text', true, '', '', "'created'::text"],
+        ['session_id', 'text', false, '', '', null],
+        ['opened_by_mismatch', 'boolean', true, '', '', 'false'],
+        ['created_at', 'timestamp with time zone', true, '', '', 'now()'],
+        ['opened_at', 'timestamp with time zone', false, '', '', null],
+        ['started_at', 'timestamp with time zone', false, '', '', null],
+        ['completed_at', 'timestamp with time zone', false, '', '', null],
+        ['expires_at', 'timestamp with time zone', true, '', '', null],
+      ],
+      indexes: [
+        'CREATE INDEX app_workouts_app_user_status_idx ON public.app_workouts USING btree (client_id, user_id, status)',
+        'CREATE INDEX app_workouts_connection_status_idx ON public.app_workouts USING btree (connection_id, status)',
+        'CREATE INDEX app_workouts_expiry_idx ON public.app_workouts USING btree (status, expires_at)',
+        'CREATE UNIQUE INDEX app_workouts_external_ref_idx ON public.app_workouts USING btree (client_id, user_id, external_ref)',
+        'CREATE UNIQUE INDEX app_workouts_pkey ON public.app_workouts USING btree (id)',
+        'CREATE UNIQUE INDEX app_workouts_session_user_idx ON public.app_workouts USING btree (session_id, user_id)',
+      ],
+      constraints: [
+        'FOREIGN KEY (client_id) REFERENCES oauth_client(client_id) ON DELETE CASCADE',
+        'FOREIGN KEY (connection_id) REFERENCES oauth_connections(id) ON DELETE CASCADE',
+        'PRIMARY KEY (id)',
+        'FOREIGN KEY (session_id) REFERENCES board_sessions(id) ON DELETE RESTRICT',
+        'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE',
+      ],
+    },
+  },
+  {
+    name: 'oauth_client_webhooks',
+    shape: {
+      columns: [
+        ['client_id', 'text', true, '', '', null],
+        ['url', 'text', true, '', '', null],
+        ['events', 'text[]', true, '', '', null],
+        ['secret', 'text', true, '', '', null],
+        ['previous_secret', 'text', false, '', '', null],
+        ['previous_secret_expires_at', 'timestamp with time zone', false, '', '', null],
+        ['enabled', 'boolean', true, '', '', 'true'],
+        ['version', 'integer', true, '', '', '1'],
+        ['failing_since', 'timestamp with time zone', false, '', '', null],
+        ['disabled_reason', 'text', false, '', '', null],
+        ['failure_email_pending', 'boolean', true, '', '', 'false'],
+        ['updated_at', 'timestamp with time zone', true, '', '', 'now()'],
+        ['last_failure_at', 'timestamp with time zone', false, '', '', null],
+      ],
+      indexes: [
+        'CREATE UNIQUE INDEX oauth_client_webhooks_pkey ON public.oauth_client_webhooks USING btree (client_id)',
+      ],
+      constraints: [
+        'FOREIGN KEY (client_id) REFERENCES oauth_client(client_id) ON DELETE CASCADE',
+        'PRIMARY KEY (client_id)',
+      ],
+    },
+  },
+  {
+    name: 'oauth_subjects',
+    shape: {
+      columns: [
+        ['user_id', 'text', true, '', '', null],
+        ['client_id', 'text', true, '', '', null],
+        ['subject', 'text', true, '', '', null],
+        ['created_at', 'timestamp with time zone', true, '', '', 'now()'],
+      ],
+      indexes: [
+        'CREATE INDEX oauth_subjects_client_id_idx ON public.oauth_subjects USING btree (client_id)',
+        'CREATE UNIQUE INDEX oauth_subjects_subject_unique ON public.oauth_subjects USING btree (subject)',
+        'CREATE UNIQUE INDEX oauth_subjects_user_id_client_id_pk ON public.oauth_subjects USING btree (user_id, client_id)',
+      ],
+      constraints: [
+        'FOREIGN KEY (client_id) REFERENCES oauth_client(client_id) ON DELETE CASCADE',
+        'UNIQUE (subject)',
+        'PRIMARY KEY (user_id, client_id)',
+        'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE',
+      ],
+    },
+  },
+  {
+    name: 'partner_webhook_outbox',
+    shape: {
+      columns: [
+        ['id', 'uuid', true, '', '', 'gen_random_uuid()'],
+        ['client_id', 'text', true, '', '', null],
+        ['connection_id', 'text', true, '', '', null],
+        ['connection_generation', 'integer', true, '', '', null],
+        ['type', 'text', true, '', '', null],
+        ['subject', 'text', true, '', '', null],
+        ['workout_id', 'text', false, '', '', null],
+        ['occurred_at', 'timestamp with time zone', true, '', '', 'now()'],
+        ['relayed_at', 'timestamp with time zone', false, '', '', null],
+        ['endpoint_version', 'integer', true, '', '', '1'],
+      ],
+      indexes: [
+        'CREATE INDEX partner_webhook_outbox_pending_idx ON public.partner_webhook_outbox USING btree (occurred_at) WHERE (relayed_at IS NULL)',
+        'CREATE UNIQUE INDEX partner_webhook_outbox_pkey ON public.partner_webhook_outbox USING btree (id)',
+        "CREATE UNIQUE INDEX partner_webhook_revocation_generation_idx ON public.partner_webhook_outbox USING btree (connection_id, connection_generation) WHERE (type = 'connection.revoked'::text)",
+        "CREATE UNIQUE INDEX partner_webhook_workout_completion_idx ON public.partner_webhook_outbox USING btree (workout_id) WHERE (type = 'workout.completed'::text)",
+      ],
+      constraints: ['FOREIGN KEY (client_id) REFERENCES oauth_client(client_id) ON DELETE CASCADE', 'PRIMARY KEY (id)'],
+    },
+  },
+];

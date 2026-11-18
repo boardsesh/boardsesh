@@ -1,5 +1,6 @@
 import { ClimbActionsPressable } from '../../climb-actions/ClimbActionsPressable';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
+import { PartnerWorkoutEntry } from '../PartnerWorkoutEntry';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GestureScrollView } from 'react-native-gesture-handler';
@@ -661,6 +662,7 @@ export function InSessionView({
       ) : null}
 
       <SessionPresenceRow sessionId={sessionId} users={sessionUsers} />
+      <PartnerWorkoutEntry sessionId={sessionId} onEndCurrentSession={canEnd ? onRequestEndSession : undefined} />
 
       {/* Solo teaching row for the chrome's bare share glyph (tab mode). A glass
           square can't hold a label, so the affordance is explained here until a

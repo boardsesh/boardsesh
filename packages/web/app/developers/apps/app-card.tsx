@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
@@ -17,6 +17,7 @@ import type { OAuthClient } from '@boardsesh/shared-schema';
 import { PageCard } from '@/app/components/ui/page-shell';
 import { themeTokens } from '@/app/theme/theme-config';
 import CopyValue, { MONOSPACE_SX } from './copy-value';
+import WebhookDialog from './webhook-dialog';
 
 type AppCardProps = {
   app: OAuthClient;
@@ -65,6 +66,7 @@ function registeredDate(createdAt: string, locale: string): string {
 
 export default function AppCard({ app, locale, onEdit, onRotate, onDelete, onCopyFailed }: AppCardProps) {
   const { t } = useTranslation('developers');
+  const [webhooksOpen, setWebhooksOpen] = useState(false);
   const suspended = app.suspendedAt !== null;
   const confidential = app.tokenEndpointAuthMethod !== 'NONE';
   const headingId = `developer-app-${app.clientId}`;
@@ -169,6 +171,9 @@ export default function AppCard({ app, locale, onEdit, onRotate, onDelete, onCop
             <Button variant="outlined" startIcon={<EditOutlined />} onClick={() => onEdit(app)}>
               {t('app.actions.edit')}
             </Button>
+            <Button variant="outlined" onClick={() => setWebhooksOpen(true)}>
+              {t('webhooks.open')}
+            </Button>
             {confidential ? (
               <Button variant="outlined" startIcon={<KeyOutlined />} onClick={() => onRotate(app)}>
                 {t('app.actions.rotate')}
@@ -186,6 +191,9 @@ export default function AppCard({ app, locale, onEdit, onRotate, onDelete, onCop
           </Box>
         )}
       </Stack>
+      {webhooksOpen ? (
+        <WebhookDialog clientId={app.clientId} appName={app.name} onClose={() => setWebhooksOpen(false)} />
+      ) : null}
     </PageCard>
   );
 }

@@ -41,6 +41,7 @@
     "@boardsesh/playlist-generator": "workspace:*",
     "@boardsesh/playlists-react": "workspace:*",
     "@boardsesh/profile-stats": "workspace:*",
+    "@boardsesh/public-api": "workspace:*",
     "@boardsesh/queue": "workspace:*",
     "@boardsesh/queue-react": "workspace:*",
     "@boardsesh/queue-runtime": "workspace:*",

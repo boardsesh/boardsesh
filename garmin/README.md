@@ -145,7 +145,10 @@ The watch authenticates with a short-lived **mobile JWT**. To obtain one:
    verified `{ jwt, refreshToken, expiresAt, userId }` response in one versioned
    auth value, then resolves the active session and opens the climb screen.
 
-Tokens are refreshed on a `401` via `POST /auth/native/refresh`. The auth envelope
+Tokens are refreshed on a `401` via `POST /auth/native/refresh`. `/graphql`
+answers an expired access token with HTTP 200 and the code-less error
+`Authentication required to perform this operation` (the server reads the
+bearer as anonymous), so that reply takes the same refresh and one retry. The auth envelope
 binds credentials to the verified response owner, login scope and credential
 revision. Requests capture their own JWT and scope; an old request never retries
 with another login's credentials. Concurrent refreshes share only their own
@@ -181,14 +184,15 @@ queued ticks by itself (see the adoption rule below).
 before the first request and before FIT laps, counters or success feedback.
 Logical capacity and storage failures refuse new logs without evicting saved
 efforts. Each request owns an owner/scope/UUID lease. Nothing is ever deleted
-without either the server's acknowledgement or a copy in the dead-letter store.
+without either the server's acknowledgement, a copy in the dead-letter store,
+or the climber confirming a delete in the refused-ticks list.
 
 #### Where a tick can be
 
 | State | Storage value | Sent? | Leaves when |
 | --- | --- | --- | --- |
 | Queued under its owner | `bs.pendingTicks` `owners[<userId>]` | Only while that verified owner is signed in | The server acknowledges its exact UUID, or refuses it for good |
-| Refused (dead letter) | `bs.rejectedTicks` | Never again | Never; the watch has no way to list or clear it yet |
+| Refused (dead letter) | `bs.rejectedTicks` | Only after Retry, under the same owner | The signed-in owner picks Retry all (back to the end of their queue) or confirms Delete all; while the store is full, another account's climber may confirm Delete others' ticks |
 | On hold (pre-G2, owner unproven) | `bs.pendingTicks` `unowned` | Never, until adopted | The adoption rule below proves its owner |
 
 #### Server replies
@@ -205,7 +209,7 @@ own data dead-letter it; anything that would refuse every tick alike retries.
 | 2xx, no `errors`, `data.saveTick.uuid` equals the sent UUID (a UUID the account already saved answers the stored tick) | Acknowledged | Removes it, sends the next |
 | 2xx whose every error is `CLIMB_NOT_FOUND` (spray climb deleted or hidden), `TICK_UUID_CONFLICT` (another account owns the UUID), or the code-less `Invalid input: …` from `SaveTickInputSchema` | Refused | Moves it to the dead-letter store, sends the next |
 | HTTP 400 whose every error is yoga's `got invalid value null at "input.<field>"` for a field the watch copies from session state (`boardType`, `climbUuid`, `angle`, `isMirror`, `isBenchmark`) | Refused | Same |
-| Every other 400 (no body, unparseable body, unknown or missing input field, a constant field refused), `GRAPHQL_VALIDATION_FAILED` on the fixed query, SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets, an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
+| Every other 400 (no body, unparseable body, unknown or missing input field, a constant field refused), `GRAPHQL_VALIDATION_FAILED` on the fixed query, SDK transport codes (below 0), 401 after the client's own refresh, 404/429/5xx from the edge or server, masked `INTERNAL_SERVER_ERROR`, `SERVICE_UNAVAILABLE`, `UNAUTHENTICATED`, the code-less `Authentication required …` an expired token gets (after the client's own refresh and retry), an acknowledgement for a different UUID, and any shape not listed above | Retry | Keeps the tick in place and stops the drain |
 
 Auth failures and transport errors never dead-letter a tick: an unknown reply
 costs a stuck queue until the next drain, never a refused effort. Whether the
@@ -229,12 +233,26 @@ retries the rest ten times. Without a retry budget, the watch
 instead dead-letters only per-tick verdicts, including the code-less
 `Invalid input` and `TICK_UUID_CONFLICT`, and retries the schema-wide ones.
 
-Known gap: the watch sends no `boardUuid`, so a tick on a spray wall the
-climber reaches only through a share link, or a wall an admin hid, gets
-`CLIMB_NOT_FOUND` and is dead-lettered although the climb exists. Before this
-change it blocked the queue instead. Sending `boardUuid` needs the session
-state endpoint to carry it and is a follow-up. This gap is why a dead-lettered
-entry may be a real send, and why the store never drops one.
+Unlisted spray walls are not loggable from the watch, by decision (#7636,
+decision 1). A wall's `?wall=` uuid is its only capability, the one `saveTick`
+checks as `boardUuid`, and session state never carries an unlisted spray
+wall's uuid: a session invite is not the wall's link. The same endpoint checks
+the current climb without the capability, so it returns `climb: null` for such
+a wall and the watch cannot log there at all. The climber logs those climbs on
+the phone, which holds the link.
+
+`boardUuid` on the watch is a forward-compatible field that no server fills
+today. The watch copies it from session state into every tick when the state
+carries a 36-character string, and leaves the key out otherwise (the input
+schema refuses a null). It is there so a later server change needs no new
+watch build; reopening the decision would take both a stored per-member link
+standing and that same uuid passed to the session-state climb check.
+
+So a tick only reaches `CLIMB_NOT_FOUND` when a wall's or climb's visibility
+changes between logging and the drain (made unlisted, a gym membership ended),
+or when an admin hid the wall, which a uuid does not reopen for anyone but its
+owner. That is why a dead-lettered entry may be a real send, and why the store
+never drops one on its own.
 
 `bs.rejectedTicks` is `{ version: 1, entries: [{ owner, tick, reason }] }`,
 oldest first, capped at 25 entries (`BuildConfig.REJECTED_TICK_MAX`). A tick is
@@ -242,8 +260,45 @@ about 500 bytes, so a full store is roughly 15KB of its own 32KB value. Nothing
 is ever evicted. When the store is full, the next refusal is treated as "retry
 later": the tick stays at the head of the queue and the drain stops there, as
 every refusal did before this change. The summary then says the store is full.
-Clearing or retrying refused ticks needs an on-watch list, which is a
-follow-up.
+The climber empties it from the watch: Session menu (MENU) → Refused ticks,
+shown when the signed-in owner has any, or when the store is full with other
+accounts' entries (then the row's count reads "N from other accounts"). The
+list has Retry all and Delete all (when the owner has entries), Delete others'
+ticks (only while the store is full, below), and one row per refused tick of
+the owner (status, local time, the server's reason).
+
+- **Retry all** moves up to 5 of the owner's refused ticks (oldest first) back
+  to the END of their queue, unchanged and with the same UUIDs, then starts a
+  drain. It never fills the last 5 queue slots: a drain dead-letters only one
+  tick per refusal reason, so a batch the server still refuses must not block
+  new logs. `TICK_UUID_CONFLICT` entries never move, because another account
+  owns that UUID and a resend can only be refused again; Delete clears them. The outbox write comes first, so a failure in
+  between leaves a copy in both stores; the next retry only drops the stale
+  entry. A resent UUID cannot become a second logbook entry: `saveTick`
+  answers a UUID the account already saved with the stored tick. A tick the
+  server refuses again returns to the list, once. Use it after a server-side
+  fix (a climb restored, a wall made visible again) or after re-pairing the
+  account whose ticks they are; a re-pair alone retries nothing.
+- **Delete all** asks first, then drops the owner's refused ticks. It is the
+  only deletion without a server acknowledgement.
+
+Both act only on the signed-in owner's entries. Another account's refused
+ticks stay until that account signs in on the watch again, and they still
+count toward the 25-entry cap. The phone has no channel to the watch's
+storage, so neither action exists on the phone.
+
+- **Delete others' ticks** (#7636 decision 2) is the exit when other accounts'
+  entries keep the store full. A full store keeps the signed-in climber's next
+  refusal at the head of their queue, the drain stops there, and once the
+  queue holds 25 ticks new logs are refused; the only other way out is
+  reinstalling the app, which also wipes every account's queued ticks. The row
+  is offered only while the store holds `REJECTED_TICK_MAX` entries and other
+  accounts own some, and it names their count. It has its own confirmation
+  ("Delete other accounts' refused ticks? They can't be recovered."). Yes
+  removes only those accounts' already-refused entries from `bs.rejectedTicks`
+  and re-checks the cap at press time. It never touches `bs.pendingTicks` for
+  any account, and never the signed-in owner's entries. Delete all stays
+  owner-only.
 
 #### On-hold ticks from before G2 (#7445)
 
@@ -380,7 +435,7 @@ garmin/
     state/PollController.mc  3s foreground poll w/ backoff + optimistic reconcile
     state/TickQueue.mc    Reply classification, storage adapters, scoped flusher
     state/OwnedTickOutbox.mc  PURE owner-partitioned outbox + on-hold adoption
-    state/RejectedTicks.mc    PURE dead-letter store for refused ticks
+    state/RejectedTicks.mc    PURE dead-letter store for refused ticks (+ requeue/delete)
     state/LegacyTickProof.mc  PURE pre-G2 token subject/issue-time reader
     state/TickLogger.mc   Live log: persist, send once, settle the reply
     recording/ActivityController.mc  FIT recording (start/lap/save/discard)

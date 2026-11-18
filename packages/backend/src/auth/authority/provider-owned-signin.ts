@@ -27,14 +27,12 @@ import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 import { readFirstPartySession, type FirstPartySession } from './session-reader';
 import { readIdentityAuthority, revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import { providerCredentialHash, type ProviderCandidateCredential } from './provider-security-result';
+import { providerDatabaseNow, providerTokenHash, ProviderSecurityRefusal } from './provider-security-context';
 import {
-  admitProviderActorInTransaction,
-  captureProviderActor,
-  providerDatabaseNow,
-  providerTokenHash,
-  ProviderSecurityRefusal,
-  type CapturedProviderActor,
-} from './provider-security-context';
+  admitBrowserBindingActorInTransaction,
+  captureBrowserBindingActor,
+  type CapturedBrowserBindingActor,
+} from './provider-binding-actor';
 import {
   captureProviderSecurityRuntime,
   withProviderSecurityAuthority,
@@ -54,7 +52,11 @@ const hash = (parts: readonly unknown[]) => createHash('sha256').update(JSON.str
 const flowId = (token: string) => hash(['provider-owned-signin-flow-v1', token]);
 const preparationId = (token: string) => hash(['provider-owned-signin-preparation-v1', token]);
 
-function actorBinding(actor: CapturedProviderActor, session: FirstPartySession, cursor: BrowserBindingCursor): string {
+function actorBinding(
+  actor: CapturedBrowserBindingActor,
+  session: FirstPartySession,
+  cursor: BrowserBindingCursor,
+): string {
   return hash([
     'provider-owned-signin-actor-v1',
     actor.input.kind,
@@ -123,7 +125,7 @@ function capturedBound(input: SigninBound): SigninBound {
 async function browserLoginIntent(
   transaction: AuthorityTransaction,
   authority: IdentityAuthorityReceipt,
-  actor: CapturedProviderActor,
+  actor: CapturedBrowserBindingActor,
   browserIntentToken: string,
   cursor: BrowserBindingCursor,
   now: Date,
@@ -167,7 +169,7 @@ async function initialFlow(
   transaction: AuthorityTransaction,
   input: SigninBound,
   authority: IdentityAuthorityReceipt,
-  actor: CapturedProviderActor,
+  actor: CapturedBrowserBindingActor,
   session: FirstPartySession,
   cursor: BrowserBindingCursor,
 ) {
@@ -205,7 +207,7 @@ export async function beginOwnedProviderSignin(
   input: Payload<'signin-intent'>,
 ) {
   const runtime = captureProviderSecurityRuntime(runtimeInput);
-  const actor = captureProviderActor(input.actor, runtime.legacySecret);
+  const actor = captureBrowserBindingActor(input.actor, runtime.legacySecret);
   const { provider, flowHash, nonceHash } = input;
   if (!runtime.methods.configuredProviders.includes(provider))
     throw new ProviderSecurityRefusal('denied', 'provider_unavailable');
@@ -223,7 +225,7 @@ export async function beginOwnedProviderSignin(
   const intentToken = randomBytes(32).toString('base64url');
   const bound = { actor: actor.input, intentToken, browserIntentToken: browser.intentToken, flowHash, nonceHash };
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
-    const { session, cursor } = await admitProviderActorInTransaction(transaction, authority, actor);
+    const { session, cursor } = await admitBrowserBindingActorInTransaction(transaction, authority, actor);
     const now = await providerDatabaseNow(transaction);
     const login = await browserLoginIntent(transaction, authority, actor, browser.intentToken, cursor, now);
     const expiresAt = new Date(
@@ -260,7 +262,7 @@ export async function prepareOwnedProviderSignin(
 ) {
   const runtime = captureProviderSecurityRuntime(runtimeInput);
   const bound = capturedBound(input);
-  const actor = captureProviderActor(bound.actor, runtime.legacySecret);
+  const actor = captureBrowserBindingActor(bound.actor, runtime.legacySecret);
   const providerProof = Object.freeze({ ...input.providerProof });
   const beforeVerification = await readIdentityAuthority(database, runtime.qualification);
   const google =
@@ -280,7 +282,7 @@ export async function prepareOwnedProviderSignin(
     const observed = await identity.findProvider(providerProof.provider, providerProof.subject);
     for (const userId of [...new Set([actor.input.expectedUserId, ...(observed ? [observed.userId] : [])])].sort())
       await lockSubjectRow(transaction, userId);
-    const { session, cursor } = await admitProviderActorInTransaction(transaction, authority, actor);
+    const { session, cursor } = await admitBrowserBindingActorInTransaction(transaction, authority, actor);
     const row = await initialFlow(transaction, bound, authority, actor, session, cursor);
     if (row.consumedAt !== null) throw new ProviderSecurityRefusal('denied', 'replayed');
     if (
@@ -380,7 +382,7 @@ export async function prepareOwnedProviderSignin(
 async function validateSigninCandidate(
   preparation: ProviderOwnedSigninPreparation,
   candidate: ProviderCandidateCredential,
-  actor: CapturedProviderActor,
+  actor: CapturedBrowserBindingActor,
   now: Date,
 ) {
   if (candidate.kind !== actor.input.kind) throw new ProviderSecurityRefusal('denied', 'invalid_proof');
@@ -418,7 +420,7 @@ export async function finalizeOwnedProviderSignin(
 ) {
   const runtime = captureProviderSecurityRuntime(runtimeInput);
   const bound = capturedBound(input);
-  const actor = captureProviderActor(bound.actor, runtime.legacySecret);
+  const actor = captureBrowserBindingActor(bound.actor, runtime.legacySecret);
   const preparation = providerOwnedSigninPreparationSchema.parse(input.preparation);
   const { preparationToken } = input;
   const candidate = Object.freeze({ ...input.candidate });
@@ -458,7 +460,7 @@ export async function finalizeOwnedProviderSignin(
         throw new ProviderSecurityRefusal('identity_changed', 'invalid_proof');
       session = previous.session;
       cursor = selected.cursor;
-    } else ({ session, cursor } = await admitProviderActorInTransaction(transaction, authority, actor));
+    } else ({ session, cursor } = await admitBrowserBindingActorInTransaction(transaction, authority, actor));
     const row = await initialFlow(transaction, bound, authority, actor, session, cursor);
     const [prepared] = await transaction
       .select()
@@ -548,11 +550,11 @@ export async function abortOwnedProviderSignin(
 ) {
   const runtime = captureProviderSecurityRuntime(runtimeInput);
   const bound = capturedBound(input);
-  const actor = captureProviderActor(bound.actor, runtime.legacySecret);
+  const actor = captureBrowserBindingActor(bound.actor, runtime.legacySecret);
   const { preparationToken } = input;
   const preparation = input.preparation ? providerOwnedSigninPreparationSchema.parse(input.preparation) : null;
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
-    const { session, cursor } = await admitProviderActorInTransaction(transaction, authority, actor);
+    const { session, cursor } = await admitBrowserBindingActorInTransaction(transaction, authority, actor);
     const row = await initialFlow(transaction, bound, authority, actor, session, cursor);
     const now = await providerDatabaseNow(transaction);
     if (!row.consumedAt) await consume(transaction, row, now);

@@ -46,7 +46,7 @@ function holdWeights(state: WallSwapState, reduceMotion: boolean): Map<number, n
     return shown;
   }
   const arriving = CLIMBS.get(state.from + state.dir) ?? new Set<number>();
-  const shared = wallSwapSharedWeight(state, reduceMotion);
+  const shared = wallSwapSharedWeight(state, reduceMotion, WALL_SWAP);
   for (const hold of leaving) shown.set(hold, arriving.has(hold) ? shared : state.outgoing);
   for (const hold of arriving) if (!leaving.has(hold)) shown.set(hold, state.incoming);
   return shown;
@@ -71,19 +71,19 @@ function harness(reduceMotion = false) {
     reduceMotion,
     commitDistance: SWIPE_THRESHOLD,
   };
-  let state: WallSwapState = wallSwapRest(0, input);
+  let state: WallSwapState = wallSwapRest(0, input, WALL_SWAP);
   const frames: Frame[] = [];
   const apply = (changes: Partial<WallSwapInput>) => {
     input = { ...input, ...changes };
-    const step = stepWallSwap(state, input);
+    const step = stepWallSwap(state, input, WALL_SWAP);
     state = step.state;
     if (step.startSwap) input = { ...input, swapMs: 0 };
-    if (step.startSettle) input = { ...input, settleMs: 0 };
+    if (step.startSettleMs !== null) input = { ...input, settleMs: 0 };
     frames.push({
       outgoing: state.outgoing,
       incoming: state.incoming,
-      shared: wallSwapSharedWeight(state, input.reduceMotion),
-      position: wallSwapPagePosition(state),
+      shared: wallSwapSharedWeight(state, input.reduceMotion, WALL_SWAP),
+      position: wallSwapPagePosition(state, WALL_SWAP),
       holds: holdWeights(state, input.reduceMotion),
     });
     return state;
@@ -101,7 +101,7 @@ function harness(reduceMotion = false) {
     tick: (ms = 16) =>
       apply({
         swapMs: Math.min(input.swapMs + ms, swapClockMs(state)),
-        settleMs: Math.min(input.settleMs + ms, WALL_SWAP.settleMs),
+        settleMs: Math.min(input.settleMs + ms, state.settleDurationMs),
       }),
     reset: (anchor: number) => apply({ anchor, offset: 0, fling: 0, reset: input.reset + 1 }),
     state: () => state,
@@ -133,10 +133,10 @@ const CAUGHT_CARRY = 300;
 
 describe('wall swap drag', () => {
   it('dims outgoing-only holds linearly to 40% at the commit point and holds them there', () => {
-    expect(dragOutgoingWeight(0, SWIPE_THRESHOLD, false)).toBe(1);
-    expect(dragOutgoingWeight(-SWIPE_THRESHOLD / 2, SWIPE_THRESHOLD, false)).toBeCloseTo(0.7, 10);
-    expect(dragOutgoingWeight(SWIPE_THRESHOLD, SWIPE_THRESHOLD, false)).toBeCloseTo(0.4, 10);
-    expect(dragOutgoingWeight(-SWIPE_THRESHOLD * 3, SWIPE_THRESHOLD, false)).toBeCloseTo(0.4, 10);
+    expect(dragOutgoingWeight(0, SWIPE_THRESHOLD, false, WALL_SWAP)).toBe(1);
+    expect(dragOutgoingWeight(-SWIPE_THRESHOLD / 2, SWIPE_THRESHOLD, false, WALL_SWAP)).toBeCloseTo(0.7, 10);
+    expect(dragOutgoingWeight(SWIPE_THRESHOLD, SWIPE_THRESHOLD, false, WALL_SWAP)).toBeCloseTo(0.4, 10);
+    expect(dragOutgoingWeight(-SWIPE_THRESHOLD * 3, SWIPE_THRESHOLD, false, WALL_SWAP)).toBeCloseTo(0.4, 10);
   });
 
   it('shows nothing incoming and leans the pair toward the finger', () => {
@@ -144,11 +144,11 @@ describe('wall swap drag', () => {
     swap.drag(-40);
     expect(swap.state()).toMatchObject({ from: 0, dir: 1, incoming: 0 });
     expect(swap.state().outgoing).toBeCloseTo(0.7, 10);
-    expect(wallSwapPagePosition(swap.state())).toBe(WALL_SWAP.pairLean);
+    expect(wallSwapPagePosition(swap.state(), WALL_SWAP)).toBe(WALL_SWAP.pairLean);
     for (const offset of [-20, -4, 0, 10, 30, 60, SWIPE_THRESHOLD]) swap.drag(offset);
     expect(swap.state()).toMatchObject({ dir: -1, incoming: 0 });
     expect(swap.state().outgoing).toBeCloseTo(0.4, 10);
-    expect(wallSwapPagePosition(swap.state())).toBe(-WALL_SWAP.pairLean);
+    expect(wallSwapPagePosition(swap.state(), WALL_SWAP)).toBe(-WALL_SWAP.pairLean);
   });
 
   it('eases a jump across the middle instead of snapping the other side’s dim', () => {
@@ -165,23 +165,23 @@ describe('wall swap drag', () => {
     const swap = harness();
     for (const offset of [-30, -60, -90, -60, -20, -4, 0]) swap.drag(offset);
     expect(swap.frames.map((frame) => frame.outgoing)).toEqual(
-      [-30, -60, -90, -60, -20, -4, 0].map((offset) => dragOutgoingWeight(offset, SWIPE_THRESHOLD, false)),
+      [-30, -60, -90, -60, -20, -4, 0].map((offset) => dragOutgoingWeight(offset, SWIPE_THRESHOLD, false, WALL_SWAP)),
     );
     expect(swap.state()).toMatchObject({ dir: 0, outgoing: 1, incoming: 0 });
-    expect(wallSwapPagePosition(swap.state())).toBe(0);
+    expect(wallSwapPagePosition(swap.state(), WALL_SWAP)).toBe(0);
   });
 });
 
 describe('wall swap commit', () => {
   it('fades outgoing-only out over 0-120 ms and incoming-only in over 60-200 ms', () => {
-    const timing = swapTiming(0.4, false);
-    expect(timing).toEqual({ durationMs: 200, outgoingEndMs: 120, incomingStartMs: 60 });
-    expect(swapWeightsAt(0, 0.4, 0, timing)).toEqual({ outgoing: 0.4, incoming: 0 });
-    expect(swapWeightsAt(60, 0.4, 0, timing).incoming).toBe(0);
-    expect(swapWeightsAt(60, 0.4, 0, timing).outgoing).toBeCloseTo(0.4 * (1 - easeIn(0.5)), 10);
-    expect(swapWeightsAt(120, 0.4, 0, timing).outgoing).toBe(0);
-    expect(swapWeightsAt(130, 0.4, 0, timing).incoming).toBeCloseTo(easeOut(70 / 140), 10);
-    expect(swapWeightsAt(200, 0.4, 0, timing)).toEqual({ outgoing: 0, incoming: 1 });
+    const timing = swapTiming(0.4, false, WALL_SWAP);
+    expect(timing).toMatchObject({ durationMs: 200, outgoingEndMs: 120, incomingStartMs: 60 });
+    expect(swapWeightsAt(0, 0.4, 0, timing, WALL_SWAP)).toEqual({ outgoing: 0.4, incoming: 0 });
+    expect(swapWeightsAt(60, 0.4, 0, timing, WALL_SWAP).incoming).toBe(0);
+    expect(swapWeightsAt(60, 0.4, 0, timing, WALL_SWAP).outgoing).toBeCloseTo(0.4 * (1 - easeIn(0.5, WALL_SWAP)), 10);
+    expect(swapWeightsAt(120, 0.4, 0, timing, WALL_SWAP).outgoing).toBe(0);
+    expect(swapWeightsAt(130, 0.4, 0, timing, WALL_SWAP).incoming).toBeCloseTo(easeOut(70 / 140, WALL_SWAP), 10);
+    expect(swapWeightsAt(200, 0.4, 0, timing, WALL_SWAP)).toEqual({ outgoing: 0, incoming: 1 });
   });
 
   it('starts at commit on its own clock, whatever the pager does next', () => {
@@ -201,10 +201,10 @@ describe('wall swap commit', () => {
   it.each([0.4, 0.55, 0.88, 1])(
     'never shows incoming-only holds while outgoing-only holds are above 40%% (starting at %s)',
     (startOutgoing) => {
-      const timing = swapTiming(startOutgoing, false);
+      const timing = swapTiming(startOutgoing, false, WALL_SWAP);
       expect(timing.durationMs).toBe(200);
       for (let elapsed = 0; elapsed <= 200; elapsed += 0.5) {
-        const { outgoing, incoming } = swapWeightsAt(elapsed, startOutgoing, 0, timing);
+        const { outgoing, incoming } = swapWeightsAt(elapsed, startOutgoing, 0, timing, WALL_SWAP);
         if (incoming > 0) expect(outgoing).toBeLessThanOrEqual(WALL_SWAP.dimFloor);
         // The board is never empty of outgoing and incoming holds at once.
         expect(Math.max(outgoing, incoming)).toBeGreaterThan(0);
@@ -213,10 +213,10 @@ describe('wall swap commit', () => {
   );
 
   it('waits for a weakly dimmed flick to reach 40% before bringing anything in', () => {
-    const timing = swapTiming(dragOutgoingWeight(-20, SWIPE_THRESHOLD, false), false);
+    const timing = swapTiming(dragOutgoingWeight(-20, SWIPE_THRESHOLD, false, WALL_SWAP), false, WALL_SWAP);
     expect(timing.incomingStartMs).toBeGreaterThan(60);
     expect(timing.incomingStartMs).toBeLessThan(120);
-    expect(swapTiming(1, false).incomingStartMs).toBeCloseTo(88, 0);
+    expect(swapTiming(1, false, WALL_SWAP).incomingStartMs).toBeCloseTo(88, 0);
   });
 });
 
@@ -246,7 +246,7 @@ describe('wall swap interruptions', () => {
     expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: false, settling: true });
     expect(swap.state().outgoing).toBe(before.incoming);
     expect(swap.state().incoming).toBe(before.outgoing);
-    expect(wallSwapPagePosition(swap.state())).toBe(1 - WALL_SWAP.pairLean);
+    expect(wallSwapPagePosition(swap.state(), WALL_SWAP)).toBe(1 - WALL_SWAP.pairLean);
     for (const offset of [120, 140, 160, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170]) {
       swap.drag(offset);
       swap.tick(8);
@@ -286,7 +286,7 @@ describe('wall swap interruptions', () => {
     for (let frame = 0; frame < 20; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 1, dir: -1, swapping: false, settling: true, outgoing: 1 });
     for (let frame = 0; frame < 16; frame++) swap.tick(8);
-    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(140, SWIPE_THRESHOLD, false), 10);
+    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(140, SWIPE_THRESHOLD, false, WALL_SWAP), 10);
     expect(largestStep(swap.frames)).toBeLessThan(JUMP);
   });
 
@@ -300,7 +300,7 @@ describe('wall swap interruptions', () => {
     swap.land(120);
     expect(swap.state()).toMatchObject({ from: 1, dir: -1, settling: true, outgoing: 1, incoming: 0 });
     for (let frame = 0; frame < 16; frame++) swap.tick(8);
-    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(120, SWIPE_THRESHOLD, false), 10);
+    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(120, SWIPE_THRESHOLD, false, WALL_SWAP), 10);
     expect(largestStep(swap.frames)).toBeLessThan(JUMP);
   });
 
@@ -341,7 +341,7 @@ describe('wall swap interruptions', () => {
     for (let frame = 0; frame < 24; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 1, dir: 1, swapping: false, settling: true, outgoing: 1 });
     for (let frame = 0; frame < 16; frame++) swap.tick(8);
-    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(-30, SWIPE_THRESHOLD, false), 10);
+    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(-30, SWIPE_THRESHOLD, false, WALL_SWAP), 10);
     expect(largestStep(swap.frames.slice(-20))).toBeLessThan(JUMP);
   });
 
@@ -356,7 +356,7 @@ describe('wall swap interruptions', () => {
     swap.drag(-41);
     expect(swap.state().dir).toBe(1);
     for (let frame = 0; frame < 16; frame++) swap.tick(8);
-    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(-41, SWIPE_THRESHOLD, false), 10);
+    expect(swap.state().outgoing).toBeCloseTo(dragOutgoingWeight(-41, SWIPE_THRESHOLD, false, WALL_SWAP), 10);
     expect(largestStep(swap.frames.slice(1))).toBeLessThan(JUMP);
   });
 
@@ -380,7 +380,7 @@ describe('wall swap interruptions', () => {
       for (let frame = 0; frame < 14; frame++) swap.tick();
       const { from } = swap.state();
       for (const frame of swap.frames) expect(Math.abs(frame.position - Math.round(frame.position))).toBeLessThan(0.5);
-      expect(Math.abs(wallSwapPagePosition(swap.state()) - from)).toBeLessThanOrEqual(WALL_SWAP.pairLean);
+      expect(Math.abs(wallSwapPagePosition(swap.state(), WALL_SWAP) - from)).toBeLessThanOrEqual(WALL_SWAP.pairLean);
     }
   });
 });
@@ -521,10 +521,9 @@ describe('wall swap reversed by a commit mid-swap', () => {
     const { before, after } = lastTwo(swap.frames);
     expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
     expect(after.holds).toEqual(before.holds);
-    expect(swap.state()).toMatchObject({ swapping: true, from: 1, dir: -1, durationMs: 120 });
-    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ swapping: true, from: 1, dir: -1, durationMs: 240 });
     swap.land();
-    swap.tick(8);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
     expect(swap.frames.every((frame) => frame.shared === 1)).toBe(true);
   });
@@ -542,7 +541,7 @@ describe('wall swap reversed by a commit mid-swap', () => {
     expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: -1, from: 1, dir: -1 });
     expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
     expect(after.holds).toEqual(before.holds);
-    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
   });
 
@@ -595,7 +594,7 @@ describe('wall swap onward commit mid-swap', () => {
 
   it('early: the skipped climb starts at 40%, the old climb’s own holds drop, nothing else moves', () => {
     const { swap, before, after, commitIndex } = onward(30, 10);
-    expect(before.outgoing).toBeCloseTo(0.4 * (1 - easeIn(30 / 120)), 10);
+    expect(before.outgoing).toBeCloseTo(0.4 * (1 - easeIn(30 / 120, WALL_SWAP)), 10);
     expect(before.incoming).toBe(0);
     expect(swap.state()).toMatchObject({
       from: 1,
@@ -746,8 +745,8 @@ describe('wall swap onward commit mid-swap', () => {
   it('under Reduce Motion the dissolve starts from the same 40% state, shared holds whole', () => {
     // No drag dim: page 0 is still bright when the onward fling commits.
     const { swap, before, after } = onward(40, 8, true);
-    expect(before.outgoing).toBeCloseTo(1 - easeIn(40 / 72), 10);
-    expect(swap.state()).toMatchObject({ from: 1, dir: 1, incoming: 0, durationMs: 120 });
+    expect(before.outgoing).toBeCloseTo(1 - 40 / 240, 10);
+    expect(swap.state()).toMatchObject({ from: 1, dir: 1, incoming: 0, durationMs: 240 });
     expect(swap.state().outgoing).toBe(WALL_SWAP.dimFloor);
     // Hold 3 is shared by pages 0 and 1 (whole) and page 1's own toward page 2;
     // hold 6 is shared by pages 1 and 2, so it is whole.
@@ -755,10 +754,10 @@ describe('wall swap onward commit mid-swap', () => {
       1: -before.outgoing,
       2: -before.outgoing,
       3: WALL_SWAP.dimFloor - 1,
-      5: WALL_SWAP.dimFloor,
-      6: 1,
+      5: WALL_SWAP.dimFloor - before.incoming,
+      6: 1 - before.incoming,
     });
-    for (let frame = 0; frame < 15; frame++) swap.tick(8);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 2, dir: 0, outgoing: 1, swapping: false });
     expect(swap.frames.every((frame) => frame.shared === 1)).toBe(true);
   });
@@ -771,38 +770,62 @@ describe('wall swap under Reduce Motion', () => {
     expect(swap.state()).toMatchObject({ outgoing: 1, incoming: 0 });
   });
 
-  it('compresses the same swap into a 120 ms dissolve', () => {
-    const timing = swapTiming(1, true);
-    expect(timing.durationMs).toBe(120);
-    expect(timing.outgoingEndMs).toBe(72);
-    expect(timing.incomingStartMs).toBeGreaterThanOrEqual(36);
-    expect(swapWeightsAt(72, 1, 0, timing).outgoing).toBe(0);
-    expect(swapWeightsAt(120, 1, 0, timing).incoming).toBe(1);
+  it.each([60, 120])('crossfades linearly over 240 ms with weight steps under 0.08 at %i Hz', (frameRate) => {
     const swap = harness(true);
     swap.drag(-20);
-    // The fling's spring ends at once under Reduce Motion: it can land first.
-    swap.commit(1);
-    swap.land();
-    expect(swap.state()).toMatchObject({ swapping: true, from: 0, dir: 1, outgoing: 1 });
-    for (let frame = 0; frame < 8; frame++) swap.tick();
+    swap.commitLanded(1);
+    expect(swap.state()).toMatchObject({ swapping: true, from: 0, dir: 1, outgoing: 1, durationMs: 240 });
+    const frameMs = 1000 / frameRate;
+    for (let frame = 1; frame * frameMs < 240; frame++) {
+      swap.tick(frameMs);
+      expect(swap.state().outgoing).toBeCloseTo(1 - (frame * frameMs) / 240, 10);
+      expect(swap.state().incoming).toBeCloseTo((frame * frameMs) / 240, 10);
+    }
+    swap.tick(frameMs);
     expect(swap.state()).toMatchObject({ swapping: false, from: 1, dir: 0, outgoing: 1, incoming: 0 });
+    expect(largestStep(swap.frames)).toBeLessThanOrEqual(0.08);
+  });
+
+  it('settles and leads in linearly after an interrupted dissolve', () => {
+    const swap = harness(true);
+    swap.drag(-90);
+    swap.commit(1);
+    swap.tick(80);
+    swap.land(140);
+    const shown = swap.drag(150);
+    expect(shown).toMatchObject({ from: 1, dir: -1, settling: true, settleDurationMs: 240 });
+
+    const halfway = swap.tick(120);
+    expect(halfway.outgoing).toBeCloseTo((shown.outgoing + 1) / 2, 10);
+    expect(halfway.incoming).toBeCloseTo(shown.incoming / 2, 10);
+    expect(swap.commit(1)).toMatchObject({ from: 1, dir: -1, leadMs: 240 });
+    const leadHalfway = swap.tick(120);
+    expect(leadHalfway.outgoing).toBeCloseTo((halfway.outgoing + 1) / 2, 10);
+    expect(leadHalfway.incoming).toBeCloseTo(halfway.incoming / 2, 10);
+    expect(swap.tick(120)).toMatchObject({ from: 1, dir: 1, outgoing: 1, incoming: 0 });
+    swap.land();
+    expect(swap.tick(240)).toMatchObject({ from: 2, dir: 0, outgoing: 1, incoming: 0, swapping: false });
   });
 
   it('works out a landed fling’s direction from the anchor it left', () => {
     const swap = harness(true);
     const before = swap.state();
-    const step = stepWallSwap(before, {
-      anchor: -1,
-      offset: 0,
-      fling: 0,
-      steps: 1,
-      reset: 0,
-      swapMs: 0,
-      settleMs: 0,
-      reduceMotion: true,
-      commitDistance: SWIPE_THRESHOLD,
-    });
-    expect(step).toMatchObject({ startSwap: true, state: { from: 0, dir: -1, durationMs: 120 } });
+    const step = stepWallSwap(
+      before,
+      {
+        anchor: -1,
+        offset: 0,
+        fling: 0,
+        steps: 1,
+        reset: 0,
+        swapMs: 0,
+        settleMs: 0,
+        reduceMotion: true,
+        commitDistance: SWIPE_THRESHOLD,
+      },
+      WALL_SWAP,
+    );
+    expect(step).toMatchObject({ startSwap: true, state: { from: 0, dir: -1, durationMs: 240 } });
   });
 });
 
@@ -811,7 +834,9 @@ describe('wall swap shared holds', () => {
   const holdThree = (frame: Frame) => frame.holds.get(3);
 
   it('are whole at rest, follow the outgoing dim while dragging and never go below 40%', () => {
-    expect(wallSwapSharedWeight(wallSwapRest(0, { anchor: 0, steps: 0, reset: 0 }), false)).toBe(1);
+    expect(wallSwapSharedWeight(wallSwapRest(0, { anchor: 0, steps: 0, reset: 0 }, WALL_SWAP), false, WALL_SWAP)).toBe(
+      1,
+    );
     const swap = harness();
     for (const offset of [-8, -20, -40, -60, -SWIPE_THRESHOLD, -SWIPE_THRESHOLD * 2, -40, 0]) swap.drag(offset);
     expect(swap.frames.map((frame) => frame.shared)).toEqual(swap.frames.map((frame) => frame.outgoing));
@@ -880,7 +905,9 @@ describe('wall swap shared holds', () => {
     swap.drag(-40);
     for (let frame = 0; frame < 16; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 0, dir: 1, settling: false });
-    expect(swap.frames.map(holdThree)).toEqual(swap.frames.map(() => dragOutgoingWeight(-40, SWIPE_THRESHOLD, false)));
+    expect(swap.frames.map(holdThree)).toEqual(
+      swap.frames.map(() => dragOutgoingWeight(-40, SWIPE_THRESHOLD, false, WALL_SWAP)),
+    );
     expect(largestStep(swap.frames)).toBeLessThan(JUMP);
   });
 
@@ -893,7 +920,7 @@ describe('wall swap shared holds', () => {
     expect(swap.state().incoming).toBeGreaterThan(0);
     for (let frame = 0; frame < 8; frame++) swap.tick(8);
     expect(swap.frames.every((frame) => frame.shared === 1 && holdThree(frame) === 1)).toBe(true);
-    expect(wallSwapSharedWeight({ outgoing: 0.1, incoming: 0.2 }, true)).toBe(1);
+    expect(wallSwapSharedWeight({ outgoing: 0.1, incoming: 0.2 }, true, WALL_SWAP)).toBe(1);
   });
 
   it('stay within 40-100% and ignore which side is which', () => {
@@ -908,8 +935,8 @@ describe('wall swap shared holds', () => {
       [Number.NaN, Number.NaN, 0.4],
       [2, 0, 1],
     ] as const) {
-      expect(wallSwapSharedWeight({ outgoing, incoming }, false)).toBe(expected);
-      expect(wallSwapSharedWeight({ outgoing: incoming, incoming: outgoing }, false)).toBe(expected);
+      expect(wallSwapSharedWeight({ outgoing, incoming }, false, WALL_SWAP)).toBe(expected);
+      expect(wallSwapSharedWeight({ outgoing: incoming, incoming: outgoing }, false, WALL_SWAP)).toBe(expected);
     }
   });
 

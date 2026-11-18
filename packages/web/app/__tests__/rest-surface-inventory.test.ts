@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 39
+ * The standing inventory oracle for issue #1889 (REST surface audit: 40
  * routes in total, classified after the board renderer moved to Railway in
  * #4715, the Railway healthcheck route landed in #3798, and the hold-heatmap
  * route and its prewarm cron were retired). The staged browser routes went
@@ -69,13 +69,16 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (14) ---
+  // --- /api/internal/* (15) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
   // NODE_ENV=development) — the only machine-readable way to confirm which
   // QA notes a running dev server started with.
   'app/api/internal/dev-metadata/route.ts': 'keep-external',
+  // Dev-only translation catalog editor (404s outside NODE_ENV=development),
+  // called by components/i18n/dev-translation-editor.tsx.
+  'app/api/internal/dev-translations/route.ts': 'keep-caller',
   // Cron targets. Their only trigger is a scheduler outside the web app — no
   // in-repo code ever calls them, which is the intended steady state, not
   // evidence of deadness. All three now fire from the Railway scheduler
@@ -262,6 +265,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged browser routes it once counted went with #7596; the closed audit
     // stays historical.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(40);
   });
 });

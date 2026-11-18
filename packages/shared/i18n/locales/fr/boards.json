@@ -199,26 +199,26 @@
       "card": {
         "title": "Allume les blocs sur {{board}}",
         "titleNoName": "Allume les blocs sur ta board",
-        "body": "Connecte ce téléphone à la board, touche un bloc, puis Allumer sur la board pour l'allumer.",
-        "bodyAlwaysDrive": "Connecte ce téléphone à la board et tu la pilotes : chaque bloc que tu choisis s'allume.",
+        "body": "Connecte ce téléphone, touche un bloc, puis Allumer sur la board.",
+        "bodyAlwaysDrive": "Connecte ce téléphone à la board et chaque bloc que tu choisis s'allume.",
         "connect": "Connecte la board",
         "tryAgain": "Réessayer",
         "noLights": "Ce mur n'a pas de LED",
         "notNow": "Pas maintenant",
         "connecting": "Connexion à {{board}}…",
         "connectingNoName": "Connexion à ta board…",
-        "failed": "Pas encore de connexion à {{board}}. Réessaie quand tu veux.",
-        "failedNoName": "Pas encore de connexion à ta board. Réessaie quand tu veux."
+        "failed": "Pas encore connecté à {{board}}. Réessaie.",
+        "failedNoName": "Pas encore connecté à ta board. Réessaie."
       },
       "confirm": {
         "title": "Connecté à {{board}}",
         "titleNoName": "Connecté à ta board",
-        "bodyAlwaysDrive": "Toujours piloter la board est activé : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches Tu pilotes la board pour arrêter.",
-        "bodyWindow": "Allumer sur la board te fait piloter la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
-        "bodyWindowMinute": "Allumer sur la board te fait piloter la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
-        "bodyWindowMinutes": "Allumer sur la board te fait piloter la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
-        "bodyUntilStop": "Allumer sur la board te fait piloter la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter.",
-        "bodyPutOnBoard": "Touche un bloc, puis Allumer sur la board pour l'allumer au mur.",
+        "bodyAlwaysDrive": "Toujours piloter la board est activé. Chaque bloc que tu choisis s'allume jusqu'à ce que tu touches Tu pilotes la board.",
+        "bodyWindow": "Allumer sur la board allume un bloc. Chaque bloc choisi dans les {{seconds}} prochaines secondes s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyWindowMinute": "Allumer sur la board allume un bloc. Chaque bloc choisi dans la prochaine minute s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyWindowMinutes": "Allumer sur la board allume un bloc. Chaque bloc choisi dans les {{minutes}} prochaines minutes s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyUntilStop": "Allumer sur la board allume un bloc. Ensuite, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches Tu pilotes la board.",
+        "bodyPutOnBoard": "Touche un bloc, puis Allumer sur la board pour l'allumer.",
         "gotIt": "Compris"
       }
     },
@@ -1079,10 +1079,10 @@
       "tap": "Touche un cercle pour le choisir. Touche-le encore pour le désactiver.",
       "maybe": "Les cercles en pointillés sont des prises incertaines. Touche-en une, puis touche Garder.",
       "longPress": "Appuie longuement sur un cercle, puis fais-le glisser pour le déplacer.",
-      "addHold": "Appuie longuement pour ajouter une prise.",
+      "addHold": "Appuie longuement sur un emplacement vide pour ajouter une prise.",
       "dismiss": "Masquer l'astuce",
       "replay": "Voir les astuces",
-      "pencil": "L'Apple Pencil ajoute et active les prises. Avec les doigts, tu te déplaces et choisis une prise."
+      "pencil": "L'Apple Pencil ajoute et active les prises. Les doigts déplacent la vue et choisissent les prises."
     },
     "a11y": {
       "wall": "Photo de ton Spraywall : {{summary}}",

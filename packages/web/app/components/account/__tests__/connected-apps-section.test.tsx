@@ -116,14 +116,14 @@ describe('ConnectedAppsSection', () => {
     expect(screen.queryByText('Sees every tick in your logbook, on every board')).toBeNull();
   });
 
-  it('opens an app to what it can see and when, with the unlisted-climbs line under the logbook', async () => {
+  it('opens an app to what it can do and when, with the unlisted-climbs line under the logbook', async () => {
     mocks.data = twoApps();
     renderSection();
     fireEvent.click(await screen.findByTestId('connected-app-connection-sequence'));
     const dialog = await screen.findByRole('dialog', { name: 'Sequence' });
     expect(dialog.textContent).toContain('Connected Oct 12, 2026');
     expect(dialog.textContent).toContain('Last used 3 hours ago');
-    expect(within(dialog).getByRole('heading', { name: 'What Sequence can see' })).toBeTruthy();
+    expect(within(dialog).getByRole('heading', { name: 'What Sequence can do' })).toBeTruthy();
     expect(dialog.textContent).toContain('Sees every tick in your logbook, on every board');
     expect(dialog.textContent).toContain("Including other setters' unlisted climbs and drafts you've logged");
     expect(dialog.textContent).toContain(

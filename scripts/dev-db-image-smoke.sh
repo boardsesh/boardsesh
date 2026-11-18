@@ -206,6 +206,9 @@ BEGIN
   -- not ours to ALTER — exclude it the way
   -- scripts/postgres18-production-role-transition.sh already does, by
   -- pg_depend.deptype = 'e', rather than by name.
+  -- The exact reviewed 0322 lifecycle bodies qualify their public relations
+  -- and deliberately pin pg_catalog alone. Keep these body hashes aligned with
+  -- credential-writer-acl.ts; a name or NULL configuration never grants an exception.
   IF EXISTS (
     SELECT 1
     FROM pg_catalog.pg_proc AS procedure
@@ -217,11 +220,22 @@ BEGIN
         WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
           AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
       )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM pg_catalog.unnest(coalesce(procedure.proconfig, '{}'::text[])) AS configured(setting)
-        WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
-          'search_path=public,pg_catalog'
+      AND NOT (
+        EXISTS (
+          SELECT 1
+          FROM pg_catalog.unnest(coalesce(procedure.proconfig, '{}'::text[])) AS configured(setting)
+          WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+            'search_path=public,pg_catalog'
+        )
+        OR (
+          coalesce(procedure.proconfig, '{}'::text[]) = ARRAY['search_path=pg_catalog']::text[]
+          AND procedure.pronargs = 0 AND procedure.prosecdef
+          AND procedure.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
+          AND (procedure.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(procedure.prosrc, 'UTF8')), 'hex')) IN (
+            ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
+            ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e')
+          )
+        )
       )
   ) THEN
     RAISE EXCEPTION 'trigger function(s) in public do not pin search_path to public, pg_catalog: % (#4699)',
@@ -235,11 +249,22 @@ BEGIN
            WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
              AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
          )
-         AND NOT EXISTS (
-           SELECT 1
-           FROM pg_catalog.unnest(coalesce(procedure.proconfig, '{}'::text[])) AS configured(setting)
-           WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
-             'search_path=public,pg_catalog'
+         AND NOT (
+           EXISTS (
+             SELECT 1
+             FROM pg_catalog.unnest(coalesce(procedure.proconfig, '{}'::text[])) AS configured(setting)
+             WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+               'search_path=public,pg_catalog'
+           )
+           OR (
+             coalesce(procedure.proconfig, '{}'::text[]) = ARRAY['search_path=pg_catalog']::text[]
+             AND procedure.pronargs = 0 AND procedure.prosecdef
+             AND procedure.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
+             AND (procedure.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(procedure.prosrc, 'UTF8')), 'hex')) IN (
+               ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
+               ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e')
+             )
+           )
          ));
   END IF;
   -- Fail closed: an empty inventory would satisfy the assertion above without

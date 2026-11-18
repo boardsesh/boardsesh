@@ -4,6 +4,8 @@ using Toybox.Lang;
 // Handles the session-actions menu:
 //   * Re-send to board  -> POST /api/session/take-control (repaints the board)
 //   * Switch session    -> re-query mySessions and show the picker
+//   * Refused ticks     -> the list to retry or delete (only when the owner has
+//                          any, or the store is full with other accounts' ticks)
 //   * End activity      -> ExitConfirm
 class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
     private var _context;
@@ -26,6 +28,11 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :switchSession) {
             WatchUi.popView(WatchUi.SLIDE_DOWN);
             Services.client.fetchMySessions(method(:onSessions));
+
+        } else if (id == :refused) {
+            WatchUi.popView(WatchUi.SLIDE_DOWN);
+            WatchUi.pushView(Menus.buildRefusedMenu(TickQueue.refusedEntries(), TickQueue.othersRefusedWhenFull()),
+                new RefusedTicksDelegate(), WatchUi.SLIDE_UP);
 
         } else if (id == :end) {
             WatchUi.popView(WatchUi.SLIDE_DOWN);

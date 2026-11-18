@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
@@ -10,6 +10,20 @@ import { singleBlockSelection } from '../workout-blocks';
 // The preview hook is mocked; the test mutates `preview.result.items` /
 // `refreshingUuids` and rerenders to drive the view's row props.
 const header = vi.hoisted(() => ({ native: false, inBodyLargeTitle: false }));
+const partnerPrivacy = vi.hoisted(() => ({
+  settings: undefined as
+    | { enabled: boolean; defaultSessionAudience: 'public' | 'followers' | 'invite_only'; isPrivate: boolean }
+    | undefined,
+  startConfig: null as { audience?: string; isPublic?: boolean } | null,
+  onVisibilityChange: null as ((isPublic: boolean) => void) | null,
+  onAudienceChange: null as ((audience: 'public' | 'followers' | 'invite_only') => void) | null,
+}));
+vi.mock('../../PartnerWorkoutEntry', () => ({
+  PartnerWorkoutEntry: ({ startConfig }: { startConfig: typeof partnerPrivacy.startConfig }) => {
+    partnerPrivacy.startConfig = startConfig;
+    return null;
+  },
+}));
 // #6903: the workout's server copy, queued at Start / Add a block.
 const workoutOutbox = vi.hoisted(() => ({ enqueueSessionWorkoutWrite: vi.fn(async () => 'queued') }));
 vi.mock('../../../../offline/session-workout-outbox', () => workoutOutbox);
@@ -93,7 +107,12 @@ const bottomChrome = vi.hoisted(() => ({
 
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('../../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout: () => false }));
-vi.mock('../../SessionVisibilityRow', () => ({ SessionVisibilityRow: () => null }));
+vi.mock('../../SessionVisibilityRow', () => ({
+  SessionVisibilityRow: ({ onChange }: { onChange: (isPublic: boolean) => void }) => {
+    partnerPrivacy.onVisibilityChange = onChange;
+    return null;
+  },
+}));
 vi.mock('react-native', () => ({
   // This suite exercises the JS chrome fallback; native headers have their own navigation tests.
   Platform: { OS: 'android' },
@@ -516,7 +535,9 @@ describe('PreSessionView in the phone split (iPhone Duo open in landscape)', () 
 });
 
 // This suite exercises the existing flow before the server privacy rollout.
-vi.mock('../../../../lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
+vi.mock('../../../../lib/graphql/hooks/use-privacy', () => ({
+  usePrivacySettings: () => ({ data: partnerPrivacy.settings }),
+}));
 vi.mock('../../../privacy/PublicationAudiencePicker', () => ({
   PublicationAudiencePicker: () => null,
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
@@ -530,9 +551,51 @@ vi.mock('../../../privacy/ResourcePrivacyControl', () => ({
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
 }));
 vi.mock('../../../privacy/AudiencePicker', () => ({
-  AudiencePicker: () => null,
+  AudiencePicker: ({ onChange }: { onChange: (audience: 'public' | 'followers' | 'invite_only') => void }) => {
+    partnerPrivacy.onAudienceChange = onChange;
+    return null;
+  },
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
 }));
+
+describe('partner workout start privacy', () => {
+  afterEach(() => {
+    partnerPrivacy.settings = undefined;
+    partnerPrivacy.startConfig = null;
+    partnerPrivacy.onAudienceChange = null;
+    partnerPrivacy.onVisibilityChange = null;
+  });
+
+  it('does not provide start credentials while session privacy is loading', () => {
+    partnerPrivacy.settings = undefined;
+    render(createElement(PreSessionView));
+    expect(partnerPrivacy.startConfig).toBeNull();
+  });
+
+  it.each(['followers', 'invite_only'] as const)('preserves the %s default for partner sessions', (audience) => {
+    partnerPrivacy.settings = { enabled: true, defaultSessionAudience: audience, isPrivate: true };
+    render(createElement(PreSessionView));
+    expect(partnerPrivacy.startConfig).toEqual({ audience, isPublic: false });
+  });
+
+  it('preserves an explicit visibility-off choice when audience controls are disabled', () => {
+    partnerPrivacy.settings = { enabled: false, defaultSessionAudience: 'public', isPrivate: false };
+    render(createElement(PreSessionView));
+    act(() => {
+      partnerPrivacy.onVisibilityChange?.(false);
+    });
+    expect(partnerPrivacy.startConfig).toEqual({ isPublic: false });
+  });
+
+  it('uses the audience selected in the existing pre-session controls', () => {
+    partnerPrivacy.settings = { enabled: true, defaultSessionAudience: 'public', isPrivate: false };
+    render(createElement(PreSessionView));
+    act(() => {
+      partnerPrivacy.onAudienceChange?.('invite_only');
+    });
+    expect(partnerPrivacy.startConfig).toEqual({ audience: 'invite_only', isPublic: false });
+  });
+});
 vi.mock('../../../privacy/use-publication-audience', () => ({
   usePublicationAudience: () => ({
     enabled: false,

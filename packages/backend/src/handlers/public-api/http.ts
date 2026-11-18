@@ -13,10 +13,19 @@ import { staticPathToMediaRedirect } from '../../lib/media-url';
  * database or the partner authority.
  */
 
-export type PublicApiRouteKind = 'me' | 'connection' | 'logbook-changes' | 'logbook-tick' | 'openapi';
+export type PublicApiRouteKind =
+  | 'me'
+  | 'connection'
+  | 'logbook-changes'
+  | 'logbook-tick'
+  | 'openapi'
+  | 'workouts-create'
+  | 'workouts-list'
+  | 'workout-get'
+  | 'workout-cancel';
 
 export interface PublicApiRoute {
-  method: 'GET' | 'DELETE';
+  method: 'GET' | 'DELETE' | 'POST';
   /** The whole path, byte for byte. */
   pathname: string;
   kind: PublicApiRouteKind;
@@ -26,6 +35,7 @@ export interface PublicApiRoute {
 export interface PublicApiRequestRoute extends PublicApiRoute {
   /** The raw path segment after `/v1/logbook/ticks/`. Validated by the route, which answers 404 for anything else. */
   tickId?: string;
+  workoutId?: string;
 }
 
 /** Everything `/v1` serves with a fixed path. */
@@ -34,6 +44,8 @@ export const PUBLIC_API_ROUTES: readonly PublicApiRoute[] = [
   { method: 'DELETE', pathname: '/v1/connection', kind: 'connection' },
   { method: 'GET', pathname: '/v1/logbook/changes', kind: 'logbook-changes' },
   { method: 'GET', pathname: '/v1/openapi.json', kind: 'openapi' },
+  { method: 'POST', pathname: '/v1/workouts', kind: 'workouts-create' },
+  { method: 'GET', pathname: '/v1/workouts', kind: 'workouts-list' },
 ];
 
 /** `GET /v1/logbook/ticks/{id}`: one non-empty path segment after the prefix. */
@@ -60,6 +72,9 @@ export function matchPublicApiRoute(
   const pathname = requestTargetPath(requestTarget);
   const fixed = PUBLIC_API_ROUTES.find((route) => route.method === method && route.pathname === pathname);
   if (fixed) return fixed;
+  const workoutMatch = /^\/v1\/workouts\/(wk_[A-Za-z0-9_-]{1,100})$/.exec(pathname);
+  if (workoutMatch && (method === 'GET' || method === 'DELETE'))
+    return { method, pathname, kind: method === 'GET' ? 'workout-get' : 'workout-cancel', workoutId: workoutMatch[1] };
   const tickId = method === TICK_ROUTE.method ? tickIdSegment(pathname) : undefined;
   return tickId === undefined ? undefined : { ...TICK_ROUTE, tickId };
 }
@@ -76,6 +91,8 @@ export function matchPublicApiPreflight(
   const pathname = requestTargetPath(requestTarget);
   const fixed = PUBLIC_API_ROUTES.find((route) => route.kind !== 'openapi' && route.pathname === pathname);
   if (fixed) return fixed;
+  if (/^\/v1\/workouts\/wk_[A-Za-z0-9_-]{1,100}$/.test(pathname))
+    return { method: 'GET', pathname, kind: 'workout-get' };
   return tickIdSegment(pathname) === undefined ? undefined : TICK_ROUTE;
 }
 

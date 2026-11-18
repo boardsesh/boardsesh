@@ -387,6 +387,7 @@ jobs:
               - 'packages/shared/playlist-generator/**'
               - 'packages/shared/playlists-react/**'
               - 'packages/shared/profile-stats/**'
+              - 'packages/shared/public-api/**'
               - 'packages/shared/queue/**'
               - 'packages/shared/queue-react/**'
               - 'packages/shared/queue-runtime/**'
@@ -1402,6 +1403,9 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: boardsesh_backend_test
+          # Worker schema rebuilds share the cluster's relation-lock budget.
+          # Set this only on the disposable test cluster; keep tests parallel.
+          POSTGRES_INITDB_ARGS: '-c max_locks_per_transaction=256'
         ports:
           - 5433:5432
         # Finer probe grid, identical tolerance window (10s x 5 = 50s ->
@@ -1528,6 +1532,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: boardsesh_backend_test
+          POSTGRES_INITDB_ARGS: '-c max_locks_per_transaction=256'
         ports:
           - 5433:5432
         # Finer probe grid, identical tolerance window (10s x 5 = 50s ->
@@ -1595,6 +1600,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: boardsesh_backend_test
+          POSTGRES_INITDB_ARGS: '-c max_locks_per_transaction=256'
         ports:
           - 5433:5432
         # Finer probe grid, identical tolerance window (10s x 5 = 50s ->

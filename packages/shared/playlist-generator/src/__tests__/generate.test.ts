@@ -114,6 +114,92 @@ describe('generatePyramidPlan', () => {
   });
 });
 
+describe('generatePyramidPlan coming back down on the same climbs', () => {
+  const pyramid = (numberOfSteps: number, climbsPerStep: number, repeatOnWayDown?: boolean) =>
+    generatePyramidPlan(
+      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', numberOfSteps, climbsPerStep, targetGrade: 20, repeatOnWayDown },
+      GRADES,
+    );
+  // One letter per climb: a slot that repeats reads its twin's letter, so the
+  // plan reads the way the climber walks it.
+  const climbLetters = (slots: ReturnType<typeof pyramid>) => {
+    const letters: string[] = [];
+    let nextLetter = 0;
+    for (const slot of slots) {
+      const twin =
+        slot.repeatOfIndex === undefined ? -1 : slots.findIndex((other) => other.index === slot.repeatOfIndex);
+      letters.push(twin >= 0 ? letters[twin] : String.fromCharCode(65 + nextLetter++));
+    }
+    return letters.join(' ');
+  };
+
+  it('repeats nothing when off or absent, so existing pyramids plan as before', () => {
+    expect(pyramid(7, 1).some((slot) => 'repeatOfIndex' in slot)).toBe(false);
+    expect(pyramid(7, 1, false).some((slot) => 'repeatOfIndex' in slot)).toBe(false);
+    expect(climbLetters(pyramid(7, 1))).toBe('A B C D E F G');
+  });
+
+  it('climbs a 7-step pyramid A B C D C B A', () => {
+    const slots = pyramid(7, 1, true);
+    expect(climbLetters(slots)).toBe('A B C D C B A');
+    expect(slots.map((slot) => slot.repeatOfIndex)).toEqual([undefined, undefined, undefined, undefined, 2, 1, 0]);
+    expect(slots.map((slot) => slot.grade)).toEqual([17, 18, 19, 20, 19, 18, 17]);
+  });
+
+  it('keeps both peaks of an even pyramid different climbs, never A B B A', () => {
+    const slots = pyramid(6, 1, true);
+    expect(climbLetters(slots)).toBe('A B C D B A');
+    expect(slots.filter((slot) => slot.section === 'peak').every((slot) => slot.repeatOfIndex === undefined)).toBe(
+      true,
+    );
+  });
+
+  it('comes down a step of several climbs in exact reverse', () => {
+    expect(climbLetters(pyramid(5, 2, true))).toBe('A B C D E F D C B A');
+    expect(climbLetters(pyramid(4, 2, true))).toBe('A B C D E F B A');
+  });
+
+  it('repeats only way-down slots, each at its twin grade, never right after it', () => {
+    for (let numberOfSteps = 3; numberOfSteps <= 15; numberOfSteps++) {
+      for (let climbsPerStep = 1; climbsPerStep <= 5; climbsPerStep++) {
+        const slots = pyramid(numberOfSteps, climbsPerStep, true);
+        slots.forEach((slot) => {
+          if (slot.section !== 'decreasing') {
+            expect(slot.repeatOfIndex).toBeUndefined();
+            return;
+          }
+          const twin = slots.find((other) => other.index === slot.repeatOfIndex);
+          expect(twin?.section).toBe('increasing');
+          expect(twin?.grade).toBe(slot.grade);
+        });
+        const letters = climbLetters(slots).split(' ');
+        letters.forEach((letter, position) => expect(letters[position - 1]).not.toBe(letter));
+        // Every way-up climb comes back exactly once.
+        const repeated = slots.flatMap((slot) => (slot.repeatOfIndex === undefined ? [] : [slot.repeatOfIndex]));
+        expect(new Set(repeated).size).toBe(repeated.length);
+        expect(repeated.length).toBe(slots.filter((slot) => slot.section === 'increasing').length);
+      }
+    }
+  });
+
+  it('points past a warm-up at the right twin', () => {
+    const slots = generatePyramidPlan(
+      {
+        ...DEFAULT_PYRAMID_OPTIONS,
+        warmUp: 'standard',
+        numberOfSteps: 3,
+        climbsPerStep: 1,
+        targetGrade: 20,
+        repeatOnWayDown: true,
+      },
+      GRADES,
+    );
+    const lastSlot = slots[slots.length - 1];
+    const firstStep = slots.find((slot) => slot.section === 'increasing');
+    expect(lastSlot.repeatOfIndex).toBe(firstStep?.index);
+  });
+});
+
 describe('generateLadderPlan', () => {
   it('only produces an increasing phase capped at the target', () => {
     const slots = generateLadderPlan(

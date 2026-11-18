@@ -80,8 +80,18 @@ export type FetchGradePool = (grade: number, ctx: PreviewFetchContext, demand: n
 /**
  * A plan slot, plus the workout stage it belongs to when it came from a staged
  * plan and the climb filters that stage's climbs are fetched with.
+ *
+ * `band` is every difficulty id that counts as the slot's grade, its own
+ * included: a partner app's "V4" on Kilter is 6b and 6b+. A slot short at its
+ * own grade takes a climb from a band mate before any nearby grade
+ * (`BORROW_GRADE_STEPS`). The app's own blocks plan one Font grade per slot and
+ * set none.
  */
-export type PreviewSlot = PlannedClimbSlot & { stageId?: string; filters?: PreviewFilters };
+export type PreviewSlot = PlannedClimbSlot & {
+  stageId?: string;
+  filters?: PreviewFilters;
+  band?: readonly number[];
+};
 
 /**
  * One string per distinct set of filters, so equal filters share a pool and
@@ -168,16 +178,29 @@ export function borrowScaleFor(grades: GeneratorGradeScale): GeneratorGradeScale
   return grades;
 }
 
-/** `slot` at each grade it may borrow from, nearest first: every step of `steps`, by default `BORROW_GRADE_STEPS`. */
+/** The other grades in `slot`'s band (`PreviewSlot.band`), nearest first. Empty without a band. */
+function bandMates(slot: PreviewSlot): number[] {
+  if (!slot.band) return [];
+  return slot.band
+    .filter((grade) => grade !== slot.grade)
+    .sort((left, right) => Math.abs(left - slot.grade) - Math.abs(right - slot.grade) || left - right);
+}
+
+/**
+ * `slot` at each grade it may borrow from, nearest first: its band mates, then
+ * every step of `steps`, by default `BORROW_GRADE_STEPS`, skipping a grade
+ * already listed.
+ */
 function borrowSources(
   slot: PreviewSlot,
   grades: GeneratorGradeScale,
   steps: readonly number[] = BORROW_GRADE_STEPS,
 ): PreviewSlot[] {
-  const sources: PreviewSlot[] = [];
+  const mates = bandMates(slot);
+  const sources: PreviewSlot[] = mates.map((grade) => ({ ...slot, grade }));
   for (const step of steps) {
     const grade = borrowedGrade(grades, slot.grade, step);
-    if (grade !== null) sources.push({ ...slot, grade });
+    if (grade !== null && !mates.includes(grade)) sources.push({ ...slot, grade });
   }
   return sources;
 }
@@ -333,8 +356,66 @@ export function pickRandomUnused(
  */
 function slotsAtGrade(slots: readonly PreviewSlot[]): Map<number, number> {
   const counts = new Map<number, number>();
-  for (const slot of slots) counts.set(slot.grade, (counts.get(slot.grade) ?? 0) + 1);
+  const twins = repeatTwinPositions(slots);
+  slots.forEach((slot, position) => {
+    // A repeat takes its twin's climb, so it asks no pool for one.
+    if (!twins.has(position)) counts.set(slot.grade, (counts.get(slot.grade) ?? 0) + 1);
+  });
   return counts;
+}
+
+/**
+ * For each slot that repeats another slot of `slots` (`PlannedClimbSlot.repeatOfIndex`,
+ * a pyramid coming back down on the same climbs), the position of that twin, by
+ * the repeat's position. A repeat whose twin is not in `slots` is left out, so
+ * it fills like any other slot rather than staying empty.
+ */
+export function repeatTwinPositions(slots: readonly PreviewSlot[]): Map<number, number> {
+  const positionByIndex = new Map<number, number>();
+  slots.forEach((slot, position) => positionByIndex.set(slot.index, position));
+  const twins = new Map<number, number>();
+  slots.forEach((slot, position) => {
+    if (slot.repeatOfIndex === undefined) return;
+    const twinPosition = positionByIndex.get(slot.repeatOfIndex);
+    if (twinPosition !== undefined && twinPosition !== position) twins.set(position, twinPosition);
+  });
+  return twins;
+}
+
+/**
+ * The uuids of the rows that show one climb because their slots are twins
+ * (`repeatTwinPositions`): `itemUuid`'s row and every row it repeats or that
+ * repeats it. Just `itemUuid` for a row with no twin; empty for an unknown uuid.
+ */
+export function linkedRowUuids(items: readonly PreviewItem[], itemUuid: string): string[] {
+  const row = items.find((preview) => preview.item.uuid === itemUuid);
+  if (!row) return [];
+  const leadIndex = leadRowOf(items, row).slot.index;
+  return items
+    .filter((preview) => preview.slot.index === leadIndex || preview.slot.repeatOfIndex === leadIndex)
+    .map((preview) => preview.item.uuid);
+}
+
+/** The row whose climb `row` shows: its twin's row when it repeats one that has a row, else itself. */
+function leadRowOf(items: readonly PreviewItem[], row: PreviewItem): PreviewItem {
+  const { repeatOfIndex } = row.slot;
+  if (repeatOfIndex === undefined) return row;
+  return items.find((preview) => preview.slot.index === repeatOfIndex) ?? row;
+}
+
+/**
+ * The row for repeat slot `slot`: its twin's climb under a queue item of its
+ * own, so the queue, the run and each visit's ticks treat it as its own climb.
+ * `kept` (the row a rebuild had there) keeps its queue-item uuid while it shows
+ * that same climb.
+ */
+function toRepeatRow(slot: PreviewSlot, twinRow: PreviewItem, kept: ClimbQueueItem | undefined): PreviewItem {
+  const item =
+    kept && kept.climb.uuid === twinRow.item.climb.uuid
+      ? kept
+      : climbToQueueItem(twinRow.item.climb, { suggested: true });
+  // The twins share a grade, so the twin's source grade is this slot's too.
+  return { ...twinRow, slot: { ...slot, grade: twinRow.slot.grade }, item };
 }
 
 /** Pools fetched for an earlier plan, offered back to `buildPoolsReusing`. */
@@ -504,7 +585,11 @@ export async function borrowForShortSlots(
     // The rows each pool fills now, by pool key, so a pool searched again is
     // asked for every one of them as well as the slots still short.
     const rowsByPoolKey = new Map<string, number>();
+    // A repeat row shows its twin's climb and takes none from the pool.
+    const rowSlotIndexes = new Set(items.map((row) => row.slot.index));
     for (const row of items) {
+      const { repeatOfIndex } = row.slot;
+      if (repeatOfIndex !== undefined && rowSlotIndexes.has(repeatOfIndex)) continue;
       const rowPoolKey = poolKeyForSlot(row.slot);
       rowsByPoolKey.set(rowPoolKey, (rowsByPoolKey.get(rowPoolKey) ?? 0) + 1);
     }
@@ -593,6 +678,58 @@ async function searchNearbyPool(
   }
   storeFetchedPool(built, key, fetched, demand);
   return true;
+}
+
+/** What `buildPreview` fills a plan with: the rows and every pool behind them. */
+export type BuiltPreview = BuiltPools & {
+  items: PreviewItem[];
+  usedUuids: Set<string>;
+  /** The grade scale the rows borrowed along (`borrowScaleFor`), for a shuffle or refresh to borrow along too. */
+  borrowScale: GeneratorGradeScale;
+};
+
+export type BuildPreviewOptions = {
+  /** Pools an earlier preview fetched, reused under `buildPoolsReusing`'s rule. */
+  cache?: PoolCache;
+  /** The rows the slots showed before, kept where they still fit (`selectItemsFromPools`). */
+  keptItems?: ReadonlyArray<ClimbQueueItem | undefined>;
+  /**
+   * The climbs to pass over while the pools have others, such as the live queue.
+   * Read once the plan's own pools are in, so a climb queued during that fetch
+   * is passed over too.
+   */
+  getAvoidedClimbUuids?: () => ReadonlySet<string>;
+};
+
+/**
+ * The whole preview pipeline for one plan: fetch the pools its slots draw from
+ * (`buildPoolsReusing`), fetch the nearby grades its short slots borrow from
+ * (`borrowForShortSlots`), then fill the rows (`selectItemsFromPools`), passing
+ * over the avoided climbs and taking top-ups last. The workout builder, "Add a
+ * block" and a partner app's workout all fill their blocks through here, so
+ * they pick climbs the same way. A build `ctx.isCurrent` calls superseded
+ * sends no more nearby searches; the caller drops what it returns.
+ */
+export async function buildPreview(
+  slots: readonly PreviewSlot[],
+  ctx: PreviewFetchContext,
+  fetchPool: FetchGradePool,
+  grades: GeneratorGradeScale,
+  { cache, keptItems = [], getAvoidedClimbUuids }: BuildPreviewOptions = {},
+): Promise<BuiltPreview> {
+  const built = await buildPoolsReusing(slots, ctx, fetchPool, cache);
+  const avoidClimbUuids = getAvoidedClimbUuids?.() ?? NO_AVOIDED_CLIMBS;
+  const borrowScale = borrowScaleFor(grades);
+  await borrowForShortSlots(slots, built, ctx, fetchPool, borrowScale, { cache, avoidClimbUuids, keptItems });
+  const { items, usedUuids } = selectItemsFromPools(
+    slots,
+    built.pools,
+    avoidClimbUuids,
+    keptItems,
+    built.poolTopUpTiers,
+    borrowScale,
+  );
+  return { ...built, items, usedUuids, borrowScale };
 }
 
 /** `buildPoolsReusing` with nothing cached, for callers that only need the pools. */
@@ -707,7 +844,11 @@ function fillSlots(
 ): FilledSlots {
   const usedUuids = new Set<string>();
   const rowBySlotPosition = new Map<number, PreviewItem>();
+  // Repeats take no climb of their own: they copy their twin's row once every
+  // other slot is filled, and stay empty when it does.
+  const twins = repeatTwinPositions(slots);
   slots.forEach((slot, position) => {
+    if (twins.has(position)) return;
     const kept = keptItems[position];
     if (!kept || usedUuids.has(kept.climb.uuid) || avoidClimbUuids.has(kept.climb.uuid)) return;
     const source = [slot, ...borrowSources(slot, grades)].find((candidate) =>
@@ -718,24 +859,38 @@ function fillSlots(
     rowBySlotPosition.set(position, toPreviewItem(slot, source, kept, poolTopUpTiers));
   });
   // Every slot's own grade first, where an avoided climb still beats borrowing.
-  // Then one borrow step at a time across all the slots still empty, climbs
-  // that are not avoided only, and last the same steps again for an avoided one.
+  // Then its band mates, nearest first, and one borrow step at a time across
+  // all the slots still empty, climbs that are not avoided only, and last the
+  // same grades again for an avoided one. A slot with no band has no mate
+  // passes, so the app's own blocks fill exactly as they always have.
   const nearby =
     (step: number) =>
     (slot: PreviewSlot): PreviewSlot | null => {
       const grade = borrowedGrade(grades, slot.grade, step);
       return grade === null ? null : { ...slot, grade };
     };
+  const mate =
+    (rank: number) =>
+    (slot: PreviewSlot): PreviewSlot | null => {
+      const grade = bandMates(slot)[rank];
+      return grade === undefined ? null : { ...slot, grade };
+    };
+  const mateRanks = Array.from(
+    { length: Math.max(0, ...slots.map((slot) => bandMates(slot).length)) },
+    (_, rank) => rank,
+  );
+  const nearbyPasses = (takesAvoided: boolean): FillPass[] => [
+    ...mateRanks.map((rank) => ({ sourceFor: mate(rank), takesAvoided })),
+    ...borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided })),
+  ];
   const passes: FillPass[] = [
     { sourceFor: (slot) => slot, takesAvoided: true },
-    ...borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided: false })),
-    ...(borrowAvoided && avoidClimbUuids.size > 0
-      ? borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided: true }))
-      : []),
+    ...nearbyPasses(false),
+    ...(borrowAvoided && avoidClimbUuids.size > 0 ? nearbyPasses(true) : []),
   ];
   for (const { sourceFor, takesAvoided } of passes) {
     slots.forEach((slot, position) => {
-      if (rowBySlotPosition.has(position)) return;
+      if (rowBySlotPosition.has(position) || twins.has(position)) return;
       const source = sourceFor(slot);
       if (!source) return;
       const pool = pools.get(poolKeyForSlot(source)) ?? [];
@@ -750,12 +905,17 @@ function fillSlots(
       );
     });
   }
+  for (const [position, twinPosition] of twins) {
+    const twinRow = rowBySlotPosition.get(twinPosition);
+    if (twinRow) rowBySlotPosition.set(position, toRepeatRow(slots[position], twinRow, keptItems[position]));
+  }
   const items: PreviewItem[] = [];
   const shortSlots: PreviewSlot[] = [];
   slots.forEach((slot, position) => {
     const row = rowBySlotPosition.get(position);
     if (row) items.push(row);
-    else shortSlots.push(slot);
+    // A repeat is short only because its twin is, which is already listed.
+    else if (!twins.has(position)) shortSlots.push(slot);
   });
   return { items, usedUuids, shortSlots };
 }
@@ -800,10 +960,12 @@ export async function refreshSlotInState(
   avoidClimbUuids: ReadonlySet<string> = NO_AVOIDED_CLIMBS,
   grades: GeneratorGradeScale = NO_GRADES,
 ): Promise<RefreshSlotResult> {
-  const index = state.items.findIndex((preview) => preview.item.uuid === targetUuid);
-  if (index === -1) return { state, changed: false }; // row gone (e.g. regenerated under a stale tap)
+  const tappedRow = state.items.find((preview) => preview.item.uuid === targetUuid);
+  if (!tappedRow) return { state, changed: false }; // row gone (e.g. regenerated under a stale tap)
 
-  const current = state.items[index];
+  // Twin rows show one climb, so a refresh on either picks for the first of them
+  // and gives every one the new climb (`linkedRowUuids`).
+  const current = leadRowOf(state.items, tappedRow);
   const plannedSlot = plannedSlotOf(current);
 
   const { pools } = state;
@@ -837,7 +999,10 @@ export async function refreshSlotInState(
     if (!climb && exhaustedPoolKeys?.has(poolKey) !== true && refetchedPoolKeys?.has(poolKey) !== true) {
       // Ask for one more than every row at this grade, in every pool: the other
       // pools' rows may hold the same climbs, so the refetch has to reach past them.
-      const rowsAtGrade = state.items.filter((preview) => preview.slot.grade === source.grade).length;
+      // A repeat row shows its twin's climb, so it needs none of its own.
+      const rowsAtGrade = state.items.filter(
+        (preview) => preview.slot.grade === source.grade && leadRowOf(state.items, preview) === preview,
+      ).length;
       const refetched = await fetchPool(source.grade, { ...ctx, filters: source.filters }, rowsAtGrade + 1);
       // Superseded while it fetched: its pool may be cut short, and the maps below
       // are shared with the state a newer build reads its cache from.
@@ -887,15 +1052,24 @@ export async function refreshSlotInState(
     };
   }
 
-  // Keep the queue-item uuid (swap `.climb` only); recompute usedUuids from the
+  // Keep each queue-item uuid (swap `.climb` only); recompute usedUuids from the
   // items so the invariant holds even across pre-existing short-pool repeats.
-  const items = state.items.slice();
-  items[index] = toPreviewItem(
+  const leadRow = toPreviewItem(
     plannedSlot,
     picked.source,
     climbToQueueItem(picked.climb, { uuid: current.item.uuid, suggested: true }),
     poolTopUpTiers ?? NO_POOL_TOP_UPS,
   );
+  const leadIndex = current.slot.index;
+  const items = state.items.map((preview) => {
+    if (preview === current) return leadRow;
+    if (preview.slot.repeatOfIndex !== leadIndex) return preview;
+    return toRepeatRow(
+      preview.slot,
+      leadRow,
+      climbToQueueItem(picked.climb, { uuid: preview.item.uuid, suggested: true }),
+    );
+  });
   const usedUuids = new Set(items.map((preview) => preview.item.climb.uuid));
 
   return {
