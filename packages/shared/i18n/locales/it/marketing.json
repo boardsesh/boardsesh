@@ -867,10 +867,10 @@
         "sessions": "Arrampicala con la tua crew"
       },
       "visibility": {
-        "title": "Chi vede il tuo Spraywall",
-        "body": "Scegli Privato, Solo con link o Pubblico quando pubblichi. Aiuta a riconoscere le prese è attivo per i nuovi Spraywall; puoi disattivarlo. Usiamo queste foto solo per migliorare il riconoscimento delle prese e non condividiamo mai la raccolta di addestramento. Modifica entrambe le opzioni in Modifica pannello."
+        "title": "Chi vede la tua Spraywall",
+        "body": "Scegli la visibilità privata, solo con link o pubblica quando pubblichi. Aiuta a riconoscere le prese è attivo per le nuove Spraywall; puoi disattivarlo. Usiamo queste foto solo per migliorare il riconoscimento delle prese e non condividiamo mai la raccolta di addestramento. Modifica entrambe le opzioni nel menu di modifica della Spraywall."
       },
-      "installHelper": "I Spraywall si configurano nell’app. È gratis.",
+      "installHelper": "Le Spraywall si configurano nell’app. È gratis.",
       "tools": {
         "tool": "Strumento",
         "action": "Cosa fa"

@@ -868,7 +868,7 @@
       },
       "visibility": {
         "title": "Quién ve tu Spraywall",
-        "body": "Elige Privado, Solo con enlace o Público al publicar. Ayudar a detectar presas está activado en los Spraywalls nuevos; puedes desactivarlo. Usamos esas fotos solo para mejorar la detección de presas y nunca compartimos la colección de entrenamiento. Cambia ambas opciones en Editar plafón."
+        "body": "Elige Privado, Solo con enlace o Público al publicar. Ayudar a detectar presas está activado en los Spraywalls nuevos; puedes desactivarlo. Usamos esas fotos solo para mejorar la detección de presas y nunca compartimos la colección de entrenamiento. Cambia ambas opciones en el menú de edición del Spraywall."
       },
       "installHelper": "Los Spraywalls se configuran en la app. Es gratis.",
       "tools": {
