@@ -514,7 +514,9 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   on the minute still gets a whole interval.
 - **Arming.** "Start workout", and "Add a block" in a workout already started, arm the timer when the workout (for a mid-session
   block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
-  timed block runs hands-free. A timer the climber already set up is left alone, and arming
+  timed block runs hands-free. A partner app's workout added to a running session follows the
+  "Add a block" rule (`armRestTimerForAddedBlock`): its own block's pacing, and nothing while
+  the session's workout still waits for its Start, which arms the whole run. A timer the climber already set up is left alone, and arming
   still never survives a cold start.
 - **Logging every go.** While the climb on the wall is in a timed stage, the player's small row
   is one-tap Fell / Sent (`docs/climb-view-options.md` › One-tap Fell / Sent). Fell logs a 1-try

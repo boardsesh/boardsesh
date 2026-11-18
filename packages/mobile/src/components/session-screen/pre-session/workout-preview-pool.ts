@@ -80,8 +80,18 @@ export type FetchGradePool = (grade: number, ctx: PreviewFetchContext, demand: n
 /**
  * A plan slot, plus the workout stage it belongs to when it came from a staged
  * plan and the climb filters that stage's climbs are fetched with.
+ *
+ * `band` is every difficulty id that counts as the slot's grade, its own
+ * included: a partner app's "V4" on Kilter is 6b and 6b+. A slot short at its
+ * own grade takes a climb from a band mate before any nearby grade
+ * (`BORROW_GRADE_STEPS`). The app's own blocks plan one Font grade per slot and
+ * set none.
  */
-export type PreviewSlot = PlannedClimbSlot & { stageId?: string; filters?: PreviewFilters };
+export type PreviewSlot = PlannedClimbSlot & {
+  stageId?: string;
+  filters?: PreviewFilters;
+  band?: readonly number[];
+};
 
 /**
  * One string per distinct set of filters, so equal filters share a pool and
@@ -168,16 +178,29 @@ export function borrowScaleFor(grades: GeneratorGradeScale): GeneratorGradeScale
   return grades;
 }
 
-/** `slot` at each grade it may borrow from, nearest first: every step of `steps`, by default `BORROW_GRADE_STEPS`. */
+/** The other grades in `slot`'s band (`PreviewSlot.band`), nearest first. Empty without a band. */
+function bandMates(slot: PreviewSlot): number[] {
+  if (!slot.band) return [];
+  return slot.band
+    .filter((grade) => grade !== slot.grade)
+    .sort((left, right) => Math.abs(left - slot.grade) - Math.abs(right - slot.grade) || left - right);
+}
+
+/**
+ * `slot` at each grade it may borrow from, nearest first: its band mates, then
+ * every step of `steps`, by default `BORROW_GRADE_STEPS`, skipping a grade
+ * already listed.
+ */
 function borrowSources(
   slot: PreviewSlot,
   grades: GeneratorGradeScale,
   steps: readonly number[] = BORROW_GRADE_STEPS,
 ): PreviewSlot[] {
-  const sources: PreviewSlot[] = [];
+  const mates = bandMates(slot);
+  const sources: PreviewSlot[] = mates.map((grade) => ({ ...slot, grade }));
   for (const step of steps) {
     const grade = borrowedGrade(grades, slot.grade, step);
-    if (grade !== null) sources.push({ ...slot, grade });
+    if (grade !== null && !mates.includes(grade)) sources.push({ ...slot, grade });
   }
   return sources;
 }
@@ -657,6 +680,58 @@ async function searchNearbyPool(
   return true;
 }
 
+/** What `buildPreview` fills a plan with: the rows and every pool behind them. */
+export type BuiltPreview = BuiltPools & {
+  items: PreviewItem[];
+  usedUuids: Set<string>;
+  /** The grade scale the rows borrowed along (`borrowScaleFor`), for a shuffle or refresh to borrow along too. */
+  borrowScale: GeneratorGradeScale;
+};
+
+export type BuildPreviewOptions = {
+  /** Pools an earlier preview fetched, reused under `buildPoolsReusing`'s rule. */
+  cache?: PoolCache;
+  /** The rows the slots showed before, kept where they still fit (`selectItemsFromPools`). */
+  keptItems?: ReadonlyArray<ClimbQueueItem | undefined>;
+  /**
+   * The climbs to pass over while the pools have others, such as the live queue.
+   * Read once the plan's own pools are in, so a climb queued during that fetch
+   * is passed over too.
+   */
+  getAvoidedClimbUuids?: () => ReadonlySet<string>;
+};
+
+/**
+ * The whole preview pipeline for one plan: fetch the pools its slots draw from
+ * (`buildPoolsReusing`), fetch the nearby grades its short slots borrow from
+ * (`borrowForShortSlots`), then fill the rows (`selectItemsFromPools`), passing
+ * over the avoided climbs and taking top-ups last. The workout builder, "Add a
+ * block" and a partner app's workout all fill their blocks through here, so
+ * they pick climbs the same way. A build `ctx.isCurrent` calls superseded
+ * sends no more nearby searches; the caller drops what it returns.
+ */
+export async function buildPreview(
+  slots: readonly PreviewSlot[],
+  ctx: PreviewFetchContext,
+  fetchPool: FetchGradePool,
+  grades: GeneratorGradeScale,
+  { cache, keptItems = [], getAvoidedClimbUuids }: BuildPreviewOptions = {},
+): Promise<BuiltPreview> {
+  const built = await buildPoolsReusing(slots, ctx, fetchPool, cache);
+  const avoidClimbUuids = getAvoidedClimbUuids?.() ?? NO_AVOIDED_CLIMBS;
+  const borrowScale = borrowScaleFor(grades);
+  await borrowForShortSlots(slots, built, ctx, fetchPool, borrowScale, { cache, avoidClimbUuids, keptItems });
+  const { items, usedUuids } = selectItemsFromPools(
+    slots,
+    built.pools,
+    avoidClimbUuids,
+    keptItems,
+    built.poolTopUpTiers,
+    borrowScale,
+  );
+  return { ...built, items, usedUuids, borrowScale };
+}
+
 /** `buildPoolsReusing` with nothing cached, for callers that only need the pools. */
 export async function buildPools(
   slots: readonly PreviewSlot[],
@@ -784,20 +859,34 @@ function fillSlots(
     rowBySlotPosition.set(position, toPreviewItem(slot, source, kept, poolTopUpTiers));
   });
   // Every slot's own grade first, where an avoided climb still beats borrowing.
-  // Then one borrow step at a time across all the slots still empty, climbs
-  // that are not avoided only, and last the same steps again for an avoided one.
+  // Then its band mates, nearest first, and one borrow step at a time across
+  // all the slots still empty, climbs that are not avoided only, and last the
+  // same grades again for an avoided one. A slot with no band has no mate
+  // passes, so the app's own blocks fill exactly as they always have.
   const nearby =
     (step: number) =>
     (slot: PreviewSlot): PreviewSlot | null => {
       const grade = borrowedGrade(grades, slot.grade, step);
       return grade === null ? null : { ...slot, grade };
     };
+  const mate =
+    (rank: number) =>
+    (slot: PreviewSlot): PreviewSlot | null => {
+      const grade = bandMates(slot)[rank];
+      return grade === undefined ? null : { ...slot, grade };
+    };
+  const mateRanks = Array.from(
+    { length: Math.max(0, ...slots.map((slot) => bandMates(slot).length)) },
+    (_, rank) => rank,
+  );
+  const nearbyPasses = (takesAvoided: boolean): FillPass[] => [
+    ...mateRanks.map((rank) => ({ sourceFor: mate(rank), takesAvoided })),
+    ...borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided })),
+  ];
   const passes: FillPass[] = [
     { sourceFor: (slot) => slot, takesAvoided: true },
-    ...borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided: false })),
-    ...(borrowAvoided && avoidClimbUuids.size > 0
-      ? borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided: true }))
-      : []),
+    ...nearbyPasses(false),
+    ...(borrowAvoided && avoidClimbUuids.size > 0 ? nearbyPasses(true) : []),
   ];
   for (const { sourceFor, takesAvoided } of passes) {
     slots.forEach((slot, position) => {

@@ -90,11 +90,14 @@ the commit, so the older pair cannot stay on screen. A commit straight back to t
 from what is on screen, the same pair named the other way round, so nothing jumps; if the
 first swap was still easing a pulled-back board to whole, that ease carries on and the
 climb the climber turned back from never lights. A commit toward the other side of a pulled-back board
-first eases that board's climb back to whole over 120 ms, then swaps. Reduce Motion: no
-drag dim, and the swap is one 120 ms dissolve that leaves shared holds fully lit. The PNG
-fallback still slides the whole board. Each frame leaves the UI thread as a `swapFrame` view
-command, so a player re-render during the fade cannot hold it back (#7737); the animated prop
-with the same sequence number covers mount and binaries without the command. Details in
+first eases that board's climb back to whole over 120 ms, then swaps. With Reduce Motion,
+dragging keeps holds fully lit. On release, old-only and new-only holds crossfade linearly
+over 240 ms, and shared holds stay fully lit. During an uninterrupted dissolve, the
+weight of either side changes by at most 0.070 per frame at 60 Hz and 0.035 at 120 Hz.
+A dropped frame or an onward flick that evicts the older pair can produce larger steps.
+The PNG fallback still slides the whole board. Each frame leaves the UI thread as a
+`swapFrame` view command, so a player re-render during the fade cannot hold it back (#7737).
+The animated prop with the same sequence number covers mount and binaries without the command. Details in
 `docs/gpu-climb-overlay-experiment.md`.
 
 **Player swap look** (`play-drawer/player-swap-look.ts`, iOS and Android binaries with
@@ -105,10 +108,10 @@ behind that front as glow-only halos up to 40%. Letting go fills the halos in al
 same sweep over 220 ms while the rings go out by 150 ms; arriving halos swell by at most
 5%. A commit within 400 ms of the last one is a flick run: no halos, no drag dim, no
 swell, a 140 ms swap. Shared holds never dip. Older binaries, an Android phone that cannot
-build the look's GLES program, Reduce Motion (the 120 ms dissolve above, no look),
-Differentiate Without Color (iOS) and the `player-swap-look-kill` switch get the shipped
-swap, frame for frame. The numbers are one constant, `PLAYER_SWAP_LOOK`; the lab's
-I reads it (`docs/board-motion-lab.md`).
+build the look's GLES program, Differentiate Without Color (iOS) and the
+`player-swap-look-kill` switch use the base swap. Reduce Motion uses the linear dissolve
+above. The lab's I reads the same `PLAYER_SWAP_LOOK` constant as the player
+(`docs/board-motion-lab.md`).
 
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual
 press feedback is separate (that's `PressableSurface`); fire haptics from the handler:

@@ -9,7 +9,15 @@ import { DEFAULT_LOCALE, DEFAULT_NAMESPACE, SUPPORTED_LOCALES, type Locale, type
 import { getLocale } from './get-locale';
 import { reportMissingI18nKey } from './missing-key-reporter';
 
-const resourceLoader = resourcesToBackend((locale: string, namespace: string) => loadCatalog(locale, namespace));
+const resourceLoader = resourcesToBackend(async (locale: string, namespace: string) => {
+  if (process.env.NODE_ENV === 'development') {
+    // Read disk on each request so an editor save is visible immediately, even
+    // before the JSON module watcher has rebuilt its cached import.
+    const { readDevCatalog } = await import('./dev-catalog-store');
+    return readDevCatalog(locale, namespace);
+  }
+  return loadCatalog(locale, namespace);
+});
 
 // These branches serve the native app, not Next's surviving display surfaces.
 // Keep this allowlist explicit: boards.mobile and session.mobile have web users.

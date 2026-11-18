@@ -78,7 +78,7 @@ function harness(reduceMotion = false) {
     const step = stepWallSwap(state, input, WALL_SWAP);
     state = step.state;
     if (step.startSwap) input = { ...input, swapMs: 0 };
-    if (step.startSettle) input = { ...input, settleMs: 0 };
+    if (step.startSettleMs !== null) input = { ...input, settleMs: 0 };
     frames.push({
       outgoing: state.outgoing,
       incoming: state.incoming,
@@ -101,7 +101,7 @@ function harness(reduceMotion = false) {
     tick: (ms = 16) =>
       apply({
         swapMs: Math.min(input.swapMs + ms, swapClockMs(state)),
-        settleMs: Math.min(input.settleMs + ms, WALL_SWAP.settleMs),
+        settleMs: Math.min(input.settleMs + ms, state.settleDurationMs),
       }),
     reset: (anchor: number) => apply({ anchor, offset: 0, fling: 0, reset: input.reset + 1 }),
     state: () => state,
@@ -175,7 +175,7 @@ describe('wall swap drag', () => {
 describe('wall swap commit', () => {
   it('fades outgoing-only out over 0-120 ms and incoming-only in over 60-200 ms', () => {
     const timing = swapTiming(0.4, false, WALL_SWAP);
-    expect(timing).toEqual({ durationMs: 200, outgoingEndMs: 120, incomingStartMs: 60 });
+    expect(timing).toMatchObject({ durationMs: 200, outgoingEndMs: 120, incomingStartMs: 60 });
     expect(swapWeightsAt(0, 0.4, 0, timing, WALL_SWAP)).toEqual({ outgoing: 0.4, incoming: 0 });
     expect(swapWeightsAt(60, 0.4, 0, timing, WALL_SWAP).incoming).toBe(0);
     expect(swapWeightsAt(60, 0.4, 0, timing, WALL_SWAP).outgoing).toBeCloseTo(0.4 * (1 - easeIn(0.5, WALL_SWAP)), 10);
@@ -521,10 +521,9 @@ describe('wall swap reversed by a commit mid-swap', () => {
     const { before, after } = lastTwo(swap.frames);
     expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
     expect(after.holds).toEqual(before.holds);
-    expect(swap.state()).toMatchObject({ swapping: true, from: 1, dir: -1, durationMs: 120 });
-    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    expect(swap.state()).toMatchObject({ swapping: true, from: 1, dir: -1, durationMs: 240 });
     swap.land();
-    swap.tick(8);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
     expect(swap.frames.every((frame) => frame.shared === 1)).toBe(true);
   });
@@ -542,7 +541,7 @@ describe('wall swap reversed by a commit mid-swap', () => {
     expect(swap.state()).toMatchObject({ swapping: true, swapFrom: 1, swapDir: -1, from: 1, dir: -1 });
     expect([after.outgoing, after.incoming]).toEqual([shown.incoming, shown.outgoing]);
     expect(after.holds).toEqual(before.holds);
-    for (let frame = 0; frame < 16; frame++) swap.tick(8);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 0, dir: 0, outgoing: 1, incoming: 0, swapping: false });
   });
 
@@ -746,8 +745,8 @@ describe('wall swap onward commit mid-swap', () => {
   it('under Reduce Motion the dissolve starts from the same 40% state, shared holds whole', () => {
     // No drag dim: page 0 is still bright when the onward fling commits.
     const { swap, before, after } = onward(40, 8, true);
-    expect(before.outgoing).toBeCloseTo(1 - easeIn(40 / 72, WALL_SWAP), 10);
-    expect(swap.state()).toMatchObject({ from: 1, dir: 1, incoming: 0, durationMs: 120 });
+    expect(before.outgoing).toBeCloseTo(1 - 40 / 240, 10);
+    expect(swap.state()).toMatchObject({ from: 1, dir: 1, incoming: 0, durationMs: 240 });
     expect(swap.state().outgoing).toBe(WALL_SWAP.dimFloor);
     // Hold 3 is shared by pages 0 and 1 (whole) and page 1's own toward page 2;
     // hold 6 is shared by pages 1 and 2, so it is whole.
@@ -755,10 +754,10 @@ describe('wall swap onward commit mid-swap', () => {
       1: -before.outgoing,
       2: -before.outgoing,
       3: WALL_SWAP.dimFloor - 1,
-      5: WALL_SWAP.dimFloor,
-      6: 1,
+      5: WALL_SWAP.dimFloor - before.incoming,
+      6: 1 - before.incoming,
     });
-    for (let frame = 0; frame < 15; frame++) swap.tick(8);
+    for (let frame = 0; frame < 30; frame++) swap.tick(8);
     expect(swap.state()).toMatchObject({ from: 2, dir: 0, outgoing: 1, swapping: false });
     expect(swap.frames.every((frame) => frame.shared === 1)).toBe(true);
   });
@@ -771,21 +770,41 @@ describe('wall swap under Reduce Motion', () => {
     expect(swap.state()).toMatchObject({ outgoing: 1, incoming: 0 });
   });
 
-  it('compresses the same swap into a 120 ms dissolve', () => {
-    const timing = swapTiming(1, true, WALL_SWAP);
-    expect(timing.durationMs).toBe(120);
-    expect(timing.outgoingEndMs).toBe(72);
-    expect(timing.incomingStartMs).toBeGreaterThanOrEqual(36);
-    expect(swapWeightsAt(72, 1, 0, timing, WALL_SWAP).outgoing).toBe(0);
-    expect(swapWeightsAt(120, 1, 0, timing, WALL_SWAP).incoming).toBe(1);
+  it.each([60, 120])('crossfades linearly over 240 ms with weight steps under 0.08 at %i Hz', (frameRate) => {
     const swap = harness(true);
     swap.drag(-20);
-    // The fling's spring ends at once under Reduce Motion: it can land first.
-    swap.commit(1);
-    swap.land();
-    expect(swap.state()).toMatchObject({ swapping: true, from: 0, dir: 1, outgoing: 1 });
-    for (let frame = 0; frame < 8; frame++) swap.tick();
+    swap.commitLanded(1);
+    expect(swap.state()).toMatchObject({ swapping: true, from: 0, dir: 1, outgoing: 1, durationMs: 240 });
+    const frameMs = 1000 / frameRate;
+    for (let frame = 1; frame * frameMs < 240; frame++) {
+      swap.tick(frameMs);
+      expect(swap.state().outgoing).toBeCloseTo(1 - (frame * frameMs) / 240, 10);
+      expect(swap.state().incoming).toBeCloseTo((frame * frameMs) / 240, 10);
+    }
+    swap.tick(frameMs);
     expect(swap.state()).toMatchObject({ swapping: false, from: 1, dir: 0, outgoing: 1, incoming: 0 });
+    expect(largestStep(swap.frames)).toBeLessThanOrEqual(0.08);
+  });
+
+  it('settles and leads in linearly after an interrupted dissolve', () => {
+    const swap = harness(true);
+    swap.drag(-90);
+    swap.commit(1);
+    swap.tick(80);
+    swap.land(140);
+    const shown = swap.drag(150);
+    expect(shown).toMatchObject({ from: 1, dir: -1, settling: true, settleDurationMs: 240 });
+
+    const halfway = swap.tick(120);
+    expect(halfway.outgoing).toBeCloseTo((shown.outgoing + 1) / 2, 10);
+    expect(halfway.incoming).toBeCloseTo(shown.incoming / 2, 10);
+    expect(swap.commit(1)).toMatchObject({ from: 1, dir: -1, leadMs: 240 });
+    const leadHalfway = swap.tick(120);
+    expect(leadHalfway.outgoing).toBeCloseTo((halfway.outgoing + 1) / 2, 10);
+    expect(leadHalfway.incoming).toBeCloseTo(halfway.incoming / 2, 10);
+    expect(swap.tick(120)).toMatchObject({ from: 1, dir: 1, outgoing: 1, incoming: 0 });
+    swap.land();
+    expect(swap.tick(240)).toMatchObject({ from: 2, dir: 0, outgoing: 1, incoming: 0, swapping: false });
   });
 
   it('works out a landed fling’s direction from the anchor it left', () => {
@@ -806,7 +825,7 @@ describe('wall swap under Reduce Motion', () => {
       },
       WALL_SWAP,
     );
-    expect(step).toMatchObject({ startSwap: true, state: { from: 0, dir: -1, durationMs: 120 } });
+    expect(step).toMatchObject({ startSwap: true, state: { from: 0, dir: -1, durationMs: 240 } });
   });
 });
 

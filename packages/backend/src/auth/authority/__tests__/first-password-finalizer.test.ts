@@ -325,17 +325,29 @@ describe('UID-bound first-password buffered finalization', () => {
           expect(await environment.database.select().from(authProviderReauthenticationReceipts)).toEqual(
             providerReceiptsBefore,
           );
+          // Provider link takes the web session the browser now holds (#7596
+          // B5c1). A legacy cookie is refused there until it is bridged.
           const nextActor = {
-            ...owner.actor,
-            credential: candidate.credential,
-            browserVersion: committed.browserCursor.version,
+            presented:
+              candidate.kind === 'canonical-token'
+                ? { kind: candidate.kind, token: candidate.credential }
+                : { kind: candidate.kind, credential: candidate.credential },
+            expectedUserId: owner.userId,
+            expectedAuthSessionId: owner.sid,
           };
-          const nextIntent = await createProviderSecurityIntent(environment.database, environment.runtime, {
+          const linkCommand = {
             actor: nextActor,
-            action: 'link',
-            provider: 'google',
+            action: 'link' as const,
+            provider: 'google' as const,
             methodId: null,
-          });
+          };
+          if (kind === 'legacy-jwe') {
+            await expect(
+              createProviderSecurityIntent(environment.database, environment.runtime, linkCommand),
+            ).rejects.toMatchObject({ outcome: 'canonical_session_required', code: 'canonical_session_required' });
+            return;
+          }
+          const nextIntent = await createProviderSecurityIntent(environment.database, environment.runtime, linkCommand);
           const providerCommand = { ...nextIntent, actor: nextActor };
           await expect(
             reauthenticateProviderWithPassword(environment.database, environment.runtime, {

@@ -42,13 +42,14 @@ under the user/provider locks. A Google assertion belonging to another user cann
 authorize linking, including when the target provider is Apple.
 
 The receipt binds exact user, requesting credential hash/kind, SID, generation,
-browser binding/version, intent, operation, provider and selected-authority receipt.
-Its deadline is bounded by the signed authentication event plus five minutes,
-provider proof expiry, source credential expiry, browser binding and intent.
+intent, operation, provider and selected-authority receipt. Its deadline is
+bounded by the signed authentication event plus five minutes, provider proof
+expiry, source credential expiry and intent. No session age stands in for it:
+a login, bridged or carried session signed in seconds ago still needs a receipt.
 Callback time, token `iat`, transfer/code issue time, refresh, navigation,
 `prompt=login` and `max_age` do not establish freshness.
 
-> **Partly superseded by #7596.** The browser binding/version and the binding deadline in this receipt, and the browser replacement steps in the next section, come from the browser binding design that is being removed. The five-minute reauthentication rule and the backend commands stay. B5 binds the receipt to the new session when it rebuilds the web layer. See [better-auth-browser-session.md](better-auth-browser-session.md).
+> **Re-keyed by #7596 B5c1.** The actor is the first-party web session, not a browser binding; see "Provider and first-password flows" in [better-auth-browser-session.md](better-auth-browser-session.md).
 
 Google's signed session-age claim requires the applicable app configuration and
 does not make an ordinary OAuth continuation a reauthentication request.
@@ -80,25 +81,24 @@ tokens, read raw tokens, extend their expiry, change connection owners or delete
 connections. Old web/browser profiles retain their original catalog contracts.
 
 The lock order is selected-authority gate, sorted provider subjects, actor user and
-cutoff/browser/intent, then locked primary owner rechecks. Selected ownership and
+cutoff, intent, then locked primary owner rechecks. Selected ownership and
 generation are reread after waits. Email matching never links identities, moves a
 subject or rewrites the local profile/verification. Unlink must retain one usable,
 unambiguous configured password or Google/Apple method.
 
-Preparation writes only the bound pending proposal. Finalization receives the
-exact caller-held candidate after the complete HTTP response has been buffered.
-In one transaction it prepares the browser replacement, performs the provider
-mutation and selected-direction mirror, records the generation/cutoffs and
-partner revocation, preserves the requesting continuation, and commits the branded
-browser replacement receipt. Every identity/credential write shares a savepoint.
-Validated policy/finalization failures may terminalize only that intent; wrong or
-stale actors cannot consume the intent or proof.
+Preparation writes only the bound pending proposal and mints nothing. In one
+transaction finalization performs the provider mutation and selected-direction
+mirror, records the generation/cutoffs and partner revocation, and keeps the
+requesting session in place: same id, token, sign-in time and expiry, at the new
+generation, checked against the branded mutation receipt. Every other first-party
+credential of the account ends. Every identity/credential write shares a
+savepoint. Validated policy/finalization failures may terminalize only that
+intent; wrong, stale or signed-out actors cannot consume the intent or proof.
 
-Lost-success recovery requires the exact caller-held candidate, original actor and
-flow capabilities, and current primary/browser selection. It returns only an ACK,
-candidate hash and cursor. It never reconstructs or returns a bearer from a SID,
-old actor hash, intent or reauthentication receipt. ACK expiry is bounded to two
-minutes and the original proof/intent/source deadlines.
+Lost-success recovery requires the same live session, at the generation the
+commit gave it, and the original intent, recovery and proof capabilities. It
+returns only an ACK and that generation, never a bearer. ACK expiry is bounded
+to two minutes and the original proof/intent/source deadlines.
 
 ## Evidence and remaining gates
 

@@ -20,7 +20,8 @@ import CapacitorRetirementGate from './components/capacitor-retirement/capacitor
 import { getServerFeatureFlag } from './lib/feature-flags/server-feature-flag';
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
-import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
+import { devEditorHostnames } from './lib/i18n/dev-editor';
+import { LOCALE_HTML_LANG, LOCALE_OG, ROOT_NAMESPACES } from './lib/i18n/config';
 import { PATHNAME_HEADER } from './lib/request-pathname-header';
 import { SITE_URL } from './lib/seo/base-url';
 import { SMART_APP_BANNER_META_NAME, smartAppBannerContent } from './lib/smart-app-banner';
@@ -90,6 +91,8 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [locale, requestHeaders] = await Promise.all([getLocale(), headers()]);
+  const DevTranslationEditor =
+    process.env.NODE_ENV === 'development' ? (await import('./components/i18n/dev-translation-editor')).default : null;
   const initialBrowser = classifyMarketingBrowser(requestHeaders.get('user-agent') ?? '');
   // Whether the footer offers a way into /build-plans. Resolved on the server
   // because SiteFooter renders in the first paint of every page and a link that
@@ -126,8 +129,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <AppThemeProvider>
-                <I18nProvider locale={locale}>
+                <I18nProvider
+                  locale={locale}
+                  namespaces={
+                    process.env.NODE_ENV === 'development' ? [...ROOT_NAMESPACES, 'devTools'] : ROOT_NAMESPACES
+                  }
+                >
                   <ConsentProvider>
+                    {DevTranslationEditor && (
+                      <DevTranslationEditor
+                        key={locale}
+                        locale={locale}
+                        allowedHostnames={devEditorHostnames(process.env.DEV_ALLOWED_ORIGINS)}
+                      />
+                    )}
                     <Suspense fallback={null}>
                       <AnalyticsIdentity />
                       <AnalyticsClient />
