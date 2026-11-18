@@ -5,6 +5,14 @@
 import { OpenAPIRegistry, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
+  CreateWorkoutSchema,
+  WorkoutCreatedSchema,
+  WorkoutResponseSchema,
+  WorkoutListQuerySchema,
+  WorkoutListSchema,
+  WorkoutConflictSchema,
+} from './workouts';
+import {
   ApiErrorResponseSchema,
   BoardTypeSchema,
   LogbookChangesQuerySchema,
@@ -28,6 +36,8 @@ const OAUTH_SCHEME = 'boardseshOAuth';
 export const PUBLIC_API_SCOPES = {
   'logbook:read': 'Every tick the climber has logged, on every board, including ones they keep private on Boardsesh.',
   'profile:read': "The climber's display name and avatar.",
+  'workouts:read': 'Read workouts your app created, including results.',
+  'workouts:write': 'Create and cancel workouts for the climber.',
   offline_access: 'Receive a refresh token to keep accessing the other granted scopes while the climber is away.',
 } as const;
 
@@ -170,5 +180,61 @@ export function createPublicApiRegistry(): OpenAPIRegistry {
     },
   });
 
+  const workoutErrors = {
+    400: errorResponse('Invalid request.'),
+    401: UNAUTHORIZED,
+    403: errorResponse('Missing workout scope.'),
+    404: errorResponse('Workout not found for this app and climber.'),
+    409: successResponse(
+      'Duplicate reference, workout cap or lifecycle conflict. A duplicate includes the existing workout.',
+      WorkoutConflictSchema,
+    ),
+    413: errorResponse('Body over 64 KB.'),
+    422: errorResponse('Invalid block or idempotency mismatch.'),
+    429: RATE_LIMITED,
+    '5XX': SERVER_ERROR,
+  };
+  registry.registerPath({
+    method: 'post',
+    path: '/v1/workouts',
+    operationId: 'createWorkout',
+    summary: 'Plan a workout',
+    security: requireScope('workouts:write'),
+    request: {
+      headers: z.object({ 'Idempotency-Key': z.uuid() }),
+      body: { required: true, content: jsonContent(CreateWorkoutSchema) },
+    },
+    responses: {
+      201: successResponse('Created workout. Replayed keys return the original response.', WorkoutCreatedSchema),
+      ...workoutErrors,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/v1/workouts',
+    operationId: 'listWorkouts',
+    summary: 'Read your workouts',
+    security: requireScope('workouts:read'),
+    request: { query: WorkoutListQuerySchema },
+    responses: { 200: successResponse('Workouts for this app and climber.', WorkoutListSchema), ...workoutErrors },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/v1/workouts/{id}',
+    operationId: 'getWorkout',
+    summary: 'Read a workout and its results',
+    security: requireScope('workouts:read'),
+    request: { params: z.object({ id: z.string().min(1) }) },
+    responses: { 200: successResponse('Workout and current results.', WorkoutResponseSchema), ...workoutErrors },
+  });
+  registry.registerPath({
+    method: 'delete',
+    path: '/v1/workouts/{id}',
+    operationId: 'cancelWorkout',
+    summary: 'Cancel an unstarted workout',
+    security: requireScope('workouts:write'),
+    request: { params: z.object({ id: z.string().min(1) }) },
+    responses: { 204: { description: 'Cancelled.', headers: RateLimitHeadersSchema }, ...workoutErrors },
+  });
   return registry;
 }

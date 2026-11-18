@@ -697,7 +697,13 @@ describe('partner OAuth on, in the real server', () => {
         authorization_response_iss_parameter_supported: true,
       });
       // Gate 10: only shipped scopes. logbook:read joined with its route (L4).
-      expect(metadata.scopes_supported).toEqual(['logbook:read', 'profile:read', 'offline_access']);
+      expect(metadata.scopes_supported).toEqual([
+        'logbook:read',
+        'profile:read',
+        'workouts:read',
+        'workouts:write',
+        'offline_access',
+      ]);
       expect(metadata).not.toHaveProperty('introspection_endpoint');
       expect(metadata).not.toHaveProperty('userinfo_endpoint');
       expect(metadata).not.toHaveProperty('registration_endpoint');
@@ -1105,11 +1111,11 @@ describe('partner OAuth on, in the real server', () => {
     });
 
     it(
-      'offers no scope the API does not serve: workouts:write waits for its route',
+      'offers no scope the API does not serve: writing logbook ticks remains unavailable',
       async () => {
         const app = await registerApp();
         const climber = await newClimber();
-        const authorization = await startAuthorization(app, { scopes: ['workouts:write', 'offline_access'] });
+        const authorization = await startAuthorization(app, { scopes: ['logbook:write', 'offline_access'] });
         expectErrorAtApp(await openAuthorize(authorization.url, climber), app, authorization, 'invalid_scope');
       },
       SUITE_DEADLINE_MS,
@@ -2757,7 +2763,7 @@ describe('partner OAuth on, in the real server', () => {
     );
 
     it(
-      'open serves the same flow, and still registers only allowlisted developers',
+      'open serves the same flow and requires developer email verification',
       async () => {
         const app = await registerApp();
         await withDeployment('open', async (opened) => {
@@ -2782,7 +2788,7 @@ describe('partner OAuth on, in the real server', () => {
             },
             { bearer: await firstPartyToken(outsider) },
           );
-          expect(refused.errors?.[0]?.extensions).toMatchObject({ code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' });
+          expect(refused.errors?.[0]?.extensions).toMatchObject({ code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' });
         });
       },
       SUITE_DEADLINE_MS,

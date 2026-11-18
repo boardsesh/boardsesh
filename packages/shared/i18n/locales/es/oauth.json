@@ -66,7 +66,9 @@
       "logbookUnlisted": "Incluidos los bloques no listados y los borradores de otros setters que hayas registrado",
       "logbookSpraywall": "Los bloques del Spraywall «Privado» o «Solo con enlace» de otra persona llegan sin su nombre",
       "offlineAccess": "Mantener este acceso hasta que la desconectes",
-      "other": "Otro acceso: {{scope}}"
+      "other": "Otro acceso: {{scope}}",
+      "workoutsRead": "Leer los resultados de los entrenamientos de esta app",
+      "workoutsWrite": "Planificar y cancelar tus entrenamientos"
     },
     "cannot": "No puede cambiar nada de tu cuenta y nunca ve tu contraseña.",
     "notReviewed": "Boardsesh no ha revisado esta app. Conecta solo apps de confianza.",

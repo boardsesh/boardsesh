@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
 import reviewedPrivateWebRelationShapes from './credential-writer-private-web-v1';
 import reviewedBrowserRelationShapes from './credential-writer-private-browser-v1';
+import reviewedPartnerLifecycleShapes from './credential-writer-partner-lifecycle';
 import reviewedProviderRelationShapes from './credential-writer-private-provider-v1';
 import reviewedFirstPasswordRelationShapes from './credential-writer-private-first-password-v1';
 import reviewedBrowserRenewalRelationShapes from './credential-writer-private-browser-renewal-v1';
@@ -217,7 +218,13 @@ export async function qualifyCredentialWriter(
     : directPartnerRevocation
       ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
       : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
-  const closureRelations = [...new Set([...Object.keys(capabilities), ...partnerRevocationRelations])];
+  // Historical web/browser receipts pin the pre-0313 schema. The current
+  // provider profiles also follow the two lifecycle triggers into their sinks;
+  // those tables belong to the closure without granting the LOGIN access.
+  const lifecycleRelations = directPartnerRevocation ? reviewedPartnerLifecycleShapes.map(({ name }) => name) : [];
+  const closureRelations = [
+    ...new Set([...Object.keys(capabilities), ...partnerRevocationRelations, ...lifecycleRelations]),
+  ];
   const deleteSources = [
     ...Object.entries(capabilities)
       .filter(([, privileges]) => privileges.includes('DELETE'))
@@ -232,12 +239,14 @@ export async function qualifyCredentialWriter(
       .filter(([, columns]) => Object.values(columns).some((privileges) => privileges.includes('UPDATE')))
       .map(([table]) => table),
     'oauth_connections',
+    ...(directPartnerRevocation ? ['app_workouts'] : []),
   ];
   const reviewedRelationShapes = directPartnerRevocation
     ? [
         ...reviewedPrivateWebRelationShapes.filter((relation) => relation.name !== 'auth_security_mutation_events'),
         ...reviewedBrowserRelationShapes,
         ...reviewedProviderRelationShapes,
+        ...reviewedPartnerLifecycleShapes,
         ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
         ...(browserRenewal ? reviewedBrowserRenewalRelationShapes : []),
       ].sort((left, right) => left.name.localeCompare(right.name))
@@ -414,6 +423,8 @@ export async function qualifyCredentialWriter(
     (SELECT count(*) FROM closure)<>${closureRelations.length}
       OR EXISTS (SELECT 1 FROM closure JOIN pg_class relation ON relation.oid=closure.oid JOIN pg_am method ON method.oid=relation.relam
         WHERE relation.relkind<>'r' OR relation.relrowsecurity OR relation.relforcerowsecurity OR relation.relispartition OR method.amname<>'heap'
+        OR (relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(lifecycleRelations)}::text::jsonb))
+          AND relation.relowner<>(SELECT relowner FROM pg_class WHERE oid='public.user_credentials'::regclass))
         OR EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid=relation.oid OR inhparent=relation.oid)
         OR EXISTS (SELECT 1 FROM pg_rewrite WHERE ev_class=relation.oid AND rulename<>'_RETURN')
         OR EXISTS (SELECT 1 FROM pg_attribute attribute JOIN pg_type type ON type.oid=attribute.atttypid
@@ -468,8 +479,26 @@ export async function qualifyCredentialWriter(
       language.lanname AS language, routine.proowner=(SELECT relowner FROM pg_class WHERE oid='public.user_credentials'::regclass) AS "ownerMatches"
     FROM pg_proc routine JOIN pg_language language ON language.oid=routine.prolang
     WHERE routine.pronamespace='public'::regnamespace AND routine.oid IN
-      (to_regprocedure('public.partner_revoke_on_credential_change()'),to_regprocedure('public.partner_revoke_user(text)')) ORDER BY 1`;
+      (to_regprocedure('public.partner_revoke_on_credential_change()'),to_regprocedure('public.partner_revoke_user(text)'),
+       CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.partner_account_deletion_events()') END,
+       CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.partner_connection_lifecycle_events()') END) ORDER BY 1`;
   const expectedRoutines = [
+    ...(directPartnerRevocation
+      ? [
+          {
+            name: 'partner_account_deletion_events',
+            sha256: '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5',
+            definer: true,
+            configuration: ['search_path=pg_catalog'],
+          },
+          {
+            name: 'partner_connection_lifecycle_events',
+            sha256: '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e',
+            definer: true,
+            configuration: ['search_path=pg_catalog'],
+          },
+        ]
+      : []),
     {
       name: 'partner_revoke_on_credential_change',
       sha256: 'caff89c7db895f231d40ebc519d7d4ad770db7fe8df19ae274c28470b2d4cfa2',
@@ -504,6 +533,20 @@ export async function qualifyCredentialWriter(
     WHERE NOT trigger.tgisinternal AND trigger.tgrelid IN (SELECT relation.oid FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
       WHERE namespace.nspname='public' AND relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(closureRelations)}::text::jsonb))) ORDER BY trigger.tgname`;
   const expectedTriggers = [
+    ...(directPartnerRevocation
+      ? [
+          {
+            definition:
+              'CREATE TRIGGER trg_partner_account_deletion_events BEFORE DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION partner_account_deletion_events()',
+            enabled: 'O',
+          },
+          {
+            definition:
+              'CREATE TRIGGER trg_partner_connection_lifecycle_events AFTER UPDATE OF generation, revoked_at ON public.oauth_connections FOR EACH ROW EXECUTE FUNCTION partner_connection_lifecycle_events()',
+            enabled: 'O',
+          },
+        ]
+      : []),
     {
       definition:
         'CREATE TRIGGER trg_user_credentials_partner_revoke_insert BEFORE INSERT ON public.user_credentials FOR EACH ROW EXECUTE FUNCTION partner_revoke_on_credential_change()',

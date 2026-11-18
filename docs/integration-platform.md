@@ -2593,10 +2593,13 @@ a sign-in older than 30 days never counts.
 | A | `allowlist` | The owner's test app, test accounts only | 25 live, 20 new in 24 hours | Everything in "Before the first switch-on" is done | 3 days |
 | B | `allowlist` | Sequence and DivePeaks developers, their own accounts only | 25 live, 20 new in 24 hours | Stage A clean | 7 days |
 | C | `allowlist` | Real climbers | 25 live, 20 new in 24 hours | Stage B clean | Until stage D |
-| D | `open` | Any developer with a verified email | The stage D default, still open (200 new a day was the proposal) | BA-02 ships or registration proves the email itself; milestone 2 docs; a second independent agent review; emailing climbers when an app connects (decision 8) | |
+| D | `open` | Any developer with a verified email | 25 live, 20 new in 24 hours; admins can change either cap | Independent registration email proof; milestone 2 docs; a second independent agent review; emailing climbers when an app connects (decision 8) | |
 
-Until stage D's email proof exists, `open` registers only the developers the
-flag names ([What the backend does today](#what-the-backend-does-today-f12)).
+Milestone 2 implements independent email proof for `open` registration. In
+`allowlist`, admission still uses the developer flag. Moving to stage D remains
+an operator action after its launch checks; implementing the proof does not
+change the deployed mode. The earlier fallback to flag-only `open` admission
+is superseded by this proof.
 
 **Stage A.**
 
@@ -2919,6 +2922,12 @@ Acceptance for the milestone:
 
 ### Milestone 2: open self-service
 
+Implemented: public HTML and Markdown guides, API reference, changelog,
+`llms.txt`, the sync example and offline mock recipe; independent developer
+email verification in `open` mode; connection notices, usage summaries and
+alerts; and admin app listings with audited connection-cap changes. Defaults
+remain 25 active connections and 20 new connections per rolling 24 hours.
+
 | PR | Acceptance |
 | --- | --- |
 | Developer docs on `www`, `llms.txt`, example client, Prism recipe | The agent acceptance test below passes |
@@ -2926,24 +2935,50 @@ Acceptance for the milestone:
 | Developer terms, privacy-policy paragraph | Marco approves the wording |
 | `/docs` GraphQL tab labelled internal | |
 | Usage summary event and alerts | Visible for the beta apps |
-| Remove the `developer-console` flag | Anyone with a verified account can register |
+| Open registration independently of `developer-console` in `open` mode | Anyone who completes the separate developer email proof can register; `allowlist` keeps its flag |
+
+Rollout gates remain: deploy the migrations and configured services, verify
+email delivery and operational alerts, complete the developer/agent acceptance
+exercise below, and satisfy the staged operator runbook. This implementation
+does not switch production to `open`.
 
 ### Milestone 3: workouts
 
-The Sequence handoff, built on milestone 1 instead of beside it. Design in
+Implemented: scoped workout create/list/read/cancel routes, launch links and
+account-safe mobile handling, native and freeform blocks, durable session-plan
+association, results, completion and expiry. Starting a new session commits its
+initial queue and plan together; retries and app restarts restore that winner.
+
+The Sequence handoff builds on milestone 1. Design in
 [partner-workouts-internal.md](./partner-workouts-internal.md); contract in
 partner-api.md. Results are read with `GET /v1/workouts/{id}`. Acceptance as
 listed there.
 
+Device gates remain: verify launch, account mismatch, cold restart after a lost
+Start response, shared-session ownership and End on supported iOS/Android
+devices. Synthetic backend and mobile tests do not replace those checks or the
+Sequence partner trial.
+
 ### Milestone 4: webhooks
 
-Only once an app asks for push. `logbook.changed`, `workout.completed`,
-`connection.revoked`, with the SSRF rules above. Acceptance: a delivery to a
+Implemented: opt-in `logbook.changed`, `workout.completed` and
+`connection.revoked` subscriptions; signed deliveries, retries, debounce,
+endpoint/key rotation, failure controls and durable revocation after account
+deletion. Event production and delivery enforce connection generations and
+endpoint versions, with the SSRF rules above.
+
+Acceptance remains: a delivery to a
 `127.0.0.1` or `169.254.169.254` URL is refused at registration and at send
 time; a revoked generation gets only `connection.revoked` after revocation.
 Deliver that event after reconnect and race it with token replacement: the
 client preserves the new credential set and data. Transport failures never
 cause deletion.
+
+Operator gates remain: prebuild the global feed index on a populated database,
+deploy migrations and backend workers, configure the encryption keyring, and
+verify signed delivery, retries, rotation, failure email and reconnect handling
+against an external test endpoint. Production subscriptions are not enabled by
+this implementation.
 
 ### Later, each on demand
 
@@ -3035,3 +3070,100 @@ bug: fix it and rerun.
 - [better-auth-migration.md](./better-auth-migration.md), first-party identity,
   session and native/watch compatibility migration
 - [background-workers.md](./background-workers.md), pg-boss roles
+
+## Milestones 2–4 implementation decisions (2026-11-17)
+
+The owner requested all three remaining milestones and chose to keep 25 active
+connections and 20 new connections per rolling 24 hours. Global admins can list
+apps, inspect connection counts and change either cap. Zero blocks new
+connections; lowering a cap does not revoke existing credentials. Limit changes
+carry a durable actor and before/after audit record.
+
+Developer registration in `open` mode requires independent, single-use email
+proof bound to the signed-in user and exact current email. Legacy
+`emailVerified` is not proof. Allowlisted admission and production mode switches
+remain separate from this implementation.
+
+Workout references remain unique after cancellation; replacement plans use a
+new `externalRef`. Attachment belongs to a climber and session, allowing each
+party member their own workout. Session deletion is restricted while a partner
+workout references it. Existing server workout plans are reused; ambiguous
+climb-to-block matches remain null in public results.
+
+While the owner is unattended, implementation questions are referred to an
+independent Astra subagent. Its security review chose these webhook rules:
+
+1. Capture the endpoint version when producing an event and check it again at
+   relay and delivery. An old endpoint's response cannot disable a newer one.
+2. Keep the previous signing key for 24 hours and refuse another rotation until
+   that overlap ends. Rotation does not shorten an already promised window.
+3. Keep minimal pairwise-subject revocation events after climber deletion; app
+   deletion can remove them. A thin hint already in flight may arrive after
+   Disconnect. Recheck authorization immediately before transport and never hold
+   a database transaction across HTTP; reading the API still enforces revocation.
+4. Keep terminal delivery records for 30 days and relayed outbox entries for
+   seven days. Never age out unrelayed events, retryable deliveries or pending
+   debounce work. Retire expired rotation keys and obsolete debounce generations.
+5. Treat signing/configuration failures as internal faults, not endpoint
+   failures. Paused deployments do not claim delivery jobs. Scope checks use
+   current generation-bound credential families, not `oauth_connections.scopes`.
+
+The review also requires backend-only table privileges and exact qualification
+of new trigger functions. Existing auth migration gates are extended, not
+waived. These decisions authorize implementation and synthetic validation;
+production activation and device evidence remain the operator runbook's gates.
+
+Current credential-writer profiles verify both lifecycle trigger bodies, their
+owner and `pg_catalog` search path, exact trigger tables and timing, and the four
+tables they read or write. The restricted login gains no direct access to those
+tables. Pinned historical web/browser profiles retain their original catalog.
+
+Before deploying the global feed reader on an existing populated database, the
+operator prebuilds its plain index outside a transaction:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS logbook_changes_global_position_idx
+  ON public.logbook_changes (txid, seq);
+```
+
+Migration 0321 uses `IF NOT EXISTS`, so fresh/test databases create it normally.
+This implementation does not execute the production command or activate partner
+modes. API error/cap and five-minute write-horizon alerts use sanitized
+error-level events through the existing Sentry transport with a 15-minute
+cooldown; PostHog summaries are measurement, not an alert subscription.
+
+Astra's lost-Start decision: a newly generated session persists the initial
+bounded queue, current climb and partner plan in its creation transaction,
+before publishing the session ID. A replay returns that winning session and
+ignores a newly generated candidate. After a lost response or restart, the app
+joins and restores the persisted queue; it never infers permission to append
+from a missing snapshot. Already-active session additions remain explicit.
+This reuses cold session restoration and avoids a new PostgreSQL/Redis repair
+protocol. The climber's chosen session audience is passed through this path.
+
+The first join also restores the solo History/Up next boundary. On a new
+partner session, the seed stores that boundary with queue version 1, after
+placing any orphan current climb at its queue position. Without a current
+climb, that boundary keeps already-climbed solo items out of the workout's
+Up next list. Later versions and older rows use the usual cold-restoration
+rule in [Current climb outside the queue](./current-climb-outside-queue.md).
+
+Version 1 session plans can store 300 workout items. The app accepts larger
+partner requests and shows how many climbs it can prepare. A new workout
+also shares a 500-item queue with the climber's solo queue, including History
+and the current climb. Existing session workouts count toward the 300-item
+limit when attaching another block. The recorded plan includes only the
+climbs that fit, so older app versions can read the full saved plan.
+
+Astra's tooling decision keeps the atomic Start wire type beside the mobile
+GraphQL operation, with a type-only re-export from the queue context. Node
+validation scripts also import that operation; importing the provider instead
+loads Expo global declarations and changes Node timer and environment types.
+The request shape and runtime behavior remain unchanged.
+
+The mobile Start fence uses the existing pure privacy-cache credential
+generation, also used by the queue provider and realtime hooks. The auth
+store advances it synchronously at credential boundaries, before storage
+awaits. This preserves account isolation without importing native SecureStore
+into queue commands or their transport-only tests. Regression coverage keeps
+account-change rejection and exercises the real offline/rejoin provider stack.

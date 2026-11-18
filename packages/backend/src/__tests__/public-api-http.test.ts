@@ -70,7 +70,7 @@ describe('public API routes', () => {
     // A plain GET needs no preflight, so the public document answers none.
     expect(matchPublicApiPreflight('OPTIONS', '/v1/openapi.json')).toBeUndefined();
     expect(matchPublicApiPreflight('OPTIONS', '/v1/logbook/ticks/')).toBeUndefined();
-    expect(matchPublicApiPreflight('OPTIONS', '/v1/workouts')).toBeUndefined();
+    expect(matchPublicApiPreflight('OPTIONS', '/v1/workouts')?.kind).toBe('workouts-create');
     expect(matchPublicApiPreflight('GET', '/v1/me')).toBeUndefined();
   });
 });

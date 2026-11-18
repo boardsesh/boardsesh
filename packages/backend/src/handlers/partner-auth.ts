@@ -11,6 +11,7 @@ import {
 } from '../auth/partner/routes';
 import { getPartnerLimitIdentity, type PartnerLimitIdentity } from '../utils/client-ip';
 import { logger } from '../utils/logger';
+import { recordPublicApiRequest } from '../services/public-api-usage';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { isApiHost } from './api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders, type PartnerCorsPolicy } from './partner-cors';
@@ -417,7 +418,7 @@ export function createPartnerAuthHandler({
     identity: PartnerLimitIdentity,
     ledger: RateLimitLedger,
     requestId: string,
-  ): Promise<{ response: Response; clientId: string | undefined }> {
+  ): Promise<{ response: Response; clientId: string | undefined; authenticatedClientId?: string }> {
     const isConsent = CONSENT_ROUTES.has(route.kind);
     // One bucket for both: the screen reads the details once and posts once.
     if (isConsent) await consumePerAddress(ledger, identity, 'oauth-consent', CONSENT_PER_IP);
@@ -464,7 +465,9 @@ export function createPartnerAuthHandler({
       permit.release();
     }
     await chargeWholeAppBudget(route.kind, clientId, response);
-    return { response, clientId };
+    const clientAuthenticated =
+      route.kind === 'token' && (response.ok || (await reachedAfterClientAuthentication(response)));
+    return { response, clientId, authenticatedClientId: clientAuthenticated ? clientId : undefined };
   }
 
   /**
@@ -529,12 +532,14 @@ export function createPartnerAuthHandler({
   }
 
   async function serveRoute(req: IncomingMessage, res: ServerResponse, route: PartnerRoute): Promise<void> {
+    const startedAt = performance.now();
     const requestId = `req_${randomBytes(12).toString('base64url')}`;
     const ledger = new RateLimitLedger();
     const identity = getPartnerLimitIdentity(req);
     const policy = corsPolicyFor(route.kind);
     let runtime: PartnerRuntime | null = null;
     let clientId: string | undefined;
+    let authenticatedClientId: string | undefined;
     let closeConnection = false;
 
     let response: Response;
@@ -551,6 +556,7 @@ export function createPartnerAuthHandler({
           const outcome = await serveBodyRoute(req, route, runtime, identity, ledger, requestId);
           response = outcome.response;
           clientId = outcome.clientId;
+          authenticatedClientId = outcome.authenticatedClientId;
         }
       }
     } catch (error) {
@@ -570,6 +576,7 @@ export function createPartnerAuthHandler({
       closeConnection,
     });
     logger.info('Partner OAuth request', { requestId, clientId, route: route.kind, status: response.status });
+    recordPublicApiRequest(authenticatedClientId, 'oauth', response.status, performance.now() - startedAt);
   }
 
   return async function handlePartnerAuth(req, res): Promise<boolean> {

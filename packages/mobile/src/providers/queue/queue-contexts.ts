@@ -13,8 +13,9 @@ import type {
 import type { PublishPlaybackStateInput, SessionRestCadenceSendOptions } from '@boardsesh/queue-react';
 import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import type { PlaybackStateChangedEvent, SessionSummary, SessionUser, UserBoard } from '@boardsesh/shared-schema';
-import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
+import type { AppWorkoutInitialSeed, SessionLiveStatsEvent } from '../../lib/graphql/operations';
 import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
+export type { AppWorkoutInitialSeed } from '../../lib/graphql/operations';
 
 /** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
 export type QueueReorderSource = 'drag' | 'play-next';
@@ -42,6 +43,8 @@ export type EndSessionOptions = {
 };
 
 export type StartSessionConfig = {
+  appWorkoutId?: string;
+  appWorkoutSeed?: AppWorkoutInitialSeed;
   audience?: 'public' | 'unlisted' | 'followers' | 'invite_only';
   name?: string;
   goal?: string;

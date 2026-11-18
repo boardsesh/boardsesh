@@ -1,3 +1,4 @@
+import { hasVerifiedPartnerDeveloperEmail } from './developer-email';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { BetterAuthPlugin } from 'better-auth';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
@@ -203,7 +204,7 @@ function isSuspended(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | und
   return row.disabled === true || Boolean(policy?.suspendedAt);
 }
 
-async function lockDeveloper(transaction: PartnerDatabase, developerId: string): Promise<void> {
+export async function lockDeveloper(transaction: PartnerDatabase, developerId: string): Promise<void> {
   await transaction.execute(
     sql`select pg_advisory_xact_lock(${REGISTRATION_LOCK_NAMESPACE}, hashtext(${developerId}))`,
   );
@@ -316,7 +317,7 @@ function recentSignInRefusal(): PartnerRegistrationError {
  * took its apps with it, so that reads as the app being gone. Returns the
  * address for the notice.
  */
-async function requireRecentSignIn(
+export async function requireRecentSignIn(
   transaction: PartnerDatabase,
   developerId: string,
   signIn: WebSignInProof | null | undefined,
@@ -365,6 +366,7 @@ export interface PartnerRegistration {
     database: PartnerDatabase,
     developerId: string,
     input: Record<string, unknown>,
+    options?: { requireEmailProof?: boolean },
   ): Promise<PartnerAppCredentials>;
   /**
    * `signIn` is the request's verified sign-in (`ConnectionContext.webSignIn`).
@@ -462,7 +464,7 @@ export function createPartnerRegistration({
       return rows.map(({ row, policy }) => toRecord(row, policy, active.get(row.clientId) ?? 0));
     },
 
-    async createApp(database, developerId, rawInput) {
+    async createApp(database, developerId, rawInput, options) {
       const input = normalizePartnerAppInput(rawInput, configuration.developerTermsVersion);
       const created = await inRegistrationTransaction(database, async (transaction) => {
         // Serializes this developer's registrations, so the app count below holds under a race.
@@ -470,8 +472,10 @@ export function createPartnerRegistration({
         const [developer] = await transaction
           .select({ email: users.email, emailVerified: users.emailVerified })
           .from(users)
-          .where(eq(users.id, developerId));
-        if (!developer?.emailVerified) {
+          .where(eq(users.id, developerId))
+          .for('share');
+        const emailProof = developer && (await hasVerifiedPartnerDeveloperEmail(transaction, developerId));
+        if (!developer || (options?.requireEmailProof ? !emailProof : !developer.emailVerified && !emailProof)) {
           throw new PartnerRegistrationError(
             'email_not_verified',
             'Verify your email address before you register an app.',

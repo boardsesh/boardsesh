@@ -224,7 +224,7 @@
       },
       "open": {
         "title": "Register your app",
-        "body": "Sign in as an enabled developer, accept the developer terms and create an app in the console. You get a client ID straight away, and a client secret if your server exchanges the code. If your account isn't enabled yet, the console says so.",
+        "body": "Sign in, verify your developer email and accept the developer terms to create an app in the console. You get a client ID and, if your server exchanges the code, a client secret. No invitation is needed.",
         "action": "Open the developer console"
       }
     },
@@ -322,5 +322,146 @@
         "support": "Ask the Boardsesh team"
       }
     }
+  },
+  "emailVerification": {
+    "title": "Verify your developer email",
+    "lead": "Confirm your email before registering an app.",
+    "description": "Send a confirmation link to {{email}}. Each new email replaces the previous link.",
+    "send": "Send confirmation email",
+    "sending": "Sending…",
+    "sent": "Check your inbox. The link expires in 30 minutes.",
+    "failed": "The email could not be sent. Wait one minute, then try again.",
+    "confirmDescription": "Confirm only if you requested a developer email for this signed-in account.",
+    "signInHelp": "Sign in in a new tab, then return here. Use the same account that requested this email.",
+    "signIn": "Sign in",
+    "confirm": "Confirm developer email",
+    "confirming": "Confirming…",
+    "verified": "Your developer email is verified. You can register an app.",
+    "invalid": "This link expired, was replaced, or belongs to another account. Request a new email from the developer console.",
+    "back": "Open developer apps"
+  },
+  "guides": {
+    "labels": {
+      "home": "Developer overview",
+      "related": "Keep reading",
+      "markdown": "Read as Markdown",
+      "openapi": "Download OpenAPI 3.1",
+      "example": "Download the logbook-sync example",
+      "loading": "Loading API reference…",
+      "invitation": "Registration is by invitation. Contact support@boardsesh.com for access."
+    },
+    "auth": {
+      "title": "Connect a climber with OAuth",
+      "description": "Register an app, authorize with PKCE and keep rotating credentials safe.",
+      "registration": {
+        "title": "Register your app",
+        "body": "Sign in at /developers/apps and verify your email for developer access. Register a public native app for a command-line tool, mobile app or desktop app; register a public web app for a browser, or a confidential app when your server exchanges the code. Keep the secret on that server.\n\nRegister the exact redirect URI. A native app may use http://127.0.0.1:8765/oauth/boardsesh or http://[::1]:8765/oauth/boardsesh; the loopback port is ignored when matching. https URLs and private-use schemes with a dot are allowed. localhost, wildcards, fragments, Boardsesh hosts and Boardsesh schemes are refused. Each account can register 10 apps, with 10 redirects per app. Default connection limits are 25 active climbers and 20 new connections in any 24 hours. Ask support@boardsesh.com about higher limits."
+      },
+      "authorize": {
+        "title": "Authorize in the system browser",
+        "body": "Discover endpoints from https://api.boardsesh.com/.well-known/oauth-authorization-server/api/auth. The issuer is https://api.boardsesh.com/api/auth and the resource is exactly https://api.boardsesh.com/v1. Send that resource when authorizing, exchanging and refreshing.\n\nGenerate a random PKCE verifier and S256 challenge, plus at least 128 random bits for state. Ask for logbook:read and offline_access; add profile:read only for the name and avatar. Open the authorize URL in a system browser. On return, verify state and iss before exchanging the code. Codes last 60 seconds and work once. Restart authorization if an exchange has an uncertain outcome."
+      },
+      "credentials": {
+        "title": "Store each rotated token before using it",
+        "body": "Access tokens last one hour and refresh tokens 90 days. Every refresh replaces the refresh token. Serialize refreshes for a climber and durably store the new pair before using the access token. Replaying a consumed refresh token invalidates its family. Never retry a refresh after a network failure whose outcome is unknown; reconnect instead.\n\nA 401 means refresh once and retry. invalid_grant means reconnect, then stop calling with that credential. Keep the authentication method registered by the app: none, client_secret_post or client_secret_basic. Browser clients use registered https redirect origins for CORS; do not store credentials in browser preferences."
+      },
+      "disconnect": {
+        "title": "Disconnect the whole connection",
+        "body": "DELETE /v1/connection needs no extra scope. A 204 confirms disconnect; remove stored credentials and the climber’s copy unless they asked you to keep it. A 401 alone does not prove an earlier DELETE succeeded. Refresh once and retry; if credentials are unusable, ask the climber to check Connected apps in Boardsesh. Revoking one token through the OAuth revoke endpoint does not disconnect every credential family. Password changes and account deletion also disconnect apps."
+      }
+    },
+    "sync": {
+      "title": "Keep a complete logbook in sync",
+      "description": "Download a full snapshot, commit changes and cursors together, and recover safely after expiry.",
+      "snapshot": {
+        "title": "Build a replacement copy first",
+        "body": "GET /v1/logbook/changes with no cursor starts a complete snapshot, including unchanged old ticks and ticks from before this API existed. Follow every cursor until hasMore is false; the last snapshot page enters incremental catch-up and still has hasMore: true. Empty pages may also have hasMore: true. limit defaults to 100 and ranges from 1 to 200.\n\nBuild a separate replacement copy. Publish it and its final cursor in one durable transaction, keeping the previous copy until then. After a crash during bootstrap, discard the abandoned replacement and restart without a cursor. Never apply snapshot pages as incremental changes to your previous live copy."
+      },
+      "changes": {
+        "title": "Apply each page and cursor together",
+        "body": "With logbook:read, upsert tick entries by tick.id and remove tick.deleted entries by id, even if you never saw that tick. Apply entries in order, ignore unknown change types and retain fields you do not yet understand. Persist the page’s mutations and cursor atomically, and serialize sync for each climber.\n\nA tick carries the climber’s own attempts, grade, stars and comment. Catalog grades may change without a tick change. Never infer a deletion from an empty incremental page. The account ID from GET /v1/me is stable for your app across reconnects and different for other apps; keep copies isolated by app and account."
+      },
+      "recovery": {
+        "title": "Recover from 410 without losing the previous copy",
+        "body": "A 410 cursor_expired requires a complete replacement, never just resetting the cursor against your old copy. Persist a full-sync-required marker before the next request. Snapshot cursors expire after one hour and belong to one app connection. Incremental retention is controlled by the pruning watermark; do not expire a cursor using its age alone.\n\nThe example client keeps credentials, ticks, the cursor and the full-sync marker in one private JSON file. It holds an exclusive lock for the command, writes replacements with atomic rename, serializes refreshes and retries network errors, 429 and 5xx with backoff. If a command crashes, confirm it has stopped before removing its leftover .lock file."
+      },
+      "poll": {
+        "title": "Poll when the climber needs it",
+        "body": "Sync when the climber opens your app. Background sync runs no more than once every 15 minutes per climber. Honor Retry-After on 429 and temporary 503 responses. Optional logbook.changed webhooks tell you to run this same sync; they do not replace the feed.\n\nKeep all private ticks private in your app too. A tick on someone else’s non-public Spraywall redacts the climb name and wall identity. Do not build a climb catalog or publish other setters’ draft or unlisted climbs from a logbook."
+      }
+    },
+    "errors": {
+      "title": "Handle API failures and limits",
+      "description": "Know when to refresh, rebuild a logbook, wait or ask the climber to reconnect.",
+      "status": {
+        "title": "Branch on HTTP status first",
+        "body": "400 means a malformed request or cursor. 401 invalid_token means refresh once and retry; invalid_grant during refresh means reconnect. 403 insufficient_scope needs authorization for that scope. 404 hides resources owned by another app or climber. 409 means a conflict, including a reused externalRef or cancelling a started workout. 410 cursor_expired means a full replacement sync. 413 means a body larger than 64 KB; 422 means validation or idempotency mismatch.\n\n429 and 5xx are retryable. Honor Retry-After and use bounded exponential backoff. Network failures do not prove revocation. Error codes and fields can grow on v1, so tolerate new ones. Errors carry error, message and requestId; validation errors may add field. OAuth uses error and error_description."
+      },
+      "limits": {
+        "title": "Read the response headers",
+        "body": "API calls allow 120 requests per minute per app/climber and 6,000 per app. Refresh allows 10 per minute per connection. Code exchange and revoke allow 60 per minute per app/client IP. A new app allows 25 active climbers and 20 new connections per rolling 24 hours. An administrator may adjust an app’s connection caps.\n\nRateLimit-Limit, RateLimit-Remaining and RateLimit-Reset describe the tightest request limit; Retry-After gives the wait in seconds. Boardsesh-Request-Id identifies the request in support logs. Never send access tokens, refresh tokens, codes or client secrets to support."
+      },
+      "versions": {
+        "title": "Expect additive changes",
+        "body": "v1 can add fields, routes, scopes, event types and enum values. Ignore what you do not understand. Removing or renaming a field requires v2; v1 continues for at least six months with a Sunset header. Every contract change is listed in the developer changelog.\n\nUse the OpenAPI 3.1 document to generate a client or mock the API offline. The mock demonstrates response shapes, not OAuth security or real cursor semantics. Test authorization and synchronization against your own account before shipping."
+      }
+    },
+    "reference": {
+      "title": "Boardsesh partner API reference",
+      "description": "Explore the scoped REST API and download its OpenAPI 3.1 contract.",
+      "contract": {
+        "title": "Use the published contract",
+        "body": "The API host is https://api.boardsesh.com. Calls under /v1 use an opaque Bearer token for the resource https://api.boardsesh.com/v1. OAuth endpoints and their metadata are separate from this REST contract. The reference below uses the same committed OpenAPI document as the backend.\n\nGenerate a client from the document or run the Prism mock below. Every response example is illustrative. The mock cannot authorize an app, refresh a token, maintain a snapshot or enforce ownership. Use your own account for those flows."
+      }
+    },
+    "changelog": {
+      "title": "Boardsesh API changelog",
+      "description": "Read the changes to the versioned API contract, newest first.",
+      "contract": {
+        "title": "Contract changes",
+        "body": "Entries come from the same committed changelog checked against the generated OpenAPI document in CI. New fields and routes remain on v1; removals and renames require a new major version. Check this page when updating your client."
+      }
+    }
+  },
+  "webhooks": {
+    "open": "Webhooks",
+    "title": "Webhooks for {{app}}",
+    "description": "Receive a notification when a logbook changes, a workout finishes or a connection ends. Notifications contain no climbing data.",
+    "loading": "Loading webhook settings…",
+    "failed": "Webhook settings could not be saved or loaded. Try again.",
+    "retry": "Try again",
+    "url": "HTTPS endpoint URL",
+    "urlHelp": "Public HTTPS on port 443. Private addresses and redirects are refused.",
+    "events": "Notification events",
+    "enabled": "Enable deliveries",
+    "save": "Save webhook",
+    "saving": "Saving…",
+    "saved": "Webhook saved.",
+    "testQueued": "Test delivery queued. Refresh the delivery list to see its result.",
+    "secretOnce": "Copy this secret now. It will not be shown again.",
+    "secret": "Webhook signing secret",
+    "rotationHelp": "After rotation, requests carry signatures from both secrets for 24 hours. Update your receiver before the old secret expires.",
+    "rotate": "Rotate signing secret",
+    "test": "Send test delivery",
+    "disable": "Disable deliveries",
+    "enable": "Re-enable deliveries",
+    "deliveries": "Recent deliveries",
+    "refresh": "Refresh deliveries",
+    "noDeliveries": "No deliveries yet.",
+    "delivery": "{{event}} · {{status}} · {{attempts}} attempts · HTTP {{code}}",
+    "noResponse": "no response",
+    "close": "Close",
+    "endpointGone": "This endpoint returned HTTP 410. Fix the endpoint, then re-enable deliveries.",
+    "failuresDisabled": "Deliveries were disabled after repeated failures. Fix the endpoint, then re-enable them.",
+    "reauthBody": "Changing webhook settings or rotating its secret requires a sign-in within the last {{minutes}} minutes. Sign in again to protect where notifications are delivered.",
+    "reauthForm": "Signing in again leaves this page and clears unsaved webhook edits. Copy your endpoint URL before continuing.",
+    "deliveryStatus": {
+      "delivered": "Delivered",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "retrying": "Retrying",
+      "pending": "Pending"
+    },
+    "rotationAvailableAfter": "You can rotate again after {{time}}."
   }
 }
