@@ -126,9 +126,9 @@ export async function admitProviderActorInTransaction(
   actor: CapturedProviderActor,
 ): Promise<{ readonly session: FirstPartySession }> {
   await revalidateIdentityAuthority(transaction, authority);
-  const now = await providerDatabaseNow(transaction);
-  const readSession = () =>
-    readFirstPartySession(transaction, actor.credential, now, (userId) =>
+  // A fresh database clock for each read: the second may have waited on the lock.
+  const readSession = async () =>
+    readFirstPartySession(transaction, actor.credential, await providerDatabaseNow(transaction), (userId) =>
       readLockedWebSubjectState(transaction, userId),
     );
   const requireExpected = (outcome: Awaited<ReturnType<typeof readSession>>): FirstPartySession => {
