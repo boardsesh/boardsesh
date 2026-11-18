@@ -18,7 +18,6 @@ import {
   webSessionReadCommandSchema,
   webSessionReadReplySchema,
   webSessionReplyStatus,
-  webSessionRollReplySchema,
   webSessionSignOutCommandSchema,
 } from '../index';
 
@@ -83,7 +82,7 @@ describe('web session protocol', () => {
     ).toBe(false);
   });
 
-  it('maps sign-out and roll outcomes to their statuses', () => {
+  it('maps sign-out outcomes to their statuses, and has no separate roll command', () => {
     const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId } as const;
     expect(
       webSessionSignOutCommandSchema.safeParse({
@@ -95,19 +94,9 @@ describe('web session protocol', () => {
     ).toBe(false);
     expect(webSessionReplyStatus({ ...base, operation: 'signout', outcome: 'signed_out' })).toBe(200);
     expect(webSessionReplyStatus({ ...base, operation: 'signout', outcome: 'identity_changed' })).toBe(409);
-    expect(webSessionReplyStatus({ ...base, operation: 'roll', outcome: 'unauthenticated' })).toBe(401);
-    expect(webSessionReplyStatus({ ...base, operation: 'roll', outcome: 'error', code: 'unavailable' })).toBe(503);
-    expect(
-      webSessionRollReplySchema.safeParse({
-        ...base,
-        operation: 'roll',
-        outcome: 'active',
-        userId: 'u',
-        authSessionId: 's',
-        expiresAt: new Date(0).toISOString(),
-        rolled: true,
-      }).success,
-    ).toBe(true);
+    expect(webSessionReplyStatus({ ...base, operation: 'signout', outcome: 'error', code: 'unavailable' })).toBe(503);
+    // A session rolls only through the access command.
+    expect(Object.keys(WEB_SESSION_COMMAND_PATHS).sort()).toEqual(['access', 'bridge', 'session', 'signout']);
   });
 
   it('reads a session from either cookie and signs out from either form', () => {

@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { WEB_SESSION_COMMAND_PATHS, webSessionRollReplySchema } from '@boardsesh/auth-protocol';
+import { WEB_SESSION_COMMAND_PATHS, webSessionAccessReplySchema } from '@boardsesh/auth-protocol';
 import { authSession, authSessionDenials, authSubjectCutoffs, mobileRefreshTokens } from '@boardsesh/db/schema';
 import {
   bridge,
@@ -287,8 +287,8 @@ describe('carried rows next to bridged ones', () => {
       .set({ expiresAt: new Date(Date.now() + 2 * 86_400_000) })
       .where(eq(authSession.id, carried.sessionId));
     for (const token of [carried.token, bridgedSession.token]) {
-      const reply = webSessionRollReplySchema.parse(
-        (await post(WEB_SESSION_COMMAND_PATHS.roll, command('roll', { token }))).body,
+      const reply = webSessionAccessReplySchema.parse(
+        (await post(WEB_SESSION_COMMAND_PATHS.access, command('access', { presented: canonical(token) }))).body,
       );
       expect(reply).toMatchObject({ outcome: 'active', rolled: true });
     }

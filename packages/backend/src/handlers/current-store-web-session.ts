@@ -11,14 +11,11 @@ import {
   webSessionReadCommandSchema,
   webSessionReadReplySchema,
   webSessionReplyStatus,
-  webSessionRollCommandSchema,
-  webSessionRollReplySchema,
   webSessionSignOutCommandSchema,
   webSessionSignOutReplySchema,
   type WebSessionAccessReply,
   type WebSessionBridgeReply,
   type WebSessionReadReply,
-  type WebSessionRollReply,
   type WebSessionSignOutCommand,
   type WebSessionSignOutReply,
 } from '@boardsesh/auth-protocol';
@@ -38,7 +35,6 @@ import {
   bridgeWebSession,
   presentedWebCredential,
   readWebSession,
-  refreshWebSession,
   signOutWebSession,
   type WebSessionSignOut,
 } from '../auth/authority/web-session';
@@ -49,7 +45,6 @@ import { sendJson } from './http-utils';
 const COMMAND_SCHEMAS = {
   session: webSessionReadCommandSchema,
   signout: webSessionSignOutCommandSchema,
-  roll: webSessionRollCommandSchema,
   bridge: webSessionBridgeCommandSchema,
   access: webSessionAccessCommandSchema,
 } as const;
@@ -83,8 +78,8 @@ function bridgeKeys() {
 
 /**
  * Default-off private commands for the first-party web session (#7596):
- * session read, guarded sign-out, roll, the legacy cookie bridge and the
- * browser access token. Login is the staged password
+ * session read, guarded sign-out, the legacy cookie bridge and the browser
+ * access token (which is where a session rolls). Login is the staged password
  * command with `webSession`. No CORS, cookie or public token reaches these,
  * and no reply sets a cookie: www owns the cookie.
  */
@@ -130,12 +125,7 @@ export async function handleCurrentStoreWebSession(
   const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId: command.requestId };
   try {
     const commandDatabase = database ?? (await getCredentialDatabase());
-    let reply:
-      | WebSessionReadReply
-      | WebSessionSignOutReply
-      | WebSessionRollReply
-      | WebSessionBridgeReply
-      | WebSessionAccessReply;
+    let reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionBridgeReply | WebSessionAccessReply;
     if (command.operation === 'session') {
       // Reads only: nothing is rolled, bridged or stamped.
       const read = await readWebSession(commandDatabase, presentedWebCredential(command.payload.presented));
@@ -183,7 +173,7 @@ export async function handleCurrentStoreWebSession(
             }
           : { ...base, operation: 'access', outcome: 'unauthenticated', reason: access.reason },
       );
-    } else if (command.operation === 'bridge') {
+    } else {
       const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
       reply = webSessionBridgeReplySchema.parse(
         bridged.status === 'bridged'
@@ -198,21 +188,6 @@ export async function handleCurrentStoreWebSession(
               generation: bridged.generation,
             }
           : { ...base, operation: 'bridge', outcome: 'denied' },
-      );
-    } else {
-      const refreshed = await refreshWebSession(commandDatabase, command.payload.token);
-      reply = webSessionRollReplySchema.parse(
-        refreshed.status === 'active'
-          ? {
-              ...base,
-              operation: 'roll',
-              outcome: 'active',
-              userId: refreshed.session.userId,
-              authSessionId: refreshed.session.authSessionId,
-              expiresAt: refreshed.expiresAt.toISOString(),
-              rolled: refreshed.rolled,
-            }
-          : { ...base, operation: 'roll', outcome: 'unauthenticated' },
       );
     }
     sendJson(response, webSessionReplyStatus(reply), reply);

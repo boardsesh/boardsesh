@@ -35,7 +35,6 @@ export const WEB_SESSION_PATH_PREFIX = '/api/internal/auth/current-store/web-ses
 export const WEB_SESSION_COMMAND_PATHS = {
   session: `${WEB_SESSION_PATH_PREFIX}/session`,
   signout: `${WEB_SESSION_PATH_PREFIX}/signout`,
-  roll: `${WEB_SESSION_PATH_PREFIX}/roll`,
   bridge: `${WEB_SESSION_PATH_PREFIX}/bridge`,
   access: `${WEB_SESSION_PATH_PREFIX}/access`,
 } as const;
@@ -135,11 +134,6 @@ export const webSessionSignOutCommandSchema = z
   })
   .strict();
 
-/** Reads the session the cookie carries and rolls it when fewer than 29 days remain. */
-export const webSessionRollCommandSchema = z
-  .object({ ...metadata, operation: z.literal('roll'), payload: z.object({ token: sessionToken }).strict() })
-  .strict();
-
 /**
  * Bridges a browser signed in before the switch: the joined NextAuth cookie
  * becomes a backend session with the cookie's own session id. Governed by
@@ -216,23 +210,6 @@ export const webSessionSignOutReplySchema = z.union([
   unavailableReply('signout'),
 ]);
 
-export const webSessionRollReplySchema = z.union([
-  z
-    .object({
-      ...replyBase,
-      operation: z.literal('roll'),
-      outcome: z.literal('active'),
-      userId: identityId,
-      authSessionId: identityId,
-      expiresAt: z.iso.datetime(),
-      rolled: z.boolean(),
-    })
-    .strict(),
-  /** No live session: expired, revoked, cut off, or never issued. */
-  z.object({ ...replyBase, operation: z.literal('roll'), outcome: z.literal('unauthenticated') }).strict(),
-  unavailableReply('roll'),
-]);
-
 export const webSessionBridgeReplySchema = z.union([
   /**
    * The bridged session. `token` is the same on every bridge of the same
@@ -295,8 +272,6 @@ export type WebSessionReadCommand = z.infer<typeof webSessionReadCommandSchema>;
 export type WebSessionReadReply = z.infer<typeof webSessionReadReplySchema>;
 export type WebSessionSignOutCommand = z.infer<typeof webSessionSignOutCommandSchema>;
 export type WebSessionSignOutReply = z.infer<typeof webSessionSignOutReplySchema>;
-export type WebSessionRollCommand = z.infer<typeof webSessionRollCommandSchema>;
-export type WebSessionRollReply = z.infer<typeof webSessionRollReplySchema>;
 export type WebSessionBridgeCommand = z.infer<typeof webSessionBridgeCommandSchema>;
 export type WebSessionBridgeReply = z.infer<typeof webSessionBridgeReplySchema>;
 export type WebSessionAccessCommand = z.infer<typeof webSessionAccessCommandSchema>;
@@ -309,12 +284,7 @@ export type WebSessionAccessReply = z.infer<typeof webSessionAccessReplySchema>;
  * reply, so a caller keys on the parsed body and never on the status alone.
  */
 export function webSessionReplyStatus(
-  reply:
-    | WebSessionReadReply
-    | WebSessionSignOutReply
-    | WebSessionRollReply
-    | WebSessionBridgeReply
-    | WebSessionAccessReply,
+  reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionBridgeReply | WebSessionAccessReply,
 ): number {
   if (reply.outcome === 'identity_changed') return 409;
   if (reply.outcome === 'unauthenticated' || reply.outcome === 'denied') return 401;

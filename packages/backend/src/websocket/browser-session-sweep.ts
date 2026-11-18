@@ -7,16 +7,19 @@ export type LiveBrowserSessions = ReadonlyMap<string, FirstPartySession>;
 /**
  * The live sessions among those the open browser sockets were opened with,
  * read by the request path's own rules, one bounded admission read per 128
- * ids. Throws on an outage, which the sweep answers by keeping sockets open.
+ * ids, one after another. Throws on an outage, which the sweep answers by
+ * keeping sockets open.
  */
 export async function readLiveBrowserSessions(sessionIds: readonly string[]): Promise<LiveBrowserSessions> {
   const unique = [...new Set(sessionIds)];
   const chunks: string[][] = [];
   for (let offset = 0; offset < unique.length; offset += AUTH_ADMISSION_BATCH_SIZE)
     chunks.push(unique.slice(offset, offset + AUTH_ADMISSION_BATCH_SIZE));
-  const now = new Date();
-  const answers = await Promise.all(chunks.map((chunk) => readLiveSessions(chunk, now)));
-  return new Map(answers.flatMap((answer) => [...answer]));
+  // One chunk at a time: a round never holds more than one runner slot for this read.
+  const live = new Map<string, FirstPartySession>();
+  for (const chunk of chunks)
+    for (const [sessionId, session] of await readLiveSessions(chunk)) live.set(sessionId, session);
+  return live;
 }
 
 /** The socket's session is live and is still the one its token was signed for. */

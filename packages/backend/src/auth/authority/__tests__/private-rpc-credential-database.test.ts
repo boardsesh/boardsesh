@@ -18,7 +18,6 @@ const dependencies = vi.hoisted(() => ({
   oauth: vi.fn(),
   signout: vi.fn(),
   webSessionSignout: vi.fn(),
-  webSessionRoll: vi.fn(),
   webSessionRead: vi.fn(),
   webSessionBridge: vi.fn(),
   webSessionAccess: vi.fn(),
@@ -52,7 +51,6 @@ vi.mock('../web-signout', () => ({ signOutLegacyWebSession: dependencies.signout
 vi.mock('../web-session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../web-session')>()),
   signOutWebSession: dependencies.webSessionSignout,
-  refreshWebSession: dependencies.webSessionRoll,
   readWebSession: dependencies.webSessionRead,
   bridgeWebSession: dependencies.webSessionBridge,
   accessWebSession: dependencies.webSessionAccess,
@@ -73,7 +71,6 @@ interface Route {
     | 'oauth'
     | 'signout'
     | 'webSessionSignout'
-    | 'webSessionRoll'
     | 'webSessionRead'
     | 'webSessionBridge'
     | 'webSessionAccess';
@@ -87,10 +84,7 @@ interface Route {
   result?(command: Record<string, unknown>): unknown;
 }
 const SESSION_EXPIRES_AT = new Date(Date.now() + 86_400_000);
-function webSessionCommand(
-  operation: 'session' | 'signout' | 'roll' | 'bridge' | 'access',
-  payload: Record<string, unknown>,
-) {
+function webSessionCommand(operation: 'session' | 'signout' | 'bridge' | 'access', payload: Record<string, unknown>) {
   return () => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     operation,
@@ -99,10 +93,7 @@ function webSessionCommand(
     payload,
   });
 }
-function webSessionReply(
-  operation: 'session' | 'signout' | 'roll' | 'bridge' | 'access',
-  fields: Record<string, unknown>,
-) {
+function webSessionReply(operation: 'session' | 'signout' | 'bridge' | 'access', fields: Record<string, unknown>) {
   return (command: Record<string, unknown>) => ({
     webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION,
     requestId: command.requestId,
@@ -198,27 +189,6 @@ const routes: Route[] = [
     unavailable: webSessionReply('signout', { outcome: 'error', code: 'unavailable' }),
     success: webSessionReply('signout', { outcome: 'signed_out' }),
     result: () => 'signed-out',
-  },
-  {
-    name: 'webSessionRoll',
-    mode: 'CURRENT_STORE_WEB_SESSION_MODE',
-    path: WEB_SESSION_COMMAND_PATHS.roll,
-    handle: handleCurrentStoreWebSession,
-    command: webSessionCommand('roll', { token: 'owned-synthetic-token' }),
-    unavailable: webSessionReply('roll', { outcome: 'error', code: 'unavailable' }),
-    success: webSessionReply('roll', {
-      outcome: 'active',
-      userId: 'owned-user',
-      authSessionId: 'owned-session',
-      expiresAt: SESSION_EXPIRES_AT.toISOString(),
-      rolled: false,
-    }),
-    result: () => ({
-      status: 'active',
-      session: { userId: 'owned-user', authSessionId: 'owned-session' },
-      rolled: false,
-      expiresAt: SESSION_EXPIRES_AT,
-    }),
   },
   {
     name: 'webSessionRead',
@@ -363,7 +333,6 @@ describe('private RPC default credential database selection', () => {
     dependencies.oauth.mockReset();
     dependencies.signout.mockReset().mockResolvedValue({ status: 'signed-out' });
     dependencies.webSessionSignout.mockReset();
-    dependencies.webSessionRoll.mockReset();
     dependencies.webSessionRead.mockReset();
     dependencies.webSessionBridge.mockReset();
     dependencies.webSessionAccess.mockReset();

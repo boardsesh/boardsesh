@@ -187,4 +187,63 @@ describe('admission read coalescer', () => {
     }
     await Promise.all(heldCallers);
   });
+
+  it('shares two read slots between coalescers of one group, and lets a waiting one in first', async () => {
+    const finishReads: Array<() => void> = [];
+    const pendingRead = (userIds: readonly string[]) =>
+      new Promise<ReadonlyMap<string, string>>((resolve) => finishReads.push(() => resolve(answerFor(userIds))));
+    // Created first, like the account read at startup.
+    const readSubjects = vi.fn(pendingRead);
+    const readSessions = vi.fn(pendingRead);
+    const admitSubject = createAdmissionCoalescer(readSubjects, 'per-request');
+    const admitSession = createAdmissionCoalescer(readSessions, 'per-request');
+    const sessions = [admitSession('session-0')];
+    await nextEventLoopTurn();
+    sessions.push(admitSession('session-1'));
+    await nextEventLoopTurn();
+    expect(readSessions).toHaveBeenCalledTimes(MAX_CONCURRENT_COALESCED_ADMISSION_READS);
+    // Both slots are taken by the session reads: the account read waits.
+    const subject = admitSubject('native-climber');
+    sessions.push(admitSession('session-2'));
+    await nextEventLoopTurn();
+    expect(readSubjects).not.toHaveBeenCalled();
+    expect(readSessions).toHaveBeenCalledTimes(2);
+    finishReads[0]();
+    await nextEventLoopTurn();
+    await nextEventLoopTurn();
+    // The freed slot goes to the waiting account read, not to the next session read.
+    expect(readSubjects).toHaveBeenCalledTimes(1);
+    expect(readSessions).toHaveBeenCalledTimes(2);
+    finishReads[1]();
+    await nextEventLoopTurn();
+    await nextEventLoopTurn();
+    expect(readSessions).toHaveBeenCalledTimes(3);
+    for (const finish of finishReads.slice(2)) finish();
+    await expect(subject).resolves.toBe('state-of-native-climber');
+    await expect(Promise.all(sessions)).resolves.toEqual([
+      'state-of-session-0',
+      'state-of-session-1',
+      'state-of-session-2',
+    ]);
+  });
+
+  it('keeps a coalescer without a group on its own two slots', async () => {
+    const finishReads: Array<() => void> = [];
+    const pendingRead = (userIds: readonly string[]) =>
+      new Promise<ReadonlyMap<string, string>>((resolve) => finishReads.push(() => resolve(answerFor(userIds))));
+    const first = vi.fn(pendingRead);
+    const second = vi.fn(pendingRead);
+    const admitFirst = createAdmissionCoalescer(first);
+    const admitSecond = createAdmissionCoalescer(second);
+    const callers = [admitFirst('a'), admitFirst('b')];
+    await nextEventLoopTurn();
+    callers.push(admitFirst('c'), admitSecond('d'));
+    await nextEventLoopTurn();
+    expect(second).toHaveBeenCalledTimes(1);
+    for (let index = 0; index < 4; index += 1) {
+      for (const finish of finishReads.splice(0)) finish();
+      await nextEventLoopTurn();
+    }
+    await Promise.all(callers);
+  });
 });
