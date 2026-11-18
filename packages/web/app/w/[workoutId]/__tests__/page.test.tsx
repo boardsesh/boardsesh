@@ -1,15 +1,18 @@
+// @vitest-environment node
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
+import { SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
+import { getServerTranslationForLocale } from '@/app/lib/i18n/server';
+import { reportMissingI18nKey } from '@/app/lib/i18n/missing-key-reporter';
+import ServerI18nProvider from '@/app/components/providers/i18n-provider';
 
-vi.mock('@/app/lib/i18n/server', () => ({
-  getServerTranslation: async () => ({
-    locale: 'en-US',
-    t: (key: string, options?: Record<string, unknown>) => tFromCatalog('session', key, options),
-  }),
-}));
+const request = vi.hoisted(() => ({ locale: 'en-US' as Locale }));
+vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => request.locale }));
+vi.mock('@/app/lib/i18n/missing-key-reporter', () => ({ reportMissingI18nKey: vi.fn() }));
 vi.mock('@/app/lib/backend-url', () => ({ getBackendHttpUrl: () => 'https://backend.example.com' }));
 vi.mock('next/navigation', () => ({
   notFound: () => {
@@ -27,21 +30,31 @@ vi.mock('@/app/components/ui/page-shell', () => ({
 }));
 import WorkoutLaunchPage, { generateMetadata } from '../page';
 
-async function renderLanding() {
-  return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
-      {await WorkoutLaunchPage({ params: Promise.resolve({ workoutId: 'wk_example' }) })}
-    </QueryClientProvider>,
-  );
+async function renderLanding(sourceName?: string) {
+  const client = new QueryClient();
+  if (sourceName) client.setQueryData(['publicAppWorkoutLaunch', 'wk_example'], sourceName);
+  const page = await WorkoutLaunchPage({ params: Promise.resolve({ workoutId: 'wk_example' }) });
+  const tree = await resolveServerTree(<ServerI18nProvider locale={request.locale}>{page}</ServerI18nProvider>);
+  return renderToStaticMarkup(<QueryClientProvider client={client}>{tree}</QueryClientProvider>);
 }
 
 const fetchMock = vi.fn();
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
+  vi.mocked(reportMissingI18nKey).mockClear();
+  request.locale = 'en-US';
 });
 
 describe('private workout launch landing', () => {
+  it.each(SUPPORTED_LOCALES)('translates the fetched source name using route resources in %s', async (locale) => {
+    request.locale = locale;
+    const html = await renderLanding('Boardsesh MCP');
+    const { t } = await getServerTranslationForLocale(locale, 'session');
+    expect(html).toContain(t('partnerWorkouts.from', { app: 'Boardsesh MCP' }));
+    expect(html).not.toContain('partnerWorkouts.from');
+    expect(reportMissingI18nKey).not.toHaveBeenCalled();
+  });
   it('server-renders the launch action without fetching or disclosing private plan details', async () => {
     fetchMock.mockResolvedValue(
       new Response(
