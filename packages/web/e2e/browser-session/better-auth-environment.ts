@@ -46,6 +46,9 @@ export function betterAuthEnvironments(
     CURRENT_STORE_WEB_OAUTH_MODE: 'backend-staging',
     CURRENT_STORE_SET_PASSWORD_MODE: 'backend-staging',
     CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
+    // Settings' provider link, unlink and reauthentication, and a first password (B5e1, B5e2).
+    CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging',
+    CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging',
     CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
     AUTH_BROWSER_SESSION_COOKIE_SECRET: cookieSecret,
     // The backend's `verification.required` and www's own switch, from one value.

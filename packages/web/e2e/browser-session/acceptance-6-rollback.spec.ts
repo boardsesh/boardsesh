@@ -54,7 +54,15 @@ test('rollback keeps browsers signed in through the legacy twin, and a newer leg
   expect(await sessionCookieNames(page)).toEqual([LEGACY_COOKIE, LOGIN_COOKIE].sort());
 
   try {
-    await restartStack({ env: { AUTH_BROWSER_SESSION_MODE: 'legacy' } });
+    // The rollback as the runbook does it: Settings' provider and first-password modes need
+    // better-auth (the backend refuses to start otherwise), so they go back with it.
+    await restartStack({
+      env: {
+        AUTH_BROWSER_SESSION_MODE: 'legacy',
+        CURRENT_STORE_PROVIDER_SECURITY_MODE: 'legacy',
+        CURRENT_STORE_FIRST_PASSWORD_MODE: 'legacy',
+      },
+    });
     const underLegacy = await edgeCookies.during(async () => {
       await page.goto(`${WWW_ORIGIN}/settings`);
       expect(await readSession(page)).toMatchObject({ userId: first.userId, authSessionId: viewer.authSessionId });

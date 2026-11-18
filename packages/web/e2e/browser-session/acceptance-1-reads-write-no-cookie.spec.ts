@@ -12,8 +12,9 @@ import { expect, failsOnSessionReadGrant, sessionSetCookies, test } from './fixt
  * A session with under 29 days left rolls on the server, through ws-auth's
  * access command, and writes no cookie either.
  *
- * Provider link and unlink routes are not on this base (B5e1 is still open),
- * so they are not in the list; the spec that adds them belongs with B5e1.
+ * The Settings routes for provider link, unlink and reauthentication and for
+ * a first password (#7804 to #7809) are in the list too: they act for the
+ * session and keep its token, so they write no session cookie either.
  */
 
 test.skip(process.env.AUTH_BROWSER_SESSION_MODE !== 'better-auth', 'Runs under AUTH_BROWSER_SESSION_MODE=better-auth.');
@@ -66,6 +67,21 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
           body: new URLSearchParams({ csrfToken }),
         });
         await fetch(`${origin}/api/internal/ws-auth`, include);
+        // Settings' provider and first-password routes (#7804, #7805, #7807, #7809). Each acts for the
+        // session and keeps its token: whatever each answers here, none may write a session cookie.
+        await fetch(`${origin}/api/auth/provider-security/methods`, include);
+        await fetch(`${origin}/api/auth/provider-security/start`, {
+          ...include,
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'unlink', provider: 'google', methodId: null }),
+        });
+        await fetch(`${origin}/api/auth/first-password/request`, {
+          ...include,
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
         // This account has a password, so the backend refuses; what matters is the cookie list.
         await fetch(`${origin}/api/internal/set-password`, {
           ...include,
@@ -90,6 +106,9 @@ test('@smoke session reads, csrf, ws-auth, private pages and set-password write 
     ['GET', '/api/auth/csrf'],
     ['GET', '/api/internal/ws-auth'],
     ['POST', '/api/internal/set-password'],
+    ['GET', '/api/auth/provider-security/methods'],
+    ['POST', '/api/auth/provider-security/start'],
+    ['POST', '/api/auth/first-password/request'],
   ] as const)
     expectRequested(reads.records, method, path);
   expect(sessionSetCookies(reads.records)).toEqual([]);
