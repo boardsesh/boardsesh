@@ -419,6 +419,28 @@ describe('handleNativeAuthExchange', () => {
     expect(await exchange(transferToken)).toBe(409);
   });
 
+  it('keeps answering 409 for a spent token after it expires', async () => {
+    const transferToken = createTransferToken('user-abc');
+    const firstRes = makeResponse();
+    await handleNativeAuthExchange(
+      makeRequest({ method: 'POST', body: { transferToken } }) as unknown as IncomingMessage,
+      firstRes as unknown as ServerResponse,
+    );
+    expect(firstRes.statusCode).toBe(200);
+
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 130_000 });
+    try {
+      const replayRes = makeResponse();
+      await handleNativeAuthExchange(
+        makeRequest({ method: 'POST', body: { transferToken } }) as unknown as IncomingMessage,
+        replayRes as unknown as ServerResponse,
+      );
+      expect(replayRes.statusCode).toBe(409);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns 400 for missing transferToken field', async () => {
     const req = makeRequest({ method: 'POST', body: {} });
     const res = makeResponse();

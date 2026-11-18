@@ -369,17 +369,14 @@ type TransferPayload = {
 /** One token segment: unpadded base64url, the only alphabet our signer writes. */
 const TRANSFER_TOKEN_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
-function verifyTransferToken(token: string): {
-  userId: string;
-  generation: number;
-  authSessionId: string | null;
-  authenticatedAt: Date | null;
-  accountCreation?: AccountCreationReceipt;
-  requiresAccountCutoff: boolean;
-  validUntil: number;
-  /** The signature this server computed, so a token is spent once however it was spelled. */
-  replayKey: string;
-} | null {
+/**
+ * The signed payload segment of a transfer token whose signature matches, and
+ * the signature this server computed for it. Only the exact form the web signer
+ * writes passes: two unpadded base64url segments, a signature of the expected
+ * length. The replay key is the computed signature, so a token is spent once
+ * however a caller spells it. Claims (expiry included) are not read here.
+ */
+function authenticateTransferToken(token: string): { encodedPayload: string; replayKey: string } | null {
   const parts = token.split('.');
   if (parts.length !== 2) return null;
   const [encodedPayload, signature] = parts;
@@ -398,7 +395,19 @@ function verifyTransferToken(token: string): {
   if (sigBuffer.length !== expectedSigBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)) {
     return null;
   }
+  return { encodedPayload, replayKey: expectedSignature };
+}
 
+/** Reads the claims of a payload segment `authenticateTransferToken` accepted. */
+function verifyTransferClaims(encodedPayload: string): {
+  userId: string;
+  generation: number;
+  authSessionId: string | null;
+  authenticatedAt: Date | null;
+  accountCreation?: AccountCreationReceipt;
+  requiresAccountCutoff: boolean;
+  validUntil: number;
+} | null {
   let payload: TransferPayload;
   try {
     payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as TransferPayload;
@@ -462,7 +471,6 @@ function verifyTransferToken(token: string): {
     // tolerance. Reject at the first millisecond outside that same window.
     validUntil: (payload.exp + CLOCK_SKEW_TOLERANCE_SECONDS + 1) * 1000,
     authenticatedAt,
-    replayKey: expectedSignature,
     ...(accountCreation ? { accountCreation } : {}),
   };
 }
@@ -765,10 +773,32 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
     return;
   }
 
-  // Verify the HMAC transfer token
-  let verified: ReturnType<typeof verifyTransferToken>;
+  // Check the HMAC signature, then replay, then the claims: a spent token stays
+  // 409 after it expires. Replay prevention keys on the signature this server
+  // computed, never on the bytes the caller sent.
+  let authenticated: ReturnType<typeof authenticateTransferToken>;
   try {
-    verified = verifyTransferToken(transferToken);
+    authenticated = authenticateTransferToken(transferToken);
+  } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
+    throw error;
+  }
+  if (!authenticated) {
+    logger.warn('[NativeAuth] Transfer token verification failed');
+    sendJson(res, 401, { error: 'Invalid or expired transfer token' });
+    return;
+  }
+  const { replayKey } = authenticated;
+
+  if (await isTokenConsumed(replayKey)) {
+    logger.warn('[NativeAuth] Transfer token replay attempt detected');
+    sendJson(res, 409, { error: 'Transfer token has already been used' });
+    return;
+  }
+
+  let verified: ReturnType<typeof verifyTransferClaims>;
+  try {
+    verified = verifyTransferClaims(authenticated.encodedPayload);
   } catch (error) {
     if (respondNativeAdmissionFailure(res, error)) return;
     throw error;
@@ -776,14 +806,6 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   if (!verified) {
     logger.warn('[NativeAuth] Transfer token verification failed');
     sendJson(res, 401, { error: 'Invalid or expired transfer token' });
-    return;
-  }
-
-  // Replay prevention keys on the signature this server computed, never on the
-  // bytes the caller sent.
-  if (await isTokenConsumed(verified.replayKey)) {
-    logger.warn('[NativeAuth] Transfer token replay attempt detected');
-    sendJson(res, 409, { error: 'Transfer token has already been used' });
     return;
   }
 
@@ -801,7 +823,7 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
 
   // Atomically mark the token as consumed. If another request consumed it
   // between the EXISTS check above and now, markTokenConsumed returns 'replay'.
-  const consumeResult = await markTokenConsumed(verified.replayKey);
+  const consumeResult = await markTokenConsumed(replayKey);
   if (consumeResult === 'replay') {
     logger.warn('[NativeAuth] Transfer token replay attempt detected (race)');
     sendJson(res, 409, { error: 'Transfer token has already been used' });
