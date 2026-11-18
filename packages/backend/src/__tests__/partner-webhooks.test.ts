@@ -32,6 +32,7 @@ import { produceLogbookWebhookEvents } from '../services/partner-webhooks/logboo
 import { readLogbookFeedState } from '../services/logbook-feed';
 import { completeSessionAppWorkouts } from '../services/public-api/workout-lifecycle';
 import { buildWorkoutResults } from '../services/public-api/workout-results';
+import { markSessionWorkoutResultsChanged } from '../services/partner-webhooks/workout-results-changed';
 import type { PgBoss } from 'pg-boss';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionWorkoutMutations } from '../graphql/resolvers/sessions/session-workouts';
@@ -468,7 +469,7 @@ describe('durable partner webhook lifecycle', () => {
 });
 
 /** Waits until the feed horizon passes every committed change, as the producer requires. */
-async function produceAfterCommittedChanges() {
+async function waitForCommittedChanges() {
   const [latest] = await db.execute<{ txid: string }>(
     sql`select txid::text as txid from logbook_changes order by seq desc limit 1`,
   );
@@ -480,6 +481,9 @@ async function produceAfterCommittedChanges() {
     if (Date.now() >= deadline) throw new Error(`Logbook horizon ${horizon} did not pass change ${latest.txid}`);
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+}
+async function produceAfterCommittedChanges() {
+  await waitForCommittedChanges();
   await produceLogbookWebhookEvents();
 }
 
@@ -687,6 +691,50 @@ describe('workout.completed after results change', () => {
     );
     await produceAfterCommittedChanges();
     expect(await completionEvents(finished.workoutId)).toHaveLength(2);
+  });
+  it('never deadlocks a tick-map write that holds the workout row against the producer', async () => {
+    const finished = await finishedWorkout();
+    await end(finished);
+    await logTick(finished.climber, finished.sessionId);
+    await waitForCommittedChanges();
+    // recordSessionWorkout's order: the workout row FOR UPDATE (recoverAppWorkoutPlan), then the debounce row.
+    let workoutLocked!: () => void;
+    let producerWaiting!: () => void;
+    const locked = new Promise<void>((resolve) => (workoutLocked = resolve));
+    const waiting = new Promise<void>((resolve) => (producerWaiting = resolve));
+    const tickMapWrite = db.transaction(async (transaction) => {
+      await transaction
+        .select({ id: appWorkouts.id })
+        .from(appWorkouts)
+        .where(eq(appWorkouts.id, finished.workoutId))
+        .for('update');
+      workoutLocked();
+      await waiting;
+      await markSessionWorkoutResultsChanged(transaction, finished.sessionId, finished.climber);
+    });
+    await locked;
+    const producer = produceLogbookWebhookEvents();
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const [blocked] = await db.execute<{ count: number }>(
+        sql`select count(*)::int as count from pg_stat_activity
+            where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`,
+      );
+      if (blocked.count > 0) break;
+      if (Date.now() >= deadline) throw new Error('The producer never waited on the workout row');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    producerWaiting();
+    const [write, produce] = await Promise.allSettled([tickMapWrite, producer]);
+    const sqlState = (outcome: PromiseSettledResult<unknown>) => {
+      if (outcome.status === 'fulfilled') return null;
+      const error = outcome.reason as { code?: string; cause?: { code?: string } };
+      return error.code ?? error.cause?.code ?? String(outcome.reason);
+    };
+    // The climber's write always wins. The producer may lose its repeatable-read
+    // snapshot to the row the write inserted (40001); its next run retries.
+    expect(sqlState(write)).toBeNull();
+    expect([null, '40001']).toContain(sqlState(produce));
   });
   it('keeps a minute between sends when prune clears a settled row and a change recreates it', async () => {
     const finished = await finishedWorkout();
