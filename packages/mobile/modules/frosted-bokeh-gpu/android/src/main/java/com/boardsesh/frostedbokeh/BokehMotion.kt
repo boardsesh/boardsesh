@@ -63,7 +63,7 @@ internal data class BokehSwapLook(
 internal data class BokehSwapFrame(
     val position: Double, val outgoing: Float, val incoming: Float, val outgoingCode: Int, val incomingCode: Int,
 ) {
-    val from: Int get() = position.roundToLong().toInt()
+    val from: Int get() = nearestPage(position)
     val direction: Int
         get() {
             val lean = position - from
@@ -81,13 +81,18 @@ internal data class BokehSwapFrame(
                 5, 7 -> {
                     val coded = values.size == 7
                     Parsed(values[4], BokehSwapFrame(values[0], unit(values[1].toFloat()), unit(values[2].toFloat()),
-                        if (coded) max(0, values[5].toInt()) else -1, if (coded) max(0, values[6].toInt()) else -1))
+                        if (coded) values[5].coerceIn(0.0, 7.0).toInt() else -1,
+                        if (coded) values[6].coerceIn(0.0, 7.0).toInt() else -1))
                 }
                 else -> null
             }
         }
     }
 }
+
+/** The nearest page, half up as JS's `Math.round` and Swift's `BokehMotion.page`, clamped. */
+internal fun nearestPage(position: Double): Int =
+    if (position.isNaN()) 0 else position.roundToLong().coerceIn(-1_000_000_000L, 1_000_000_000L).toInt()
 
 internal fun unit(value: Float): Float = if (value > 0f) (if (value < 1f) value else 1f) else 0f
 
@@ -106,15 +111,15 @@ internal fun smooth(value: Float): Float {
  *   the board's front, keyed by its x.
  * - A climb that appears whole in one step (the Next button, a queue tap, a crewmate's
  *   change, any change with no frames) runs the release on its own.
+ * - A frame naming a page the app has not sent yet (a flick run outpacing the JS thread)
+ *   keeps the last frame it could draw until the page arrives.
  * - A climb that leaves the screen in one step fades out where it is.
  * - Lights lit in both climbs stay whole. At most [MAX_BLOBS] are drawn.
  */
 internal class BokehMotion {
-    /** `BOKEH_SWAP_MS`, `BOKEH_SWAP_OUT_MS` and `BOKEH_DISSOLVE_MS`, in seconds. */
+    /** `BOKEH_SWAP_MS` and `BOKEH_SWAP_OUT_MS`, in seconds. */
     var releaseSeconds = 0.22
     var fadeSeconds = 0.15
-    var dissolveSeconds = 0.24
-    var reduceMotion = false
     var look: BokehSwapLook? = null
     /** The pill's width in points: lights are keyed by their x over it. */
     var width = 0f
@@ -123,7 +128,9 @@ internal class BokehMotion {
         private set
     /** The climbs the board can swap between, by page; empty without swap frames. */
     private var pages: Map<Int, BokehClimb> = emptyMap()
+    /** The newest frame, and the newest one whose leaving page the app has sent. */
     private var frame: BokehSwapFrame? = null
+    private var drawnFrame: BokehSwapFrame? = null
     private var lastSequence: Double? = null
     private var visible: Map<String, Float> = emptyMap()
     private val leftovers = mutableListOf<Leftover>()
@@ -145,6 +152,7 @@ internal class BokehMotion {
             current = capped
             pages = cappedPages
             if (pages.isEmpty()) frame = null
+            resolveFrame()
         }
     }
 
@@ -155,8 +163,21 @@ internal class BokehMotion {
         if (last != null && parsed.sequence <= last) return false
         lastSequence = parsed.sequence
         if (parsed.frame == frame) return true
-        refresh(now) { frame = parsed.frame }
+        refresh(now) {
+            frame = parsed.frame
+            resolveFrame()
+        }
         return true
+    }
+
+    /**
+     * The frame to draw: the newest, once its leaving page is known; until then the last one
+     * that was, so a flick run never blanks the pill.
+     */
+    private fun resolveFrame() {
+        val latest = frame
+        if (latest == null) drawnFrame = null
+        else if (pages.containsKey(latest.from)) drawnFrame = latest
     }
 
     // Output
@@ -175,10 +196,10 @@ internal class BokehMotion {
 
     // Transitions
 
-    private val frameMode: Boolean get() = frame != null && pages.isNotEmpty()
+    private val frameMode: Boolean get() = drawnFrame != null && pages.isNotEmpty()
 
     private fun visibleWeights(): Map<String, Float> {
-        val frame = frame
+        val frame = drawnFrame
         if (!frameMode || frame == null) return if (current.lights.isEmpty()) emptyMap() else mapOf(current.key to 1f)
         val weights = mutableMapOf<String, Float>()
         pages[frame.from]?.let { weights[it.key] = frame.outgoing }
@@ -189,7 +210,7 @@ internal class BokehMotion {
     }
 
     private fun visibleClimbs(): List<BokehClimb> {
-        val frame = frame
+        val frame = drawnFrame
         if (!frameMode || frame == null) return listOf(current)
         val climbs = mutableListOf<BokehClimb>()
         pages[frame.from]?.let { climbs.add(it) }
@@ -216,7 +237,9 @@ internal class BokehMotion {
             if (shown.any { sameHold(it, entry.light) }) continue
             leftovers.add(Leftover(entry.light, now))
         }
-        if (before.isNotEmpty()) {
+        // Something was on screen: a climb arriving whole runs the release. Not on the first
+        // climb, which appears whole.
+        if (before.isNotEmpty() || previous.isNotEmpty()) {
             for (climb in climbs) {
                 val weight = next[climb.key] ?: continue
                 if (weight - (previous[climb.key] ?: 0f) < ABRUPT_STEP) continue
@@ -233,17 +256,15 @@ internal class BokehMotion {
     }
 
     private fun prune(now: Double) {
-        val fadeLength = if (reduceMotion) dissolveSeconds else fadeSeconds
-        val releaseLength = if (reduceMotion) dissolveSeconds else releaseSeconds
-        leftovers.removeAll { now - it.start >= fadeLength }
-        arrivals.values.removeAll { now - it.start >= releaseLength }
+        leftovers.removeAll { now - it.start >= fadeSeconds }
+        arrivals.values.removeAll { now - it.start >= releaseSeconds }
     }
 
     // Drawing
 
     private fun compose(now: Double): List<Entry> {
         val entries = leftovers.mapTo(mutableListOf()) { Entry(null, -1, it.light.copy(peak = it.light.peak * fade(now - it.start))) }
-        val frame = frame
+        val frame = drawnFrame
         val shaped = if (frameMode && frame != null) frameEntries(frame)
         else current.lights.mapIndexed { index, light -> Entry(current.key, index, light) }
         for (entry in shaped) {
@@ -260,7 +281,7 @@ internal class BokehMotion {
         val direction = frame.direction
         val outgoing = pages[frame.from]
         val incoming = if (direction != 0) pages[frame.from + direction] else null
-        val look = if (reduceMotion || frame.outgoingCode < 0) null else look
+        val look = if (frame.outgoingCode < 0) null else look
         val entries = mutableListOf<Entry>()
         if (outgoing != null) {
             val side = side(frame.outgoing, frame.outgoingCode, upper = direction < 0)
@@ -302,7 +323,6 @@ internal class BokehMotion {
 
     /** A standalone release's ceiling on an arriving light (`frostReleaseFill`). */
     private fun fill(light: BokehBlob, elapsed: Double): Float {
-        if (reduceMotion) return unit((elapsed / dissolveSeconds).toFloat())
         val half = (releaseSeconds / 2).toFloat()
         val key = 1 - across(light)
         return smooth((elapsed.toFloat() - key * half) / half)
@@ -310,7 +330,7 @@ internal class BokehMotion {
 
     /** A fading light's share left (`frostReleaseFade`). */
     private fun fade(elapsed: Double): Float =
-        if (reduceMotion) 1 - unit((elapsed / dissolveSeconds).toFloat()) else 1 - smooth((elapsed / fadeSeconds).toFloat())
+        1 - smooth((elapsed / fadeSeconds).toFloat())
 
     companion object {
         /** `BOKEH_SAME_HOLD_POINTS`. */
@@ -389,8 +409,8 @@ internal class BokehMotion {
 
 /**
  * No callback when nothing moves. A transition (swap frames arriving or a release running)
- * draws at 60 fps, Reduce Motion included: its dissolve is a fade, not motion. Battery Saver
- * and Reduce Motion only suppress breathing.
+ * draws at 60 fps. Battery Saver and Reduce Motion only suppress breathing (the app draws a
+ * still frost under Reduce Motion).
  */
 internal fun bokehFrameRate(visible: Boolean, reduceMotion: Boolean, lowPower: Boolean, moving: Boolean, motion: Boolean): Int =
     when {

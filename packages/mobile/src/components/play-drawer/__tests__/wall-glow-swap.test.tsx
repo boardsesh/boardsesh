@@ -23,7 +23,6 @@ type GpuProps = {
   swapLook?: readonly number[] | null;
   releaseMs?: number;
   releaseOutMs?: number;
-  dissolveMs?: number;
   animatedProps?: { swapFrame: readonly number[] };
 };
 const gpu = vi.hoisted(() => ({ last: null as GpuProps | null }));
@@ -138,7 +137,8 @@ describe('the frost following the board swap', () => {
     );
     const props = gpu.last;
     expect(props?.glideMs).toBeUndefined();
-    expect(props).toMatchObject({ releaseMs: 220, releaseOutMs: 150, dissolveMs: 240, swapLook: LOOK });
+    expect(props).toMatchObject({ releaseMs: 220, releaseOutMs: 150, swapLook: LOOK });
+    expect(props).not.toHaveProperty('dissolveMs');
     expect(props?.swapClimbs?.centerPage).toBe(5);
     expect(props?.swapClimbs?.previous).toBeNull();
     expect(props?.swapClimbs?.next?.key).toBe('climb-6');
@@ -200,5 +200,19 @@ describe('the frost following the board swap', () => {
     );
     const fade = view.getByTestId('wall-glow-label-fade');
     expect(JSON.parse(fade.dataset.style ?? '[]')[1]).toEqual({ opacity: 1 });
+  });
+
+  it('draws the full-surface fade when a neighbour needs it', () => {
+    const view = render(
+      createElement(WallGlow, {
+        layer: layer('climb-5', 0.2, [1]),
+        width: 360,
+        moving: true,
+        swap: swapWith([5, 1, 0, 1, 0, 0], { ...layer('climb-6', 0.5, [3]), readableZone: 'full' }),
+      }),
+    );
+    const style = JSON.parse(view.getByTestId('wall-glow-label-fade').dataset.style ?? '[]');
+    expect(style[0][0]).toMatchObject({ top: 0, right: 0, bottom: 0, left: 0 });
+    expect(style[0][1]).toEqual({ backgroundColor: 'rgba(14, 13, 18, 0.5)' });
   });
 });

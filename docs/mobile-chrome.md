@@ -627,8 +627,7 @@ way it looks like this:
   change climbs with the board's swap at up to 60 fps: the lights follow the drag, the release and Next as the
   board's holds do (option I; see "The wall button's frost follows the swap" in `docs/mobile-motion.md`).
   Binaries from before that glide between climbs over 700 ms. Both use the same 3.5-point drift and 14% swell.
-  Reduce Motion stops the breathing and the drag-following (the frost dissolves over 240 ms); Battery Saver/Low
-  Power Mode disables breathing. Hidden or
+  Reduce Motion keeps the still frost; Battery Saver/Low Power Mode disables breathing. Hidden or
   backgrounded views stop scheduling frames. Older Android versions, binaries without the module,
   renderer failures, samples and screenshot mode retain the still renderer. That renderer cross-fades
   new climbs or playback frames over 200 ms (at once with Reduce Motion).

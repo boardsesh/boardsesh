@@ -10,6 +10,8 @@ import Foundation
 ///   takes its own weight through the board's front, keyed by its x.
 /// - A climb that appears whole in one step (the Next button, a queue tap, a
 ///   crewmate's change, any change with no frames) runs the release on its own.
+/// - A frame naming a page the app has not sent yet (a flick run outpacing
+///   the JS thread) keeps the last frame it could draw until the page arrives.
 /// - A climb that leaves the screen in one step fades out where it is.
 /// - Lights lit in both climbs stay whole. At most `maxLights` are drawn.
 
@@ -81,7 +83,8 @@ struct BokehSwapFrame: Equatable {
   var outgoingCode: Int
   var incomingCode: Int
 
-  var from: Int { Int(position.rounded()) }
+  /// Half up, as JS's `Math.round` and Kotlin's `roundToLong`.
+  var from: Int { BokehMotion.page(position) }
   var direction: Int {
     let lean = position - Double(from)
     return lean > 0.01 ? 1 : (lean < -0.01 ? -1 : 0)
@@ -95,9 +98,10 @@ struct BokehSwapFrame: Equatable {
       return (values[0], nil)
     case 5, 7:
       let coded = values.count == 7
+      // Codes are 0...7; clamped before the conversion, which traps out of range.
       return (values[4], BokehSwapFrame(position: values[0], outgoing: BokehMotion.unit(Float(values[1])),
-        incoming: BokehMotion.unit(Float(values[2])), outgoingCode: coded ? max(0, Int(values[5])) : -1,
-        incomingCode: coded ? max(0, Int(values[6])) : -1))
+        incoming: BokehMotion.unit(Float(values[2])), outgoingCode: coded ? Int(min(7, max(0, values[5]))) : -1,
+        incomingCode: coded ? Int(min(7, max(0, values[6]))) : -1))
     default:
       return nil
     }
@@ -115,11 +119,9 @@ final class BokehMotion {
   static let maxReach: Float = 1.35
   private static let invisible: Float = 0.0005
 
-  /// `BOKEH_SWAP_MS`, `BOKEH_SWAP_OUT_MS` and `BOKEH_DISSOLVE_MS`, in seconds.
+  /// `BOKEH_SWAP_MS` and `BOKEH_SWAP_OUT_MS`, in seconds.
   var releaseSeconds = 0.22
   var fadeSeconds = 0.15
-  var dissolveSeconds = 0.24
-  var reduceMotion = false
   var look: BokehSwapLook?
   /// The pill's width in points: lights are keyed by their x over it.
   var width: Float = 0
@@ -127,7 +129,9 @@ final class BokehMotion {
   private(set) var current = BokehClimb(key: "", lights: [])
   /// The climbs the board can swap between, by page; empty without swap frames.
   private var pages: [Int: BokehClimb] = [:]
+  /// The newest frame, and the newest one whose leaving page the app has sent.
   private var frame: BokehSwapFrame?
+  private var drawnFrame: BokehSwapFrame?
   private var lastSequence: Double?
   private var visible: [String: Float] = [:]
   private var leftovers: [(light: BokehLight, start: Double)] = []
@@ -147,6 +151,12 @@ final class BokehMotion {
   }
 
   static func unit(_ value: Float) -> Float { value > 0 ? (value < 1 ? value : 1) : 0 }
+
+  /// The nearest page, half up, clamped so the conversion never traps.
+  static func page(_ position: Double) -> Int {
+    guard !position.isNaN else { return 0 }
+    return Int(min(1e9, max(-1e9, (position + 0.5).rounded(.down))))
+  }
 
   static func smooth(_ value: Float) -> Float {
     let clamped = unit(value)
@@ -171,6 +181,7 @@ final class BokehMotion {
       current = capped
       pages = cappedPages
       if pages.isEmpty { frame = nil }
+      resolveFrame()
     }
   }
 
@@ -181,8 +192,21 @@ final class BokehMotion {
     if let lastSequence, parsed.sequence <= lastSequence { return false }
     lastSequence = parsed.sequence
     if parsed.frame == frame { return true }
-    refresh(now) { frame = parsed.frame }
+    refresh(now) {
+      frame = parsed.frame
+      resolveFrame()
+    }
     return true
+  }
+
+  /// The frame to draw: the newest, once its leaving page is known; until
+  /// then the last one that was, so a flick run never blanks the pill.
+  private func resolveFrame() {
+    guard let frame else {
+      drawnFrame = nil
+      return
+    }
+    if pages[frame.from] != nil { drawnFrame = frame }
   }
 
   // MARK: - Output
@@ -209,10 +233,10 @@ final class BokehMotion {
 
   // MARK: - Transitions
 
-  private var frameMode: Bool { frame != nil && !pages.isEmpty }
+  private var frameMode: Bool { drawnFrame != nil && !pages.isEmpty }
 
   private func visibleWeights() -> [String: Float] {
-    guard frameMode, let frame else { return current.lights.isEmpty ? [:] : [current.key: 1] }
+    guard frameMode, let frame = drawnFrame else { return current.lights.isEmpty ? [:] : [current.key: 1] }
     var weights: [String: Float] = [:]
     if let outgoing = pages[frame.from] { weights[outgoing.key] = frame.outgoing }
     if frame.direction != 0, let incoming = pages[frame.from + frame.direction] {
@@ -222,7 +246,7 @@ final class BokehMotion {
   }
 
   private func visibleClimbs() -> [BokehClimb] {
-    guard frameMode, let frame else { return [current] }
+    guard frameMode, let frame = drawnFrame else { return [current] }
     var climbs: [BokehClimb] = []
     if let outgoing = pages[frame.from] { climbs.append(outgoing) }
     if frame.direction != 0, let incoming = pages[frame.from + frame.direction] { climbs.append(incoming) }
@@ -245,7 +269,9 @@ final class BokehMotion {
       if shown.contains(where: { Self.sameHold($0, entry.light) }) { continue }
       leftovers.append((entry.light, now))
     }
-    if !before.isEmpty {
+    // Something was on screen: a climb arriving whole runs the release. Not on
+    // the first climb, which appears whole.
+    if !before.isEmpty || !previous.isEmpty {
       for climb in climbs {
         guard let weight = next[climb.key], weight - (previous[climb.key] ?? 0) >= Self.abruptStep else { continue }
         var held = Set<Int>()
@@ -266,10 +292,8 @@ final class BokehMotion {
   }
 
   private func prune(_ now: Double) {
-    let fadeLength = reduceMotion ? dissolveSeconds : fadeSeconds
-    let releaseLength = reduceMotion ? dissolveSeconds : releaseSeconds
-    leftovers.removeAll { now - $0.start >= fadeLength }
-    arrivals = arrivals.filter { now - $0.value.start < releaseLength }
+    leftovers.removeAll { now - $0.start >= fadeSeconds }
+    arrivals = arrivals.filter { now - $0.value.start < releaseSeconds }
   }
 
   // MARK: - Drawing
@@ -281,7 +305,7 @@ final class BokehMotion {
       return Entry(key: nil, index: -1, light: light)
     }
     var shaped: [Entry]
-    if frameMode, let frame {
+    if frameMode, let frame = drawnFrame {
       shaped = frameEntries(frame)
     } else {
       shaped = current.lights.enumerated().map { Entry(key: current.key, index: $0.offset, light: $0.element) }
@@ -299,7 +323,7 @@ final class BokehMotion {
     let direction = frame.direction
     let outgoing = pages[frame.from]
     let incoming = direction != 0 ? pages[frame.from + direction] : nil
-    let look = reduceMotion || frame.outgoingCode < 0 ? nil : self.look
+    let look = frame.outgoingCode < 0 ? nil : self.look
     var entries: [Entry] = []
     if let outgoing {
       let side = side(weight: frame.outgoing, code: frame.outgoingCode, upper: direction < 0)
@@ -347,7 +371,6 @@ final class BokehMotion {
 
   /// A standalone release's ceiling on an arriving light (`frostReleaseFill`).
   private func fill(_ light: BokehLight, elapsed: Double) -> Float {
-    if reduceMotion { return Self.unit(Float(elapsed / dissolveSeconds)) }
     let half = Float(releaseSeconds / 2)
     let key = 1 - across(light)
     return Self.smooth((Float(elapsed) - key * half) / half)
@@ -355,7 +378,6 @@ final class BokehMotion {
 
   /// A fading light's share left (`frostReleaseFade`).
   private func fade(_ elapsed: Double) -> Float {
-    if reduceMotion { return 1 - Self.unit(Float(elapsed / dissolveSeconds)) }
     return 1 - Self.smooth(Float(elapsed / fadeSeconds))
   }
 

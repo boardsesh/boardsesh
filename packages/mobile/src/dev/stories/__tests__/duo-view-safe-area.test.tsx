@@ -30,6 +30,14 @@ vi.mock('../../../components/play-drawer/PlayDrawerHeaderView', () => ({
 vi.mock('../../../components/play-drawer/PlayDrawerActionBar', () => ({ PlayDrawerActionBar: () => null }));
 vi.mock('../../../components/play-drawer/WallStatePillView', () => ({ WallStatePillView: () => null }));
 vi.mock('../StoryBoard', () => ({ StoryBoard: () => <div data-testid="board" /> }));
+// The swipeable board (the frost-following story) is off here: no pager, no carousel.
+vi.mock('react-native-reanimated', () => ({ useSharedValue: <Value,>(initial: Value) => ({ value: initial }) }));
+vi.mock('../../../components/play-drawer/SwipeBoardCarousel', () => ({ SwipeBoardCarousel: () => null }));
+vi.mock('../../../components/play-drawer/use-swipe-pager', () => ({
+  useSwipePager: () => ({ pager: {}, stepSignal: { direction: 0, step: 0 } }),
+  useSwipeNavigation: () => {},
+  useSwipePages: () => 0,
+}));
 vi.mock('../StorySprayBoard', () => ({ StorySprayBoard: () => null }));
 vi.mock('../../../components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../components/Icon', () => ({ Icon: () => null }));

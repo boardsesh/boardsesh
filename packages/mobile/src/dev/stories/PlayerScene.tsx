@@ -5,7 +5,14 @@ import { resolveDisplayGrade } from '../../lib/boardsesh-grade-display';
 import { StorySprayBoard } from './StorySprayBoard';
 import type { StoryBoardFixture } from '../fixtures/boards';
 import { boardSupportsMirroring } from '@boardsesh/board-config';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useSharedValue } from 'react-native-reanimated';
+import { SwipeBoardCarousel } from '../../components/play-drawer/SwipeBoardCarousel';
+import { useSwipeNavigation, useSwipePager, useSwipePages } from '../../components/play-drawer/use-swipe-pager';
+import type { WallControlSwap } from '../../components/play-drawer/WallControlButton';
+import type { BoardSwapFrame } from '../../components/play-drawer/swap-look';
+import { PLAYER_SWAP_LOOK_ENCODED } from '../../components/play-drawer/player-swap-look';
+import { getBoardRenderData } from '../../lib/board-details';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChromeIconButton } from '../../components/ChromeIconButton';
@@ -25,7 +32,8 @@ import { StoryBoard } from './StoryBoard';
 import type { StoryRenderControls } from './types';
 
 const noop = () => {};
-export type PlayerSceneState = 'lit' | 'preview' | 'crew' | 'dark' | 'disconnected' | 'busy';
+/** `driving`: this phone drives the wall (a live drive), so the wall button wears the frost. */
+export type PlayerSceneState = 'lit' | 'driving' | 'preview' | 'crew' | 'dark' | 'disconnected' | 'busy';
 /** The production player's layout, header, board and actions driven entirely by local story state. */
 export function PlayerScene({
   state = 'lit',
@@ -33,10 +41,17 @@ export function PlayerScene({
   boardControl = 'wallButton',
   onReady,
   onError,
+  swipeBoard = false,
 }: StoryRenderControls & {
   state?: PlayerSceneState;
   boardControl?: 'wallButton' | 'lightbulb';
   fixture?: StoryBoardFixture;
+  /**
+   * The player's own swipeable board (the stationary GPU carousel and its wall
+   * swap) instead of a still board, with the wall button's frost following its
+   * frames as `PlayCore` wires it. Swipe the board to see the frost follow.
+   */
+  swipeBoard?: boolean;
 }) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -44,7 +59,7 @@ export function PlayerScene({
   const [index, setIndex] = useState(0);
   const [mirrored, setMirrored] = useState(false);
   const [favorite, setFavorite] = useState(false);
-  const [lit, setLit] = useState(state === 'lit');
+  const [lit, setLit] = useState(state === 'lit' || state === 'driving');
   const { board, climbs } = fixture;
   const climb = climbs[index];
   const { gradeFormat } = useGradeFormat();
@@ -79,6 +94,7 @@ export function PlayerScene({
     otherClimbLit: preview,
     writing: false,
     navigationCommits: !preview,
+    driveMode: state === 'driving' ? 'live' : undefined,
   });
   // Driving draws the frost from the climb's lit holds, as the real player
   // does; a spray wall has no lights, so it never frosts.
@@ -88,6 +104,37 @@ export function PlayerScene({
     mirrored,
     shown: !fixture.spray && wallControlUsesFrost(wallControl),
   });
+  // The swipeable board, and the frost following it (as PlayCore wires both).
+  const { pager, stepSignal } = useSwipePager();
+  useSwipeNavigation(pager, next, previous);
+  const previousClimb = index > 0 ? climbs[index - 1] : null;
+  const nextClimb = index < climbs.length - 1 ? climbs[index + 1] : null;
+  const centerPage = useSwipePages(pager, stepSignal, previousClimb?.uuid ?? null, climb.uuid, nextClimb?.uuid ?? null);
+  const swapFrames = useSharedValue<BoardSwapFrame | null>(null);
+  const followsBoard = swipeBoard && wallGlow !== null;
+  const previousGlow = useStoryWallGlow({
+    board,
+    climb: previousClimb ?? climb,
+    mirrored,
+    shown: followsBoard && previousClimb !== null,
+  });
+  const nextGlow = useStoryWallGlow({
+    board,
+    climb: nextClimb ?? climb,
+    mirrored,
+    shown: followsBoard && nextClimb !== null,
+  });
+  const wallSwap = useMemo<WallControlSwap | undefined>(
+    () =>
+      followsBoard
+        ? { frames: swapFrames, centerPage, previous: previousGlow, next: nextGlow, look: PLAYER_SWAP_LOOK_ENCODED }
+        : undefined,
+    [followsBoard, swapFrames, centerPage, previousGlow, nextGlow],
+  );
+  const boardRenderData = useMemo(
+    () => getBoardRenderData({ ...board, setIds: board.setIds.split(',').map(Number) }),
+    [board],
+  );
   return (
     <View
       style={[
@@ -135,7 +182,26 @@ export function PlayerScene({
           />
         }
         board={
-          fixture.spray ? (
+          swipeBoard && boardRenderData && !fixture.spray ? (
+            <SwipeBoardCarousel
+              boardName={board.boardName}
+              boardRenderData={boardRenderData}
+              layoutId={board.layoutId}
+              sizeId={board.sizeId}
+              setIds={board.setIds}
+              currentFrames={climb.frames}
+              nextFrames={nextClimb?.frames ?? null}
+              prevFrames={previousClimb?.frames ?? null}
+              pager={pager}
+              centerPage={centerPage}
+              mirrored={mirrored}
+              canSwipeNext={nextClimb !== null}
+              canSwipePrevious={previousClimb !== null}
+              onSwipeNext={next}
+              onSwipePrevious={previous}
+              swapFrameMirror={swapFrames}
+            />
+          ) : fixture.spray ? (
             <StorySprayBoard
               geometry={fixture.spray}
               frames={climb.frames}
@@ -164,6 +230,7 @@ export function PlayerScene({
             remainingQueueCount={climbs.length - index - 1}
             wallControl={wallControl}
             wallGlow={wallGlow}
+            wallSwap={wallSwap}
             boardControl={boardControl}
             onWallControlPress={() => setLit((current) => !current)}
             currentAngle={board.angle}

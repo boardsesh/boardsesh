@@ -137,13 +137,22 @@ pill scale, driven by the same frames:
 - **Shared holds** (same hold id, or within 6 pt in the same colour) stay whole and never dip.
 - **Breathing** uses a per-light seed (a hash of the hold id, in the colour's alpha), so a light
   never jumps when its slot changes. At most 30 lights are drawn, the strongest kept.
-- **Reduce Motion:** no front and no ghosts; a linear 240 ms dissolve, shared holds held. Low Power
-  Mode stops only the breathing.
+- **Ahead of the app.** A flick run can carry the board past the pages the app has sent the frost
+  (the climb either side of the one on show). The frost keeps the last frame it could draw until
+  the app catches up, then runs the release onto the new climb, so the pill never goes dark.
+- **Reduce Motion:** the button draws the still frost (no GPU view), as before. The native view's
+  `reduceMotion` only stops the breathing; Low Power Mode does the same.
+- **Cost:** `PlayCore` parses the neighbours' holds only while the frost is up and moving (the
+  `wall-frost-motion` flag, no Reduce Motion) on a binary with `swapFrameApi`. The animated-prop
+  copy of the frame is written for mount and the first frame only; every other frame is a
+  command, so a swipe adds no Fabric commits.
 - **Label contrast:** while a pair is on show the label fade is the higher of the two climbs'
-  (`wall-glow-swap-fade.ts`, on the UI thread), and for 220 ms after the climb changes.
+  (`wall-glow-swap-fade.ts`, on the UI thread), and for 220 ms after the climb changes. If either
+  neighbour needs the full-surface fade, the button draws that one.
 
 The rules and numbers live in `@boardsesh/frosted-bokeh` (`swap.ts`); `BokehMotion.swift` and
-`BokehMotion.kt` run them line for line. Binaries without `swapFrameApi` keep the old 700 ms glide
+`BokehMotion.kt` run them line for line and are held to the golden vectors in `swap.test.ts`.
+To try it on the simulator, open the story `dev/stories/busy-wall--frost-swipe`. Binaries without `swapFrameApi` keep the old 700 ms glide
 (`glideMs`), and the app sends them none of the new props.
 
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual

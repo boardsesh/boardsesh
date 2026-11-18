@@ -33,8 +33,8 @@ struct GPUUniforms {
 /// 15 fps for the breathing (a light's fastest drift is about 2 pt/s, a tenth
 /// of a point a frame), 60 fps while the board's swap frames arrive or a
 /// release runs (`BokehMotion`), and nothing at all when the view is off
-/// screen or the app is in the background. Reduce Motion stops the breathing
-/// and keeps the dissolve; Low Power Mode stops the breathing only.
+/// screen or the app is in the background. Reduce Motion and Low Power Mode
+/// stop the breathing. (The app draws a still frost under Reduce Motion.)
 final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   let onRenderError = EventDispatcher()
 
@@ -50,7 +50,6 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
   var pendingSwapLook: [Double]?
   var pendingReleaseMs = 220.0
   var pendingReleaseOutMs = 150.0
-  var pendingDissolveMs = 240.0
 
   private static let breathingFramesPerSecond = 15
   private static let movingFramesPerSecond = 60
@@ -128,15 +127,13 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
     reduceMotion = pendingReduceMotion
     drift = Float(max(0, pendingDrift))
     swell = Float(max(0, pendingSwell))
-    motion.reduceMotion = reduceMotion
     motion.look = BokehSwapLook(pendingSwapLook)
     motion.releaseSeconds = max(0.001, pendingReleaseMs / 1000)
     motion.fadeSeconds = max(0.001, pendingReleaseOutMs / 1000)
-    motion.dissolveSeconds = max(0.001, pendingDissolveMs / 1000)
     let current = BokehClimb(key: pendingKey, lights: Self.lights(pendingBlobs))
     var pages: [Int: BokehClimb] = [:]
     if let climbs = pendingSwapClimbs {
-      let center = Int(climbs.centerPage.rounded())
+      let center = BokehMotion.page(climbs.centerPage)
       pages[center] = current
       if let previous = climbs.previous { pages[center - 1] = BokehClimb(key: previous.key, lights: Self.lights(previous.blobs)) }
       if let next = climbs.next { pages[center + 1] = BokehClimb(key: next.key, lights: Self.lights(next.blobs)) }
@@ -194,7 +191,8 @@ final class FrostedBokehGPUView: ExpoView, MTKViewDelegate {
       let x = Float(record.x)
       let y = Float(record.y)
       return BokehLight(
-        id: record.id >= 0 && record.id.isFinite ? Int64(record.id) : -1,
+        // Hold ids are small; anything past 2^53 is not one, and Int64() would trap past 2^63.
+        id: record.id >= 0 && record.id < 9_007_199_254_740_992 ? Int64(record.id) : -1,
         seed: record.seed >= 0 && record.seed.isFinite ? Float(record.seed) : BokehLight.positionSeed(x: x, y: y),
         x: x, y: y, r: Float(record.r), peak: Float(record.peak),
         red: color.x, green: color.y, blue: color.z)

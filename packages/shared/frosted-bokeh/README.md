@@ -41,11 +41,12 @@ props, so this package is the only place they are set.
 (option I). The native views follow the board's swap frames light by light
 (`frostLightWeight`, `frostLightShape`), and with no frames run a release of
 their own (`frostReleaseFill`, `frostReleaseFade`: old lights out by
-`BOKEH_SWAP_OUT_MS`, new ones filling from the right edge over `BOKEH_SWAP_MS`,
-a linear `BOKEH_DISSOLVE_MS` dissolve under Reduce Motion). A light lit in both
+`BOKEH_SWAP_OUT_MS`, new ones filling from the right edge over `BOKEH_SWAP_MS`).
+Under Reduce Motion the wall button draws a still frost. A light lit in both
 climbs (`sameBokehHold`) stays whole; at most `MAX_GPU_BOKEH_LIGHTS` are drawn,
 the strongest kept (`capBokehLights`). `BokehMotion.swift` and `BokehMotion.kt`
-implement the same rules; change all three together. `BOKEH_GLIDE_MS` (700) is
+implement the same rules, held to the golden vectors in `swap.test.ts` (the
+same numbers `BokehMotionTest.kt` pins); change all three together. `BOKEH_GLIDE_MS` (700) is
 the old index glide, kept for binaries without the swap-frame API.
 
 `bokehPixel(point, blobs, { ..., motion: true })` returns the worst frame that

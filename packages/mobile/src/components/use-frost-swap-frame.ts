@@ -32,7 +32,7 @@ export const INITIAL_FROST_SWAP_FRAME: readonly number[] = [INITIAL_SWAP_FRAME_S
 export type FrostSwapFrameCommand<Target extends Component | ElementType> = {
   /** Attach to the animated native frost view: the command's target. */
   target: AnimatedRef<Target>;
-  /** The newest sequenced frame, for the animated prop; null until the UI thread sent one. */
+  /** The frame for the animated prop (mount and the first frame only); null until the UI thread sent one. */
   latest: SharedValue<number[] | null>;
 };
 
@@ -69,7 +69,11 @@ export function useFrostSwapFrame<Target extends Component | ElementType>(
       const next = sequence.value + 1;
       sequence.value = next;
       const sequenced = frostSwapFrame(frame, next);
-      latest.value = sequenced;
+      // The animated prop is a Fabric commit: write it only for mount (no
+      // target yet) and for the first frame, never per frame. The command
+      // carries the rest, and a view mounted later takes the stale copy only
+      // until the next command, which the sequence lets through.
+      if (!targetMounted.value || latest.value === null) latest.value = sequenced;
       if (targetMounted.value) dispatchCommand(target, SWAP_FRAME_COMMAND, sequenced);
     },
     [enabled, frames],

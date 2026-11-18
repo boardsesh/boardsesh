@@ -19,18 +19,22 @@
  *   binary or board without the swap) the frost runs the release on its own:
  *   old lights out by `BOKEH_SWAP_OUT_MS` (smoothstep), new ones filling from
  *   the right edge over `BOKEH_SWAP_MS`, shared lights held.
- * - Reduce Motion: no front, no ghost, no tighten; a linear dissolve over
- *   `BOKEH_DISSOLVE_MS`, shared lights held.
+ * - A frame naming a page the app has not sent yet (a flick run outpacing the
+ *   JS thread) keeps the last frame the view could draw until the page arrives.
+ * - Reduce Motion: the wall button draws a still frost, so none of this runs;
+ *   the native view's `reduceMotion` only stops the breathing.
  *
  * The native view draws at most `MAX_GPU_BOKEH_LIGHTS`, keeping the strongest.
+ *
+ * Nothing in the app calls these functions: the native views run the rules.
+ * They are the reference the native tests are held to: the golden vectors in
+ * `__tests__/swap.test.ts` are the same numbers `BokehMotionTest.kt` pins.
  */
 
 /** A standalone release: new lights fill along the sweep over this long. */
 export const BOKEH_SWAP_MS = 220;
 /** A standalone release: old lights are gone by here. */
 export const BOKEH_SWAP_OUT_MS = 150;
-/** Reduce Motion's linear dissolve, the board's `reduceMotionDurationMs`. */
-export const BOKEH_DISSOLVE_MS = 240;
 /** Without hold ids, two lights this close (pill points) with the same colour are one hold. */
 export const BOKEH_SAME_HOLD_POINTS = 6;
 /** What the native view draws at most: `MAX_BOKEH_BLOBS` for each of two climbs. */
@@ -68,12 +72,26 @@ export function bokehSeed(light: { x: number; y: number; id?: number }): number 
   return (wave - Math.floor(wave)) * TAU;
 }
 
-/** Two lights are one hold: the same id (or, without ids, within 6 points) and the same colour. */
+/** A hex colour's channels, 0 to 1 (`#RGB` or `#RRGGBB`), as the native views parse it. */
+function channels(hex: string): [number, number, number] {
+  let clean = hex.trim().replace(/^#/, '');
+  if (clean.length === 3) clean = clean.replace(/./g, (digit) => digit + digit);
+  const value = Number.parseInt(clean.slice(0, 6), 16);
+  const packed = Number.isFinite(value) ? value : 0;
+  return [((packed >> 16) & 255) / 255, ((packed >> 8) & 255) / 255, (packed & 255) / 255];
+}
+
+/**
+ * Two lights are one hold: the same colour (each channel within 0.02) and the
+ * same id, or, without ids, within 6 points.
+ */
 export function sameBokehHold(
   first: { x: number; y: number; color: string; id?: number },
   second: { x: number; y: number; color: string; id?: number },
 ): boolean {
-  if (first.color.toUpperCase() !== second.color.toUpperCase()) return false;
+  const firstChannels = channels(first.color);
+  const secondChannels = channels(second.color);
+  if (firstChannels.some((channel, index) => Math.abs(channel - (secondChannels[index] ?? 0)) >= 0.02)) return false;
   if (first.id !== undefined && second.id !== undefined) return first.id === second.id;
   return Math.hypot(first.x - second.x, first.y - second.y) < BOKEH_SAME_HOLD_POINTS;
 }
@@ -203,18 +221,16 @@ export function frostLightShape(
 /**
  * A standalone release's ceiling on one arriving light, `elapsedMs` in: each
  * light fills over half the release, starting up to half a release late in
- * sweep order from the right edge. Reduce Motion: a linear dissolve, all at once.
+ * sweep order from the right edge.
  */
-export function frostReleaseFill(across: number, elapsedMs: number, reduceMotion: boolean): number {
-  if (reduceMotion) return clampUnit(elapsedMs / BOKEH_DISSOLVE_MS);
+export function frostReleaseFill(across: number, elapsedMs: number): number {
   const half = BOKEH_SWAP_MS / 2;
   const key = frostSweepKey(across, true);
   return smooth((elapsedMs - key * half) / half);
 }
 
 /** A standalone release's share left of an old light, `elapsedMs` in. */
-export function frostReleaseFade(elapsedMs: number, reduceMotion: boolean): number {
-  if (reduceMotion) return 1 - clampUnit(elapsedMs / BOKEH_DISSOLVE_MS);
+export function frostReleaseFade(elapsedMs: number): number {
   return 1 - smooth(elapsedMs / BOKEH_SWAP_OUT_MS);
 }
 

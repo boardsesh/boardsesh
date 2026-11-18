@@ -1,4 +1,6 @@
 import { PlayerScene } from '../../dev/stories/PlayerScene';
+import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
+import { AURA_GPU_FAMILIES, AURA_GPU_FLAG } from '../../lib/board-render/gpu-rollout';
 import { StyleSheet, View } from 'react-native';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
 import type { StoryModule } from '../../dev/stories/types';
@@ -13,6 +15,12 @@ import { resolveBusyWallQuestion, type BusyWallQuestionInput } from './busy-wall
 // also the place to check the first row's spacing with ⏮ and ⏭ live.
 
 const noop = () => {};
+
+/** The GPU board on every family, and the moving frost forced on, as the board motion lab does. */
+const FROST_SWIPE_FLAGS = { [AURA_GPU_FLAG]: true, 'wall-frost-motion': true };
+const FROST_SWIPE_PAYLOADS = {
+  [AURA_GPU_FLAG]: { version: 1, enabledFamilies: [...AURA_GPU_FAMILIES], disabledFamilies: [] },
+};
 
 const question = (overrides: Partial<BusyWallQuestionInput> = {}) =>
   resolveBusyWallQuestion({
@@ -67,6 +75,18 @@ const stories: StoryModule = {
       layout: 'fullscreen',
       readiness: 'explicit',
       render: (controls) => <PlayerScene {...controls} state="lit" />,
+    },
+    // Option I: swipe the board (or tap Next) and the driving wall button's
+    // frost follows it, light by light. Needs a binary with the frost's
+    // swapFrameApi; story mode holds the breathing still.
+    frostSwipe: {
+      name: 'Driving: the frost follows the board swipe',
+      layout: 'fullscreen',
+      render: (controls) => (
+        <FeatureFlagsProvider flags={FROST_SWIPE_FLAGS} payloads={FROST_SWIPE_PAYLOADS}>
+          <PlayerScene {...controls} state="driving" swipeBoard />
+        </FeatureFlagsProvider>
+      ),
     },
   },
 };

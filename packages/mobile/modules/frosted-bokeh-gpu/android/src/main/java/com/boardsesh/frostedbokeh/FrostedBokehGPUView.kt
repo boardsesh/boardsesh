@@ -18,7 +18,6 @@ import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import expo.modules.kotlin.views.ExpoViewCommandReceiver
-import kotlin.math.roundToInt
 
 /** Native-only motion; RN owns all overlays, text, clipping and control behaviour. */
 class FrostedBokehGPUView(context: Context, appContext: AppContext) :
@@ -35,7 +34,6 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) :
     var pendingSwapLook: List<Double>? = null
     var pendingReleaseMs = 220.0
     var pendingReleaseOutMs = 150.0
-    var pendingDissolveMs = 240.0
 
     private val motion = BokehMotion()
     private var painter: BokehPainter? = null
@@ -101,15 +99,13 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) :
             reduceMotion = pendingReduceMotion
             drift = pendingDrift.toFloat().coerceAtLeast(0f)
             swell = pendingSwell.toFloat().coerceAtLeast(0f)
-            motion.reduceMotion = reduceMotion
             motion.look = BokehSwapLook.parse(pendingSwapLook)
             motion.releaseSeconds = (pendingReleaseMs / 1000).coerceAtLeast(0.001)
             motion.fadeSeconds = (pendingReleaseOutMs / 1000).coerceAtLeast(0.001)
-            motion.dissolveSeconds = (pendingDissolveMs / 1000).coerceAtLeast(0.001)
             val current = BokehClimb(pendingKey, lights(pendingBlobs))
             val pages = mutableMapOf<Int, BokehClimb>()
             pendingSwapClimbs?.let { climbs ->
-                val center = climbs.centerPage.roundToInt()
+                val center = nearestPage(climbs.centerPage)
                 pages[center] = current
                 climbs.previous?.let { pages[center - 1] = BokehClimb(it.key, lights(it.blobs)) }
                 climbs.next?.let { pages[center + 1] = BokehClimb(it.key, lights(it.blobs)) }
@@ -146,7 +142,8 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) :
         val x = record.x.toFloat()
         val y = record.y.toFloat()
         BokehBlob(x, y, record.r.toFloat(), record.peak.toFloat(), color[0], color[1], color[2],
-            id = if (record.id >= 0 && record.id.isFinite()) record.id.toLong() else -1,
+            // Hold ids are small; anything past 2^53 is not one.
+            id = if (record.id >= 0 && record.id < 9_007_199_254_740_992.0) record.id.toLong() else -1,
             seed = if (record.seed >= 0 && record.seed.isFinite()) record.seed.toFloat() else positionSeed(x, y))
     }
 

@@ -105,7 +105,12 @@ function WallGlowComponent({ layer, width, moving = false, swap }: WallGlowProps
   );
   // With the swap the view is drawn at the strongest fade any frame can ask for.
   const fade = swapFollowed ? Math.max(heldFade, layer.fade, previousFade ?? 0, nextFade ?? 0) : heldFade;
-  const fullSurfaceFade = layer.readableZone === 'full';
+  // While the board can show a pair, the stricter zone of the two: a neighbour
+  // whose label spans the pill needs the full-surface fade too.
+  const fullSurfaceFade =
+    layer.readableZone === 'full' ||
+    swapFollowed?.previous?.readableZone === 'full' ||
+    swapFollowed?.next?.readableZone === 'full';
   const fadeGradient =
     fade > 0
       ? `linear-gradient(to right, transparent 0%, ${baseWithAlpha(surface.base, fade)} 10%, ${baseWithAlpha(surface.base, fade)} 90%, transparent 100%)`

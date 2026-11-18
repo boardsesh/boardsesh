@@ -21,10 +21,9 @@ class BokehMotionTest {
     private fun light(x: Float, id: Long = -1, red: Float = 1f, peak: Float = 1f) =
         BokehBlob(x, 20f, 40f, peak, red, 0f, 0f, id = id, seed = x / 100f)
 
-    private fun motion(reduceMotion: Boolean = false) = BokehMotion().apply {
+    private fun motion() = BokehMotion().apply {
         width = this@BokehMotionTest.width
         look = playerLook
-        this.reduceMotion = reduceMotion
     }
 
     private fun BokehMotion.show(key: String, lights: List<BokehBlob>, now: Double, pages: Map<Int, BokehClimb> = emptyMap()) =
@@ -220,28 +219,6 @@ class BokehMotionTest {
         }
     }
 
-    @Test fun `reduce motion dissolves linearly over 240 ms with no stagger`() {
-        val motion = motion(reduceMotion = true)
-        motion.show("old", listOf(light(100f, id = 1), light(200f, id = 2)), 0.0)
-        motion.show("new", listOf(light(0f, id = 3), light(300f, id = 4), light(200f, id = 2)), 1.0)
-        val halfway = motion.blobs(1.12)
-        assertEquals(0.5f, halfway.single { it.id == 1L }.peak, 0.001f)
-        assertEquals(0.5f, halfway.single { it.id == 3L }.peak, 0.001f)
-        assertEquals(0.5f, halfway.single { it.id == 4L }.peak, 0.001f)
-        assertEquals(1f, halfway.single { it.id == 2L }.peak, 0f)
-        assertTrue(motion.transitioning(1.2))
-        assertFalse(motion.transitioning(1.24))
-    }
-
-    @Test fun `reduce motion follows the frames without a front`() {
-        val motion = motion(reduceMotion = true)
-        motion.framed()
-        motion.drag(0.7, 0.3)
-        val drawn = motion.blobs(0.0)
-        for (blob in drawn.filter { it.id < 10 }) assertEquals(0.7f, blob.peak, 0.0001f)
-        for (blob in drawn.filter { it.id >= 10 }) assertEquals(0.3f, blob.peak, 0.0001f)
-    }
-
     @Test fun `interrupted releases never draw more than thirty lights and keep the strongest`() {
         val motion = motion()
         val climbs = (0 until 4).map { climb ->
@@ -264,15 +241,86 @@ class BokehMotionTest {
         assertEquals(0.35f, look.tighten, 0f)
         assertEquals(0.4f, look.ghost, 0f)
         assertNull(BokehSwapLook.parse(listOf(1.0, 0.25)))
-        // The same numbers `swap.ts`'s tests pin.
-        assertEquals(0.4f, BokehMotion.lit(0.4f, 0.5f, false, look), 0.0001f)
-        assertEquals(0.7f, BokehMotion.lit(0.7f, 0.5f, false, look), 0.0001f)
-        assertEquals(1f, BokehMotion.lit(0.7f, 0f, false, look), 0.0001f)
-        assertEquals(0.4f, BokehMotion.lit(0.7f, 1f, false, look), 0.0001f)
-        assertEquals(0.79f, BokehMotion.shaped(0.4f, 0f, false, false, look).second, 0.0001f)
     }
 
-    @Test fun `frame loop runs for transitions, Reduce Motion included, and breathes otherwise`() {
+    /** The golden vectors in `@boardsesh/frosted-bokeh`'s `swap.test.ts`: the same numbers. */
+    @Test fun `the rules match the golden vectors in swap test ts`() {
+        val look = requireNotNull(playerLook)
+        val weights = listOf(
+            listOf(0.4, 0.5, 0.0, 0.4), listOf(0.7, 0.5, 0.0, 0.7), listOf(0.7, 0.0, 0.0, 1.0),
+            listOf(0.7, 1.0, 0.0, 0.4), listOf(0.55, 0.3, 1.0, 0.6184), listOf(0.2, 0.6, 1.0, 0.0512),
+            listOf(0.85, 0.9, 0.0, 0.5422), listOf(0.3, 0.9, 0.0, 0.0948),
+        )
+        for ((weight, key, arriving, expected) in weights) {
+            assertEquals(expected.toFloat(), BokehMotion.lit(weight.toFloat(), key.toFloat(), arriving == 1.0, look), 0.0001f)
+        }
+        val shapes = listOf(
+            listOf(0.4, 0.0, 0.0, 0.0, 0.4, 0.79), listOf(0.2, 0.0, 1.0, 0.0, 0.2, 1.0),
+            listOf(0.55, 0.0, 1.0, 0.0, 0.55, 1.05), listOf(0.55, 0.0, 1.0, 1.0, 0.55, 1.0),
+            listOf(0.7, 0.4, 0.0, 0.0, 0.7, 0.895),
+        )
+        for (row in shapes) {
+            val (glow, reach) = BokehMotion.shaped(row[0].toFloat(), row[1].toFloat(), row[2] == 1.0, row[3] == 1.0, look)
+            assertEquals(row[4].toFloat(), glow, 0.0001f)
+            assertEquals(row[5].toFloat(), reach, 0.0001f)
+        }
+        // The release's fill and fade, through the motion: one light at x, a release started at 0.
+        val fills = listOf(listOf(1.0, 55.0, 0.5), listOf(0.5, 110.0, 0.5), listOf(0.25, 150.0, 0.66752), listOf(0.8, 40.0, 0.071567))
+        for ((across, milliseconds, expected) in fills) {
+            val motion = motion()
+            motion.show("old", listOf(light(1000f)), -1.0)
+            motion.show("new", listOf(light(across.toFloat() * width, red = 0f)), 0.0)
+            assertEquals(expected.toFloat(), motion.blobs(milliseconds / 1000).single { it.red == 0f }.peak, 0.0001f)
+        }
+        for ((milliseconds, expected) in listOf(listOf(75.0, 0.5), listOf(30.0, 0.896), listOf(120.0, 0.104))) {
+            val motion = motion()
+            motion.show("old", listOf(light(100f)), -1.0)
+            motion.show("new", listOf(light(300f, red = 0f)), 0.0)
+            assertEquals(expected.toFloat(), motion.blobs(milliseconds / 1000).single { it.red == 1f }.peak, 0.0001f)
+        }
+    }
+
+    @Test fun `a flick run past the pages the app has sent keeps the frost lit, then releases`() {
+        val motion = motion()
+        motion.framed()
+        motion.drag(0.4, 0.4)
+        sequence += 1
+        motion.applyFrame(listOf(5.25, 0.6, 0.2, 1.0, sequence, 0.0, 1.0), 0.1)
+        // The climb on page 5 (the left climb on page 4 is fading out where it was).
+        val shown = motion.blobs(0.1).filter { it.id >= 10 }
+        assertEquals(2, shown.size)
+        // Page 6 has not come from the app yet: the last frame it could draw stays up.
+        sequence += 1
+        motion.applyFrame(listOf(6.0, 1.0, 0.0, 1.0, sequence, 0.0, 0.0), 0.15)
+        assertEquals(shown, motion.blobs(0.15).filter { it.id >= 10 })
+        // The app catches up: the climb on page 6 fills in along the sweep, page 5 fades.
+        val third = BokehClimb("third", listOf(light(150f, id = 21)))
+        motion.setClimbs(third, mapOf(5 to right, 6 to third), 0.2)
+        assertTrue(motion.transitioning(0.2))
+        assertTrue(motion.blobs(0.2).none { it.id == 21L })
+        assertEquals(1f, motion.blobs(0.5).single().peak, 0.0001f)
+    }
+
+    @Test fun `a climb arriving after a climb with no lights still runs the release`() {
+        val motion = motion()
+        val empty = BokehClimb("empty", emptyList())
+        motion.setClimbs(empty, mapOf(4 to empty, 5 to right), 0.0)
+        motion.applyFrame(listOf(4.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0), 0.0)
+        motion.applyFrame(listOf(5.0, 1.0, 0.0, 1.0, 2.0, 0.0, 0.0), 1.0)
+        assertTrue(motion.transitioning(1.0))
+        assertTrue(motion.blobs(1.0).none { it.x == 60f })
+    }
+
+    @Test fun `pages round half up, as JS does, and wild numbers clamp`() {
+        assertEquals(5, requireNotNull(BokehSwapFrame.parse(listOf(4.5, 1.0, 0.0, 1.0, 1.0))?.frame).from)
+        assertEquals(-3, requireNotNull(BokehSwapFrame.parse(listOf(-3.5, 1.0, 0.0, 1.0, 1.0))?.frame).from)
+        val wild = requireNotNull(BokehSwapFrame.parse(listOf(1e300, 1.0, 0.0, 1.0, 1.0, 1e12, -1e12))?.frame)
+        assertEquals(1_000_000_000, wild.from)
+        assertEquals(7, wild.outgoingCode)
+        assertEquals(0, wild.incomingCode)
+    }
+
+    @Test fun `frame loop runs for transitions and breathes otherwise`() {
         assertEquals(0, bokehFrameRate(false, false, false, true, true))
         assertEquals(60, bokehFrameRate(true, true, false, true, true))
         assertEquals(0, bokehFrameRate(true, true, false, false, true))

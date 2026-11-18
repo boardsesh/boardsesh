@@ -25,7 +25,6 @@ class FrostedBokehGPUModule : Module() {
             Prop("swapLook") { view: FrostedBokehGPUView, look: List<Double>? -> view.pendingSwapLook = look }
             Prop("releaseMs") { view: FrostedBokehGPUView, milliseconds: Double -> view.pendingReleaseMs = milliseconds }
             Prop("releaseOutMs") { view: FrostedBokehGPUView, milliseconds: Double -> view.pendingReleaseOutMs = milliseconds }
-            Prop("dissolveMs") { view: FrostedBokehGPUView, milliseconds: Double -> view.pendingDissolveMs = milliseconds }
             // The animated-prop copy of the `swapFrame` command, for mount; the sequence drops it
             // whenever the command already delivered the frame.
             Prop("swapFrame") { view: FrostedBokehGPUView, frame: List<Double>? -> if (frame != null) view.setSwapFrame(frame) }

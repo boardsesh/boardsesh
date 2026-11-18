@@ -12,7 +12,6 @@ import {
 import { Animated, Image, StyleSheet, View } from 'react-native';
 import Reanimated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
 import {
-  BOKEH_DISSOLVE_MS,
   BOKEH_DRIFT,
   BOKEH_GLIDE_MS,
   BOKEH_SWAP_MS,
@@ -232,7 +231,6 @@ function FrostedBokehComponent({
           // A still capture draws each climb whole at once: the shortest release there is.
           releaseMs={FROST_STILL_FOR_CAPTURE ? 1 : BOKEH_SWAP_MS}
           releaseOutMs={FROST_STILL_FOR_CAPTURE ? 1 : BOKEH_SWAP_OUT_MS}
-          dissolveMs={FROST_STILL_FOR_CAPTURE ? 1 : BOKEH_DISSOLVE_MS}
           animatedProps={swapFrameProps}
           onRenderError={handleRenderError}
           testID={`${testID}-gpu`}

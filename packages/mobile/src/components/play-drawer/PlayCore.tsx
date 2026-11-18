@@ -172,7 +172,11 @@ import {
   type KeepLightingPlan,
 } from '../../lib/keep-lighting';
 import { useAuth } from '../../providers/auth-provider';
-import { useBoardseshGradeEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
+import {
+  useBoardseshGradeEnabled,
+  useWallFrostMotionEnabled,
+  useWallSwipeToDriveEnabled,
+} from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useClimb, useGymBoards, useProfile } from '../../lib/graphql/hooks';
 import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
@@ -227,11 +231,15 @@ import type { WallGlowInput } from './use-wall-glow';
 import type { BoardSwapFrame } from './swap-look';
 import type { WallControlSwap } from './WallControlButton';
 import { PLAYER_SWAP_LOOK_ENCODED } from './player-swap-look';
+import { readFrostedBokehSwapFrameApi } from '../../../modules/frosted-bokeh-gpu/src/swap-frame-api';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { buildWallGlowInput } from './wall-glow-input';
 import { wallControlFrostHasLeds, wallControlUsesFrost } from './wall-control-frost';
 import { boardHasLights, litByWallDevice } from '../../lib/boards/board-lighting';
 
 const EMPTY_HOLD_PLACEMENTS: HoldPlacement[] = [];
+/** Whether this binary's wall-button frost can follow the board's swap; read once. */
+const FROST_FOLLOWS_SWAP = readFrostedBokehSwapFrameApi() >= 1;
 /** A workout stage holds the top bar: the board's value names no list position then. */
 const NO_TRACK_LABEL: TrackLabelModel = { kind: 'hidden' };
 import { useWallHolderIdentity } from './use-wall-holder-name';
@@ -2860,10 +2868,12 @@ export function PlayCore({
   ]);
   // The frost follows the board's swap (option I): the board copies each swap
   // frame here on the UI thread, and the button gets the neighbours' holds once
-  // per pair, only while the frost is up. The button decides whether this
-  // binary's frost can follow (`frostedBokehFollowsSwap`).
+  // per pair: only while the frost is up and moving (the flag, no Reduce
+  // Motion) on a binary whose frost can follow. Anywhere else nothing parses.
   const frostSwapFrames = useSharedValue<BoardSwapFrame | null>(null);
-  const frostFollowsBoard = wallGlowShown;
+  const frostMotionOffered = useWallFrostMotionEnabled();
+  const reduceMotion = useReduceMotion();
+  const frostFollowsBoard = wallGlowShown && FROST_FOLLOWS_SWAP && frostMotionOffered && !reduceMotion;
   const nextGlowFrames = frostFollowsBoard ? (nextPeekFrames ?? '') : '';
   const previousGlowFrames = frostFollowsBoard ? (prevPeekFrames ?? '') : '';
   const holdPlacements = boardRenderData?.holdsData ?? EMPTY_HOLD_PLACEMENTS;
