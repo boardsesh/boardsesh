@@ -165,16 +165,22 @@ test('@smoke only the session read that bridges a pre-cutover cookie writes, and
   const bridgedViewer = await readViewer(page);
   const refusal = await edgeCookies.during(() =>
     page.evaluate(
-      async ({ origin, expectedViewer }) => {
+      async ({ origin, userId, authSessionId }) => {
+        // The Settings card's request: the guard's header and the expected login in the body.
         const response = await fetch(`${origin}/api/internal/set-password`, {
           method: 'POST',
           credentials: 'include',
-          headers: { 'content-type': 'application/json', 'X-Boardsesh-Expected-Viewer': expectedViewer },
-          body: JSON.stringify({ password: 'a password of eight', confirmPassword: 'a password of eight' }),
+          headers: { 'content-type': 'application/json', 'X-Boardsesh-Expected-Viewer': `${userId}:${authSessionId}` },
+          body: JSON.stringify({
+            password: 'a password of eight',
+            confirmPassword: 'a password of eight',
+            expectedUserId: userId,
+            expectedAuthSessionId: authSessionId,
+          }),
         });
         return { status: response.status, body: (await response.json().catch(() => null)) as unknown };
       },
-      { origin: WWW_ORIGIN, expectedViewer: `${bridgedViewer.userId}:${bridgedViewer.authSessionId}` },
+      { origin: WWW_ORIGIN, userId: bridgedViewer.userId, authSessionId: bridgedViewer.authSessionId },
     ),
   );
   expect(refusal.result).toEqual({ status: 403, body: { error: 'reauthentication_required' } });
