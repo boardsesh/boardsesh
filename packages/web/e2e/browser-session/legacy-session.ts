@@ -60,8 +60,8 @@ export async function mintLegacySession(
 ): Promise<MintedLegacySession> {
   const value = await encodeSessionJwt(account, secret);
   const expires = Math.floor(Date.now() / 1000) + THIRTY_DAYS_SECONDS;
-  const base = { path: '/', httpOnly: true, sameSite: 'Lax' as const, expires };
-  const parentDomain = { ...base, domain: COOKIE_DOMAIN };
+  const base = { httpOnly: true, sameSite: 'Lax' as const, expires };
+  const parentDomain = { ...base, path: '/', domain: COOKIE_DOMAIN };
   let cookies: Cookie[];
   if (shape === 'normal') {
     cookies = [{ ...parentDomain, name: SECURE_NAME, value, secure: true }];
@@ -74,7 +74,7 @@ export async function mintLegacySession(
       secure: true,
     }));
   } else if (shape === 'host-only') {
-    // A `url` instead of a `domain` makes the cookie host-only on www.
+    // A `url` instead of a `domain` makes the cookie host-only on www; Playwright takes no `path` with it.
     cookies = [{ ...base, url: WWW_ORIGIN, name: SECURE_NAME, value, secure: true }];
   } else {
     cookies = [{ ...parentDomain, name: PLAIN_NAME, value, secure: false }];

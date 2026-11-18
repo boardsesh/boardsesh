@@ -33,20 +33,36 @@ test('names every Set-Cookie of a probe response, attributes included and values
   expect(JSON.stringify(records)).not.toContain('=1');
 });
 
-test('shows a sign-in writing the session cookie, an idle read writing none, and a sign-out clearing it', async ({
+test('shows a sign-in writing the session cookie, a session read rolling it, the cookie route writing none, and a sign-out clearing it', async ({
   page,
   accountA,
   edgeCookies,
 }) => {
   const signIn = await edgeCookies.during(() => signInOnWww(page, accountA));
   const written = sessionSetCookies(signIn.records).filter((cookie) => !cookie.clears);
-  expect(written).toHaveLength(1);
-  expect(written[0]).toMatchObject({ host: WWW_HOST, name: '__Secure-next-auth.session-token' });
-  expect(written[0]?.attributes).toEqual(expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Secure', 'HttpOnly']));
+  // The credentials callback writes it first. Legacy NextAuth also rewrites it on each /api/auth/session read.
+  expect(written[0]).toMatchObject({
+    host: WWW_HOST,
+    path: '/api/auth/callback/credentials',
+    name: '__Secure-next-auth.session-token',
+  });
+  for (const cookie of written) {
+    expect(cookie).toMatchObject({ host: WWW_HOST, name: '__Secure-next-auth.session-token' });
+    expect(cookie.attributes).toEqual(expect.arrayContaining([`Domain=${COOKIE_DOMAIN}`, 'Secure', 'HttpOnly']));
+  }
   // The cookie's value is in the browser's jar, and not in the record.
   const [sessionCookie] = (await page.context().cookies()).filter((cookie) => cookie.name === written[0]?.name);
   expect(sessionCookie?.value.length).toBeGreaterThan(20);
   expect(JSON.stringify(signIn.records)).not.toContain(sessionCookie?.value ?? 'unreachable');
+
+  // Legacy mode rolls the cookie on a session read. Phase B's no-write-on-read rule is the contrast.
+  const rolled = await edgeCookies.during(() =>
+    page.evaluate(
+      async (origin) => (await fetch(`${origin}/api/auth/session`, { credentials: 'include' })).status,
+      WWW_ORIGIN,
+    ),
+  );
+  expect(sessionSetCookies(rolled.records).filter((cookie) => cookie.path === '/api/auth/session')).not.toEqual([]);
 
   // The cookie route only reads the session: the request is in the log, with no session Set-Cookie.
   const idle = await edgeCookies.during(() => readViewer(page));

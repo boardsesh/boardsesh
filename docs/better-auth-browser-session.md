@@ -710,9 +710,63 @@ environment when it is set, so a Phase B spec can run the same stack under
 `packages/web/test-results/browser-session/` and
 `packages/web/playwright-report/browser-session/`.
 
-What the harness does not show: Playwright's WebKit does not apply Safari's
-intelligent tracking prevention, so the seven-day cap on a server-set cookie
-(owner decision 2) still needs a real Safari check.
+### What a spec can use
+
+Fixtures from `packages/web/e2e/browser-session/fixtures.ts`, each with a spec
+that shows it working in legacy mode in both engines:
+
+| Fixture | What it gives a spec | Spec |
+| --- | --- | --- |
+| `accountA`, `accountB` | `{ userId, email, password, name }` for the dev database's test user and a second account made at global setup (`database.ts`: the same two inserts the partner journey uses, deleted at teardown). `openContext()` opens another context set up like `context`. Sign in with `helpers.ts` `signInOnWww(page, account)`. | `accounts.spec.ts` |
+| `edgeCookies` | `begin()` then `end()`, or `during(action)`: every response the edge relayed in the window, as `{ host, method, path, status, setCookies: [{ name, attributes, clears }] }`. Names and attributes only, never a value (`edge.ts` drops it). A response with no Set-Cookie is still listed, so "emitted none" differs from "never ran". `sessionSetCookies(records)` keeps the session cookies. | `set-cookie-recording.spec.ts` |
+| `legacySession.addTo(context, account, shape)` | A NextAuth cookie minted with `encode` from `next-auth/jwt` and the run's `NEXTAUTH_SECRET`: `normal`, `chunked` (three `.0` to `.2` pieces), `host-only` (no Domain, www only) or `plain-named` (`next-auth.session-token`, no `Secure`). Returns the cookie names. | `legacy-session.spec.ts` |
+| `restartStack({ env })` | Stops both servers and starts them again with `env` set over the run's own environment (null unsets; no argument goes back to it). The database, edge, browser contexts and ports stay. The setup process does it, so the specs reach it through a loopback control server with a per-run token. Allow minutes under `next dev`. | `restart.spec.ts` |
+
+Legacy mode rewrites the session cookie on every `/api/auth/session` read, as
+well as at sign-in (both show in `set-cookie-recording.spec.ts`), and
+`/api/internal/ws-auth` writes none.
+
+**www as a production build.** `BROWSER_SESSION_E2E_WWW=production` (or
+`vp run test:e2e:browser-session -- --www-production`) runs `next build` and
+`next start` instead of `next dev`. Router Cache behaviour and several auth
+branches differ under `NODE_ENV=production`. The nightly uses it and a pull
+request run does not, because the build adds minutes; a dispatch has a `www`
+input. The build writes `packages/web/.next`, so do not start it while
+`vp run dev` is running.
+
+**Probes.** `websocket.spec.ts`: the app tab opens `wss://ws.boardsesh.test/graphql`
+through the proxy and gets `connection_ack`, in both engines. `bfcache.spec.ts`,
+below.
+
+**Back/forward cache.** From playwright-core 1.62.1: Chromium is launched with
+`--disable-back-forward-cache`, so no Chromium page is restored from the cache.
+Dropping that flag is not enough with the default headless shell, which reports
+`BackForwardCacheDisabledForDelegate`. The `chromium-bfcache` project uses the
+full Chromium build (`channel: 'chromium'`) with
+`ignoreDefaultArgs: ['--disable-back-forward-cache']`, and a back navigation
+there fires `pageshow` with `persisted: true`. The other Chromium project stays
+`false`. WebKit's launcher passes no such flag, and its Linux build fired
+`persisted: false` in the first CI run; I found no supported switch for it, so a
+spec cannot rely on a WebKit restore. `chromium-bfcache` runs only
+`bfcache.spec.ts`; a spec that needs a restore uses it. A restored page runs no
+script and sends no request, and `goBack` must wait for `commit`, since a
+restore fires no `load`.
+
+What the harness does not show:
+
+- Safari's seven-day cap on a server-set cookie (owner decision 2) cannot
+  trigger here. Playwright's WebKit has no intelligent tracking prevention, and
+  every host resolves through one proxy to 127.0.0.1, so no site looks
+  cross-site to a tracker list. It still needs a real Safari check.
+- The back/forward cache differs by engine, as above: no WebKit restore at all,
+  and a Chromium restore only in `chromium-bfcache`.
+- A pull request runs www under `next dev`. Behaviour that differs in a
+  production build is checked only by the nightly, or a dispatch with
+  `www=production`.
+- One auth mode per run. `AUTH_BROWSER_SESSION_MODE` is read when the setup
+  starts the servers, so a spec that needs the other mode calls
+  `restartStack({ env: { AUTH_BROWSER_SESSION_MODE: ... } })`, and every
+  restart is a cold start for the servers.
 
 ## Open questions
 
