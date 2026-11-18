@@ -1366,7 +1366,40 @@ backend issues a new session whose sign-in time is now (Google only with a
 signed `auth_time` under five minutes old) and ends the old one, and the
 browser returns to the `callbackUrl`, reduced to a same-origin path
 (`safeCallbackUrl`). A silent Google sign-in cannot satisfy a five-minute
-check. Apple-only accounts are told to set a password first. Settings' link
+check. Apple-only accounts are told to set a password first.
+
+It ends as the account that started it, or not at all. Before the sign-in,
+the page POSTs `/api/auth/reauthenticate/start` (same `Origin`, the
+expected-viewer header), which writes `__Host-boardsesh.reauthenticate`:
+sealed like the provider flow cookie (its own HKDF label), HttpOnly, Lax, ten
+minutes, holding `startedAs` (the signed-in user id) and the return path. Both
+sign-ins come back to `GET /api/auth/reauthenticate/return`, which clears it
+and forwards to the return path only when the browser is now signed in as
+`startedAs`. Another account (Google offered a different one and the climber
+picked it) goes to `/auth/reauthenticate?outcome=other_account`, which says so
+and offers Sign out and the home page; a missing or expired record goes to
+`outcome=expired`. Neither value can be chosen through a URL. An unknown
+Google account ends on `link_required`; while a re-sign-in is in progress the
+error page says that Google account is not connected to this Boardsesh
+account and offers to try again, instead of the Settings advice. The Google
+start sends the account's email as `login_hint`; Google preselects it only
+when it is the connected address (the backend does not store the Google
+address, so nothing better is known). The page shows sign-in buttons only from
+a successful `methods` read (a legacy-only browser re-reads the session and
+asks once more); any other answer is an error with a retry, so an Apple-only
+account is never offered Google. A wrong password, a rate limit (429) and an
+outage each get their own message.
+
+Return to app.boardsesh.com is not supported: `callbackUrl` is reduced to a
+path on www (`safeCallbackUrl` without an origin), so an absolute Expo web URL
+falls back to `/`. Nothing on app.boardsesh.com sends climbers here today; if
+it ever does, that return needs its own allowlist.
+
+Deploy order: `link_required` is a new value in the `resolve` reply. A www
+without it refuses such a reply and shows the outage page, so www deploys
+before the backend or with it.
+
+Settings' link
 and unlink use the per-intent reauthentication of the provider-security
 commands instead, which does not touch the session's sign-in time; the console
 and partner pages need the session's own sign-in time, which only a login

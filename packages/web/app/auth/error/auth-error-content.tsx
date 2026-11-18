@@ -14,20 +14,35 @@ import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import BackButton from '@/app/components/back-button';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import { themeTokens } from '@/app/theme/theme-config';
 import { getAuthErrorMessage } from './get-error-message';
 
-export default function AuthErrorContent() {
+type AuthErrorContentProps = {
+  /**
+   * Set when this error ended a forced re-sign-in of this browser's account
+   * (#7655 item 6): the path the climber was confirming for.
+   */
+  reauthenticationReturnTo?: string;
+};
+
+export default function AuthErrorContent({ reauthenticationReturnTo }: AuthErrorContentProps = {}) {
   const { t } = useTranslation('auth');
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
   const { data: session } = useSession();
   const signedInEmail = session?.user?.email;
   // A sign-in that would have made a second account while signed in (#7596 B5e1).
-  const message =
-    error === 'OAuthLinkRequired' && signedInEmail
+  const linkRequired = error === 'OAuthLinkRequired';
+  const reauthenticating = linkRequired && reauthenticationReturnTo !== undefined;
+  const message = reauthenticating
+    ? t('error.linkRequiredReauthenticating')
+    : linkRequired && signedInEmail
       ? t('error.linkRequiredSignedInAs', { email: signedInEmail })
       : getAuthErrorMessage(error, t);
+  const retryHref = reauthenticating
+    ? `/auth/reauthenticate?${new URLSearchParams({ callbackUrl: reauthenticationReturnTo }).toString()}`
+    : undefined;
 
   return (
     <Box sx={{ minHeight: '100vh', background: 'var(--semantic-background)' }}>
@@ -66,9 +81,19 @@ export default function AuthErrorContent() {
               <CancelOutlined sx={{ fontSize: 48, color: 'var(--color-error)', mx: 'auto' }} />
               <Typography variant="h3">{t('error.title')}</Typography>
               <MuiAlert severity="error">{message}</MuiAlert>
-              <Button variant="contained" href="/auth/login" fullWidth size="large">
-                {t('error.back')}
-              </Button>
+              {retryHref ? (
+                <Button variant="contained" component={LocaleLink} href={retryHref} fullWidth size="large">
+                  {t('error.tryAgain')}
+                </Button>
+              ) : linkRequired && signedInEmail ? (
+                <Button variant="contained" component={LocaleLink} href="/settings" fullWidth size="large">
+                  {t('error.openSettings')}
+                </Button>
+              ) : (
+                <Button variant="contained" href="/auth/login" fullWidth size="large">
+                  {t('error.back')}
+                </Button>
+              )}
             </Stack>
           </CardContent>
         </Card>
