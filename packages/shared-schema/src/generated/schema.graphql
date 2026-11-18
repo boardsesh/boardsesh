@@ -983,6 +983,10 @@ type DiscoverableSession {
 Input for creating a new climbing session.
 """
 input CreateSessionInput {
+  "Partner workout to start atomically with this climber's session."
+  appWorkoutId: ID
+  "Initial queue and generated stage plan, committed with the new partner workout session."
+  appWorkoutSeed: JSON
   audience: PrivacyResourceAudience
   "Board configuration path (e.g., 'kilter/1/1/1,2/40')"
   boardPath: String!
@@ -12692,6 +12696,130 @@ extend type Mutation {
   rotateOAuthClientSecret(clientId: ID!): OAuthClientCredentials!
   "Delete the signed-in developer's app and end every climber connection to it. False when there was no such app."
   deleteOAuthClient(clientId: ID!): Boolean!
+}
+
+type PartnerDeveloperEmailStatus {
+  email: String!
+  verified: Boolean!
+}
+extend type Query {
+  partnerDeveloperEmailStatus: PartnerDeveloperEmailStatus!
+}
+extend type Mutation {
+  requestPartnerDeveloperEmail: Boolean!
+  confirmPartnerDeveloperEmail(token: String!): Boolean!
+}
+
+"Global-admin app directory. Never contains client credentials or connected climber identities."
+type AdminPartnerApp {
+  clientId: ID!
+  name: String
+  publisherName: String
+  ownerUserId: ID!
+  ownerName: String
+  ownerEmail: String
+  homepageUrl: String
+  createdAt: String!
+  disabled: Boolean!
+  suspendedAt: String
+  suspensionReason: String
+  activeConnections: Int!
+  newConnectionsLast24Hours: Int!
+  maxActiveConnections: Int!
+  maxNewConnectionsPerDay: Int!
+}
+
+type AdminPartnerAppConnection {
+  apps: [AdminPartnerApp!]!
+  totalCount: Int!
+  hasMore: Boolean!
+}
+
+input AdminPartnerAppsInput {
+  query: String
+  limit: Int
+  offset: Int
+}
+
+input UpdatePartnerAppLimitsInput {
+  clientId: ID!
+  maxActiveConnections: Int!
+  maxNewConnectionsPerDay: Int!
+}
+
+extend type Query {
+  adminPartnerApps(input: AdminPartnerAppsInput): AdminPartnerAppConnection!
+}
+
+extend type Mutation {
+  updatePartnerAppLimits(input: UpdatePartnerAppLimitsInput!): AdminPartnerApp!
+}
+
+type PartnerWebhookSettings {
+  clientId: ID!
+  url: String!
+  events: [String!]!
+  enabled: Boolean!
+  disabledReason: String
+  previousSecretExpiresAt: String
+}
+type PartnerWebhookCredentials {
+  settings: PartnerWebhookSettings!
+  secret: String
+}
+type PartnerWebhookDelivery {
+  id: ID!
+  event: String!
+  status: String!
+  attempts: Int!
+  lastStatusCode: Int
+  lastError: String
+  createdAt: String!
+  deliveredAt: String
+}
+input UpdatePartnerWebhookInput {
+  clientId: ID!
+  url: String!
+  events: [String!]!
+  enabled: Boolean!
+}
+extend type Query {
+  partnerWebhookSettings(clientId: ID!): PartnerWebhookSettings
+  partnerWebhookDeliveries(clientId: ID!): [PartnerWebhookDelivery!]!
+}
+extend type Mutation {
+  updatePartnerWebhook(input: UpdatePartnerWebhookInput!): PartnerWebhookCredentials!
+  rotatePartnerWebhookSecret(clientId: ID!): PartnerWebhookCredentials!
+  testPartnerWebhook(clientId: ID!): ID!
+}
+
+"A partner workout delivered to the signed-in climber. Its session identifier never leaves the partner API."
+type AppWorkout {
+  id: ID!
+  clientId: ID!
+  status: String!
+  title: String!
+  sourceAppName: String!
+  sessionId: ID
+  sessionPlan: JSON
+  notes: String
+  scheduledFor: String
+  spec: JSON!
+  blocks: JSON!
+  expiresAt: String!
+  openedByMismatch: Boolean!
+}
+type AppWorkoutLaunch {
+  sourceAppName: String!
+}
+extend type Query {
+  appWorkout(id: ID!): AppWorkout!
+  "Only the registered app's public name; never the workout title, notes or blocks."
+  publicAppWorkoutLaunch(id: ID!): AppWorkoutLaunch
+}
+extend type Mutation {
+  attachAppWorkout(workoutId: ID!, sessionId: ID!): Boolean!
+  recordAppWorkoutPlan(workoutId: ID!, plan: JSON!): Boolean!
 }
 
 "An app the signed-in climber connected to their account (docs/integration-platform.md, Connected apps)."

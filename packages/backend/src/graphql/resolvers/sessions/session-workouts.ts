@@ -24,6 +24,8 @@ import {
   type SessionWorkoutRepOutcome as RepOutcome,
 } from '@boardsesh/workout-summary';
 import { db } from '../../../db/client';
+import { recoverAppWorkoutPlan } from '../../../services/public-api/workouts';
+import type { PartnerDatabase } from '../../../auth/partner/tables';
 import { canAccessResource } from '../../../services/privacy';
 import { sessionsOwnSurfaceVisibleUserIds, sessionVisibleUserIds } from '../../../services/board-session-privacy';
 import { logger } from '../../../utils/logger';
@@ -234,19 +236,22 @@ export const sessionWorkoutMutations = {
     const ownTickMap = tickMap.filter((entry) => ownTickUuids.has(entry.tickUuid));
 
     const now = new Date();
-    await db
-      .insert(dbSchema.sessionWorkouts)
-      .values({ sessionId, userId, plan, tickMap: ownTickMap, revision, createdAt: now, updatedAt: now })
-      .onConflictDoUpdate({
-        target: [dbSchema.sessionWorkouts.sessionId, dbSchema.sessionWorkouts.userId],
-        set: {
-          plan: sql`excluded.plan`,
-          tickMap: sql`excluded.tick_map`,
-          revision: sql`excluded.revision`,
-          updatedAt: now,
-        },
-        setWhere: sql`${dbSchema.sessionWorkouts.revision} < excluded.revision`,
-      });
+    await db.transaction(async (tx) => {
+      await recoverAppWorkoutPlan(tx as unknown as PartnerDatabase, userId, sessionId, plan);
+      await tx
+        .insert(dbSchema.sessionWorkouts)
+        .values({ sessionId, userId, plan, tickMap: ownTickMap, revision, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [dbSchema.sessionWorkouts.sessionId, dbSchema.sessionWorkouts.userId],
+          set: {
+            plan: sql`excluded.plan`,
+            tickMap: sql`excluded.tick_map`,
+            revision: sql`excluded.revision`,
+            updatedAt: now,
+          },
+          setWhere: sql`${dbSchema.sessionWorkouts.revision} < excluded.revision`,
+        });
+    });
     return true;
   },
 };

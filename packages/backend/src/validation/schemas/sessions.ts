@@ -14,6 +14,11 @@ import {
  * Create session input validation schema
  */
 export const CreateSessionInputSchema = z.object({
+  appWorkoutId: z
+    .string()
+    .regex(/^wk_[A-Za-z0-9_-]{1,100}$/)
+    .nullish(),
+  appWorkoutSeed: z.unknown().optional(),
   audience: z.enum(['public', 'unlisted', 'followers', 'invite_only']).nullish(),
   boardPath: BoardPathSchema,
   latitude: LatitudeSchema,

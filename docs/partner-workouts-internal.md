@@ -102,8 +102,10 @@ that explicit connection, not a provider-internal grant or browser session.
 | --- | --- | --- |
 | `app_workouts` | `id`, `client_id`, `connection_id`, `connection_generation`, `user_id`, `external_ref`, `title`, `spec jsonb`, `plan_snapshot jsonb`, `status`, `session_id`, `opened_at`, `started_at`, `completed_at`, `expires_at`, `opened_by_mismatch`, `idempotency_key`, `idempotency_body_hash`, `idempotency_response jsonb` | Unique on `(client_id, user_id, external_ref)` gives the 409. `plan_snapshot` is what the app actually queued at Start, so results can attribute ticks to blocks |
 
-Plus one column: `board_sessions.app_workout_id`, nullable, FK to
-`app_workouts`, set by `createSession` when the app passes it.
+Attachment uses `app_workouts.session_id`, unique with `user_id`. Each climber
+in a shared session can attach one workout. The session foreign key uses
+`RESTRICT`, preserving completed partner results. `app_workout_requests` stores
+the 24-hour idempotency key, body hash and original response separately.
 
 `connection_id` and `connection_generation` bind a workout to the authorization
 that created it. Creating, opening, attaching and starting a workout recheck
@@ -242,10 +244,10 @@ pools fill them, and the phone keeps a `WorkoutRun` that maps every queued
 climb to its block, so the player and the session card can say
 "Volume · 3 of 8".
 
-That run stays on the phone and the server never sees a stage, so what was
-actually queued, per block, is still written back as `plan_snapshot` through a
-`recordAppWorkoutPlan` mutation at Start. The snapshot can be built straight
-from the run. Results can infer a block only when the tick's climb matches
+The existing `session_workouts` write and durable mobile outbox store the run
+on the server. `recordAppWorkoutPlan` records its per-block climb snapshot at
+Start; the normal session-workout write reconstructs the same canonical snapshot
+if that response is lost. Empty freeform blocks remain in the snapshot. Results can infer a block only when the tick's climb matches
 exactly one block in that snapshot. A climb never queued, or queued in more
 than one block, gets `blockIndex: null`; warm-up and volume can contain the
 same climb. Exact attribution requires a queue-item/stage identity recorded
@@ -339,11 +341,11 @@ no test depends on a timer.
 
 `endSession` in `packages/backend/src/graphql/resolvers/sessions/mutations.ts`
 ends a session and then fire-and-forgets `autoSyncSessionToIntegrations`.
-Workout completion goes in the same place but not the same way: inside the
-transaction that marks the session ended, if `app_workout_id` is set, the
-resolver moves the workout to `completed` (and, from milestone 4, enqueues a
-`workout.completed` event on the same transaction). Results are not
-materialized at that point; they are built on read.
+Workout completion belongs to `room-manager/session-discovery.ts`, where the
+session is actually ended. A session advisory fence serializes attachment and
+End; all participating users are locked before their connection rows. The same
+transaction completes attached workouts and writes the webhook outbox. Results
+are built on read, so subsequent tick edits and deletions remain visible.
 
 Abandoned sessions need no new machinery. `endStaleInactiveSessions` in
 `packages/backend/src/services/room-manager/room-manager.ts` already ends a

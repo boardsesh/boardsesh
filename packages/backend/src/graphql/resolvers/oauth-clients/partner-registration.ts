@@ -1,4 +1,11 @@
 import { GraphQLError } from 'graphql';
+import {
+  confirmPartnerDeveloperEmail,
+  hasVerifiedPartnerDeveloperEmail,
+  readPartnerDeveloperEmailStatus,
+  requestPartnerDeveloperEmail,
+} from '../../../auth/partner/developer-email';
+import { sendPartnerDeveloperVerificationEmail } from '../../../email/partner-developer-email';
 import { PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS } from '@boardsesh/auth-protocol/auth-time';
 import {
   PARTNER_CONSOLE_ALLOWLIST_UNAVAILABLE,
@@ -161,7 +168,7 @@ function refusalError(error: PartnerRegistrationError): GraphQLError {
  * (BA-02, or registration's own email check): `emailVerified` was stamped
  * without one while verification was off.
  */
-async function withRegistration<Result>(
+export async function withRegistration<Result>(
   ctx: ConnectionContext,
   kind: 'read' | 'write',
   work: (
@@ -183,7 +190,15 @@ async function withRegistration<Result>(
   const developerId = ctx.userId;
   if (!developerId) throw new Error('Authentication required to perform this operation');
   await chargeDeveloperLimit(ctx, kind);
-  await requireInvitedDeveloper(developerId);
+  if (mode !== 'open') await requireInvitedDeveloper(developerId);
+  if (
+    mode === 'open' &&
+    !(await hasVerifiedPartnerDeveloperEmail(db as unknown as RegistrationDatabase, developerId))
+  ) {
+    throw new GraphQLError('Verify your developer email before registering apps.', {
+      extensions: { code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' },
+    });
+  }
   await chargeAddressLimit(ctx, kind);
 
   let runtime: PartnerRuntime | null;
@@ -257,7 +272,38 @@ function clientIdArgument(clientId: unknown): string {
   return clientId;
 }
 
+/** Proof operations need no proof themselves; allowlist mode still requires an invite. */
+async function withDeveloperEmail<Result>(
+  ctx: ConnectionContext,
+  kind: 'read' | 'write',
+  work: (database: RegistrationDatabase, userId: string) => Promise<Result>,
+): Promise<Result> {
+  const mode = registrationMode();
+  if (mode === 'off')
+    throw new GraphQLError('Developer apps are not available.', { extensions: { code: 'NOT_FOUND' } });
+  if (mode === 'hold')
+    throw new GraphQLError('Developer apps are paused.', {
+      extensions: { code: 'SERVICE_UNAVAILABLE', retryAfterSeconds: 60 },
+    });
+  requireAuthenticated(ctx);
+  if (!ctx.userId) throw new GraphQLError('Sign in first.', { extensions: { code: 'UNAUTHENTICATED' } });
+  await chargeDeveloperLimit(ctx, kind);
+  if (mode !== 'open') await requireInvitedDeveloper(ctx.userId);
+  await chargeAddressLimit(ctx, kind);
+  try {
+    return await work(db as unknown as RegistrationDatabase, ctx.userId);
+  } catch (error) {
+    if (error instanceof PartnerRegistrationError) throw refusalError(error);
+    logger.error('Developer email verification failed', { errorName: error instanceof Error ? error.name : 'unknown' });
+    throw new GraphQLError('Email verification is unavailable. Try again.', {
+      extensions: { code: 'SERVICE_UNAVAILABLE' },
+    });
+  }
+}
+
 export const oauthClientQueries = {
+  partnerDeveloperEmailStatus: (_: unknown, _args: unknown, ctx: ConnectionContext) =>
+    withDeveloperEmail(ctx, 'read', readPartnerDeveloperEmailStatus),
   myOAuthClients: (_: unknown, _args: unknown, ctx: ConnectionContext): Promise<OAuthClient[]> =>
     withRegistration(ctx, 'read', async (registration, developerId, database) =>
       (await registration.listApps(database, developerId)).map(toOAuthClient),
@@ -265,6 +311,13 @@ export const oauthClientQueries = {
 };
 
 export const oauthClientMutations = {
+  requestPartnerDeveloperEmail: (_: unknown, _args: unknown, ctx: ConnectionContext) =>
+    withDeveloperEmail(ctx, 'write', async (database, userId) => {
+      await requestPartnerDeveloperEmail(database, userId, sendPartnerDeveloperVerificationEmail);
+      return true;
+    }),
+  confirmPartnerDeveloperEmail: (_: unknown, { token }: { token: string }, ctx: ConnectionContext) =>
+    withDeveloperEmail(ctx, 'write', (database, userId) => confirmPartnerDeveloperEmail(database, userId, token)),
   createOAuthClient: (
     _: unknown,
     { input }: { input: CreateOAuthClientInput },
@@ -272,16 +325,21 @@ export const oauthClientMutations = {
   ): Promise<OAuthClientCredentials> =>
     withRegistration(ctx, 'write', async (registration, developerId, database) =>
       toCredentials(
-        await registration.createApp(database, developerId, {
-          name: input.name,
-          publisherName: input.publisherName,
-          homepageUrl: input.homepageUrl,
-          privacyPolicyUrl: input.privacyPolicyUrl,
-          applicationType: lowerCaseEnum(input.applicationType),
-          tokenEndpointAuthMethod: lowerCaseEnum(input.tokenEndpointAuthMethod),
-          redirectUris: input.redirectUris,
-          acceptedTermsVersion: input.acceptedTermsVersion,
-        }),
+        await registration.createApp(
+          database,
+          developerId,
+          {
+            name: input.name,
+            publisherName: input.publisherName,
+            homepageUrl: input.homepageUrl,
+            privacyPolicyUrl: input.privacyPolicyUrl,
+            applicationType: lowerCaseEnum(input.applicationType),
+            tokenEndpointAuthMethod: lowerCaseEnum(input.tokenEndpointAuthMethod),
+            redirectUris: input.redirectUris,
+            acceptedTermsVersion: input.acceptedTermsVersion,
+          },
+          { requireEmailProof: registrationMode() === 'open' },
+        ),
       ),
     ),
 

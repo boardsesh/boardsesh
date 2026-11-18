@@ -75,6 +75,12 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'app-workouts',
+    label: 'Partner workouts',
+    description: 'Open a planned session from a connected app and read back the results.',
+    defaultEnabled: false,
+  },
+  {
     key: AURA_GPU_FLAG,
     label: 'Aura GPU rendering',
     description:
@@ -738,6 +744,11 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useWorkoutTimedBlocksFlag(): boolean {
   return useFeatureFlag('workout-timed-blocks') === true;
+}
+
+export function useAppWorkoutsFlag(): boolean {
+  const enabled = useFeatureFlag('app-workouts');
+  return process.env.EXPO_PUBLIC_APP_WORKOUTS === 'true' || enabled === true;
 }
 
 /**

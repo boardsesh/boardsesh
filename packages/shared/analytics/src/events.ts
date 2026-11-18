@@ -336,6 +336,10 @@ export const SHARED_EVENTS = {
   // rows came from a nearby grade because their own grade ran short; absent
   // on events from before borrowing.
   SessionQueueGenerated: 'Session Queue Generated',
+  // Partner workout handoff; split every metric by board_name.
+  AppWorkoutOpened: 'App Workout Opened',
+  AppWorkoutStarted: 'App Workout Started',
+  AppWorkoutCompleted: 'App Workout Completed',
   // Deep-link session join
   SessionJoined: 'Session Joined',
   // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in
