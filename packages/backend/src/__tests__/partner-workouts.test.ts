@@ -1062,6 +1062,32 @@ describe('partner workout results', () => {
     expect(ticks.get(onSecondBlock)).toBe(1);
   });
 
+  it('leaves out an earlier climb of a block climb that the tick map does not pin', async () => {
+    const { principal } = await connected();
+    const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal);
+    const blockClimb = randomUUID();
+    await storeSessionWorkout(sessionId, principal.userId, [
+      { id: `${workout.id}:0`, items: [{ queueItemUuid: randomUUID(), climbUuid: blockClimb }] },
+    ]);
+    const beforeWorkout = await logTick(
+      principal.userId,
+      sessionId,
+      blockClimb,
+      new Date(workoutStartedAt.getTime() - minutes(15)),
+    );
+    const duringWorkout = await logTick(
+      principal.userId,
+      sessionId,
+      blockClimb,
+      new Date(workoutStartedAt.getTime() + minutes(4)),
+    );
+    await endSession(sessionId);
+    const ticks = ticksById(await read(principal, workout.id));
+    expect(ticks.has(beforeWorkout)).toBe(false);
+    // With the earlier tick out of the derivation, the block's one slot goes to the workout's own tick.
+    expect(ticks.get(duringWorkout)).toBe(0);
+  });
+
   it('attributes a late tick by its kept tick-map entry once the tick lands', async () => {
     const { principal } = await connected();
     const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal, twoVolumeBlocks());
