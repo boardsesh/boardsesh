@@ -8,7 +8,6 @@ import {
   isReservedAuthRecordIdentifier,
   isVersionedEmailVerificationToken,
 } from '@boardsesh/auth-protocol';
-import { soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { webPasswordMode } from '@/app/lib/auth/password-command-client.server';
 import {
@@ -17,6 +16,7 @@ import {
 } from '@/app/lib/auth/email-verification-response.server';
 import { verifyEmailWithCommand } from '@/app/lib/auth/email-verification-command.server';
 import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
+import { LEGACY_EMAIL_VERIFICATION_LIFETIME_MS, legacyLinkAccount } from '@/app/lib/auth/legacy-link-account';
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token');
@@ -89,10 +89,15 @@ export async function GET(request: NextRequest) {
     return emailVerificationRedirect(request, '/auth/verify-request?error=TokenExpired');
   }
 
-  // Verify user exists before updating. The link's address is matched exactly
-  // first, then in other capitals only when one account has it.
+  // The token row only carries the address, not the user id. Bind it to the one
+  // account it was issued for: the only row storing this exact address, created
+  // before the link. Never another capitalisation, so a link for an account since
+  // deleted cannot verify its case sibling.
   const found = await findAccountsByEmail(db, email);
-  const account = soleAccount(found);
+  const account = legacyLinkAccount(found, {
+    expires: tokenData.expires,
+    lifetimeMs: LEGACY_EMAIL_VERIFICATION_LIFETIME_MS,
+  });
 
   if (!account) {
     // Token exists but user doesn't - cleanup the orphan token. An address

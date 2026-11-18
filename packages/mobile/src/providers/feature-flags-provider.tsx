@@ -75,6 +75,12 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'app-workouts',
+    label: 'Partner workouts',
+    description: 'Open a planned session from a connected app and read back the results.',
+    defaultEnabled: false,
+  },
+  {
     key: AURA_GPU_FLAG,
     label: 'Aura GPU rendering',
     description:
@@ -267,6 +273,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Kill switch for hide-on-scroll on Android phones: scrolling down a tab slides the tab bar away and drops the MiniPlayer card to the bottom; scrolling up brings it back. With it on, the bar sits below the screen, opaque, and never moves, exactly as before. Also the QA switch for comparing the two. Unresolved reads as enabled.',
   },
   {
+    key: 'player-swap-look-kill',
+    label: 'Plain climb swap on the player board',
+    description:
+      "Kill switch for the player board's swap look: dragging dims the old holds into standby rings from the edge the next climb comes from and shows the next climb as faint halos behind that front; letting go fills them in along the same sweep. With it on, the board swaps climbs exactly as before, a plain fade. Also the QA switch for comparing the two; it takes effect on the open board. Older builds, Reduce Motion and Differentiate Without Color always get the plain fade. Unresolved reads as enabled.",
+  },
+  {
     key: 'early-updates',
     label: 'Early updates',
     description:
@@ -277,13 +289,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Sheet keyboard calibration (QA)',
     description:
       'QA only, iPhone and iPad. Draws a black box of numbers at the top of every sheet with a pinned bar or header, such as Log a tick, to show where the keyboard really sits under a sheet (#5964). Open the sheet and screenshot the box, tap a text field and screenshot it again. It only measures: buttons and padding stay exactly as they are. Off by default.',
-    defaultEnabled: false,
-  },
-  {
-    key: 'workout-timed-blocks',
-    label: 'Timed workout blocks',
-    description:
-      'Offers the 4x4, Limit Bouldering and On the Minute blocks on the Record tab and in "Add a block" before they launch (#5380): 8 type chips instead of 5. Dev builds always offer them. A POSITIVE rollout flag, off by default: with no value at all a store build shows the 5 chips climbers have today. Screenshot mode ignores it.',
     defaultEnabled: false,
   },
   {
@@ -602,6 +607,15 @@ export function useTabBarHideOnScrollEnabled(): boolean {
   return useFeatureFlag('tab-bar-hide-on-scroll-kill') !== true;
 }
 
+/**
+ * Kill switch for the player board's swap look (`play-drawer/player-swap-look.ts`).
+ * Unresolved reads as enabled; switched on, the board runs the shipped wall
+ * swap, live on an open board. Also the QA switch for comparing the two.
+ */
+export function usePlayerSwapLookEnabled(): boolean {
+  return useFeatureFlag('player-swap-look-kill') !== true;
+}
+
 export function useQaTesterGateEnabled(): boolean {
   return useFeatureFlag('qa-tester-gate-kill') !== true;
 }
@@ -711,18 +725,9 @@ export function useSharedSessionBrowseEnabled(): boolean {
   return useFeatureFlag('shared-session-browse') === true;
 }
 
-/**
- * The flag half of the timed workout blocks gate (#5380): whether
- * `workout-timed-blocks` is on. `timedWorkoutBlocksOffered` adds every dev build
- * so read the chips through that, not this alone.
- *
- * A POSITIVE rollout flag, read strictly like `useBoardseshGradeEnabled`:
- * missing/undefined reads as OFF, which is the chips climbers have today. A
- * tester whose flag lands a moment after the Record tab opens sees the timed
- * chips appear; nothing is acted on before that.
- */
-export function useWorkoutTimedBlocksFlag(): boolean {
-  return useFeatureFlag('workout-timed-blocks') === true;
+export function useAppWorkoutsFlag(): boolean {
+  const enabled = useFeatureFlag('app-workouts');
+  return process.env.EXPO_PUBLIC_APP_WORKOUTS === 'true' || enabled === true;
 }
 
 /**

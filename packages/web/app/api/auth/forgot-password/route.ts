@@ -16,6 +16,7 @@ import {
 } from '@/app/lib/auth/password-recovery-command.server';
 import { withEmailVerificationPrivacy } from '@/app/lib/auth/email-verification-response.server';
 import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
+import { LEGACY_PASSWORD_RESET_LIFETIME_MS } from '@/app/lib/auth/legacy-link-account';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -84,7 +85,7 @@ async function handleForgotPassword(request: NextRequest) {
     const { email } = account;
     const token = crypto.randomUUID();
     const tokenHash = hashResetToken(token);
-    const expires = new Date(Date.now() + 60 * 60 * 1000);
+    const expires = new Date(Date.now() + LEGACY_PASSWORD_RESET_LIFETIME_MS);
     const identifier = getPasswordResetIdentifier(email);
 
     const issued = await db.transaction(async (tx) => {

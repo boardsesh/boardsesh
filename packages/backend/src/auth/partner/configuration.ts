@@ -13,7 +13,7 @@ export const PARTNER_WEB_ORIGIN = 'https://www.boardsesh.com';
  * included (decision 21), which the consent screen says. `openid` stays out
  * because OIDC discovery is not offered.
  */
-export const PARTNER_SCOPES = ['logbook:read', 'profile:read', 'offline_access'];
+export const PARTNER_SCOPES = ['logbook:read', 'profile:read', 'workouts:read', 'workouts:write', 'offline_access'];
 
 /** The consent link is signed with `codeExpiresIn`, so it stays 600 and the code row is cut to 60 s at issuance. */
 export const PARTNER_SIGNED_QUERY_LIFETIME_SECONDS = 600;

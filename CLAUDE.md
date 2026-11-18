@@ -181,6 +181,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/climb-popularity.md` — the popular sort's ranking table (`board_climb_popularity`): why a side table and never a column, the hourly incremental refresh and weekly full pass, the readiness gate that keeps the old aggregation until a board is built, the walk plus fallback, and the one order change
 - `docs/playlist-grade-summaries.md` — the grade band on playlist cards and Discover's grade and "Following" filters: the `playlist_grade_summaries` side table (10th–90th percentile of rounded grade ids, null-angle rows graded at the most-repeated angle), the recompute on climb add/remove, the daily changed-rows-only refresh and its first backfill, and the band match rule
 - `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climb store (`sitemap_shard_refreshes` + the `sitemap_climb_urls` ordinal table the shard pages read): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
+- `docs/board-motion-lab.md` — the board motion lab: a developer screen (dev builds, testers, admins) that plays scripted swipes through alternative climb-to-climb transitions on the real GPU board, how to open it (Settings › Developer, deep link), add a variant, build it to a phone and run the Play all demo
 
 ## Architecture Overview
 

@@ -4,6 +4,7 @@ import type { HomeTopSectionId } from '../../lib/home-sections';
 import { HomeBetaSection } from './HomeBetaSection';
 import { HomeBoardSection } from './HomeBoardSection';
 import { HomePlaylistsSection } from './HomePlaylistsSection';
+import { HomeProjectsSection } from './HomeProjectsSection';
 import { HomeSessionSection } from './HomeSessionSection';
 import { HomeWeekSection } from './HomeWeekSection';
 
@@ -49,6 +50,8 @@ export const HomeSections = memo(function HomeSections({
         return cardsReady ? <HomeBoardSection key={sectionId} /> : null;
       case 'session':
         return cardsReady ? <HomeSessionSection key={sectionId} /> : null;
+      case 'projects':
+        return cardsReady ? <HomeProjectsSection key={sectionId} /> : null;
       case 'playlists':
         return cardsReady ? <HomePlaylistsSection key={sectionId} /> : null;
       // The rail mounts as it always has and holds its own reads on `liveEnabled`.

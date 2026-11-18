@@ -19,6 +19,7 @@
  * the app stopped sending.
  */
 export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
+  'AppWorkout', // Only explicit /w launch links; capture flows never open a partner workout.
   'BetaLinkPreview',
   'BoardClimbRecentSenders',
   'BoardHistory',

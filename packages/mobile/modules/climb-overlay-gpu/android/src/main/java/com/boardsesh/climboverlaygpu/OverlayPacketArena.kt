@@ -12,7 +12,9 @@ import org.json.JSONObject
 internal class PacketArena(var buffer: Int,val capacity: Int) { var users=1 }
 internal class UploadedPacket(val handle: PacketHandle,val session: PacketRustSession,val header: PacketHeader,
     val descriptors: IntArray,val resources: Int,val arena: PacketArena,val keys: List<String>,val epoch: Long,
-    val prepareMs: Double,val uploadMs: Double,val uploadBytes: Int,val copyBytes: Int,val selectedBytes: Int) {
+    val prepareMs: Double,val uploadMs: Double,val uploadBytes: Int,val copyBytes: Int,val selectedBytes: Int,
+    /** Each scene's holds as the swap look reads them, decoded with the packet ([OverlaySwapLook.PacketScenes]). */
+    val lookScenes: OverlaySwapLook.PacketScenes) {
     private val uniformBytes=directBytes(OverlayPacketLayout.UNIFORM_BYTES)
     var retired=false
     val hit get()=uploadBytes==0 && copyBytes==0
@@ -30,7 +32,8 @@ internal class ArenaLoan(val resident: Map<String,Long>,val index: OverlayArenaI
 internal data class MissingChunk(val key: String,val handle: Long,val bytes: Int,val source: Int)
 /** The CPU half of a packet, encoded against an [ArenaLoan]. Owns its native outputs until upload adopts them. */
 internal class EncodedPacket(val keys: List<String>,val missing: List<MissingChunk>,val pixelBytes: Int,val chunks: GpuPacketOutput,
-    val acquired: HashMap<String,PacketHandle>,val placement: ArenaPlan,val encoded: GpuPacketOutput,val description: PacketHeader): Closeable {
+    val acquired: HashMap<String,PacketHandle>,val placement: ArenaPlan,val encoded: GpuPacketOutput,val description: PacketHeader,
+    val lookScenes: OverlaySwapLook.PacketScenes): Closeable {
     override fun close() { acquired.values.forEach { it.close() };acquired.clear();encoded.close();chunks.close() }
 }
 internal object OverlayPacketMetrics {
@@ -174,7 +177,11 @@ internal object OverlayPacketArena {
                     val output=GpuPacketBridge.encode(planLease.id,placements,cancel.id);encoded=output
                     packetStatus(output.status)
                     val description=PacketHeader.parse(output.json(maximum=65536),output.useBuffer(1){it.remaining()},output.useBuffer(2){it.remaining()})
-                    EncodedPacket(keys,records,pixelBytes,chunks,acquired,placement,output,description)
+                    // The swap look reads hold centres, roles and ids per frame; the descriptors leave the CPU at
+                    // upload, so plain arrays are kept, and only while the module offers the look.
+                    val lookScenes=if(!OverlaySwapLookProgram.offered)OverlaySwapLook.PacketScenes.NONE
+                        else output.useBuffer(1) { OverlaySwapLook.PacketScenes.decode(it,description) }
+                    EncodedPacket(keys,records,pixelBytes,chunks,acquired,placement,output,description,lookScenes)
                 } catch(failure: Throwable) { acquired.values.forEach { it.close() };encoded?.close();chunks.close();throw failure }
             }
         }
@@ -234,7 +241,8 @@ internal object OverlayPacketArena {
             session.retain();sessionRetained=true
             target.users++;arenaRetained=true
             return UploadedPacket(handle,session,description,buffers,resources,target,keys,epoch,
-                (System.nanoTime()-started)/1e6,if(pixelBytes==0 && copied==0)0.0 else (System.nanoTime()-uploading)/1e6,pixelBytes,copied,keys.sumOf { placement.records.getValue(it).bytes })
+                (System.nanoTime()-started)/1e6,if(pixelBytes==0 && copied==0)0.0 else (System.nanoTime()-uploading)/1e6,pixelBytes,copied,keys.sumOf { placement.records.getValue(it).bytes },
+                packet.lookScenes)
         } catch(failure: Throwable) {
             adopted?.close();if(sessionRetained)session.close();if(arenaRetained)releaseArena(target)
             pinned?.let { index.release(keys,it) }

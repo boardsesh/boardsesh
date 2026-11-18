@@ -9,6 +9,7 @@ import { useViewerUserId } from '../../../hooks/use-viewer-user-id';
 import { fetchAllMyBoards, useUpdateBoard } from '../../../lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
+import { sessionPresenceSupportsRestTimer } from '../../../lib/live-activity/live-activity-plugin';
 import { isRestTimerSoundAvailable } from '../../../lib/rest-timer-cues';
 import { changeRestTimerMode } from '../../../lib/rest-timer-mode-change';
 import { trackSettingChanged, withSettingTracking } from '../../../lib/settings-analytics';
@@ -34,7 +35,9 @@ export function TimersSettingsScreen() {
   const [targetSeconds, setTargetSeconds] = useSetting('restTimerTargetSeconds');
   const [mode] = useSetting('restTimerMode');
   const [autoAdvance, setAutoAdvance] = useSetting('restTimerAutoAdvance');
+  const [countdownCues, setCountdownCues] = useSetting('restTimerCountdownCues');
   const [sound, setSound] = useSetting('restTimerSound');
+  const [showOnLockScreen, setShowOnLockScreen] = useSetting('restTimerShowOnLockScreen');
   const { blockedReason } = useSessionTimerDriver();
   const { sessionId } = useQueueSessionId();
   const { fontScale } = useWindowDimensions();
@@ -78,10 +81,11 @@ export function TimersSettingsScreen() {
             onAutoAdvanceChange: onToggle(setAutoAdvance),
           },
           cues: {
-            // No reader on this branch yet: the countdown buzz lands with #5396,
-            // which passes `{ enabled, onChange }` here.
-            countdownCues: null,
+            countdownCues: { enabled: countdownCues, onChange: onToggle(setCountdownCues) },
             sound: soundAvailable ? { enabled: sound, onChange: onToggle(setSound) } : null,
+            lockScreen: sessionPresenceSupportsRestTimer
+              ? { enabled: showOnLockScreen, onChange: onToggle(setShowOnLockScreen) }
+              : null,
           },
           rogue: rogue.section,
           fontScale,
@@ -98,9 +102,13 @@ export function TimersSettingsScreen() {
       onModeChange,
       onToggle,
       setAutoAdvance,
+      countdownCues,
+      setCountdownCues,
       soundAvailable,
       sound,
       setSound,
+      showOnLockScreen,
+      setShowOnLockScreen,
       rogue.section,
       fontScale,
     ],

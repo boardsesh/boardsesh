@@ -21,6 +21,12 @@ export type DeveloperSettingsAccess = {
   allowed: boolean;
   /** Not allowed yet, but the profile or admin answer that could allow it is still loading. */
   loading: boolean;
+  /**
+   * No dev tools yet, but the profile or admin answer that could grant them is
+   * still loading. Not the same as `loading`: a preview build is allowed the
+   * page before it knows whether this climber is a tester.
+   */
+  devToolsLoading: boolean;
   isTester: boolean;
   isAdmin: boolean;
 };
@@ -46,6 +52,7 @@ export function useDeveloperSettingsAccess(): DeveloperSettingsAccess {
     showBottomChromeDiagnostics,
     allowed,
     loading: !allowed && (profileLoading || adminLoading),
+    devToolsLoading: !showDevTools && (profileLoading || adminLoading),
     isTester,
     isAdmin,
   };

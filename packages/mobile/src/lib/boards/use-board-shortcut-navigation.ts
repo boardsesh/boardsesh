@@ -10,7 +10,7 @@ import type { BoardReturnTo } from './board-return-to';
  *
  * Browsing the selected board must not activate it again or change the session.
  */
-export function useBoardShortcutNavigation(returnTo: BoardReturnTo) {
+export function useBoardShortcutNavigation(returnTo: BoardReturnTo, returnAfterFirstPick = false) {
   const router = useRouter();
   const boardQuery = useActiveBoard();
   const activeBoard = boardQuery.data;
@@ -26,9 +26,9 @@ export function useBoardShortcutNavigation(returnTo: BoardReturnTo) {
     // A first pick still lands on Climbs: there is nothing to come back to yet.
     router.push({
       pathname: '/boards',
-      params: { returnTo: activeBoard ? returnTo : '/(tabs)/climbs' },
+      params: { returnTo: activeBoard || returnAfterFirstPick ? returnTo : '/(tabs)/climbs' },
     });
-  }, [activeBoard, hasNoBoard, returnTo, router]);
+  }, [activeBoard, hasNoBoard, returnTo, returnAfterFirstPick, router]);
 
   const { refetch } = boardQuery;
   const retryBoard = useCallback(() => {

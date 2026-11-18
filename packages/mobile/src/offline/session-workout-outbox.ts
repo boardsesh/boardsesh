@@ -8,9 +8,9 @@
 // an older write can't roll a newer one back. A newer write replaces the ones
 // for the same session still waiting in the outbox.
 //
-// FIFO matters: the server keeps a tick-map entry only when that tick is
-// already one of the climber's ticks in the session. The outbox drains in
-// order, so a write queued after the ticks lands after them.
+// The write need not land after its ticks: the server keeps a tick-map entry
+// for a tick it has not seen yet, and applies it once the tick lands (#7028).
+// It drops only entries naming someone else's tick or one from another session.
 
 import type { QueryClient } from '@tanstack/react-query';
 import type { ClimbQueueItem } from '@boardsesh/queue';

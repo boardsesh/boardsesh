@@ -94,10 +94,28 @@ describe('workoutStepperRows for a ladder', () => {
     const rows = rowsFor({ ...DEFAULT_LADDER_OPTIONS, targetGrade: 18, descending: true });
     expect(rows[2].element.props).toMatchObject({ value: true });
   });
+});
 
-  it('gives a pyramid no switch', () => {
-    const rows = rowsFor({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 });
-    expect(rows.map((row) => row.key)).toEqual(['numberOfSteps', 'climbsPerStep']);
+describe('workoutStepperRows for a pyramid', () => {
+  it('ends with a Same climbs down switch, off by default, that sets repeatOnWayDown', () => {
+    const onOptionsChange = vi.fn();
+    const options = { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 };
+    const rows = rowsFor(options, onOptionsChange);
+
+    expect(rows.map((row) => row.key)).toEqual(['numberOfSteps', 'climbsPerStep', 'repeatOnWayDown']);
+    expect(rows[2].element.props).toMatchObject({
+      label: 'mobile.session.preGeneratorSameClimbsDown',
+      description: 'mobile.session.preGeneratorSameClimbsDownDescription',
+      value: false,
+    });
+    const switchProps = rows[2].element.props as { onValueChange: (next: boolean) => void };
+    switchProps.onValueChange(true);
+    expect(onOptionsChange).toHaveBeenCalledWith({ ...options, repeatOnWayDown: true });
+  });
+
+  it('shows the switch on when the way down repeats', () => {
+    const rows = rowsFor({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18, repeatOnWayDown: true });
+    expect(rows[2].element.props).toMatchObject({ value: true });
   });
 });
 

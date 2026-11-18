@@ -1,0 +1,1 @@
+ALTER TABLE "webhook_deliveries" ADD COLUMN "next_reconcile_at" timestamp with time zone DEFAULT now() NOT NULL;

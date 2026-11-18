@@ -23,6 +23,9 @@ import { startPopularBoardConfigsRefresh } from './services/popular-board-config
 import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
 import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
 import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
+import { startPartnerConnectionNotices } from './services/partner-connection-notices';
+import { startAppWorkoutMaintenance, startSessionInactivityMaintenance } from './services/app-workout-maintenance';
+import { startPartnerWebhooks } from './services/partner-webhooks/worker';
 import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
 import { qualifyIdentityMirrorAtStartup } from './auth/authority/mirror-activation';
@@ -91,6 +94,26 @@ async function main() {
   // replica that registers it. Nothing a request reads depends on it.
   await startPartnerOAuthSweep(jobQueue).catch((error: unknown) => {
     logger.error('[PartnerOAuthSweep] Could not register the sweep job', { error });
+  });
+  await startPartnerConnectionNotices(jobQueue).catch((error: unknown) => {
+    logger.error('[PartnerConnectionNotices] Could not register notification delivery', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  });
+  await startSessionInactivityMaintenance(jobQueue).catch((error: unknown) => {
+    logger.error('[SessionInactivity] Could not register the inactivity job', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  });
+  await startAppWorkoutMaintenance(jobQueue).catch((error: unknown) => {
+    logger.error('[AppWorkoutMaintenance] Could not register the expiry job', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  });
+  await startPartnerWebhooks(jobQueue).catch((error: unknown) => {
+    logger.error('[PartnerWebhooks] Could not register delivery workers', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
   });
   // Not fatal: a queued erasure waits up to 14 days for a worker
   // (`retentionSeconds` on the queue; a finished one is kept 7 days), and the

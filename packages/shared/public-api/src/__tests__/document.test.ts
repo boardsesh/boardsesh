@@ -3,6 +3,17 @@ import type { z } from 'zod';
 import committedDocument from '../generated/openapi.json';
 import { generatePublicApiDocument, renderPublicApiDocument } from '../document';
 import {
+  CreateWorkoutSchema,
+  WorkoutBlockSchema,
+  WorkoutBlockSupportSchema,
+  WorkoutConflictSchema,
+  WorkoutCreatedSchema,
+  WorkoutListSchema,
+  WorkoutResponseSchema,
+  WorkoutResultsSchema,
+  WorkoutStatusSchema,
+} from '../workouts';
+import {
   ApiErrorResponseSchema,
   BoardTypeSchema,
   GradeSchema,
@@ -51,6 +62,10 @@ describe('the OpenAPI routes', () => {
       'delete /v1/connection',
       'get /v1/logbook/changes',
       'get /v1/logbook/ticks/{id}',
+      'post /v1/workouts',
+      'get /v1/workouts',
+      'get /v1/workouts/{id}',
+      'delete /v1/workouts/{id}',
     ]);
   });
 
@@ -76,8 +91,9 @@ describe('the OpenAPI routes', () => {
     expect(paths['/v1/connection'].delete.responses['204'].content).toBeUndefined();
   });
 
-  it('offers no workout scope before workouts exist', () => {
-    expect(committedJson).not.toContain('workouts:');
+  it('offers workout scopes with their routes', () => {
+    expect(committedJson).toContain('workouts:read');
+    expect(committedJson).toContain('workouts:write');
   });
 
   it.each(
@@ -111,6 +127,15 @@ describe('the OpenAPI schemas', () => {
     TickDeletedChange: TickDeletedChangeSchema,
     TickStatus: TickStatusSchema,
     UnknownLogbookChange: UnknownLogbookChangeSchema,
+    CreateWorkout: CreateWorkoutSchema,
+    Workout: WorkoutResponseSchema,
+    WorkoutBlock: WorkoutBlockSchema,
+    WorkoutBlockSupport: WorkoutBlockSupportSchema,
+    WorkoutConflict: WorkoutConflictSchema,
+    WorkoutCreated: WorkoutCreatedSchema,
+    WorkoutList: WorkoutListSchema,
+    WorkoutResults: WorkoutResultsSchema,
+    WorkoutStatus: WorkoutStatusSchema,
   };
 
   it('registers a schema for every component', () => {

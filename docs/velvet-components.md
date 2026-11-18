@@ -33,10 +33,10 @@ builds from `insetGroupedRowStyles` (`row`, a 44pt `leading` column, `text`).
 
 ## `ArtRow`
 
-**`ArtRow`** `{ art, artSize: 'compact' | 'regular', title, titleVariant?: 'headline' | 'body', subtitle?, eyebrow?, status?, accessory?:
+**`ArtRow`** `{ art, artSize: 'compact' | 'regular' | 'large', title, titleVariant?: 'headline' | 'body', subtitle?, eyebrow?, status?, accessory?:
 'checkmark' | 'chevron' | element, selected?, onPress?, onLongPress?, delayLongPress?,
 longPressAccessibilityLabel?, accessibilityLabel?, wrapTarget?, testID? }`: a row of an `InsetGroupedList` that
-leads with art (a board, a playlist, an icon). The slot is 36 or 44pt wide and the art sets the
+leads with art (a board, a playlist, an icon). The slot is 36, 44 or 72pt wide (`large`, 72×92, for a climb whose holds must read, such as Home's projects shelf) and the art sets the
 height; memoise `art` in the caller. Headline title (12pt above and below, 4pt to the subtitle: Home's
 rows), or with `titleVariant="body"` a list to choose from: a body title, regular until selected, 10pt above
 and below and 2pt to the subtitle (the board picker). Secondary subheadline subtitle, footnote eyebrow; a `status` pill wraps under the title when the two don't fit on one line. `selected` takes
@@ -65,7 +65,7 @@ page with 32pt above and below, `quiet` is one secondary footnote line at the gu
 ## `BoardThumbnail`
 
 **`BoardThumbnail`** (`components/boards/`) `{ board: { boardType, layoutId, sizeId, setIds }, size:
-'compact' | 'regular' | number, accessibilityHidden? }`: a board's bare art in a 36×44 or 44×56 slot
+'compact' | 'regular' | 'large' | number, accessibilityHidden? }`: a board's bare art in a 36×44, 44×56 or 72×92 slot
 (or a square of `size` points). The art keeps its own aspect ratio with a `separator` hairline on it
 and no tile behind it; an unknown config shows the boards glyph and a spray wall shows its cached
 photo, or a camera glyph until the photo is on disk. It renders at 400px so it shares the raster

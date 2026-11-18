@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { markUserDataComplete, runMigrations, stampLocalUserId } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { readWeekActivityLocal } from '../get-week-activity-local';
+import { readActivityTicksLocal } from '../get-activity-ticks-local';
 
 let db: TestSqliteDb;
 
@@ -41,7 +41,7 @@ beforeEach(async () => {
   await markUserDataComplete(db);
 });
 
-describe('readWeekActivityLocal', () => {
+describe('readActivityTicksLocal', () => {
   it('reads every board, with the climber grade first and the consensus as fallback', async () => {
     await db.runAsync(
       `INSERT INTO board_climbs (uuid, board_type, layout_id, name) VALUES ('climb-1', 'kilter', 8, 'Jolly Roger')`,
@@ -54,7 +54,7 @@ describe('readWeekActivityLocal', () => {
     await insertTick('consensus', { status: 'flash', climbedAt: '2026-11-16T18:00:00.000Z' });
     await insertTick('other-board', { boardType: 'tension', climbUuid: 'climb-9', status: 'attempt' });
 
-    const rows = await readWeekActivityLocal(db, 'user-a');
+    const rows = await readActivityTicksLocal(db, 'user-a');
     expect(rows).toHaveLength(3);
     expect(rows).toEqual(
       expect.arrayContaining([
@@ -71,11 +71,11 @@ describe('readWeekActivityLocal', () => {
     await insertTick('legacy', { ownerId: null, climbedAt: '2026-11-15T10:00:00.000Z' });
     await insertTick('someone-else', { ownerId: 'user-b', climbedAt: '2026-11-14T10:00:00.000Z' });
 
-    expect(await readWeekActivityLocal(db, 'user-a')).toHaveLength(2);
+    expect(await readActivityTicksLocal(db, 'user-a')).toHaveLength(2);
   });
 
   it('declines for a viewer the rows do not belong to', async () => {
     await insertTick('mine');
-    expect(await readWeekActivityLocal(db, 'user-b')).toBeNull();
+    expect(await readActivityTicksLocal(db, 'user-b')).toBeNull();
   });
 });

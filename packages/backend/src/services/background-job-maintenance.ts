@@ -9,6 +9,7 @@ import { clearFinishedProviderSyncRuns, reconcileBackgroundJobRun } from '@board
 import { deleteExpiredCommandClaims } from '../auth/current-store/command-context';
 import { purgeRetiredEmailKeys } from '../auth/current-store/email-reservations';
 import { runFirstPasswordPreparationMaintenance } from '../auth/authority/first-password-maintenance';
+import { prunePasswordGuessWindows } from '../auth/password-guess-windows';
 import { logger } from '../utils/logger';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
 
@@ -64,7 +65,8 @@ export function backgroundJobReconciler(database: DbInstance) {
  * Expired staged-auth records, whatever the mode: rows written while a staged
  * mode was on must still go after it is switched off, and with none it is two
  * empty reads. Replay records (`ba03-web-auth:`) go once expired; a deleted
- * address's digest goes 90 days after the deletion.
+ * address's digest goes 90 days after the deletion; a password guess window
+ * goes once it has ended (#7656).
  */
 export async function clearExpiredAuthRecords(database: DbInstance): Promise<void> {
   // SQL failures can carry bound values. Keep fixed categories; the next minute retries.
@@ -87,6 +89,8 @@ export async function clearExpiredAuthRecords(database: DbInstance): Promise<voi
   } catch {
     logger.warn('First-password preparation scrub unavailable');
   }
+  // Never throws: a failure is counted and logged as a fail-open inside.
+  await prunePasswordGuessWindows(database);
 }
 
 export async function startBackgroundJobMaintenance(boss: PgBoss, database: DbInstance): Promise<void> {

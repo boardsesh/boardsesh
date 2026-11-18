@@ -6,6 +6,7 @@ import { readPartnerOAuthMode, type PartnerOAuthMode } from '../../auth/partner/
 import { getMediaPublicBaseUrl } from '../../storage/s3';
 import { apiLaneGroup, getPartnerLimitIdentity, type PartnerLimitIdentity } from '../../utils/client-ip';
 import { logger } from '../../utils/logger';
+import { recordPublicApiRequest } from '../../services/public-api-usage';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { isApiHost } from '../api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders } from '../partner-cors';
@@ -18,6 +19,7 @@ import {
   type PublicApiRequestRoute,
 } from './http';
 import { serveLogbookChanges, serveLogbookTick } from './logbook';
+import { readWorkoutBody, serveWorkoutRoute, WorkoutBodyError } from './workouts';
 import {
   CHALLENGE_INVALID_TOKEN,
   CHALLENGE_NO_TOKEN,
@@ -109,8 +111,14 @@ export function createPublicApiHandler({
     principal: PartnerApiPrincipal,
     requestId: string,
     releaseApiPermit: () => void,
+    requestBody?: unknown,
   ): Promise<ApiOutcome> {
     switch (route.kind) {
+      case 'workouts-create':
+      case 'workouts-list':
+      case 'workout-get':
+      case 'workout-cancel':
+        return serveWorkoutRoute(runtime, principal, route, req, requestId, requestBody);
       case 'me': {
         const climber = await runtime.api.readClimber(principal);
         if (!climber) return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, 'climber_gone');
@@ -160,7 +168,7 @@ export function createPublicApiHandler({
       return unauthorized(requestId, challenge, bearer.problem);
     }
 
-    const permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
+    let permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
     if (!permit) return unavailable(requestId);
     try {
       const result = await runtime.api.authenticate(bearer.token);
@@ -173,11 +181,24 @@ export function createPublicApiHandler({
       authenticated(principal.clientId);
       await ledger.consume(`${principal.clientId}:${principal.userId}`, 'api-connection', API_PER_CONNECTION);
       await ledger.consume(principal.clientId, 'api-app', API_PER_APP);
+      let requestBody: unknown;
+      if (route.kind === 'workouts-create') {
+        if (!principal.scopes.includes('workouts:write'))
+          return errorOutcome(403, 'insufficient_scope', 'This call needs workouts:write.', requestId, {
+            headers: { 'www-authenticate': 'Bearer error="insufficient_scope", scope="workouts:write"' },
+          });
+        // Only authenticated writers may reserve the body pool. Slow bodies
+        // hold no database admission permit; the write revalidates the bearer.
+        permit.release();
+        requestBody = await readWorkoutBody(req, identity.key);
+        permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
+        if (!permit) return unavailable(requestId);
+      }
       // Connected apps' "last used": a write at most once an hour per connection.
       await runtime.api.recordUse(principal);
-      return await serveForPrincipal(req, route, runtime, principal, requestId, () => permit.release());
+      return await serveForPrincipal(req, route, runtime, principal, requestId, () => permit?.release(), requestBody);
     } catch (error) {
-      if (error instanceof PartnerRateLimited) throw error;
+      if (error instanceof PartnerRateLimited || error instanceof WorkoutBodyError) throw error;
       if (runtime.api.isDatabaseBusy(error)) return unavailable(requestId);
       // Name and database code only: a Drizzle error's text carries the token hash.
       logger.error('Partner API request failed', {
@@ -188,7 +209,7 @@ export function createPublicApiHandler({
       });
       return serverError(requestId);
     } finally {
-      permit.release();
+      permit?.release();
     }
   }
 
@@ -225,8 +246,9 @@ export function createPublicApiHandler({
         }),
       );
     }
-    // No route here reads a body. One that was sent anyway is never drained.
-    if (requestHasBody(req)) headers.connection = 'close';
+    // Only workout creation consumes a body. A complete HTTP message can still
+    // have an unread stream, so retain the socket only after it was consumed.
+    if (requestHasBody(req) && !req.readableEnded) headers.connection = 'close';
     if (outcome.body === undefined) {
       res.writeHead(outcome.status, headers);
       res.end();
@@ -238,6 +260,7 @@ export function createPublicApiHandler({
   }
 
   async function serveRoute(req: IncomingMessage, res: ServerResponse, route: PublicApiRequestRoute): Promise<void> {
+    const startedAt = performance.now();
     const requestId = `req_${randomBytes(12).toString('base64url')}`;
     const ledger = new RateLimitLedger();
     const identity = getPartnerLimitIdentity(req);
@@ -253,7 +276,17 @@ export function createPublicApiHandler({
           })
         : unavailable(requestId);
     } catch (error) {
-      if (error instanceof PartnerRateLimited) {
+      if (error instanceof WorkoutBodyError) {
+        outcome =
+          error.status === 503
+            ? unavailable(requestId)
+            : errorOutcome(
+                error.status,
+                error.status === 413 ? 'payload_too_large' : 'invalid_request',
+                error.message,
+                requestId,
+              );
+      } else if (error instanceof PartnerRateLimited) {
         outcome = errorOutcome(429, 'rate_limited', 'Too many requests. Wait for Retry-After.', requestId, {
           headers: partnerRateLimitedHeaders(error),
         });
@@ -268,6 +301,7 @@ export function createPublicApiHandler({
     }
 
     await writeOutcome(req, res, outcome, { runtime, clientId, requestId, rateLimitHeaders: ledger.headers() });
+    recordPublicApiRequest(clientId, 'api', outcome.status, performance.now() - startedAt);
     logger.info('Partner API request', {
       requestId,
       clientId,

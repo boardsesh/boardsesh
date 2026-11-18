@@ -1,4 +1,4 @@
-import { lookup } from 'node:dns/promises';
+import { resolveAddresses } from './resolve-addresses';
 
 // Hostname allowlists for the platforms whose thumbnails we cache. Each entry
 // matches the *exact* hostname (case-insensitive) — wildcard support is
@@ -47,7 +47,7 @@ export class TransientImageFetchError extends UnsafeImageHostError {
 // fetch initiated on behalf of a user — loopback, RFC1918 private space,
 // link-local (incl. AWS instance metadata at 169.254.169.254), CGNAT,
 // multicast, IPv6 loopback / unique-local / link-local. Pass an IP literal
-// returned from `dns.lookup`, not a hostname.
+// returned from DNS, not a hostname.
 export function isPrivateIp(addr: string): boolean {
   // IPv4
   const v4 = addr.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -86,8 +86,6 @@ export function isPrivateIp(addr: string): boolean {
 //      reserved range. Defense in depth against DNS rebinding and against
 //      a CDN hostname that's been pointed at an internal IP.
 //
-// Both layers must pass. The DNS check uses dns.lookup (Node's libuv-backed
-// resolver) so /etc/hosts is honored — important in dev / CI.
 //
 // Known limitation (TOCTOU): the DNS resolution here and the subsequent
 // `fetch(url)` call in cacheRemoteThumbnail are separate steps. A DNS
@@ -118,7 +116,7 @@ export async function assertAllowedImageHost(rawUrl: string, kind: ImageHostKind
 
   let addresses: { address: string; family: number }[];
   try {
-    addresses = await lookup(parsed.hostname, { all: true });
+    addresses = await resolveAddresses(parsed.hostname);
   } catch {
     throw new TransientImageFetchError(`Could not resolve ${parsed.hostname}`);
   }

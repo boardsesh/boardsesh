@@ -734,6 +734,9 @@ importers:
       '@boardsesh/profile-stats':
         specifier: workspace:*
         version: link:../shared/profile-stats
+      '@boardsesh/public-api':
+        specifier: workspace:*
+        version: link:../shared/public-api
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue
@@ -1926,6 +1929,9 @@ importers:
       '@boardsesh/profile-stats':
         specifier: workspace:*
         version: link:../shared/profile-stats
+      '@boardsesh/public-api':
+        specifier: workspace:*
+        version: link:../shared/public-api
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue

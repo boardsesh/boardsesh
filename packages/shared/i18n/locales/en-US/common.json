@@ -495,6 +495,7 @@
           "week": "This week",
           "board": "Your board",
           "session": "Session",
+          "projects": "Your projects",
           "playlists": "At your level",
           "climbingNow": "Climbing now",
           "beta": "Fresh beta",
@@ -504,6 +505,7 @@
           "week": "Sessions, sends and weeks running",
           "board": "Browse climbs or change board",
           "session": "Your last workout, or start a session",
+          "projects": "Climbs you tried and haven't sent",
           "playlists": "At your level, Hidden gems and Fresh",
           "climbingNow": "Live sessions you can join",
           "beta": "New beta videos for your board",
@@ -629,6 +631,8 @@
         "countdownCuesHint": "A buzz on each of the final seconds, so you are on the holds when the next climb lights up.",
         "sound": "Sound",
         "soundHint": "Play a tone with the cues. It plays over the silent switch and keeps your music going.",
+        "lockScreen": "Show on Lock Screen",
+        "lockScreenHint": "See your rest count down without opening the app.",
         "rogueTitle": "Gym timer",
         "rogueFooter": "Pair a Rogue timer to a board and its stopwatch restarts with your rest: when you log a climb, when the queue moves on and on every fixed-window beat. Only the phone connected to the board drives it.",
         "rogueNotPaired": "Not paired",
@@ -741,35 +745,35 @@
       "replayError": "Couldn't reopen the walkthrough. Try again.",
       "prompt": {
         "title": "See what's lit on your wall, live",
-        "body": "Follow your gym's board and Boardsesh shows what's lit right now: who lit it, the grade, who set it, recent sends. You don't start anything; it's just there.",
-        "footnote": "Plus crew sessions, the workout builder, and send tracking once you're on a wall.",
+        "body": "Follow your gym's board to see what's lit now, who set it, and recent sends.",
+        "footnote": "Crew sessions, workouts and send tracking come once you're on a wall.",
         "continue": "Pick my board"
       },
       "board": {
         "title": "Which board do you climb on?",
-        "body": "Every board keeps its own history. Pick the one you climb on and you'll see what everyone else on it has been sending.",
-        "offlineHint": "Pick a board and we'll offer to keep it on this phone. It opens instantly and still works when the gym wifi doesn't.",
+        "body": "Every board keeps its own history. Pick yours to see what everyone on it is sending.",
+        "offlineHint": "Pick a board and we'll offer to save it on this phone. It works without gym Wi-Fi.",
         "findAnother": "Find another board",
         "findFirst": "Find my board",
         "offlineSkip": "Skip for now"
       },
-      "boardRevealTip": "Tap the clock to see what's been lit on this wall.",
-      "quickActionsTip": "Long-press a climb for quick actions like queue, tick and playlists.",
+      "boardRevealTip": "Tap the clock to see what's been lit here.",
+      "quickActionsTip": "Long-press a climb to queue, tick or add it to a playlist.",
       "tips": {
-        "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
-        "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
-        "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
-        "accessory": "The bar at the bottom keeps the last climb you opened, until your queue moves on. Tap it to reopen that climb; its lightbulb puts it on the board and ✓ logs it. The climb on the wall stays at the top of Climbs.",
+        "workout": "Build a workout: pick a style and a grade, then climb.",
+        "crew": "Climbing with friends? Start a session and share one queue.",
+        "record": "Progress charts your sends. Import your Kilter or Tension logbook to fill it.",
+        "accessory": "The bottom bar keeps the last climb you opened. Tap it to reopen.",
         "previewFirst": {
-          "title": "A tap opens a preview. Put on board lights it.",
-          "windowSeconds": "Then you drive the wall: for {{seconds}} seconds after each climb lights, every climb you pick lights too.",
-          "windowMinute": "Then you drive the wall: for 1 minute after each climb lights, every climb you pick lights too.",
-          "windowMinutes": "Then you drive the wall: for {{minutes}} minutes after each climb lights, every climb you pick lights too.",
-          "untilStop": "Then you drive the wall: every climb you pick lights until you stop.",
-          "frost": "The frosted button means you are driving the wall: every climb you pick lights up. A drive from Put on board stops after the time set under Stop driving after (Settings › Board): a clock counts down beside the label and the frost shrinks as it runs out. Swipe the button left to drive with no end (once connected, you can also hold it and pick Light every climb). Tap it to stop.",
-          "frostScreenReader": "When the button reads You are driving the wall, every climb you pick lights up. A drive from Put on board stops after the time set under Stop driving after, in Settings › Board. Use the Light every climb action to drive with no end. Tap the button to stop.",
-          "frostOpenEnded": "The frosted button means you are driving the wall: every climb you pick lights up until you tap it to stop. Swipe the button left to start driving (once connected, you can also hold it and pick Light every climb).",
-          "frostOpenEndedScreenReader": "When the button reads You are driving the wall, every climb you pick lights up until you tap the button to stop. Use the Light every climb action to start driving.",
+          "title": "Tap a climb to preview it. Put on board lights it.",
+          "windowSeconds": "For {{seconds}} seconds after each climb lights, every climb you pick lights too.",
+          "windowMinute": "For 1 minute after each climb lights, every climb you pick lights too.",
+          "windowMinutes": "For {{minutes}} minutes after each climb lights, every climb you pick lights too.",
+          "untilStop": "After that, every climb you pick lights until you stop.",
+          "frost": "The frosted button means every climb you pick lights. Swipe it left to keep lighting until you stop. Tap it to stop.",
+          "frostScreenReader": "When the button reads You are driving the wall, every climb you pick lights. Use the Light every climb action to keep lighting until you stop. Tap the button to stop.",
+          "frostOpenEnded": "The frosted button means every climb you pick lights. Swipe it left to start. Tap it to stop.",
+          "frostOpenEndedScreenReader": "When the button reads You are driving the wall, every climb you pick lights. Use the Light every climb action to start. Tap the button to stop.",
           "settings": "Lighting settings",
           "done": "Got it",
           "close": "Close tip"
@@ -777,11 +781,11 @@
       },
       "link": {
         "title": "Bring your {{boardName}} sends with you",
-        "body": "Your {{boardName}} account and Boardsesh are separate, even if you use the same email. Link your account to sync available sends into your logbook. Sync timing and history vary.",
-        "footnote": "Linking asks for your {{boardName}} username, not your email.",
+        "body": "Your {{boardName}} account is separate from Boardsesh. Link it to bring your sends into your logbook.",
+        "footnote": "Linking needs your {{boardName}} username, not your email.",
         "continue": "Link my {{boardName}} account",
         "skip": "Not now",
-        "skipHint": "You can do this any time in Settings › Connected apps."
+        "skipHint": "Do it any time in Settings › Connected apps."
       }
     },
     "nav": {
@@ -844,10 +848,10 @@
         "earlyUpdatesHelp": "Early updates may have rough edges. Changes apply next launch."
       },
       "previewFirstSpotlight": {
-        "title": "Look through climbs without lighting the board",
-        "tap": "A tap opens a preview. Put on board lights it, and then you drive the wall: the climbs you pick light too, until the time you chose runs out (45 seconds by default). Change it under Stop driving after in Settings › Board.",
-        "swipe": "Swipe the wall button left to drive the wall until you stop. While it glows in the climb's colours, every climb you pick lights up. Tap it to stop. When a drive has a time limit, a clock shows beside the label and the frost shrinks as the time runs out.",
-        "back": "The arrow at the top left ends a preview and takes you back to your pick, or to the climb on the wall. The bar at the bottom keeps the last climb you opened.",
+        "title": "Browse climbs without lighting the board",
+        "tap": "Tap a climb to preview it. Put on board lights it, and your next picks too. Set how long in Settings › Board.",
+        "swipe": "Swipe the wall button left to light every climb you pick. Tap it to stop.",
+        "back": "Tap the arrow at the top left to end a preview.",
         "cta": "See how it works",
         "dismiss": "Got it"
       }

@@ -265,16 +265,64 @@ describe('POST /api/auth/reset-password', () => {
       mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
     });
 
-    it.each([
-      ['exactly as stored', 'Mixed.Case@Example.test'],
-      ['in lowercase', 'mixed.case@example.test'],
-    ])('resets the mixed-case account when the link carries its address %s', async (_case, linkEmail) => {
+    it('resets the mixed-case account when the link carries its address exactly as stored', async () => {
       lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' }];
 
-      const response = await POST(createRequest(submission(linkEmail)));
+      const response = await POST(createRequest(submission('Mixed.Case@Example.test')));
 
       expect(response.status).toBe(200);
       expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'mixed'] }]);
+    });
+
+    // Every issuer writes the account's stored address into the link, so a link
+    // in other capitals was issued for another row: one since deleted, or one
+    // whose address was resolved away.
+    it('refuses a link whose address no account stores exactly, even when one account has it in other capitals', async () => {
+      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' }];
+
+      const response = await POST(createRequest(submission('mixed.case@example.test')));
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid or expired reset link' });
+      expect(mockHash).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it("never changes B with A's link once A is gone, though their addresses differ only in capitals", async () => {
+      const accountA = { id: 'account-a', email: 'Shared@Example.test', passwordHash: '$2b$12$a' };
+      const accountB = { id: 'account-b', email: 'shared@example.test', passwordHash: '$2b$12$b' };
+
+      lookup.stored = [accountA, accountB];
+      expect((await POST(createRequest(submission(accountA.email)))).status).toBe(200);
+      expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'account-a'] }]);
+
+      vi.clearAllMocks();
+      mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
+      lookup.stored = [accountB];
+      const response = await POST(createRequest(submission(accountA.email)));
+
+      expect(response.status).toBe(400);
+      expect(mockHash).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses an account created after the link was issued, even at the exact address', async () => {
+      // A one-hour link with 30 minutes left was issued 30 minutes ago.
+      mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 30 * 60_000) }]);
+      lookup.stored = [
+        {
+          id: 'new-holder',
+          email: 'reused@example.test',
+          passwordHash: '$2b$12$c',
+          createdAt: new Date(Date.now() - 5 * 60_000),
+        },
+      ];
+
+      const response = await POST(createRequest(submission('reused@example.test')));
+
+      expect(response.status).toBe(400);
+      expect(mockHash).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
     });
 
     it('resets the group member the link names exactly, not its sibling', async () => {

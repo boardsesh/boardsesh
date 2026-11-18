@@ -199,26 +199,26 @@
       "card": {
         "title": "{{board}}: Boulder beleuchten",
         "titleNoName": "Boulder am Board beleuchten",
-        "body": "Verbinde dieses Handy mit dem Board, tipp einen Boulder an und dann auf Am Board beleuchten.",
-        "bodyAlwaysDrive": "Verbinde dieses Handy mit dem Board und du steuerst es: Jeder Boulder, den du wählst, wird beleuchtet.",
+        "body": "Verbinde dieses Handy, tipp einen Boulder an und dann auf Am Board beleuchten.",
+        "bodyAlwaysDrive": "Verbinde dieses Handy mit dem Board, dann wird jeder Boulder beleuchtet, den du wählst.",
         "connect": "Verbinde das Board",
         "tryAgain": "Nochmal versuchen",
         "noLights": "Diese Wand hat kein Licht",
         "notNow": "Nicht jetzt",
         "connecting": "Verbinde mit {{board}}…",
         "connectingNoName": "Verbinde mit deinem Board…",
-        "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal, wenn du so weit bist.",
-        "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal, wenn du so weit bist."
+        "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal.",
+        "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal."
       },
       "confirm": {
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",
-        "bodyAlwaysDrive": "„Board immer steuern“ ist an: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf „Du steuerst das Board“ tippst, um aufzuhören.",
-        "bodyWindow": "Mit „Am Board beleuchten“ steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
-        "bodyWindowMinute": "Mit „Am Board beleuchten“ steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
-        "bodyWindowMinutes": "Mit „Am Board beleuchten“ steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
-        "bodyUntilStop": "Mit „Am Board beleuchten“ steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf den Button tippst, um aufzuhören.",
-        "bodyPutOnBoard": "Tipp einen Boulder an und dann auf „Am Board beleuchten“.",
+        "bodyAlwaysDrive": "Board immer steuern ist an. Jeder Boulder, den du wählst, wird beleuchtet, bis du auf Du steuerst das Board tippst.",
+        "bodyWindow": "Am Board beleuchten beleuchtet einen Boulder. Jeder Boulder, den du in den nächsten {{seconds}} Sekunden wählst, wird auch beleuchtet. Danach tippst du wieder auf Am Board beleuchten.",
+        "bodyWindowMinute": "Am Board beleuchten beleuchtet einen Boulder. Jeder Boulder, den du in der nächsten Minute wählst, wird auch beleuchtet. Danach tippst du wieder auf Am Board beleuchten.",
+        "bodyWindowMinutes": "Am Board beleuchten beleuchtet einen Boulder. Jeder Boulder, den du in den nächsten {{minutes}} Minuten wählst, wird auch beleuchtet. Danach tippst du wieder auf Am Board beleuchten.",
+        "bodyUntilStop": "Am Board beleuchten beleuchtet einen Boulder. Danach wird jeder Boulder beleuchtet, den du wählst, bis du auf Du steuerst das Board tippst.",
+        "bodyPutOnBoard": "Tipp einen Boulder an, dann auf Am Board beleuchten, um ihn zu beleuchten.",
         "gotIt": "Verstanden"
       }
     },
@@ -1076,13 +1076,13 @@
       "typical": "Typisch"
     },
     "hints": {
-      "tap": "Tippe auf einen Kreis, um ihn auszuwählen. Tippe noch mal, um ihn auszuschalten.",
+      "tap": "Tippe auf einen Kreis, um ihn zu wählen. Tippe noch mal, um ihn auszuschalten.",
       "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen und dann auf Behalten.",
       "longPress": "Halte einen Kreis gedrückt und zieh ihn, um ihn zu verschieben.",
-      "addHold": "Halte gedrückt, um einen Griff hinzuzufügen.",
+      "addHold": "Halte eine leere Stelle gedrückt, um einen Griff hinzuzufügen.",
       "dismiss": "Tipp ausblenden",
       "replay": "Tipps zeigen",
-      "pencil": "Der Apple Pencil fügt Griffe hinzu und schaltet sie. Mit den Fingern bewegst du dich und wählst einen Griff aus."
+      "pencil": "Der Apple Pencil fügt Griffe hinzu und schaltet sie um. Finger bewegen die Ansicht und wählen Griffe."
     },
     "a11y": {
       "wall": "Foto deiner Spraywall: {{summary}}",
