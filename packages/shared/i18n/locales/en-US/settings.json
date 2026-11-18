@@ -54,7 +54,7 @@
     },
     "firstPassword": {
       "title": "Add a password",
-      "description": "Add a password to an account that signs in with Apple"
+      "description": "Add a password to your Boardsesh account"
     }
   },
   "title": "Settings",
@@ -719,7 +719,7 @@
     "disconnect": "Disconnect",
     "notAvailableYet": "Not available yet",
     "onlyMethod": "This is your only way to sign in. Add another one before you disconnect it.",
-    "appleOnly": "You sign in only with Apple. Set a password first, then you can connect or disconnect other ways to sign in.",
+    "noPassword": "You don't have a password yet. Add one to sign in with your email and to confirm changes here.",
     "setPassword": "Set a password",
     "confirmLink": "Confirm it's you to connect {{provider}}.",
     "confirmUnlink": "Confirm it's you to disconnect {{provider}}.",
@@ -748,7 +748,10 @@
       "provider_unavailable": "That provider isn't available right now.",
       "replayed": "That request was already used. Start again.",
       "failed": "That didn't work. Try again."
-    }
+    },
+    "disconnectProvider": "Disconnect {{provider}}",
+    "cancelPending": "Cancel pending changes",
+    "pendingCancelled": "Cancelled. Try again now; anything still waiting ends within 15 minutes."
   },
   "firstPassword": {
     "title": "Add a password",
@@ -756,8 +759,8 @@
     "send": "Email me a link",
     "sendAgain": "Send another link",
     "sent": "Link sent to {{email}}. Open it in this browser within five minutes.",
-    "notEligible": "This account already has a password or another way to sign in. Manage it in Settings.",
-    "tryAgainSoon": "We couldn't send the link. Try again in a minute.",
+    "notEligible": "We can't add a password to this account from here. If it already has one, sign in with it.",
+    "tryAgainSoon": "We couldn't send the link. Try again later.",
     "back": "Back to Settings"
   }
 }

@@ -66,11 +66,26 @@ export function isPartnerOAuthAnalyticsUrl(url: string, baseUrl = DEFAULT_ANALYT
 }
 
 /**
+ * /auth/confirm-first-password — the first-password email's landing page
+ * (#7596 B5e2). Its fragment carries a confirmation token; the page removes it
+ * at once and telemetry redaction strips it too, and with no SDK on the page
+ * nothing ever depends on either.
+ */
+export function isFirstPasswordConfirmationUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BASE_URL): boolean {
+  const pathname = stripAnalyticsLocalePrefix(analyticsPathname(url, baseUrl)).toLowerCase();
+  return pathname === '/auth/confirm-first-password' || pathname.startsWith('/auth/confirm-first-password/');
+}
+
+/**
  * Pages where the PostHog SDK is never constructed and nothing is captured:
- * embeds, kiosk (which has its own transport) and the partner OAuth pages.
+ * embeds, kiosk (which has its own transport), the partner OAuth pages and
+ * the first-password confirmation page.
  */
 export function isProductAnalyticsFreeUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BASE_URL): boolean {
   return (
-    isEmbedAnalyticsUrl(url, baseUrl) || isKioskAnalyticsUrl(url, baseUrl) || isPartnerOAuthAnalyticsUrl(url, baseUrl)
+    isEmbedAnalyticsUrl(url, baseUrl) ||
+    isKioskAnalyticsUrl(url, baseUrl) ||
+    isPartnerOAuthAnalyticsUrl(url, baseUrl) ||
+    isFirstPasswordConfirmationUrl(url, baseUrl)
   );
 }

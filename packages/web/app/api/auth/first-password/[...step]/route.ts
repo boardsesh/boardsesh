@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { routeFirstPassword } from '@/app/lib/auth/first-password-route.server';
 
 /**
- * First password for Apple-only accounts under `AUTH_BROWSER_SESSION_MODE=better-auth`
+ * First password for accounts without one (a Google or Apple identity) under `AUTH_BROWSER_SESSION_MODE=better-auth`
  * (#7596 B5e2). 404 with the mode unset. See `first-password-route.server.ts`
  * and docs/better-auth-browser-session.md.
  */

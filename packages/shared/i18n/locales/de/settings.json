@@ -54,7 +54,7 @@
     },
     "firstPassword": {
       "title": "Passwort hinzufügen",
-      "description": "Füge einem Konto, das sich mit Apple anmeldet, ein Passwort hinzu"
+      "description": "Füge deinem Boardsesh-Konto ein Passwort hinzu"
     }
   },
   "title": "Einstellungen",
@@ -719,7 +719,7 @@
     "disconnect": "Trennen",
     "notAvailableYet": "Noch nicht verfügbar",
     "onlyMethod": "Das ist deine einzige Anmeldemethode. Füge eine weitere hinzu, bevor du sie trennst.",
-    "appleOnly": "Du meldest dich nur mit Apple an. Lege zuerst ein Passwort fest, dann kannst du andere Anmeldemethoden verbinden oder trennen.",
+    "noPassword": "Du hast noch kein Passwort. Lege eins fest, um dich mit deiner E-Mail-Adresse anzumelden und Änderungen hier zu bestätigen.",
     "setPassword": "Passwort festlegen",
     "confirmLink": "Bestätige, dass du es bist, um {{provider}} zu verbinden.",
     "confirmUnlink": "Bestätige, dass du es bist, um {{provider}} zu trennen.",
@@ -748,7 +748,10 @@
       "provider_unavailable": "Dieser Anbieter ist gerade nicht verfügbar.",
       "replayed": "Diese Anfrage wurde schon verwendet. Fang noch einmal an.",
       "failed": "Das hat nicht funktioniert. Versuch es erneut."
-    }
+    },
+    "disconnectProvider": "{{provider}} trennen",
+    "cancelPending": "Offene Änderungen abbrechen",
+    "pendingCancelled": "Abgebrochen. Versuch es jetzt erneut; was noch wartet, endet innerhalb von 15 Minuten."
   },
   "firstPassword": {
     "title": "Passwort hinzufügen",
@@ -756,8 +759,8 @@
     "send": "Link per E-Mail schicken",
     "sendAgain": "Neuen Link schicken",
     "sent": "Link an {{email}} geschickt. Öffne ihn innerhalb von fünf Minuten in diesem Browser.",
-    "notEligible": "Dieses Konto hat schon ein Passwort oder eine andere Anmeldemethode. Verwalte es in den Einstellungen.",
-    "tryAgainSoon": "Wir konnten den Link nicht schicken. Versuch es in einer Minute erneut.",
+    "notEligible": "Wir können diesem Konto hier kein Passwort hinzufügen. Wenn es schon eins hat, melde dich damit an.",
+    "tryAgainSoon": "Wir konnten den Link nicht schicken. Versuch es später erneut.",
     "back": "Zurück zu den Einstellungen"
   }
 }

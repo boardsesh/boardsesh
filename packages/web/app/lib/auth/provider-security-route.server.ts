@@ -89,7 +89,12 @@ export function flowOfSession(
 }
 
 /** A step's result as the JSON routes answer it. */
-function stepAnswer(context: RouteContext, record: ProviderFlowRecord, result: StepResult): Response {
+async function stepAnswer(
+  context: RouteContext,
+  record: ProviderFlowRecord,
+  result: StepResult,
+  session: LiveSession,
+): Promise<Response> {
   const clear = [clearProviderFlowCookie(context.cookies, record.sameSite)];
   switch (result.kind) {
     case 'committed':
@@ -110,6 +115,8 @@ function stepAnswer(context: RouteContext, record: ProviderFlowRecord, result: S
         sealProviderFlowCookie(context.cookies, result.record),
       ]);
     case 'refused':
+      // A flow that ends here gives its intent's slot back, so closed flows never pile up to `too_many_pending`.
+      if (!result.keep) await abortQuietly(context.client, session.actor, record.intentToken);
       return refusalAnswer(result.reply, result.keep ? [] : clear);
     case 'unavailable':
       // A lost reply may have committed: the record stays so `recover` can ask.
@@ -235,7 +242,7 @@ async function reauthenticateWithPassword(
   } catch {
     return unavailableAnswer();
   }
-  if (reply.outcome !== 'proved') return stepAnswer(context, record, refusedStep(reply));
+  if (reply.outcome !== 'proved') return stepAnswer(context, record, refusedStep(reply), session);
   const proved = { ...record, reauthenticationToken: reply.reauthenticationToken };
   const result = await continueAfterReauthentication(
     context.client,
@@ -246,7 +253,7 @@ async function reauthenticateWithPassword(
   );
   // Keep the proof in the flow even when the next step failed, so `recover` and a retry can use it.
   if (result.kind === 'unavailable') return unavailableAnswer([sealProviderFlowCookie(context.cookies, proved)]);
-  return stepAnswer(context, proved, result);
+  return stepAnswer(context, proved, result, session);
 }
 
 async function startGoogleReauthentication(
@@ -268,7 +275,7 @@ async function startGoogleReauthentication(
   } catch {
     return unavailableAnswer();
   }
-  if (reply.outcome !== 'bound') return stepAnswer(context, record, refusedStep(reply));
+  if (reply.outcome !== 'bound') return stepAnswer(context, record, refusedStep(reply), session);
   let url: string;
   try {
     url = await authorizationUrl(
@@ -308,6 +315,7 @@ async function recover(context: RouteContext, session: LiveSession, record: Prov
     context,
     record,
     await recoverLostReply(context.client, session.actor, record, record.reauthenticationToken),
+    session,
   );
 }
 

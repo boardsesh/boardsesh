@@ -108,4 +108,18 @@ describe('ConfirmFirstPasswordContent', () => {
     expect(await screen.findByText("The two passwords don't match.")).toBeTruthy();
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(1));
   });
+
+  it('keeps the form after a lost prepare reply, which leaves nothing to recover', async () => {
+    answers({
+      status: [[200, { status: 'pending' }]],
+      confirm: [[503, { status: 'unavailable' }]],
+      recover: [[400, { status: 'refused', outcome: 'denied', code: 'invalid_proof' }]],
+    });
+    render(<ConfirmFirstPasswordContent />);
+    fireEvent.change(await screen.findByLabelText('New password'), { target: { value: 'a long password' } });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'a long password' } });
+    fireEvent.click(screen.getByText('Save password'));
+    expect(await screen.findByText("That didn't go through. Try again in a minute.")).toBeTruthy();
+    expect(screen.getByLabelText('New password')).toBeTruthy();
+  });
 });

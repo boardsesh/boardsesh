@@ -86,6 +86,9 @@ describe('isProductAnalyticsFreeUrl', () => {
     expect(isProductAnalyticsFreeUrl('/embed/board/abc')).toBe(true);
     expect(isProductAnalyticsFreeUrl('/kiosk/some-gym')).toBe(true);
     expect(isProductAnalyticsFreeUrl('/es/oauth/consent')).toBe(true);
+    // The first-password email's landing page (#7596 B5e2): its fragment carries a token.
+    expect(isProductAnalyticsFreeUrl(`/fr/auth/confirm-first-password#token=${'E'.repeat(43)}`)).toBe(true);
+    expect(isProductAnalyticsFreeUrl('/auth/confirm-first-password-elsewhere')).toBe(false);
     expect(isProductAnalyticsFreeUrl('/gyms')).toBe(false);
     expect(isProductAnalyticsFreeUrl('/admin')).toBe(false);
   });

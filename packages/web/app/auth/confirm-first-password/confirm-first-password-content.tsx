@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -77,7 +77,12 @@ export default function ConfirmFirstPasswordContent() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  // The fragment is read once: a second run (React Strict Mode) would find it gone.
+  const linkTaken = useRef(false);
+  const resultRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (linkTaken.current) return;
+    linkTaken.current = true;
     const taken = takeLinkFromFragment();
     if (!taken) {
       setView('invalidLink');
@@ -102,6 +107,9 @@ export default function ConfirmFirstPasswordContent() {
     if (status === 'unavailable' && !recovering && link)
       // A lost reply may have committed: ask once.
       return finish(await postAccountSecurity(`${FIRST_PASSWORD_PATH}/recover`, { operation: link.operation }), true);
+    // Nothing to recover (the step itself did not go through): keep the form for another try.
+    if (recovering && (status === 'unavailable' || refusalOf(answer)?.code === 'invalid_proof'))
+      return setFieldError(t('confirmFirstPassword.views.tryAgainSoon'));
     setView(viewOf(answer));
   }
 
@@ -123,6 +131,10 @@ export default function ConfirmFirstPasswordContent() {
 
   const message =
     view === 'checking' || view === 'form' || view === 'done' ? undefined : t(`confirmFirstPassword.views.${view}`);
+  // When a result replaces the form, move focus to it so a screen reader hears it.
+  useEffect(() => {
+    if (view !== 'checking' && view !== 'form') resultRef.current?.focus();
+  }, [view]);
   return (
     <Box component="main" sx={{ padding: '24px', display: 'flex', justifyContent: 'center', paddingTop: '48px' }}>
       <Card sx={{ width: '100%', maxWidth: 400 }}>
@@ -132,8 +144,10 @@ export default function ConfirmFirstPasswordContent() {
               {t('confirmFirstPassword.title')}
             </Typography>
             {view === 'checking' && <CircularProgress size={32} sx={{ alignSelf: 'center' }} />}
-            {message && <Alert severity={view === 'tryAgainSoon' ? 'error' : 'info'}>{message}</Alert>}
-            {view === 'done' && <Alert severity="success">{t('confirmFirstPassword.done')}</Alert>}
+            <Box ref={resultRef} tabIndex={-1} sx={{ outline: 'none' }}>
+              {message && <Alert severity={view === 'tryAgainSoon' ? 'error' : 'info'}>{message}</Alert>}
+              {view === 'done' && <Alert severity="success">{t('confirmFirstPassword.done')}</Alert>}
+            </Box>
             {view === 'form' && (
               <Box component="form" onSubmit={submit}>
                 <Stack spacing={2}>

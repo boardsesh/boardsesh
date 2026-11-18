@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { signBrowserSessionCookie } from '@boardsesh/auth-protocol/browser-session-cookie';
-import { userCredentials, users } from '@boardsesh/db/schema';
+import { authFirstPasswordChallenges, userCredentials, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { createProviderSecurityDriver } from '../../backend/src/auth/authority/__tests__/provider-security-fixture';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
@@ -160,15 +160,22 @@ async function viewerOf(jar: CookieJar): Promise<string> {
   return `${session.user?.id}:${session.authSessionId}`;
 }
 
-async function post(step: string, jar: CookieJar, body: Record<string, unknown> = {}) {
+async function post(
+  step: string,
+  jar: CookieJar,
+  body: Record<string, unknown> = {},
+  overrides: { origin?: string; viewer?: string | null; headers?: Record<string, string> } = {},
+) {
+  const viewer = overrides.viewer === undefined ? await viewerOf(jar) : overrides.viewer;
   const request = new NextRequest(new URL(`/api/auth/first-password/${step}`, ORIGIN), {
     method: 'POST',
     headers: {
-      origin: ORIGIN,
+      origin: overrides.origin ?? ORIGIN,
       cookie: jar.header(),
       'content-type': 'application/json',
       'x-forwarded-for': randomClientAddress(),
-      'X-Boardsesh-Expected-Viewer': await viewerOf(jar),
+      ...(viewer === null ? {} : { 'X-Boardsesh-Expected-Viewer': viewer }),
+      ...overrides.headers,
     },
     body: JSON.stringify(body),
   });
@@ -190,7 +197,7 @@ async function sessionOf(token: string) {
   return read.session;
 }
 
-describe.each(['', 'legacy'])('with the mode %j (as on main)', (mode) => {
+describe.each([undefined, '', 'legacy'])('with the mode %j (as on main)', (mode) => {
   it('answers 404', async () => {
     vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
     const { jar } = await appleOnlyClimber();
@@ -295,5 +302,56 @@ describe('first password under better-auth', () => {
     expect(holder.mail).toHaveLength(0);
     expect(await hasPassword(owner.userId)).toBe(false);
     expect(jar.get(FLOW_COOKIE)).toBeUndefined();
+  });
+
+  it('refuses a wrong Origin, a cross-site request and a missing viewer header, and sends no email', async () => {
+    const { jar } = await appleOnlyClimber();
+    expect((await post('request', jar, {}, { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await post('request', jar, {}, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403);
+    expect((await post('request', jar, {}, { viewer: null })).status).toBe(409);
+    expect(holder.mail).toHaveLength(0);
+  });
+
+  it('an expired link is refused and sets nothing', async () => {
+    const { owner, jar } = await appleOnlyClimber();
+    await post('request', jar);
+    const [{ token: confirmation, operation }] = holder.mail;
+    await environment.database
+      .update(authFirstPasswordChallenges)
+      .set({ issuedAt: new Date(Date.now() - 10 * 60_000), expiresAt: new Date(Date.now() - 5 * 60_000) })
+      .where(eq(authFirstPasswordChallenges.userId, owner.userId));
+    expect((await post('status', jar, { operation })).body).toMatchObject({ status: 'refused', code: 'expired' });
+    const confirmed = await post('confirm', jar, {
+      operation,
+      token: confirmation,
+      password: NEW_PASSWORD,
+      confirmPassword: NEW_PASSWORD,
+    });
+    // The expired flow was cleared by the refusal, so nothing of it can be finished.
+    expect(confirmed.body.status).not.toBe('committed');
+    expect(await hasPassword(owner.userId)).toBe(false);
+  });
+
+  it('a second request ends the first link', async () => {
+    const { owner, jar } = await appleOnlyClimber();
+    await post('request', jar);
+    const firstFlow = jar.get(FLOW_COOKIE) ?? '';
+    await post('request', jar);
+    const [first, second] = holder.mail;
+    const body = (link: { token: string; operation: string }) => ({
+      operation: link.operation,
+      token: link.token,
+      password: NEW_PASSWORD,
+      confirmPassword: NEW_PASSWORD,
+    });
+    // This browser's flow is the second one now.
+    expect((await post('confirm', jar, body(first))).body).toEqual({ status: 'other_browser' });
+    const stale = new CookieJar();
+    for (const name of jar.names())
+      stale.set(name, jar.get(name, DOMAIN) ?? jar.get(name) ?? '', jar.get(name, DOMAIN) ? DOMAIN : '');
+    stale.set(FLOW_COOKIE, firstFlow);
+    expect((await post('confirm', stale, body(first))).body).toMatchObject({ status: 'refused' });
+    expect(await hasPassword(owner.userId)).toBe(false);
+    expect((await post('confirm', jar, body(second))).body).toMatchObject({ status: 'committed' });
   });
 });

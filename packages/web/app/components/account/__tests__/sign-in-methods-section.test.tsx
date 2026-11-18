@@ -85,14 +85,14 @@ describe('SignInMethodsSection', () => {
     routes({ methods: [[503, { status: 'unavailable' }]] });
     render(<SignInMethodsSection />);
     expect(await screen.findByText("We couldn't load your sign-in methods.")).toBeTruthy();
-    expect(screen.queryByText('Disconnect')).toBeNull();
+    expect(screen.queryByLabelText('Disconnect Google')).toBeNull();
   });
 
   it('lists the password and Google, and shows Apple as not available yet', async () => {
     routes({ methods: [[200, methods()]] });
     render(<SignInMethodsSection />);
     expect(await screen.findByText('Set')).toBeTruthy();
-    expect((screen.getByText('Disconnect') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByLabelText('Disconnect Google') as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText('Not available yet')).toBeTruthy();
     expect(screen.queryByText('Connect Apple')).toBeNull();
   });
@@ -111,7 +111,7 @@ describe('SignInMethodsSection', () => {
       ],
     });
     render(<SignInMethodsSection />);
-    expect(((await screen.findByText('Disconnect')) as HTMLButtonElement).disabled).toBe(true);
+    expect(((await screen.findByLabelText('Disconnect Google')) as HTMLButtonElement).disabled).toBe(true);
     expect(
       screen.getByText('This is your only way to sign in. Add another one before you disconnect it.'),
     ).toBeTruthy();
@@ -144,7 +144,7 @@ describe('SignInMethodsSection', () => {
       ],
     });
     render(<SignInMethodsSection />);
-    expect(await screen.findByText('Disconnect')).toBeTruthy();
+    expect(await screen.findByLabelText('Disconnect Google')).toBeTruthy();
     expect(mocks.getSession).toHaveBeenCalledTimes(1);
   });
 
@@ -161,7 +161,7 @@ describe('SignInMethodsSection', () => {
       ],
     });
     render(<SignInMethodsSection />);
-    fireEvent.click(await screen.findByText('Disconnect'));
+    fireEvent.click(await screen.findByLabelText('Disconnect Google'));
     const field = await screen.findByLabelText('Password');
     fireEvent.change(field, { target: { value: 'my password' } });
     fireEvent.click(screen.getByText('Confirm'));
@@ -174,21 +174,73 @@ describe('SignInMethodsSection', () => {
     );
   });
 
-  it('asks recover once after a lost reply, and says try again in a minute when that fails too', async () => {
+  it('a rate-limited password (503, nothing to recover) keeps the flow open and says try again in a minute', async () => {
     routes({
       methods: [[200, methods()]],
       start: [[200, { status: 'reauthentication_required', action: 'unlink', provider: 'google' }]],
       'reauthenticate/password': [[503, { status: 'unavailable' }]],
-      recover: [[503, { status: 'unavailable' }]],
+      // What the route answers when the flow holds no proof yet.
+      recover: [[400, { status: 'refused', outcome: 'denied', code: 'invalid_intent' }]],
     });
     render(<SignInMethodsSection />);
-    fireEvent.click(await screen.findByText('Disconnect'));
+    fireEvent.click(await screen.findByLabelText('Disconnect Google'));
     fireEvent.change(await screen.findByLabelText('Password'), { target: { value: 'my password' } });
     fireEvent.click(screen.getByText('Confirm'));
-    await waitFor(() =>
-      expect(mocks.showMessage).toHaveBeenCalledWith("That didn't go through. Try again in a minute.", 'error'),
-    );
+    expect(await screen.findByText("That didn't go through. Try again in a minute.")).toBeTruthy();
+    expect(screen.getByLabelText('Password')).toBeTruthy();
     expect(calledPaths().filter((path) => path === 'recover')).toHaveLength(1);
+    expect(mocks.showMessage).not.toHaveBeenCalled();
+  });
+
+  it('offers a Google-only account the first-password link and keeps Google working', async () => {
+    routes({
+      methods: [
+        [
+          200,
+          methods({
+            passwordUsable: false,
+            providers: [{ methodId: 'd'.repeat(64), provider: 'google', usable: true, canUnlink: false }],
+            reauthentication: { password: false, google: true, apple: false },
+          }),
+        ],
+      ],
+    });
+    render(<SignInMethodsSection />);
+    const link = await screen.findByText('Set a password');
+    expect(link.closest('a')?.getAttribute('href')).toBe('/settings/first-password');
+    expect(screen.getByText(/You don't have a password yet/)).toBeTruthy();
+  });
+
+  it('gives too_many_pending a way out that cancels the open change', async () => {
+    routes({
+      methods: [[200, methods({ providers: [] })]],
+      start: [[400, { status: 'refused', outcome: 'denied', code: 'too_many_pending' }]],
+      abort: [[200, { status: 'aborted' }]],
+    });
+    render(<SignInMethodsSection />);
+    fireEvent.click(await screen.findByText('Connect Google'));
+    fireEvent.click(await screen.findByText('Cancel pending changes'));
+    await waitFor(() => expect(calledPaths()).toContain('abort'));
+    await waitFor(() => expect(screen.queryByText('Cancel pending changes')).toBeNull());
+  });
+
+  it('names each Disconnect button after its provider', async () => {
+    routes({
+      methods: [
+        [
+          200,
+          methods({
+            providers: [
+              { methodId: 'e'.repeat(64), provider: 'google', usable: true, canUnlink: true },
+              { methodId: 'f'.repeat(64), provider: 'apple', usable: true, canUnlink: true },
+            ],
+          }),
+        ],
+      ],
+    });
+    render(<SignInMethodsSection />);
+    expect(await screen.findByLabelText('Disconnect Google')).toBeTruthy();
+    expect(screen.getByLabelText('Disconnect Apple')).toBeTruthy();
   });
 
   it('reads the provider result on return, says it, and takes it out of the address', async () => {

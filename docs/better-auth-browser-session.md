@@ -1077,8 +1077,9 @@ The backend cores stay. Google and Apple link and unlink require real
 reauthentication within five minutes (owner decision, 2026-11-13); for Google
 only a signed `auth_time` in a verified ID token counts
 ([provider security adoption](./better-auth-provider-security-adoption.md)).
-Apple-only accounts set a first password after email confirmation, which is
-not provider reauthentication. Facebook sign-in and linking stay removed;
+Accounts with no password and a Google or Apple identity set a first
+password after email confirmation (Apple-only at first; widened by the
+decision of 2026-11-18 on #7596), which is not provider reauthentication. Facebook sign-in and linking stay removed;
 stored Facebook identities stay. Drizzle schema exports and merged migrations
 stay, and this work writes no migrations.
 
@@ -1463,32 +1464,40 @@ the mode unset answers 404. Apple is not driven end to end.
 `reauthenticate/password` or `reauthenticate/google`, follow `redirect`,
 call `refreshAccessTokenAfterCredentialChange` on `committed`, re-read the
 session and retry once on `canonical_session_required`, and read
-`providerSecurity` on return) and the first-password page for Apple-only
-accounts. It removes `B5E2_WWW_PROVIDER_SETTINGS_UI` from the www cutover
+`providerSecurity` on return) and the first-password page for accounts
+without a password. It removes `B5E2_WWW_PROVIDER_SETTINGS_UI` from the www cutover
 list.
 
 ### Settings and first password on www (B5e2)
 
-**Sign-in methods card.** Under `better-auth` the www Settings page shows the
-card "Sign-in methods" in place of the set-password card
-(`sign-in-methods-section.tsx`; with the mode unset the page is as before,
-pinned by a test). It reads `methods` and shows the password state and each
+**Sign-in methods card.** Under `better-auth`, and only when www's
+`CURRENT_STORE_PROVIDER_SECURITY_MODE` is `backend-staging` too, the www
+Settings page shows the card "Sign-in methods" in place of the set-password
+card (`sign-in-methods-section.tsx`). Otherwise the page is as before, pinned
+by a test. It reads `methods` and shows the password state and each
 configured provider: connected (Disconnect), not connected (Connect), or "Not
 available yet" (Apple link, see `APPLE_LINK_ENABLED`). The only sign-in method
 cannot be disconnected and says why. A change runs `start`, then the password
 or "Continue with Google" (which follows the returned redirect), then the
 result: `committed` fetches a new 15-minute token
 (`refreshAccessTokenAfterCredentialChange`), reads `methods` again and says
-so; a wrong password keeps the flow; `unavailable` asks `recover` once and
-then says "try again in a minute" (the backend answers 503 past five
-reauthentication tries a minute per account, so that is not shown as an
-outage); `identity_changed` reloads from the locale root; every other refusal
-has its own message. Back from a provider, the card reads `providerSecurity`
+so; a wrong password keeps the flow; `unavailable` asks `recover` once, and
+when there is nothing to recover (the backend answers 503 past five
+reauthentication tries a minute per account) the flow stays open with "try
+again in a minute"; `identity_changed` reloads from the locale root; every
+other refusal has its own message, and the route aborts the intent of any
+flow it ends, so closed flows never pile up. `too_many_pending` offers
+"Cancel pending changes", which aborts this browser's open change. Back from a provider, the card reads `providerSecurity`
 (and `provider`) from the address, says what happened and removes both. Every
 call goes through the www guard (expected-viewer header) and re-reads the
 session once on `canonical_session_required` (`account-security-client.ts`).
-An Apple-only account (no password, no Google) is sent to set a password
-first.
+Every account without a usable password is offered "Set a password", a link
+to `/settings/first-password` (decision of 2026-11-18 on #7596: first
+password is open to any account with no password and a Google or Apple
+identity). Connect and Disconnect stay enabled whenever the account can
+confirm a change (a password, or a fresh Google sign-in). Until the backend
+accepts Google-only accounts, the www cutover list carries
+`B5E2_FIRST_PASSWORD_ANY_PROVIDER`.
 
 **First password** (`first-password-route.server.ts`). Routes under
 `/api/auth/first-password/*`, all POST with this site's `Origin`, the
@@ -1498,7 +1507,7 @@ is `backend-staging`; no reply writes a session cookie:
 
 | Step | What it does |
 |---|---|
-| `request` | Backend `request` for the live session; www emails the plan's link through `@boardsesh/email` (`sendFirstPasswordConfirmationEmail`) and writes the sealed `__Host-boardsesh.first-password-flow` cookie (challenge and recovery tokens, the account and session that asked). No email, no cookie: asking again supersedes the challenge |
+| `request` | Backend `request` for the live session; www seals the `__Host-boardsesh.first-password-flow` cookie (challenge and recovery tokens, the account and session that asked; ids capped at 128 characters) first, then emails the plan's link through `@boardsesh/email` (`sendFirstPasswordConfirmationEmail`). The link's origin is the configured canonical origin only: with none configured every step answers 503. No email, no cookie: asking again supersedes the challenge |
 | `status` `{ operation }` | Whether the emailed link belongs to this browser and session; backend `read` (no write) |
 | `confirm` `{ operation, token, password, confirmPassword }` | Backend `prepare` then `finalize`; on a lost reply one `recover`. `committed` carries `refreshAccessToken: true` |
 | `recover` `{ operation }` | Asks `recover` with the sealed preparation token |
@@ -1512,6 +1521,9 @@ account answers `other_account`; both change nothing and the page says what to
 do. The operation key is a digest of the challenge, never the challenge. The
 same session that asked must finish (the backend checks the token hash too).
 The page `/settings/first-password` asks for the email ("we sent you a link").
+The confirmation page loads no product analytics (`isProductAnalyticsFreeUrl`),
+and telemetry redaction also covers the `status`, `confirm` and `recover`
+route names. A lost `prepare` reply keeps the password form for another try.
 
 `first-password.integration.proof.ts` drives the routes over the real backend
 handlers and real PostgreSQL (only the mail transport is replaced, to read the

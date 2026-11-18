@@ -54,7 +54,7 @@
     },
     "firstPassword": {
       "title": "Ajouter un mot de passe",
-      "description": "Ajoutez un mot de passe à un compte qui se connecte avec Apple"
+      "description": "Ajoutez un mot de passe à votre compte Boardsesh"
     }
   },
   "title": "Paramètres",
@@ -719,7 +719,7 @@
     "disconnect": "Délier",
     "notAvailableYet": "Pas encore disponible",
     "onlyMethod": "C'est votre seul moyen de connexion. Ajoutez-en un autre avant de le délier.",
-    "appleOnly": "Vous vous connectez uniquement avec Apple. Définissez d'abord un mot de passe ; vous pourrez ensuite lier ou délier d'autres moyens de connexion.",
+    "noPassword": "Vous n'avez pas encore de mot de passe. Ajoutez-en un pour vous connecter avec votre e-mail et confirmer les changements ici.",
     "setPassword": "Définir un mot de passe",
     "confirmLink": "Confirmez votre identité pour lier {{provider}}.",
     "confirmUnlink": "Confirmez votre identité pour délier {{provider}}.",
@@ -748,7 +748,10 @@
       "provider_unavailable": "Ce fournisseur n'est pas disponible pour le moment.",
       "replayed": "Cette demande a déjà servi. Recommencez.",
       "failed": "Cela n'a pas fonctionné. Réessayez."
-    }
+    },
+    "disconnectProvider": "Délier {{provider}}",
+    "cancelPending": "Annuler les changements en attente",
+    "pendingCancelled": "Annulé. Réessayez maintenant ; ce qui reste en attente se termine dans les 15 minutes."
   },
   "firstPassword": {
     "title": "Ajouter un mot de passe",
@@ -756,8 +759,8 @@
     "send": "M'envoyer un lien",
     "sendAgain": "Envoyer un autre lien",
     "sent": "Lien envoyé à {{email}}. Ouvrez-le dans ce navigateur dans les cinq minutes.",
-    "notEligible": "Ce compte a déjà un mot de passe ou un autre moyen de connexion. Gérez-le dans les Paramètres.",
-    "tryAgainSoon": "Impossible d'envoyer le lien. Réessayez dans une minute.",
+    "notEligible": "Impossible d'ajouter un mot de passe à ce compte depuis ici. S'il en a déjà un, connectez-vous avec.",
+    "tryAgainSoon": "Impossible d'envoyer le lien. Réessayez plus tard.",
     "back": "Retour aux Paramètres"
   }
 }

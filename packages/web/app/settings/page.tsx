@@ -4,6 +4,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { browserSessionRouteMode } from '@/app/lib/auth/browser-session-mode.server';
+import { wwwProviderSecurityStaged } from '@/app/lib/auth/provider-security-command-client.server';
 import SettingsPageContent from './settings-page-content';
 
 export async function generateMetadata() {
@@ -20,8 +21,10 @@ export default async function SettingsPage() {
   const locale = await getLocale();
   return (
     <I18nProvider locale={locale} namespaces={['settings']}>
-      {/* The sign-in methods card exists only under the browser session mode (#7596 B5e2). */}
-      <SettingsPageContent signInMethods={browserSessionRouteMode().kind === 'better-auth'} />
+      {/* The sign-in methods card needs the browser session mode and www's provider security (#7596 B5e2). */}
+      <SettingsPageContent
+        signInMethods={browserSessionRouteMode().kind === 'better-auth' && wwwProviderSecurityStaged()}
+      />
     </I18nProvider>
   );
 }

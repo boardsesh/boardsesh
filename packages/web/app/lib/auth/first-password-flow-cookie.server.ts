@@ -24,8 +24,9 @@ const backendToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const recordSchema = z
   .object({
     version: z.literal(1),
-    userId: z.string().min(1).max(1024),
-    authSessionId: z.string().min(1).max(1024),
+    // Ids are UUIDs; the caps keep any record well under the sealed-cookie limit.
+    userId: z.string().min(1).max(128),
+    authSessionId: z.string().min(1).max(128),
     challengeToken: backendToken,
     recoveryToken: backendToken,
     /** Milliseconds: the challenge's own end (five minutes at most). */

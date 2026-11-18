@@ -101,6 +101,7 @@ export default function SignInMethodsSection() {
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
+  const [pendingBlocked, setPendingBlocked] = useState(false);
 
   const resultText = useCallback(
     (result: string, provider?: Provider) =>
@@ -162,11 +163,17 @@ export default function SignInMethodsSection() {
         return;
       }
       if (status === 'unavailable' && !recovering) {
-        // A lost reply may have committed: ask once. The backend also answers 503 past five tries a minute.
+        // A lost reply may have committed: ask once.
         await settle(await postAccountSecurity(`${PROVIDER_SECURITY_PATH}/recover`), active, true);
         return;
       }
       const refusal = refusalOf(answer);
+      // Nothing to recover: the step itself did not go through (the backend answers 503 past five
+      // reauthentication tries a minute). The flow stays open for another try in a minute.
+      if (recovering && (status === 'unavailable' || refusal?.code === 'invalid_intent')) {
+        setFlowError(t('signInMethods.tryAgainSoon'));
+        return;
+      }
       if (refusal?.outcome === 'identity_changed') {
         window.location.assign(localeHref('/', locale));
         return;
@@ -176,14 +183,10 @@ export default function SignInMethodsSection() {
         setFlowError(t('signInMethods.wrongPassword'));
         return;
       }
+      // The route ended this flow (and gave its intent back).
       setFlow(null);
       setFlowError(null);
-      showMessage(
-        status === 'unavailable'
-          ? t('signInMethods.tryAgainSoon')
-          : resultText(refusal?.code ?? 'failed', active.provider),
-        'error',
-      );
+      showMessage(resultText(refusal?.code ?? 'failed', active.provider), 'error');
       await load();
     },
     [load, locale, resultText, showMessage, t],
@@ -201,6 +204,20 @@ export default function SignInMethodsSection() {
     }
   }
 
+  /** Gives back this browser's open change, the way out of `too_many_pending`. */
+  async function cancelPending() {
+    setPending(true);
+    try {
+      await postAccountSecurity(`${PROVIDER_SECURITY_PATH}/abort`);
+    } catch {
+      // Whatever is still waiting ends on its own within 15 minutes.
+    } finally {
+      setPendingBlocked(false);
+      setPending(false);
+      showMessage(t('signInMethods.pendingCancelled'), 'info');
+    }
+  }
+
   async function begin(next: Flow, methodId?: string) {
     setPending(true);
     setFlowError(null);
@@ -211,8 +228,12 @@ export default function SignInMethodsSection() {
         ...(methodId ? { methodId } : {}),
         returnTo: `${window.location.pathname}${window.location.search}`,
       });
-      if (answerStatus(answer) === 'reauthentication_required') setFlow(next);
-      else await settle(answer, next);
+      const status = answerStatus(answer);
+      if (status === 'reauthentication_required') setFlow(next);
+      else if (refusalOf(answer)?.code === 'too_many_pending') setPendingBlocked(true);
+      else if (status === 'unavailable') showMessage(t('signInMethods.tryAgainSoon'), 'error');
+      else if (refusalOf(answer)?.outcome === 'identity_changed') window.location.assign(localeHref('/', locale));
+      else showMessage(resultText(refusalOf(answer)?.code ?? 'failed', next.provider), 'error');
     } catch {
       showMessage(t('signInMethods.tryAgainSoon'), 'error');
     } finally {
@@ -249,7 +270,6 @@ export default function SignInMethodsSection() {
     );
 
   const linked = (provider: Provider) => methods.providers.find((method) => method.provider === provider);
-  const appleOnly = !methods.passwordUsable && methods.providers.every((method) => method.provider === 'apple');
   // With neither a password nor a usable Google there is no way to confirm a change yet.
   const canConfirm = methods.reauthentication.password || methods.reauthentication.google;
   const shownProviders = (['google', 'apple'] as const).filter(
@@ -281,6 +301,7 @@ export default function SignInMethodsSection() {
                     <Button
                       variant="outlined"
                       size="small"
+                      aria-label={t('signInMethods.disconnectProvider', { provider: name })}
                       disabled={pending || flow !== null || !method.canUnlink || !canConfirm}
                       onClick={() => void begin({ action: 'unlink', provider }, method.methodId)}
                     >
@@ -307,7 +328,19 @@ export default function SignInMethodsSection() {
               </Box>
             );
           })}
-          {appleOnly && (
+          {pendingBlocked && (
+            <Alert
+              severity="warning"
+              action={
+                <Button color="inherit" size="small" disabled={pending} onClick={() => void cancelPending()}>
+                  {t('signInMethods.cancelPending')}
+                </Button>
+              }
+            >
+              {t('signInMethods.results.too_many_pending')}
+            </Alert>
+          )}
+          {!methods.passwordUsable && (
             <Alert
               severity="info"
               action={
@@ -316,7 +349,7 @@ export default function SignInMethodsSection() {
                 </Button>
               }
             >
-              {t('signInMethods.appleOnly')}
+              {t('signInMethods.noPassword')}
             </Alert>
           )}
           {flow && (

@@ -23,7 +23,8 @@ import { sameSecret } from './provider-security-flow.server';
 /**
  * www's first-password routes under `AUTH_BROWSER_SESSION_MODE=better-auth`
  * (#7596 B5e2), on the backend's `first-password-v1` commands (B5c2). An
- * Apple-only account asks for an email; the emailed link opens
+ * account with no password and a Google or Apple identity asks for an email
+ * (decision of 2026-11-18 on #7596); the emailed link opens
  * `/auth/confirm-first-password` in the same browser, where the same session
  * chooses the password. See docs/better-auth-browser-session.md.
  *
@@ -79,6 +80,13 @@ async function requestEmail(context: Context, session: LiveSession): Promise<Res
     recoveryToken: reply.recoveryToken,
     expiresAt: Date.parse(reply.expiresAt),
   };
+  // Sealed before the email goes out, so a record that cannot be carried never leaves a link behind.
+  let sealed: string;
+  try {
+    sealed = sealFirstPasswordFlowCookie(context.cookies, record);
+  } catch {
+    return unavailable();
+  }
   try {
     await sendFirstPasswordConfirmationEmail(
       reply.mailPlan.recipient,
@@ -90,9 +98,7 @@ async function requestEmail(context: Context, session: LiveSession): Promise<Res
     // No email, no flow: asking again supersedes this challenge.
     return unavailable();
   }
-  return answer(200, { status: 'sent', expiresAt: reply.expiresAt }, [
-    sealFirstPasswordFlowCookie(context.cookies, record),
-  ]);
+  return answer(200, { status: 'sent', expiresAt: reply.expiresAt }, [sealed]);
 }
 
 /**
@@ -196,7 +202,9 @@ export async function routeFirstPassword(request: NextRequest, step: readonly st
   if (mode.kind === 'unavailable' || !wwwFirstPasswordStaged()) return unavailable();
   const path = step.join('/');
   if (!['request', 'status', 'confirm', 'recover'].includes(path)) return answer(404, { error: 'not_found' });
-  const publicOrigin = resolvePublicAuthOrigin() ?? request.nextUrl.origin;
+  // The emailed link is built from this origin: only the configured one, never the request's (fail closed).
+  const publicOrigin = resolvePublicAuthOrigin();
+  if (!publicOrigin) return unavailable();
   if (!sameOriginPost(request, publicOrigin)) return answer(403, { error: 'origin_refused' });
   let client: FirstPasswordCommandClient;
   try {

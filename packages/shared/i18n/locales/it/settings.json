@@ -54,7 +54,7 @@
     },
     "firstPassword": {
       "title": "Aggiungi una password",
-      "description": "Aggiungi una password a un account che accede con Apple"
+      "description": "Aggiungi una password al tuo account Boardsesh"
     }
   },
   "title": "Impostazioni",
@@ -719,7 +719,7 @@
     "disconnect": "Scollega",
     "notAvailableYet": "Non ancora disponibile",
     "onlyMethod": "È il tuo unico metodo di accesso. Aggiungine un altro prima di scollegarlo.",
-    "appleOnly": "Accedi solo con Apple. Imposta prima una password, poi potrai collegare o scollegare altri metodi di accesso.",
+    "noPassword": "Non hai ancora una password. Aggiungine una per accedere con la tua email e confermare le modifiche qui.",
     "setPassword": "Imposta una password",
     "confirmLink": "Conferma che sei tu per collegare {{provider}}.",
     "confirmUnlink": "Conferma che sei tu per scollegare {{provider}}.",
@@ -748,7 +748,10 @@
       "provider_unavailable": "Quel provider ora non è disponibile.",
       "replayed": "Quella richiesta è già stata usata. Ricomincia.",
       "failed": "Non ha funzionato. Riprova."
-    }
+    },
+    "disconnectProvider": "Scollega {{provider}}",
+    "cancelPending": "Annulla le modifiche in sospeso",
+    "pendingCancelled": "Annullato. Riprova ora; quello che resta in sospeso termina entro 15 minuti."
   },
   "firstPassword": {
     "title": "Aggiungi una password",
@@ -756,8 +759,8 @@
     "send": "Inviami un link",
     "sendAgain": "Invia un altro link",
     "sent": "Link inviato a {{email}}. Aprilo in questo browser entro cinque minuti.",
-    "notEligible": "Questo account ha già una password o un altro metodo di accesso. Gestiscilo nelle Impostazioni.",
-    "tryAgainSoon": "Non siamo riusciti a inviare il link. Riprova tra un minuto.",
+    "notEligible": "Non possiamo aggiungere una password a questo account da qui. Se ne ha già una, accedi con quella.",
+    "tryAgainSoon": "Non siamo riusciti a inviare il link. Riprova più tardi.",
     "back": "Torna alle Impostazioni"
   }
 }

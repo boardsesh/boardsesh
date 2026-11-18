@@ -54,7 +54,7 @@
     },
     "firstPassword": {
       "title": "Añadir una contraseña",
-      "description": "Añade una contraseña a una cuenta que inicia sesión con Apple"
+      "description": "Añade una contraseña a tu cuenta de Boardsesh"
     }
   },
   "title": "Ajustes",
@@ -719,7 +719,7 @@
     "disconnect": "Desconectar",
     "notAvailableYet": "Aún no disponible",
     "onlyMethod": "Es tu única forma de iniciar sesión. Añade otra antes de desconectarla.",
-    "appleOnly": "Solo inicias sesión con Apple. Primero crea una contraseña; luego podrás conectar o desconectar otras formas de iniciar sesión.",
+    "noPassword": "Aún no tienes contraseña. Añade una para iniciar sesión con tu correo y para confirmar cambios aquí.",
     "setPassword": "Crear contraseña",
     "confirmLink": "Confirma que eres tú para conectar {{provider}}.",
     "confirmUnlink": "Confirma que eres tú para desconectar {{provider}}.",
@@ -748,7 +748,10 @@
       "provider_unavailable": "Ese proveedor no está disponible ahora.",
       "replayed": "Esa solicitud ya se usó. Empieza otra vez.",
       "failed": "No funcionó. Inténtalo otra vez."
-    }
+    },
+    "disconnectProvider": "Desconectar {{provider}}",
+    "cancelPending": "Cancelar cambios pendientes",
+    "pendingCancelled": "Cancelado. Inténtalo ahora; lo que siga pendiente termina en menos de 15 minutos."
   },
   "firstPassword": {
     "title": "Añadir una contraseña",
@@ -756,8 +759,8 @@
     "send": "Envíame un enlace",
     "sendAgain": "Enviar otro enlace",
     "sent": "Enlace enviado a {{email}}. Ábrelo en este navegador en menos de cinco minutos.",
-    "notEligible": "Esta cuenta ya tiene contraseña u otra forma de iniciar sesión. Gestiónala en Ajustes.",
-    "tryAgainSoon": "No pudimos enviar el enlace. Inténtalo en un minuto.",
+    "notEligible": "No podemos añadir una contraseña a esta cuenta desde aquí. Si ya tiene una, inicia sesión con ella.",
+    "tryAgainSoon": "No pudimos enviar el enlace. Inténtalo más tarde.",
     "back": "Volver a Ajustes"
   }
 }

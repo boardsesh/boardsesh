@@ -20,7 +20,7 @@ export async function generateMetadata() {
 }
 
 /**
- * A first password for an account that signs in only with Apple (#7596 B5e2),
+ * A first password for an account with none, signed in through Google or Apple (#7596 B5e2),
  * under `AUTH_BROWSER_SESSION_MODE=better-auth` only (404 otherwise). The
  * climber asks for an email; its link, opened in this browser, lets this same
  * session choose the password.
