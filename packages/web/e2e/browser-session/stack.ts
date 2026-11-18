@@ -30,14 +30,45 @@ export const GRAPHQL_URL = `wss://${WS_HOST}/graphql`;
 /** The `Domain` the session cookie is written with: the production shape, `.boardsesh.com`. */
 export const COOKIE_DOMAIN = `.${PARENT_DOMAIN}`;
 
-/** The seeded dev-database account every run signs in as (e2e/SEED_CONTRACT.md). */
-export const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL ?? 'test@boardsesh.com';
-export const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD ?? 'test';
+/** What `database.ts` prints its seed result after, and the id prefix of the one account it creates. */
+export const SEED_OUTPUT_PREFIX = 'BROWSER_SESSION_E2E_SEED=';
+export const ACCOUNT_ID_PREFIX = 'browser-session-e2e-';
+
+/** `next dev`, or `next build` then `next start` (BROWSER_SESSION_E2E_WWW=production). */
+export type WwwMode = 'dev' | 'production';
+
+/** An account a spec can sign in as. `userId` is the `sub` of its session. */
+export interface SeededAccount {
+  userId: string;
+  email: string;
+  password: string;
+  name: string;
+}
+
+/** What the edge saw one response set, with names and attributes only (never a value). */
+export interface SetCookieRecord {
+  host: string;
+  method: string;
+  /** Path without its query string. */
+  path: string;
+  status: number;
+  setCookies: Array<{ name: string; attributes: string[]; clears: boolean }>;
+}
 
 export interface BrowserSessionStack {
   /** The browsers' HTTP proxy. It tunnels only to the hosts above. */
   proxyServer: string;
+  /** The seeded dev-database account, and a second one made for this run. */
+  accounts: { accountA: SeededAccount; accountB: SeededAccount };
+  /** This run's NextAuth secret, to mint legacy sessions with. It guards a throwaway database and dies with the run. */
+  nextAuthSecret: string;
+  wwwMode: WwwMode;
+  /** The setup process's control server: restarts and the Set-Cookie log. Loopback only, token required. */
+  control: { url: string; token: string };
 }
+
+/** Session cookies of either auth stack, chunks included (`__Secure-next-auth.session-token.1`, ...). */
+export const SESSION_COOKIE_NAME = /(?:next-auth|better-auth)\.session[_-]?token(?:\.\d+)?$/;
 
 export function readStack(): BrowserSessionStack {
   const raw = process.env[STACK_ENVIRONMENT_VARIABLE];

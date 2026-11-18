@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
-import { APP_ORIGIN, COOKIE_DOMAIN, TEST_USER_EMAIL, TEST_USER_PASSWORD, WWW_ORIGIN } from './stack';
+import { openApp, readViewer, signInOnWww } from './helpers';
+import { COOKIE_DOMAIN, WWW_ORIGIN } from './stack';
 import { expect, test } from './fixtures';
 
 /**
@@ -10,57 +11,22 @@ import { expect, test } from './fixtures';
  * the app out. The Phase B specs run the same shape against `better-auth`.
  */
 
-interface WsAuthRead {
-  authenticated: boolean;
-  userId?: string;
-  authSessionId?: string;
-}
-
 test.skip(
   !!process.env.AUTH_BROWSER_SESSION_MODE,
   'The baseline runs in legacy mode; AUTH_BROWSER_SESSION_MODE is set for this run.',
 );
-
-/** The viewer www's cookie route answers for, called from the page's own origin or cross-origin from the app. */
-async function readViewer(page: Page): Promise<WsAuthRead> {
-  return page.evaluate(async (wwwOrigin) => {
-    const response = await fetch(`${wwwOrigin}/api/internal/ws-auth`, {
-      credentials: 'include',
-      cache: 'no-store',
-    });
-    const { authenticated, userId, authSessionId } = (await response.json()) as WsAuthRead;
-    return { authenticated, userId, authSessionId };
-  }, WWW_ORIGIN);
-}
-
-async function signInOnWww(page: Page): Promise<void> {
-  await page.goto(`${WWW_ORIGIN}/auth/login?callbackUrl=${encodeURIComponent('/settings')}`);
-  await page.getByLabel('Email').fill(TEST_USER_EMAIL);
-  await page.getByLabel('Password').fill(TEST_USER_PASSWORD);
-  await page.getByRole('button', { name: 'Login' }).click();
-  await page.waitForURL(`${WWW_ORIGIN}/settings`);
-}
-
-/** Opens the app and declines the one-time analytics question a fresh account may be asked. */
-async function openApp(page: Page): Promise<void> {
-  const consentPrompt = page.getByRole('button', { name: 'No thanks', exact: true });
-  await page.addLocatorHandler(consentPrompt, async () => {
-    await consentPrompt.click();
-  });
-  await page.goto(`${APP_ORIGIN}/`);
-}
 
 const homeTab = (page: Page) => page.getByRole('tab', { name: 'Home', exact: true });
 const emailField = (page: Page) => page.getByRole('textbox', { name: 'Email', exact: true });
 const sessionCookies = async (page: Page) =>
   (await page.context().cookies()).filter((cookie) => cookie.name.endsWith('next-auth.session-token'));
 
-test('the app subdomain follows the www sign-in and sign-out', async ({ context }) => {
+test('the app subdomain follows the www sign-in and sign-out', async ({ context, accountA }) => {
   const wwwPage = await context.newPage();
-  await signInOnWww(wwwPage);
+  await signInOnWww(wwwPage, accountA);
   const wwwViewer = await readViewer(wwwPage);
   expect(wwwViewer.authenticated).toBe(true);
-  expect(wwwViewer.userId).toBeTruthy();
+  expect(wwwViewer.userId).toBe(accountA.userId);
 
   // A second tab of the same browser context, on the app subdomain.
   const appPage = await context.newPage();

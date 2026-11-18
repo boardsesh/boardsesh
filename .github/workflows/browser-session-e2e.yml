@@ -18,6 +18,12 @@ name: Browser Session E2E
 # person watching it, so it does not.
 on:
   workflow_dispatch:
+    inputs:
+      www:
+        description: 'How www runs: next dev, or next build + next start (the nightly default)'
+        type: choice
+        options: [dev, production]
+        default: dev
   schedule:
     - cron: '41 17 * * *' # daily, 17:41 UTC
   pull_request:
@@ -32,6 +38,8 @@ on:
       - 'packages/backend/src/auth/**'
       - 'packages/shared/auth-protocol/src/**'
       - 'packages/mobile/src/lib/auth*.web.ts'
+      - 'packages/mobile/src/**/user-storage-owner.web.ts'
+      - 'packages/mobile/src/lib/graphql/use-auth-token.web.ts'
       - '.github/workflows/browser-session-e2e.yml'
 
 permissions:
@@ -75,6 +83,11 @@ jobs:
         working-directory: packages/web
 
       - name: Run the browser-session specs in both engines
+        env:
+          # The nightly runs www as a production build (Router Cache and several auth
+          # branches differ from next dev); a pull request keeps next dev, which
+          # starts minutes sooner. A dispatch chooses.
+          BROWSER_SESSION_E2E_WWW: ${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}
         # db:up (dev-db compose stack) and the web-runtime install come from the vp task graph.
         run: vp run test:e2e:browser-session
 

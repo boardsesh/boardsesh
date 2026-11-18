@@ -12,11 +12,15 @@ import { parse } from 'yaml';
  * engines, and keep its traces off and its cap at 30 minutes.
  */
 
-type Step = { name?: string; run?: string; with?: Record<string, string> };
+type Step = { name?: string; run?: string; with?: Record<string, string>; env?: Record<string, string> };
 type Job = { if?: string; needs?: string[]; environment?: string; 'timeout-minutes'?: number; steps?: Step[] };
 type Workflow = {
   permissions?: Record<string, string>;
-  on: { schedule?: Array<{ cron: string }>; pull_request?: { paths?: string[] }; workflow_dispatch?: unknown };
+  on: {
+    schedule?: Array<{ cron: string }>;
+    pull_request?: { paths?: string[] };
+    workflow_dispatch?: { inputs?: Record<string, { type?: string; options?: string[]; default?: string }> };
+  };
   concurrency: { group: string; 'cancel-in-progress': string };
   jobs: Record<string, Job>;
 };
@@ -46,6 +50,8 @@ describe('browser-session-e2e.yml', () => {
       'packages/backend/src/auth/**',
       'packages/shared/auth-protocol/src/**',
       'packages/mobile/src/lib/auth*.web.ts',
+      'packages/mobile/src/**/user-storage-owner.web.ts',
+      'packages/mobile/src/lib/graphql/use-auth-token.web.ts',
       '.github/workflows/browser-session-e2e.yml',
     ]);
   });
@@ -74,6 +80,20 @@ describe('browser-session-e2e.yml', () => {
     expect(runs).toContain('vp run test:e2e:browser-session');
   });
 
+  it('runs the nightly against a production www build, a pull request against next dev, and lets a dispatch choose', () => {
+    const run = (workflow.jobs['browser-session'].steps ?? []).find(
+      (step) => step.run === 'vp run test:e2e:browser-session',
+    );
+    expect(run?.env?.BROWSER_SESSION_E2E_WWW).toBe(
+      "${{ github.event_name == 'schedule' && 'production' || inputs.www || 'dev' }}",
+    );
+    expect(workflow.on.workflow_dispatch?.inputs?.www).toMatchObject({
+      type: 'choice',
+      options: ['dev', 'production'],
+      default: 'dev',
+    });
+  });
+
   it('cancels a superseded PR run but never a nightly or a dispatch', () => {
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name == 'pull_request' }}");
   });
@@ -99,6 +119,19 @@ describe('the browser-session harness', () => {
   it('builds the standalone export and never lets a caller edit /etc/hosts', () => {
     expect(harnessScript).toContain("'--subdomain'");
     expect(harnessScript).not.toContain('/etc/hosts');
+  });
+
+  it('probes the back/forward cache in a project that turns it on, and no other', () => {
+    expect(playwrightConfig).toContain("name: 'chromium-bfcache'");
+    expect(playwrightConfig).toContain("ignoreDefaultArgs: ['--disable-back-forward-cache']");
+    expect(playwrightConfig.match(/ignoreDefaultArgs/g)).toHaveLength(1);
+  });
+
+  it('sweeps stale run directories and offers a production www build', () => {
+    const globalSetup = readFileSync('packages/web/e2e/browser-session/global-setup.ts', 'utf8');
+    expect(globalSetup).toContain('sweepStaleRunDirectories(runsDirectory)');
+    expect(globalSetup).toContain("BROWSER_SESSION_E2E_WWW ?? 'dev'");
+    expect(harnessScript).toContain('--www-production');
   });
 
   it('keeps the base spec in legacy mode and the main suite out of the harness', () => {

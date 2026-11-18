@@ -37,5 +37,17 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    {
+      // The one project with the back/forward cache on: the full Chromium build
+      // (the headless shell cannot have it) without playwright's
+      // `--disable-back-forward-cache`. Runs only the probe that needs it.
+      name: 'chromium-bfcache',
+      testMatch: /bfcache\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chromium',
+        launchOptions: { ignoreDefaultArgs: ['--disable-back-forward-cache'] },
+      },
+    },
   ],
 });
