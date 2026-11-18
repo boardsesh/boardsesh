@@ -2802,6 +2802,22 @@ Sequence proposal is superseded by these implemented delivery rules:
   at most ten producer pages of 1,000 feed rows and 100 ready connections each,
   and ten relay pages of 100 outbox events. The cursor and pending bits preserve
   unfinished work for later runs.
+- `workout.completed` is sent at End, in the End transaction, and again when the
+  workout's results change afterwards. The same producer page reads each
+  change's `tick_uuid`, follows it to a tick of the workout's climber in the
+  workout's session (a deleted tick no longer names a session, so it counts for
+  every recent workout of that climber), and marks finished workouts whose End
+  is under seven days old and whose app subscribes to `workout.completed`.
+  `partner_workout_result_debounce` (one row per workout, `pending` plus
+  `last_enqueued_at`, which starts at `completed_at`) spaces sends at least a
+  minute apart, End's included, across restarts and replicas. A workout whose
+  completion event is still unrelayed is skipped: its delivery comes after the
+  change committed, so the app's read already sees it. The outbox allows one
+  unrelayed `workout.completed` per workout
+  (`partner_webhook_workout_completion_pending_idx`); a relayed one may be
+  followed by another. Each repeat has a new event id and the same workout id,
+  and `occurredAt` is the time of the change. Apps that did not subscribe, or
+  whose endpoint is off, get nothing, as at End.
 - Signature, retry table and `410` handling are specified in partner-api.md
   section 5 (`Boardsesh-Signature: t=…,v1=…`, HMAC-SHA256 over `t.rawBody`).
   Nine exponential retry delays total roughly 17–26 hours with jitter;
