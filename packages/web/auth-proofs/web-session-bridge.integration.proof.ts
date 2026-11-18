@@ -19,8 +19,10 @@ import {
   DOMAIN,
   LEGACY,
   LOGIN,
+  MARKER,
   browserSteps,
   createClimber,
+  expectViewerMarkerFor,
   randomClientAddress,
   sessionCookieNamesIn,
   startWebSessionBackend,
@@ -131,7 +133,8 @@ describe('a browser signed in before the switch', () => {
       expect(await first.json()).toMatchObject({ user: { id: climber.id }, authSessionId });
       const bridged = bridgedCookieOf(first);
       expect(bridged).toMatch(/; Domain=\.boardsesh\.com; Max-Age=34560000; HttpOnly; SameSite=Lax; Secure$/);
-      expect(sessionCookieNamesIn(first)).toEqual([BRIDGED]);
+      expect(sessionCookieNamesIn(first)).toEqual([BRIDGED, MARKER]);
+      expectViewerMarkerFor(first, authSessionId);
       const bridgedValue = bridged?.split(';', 1)[0] ?? '';
       const second = await readSession(`${bridgedValue}; ${cookieOf(credential)}`);
       expect(setCookies(second)).toEqual([]);
@@ -309,7 +312,7 @@ describe('sign-out after a bridge', () => {
       },
     });
     expect(response.status).toBe(200);
-    expect(sessionCookieNamesIn(response)).toEqual(expect.arrayContaining([LOGIN, BRIDGED, LEGACY]));
+    expect(sessionCookieNamesIn(response)).toEqual(expect.arrayContaining([LOGIN, BRIDGED, LEGACY, MARKER]));
     expect((await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status).not.toBe(
       'admitted',
     );

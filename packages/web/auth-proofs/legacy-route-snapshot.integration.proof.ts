@@ -230,6 +230,9 @@ describe('legacy mode with a first-party cookie left from before a rollback (rev
     '__Secure-boardsesh.session_token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
     '__Secure-boardsesh.bridged_session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
     '__Secure-boardsesh.bridged_session_token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+    // The viewer marker is cleared with them; legacy mode never writes one.
+    '__Secure-boardsesh.viewer=; Path=/; Max-Age=0; SameSite=Lax; Secure',
+    '__Secure-boardsesh.viewer=; Path=/; Domain=.boardsesh.com; Max-Age=0; SameSite=Lax; Secure',
   ];
   afterEach(() => {
     carriedFirstParty = '';

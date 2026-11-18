@@ -306,7 +306,7 @@ export async function sessionReadAnswer(
   }
   const answer = NextResponse.json(sessionJson(resolution.session), { headers: PRIVATE });
   if (resolution.bridged)
-    for (const setCookie of bridgedSessionCookies(cookies, resolution.token, {
+    for (const setCookie of bridgedSessionCookies(cookies, resolution.token, resolution.session.authSessionId, {
       replacesLoginCookie: resolution.bridged.replaces === 'login',
     }))
       answer.headers.append('Set-Cookie', setCookie);

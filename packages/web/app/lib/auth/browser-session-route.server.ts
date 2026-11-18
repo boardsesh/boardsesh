@@ -88,7 +88,7 @@ async function login(
   if (!issued) return unavailablePasswordAuthResponse(request.url);
   appendLegacyHostOnlySessionCookieClear(response);
   // The name comes from how this request got the session (a login), never from a session read's `source`.
-  for (const setCookie of loginSessionCookies(cookies, issued.token, requestCookieNames(request)))
+  for (const setCookie of loginSessionCookies(cookies, issued.token, issued.sessionId, requestCookieNames(request)))
     response.headers.append('Set-Cookie', setCookie);
   return response;
 }

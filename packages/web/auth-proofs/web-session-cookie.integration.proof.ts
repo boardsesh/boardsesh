@@ -20,9 +20,11 @@ import {
   DOMAIN,
   LEGACY,
   LOGIN,
+  MARKER,
   browserSteps,
   canonicalStatus,
   createClimber,
+  expectViewerMarkerFor,
   legacyStatus,
   loginToken,
   sessionCookieNamesIn,
@@ -120,6 +122,9 @@ describe('login', () => {
     ]);
     const session = await sessionOf(jar.header());
     expect(session.user?.id).toBe(climberA.id);
+    // The viewer marker names the issued login, written last; its host-only copy is cleared first.
+    expectViewerMarkerFor(response, session.authSessionId ?? '');
+    expect(written).toContain(`${MARKER}=; Path=/; Max-Age=0; SameSite=Lax; Secure`);
     const legacy = await decode({ token: jar.get(LEGACY, DOMAIN) ?? '', secret });
     expect(legacy?.authSessionId).toBe(session.authSessionId);
     expect(await statusOf(loginToken(jar))).toBe('admitted');

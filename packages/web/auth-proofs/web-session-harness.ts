@@ -26,7 +26,8 @@ import { handleCurrentStoreWebSession } from '../../backend/src/handlers/current
 import { handleCurrentStoreWebOAuth } from '../../backend/src/handlers/current-store-web-oauth';
 import { handleProviderSecurity } from '../../backend/src/handlers/provider-security';
 import { handleFirstPassword } from '../../backend/src/handlers/first-password';
-import { CookieJar, callRoute, setCookieNames, type AuthRoute } from './route-harness';
+import { viewerMarkerValue } from '@boardsesh/auth-protocol/browser-session-cookie';
+import { CookieJar, callRoute, setCookieNames, setCookies, type AuthRoute } from './route-harness';
 
 type Database = Awaited<ReturnType<typeof createEnvironment>>['database'];
 
@@ -35,7 +36,9 @@ export const PASSWORD = 'web session proof password';
 export const LOGIN = '__Secure-boardsesh.session_token';
 export const BRIDGED = '__Secure-boardsesh.bridged_session_token';
 export const LEGACY = '__Secure-next-auth.session-token';
-export const SESSION_COOKIE_NAMES = [LOGIN, BRIDGED, LEGACY, 'next-auth.session-token'];
+/** The viewer marker (#7596): readable, written and cleared only beside a session cookie. */
+export const MARKER = '__Secure-boardsesh.viewer';
+export const SESSION_COOKIE_NAMES = [LOGIN, BRIDGED, LEGACY, 'next-auth.session-token', MARKER];
 export const DOMAIN = '.boardsesh.com';
 
 const rpcSecret = randomBytes(32).toString('base64url');
@@ -193,7 +196,7 @@ export function browserSteps(route: AuthRoute) {
       headers: { 'x-forwarded-for': clientAddress },
       ...(method === 'POST' ? { form: { csrfToken } } : {}),
     });
-    const allowed = bridges ? [BRIDGED] : [];
+    const allowed = bridges ? [BRIDGED, MARKER] : [];
     if (!writes) expect(sessionCookieNamesIn(response).filter((name) => !allowed.includes(name))).toEqual([]);
     return response;
   }
@@ -215,6 +218,20 @@ export function browserSteps(route: AuthRoute) {
     });
   }
   return { csrf, login, readSession, signOut };
+}
+
+/**
+ * The response writes the viewer marker for `authSessionId` exactly once, as
+ * its last `Set-Cookie`, in the production shape: Domain, the session
+ * cookie's Max-Age, SameSite=Lax, Secure, and never HttpOnly.
+ */
+export function expectViewerMarkerFor(response: Response, authSessionId: string): void {
+  const headers = setCookies(response);
+  const writes = headers.filter((header) => header.startsWith(`${MARKER}=`) && !header.startsWith(`${MARKER}=;`));
+  expect(writes).toEqual([
+    `${MARKER}=${viewerMarkerValue(authSessionId)}; Path=/; Domain=.boardsesh.com; Max-Age=34560000; SameSite=Lax; Secure`,
+  ]);
+  expect(headers.at(-1)).toBe(writes[0]);
 }
 
 /** The raw session token inside the Domain-scoped login cookie the jar holds. */

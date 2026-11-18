@@ -172,7 +172,7 @@ export function publishProviderSignIn(
   appendLegacyHostOnlySessionCookieClear(response);
   const carried = request.cookies.getAll().map((requestCookie) => requestCookie.name);
   appendStaleLegacySessionCookieClears(response, carried);
-  for (const setCookie of loginSessionCookies(cookies, issued.token, carried))
+  for (const setCookie of loginSessionCookies(cookies, issued.token, issued.sessionId, carried))
     response.headers.append('Set-Cookie', setCookie);
   return response;
 }

@@ -23,9 +23,11 @@ import {
   DOMAIN,
   LEGACY,
   LOGIN,
+  MARKER,
   browserSteps,
   canonicalStatus,
   createClimber,
+  expectViewerMarkerFor,
   loginToken,
   randomClientAddress,
   reserveClimberEmail,
@@ -186,6 +188,8 @@ async function expectTwinBesideLogin(response: Response, jar: CookieJar) {
   const read = await readFirstPartySession(environment.database, { kind: 'canonical-token', token: loginToken(jar) });
   if (read.status !== 'admitted') throw new Error('The new login cookie does not read as live');
   expect(twin?.authSessionId).toBe(read.session.authSessionId);
+  // The viewer marker names the same login, written last (#7596 decision).
+  expectViewerMarkerFor(response, read.session.authSessionId);
   return { twin, session: read.session };
 }
 
@@ -204,6 +208,7 @@ describe('Google sign-in with the mode unset, empty or legacy (as on main)', () 
       expect(setCookies(start).some((header) => header.includes('next-auth.nonce.'))).toBe(false);
       expect(sessionCookieNamesIn(response)).toContain(LEGACY);
       expect(sessionCookieNamesIn(response)).not.toContain(LOGIN);
+      expect(sessionCookieNamesIn(response)).not.toContain(MARKER);
       expect(resolveSessionRequests).toEqual([undefined]);
     },
   );

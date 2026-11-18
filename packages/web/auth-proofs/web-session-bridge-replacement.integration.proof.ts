@@ -19,8 +19,10 @@ import {
   DOMAIN,
   LEGACY,
   LOGIN,
+  MARKER,
   browserSteps,
   createClimber,
+  expectViewerMarkerFor,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
   type WebSessionBackend,
@@ -146,6 +148,8 @@ describe('beside a login cookie', () => {
         `${LOGIN}=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure`,
       ]);
       expect(bridgedCookieOf(response)).toBeDefined();
+      // The marker moves to the bridged login with it.
+      expectViewerMarkerFor(response, authSessionId);
     },
   );
 
@@ -184,6 +188,12 @@ describe('beside a login cookie', () => {
       );
     }
     expect(bridgedCookieOf(response)).toBeUndefined();
+    // The session read's first-party-and-legacy clears take the marker too, and write none.
+    expect(clearsOf(response, MARKER)).toEqual([
+      `${MARKER}=; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+      `${MARKER}=; Path=/; Domain=.boardsesh.com; Max-Age=0; SameSite=Lax; Secure`,
+    ]);
+    expect(setCookies(response).filter((header) => header.startsWith(`${MARKER}=`))).toHaveLength(2);
   });
 });
 

@@ -6,8 +6,10 @@ import {
   browserSessionCookieName,
   readBrowserSessionCookies,
   serializeBrowserSessionCookie,
+  serializeViewerMarkerCookie,
   type BrowserSessionCookieKind,
 } from '@boardsesh/auth-protocol/browser-session-cookie';
+import { viewerMarkerCookieName } from '@boardsesh/auth-protocol/viewer-marker';
 import { webLogger } from '@/app/lib/observability/logger';
 import { capturePresentedWebCredential } from './admitted-session.server';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
@@ -176,24 +178,29 @@ function setCookieName(setCookie: string): string {
 
 /**
  * The `Set-Cookie` values a successful login appends after NextAuth's own:
- * clears of the bridged name in both scopes (and the plain names the request
- * carried), the host-only copy of the login name when the login cookie is
- * written with a Domain, then the login cookie last. On a host-only
- * deployment the host-only login clear would delete the cookie just written,
- * so it is left out there.
+ * clears of the bridged name and the viewer marker in both scopes (and the
+ * plain names the request carried), the host-only copy of the login name when
+ * the login cookie is written with a Domain, then the login cookie, then the
+ * viewer marker for `authSessionId` last, in the login cookie's scope. On a
+ * host-only deployment the host-only clears of the login name and the marker
+ * would delete the cookies just written, so they are left out there.
  */
 export function loginSessionCookies(
   cookies: BrowserSessionCookieConfiguration,
   token: string,
+  authSessionId: string,
   requestCookieNames: readonly string[],
 ): string[] {
-  const loginName = browserSessionCookieName('login', cookies.secure);
+  const writtenNames = new Set([
+    browserSessionCookieName('login', cookies.secure),
+    viewerMarkerCookieName(cookies.secure),
+  ]);
   const writtenInDomainScope = cookies.domain !== undefined;
   const clears = browserSessionCookieClears({
     domain: cookies.domain,
     secure: cookies.secure,
     requestCookieNames,
-  }).filter((clear) => setCookieName(clear) !== loginName || isDomainScoped(clear) !== writtenInDomainScope);
+  }).filter((clear) => !writtenNames.has(setCookieName(clear)) || isDomainScoped(clear) !== writtenInDomainScope);
   return [
     ...clears,
     serializeBrowserSessionCookie({
@@ -203,18 +210,21 @@ export function loginSessionCookies(
       domain: cookies.domain,
       secure: cookies.secure,
     }),
+    serializeViewerMarkerCookie({ authSessionId, domain: cookies.domain, secure: cookies.secure }),
   ];
 }
 
 /**
  * The `Set-Cookie` values a session read appends after bridging a legacy
  * cookie (B2b): the bridged cookie, after clears of the login name in both
- * scopes when the bridged login replaces a stale login cookie. The legacy
- * cookie is kept for the rollback window.
+ * scopes when the bridged login replaces a stale login cookie, then the viewer
+ * marker for `authSessionId` in the bridged cookie's scope. The legacy cookie
+ * is kept for the rollback window.
  */
 export function bridgedSessionCookies(
   cookies: BrowserSessionCookieConfiguration,
   token: string,
+  authSessionId: string,
   { replacesLoginCookie }: { replacesLoginCookie: boolean },
 ): string[] {
   const loginName = browserSessionCookieName('login', cookies.secure);
@@ -234,10 +244,11 @@ export function bridgedSessionCookies(
       domain: cookies.domain,
       secure: cookies.secure,
     }),
+    serializeViewerMarkerCookie({ authSessionId, domain: cookies.domain, secure: cookies.secure }),
   ];
 }
 
-/** Sign-out: both first-party names, both scopes, plus the plain names the request carried. */
+/** Sign-out: both first-party names and the viewer marker, both scopes, plus the plain names the request carried. */
 export function signOutBrowserSessionCookieClears(
   cookies: BrowserSessionCookieConfiguration,
   requestCookieNames: readonly string[],
@@ -246,8 +257,10 @@ export function signOutBrowserSessionCookieClears(
 }
 
 const FIRST_PARTY_KINDS: readonly BrowserSessionCookieKind[] = ['login', 'bridged'];
+// The viewer marker counts as a session cookie name: it is sent only beside one.
 const SESSION_COOKIE_NAMES = new Set([
   ...FIRST_PARTY_KINDS.flatMap((kind) => [true, false].map((secure) => browserSessionCookieName(kind, secure))),
+  ...[true, false].map((secure) => viewerMarkerCookieName(secure)),
   SECURE_SESSION_COOKIE_NAME,
   PLAIN_SESSION_COOKIE_NAME,
 ]);
@@ -260,7 +273,7 @@ function isSessionCookieName(name: string): boolean {
 
 /**
  * Removes every `Set-Cookie` for a session cookie name, legacy or first-party,
- * keeping the rest (CSRF, callback URL) in order. Session reads, csrf and
+ * or the viewer marker, keeping the rest (CSRF, callback URL) in order. Session reads, csrf and
  * session updates under `better-auth` write and clear no session cookie.
  */
 export function withoutSessionSetCookies(response: Response): Response {
@@ -274,7 +287,7 @@ export function withoutSessionSetCookies(response: Response): Response {
  * `legacy` mode (review M2, owner option a): when a login or sign-out reply of
  * the legacy route writes or clears the legacy session cookie and the request
  * carried a first-party cookie of either name (any value, verified or not),
- * clear both first-party names in both scopes too. Otherwise a first-party
+ * clear both first-party names and the viewer marker in both scopes too. Otherwise a first-party
  * cookie left from before a rollback would outrank this newer login or outlive
  * this sign-out once the mode is turned on again.
  *
