@@ -4,6 +4,22 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-18
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Secondary buttons read as buttons now, with plain text beside the main violet one ([#7801](https://github.com/boardsesh/boardsesh/pull/7801))
+- Back to your projects: climbs you tried and haven't sent yet sit on Home, one tap from the wall ([#7759](https://github.com/boardsesh/boardsesh/pull/7759))
+
+### Improved
+
+- Open a workout from your connected training app and climb it in Boardsesh. ([#7776](https://github.com/boardsesh/boardsesh/pull/7776))
+  Keep your connected training app up to date with your logbook.
+
 ## 2026-11-17
 
 ### App update
@@ -12,6 +28,8 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Home now opens with your session and climbs at your level, unsent ([#7754](https://github.com/boardsesh/boardsesh/pull/7754))
+  The Session card shows your last workout, one tap from starting again
 - See your week on Home: the days you climbed, your sends, and how many weeks you've kept it going ([#7714](https://github.com/boardsesh/boardsesh/pull/7714))
   New personal bests show up on Home, one tap from the climb
 - Swiping between climbs, holds both climbs share now dim and return with the rest ([#7740](https://github.com/boardsesh/boardsesh/pull/7740))
@@ -30,6 +48,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Shorter, clearer tips when you start out: each one says what to tap and what you get. ([#7757](https://github.com/boardsesh/boardsesh/pull/7757))
 - Closing the player with a swipe no longer makes your climb list jump in size ([#7755](https://github.com/boardsesh/boardsesh/pull/7755))
 - Lit holds show again on the Aura board look on some Android phones, including the Galaxy S26 Ultra. ([#7753](https://github.com/boardsesh/boardsesh/pull/7753))
 - Swiping to the next climb fades its holds in smoothly, without the mid-fade stutter ([#7742](https://github.com/boardsesh/boardsesh/pull/7742))

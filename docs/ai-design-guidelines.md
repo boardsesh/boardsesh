@@ -380,7 +380,7 @@ In `packages/mobile/src/components/`, each with a story (`dev/stories/<id>`). Re
 - **`ArtRow`**: a row leading with art (board, playlist, icon); `selected` takes `theme.selection`; presses dip in opacity, never scale.
 - **`StatusPill`**: something you can't tap; never shrinks or truncates.
 - **`EmptyState`**: `screen`, `section` or `quiet` (one footnote line plus a `TextAction`).
-- **`BoardThumbnail`**: a board's bare art in a 36×44 or 44×56 slot; spray walls show the cached photo.
+- **`BoardThumbnail`**: a board's bare art in a 36×44, 44×56 or 72×92 slot; spray walls show the cached photo.
 - **Other primitives** (`components/index.ts`): `Text`, `Button`, `Card`, `ListRow`, `Avatar`, `Badge`, `Separator`, `SectionHeader`, `Sheet`, `ModalSheet`, `GlassSurface`, `Icon`, `SegmentedControl`, `Toast`, `SwitchRow`. Prefer them over raw RN host components. Touch feedback goes through `PressableSurface` (Material ripple on Android, scale or opacity spring on iOS), never a hand-rolled `AnimatedPressable`.
 
 ---

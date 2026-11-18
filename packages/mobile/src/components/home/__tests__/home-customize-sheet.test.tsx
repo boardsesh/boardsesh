@@ -152,12 +152,14 @@ describe('HomeCustomizeSheet', () => {
       `${SECTION_KEY}.week`,
       `${SECTION_KEY}.session`,
       `${SECTION_KEY}.climbingNow`,
+      `${SECTION_KEY}.projects`,
       `${SECTION_KEY}.playlists`,
       `${SECTION_KEY}.board`,
       `${SECTION_KEY}.beta`,
       `${SECTION_KEY}.feed`,
     ]);
     expect(screen.getAllByRole('switch').map((element) => (element as HTMLInputElement).checked)).toEqual([
+      true,
       true,
       true,
       true,
@@ -172,7 +174,7 @@ describe('HomeCustomizeSheet', () => {
     expect((screen.getByTestId('home-customize-restore-defaults') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('Focused turns on Session, At your level and Your board, and hides the feed and Climbing now', () => {
+  it('Focused turns on Session, Back to your projects, At your level and Your board, and hides the feed and Climbing now', () => {
     renderSheet();
     act(() => {
       fireEvent.click(screen.getByTestId('home-customize-focused'));
@@ -192,6 +194,7 @@ describe('HomeCustomizeSheet', () => {
       'week',
       'climbingNow',
       'session',
+      'projects',
       'playlists',
       'board',
       'beta',
@@ -231,6 +234,7 @@ describe('HomeCustomizeSheet', () => {
       'week',
       'session',
       'climbingNow',
+      'projects',
       'playlists',
       'beta',
       'board',

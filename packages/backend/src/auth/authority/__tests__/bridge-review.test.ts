@@ -75,7 +75,7 @@ it('does not promote unguarded legacy auth_time into fresh authentication', asyn
     expect(bridged.session.createdAt.getTime()).toBe(0);
     const canonical = await readFirstPartySession(
       environment.database,
-      { kind: 'canonical-token', token: bridged.session.token },
+      { kind: 'canonical-token', token: bridged.token ?? '' },
       now,
     );
     expect(canonical.status).toBe('admitted');

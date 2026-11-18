@@ -7,7 +7,7 @@ import {
   type AnimatedRef,
   type SharedValue,
 } from 'react-native-reanimated';
-import type { WallSwapFrame } from './wall-swap';
+import { shippedSwapFrame, type BoardSwapFrame, type SwapFrameSource } from './swap-look';
 
 /** The native view command each wall-swap frame is sent under (#7737). */
 export const SWAP_FRAME_COMMAND = 'swapFrame';
@@ -16,23 +16,30 @@ export const SWAP_FRAME_COMMAND = 'swapFrame';
  * The four-number swap frame, then its sequence number. The native view drops
  * any frame whose sequence is not above the newest one it applied, so the
  * prop copy of a frame, arriving after its command, cannot step the fade back.
+ * A swap-look frame (`swap-look.ts`) carries its two arrival flags after the
+ * sequence: seven numbers, which only a binary with `swapLookVersion` takes.
  */
-export type SequencedSwapFrame = [
-  pagePosition: number,
-  outgoingWeight: number,
-  incomingWeight: number,
-  sharedWeight: number,
-  sequence: number,
-];
+export type SequencedSwapFrame =
+  | [pagePosition: number, outgoingWeight: number, incomingWeight: number, sharedWeight: number, sequence: number]
+  | [
+      pagePosition: number,
+      outgoingWeight: number,
+      incomingWeight: number,
+      sharedFloor: number,
+      sequence: number,
+      outgoingArrives: number,
+      incomingArrives: number,
+    ];
 
 /**
- * Always five numbers. A binary that takes the command reads the fifth as the
- * sequence, so the frame keeps its shared weight even where the API version
- * would trim it.
+ * Five numbers, or seven for a swap-look frame. A binary that takes the
+ * command reads the fifth as the sequence, so the frame keeps its shared weight
+ * even where the API version would trim it.
  */
-export function sequencedSwapFrame(frame: WallSwapFrame, sequence: number): SequencedSwapFrame {
+export function sequencedSwapFrame(frame: BoardSwapFrame, sequence: number): SequencedSwapFrame {
   'worklet';
-  return [frame[0], frame[1], frame[2], frame[3], sequence];
+  if (frame.length === 4) return [frame[0], frame[1], frame[2], frame[3], sequence];
+  return [frame[0], frame[1], frame[2], frame[3], sequence, frame[4], frame[5]];
 }
 
 /** The sequence of the frame JS sends before the first UI-thread frame: below every real one. */
@@ -57,8 +64,10 @@ export type SwapFrameCommand<Target extends Component | ElementType> = {
  * it whenever the command already delivered the frame.
  */
 export function useSwapFrameCommand<Target extends Component | ElementType>(
-  swapFrame: SharedValue<WallSwapFrame> | undefined,
+  swapFrame: SwapFrameSource | undefined,
   enabled: boolean,
+  /** The binary draws the swap look: send look frames whole. Otherwise they go as the shipped four numbers. */
+  look = false,
 ): SwapFrameCommand<Target> {
   const target = useAnimatedRef<Target>();
   const targetMounted = useSharedValue(false);
@@ -77,11 +86,11 @@ export function useSwapFrameCommand<Target extends Component | ElementType>(
       if (frame === null) return;
       const next = sequence.value + 1;
       sequence.value = next;
-      const sequenced = sequencedSwapFrame(frame, next);
+      const sequenced = sequencedSwapFrame(look ? frame : shippedSwapFrame(frame), next);
       latest.value = sequenced;
       if (targetMounted.value) dispatchCommand(target, SWAP_FRAME_COMMAND, sequenced);
     },
-    [enabled, swapFrame],
+    [enabled, swapFrame, look],
   );
   return { target, latest };
 }

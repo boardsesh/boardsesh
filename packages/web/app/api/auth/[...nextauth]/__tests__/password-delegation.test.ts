@@ -242,6 +242,61 @@ describe('public NextAuth App Router password delegation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(legacyAuthorize).not.toHaveBeenCalled();
   });
+  describe('the client address sent to the backend', () => {
+    const originProofSecret = 'origin-proof-fixture-secret-at-least-32-bytes';
+    const proven = (visitor = clientAddress, proof = originProofSecret) =>
+      password(CLOUDFLARE_EDGE, selected.email, { 'CF-Connecting-IP': visitor, 'X-Boardsesh-Origin-Proof': proof });
+    async function sentClientAddress(response: Promise<Response>, fetchMock: ReturnType<typeof backendResponse>) {
+      expect((await response).status).toBe(401);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const init = fetchMock.mock.calls[0][1];
+      if (typeof init?.body !== 'string') throw new Error('Expected serialized command');
+      return (JSON.parse(init.body) as { clientAddress?: string }).clientAddress;
+    }
+    let fetchMock: ReturnType<typeof backendResponse>;
+    beforeEach(() => {
+      vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', originProofSecret);
+      fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    it('is the visitor when our zone proved the request crossed it', async () => {
+      expect(await sentClientAddress(proven(), fetchMock)).toBe(clientAddress);
+    });
+
+    it('is the whole IPv6 visitor address; the backend groups it by /64', async () => {
+      expect(await sentClientAddress(proven('2001:db8:7:8::42'), fetchMock)).toBe('2001:db8:7:8::42');
+    });
+
+    // What a Worker on any Cloudflare account sends when it fetches our Railway domain.
+    it('is left out for a Cloudflare last hop with a chosen visitor header and no proof', async () => {
+      expect(await sentClientAddress(passwordFromVisitor('203.0.113.200'), fetchMock)).toBeUndefined();
+    });
+
+    it('is left out when the proof is wrong', async () => {
+      expect(
+        await sentClientAddress(proven(clientAddress, 'not-the-origin-proof-secret-but-as-long-as-it'), fetchMock),
+      ).toBeUndefined();
+    });
+
+    it('is left out while the proof secret is unset', async () => {
+      vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', '');
+      expect(await sentClientAddress(proven(), fetchMock)).toBeUndefined();
+    });
+
+    it('is left out for a direct caller that forges a Cloudflare hop, visitor header and proof', async () => {
+      const spoofed = password(`${CLOUDFLARE_EDGE}, ${clientAddress}`, selected.email, {
+        'CF-Connecting-IP': '203.0.113.200',
+        'X-Boardsesh-Origin-Proof': originProofSecret,
+      });
+      expect(await sentClientAddress(spoofed, fetchMock)).toBeUndefined();
+    });
+
+    it('is left out when the request carries no forwarding headers', async () => {
+      expect(await sentClientAddress(password(''), fetchMock)).toBeUndefined();
+    });
+  });
+
   // Legacy sign-in runs bcrypt on the web process for every address, unknown ones
   // included, so one client must not be able to fill its event loop.
   it('never limits right passwords in legacy mode: 20 sign-ins from one visitor all succeed', async () => {
@@ -285,6 +340,19 @@ describe('public NextAuth App Router password delegation', () => {
     }
     expect(legacyAuthorize).toHaveBeenCalledTimes(24);
     expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+    warn.mockRestore();
+  });
+  // A path the zone's rule misses, or a Worker on the Railway domain, carries no proof.
+  it('limits a legacy sign-in without the proof once the proof secret is set, never skipping it', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', 'origin-proof-fixture-secret-at-least-32-bytes');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    legacyAuthorize.mockResolvedValue(null);
+    vi.stubGlobal('fetch', vi.fn());
+    const unproven = () => password('172.70.9.9', selected.email, { 'CF-Connecting-IP': clientAddress });
+    for (let attempt = 0; attempt < 10; attempt += 1) expect((await unproven()).status).toBe(401);
+    expect((await unproven()).status).toBe(429);
+    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
     warn.mockRestore();
   });
   it('uses the exact original credentials path in legacy mode without RPC configuration', async () => {

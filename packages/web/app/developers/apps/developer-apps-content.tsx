@@ -38,6 +38,7 @@ import { isEmptyUpdate, toCreateInput, toUpdateInput, type AppFormState } from '
 import { classifyConsoleError, type ConsoleProblem } from '@/app/lib/developer-apps/console-errors';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import AppCard from './app-card';
+import DeveloperEmailPanel from './developer-email-panel';
 import AppFormDialog from './app-form-dialog';
 import ConfirmActionDialog from './confirm-action-dialog';
 import SecretDialog, { type RevealedCredentials } from './secret-dialog';
@@ -241,6 +242,7 @@ export default function DeveloperAppsContent() {
         </Box>
       );
     }
+    if (listProblem?.kind === 'email-not-verified') return <DeveloperEmailPanel />;
     if (listProblem) {
       const gate = {
         'not-available': { icon: <LockOutlined />, key: 'notAvailable' },

@@ -19,7 +19,7 @@ extendZodWithOpenApi(z);
  * document lists the values without closing the set, because a generated client
  * reading a closed enum breaks on the first new value and the docs promise it won't.
  */
-function extensibleEnum<const Values extends readonly [string, ...string[]]>(
+export function extensibleEnum<const Values extends readonly [string, ...string[]]>(
   values: Values,
   metadata: { description: string; example: Values[number] },
 ) {
@@ -320,6 +320,11 @@ export const API_ERROR_CODES = [
   'cursor_expired',
   'rate_limited',
   'server_error',
+  'invalid_block',
+  'idempotency_mismatch',
+  'workout_limit',
+  'conflict',
+  'payload_too_large',
 ] as const;
 
 export const ApiErrorResponseSchema = z

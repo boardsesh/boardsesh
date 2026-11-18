@@ -1,3 +1,4 @@
+import { partnerConnectionNotices } from '@boardsesh/db/schema/auth';
 import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provider';
@@ -13,6 +14,7 @@ import {
 import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
 import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
 import { checkConnectionCaps, type ConnectionCapRefusal } from './connection-caps';
+import { ensurePartnerSubject } from './api-access';
 import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
 import {
   lockClimber,
@@ -497,6 +499,7 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
               state.redemption.clientId,
             );
             if (!connection) throw new Error('Redeemed a code for a missing connection.');
+            await ensurePartnerSubject(transaction, connection.userId, connection.clientId);
             if (connection.connectedAt) return;
             const liveAt = new Date();
             const capRefusal = await checkConnectionCaps(transaction, connection, liveAt);
@@ -505,6 +508,16 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
               .update(oauthConnections)
               .set({ connectedAt: liveAt, updatedAt: liveAt })
               .where(eq(oauthConnections.id, connection.id));
+            await transaction
+              .insert(partnerConnectionNotices)
+              .values({
+                connectionId: connection.id,
+                generation: connection.generation,
+                userId: connection.userId,
+                clientId: connection.clientId,
+                createdAt: liveAt,
+              })
+              .onConflictDoNothing();
           }),
         },
       ],

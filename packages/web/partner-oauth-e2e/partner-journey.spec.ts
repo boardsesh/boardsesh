@@ -423,8 +423,10 @@ test('an app registers, connects a climber on www, syncs the logbook, refreshes 
     // The row the www settings page shows for this app; it opens the app's detail.
     await connectedApps.getByRole('button', { name: new RegExp(APP_NAME) }).click();
     const detail = climber.page.getByRole('dialog', { name: APP_NAME });
-    await expect(detail.getByText(`What ${APP_NAME} can see`)).toBeVisible();
+    await expect(detail.getByRole('heading', { name: `What ${APP_NAME} can do`, exact: true })).toBeVisible();
     await expect(detail.getByText('Sees every tick in your logbook, on every board')).toBeVisible();
+    await expect(detail.getByText('Sees your display name and profile photo')).toBeVisible();
+    await expect(detail.getByText('Keeps this access until you disconnect it')).toBeVisible();
     await detail.getByRole('button', { name: `Disconnect ${APP_NAME}` }).click();
     // Through the console's `disconnectApp` mutation, with the climber's own session.
     const disconnectRequest = climber.page.waitForRequest(

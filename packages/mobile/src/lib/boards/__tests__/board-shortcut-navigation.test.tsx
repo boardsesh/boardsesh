@@ -64,8 +64,17 @@ import { BoardSummaryCard } from '../../../components/boards/BoardSummaryCard';
 import { useBoardShortcutNavigation } from '../use-board-shortcut-navigation';
 import type { BoardReturnTo } from '../board-return-to';
 
-function BoardActions({ returnTo }: { returnTo: BoardReturnTo }) {
-  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } = useBoardShortcutNavigation(returnTo);
+function BoardActions({
+  returnTo,
+  returnAfterFirstPick = false,
+}: {
+  returnTo: BoardReturnTo;
+  returnAfterFirstPick?: boolean;
+}) {
+  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } = useBoardShortcutNavigation(
+    returnTo,
+    returnAfterFirstPick,
+  );
   return createElement(BoardSummaryCard, {
     board: boardQuery.data,
     hasNoBoard,
@@ -151,6 +160,16 @@ describe('Board card navigation', () => {
       params: { returnTo: '/(tabs)/climbs' },
     });
     expect(screen.queryByRole('button', { name: /^mobile.session.browseClimbs/ })).toBeNull();
+  });
+
+  it('returns to a pending partner workout after the first board choice', () => {
+    boardState.data = null;
+    render(createElement(BoardActions, { returnTo: '/(tabs)/record', returnAfterFirstPick: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.session.chooseBoard' }));
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/boards',
+      params: { returnTo: '/(tabs)/record' },
+    });
   });
 
   it('waits for storage instead of offering a new selection', () => {

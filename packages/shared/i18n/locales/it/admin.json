@@ -28,7 +28,8 @@
     "locationSync": "Sincronizzazioni delle sedi congelate",
     "sprayWalls": "Dati di addestramento Spraywall",
     "boards": "Pannelli registrati",
-    "buildPlans": "Ordini dei pacchetti di costruzione"
+    "buildPlans": "Ordini dei pacchetti di costruzione",
+    "partnerApps": "App partner"
   },
   "feedback": {
     "title": "Segnalazioni di bug e feedback",
@@ -580,5 +581,34 @@
     "retry": "Riprova",
     "loadMore": "Carica altri",
     "unknown": "Non indicato"
+  },
+  "partnerApps": {
+    "title": "App partner",
+    "description": "App registrate, climber collegati e limiti di connessione.",
+    "limitsHelp": "I limiti si applicano alle nuove connessioni. Abbassare un limite mantiene attive le connessioni esistenti. Zero blocca le nuove connessioni. Le modifiche vengono registrate con il tuo account amministratore.",
+    "search": "Cerca app, editore o sviluppatore",
+    "searchAction": "Cerca",
+    "app": "App",
+    "developer": "Sviluppatore",
+    "connections": "Connessioni",
+    "limits": "Limiti",
+    "actions": "Azioni",
+    "activeLimit": "Numero massimo di connessioni attive",
+    "dailyLimit": "Numero massimo di nuove connessioni per 24 ore",
+    "usage": "{{active}} attive · {{recent}} nuove in 24 ore",
+    "invalidLimit": "Usa un numero intero da 0 a 2147483647.",
+    "save": "Salva limiti",
+    "saved": "Limiti salvati",
+    "saveError": "Non è stato possibile salvare i limiti. Riprova.",
+    "loading": "Caricamento delle app partner",
+    "loadError": "Non è stato possibile caricare le app partner.",
+    "retry": "Riprova",
+    "empty": "Nessuna app corrisponde a questa ricerca.",
+    "total_one": "{{count}} app registrata",
+    "total_other": "{{count}} app registrate",
+    "previous": "Pagina precedente",
+    "next": "Pagina successiva",
+    "active": "Attiva",
+    "suspended": "Sospesa"
   }
 }

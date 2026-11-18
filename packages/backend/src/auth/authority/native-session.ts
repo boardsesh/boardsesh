@@ -1,11 +1,12 @@
 import { nativeSessionRequiresAccountCutoff } from '../native-session-ancestry';
 import type { NativeRevocationMode } from './native-revocation-configuration';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { authCredentialLineage, authSession, authSessionDenials } from '@boardsesh/db/schema/auth';
 import type { AuthorityTransaction } from './adapter';
 import { legacyBridgeMode } from './bridge';
 import { AuthSubjectDeniedError } from '../human-admission';
+import { newSessionToken } from './session-token';
 
 interface RefreshSessionProof {
   readonly sessionId: string;
@@ -55,7 +56,8 @@ export async function bindNativeRefreshSession(
   if (!session) {
     await transaction.insert(authSession).values({
       id: proof.sessionId,
-      token: randomBytes(32).toString('base64url'),
+      // Never handed to anyone: native clients keep their refresh token.
+      token: newSessionToken().stored,
       userId,
       expiresAt: sourceExpiresAt,
       createdAt: proof.authenticatedAt ?? new Date(0),

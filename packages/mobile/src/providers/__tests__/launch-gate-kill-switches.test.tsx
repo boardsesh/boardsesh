@@ -16,6 +16,7 @@ import {
   useConnectivityBannerEnabled,
   useFirstBoardPickerEnabled,
   useFirstConnectCtaEnabled,
+  usePlayerSwapLookEnabled,
   useQaTesterGateEnabled,
   useSendRecoveryGateEnabled,
   useStaleCurrentHoldEnabled,
@@ -38,6 +39,8 @@ const KILL_SWITCHES = [
   // Not a launch surface, but the same direction: the #4979 hold is on until
   // PostHog says `true` (docs/current-climb-outside-queue.md, section 8).
   { key: 'stale-current-hold-kill', useEnabled: useStaleCurrentHoldEnabled },
+  // The player board's swap look ships at 100% too: on until PostHog says `true`.
+  { key: 'player-swap-look-kill', useEnabled: usePlayerSwapLookEnabled },
 ] as const;
 
 function readEnabled(useEnabled: () => boolean, flags?: Record<string, boolean | string | undefined>): boolean {

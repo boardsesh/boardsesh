@@ -53,6 +53,7 @@ import {
   resetHandledLaunchBoardUrlForTests,
 } from '../deep-link-provider';
 import { clearBoardLinkReplay, didReplayBoardLink } from '../../lib/routing/board-link-replay';
+import { PENDING_APP_WORKOUT_KEY } from '../../lib/partner-workout-link';
 
 const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
 const LEGACY_PREVIEW_LINK = 'https://www.boardsesh.com/preview/pr-1234';
@@ -67,6 +68,38 @@ beforeEach(() => {
   clearBoardLinkReplay();
   // Each test is its own launch: the provider handles a launch URL once per process.
   resetHandledLaunchBoardUrlForTests();
+});
+
+describe('DeepLinkProvider — partner workout links', () => {
+  it('preserves a signed-out launch through sign-in and consumes it once', async () => {
+    linkState.initialUrl = 'com.boardsesh.app://w/wk_training';
+    const signedOut = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() => expect(store.get(PENDING_APP_WORKOUT_KEY)).toBe('wk_training'));
+    expect(navigateMock).not.toHaveBeenCalled();
+    signedOut.unmount();
+    authState.isAuthenticated = true;
+    const signedIn = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledExactlyOnceWith({
+        pathname: '/w/[workoutId]',
+        params: { workoutId: 'wk_training' },
+      }),
+    );
+    expect(store.has(PENDING_APP_WORKOUT_KEY)).toBe(false);
+    signedIn.unmount();
+    authState.isAuthenticated = false;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(store.has(PENDING_APP_WORKOUT_KEY)).toBe(false);
+  });
+
+  it('does not navigate an arbitrary stored path after sign-in', async () => {
+    store.set(PENDING_APP_WORKOUT_KEY, '//evil.example');
+    authState.isAuthenticated = true;
+    render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('DeepLinkProvider — legacy OTA preview links', () => {

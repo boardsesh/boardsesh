@@ -564,6 +564,17 @@ edit with the asset uploads and briefly desync which commit the notes name
 from which shards actually landed (last writer wins); acceptable given how
 rarely two full captures for the same platform land at the same time.
 
+The content gate in ios-finalize fails a shot whose raw capture is under 40% of
+the same file's baseline size, as a likely mid-load capture. Publishing the
+baseline comes after that gate, so a deliberate screen change that makes a shot
+much smaller (a simpler story, a plainer wallpaper) blocks every upload and
+every refresh. Break it with one dispatch: `gate: full`, `upload: true`,
+`publish_baseline: true`, `content_baseline: floor-only`. Floor-only skips the
+ratio for that run only and keeps the 60 KB floor and the dimension gate;
+automatic runs always compare. Check every contact sheet of that run, because
+what it publishes becomes the reference for later runs. First used on
+2026-11-18, after #7552 moved captures to view stories.
+
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
 notes ship with the AAB from each
 `fastlane/metadata/android/<locale>/changelogs/default.txt`; Play caps each file

@@ -28,7 +28,8 @@ module TickQueue {
     //                 body): SDK transport codes (< 0), 401 after the client's
     //                 own refresh, 404/429/5xx, masked INTERNAL_SERVER_ERROR,
     //                 SERVICE_UNAVAILABLE, UNAUTHENTICATED, the code-less
-    //                 "Authentication required ..." an expired token receives,
+    //                 "Authentication required ..." an expired token receives
+    //                 (after the client's own refresh and one retry),
     //                 and any reply shape not listed above.
 
     function savedUuid(code as Lang.Number, response) {

@@ -224,7 +224,7 @@
       },
       "open": {
         "title": "Registriere deine App",
-        "body": "Melde dich als freigeschaltete Entwickler*in an, akzeptiere die Entwicklerbedingungen und leg in der Konsole eine App an. Die Client-ID bekommst du sofort, ein Client-Secret, wenn dein Server den Code eintauscht. Ist dein Konto noch nicht freigeschaltet, sagt dir das die Konsole.",
+        "body": "Melde dich an, bestätige deine Entwickler-E-Mail und akzeptiere die Bedingungen, um eine App in der Konsole anzulegen. Du erhältst eine Client-ID und, wenn dein Server den Code eintauscht, ein Client-Secret. Eine Einladung ist nicht nötig.",
         "action": "Entwickler-Konsole öffnen"
       }
     },
@@ -322,5 +322,146 @@
         "support": "Frag das Boardsesh-Team"
       }
     }
+  },
+  "emailVerification": {
+    "title": "Bestätige deine Entwickler-E-Mail",
+    "lead": "Bestätige deine E-Mail, bevor du eine App registrierst.",
+    "description": "Sende einen Bestätigungslink an {{email}}. Jede neue E-Mail ersetzt den vorherigen Link.",
+    "send": "Bestätigungs-E-Mail senden",
+    "sending": "Wird gesendet…",
+    "sent": "Schau in dein Postfach. Der Link läuft in 30 Minuten ab.",
+    "failed": "Die E-Mail konnte nicht gesendet werden. Warte eine Minute und versuche es erneut.",
+    "confirmDescription": "Bestätige nur, wenn du diese E-Mail für das angemeldete Konto angefordert hast.",
+    "signInHelp": "Melde dich in einem neuen Tab an und kehre hierher zurück. Nutze das Konto, das diese E-Mail angefordert hat.",
+    "signIn": "Anmelden",
+    "confirm": "Entwickler-E-Mail bestätigen",
+    "confirming": "Wird bestätigt…",
+    "verified": "Deine Entwickler-E-Mail ist bestätigt. Du kannst eine App registrieren.",
+    "invalid": "Dieser Link ist abgelaufen, wurde ersetzt oder gehört zu einem anderen Konto. Fordere eine neue E-Mail in der Entwicklerkonsole an.",
+    "back": "Entwickler-Apps öffnen"
+  },
+  "guides": {
+    "labels": {
+      "home": "Entwicklerübersicht",
+      "related": "Weiterlesen",
+      "markdown": "Als Markdown lesen",
+      "openapi": "OpenAPI 3.1 herunterladen",
+      "example": "Logbuch-Sync-Beispiel herunterladen",
+      "loading": "API-Referenz wird geladen…",
+      "invitation": "Die Registrierung erfolgt auf Einladung. Frag unter support@boardsesh.com nach Zugang."
+    },
+    "auth": {
+      "title": "Verbinde ein Kletterkonto mit OAuth",
+      "description": "Registriere eine App, autorisiere mit PKCE und speichere erneuerte Zugangsdaten sicher.",
+      "registration": {
+        "title": "Registriere deine App",
+        "body": "Melde dich unter /developers/apps an und bestätige deine Entwickler-E-Mail. Wähle öffentlich/nativ für Kommandozeilen-, Mobil- und Desktop-Apps; öffentlich/Web für Browser; vertraulich, wenn dein Server den Code eintauscht. Das Secret bleibt auf dem Server.\n\nRegistriere die genaue Rückleitungs-URI. Native Apps dürfen http://127.0.0.1:8765/oauth/boardsesh oder http://[::1]:8765/oauth/boardsesh nutzen; der Loopback-Port wird beim Abgleich ignoriert. https und private Schemes mit Punkt sind erlaubt. localhost, Platzhalter, Fragmente sowie Boardsesh-Hosts und -Schemes werden abgelehnt. Pro Konto sind 10 Apps mit je 10 Rückleitungen erlaubt. Standard: 25 aktive Verbindungen und 20 neue in 24 Stunden. Höhere Grenzen: support@boardsesh.com."
+      },
+      "authorize": {
+        "title": "Autorisiere im Systembrowser",
+        "body": "Die Endpoints findest du unter https://api.boardsesh.com/.well-known/oauth-authorization-server/api/auth. Der Issuer ist https://api.boardsesh.com/api/auth, die Resource genau https://api.boardsesh.com/v1. Übermittle resource bei Autorisierung, Codeaustausch und Erneuerung.\n\nErzeuge einen zufälligen PKCE-Verifier mit S256-Challenge und mindestens 128 zufällige Bits für state. Fordere logbook:read und offline_access an; profile:read nur für Name und Avatar. Öffne den Systembrowser. Prüfe state und iss vor dem Codeaustausch. Codes gelten 60 Sekunden und nur einmal. Ist der Ausgang eines Austauschs unklar, beginne die Autorisierung neu."
+      },
+      "credentials": {
+        "title": "Speichere jedes erneuerte Token vor der Verwendung",
+        "body": "Access-Tokens gelten eine Stunde, Refresh-Tokens 90 Tage. Jede Erneuerung ersetzt das Refresh-Token. Serialisiere Erneuerungen pro Konto und speichere das neue Paar dauerhaft vor der Verwendung. Die Wiederverwendung eines verbrauchten Tokens sperrt seine Familie. Nach einem Netzwerkfehler mit unklarem Ausgang neu verbinden, statt das Token erneut zu verwenden.\n\nBei 401 einmal erneuern und erneut anfragen. invalid_grant verlangt eine neue Verbindung; nutze diese Zugangsdaten nicht weiter. Behalte die registrierte Methode: none, client_secret_post oder client_secret_basic. CORS erlaubt die registrierten https-Rückleitungsursprünge. Zugangsdaten gehören nicht in Browser-Einstellungen."
+      },
+      "disconnect": {
+        "title": "Trenne die gesamte Verbindung",
+        "body": "DELETE /v1/connection braucht keinen weiteren Scope. 204 bestätigt die Trennung: Entferne Zugangsdaten und gespeichertes Logbuch, sofern keine Aufbewahrung gewünscht wurde. 401 allein bestätigt keinen früheren DELETE. Erneuere einmal und versuche es erneut; sind die Zugangsdaten unbrauchbar, verweise auf Verbundene Apps in Boardsesh. Ein einzelner OAuth-Token-Widerruf trennt nicht alle Familien. Passwortänderungen und Kontolöschung trennen Apps ebenfalls."
+      }
+    },
+    "sync": {
+      "title": "Halte das ganze Logbuch synchron",
+      "description": "Lade einen vollständigen Snapshot, speichere Änderungen und Cursor zusammen und erhole dich sicher von Ablauf.",
+      "snapshot": {
+        "title": "Erstelle zuerst eine Ersatzkopie",
+        "body": "GET /v1/logbook/changes ohne Cursor startet einen vollständigen Snapshot, auch mit alten unveränderten Einträgen und solchen von vor dieser API. Folge allen Cursorn bis hasMore: false. Die letzte Snapshot-Seite geht mit hasMore: true in die inkrementelle Aufholphase über. Auch leere Seiten können hasMore: true haben. limit reicht von 1 bis 200, Standard 100.\n\nErstelle eine getrennte Ersatzkopie. Veröffentliche sie samt endgültigem Cursor in einer dauerhaften Transaktion; behalte bis dahin die alte Kopie. Nach einem Absturz beim Erstabruf verwirf den unvollständigen Ersatz und starte ohne Cursor. Behandle Snapshot-Seiten nie als inkrementelle Änderungen an der alten Kopie."
+      },
+      "changes": {
+        "title": "Speichere jede Seite mit ihrem Cursor",
+        "body": "Mit logbook:read ersetzt oder ergänzt du tick-Einträge anhand tick.id und entfernst tick.deleted anhand id, auch unbekannte Einträge. Verarbeite sie in Reihenfolge und ignoriere unbekannte Änderungstypen. Speichere Änderungen und Cursor atomar und serialisiere die Synchronisierung pro Konto.\n\nEin Eintrag enthält Versuche, Grad, Sterne und Kommentar. Kataloggrade können sich ohne neue Logbuchänderung ändern. Eine leere inkrementelle Seite bedeutet keine Löschung. GET /v1/me liefert eine für deine App stabile ID, die in anderen Apps anders ist. Trenne Kopien nach App und Konto."
+      },
+      "recovery": {
+        "title": "Erhole dich von 410, ohne die alte Kopie zu verlieren",
+        "body": "410 cursor_expired verlangt einen vollständigen Ersatz, nicht nur einen zurückgesetzten Cursor. Speichere vor der nächsten Anfrage dauerhaft, dass ein vollständiger Abruf nötig ist. Snapshot-Cursor gelten eine Stunde und gehören zu einer Verbindung. Inkrementelle Aufbewahrung richtet sich nach dem Bereinigungsstand; verwerfe Cursor nicht allein wegen ihres Alters.\n\nDas Beispiel speichert Zugangsdaten, Einträge, Cursor und Status in einer privaten JSON-Datei. Jeder Befehl hält eine Dateisperre, ersetzt per atomarem Umbenennen, serialisiert Erneuerungen und wiederholt Netzwerkfehler, 429 und 5xx mit wachsender Wartezeit. Prüfe nach einem Absturz, dass der Befehl beendet ist, bevor du seine .lock-Datei entfernst."
+      },
+      "poll": {
+        "title": "Synchronisiere bei Bedarf",
+        "body": "Synchronisiere beim Öffnen deiner App. Im Hintergrund höchstens alle 15 Minuten pro Konto. Beachte Retry-After bei 429 und vorübergehenden 503-Antworten. Optionale logbook.changed-Webhooks fordern denselben Sync an; sie ersetzen den Feed nicht.\n\nPrivate Einträge bleiben privat. Auf einer fremden nicht öffentlichen Spraywall werden Bouldername und Spraywall-Identität verborgen. Erstelle aus dem Logbuch keinen Katalog und veröffentliche keine Entwürfe oder ungelisteten Boulder anderer Routenbauer*innen."
+      }
+    },
+    "errors": {
+      "title": "Behandle API-Fehler und Grenzen",
+      "description": "Erkenne, wann du erneuern, das Logbuch neu laden, warten oder neu verbinden musst.",
+      "status": {
+        "title": "Prüfe zuerst den HTTP-Status",
+        "body": "400 steht für eine ungültige Anfrage oder einen Cursor. Bei 401 invalid_token einmal erneuern; invalid_grant beim Erneuern verlangt eine neue Verbindung. 403 insufficient_scope erfordert diesen Scope. 404 verbirgt fremde Ressourcen. 409 bedeutet Konflikt, etwa wiederverwendetes externalRef oder Abbruch eines gestarteten Trainings. 410 cursor_expired verlangt einen kompletten Sync. 413 bedeutet mehr als 64 KB; 422 ungültige Felder oder widersprüchliche Idempotenz.\n\nWiederhole 429 und 5xx mit Retry-After und begrenzter exponentieller Wartezeit. Netzwerkfehler beweisen keinen Widerruf. Toleriere neue Codes und Felder in v1. Fehler enthalten error, message und requestId, optional field. OAuth nutzt error und error_description."
+      },
+      "limits": {
+        "title": "Lies die Antwort-Header",
+        "body": "Die API erlaubt 120 Anfragen pro Minute je App/Konto und 6.000 je App. Erneuerung: 10 pro Minute je Verbindung. Codeaustausch und Widerruf: 60 pro Minute je App/IP. Neue Apps erlauben 25 aktive und 20 neue Verbindungen in 24 Stunden. Globale Admins können die Grenzen ändern.\n\nRateLimit-Limit, RateLimit-Remaining und RateLimit-Reset beschreiben die strengste Grenze. Retry-After nennt die Wartezeit in Sekunden. Boardsesh-Request-Id hilft dem Support, die Anfrage zu finden. Teile niemals Tokens, Codes oder Secrets mit dem Support."
+      },
+      "versions": {
+        "title": "Rechne mit Ergänzungen",
+        "body": "v1 kann Felder, Routen, Scopes, Ereignisse und Enum-Werte ergänzen. Ignoriere Unbekanntes. Entfernen oder Umbenennen erfordert v2; v1 läuft mit Sunset-Header mindestens sechs Monate weiter. Jede Vertragsänderung steht im Änderungsprotokoll.\n\nGeneriere einen Client oder simuliere die API mit OpenAPI 3.1. Die Simulation zeigt Formate, keine OAuth-Sicherheit und keine echten Cursor. Teste Autorisierung und Sync vor Veröffentlichung mit deinem Konto."
+      }
+    },
+    "reference": {
+      "title": "Boardsesh-API-Referenz für Apps",
+      "description": "Erkunde die REST-API mit Scopes und lade ihren OpenAPI-3.1-Vertrag herunter.",
+      "contract": {
+        "title": "Nutze den veröffentlichten Vertrag",
+        "body": "Der Host ist https://api.boardsesh.com. /v1 verwendet ein undurchsichtiges Bearer-Token für die Resource https://api.boardsesh.com/v1. OAuth-Endpoints und Metadaten sind vom REST-Vertrag getrennt. Diese Referenz verwendet dasselbe versionierte OpenAPI-Dokument wie das Backend.\n\nGeneriere einen Client oder starte die Prism-Simulation. Beispiele dienen der Veranschaulichung. Die Simulation autorisiert keine App, erneuert keine Tokens, pflegt keine Snapshots und prüft keine Eigentümerschaft. Teste diese Abläufe mit deinem Konto."
+      }
+    },
+    "changelog": {
+      "title": "Boardsesh-API-Änderungsprotokoll",
+      "description": "Lies die Vertragsänderungen, neueste zuerst.",
+      "contract": {
+        "title": "Vertragsänderungen",
+        "body": "Die Einträge stammen aus demselben versionierten Änderungsprotokoll, das CI mit dem generierten OpenAPI-Dokument abgleicht. Neue Felder und Routen bleiben in v1; Entfernen und Umbenennen braucht eine neue Hauptversion. Prüfe diese Seite bei Client-Updates."
+      }
+    }
+  },
+  "webhooks": {
+    "open": "Webhooks",
+    "title": "Webhooks für {{app}}",
+    "description": "Erhalte eine Nachricht bei Logbuchänderungen, abgeschlossenen Trainings und getrennten Verbindungen. Nachrichten enthalten keine Kletterdaten.",
+    "loading": "Webhook-Einstellungen werden geladen…",
+    "failed": "Webhook-Einstellungen konnten nicht geladen oder gespeichert werden. Versuche es erneut.",
+    "retry": "Erneut versuchen",
+    "url": "HTTPS-Ziel-URL",
+    "urlHelp": "Öffentliches HTTPS auf Port 443. Private Adressen und Weiterleitungen werden abgelehnt.",
+    "events": "Benachrichtigungsereignisse",
+    "enabled": "Zustellungen aktivieren",
+    "save": "Webhook speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "Webhook gespeichert.",
+    "testQueued": "Testzustellung eingeplant. Aktualisiere die Liste, um das Ergebnis zu sehen.",
+    "secretOnce": "Kopiere dieses Secret jetzt. Es wird nicht erneut angezeigt.",
+    "secret": "Webhook-Signatur-Secret",
+    "rotationHelp": "Nach dem Wechsel tragen Anfragen 24 Stunden lang beide Signaturen. Aktualisiere deinen Empfänger vor Ablauf des alten Secrets.",
+    "rotate": "Signatur-Secret wechseln",
+    "test": "Test zustellen",
+    "disable": "Zustellungen deaktivieren",
+    "enable": "Zustellungen wieder aktivieren",
+    "deliveries": "Letzte Zustellungen",
+    "refresh": "Zustellungen aktualisieren",
+    "noDeliveries": "Noch keine Zustellungen.",
+    "delivery": "{{event}} · {{status}} · {{attempts}} Versuche · HTTP {{code}}",
+    "noResponse": "keine Antwort",
+    "close": "Schließen",
+    "endpointGone": "Dieses Ziel antwortete mit HTTP 410. Korrigiere es und aktiviere die Zustellungen erneut.",
+    "failuresDisabled": "Zustellungen wurden nach wiederholten Fehlern deaktiviert. Korrigiere das Ziel und aktiviere sie erneut.",
+    "reauthBody": "Einstellungen oder Secret zu ändern erfordert eine Anmeldung innerhalb der letzten {{minutes}} Minuten. Melde dich erneut an, um das Nachrichtenziel zu schützen.",
+    "reauthForm": "Eine neue Anmeldung verlässt diese Seite und verwirft ungespeicherte Änderungen. Kopiere vorher deine Ziel-URL.",
+    "deliveryStatus": {
+      "delivered": "Zugestellt",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
+      "retrying": "Wird wiederholt",
+      "pending": "Ausstehend"
+    },
+    "rotationAvailableAfter": "Du kannst das Geheimnis nach {{time}} erneut wechseln."
   }
 }

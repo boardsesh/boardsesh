@@ -26,6 +26,7 @@ import { beginBrowserIntent, commitBrowserLogin, createUnpublishedBrowserBinding
 import { createProviderSecurityIntent, type ProviderSecurityRuntime } from '../provider-security-intents';
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { providerTokenHash } from '../provider-security-context';
+import { sessionTokenDigest } from '../session-token';
 
 const phase = vi.hoisted(() => ({ afterCompare: undefined as (() => Promise<void>) | undefined }));
 vi.mock('bcryptjs', async (original) => {
@@ -101,7 +102,7 @@ async function actorFixture(selected: IdentityAuthorityName, kind: ProviderSecur
     await environment.database.insert(authSession).values({
       id: sid,
       userId,
-      token: raw,
+      token: sessionTokenDigest(raw),
       expiresAt,
       updatedAt: new Date(),
       originalAuthenticatedAt: authenticatedAt,
@@ -212,7 +213,7 @@ describe('operation-bound selected-authority actual password reauthentication', 
         ).toHaveLength(0);
         if (kind === 'canonical-token') {
           const [session] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
-          expect(session.token).toBe(owner.actor.credential);
+          expect(session.token).toBe(sessionTokenDigest(owner.actor.credential));
           expect(session.originalAuthenticatedAt).toEqual(owner.authenticatedAt);
           expect(session.expiresAt).toEqual(owner.sourceExpiresAt);
         }

@@ -43,7 +43,7 @@ function findRow(input: DeveloperModelInput, key: string): MoreRow {
 
 describe('buildDeveloperModel', () => {
   it('always gives the dev tools the server-unreachable switch, so the section is never empty', () => {
-    expect(layout(makeInput())).toEqual([['development', ['forceServerUnreachable']]]);
+    expect(layout(makeInput())).toEqual([['development', ['boardMotionLab', 'forceServerUnreachable']]]);
   });
 
   it('lists every tool that applies, in the order they always had', () => {
@@ -64,6 +64,7 @@ describe('buildDeveloperModel', () => {
           'offlineWrites',
           'qaPick',
           'outlineEditor',
+          'boardMotionLab',
           'sentryDiagnostics',
           'forceServerUnreachable',
         ],

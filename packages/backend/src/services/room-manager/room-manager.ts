@@ -66,7 +66,6 @@ import {
 } from './session-liveness';
 
 const INACTIVITY_THRESHOLD_MS = 60 * 60 * 1000;
-const INACTIVITY_SWEEP_INTERVAL_MS = 60 * 1000;
 
 class RoomManager {
   private clients = new Map<string, ConnectedClient>();
@@ -94,7 +93,6 @@ class RoomManager {
   private readonly SESSION_GRACE_PERIOD_MS = 60_000;
   private pendingJoinPersists = new Map<string, Promise<void>>();
   private writeScheduler = new WriteScheduler();
-  private inactivitySweepInterval: NodeJS.Timeout | null = null;
 
   /**
    * Build the plumbing object passed to the room-manager/* free functions
@@ -150,11 +148,6 @@ class RoomManager {
     // Clear pending join persist promises
     this.pendingJoinPersists.clear();
 
-    if (this.inactivitySweepInterval) {
-      clearInterval(this.inactivitySweepInterval);
-      this.inactivitySweepInterval = null;
-    }
-
     // Reset the distributed state singleton so initialize() creates a fresh one
     forceResetDistributedState();
   }
@@ -175,17 +168,7 @@ class RoomManager {
       logger.info('[RoomManager] Redis not available - using Postgres only mode (single instance)');
     }
 
-    if (!this.inactivitySweepInterval) {
-      this.inactivitySweepInterval = setInterval(() => {
-        this.runInactivitySweep().catch((err) => {
-          logger.error('[RoomManager] Inactivity sweep failed:', err);
-        });
-      }, INACTIVITY_SWEEP_INTERVAL_MS);
-      this.inactivitySweepInterval.unref();
-      logger.info(
-        `[RoomManager] Inactivity sweep enabled (threshold ${INACTIVITY_THRESHOLD_MS / 60000}m, interval ${INACTIVITY_SWEEP_INTERVAL_MS / 60000}m)`,
-      );
-    }
+    // Inactivity is scheduled once per cluster by app-workout-maintenance.
   }
 
   /**
@@ -198,11 +181,8 @@ class RoomManager {
    * instance leak `endSession` guards against, just reached via the
    * inactivity path instead of an explicit end).
    *
-   * Extracted from the `setInterval` callback in `initialize()` so tests can
-   * drive a single sweep tick directly instead of waiting on the real
-   * interval. Rethrows on failure: the interval callback catches and logs so
-   * a bad tick never kills the timer, while direct callers (tests) see the
-   * error.
+   * The backend-affine pg-boss job and tests call the same bounded sweep.
+   * Errors propagate so the durable job can retry.
    */
   async runInactivitySweep(): Promise<void> {
     const endedIds = await endStaleInactiveSessions(INACTIVITY_THRESHOLD_MS);
@@ -237,10 +217,6 @@ class RoomManager {
       for (const participant of participants.values()) {
         if (participant.reconnectTimer) clearTimeout(participant.reconnectTimer);
       }
-    }
-    if (this.inactivitySweepInterval) {
-      clearInterval(this.inactivitySweepInterval);
-      this.inactivitySweepInterval = null;
     }
     await shutdownDistributedState();
     logger.info('[RoomManager] Shutdown complete');

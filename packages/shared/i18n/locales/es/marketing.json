@@ -873,7 +873,7 @@
     "tabs": {
       "overview": "Resumen",
       "rest": "API REST",
-      "graphql": "Esquema GraphQL",
+      "graphql": "Esquema GraphQL interno",
       "websocket": "Guía de WebSocket"
     },
     "overview": {
@@ -891,7 +891,7 @@
         "baseUrlLabel": "URL base:"
       },
       "ws": {
-        "title": "API GraphQL por WebSocket",
+        "title": "API GraphQL interna por WebSocket",
         "intro": "Usa la API por WebSocket para funciones en tiempo real, como sesiones de fiesta y sincronización de la cola. La API GraphQL ofrece:",
         "feature1": "Actualizaciones de la cola en tiempo real mediante suscripciones",
         "feature2": "Gestión de sesiones (crear, unirse, salir)",

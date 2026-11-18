@@ -11,6 +11,7 @@ import {
 import { createEnvironment } from './environment';
 import { replaceCanonicalAfterSecurityMutation } from '../security-session';
 import { readFirstPartySession } from '../session-reader';
+import { sessionTokenDigest } from '../session-token';
 
 describe('post-mutation canonical replacement and event constraints', () => {
   let environment: Awaited<ReturnType<typeof createEnvironment>>;
@@ -27,7 +28,7 @@ describe('post-mutation canonical replacement and event constraints', () => {
     await environment.database.insert(users).values({ id: userId, email: `replace-${userId}@example.com` });
     await environment.database.insert(authSession).values({
       id: authSessionId,
-      token: oldToken,
+      token: sessionTokenDigest(oldToken),
       userId,
       expiresAt,
       createdAt: age,
@@ -66,6 +67,8 @@ describe('post-mutation canonical replacement and event constraints', () => {
     expect(replacement?.token).not.toBe(oldToken);
     const [canonical] = await environment.database.select().from(authSession).where(eq(authSession.id, authSessionId));
     expect(canonical.revocationGeneration).toBe(1);
+    // The row holds the new token's digest, never the token.
+    expect(canonical.token).toBe(sessionTokenDigest(replacement!.token));
     expect(canonical.createdAt.getTime()).toBe(age.getTime());
     expect(canonical.originalAuthenticatedAt?.getTime()).toBe(age.getTime());
     expect(canonical.expiresAt.getTime()).toBe(expiresAt.getTime());

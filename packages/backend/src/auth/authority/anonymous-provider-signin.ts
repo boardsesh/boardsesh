@@ -37,6 +37,7 @@ import { providerDatabaseNow, providerTokenHash, ProviderSecurityRefusal } from 
 import { providerCredentialHash } from './provider-security-result';
 import { googleReauthenticationDeadline } from './provider-security-policy';
 import { verifyProviderGoogleAuthenticationAssertion } from './provider-google-reauthentication';
+import { sessionTokenDigest } from './session-token';
 
 type Payload<Operation extends AnonymousProviderOperation> = Extract<
   AnonymousProviderCommand,
@@ -501,7 +502,7 @@ export async function finalizeAnonymousProviderSignin(
       await transaction.insert(authSession).values({
         id: preparation.credentialProof.authSessionId,
         userId: preparation.credentialProof.userId,
-        token: input.candidate.credential,
+        token: sessionTokenDigest(input.candidate.credential),
         expiresAt: new Date(preparation.credentialExpiresAt),
         updatedAt: now,
         revocationGeneration: preparation.credentialProof.generation,

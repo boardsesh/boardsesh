@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test'
 vi.mock('server-only', () => ({}));
 import {
   issueNativeOAuthTransferToken,
+  nativeOAuthTransferSpentMarker,
   verifyNativeOAuthTransferToken,
   issueNativeOAuthAttempt,
   verifyNativeOAuthAttempt,
@@ -170,6 +171,63 @@ describe('native OAuth transfer token', () => {
   it('rejects tokens with extra segments', () => {
     const token = issueNativeOAuthTransferToken({ userId: 'user_123', nextPath: '/' });
     expect(verifyNativeOAuthTransferToken(`${token}.extra`)).toBeNull();
+  });
+
+  it.each([
+    ['one trailing NUL', (signature: string) => `${signature}\u0000`],
+    ['two trailing NULs', (signature: string) => `${signature}\u0000\u0000`],
+    ['base64 padding', (signature: string) => `${signature}=`],
+    ['a trailing space', (signature: string) => `${signature} `],
+    ['a trailing newline', (signature: string) => `${signature}\n`],
+    ['the standard base64 alphabet', (signature: string) => Buffer.from(signature, 'base64url').toString('base64')],
+  ])('refuses a signature respelled with %s', (_label, respell) => {
+    const token = issueNativeOAuthTransferToken({ userId: 'user_123', nextPath: '/' });
+    const [payload, signature] = token.split('.');
+    const respelled = `${payload}.${respell(signature)}`;
+    expect(respelled).not.toBe(token);
+    expect(verifyNativeOAuthTransferToken(respelled)).toBeNull();
+    expect(nativeOAuthTransferSpentMarker(respelled)).toBeNull();
+  });
+
+  it('refuses a payload segment that is not unpadded base64url', () => {
+    const token = issueNativeOAuthTransferToken({ userId: 'user_123', nextPath: '/' });
+    const [payload] = token.split('.');
+    for (const respelledPayload of [`${payload}=`, ` ${payload}`, `${payload}\u0000`]) {
+      const signature = createHmac('sha256', 'test-nextauth-secret').update(respelledPayload).digest('base64url');
+      expect(verifyNativeOAuthTransferToken(`${respelledPayload}.${signature}`)).toBeNull();
+    }
+  });
+
+  it('refuses a signed token whose lifetime exceeds the issuer cap', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const sign = (claims: Record<string, unknown>) => {
+      const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+      return `${payload}.${createHmac('sha256', 'test-nextauth-secret').update(payload).digest('base64url')}`;
+    };
+    expect(verifyNativeOAuthTransferToken(sign({ userId: 'u', nextPath: '/', iat: now, exp: now + 125 }))).toEqual({
+      generation: 0,
+      userId: 'u',
+      nextPath: '/',
+    });
+    expect(verifyNativeOAuthTransferToken(sign({ userId: 'u', nextPath: '/', iat: now, exp: now + 126 }))).toBeNull();
+    expect(verifyNativeOAuthTransferToken(sign({ userId: 'u', nextPath: '/', iat: now, exp: now }))).toBeNull();
+  });
+
+  it('derives one spent marker per token, expiring after the token can no longer verify', () => {
+    const token = issueNativeOAuthTransferToken({ userId: 'user_123', nextPath: '/' });
+    const marker = nativeOAuthTransferSpentMarker(token);
+    expect(marker).not.toBeNull();
+    expect(nativeOAuthTransferSpentMarker(token)).toEqual(marker);
+    // The backend's expired replay-record cleanup deletes every row under this prefix.
+    expect(marker?.identifier).toBe(`ba03-web-auth:${marker?.token}`);
+    expect(marker?.token).toMatch(/^[0-9a-f]{64}$/);
+    // 120 s life + 5 s skew + 5 min margin.
+    expect(marker?.expires.toISOString()).toBe('2026-04-03T12:07:05.000Z');
+
+    vi.setSystemTime(new Date('2026-04-03T12:00:01Z'));
+    const next = issueNativeOAuthTransferToken({ userId: 'user_123', nextPath: '/' });
+    expect(nativeOAuthTransferSpentMarker(next)?.token).not.toBe(marker?.token);
+    expect(nativeOAuthTransferSpentMarker(`${token}x`)).toBeNull();
   });
 
   it('rejects tokens with empty segments', () => {

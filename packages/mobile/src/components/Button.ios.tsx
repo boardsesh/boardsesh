@@ -6,7 +6,8 @@
 //                  and EVERY iOS version — the brand CTA never goes translucent, so
 //                  it can't wash out over board art or in near-black dark mode, and
 //                  it never touches the iOS-26 `#available` glass gate.
-//   outlined/    → glass-as-guest: a neutral Liquid Glass capsule on an opaque
+//   outlined/    → glass-as-guest: a neutral Liquid Glass capsule, label-coloured
+//                  text (never violet, #7695), on an opaque
 //   tonal          surface on iOS 26 (`buttonStyle('glass')`); an EXPLICIT
 //                  `bordered` fallback on iOS < 26 (we branch on
 //                  `useGlassCapability()` rather than trusting @expo/ui's implicit
@@ -82,7 +83,7 @@ export function Button({
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, radii, colorScheme } = useTheme();
+  const { brandColors, radii, colorScheme, systemColors } = useTheme();
   const boldText = useBoldText();
   const supportsGlass = useGlassCapability();
   const surfaceFromContext = useButtonSurface();
@@ -119,11 +120,14 @@ export function Button({
     fillTint = overlays.scrim;
     contentColor = overlays.onScrim;
   } else if (supportsGlass && effectiveOver !== 'glass') {
-    fillTint = undefined; // neutral glass; the brand reads via the label colour
-    contentColor = accentColor;
+    // Neutral glass with a neutral label (#7695): violet stays for links,
+    // status and selection, so the secondary button never reads as a link.
+    fillTint = undefined;
+    contentColor = tintColor ?? (systemColors.label as string);
   } else {
-    fillTint = accentColor;
-    contentColor = accentColor;
+    // `bordered`, tinted with the label colour: a neutral capsule, as on glass.
+    fillTint = tintColor ?? (systemColors.label as string);
+    contentColor = tintColor ?? (systemColors.label as string);
   }
 
   // Which axes the caller sized for us: a positive `flex`/`width: '100%'` across,

@@ -35,6 +35,7 @@ import { readLockedWebSubjectState } from '../../current-store/web-credential-st
 import { readBrowserBinding } from '../browser-binding';
 import * as browserAuthority from '../browser-binding';
 import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
+import { sessionTokenDigest } from '../session-token';
 
 // These writers run with the mirror on and no backend boot (function-level mirror).
 recordFunctionLevelIdentityMirrorForTests();
@@ -142,7 +143,7 @@ describe('buffered provider mutation selected-authority finalize transaction', (
         await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, owner.userId)),
       ).toHaveLength(0);
       const [session] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
-      expect(session.token).toBe(owner.actor.credential);
+      expect(session.token).toBe(sessionTokenDigest(owner.actor.credential));
       expect(session.revocationGeneration).toBe(0);
       const [connection] = await environment.database
         .select()
@@ -413,7 +414,7 @@ describe('buffered provider mutation selected-authority finalize transaction', (
         await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, owner.userId)),
       ).toHaveLength(0);
       const [session] = await environment.database.select().from(authSession).where(eq(authSession.id, owner.sid));
-      expect(session.token).toBe(owner.actor.credential);
+      expect(session.token).toBe(sessionTokenDigest(owner.actor.credential));
       const [connection] = await environment.database
         .select()
         .from(oauthConnections)

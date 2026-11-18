@@ -13,7 +13,7 @@ import { compare } from 'bcryptjs';
 import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
 import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
-import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
+import { nativeOAuthTransferSpentMarker, verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
@@ -133,6 +133,21 @@ providers.push(
       const users = await db.select().from(schema.users).where(eq(schema.users.id, decoded.userId)).limit(1);
 
       if (users.length === 0) {
+        return null;
+      }
+
+      // A transfer token signs in once. The insert is the claim: a second use
+      // meets the row the first one wrote and is refused.
+      const spentMarker = nativeOAuthTransferSpentMarker(credentials.transferToken);
+      if (!spentMarker) {
+        return null;
+      }
+      const claimed = await db
+        .insert(schema.verificationTokens)
+        .values(spentMarker)
+        .onConflictDoNothing()
+        .returning({ token: schema.verificationTokens.token });
+      if (claimed.length !== 1) {
         return null;
       }
 

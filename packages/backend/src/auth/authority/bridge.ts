@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { authCredentialLineage, authSession, authSessionDenials } from '@boardsesh/db/schema/auth';
 import { requireHumanSubjectForIssuance, AuthSubjectDeniedError } from '../human-admission';
@@ -6,6 +5,7 @@ import { decideCredential } from '../credential-cutoffs';
 import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 import { requireReadCommitted } from '../current-store/foundation-context';
 import type { AuthorityDatabase } from './adapter';
+import { newSessionToken } from './session-token';
 
 export type LegacyBridgeMode = 'off' | 'shadow' | 'on';
 export function legacyBridgeMode(environment: Readonly<Record<string, string | undefined>>): LegacyBridgeMode {
@@ -16,7 +16,17 @@ export function legacyBridgeMode(environment: Readonly<Record<string, string | u
 }
 export type LegacyBridgeResult =
   | { status: 'off' | 'shadow' | 'denied' | 'unavailable' }
-  | { status: 'bridged'; session: typeof authSession.$inferSelect };
+  | {
+      status: 'bridged';
+      session: typeof authSession.$inferSelect;
+      /**
+       * The raw session token, only from the call that created the row: the row
+       * stores its digest, so a later bridge of the same login cannot hand it out
+       * again and answers null. B2 decides what a browser that lost the first
+       * reply does (#7596).
+       */
+      token: string | null;
+    };
 
 /** Verify first, then gate → user → cutoff → session → lineage. No route is mounted. */
 export async function bridgeLegacyCredential(
@@ -70,13 +80,14 @@ export async function bridgeLegacyCredential(
       if (mode === 'shadow') return { status: 'shadow' };
       // A missing lineage is not a denial. Preserve signed expiry and unknown
       // age; never substitute now or the current generation into the proof.
+      const issued = newSessionToken();
       const [session] = existing
         ? [existing]
         : await transaction
             .insert(authSession)
             .values({
               id: sessionId,
-              token: randomBytes(32).toString('base64url'),
+              token: issued.stored,
               userId: proof.userId,
               expiresAt: proof.expiresAt,
               createdAt: (proof.linkGuarded ? proof.originalAuthenticatedAt : null) ?? new Date(0),
@@ -104,7 +115,7 @@ export async function bridgeLegacyCredential(
           originalAuthenticatedAt: proof.originalAuthenticatedAt,
           originalExpiresAt: proof.expiresAt,
         });
-      return { status: 'bridged', session };
+      return { status: 'bridged', session, token: existing ? null : issued.token };
     });
   } catch (error) {
     return { status: error instanceof AuthSubjectDeniedError ? 'denied' : 'unavailable' };

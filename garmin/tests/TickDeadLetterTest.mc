@@ -148,13 +148,14 @@ function testSecondSameReasonRefusalInOneDrainStopsAndKeepsTheTick(logger as Tes
 
 (:test)
 function testTransportAndAuthFailuresDeadLetterNothingAndKeepOrder(logger as Test.Logger) as Lang.Boolean {
+    // [status, body, whether the client refreshes before the drain hears it]
     var failures = [
-        [-104, null],
-        [-2, null],
-        [401, null],
-        [200, graphqlError(null, "Authentication required to perform this operation")],
-        [503, graphqlError("INTERNAL_SERVER_ERROR", "Something went wrong on our end. Please try again.")],
-        [429, null]
+        [-104, null, false],
+        [-2, null, false],
+        [401, null, true],
+        [200, graphqlError(null, "Authentication required to perform this operation"), true],
+        [503, graphqlError("INTERNAL_SERVER_ERROR", "Something went wrong on our end. Please try again."), false],
+        [429, null, false]
     ];
     for (var index = 0; index < failures.size(); index += 1) {
         var context = installAuthFixture("owner-a", 2100 + index * 10);
@@ -165,9 +166,12 @@ function testTransportAndAuthFailuresDeadLetterNothingAndKeepOrder(logger as Tes
         var observer = new FlushCompletionObserver();
         new TickFlusher(client).start(observer.method(:done));
         client.sent[0]["callback"].invoke(failures[index][0], failures[index][1]);
-        // A 401 asks the client to refresh first; the drain has not settled.
-        if (failures[index][0] == 401) {
+        // A 401, or the 200 auth error an expired token gets, asks the client
+        // to refresh first; the drain has not settled.
+        if (failures[index][2] == true) {
             Test.assertEqual(observer.calls, 0);
+            Test.assertEqual(client.sent.size(), 2);
+            Test.assertEqual(client.sent[1]["params"]["refreshToken"], "refresh");
         } else {
             Test.assertEqual(observer.calls, 1);
             Test.assertEqual(client.sent.size(), 1);
@@ -177,6 +181,71 @@ function testTransportAndAuthFailuresDeadLetterNothingAndKeepOrder(logger as Tes
         Test.assertEqual(TickQueue.all()[0]["uuid"], "front");
         Test.assertEqual(TickQueue.all()[1]["uuid"], "back");
     }
+    return true;
+}
+
+(:test)
+function testExpiredTokenDrainRefreshesAndSendsEachTickOnce(logger as Test.Logger) as Lang.Boolean {
+    var context = installAuthFixture("owner-a", 2170);
+    resetTickStores();
+    TickQueue.enqueue({ "uuid" => "expired" }, context);
+    TickQueue.enqueue({ "uuid" => "behind" }, context);
+    var client = new CapturedBsClient();
+    var observer = new FlushCompletionObserver();
+    new TickFlusher(client).start(observer.method(:done));
+    client.sent[0]["callback"].invoke(200, graphqlError(null, "Authentication required to perform this operation"));
+    Test.assertEqual(observer.calls, 0);
+    Test.assertEqual(client.sent[1]["params"]["refreshToken"], "refresh");
+    var rotated = authResponse("owner-a");
+    rotated["jwt"] = "rotated-access";
+    client.sent[1]["callback"].invoke(200, rotated);
+    // The same tick, same UUID, once more with the new token.
+    Test.assertEqual(client.sent.size(), 3);
+    Test.assertEqual(client.sent[2]["token"], "rotated-access");
+    Test.assertEqual(client.sent[2]["params"]["variables"]["input"]["uuid"], "expired");
+    client.sent[2]["callback"].invoke(200, savedReply("expired"));
+    Test.assertEqual(client.sent[3]["params"]["variables"]["input"]["uuid"], "behind");
+    client.sent[3]["callback"].invoke(200, savedReply("behind"));
+    Test.assertEqual(client.sent.size(), 4);
+    Test.assertEqual(TickQueue.size(), 0);
+    Test.assertEqual(rejectedEntries().size(), 0);
+    Test.assertEqual(observer.calls, 1);
+    return true;
+}
+
+// GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION: a refresh the server rejects signs
+// the watch out but keeps every queued tick, and a same-account re-pair
+// sends them.
+(:test)
+function testRejectedRefreshAfterTickAuthErrorKeepsTheQueueForRepair(logger as Test.Logger) as Lang.Boolean {
+    var context = installAuthFixture("owner-a", 2180);
+    resetTickStores();
+    TickQueue.enqueue({ "uuid" => "kept-1" }, context);
+    TickQueue.enqueue({ "uuid" => "kept-2" }, context);
+    var client = new CapturedBsClient();
+    var observer = new FlushCompletionObserver();
+    new TickFlusher(client).start(observer.method(:done));
+    client.sent[0]["callback"].invoke(200, graphqlError(null, "Authentication required to perform this operation"));
+    client.sent[1]["callback"].invoke(401, { "error" => "Invalid refresh token" });
+    Test.assertEqual(client.lost, 1);
+    Test.assertEqual(TokenStore.hasTokens(), false);
+    Test.assertEqual(observer.calls, 1);
+    Test.assertEqual(client.sent.size(), 2);
+    Test.assertEqual(rejectedEntries().size(), 0);
+    var kept = OwnedTickOutbox.forOwner(TickQueue.loadEnvelope(), "owner-a");
+    Test.assertEqual(kept.size(), 2);
+    Test.assertEqual(kept[0]["uuid"], "kept-1");
+    Test.assertEqual(kept[1]["uuid"], "kept-2");
+
+    installAuthFixture("owner-a", 2190);
+    client = new CapturedBsClient();
+    observer = new FlushCompletionObserver();
+    new TickFlusher(client).start(observer.method(:done));
+    Test.assertEqual(client.sent[0]["params"]["variables"]["input"]["uuid"], "kept-1");
+    client.sent[0]["callback"].invoke(200, savedReply("kept-1"));
+    client.sent[1]["callback"].invoke(200, savedReply("kept-2"));
+    Test.assertEqual(TickQueue.size(), 0);
+    Test.assertEqual(observer.calls, 1);
     return true;
 }
 
