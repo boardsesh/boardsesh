@@ -159,21 +159,39 @@ const WEBKIT_INTERNAL_ERROR = /WebKit encountered an internal error/;
 /**
  * One named infrastructure retry (harness-retries.ts): WebKit failing a
  * navigation with "internal error", a failure of its network stack through the
- * proxy, not an answer from the app. The navigation is tried once more, and
- * the setup process counts it; the run fails when there were more than two.
+ * proxy, not an answer from the app. That covers the navigation's own
+ * document and the scripts it loads: when one of those fails that way the page
+ * never runs (a blank app tab), so the navigation is tried once more. Every
+ * failed request is logged with its URL, so a failure outside that class is
+ * still visible in the run log. The setup process counts each retry; the run
+ * fails when there were more than two.
  */
 function retryWebKitInternalError(page: Page, stack: BrowserSessionStack): void {
+  let failedLoads: string[] = [];
+  page.on('requestfailed', (request) => {
+    const failure = request.failure()?.errorText ?? 'no detail';
+    console.info(`[webkit] request failed: ${request.method()} ${request.url().slice(0, 200)} (${failure})`);
+    if (WEBKIT_INTERNAL_ERROR.test(failure) && ['document', 'script'].includes(request.resourceType()))
+      failedLoads.push(request.url());
+  });
   const retried =
     <Result>(navigate: () => Promise<Result>) =>
     async (): Promise<Result> => {
+      failedLoads = [];
+      let result: Result;
       try {
-        return await navigate();
+        result = await navigate();
       } catch (error) {
         if (!(error instanceof Error) || !WEBKIT_INTERNAL_ERROR.test(error.message)) throw error;
         console.info(`[harness-retry] webkit-internal-error on ${page.url()}`);
         await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
         return navigate();
       }
+      if (failedLoads.length === 0) return result;
+      console.info(`[harness-retry] webkit-internal-error loading ${failedLoads[0]?.slice(0, 200)}`);
+      await control(stack, '/harness-retry', { method: 'POST', body: '{}' });
+      failedLoads = [];
+      return navigate();
     };
   const goto = page.goto.bind(page);
   const reload = page.reload.bind(page);
