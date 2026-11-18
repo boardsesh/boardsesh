@@ -103,3 +103,41 @@ describe('assignWorkoutTicks agrees with deriveWorkoutStages', () => {
     expect(disagreements.slice(0, 5)).toEqual([]);
   });
 });
+
+describe('a partner app’s 4x4 rounds', () => {
+  it('holds one go per item in both, with the round rule stored and no reps per set', () => {
+    const plan: SessionWorkoutPlan = {
+      version: 1,
+      stages: [
+        {
+          id: 'rounds',
+          kind: 'fourByFour',
+          pacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'round' },
+          items: ['a', 'b', 'c', 'a', 'b', 'c', 'a', 'b', 'c'].map((climbUuid, position) => ({
+            queueItemUuid: `q${position}`,
+            climbUuid,
+            angle: 40,
+          })),
+        },
+      ],
+    };
+    for (const tickClimbs of sequences(['a', 'b', 'c'], 0, 6)) {
+      const ticks = ticksOf(tickClimbs);
+      const derived = deriveWorkoutStages(plan, [], ticks);
+      const assigned = assignWorkoutTicks(ticks, {
+        userId: 'owner',
+        stages: derived.stages.map((stage) => ({
+          repsPerSet: stage.repsPerSet,
+          climbs: stage.climbs.map(({ climbUuid, angle, reps }) => ({ climbUuid, angle, reps })),
+        })),
+      });
+      const derivedUuids = derived.stages[0].climbs.map((climb) => climb.tickUuids);
+      expect(assigned.byClimb[0].map((climbTicks) => climbTicks.map((tick) => tick.uuid))).toEqual(derivedUuids);
+      // No climb ticked more often than it has rounds: every round's item holds at most one go.
+      const roundsEnough = ['a', 'b', 'c'].every(
+        (climb) => tickClimbs.filter((letter) => letter === climb).length <= 3,
+      );
+      if (roundsEnough) expect(derivedUuids.every((tickUuids) => tickUuids.length <= 1)).toBe(true);
+    }
+  });
+});

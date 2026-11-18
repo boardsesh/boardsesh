@@ -44,14 +44,6 @@ describe('partner workout planning', () => {
       externalRef: 'free',
       blocks: [
         { type: 'freeClimbing', durationSeconds: 600 },
-        {
-          type: 'fourByFour',
-          targetGrade: { scale: 'v', value: 4 },
-          climbCount: 4,
-          rounds: 4,
-          restBetweenClimbsSeconds: 0,
-          restBetweenRoundsSeconds: 180,
-        },
         { type: 'limitBouldering', targetGrade: { scale: 'v', value: 6 }, climbCount: 3 },
       ],
     };
@@ -60,6 +52,62 @@ describe('partner workout planning', () => {
       slots: [],
       clampedBlocks: [],
     });
+  });
+
+  it('plans a 4x4 as its climbs, then the same climbs again for every round (#6734)', () => {
+    const spec: CreateWorkout = {
+      title: 'Board 4x4s',
+      externalRef: 'four',
+      blocks: [
+        { type: 'warmUp', climbCount: 2, gradeRange: { scale: 'v', from: 1, to: 3 } },
+        {
+          type: 'fourByFour',
+          targetGrade: { scale: 'v', value: 4 },
+          climbCount: 4,
+          rounds: 3,
+          restBetweenClimbsSeconds: 0,
+          restBetweenRoundsSeconds: 180,
+        },
+      ],
+    };
+    const planned = buildPartnerWorkoutPlan(spec, getGradesForBoard('kilter'), 'wk_four');
+    expect(planned.plan.stages.map((stage) => [stage.id, stage.kind])).toEqual([
+      ['wk_four:0', 'warmUp'],
+      ['wk_four:1', 'fourByFour'],
+    ]);
+    const four = planned.slots.filter((slot) => slot.stageId === 'wk_four:1');
+    expect(four).toHaveLength(12);
+    // Round 1 is four climbs of their own, across the V4 band; rounds 2 and 3 repeat them in order.
+    expect(four.slice(0, 4).map((slot) => slot.repeatOfIndex)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(four.slice(4).map((slot) => slot.repeatOfIndex)).toEqual([2, 3, 4, 5, 2, 3, 4, 5]);
+    expect(four.map((slot) => slot.index)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    expect(four.map((slot) => slot.grade)).toEqual([18, 19, 18, 19, 18, 19, 18, 19, 18, 19, 18, 19]);
+    // A repeat sits a whole round or more after its twin, so no climb fills two pages in a row.
+    for (const slot of four) {
+      if (slot.repeatOfIndex !== undefined) expect([4, 8]).toContain(slot.index - slot.repeatOfIndex);
+    }
+  });
+
+  it('plans a 4x4 of one climb as one slot: its rounds are reps of one set', () => {
+    const block = {
+      type: 'fourByFour' as const,
+      targetGrade: { scale: 'font' as const, value: '6B' as const },
+      climbCount: 1,
+      restBetweenClimbsSeconds: 0,
+      restBetweenRoundsSeconds: 120,
+    };
+    const oneSet = buildPartnerWorkoutPlan(
+      { title: 'One', externalRef: 'one', blocks: [{ ...block, rounds: 4 }] },
+      getGradesForBoard('kilter'),
+      'wk_one',
+    );
+    expect(oneSet.slots).toEqual([{ index: 0, grade: 18, section: 'main', stageId: 'wk_one:0' }]);
+    const oneRound = buildPartnerWorkoutPlan(
+      { title: 'One', externalRef: 'one', blocks: [{ ...block, rounds: 1 }] },
+      getGradesForBoard('kilter'),
+      'wk_one',
+    );
+    expect(oneRound.slots).toHaveLength(1);
   });
 
   it('keeps native stage IDs aligned with original block indices around freeform blocks', () => {

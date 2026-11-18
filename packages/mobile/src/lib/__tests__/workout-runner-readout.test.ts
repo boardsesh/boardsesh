@@ -188,6 +188,7 @@ describe('describeWorkoutRunner', () => {
         drivesWall: true,
         endsWorkout: false,
         closesSet: true,
+        closesRound: false,
         armed: true,
         paused: false,
         timing: true,

@@ -22,7 +22,7 @@ import { Card } from '../Card';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { spacing } from '../../theme/tokens';
-import { buildPartnerWorkoutPlan } from '../../lib/partner-workout-plan';
+import { buildPartnerWorkoutPlan, partnerBlockIsFreeform } from '../../lib/partner-workout-plan';
 import {
   activatePartnerWorkout,
   clearPendingWorkout,
@@ -104,7 +104,10 @@ export function PartnerWorkoutCard({
       credentialGeneration !== getCredentialGeneration()
     )
       return;
-    const restored = restorePartnerWorkoutRun(winningPlan.data.sessionPlan);
+    const restored = restorePartnerWorkoutRun(winningPlan.data.sessionPlan, {
+      workoutId: active.id,
+      spec: active.spec,
+    });
     if (!restored) return;
     let cancelled = false;
     // Read persisted local ticks before installing a server plan. A cold-start
@@ -405,9 +408,7 @@ export function PartnerWorkoutCard({
               <Text variant="footnote">{t('partnerWorkouts.rest', { seconds: block.restSeconds })}</Text>
             ) : null}
             {block.instructions ? <Text>{block.instructions}</Text> : null}
-            {block.type === 'fourByFour' || block.type === 'limitBouldering' ? (
-              <Text variant="footnote">{t('partnerWorkouts.freeform')}</Text>
-            ) : null}
+            {partnerBlockIsFreeform(block) ? <Text variant="footnote">{t('partnerWorkouts.freeform')}</Text> : null}
             {plan?.clampedBlocks.includes(index) ? (
               <Text variant="footnote">{t('partnerWorkouts.clamped')}</Text>
             ) : null}

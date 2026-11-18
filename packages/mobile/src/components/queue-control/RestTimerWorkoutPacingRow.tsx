@@ -61,8 +61,9 @@ export function RestTimerWorkoutPacingRow({ stage, inset = true }: RestTimerWork
 
 /**
  * "4x4 · 4 reps a set, 3:00 between sets" (with the rest between reps when
- * there is one), "Limit Bouldering · 3:00 rest after each climb", or "On the
- * Minute · A new climb every 1:00".
+ * there is one), a partner app's "4x4 · 4 climbs a round, 0:30 between climbs,
+ * 3:00 between rounds", "Limit Bouldering · 3:00 rest after each climb", or
+ * "On the Minute · A new climb every 1:00".
  */
 function pacingSummary(stage: RestTimerStagePacing, stageName: string, t: TranslateWorkoutStage): string {
   const { stagePacing } = stage;
@@ -70,6 +71,14 @@ function pacingSummary(stage: RestTimerStagePacing, stageName: string, t: Transl
     return t('mobile.restTimer.workoutPacingInterval', {
       stage: stageName,
       interval: formatRestLength(stageRestSeconds(stagePacing, false)),
+    });
+  }
+  if (stagePacing.rounds !== undefined) {
+    return t('mobile.restTimer.workoutPacingRounds', {
+      stage: stageName,
+      count: stagePacing.rounds.climbsPerRound,
+      climbRest: formatRestLength(stageRestSeconds(stagePacing, false)),
+      roundRest: formatRestLength(stageRestSeconds(stagePacing, true)),
     });
   }
   if (stagePacing.sets !== undefined) {

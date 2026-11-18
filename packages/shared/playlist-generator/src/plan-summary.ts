@@ -1,6 +1,6 @@
 import { groupSlotsBySection } from './generate';
 import { stageRestSeconds, type WorkoutStagePacing } from './pacing';
-import { workoutRunHasPacing, type WorkoutRun } from './stages';
+import { workoutRunHasPacing, workoutRunRound, type WorkoutRun } from './stages';
 import type { PlannedClimbSlot } from './types';
 
 export type PlanSectionCount = {
@@ -102,6 +102,26 @@ function climbTime(pacing: WorkoutStagePacing | undefined): { seconds: number; r
 }
 
 /**
+ * The time a stage of `climbCount` queued climbs takes, and the rest at its end.
+ * A partner app's 4x4 rounds is one go per climb, with the round rest after
+ * each round's last climb (`workoutRunRound`) and the climb rest after the rest.
+ */
+function stageTime(pacing: WorkoutStagePacing | undefined, climbCount: number): { seconds: number; restAfter: number } {
+  if (pacing?.mode === 'afterTick' && pacing.rounds !== undefined && climbCount > 0) {
+    let seconds = 0;
+    let restAfter = 0;
+    for (let position = 1; position <= climbCount; position++) {
+      const { closesRound } = workoutRunRound(position, climbCount, pacing.rounds.climbsPerRound);
+      restAfter = stageRestSeconds(pacing, closesRound);
+      seconds += ESTIMATE_SECONDS_PER_TRY + restAfter;
+    }
+    return { seconds, restAfter };
+  }
+  const { seconds, restAfter } = climbTime(pacing);
+  return { seconds: seconds * climbCount, restAfter };
+}
+
+/**
  * About how long a workout takes, in minutes, from the run Start hands over:
  * every queued climb with the rest the stage paces after it
  * (`stageRestSeconds`, so the 10 s changeover counts), one interval per climb
@@ -120,8 +140,8 @@ export function estimateWorkoutMinutes(run: WorkoutRun): number | null {
   let totalSeconds = 0;
   let lastRestSeconds = 0;
   for (const stage of run.stages) {
-    const { seconds, restAfter } = climbTime(stage.pacing);
-    totalSeconds += seconds * stage.itemUuids.length;
+    const { seconds, restAfter } = stageTime(stage.pacing, stage.itemUuids.length);
+    totalSeconds += seconds;
     if (stage.itemUuids.length > 0) lastRestSeconds = restAfter;
   }
   totalSeconds -= lastRestSeconds;

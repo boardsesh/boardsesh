@@ -8,6 +8,7 @@
 //   between two reps of a 4x4 set   "Rest" · "Then rep 2 of 4 · Set 1 of 4"   Go now
 //   after a fall on a limit climb   "Rest" · "Then try again · Try 3"         Go now
 //   after a 4x4 set's last rep      "Set 2 done" · "Next: Crimp City · V5"    Skip rest
+//   after a partner round's last    "Round 2 done" · "Next: Crimp City · V5"  Skip rest
 //   at the end of a block           "4x4 done" · "Next: Limit Bouldering"     Skip rest
 //   any other paced rest            "Rest" (or "Next climb in") · "Next: …"   Skip rest
 //
@@ -31,6 +32,8 @@ export type WorkoutRestCardHeading =
   | { kind: 'paused' }
   /** A 4x4 set's every rep is logged. `set` is its number in the block. */
   | { kind: 'setDone'; set: number }
+  /** A partner app's 4x4 round's last climb is logged. `round` is its number in the block. */
+  | { kind: 'roundDone'; round: number }
   /** The rest ends the block: Next lands on another stage. */
   | { kind: 'stageDone'; stage: WorkoutStageKind; isCoolDown: boolean };
 
@@ -107,6 +110,7 @@ export function resolveWorkoutRestCard({
       return { kind: 'stageDone', stage: position.kind, isCoolDown: position.isCoolDown === true };
     }
     if (rest.closesSet) return { kind: 'setDone', set: position.positionInStage };
+    if (rest.closesRound && position.round) return { kind: 'roundDone', round: position.round.number };
     return rest.mode === 'onTheMinute' ? { kind: 'nextBeat' } : { kind: 'rest' };
   })();
 

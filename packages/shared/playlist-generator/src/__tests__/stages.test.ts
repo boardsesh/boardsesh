@@ -28,6 +28,8 @@ import {
   planFromBlocks,
   pruneRun,
   workoutRunHasPacing,
+  roundPacing,
+  workoutRunRound,
 } from '../index';
 
 const DENSE_GRADES: GeneratorGradeScale = Array.from({ length: 33 }, (_, i) => ({ difficulty_id: i + 1 }));
@@ -1251,5 +1253,63 @@ describe('locateInRun on a 4x4', () => {
       stageSize: 2,
       remainingInStage: 0,
     });
+  });
+});
+
+describe('locateInRun on a partner app’s 4x4 rounds (#6734)', () => {
+  // Two climbs a round, three rounds: A1 B1 A2 B2 A3 B3, each its own queue item.
+  const ROUNDS_RUN: WorkoutRun = {
+    stages: [
+      {
+        id: 'rounds',
+        kind: 'fourByFour',
+        itemUuids: ['a1', 'b1', 'a2', 'b2', 'a3', 'b3'],
+        pacing: roundPacing({ climbsPerRound: 2, restBetweenClimbsSeconds: 20, restBetweenRoundsSeconds: 120 }),
+      },
+    ],
+  };
+  const queue = ['a1', 'b1', 'a2', 'b2', 'a3', 'b3'];
+
+  it('says which round the climb is in and which climb of it', () => {
+    expect(locateInRun(ROUNDS_RUN, 'a2', queue)?.round).toEqual({
+      number: 2,
+      total: 3,
+      climb: 1,
+      climbs: 2,
+      closesRound: false,
+    });
+    expect(locateInRun(ROUNDS_RUN, 'b2', queue)?.round).toEqual({
+      number: 2,
+      total: 3,
+      climb: 2,
+      climbs: 2,
+      closesRound: true,
+    });
+    expect(locateInRun(ROUNDS_RUN, 'b3', queue)).toMatchObject({
+      positionInStage: 6,
+      round: { number: 3, closesRound: true },
+    });
+  });
+
+  it('follows the queue: a removed climb shortens the last round, which still closes', () => {
+    const shortQueue = ['a1', 'b1', 'a2', 'b2', 'a3'];
+    expect(locateInRun(ROUNDS_RUN, 'a3', shortQueue)?.round).toEqual({
+      number: 3,
+      total: 3,
+      climb: 1,
+      climbs: 1,
+      closesRound: true,
+    });
+  });
+
+  it('leaves the app’s own 4x4 sets without rounds', () => {
+    expect(locateInRun(FOUR_BY_FOUR_RUN, 'b', ['w1', 'a', 'b'])?.round).toBeUndefined();
+  });
+
+  it('places any position, a round short or out of range included', () => {
+    expect(workoutRunRound(4, 4, 4)).toEqual({ number: 1, total: 1, climb: 4, climbs: 4, closesRound: true });
+    expect(workoutRunRound(5, 10, 4)).toEqual({ number: 2, total: 3, climb: 1, climbs: 4, closesRound: false });
+    expect(workoutRunRound(10, 10, 4)).toEqual({ number: 3, total: 3, climb: 2, climbs: 2, closesRound: true });
+    expect(workoutRunRound(0, 0, 0)).toEqual({ number: 1, total: 1, climb: 1, climbs: 1, closesRound: true });
   });
 });

@@ -9,6 +9,7 @@ import {
   estimateWorkoutMinutes,
   generatePyramidPlan,
   planFromBlocks,
+  roundPacing,
   summarizePlanFill,
 } from '../index';
 
@@ -138,6 +139,14 @@ describe('estimateWorkoutMinutes', () => {
     };
 
     expect(estimateWorkoutMinutes({ stages: [flatStage('four', 'fourByFour', 5, triples)] })).toBe(40);
+  });
+
+  it('counts a partner app’s 4x4 rounds one go per climb, with the round rest after each round', () => {
+    // Four climbs a round, four rounds: 16 goes of 45 s, 12 climb rests of 30 s
+    // and 4 round rests of 180 s. 720 + 360 + 720 = 1800 s, less the last round
+    // rest: 1620 s, 27 min, rounded to 25.
+    const rounds = roundPacing({ climbsPerRound: 4, restBetweenClimbsSeconds: 30, restBetweenRoundsSeconds: 180 });
+    expect(estimateWorkoutMinutes({ stages: [flatStage('rounds', 'fourByFour', 16, rounds)] })).toBe(25);
   });
 
   it('counts the changeover after a set rest of 0', () => {

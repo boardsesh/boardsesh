@@ -113,9 +113,11 @@ export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStag
  * "Warm-up · 2 of 5", the player's subtitle part for a workout climb, or
  * "Cool-down · 2 of 5" after the last block. On a 4x4 each climb is a set; with
  * no go to show (`formatWorkoutStagePositionWithGo`) it reads like any stage.
+ * A partner app's 4x4 rounds reads "4x4 · Round 2 of 4 · Climb 3 of 4".
  */
 export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: TranslateWorkoutStage): string {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
+  if (position.round) return t('mobile.session.workoutStageRoundPosition', { stage, ...roundAndClimb(position.round) });
   return t('mobile.session.workoutStagePosition', {
     stage,
     position: position.positionInStage,
@@ -146,6 +148,16 @@ export function formatWorkoutStagePositionWithGo(
   return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: go.number });
 }
 
+/** A partner 4x4 climb's numbers: which round, and which climb of that round. */
+function roundAndClimb(round: NonNullable<WorkoutRunPosition['round']>): {
+  round: number;
+  rounds: number;
+  climb: number;
+  climbs: number;
+} {
+  return { round: round.number, rounds: round.total, climb: round.climb, climbs: round.climbs };
+}
+
 /** A 4x4 climb's numbers: which rep, and which set (one climb each) it is of. */
 function repAndSet(
   position: WorkoutRunPosition,
@@ -158,7 +170,8 @@ function repAndSet(
  * Where a workout climb sits, as the two pieces the player's top bar lays out:
  * the stage's name, which may be cut, and its numbers, which never are (#6745).
  * "Warm-up" and "2 of 5" ("Cool-down" after the last block), or on a 4x4 "4x4"
- * and "Rep 3 of 4 · Set 2 of 4". A limit climb's try rides with the numbers:
+ * and "Rep 3 of 4 · Set 2 of 4" ("Round 2 of 4 · Climb 3 of 4" on a partner
+ * app's 4x4 rounds). A limit climb's try rides with the numbers:
  * "2 of 3 · Try 3". VoiceOver gets the numbers in words, not "·".
  */
 export function formatWorkoutStageParts(
@@ -173,6 +186,14 @@ export function formatWorkoutStageParts(
       stage,
       count: t('mobile.session.workoutStageSetCount', numbers),
       accessibilityLabel: t('mobile.session.workoutStageTopBarSetAria', { stage, ...numbers }),
+    };
+  }
+  if (position.round) {
+    const numbers = roundAndClimb(position.round);
+    return {
+      stage,
+      count: t('mobile.session.workoutStageRoundCount', numbers),
+      accessibilityLabel: t('mobile.session.workoutStageTopBarRoundAria', { stage, ...numbers }),
     };
   }
   const numbers = { position: position.positionInStage, total: position.stageSize };

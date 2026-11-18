@@ -24,6 +24,7 @@ export {
 } from './plan-summary';
 export type { PlanFillSummary, PlanSectionCount } from './plan-summary';
 export {
+  MAX_STAGE_CLIMBS_PER_ROUND,
   MAX_STAGE_REPS_PER_SET,
   MAX_STAGE_REST_SECONDS,
   MAX_STAGE_SETS,
@@ -32,9 +33,10 @@ export {
   STAGE_CHANGEOVER_SECONDS,
   isWorkoutStagePacing,
   pacingForOptions,
+  roundPacing,
   stageRestSeconds,
 } from './pacing';
-export type { StageAdvanceOn, StagePacingMode, StageSetPacing, WorkoutStagePacing } from './pacing';
+export type { StageAdvanceOn, StagePacingMode, StageRoundPacing, StageSetPacing, WorkoutStagePacing } from './pacing';
 export {
   WORKOUT_STAGE_KINDS,
   isWorkoutStageKind,
@@ -46,6 +48,7 @@ export {
   pruneRun,
   locateInRun,
   workoutRunHasPacing,
+  workoutRunRound,
 } from './stages';
 export type {
   WorkoutBlockSpec,
@@ -64,4 +67,5 @@ export type {
   WorkoutRun,
   WorkoutRunEntry,
   WorkoutRunPosition,
+  WorkoutRunRound,
 } from './stages';

@@ -1,3 +1,4 @@
+import type { CreateWorkout } from '@boardsesh/public-api';
 import {
   MAX_SYNCED_QUEUE_ITEMS,
   normaliseHistoryCount,
@@ -14,6 +15,7 @@ import type { AppWorkoutInitialSeed } from '../providers/queue/queue-contexts';
 import { appendBlockToRun } from '../components/session-screen/in-session/add-workout-block';
 import { buildSessionWorkoutPlan, captureWorkoutRunClimbs } from './session-workout-plan';
 import type { WorkoutRunClimb } from './workout-run-store';
+import { partnerBlockForStage, partnerBlockPacing } from './partner-workout-preview';
 
 /** Build the complete first write before creating a session; existing solo content is preserved. */
 export function buildPartnerWorkoutInitialSeed({
@@ -84,9 +86,15 @@ function savedPacing(stage: SessionWorkoutPlanStage): WorkoutRunStage['pacing'] 
   return undefined;
 }
 
-/** Restore only the winning persisted plan, never the preview regenerated after a lost reply. */
+/**
+ * Restore only the winning persisted plan, never the preview regenerated after a
+ * lost reply. With the workout's own spec, a partner block's stage takes its
+ * pacing from the block (`partnerBlockPacing`) rather than from the stored
+ * copy, which holds no 4x4 rounds: the server's plan fields name only sets.
+ */
 export function restorePartnerWorkoutRun(
   candidate: unknown,
+  partner?: { workoutId: string; spec: CreateWorkout },
 ): { run: WorkoutRun; climbs: Record<string, WorkoutRunClimb> } | null {
   const plan = parseSessionWorkoutPlan(candidate);
   if (!plan) return null;
@@ -100,7 +108,9 @@ export function restorePartnerWorkoutRun(
       itemUuids: stage.items.map((item) => item.queueItemUuid),
       ...(stage.targetGrade === undefined ? {} : { targetGrade: stage.targetGrade }),
       ...(stage.coolDown ? { coolDown: true as const } : {}),
-      pacing: savedPacing(stage),
+      pacing:
+        (partner && partnerBlockPacing(partnerBlockForStage(partner.spec, partner.workoutId, stage.id))) ??
+        savedPacing(stage),
     });
     for (const item of stage.items)
       climbs[item.queueItemUuid] = {

@@ -425,10 +425,49 @@ export type WorkoutRunPosition = {
   /** Climbs after the current one in the same stage. On a 4x4, a climb is a set. */
   remainingInStage: number;
   /**
+   * Set only on a partner app's 4x4 rounds (`StageRoundPacing`): which round
+   * the current climb is in, and which climb of it (`workoutRunRound`).
+   */
+  round?: WorkoutRunRound;
+  /**
    * Set only on a stage planned as a cool-down (`WorkoutRunStage.coolDown`). It
    * follows the plan, not the queue order: its climbs step down wherever they sit.
    */
   isCoolDown?: true;
+};
+
+/**
+ * A climb's place in a partner app's 4x4 rounds: round `number` of `total`,
+ * climb `climb` of the `climbs` that round holds. `closesRound`: the climb is
+ * its round's last, so the round rest follows it.
+ */
+export type WorkoutRunRound = {
+  number: number;
+  total: number;
+  climb: number;
+  climbs: number;
+  closesRound: boolean;
+};
+
+/**
+ * Where the climb at 1-based `positionInStage` of a stage holding `stageSize`
+ * queued climbs sits in its rounds of `climbsPerRound`. Like a 4x4's sets, it
+ * follows the queue: the stage's climbs in queue order are round 1, then round
+ * 2, and so on. A last round left short (a climb removed, or cut by the queue's
+ * cap) holds what is left, so its last climb still closes it.
+ */
+export const workoutRunRound = (
+  positionInStage: number,
+  stageSize: number,
+  climbsPerRound: number,
+): WorkoutRunRound => {
+  const perRound = Math.max(1, Math.floor(climbsPerRound));
+  const size = Math.max(1, stageSize);
+  const position = Math.min(size, Math.max(1, positionInStage));
+  const number = Math.ceil(position / perRound);
+  const climbs = Math.min(perRound, size - (number - 1) * perRound);
+  const climb = position - (number - 1) * perRound;
+  return { number, total: Math.ceil(size / perRound), climb, climbs, closesRound: climb === climbs };
 };
 
 /**
@@ -476,6 +515,10 @@ export const locateInRun = (
       remainingInStage: queuedStage.itemUuids.length - positionInStage - 1,
     };
     if (queuedStage.kind === 'warmUp' && queuedStage.coolDown === true) position.isCoolDown = true;
+    const rounds = queuedStage.pacing?.mode === 'afterTick' ? queuedStage.pacing.rounds : undefined;
+    if (rounds !== undefined) {
+      position.round = workoutRunRound(position.positionInStage, position.stageSize, rounds.climbsPerRound);
+    }
     return position;
   }
   return null;

@@ -1,14 +1,19 @@
 import type { CreateWorkout, WorkoutBlock } from '@boardsesh/public-api';
 import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-config';
 import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
   DEFAULT_ON_THE_MINUTE_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
+  MAX_STAGE_REPS_PER_SET,
+  MAX_STAGE_SETS,
+  roundPacing,
   type WorkoutPlan,
   type WorkoutStage,
   type StagedSlot,
+  type WorkoutStagePacing,
 } from '@boardsesh/playlist-generator';
 
 type RequestedGrade = { scale: 'v'; value: number } | { scale: 'font'; value: string };
@@ -90,8 +95,52 @@ function rangeForBlock(
 /** A planned slot, with the V band it may fill from (`PreviewSlot.band`). */
 export type PartnerSlot = StagedSlot & { band?: readonly number[] };
 
+/** A block the app queues climbs for and runs on the wall. */
 export function partnerBlockRunsNatively(block: WorkoutBlock): boolean {
-  return block.type !== 'fourByFour' && block.type !== 'limitBouldering' && block.type !== 'freeClimbing';
+  return block.type !== 'limitBouldering' && block.type !== 'freeClimbing';
+}
+
+/**
+ * A block the card says is climbed freestyle: one the app has a stage for but
+ * does not queue yet. Free climbing is neither: it is the climber's own climbs
+ * by design.
+ */
+export function partnerBlockIsFreeform(block: WorkoutBlock): boolean {
+  return !partnerBlockRunsNatively(block) && block.type !== 'freeClimbing';
+}
+
+type FourByFourBlock = Extract<WorkoutBlock, { type: 'fourByFour' }>;
+
+/**
+ * A 4x4 of one climb is that climb once per round. Its rounds would be one
+ * climb on every page of the player in a row, so it runs as the app's own 4x4
+ * set instead: one queue item, a rep per round, the round rest between reps.
+ */
+const runsAsOneSet = (block: FourByFourBlock): boolean => block.climbCount === 1 && block.rounds > 1;
+
+/**
+ * How a partner `fourByFour` runs (#6734, workoutbash1 D1): as the partner wrote
+ * it, `climbCount` climbs one go each, then the same climbs again for each of
+ * its `rounds`, with the rest between climbs after every climb and the rest
+ * between rounds after each round's last. Any logged go moves the wall on, a
+ * fall included: a round is climbed straight through, one go a climb. A 4x4 of
+ * one climb is one set (`runsAsOneSet`).
+ */
+export function partnerFourByFourPacing(block: FourByFourBlock): WorkoutStagePacing {
+  if (runsAsOneSet(block)) {
+    const repsPerSet = Math.min(block.rounds, MAX_STAGE_REPS_PER_SET);
+    return {
+      mode: 'afterTick',
+      restSeconds: block.restBetweenRoundsSeconds,
+      advanceOn: 'set',
+      sets: { repsPerSet, restBetweenSetsSeconds: block.restBetweenRoundsSeconds },
+    };
+  }
+  return roundPacing({
+    climbsPerRound: block.climbCount,
+    restBetweenClimbsSeconds: block.restBetweenClimbsSeconds,
+    restBetweenRoundsSeconds: block.restBetweenRoundsSeconds,
+  });
 }
 
 /** One stage per native block, retaining explicit warm-up ranges and exact requested counts. */
@@ -144,6 +193,20 @@ export function buildPartnerWorkoutPlan(
           options: { ...DEFAULT_LADDER_OPTIONS, targetGrade: range.target, warmUp: 'none' },
         };
         break;
+      case 'fourByFour':
+        // Its run's pacing is always `partnerFourByFourPacing` (the preview
+        // sets it), and its slots are planned below, never by the generator.
+        stage = {
+          id,
+          kind: 'fourByFour',
+          options: {
+            ...DEFAULT_FOUR_BY_FOUR_OPTIONS,
+            targetGrade: range.target,
+            warmUp: 'none',
+            sets: Math.min(block.climbCount, MAX_STAGE_SETS),
+          },
+        };
+        break;
       case 'onTheMinute':
         stage = {
           id,
@@ -175,7 +238,9 @@ export function buildPartnerWorkoutPlan(
     // turns across its Font grades, so a V grade draws from each of them and a
     // short one fills from its band mates first (`PreviewSlot.band`).
     const usesByBand = bands.map(() => 0);
-    for (let position = 0; position < block.climbCount; position++) {
+    const firstSlotIndex = slots.length;
+    const climbCount = block.type === 'fourByFour' && runsAsOneSet(block) ? 1 : block.climbCount;
+    for (let position = 0; position < climbCount; position++) {
       const progress = block.climbCount === 1 ? 1 : position / (block.climbCount - 1);
       const peakHeight = block.climbCount % 2 === 0 ? (block.climbCount - 2) / (block.climbCount - 1) : 1;
       const ramp =
@@ -190,6 +255,23 @@ export function buildPartnerWorkoutPlan(
         stageId: id,
         ...(band.length > 1 ? { band } : {}),
       });
+    }
+    // A 4x4's later rounds climb round 1's climbs again, each visit a queue
+    // item of its own (#7822's repeat slots). A round never starts on the
+    // climb the last one ended on, since a round holds two climbs or more.
+    if (block.type === 'fourByFour' && !runsAsOneSet(block)) {
+      for (let round = 1; round < block.rounds; round++) {
+        for (let position = 0; position < climbCount; position++) {
+          const twin = slots[firstSlotIndex + position];
+          slots.push({
+            index: slots.length,
+            grade: twin.grade,
+            section: 'main',
+            stageId: id,
+            repeatOfIndex: twin.index,
+          });
+        }
+      }
     }
   }
   return { plan: { stages }, slots, clampedBlocks };
