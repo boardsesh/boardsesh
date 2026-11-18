@@ -7,7 +7,11 @@ import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
 import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsentInteractions } from '@boardsesh/db/schema/auth';
 import type { PartnerAuthorityConfiguration } from './configuration';
 import { authorizeRedirectTarget } from './fence';
-import { resolveFirstPartySession } from './first-party-session';
+import {
+  firstPartyCookieSecret,
+  FirstPartySessionUnavailableError,
+  resolveFirstPartySession,
+} from './first-party-session';
 import { lockClimber, selectConnectionForUpdate } from './locks';
 import type { PartnerDatabase } from './tables';
 import { currentPartnerTransaction } from './transaction';
@@ -166,7 +170,8 @@ async function checkConsentInteraction(
 }
 
 /**
- * Turns the www NextAuth session cookie into the session Better Auth reads.
+ * Turns the www session cookie (NextAuth's, or with the web session mode on the
+ * first-party login or bridged cookie) into the session Better Auth reads.
  * There is no other way in: no Better Auth sign-in route is served, and no new
  * cookie is ever set, so every authorize and consent request re-reads the
  * cookie, and a sign-out or account switch on www applies at once.
@@ -181,11 +186,26 @@ export function partnerSessionBridge(configuration: PartnerAuthorityConfiguratio
           handler: createAuthMiddleware(async (context) => {
             // Consent re-enters authorize with the session this request already bridged.
             if (context.context.session) return;
-            const outcome = await resolveFirstPartySession(
-              context.request?.headers.get('cookie') ?? context.headers?.get('cookie') ?? null,
-              configuration.nextAuthSecret,
-              () => currentPartnerTransaction().transaction,
-            );
+            let outcome: Awaited<ReturnType<typeof resolveFirstPartySession>>;
+            try {
+              outcome = await resolveFirstPartySession(
+                context.request?.headers.get('cookie') ?? context.headers?.get('cookie') ?? null,
+                configuration.nextAuthSecret,
+                () => currentPartnerTransaction().transaction,
+                new Date(),
+                firstPartyCookieSecret(),
+              );
+            } catch (error) {
+              if (!(error instanceof FirstPartySessionUnavailableError)) throw error;
+              throw new APIError(
+                'SERVICE_UNAVAILABLE',
+                {
+                  error: 'temporarily_unavailable',
+                  error_description: 'Sign-in could not be checked. Try again shortly.',
+                },
+                NO_STORE,
+              );
+            }
             if (outcome.status !== 'signed-in') return;
             context.context.session = {
               session: outcome.session,
