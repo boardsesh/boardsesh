@@ -40,6 +40,9 @@ vi.mock('../../../lib/board-render/gpu-native-capability', () => ({
   get climbOverlayGpuApiVersion() {
     return recorded.apiVersion;
   },
+  // No swap look: the board runs the shipped wall swap (player-swap-look.test.tsx covers the look).
+  climbOverlaySwapCommandApi: 0,
+  climbOverlaySwapLookVersion: 0,
 }));
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
   climbOverlayGpuApiVersion: 5,
@@ -53,6 +56,7 @@ vi.mock('../../../lib/board-render-settings', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useGpuClimbOverlayEnabled: () => recorded.gpuEnabled,
+  usePlayerSwapLookEnabled: () => true,
 }));
 
 // The platform the board's spoken value is decided for.

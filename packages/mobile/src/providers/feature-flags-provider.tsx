@@ -267,6 +267,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Kill switch for hide-on-scroll on Android phones: scrolling down a tab slides the tab bar away and drops the MiniPlayer card to the bottom; scrolling up brings it back. With it on, the bar sits below the screen, opaque, and never moves, exactly as before. Also the QA switch for comparing the two. Unresolved reads as enabled.',
   },
   {
+    key: 'player-swap-look-kill',
+    label: 'Plain climb swap on the player board',
+    description:
+      "Kill switch for the player board's swap look on iPhone and iPad: dragging dims the old holds into standby rings from the edge the next climb comes from and shows the next climb as faint halos behind that front; letting go fills them in along the same sweep. With it on, the board swaps climbs exactly as before, a plain fade. Also the QA switch for comparing the two; it takes effect on the open board. Android, older iOS builds and Reduce Motion always get the plain fade. Unresolved reads as enabled.",
+  },
+  {
     key: 'early-updates',
     label: 'Early updates',
     description:
@@ -600,6 +606,15 @@ export function useConnectivityBannerEnabled(): boolean {
  */
 export function useTabBarHideOnScrollEnabled(): boolean {
   return useFeatureFlag('tab-bar-hide-on-scroll-kill') !== true;
+}
+
+/**
+ * Kill switch for the player board's swap look (`play-drawer/player-swap-look.ts`).
+ * Unresolved reads as enabled; switched on, the board runs the shipped wall
+ * swap, live on an open board. Also the QA switch for comparing the two.
+ */
+export function usePlayerSwapLookEnabled(): boolean {
+  return useFeatureFlag('player-swap-look-kill') !== true;
 }
 
 export function useQaTesterGateEnabled(): boolean {

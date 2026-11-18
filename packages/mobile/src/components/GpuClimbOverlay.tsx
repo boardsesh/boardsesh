@@ -1,6 +1,7 @@
 import {
   climbOverlayGpuApiVersion,
   climbOverlaySwapCommandApi,
+  climbOverlaySwapLookVersion,
   type ClimbOverlayGPUFailure,
   type ClimbOverlayGPUFailureScope,
 } from '../lib/board-render/gpu-native-capability';
@@ -14,14 +15,20 @@ import {
   NativeMotionClimbOverlayGPU,
   type ClimbOverlayGPUMotionProps,
   type ClimbOverlayGPUReady,
+  type ClimbOverlayGPUSwapLookState,
 } from '../../modules/climb-overlay-gpu/src';
 import {
   nativeWallSwapFrame,
   WALL_SWAP_NATIVE_API,
   type NativeWallSwapFrame,
   type RevealMode,
-  type WallSwapFrame,
 } from './play-drawer/wall-swap';
+import {
+  shippedSwapFrame,
+  SWAP_LOOK_NATIVE_VERSION,
+  type SwapFrameSource,
+  type SwapLookStatus,
+} from './play-drawer/swap-look';
 import {
   INITIAL_SWAP_FRAME_SEQUENCE,
   sequencedSwapFrame,
@@ -45,8 +52,15 @@ export type GpuClimbTransition = {
   prefetchFrames?: readonly string[];
   /** API 6: the swap weights hold classes over time instead of wiping by position. */
   revealMode?: RevealMode;
-  /** The swap's pair and three weights, one value (see play-drawer/wall-swap). */
-  swapFrame?: SharedValue<WallSwapFrame>;
+  /** The swap's pair and three weights, one value (see play-drawer/wall-swap), or a swap-look frame. */
+  swapFrame?: SwapFrameSource;
+  /** The encoded swap look (`encodeSwapLook`) its six-number frames are drawn with: the player's or the lab's. */
+  swapLook?: readonly number[];
+  /**
+   * Board motion lab only: the native look's state, when it changes. Without it
+   * the view is never asked for the event (`swapLookStateEvents`).
+   */
+  onSwapLookState?: (status: SwapLookStatus) => void;
   /** Board motion lab only: Reduce Motion as it chose; absent, the system setting. */
   reduceMotion?: boolean;
   /** Board motion lab only: this board presented a request, with the native timings. */
@@ -56,6 +70,15 @@ export type GpuClimbTransition = {
 };
 
 const NO_GPU_PREFETCH_FRAMES: readonly string[] = [];
+
+/** The native look event as a status, or null for a payload this app does not know. */
+function swapLookStatus(event: ClimbOverlayGPUSwapLookState): SwapLookStatus | null {
+  const reachOff = typeof event.reachOff === 'string' ? { reachOff: event.reachOff } : {};
+  if (event.state === 'off') return { state: 'off', reason: event.reason ?? 'unknown' };
+  if (event.state === 'ready') return { state: 'ready', ...reachOff };
+  if (event.state === 'on' && typeof event.holds === 'number') return { state: 'on', holds: event.holds, ...reachOff };
+  return null;
+}
 
 /** What a ref on the animated motion overlay receives: the swap command's target. */
 type MotionOverlayInstance = Component<ClimbOverlayGPUMotionProps> | FunctionComponent<ClimbOverlayGPUMotionProps>;
@@ -101,6 +124,7 @@ export function GpuClimbOverlay({
   const reduceMotion = transition?.reduceMotion ?? systemReduceMotion;
   const onTransitionReady = transition?.onRenderReady;
   const onTransitionError = transition?.onRenderError;
+  const onTransitionLook = transition?.onSwapLookState;
   const appActive = useIsAppActive();
   const pagePosition = transition?.pagePosition;
   const centerPage = transition?.centerPage ?? 0;
@@ -112,9 +136,23 @@ export function GpuClimbOverlay({
   // command, which a React commit cannot hold back. The animated prop still
   // carries the frame, with the same sequence, for mount and as a backstop.
   const swapCommand = swap && AnimatedMotionOverlay !== null && climbOverlaySwapCommandApi >= 1;
+  // A binary with the swap look takes its six-number frames (seven with the
+  // sequence) and the look itself; any other binary gets the shipped four
+  // numbers and no look, and draws API 7's swap. The player only sends a look
+  // where this holds (`binaryDrawsPlayerSwapLook`).
+  const swapLookSupported = swapCommand && climbOverlaySwapLookVersion >= SWAP_LOOK_NATIVE_VERSION;
+  const swapLook = swapLookSupported ? transition?.swapLook : undefined;
+  const swapLookState = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<ClimbOverlayGPUSwapLookState>) => {
+      const status = swapLookStatus(nativeEvent);
+      if (status) onTransitionLook?.(status);
+    },
+    [onTransitionLook],
+  );
   const { target: swapCommandTarget, latest: latestSequencedFrame } = useSwapFrameCommand<MotionOverlayInstance>(
     swapFrame,
     swapCommand,
+    swapLookSupported,
   );
   // Updating these native numeric props stays on the UI thread. No React render,
   // config serialization or hold-list preparation runs for a drag frame.
@@ -123,12 +161,13 @@ export function GpuClimbOverlay({
     swapFrame?: NativeWallSwapFrame | SequencedSwapFrame;
   } => {
     if (!swap || !swapFrame) return { pagePosition: reduceMotion ? centerPage : (pagePosition?.value ?? centerPage) };
-    if (!swapCommand) return { swapFrame: nativeWallSwapFrame(swapFrame.value, climbOverlayGpuApiVersion) };
+    if (!swapCommand) {
+      return { swapFrame: nativeWallSwapFrame(shippedSwapFrame(swapFrame.value), climbOverlayGpuApiVersion) };
+    }
     // Before the UI thread's first frame, the frame on hand with the lowest sequence.
-    return {
-      swapFrame: latestSequencedFrame.value ?? sequencedSwapFrame(swapFrame.value, INITIAL_SWAP_FRAME_SEQUENCE),
-    };
-  }, [pagePosition, centerPage, reduceMotion, swap, swapCommand, swapFrame, latestSequencedFrame]);
+    const frame = swapLookSupported ? swapFrame.value : shippedSwapFrame(swapFrame.value);
+    return { swapFrame: latestSequencedFrame.value ?? sequencedSwapFrame(frame, INITIAL_SWAP_FRAME_SEQUENCE) };
+  }, [pagePosition, centerPage, reduceMotion, swap, swapCommand, swapLookSupported, swapFrame, latestSequencedFrame]);
   // Clearing the view/config releases its last presented drawable; changing
   // only the request keeps that drawable on screen until the next is ready.
   useLayoutEffect(() => () => onRelease(), [configJson, onRelease]);
@@ -246,6 +285,13 @@ export function GpuClimbOverlay({
           ? { prefetchFrames: transition?.prefetchFrames ?? NO_GPU_PREFETCH_FRAMES }
           : {})}
         {...(climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API ? { revealMode: swap ? 'swap' : 'wipe' } : {})}
+        {...(swapLook
+          ? {
+              swapLook,
+              swapLookStateEvents: onTransitionLook !== undefined,
+              ...(onTransitionLook ? { onSwapLookState: swapLookState } : {}),
+            }
+          : {})}
         centerPage={centerPage}
         ref={swapCommandTarget}
         animatedProps={animatedProps}

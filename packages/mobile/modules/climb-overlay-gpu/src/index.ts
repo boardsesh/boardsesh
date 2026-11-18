@@ -15,6 +15,14 @@ export type ClimbOverlayGPUReady = {
   lowPowerMode?: boolean;
 };
 
+/** `onSwapLookState`'s payload; `SwapLookStatus` in play-drawer/swap-look.ts. */
+export type ClimbOverlayGPUSwapLookState = {
+  state: 'off' | 'ready' | 'on';
+  reason?: string;
+  holds?: number;
+  reachOff?: string;
+};
+
 export type ClimbOverlayGPUNativeProps = ViewProps & {
   configJson: string;
   requestId: string;
@@ -54,7 +62,10 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
    * A binary with the module constant `swapCommandApi` also takes five: the
    * four, then the frame's sequence; it drops a frame whose sequence is not
    * above the newest it applied. The same frame arrives first as the
-   * `swapFrame` view command (#7737).
+   * `swapFrame` view command (#7737). A binary with `swapLookVersion` 2 also
+   * takes seven: the five, then the arrival code of the climb being left and
+   * of the arriving one (play-drawer/swap-look.ts); the fourth number is then
+   * the look's shared floor.
    */
   swapFrame?:
     | readonly [pagePosition: number, outgoingWeight: number, incomingWeight: number]
@@ -65,7 +76,35 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
         incomingWeight: number,
         sharedWeight: number,
         sequence: number,
+      ]
+    | readonly [
+        pagePosition: number,
+        outgoingWeight: number,
+        incomingWeight: number,
+        sharedFloor: number,
+        sequence: number,
+        outgoingArrives: number,
+        incomingArrives: number,
       ];
+  /**
+   * `swapLookVersion` 2 (iOS) only: the swap look (`encodeSwapLook` in
+   * play-drawer/swap-look.ts). The player sends `PLAYER_SWAP_LOOK`'s; the board
+   * motion lab sends its variant's, again when a slider is released. Null or
+   * absent draws the API 7 swap; Reduce Motion and Differentiate Without Color
+   * turn it off natively. Android takes the prop and ignores it.
+   */
+  swapLook?: readonly number[] | null;
+  /**
+   * `swapLookVersion` 2 only: send `onSwapLookState`. Off (the default, and the
+   * player's), the view sends nothing; on (the board motion lab's readout), it
+   * sends the state at once and whenever it changes.
+   */
+  swapLookStateEvents?: boolean;
+  /**
+   * `swapLookVersion` 2 only, while `swapLookStateEvents` is on: whether the look
+   * is off (and why), ready or drawn.
+   */
+  onSwapLookState?: (event: NativeSyntheticEvent<ClimbOverlayGPUSwapLookState>) => void;
   animateEdits: boolean;
   /** The outer view mirrors artwork; only reverse the reveal direction here. */
   displayMirrored?: boolean;

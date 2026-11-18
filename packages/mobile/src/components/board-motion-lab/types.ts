@@ -5,6 +5,7 @@
  * so recordings compare like with like. See docs/board-motion-lab.md.
  */
 import type { BoardTransition } from '../play-drawer/board-transition';
+import type { SwapLookStatus } from '../play-drawer/swap-look';
 
 /** One slider. Values are plain numbers; the variant decides what they mean. */
 export type ParamSpec = {
@@ -29,11 +30,16 @@ export type BoardMotionVariant = {
   /** One sentence: what the climber sees. */
   summary: string;
   params: readonly ParamSpec[];
+  /**
+   * A second set of slider values, the Bold preset: the same look pushed far
+   * enough to tell apart at 1×. The defaults are the Subtle preset.
+   */
+  boldParams?: ParamValues;
   /** Called on the JS thread whenever a slider settles; the carousel remounts with the result. */
   createTransition(params: ParamValues): BoardTransition;
   /** The native overlay API this variant needs; greyed out with the reason on older binaries. */
   requiresNativeApi?: number;
-  /** A native lab shader mode (spike builds only); greyed out when the binary lacks it. */
+  /** A native lab shader mode (`'swap-look'`, iOS `swapLookVersion` 1); greyed out when the binary lacks it. */
   requiresNativeLab?: string;
 };
 
@@ -71,11 +77,21 @@ export type LabClimb = { id: string; name: string; frames: string };
 /** A named list of climbs on one board, e.g. "Real climbs" or "90% shared holds". */
 export type LabClimbSet = { id: string; label: string; climbs: readonly LabClimb[] };
 
+/**
+ * The native swap look, for look variants: unsupported by this build, sent
+ * but not yet answered (a build without the look's event never answers), or
+ * what the native view last said.
+ */
+export type LabLookStatus = { state: 'unsupported'; swapLookVersion: number } | { state: 'waiting' } | SwapLookStatus;
+
 /** What the stage reports about how the board is being drawn. */
 export type LabRenderStatus =
   | { path: 'loading' }
-  | { path: 'gpu'; apiVersion: number; prepareMs: number | null; uploadMs: number | null }
+  | { path: 'gpu'; apiVersion: number; prepareMs: number | null; uploadMs: number | null; look?: LabLookStatus }
   | { path: 'png'; apiVersion: number; reason: string };
+
+/** Which set of slider values a variant starts from: its defaults, or its Bold preset. */
+export type LabPreset = 'subtle' | 'bold';
 
 export type ReduceMotionChoice = 'system' | 'on' | 'off';
 

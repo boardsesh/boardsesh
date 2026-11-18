@@ -109,6 +109,9 @@ enum MetalGolden {
         uniforms.withUnsafeBytes { encoder.setFragmentBytes($0.baseAddress!, length: 144, index: 2) }
         encoder.setFragmentBuffer(resources, offset: 0, index: 3)
         encoder.setFragmentBuffer(descriptors, offset: inputs.scenes[sample.upper].offset, index: 4)
+        // The swap look's header (binding 5), zero: no look, API 7's swap. The reference ignores it.
+        let lookOff: [UInt16] = [0, 0, 0, 0]
+        lookOff.withUnsafeBytes { encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 5) }
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding(); command.commit(); command.waitUntilCompleted(); commands += 1
         try require(command.status == .completed && command.error == nil, "Metal command failed: \(String(describing: command.error))")

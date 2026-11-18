@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import type { SharedValue } from 'react-native-reanimated';
+import type { BoardSwapFrame } from '../play-drawer/swap-look';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ const controls = vi.hoisted(() => ({
   enabled: true,
   apiVersion: 5,
   swapCommandApi: 0,
+  swapLookVersion: 0,
   nativeAvailable: true,
   motionAvailable: true,
   reduceMotion: false,
@@ -28,6 +30,9 @@ const controls = vi.hoisted(() => ({
     displayMirrored?: boolean;
     configJson: string;
     reduceMotion?: boolean;
+    swapLook?: readonly number[] | null;
+    swapLookStateEvents?: boolean;
+    onSwapLookState?: (event: { nativeEvent: Record<string, unknown> }) => void;
     previousFrames?: string | null;
     nextFrames?: string | null;
     centerPage?: number;
@@ -121,6 +126,9 @@ vi.mock('../../lib/board-render/gpu-native-capability', () => ({
   },
   get climbOverlaySwapCommandApi() {
     return controls.swapCommandApi;
+  },
+  get climbOverlaySwapLookVersion() {
+    return controls.swapLookVersion;
   },
 }));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
@@ -227,6 +235,7 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     controls.enabled = true;
     controls.apiVersion = 5;
     controls.swapCommandApi = 0;
+    controls.swapLookVersion = 0;
     controls.runSwapReaction = null;
     controls.dispatchCommand.mockClear();
     controls.nativeAvailable = true;
@@ -573,6 +582,79 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     swapFrame.value = [4.25, 0, 1, 1];
     act(() => controls.runSwapReaction?.());
     expect(controls.dispatchCommand).toHaveBeenCalledTimes(4);
+  });
+
+  it('sends a lab swap look and its seven-number frames only to a binary that draws the look', () => {
+    controls.apiVersion = 7;
+    controls.swapCommandApi = 1;
+    const look = [1, 0.4, 1, 0.4, 0, 0, 0, 0, 0.08, 0.25, 0, 0.15, 0];
+    const swapFrame = { value: [4.25, 0.6, 0.2, 1, 0, 1] } as unknown as SharedValue<BoardSwapFrame>;
+    const transition = {
+      previousFrames: 'p4131r43',
+      nextFrames: 'p4306r43',
+      centerPage: 4,
+      pagePosition: { value: 4.25 } as SharedValue<number>,
+      revealMode: 'swap' as const,
+      swapFrame,
+      swapLook: look,
+    };
+    // No look on this binary (Android, or before the look): the shipped five numbers, no look prop.
+    const { unmount } = render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    expect(controls.props?.swapLook).toBeUndefined();
+    act(() => controls.runSwapReaction?.());
+    expect(controls.dispatchCommand).toHaveBeenLastCalledWith(controls.props?.ref, 'swapFrame', [4.25, 0.6, 0.2, 1, 1]);
+    unmount();
+    // A look binary: the look as a prop, and the frame whole with its flags after the sequence.
+    controls.swapLookVersion = 2;
+    controls.dispatchCommand.mockClear();
+    render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    expect(controls.props?.swapLook).toEqual(look);
+    // Nobody listens (the player): the view is told not to send its state.
+    expect(controls.props?.swapLookStateEvents).toBe(false);
+    expect(controls.props?.onSwapLookState).toBeUndefined();
+    expect(controls.animatedWorklet?.()).toEqual({ swapFrame: [4.25, 0.6, 0.2, 1, 0, 0, 1] });
+    act(() => controls.runSwapReaction?.());
+    expect(controls.dispatchCommand).toHaveBeenLastCalledWith(
+      controls.props?.ref,
+      'swapFrame',
+      [4.25, 0.6, 0.2, 1, 1, 0, 1],
+    );
+    // The player's own four-number frames still go as five numbers.
+    swapFrame.value = [4.25, 0.5, 0.3, 0.5];
+    act(() => controls.runSwapReaction?.());
+    expect(controls.dispatchCommand).toHaveBeenLastCalledWith(
+      controls.props?.ref,
+      'swapFrame',
+      [4.25, 0.5, 0.3, 0.5, 2],
+    );
+  });
+
+  it('sends the look under Reduce Motion too, so the native view can say it is off and why', () => {
+    controls.apiVersion = 7;
+    controls.swapCommandApi = 1;
+    controls.swapLookVersion = 2;
+    controls.reduceMotion = true;
+    const onSwapLookState = vi.fn();
+    const look = [2, 1, 1, 0.4, 0.4, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0];
+    const transition = {
+      previousFrames: 'p4131r43',
+      nextFrames: 'p4306r43',
+      centerPage: 4,
+      pagePosition: { value: 4.25 } as SharedValue<number>,
+      revealMode: 'swap' as const,
+      swapFrame: { value: [4.25, 1, 0, 1] } as unknown as SharedValue<readonly [number, number, number, number]>,
+      swapLook: look,
+      onSwapLookState,
+    };
+    render(<BoardImageNative {...BOARD} gpuTransition={transition} />);
+    expect(controls.props?.swapLook).toEqual(look);
+    expect(controls.props?.swapLookStateEvents).toBe(true);
+    act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'off', reason: 'Reduce Motion' } }));
+    expect(onSwapLookState).toHaveBeenLastCalledWith({ state: 'off', reason: 'Reduce Motion' });
+    act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'on', holds: 24, reachOff: 'Low Power' } }));
+    expect(onSwapLookState).toHaveBeenLastCalledWith({ state: 'on', holds: 24, reachOff: 'Low Power' });
+    act(() => controls.props?.onSwapLookState?.({ nativeEvent: { state: 'weird' } }));
+    expect(onSwapLookState).toHaveBeenCalledTimes(2);
   });
 
   it('flattens multi-frame neighboring climbs just like the current climb', () => {

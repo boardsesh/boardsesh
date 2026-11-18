@@ -24,6 +24,10 @@ previous=B, current=A, next=B, at native 1080 × 1504 pixels.
   weights (.4, 0, .4), (.25, .3, .4), (0, .6, .6) and (1, 0, 0). The shared weight
   lives in uniform `tuning2.w`; the other swap samples leave it at 1.
 
+Since the board motion lab's swap look, the shader also reads fragment buffer 5
+(the look's header). `MetalGolden.swift` binds it as zero, which is the API 7 path
+the 42 samples check; `scripts/board-motion-preview` renders the look itself.
+
 The transition packet retains the mixed edit baseline. The editor subcase uses a
 second real Rust Plan with every current hold marked changed. It must reuse the
 same chunks and tile resources. This makes the production Rust renderer's global

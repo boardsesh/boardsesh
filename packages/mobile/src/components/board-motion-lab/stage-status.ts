@@ -1,5 +1,5 @@
 /** How the lab's stage is drawing the board, from what it can see. Pure. */
-import type { LabRenderStatus } from './types';
+import type { LabLookStatus, LabRenderStatus } from './types';
 
 /** The native view that draws the stationary board's motion at all (`NativeMotionClimbOverlayGPU`). */
 export const MOTION_NATIVE_API = 3;
@@ -23,6 +23,8 @@ export type StageStatusInput = {
   timings: { prepareMs: number; uploadMs: number } | null;
   /** The native reason the last trio failed, if it did since the last presentation. */
   gpuError: string | null;
+  /** Look variants only: the native swap look's state; undefined for A to C. */
+  look?: LabLookStatus;
 };
 
 export function stageStatus(input: StageStatusInput): LabRenderStatus {
@@ -45,7 +47,13 @@ export function stageStatus(input: StageStatusInput): LabRenderStatus {
     );
   }
   if (input.renderPath === 'gpu' && input.timings !== null) {
-    return { path: 'gpu', apiVersion, prepareMs: input.timings.prepareMs, uploadMs: input.timings.uploadMs };
+    return {
+      path: 'gpu',
+      apiVersion,
+      prepareMs: input.timings.prepareMs,
+      uploadMs: input.timings.uploadMs,
+      ...(input.look ? { look: input.look } : null),
+    };
   }
   return { path: 'loading' };
 }
