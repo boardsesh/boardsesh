@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import {
   authProtocolNativeImporters,
   isWebOnly,
+  jsonAdditionViolations,
   NATIVE_CHANGE_ALLOWLIST,
   nativeChangeViolations,
 } from '../check-native-unchanged';
@@ -56,6 +57,24 @@ describe('check-native-unchanged', () => {
         { path: 'packages/shared/queue/src/d.ts', text: "import '@boardsesh/auth-protocol-other';" },
       ]),
     ).toEqual(['packages/mobile/src/lib/a.ts']);
+  });
+
+  it('lets an allowlisted locale file gain keys and refuses a removed or changed one', () => {
+    const base = JSON.stringify({ errors: { default: 'Oops' }, title: 'Hi' });
+    expect(
+      jsonAdditionViolations(
+        'a.json',
+        base,
+        JSON.stringify({ errors: { default: 'Oops', added: 'New' }, title: 'Hi' }),
+      ),
+    ).toEqual([]);
+    expect(
+      jsonAdditionViolations('a.json', base, JSON.stringify({ errors: { default: 'Changed' }, title: 'Hi' })),
+    ).toEqual(['a.json: changes errors.default']);
+    expect(jsonAdditionViolations('a.json', base, JSON.stringify({ errors: {} }))).toEqual([
+      'a.json: removes errors.default',
+      'a.json: removes title',
+    ]);
   });
 
   it('gives every allowlist entry a reason', () => {

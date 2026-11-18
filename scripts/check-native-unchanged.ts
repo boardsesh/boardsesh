@@ -19,8 +19,9 @@ import process from 'node:process';
 /**
  * Native-reachable files the web lane changes on purpose. Built from the
  * stack's actual diff against main (2026-11-18: #7802, #7777, and the
- * Settings lane #7804 to #7809 merged in #7810). The locale files only gain
- * keys; the mobile bundle carries them unused.
+ * Settings lane #7804 to #7809 merged in #7810). The locale files may only
+ * gain keys, which `jsonAdditionViolations` enforces; the mobile bundle
+ * carries them unused.
  */
 export const NATIVE_CHANGE_ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
   'packages/shared/text-redaction/src/password-recovery.ts':
@@ -92,6 +93,33 @@ export function nativeChangeViolations(changedPaths: readonly string[], nativeIm
   return violations;
 }
 
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+/** Every leaf of a parsed JSON document as `dotted.path` to its value. */
+function leaves(document: Json, prefix = '', into = new Map<string, string>()): Map<string, string> {
+  if (document !== null && typeof document === 'object') {
+    for (const [key, child] of Object.entries(document)) leaves(child, prefix ? `${prefix}.${key}` : key, into);
+  } else {
+    into.set(prefix, JSON.stringify(document));
+  }
+  return into;
+}
+
+/**
+ * For an allowlisted locale file: what the head removed or changed of the base.
+ * Additions are allowed; a removed or changed key ships a different string to phones.
+ */
+export function jsonAdditionViolations(path: string, baseText: string, headText: string): string[] {
+  const base = leaves(JSON.parse(baseText) as Json);
+  const head = leaves(JSON.parse(headText) as Json);
+  const violations: string[] = [];
+  for (const [key, value] of base) {
+    if (!head.has(key)) violations.push(`${path}: removes ${key}`);
+    else if (head.get(key) !== value) violations.push(`${path}: changes ${key}`);
+  }
+  return violations;
+}
+
 function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
@@ -110,6 +138,20 @@ function main(): number {
     tracked.filter((path) => SOURCE_FILE.test(path)).map((path) => ({ path, text: readFileSync(path, 'utf8') })),
   );
   const violations = nativeChangeViolations(changed, importers);
+  // An allowlisted locale file may only gain keys: enforced, not taken on trust.
+  const mergeBase = git(['merge-base', base, 'HEAD']).trim();
+  for (const path of changed.filter(
+    (candidate) => candidate in NATIVE_CHANGE_ALLOWLIST && candidate.endsWith('.json'),
+  )) {
+    const show = (revision: string) => {
+      try {
+        return git(['show', `${revision}:${path}`]);
+      } catch {
+        return '{}';
+      }
+    };
+    violations.push(...jsonAdditionViolations(path, show(mergeBase), show('HEAD')));
+  }
   const stale = Object.keys(NATIVE_CHANGE_ALLOWLIST).filter((path) => !changed.includes(path));
   console.info(
     `[native-unchanged] ${changed.length} changed file(s) under packages/mobile and packages/shared since ${base}; ` +
