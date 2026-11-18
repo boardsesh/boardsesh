@@ -232,10 +232,10 @@ function measureNext() {
   act(() => callback?.(16, 500, 326, 96));
 }
 
-function completeAnimations() {
+function completeAnimations(finished = true) {
   act(() => {
     const animations = runtime.animations.splice(0);
-    for (const complete of animations) complete(true);
+    for (const complete of animations) complete(finished);
   });
 }
 
@@ -274,6 +274,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -333,6 +334,76 @@ describe('lifted climb list row menu', () => {
     completeFrames();
     expect(run).toHaveBeenCalledExactlyOnceWith('share');
     expect(runtime.focus).not.toHaveBeenCalled();
+  });
+
+  it('removes the overlay and runs the selected action when closing animation is interrupted', () => {
+    const run = vi.fn(() => expect(screen.queryByTestId('full-window-overlay')).toBeNull());
+    render(<Harness rows={actionRows(run)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    fireEvent.click(screen.getByTestId('climb-row-menu-action-share'));
+    completeAnimations(false);
+    expect(screen.queryByTestId('full-window-overlay')).toBeNull();
+    expect(run).not.toHaveBeenCalled();
+    completeFrames();
+    expect(run).toHaveBeenCalledExactlyOnceWith('share');
+  });
+
+  it('recovers when the closing animation never calls back, without closing a later menu', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    render(<Harness rows={actionRows()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    fireEvent.click(screen.getByTestId('climb-row-menu-backdrop'));
+    const lateCompletion = runtime.animations.shift();
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.queryByTestId('full-window-overlay')).toBeNull();
+    completeFrames();
+    expect(runtime.focus).toHaveBeenCalledExactlyOnceWith('More Rocky');
+
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    act(() => lateCompletion?.(true));
+    completeFrames();
+    expect(screen.getByTestId('full-window-overlay')).toBeTruthy();
+    expect(runtime.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a selected action only once when animation completion arrives after fallback dismissal', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const run = vi.fn(() => expect(screen.queryByTestId('full-window-overlay')).toBeNull());
+    render(<Harness rows={actionRows(run)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    fireEvent.click(screen.getByTestId('climb-row-menu-action-share'));
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.queryByTestId('full-window-overlay')).toBeNull();
+    completeFrames();
+    completeAnimations();
+    completeFrames();
+    expect(run).toHaveBeenCalledExactlyOnceWith('share');
+  });
+
+  it('cancels fallback dismissal and the selected action when its credentials retire', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const run = vi.fn();
+    render(<Harness rows={actionRows(run)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    fireEvent.click(screen.getByTestId('climb-row-menu-action-share'));
+    changeCredentials();
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    completeAnimations();
+    completeFrames();
+    expect(screen.queryByTestId('full-window-overlay')).toBeNull();
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('leaves the menu open when a disabled action is pressed', () => {

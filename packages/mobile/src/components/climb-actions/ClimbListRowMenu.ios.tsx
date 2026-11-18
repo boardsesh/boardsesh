@@ -49,6 +49,8 @@ type MenuSnapshot = Pick<
 // A second row opening retires the first, including an outstanding measurement.
 let retireActiveMenu: (() => void) | undefined;
 const PREVIEW_PADDING = 8;
+// A native animation callback must not own the lifetime of a full-window touch blocker.
+const DISMISS_FALLBACK_MS = 500;
 const menuRowKey = (row: PlayDrawerMenuRow) => row.id;
 
 export function ClimbListRowMenu(props: ClimbListRowMenuProps) {
@@ -260,6 +262,8 @@ function LiftedRowMenu({
   const reduceMotion = useReduceMotion();
   const progress = useSharedValue(0);
   const closing = useRef(false);
+  const dismissed = useRef(false);
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const selectedRow = useRef<PlayDrawerMenuRow | undefined>(undefined);
   const headerRef = useRef<ViewInstance | null>(null);
   const [menuHeight, setMenuHeight] = useState(() =>
@@ -300,17 +304,32 @@ function LiftedRowMenu({
       retire();
   }, [viewport.width, viewport.height, viewport.fontScale, snapshot, retire]);
 
-  const completeDismiss = useCallback(() => finish(snapshot, selectedRow.current), [finish, snapshot]);
+  useEffect(() => {
+    dismissed.current = false;
+    return () => {
+      dismissed.current = true;
+      clearTimeout(dismissTimer.current);
+    };
+  }, []);
+  const completeDismiss = useCallback(() => {
+    if (dismissed.current) return;
+    dismissed.current = true;
+    clearTimeout(dismissTimer.current);
+    finish(snapshot, selectedRow.current);
+  }, [finish, snapshot]);
   const dismiss = useCallback(
     (row?: PlayDrawerMenuRow) => {
       if (closing.current || row?.disabled) return;
       closing.current = true;
       selectedRow.current = row;
       if (reduceMotion) completeDismiss();
-      else
-        progress.value = withTiming(0, { duration: timing.fast }, (complete) => {
-          if (complete) runOnJS(completeDismiss)();
+      else {
+        dismissTimer.current = setTimeout(completeDismiss, DISMISS_FALLBACK_MS);
+        progress.value = withTiming(0, { duration: timing.fast }, () => {
+          // Cancellation ends the close too; leaving `closing` set would swallow every later tap.
+          runOnJS(completeDismiss)();
         });
+      }
     },
     [completeDismiss, progress, reduceMotion],
   );
