@@ -179,9 +179,12 @@ the mutation and the headline query are rate limited. An unknown session and a m
 **How results are derived.** Nothing about results is stored. Each read takes the owner's
 ticks in the session and runs `deriveWorkoutStages`: a tick in the tick map goes to that
 queue item. Any other tick goes to a plan climb with the same climb and angle (and mirror
-when both say): the first one in plan order that still has room (a 4x4 climb until it
-holds its reps per set, any other climb until it holds one tick), else the last one. So a
-climb queued twice fills its first slot before its second. A tick that matches nothing
+when both say) that still has room (a 4x4 climb until it holds its reps per set, any other
+climb until it holds one tick): the first such climb at or after the one the tick before it
+went to, in plan order, else the first such climb anywhere, else the last matching one. So a
+climb queued twice fills its first slot before its second, and a tick on a pyramid's way
+down never lands on a way-up copy the climber skipped. `assignWorkoutTicks` groups a
+session's ticks by the same rule when the server sends no tick uuids. A tick that matches nothing
 counts as off plan.
 Each climb's reps are its ticks in time order. Every tally counts ticks, the unit the
 session totals use: `sent` is flash plus send ticks, `attempts` is attempt ticks, `skipped`
@@ -631,6 +634,25 @@ off from instead (`coolDownSource`), and the preview heads its climbs "Cool-down
 warm-up with no workout block on either side says it needs one. Any block can move up or down or be removed. The cap is five
 blocks, warm-ups included (`MAX_WORKOUT_BLOCKS` in `workout-blocks.ts`).
 A ladder block has a "Hardest first" switch (`descending` on `LadderOptions`): the steps run from the target grade down, the first step is the peak and the rest are decreasing, and a warm-up before it still ramps to the target grade.
+
+A pyramid block has a "Same climbs down" switch (`repeatOnWayDown` on `PyramidOptions`, off
+by default, #6740): the way down climbs the way-up climbs again in exact reverse, so 7 steps
+queue A B C D C B A and 5 steps of two climbs queue A B C D E F D C B A. Every way-down slot
+carries `repeatOfIndex`, the plan index of its way-up twin (`PlannedClimbSlot`); only
+`decreasing` slots repeat. An even step count plans two peak steps, and those stay two
+different climbs (6 steps queue A B C D B A), so one climb never sits on two pages in a row.
+The slot field is generic on purpose: OTM rounds (#6736) and climb sources (#6739) can mark
+repeats the same way.
+
+In the preview (`workout-preview-pool.ts`), a repeat slot takes no climb from a pool and asks
+none for one: once every other slot is filled it copies its twin's climb under a queue item
+of its own (`repeatTwinPositions`), and it is empty when its twin is. Refreshing either row of
+a pair picks a new climb for the way-up slot and gives it to both, each keeping its queue-item
+uuid, and both rows spin while it runs (`linkedRowUuids`). Start queues every row once, so
+the second visit is its own queue item: its own place in the run, its own ticks in the tick
+log, its own row in the summary. Nothing new is stored: a run keeps no options, so a pyramid
+with the switch on writes the same `pyramid` stage under `boardsesh_workout_run_v1`, and an
+older bundle reads it as a pyramid whose way down happens to hold the same climbs.
 
 Every block, warm-ups included, has its own climb filters, in a folded "Climb filters"
 disclosure under the block's fields (`WorkoutBlockFilters`, rendered by
