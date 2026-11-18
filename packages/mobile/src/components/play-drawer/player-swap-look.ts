@@ -12,13 +12,10 @@
  * - A commit within 400 ms of the previous one is a flick run: no halos, no
  *   drag dim, no swell, and a 140 ms swap. Shared holds never dip.
  *
- * Everywhere else the board runs the shipped wall swap (`wall-swap.ts`) exactly
- * as before: binaries without the look (older ones, and an Android phone that
- * cannot build its GLES program), Reduce Motion (the shipped 120 ms dissolve, no
- * look), Differentiate Without Color on iOS (a ghost shows a hold's role colour
- * without its role shape) and the `player-swap-look-kill` switch, which is also
- * the QA switch for comparing the two. The native view turns the look off for
- * those settings too.
+ * Binaries without the look, Differentiate Without Color on iOS, and the
+ * `player-swap-look-kill` switch use the base wall swap (`wall-swap.ts`).
+ * Reduce Motion uses the base driver's linear dissolve. The native view
+ * also turns the look off under either accessibility setting.
  *
  * To change the look, change `PLAYER_SWAP_LOOK`. The lab's I starts from it, so
  * the lab shows the player's look and its sliders retune it live

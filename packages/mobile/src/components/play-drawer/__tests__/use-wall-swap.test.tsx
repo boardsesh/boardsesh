@@ -198,7 +198,7 @@ describe('useWallSwap', () => {
     expect(runtime.clocks).toHaveLength(0);
   });
 
-  it('under Reduce Motion skips the dim, dissolves in 120 ms and keeps shared holds whole', () => {
+  it('under Reduce Motion skips the dim, dissolves in 240 ms and keeps shared holds whole', () => {
     runtime.reduceMotion = true;
     const { swipe, frame } = mount();
     swipe.translateX.value = -SWIPE_THRESHOLD * 2;
@@ -207,12 +207,12 @@ describe('useWallSwap', () => {
     swipe.uiSteps.value = 1;
     swipe.flingDirection.value = 1;
     runtime.frame();
-    expect(runtime.timingConfigs.at(-1)).toMatchObject({ duration: 120, reduceMotion: 'never' });
+    expect(runtime.timingConfigs.at(-1)).toMatchObject({ duration: 240, reduceMotion: 'never' });
     swipe.anchorPage.value = 1;
     swipe.flingDirection.value = 0;
     swipe.translateX.value = 0;
     const shared: number[] = [];
-    for (let elapsed = 0; elapsed < 120; elapsed += 16) {
+    for (let elapsed = 0; elapsed < 240; elapsed += 16) {
       runtime.advance(16);
       shared.push(frame()[3]);
     }
