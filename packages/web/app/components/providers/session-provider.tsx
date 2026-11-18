@@ -253,6 +253,8 @@ export default function SessionProviderWrapper({
       identityProbe = probe;
       const deadline = setTimeout(() => probe.abort(), 15_000);
       let readsSession = false;
+      // The probe read the page's own login again: a held reply under a false viewer marker may land.
+      let confirmed = false;
       try {
         const response = await fetch(IDENTITY_PROBE_PATH, { cache: 'no-store', signal: probe.signal });
         // An outage proves nothing and keeps the accepted session. A 401 (only
@@ -278,6 +280,8 @@ export default function SessionProviderWrapper({
           recheckAfterProbe = false;
           readsSession = true;
           externalRefresh();
+        } else if (probed !== undefined && sessionViewerKey(probed) === browserSessionGuard().viewerKey()) {
+          confirmed = true;
         }
       } catch {
         /* Transport failure keeps the accepted session. */
@@ -290,7 +294,7 @@ export default function SessionProviderWrapper({
             void checkIdentity(false);
           } else if (!readsSession) {
             // No session read follows, so a request waiting on this check goes on now.
-            browserSessionGuard().sessionChecked(probeStarted);
+            browserSessionGuard().sessionChecked(probeStarted, confirmed);
           }
         }
       }
