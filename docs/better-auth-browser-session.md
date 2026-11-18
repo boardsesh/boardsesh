@@ -179,6 +179,76 @@ revocation goes through `lineage.ts`.
   older kinds' account read, shared by every request that asks in the same
   tick; no result cache, by design.
 
+### ws-auth and the two browser clients on the token (B3b)
+
+Under `AUTH_BROWSER_SESSION_MODE=better-auth`, `/api/internal/ws-auth`
+answers the 15-minute token instead of the raw NextAuth JWE
+(`browser-access-token-route.server.ts`). With the mode unset, empty or
+`legacy` it is the code it was; `ws-auth-access-token.integration.proof.ts`
+pins that answer from before the change. Another mode value is 503.
+
+Who the browser is comes from `resolveBrowserSession`
+(`browser-session-bridge.server.ts`), the one resolver the session read uses
+too: same precedence, same conflict and oversize rules, same newer-legacy-login
+rule. So `userId` and `authSessionId` in ws-auth always equal what
+`/api/auth/session` answers for the same request, fallbacks included. The
+session read turns the answer into session JSON and its planned cookie writes;
+ws-auth writes and clears no cookie at all, in any case. ws-auth then calls the
+backend `access` command with the canonical token the resolver found.
+
+| Case | ws-auth answer |
+| --- | --- |
+| A live session (from the cookie, or bridged) | 200 `{ token, authenticated: true, userId, authSessionId, expiresAt }`; `expiresAt` is the token's end, at most 15 minutes away |
+| No session cookie, a conflicted one, an oversized legacy cookie, or a legacy login the bridge denies | 200 `{ token: null, authenticated: false }` |
+| A first-party cookie whose session ended (the session read answers `{}` with the `denied` header) | 401 `{ token: null, authenticated: false }`; never a fall back to the legacy cookie |
+| A legacy-only browser | Bridged without a cookie (the bridge is deterministic, so the next session read sets exactly that cookie), in its own budget of 20 a minute per client address (`ws-auth-bridge:`), then the token as above |
+| Bridge over its budget or failing, an unverifiable first-party cookie beside a legacy cookie, a plain-named legacy cookie in a secure context, backend 503, an unparsed reply, the transport's 401 | 503; the client keeps its session and retries |
+
+Costs: a signed-in ws-auth is two private commands (`session`, then
+`access`); a bridging one is four. The www hook refreshes about every 12
+minutes per tab, and the provider's identity probe calls ws-auth on focus at
+most once every 30 seconds. A legacy cookie under a plain name in a secure
+context is never bridged (B2b), so such a browser gets 503 from ws-auth until it
+signs in again; so does a browser holding an unverifiable first-party cookie
+beside its legacy one.
+
+**www** (`app/lib/auth/browser-access-token.ts`, `use-ws-auth-token.ts`). The
+token lives in memory only (React Query data, never persisted). It goes stale
+three minutes before its end, so the hook refetches at about 12 minutes, and on
+focus or `pageshow` only once fewer than three minutes remain; every caller
+shares one fetch per tab. A 503 keeps the token and backs off (30 s doubling to
+5 minutes); nothing signs out. A ws-auth 401 asks the session read once and is
+not retried. The session guard sends a request the backend refused with 401
+once more with one new token, fetched once per refused token for every caller;
+a second refusal goes to the session check, which re-reads the session. The
+provider's probe treats a ws-auth 401 as "read the session now". A socket is
+keyed by a handle that stays the same while the viewer does and reads the
+current token at each (re)connect: a 4401 close asks the next connect for a new
+token (graphql-ws reconnects and resubscribes), a 1013 reconnects with the
+same token. An account change or sign-out seen by the guard drops every token,
+and the guard closes the shared socket. After set-password the page asks for a
+new token at once. A token without `expiresAt` (legacy mode) is never
+remembered, so with the mode off requests and sockets send what they sent
+before.
+
+**Expo web** (`.web` files only: `auth-store.web.ts`,
+`auth-interceptor.web.ts`). A ws-auth answer with `expiresAt` is refreshed
+about three minutes before its end through the one shared session read
+(`synchronizeWebSession`), with the same backoff on failure; focus refreshes it
+inside the last three minutes despite the 30-second throttle, and a focus probe
+that brings a token for the same login replaces the page's own. `ensureFreshToken`
+refreshes a token inside its last three minutes before an HTTP request or a
+WebSocket handshake; a failed refresh keeps a token that has not ended. The
+existing 401 path (one shared refresh, one retry) and 4401 path (refresh, then
+reconnect) are unchanged. A ws-auth 401 inside the session/token pair reads the
+session again. The legacy JWE has no end and is used as before.
+
+Left for B4a: server renders (`getServerAuthToken`, `getAdmittedServerSession`)
+still forward and read the legacy cookie. Moving only the token would let one
+render fetch data as one login and show another, so both move together in B4a.
+Provider link and unlink have no www page under this mode yet (B5e); they
+should call `refreshAccessTokenAfterCredentialChange` as set-password does.
+
 ## Signed-in browsers from before the switch
 
 A browser with a valid legacy JWE and no new cookie is bridged by the private
@@ -461,7 +531,7 @@ whenever `NODE_ENV=production`, and a cookie domain the codec accepts). With
 one missing, or with any other mode value, every `/api/auth/*` route answers
 503 and the log names one `AUTH_BROWSER_SESSION_WEB_*` code, never a value.
 Even with every precondition met, `better-auth` stays `unavailable` while
-`BROWSER_SESSION_WEB_CUTOVER_BLOCKERS` lists www work that has not landed (B3b
+`BROWSER_SESSION_WEB_CUTOVER_BLOCKERS` lists www work that has not landed (B4
 to B7), as the backend's own list refuses to start; each later www PR deletes
 its entry. Only tests build a resolver with another list
 (`browserSessionRouteModeResolver`), which `better-auth-boundary.test.ts`
