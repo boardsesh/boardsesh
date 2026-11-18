@@ -9,6 +9,12 @@ import { DEFAULT_SETTINGS, getSetting, setSetting } from '../../../../settings';
 
 const inView = vi.hoisted(() => ({
   connectedBoardName: null as string | null,
+  spraywallAdjacentLightingEligible: false,
+  setMoonboardLightAdjacentHolds: vi.fn(),
+  reassertWall: vi.fn(),
+}));
+vi.mock('../../../../lib/spray/use-spray-wall-adjacent-lighting', () => ({
+  useSprayWallAdjacentLightingEligible: () => inView.spraywallAdjacentLightingEligible,
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
@@ -16,7 +22,14 @@ const openExternalUrl = vi.hoisted(() => vi.fn<(url: string, source: string) => 
 vi.mock('../../../../lib/open-url', () => ({ openExternalUrl }));
 vi.mock('../../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () =>
-    inView.connectedBoardName === null ? null : { boardName: inView.connectedBoardName },
+    inView.connectedBoardName === null
+      ? null
+      : {
+          boardName: inView.connectedBoardName,
+          moonboardLightAdjacentHolds: true,
+          setMoonboardLightAdjacentHolds: inView.setMoonboardLightAdjacentHolds,
+          reassertWall: inView.reassertWall,
+        },
 }));
 
 import { useBoardLightingSections } from '../use-board-lighting-sections';
@@ -34,7 +47,11 @@ function selectRow(rows: MoreRow[], key: string) {
 
 beforeEach(() => {
   inView.connectedBoardName = null;
+  inView.spraywallAdjacentLightingEligible = false;
+  vi.clearAllMocks();
   setSetting('putOnBoardKeepsLighting', DEFAULT_SETTINGS.putOnBoardKeepsLighting);
+  setSetting('spraywallLightAdjacentHolds', false);
+  setSetting('moonboardLightAdjacentHolds', true);
 });
 
 describe('useBoardLightingSections: Stop driving after', () => {
@@ -65,5 +82,38 @@ describe('useBoardLightingSections: the driving help row', () => {
     row.onPress();
     expect(openExternalUrl).toHaveBeenCalledOnce();
     expect(openExternalUrl.mock.calls[0][0]).toMatch(/\/help\/board-and-bluetooth#driving$/);
+  });
+});
+
+describe('useBoardLightingSections: upper LEDs', () => {
+  it.each([true, false])('shows the Spraywall row only with an eligible setup: %s', (eligible) => {
+    inView.connectedBoardName = 'spray';
+    inView.spraywallAdjacentLightingEligible = eligible;
+    const row = rowsOf().find((candidate) => candidate.key === 'spraywallLightAdjacentHolds');
+    expect(Boolean(row)).toBe(eligible);
+  });
+
+  it('writes Spraywall lighting independently without reasserting the previous setting', () => {
+    inView.connectedBoardName = 'spray';
+    inView.spraywallAdjacentLightingEligible = true;
+    const row = rowsOf().find((candidate) => candidate.key === 'spraywallLightAdjacentHolds');
+    if (row?.kind !== 'toggle') throw new Error('no Spraywall upper lighting row');
+    expect(row.value).toBe(false);
+    expect(row.subtitle).toBe('lightControl.spraywallLightAdjacentHoldsHelp');
+    act(() => row.onValueChange(true));
+    expect(getSetting('spraywallLightAdjacentHolds')).toBe(true);
+    expect(getSetting('moonboardLightAdjacentHolds')).toBe(true);
+    expect(inView.setMoonboardLightAdjacentHolds).not.toHaveBeenCalled();
+    expect(inView.reassertWall).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing MoonBoard setting and relight handler', () => {
+    inView.connectedBoardName = 'moonboard';
+    const row = rowsOf().find((candidate) => candidate.key === 'moonboardLightAdjacentHolds');
+    if (row?.kind !== 'toggle') throw new Error('no MoonBoard upper lighting row');
+    act(() => row.onValueChange(false));
+    expect(inView.setMoonboardLightAdjacentHolds).toHaveBeenCalledExactlyOnceWith(false);
+    expect(inView.reassertWall).toHaveBeenCalledOnce();
+    expect(getSetting('spraywallLightAdjacentHolds')).toBe(false);
   });
 });

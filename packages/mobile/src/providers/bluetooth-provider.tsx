@@ -1106,6 +1106,7 @@ export function BluetoothProvider({
   const { setCurrentClimb, getQueueSnapshot } = useQueueActions();
   const { showToast } = useToast();
   const [moonboardLightAdjacentHolds, setMoonboardLightAdjacentHolds] = useSetting('moonboardLightAdjacentHolds');
+  const [spraywallLightAdjacentHolds] = useSetting('spraywallLightAdjacentHolds');
   const encodingSignature = getBleEncodingSignature(boardName, moonboardLightAdjacentHolds);
   const { overrides: holdColorOverrides, signature: holdColorSignature } = useHoldColorOverrides();
   const bluetoothColorOverrides = useMemo(
@@ -1706,6 +1707,7 @@ export function BluetoothProvider({
     boardName,
     layoutId,
     colorOverrides: bluetoothColorOverrides,
+    lightAboveHolds: spraywallLightAdjacentHolds === true,
     onInvalidated: invalidateSprayLedFrames,
     onFailure: reportSprayLedFailure,
   });

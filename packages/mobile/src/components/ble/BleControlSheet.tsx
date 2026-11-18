@@ -21,9 +21,10 @@ type BleControlSheetProps = {
   /** Disconnect Bluetooth when driving ends (2.7): let go of the board when a drive ends. */
   disconnectWhenDrivingEnds: boolean;
   onToggleDisconnectWhenDrivingEnds: (enabled: boolean) => void;
-  /** Show the MoonBoard "light hold above" row — only when the connected
-   * board is a MoonBoard. */
+  /** Show the "light hold above" row for a board that supports it. */
   showLightAdjacentHolds: boolean;
+  /** Spraywall helper copy replaces the MoonBoard controller explanation. */
+  spraywallAdjacentLighting?: boolean;
   lightAdjacentHoldsEnabled: boolean;
   onToggleLightAdjacentHolds: (enabled: boolean) => void;
   /** Always drive the wall: this phone drives the wall while it holds the board. */
@@ -73,6 +74,7 @@ function BleControlSheet({
   disconnectWhenDrivingEnds,
   onToggleDisconnectWhenDrivingEnds,
   showLightAdjacentHolds,
+  spraywallAdjacentLighting = false,
   lightAdjacentHoldsEnabled,
   onToggleLightAdjacentHolds,
   alwaysDrive,
@@ -133,7 +135,11 @@ function BleControlSheet({
         {showLightAdjacentHolds && (
           <SwitchRow
             label={tCommon('lightControl.lightAdjacentHolds')}
-            description={tCommon('lightControl.lightAdjacentHoldsHelp')}
+            description={
+              spraywallAdjacentLighting
+                ? tCommon('lightControl.spraywallLightAdjacentHoldsHelp')
+                : tCommon('lightControl.lightAdjacentHoldsHelp')
+            }
             wrapDescription
             value={lightAdjacentHoldsEnabled}
             onValueChange={onToggleLightAdjacentHolds}

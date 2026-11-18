@@ -12,6 +12,7 @@ function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLight
     alwaysDrive: { enabled: false, onChange: vi.fn() },
     playlistTapLoadsQueue: { enabled: false, onChange: vi.fn() },
     moonboardLightAdjacentHolds: null,
+    spraywallLightAdjacentHolds: null,
     ...overrides,
   };
 }
@@ -157,6 +158,26 @@ describe('buildBoardLightingSections', () => {
     row.onValueChange(true);
     expect(input.playlistTapLoadsQueue.onChange).toHaveBeenCalledWith(true);
     expect(input.alwaysDrive.onChange).not.toHaveBeenCalled();
+  });
+
+  it('puts the Spraywall upper-LED switch in the same position, with its own setting and helper text', () => {
+    const onChange = vi.fn();
+    const input = makeInput({ spraywallLightAdjacentHolds: { enabled: false, onChange } });
+    expect(buildBoardLightingSections(input)[3].rows.map((row) => row.key)).toEqual([
+      'playlistTapLoadsQueue',
+      'spraywallLightAdjacentHolds',
+    ]);
+    const row = findRow(input, 'spraywallLightAdjacentHolds');
+    if (row.kind !== 'toggle') throw new Error('not a toggle');
+    expect(row).toMatchObject({
+      label: 'lightControl.lightAdjacentHolds',
+      subtitle: 'lightControl.spraywallLightAdjacentHoldsHelp',
+      value: false,
+    });
+    row.onValueChange(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(input.playlistTapLoadsQueue.onChange).not.toHaveBeenCalled();
+    expect(findRowKeys(input)).not.toContain('moonboardLightAdjacentHolds');
   });
 
   it('hands the Always drive the wall flip to its own handler', () => {

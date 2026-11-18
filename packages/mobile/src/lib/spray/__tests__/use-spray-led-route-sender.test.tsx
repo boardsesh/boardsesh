@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   privacy: 'current',
   removal: 0,
   registered: null as null | { wallUuid: string },
+  ownsLane: true,
   background: null as ((state: string) => void) | null,
   credentialChanged: null as (() => void) | null,
   configuration: null as ((wallUuid: string) => void) | null,
@@ -120,11 +121,282 @@ beforeEach(() => {
   mocks.clear.mockResolvedValue(true);
   mocks.close.mockResolvedValue(undefined);
   mocks.detach.mockResolvedValue(undefined);
-  mocks.create.mockReturnValue({ show: mocks.show, clear: mocks.clear, close: mocks.close, detach: mocks.detach });
+  mocks.ownsLane = true;
+  mocks.create.mockReturnValue({
+    show: mocks.show,
+    clear: mocks.clear,
+    close: mocks.close,
+    detach: mocks.detach,
+    isOwner: () => mocks.ownsLane,
+  });
 });
 afterEach(cleanup);
 
 describe('spray route transport', () => {
+  const useUpperSender = (lightAboveHolds = true) =>
+    useSprayLedRouteSender({
+      boardName: 'spray',
+      layoutId: 42,
+      colorOverrides: { STARTING: '#804020' },
+      lightAboveHolds,
+      onInvalidated: mocks.invalidate,
+      onFailure: mocks.failure,
+    });
+
+  function upperMapping() {
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [{ holdId: 7, holeIndices: [0], ledIds: ['a'], indices: [2], aboveLedIds: ['b'], aboveIndices: [5] }],
+    });
+  }
+
+  it.each(['below', 'alternating'])('dims the separate upper LED for %s placement', async (ledPlacement) => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement });
+    upperMapping();
+    const { result } = renderHook(() => useUpperSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith(
+      [2, 5],
+      [
+        { index: 2, color: [128, 64, 32] },
+        { index: 5, color: [32, 16, 8] },
+      ],
+    );
+  });
+
+  it.each(['center', 'sides'])('keeps upper lighting disabled for %s placement', async (ledPlacement) => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement });
+    upperMapping();
+    const { result } = renderHook(() => useUpperSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith([2], [{ index: 2, color: [128, 64, 32] }]);
+  });
+
+  it('leaves upper references dark when the option is off', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    upperMapping();
+    const { result } = renderHook(() => useUpperSender(false));
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith([2], [{ index: 2, color: [128, 64, 32] }]);
+  });
+
+  it('lights primary LEDs when the optional upper position is missing or unwired', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [{ holdId: 7, holeIndices: [0], ledIds: ['a'], indices: [2], aboveLedIds: ['unwired'], aboveIndices: [] }],
+    });
+    const { result } = renderHook(() => useUpperSender());
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith([2], [{ index: 2, color: [128, 64, 32] }]);
+  });
+
+  it('keeps route LEDs at full brightness when another hold also refers to them as upper LEDs', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'alternating' });
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [
+        { holdId: 7, holeIndices: [0], ledIds: ['a'], indices: [2], aboveLedIds: ['b'], aboveIndices: [5] },
+        { holdId: 8, holeIndices: [1], ledIds: ['b'], indices: [5], aboveLedIds: ['a'], aboveIndices: [2] },
+      ],
+    });
+    const { result } = renderHook(() => useUpperSender());
+    expect(await result.current.send('p7r1p8r1')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith(
+      [2, 5],
+      [
+        { index: 2, color: [128, 64, 32] },
+        { index: 5, color: [128, 64, 32] },
+      ],
+    );
+  });
+
+  it('refreshes the owned route after the upper-light setting changes without reasserting the queue', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    upperMapping();
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    mocks.invalidate.mockClear();
+    rerender({ enabled: true });
+    await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(2));
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.invalidate).not.toHaveBeenCalledWith(true);
+    expect(mocks.show.mock.lastCall?.[0]).toEqual([2, 5]);
+  });
+
+  it('does not take a wall or send a command when the option changes without a route session', () => {
+    const { rerender } = renderHook(({ enabled }) => useUpperSender(enabled), { initialProps: { enabled: false } });
+    rerender({ enabled: true });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.show).not.toHaveBeenCalled();
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(mocks.invalidate).not.toHaveBeenCalledWith(true);
+  });
+
+  it('uses the new setting in a pending first route and preserves its acknowledgement', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    upperMapping();
+    let complete!: (geometry: typeof payload) => void;
+    mocks.payload.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    const pending = result.current.send('p7r1');
+    await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalled());
+    rerender({ enabled: true });
+    complete(payload);
+    expect(await pending).toBe(true);
+    expect(mocks.show.mock.lastCall?.[0]).toEqual([2, 5]);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it('uses a changed option while the first route is still loading controller settings', async () => {
+    upperMapping();
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    let complete!: (settings: { enabled: boolean; controller: { type: string; url: string } }) => void;
+    mocks.settings.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    const pending = result.current.send('p7r1');
+    await vi.waitFor(() => expect(mocks.settings).toHaveBeenCalled());
+    expect(mocks.create).not.toHaveBeenCalled();
+    rerender({ enabled: true });
+    complete({ enabled: true, controller: { type: 'wled', url: 'http://wall.local' } });
+    expect(await pending).toBe(true);
+    expect(mocks.show.mock.lastCall?.[0]).toEqual([2, 5]);
+  });
+
+  it('finishes a changed option during an in-flight controller write before acknowledging the route', async () => {
+    upperMapping();
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    let complete!: (acknowledged: boolean) => void;
+    mocks.show.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    const pending = result.current.send('p7r1');
+    await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(1));
+    rerender({ enabled: true });
+    complete(true);
+    expect(await pending).toBe(true);
+    expect(mocks.show).toHaveBeenCalledTimes(2);
+    expect(mocks.show.mock.lastCall?.[0]).toEqual([2, 5]);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it('preserves an explicitly cleared wall when the option changes', async () => {
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    expect(await result.current.send('')).toBe(true);
+    rerender({ enabled: true });
+    await Promise.resolve();
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+    expect(mocks.clear).toHaveBeenCalledTimes(1);
+    expect(mocks.invalidate).not.toHaveBeenCalledWith(true);
+  });
+
+  it('does not take back a setup preview between acknowledgement and an option-refresh write', async () => {
+    upperMapping();
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    let complete!: (acknowledged: boolean) => void;
+    mocks.show.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    const pending = result.current.send('p7r1');
+    await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(1));
+    rerender({ enabled: true });
+    mocks.ownsLane = false;
+    complete(true);
+    expect(await pending).toBe(false);
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not take the controller back from a setup preview on an option change', async () => {
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    mocks.ownsLane = false;
+    rerender({ enabled: true });
+    await Promise.resolve();
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the actual preview frames rather than replacing them with another route', async () => {
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    mocks.mapping.mockReturnValue({
+      holes: [],
+      holds: [{ holdId: 8, holeIndices: [0], ledIds: ['c'], indices: [3], aboveLedIds: ['d'], aboveIndices: [6] }],
+    });
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p8r1')).toBe(true);
+    rerender({ enabled: true });
+    await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(2));
+    expect(mocks.show.mock.lastCall?.[0]).toEqual([3, 6]);
+    expect(mocks.invalidate).not.toHaveBeenCalledWith(true);
+  });
+
+  it('does not steal the lane when a setup preview starts while refreshed geometry is loading', async () => {
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    let complete!: (geometry: typeof payload) => void;
+    mocks.payload.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    rerender({ enabled: true });
+    await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(2));
+    mocks.ownsLane = false;
+    complete(payload);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])(
+    'refreshes the last acknowledged route after a refused request (mirrored=%s)',
+    async (mirrored) => {
+      mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+      upperMapping();
+      const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+        initialProps: { enabled: false },
+      });
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(await result.current.send('p8r1', mirrored)).toBe(false);
+      rerender({ enabled: true });
+      await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(2));
+      expect(mocks.show.mock.lastCall?.[0]).toEqual([2, 5]);
+    },
+  );
+
   it('never clears after credentials change while the native driver loads', async () => {
     let finishLoading!: (driver: string) => void;
     mocks.loadDriver.mockReturnValueOnce(

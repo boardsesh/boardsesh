@@ -507,13 +507,14 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         return;
       }
       const finishRebuild = (draft: TnutLayout) => {
+        const bound = { ...draft, ledPositions: bindLedPositionsToHoles(draft, source.frame) };
         generatedLeds.current = signature;
-        ledBasis.current = draft;
-        generatedWiring.current = draft.wiring
-          ? wiringSignature(draft, draft.wiring.direction, draft.wiring.startCorner)
+        ledBasis.current = bound;
+        generatedWiring.current = bound.wiring
+          ? wiringSignature(bound, bound.wiring.direction, bound.wiring.startCorner)
           : null;
-        setLayout(draft);
-        saveWork(draft);
+        setLayout(bound);
+        saveWork(bound);
         setStep('ledPositions');
       };
       const expanded = ledBasis.current && expandLedGrid(ledBasis.current, layout);
@@ -540,14 +541,13 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       }
       const rebuildLeds = () => {
         // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
-        finishRebuild(
-          withUpdate(layout, {
-            ledPositions: generateLedPositions(layout),
-            wiring: undefined,
-            holdLeds: [],
-            ledGroups: undefined,
-          }),
-        );
+        finishRebuild({
+          ...layout,
+          ledPositions: generateLedPositions(layout),
+          wiring: undefined,
+          holdLeds: [],
+          ledGroups: undefined,
+        });
       };
       if (wouldDiscardHandWork()) {
         await confirmAction(

@@ -8,6 +8,7 @@ import { openExternalUrl } from '../../../lib/open-url';
 import { hapticSelection } from '../../../lib/haptics';
 import { useOptionalBluetoothContext } from '../../../providers/bluetooth-provider';
 import { useSetting } from '../../../settings';
+import { useSprayWallAdjacentLightingEligible } from '../../../lib/spray/use-spray-wall-adjacent-lighting';
 import { buildBoardLightingSections } from './board-lighting-model';
 
 /**
@@ -31,6 +32,11 @@ export function useBoardLightingSections(): MoreSection[] {
   const moonboardLightAdjacentHolds = bluetooth?.moonboardLightAdjacentHolds ?? false;
   const setMoonboardLightAdjacentHolds = bluetooth?.setMoonboardLightAdjacentHolds;
   const reassertWall = bluetooth?.reassertWall;
+  const showSpraywallLightAdjacentHolds = useSprayWallAdjacentLightingEligible(
+    bluetooth?.boardName,
+    bluetooth?.layoutId,
+  );
+  const [spraywallLightAdjacentHolds, setSpraywallLightAdjacentHolds] = useSetting('spraywallLightAdjacentHolds');
 
   return useMemo(
     () =>
@@ -81,6 +87,15 @@ export function useBoardLightingSections(): MoreSection[] {
               },
             }
           : null,
+        spraywallLightAdjacentHolds: showSpraywallLightAdjacentHolds
+          ? {
+              enabled: spraywallLightAdjacentHolds,
+              onChange: (enabled) => {
+                hapticSelection();
+                setSpraywallLightAdjacentHolds(enabled);
+              },
+            }
+          : null,
         onOpenDrivingHelp: () => {
           void openExternalUrl(
             buildHelpSectionUrl('board-and-bluetooth', 'driving', language),
@@ -104,6 +119,9 @@ export function useBoardLightingSections(): MoreSection[] {
       showMoonboardLightAdjacentHolds,
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
+      showSpraywallLightAdjacentHolds,
+      spraywallLightAdjacentHolds,
+      setSpraywallLightAdjacentHolds,
       reassertWall,
     ],
   );

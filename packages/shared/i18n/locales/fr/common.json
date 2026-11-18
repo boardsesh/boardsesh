@@ -933,6 +933,7 @@
     "turnOffAll": "Tout éteindre",
     "lightAdjacentHolds": "Allumer la prise du dessus",
     "lightAdjacentHoldsHelp": "Allume une seconde LED, plus tamisée, au-dessus de chaque prise de départ ou de main allumée. Nécessite un contrôleur MoonBoard avec la fonction LED additionnelle.",
+    "spraywallLightAdjacentHoldsHelp": "Allume une LED plus tamisée au-dessus de chaque prise allumée lorsqu’une LED supérieure lui est attribuée dans la configuration du Spraywall.",
     "disconnect": "Déconnecter la board"
   },
   "bluetooth": {

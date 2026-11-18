@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   offlineMode: false,
   autoConnectBle: true,
   moonboardLightAdjacentHolds: false,
+  spraywallLightAdjacentHolds: false,
   moonboardGridLabels: true,
   alwaysDrive: false,
   putOnBoardKeepsLighting: DEFAULT_KEEP_LIGHTING,

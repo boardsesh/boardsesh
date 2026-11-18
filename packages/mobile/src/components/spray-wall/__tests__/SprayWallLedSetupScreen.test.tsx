@@ -12,6 +12,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assignLedIndices,
+  bindLedPositionsToHoles,
   createWiring,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
@@ -1329,6 +1330,21 @@ describe('SprayWallLedSetupScreen', () => {
       expect(lastSaved().wiring).toEqual(saved.wiring);
       advanceToWiring();
       expect(lastSaved().wiring).toEqual(saved.wiring);
+    });
+
+    it('persists refreshed upper references when an expanded below layout keeps existing cable work', async () => {
+      const saved = wiredGrid(3, 3);
+      saved.ledPlacement = 'below';
+      saved.ledPositions = generateLedPositions(saved);
+      saved.wiring = { ...createWiring(saved.ledPositions, 'horizontal', 'tl', saved), initialSkip: 2 };
+      await growGrid(saved, 5);
+      next();
+      if (controls.confirm.mock.calls.length) await respondToConfirm(true);
+      await waitFor(() => expect(storage.save).toHaveBeenCalled());
+      const expanded = lastSaved();
+      expect(expanded.ledPositions?.some((led) => led.aboveHole)).toBe(true);
+      expect(expanded.ledPositions).toEqual(bindLedPositionsToHoles(expanded, photoSource.frame));
+      expect(expanded.wiring).toEqual(saved.wiring);
     });
 
     it('warns about manual edits on expansion and keeps them and their wire when confirmed', async () => {

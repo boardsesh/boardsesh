@@ -31,6 +31,8 @@ export type BoardLightingModelInput = {
    * reachable without a live connection.
    */
   moonboardLightAdjacentHolds: Toggle | null;
+  /** The same row for a Spraywall configured with LEDs below/between holds. */
+  spraywallLightAdjacentHolds: Toggle | null;
   /**
    * Opens the www help on driving the wall (`/help/board-and-bluetooth#driving`).
    * The preview-first card and the What's New spotlight both retire, so this
@@ -199,6 +201,15 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       subtitle: t('lightControl.lightAdjacentHoldsHelp'),
       value: input.moonboardLightAdjacentHolds.enabled,
       onValueChange: input.moonboardLightAdjacentHolds.onChange,
+    });
+  } else if (input.spraywallLightAdjacentHolds) {
+    moreLightingRows.push({
+      kind: 'toggle',
+      key: 'spraywallLightAdjacentHolds',
+      label: t('lightControl.lightAdjacentHolds'),
+      subtitle: t('lightControl.spraywallLightAdjacentHoldsHelp'),
+      value: input.spraywallLightAdjacentHolds.enabled,
+      onValueChange: input.spraywallLightAdjacentHolds.onChange,
     });
   }
 

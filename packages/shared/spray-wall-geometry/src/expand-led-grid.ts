@@ -13,7 +13,11 @@ function originalPoint(id: string): TnutPoint | undefined {
 export function hasStaleLedGrid(layout: TnutLayout): boolean {
   if (layout.pattern === 'custom') return false;
   const holes = new Set(layout.holes.map(pointKey));
-  return (layout.ledPositions ?? []).some((led) => originalPoint(led.id) && led.hole && !holes.has(pointKey(led.hole)));
+  return (layout.ledPositions ?? []).some(
+    (led) =>
+      originalPoint(led.id) &&
+      ((led.hole && !holes.has(pointKey(led.hole))) || (led.aboveHole && !holes.has(pointKey(led.aboveHole)))),
+  );
 }
 
 function mountingSlot(layout: TnutLayout, led: LedPosition, origin: TnutPoint): string {
@@ -99,11 +103,18 @@ export function expandLedGrid(
   const kept = draft.ledPositions
     .filter(({ id }) => retained.has(id) || keep.has(id))
     .map((led) => {
-      if (!led.hole || currentHoles.has(pointKey(led.hole))) return led;
-      // This LED still exists on the cable but its former mounting hole no
-      // longer exists in the calibration. Keep the LED as an independent dot.
-      const { hole: _removed, ...independent } = led;
-      return independent;
+      const removedHole = led.hole && !currentHoles.has(pointKey(led.hole));
+      // Upper references are automatic. A new pitch can put another nut/LED
+      // between an old pair even when both old nuts still exist. Re-infer from
+      // the retained origin, which older clients also preserve, on next bind.
+      const removedAboveHole = led.aboveHole !== undefined;
+      if (!removedHole && !removedAboveHole) return led;
+      // Keep physical dots and surviving primary references intact.
+      const { hole, aboveHole: _aboveHole, ...independent } = led;
+      return {
+        ...independent,
+        ...(!removedHole && hole ? { hole } : {}),
+      };
     });
   if (kept.some(({ id }) => !retained.has(id))) needsReview = true;
   const usedPoints = new Set(kept.map(pointKey));
