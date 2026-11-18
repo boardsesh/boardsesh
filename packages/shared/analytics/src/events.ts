@@ -351,8 +351,9 @@ export const SHARED_EVENTS = {
   LiveSessionJoined: 'Live Session Joined',
   StartSessionPromptTapped: 'Start Session Prompt Tapped',
   // A tap inside one of Home's sections (#7689). { section: 'week' | 'session'
-  // | 'playlists', target }: `target` names what was tapped ('record',
-  // 'start', 'open', 'all', or a smart playlist's type). Divide by Home
+  // | 'projects' | 'playlists', target }: `target` names what was tapped
+  // ('record', 'start', 'open', 'climb', 'all', or a smart playlist's type).
+  // Projects 'climb' over shelf views is #7691's open rate. Divide by Home
   // screen views for the share of Home visits that act on a section. Added
   // together with retiring 'Add to Queue', which had no call site left.
   HomeSectionTapped: 'Home Section Tapped',
