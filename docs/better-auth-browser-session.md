@@ -2073,7 +2073,9 @@ every web-session command on the real LOGIN in CI.
 
 Every run, pull request or nightly, runs every acceptance spec against a
 production build of www, in Chromium, WebKit and `chromium-bfcache`: green,
-about 11 minutes of job time (#7810). The nightly first runs the legacy
+about 8 to 12 minutes of job time (#7810). `B7_BROWSER_ACCEPTANCE` left both
+cutover lists after run 44361714455 passed five attempts in a row on one head
+(`fff7141457`, 48 tests each, no harness retry). The nightly first runs the legacy
 baseline. Not covered here: Google and Apple sign-in through the browser (the
 Google stand-in, `auth-proofs/google-oidc-fixture.ts`, is not wired into the
 edge), the partner consent page (it needs the partner OAuth journey's own
