@@ -11,7 +11,7 @@ import {
   PARTNER_DEVELOPER_CONSOLE_FLAG,
 } from '@boardsesh/auth-protocol/partner-oauth';
 import type { ConnectionContext, CreateOAuthClientInput } from '@boardsesh/shared-schema';
-import { oauthClient, users } from '@boardsesh/db/schema/auth';
+import { oauthClient, partnerDeveloperEmails, users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { API_HOSTNAME } from '../handlers/api-host';
 import { redisClientManager } from '../redis/client';
@@ -692,7 +692,7 @@ describe('the other modes', () => {
     expect(posthog.asked(developerId)).toBe(0);
   });
 
-  it('still registers only allowlisted developers in open, until developer email has a real proof', async () => {
+  it('opens registration only after independent email proof, without an invite', async () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
     vi.stubEnv('PARTNER_OAUTH_SECRETS', PARTNER_SECRET);
     const listed = await createDeveloper();
@@ -704,11 +704,17 @@ describe('the other modes', () => {
         { input: { ...APP_INPUT, applicationType: 'WEB', tokenEndpointAuthMethod: 'NONE' } },
         context(verifiedOutsider),
       ),
-    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN', reason: 'NOT_ALLOWLISTED' } });
+    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN', reason: 'EMAIL_NOT_VERIFIED' } });
+    await db.insert(partnerDeveloperEmails).values({
+      userId: verifiedOutsider,
+      email: `${verifiedOutsider}@example.invalid`,
+      requestedAt: new Date(),
+      verifiedAt: new Date(),
+    });
     const created = await oauthClientMutations.createOAuthClient(
       undefined,
       { input: { ...APP_INPUT, applicationType: 'WEB', tokenEndpointAuthMethod: 'NONE' } },
-      context(listed),
+      context(verifiedOutsider),
     );
     expect(created.clientSecret).toBeNull();
     expect(created.client.tokenEndpointAuthMethod).toBe('NONE');

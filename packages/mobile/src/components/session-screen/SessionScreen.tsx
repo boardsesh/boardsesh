@@ -138,6 +138,7 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
           {showLiveSession ? (
             <InSessionView
               showChrome={false}
+              onRequestEndSession={requestEndSession}
               endVisible={showEndSession}
               onEndDismiss={dismissEndSession}
               translateY={translateY}

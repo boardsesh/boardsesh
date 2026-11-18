@@ -588,7 +588,7 @@
       "gone": "Cette app n’est plus connectée.",
       "loadFailed": "Impossible de charger cette app. Vérifie ta connexion et réessaie.",
       "retry": "Réessayer",
-      "scopesHeading": "Ce que {{app}} peut voir",
+      "scopesHeading": "Ce que {{app}} peut faire",
       "unnamedApp": "App sans nom",
       "publisher": "Par {{publisher}}",
       "connected": "Connectée le {{date}}",
@@ -604,7 +604,9 @@
         "logbookSpraywall": "Les blocs du Spraywall « Privé » ou « Lien seulement » d’une autre personne arrivent sans leur nom",
         "profileRead": "Voit ton nom affiché et ta photo de profil",
         "offlineAccess": "Garde cet accès jusqu’à ce que tu la déconnectes",
-        "other": "Autre accès : {{scope}}"
+        "other": "Autre accès : {{scope}}",
+        "workoutsRead": "Lire les résultats des séances prévues par cette application",
+        "workoutsWrite": "Prévoir et annuler tes séances"
       },
       "disconnect": "Déconnecter",
       "disconnectA11y": "Déconnecter {{app}}",

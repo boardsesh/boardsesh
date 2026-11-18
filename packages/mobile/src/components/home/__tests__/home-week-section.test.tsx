@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import dayjs from 'dayjs';
 import { buildWeekSummary } from '@boardsesh/profile-stats';
-import type { WeekActivityTick } from '../../../db/queries/get-week-activity-local';
+import type { ActivityTick } from '../../../db/queries/get-activity-ticks-local';
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), openClimb: vi.fn() }));
@@ -74,12 +74,7 @@ import { HomeWeekCard } from '../HomeWeekSection';
 
 const TODAY = dayjs('2026-11-18T12:00:00');
 
-function tick(
-  day: string,
-  status: WeekActivityTick['status'],
-  difficulty: number | null,
-  climbName: string | null = null,
-) {
+function tick(day: string, status: ActivityTick['status'], difficulty: number | null, climbName: string | null = null) {
   return {
     climbedAt: dayjs(`${day}T18:00:00`).toISOString(),
     status,
@@ -89,10 +84,11 @@ function tick(
     angle: 40,
     climbName,
     layoutId: 8,
-  } satisfies WeekActivityTick;
+    attemptCount: 1,
+  } satisfies ActivityTick;
 }
 
-const summaryOf = (ticks: WeekActivityTick[]) => buildWeekSummary(ticks, { today: TODAY });
+const summaryOf = (ticks: ActivityTick[]) => buildWeekSummary(ticks, { today: TODAY });
 
 beforeEach(() => {
   drawer.openClimb.mockClear();

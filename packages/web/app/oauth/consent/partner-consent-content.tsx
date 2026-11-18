@@ -31,7 +31,12 @@ import { PartnerOAuthMessage, PartnerOAuthTitle } from '../partner-oauth-layout'
 type ConsentFormView = Extract<PartnerConsentView, { kind: 'consent' }>;
 
 /** Scopes that only read. The "can't change anything" line shows only when every requested scope is one. */
-const READ_ONLY_SCOPES: ReadonlySet<string> = new Set(['profile:read', 'logbook:read', 'offline_access']);
+const READ_ONLY_SCOPES: ReadonlySet<string> = new Set([
+  'profile:read',
+  'logbook:read',
+  'workouts:read',
+  'offline_access',
+]);
 
 type Phase =
   | { kind: 'loading' }
@@ -64,6 +69,10 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
         return t('consent.scopes.logbookRead');
       case 'offline_access':
         return t('consent.scopes.offlineAccess');
+      case 'workouts:read':
+        return t('consent.scopes.workoutsRead');
+      case 'workouts:write':
+        return t('consent.scopes.workoutsWrite');
       default:
         return t('consent.scopes.other', { scope });
     }

@@ -58,6 +58,7 @@ import * as sharedProposals from '@boardsesh/graphql/operations/proposals';
 import * as sharedQa from '@boardsesh/graphql/operations/qa';
 import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session';
 import * as sharedSessionWorkouts from '@boardsesh/graphql/operations/session-workouts';
+import * as sharedAppWorkouts from '@boardsesh/graphql/operations/app-workouts';
 import * as sharedPrivacy from '@boardsesh/graphql/operations/privacy';
 import * as sharedNotifications from '@boardsesh/graphql/operations/notifications';
 import * as sharedAnalyticsConsent from '@boardsesh/graphql/operations/analytics-consent';
@@ -187,6 +188,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/qa': sharedQa,
   '@boardsesh/graphql/operations/queue-session': sharedQueueSession,
   '@boardsesh/graphql/operations/session-workouts': sharedSessionWorkouts,
+  '@boardsesh/graphql/operations/app-workouts': sharedAppWorkouts,
 };
 
 // Build the schema inside this test's own `graphql` instance. Importing a

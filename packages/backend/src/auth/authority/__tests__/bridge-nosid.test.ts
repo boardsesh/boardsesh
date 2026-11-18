@@ -82,7 +82,9 @@ async function bridge(credential: string) {
   const answer = await bridgeLegacyCredential(environment.database, credential, secret, 'on', now);
   expect(answer.status).toBe('bridged');
   if (answer.status !== 'bridged') throw new Error('Synthetic bridge refused');
-  return answer.session;
+  // The row stores only a digest; the raw token comes from the call that created it.
+  if (!answer.token) throw new Error('Synthetic bridge reused an existing row');
+  return { ...answer.session, token: answer.token };
 }
 it('preserves no-SID reads, bridge modes, provenance and unknown authentication age without cutoff writes', async () => {
   const { first } = await fixture();
@@ -247,7 +249,7 @@ it('serializes a sibling bridge behind explicit logout and refuses the old gener
   // If the bridge won before logout it must already be refused after the commit.
   if (answer.status === 'bridged')
     expect(
-      (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: answer.session.token }, now))
+      (await readFirstPartySession(environment.database, { kind: 'canonical-token', token: answer.token ?? '' }, now))
         .status,
     ).toBe('denied');
   else expect(answer.status).toBe('denied');

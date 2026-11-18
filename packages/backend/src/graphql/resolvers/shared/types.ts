@@ -21,6 +21,8 @@ export type ClimbSearchContext = {
  * Input type for createSession mutation
  */
 export type CreateSessionInput = {
+  appWorkoutId?: string | null;
+  appWorkoutSeed?: unknown;
   audience?: 'public' | 'unlisted' | 'followers' | 'invite_only' | null;
   boardPath: string;
   latitude: number;

@@ -11,6 +11,7 @@ import { RELAXES_ANONYMOUS_ROUTES } from '../lib/routing/anonymous-auth-gate';
 import { isBoardLinkPath, parseBoardLinkPath } from '../lib/routing/board-deep-link';
 import { clearBoardLinkReplay, setBoardLinkReplay } from '../lib/routing/board-link-replay';
 import { useAuth } from './auth-provider';
+import { isAppWorkoutId, parseAppWorkoutId, PENDING_APP_WORKOUT_KEY } from '../lib/partner-workout-link';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
 // (auth-provider) redirects an unauthenticated cold-start to /auth/login and
@@ -36,10 +37,12 @@ export const PENDING_BOARD_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // this, signing out hours after opening the app from a climb link would stash
 // that link again and the next sign-in would land on it. One launch, one stash.
 let handledLaunchBoardUrl: string | null = null;
+let handledLaunchWorkoutUrl: string | null = null;
 
 /** Tests only: forget the launch URL, as a new process would. */
 export function resetHandledLaunchBoardUrlForTests(): void {
   handledLaunchBoardUrl = null;
+  handledLaunchWorkoutUrl = null;
 }
 
 type PendingBoardLink = { path: string; stashedAt: number };
@@ -205,6 +208,19 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   const handleUrl = useCallback(
     (url: string | null, isLaunchUrl: boolean) => {
       if (!url) return;
+      const workoutId = parseAppWorkoutId(url);
+      if (workoutId) {
+        if (isLaunchUrl && handledLaunchWorkoutUrl === url) return;
+        if (isLaunchUrl) handledLaunchWorkoutUrl = url;
+        if (!isAuthenticatedRef.current || !getConsentSnapshot().settled) {
+          void AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, workoutId).catch((error: unknown) => {
+            reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-partner-workout' } });
+          });
+        } else if (!deferConsentDestination(`/w/${workoutId}`)) {
+          router.navigate({ pathname: '/w/[workoutId]', params: { workoutId } });
+        }
+        return;
+      }
       const sessionId = parseJoinSessionId(url);
       if (sessionId) {
         void handleSessionId(sessionId);
@@ -217,7 +233,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
       const boardPath = parseBoardLinkPath(url);
       if (boardPath) void handleBoardLink(url, boardPath, isLaunchUrl);
     },
-    [handleBoardLink, handleLegacyPreview, handleSessionId],
+    [handleBoardLink, handleLegacyPreview, handleSessionId, router],
   );
 
   // Cold start + warm links.
@@ -236,6 +252,23 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   // Replay a pending join once the user is authenticated (post-login, or a link
   // received while signed out that we stashed above). Clears the stash on
   // consume so it fires exactly once.
+  useEffect(() => {
+    if (!isAuthenticated || !consentSettled) return;
+    let cancelled = false;
+    void (async () => {
+      const workoutId = await AsyncStorage.getItem(PENDING_APP_WORKOUT_KEY);
+      if (cancelled || !isAppWorkoutId(workoutId)) return;
+      await AsyncStorage.removeItem(PENDING_APP_WORKOUT_KEY);
+      if (!deferConsentDestination(`/w/${workoutId}`))
+        router.navigate({ pathname: '/w/[workoutId]', params: { workoutId } });
+    })().catch((error: unknown) => {
+      reportHandledError(error, { tags: { source: 'deep-link', op: 'replay-partner-workout' } });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, consentSettled, router]);
+
   useEffect(() => {
     if (!isAuthenticated || !consentSettled) return;
     let cancelled = false;

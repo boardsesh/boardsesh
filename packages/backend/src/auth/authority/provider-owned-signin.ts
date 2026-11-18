@@ -42,6 +42,7 @@ import {
 } from './provider-security-intents';
 import { googleReauthenticationDeadline } from './provider-security-policy';
 import { verifyProviderGoogleAuthenticationAssertion } from './provider-google-reauthentication';
+import { sessionTokenDigest } from './session-token';
 
 type Payload<Operation extends ProviderSecurityCommand['operation']> = Extract<
   ProviderSecurityCommand,
@@ -497,7 +498,7 @@ export async function finalizeOwnedProviderSignin(
       await transaction.insert(authSession).values({
         id: preparation.credentialProof.authSessionId,
         userId: owner.userId,
-        token: candidate.credential,
+        token: sessionTokenDigest(candidate.credential),
         expiresAt: new Date(preparation.credentialExpiresAt),
         updatedAt: now,
         revocationGeneration: owner.generation,

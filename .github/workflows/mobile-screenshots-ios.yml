@@ -212,6 +212,11 @@ on:
         description: 'After a green FULL capture, publish the set as the `screenshots-baseline` prerelease that the probe gate compares against. Automatic runs after a native deploy do this themselves; set it on a dispatch (gate=full, or gate=probe when no baseline exists yet) to refresh the baseline by hand.'
         type: boolean
         default: false
+      content_baseline:
+        description: '"compare" (default) fails a shot under 40% of its baseline size as a likely mid-load capture. "floor-only" skips that ratio for this dispatch and keeps the 60 KB floor: use it once, with publish_baseline, after a deliberate screen change makes the old baseline incomparable, and check every contact sheet of that run. Automatic runs always compare.'
+        type: choice
+        options: [compare, floor-only]
+        default: compare
       cpp_target:
         description: 'Custom product page target. none keeps the default listing pipeline.'
         type: choice
@@ -1099,9 +1104,15 @@ jobs:
         if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         env:
           BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
+          # Dispatch-only escape hatch; automatic runs always compare.
+          CONTENT_BASELINE: ${{ github.event_name == 'workflow_dispatch' && inputs.content_baseline || 'compare' }}
         run: |
           set -euo pipefail
-          if [ "$BASELINE_FOUND" = "true" ]; then
+          if [ "$CONTENT_BASELINE" = "floor-only" ]; then
+            echo "::warning::content_baseline=floor-only: baseline size ratio skipped for this run; 60 KB floor still applies."
+            echo "Content gate: **floor-only** (dispatch input). Baseline ratio skipped; check every contact sheet of this run." >> "$GITHUB_STEP_SUMMARY"
+            vp run screenshot:assert-content -- --dir app-stores/apple/screenshots
+          elif [ "$BASELINE_FOUND" = "true" ]; then
             vp run screenshot:assert-content -- \
               --dir app-stores/apple/screenshots \
               --baseline-dir "$RUNNER_TEMP/previous-baseline"

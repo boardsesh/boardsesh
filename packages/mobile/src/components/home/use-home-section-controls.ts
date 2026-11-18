@@ -32,6 +32,7 @@ export function useHomeSectionControls() {
   const weekLabel = t('mobile.settings.homeSections.sections.week');
   const boardLabel = t('mobile.settings.homeSections.sections.board');
   const sessionLabel = t('mobile.settings.homeSections.sections.session');
+  const projectsLabel = t('mobile.settings.homeSections.sections.projects');
   const playlistsLabel = t('mobile.settings.homeSections.sections.playlists');
   const climbingNowLabel = t('mobile.settings.homeSections.sections.climbingNow');
   const betaLabel = t('mobile.settings.homeSections.sections.beta');
@@ -39,6 +40,7 @@ export function useHomeSectionControls() {
   const weekDescription = t('mobile.settings.homeSections.descriptions.week');
   const boardDescription = t('mobile.settings.homeSections.descriptions.board');
   const sessionDescription = t('mobile.settings.homeSections.descriptions.session');
+  const projectsDescription = t('mobile.settings.homeSections.descriptions.projects');
   const playlistsDescription = t('mobile.settings.homeSections.descriptions.playlists');
   const climbingNowDescription = t('mobile.settings.homeSections.descriptions.climbingNow');
   const betaDescription = t('mobile.settings.homeSections.descriptions.beta');
@@ -49,6 +51,7 @@ export function useHomeSectionControls() {
       week: weekLabel,
       board: boardLabel,
       session: sessionLabel,
+      projects: projectsLabel,
       playlists: playlistsLabel,
       climbingNow: climbingNowLabel,
       beta: betaLabel,
@@ -58,6 +61,7 @@ export function useHomeSectionControls() {
       week: weekDescription,
       board: boardDescription,
       session: sessionDescription,
+      projects: projectsDescription,
       playlists: playlistsDescription,
       climbingNow: climbingNowDescription,
       beta: betaDescription,
@@ -76,6 +80,7 @@ export function useHomeSectionControls() {
     weekLabel,
     boardLabel,
     sessionLabel,
+    projectsLabel,
     playlistsLabel,
     climbingNowLabel,
     betaLabel,
@@ -83,6 +88,7 @@ export function useHomeSectionControls() {
     weekDescription,
     boardDescription,
     sessionDescription,
+    projectsDescription,
     playlistsDescription,
     climbingNowDescription,
     betaDescription,

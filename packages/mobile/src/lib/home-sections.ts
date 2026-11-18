@@ -2,8 +2,9 @@ import { isSameSectionLayout, type SectionLayout, type SectionLayoutSpec } from 
 import { createSectionLayoutStore, settingsLayoutStorage, useSectionLayout } from './section-layout-store';
 
 // The sections Home shows, and in what order (#6289). The default is the Home
-// redesign's (#7688): This week (#7690), Session, Climbing now, At your level,
-// then the feed. Your board and Fresh beta (the beta shelf Home had until #5518)
+// redesign's (#7688): This week (#7690), Session, Climbing now, Back to your
+// projects (#7691, which draws nothing for a climber with no project), At your
+// level, then the feed. Your board and Fresh beta (the beta shelf Home had until #5518)
 // start hidden, and "Focused" is one tap away.
 //
 // Climbing now stays its own rail until the Session card can lead with a live
@@ -17,7 +18,16 @@ import { createSectionLayoutStore, settingsLayoutStorage, useSectionLayout } fro
 //
 // The feed stays last: it scrolls forever, so nothing could sit under it.
 
-export const HOME_SECTION_IDS = ['week', 'session', 'climbingNow', 'playlists', 'board', 'beta', 'feed'] as const;
+export const HOME_SECTION_IDS = [
+  'week',
+  'session',
+  'climbingNow',
+  'projects',
+  'playlists',
+  'board',
+  'beta',
+  'feed',
+] as const;
 export type HomeSectionId = (typeof HOME_SECTION_IDS)[number];
 /** The sections drawn above the feed; the feed is the list itself. */
 export type HomeTopSectionId = Exclude<HomeSectionId, 'feed'>;
@@ -30,14 +40,24 @@ export const HOME_SECTIONS: SectionLayoutSpec<HomeSectionId> = {
   ids: HOME_SECTION_IDS,
   defaults: {
     order: HOME_SECTION_IDS,
-    visible: { week: true, session: true, climbingNow: true, playlists: true, board: false, beta: false, feed: true },
+    visible: {
+      week: true,
+      session: true,
+      climbingNow: true,
+      projects: true,
+      playlists: true,
+      board: false,
+      beta: false,
+      feed: true,
+    },
   },
   lockedLast: 'feed',
 };
 
-/** What "Focused" shows: your week and the three cards, without the feed and Climbing now. */
+/** What "Focused" shows: your week, your projects and the three cards, without the feed and Climbing now. */
 const FOCUSED_VISIBILITY: Readonly<Record<HomeSectionId, boolean>> = {
   week: true,
+  projects: true,
   board: true,
   session: true,
   playlists: true,

@@ -31,7 +31,7 @@ export type ArtRowProps = {
    * render defeats this row's `memo`.
    */
   art: ReactNode;
-  /** The slot's width (36 or 44pt) and the matching separator inset. The art sets the row's height. */
+  /** The slot's width (36, 44 or 72pt) and the matching separator inset. The art sets the row's height. */
   artSize: ArtSize;
   title: string;
   /** See `ArtRowTitleVariant`. Defaults to `headline`. */
@@ -89,6 +89,7 @@ const HIDDEN_CHECKMARK = { opacity: 0 } as const;
 const artSlotStyles = StyleSheet.create({
   compact: { width: ART_SLOTS.compact.width, flexShrink: 0, alignItems: 'center' },
   regular: { width: ART_SLOTS.regular.width, flexShrink: 0, alignItems: 'center' },
+  large: { width: ART_SLOTS.large.width, flexShrink: 0, alignItems: 'center' },
 });
 
 /** `titleVariant="body"`: a list's spacing, tighter than a shelf's (`insetGroupedRowStyles`). */

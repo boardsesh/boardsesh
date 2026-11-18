@@ -28,7 +28,8 @@
     "locationSync": "Gels de synchronisation des lieux",
     "sprayWalls": "Données d'entraînement des Spraywalls",
     "boards": "Boards enregistrées",
-    "buildPlans": "Commandes de packs de construction"
+    "buildPlans": "Commandes de packs de construction",
+    "partnerApps": "Applications partenaires"
   },
   "buildPlans": {
     "title": "Commandes de packs de construction",
@@ -580,5 +581,34 @@
       "unlisted": "Non répertoriée",
       "private": "Privée"
     }
+  },
+  "partnerApps": {
+    "title": "Applications partenaires",
+    "description": "Applications inscrites, grimpeurs connectés et limites de connexions.",
+    "limitsHelp": "Les limites concernent les nouvelles connexions. Réduire une limite préserve les connexions existantes. Zéro bloque les nouvelles connexions. Les modifications sont enregistrées avec votre compte administrateur.",
+    "search": "Rechercher une application, un éditeur ou un développeur",
+    "searchAction": "Rechercher",
+    "app": "Application",
+    "developer": "Développeur",
+    "connections": "Connexions",
+    "limits": "Limites",
+    "actions": "Actions",
+    "activeLimit": "Nombre maximal de connexions actives",
+    "dailyLimit": "Nombre maximal de nouvelles connexions par 24 heures",
+    "usage": "{{active}} actives · {{recent}} nouvelles en 24 heures",
+    "invalidLimit": "Utilisez un nombre entier de 0 à 2147483647.",
+    "save": "Enregistrer les limites",
+    "saved": "Limites enregistrées",
+    "saveError": "Impossible d’enregistrer ces limites. Réessayez.",
+    "loading": "Chargement des applications partenaires",
+    "loadError": "Impossible de charger les applications partenaires.",
+    "retry": "Réessayer",
+    "empty": "Aucune application ne correspond à cette recherche.",
+    "total_one": "{{count}} application inscrite",
+    "total_other": "{{count}} applications inscrites",
+    "previous": "Page précédente",
+    "next": "Page suivante",
+    "active": "Active",
+    "suspended": "Suspendue"
   }
 }

@@ -12,6 +12,7 @@ import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/pas
 import { resendVerificationWithCommand } from '@/app/lib/auth/email-verification-command.server';
 import { passwordCommandUnavailableResponse } from '@/app/lib/auth/register-password-command.server';
 import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
+import { LEGACY_EMAIL_VERIFICATION_LIFETIME_MS } from '@/app/lib/auth/legacy-link-account';
 
 // Zod schema for email validation
 const resendVerificationSchema = z.object({
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Generate new token
     const token = crypto.randomUUID();
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expires = new Date(Date.now() + LEGACY_EMAIL_VERIFICATION_LIFETIME_MS);
 
     // Delete existing tokens and create new one atomically
     const issued = await db.transaction(async (tx) => {

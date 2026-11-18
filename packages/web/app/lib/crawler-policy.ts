@@ -241,6 +241,7 @@ export const AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS: readonly string[] = [
   '/health/db',
   '/api/health',
   '/robots.txt',
+  '/llms.txt',
   ...withLocaleForms(['/developers']),
 ];
 export const AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES: readonly string[] = [

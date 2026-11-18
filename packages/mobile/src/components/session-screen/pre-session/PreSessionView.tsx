@@ -56,6 +56,7 @@ import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sec
 import { OnboardingTipBanner } from '../../onboarding/OnboardingTipBanner';
 import { hasSeenTip, markTipSeen } from '../../../lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_CREW_KEY, ONBOARDING_TIP_WORKOUT_KEY } from '@boardsesh/key-value-storage';
+import { usePendingWorkout } from '../../../lib/pending-workout-store';
 
 type PreSessionViewProps = {
   /** Render the floating glass chrome (large title + board pill). True in the
@@ -96,13 +97,16 @@ export function PreSessionView({
   isOpeningClimbs = false,
 }: PreSessionViewProps) {
   const nativeRootHeader = useNativeRootHeader();
+  const pendingPartnerWorkout = usePendingWorkout();
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { variant } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
-  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } =
-    useBoardShortcutNavigation('/(tabs)/record');
+  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } = useBoardShortcutNavigation(
+    '/(tabs)/record',
+    pendingPartnerWorkout !== null,
+  );
   const { data: activeBoard } = boardQuery;
   const { isAuthenticated } = useAuth();
   const { startSession, appendQueueItems } = useQueueActions();
@@ -268,7 +272,7 @@ export function PreSessionView({
   );
 
   const handleStart = useCallback(async () => {
-    if (!activeBoard || isStartPending) return;
+    if (!activeBoard || isStartPending || pendingPartnerWorkout) return;
     const hasWorkout = hasWorkoutBlocks(selection);
     const { items: generatedItems, run: generatedRun } = hasWorkout ? toStagedQueueItems() : { items: [], run: null };
     if (hasWorkout && (status !== 'ready' || refreshingUuids.size > 0 || generatedItems.length === 0)) {
@@ -349,11 +353,12 @@ export function PreSessionView({
     isStartPending,
     planSummary.substituted,
     queryClient,
+    pendingPartnerWorkout,
   ]);
 
   const generatorPreviewReady =
     !hasWorkoutBlocks(selection) || (status === 'ready' && previewItems.length > 0 && refreshingUuids.size === 0);
-  const canStart = activeBoard != null && !isStartPending && generatorPreviewReady;
+  const canStart = activeBoard != null && !isStartPending && generatorPreviewReady && pendingPartnerWorkout === null;
   // The single source of the Start capsule's bottom offset: passed to SessionStartFab
   // AND used for the list reservation, so the FAB position and the last-row clearance
   // can't drift. The Material-vs-glass arbitration lives in computeBottomChromeMetrics
@@ -431,6 +436,13 @@ export function PreSessionView({
   const listHeader = useMemo(
     () => (
       <PreSessionHeaderView
+        partnerStartConfig={
+          privacySettings === undefined
+            ? null
+            : privacySettings.enabled
+              ? { audience: effectiveSessionAudience, isPublic: effectiveSessionAudience === 'public' }
+              : { isPublic }
+        }
         tip={
           activeTip ? (
             <View style={styles.cardInset}>
@@ -499,6 +511,7 @@ export function PreSessionView({
       handleVisibilityChange,
       isPublic,
       privacySettings?.enabled,
+      privacySettings === undefined,
       effectiveSessionAudience,
       isStartPending,
       selection,

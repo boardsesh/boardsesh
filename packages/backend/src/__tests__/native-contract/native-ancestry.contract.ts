@@ -21,6 +21,7 @@ import {
   nativeSessionRequiresAccountCutoff,
 } from '../../auth/native-session-ancestry';
 import { parseWatchPairCapability } from '../../auth/watch-pairing-capability';
+import { sessionTokenDigest } from '../../auth/authority/session-token';
 
 let fixture: Awaited<ReturnType<typeof createNativeHttpFixture>>;
 let foundation: typeof import('../../auth/current-store/foundation-context');
@@ -210,7 +211,13 @@ describe('actual exchange, refresh and source-bound watch capability ancestry', 
         .where(eq(authSession.id, String(first.sid)));
       expect(canonical.legacyLineageId).toMatch(/^credential:native-refresh:/);
       await fixture.db.delete(authCredentialLineage).where(eq(authCredentialLineage.id, canonical.legacyLineageId!));
-      const read = await readers.readFirstPartySession(fixture.db, { kind: 'canonical-token', token: canonical.token });
+      // Rows store a token digest and a native row hands no token out: give it a known one to read it.
+      const presented = randomUUID();
+      await fixture.db
+        .update(authSession)
+        .set({ token: sessionTokenDigest(presented) })
+        .where(eq(authSession.id, canonical.id));
+      const read = await readers.readFirstPartySession(fixture.db, { kind: 'canonical-token', token: presented });
       if (read.status !== 'admitted') throw new Error('Owned canonical descendant not admitted');
       expect(read.session.requiresAccountCutoff).toBe(true);
       await lineage.denyFirstPartySession(fixture.db, read.session, new Date(), authority);
@@ -328,9 +335,14 @@ describe('actual exchange, refresh and source-bound watch capability ancestry', 
     const sid = String(decodeJwt(child.jwt).sid);
     const [canonical] = await fixture.db.select().from(authSession).where(eq(authSession.id, sid));
     expect(canonical.legacyLineageId).toMatch(/^credential:native-refresh:/);
+    const presented = randomUUID();
+    await fixture.db
+      .update(authSession)
+      .set({ token: sessionTokenDigest(presented) })
+      .where(eq(authSession.id, sid));
     expect((await fixture.post('/auth/native/revoke', { refreshToken: child.refreshToken })).status).toBe(200);
     expect(
-      (await readers.readFirstPartySession(fixture.db, { kind: 'canonical-token', token: canonical.token })).status,
+      (await readers.readFirstPartySession(fixture.db, { kind: 'canonical-token', token: presented })).status,
     ).toBe('denied');
     expect(
       (

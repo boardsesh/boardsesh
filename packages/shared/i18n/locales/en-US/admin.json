@@ -28,7 +28,8 @@
     "locationSync": "Location sync freezes",
     "sprayWalls": "Spraywall training data",
     "boards": "Registered boards",
-    "buildPlans": "Build-pack orders"
+    "buildPlans": "Build-pack orders",
+    "partnerApps": "Partner apps"
   },
   "buildPlans": {
     "title": "Build-pack orders",
@@ -580,5 +581,34 @@
       "unlisted": "Unlisted",
       "private": "Private"
     }
+  },
+  "partnerApps": {
+    "title": "Partner apps",
+    "description": "Registered apps, connected climbers, and connection limits.",
+    "limitsHelp": "Limits apply to new connections. Lowering a limit keeps existing connections working. Zero blocks new connections. Changes are recorded with your admin account.",
+    "search": "Search app, publisher, or developer",
+    "searchAction": "Search",
+    "app": "App",
+    "developer": "Developer",
+    "connections": "Connections",
+    "limits": "Limits",
+    "actions": "Actions",
+    "activeLimit": "Maximum active connections",
+    "dailyLimit": "Maximum new connections per 24 hours",
+    "usage": "{{active}} active · {{recent}} new in 24 hours",
+    "invalidLimit": "Use a whole number from 0 to 2147483647.",
+    "save": "Save limits",
+    "saved": "Limits saved",
+    "saveError": "Couldn't save these limits. Try again.",
+    "loading": "Loading partner apps",
+    "loadError": "Couldn't load partner apps.",
+    "retry": "Retry",
+    "empty": "No apps match this search.",
+    "total_one": "{{count}} registered app",
+    "total_other": "{{count}} registered apps",
+    "previous": "Previous page",
+    "next": "Next page",
+    "active": "Active",
+    "suspended": "Suspended"
   }
 }

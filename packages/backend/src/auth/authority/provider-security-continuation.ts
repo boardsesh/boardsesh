@@ -13,6 +13,7 @@ import {
 import type { AuthorityTransaction } from './adapter';
 import type { FirstPartyCredential, FirstPartySession } from './session-reader';
 import type { ProviderCandidateCredential } from './provider-security-result';
+import { sessionTokenDigest } from './session-token';
 
 /** Requesting-device continuation uses the same SID, new generation/token and original provenance. */
 export async function replaceProviderCanonicalContinuation(
@@ -48,7 +49,7 @@ export async function replaceProviderCanonicalContinuation(
       (stored.revocationGeneration ?? 0) !== source.generation ||
       stored.originalAuthenticatedAt?.getTime() !== source.authenticatedAt?.getTime() ||
       stored.expiresAt.getTime() < source.expiresAt.getTime() ||
-      (sourceCredential.kind === 'canonical-token' && stored.token !== sourceCredential.token) ||
+      (sourceCredential.kind === 'canonical-token' && stored.token !== sessionTokenDigest(sourceCredential.token)) ||
       (stored.legacyLineageId?.startsWith('credential:') ?? false) !== source.requiresAccountCutoff
     )
       throw new Error('PROVIDER_CONTINUATION_SOURCE_CHANGED');
@@ -66,7 +67,12 @@ export async function replaceProviderCanonicalContinuation(
     const token = candidate.kind === 'canonical-token' ? candidate.credential : randomBytes(32).toString('base64url');
     await transaction
       .update(authSession)
-      .set({ token, revocationGeneration: generation, updatedAt: now, expiresAt: source.expiresAt })
+      .set({
+        token: sessionTokenDigest(token),
+        revocationGeneration: generation,
+        updatedAt: now,
+        expiresAt: source.expiresAt,
+      })
       .where(and(eq(authSession.id, source.authSessionId), eq(authSession.userId, source.userId)));
   } else if (sourceCredential.kind === 'canonical-token') throw new Error('PROVIDER_CONTINUATION_SOURCE_MISSING');
   await transaction

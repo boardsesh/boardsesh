@@ -11,17 +11,21 @@ OAuth consent screen, and then:
 There is no application process and no commercial agreement. Every app gets
 the same API, the same scopes and the same limits.
 
-Status: draft v1. The milestone 1 endpoints are built and not yet open to
-apps. Early access is by invitation: registration is open only to developer
-accounts the Boardsesh team has added, and each app starts with small connection
-caps (section 1). Field names and semantics here are what we intend to ship. Questions go to the Boardsesh team
-until milestone 2 publishes a support channel with the docs. Each section says which milestone
-of [integration-platform.md](./integration-platform.md) delivers it: the
-logbook first (milestone 1), workouts next (milestone 3), webhooks after that
-(milestone 4). This file becomes the public developer docs at
-`https://www.boardsesh.com/developers` in milestone 2. The design behind it is
-in [integration-platform.md](./integration-platform.md); the workouts internals
-are in [partner-workouts-internal.md](./partner-workouts-internal.md).
+Status: v1 is implemented through milestones 2–4: developer guides and
+self-service registration, workouts and webhooks. This describes the
+implemented contract; it does not announce production activation. Availability
+and registration remain controlled by the staged rollout in
+[integration-platform.md](./integration-platform.md). In allowlist mode, only
+invited developer accounts can register; open mode requires a separate email
+verification. Each app starts with the connection caps in section 1.
+
+The developer overview, guides, reference and changelog are implemented at
+`https://www.boardsesh.com/developers`, with Markdown guides and `/llms.txt` for
+coding agents. Section milestone labels record delivery order. Operator launch
+checks, partner trials and device verification still apply before rollout.
+Questions go to support@boardsesh.com. The design is in
+[integration-platform.md](./integration-platform.md); workout internals are in
+[partner-workouts-internal.md](./partner-workouts-internal.md).
 
 Everything is HTTPS.
 
@@ -663,7 +667,7 @@ unknown fields are ignored, and a block the app cannot run yet is still shown
 | `restBetweenRoundsSeconds` | int, 0 to 3600             | `fourByFour`                                   |
 | `intervalSeconds`          | int, 15 to 3600            | `onTheMinute` (default 60)                     |
 | `restSeconds`              | int, 0 to 3600             | `limitBouldering`, `volume`, `pyramid`, `ladder`, `gradeFocus` (rest after each climb) |
-| `durationSeconds`          | int                        | `freeClimbing`, display only                   |
+| `durationSeconds`          | int, 1 to 86400            | `freeClimbing`, display only                   |
 
 Block types, and how Boardsesh runs each one today:
 
@@ -741,8 +745,8 @@ body within 24 hours returns the original response. Same key, different body:
 `422`.
 
 Creating a second workout with an `externalRef` that already exists for this
-climber returns `409` with the existing workout in the body. Cancel the old
-one first if the plan changed.
+climber returns `409` with the existing workout in the body. If the plan changes, cancel the old workout and use a new externalRef for
+the replacement. Cancelling does not release the original externalRef.
 
 ### Reading and cancelling
 
@@ -1035,8 +1039,9 @@ fields, new routes, new scopes, new event types, new enum values. Read what
 you know and ignore the rest. Anything that removes or renames a field becomes
 `v2`, with `v1` kept running for at least six months and a `Sunset` header on
 its responses for that whole time. Every contract change is listed on the
-changelog page at `https://www.boardsesh.com/developers/changelog`, which
-arrives with the public developer docs in milestone 2.
+changelog page at `https://www.boardsesh.com/developers/changelog`. That page
+and its Markdown version are implemented from the checked-in contract changelog
+alongside the public developer guides.
 
 ## Later
 

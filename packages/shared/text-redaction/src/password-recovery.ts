@@ -17,9 +17,17 @@ const CUSTODY_COOKIE_PREFIXES = [
   '__host-boardsesh.browser-renewal',
   '__host-boardsesh.expired-binding',
   '__host-boardsesh.password-signin',
+  // The signed first-party browser session cookies (#7596), with and without
+  // the `__Secure-` prefix. Names live in @boardsesh/auth-protocol/browser-session-cookie.
+  '__secure-boardsesh.session_token',
+  '__secure-boardsesh.bridged_session_token',
+  'boardsesh.session_token',
+  'boardsesh.bridged_session_token',
 ];
 const CUSTODY_COOKIE_ASSIGNMENT =
   /(__Host-boardsesh\.(?:browser-renewal|expired-binding|password-signin)[^\s;=,"'<>\\]{0,160}\s*=\s*)[^\s;,"'<>\\]+/gi;
+/** Also matches the `__Secure-` spelling, which ends in the same name. */
+const SESSION_COOKIE_ASSIGNMENT = /(boardsesh\.(?:bridged_)?session_token\s*=\s*)[^\s;,"'<>\\]+/gi;
 
 function decodedName(name: string): string {
   const characters: string[] = [];
@@ -58,6 +66,7 @@ function isRenewalCookieField(name: string): boolean {
 export function redactPasswordRecoveryUrls(text: string): string {
   return text
     .replace(CUSTODY_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
+    .replace(SESSION_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
     .replace(RECOVERY_URL, (_match, path: string, marker: string) => `${path}${marker}${REDACTED}`)
     .replace(VERSIONED_SECRET, REDACTED);
 }

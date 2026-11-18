@@ -131,6 +131,11 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['similarClimbs'] / ['holdHeatmap'] — answered on device from board_climbs
   // joined to the derived holds index (holds-index/), so a climb arriving,
   // changing or being hidden changes the strip and the heatmap.
+  //
+  // ['localClimbArt'] / ['localTicks', 'activity'] — Home's projects shelf
+  //   (#7691) draws its rows from board_climbs' frames, and its tick read joins
+  //   board_climbs for each climb's name and layout. A board downloaded after
+  //   the shelf first drew must fill in the blank tiles and "Unknown climb".
   board_climbs: [
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
@@ -139,6 +144,8 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['setterStats'],
     ['similarClimbs'],
     ['holdHeatmap'],
+    ['localClimbArt'],
+    ['localTicks', 'activity'],
   ],
   // The setter picker reads stats too, on Woods only: a climb set at another angle
   // counts toward its setter at the browsed angle once it has a stats row there

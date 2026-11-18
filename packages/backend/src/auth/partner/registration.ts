@@ -1,11 +1,9 @@
+import { lockDeveloper, requireRecentSignIn } from './developer-change';
+import { hasVerifiedPartnerDeveloperEmail } from './developer-email';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { BetterAuthPlugin } from 'better-auth';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
-import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import {
-  isSignInGoodForPartnerAppChange,
-  PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS,
-} from '@boardsesh/auth-protocol/auth-time';
+import { and, asc, count, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import {
   oauthAppPolicy,
   oauthClient,
@@ -14,7 +12,6 @@ import {
   oauthConsent,
   oauthGrants,
   oauthVerification,
-  userCredentials,
   users,
 } from '@boardsesh/db/schema/auth';
 import type { WebSignInProof } from '@boardsesh/shared-schema';
@@ -45,13 +42,6 @@ import { isPartnerDatabaseBusy, runInPartnerTransaction } from './transaction';
 
 type OAuthClientRow = typeof oauthClient.$inferSelect;
 type OAuthAppPolicyRow = typeof oauthAppPolicy.$inferSelect;
-
-/**
- * Advisory lock namespace for one developer's registrations (#6982, BA-08). The
- * second key is the developer id hashed; a collision only adds a wait. Taken
- * before any row lock, so it never joins the issuers' lock order.
- */
-const REGISTRATION_LOCK_NAMESPACE = 6982;
 
 /**
  * Better Auth's client endpoints read the developer from a session. A
@@ -203,12 +193,6 @@ function isSuspended(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | und
   return row.disabled === true || Boolean(policy?.suspendedAt);
 }
 
-async function lockDeveloper(transaction: PartnerDatabase, developerId: string): Promise<void> {
-  await transaction.execute(
-    sql`select pg_advisory_xact_lock(${REGISTRATION_LOCK_NAMESPACE}, hashtext(${developerId}))`,
-  );
-}
-
 /** The developer's own app. Another developer's app reads as missing, so ids reveal nothing. */
 async function findOwnedApp(
   transaction: PartnerDatabase,
@@ -274,9 +258,6 @@ export type PartnerAppChangeNotifier = (notice: PartnerAppChangeNotice) => Promi
 /** A notice a transaction prepared, sent or skipped once it commits. */
 type PendingNotice = { readonly notice: PartnerAppChangeNotice; readonly emailVerified: boolean };
 
-/** The developer's address, read with their `users` row. */
-type DeveloperAddress = { readonly email: string; readonly emailVerified: boolean };
-
 /** The redirect URIs an edit adds and removes, or null when it leaves the set as it was. */
 function redirectUriChange(
   before: readonly string[],
@@ -286,62 +267,6 @@ function redirectUriChange(
   const added = after.filter((uri) => !before.includes(uri)).length;
   const removed = before.filter((uri) => !after.includes(uri)).length;
   return added === 0 && removed === 0 ? null : { added, removed };
-}
-
-function recentSignInRefusal(): PartnerRegistrationError {
-  return new PartnerRegistrationError(
-    'recent_sign_in_required',
-    `Sign in again to make this change. Changing redirect URIs, making a new client secret or deleting an app needs a sign-in from the last ${PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS / 60} minutes.`,
-  );
-}
-
-/**
- * The gate in front of every change that decides where an app's codes and
- * tokens go: a redirect URI added, replaced or removed, a new client secret,
- * or the app deleted (#7598). Anyone holding an older session, on a shared
- * laptop or with a copied cookie, could otherwise point the app at their own
- * redirect and take its secret.
- *
- * The sign-in comes from the credential the request authenticated with: the
- * www session's `auth_time` and `link_guarded`, read the way partner consent
- * reads them (`legacyWebSignIn`). It must be under
- * `PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` old and clearly after the
- * developer's last password write. An unknown age, an app token or a WebSocket
- * call is refused.
- *
- * Runs after the developer's advisory lock and before any write. The
- * developer's `users` row is taken FOR SHARE first, the partner lock order, and
- * the password write time is read once it is held, so a change queued behind a
- * password reset reads the reset's time. An account deleted while this waited
- * took its apps with it, so that reads as the app being gone. Returns the
- * address for the notice.
- */
-async function requireRecentSignIn(
-  transaction: PartnerDatabase,
-  developerId: string,
-  signIn: WebSignInProof | null | undefined,
-): Promise<DeveloperAddress> {
-  if (!signIn?.linkGuarded || signIn.authenticatedAtMs === null) throw recentSignInRefusal();
-  const [developer] = await transaction
-    .select({ email: users.email, emailVerified: users.emailVerified })
-    .from(users)
-    .where(eq(users.id, developerId))
-    .for('share');
-  if (!developer) throw new PartnerRegistrationError('not_found', 'No app with that client ID.');
-  const [password] = await transaction
-    .select({ updatedAt: userCredentials.updatedAt })
-    .from(userCredentials)
-    .where(eq(userCredentials.userId, developerId));
-  const recent = isSignInGoodForPartnerAppChange(
-    {
-      authTimeSeconds: Math.floor(signIn.authenticatedAtMs / 1000),
-      linkGuarded: signIn.linkGuarded,
-      passwordChangedAt: password?.updatedAt ?? null,
-    },
-    Date.now(),
-  );
-  if (!recent) throw recentSignInRefusal();
-  return { email: developer.email, emailVerified: developer.emailVerified !== null };
 }
 
 /** A lock or statement timeout is a retry, never a broken app. */
@@ -365,6 +290,7 @@ export interface PartnerRegistration {
     database: PartnerDatabase,
     developerId: string,
     input: Record<string, unknown>,
+    options?: { requireEmailProof?: boolean },
   ): Promise<PartnerAppCredentials>;
   /**
    * `signIn` is the request's verified sign-in (`ConnectionContext.webSignIn`).
@@ -462,7 +388,7 @@ export function createPartnerRegistration({
       return rows.map(({ row, policy }) => toRecord(row, policy, active.get(row.clientId) ?? 0));
     },
 
-    async createApp(database, developerId, rawInput) {
+    async createApp(database, developerId, rawInput, options) {
       const input = normalizePartnerAppInput(rawInput, configuration.developerTermsVersion);
       const created = await inRegistrationTransaction(database, async (transaction) => {
         // Serializes this developer's registrations, so the app count below holds under a race.
@@ -470,8 +396,10 @@ export function createPartnerRegistration({
         const [developer] = await transaction
           .select({ email: users.email, emailVerified: users.emailVerified })
           .from(users)
-          .where(eq(users.id, developerId));
-        if (!developer?.emailVerified) {
+          .where(eq(users.id, developerId))
+          .for('share');
+        const emailProof = developer && (await hasVerifiedPartnerDeveloperEmail(transaction, developerId));
+        if (!developer || (options?.requireEmailProof ? !emailProof : !developer.emailVerified && !emailProof)) {
           throw new PartnerRegistrationError(
             'email_not_verified',
             'Verify your email address before you register an app.',
