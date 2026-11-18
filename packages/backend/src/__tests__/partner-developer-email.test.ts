@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { users, partnerDeveloperEmails } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import {
@@ -55,6 +55,65 @@ describe('independent partner developer email proof', () => {
     expect(await hasVerifiedPartnerDeveloperEmail(database, userId)).toBe(false);
   });
 
+  it('preserves current-email proof when stale tabs resend concurrently, without sending mail', async () => {
+    const userId = await account();
+    const token = await challenge(userId);
+    expect(await confirmPartnerDeveloperEmail(database, userId, token)).toBe(true);
+    const [verified] = await db.select().from(partnerDeveloperEmails).where(eq(partnerDeveloperEmails.userId, userId));
+    const notify = vi.fn().mockResolvedValue(undefined);
+    await Promise.all(Array.from({ length: 4 }, () => requestPartnerDeveloperEmail(database, userId, notify)));
+    expect(notify).not.toHaveBeenCalled();
+    expect(await hasVerifiedPartnerDeveloperEmail(database, userId)).toBe(true);
+    const [retained] = await db.select().from(partnerDeveloperEmails).where(eq(partnerDeveloperEmails.userId, userId));
+    expect(retained).toEqual(verified);
+  });
+
+  it('locks the proof row before deciding whether to replace a challenge', async () => {
+    const lockProof = vi.fn().mockResolvedValue([
+      {
+        email: 'owner@example.com',
+        requestedAt: new Date(),
+        verifiedAt: new Date(),
+      },
+    ]);
+    const lockAccount = vi.fn().mockResolvedValue([{ email: 'owner@example.com' }]);
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({ from: () => ({ where: () => ({ for: lockAccount }) }) })
+        .mockReturnValueOnce({ from: () => ({ where: () => ({ for: lockProof }) }) }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    const lockedDatabase = {
+      transaction: async (work: (current: typeof transaction) => Promise<unknown>) => work(transaction),
+    } as unknown as PartnerDatabase;
+    const notify = vi.fn();
+    await requestPartnerDeveloperEmail(lockedDatabase, 'owner', notify);
+    expect(lockAccount).toHaveBeenCalledWith('share');
+    expect(lockProof).toHaveBeenCalledWith('update');
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('requires a fresh challenge when a verified account changes its address', async () => {
+    const userId = await account();
+    const oldToken = await challenge(userId);
+    expect(await confirmPartnerDeveloperEmail(database, userId, oldToken)).toBe(true);
+    const changedEmail = `updated-${userId}@example.com`;
+    await db.update(users).set({ email: changedEmail }).where(eq(users.id, userId));
+    await db
+      .update(partnerDeveloperEmails)
+      .set({ requestedAt: new Date(Date.now() - 61_000) })
+      .where(eq(partnerDeveloperEmails.userId, userId));
+    expect(await hasVerifiedPartnerDeveloperEmail(database, userId)).toBe(false);
+    const notify = vi.fn().mockResolvedValue(undefined);
+    await requestPartnerDeveloperEmail(database, userId, notify);
+    expect(notify).toHaveBeenCalledOnce();
+    expect(notify.mock.calls[0][0]).toBe(changedEmail);
+    expect(await confirmPartnerDeveloperEmail(database, userId, oldToken)).toBe(false);
+    expect(await hasVerifiedPartnerDeveloperEmail(database, userId)).toBe(false);
+    expect(await confirmPartnerDeveloperEmail(database, userId, notify.mock.calls[0][1])).toBe(true);
+  });
+
   it('invalidates expired and replaced links, throttles resends, and only one racing confirmation wins', async () => {
     const userId = await account();
     const original = await challenge(userId);
@@ -70,15 +129,17 @@ describe('independent partner developer email proof', () => {
       confirmPartnerDeveloperEmail(database, userId, replacement),
     ]);
     expect(outcomes.filter(Boolean)).toHaveLength(1);
-    await db
-      .update(partnerDeveloperEmails)
-      .set({ requestedAt: new Date(Date.now() - 61_000) })
-      .where(eq(partnerDeveloperEmails.userId, userId));
-    const expired = await challenge(userId);
+    const expiredUserId = await account();
+    const expired = await challenge(expiredUserId);
     await db
       .update(partnerDeveloperEmails)
       .set({ expiresAt: new Date(Date.now() - 1) })
-      .where(and(eq(partnerDeveloperEmails.userId, userId), eq(partnerDeveloperEmails.email, `${userId}@example.com`)));
-    expect(await confirmPartnerDeveloperEmail(database, userId, expired)).toBe(false);
+      .where(
+        and(
+          eq(partnerDeveloperEmails.userId, expiredUserId),
+          eq(partnerDeveloperEmails.email, `${expiredUserId}@example.com`),
+        ),
+      );
+    expect(await confirmPartnerDeveloperEmail(database, expiredUserId, expired)).toBe(false);
   });
 });

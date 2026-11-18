@@ -98,6 +98,33 @@ describe('standalone partner logbook example', () => {
     expect((await readState(file)).tokens.refreshToken).toBe('old-refresh');
   });
 
+  it.each([
+    ['numeric', () => '86400'],
+    ['HTTP date', () => new Date(Date.now() + 86_400_000).toUTCString()],
+  ])('refuses a long %s API retry without changing state or retaining the lock', async (_kind, retryAfter) => {
+    const original = await readFile(file, 'utf8');
+    request.mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': retryAfter() } }));
+    await expect(withStateLock(file, () => syncLogbook(file, state))).rejects.toThrow('later than 60 seconds');
+    expect(request).toHaveBeenCalledOnce();
+    expect(await readFile(file, 'utf8')).toBe(original);
+    await expect(withStateLock(file, async () => 'available')).resolves.toBe('available');
+  });
+
+  it.each([
+    ['numeric', () => '86400'],
+    ['HTTP date', () => new Date(Date.now() + 86_400_000).toUTCString()],
+  ])('refuses a long %s refresh retry without replaying credentials', async (_kind, retryAfter) => {
+    const original = await readFile(file, 'utf8');
+    request
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503, headers: { 'Retry-After': retryAfter() } }));
+    await expect(withStateLock(file, () => apiRequest(file, state, '/v1/me'))).rejects.toThrow('later than 60 seconds');
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(await readFile(file, 'utf8')).toBe(original);
+    expect(state.tokens).toEqual({ accessToken: 'old-access', refreshToken: 'old-refresh' });
+    await expect(withStateLock(file, async () => 'available')).resolves.toBe('available');
+  });
+
   it('serializes synchronization and credential replacement for one private file', async () => {
     await withStateLock(file, async () => {
       await expect(withStateLock(file, async () => undefined)).rejects.toThrow('Another command owns');

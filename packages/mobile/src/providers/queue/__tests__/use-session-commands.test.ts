@@ -27,10 +27,15 @@ const mocks = vi.hoisted(() => ({
   clearStoredCreatedSessionId: vi.fn(() => Promise.resolve()),
   execute: vi.fn(() => Promise.resolve({})),
   request: vi.fn(),
+  rememberPartnerWorkout: vi.fn(async (_sessionId: string, _workoutId: string) => undefined),
   setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
 
+vi.mock('../../../lib/pending-workout-store', () => ({
+  rememberPartnerWorkout: mocks.rememberPartnerWorkout,
+  clearActivePartnerWorkout: vi.fn(async () => undefined),
+}));
 vi.mock('../../../lib/active-board-store', () => ({
   getStoredActiveBoard: () => (mocks.boardRead ? mocks.boardRead() : Promise.resolve(mocks.storedActiveBoard)),
 }));
@@ -44,7 +49,10 @@ vi.mock('../../../lib/graphql/operations', () => ({
   CREATE_PARTNER_WORKOUT_SESSION: 'CreatePartnerWorkoutSession',
   END_SESSION: 'EndSession',
 }));
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => mocks.credentialGeneration }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({
+  getCredentialGeneration: () => mocks.credentialGeneration,
+  subscribeToCredentialChanges: () => () => undefined,
+}));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: () => null,
   isGraphqlRateLimitedError: () => false,
@@ -410,6 +418,7 @@ describe('partner initial seed recovery', () => {
     mocks.activeBoardGeneration = 0;
     mocks.credentialGeneration = 0;
     mocks.request.mockReset();
+    mocks.rememberPartnerWorkout.mockClear();
     mocks.setStoredSessionId.mockClear();
     mocks.clearStoredQueueSnapshot.mockClear();
   });
@@ -478,6 +487,7 @@ describe('partner initial seed recovery', () => {
     });
     expect(params.dispatch).not.toHaveBeenCalled();
     expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(mocks.rememberPartnerWorkout).not.toHaveBeenCalled();
     expect(params.setSessionId).not.toHaveBeenCalled();
   });
   it('can retry when storing the committed session id initially fails', async () => {
@@ -494,6 +504,7 @@ describe('partner initial seed recovery', () => {
       expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBeNull();
     });
     expect(params.sessionIdRef.current).toBeNull();
+    expect(mocks.rememberPartnerWorkout).toHaveBeenCalledWith('original-session', 'wk');
     await act(async () => {
       expect(await result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed })).toBe(
         'original-session',
@@ -547,6 +558,7 @@ describe('partner initial seed recovery', () => {
       });
       expect(await start!).toBeNull();
     });
+    expect(mocks.rememberPartnerWorkout).toHaveBeenCalledWith('original-session', 'wk');
     expect(params.sessionIdRef.current).toBe('joined-session');
     expect(params.dispatch).not.toHaveBeenCalled();
     expect(mocks.setStoredSessionId).not.toHaveBeenCalled();

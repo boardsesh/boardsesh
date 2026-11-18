@@ -168,7 +168,7 @@ class RoomManager {
       logger.info('[RoomManager] Redis not available - using Postgres only mode (single instance)');
     }
 
-    // Inactivity is scheduled once per cluster by app-workout-maintenance.
+    // Inactivity is scheduled independently once per cluster at startup.
   }
 
   /**

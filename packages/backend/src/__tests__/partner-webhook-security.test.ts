@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 const { dns, httpsRequest } = vi.hoisted(() => ({ dns: vi.fn(), httpsRequest: vi.fn() }));
-vi.mock('node:dns/promises', () => ({ lookup: dns }));
+vi.mock('../lib/resolve-addresses', () => ({ resolveAddresses: dns }));
 vi.mock('node:https', () => ({ request: httpsRequest }));
 import { decryptWebhookSecret, encryptWebhookSecret, webhookSignature } from '../services/partner-webhooks/crypto';
 import {

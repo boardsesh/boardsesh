@@ -54,9 +54,16 @@ export async function requestPartnerDeveloperEmail(
     // This lock serializes requests for one account even before a proof row exists.
     await transaction.execute(sql`select pg_advisory_xact_lock(719284, hashtext(${userId}))`);
     const [previous] = await transaction
-      .select({ requestedAt: partnerDeveloperEmails.requestedAt })
+      .select({
+        email: partnerDeveloperEmails.email,
+        requestedAt: partnerDeveloperEmails.requestedAt,
+        verifiedAt: partnerDeveloperEmails.verifiedAt,
+      })
       .from(partnerDeveloperEmails)
-      .where(eq(partnerDeveloperEmails.userId, userId));
+      .where(eq(partnerDeveloperEmails.userId, userId))
+      .for('update');
+    // A stale tab cannot undo an ownership proof for the unchanged address.
+    if (previous?.email === account.email && previous.verifiedAt) return null;
     const now = new Date();
     if (previous && now.getTime() - previous.requestedAt.getTime() < PARTNER_EMAIL_RESEND_INTERVAL_MS)
       throw new PartnerRegistrationError('busy', 'Wait one minute before requesting another email.');
@@ -73,7 +80,7 @@ export async function requestPartnerDeveloperEmail(
       .onConflictDoUpdate({ target: partnerDeveloperEmails.userId, set: proof });
     return account.email;
   });
-  await notify(recipient, token);
+  if (recipient !== null) await notify(recipient, token);
 }
 
 /** Explicit POST/GraphQL action, not opening the email link. Conditional UPDATE consumes once under a race. */

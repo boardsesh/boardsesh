@@ -16,6 +16,7 @@ import {
   presentCreatedWorkout,
   AppWorkoutError,
 } from '../../../services/public-api/workouts';
+import { appWorkoutGraphError } from './errors';
 import { requireAuthenticated, applyRateLimit } from '../shared/helpers';
 
 function requireAvailable(): void {
@@ -25,10 +26,7 @@ function requireAvailable(): void {
     throw new GraphQLError('Partner workouts are paused', { extensions: { code: 'SERVICE_UNAVAILABLE' } });
 }
 function graphError(error: unknown): never {
-  if (error instanceof AppWorkoutError)
-    throw new GraphQLError(error.message, {
-      extensions: { code: error.status === 404 ? 'NOT_FOUND' : error.status === 409 ? 'CONFLICT' : 'BAD_USER_INPUT' },
-    });
+  if (error instanceof AppWorkoutError) throw appWorkoutGraphError(error);
   throw error;
 }
 

@@ -1,4 +1,4 @@
-import { lookup } from 'node:dns/promises';
+import { resolveAddresses } from '../../lib/resolve-addresses';
 import { request, type RequestOptions } from 'node:https';
 import { BlockList, isIP } from 'node:net';
 
@@ -64,8 +64,6 @@ export function parseWebhookUrl(rawUrl: string): URL {
 
 type Address = { address: string; family: number };
 export type WebhookResolver = (hostname: string) => Promise<Address[]>;
-const resolveAddresses: WebhookResolver = (hostname) => lookup(hostname, { all: true });
-
 /** Validate every answer and return the exact address the HTTPS connection must use. */
 export async function resolveWebhookTarget(
   rawUrl: string,
@@ -74,21 +72,7 @@ export async function resolveWebhookTarget(
   const url = parseWebhookUrl(rawUrl);
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   const literalFamily = isIP(hostname);
-  let lookupDeadline: ReturnType<typeof setTimeout> | undefined;
-  let addresses: Address[];
-  try {
-    addresses = literalFamily
-      ? [{ address: hostname, family: literalFamily }]
-      : await Promise.race([
-          resolve(hostname),
-          new Promise<never>((_, reject) => {
-            lookupDeadline = setTimeout(() => reject(new Error('Webhook DNS deadline exceeded')), 5000);
-            lookupDeadline.unref();
-          }),
-        ]);
-  } finally {
-    if (lookupDeadline) clearTimeout(lookupDeadline);
-  }
+  const addresses = literalFamily ? [{ address: hostname, family: literalFamily }] : await resolve(hostname);
   if (
     addresses.length === 0 ||
     addresses.length > 32 ||

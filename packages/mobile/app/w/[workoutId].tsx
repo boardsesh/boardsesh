@@ -4,13 +4,18 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as WebBrowser from 'expo-web-browser';
 import { GET_APP_WORKOUT } from '@boardsesh/graphql/operations/app-workouts';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useAppWorkoutsFlag } from '../../src/providers/feature-flags-provider';
 import { getHttpClient } from '../../src/lib/graphql/client';
 import { getCredentialGeneration } from '../../src/lib/privacy/privacy-cache';
-import { isAppWorkoutId, PENDING_APP_WORKOUT_KEY } from '../../src/lib/partner-workout-link';
+import {
+  isAppWorkoutId,
+  PENDING_APP_WORKOUT_KEY,
+  serializePendingAppWorkout,
+} from '../../src/lib/partner-workout-link';
 import { activatePartnerWorkout, setPendingWorkout, type AppWorkout } from '../../src/lib/pending-workout-store';
 import { useQueueSessionId } from '../../src/providers/queue-provider';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -46,17 +51,33 @@ export default function AppWorkoutRoute() {
     queryFn: async () =>
       (await getHttpClient().request<{ appWorkout: AppWorkout }>(GET_APP_WORKOUT, { id: workoutId })).appWorkout,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
   useEffect(() => {
     if (!enabled || isAuthenticated || !isAppWorkoutId(workoutId)) return;
-    void AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, workoutId)
-      .then(() => router.replace('/auth/login'))
+    let cancelled = false;
+    void AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, serializePendingAppWorkout(workoutId))
+      .then(() => {
+        if (!cancelled && generation === getCredentialGeneration()) router.replace('/auth/login');
+      })
       .catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'partner-workout', op: 'stash-link' } });
       });
-  }, [enabled, isAuthenticated, workoutId, router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, isAuthenticated, workoutId, router, generation]);
   useEffect(() => {
-    if (!enabled || !query.data || !isAuthenticated || !consentSettled || generation !== getCredentialGeneration())
+    if (
+      !enabled ||
+      query.isFetching ||
+      query.isError ||
+      !query.data ||
+      !isAuthenticated ||
+      !consentSettled ||
+      generation !== getCredentialGeneration()
+    )
       return;
     if (query.data.status === 'started' && query.data.sessionId === sessionId && sessionId) {
       activatePartnerWorkout(sessionId, query.data);
@@ -68,15 +89,34 @@ export default function AppWorkoutRoute() {
       track(SHARED_EVENTS.AppWorkoutOpened, partnerWorkoutAnalytics(query.data, board?.boardType ?? null));
     }
     router.replace('/(tabs)/record');
-  }, [enabled, query.data, isAuthenticated, consentSettled, generation, router, sessionId, board?.boardType]);
+  }, [
+    enabled,
+    query.data,
+    query.isFetching,
+    query.isError,
+    isAuthenticated,
+    consentSettled,
+    generation,
+    router,
+    sessionId,
+    board?.boardType,
+  ]);
   const switchAccount = async () => {
-    await AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, workoutId);
+    await AsyncStorage.setItem(PENDING_APP_WORKOUT_KEY, serializePendingAppWorkout(workoutId));
     await signOut();
     router.replace('/auth/login');
   };
   const resumeSession = () => {
     const workout = query.data;
-    if (!workout?.sessionId || generation !== getCredentialGeneration() || !isAuthenticated || !consentSettled) return;
+    if (
+      !workout?.sessionId ||
+      query.isFetching ||
+      query.isError ||
+      generation !== getCredentialGeneration() ||
+      !isAuthenticated ||
+      !consentSettled
+    )
+      return;
     // Joining owns confirmation, board resolution and the authoritative queue.
     // Reopening a link never appends a second copy of an existing workout.
     activatePartnerWorkout(workout.sessionId, workout);
@@ -86,7 +126,20 @@ export default function AppWorkoutRoute() {
     <View style={styles.body}>
       <Stack.Screen options={{ title: t('partnerWorkouts.routeTitle') }} />
       {!enabled ? (
-        <Text>{t('partnerWorkouts.unavailable')}</Text>
+        <>
+          <Text>{t('partnerWorkouts.unavailable')}</Text>
+          {isAppWorkoutId(workoutId) ? (
+            <Button
+              title={t('partnerWorkouts.openWebsite')}
+              onPress={() => {
+                // An in-app browser avoids re-entering iOS's universal-link association.
+                void WebBrowser.openBrowserAsync(`https://www.boardsesh.com/w/${workoutId}`).catch((error: unknown) => {
+                  reportHandledError(error, { tags: { source: 'partner-workout', op: 'open-website' } });
+                });
+              }}
+            />
+          ) : null}
+        </>
       ) : !isAppWorkoutId(workoutId) ? (
         <Text>{t('partnerWorkouts.loadError')}</Text>
       ) : isAccountMismatch(query.error) ? (

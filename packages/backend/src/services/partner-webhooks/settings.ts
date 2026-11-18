@@ -13,7 +13,7 @@ import { lockDeveloper, requireRecentSignIn } from '../../auth/partner/developer
 import { PartnerRegistrationError } from '../../auth/partner/registration-rules';
 import { runInPartnerTransaction } from '../../auth/partner/transaction';
 import type { PartnerDatabase } from '../../auth/partner/tables';
-import { encryptWebhookSecret } from './crypto';
+import { decryptWebhookSecret, encryptWebhookSecret } from './crypto';
 import { PARTNER_WEBHOOK_EVENTS } from './events';
 import { resolveWebhookTarget, UnsafeWebhookUrlError } from './transport';
 
@@ -147,6 +147,7 @@ export async function updateOwnedWebhook(
       updatedAt: new Date(),
       disabledReason: null,
       failingSince: null,
+      lastFailureAt: null,
       failureEmailPending: false,
       version: (existing?.version ?? 0) + 1,
     };
@@ -184,7 +185,13 @@ export async function rotateOwnedWebhookSecret(
       .where(eq(oauthClientWebhooks.clientId, clientId))
       .for('update');
     if (!existing) throw new PartnerRegistrationError('not_found', 'Configure a webhook first.');
-    if (existing.previousSecretExpiresAt && existing.previousSecretExpiresAt.getTime() > Date.now()) {
+    let previousSecret: string | null = null;
+    try {
+      previousSecret = encryptWebhookSecret(decryptWebhookSecret(existing.secret));
+    } catch {
+      // Owners can recover immediately when a retired sealing key is unavailable.
+    }
+    if (previousSecret && existing.previousSecretExpiresAt && existing.previousSecretExpiresAt.getTime() > Date.now()) {
       throw new PartnerRegistrationError(
         'invalid_input',
         `The previous signing secret remains valid until ${existing.previousSecretExpiresAt.toISOString()}. Rotate again after that time.`,
@@ -195,8 +202,8 @@ export async function rotateOwnedWebhookSecret(
       .update(oauthClientWebhooks)
       .set({
         secret: encryptWebhookSecret(secret),
-        previousSecret: existing.secret,
-        previousSecretExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        previousSecret,
+        previousSecretExpiresAt: previousSecret ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null,
         updatedAt: new Date(),
       })
       .where(eq(oauthClientWebhooks.clientId, clientId))

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
@@ -26,6 +27,10 @@ import { buildPartnerWorkoutPlan } from '../../lib/partner-workout-plan';
 import {
   activatePartnerWorkout,
   clearPendingWorkout,
+  setPendingWorkout,
+  rememberPartnerWorkout,
+  getPartnerWorkoutTimer,
+  setPartnerWorkoutTimer,
   getPendingWorkout,
   useActivePartnerWorkout,
   usePendingWorkout,
@@ -60,6 +65,7 @@ export function PartnerWorkoutCard({
   startConfig?: StartSessionConfig | null;
 }) {
   const { t } = useTranslation('session');
+  const router = useRouter();
   const enabled = useAppWorkoutsFlag();
   const pending = usePendingWorkout();
   const { sessionId } = useQueueSessionId();
@@ -76,8 +82,9 @@ export function PartnerWorkoutCard({
   const [timer, setTimer] = useState<{ block: number; endsAt: number } | null>(null);
   const [remaining, setRemaining] = useState(0);
   useEffect(() => {
-    setTimer(null);
-    setRemaining(0);
+    const savedTimer = sessionId && workout ? getPartnerWorkoutTimer(sessionId, workout.id) : null;
+    setTimer(savedTimer && savedTimer.endsAt > Date.now() ? savedTimer : null);
+    setRemaining(savedTimer ? Math.max(0, Math.ceil((savedTimer.endsAt - Date.now()) / 1000)) : 0);
   }, [workout?.id, sessionId]);
   const credentialGeneration = getCredentialGeneration();
   const winningPlan = useQuery({
@@ -119,13 +126,13 @@ export function PartnerWorkoutCard({
   }, [active, sessionId, winningPlan.data, credentialGeneration]);
   const plan = useMemo(() => {
     const boardName = board ? toBoardName(board.boardType) : null;
-    return pending && boardName
+    return pending && pending.status !== 'started' && boardName
       ? buildPartnerWorkoutPlan(pending.spec, getGradesForBoard(boardName), pending.id)
       : null;
   }, [pending, board]);
   const preview = useQuery({
     queryKey: ['partnerWorkoutPreview', credentialGeneration, pending?.id, board],
-    enabled: enabled && pending !== null && board != null && plan !== null,
+    enabled: enabled && pending !== null && pending.status !== 'started' && board != null && plan !== null,
     retry: false,
     queryFn: async ({ signal }) => {
       if (!plan || !board) throw new Error('No workout board');
@@ -156,7 +163,7 @@ export function PartnerWorkoutCard({
   });
 
   const start = useCallback(async () => {
-    if (!pending || !board || !preview.data || launching.has(pending.id)) return;
+    if (!pending || pending.status === 'started' || !board || !preview.data || launching.has(pending.id)) return;
     if (!sessionId && !startConfig) return;
     if (plan && plan.slots.length > 0 && preview.data.items.length === 0) return;
     if (preview.data.items.length > 0 && getQueueSnapshot().queue.length >= MAX_SYNCED_QUEUE_ITEMS) {
@@ -168,6 +175,19 @@ export function PartnerWorkoutCard({
     const intendedSessionId = sessionId;
     launching.add(pending.id);
     setBusy(true);
+    const recoverCommittedWorkout = async (): Promise<boolean> => {
+      const recovered = (await getHttpClient().request<{ appWorkout: AppWorkout }>(GET_APP_WORKOUT, { id: pending.id }))
+        .appWorkout;
+      if (generation !== getCredentialGeneration() || getPendingWorkout()?.id !== pending.id) return true;
+      if (recovered.status !== 'started' || !recovered.sessionId) return false;
+      await rememberPartnerWorkout(recovered.sessionId, recovered.id).catch((error: unknown) => {
+        reportHandledError(error, { tags: { source: 'partner-workout', op: 'remember-committed' } });
+      });
+      if (generation !== getCredentialGeneration() || getPendingWorkout()?.id !== pending.id) return true;
+      if (getQueueSnapshot().sessionId === recovered.sessionId) activatePartnerWorkout(recovered.sessionId, recovered);
+      else setPendingWorkout(recovered);
+      return true;
+    };
     try {
       let attachedSessionId = intendedSessionId;
       if (attachedSessionId) {
@@ -180,6 +200,12 @@ export function PartnerWorkoutCard({
         )
           return;
         await getHttpClient().request(ATTACH_APP_WORKOUT, { workoutId: pending.id, sessionId: attachedSessionId });
+        if (generation !== getCredentialGeneration()) return;
+        await rememberPartnerWorkout(attachedSessionId, pending.id);
+        if (getQueueSnapshot().sessionId !== attachedSessionId || boardGeneration !== getActiveBoardWriteGeneration()) {
+          await recoverCommittedWorkout();
+          return;
+        }
       } else {
         const snapshot = getQueueSnapshot();
         if (snapshot.sessionId) return;
@@ -197,8 +223,11 @@ export function PartnerWorkoutCard({
           return;
         }
         attachedSessionId = await startSession({ ...startConfig, appWorkoutId: pending.id, appWorkoutSeed: seed });
-        if (!attachedSessionId || generation !== getCredentialGeneration() || getPendingWorkout()?.id !== pending.id)
+        if (generation !== getCredentialGeneration() || getPendingWorkout()?.id !== pending.id) return;
+        if (!attachedSessionId) {
+          await recoverCommittedWorkout();
           return;
+        }
         // Queue + attribution are already durable. Replay returns that winning
         // state; never append or persist this render's regenerated preview again.
         activatePartnerWorkout(attachedSessionId, {
@@ -221,7 +250,10 @@ export function PartnerWorkoutCard({
       if (!attachedSessionId || generation !== getCredentialGeneration() || getPendingWorkout()?.id !== pending.id)
         return;
       const snapshot = getQueueSnapshot();
-      if (snapshot.sessionId !== attachedSessionId) return;
+      if (snapshot.sessionId !== attachedSessionId) {
+        await recoverCommittedWorkout();
+        return;
+      }
       if (boardGeneration !== getActiveBoardWriteGeneration()) {
         showToast(t('partnerWorkouts.startError'), 'error');
         return;
@@ -252,7 +284,7 @@ export function PartnerWorkoutCard({
       setWorkoutRun(attachedSessionId, combinedRun, climbs);
       // Retire Start as soon as the local queue/run are committed. A failed
       // persistence or response must never make a retry append these UUIDs twice.
-      activatePartnerWorkout(attachedSessionId, pending);
+      activatePartnerWorkout(attachedSessionId, { ...pending, status: 'started', sessionId: attachedSessionId });
       track(SHARED_EVENTS.AppWorkoutStarted, partnerWorkoutAnalytics(pending, board.boardType));
       if (intendedSessionId) armRestTimerForWorkout(attachedSessionId, partnerRun, nowMs());
       // This durable write also reconstructs the partner snapshot after a lost response.
@@ -279,6 +311,18 @@ export function PartnerWorkoutCard({
         });
       if (generation !== getCredentialGeneration()) return;
     } catch (error) {
+      if (generation !== getCredentialGeneration()) return;
+      const reasons = (error as { response?: { errors?: { extensions?: { reason?: string } }[] } } | null)?.response
+        ?.errors;
+      if (reasons?.some((entry) => entry.extensions?.reason === 'APP_WORKOUT_PERMANENT_SESSION')) {
+        showToast(t('partnerWorkouts.personalSessionRequired'), 'error');
+        return;
+      }
+      try {
+        if (await recoverCommittedWorkout()) return;
+      } catch {
+        /* A later retry refetches before appending. */
+      }
       reportHandledError(error, { tags: { source: 'partner-workout', op: 'start' } });
       showToast(t('partnerWorkouts.startError'), 'error');
     } finally {
@@ -301,7 +345,10 @@ export function PartnerWorkoutCard({
   ]);
 
   // Timer polling is mounted only while a free-climbing countdown is running.
-  const endTimer = useCallback(() => setTimer(null), []);
+  const endTimer = useCallback(() => {
+    setTimer(null);
+    if (sessionId && workout) void setPartnerWorkoutTimer(sessionId, workout.id, null).catch(() => undefined);
+  }, [sessionId, workout]);
   usePartnerCountdown(timer?.endsAt ?? null, setRemaining, endTimer);
   if (!workout) return null;
   const nativeUnavailable = (plan?.slots.length ?? 0) > 0 && preview.data?.items.length === 0;
@@ -356,13 +403,25 @@ export function PartnerWorkoutCard({
                 onPress={() => {
                   const seconds = block.durationSeconds!;
                   setRemaining(seconds);
-                  setTimer({ block: index, endsAt: Date.now() + seconds * 1000 });
+                  const countdown = { block: index, endsAt: Date.now() + seconds * 1000 };
+                  setTimer(countdown);
+                  if (sessionId)
+                    void setPartnerWorkoutTimer(sessionId, workout.id, countdown).catch((error: unknown) => {
+                      reportHandledError(error, { tags: { source: 'partner-workout', op: 'save-timer' } });
+                    });
                 }}
               />
             ) : null}
           </View>
         ))}
-        {pending ? (
+        {pending?.status === 'started' ? (
+          <Button
+            title={t('partnerWorkouts.resume')}
+            onPress={() => {
+              router.navigate({ pathname: '/w/[workoutId]', params: { workoutId: pending.id } });
+            }}
+          />
+        ) : pending ? (
           <>
             {!board ? <Text>{t('partnerWorkouts.chooseBoard')}</Text> : null}
             {!sessionId && !startConfig ? <Text>{t('partnerWorkouts.privacyLoading')}</Text> : null}

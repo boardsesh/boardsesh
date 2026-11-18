@@ -1,0 +1,4 @@
+DROP INDEX "partner_connection_notices_pending_idx";--> statement-breakpoint
+CREATE INDEX "partner_connection_notices_delivered_retention_idx" ON "partner_connection_notices" USING btree ("delivered_at") WHERE "partner_connection_notices"."delivered_at" is not null;--> statement-breakpoint
+CREATE INDEX "partner_connection_notices_failed_retention_idx" ON "partner_connection_notices" USING btree ("next_attempt_at") WHERE ("partner_connection_notices"."delivered_at" is null and "partner_connection_notices"."attempts" >= 10);--> statement-breakpoint
+CREATE INDEX "partner_connection_notices_pending_idx" ON "partner_connection_notices" USING btree ("next_attempt_at") WHERE ("partner_connection_notices"."delivered_at" is null and "partner_connection_notices"."attempts" < 10);

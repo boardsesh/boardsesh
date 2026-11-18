@@ -4,6 +4,14 @@
  */
 
 import { readFileSync } from 'node:fs';
+const partnerNoticeRetentionSchema = readFileSync(
+  new URL('../../../db/drizzle/0326_partner_notice_retention_7811.sql', import.meta.url),
+  'utf8',
+);
+const partnerReviewSchema = readFileSync(
+  new URL('../../../db/drizzle/0325_partner_review_7811.sql', import.meta.url),
+  'utf8',
+);
 const partnerInitialHistorySchema = readFileSync(
   new URL('../../../db/drizzle/0324_partner_workout_initial_history.sql', import.meta.url),
   'utf8',
@@ -2550,4 +2558,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerEventGenerationsSchema}
   ${partnerReconcileFairnessSchema}
   ${partnerInitialHistorySchema}
+  ${partnerReviewSchema}
+  ${partnerNoticeRetentionSchema}
 `;

@@ -1166,6 +1166,8 @@
     "repAttempt": "Versuch"
   },
   "partnerWorkouts": {
+    "openWebsite": "Auf der Website öffnen",
+    "personalSessionRequired": "Starte eine eigene Session, um dieses Training zu nutzen.",
     "routeTitle": "Training aus einer App",
     "from": "Von {{app}}",
     "unavailable": "App-Trainings sind noch nicht verfügbar.",
@@ -1209,7 +1211,7 @@
     "syncError": "Dein Training läuft, aber der Plan konnte nicht gespeichert werden. Lass Boardsesh geöffnet und versuche erneut zu synchronisieren.",
     "targetGrade": "Zielgrad: {{grade}}",
     "resume": "Dieses Training fortsetzen",
-    "privacyLoading": "Sitzungsprivatsphäre wird geprüft…",
+    "privacyLoading": "Privatsphäre der Session wird geprüft…",
     "budgetShortfall": "{{found}} von {{planned}} geplanten Bouldern passen in die Warteschlange und das Training."
   }
 }
