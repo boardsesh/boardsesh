@@ -80,6 +80,7 @@ describe('web-lane-native-unchanged.yml', () => {
     const job = workflow.jobs['native-unchanged'];
     expect(job.if).toContain("startsWith(github.head_ref, 'feat/7596-')");
     expect(job.if).toContain("startsWith(github.head_ref, 'test/7596-')");
+    expect(job.if).toContain("startsWith(github.head_ref, 'fix/7596-')");
     expect(job.steps[0]?.with?.['fetch-depth']).toBe(0);
     expect(job.steps.map((step) => step.run ?? '').join('\n')).toContain(
       'vp exec tsx scripts/check-native-unchanged.ts origin/main',

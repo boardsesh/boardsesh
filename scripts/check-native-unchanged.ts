@@ -18,13 +18,37 @@ import process from 'node:process';
 
 /**
  * Native-reachable files the web lane changes on purpose. Built from the
- * stack's actual diff against main (2026-11-18, tip of #7802 plus #7777).
+ * stack's actual diff against main (2026-11-18: #7802, #7777, and the
+ * Settings lane #7804 to #7809 merged in #7810). The locale files only gain
+ * keys; the mobile bundle carries them unused.
  */
 export const NATIVE_CHANGE_ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
   'packages/shared/text-redaction/src/password-recovery.ts':
     'Adds the first-party session cookie names to log redaction; on a phone it only scrubs names no native request sends.',
   'packages/shared/text-redaction/src/__tests__/browser-session-cookie.test.ts':
     'Test of that redaction; tests are not in any bundle.',
+  'packages/shared/text-redaction/src/__tests__/password-recovery.test.ts':
+    'Test of the provider-flow redaction (#7805); tests are not in any bundle.',
+  'packages/shared/i18n/locales/de/auth.json':
+    'Settings lane (#7804): adds www-only auth error strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/de/settings.json':
+    'Settings lane (#7807, #7809): adds www-only sign-in methods strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/en-US/auth.json':
+    'Settings lane (#7804): adds www-only auth error strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/en-US/settings.json':
+    'Settings lane (#7807, #7809): adds www-only sign-in methods strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/es/auth.json':
+    'Settings lane (#7804): adds www-only auth error strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/es/settings.json':
+    'Settings lane (#7807, #7809): adds www-only sign-in methods strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/fr/auth.json':
+    'Settings lane (#7804): adds www-only auth error strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/fr/settings.json':
+    'Settings lane (#7807, #7809): adds www-only sign-in methods strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/it/auth.json':
+    'Settings lane (#7804): adds www-only auth error strings; no existing key changes and no native screen reads them.',
+  'packages/shared/i18n/locales/it/settings.json':
+    'Settings lane (#7807, #7809): adds www-only sign-in methods strings; no existing key changes and no native screen reads them.',
 });
 
 const AUTH_PROTOCOL_ROOT = 'packages/shared/auth-protocol/';
