@@ -213,11 +213,14 @@ export function chooseSessionWorkout({
   return shown ? { source: 'server', workout: shown } : null;
 }
 
-/** A feed card's line from the server's headline, grades in the viewer's system. */
+/**
+ * A feed card's line from the server's headline, grades in the viewer's system
+ * on the board the server named the grade on, so it reads as session detail does.
+ */
 export function headlineView(headline: SessionWorkoutHeadlineResult, format: FormatGradeLabel): WorkoutHeadlineView {
   return {
     mainKind: headline.mainKind,
-    mainTargetGrade: displayGrade(headline.mainTargetGrade, null, format),
+    mainTargetGrade: displayGrade(headline.mainTargetGrade, headline.mainTargetBoardType, format),
     secondMainKind: headline.secondMainKind,
     blockCount: headline.blockCount,
     extraMainBlocks: headline.extraMainBlocks,

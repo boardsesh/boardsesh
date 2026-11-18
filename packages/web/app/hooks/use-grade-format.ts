@@ -48,9 +48,11 @@ export function useGradeFormat() {
     window.dispatchEvent(new CustomEvent(GRADE_FORMAT_CHANGE_EVENT, { detail: format }));
   }, []);
 
+  // `boardName` picks the board's own V scale: MoonBoard reads "6a+/V3" as V3,
+  // every other board as V3+.
   const formatGradeWithPreference = useCallback(
-    (difficulty: string | null | undefined): string | null => {
-      return formatGrade(difficulty, gradeFormat);
+    (difficulty: string | null | undefined, boardName?: string | null): string | null => {
+      return formatGrade(difficulty, gradeFormat, boardName);
     },
     [gradeFormat],
   );

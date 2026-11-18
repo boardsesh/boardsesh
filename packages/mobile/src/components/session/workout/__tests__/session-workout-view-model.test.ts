@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatGrade } from '@boardsesh/play-view';
 import type {
   SessionWorkoutHeadlineResult,
   SessionWorkoutResult,
@@ -187,6 +188,7 @@ describe('headlines', () => {
       userId: 'me',
       mainKind: 'fourByFour',
       mainTargetGrade: '6b/V4',
+      mainTargetBoardType: 'kilter',
       secondMainKind: null,
       blockCount: 3,
       extraMainBlocks: 0,
@@ -198,5 +200,22 @@ describe('headlines', () => {
       blockCount: 3,
       extraMainBlocks: 0,
     });
+  });
+
+  it("reads the headline's grade on the board the server named it on, as session detail does", () => {
+    // MoonBoard's V3 holds only 6A+, so "6a+/V3" reads V3 there and V3+ elsewhere.
+    const vGradeOnBoard: FormatGradeLabel = (label, boardType) => formatGrade(label, 'v-grade', boardType);
+    const headline: SessionWorkoutHeadlineResult = {
+      sessionId: 's1',
+      userId: 'me',
+      mainKind: 'pyramid',
+      mainTargetGrade: '6a+/V3',
+      mainTargetBoardType: 'moonboard',
+      secondMainKind: null,
+      blockCount: 1,
+      extraMainBlocks: 0,
+    };
+    expect(headlineView(headline, vGradeOnBoard).mainTargetGrade).toBe('V3');
+    expect(headlineView({ ...headline, mainTargetBoardType: 'kilter' }, vGradeOnBoard).mainTargetGrade).toBe('V3+');
   });
 });

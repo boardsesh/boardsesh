@@ -24,21 +24,24 @@ const REP: Record<string, SessionWorkoutRepOutcome> = { FLASH: 'flash', SEND: 's
 
 /**
  * The server's answer as the page draws it. `formatGrade` turns the server's
- * grade labels ("6b/V4") into the viewer's format.
+ * grade labels ("6b/V4") into the viewer's format on the label's board: a
+ * climb's own, and for a block's target its first climb with one, as the feed
+ * card's headline and the app's session detail do.
  */
 export function toWorkoutView(
   workout: SessionWorkoutResult,
-  formatGrade: (grade: string) => string | null,
+  formatGrade: (grade: string, boardName: string | null) => string | null,
 ): SessionWorkoutView {
-  const format = (grade: string | null) => (grade ? (formatGrade(grade) ?? grade) : null);
+  const format = (grade: string | null, boardName: string | null) =>
+    grade ? (formatGrade(grade, boardName) ?? grade) : null;
   return {
     ...workout,
     stages: workout.stages.map((stage) => ({
       ...stage,
-      targetGrade: format(stage.targetGrade),
+      targetGrade: format(stage.targetGrade, stage.climbs.find((climb) => climb.boardType)?.boardType ?? null),
       climbs: stage.climbs.map((climb) => ({
         ...climb,
-        grade: format(climb.grade),
+        grade: format(climb.grade, climb.boardType),
         rawGrade: climb.grade,
         reps: climb.reps.flatMap((rep) => (REP[rep] ? [REP[rep]] : [])),
       })),

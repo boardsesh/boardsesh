@@ -504,6 +504,67 @@ describe('legacy GetSmartPlaylist replay compatibility', () => {
   });
 });
 
+describe('legacy GetSessionWorkoutHeadlines replay compatibility (#7027)', () => {
+  const legacy =
+    'query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) { sessionWorkoutHeadlines(sessionIds: $sessionIds) { sessionId userId mainKind mainTargetGrade secondMainKind blockCount extraMainBlocks } }';
+  const current = legacy.replace('mainTargetGrade', 'mainTargetGrade mainTargetBoardType');
+  const fixture = (sessionWorkoutHeadlines: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetSessionWorkoutHeadlines',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { sessionIds: ['s-1'] },
+    response: { data: { sessionWorkoutHeadlines } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+  const headline = {
+    sessionId: 's-1',
+    userId: 'u-1',
+    mainKind: 'fourByFour',
+    mainTargetGrade: '6b/V4',
+    secondMainKind: null,
+    blockCount: 3,
+    extraMainBlocks: 0,
+  };
+
+  it('replays the recorded headlines with no board, without mutating the recording', () => {
+    const recorded = fixture([headline]);
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: { data: { sessionWorkoutHeadlines: [{ ...headline, mainTargetBoardType: null }] } },
+    });
+    expect(replayCompatibleFixtureResponse(current, fixture([]))).toEqual({
+      response: { data: { sessionWorkoutHeadlines: [] } },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture([headline]);
+    // The field anywhere but straight after mainTargetGrade.
+    expect(
+      replayCompatibleFixtureResponse(legacy.replace('blockCount', 'blockCount mainTargetBoardType'), recorded),
+    ).toBeNull();
+    // Selected twice.
+    expect(
+      replayCompatibleFixtureResponse(current.replace('blockCount', 'blockCount mainTargetBoardType'), recorded),
+    ).toBeNull();
+    // The addition plus another change.
+    expect(replayCompatibleFixtureResponse(current.replace(' extraMainBlocks', ''), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already carries the board, or holds no list', () => {
+    expect(
+      replayCompatibleFixtureResponse(current, fixture([{ ...headline, mainTargetBoardType: 'kilter' }])),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(current, fixture(null))).toBeNull();
+  });
+});
+
 describe('legacy tick characteristics replay compatibility', () => {
   // A session's highlights and its grouped items are two tick levels in one
   // document, so the field is added twice.
