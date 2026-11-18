@@ -85,6 +85,7 @@ describe('SupportContent', () => {
     renderPage();
 
     expect(screen.getByText(tFromCatalog('marketing', 'support.hero.title'))).toBeTruthy();
+    expect(screen.getByText(tFromCatalog('marketing', 'funding.body'))).toBeTruthy();
     expect(screen.getByText(tFromCatalog('marketing', 'support.why.p1'))).toBeTruthy();
   });
 
@@ -144,11 +145,12 @@ describe('SupportContent', () => {
 
   // The SEO rules want 2-3 crawlable internal links with descriptive anchor
   // text on every indexable page; the footer supplies the rest.
-  it('links onward to /about and /docs for the internal-link rule', () => {
+  it('links to About, Legal and Privacy for the project and funding details', () => {
     const { container } = renderPage();
 
     expect(hrefs(container)).toContain('/about');
-    expect(hrefs(container)).toContain('/docs');
+    expect(hrefs(container)).toContain('/legal');
+    expect(hrefs(container)).toContain('/privacy');
   });
   describe('monthly first', () => {
     it('leads with monthly and lists every env-configured option', () => {
@@ -169,23 +171,11 @@ describe('SupportContent', () => {
       expect(perMonth('AUD tier A')).toBe('AUD tier A/month');
     });
 
-    // The monthly ask is for build time. No line beside it may pitch the bills.
-    it('swaps every running-costs line for its build-time variant', () => {
+    it('uses the same funding story beside monthly and one-off options', () => {
       const { container } = renderPage(MONTHLY_OPTIONS);
-
-      for (const key of ['support.promiseMonthly', 'support.why.p2Monthly', 'support.honesty.p1Monthly']) {
-        expect(screen.getByText(tFromCatalog('marketing', key))).toBeTruthy();
-      }
-      for (const key of [
-        'support.promise',
-        'support.why.p2',
-        'support.honesty.p1',
-        'support.why.p1',
-        'support.honesty.p2',
-      ]) {
-        expect(container.textContent).not.toContain(tFromCatalog('marketing', key));
-      }
-      expect(container.textContent).not.toMatch(/server bill|pays the bill|keeps the lights on/i);
+      expect(screen.getByText(tFromCatalog('marketing', 'funding.body'))).toBeTruthy();
+      expect(screen.getByText(tFromCatalog('marketing', 'support.promise'))).toBeTruthy();
+      expect(container.textContent).not.toMatch(/second tier|enshittify|self-hosting will always/i);
     });
 
     // GitHub Sponsors stays as the third way to give.

@@ -68,7 +68,7 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
   return (
     <PageShell
       title={t('support.hero.title')}
-      lead={t('support.hero.subtitle')}
+      lead={t('funding.body')}
       width="wide"
       headerAlign="center"
       headerClassName={styles.hero}
@@ -118,14 +118,14 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
       {/* The promise belongs next to the ask, not buried in the small print. */}
       <Box className={styles.promise}>
         <Typography variant="h5" component="p">
-          {monthlyFirst ? t('support.promiseMonthly') : t('support.promise')}
+          {t('support.promise')}
         </Typography>
       </Box>
 
       <Box className={styles.contributionGrid}>
         <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
-          <Prose>{monthlyFirst ? t('support.why.p1Monthly') : t('support.why.p1')}</Prose>
-          <Prose>{monthlyFirst ? t('support.why.p2Monthly') : t('support.why.p2')}</Prose>
+          <Prose>{t('support.why.p1')}</Prose>
+          <Prose>{t('support.why.p2')}</Prose>
         </PageSection>
 
         <PageSection title={t('support.rails.title')} className={styles.contributionOptions}>
@@ -191,8 +191,17 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
         icon={<InfoOutlined />}
         tone="neutral"
       >
-        <Prose>{monthlyFirst ? t('support.honesty.p1Monthly') : t('support.honesty.p1')}</Prose>
-        <Prose>{monthlyFirst ? t('support.honesty.p2Monthly') : t('support.honesty.p2')}</Prose>
+        <Prose>{t('support.honesty.p1')}</Prose>
+        <Prose>{t('support.honesty.p2')}</Prose>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/legal">
+            {t('support.legalLink')}
+          </MuiLink>
+          {' · '}
+          <MuiLink component={LocaleLink} href="/privacy">
+            {t('support.privacyLink')}
+          </MuiLink>
+        </Prose>
         <Prose>
           <MuiLink href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className={styles.standaloneLink}>
             {t('support.docsLink')}

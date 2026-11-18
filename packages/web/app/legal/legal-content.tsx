@@ -14,6 +14,7 @@ export default function LegalContent() {
     <PageShell title={t('legal.intro.title')}>
       <PageSection>
         <Prose>{t('legal.intro.p1')}</Prose>
+        <Prose>{t('funding.body')}</Prose>
         <Prose>{t('legal.intro.p2')}</Prose>
       </PageSection>
 

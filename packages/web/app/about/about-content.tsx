@@ -8,7 +8,7 @@ import { GitHub, GroupOutlined, FavoriteBorderOutlined, ApiOutlined, RocketLaunc
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
-import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
+import TrustFaq from '@/app/components/marketing/trust-faq';
 import styles from './about.module.css';
 import type { DeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 
@@ -30,19 +30,6 @@ export default function AboutContent({
             </MuiLink>
           </Prose>
         </PageSection>
-        <Box component="figure" className={styles.preview}>
-          <Typography component="figcaption" className={styles.caption}>
-            {t('about.profile.title')}
-          </Typography>
-          <MarketingPreviewSwitch />
-          <MarketingScreenshot
-            shot="profile"
-            alt={t('about.profile.shotAlt')}
-            preload
-            className={styles.screenshot}
-            sizes="(max-width: 760px) 240px, 280px"
-          />
-        </Box>
 
         {/* The feature list that was here repeated the landing page's own feature
             strip as bolded-label bullets. Who builds it, and what is coming, are
@@ -101,6 +88,12 @@ export default function AboutContent({
           ) : null}
         </PageSection>
       </Box>
+
+      <TrustFaq />
+
+      <PageSection title={t('funding.title')}>
+        <Prose>{t('funding.body')}</Prose>
+      </PageSection>
 
       <PageSection title={t('about.community.title')} icon={<FavoriteBorderOutlined />} className={styles.community}>
         <Prose>{t('about.community.body')}</Prose>
