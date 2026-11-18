@@ -96,7 +96,7 @@ beforeEach(() => {
     CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
     CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
     CURRENT_STORE_DELETED_EMAIL_KEY: 'synthetic-web-session-read-retired-mailbox-key',
-    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'off',
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'compatible',
     AUTH_CUTOFF_ENFORCEMENT: 'enforce',
     EMAIL_VERIFICATION_ENABLED: 'false',
     NEXTAUTH_SECRET: nextAuthSecret,
@@ -138,6 +138,7 @@ async function login(email: string, extra: Record<string, unknown> = {}) {
     requestId: randomUUID(),
     issuedAt: Date.now(),
     webSession: {},
+    credentialProofVersion: 1,
     payload: { email, password: PASSWORD },
     ...extra,
   });
