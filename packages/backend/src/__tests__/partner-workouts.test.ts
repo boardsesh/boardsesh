@@ -1088,6 +1088,29 @@ describe('partner workout results', () => {
     expect(ticks.get(duringWorkout)).toBe(0);
   });
 
+  it('keeps every tick of a session the workout started itself, even from a phone clock running behind', async () => {
+    const { principal } = await connected();
+    const workout = await create(principal);
+    const sessionId = await start(principal.userId, workout.id);
+    const [session] = await db.select().from(boardSessions).where(eq(boardSessions.id, sessionId));
+    // Start creates the session and attaches the workout in one transaction, a few ms apart.
+    const workoutStartedAt = new Date(session.startedAt!.getTime() + 40);
+    await db.update(appWorkouts).set({ startedAt: workoutStartedAt }).where(eq(appWorkouts.id, workout.id));
+    await storeSessionWorkout(sessionId, principal.userId, [
+      { id: `${workout.id}:0`, items: [{ queueItemUuid: randomUUID(), climbUuid: randomUUID() }] },
+    ]);
+    const behindClock = await logTick(
+      principal.userId,
+      sessionId,
+      randomUUID(),
+      new Date(workoutStartedAt.getTime() - 30_000),
+    );
+    await endSession(sessionId);
+    const result = await read(principal, workout.id);
+    expect(ticksById(result).get(behindClock)).toBeNull();
+    expect(result.results?.session.startedAt).toBe(session.startedAt!.toISOString());
+  });
+
   it('attributes a late tick by its kept tick-map entry once the tick lands', async () => {
     const { principal } = await connected();
     const { workout, sessionId, workoutStartedAt } = await addToRunningSession(principal, twoVolumeBlocks());
