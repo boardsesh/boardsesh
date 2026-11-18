@@ -12,7 +12,7 @@ import {
 } from '@boardsesh/auth-protocol';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
 import { loginSessionCookies, presentedForLogin, readRequestBrowserSession } from './browser-session.server';
-import { appendLegacyHostOnlySessionCookieClear } from './secure-cookies';
+import { appendLegacyHostOnlySessionCookieClear, appendStaleLegacySessionCookieClears } from './secure-cookies';
 
 /**
  * Google and Apple web sign-in under `AUTH_BROWSER_SESSION_MODE=better-auth`
@@ -115,10 +115,15 @@ export async function readGoogleSignInNonce(
   const name = options.cookies?.nonce?.name;
   const secret = options.secret ?? process.env.NEXTAUTH_SECRET;
   if (!name || !secret) return undefined;
-  const sealed = request.cookies.getAll().filter((cookie) => cookie.name === name);
-  if (sealed.length !== 1) return undefined;
+  // The raw header, so two copies of the name (which a parsed cookie store would merge) refuse.
+  const sealed = (request.headers.get('cookie') ?? '')
+    .split(';')
+    .map((pair) => pair.trim())
+    .filter((pair) => pair.slice(0, pair.indexOf('=')) === name)
+    .map((pair) => pair.slice(pair.indexOf('=') + 1));
+  if (sealed.length !== 1 || !sealed[0]) return undefined;
   try {
-    const claims = await (options.jwt?.decode ?? decode)({ token: sealed[0].value, secret, salt: name });
+    const claims = await (options.jwt?.decode ?? decode)({ token: sealed[0], secret, salt: name });
     const value = claims?.value;
     return claims?.provider === 'google' && typeof value === 'string' && isStrongNonce(value) ? value : undefined;
   } catch {
@@ -154,6 +159,7 @@ export function publishProviderSignIn(
 ): Response {
   appendLegacyHostOnlySessionCookieClear(response);
   const carried = request.cookies.getAll().map((requestCookie) => requestCookie.name);
+  appendStaleLegacySessionCookieClears(response, carried);
   for (const setCookie of loginSessionCookies(cookies, issued.token, carried))
     response.headers.append('Set-Cookie', setCookie);
   return response;

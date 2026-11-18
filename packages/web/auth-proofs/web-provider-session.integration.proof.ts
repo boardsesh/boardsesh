@@ -1,0 +1,309 @@
+// @vitest-environment node
+/**
+ * #7596 B5b: under `AUTH_BROWSER_SESSION_MODE=better-auth`, a Google sign-in
+ * through the real `/api/auth/[...nextauth]` route publishes the first-party
+ * session the backend's web OAuth `resolve` issues, beside the legacy twin
+ * with the same session id. Real route, real NextAuth (Google provider pointed
+ * at a loopback stand-in that signs real ID tokens), the real backend web
+ * OAuth and web-session handlers over HTTP, real PostgreSQL. The backend's own
+ * Google freshness verifier checks the same token (its certificate fetch is
+ * answered with the stand-in's key). Nothing scripts a backend reply.
+ */
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { decode, encode } from 'next-auth/jwt';
+import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { authSession } from '@boardsesh/db/schema';
+import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
+import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
+import { CookieJar, callRoute, patchNextRequestIo, setCookies } from './route-harness';
+import {
+  BRIDGED,
+  DOMAIN,
+  LEGACY,
+  LOGIN,
+  browserSteps,
+  canonicalStatus,
+  createClimber,
+  loginToken,
+  randomClientAddress,
+  reserveClimberEmail,
+  sessionCookieNamesIn,
+  startWebSessionBackend,
+  stubBetterAuthEnvironment,
+  type WebSessionBackend,
+} from './web-session-harness';
+import { GOOGLE_CERTS_URL, startGoogleOidcFixture, type GoogleIdentity } from './google-oidc-fixture';
+
+const holder = vi.hoisted(() => {
+  // auth-options reads these when it loads: production www, and a configured Google provider.
+  process.env.NEXTAUTH_SECRET = 'web-provider-session-proof-nextauth-secret-7596';
+  process.env.NEXTAUTH_URL = 'https://www.boardsesh.com';
+  process.env.GOOGLE_CLIENT_ID = 'web-provider-session-proof.apps.googleusercontent.test';
+  process.env.GOOGLE_CLIENT_SECRET = 'web-provider-session-proof-google-secret';
+  return { database: undefined as unknown };
+});
+vi.mock('server-only', () => ({}));
+vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: () => ({}) }));
+vi.mock('@/app/lib/db/db', () => ({ getDb: () => holder.database }));
+vi.mock('../../backend/src/db/client', () => ({
+  get db() {
+    return holder.database;
+  },
+}));
+vi.mock('../../backend/src/auth/admission-pool', () => ({
+  readOnAdmissionConnection: async (mark: () => void, read: (database: unknown) => PromiseLike<unknown>) => {
+    mark();
+    return read(holder.database);
+  },
+}));
+vi.mock('../app/lib/auth/credential-admission.server', async (original) => ({
+  ...(await original<typeof import('../app/lib/auth/credential-admission.server')>()),
+  admitPresentedWebCredential: async (credential: string) => {
+    const result = await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret });
+    if (result.status === 'unavailable') throw new Error('Owned authority unavailable');
+    return result.status === 'admitted' ? result.session.userId : null;
+  },
+}));
+// The test seam: the preconditions alone, as once the www cutover list is empty.
+vi.mock('../app/lib/auth/browser-session-mode.server', async (original) => {
+  const actual = await original<typeof import('../app/lib/auth/browser-session-mode.server')>();
+  return { ...actual, browserSessionRouteMode: actual.browserSessionRouteModeResolver([]) };
+});
+
+import * as authRoute from '../app/api/auth/[...nextauth]/route';
+import { authOptions } from '../app/lib/auth/auth-options';
+
+const secret = 'web-provider-session-proof-nextauth-secret-7596';
+const ACCESS_SECRET = 'web-provider-session-proof-access-secret-7596-b5b';
+const RESOLVE_PATH = '/api/internal/auth/current-store/web-oauth/v1/resolve';
+const { csrf, login, readSession } = browserSteps(authRoute);
+let environment: Awaited<ReturnType<typeof createEnvironment>>;
+let backend: WebSessionBackend;
+let google: Awaited<ReturnType<typeof startGoogleOidcFixture>>;
+const realFetch = globalThis.fetch;
+/** The `webSession` field of every web OAuth `resolve` www sent (undefined when it sent none). */
+let resolveSessionRequests: unknown[] = [];
+
+beforeAll(async () => {
+  environment = await createEnvironment();
+  holder.database = environment.database;
+  backend = await startWebSessionBackend(environment.database);
+  google = await startGoogleOidcFixture(process.env.GOOGLE_CLIENT_ID ?? '');
+  patchNextRequestIo();
+  // Point NextAuth's Google provider at the stand-in (its user options win over the defaults).
+  const provider = authOptions.providers.find((configured) => configured.id === 'google');
+  if (!provider || provider.type !== 'oauth' || !provider.options) throw new Error('No Google provider configured');
+  Object.assign(provider.options, { wellKnown: google.discoveryUrl });
+});
+beforeEach(() => {
+  resolveSessionRequests = [];
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    // The backend's Google freshness verifier fetches Google's certificates.
+    if (url === GOOGLE_CERTS_URL) return Response.json(google.certificates());
+    if (url.endsWith(RESOLVE_PATH) && typeof init?.body === 'string')
+      resolveSessionRequests.push((JSON.parse(init.body) as { webSession?: unknown }).webSession);
+    return realFetch(input, init);
+  });
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  vi.mocked(console.warn).mockRestore();
+});
+afterAll(async () => {
+  vi.restoreAllMocks();
+  await google?.close();
+  await backend?.close();
+  await environment?.close();
+});
+
+function betterAuth(): void {
+  stubBetterAuthEnvironment(backend.origin);
+  vi.stubEnv('AUTH_BROWSER_ACCESS_TOKEN_SECRET', ACCESS_SECRET);
+  vi.stubEnv('CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE', 'auth-time-staging');
+}
+
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const newGoogleIdentity = (authAgoSeconds?: number): GoogleIdentity => {
+  const id = randomUUID();
+  return {
+    subject: `google-${id}`,
+    email: `google-${id}@example.test`,
+    ...(authAgoSeconds === undefined ? {} : { authTimeSeconds: nowSeconds() - authAgoSeconds }),
+  };
+};
+
+/** A browser's whole Google sign-in: start, Google's answer, the callback. */
+async function googleSignIn(jar: CookieJar, identity: GoogleIdentity) {
+  const clientAddress = randomClientAddress();
+  const csrfToken = await csrf(jar);
+  const start = await callRoute(authRoute, '/api/auth/signin/google', {
+    cookie: jar.header(),
+    form: { csrfToken, callbackUrl: 'https://www.boardsesh.com/', json: 'true' },
+    headers: { 'x-forwarded-for': clientAddress },
+  });
+  jar.apply(start);
+  const { url } = (await start.clone().json()) as { url: string };
+  const callback = new URL(await google.authorize(url, identity));
+  const response = await callRoute(authRoute, `${callback.pathname}${callback.search}`, {
+    cookie: jar.header(),
+    headers: { 'x-forwarded-for': clientAddress },
+  });
+  jar.apply(response);
+  return { start, response };
+}
+
+/** The claims of the Domain-scoped legacy cookie a response wrote. */
+async function legacyTwinOf(response: Response) {
+  const written = setCookies(response).find(
+    (header) => header.startsWith(`${LEGACY}=`) && !header.startsWith(`${LEGACY}=;`) && /Domain=/i.test(header),
+  );
+  if (!written) return undefined;
+  return decode({ token: written.split(';', 1)[0].slice(LEGACY.length + 1), secret });
+}
+
+/**
+ * The invariant (#7789 review, #7793 review): a response that sets the login
+ * cookie also writes the legacy twin with the same session id, so no legacy
+ * cookie with another id stays beside it.
+ */
+async function expectTwinBesideLogin(response: Response, jar: CookieJar) {
+  expect(
+    setCookies(response).some((header) => header.startsWith(`${LOGIN}=`) && !header.startsWith(`${LOGIN}=;`)),
+  ).toBe(true);
+  const twin = await legacyTwinOf(response);
+  const read = await readFirstPartySession(environment.database, { kind: 'canonical-token', token: loginToken(jar) });
+  if (read.status !== 'admitted') throw new Error('The new login cookie does not read as live');
+  expect(twin?.authSessionId).toBe(read.session.authSessionId);
+  return { twin, session: read.session };
+}
+
+describe('Google sign-in with the mode unset (as on main)', () => {
+  it('writes only the legacy cookie and asks the backend for no session', async () => {
+    stubBetterAuthEnvironment(backend.origin);
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', '');
+    const jar = new CookieJar();
+    const { response } = await googleSignIn(jar, newGoogleIdentity(30));
+    expect(sessionCookieNamesIn(response)).toContain(LEGACY);
+    expect(sessionCookieNamesIn(response)).not.toContain(LOGIN);
+    expect(resolveSessionRequests).toEqual([undefined]);
+  });
+});
+
+describe('Google sign-in under better-auth', () => {
+  beforeEach(betterAuth);
+
+  it('publishes a fresh login: login cookie, legacy twin with its id and sign-in time, bridged name cleared', async () => {
+    const identity = newGoogleIdentity(30);
+    const jar = new CookieJar();
+    const { start, response } = await googleSignIn(jar, identity);
+    // Google was asked for auth_time and a nonce of at least 128 bits, kept in a host-only cookie.
+    const authorization = google.authorizations().at(-1);
+    expect(authorization?.get('max_age')).toBeTruthy();
+    expect(authorization?.get('nonce')?.length).toBeGreaterThanOrEqual(22);
+    const nonceCookie = setCookies(start).find((header) => header.includes('next-auth.nonce.'));
+    expect(nonceCookie).toMatch(/HttpOnly/i);
+    expect(nonceCookie).not.toMatch(/Domain=/i);
+    expect(resolveSessionRequests).toHaveLength(1);
+    expect(resolveSessionRequests[0]).toMatchObject({ googleAuthentication: { nonce: authorization?.get('nonce') } });
+
+    const { twin, session } = await expectTwinBesideLogin(response, jar);
+    expect(twin?.auth_time).toBe(identity.authTimeSeconds);
+    expect(twin?.link_guarded).toBe(true);
+    const clears = setCookies(response).filter((header) => header.startsWith(`${BRIDGED}=;`));
+    expect(clears.some((header) => /Domain=/i.test(header))).toBe(true);
+    expect(clears.some((header) => !/Domain=/i.test(header))).toBe(true);
+    const [row] = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.id, session.authSessionId));
+    expect(row.legacyLineageId).toBeNull();
+    expect(row.originalAuthenticatedAt?.getTime()).toBe((identity.authTimeSeconds ?? 0) * 1000);
+    const sessionJson = (await (await readSession(jar.header())).json()) as { user?: { email?: string } };
+    expect(sessionJson.user?.email).toBe(identity.email);
+  });
+
+  it('publishes a silent Google sign-in as carried: the twin has no auth_time and no link guard', async () => {
+    const jar = new CookieJar();
+    const { response } = await googleSignIn(jar, newGoogleIdentity(2 * 60 * 60));
+    const { twin, session } = await expectTwinBesideLogin(response, jar);
+    expect(twin?.auth_time).toBeUndefined();
+    expect(twin?.link_guarded).toBeUndefined();
+    const [row] = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.id, session.authSessionId));
+    expect(row.legacyLineageId?.startsWith('carried:')).toBe(true);
+  });
+
+  it.each([
+    ['a Domain', DOMAIN],
+    ['a host-only', ''],
+  ])(
+    'leaves no leftover legacy cookie (%s copy, another id, written inside the four minutes) beside a fresh login',
+    async (_scope, domain) => {
+      const leftoverClimber = await createClimber(environment.database);
+      const leftover = await encode({
+        token: { sub: leftoverClimber.id, authSessionId: randomUUID(), gen: 0, auth_time: nowSeconds() - 60 },
+        secret,
+        maxAge: 3600,
+      });
+      const jar = new CookieJar();
+      jar.set(LEGACY, leftover, domain);
+      const identity = newGoogleIdentity(4 * 60);
+      const { response } = await googleSignIn(jar, identity);
+      await expectTwinBesideLogin(response, jar);
+      expect(jar.get(LEGACY, '')).toBeUndefined();
+      // The next session read answers the Google login and writes nothing: no rule (c) switch.
+      const read = await readSession(jar.header());
+      expect(((await read.json()) as { user?: { email?: string } }).user?.email).toBe(identity.email);
+      expect(setCookies(read)).toEqual([]);
+    },
+  );
+
+  it('ends the session the browser held as A when it signs in as B through Google', async () => {
+    const climberA = await createClimber(environment.database);
+    const jar = new CookieJar();
+    await login(jar, climberA.email);
+    const tokenA = loginToken(jar);
+    const legacyA = jar.get(LEGACY, DOMAIN) ?? '';
+    const identityB = newGoogleIdentity(30);
+    const { response } = await googleSignIn(jar, identityB);
+    await expectTwinBesideLogin(response, jar);
+    expect(await canonicalStatus(environment.database, tokenA)).not.toBe('admitted');
+    expect(
+      (await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential: legacyA, secret })).status,
+    ).not.toBe('admitted');
+    expect(resolveSessionRequests.at(-1)).toMatchObject({ presented: { kind: 'canonical-token', token: tokenA } });
+  });
+
+  it('changes no session cookie when the backend will not issue a session, or the email belongs to another account', async () => {
+    const climberA = await createClimber(environment.database);
+    const jar = new CookieJar();
+    await login(jar, climberA.email);
+    const before = jar.header();
+    // The backend's web-session mode is off: `resolve` with a session answers 404, www answers its outage page.
+    vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'legacy');
+    const off = await googleSignIn(jar, newGoogleIdentity(30));
+    expect(sessionCookieNamesIn(off.response)).toEqual([]);
+    expect(off.response.headers.get('location')).toContain('/auth/error');
+    betterAuth();
+    await reserveClimberEmail(environment.database, climberA);
+    // A new Google subject with the email of an existing account: today's page, no cookie change.
+    const conflict = await googleSignIn(jar, { ...newGoogleIdentity(30), email: climberA.email });
+    expect(sessionCookieNamesIn(conflict.response)).toEqual([]);
+    expect(conflict.response.headers.get('location')).toContain('OAuthAccountNotLinked');
+    expect(await canonicalStatus(environment.database, loginToken(jar))).toBe('admitted');
+    expect(jar.header()).toContain(before.split('; ').find((pair) => pair.startsWith(`${LOGIN}=`)) ?? 'missing');
+  });
+
+  it('keeps the invariant for a password login too: login cookie and twin with one id', async () => {
+    const climber = await createClimber(environment.database);
+    const jar = new CookieJar();
+    const response = await login(jar, climber.email);
+    await expectTwinBesideLogin(response, jar);
+  });
+});

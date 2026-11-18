@@ -1194,6 +1194,60 @@ Cookie-header check under "What is removed". The dark
 behaviour (`current-store/set-password.ts:43`,
 `current-store/web-oauth-identity.ts:181`).
 
+
+### Google and Apple sign-in on www (B5b)
+
+Under `AUTH_BROWSER_SESSION_MODE=better-auth`, www needs
+`CURRENT_STORE_WEB_OAUTH_MODE=backend-staging` (precondition
+`AUTH_BROWSER_SESSION_WEB_OAUTH_MODE_REQUIRED`), and every Google or Apple
+start through `/api/auth/signin/*` is an explicit sign-in
+(`web-oauth-session.server.ts`, `web-oauth-request.server.ts`):
+
+- `intent` and `resolve` carry `actorCookie: null`: a sign-in never links into
+  the account the browser arrived as. Linking is provider security's (B5c1,
+  B5e). NextAuth's own "signed in" read of its cookie is switched off for the
+  callback, so it never tries to link either.
+- `resolve` sends `webSession: { presented }`, the cookie the callback arrived
+  with (the verified first-party cookie first, else the legacy cookie, never
+  both; a legacy cookie no command accepts is dropped), and always
+  `credentialProofVersion`.
+- A reply counts only with the session and a credential proof naming the same
+  session id and generation; otherwise www answers its outage page and no
+  session cookie changes. A lost reply, a 503 and the backend's 404 (its
+  web-session mode off) do the same; the intent is consumed, so the climber
+  starts the sign-in again. `email_conflict` and `email_required` keep today's
+  pages and change no cookie.
+- One response publishes the sign-in: NextAuth's legacy twin with the proof's
+  session id (no `auth_time` and no `link_guarded` for a `carried` login), the
+  host-only legacy clear, clears of every other legacy name or chunk the
+  request carried, clears of the bridged name in both scopes, then the login
+  cookie. So no legacy cookie with another id stays beside the new login cookie,
+  which rule (c) would otherwise follow: a fresh Google login's
+  `authenticatedAt` is Google's `auth_time`, up to five minutes before the
+  login, and a leftover legacy cookie written in that gap would look newer.
+- Google freshness (#7655, #7590). NextAuth's `nonce` check is on for these
+  flows: a 32-byte random nonce goes to Google and into a sealed host-only
+  HttpOnly cookie of the flow, and the ID token must carry it. The intent's
+  `flow` is the SHA-256 hex of `JSON.stringify(["web-oauth-google-nonce-v1",
+  nonce])`, and `resolve` forwards the raw ID token and the nonce. Every sign-in
+  asks Google for `max_age=31536000`, so the token carries `auth_time` without
+  making a climber already signed in to Google sign in again. The backend counts
+  the session as a fresh login only when Google's own `auth_time` is under five
+  minutes old; a silent sign-in is `carried` and never passes a five-minute
+  check. A forced reauthentication (`max_age=0`) is B5e1's entry point
+  (`googleSessionAuthorizationParams({ reauthenticate: true })`). Apple
+  sign-ins are always `carried`.
+- The B1c rule that clears the first-party names on a legacy provider login
+  now applies only to providers that still sign in on the legacy cookie alone
+  (the native transfer until B4c), not to Google or Apple.
+- The NextAuth link guard (`oauth-link-guard.server.ts`) runs only on the
+  legacy web OAuth path, which under `better-auth` answers 503 instead.
+
+`web-provider-session.integration.proof.ts` drives Google end to end through
+the real route against a loopback stand-in that signs real ID tokens, the real
+backend web OAuth and web-session handlers and real PostgreSQL. Apple runs the
+same code with no nonce, but is not driven end to end there.
+
 ## What is removed, and why
 
 Behind the eight gates sits a second design: host-only `__Host-boardsesh.*`

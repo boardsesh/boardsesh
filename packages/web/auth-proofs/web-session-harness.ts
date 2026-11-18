@@ -9,7 +9,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { Socket } from 'node:net';
 import { hash } from 'bcryptjs';
 import { expect, vi } from 'vite-plus/test';
-import { authEmailProjection, userCredentials, users } from '@boardsesh/db/schema';
+import {
+  authEmailProjection,
+  authEmailReservationMembers,
+  authEmailReservations,
+  userCredentials,
+  users,
+} from '@boardsesh/db/schema';
 import type { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../backend/src/auth/current-store/foundation-context';
@@ -17,6 +23,7 @@ import { createPasswordCompareGate } from '../../backend/src/auth/current-store/
 import { createPasswordLoginLimiter } from '../../backend/src/auth/current-store/password-login-limits';
 import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
 import { handleCurrentStoreWebSession } from '../../backend/src/handlers/current-store-web-session';
+import { handleCurrentStoreWebOAuth } from '../../backend/src/handlers/current-store-web-oauth';
 import { CookieJar, callRoute, setCookieNames, type AuthRoute } from './route-harness';
 
 type Database = Awaited<ReturnType<typeof createEnvironment>>['database'];
@@ -68,7 +75,9 @@ export async function startWebSessionBackend(database: Database): Promise<WebSes
   const real = await listen((request, response) =>
     request.url?.startsWith('/api/internal/auth/current-store/web-session/v1/')
       ? handleCurrentStoreWebSession(request, response, database)
-      : handleCurrentStoreWebAuth(request, response, database, guards),
+      : request.url?.startsWith('/api/internal/auth/current-store/web-oauth/v1/')
+        ? handleCurrentStoreWebOAuth(request, response, database)
+        : handleCurrentStoreWebAuth(request, response, database, guards),
   );
   const refusing = await listen((request, response) => {
     request.headers.origin = 'https://www.boardsesh.com';
@@ -114,6 +123,15 @@ export async function createClimber(database: Database, { verified = true } = {}
   await database.insert(users).values({ id, email, name: 'Climber', emailVerified: verified ? new Date() : null });
   await database.insert(userCredentials).values({ userId: id, passwordHash: await hash(PASSWORD, 4) });
   return { id, email };
+}
+
+/** The backend's reservation of a climber's address, as an account created by the authority has one. */
+export async function reserveClimberEmail(database: Database, climber: { id: string; email: string }) {
+  const normalizedEmail = climber.email.toLowerCase();
+  await database
+    .insert(authEmailReservations)
+    .values({ normalizedEmail, basisProjectionId: projectionId, state: 'owned', ownerUserId: climber.id });
+  await database.insert(authEmailReservationMembers).values({ normalizedEmail, userId: climber.id });
 }
 
 export function sessionCookieNamesIn(response: Response): string[] {

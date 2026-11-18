@@ -246,6 +246,11 @@ export function createWebOAuthIdentityAuthRequest(
     },
     jwt: {
       ...base.jwt,
+      // A session sign-in never links into the account the browser arrived as
+      // (the backend issues a new session and ends the presented one). NextAuth
+      // reads its own cookie as "signed in" and would try to; for it the
+      // browser arrives signed out. Its flow cookies use the module decoder.
+      ...(webSession ? { decode: async () => null } : {}),
       async encode(parameters) {
         try {
           if (!outcome) return rejectUnavailable();
