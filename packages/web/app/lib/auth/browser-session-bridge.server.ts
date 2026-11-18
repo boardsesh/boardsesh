@@ -4,8 +4,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { PresentedWebSession } from '@boardsesh/auth-protocol';
 import type { BrowserSessionCookieKind } from '@boardsesh/auth-protocol/browser-session-cookie';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
-import { bridgedSessionCookies, readRequestLegacyCookie, withoutSessionSetCookies } from './browser-session.server';
-import { CREDENTIAL_AUTHORITY_HEADER } from './credential-admission-response.server';
+import {
+  bridgedSessionCookies,
+  carriesFirstPartyCookie,
+  readRequestBrowserSession,
+  readRequestLegacyCookie,
+  signOutBrowserSessionCookieClears,
+  withoutSessionSetCookies,
+  type RequestBrowserSession,
+} from './browser-session.server';
+import { CREDENTIAL_AUTHORITY_HEADER, unavailableCredentialResponse } from './credential-admission-response.server';
 import { checkRateLimit } from './rate-limiter';
 import { appendSignOutSessionCookieClears, sessionCookieName } from './secure-cookies';
 import { trustedClientRateLimitKey } from './trusted-client-ip.server';
@@ -16,7 +24,11 @@ type LegacyPresented = Extract<PresentedWebSession, { kind: 'legacy-jwe' }>;
 /** The private, uncached headers of every session answer. `no-store` on anything that sets the cookie. */
 const PRIVATE = { 'Cache-Control': 'private, no-store' } as const;
 
-/** Bridges per client address and minute. A browser bridges once; a reload loop or a scripted caller stops here. */
+/**
+ * Bridges per client address and minute, counted separately for the session
+ * read and for ws-auth, so the identity probe never uses up the session read's.
+ * A browser bridges once; a reload loop or a scripted caller stops here.
+ */
 export const BRIDGES_PER_CLIENT = 20;
 const BRIDGE_WINDOW_MS = 60_000;
 
@@ -77,72 +89,191 @@ export async function newerLegacyLogin(
   return signedInAt * 1000 > Date.parse(active.authenticatedAt) ? legacy.presented : undefined;
 }
 
-export type BridgeFallback = () => Promise<Response>;
+/** Who a bridge is counted for: the session read and ws-auth each have their own budget per client. */
+export type BridgeBucket = 'session-read' | 'ws-auth';
+
+type BridgeOutcome =
+  | { kind: 'bridged'; session: ActiveWebSession; token: string }
+  | { kind: 'denied' }
+  /** The bridge answered, but the backend's read of the bridged token did not name that session. */
+  | { kind: 'mismatch' }
+  /** Over the client's limit, 503, a timeout, 400 or the transport's 401: nothing is known. */
+  | { kind: 'failed' };
 
 /**
- * Bridges the request's legacy cookie on a session read (B2b), acting only on
- * a parsed reply:
- * - `bridged`: the session JSON for the bridged session, plus the bridged
- *   cookie (after clears of a stale login cookie it replaces; a stale bridged
- *   cookie is simply overwritten). The legacy cookie stays for the rollback
- *   window. The cookie goes on after every other session `Set-Cookie` was
- *   removed.
- * - `denied`: the legacy cookie cannot become a session (signed out, cut off,
- *   replaced, or a rollback cookie of a login row): the read is signed out
- *   (`onDenied`) and the legacy names and chunks are cleared. When this legacy
- *   login was replacing a stale first-party cookie, `onDenied` clears the
- *   first-party names too: the browser's last sign-in ended, so it never falls
- *   back to the older session.
- * These are the session read's three planned exceptions to HARD RULE 2: the
- * bridged cookie, the login-name clears of a replacement, and the clears of a
- * denied legacy cookie.
- * - anything else (503, timeout, 400, the transport's 401), or a client over
- *   its bridge limit: `fallback`, with no cookie change.
- * Never logs the token, the cookie or the reply.
+ * Bridges a legacy cookie through the backend (deterministic and idempotent:
+ * the same cookie always gets the same token), then reads the bridged session
+ * back, acting only on parsed replies. Writes no cookie and logs nothing about
+ * the token, the cookie or the reply.
  */
-export async function bridgeOnSessionRead(
+async function bridgeLegacyLogin(
   request: NextRequest,
-  cookies: BrowserSessionCookieConfiguration,
   legacy: LegacyPresented,
-  options: { replaces: 'nothing' | BrowserSessionCookieKind; fallback: BridgeFallback; onDenied: () => Response },
-): Promise<Response> {
+  bucket: BridgeBucket,
+): Promise<BridgeOutcome> {
   const clientKey = trustedClientRateLimitKey(request);
-  if (checkRateLimit(`web-session-bridge:${clientKey}`, BRIDGES_PER_CLIENT, BRIDGE_WINDOW_MS).limited)
-    return options.fallback();
+  const limitKey = bucket === 'ws-auth' ? `ws-auth-bridge:${clientKey}` : `web-session-bridge:${clientKey}`;
+  if (checkRateLimit(limitKey, BRIDGES_PER_CLIENT, BRIDGE_WINDOW_MS).limited) return { kind: 'failed' };
   const client = createWebSessionCommandClient();
   let bridged: Awaited<ReturnType<typeof client.bridge>>;
   try {
     bridged = await client.bridge(legacy.credential);
   } catch {
-    return options.fallback();
+    return { kind: 'failed' };
   }
-  if (bridged.status === 'denied') {
-    const answer = options.onDenied();
-    appendSignOutSessionCookieClears(
-      answer,
-      request.cookies.getAll().map((requestCookie) => requestCookie.name),
-    );
-    return answer;
-  }
-  // The JSON comes from the backend's own read of the bridged session, so it is
-  // exactly what every later read of the bridged cookie answers.
+  if (bridged.status === 'denied') return { kind: 'denied' };
+  // The answer comes from the backend's own read of the bridged session, so it
+  // is exactly what every later read of the bridged cookie answers.
   let read: Awaited<ReturnType<typeof client.read>>;
   try {
     read = await client.read({ kind: 'canonical-token', token: bridged.session.token });
   } catch {
-    return options.fallback();
+    return { kind: 'failed' };
   }
-  if (read.status !== 'active' || read.session.authSessionId !== bridged.session.sessionId)
-    return NextResponse.json({}, { headers: { ...PRIVATE, [CREDENTIAL_AUTHORITY_HEADER]: 'denied' } });
-  const response = NextResponse.json(sessionJson(read.session), { headers: PRIVATE });
-  for (const setCookie of bridgedSessionCookies(cookies, bridged.session.token, {
-    replacesLoginCookie: options.replaces === 'login',
-  }))
-    response.headers.append('Set-Cookie', setCookie);
-  return response;
+  if (read.status !== 'active' || read.session.authSessionId !== bridged.session.sessionId) return { kind: 'mismatch' };
+  return { kind: 'bridged', session: read.session, token: bridged.session.token };
 }
 
-/** The legacy path's own answer, with every session `Set-Cookie` removed: today's read, no cookie change. */
-export function legacyAnswer(legacyRoute: () => Promise<Response>): BridgeFallback {
-  return async () => withoutSessionSetCookies(await legacyRoute());
+/** Which session cookies a signed-out answer of the session read clears. ws-auth clears none. */
+export type SignedOutClears = 'none' | 'legacy' | 'first-party-and-legacy';
+
+/**
+ * Who the browser is, under `AUTH_BROWSER_SESSION_MODE=better-auth`: ONE answer
+ * for `/api/auth/session` and for `/api/internal/ws-auth` (#7596 B3b), so both
+ * name the same `userId` and `authSessionId` for the same request, fallbacks
+ * included. The session read turns it into the session JSON and its planned
+ * cookie writes; ws-auth turns it into a browser access token and writes no
+ * cookie at all.
+ *
+ * - `active`: a live first-party session and the canonical token that names
+ *   it, either from the cookie or from a bridge of the legacy cookie. `bridged`
+ *   is set when the session read would set the bridged cookie (and, with
+ *   `replaces: 'login'`, clear a stale login cookie).
+ * - `signed-out`: with the reason, which decides the session read's clears and
+ *   header, and whether ws-auth answers 401 (`session-ended`) or 200.
+ * - `legacy-answer`: nothing is known beyond the legacy cookie (a POST, a
+ *   bridge over its limit or failing, an unverifiable first-party cookie beside
+ *   the legacy one, a plain-named legacy cookie). The session read answers from
+ *   the legacy path as before; ws-auth has no token to give and answers 503.
+ * - `unavailable`: 503.
+ */
+export type BrowserSessionResolution =
+  | {
+      kind: 'active';
+      session: ActiveWebSession;
+      token: string;
+      bridged?: { replaces: 'nothing' | BrowserSessionCookieKind };
+    }
+  | {
+      kind: 'signed-out';
+      reason: 'no-cookie' | 'conflicted' | 'oversized' | 'session-ended' | 'bridge-denied';
+      clears: SignedOutClears;
+    }
+  | { kind: 'legacy-answer' }
+  | { kind: 'unavailable' };
+
+/**
+ * The one resolver behind the session read and ws-auth. `bridges` is true for
+ * a GET: only a GET bridges, and each caller counts its bridges in its own
+ * bucket. Never writes a cookie itself.
+ */
+export async function resolveBrowserSession(
+  request: NextRequest,
+  cookies: BrowserSessionCookieConfiguration,
+  { bridges, bucket }: { bridges: boolean; bucket: BridgeBucket },
+): Promise<BrowserSessionResolution> {
+  let session: RequestBrowserSession;
+  try {
+    session = await readRequestBrowserSession(request, cookies);
+  } catch {
+    return { kind: 'unavailable' };
+  }
+  // A conflicted cookie, or a legacy cookie no command accepts, is signed out.
+  if (session.kind === 'conflicted') return { kind: 'signed-out', reason: 'conflicted', clears: 'none' };
+  if (session.kind === 'oversized-legacy') return { kind: 'signed-out', reason: 'oversized', clears: 'none' };
+  if (session.kind === 'none') return { kind: 'signed-out', reason: 'no-cookie', clears: 'none' };
+  if (session.kind === 'legacy') {
+    // Only the legacy name this deployment writes is bridged: a plain-named cookie
+    // in a secure context would otherwise become a 400-day `__Secure-` cookie.
+    if (!bridges || carriesFirstPartyCookie(request) || session.cookieName !== sessionCookieName())
+      return { kind: 'legacy-answer' };
+    const outcome = await bridgeLegacyLogin(request, session.presented, bucket);
+    if (outcome.kind === 'bridged')
+      return { kind: 'active', session: outcome.session, token: outcome.token, bridged: { replaces: 'nothing' } };
+    if (outcome.kind === 'denied') return { kind: 'signed-out', reason: 'bridge-denied', clears: 'legacy' };
+    if (outcome.kind === 'mismatch') return { kind: 'signed-out', reason: 'session-ended', clears: 'none' };
+    return { kind: 'legacy-answer' };
+  }
+  let active: ActiveWebSession;
+  try {
+    const read = await createWebSessionCommandClient().read(session.presented);
+    if (read.status === 'signed-out') return { kind: 'signed-out', reason: 'session-ended', clears: 'none' };
+    active = read.session;
+    if (active.user.id !== active.userId) return { kind: 'unavailable' };
+  } catch {
+    return { kind: 'unavailable' };
+  }
+  const fromCookie: BrowserSessionResolution = { kind: 'active', session: active, token: session.presented.token };
+  if (!bridges) return fromCookie;
+  let newer: Awaited<ReturnType<typeof newerLegacyLogin>>;
+  try {
+    newer = await newerLegacyLogin(request, active, session.cookieKind);
+  } catch {
+    newer = undefined;
+  }
+  if (!newer) return fromCookie;
+  const outcome = await bridgeLegacyLogin(request, newer, bucket);
+  if (outcome.kind === 'bridged')
+    return {
+      kind: 'active',
+      session: outcome.session,
+      token: outcome.token,
+      bridged: { replaces: session.cookieKind },
+    };
+  // The newer login ended: signed out, never back to the stale session.
+  if (outcome.kind === 'denied')
+    return { kind: 'signed-out', reason: 'bridge-denied', clears: 'first-party-and-legacy' };
+  if (outcome.kind === 'mismatch') return { kind: 'signed-out', reason: 'session-ended', clears: 'none' };
+  // A failed bridge keeps this request's answer; the next read retries.
+  return fromCookie;
+}
+
+/**
+ * The session read's answer for a resolution (B2b): the session JSON and the
+ * session read's three planned exceptions to HARD RULE 2: the bridged cookie
+ * (after clears of a stale login cookie it replaces; a stale bridged cookie is
+ * simply overwritten), and the clears of a denied legacy cookie (plus the
+ * first-party names when that legacy login was replacing a stale first-party
+ * cookie, so the browser never falls back to the older session). The legacy
+ * cookie stays after a bridge, for the rollback window. Every answer is
+ * `private, no-store`.
+ */
+export async function sessionReadAnswer(
+  request: NextRequest,
+  cookies: BrowserSessionCookieConfiguration,
+  resolution: BrowserSessionResolution,
+  legacyRoute: () => Promise<Response>,
+): Promise<Response> {
+  if (resolution.kind === 'unavailable') return unavailableCredentialResponse();
+  if (resolution.kind === 'legacy-answer') return withoutSessionSetCookies(await legacyRoute());
+  if (resolution.kind === 'signed-out') {
+    const ended = resolution.reason === 'session-ended';
+    const answer = NextResponse.json(
+      {},
+      { headers: ended ? { ...PRIVATE, [CREDENTIAL_AUTHORITY_HEADER]: 'denied' } : PRIVATE },
+    );
+    const carriedNames = request.cookies.getAll().map((requestCookie) => requestCookie.name);
+    if (resolution.clears === 'first-party-and-legacy')
+      for (const clear of signOutBrowserSessionCookieClears(cookies, carriedNames))
+        answer.headers.append('Set-Cookie', clear);
+    if (resolution.clears !== 'none') appendSignOutSessionCookieClears(answer, carriedNames);
+    return answer;
+  }
+  const answer = NextResponse.json(sessionJson(resolution.session), { headers: PRIVATE });
+  if (resolution.bridged)
+    for (const setCookie of bridgedSessionCookies(cookies, resolution.token, {
+      replacesLoginCookie: resolution.bridged.replaces === 'login',
+    }))
+      answer.headers.append('Set-Cookie', setCookie);
+  return answer;
 }

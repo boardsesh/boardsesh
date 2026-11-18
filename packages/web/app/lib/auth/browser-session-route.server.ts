@@ -1,14 +1,13 @@
 import 'server-only';
 import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
-import { NextResponse, type NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { authOptions } from './auth-options';
 import { capturePresentedWebCredential } from './admitted-session.server';
 import { withAuthResponseAdmission } from './auth-response-admission.server';
 import type { BrowserSessionCookieConfiguration, BrowserSessionRouteMode } from './browser-session-mode.server';
-import { bridgeOnSessionRead, legacyAnswer, newerLegacyLogin, sessionJson } from './browser-session-bridge.server';
+import { resolveBrowserSession, sessionReadAnswer } from './browser-session-bridge.server';
 import {
-  carriesFirstPartyCookie,
   loginSessionCookies,
   presentedForLogin,
   readRequestBrowserSession,
@@ -16,7 +15,7 @@ import {
   withoutSessionSetCookies,
   type RequestBrowserSession,
 } from './browser-session.server';
-import { CREDENTIAL_AUTHORITY_HEADER, unavailableCredentialResponse } from './credential-admission-response.server';
+import { unavailableCredentialResponse } from './credential-admission-response.server';
 import {
   admitPasswordLogin,
   createPasswordCommandAuthRequest,
@@ -26,12 +25,11 @@ import {
   appendLegacyHostOnlySessionCookieClear,
   appendSignOutSessionCookieClears,
   responseSetsSessionCookie,
-  sessionCookieName,
   sessionCookieNameCandidates,
 } from './secure-cookies';
 import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
-import { createWebSessionCommandClient, type ActiveWebSession } from './web-session-command-client.server';
+import { createWebSessionCommandClient } from './web-session-command-client.server';
 import { responseClearsNextAuthSession } from './web-signout-command.server';
 
 type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
@@ -194,77 +192,26 @@ async function signOut(
  * `/api/auth/session` (GET, and POST for `update()`) under `better-auth`. A
  * first-party cookie is answered by the backend's session read in today's JSON
  * shape. A GET with a legacy cookie and no first-party cookie of either name
- * (verified or not) bridges it (B2b, `bridgeOnSessionRead`); so does a GET
- * whose active login cookie is older than a legacy login beside it (a login
- * made during a rollback). POST never bridges and answers a legacy cookie from
- * the legacy path. A session read writes or clears a session cookie in three
- * planned cases only (`bridgeOnSessionRead`): the bridged cookie, the clears
- * of a stale first-party cookie a newer legacy login replaces, and the clears
- * of a legacy cookie the backend denies. Nothing else does.
+ * (verified or not) bridges it (B2b); so does a GET whose active first-party
+ * cookie is older than a legacy login beside it (a login made during a
+ * rollback). POST never bridges and answers a legacy cookie from the legacy
+ * path. Who the browser is comes from `resolveBrowserSession`, the one
+ * resolver ws-auth uses too (B3b), so both answer the same ids. A session read
+ * writes or clears a session cookie in three planned cases only
+ * (`sessionReadAnswer`): the bridged cookie, the clears of a stale first-party
+ * cookie a newer legacy login replaces, and the clears of a legacy cookie the
+ * backend denies. Nothing else does.
  */
 async function readSession(
   request: NextRequest,
   cookies: BrowserSessionCookieConfiguration,
   legacyRoute: () => Promise<Response>,
 ): Promise<Response> {
-  let session: RequestBrowserSession;
-  try {
-    session = await readRequestBrowserSession(request, cookies);
-  } catch {
-    return unavailableCredentialResponse();
-  }
-  // A conflicted cookie, or a legacy cookie no command accepts, is signed out.
-  if (session.kind === 'conflicted' || session.kind === 'oversized-legacy')
-    return NextResponse.json({}, { headers: PRIVATE });
-  const bridging = request.method === 'GET';
-  // Only the legacy name this deployment writes is bridged: a plain-named cookie
-  // in a secure context would otherwise become a 400-day `__Secure-` cookie.
-  if (
-    session.kind === 'legacy' &&
-    bridging &&
-    !carriesFirstPartyCookie(request) &&
-    session.cookieName === sessionCookieName()
-  )
-    return bridgeOnSessionRead(request, cookies, session.presented, {
-      replaces: 'nothing',
-      fallback: legacyAnswer(legacyRoute),
-      onDenied: () => NextResponse.json({}, { headers: PRIVATE }),
-    });
-  if (session.kind !== 'canonical') return withoutSessionSetCookies(await legacyRoute());
-  let active: ActiveWebSession;
-  try {
-    const read = await createWebSessionCommandClient().read(session.presented);
-    if (read.status === 'signed-out')
-      return NextResponse.json({}, { headers: { ...PRIVATE, [CREDENTIAL_AUTHORITY_HEADER]: 'denied' } });
-    active = read.session;
-    if (active.user.id !== active.userId) return unavailableCredentialResponse();
-  } catch {
-    return unavailableCredentialResponse();
-  }
-  const activeAnswer = () => NextResponse.json(sessionJson(active), { headers: PRIVATE });
-  if (bridging) {
-    let newer: Awaited<ReturnType<typeof newerLegacyLogin>>;
-    try {
-      newer = await newerLegacyLogin(request, active, session.cookieKind);
-    } catch {
-      newer = undefined;
-    }
-    const carriedNames = requestCookieNames(request);
-    if (newer)
-      return bridgeOnSessionRead(request, cookies, newer, {
-        replaces: session.cookieKind,
-        // A failed bridge keeps this request's answer; the next read retries.
-        fallback: async () => activeAnswer(),
-        // The newer login ended: signed out, never back to the stale session.
-        onDenied: () => {
-          const signedOut = NextResponse.json({}, { headers: PRIVATE });
-          for (const clear of signOutBrowserSessionCookieClears(cookies, carriedNames))
-            signedOut.headers.append('Set-Cookie', clear);
-          return signedOut;
-        },
-      });
-  }
-  return activeAnswer();
+  const resolution = await resolveBrowserSession(request, cookies, {
+    bridges: request.method === 'GET',
+    bucket: 'session-read',
+  });
+  return sessionReadAnswer(request, cookies, resolution, legacyRoute);
 }
 
 /**

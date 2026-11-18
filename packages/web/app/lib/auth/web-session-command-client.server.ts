@@ -3,11 +3,13 @@ import { randomUUID } from 'node:crypto';
 import {
   WEB_SESSION_COMMAND_PATHS,
   WEB_SESSION_PROTOCOL_VERSION,
+  webSessionAccessReplySchema,
   webSessionBridgeReplySchema,
   webSessionReadReplySchema,
   webSessionReplyStatus,
   webSessionSignOutReplySchema,
   type PresentedWebSession,
+  type WebSessionAccessReply,
   type WebSessionBridgeReply,
   type WebSessionReadReply,
 } from '@boardsesh/auth-protocol';
@@ -29,7 +31,22 @@ export type BridgedWebSession = Extract<WebSessionBridgeReply, { outcome: 'bridg
 /** The bridged session, or a confirmed "this cookie cannot be bridged". Anything else throws. */
 export type WebSessionBridgeResult = { status: 'bridged'; session: BridgedWebSession } | { status: 'denied' };
 
+export type BrowserAccessGrant = Extract<WebSessionAccessReply, { outcome: 'active' }>;
+
+/**
+ * A 15-minute browser access token for the presented session (B3a's `access`),
+ * or a confirmed answer that there is none: `no-session` (the cookie carries no
+ * live session) or `bridge-required` (a legacy cookie, which `access` never
+ * reads). Anything else throws.
+ */
+export type WebSessionAccessResult =
+  | { status: 'active'; grant: BrowserAccessGrant }
+  | { status: 'no-session' }
+  | { status: 'bridge-required' };
+
 export type WebSessionCommandClient = {
+  /** The browser access token for a session; the one place a web session rolls. Never logs the token. */
+  access(presented: PresentedWebSession): Promise<WebSessionAccessResult>;
   /** The joined legacy NextAuth cookie, as received; at most `LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH`. */
   bridge(credential: string): Promise<WebSessionBridgeResult>;
   read(presented: PresentedWebSession): Promise<WebSessionReadResult>;
@@ -40,7 +57,7 @@ export type WebSessionCommandClient = {
 };
 
 /**
- * The backend's `session`, `signout` and `bridge` web-session commands (#7596), on the
+ * The backend's `session`, `signout`, `bridge` and `access` web-session commands (#7596), on the
  * same private channel and secret as the staged password command. One request
  * each, no retry: a lost sign-out reply may follow a commit.
  *
@@ -62,6 +79,21 @@ export function createWebSessionCommandClient(
   }
 
   return {
+    async access(presented) {
+      try {
+        const command = { ...metadata(), operation: 'access' as const, payload: { presented } };
+        const response = await transport.post(WEB_SESSION_COMMAND_PATHS.access, command);
+        const reply = webSessionAccessReplySchema.parse(response.body);
+        if (reply.requestId !== command.requestId || webSessionReplyStatus(reply) !== response.status)
+          throw new AuthBackendUnavailableError();
+        if (reply.outcome === 'active') return { status: 'active', grant: reply };
+        if (reply.outcome === 'unauthenticated')
+          return { status: reply.reason === 'no_session' ? 'no-session' : 'bridge-required' };
+        throw new AuthBackendUnavailableError();
+      } catch {
+        throw new AuthBackendUnavailableError();
+      }
+    },
     async bridge(credential) {
       try {
         const command = { ...metadata(), operation: 'bridge' as const, payload: { credential } };

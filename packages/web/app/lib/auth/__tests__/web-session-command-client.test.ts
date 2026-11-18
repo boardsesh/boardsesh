@@ -115,4 +115,51 @@ describe('web session command client', () => {
     const wrongStatus = backend(200, (command) => ({ ...replyBase(command), outcome: 'denied' }));
     await expect(wrongStatus.client.bridge('legacy-cookie')).rejects.toThrow('AuthBackendUnavailable');
   });
+
+  it('asks for a browser access token, and keeps both refusal reasons apart from every unparsed answer', async () => {
+    const granted = backend(200, (command) => ({
+      ...replyBase(command),
+      outcome: 'active',
+      userId: 'user-1',
+      authSessionId: 'session-1',
+      expiresAt: '2026-12-18T00:00:00.000Z',
+      rolled: false,
+      accessToken: 'header.payload.signature',
+      accessTokenExpiresAt: '2026-11-18T00:15:00.000Z',
+    }));
+    await expect(granted.client.access(presented)).resolves.toMatchObject({
+      status: 'active',
+      grant: { userId: 'user-1', authSessionId: 'session-1', accessToken: 'header.payload.signature' },
+    });
+    expect(granted.sent[0].url).toBe(`https://backend.boardsesh.test${WEB_SESSION_COMMAND_PATHS.access}`);
+    expect(granted.sent[0].body).toMatchObject({ operation: 'access', payload: { presented } });
+    for (const [reason, status] of [
+      ['no_session', 'no-session'],
+      ['bridge_required', 'bridge-required'],
+    ] as const) {
+      const refused = backend(401, (command) => ({ ...replyBase(command), outcome: 'unauthenticated', reason }));
+      await expect(refused.client.access(presented)).resolves.toEqual({ status });
+    }
+    for (const [status, reply] of [
+      [401, () => ({ error: 'unauthorized' })],
+      [404, () => ({ error: 'disabled' })],
+      [
+        200,
+        (command: { requestId: string; operation: string }) => ({
+          ...replyBase(command),
+          outcome: 'unauthenticated',
+          reason: 'no_session',
+        }),
+      ],
+      [
+        503,
+        (command: { requestId: string; operation: string }) => ({
+          ...replyBase(command),
+          outcome: 'error',
+          code: 'unavailable',
+        }),
+      ],
+    ] as const)
+      await expect(backend(status, reply).client.access(presented)).rejects.toThrow('AuthBackendUnavailable');
+  });
 });
