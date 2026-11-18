@@ -1,13 +1,15 @@
 // Board motion lab previews, Android half: draws prepared frames with the Android
 // shader and the Kotlin swap look on an emulator's GLES 3.1, then compares each
-// frame with the Metal shader and the Swift look on this Mac. With --golden, also
-// checks the Android shader with no look bound is byte-identical to the one at
-// --baseline on the Aura transition golden's 42 samples. See README.md.
+// frame with the Metal shader and the Swift look on this Mac. A frame with look
+// words draws with the look program, any other with the base program, as the
+// renderer does. With --golden, also checks that the base program and the look
+// program with no look are byte-identical to the shader at --baseline on the Aura
+// transition golden's 42 samples. See README.md.
 //
 // Every Android input comes from the real Kotlin objects: a temporary unit test
 // (outside the repository, added through a Gradle init script) writes
 // OverlayShader's strings, the baseline ref's OverlayShader, and each frame's
-// words from OverlaySwapLook.encode.
+// words from OverlaySwapLook.Frame.encode.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -56,6 +58,9 @@ const golden = process.argv.includes('--golden') ? home(option('--golden')) : nu
 const ids = option('--ids', DEFAULT_IDS.join(',')).split(',');
 const baselineRef = option('--baseline', run('git', ['-C', repository, 'merge-base', 'HEAD', 'origin/main']).trim());
 const keepRaw = process.argv.includes('--keep-raw');
+// The swap's two ends on GLES alone: no Metal, see writeEndpointFrames.
+const endpoints = process.argv.includes('--endpoints');
+if (endpoints && wordsOnly) throw new Error('--endpoints draws on the emulator; it cannot be --words-only');
 // Host evidence only: an emulator is this Mac's GPU stack (ANGLE on SwiftShader).
 // A phone goes through the golden's reviewed device registration instead.
 if (!/^emulator-\d+$/.test(serial)) throw new Error('--serial must name an emulator (emulator-NNNN)');
@@ -65,27 +70,147 @@ const exported = join(out, 'export');
 const device = join(out, 'device');
 mkdirSync(build, { recursive: true });
 
-// 1. The Metal side: the frames' uniforms and Swift look words, from the preview renderer.
-for (const name of ['BaselineShader', 'BeforeFixShader']) {
-  const source = run('git', ['-C', repository, 'show', `${baselineRef}:${METAL_SHADER}`]);
-  writeFileSync(join(build, `${name}.swift`), source.replace('enum ClimbOverlayShader {', `enum ${name} {`));
+/**
+ * Rust's uniforms for a pair and swap, as PreviewRender.swift's `LoadedPacket.uniforms`
+ * patches them: the pair's base sample with the shared-weight word (15), stamp layers
+ * (17), side weights (22, 23) and progress (24) written in. `transitioning` keeps the
+ * progress strictly inside 0..1, as Rust does while shared holds dip, so a pair at
+ * W = (1, 0) or (0, 1) still takes the shader's swap path.
+ */
+function patchedUniforms(description, lower, upper, swap, transitioning) {
+  const same = lower === upper;
+  const base = same ? `still-${lower}` : lower === 0 ? 'base-0-2' : 'base-1-0';
+  const bytes = Buffer.from(readFileSync(join(work, description.dir, `uniforms-${base}.bin`)));
+  const float = Math.fround;
+  const [weightLower, weightUpper, shared] = swap.map(float);
+  const lowerCount = description.scenes[lower].count;
+  const upperCount = description.scenes[upper].count;
+  const ulp = 2 ** -23;
+  let progress;
+  if (same) progress = 0;
+  else if (lowerCount > 0 && upperCount === 0) progress = float(1 - weightLower);
+  else if (lowerCount === 0 && upperCount > 0) progress = weightUpper;
+  else {
+    progress = float(float(float(1 - weightLower) + weightUpper) * 0.5);
+    if (shared < 1 || transitioning) progress = Math.min(Math.max(progress, ulp), float(1 - ulp));
+  }
+  const layers = description.scenes.map((scene) => scene.stampLayers);
+  const inside = progress > 0 && progress < 1;
+  bytes.writeFloatLE(inside ? shared : 0, 15 * 4);
+  bytes.writeUInt32LE(
+    (progress <= 0 ? layers[lower] : progress >= 1 ? layers[upper] : layers[lower] | layers[upper]) >>> 0,
+    17 * 4,
+  );
+  bytes.writeFloatLE(weightLower, 22 * 4);
+  bytes.writeFloatLE(weightUpper, 23 * 4);
+  bytes.writeFloatLE(progress, 24 * 4);
+  return bytes;
 }
+
+/**
+ * The GLES twin of PreviewRender.swift's `endpoints`: every pair I's sheets draw, as a
+ * look frame at W = (1, 0) and (0, 1) (the look program) and as the still frame of the
+ * climb at rest (the base program). Writes the frames the Kotlin export and the device
+ * read, and returns the pairs to compare.
+ */
+function writeEndpointFrames() {
+  const plan = JSON.parse(readFileSync(join(work, 'plan.json'), 'utf8'));
+  mkdirSync(join(exported, 'frames'), { recursive: true });
+  const rows = [];
+  const packets = {};
+  const checks = [];
+  const seen = new Set();
+  let table = '';
+  const add = (name, packetKey, lower, upper, swap, codes, look, transitioning) => {
+    const description = plan.packets[packetKey];
+    const directory = `packets/${packetKey.replaceAll('/', '-')}`;
+    writeFileSync(
+      join(exported, 'frames', `${name}.uniforms`),
+      patchedUniforms(description, lower, upper, swap, transitioning),
+    );
+    const { width, height } = plan.boards[description.board];
+    const lowerScene = description.scenes[lower];
+    const upperScene = description.scenes[upper];
+    table += `${name} ${directory} ${width} ${height} ${lowerScene.offset} ${lowerScene.bytes} ${upperScene.offset} ${upperScene.bytes}\n`;
+    rows.push({
+      name,
+      packet: packetKey,
+      directory,
+      lower,
+      upper,
+      swap,
+      sharedFloor: 1,
+      codes,
+      ...(look ? { look } : {}),
+    });
+  };
+  for (const sheet of plan.sheets.filter((candidate) => candidate.id.startsWith('I-'))) {
+    for (const frame of sheet.frames) {
+      if (frame.lower === frame.upper) continue;
+      if (!frame.look) throw new Error(`${sheet.id} has no look`);
+      const key = `${frame.look.join(',')}|${frame.packet}|${frame.lower}|${frame.upper}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const description = plan.packets[frame.packet];
+      const { width, height } = plan.boards[description.board];
+      packets[frame.packet] = {
+        source: join(work, description.dir),
+        width,
+        height,
+        scenes: description.scenes.map(({ offset, bytes, count }) => ({ offset, bytes, count })),
+      };
+      const pair = `endpoint-${seen.size - 1}`;
+      // The whole climb is the one being left (the first drag frame); the dark one arrives
+      // from its slot's edge. A hold at W = 1 or 0 draws the same either way round.
+      for (const [end, whole, swap, codes] of [
+        ['start', frame.lower, [1, 0, 1], [0, 1]],
+        ['end', frame.upper, [0, 1, 1], [2, 0]],
+      ]) {
+        add(`${pair}-${end}-look`, frame.packet, frame.lower, frame.upper, swap, codes, frame.look, true);
+        add(`${pair}-${end}-still`, frame.packet, whole, whole, [1, 0, 1], [0, 0], null, false);
+        checks.push({
+          name: `${pair}-${end}`,
+          sheet: sheet.id,
+          packet: frame.packet,
+          lower: frame.lower,
+          upper: frame.upper,
+          end,
+        });
+      }
+    }
+  }
+  if (checks.length === 0) throw new Error("No pairs on I's sheets");
+  writeFileSync(join(exported, 'frames.tsv'), table);
+  writeFileSync(join(exported, 'frames.json'), JSON.stringify({ packets, frames: rows }, null, 2));
+  console.log(JSON.stringify({ status: 'ENDPOINT_FRAMES', checks: checks.length, frames: rows.length }));
+  return checks;
+}
+
+// 1. The Metal side: the frames' uniforms and Swift look words, from the preview renderer.
+// With --endpoints there is no Metal side: the frames come from the plan directly.
 const preview = join(build, 'board-motion-preview');
-run('xcrun', [
-  'swiftc',
-  '-O',
-  '-module-cache-path',
-  join(build, 'module-cache'),
-  join(here, 'PreviewRender.swift'),
-  join(ios, 'ClimbOverlayShader.swift'),
-  join(ios, 'ClimbOverlaySwapLook.swift'),
-  join(ios, 'ClimbOverlayPacketLayout.swift'),
-  join(build, 'BaselineShader.swift'),
-  join(build, 'BeforeFixShader.swift'),
-  '-o',
-  preview,
-]);
-console.log(run(preview, ['export', work, exported, ...ids]).trim());
+const endpointChecks = endpoints ? writeEndpointFrames() : [];
+if (!endpoints) {
+  for (const name of ['BaselineShader', 'BeforeFixShader']) {
+    const source = run('git', ['-C', repository, 'show', `${baselineRef}:${METAL_SHADER}`]);
+    writeFileSync(join(build, `${name}.swift`), source.replace('enum ClimbOverlayShader {', `enum ${name} {`));
+  }
+  run('xcrun', [
+    'swiftc',
+    '-O',
+    '-module-cache-path',
+    join(build, 'module-cache'),
+    join(here, 'PreviewRender.swift'),
+    join(ios, 'ClimbOverlayShader.swift'),
+    join(ios, 'ClimbOverlaySwapLook.swift'),
+    join(ios, 'ClimbOverlayPacketLayout.swift'),
+    join(build, 'BaselineShader.swift'),
+    join(build, 'BeforeFixShader.swift'),
+    '-o',
+    preview,
+  ]);
+  console.log(run(preview, ['export', work, exported, ...ids]).trim());
+}
 
 // 2. The Android side, from the real Kotlin objects: shaders and every frame's look words.
 const testSources = join(build, 'kotlin-test');
@@ -115,7 +240,9 @@ class BoardMotionGlesExportTest {
         val root = File(System.getProperty("boardMotionExport"))
         val shaders = File(root, "shaders").apply { mkdirs() }
         File(shaders, "after.vert").writeText(OverlayShader.vertex)
-        File(shaders, "after.frag").writeText(OverlayShader.fragment)
+        File(shaders, "after.frag").writeText(OverlayShader.lookFragment)
+        File(shaders, "base.vert").writeText(OverlayShader.vertex)
+        File(shaders, "base.frag").writeText(OverlayShader.fragment)
         File(shaders, "baseline.vert").writeText(BaselineOverlayShader.vertex)
         File(shaders, "baseline.frag").writeText(BaselineOverlayShader.fragment)
         val manifest = JSONObject(File(root, "frames.json").readText())
@@ -133,6 +260,7 @@ class BoardMotionGlesExportTest {
         }
         val frames = manifest.getJSONArray("frames")
         val target = ByteBuffer.allocate(OverlaySwapLook.GLES_BYTES)
+        val out = OverlaySwapLook.Frame()
         for (index in 0 until frames.length()) {
             val frame = frames.getJSONObject(index)
             val values = frame.optJSONArray("look")?.let { array -> (0 until array.length()).map { array.getDouble(it) } }
@@ -141,14 +269,13 @@ class BoardMotionGlesExportTest {
             val lower = frame.getInt("lower")
             val upper = frame.getInt("upper")
             val look = values?.let { OverlaySwapLook.Look.parse(it) ?: error("Bad look") }
-            val words = if (look == null || lower == upper) OverlaySwapLook.OFF else {
-                val packet = scenes.getValue(frame.getString("packet"))
-                OverlaySwapLook.encode(packet.scene(lower, false), packet.scene(upper, true),
-                    OverlaySwapLook.Side.fromCode(swap.getDouble(0).toFloat(), codes.getInt(0)),
-                    OverlaySwapLook.Side.fromCode(swap.getDouble(1).toFloat(), codes.getInt(1)),
+            val packet = scenes.getValue(frame.getString("packet"))
+            // No words: the renderer draws the base program; the device reads a zero header as that.
+            val count = if (look == null || lower == upper || !packet.decoded) 0 else
+                out.encode(packet.scene(lower, false), packet.scene(upper, true),
+                    swap.getDouble(0).toFloat(), codes.getInt(0), swap.getDouble(1).toFloat(), codes.getInt(1),
                     frame.getDouble("sharedFloor").toFloat(), look, false, true)
-            }
-            val bytes = OverlaySwapLook.bytes(words, target)
+            val bytes = if (count == 0) ByteBuffer.wrap(ByteArray(8)) else OverlaySwapLook.bytes(out.words, count, target)
             File(root, "frames/" + frame.getString("name") + ".kotlin-look").writeBytes(ByteArray(bytes.remaining()).also { bytes.get(it) })
         }
     }
@@ -189,7 +316,7 @@ if (wordsOnly) {
 const manifest = JSON.parse(readFileSync(join(exported, 'frames.json'), 'utf8'));
 mkdirSync(join(device, 'frames'), { recursive: true });
 mkdirSync(join(device, 'shaders'));
-for (const file of ['after.vert', 'after.frag', 'baseline.vert', 'baseline.frag'])
+for (const file of ['after.vert', 'after.frag', 'base.vert', 'base.frag', 'baseline.vert', 'baseline.frag'])
   copyFileSync(join(exported, 'shaders', file), join(device, 'shaders', file));
 copyFileSync(join(exported, 'frames.tsv'), join(device, 'frames.tsv'));
 const directories = new Map(manifest.frames.map((frame) => [frame.directory, manifest.packets[frame.packet].source]));
@@ -265,7 +392,35 @@ try {
   spawnSync(adb, ['-s', serial, 'shell', `rm -rf ${remote}`]);
 }
 
-// 6. Metal (Swift words) against GLES (Kotlin words), frame by frame.
+// 6. Metal (Swift words) against GLES (Kotlin words), frame by frame; or, with
+// --endpoints, each look frame at a swap's end against the still frame, pixel for pixel.
+if (endpoints) {
+  const results = endpointChecks.map((check) => {
+    const look = readFileSync(join(raw, `${check.name}-look.rgba`));
+    const still = readFileSync(join(raw, `${check.name}-still.rgba`));
+    if (look.length !== still.length) throw new Error(`${check.name}: frame sizes differ`);
+    let changedPixels = 0;
+    let maxChannelDifference = 0;
+    for (let pixel = 0; pixel < look.length; pixel += 4) {
+      let largest = 0;
+      for (let channel = 0; channel < 4; channel++)
+        largest = Math.max(largest, Math.abs(look[pixel + channel] - still[pixel + channel]));
+      if (largest > 0) changedPixels++;
+      maxChannelDifference = Math.max(maxChannelDifference, largest);
+    }
+    return { ...check, changedPixels, maxChannelDifference };
+  });
+  const differing = results.filter((result) => result.changedPixels > 0).length;
+  const status = differing === 0 ? 'PASS_ENDPOINTS_MATCH_STILL' : 'FAIL_ENDPOINTS_DIFFER';
+  writeFileSync(
+    join(out, 'endpoints.json'),
+    JSON.stringify({ status, checks: results.length, differing, rows: results }, null, 2),
+  );
+  console.log(JSON.stringify({ status, checks: results.length, differing }));
+  if (!keepRaw) for (const file of readdirSync(raw).filter((name) => name.endsWith('.rgba'))) rmSync(join(raw, file));
+  if (differing > 0) process.exit(4);
+  process.exit(0);
+}
 const compared = run(preview, ['compare', work, exported, raw, join(out, 'compare')], { timeout: 3_600_000 }).trim();
 console.log(compared);
 if (!keepRaw) for (const file of readdirSync(raw).filter((name) => name.endsWith('.rgba'))) rmSync(join(raw, file));

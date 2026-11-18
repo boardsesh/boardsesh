@@ -27,7 +27,7 @@ internal object OverlaySwapCommand {
         if (values == null) return null
         if (values.size != 5 && values.size != 7) return SequencedSwapFrame(values, null)
         val sequence = values[4]
-        if (!sequence.isFinite() || values.drop(5).any { !it.isFinite() }) return null
+        if (!sequence.isFinite() || values.size == 7 && (!values[5].isFinite() || !values[6].isFinite())) return null
         val arrivals =
             if (values.size == 7)
                 OverlaySwapLook.Arrivals(OverlaySwapLook.Arrivals.code(values[5]), OverlaySwapLook.Arrivals.code(values[6]))

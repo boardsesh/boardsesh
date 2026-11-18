@@ -164,9 +164,20 @@ internal object OverlayRenderer {
     private var initialized = false
     private var program = 0
     private var uniformBuffer = 0
-    /** The swap look's uniform block ([OverlaySwapLook.GLES_BYTES]); every draw binds it, off or on. */
+    /**
+     * The swap look's program ([OverlaySwapLookProgram]): 0 until this context
+     * builds it, and 0 for good in this context if that fails, which leaves
+     * every frame on [program].
+     */
+    private var lookProgram = 0
+    /** This context has tried to build [lookProgram]; it tries once. */
+    private var lookProgramTried = false
+    /** The look program's uniform block ([OverlaySwapLook.GLES_BYTES]), bound only by a draw with the look. */
     private var lookBuffer = 0
     private val lookBytes = directBytes(OverlaySwapLook.GLES_BYTES)
+    /** One frame's look words, reused every frame. */
+    private val lookFrame = OverlaySwapLook.Frame()
+    private var lookFailureLogged = false
     private val budget = AtlasBudget()
     private val bufferBytes = HashMap<Int, Int>()
     private val retiredBuffers = ArrayList<Pair<Long, Int>>()
@@ -312,8 +323,37 @@ internal object OverlayRenderer {
             error("GPU shader link failed (GL $glError)")
         }
         uniformBuffer = buffer(directBytes(OverlayPacketLayout.UNIFORM_BYTES), GLES31.GL_UNIFORM_BUFFER)
-        lookBuffer = buffer(directBytes(OverlaySwapLook.GLES_BYTES), GLES31.GL_UNIFORM_BUFFER)
         checked("GPU initialization")
+        // After the base program is whole, so the look can never fail it.
+        if (OverlaySwapLookProgram.offered) lookProgramReady()
+    }
+
+    /**
+     * Whether this context has the swap look's program, building it the first
+     * time it is asked: at initialization when the module offered the look, else
+     * on the first frame that wants it. A failure is logged once per process and
+     * leaves every frame on the base program; it is not a GPU failure.
+     */
+    private fun lookProgramReady(): Boolean {
+        if (lookProgramTried) return lookProgram != 0
+        lookProgramTried = true
+        val built = OverlaySwapLookProgram.build()
+        var failure = built.failure
+        if (failure == null) {
+            try {
+                lookBuffer = buffer(directBytes(OverlaySwapLook.GLES_BYTES), GLES31.GL_UNIFORM_BUFFER, GLES31.GL_DYNAMIC_DRAW)
+                lookProgram = built.program
+            } catch (error: Exception) {
+                GLES31.glDeleteProgram(built.program)
+                for (attempt in 0 until 8) if (GLES31.glGetError() == GLES31.GL_NO_ERROR) break
+                failure = "look buffer: $error"
+            }
+        }
+        if (failure != null && !lookFailureLogged) {
+            lookFailureLogged = true
+            Log.w("BoardseshClimbGPU", "Swap look program unavailable in this GPU context; drawing without the look: $failure")
+        }
+        return lookProgram != 0
     }
 
     private fun park() {
@@ -348,14 +388,14 @@ internal object OverlayRenderer {
         budget.reserve(amount)
     }
 
-    private fun buffer(bytes: ByteBuffer, target: Int = GLES31.GL_SHADER_STORAGE_BUFFER): Int {
+    private fun buffer(bytes: ByteBuffer, target: Int = GLES31.GL_SHADER_STORAGE_BUFFER, usage: Int = GLES31.GL_STATIC_DRAW): Int {
         val amount = bytes.remaining()
         val ids = IntArray(1)
         reserveBytes(amount)
         GLES31.glGenBuffers(1, ids, 0)
         try {
             GLES31.glBindBuffer(target, ids[0])
-            GLES31.glBufferData(target, bytes.remaining(), bytes, GLES31.GL_STATIC_DRAW)
+            GLES31.glBufferData(target, bytes.remaining(), bytes, usage)
             checked("GPU buffer allocation")
             bufferBytes[ids[0]] = amount
             return ids[0]
@@ -700,11 +740,15 @@ internal object OverlayRenderer {
             !session.destroyed &&
             session.view.matches(request)
 
-    /** [look] is the swap look's words ([OverlaySwapLook.encode]) or its zero header: the shader always reads it. */
-    private fun encode(packet: UploadedPacket,lower: Int,upper: Int,params: ByteBuffer,look: IntArray=OverlaySwapLook.OFF) {
+    /**
+     * [lookWords] > 0: [lookFrame] holds this frame's look and the draw uses the
+     * look program and its block. 0: the base program, with the same calls as
+     * before the look existed.
+     */
+    private fun encode(packet: UploadedPacket,lower: Int,upper: Int,params: ByteBuffer,lookWords: Int=0) {
         GLES31.glViewport(0,0,packet.header.width,packet.header.height)
         GLES31.glDisable(GLES31.GL_BLEND);GLES31.glDisable(GLES31.GL_DEPTH_TEST);GLES31.glDisable(GLES31.GL_DITHER)
-        GLES31.glUseProgram(program)
+        GLES31.glUseProgram(OverlaySwapLookProgram.programFor(program,lookProgram,lookWords))
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_PIXELS,packet.arena.buffer)
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_LOWER,packet.descriptors[lower])
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER,OverlayPacketLayout.GLES_STORAGE_BINDINGS_UPPER,packet.descriptors[upper])
@@ -712,10 +756,12 @@ internal object OverlayRenderer {
         GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER,uniformBuffer)
         GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER,0,OverlayPacketLayout.UNIFORM_BYTES,params)
         GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER,OverlayPacketLayout.GLES_UNIFORM_BINDINGS_UNIFORMS,uniformBuffer)
-        val lookWords=OverlaySwapLook.bytes(look,lookBytes)
-        GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER,lookBuffer)
-        GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER,0,lookWords.remaining(),lookWords)
-        GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER,OverlaySwapLook.GLES_BINDING,lookBuffer)
+        if(lookWords>0 && lookProgram!=0) {
+            val lookData=OverlaySwapLook.bytes(lookFrame.words,lookWords,lookBytes)
+            GLES31.glBindBuffer(GLES31.GL_UNIFORM_BUFFER,lookBuffer)
+            GLES31.glBufferSubData(GLES31.GL_UNIFORM_BUFFER,0,lookData.remaining(),lookData)
+            GLES31.glBindBufferBase(GLES31.GL_UNIFORM_BUFFER,OverlaySwapLook.GLES_BINDING,lookBuffer)
+        }
         GLES31.glDrawArrays(GLES31.GL_TRIANGLES,0,3);checked("GPU draw")
     }
 
@@ -789,14 +835,17 @@ internal object OverlayRenderer {
             val now = System.nanoTime()
             val reach = session.editStart?.let { OverlayPolicy.reach(now - it) } ?: 1f
             if (!carrying && !eligible(session, request)) return false
-            // The swap look replaces the per-side weights only in swap mode (OverlaySwapLook.frame).
-            val look = if (swap) OverlaySwapLook.frame(controls, selection, weights, packet.lookScenes)
-                else OverlaySwapLook.OFF
+            // The swap look replaces the per-side weights only in swap mode, on its own
+            // program (OverlaySwapLook.frame); without it the base program draws.
+            val lookWanted = swap && controls.look != null
+            val lookReady = lookWanted && lookProgramReady()
+            if (lookWanted) session.view.swapLookShader(lookReady)
+            val lookWords = if (lookReady) OverlaySwapLook.frame(controls, selection, weights, packet.lookScenes, packet.header, lookFrame) else 0
             GLES31.glBindFramebuffer(GLES31.GL_FRAMEBUFFER, 0)
             encode(packet,lower,upper,packet.uniforms(lower,upper,selection.progress,reach,
                 request.previous!=null || request.next!=null || request.animateEdits,controls.mirrored,
-                controls.revealMode,weights),look)
-            session.view.swapLookDrawn(look)
+                controls.revealMode,weights),lookWords)
+            session.view.swapLookDrawn(lookWords)
             val frame =
                 session.ledger.submit(now, request.revision, request.generation) ?: return false
             check(EGLExt.eglPresentationTimeANDROID(display, session.eglSurface, frame.timestamp)) {
@@ -1000,6 +1049,8 @@ internal object OverlayRenderer {
         display = EGL14.EGL_NO_DISPLAY
         program = 0
         uniformBuffer = 0
+        lookProgram = 0
+        lookProgramTried = false
         lookBuffer = 0
         initialized = false
         OverlayPacketMetrics.gpuReset()

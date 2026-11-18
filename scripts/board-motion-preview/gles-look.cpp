@@ -1,13 +1,16 @@
 // Board motion lab previews, GLES side: renders prepared frames offscreen with the
 // Android shader strings exported from the real Kotlin objects, the swap look's
 // words from the real OverlaySwapLook.kt, and Rust packets; and renders the Aura
-// transition golden's 42 samples through the baseline and current shaders with no
-// look bound. Runs on an Android emulator (gles.mjs); no app, settings or network.
+// transition golden's 42 samples through the baseline shader, today's base program
+// and today's look program with no look. Runs on an Android emulator (gles.mjs);
+// no app, settings or network.
 //
-//   gles-look frames <root>   root/shaders/after.{vert,frag}, root/frames.tsv,
+//   gles-look frames <root>   root/shaders/{after,base}.{vert,frag}, root/frames.tsv,
 //                             root/packets/..., root/frames/<name>.{uniforms,look}
-//                             -> root/out/<name>.rgba (top row first, premultiplied)
-//   gles-look parity <root>   root/shaders/{baseline,after}.{vert,frag}, root/golden/...
+//                             -> root/out/<name>.rgba (top row first, premultiplied).
+//                             A look with a zero header draws with the base program,
+//                             as OverlayRenderer does; any other with the look (after).
+//   gles-look parity <root>   root/shaders/{baseline,base,after}.{vert,frag}, root/golden/...
 //                             -> root/out/parity.json
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -240,6 +243,8 @@ struct Packet {
 int frames(const std::string& root) {
   auto context = start();
   const auto after = program(root, "after");
+  const auto base = program(root, "base");
+  size_t lookFrames = 0;
   std::map<std::string, Packet> packets;
   mkdir((root + "/out").c_str(), 0700);
   const auto list = rows(read(root, "frames.tsv", 1 << 20), 8);
@@ -255,28 +260,53 @@ int frames(const std::string& root) {
     const int width = std::stoi(row[2]), height = std::stoi(row[3]);
     const auto lower = packet.scene(std::stoul(row[4]), std::stoul(row[5]));
     const auto upper = packet.scene(std::stoul(row[6]), std::stoul(row[7]));
-    const auto rgba = draw(context, after, width, height, packet.pixels, lower, upper, packet.resources,
-                           read(root, "frames/" + name + ".uniforms", uniformBytes), read(root, "frames/" + name + ".look", lookBytes));
+    const auto look = read(root, "frames/" + name + ".look", lookBytes);
+    const bool shaped = look.size() >= 2 && (look[0] | look[1]) != 0;
+    lookFrames += shaped;
+    const auto rgba = draw(context, shaped ? after : base, width, height, packet.pixels, lower, upper, packet.resources,
+                           read(root, "frames/" + name + ".uniforms", uniformBytes), look);
     save(root + "/out/" + name + ".rgba", rgba);
   }
   const auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-  std::cout << "{\"status\":\"RENDERED\",\"frames\":" << list.size() << ",\"seconds\":" << seconds << ",\"renderer\":\""
+  std::cout << "{\"status\":\"RENDERED\",\"frames\":" << list.size() << ",\"lookFrames\":" << lookFrames << ",\"seconds\":" << seconds << ",\"renderer\":\""
             << context.renderer << "\",\"version\":\"" << context.version << "\"}" << std::endl;
   return 0;
 }
 
+/** Pixels that differ between two renders, and the largest channel error. */
+struct Difference {
+  uint64_t changed = 0;
+  int maximum = 0;
+};
+Difference difference(const Bytes& before, const Bytes& now) {
+  Difference result;
+  for (size_t pixel = 0; pixel < before.size(); pixel += 4) {
+    int error = 0;
+    for (size_t channel = 0; channel < 4; channel++)
+      error = std::max(error, std::abs(static_cast<int>(before[pixel + channel]) - static_cast<int>(now[pixel + channel])));
+    result.changed += error > 0;
+    result.maximum = std::max(result.maximum, error);
+  }
+  return result;
+}
+
+/**
+ * Every golden sample through the baseline shader, today's base program (every
+ * frame without the look) and today's look program with a zero header: both must
+ * match the baseline byte for byte.
+ */
 int parity(const std::string& root) {
   auto context = start();
-  const auto baseline = program(root, "baseline"), after = program(root, "after");
+  const auto baseline = program(root, "baseline"), base = program(root, "base"), after = program(root, "after");
   const auto pixels = buffer(GL_SHADER_STORAGE_BUFFER, read(root, "golden/pixels.bin"));
   const auto resources = buffer(GL_SHADER_STORAGE_BUFFER, read(root, "golden/resources.bin"));
   std::map<std::string, Packet> variants;
   for (const auto* name : {"transition", "editor"}) variants[name].descriptors = read(root, std::string("golden/descriptors-") + name + ".bin", 1 << 20);
   const Bytes off(8, 0);
   const auto samples = rows(read(root, "golden/samples.tsv", 1 << 16), 8);
-  size_t identical = 0;
-  uint64_t changedTotal = 0;
-  int maximumError = 0;
+  size_t identicalBase = 0, identicalLook = 0;
+  uint64_t changedBase = 0, changedLook = 0;
+  int maximumBase = 0, maximumLook = 0;
   std::ostringstream report;
   for (const auto& row : samples) {
     auto& packet = variants.at(row[7]);
@@ -285,27 +315,26 @@ int parity(const std::string& root) {
     const auto upper = packet.scene(std::stoul(row[5]), std::stoul(row[6]));
     const auto uniforms = read(root, "golden/uniforms-" + row[0] + ".bin", uniformBytes);
     const auto before = draw(context, baseline, width, height, pixels, lower, upper, resources, uniforms, off);
-    const auto now = draw(context, after, width, height, pixels, lower, upper, resources, uniforms, off);
-    uint64_t changed = 0;
-    int localMaximum = 0;
-    for (size_t pixel = 0; pixel < before.size(); pixel += 4) {
-      int error = 0;
-      for (size_t channel = 0; channel < 4; channel++)
-        error = std::max(error, std::abs(static_cast<int>(before[pixel + channel]) - static_cast<int>(now[pixel + channel])));
-      changed += error > 0;
-      localMaximum = std::max(localMaximum, error);
-    }
-    if (before == now) identical++;
-    changedTotal += changed;
-    maximumError = std::max(maximumError, localMaximum);
-    report << (report.tellp() > 0 ? "," : "") << "{\"name\":\"" << row[0] << "\",\"identicalBytes\":" << (before == now ? "true" : "false")
-           << ",\"changedPixels\":" << changed << ",\"maxChannelError\":" << localMaximum << "}";
+    const auto viaBase = draw(context, base, width, height, pixels, lower, upper, resources, uniforms, off);
+    const auto viaLook = draw(context, after, width, height, pixels, lower, upper, resources, uniforms, off);
+    const auto baseDifference = difference(before, viaBase), lookDifference = difference(before, viaLook);
+    identicalBase += before == viaBase;
+    identicalLook += before == viaLook;
+    changedBase += baseDifference.changed;
+    changedLook += lookDifference.changed;
+    maximumBase = std::max(maximumBase, baseDifference.maximum);
+    maximumLook = std::max(maximumLook, lookDifference.maximum);
+    report << (report.tellp() > 0 ? "," : "") << "{\"name\":\"" << row[0] << "\",\"baseIdentical\":" << (before == viaBase ? "true" : "false")
+           << ",\"lookOffIdentical\":" << (before == viaLook ? "true" : "false") << ",\"lookOffChangedPixels\":" << lookDifference.changed
+           << ",\"lookOffMaxChannelError\":" << lookDifference.maximum << "}";
   }
-  const bool passed = identical == samples.size();
+  const bool passed = identicalBase == samples.size() && identicalLook == samples.size();
   std::ostringstream summary;
   summary << "{\"status\":\"" << (passed ? "PASS_LOOK_OFF_IDENTICAL" : "FAIL_LOOK_OFF_DIFFERS") << "\",\"samples\":" << samples.size()
-          << ",\"identicalSamples\":" << identical << ",\"changedPixels\":" << changedTotal << ",\"maxChannelError\":" << maximumError
-          << ",\"renderer\":\"" << context.renderer << "\",\"version\":\"" << context.version << "\",\"rows\":[" << report.str() << "]}";
+          << ",\"base\":{\"identicalSamples\":" << identicalBase << ",\"changedPixels\":" << changedBase << ",\"maxChannelError\":" << maximumBase
+          << "},\"lookProgramOff\":{\"identicalSamples\":" << identicalLook << ",\"changedPixels\":" << changedLook
+          << ",\"maxChannelError\":" << maximumLook << "},\"renderer\":\"" << context.renderer << "\",\"version\":\"" << context.version
+          << "\",\"rows\":[" << report.str() << "]}";
   mkdir((root + "/out").c_str(), 0700);
   std::ofstream(root + "/out/parity.json") << summary.str();
   std::cout << summary.str() << std::endl;

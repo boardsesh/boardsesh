@@ -28,11 +28,14 @@ class ClimbOverlayGPUModule : Module() {
             "apiVersion" to OverlayPacketLayout.NATIVE_API_VERSION,
             "assetApiVersion" to 0,
             "swapCommandApi" to OverlaySwapCommand.API,
-            // The swap look, the same version iOS reports: the app sends the look
-            // and seven-number swap frames (OverlaySwapLook, OverlaySwapCommand).
-            "swapLookVersion" to OverlaySwapLook.VERSION,
         )
+        // The swap look: the version iOS reports when this phone builds the look's
+        // program, else 0. At 2 the app sends the look and seven-number swap frames
+        // (OverlaySwapLook, OverlaySwapCommand). JS reads it once, at import; the
+        // probe started below has normally finished by then (OverlaySwapLookProgram).
+        Constant("swapLookVersion") { OverlaySwapLookProgram.version() }
         OnCreate {
+            OverlaySwapLookProgram.probe()
             application = appContext.reactContext?.applicationContext
             application?.registerComponentCallbacks(callbacks)
         }
@@ -97,6 +100,10 @@ class ClimbOverlayGPUModule : Module() {
                 view.setSwapFrame(value)
             }
             Prop("swapLook") { view: ClimbOverlayGPUView, value: List<Double>? -> view.setSwapLook(value) }
+            // The lab's readout listens; the player does not, so its view sends no onSwapLookState.
+            Prop("swapLookStateEvents") { view: ClimbOverlayGPUView, value: Boolean? ->
+                view.setSwapLookStateEvents(value == true)
+            }
             Prop("requestId") { view: ClimbOverlayGPUView, value: String -> view.requestId = value }
             Prop("active") { view: ClimbOverlayGPUView, value: Boolean -> view.active = value }
             Prop("animateEdits") { view: ClimbOverlayGPUView, value: Boolean ->

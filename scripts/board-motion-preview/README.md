@@ -69,14 +69,24 @@ swap look, then compares every frame with Metal. Every Android input comes from
 the real Kotlin objects: a temporary unit test outside the repository, added to
 the generated Android project through a Gradle init script, writes
 `OverlayShader`'s strings, the baseline ref's `OverlayShader`, and each frame's
-words from `OverlaySwapLook.encode`. `gles-look.cpp` renders offscreen on an
-Android emulator's GLES 3.1 (ANGLE on SwiftShader, so on this Mac's CPU). It
-reports, per frame, the largest channel error, pixels off by more than one byte,
-pixels changed at all, how many pixels the look itself changes on Metal (so a
-match means something), and whether Swift's and Kotlin's look words are the same.
-The three worst frames are saved as Metal, GLES and 32× difference images. With
-`--golden`, it also renders the Aura transition golden's 42 samples through the
-Android shader at `--baseline` and today's with no look bound: every byte must match.
+words from `OverlaySwapLook.Frame.encode`. `gles-look.cpp` renders offscreen on an
+Android emulator's GLES 3.1 (ANGLE on SwiftShader, so on this Mac's CPU). Android
+draws with two programs, as `OverlayRenderer` does: a frame with look words uses
+the look program (`OverlayShader.lookFragment`), any other the base program
+(`OverlayShader.fragment`, main's source byte for byte). It reports, per frame,
+the largest channel error, pixels off by more than one byte, pixels changed at
+all, how many pixels the look itself changes on Metal (so a match means
+something), and whether Swift's and Kotlin's look words are the same. The three
+worst frames are saved as Metal, GLES and 32× difference images. With `--golden`,
+it also renders the Aura transition golden's 42 samples through the shader at
+`--baseline`, today's base program and today's look program with no look: every
+byte must match.
+
+`--endpoints` is the GLES twin of the Metal `endpoints` check: every pair I's
+sheets draw, as a look frame at W = (1, 0) and (0, 1) through the look program,
+against the still frame of that climb through the base program, pixel for pixel.
+It needs no Metal; numbers land in `<out>/endpoints.json`, and any difference
+exits non-zero.
 
 1. Generate the Android project (`packages/mobile/android`, gitignored) with
    `vp exec expo prebuild --platform android --no-install` in `packages/mobile`,

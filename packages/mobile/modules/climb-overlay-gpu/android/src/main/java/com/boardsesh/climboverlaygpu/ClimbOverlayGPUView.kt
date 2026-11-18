@@ -28,7 +28,10 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     ExpoView(context, appContext), TextureView.SurfaceTextureListener, ExpoViewCommandReceiver {
     private val onRenderReady by EventDispatcher<Map<String, Any?>>()
     private val onRenderError by EventDispatcher()
-    /** Whether the swap look is drawing, sent when that changes and only once a look was sent. */
+    /**
+     * Whether the swap look is drawing, sent when that changes, and only while
+     * JS listens ([setSwapLookStateEvents]: the lab's readout; the player leaves it off).
+     */
     private val onSwapLookState by EventDispatcher<Map<String, Any>>()
     var configJson = ""
     var geometryAssetPath: String? = null
@@ -55,9 +58,13 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var arrivals = OverlaySwapLook.Arrivals()
     /** The swap look; null draws API 7's swap. */
     private var swapLook: OverlaySwapLook.Look? = null
-    /** Set once the app has sent any look, so a view that never gets one never sends a state event. */
-    private var swapLookRequested = false
     private var swapLookRejected = false
+    /** The `swapLookStateEvents` prop: the lab's readout listens for [onSwapLookState]; the player does not. */
+    @Volatile private var swapLookStateEvents = false
+    /** The renderer could not build the look program (main thread, from [swapLookShader]). */
+    private var swapLookShaderMissing = false
+    /** Render thread only: the last availability [swapLookShader] reported; the program is assumed until told. */
+    private var swapLookShaderSeen = true
     /** Holds in the last look drawn since the look last changed; null until one is drawn. Main thread. */
     private var swapLookAppliedHolds: Int? = null
     private var swapLookLastReport: Map<String, Any>? = null
@@ -99,8 +106,6 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private var systemReduced = false
     /** Thermal status severe or worse (API 29+): the swap look's reach stays at 1. */
     private var systemHot = false
-    /** A `PowerManager.OnThermalStatusChangedListener` on API 29+, while attached. */
-    private var thermalListener: Any? = null
     private var lastErrorRevision: Long? = null
     @Volatile private var activePreparation: PacketCancellation? = null
     @Volatile private var idlePreparation: PacketCancellation? = null
@@ -157,15 +162,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 false,
                 animationObserver,
             )
-            if (Build.VERSION.SDK_INT >= 29) {
-                val listener =
-                    PowerManager.OnThermalStatusChangedListener {
-                        refreshMotionPolicy()
-                        applyProps()
-                    }
-                powerManager().addThermalStatusListener(listener)
-                thermalListener = listener
-            }
+            watchThermal(this)
             registered = true
         }
         post { applyProps() }
@@ -182,12 +179,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         if (registered) {
             context.unregisterReceiver(powerReceiver)
             context.contentResolver.unregisterContentObserver(animationObserver)
-            if (Build.VERSION.SDK_INT >= 29) {
-                (thermalListener as? PowerManager.OnThermalStatusChangedListener)?.let {
-                    powerManager().removeThermalStatusListener(it)
-                }
-            }
-            thermalListener = null
+            unwatchThermal(this)
             registered = false
         }
         session?.let { OverlayRenderer.deactivate(it) }
@@ -250,7 +242,6 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
      */
     fun setSwapLook(values: List<Double>?) {
         val look = OverlaySwapLook.Look.parse(values)
-        swapLookRequested = swapLookRequested || values != null
         swapLookRejected = values != null && look == null
         if (look != swapLook) {
             swapLook = look
@@ -261,6 +252,20 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         reportSwapLook()
     }
 
+    /**
+     * The `swapLookStateEvents` prop: true while JS listens for [onSwapLookState]
+     * (the lab's readout). Off, the view sends no state event and the render
+     * thread posts nothing about the look. Turning it on sends the current state.
+     */
+    fun setSwapLookStateEvents(enabled: Boolean) {
+        if (enabled == swapLookStateEvents) return
+        swapLookStateEvents = enabled
+        if (!enabled) return
+        resetSwapLookApplied()
+        swapLookLastReport = null
+        reportSwapLook()
+    }
+
     private fun resetSwapLookApplied() {
         swapLookAppliedHolds = null
         swapLookEpoch++
@@ -268,13 +273,18 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
 
     /**
      * Tells the app whether the look is off (with why), ready, or drawn (with its
-     * hold count), only when that changes. Never sent to a view that got no look.
-     * Main thread.
+     * hold count), only when that changes, and only while JS listens. Main thread.
      */
     private fun reportSwapLook() {
-        if (!swapLookRequested) return
+        if (!swapLookStateEvents) return
         val offReason =
-            OverlaySwapLook.offReason(swapLook, swapLookRejected, revealMode, reduceMotion || systemReduced)
+            OverlaySwapLook.offReason(
+                swapLook,
+                swapLookRejected,
+                revealMode,
+                reduceMotion || systemReduced,
+                swapLookShaderMissing,
+            )
         if (offReason != null) resetSwapLookApplied()
         val report =
             OverlaySwapLook.report(
@@ -288,12 +298,28 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     }
 
     /**
-     * Render thread, after each draw: a frame that used the look reports it the
-     * first time, and again when its hold count changes; the first one is logged.
+     * Render thread, on every swap draw while the app sends a look: whether the
+     * renderer has the look program. A change is posted to the main thread, where
+     * a missing program reads as off ([OverlaySwapLook.SHADER_UNAVAILABLE]).
      */
-    internal fun swapLookDrawn(words: IntArray) {
-        if (words[0] != 1) return
-        val holds = words.size / 4 - 1
+    internal fun swapLookShader(available: Boolean) {
+        if (available == swapLookShaderSeen) return
+        swapLookShaderSeen = available
+        main.post {
+            swapLookShaderMissing = !available
+            resetSwapLookApplied()
+            reportSwapLook()
+        }
+    }
+
+    /**
+     * Render thread, after each draw, with the look words it bound (0: none). A
+     * frame that used the look reports it the first time, and again when its hold
+     * count changes, while JS listens; the first one is logged.
+     */
+    internal fun swapLookDrawn(lookWords: Int) {
+        if (lookWords <= 0) return
+        val holds = lookWords / 4 - 1
         val epoch = swapLookEpoch
         if (epoch == swapLookDrawnEpoch && holds == swapLookDrawnHolds) return
         swapLookDrawnEpoch = epoch
@@ -303,6 +329,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
             val reach = OverlaySwapLook.reachOffReason(controls.lowPower, controls.hot) ?: "on"
             Log.i(LOG_TAG, "swap look applied: $holds holds, reach $reach")
         }
+        if (!swapLookStateEvents) return
         main.post {
             if (swapLookEpoch != epoch || swapLookAppliedHolds == holds) return@post
             swapLookAppliedHolds = holds
@@ -321,10 +348,8 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         return true
     }
 
-    private fun powerManager() = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-
     private fun refreshMotionPolicy() {
-        val power = powerManager()
+        val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         systemLowPower = power.isPowerSaveMode
         // iOS pins the look's reach at ProcessInfo.ThermalState.serious; Android's
         // nearest is SEVERE ("UX is largely impacted").
@@ -653,6 +678,37 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 it.refreshMotionPolicy()
                 it.applyProps()
             }
+        }
+
+        /** Attached views on API 29+, all told by one process-wide thermal listener. Main thread. */
+        private val thermalViews = LinkedHashSet<ClimbOverlayGPUView>()
+        /** The application's `PowerManager` and its `OnThermalStatusChangedListener`, while any view is attached. */
+        private var thermalPower: PowerManager? = null
+        private var thermalListener: Any? = null
+
+        private fun watchThermal(view: ClimbOverlayGPUView) {
+            if (Build.VERSION.SDK_INT < 29) return
+            thermalViews.add(view)
+            if (thermalListener != null) return
+            val power = view.context.applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            val listener =
+                PowerManager.OnThermalStatusChangedListener {
+                    thermalViews.toList().forEach { attached ->
+                        attached.refreshMotionPolicy()
+                        attached.applyProps()
+                    }
+                }
+            power.addThermalStatusListener(listener)
+            thermalPower = power
+            thermalListener = listener
+        }
+
+        private fun unwatchThermal(view: ClimbOverlayGPUView) {
+            if (Build.VERSION.SDK_INT < 29) return
+            if (!thermalViews.remove(view) || thermalViews.isNotEmpty()) return
+            (thermalListener as? PowerManager.OnThermalStatusChangedListener)?.let { thermalPower?.removeThermalStatusListener(it) }
+            thermalPower = null
+            thermalListener = null
         }
     }
 }

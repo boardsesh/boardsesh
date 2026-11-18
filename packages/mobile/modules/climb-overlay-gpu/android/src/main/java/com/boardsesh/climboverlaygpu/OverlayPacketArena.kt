@@ -13,7 +13,7 @@ internal class PacketArena(var buffer: Int,val capacity: Int) { var users=1 }
 internal class UploadedPacket(val handle: PacketHandle,val session: PacketRustSession,val header: PacketHeader,
     val descriptors: IntArray,val resources: Int,val arena: PacketArena,val keys: List<String>,val epoch: Long,
     val prepareMs: Double,val uploadMs: Double,val uploadBytes: Int,val copyBytes: Int,val selectedBytes: Int,
-    /** Each scene's holds as the swap look reads them, decoded off the render thread by [OverlayPacketArena.encode]. */
+    /** Each scene's holds as the swap look reads them, decoded with the packet ([OverlaySwapLook.PacketScenes]). */
     val lookScenes: OverlaySwapLook.PacketScenes) {
     private val uniformBytes=directBytes(OverlayPacketLayout.UNIFORM_BYTES)
     var retired=false
@@ -177,8 +177,10 @@ internal object OverlayPacketArena {
                     val output=GpuPacketBridge.encode(planLease.id,placements,cancel.id);encoded=output
                     packetStatus(output.status)
                     val description=PacketHeader.parse(output.json(maximum=65536),output.useBuffer(1){it.remaining()},output.useBuffer(2){it.remaining()})
-                    // The swap look reads hold centres, roles and ids per frame; the descriptors leave the CPU at upload.
-                    val lookScenes=output.useBuffer(1) { OverlaySwapLook.PacketScenes.decode(it,description) }
+                    // The swap look reads hold centres, roles and ids per frame; the descriptors leave the CPU at
+                    // upload, so plain arrays are kept, and only while the module offers the look.
+                    val lookScenes=if(!OverlaySwapLookProgram.offered)OverlaySwapLook.PacketScenes.NONE
+                        else output.useBuffer(1) { OverlaySwapLook.PacketScenes.decode(it,description) }
                     EncodedPacket(keys,records,pixelBytes,chunks,acquired,placement,output,description,lookScenes)
                 } catch(failure: Throwable) { acquired.values.forEach { it.close() };encoded?.close();chunks.close();throw failure }
             }
