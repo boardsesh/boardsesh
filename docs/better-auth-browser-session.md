@@ -1283,13 +1283,13 @@ they answer 503 unless www's own `CURRENT_STORE_PROVIDER_SECURITY_MODE` is
 
 | Route | Method | What it does | Answers |
 |---|---|---|---|
-| `methods` | GET | The signed-in account's methods: password usable, linked Google/Apple identities (`methodId`, `canUnlink`), configured providers, and which reauthentication methods work (`password`, `google`; `apple` is always false) | 200 `{ status: 'methods', … }` |
-| `start` | POST `{ action, provider, methodId?, returnTo? }` | Creates the backend intent with the canonical session as actor (never the legacy cookie, never with `webSession`), and writes the sealed flow cookie | 200 `{ status: 'reauthentication_required', action, provider, expiresAt }` |
+| `methods` | GET | The signed-in account's methods: password usable, linked Google/Apple identities (`methodId`, `canUnlink`), configured providers, which reauthentication methods work (`password`, `google`; `apple` is always false), and `linking` per provider (`{ available }`, or `{ available: false, reason }` with `not_configured` or `apple_link_unproven`) | 200 `{ status: 'methods', … }` |
+| `start` | POST `{ action, provider, methodId?, returnTo? }` | Creates the backend intent with the canonical session as actor (never the legacy cookie, never with `webSession`), and writes the sealed flow cookie. `link` + `apple` is refused (`provider_unavailable`) while `APPLE_LINK_ENABLED` is false | 200 `{ status: 'reauthentication_required', action, provider, expiresAt }` |
 | `reauthenticate/password` | POST `{ password }` | `reauthenticate-password`; then an unlink prepares and finalizes, and a link binds its provider round trip | 200 `committed` (unlink) or `{ status: 'redirect', url }` (link) |
 | `reauthenticate/google` | POST | `bind-google-reauthentication` and Google's URL with `max_age=0` and `prompt=select_account consent` (#7590) | 200 `{ status: 'redirect', url }` |
 | `reauthenticate/apple` | POST | Always refused: the backend verifies no Apple ID token, so Apple cannot prove a fresh sign-in (#7655 item 3). Apple-only accounts reauthenticate by setting a first password (B5e2) | 403 `reauthentication_unavailable` |
 | `callback/google` | GET | Finishes a Google reauthentication (`reauthenticate-google` with the raw ID token, nonce and the hash of the query `state`) or a Google link (`prepare` with the verified identity and the hash of the query `state`, then `finalize`) | 303 to `returnTo?providerSecurity=…` |
-| `callback/apple` | POST, then GET `?resume=1` | Apple's cross-site `form_post` is held in the flow cookie after its state matches; the same-site GET (which carries the Lax session cookie) finishes the link | 303 as above |
+| `callback/apple` | POST, then GET `?resume=1` | Apple's cross-site `form_post` is held in the flow cookie after its state matches; the same-site GET (which carries the Lax session cookie) finishes the link. Unreachable while Apple link is off | 303 as above |
 | `abort` | POST | Ends the open intent and the flow cookie | 200 `{ status: 'aborted' }` |
 | `recover` | POST | Asks `recover` about a link or unlink whose reply was lost | 200 `committed` or a refusal |
 
@@ -1314,8 +1314,13 @@ status mapping; a lost or 503 reply is 503 `{ status: 'unavailable' }`.
   `boardsesh-provider-security-flow-cookie-v1`, the cookie name as associated
   data; HttpOnly, Secure, Path=/, no Domain, at most 15 minutes; SameSite=Lax,
   or None for an Apple link (Apple answers by `form_post`). It is cleared with
-  the attributes it was written with. None of these values goes into the OAuth
-  `state`, a URL or page JavaScript. The preparation token lives only inside
+  the attributes it was written with, and a seal larger than the reader
+  accepts (3,072 characters) is never written: the intent is aborted and the
+  answer is 503. The PKCE verifier and every backend token stay sealed. The
+  state, the nonce and the S256 code challenge are part of the authorization
+  URL, which the JSON `redirect` answer hands to page JavaScript to follow;
+  that is what an OAuth redirect is, and none of them lets anyone redeem the
+  code without the sealed verifier. The preparation token lives only inside
   the one request that prepares and finalizes. The record names the account
   and session that started the flow; every later step and callback compares
   them with the session the request presents now (`identity_changed`, flow
@@ -1347,6 +1352,18 @@ status mapping; a lost or 503 reply is 503 `{ status: 'unavailable' }`.
 - **Legacy-only browsers.** A request that presents only a legacy cookie gets
   403 `canonical_session_required`; the page re-reads the session (which
   bridges it) and retries once.
+- **Apple link is off** (`APPLE_LINK_ENABLED = false` in
+  `provider-security-route.server.ts`) until a proof drives Apple's
+  `form_post` round trip against an Apple stand-in. The www cutover list names
+  it (`B5E1_APPLE_LINK_PROOF`). Apple-only accounts can still unlink after a
+  first password, and Apple sign-in is unchanged.
+- **Failed round trips give their slot back.** A code exchange that fails
+  (`provider_not_verified`), a provider with no client, and any refusal that
+  ends the flow call `abort` before clearing the flow cookie, so failures never
+  pile up to `too_many_pending`. A cancelled Google reauthentication keeps the
+  intent, so the climber can still use the password; a cancelled link ends it.
+  The issuer's signing keys are cached for an hour and fetched again on an
+  unknown `kid`.
 - **Lost replies.** A lost or 503 `finalize` reply is followed by one `recover`
   with the same session; `recovered` counts as committed. When that is lost
   too, the flow cookie stays, the answer is `unavailable`, and `POST recover`
@@ -1366,7 +1383,40 @@ backend issues a new session whose sign-in time is now (Google only with a
 signed `auth_time` under five minutes old) and ends the old one, and the
 browser returns to the `callbackUrl`, reduced to a same-origin path
 (`safeCallbackUrl`). A silent Google sign-in cannot satisfy a five-minute
-check. Apple-only accounts are told to set a password first. Settings' link
+check. Apple-only accounts are told to set a password first.
+
+It ends as the account that started it, or not at all. Before the sign-in,
+the page POSTs `/api/auth/reauthenticate/start` (same `Origin`, the
+expected-viewer header), which writes `__Host-boardsesh.reauthenticate`:
+sealed like the provider flow cookie (its own HKDF label), HttpOnly, Lax, ten
+minutes, holding `startedAs` (the signed-in user id) and the return path. Both
+sign-ins come back to `GET /api/auth/reauthenticate/return`, which clears it
+and forwards to the return path only when the browser is now signed in as
+`startedAs`. Another account (Google offered a different one and the climber
+picked it) goes to `/auth/reauthenticate?outcome=other_account`, which says so
+and offers Sign out and the home page; a missing or expired record goes to
+`outcome=expired`. Neither value can be chosen through a URL. An unknown
+Google account ends on `link_required`; while a re-sign-in is in progress the
+error page says that Google account is not connected to this Boardsesh
+account and offers to try again, instead of the Settings advice. The Google
+start sends the account's email as `login_hint`; Google preselects it only
+when it is the connected address (the backend does not store the Google
+address, so nothing better is known). The page shows sign-in buttons only from
+a successful `methods` read (a legacy-only browser re-reads the session and
+asks once more); any other answer is an error with a retry, so an Apple-only
+account is never offered Google. A wrong password, a rate limit (429) and an
+outage each get their own message.
+
+Return to app.boardsesh.com is not supported: `callbackUrl` is reduced to a
+path on www (`safeCallbackUrl` without an origin), so an absolute Expo web URL
+falls back to `/`. Nothing on app.boardsesh.com sends climbers here today; if
+it ever does, that return needs its own allowlist.
+
+Deploy order: `link_required` is a new value in the `resolve` reply. A www
+without it refuses such a reply and shows the outage page, so www deploys
+before the backend or with it.
+
+Settings' link
 and unlink use the per-intent reauthentication of the provider-security
 commands instead, which does not touch the session's sign-in time; the console
 and partner pages need the session's own sign-in time, which only a login

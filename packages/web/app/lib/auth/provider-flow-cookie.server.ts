@@ -66,7 +66,7 @@ const flowRecordSchema = z
      * the climber cancelled at Apple.
      */
     heldCallback: z
-      .object({ code: z.string().min(1).max(2048).nullable(), state: z.string().min(1).max(1024) })
+      .object({ code: z.string().min(1).max(1024).nullable(), state: z.string().min(1).max(1024) })
       .strict()
       .optional(),
   })
@@ -94,7 +94,7 @@ function cookieAttributes(cookies: Pick<BrowserSessionCookieConfiguration, 'secu
   return { httpOnly: true, secure: cookies.secure, path: '/', sameSite: effective } as const;
 }
 
-/** The `Set-Cookie` that writes (or rewrites) the flow's record. */
+/** The `Set-Cookie` that writes (or rewrites) the flow's record. Throws `SealedCookieTooLarge` rather than write what the reader refuses. */
 export function sealProviderFlowCookie(cookies: BrowserSessionCookieConfiguration, record: ProviderFlowRecord): string {
   const parsed = flowRecordSchema.parse(record);
   const name = providerFlowCookieName(cookies.secure);

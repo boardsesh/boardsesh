@@ -205,4 +205,22 @@ describe('provider unlink and reauthentication under better-auth', () => {
     expect(await aborted.json()).toEqual({ status: 'aborted' });
     expect(jar.get(FLOW_COOKIE)).toBeUndefined();
   });
+
+  it('a cancelled Google reauthentication keeps the flow, so the password still works', async () => {
+    const { jar } = await climberWithGoogle();
+    await startUnlinkOfGoogle(jar);
+    const started = await steps.post('reauthenticate/google', jar);
+    const { url } = (await started.json()) as { url: string };
+    const state = new URL(url).searchParams.get('state') ?? '';
+    const cancelled = await steps.call(
+      'GET',
+      `callback/google?${new URLSearchParams({ state, error: 'access_denied' })}`,
+      jar,
+    );
+    jar.apply(cancelled);
+    expect(steps.resultOf(cancelled)).toBe('cancelled');
+    expect(jar.get(FLOW_COOKIE)).toBeDefined();
+    const committed = await steps.post('reauthenticate/password', jar, { password: PASSWORD });
+    expect(await committed.json()).toMatchObject({ status: 'committed', action: 'unlink' });
+  });
 });

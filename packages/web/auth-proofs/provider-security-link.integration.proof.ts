@@ -7,7 +7,9 @@
  * case drops a reply the backend really sent.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
+import { authProviderSecurityIntents } from '@boardsesh/db/schema/auth';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
@@ -198,7 +200,7 @@ async function googleLinked(jar: CookieJar): Promise<boolean> {
   return (await steps.methodsOf(jar)).providers.some((method) => method.provider === 'google');
 }
 
-describe.each(['', 'legacy'])('with the mode %j (as on main)', (mode) => {
+describe.each([undefined, '', 'legacy'])('with the mode %j (as on main)', (mode) => {
   it('answers 404 on every provider-security route', async () => {
     betterAuth();
     vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
@@ -224,6 +226,9 @@ describe('provider link under better-auth', () => {
     const body = { action: 'link', provider: 'google' };
     expect((await steps.call('POST', 'start', jar, { body, viewer, origin: 'https://evil.example' })).status).toBe(403);
     expect((await steps.call('POST', 'start', jar, { body, viewer, origin: null })).status).toBe(403);
+    // The right Origin, but the browser says the request came from another site.
+    const crossSite = { body, viewer, headers: { 'sec-fetch-site': 'cross-site' } };
+    expect((await steps.call('POST', 'start', jar, crossSite)).status).toBe(403);
     expect((await steps.call('POST', 'start', jar, { body })).status).toBe(409);
     // A browser signed in before the cutover holds only the legacy cookie.
     const climber = await createClimber(environment.database);
@@ -283,6 +288,46 @@ describe('provider link under better-auth', () => {
     expect(await googleLinked(jar)).toBe(true);
     expect(await graphqlViewer(oldAccess)).not.toBe(climber.id);
     expect(await graphqlViewer(await accessToken(jar))).toBe(climber.id);
+    // The live login cookie outranks the legacy twin, now dead on its old generation: same user, no cookie change.
+    const read = await callRoute(authRoute, '/api/auth/session', {
+      cookie: jar.header(),
+      headers: { 'x-forwarded-for': randomClientAddress() },
+    });
+    expect(setCookies(read)).toEqual([]);
+    expect(await read.json()).toMatchObject({ user: { id: climber.id }, authSessionId: before.authSessionId });
+  });
+
+  it('refuses to link an identity another account owns; a failed code exchange gives the intent back', async () => {
+    const identity = newGoogleIdentity();
+    const owner = new CookieJar();
+    await steps.googleSignIn(owner, identity, await csrf(owner));
+    const { climber, jar } = await signedInClimber();
+    const url = await linkUpToProvider(jar);
+    const { response } = await steps.followGoogle(jar, url, identity);
+    expect(steps.resultOf(response)).toBe('ownership_conflict');
+    expect(await googleLinked(jar)).toBe(false);
+
+    const again = await linkUpToProvider(jar);
+    const callback = new URL(await google.authorize(again, newGoogleIdentity()));
+    callback.searchParams.set('code', randomBytes(24).toString('base64url'));
+    const failed = await steps.call('GET', `callback/google${callback.search}`, jar);
+    expect(steps.resultOf(failed)).toBe('provider_not_verified');
+    const phases = await environment.database
+      .select({ phase: authProviderSecurityIntents.phase })
+      .from(authProviderSecurityIntents)
+      .where(eq(authProviderSecurityIntents.userId, climber.id));
+    expect(phases.map(({ phase }) => phase)).toEqual(['terminal', 'terminal']);
+  });
+
+  it('refuses an Apple link until its proof exists, and says why in methods', async () => {
+    const { jar } = await signedInClimber();
+    const refused = await steps.post('start', jar, { action: 'link', provider: 'apple' });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ outcome: 'denied', code: 'provider_unavailable' });
+    expect(flowCookieOf(refused)).toBeUndefined();
+    const { linking } = await steps.methodsOf(jar);
+    expect(linking.google).toEqual({ available: true });
+    expect(linking.apple.available).toBe(false);
   });
 
   it("refuses another account's session holding A's flow cookie, at a step and at the callback", async () => {

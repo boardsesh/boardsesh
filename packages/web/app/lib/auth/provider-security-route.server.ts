@@ -33,6 +33,7 @@ import {
   type RouteContext,
 } from './provider-security-context.server';
 import {
+  abortQuietly,
   continueAfterReauthentication,
   nonceHash,
   providerSecurityCallbackUrl,
@@ -42,6 +43,16 @@ import {
   type StepResult,
 } from './provider-security-flow.server';
 import { handleProviderSecurityCallback } from './provider-security-callback.server';
+import { SealedCookieTooLarge } from './sealed-cookie.server';
+
+/**
+ * Apple link is off until a proof drives Apple's `form_post` round trip end to
+ * end against a stand-in (#7805 review, M1). While false, `start` refuses
+ * `link` + `apple` with `provider_unavailable` and `methods` reports Apple as
+ * not linkable with the reason `apple_link_unproven`. The www cutover list
+ * names it (`B5E1_APPLE_LINK_PROOF`), so it cannot be forgotten.
+ */
+export const APPLE_LINK_ENABLED = false;
 
 /**
  * www's provider link, unlink and reauthentication routes under
@@ -135,6 +146,17 @@ async function methods(context: RouteContext, session: LiveSession): Promise<Res
     configuredProviders: reply.configuredProviders,
     // Apple ID tokens are not verified by the backend, so Apple cannot reauthenticate (#7655).
     reauthentication: { password: reply.passwordUsable, google: reply.googleReauthenticationAvailable, apple: false },
+    // Which providers this account can connect now, and why not when it cannot.
+    linking: {
+      google: reply.configuredProviders.includes('google')
+        ? { available: true }
+        : { available: false, reason: 'not_configured' },
+      apple: !reply.configuredProviders.includes('apple')
+        ? { available: false, reason: 'not_configured' }
+        : APPLE_LINK_ENABLED
+          ? { available: true }
+          : { available: false, reason: 'apple_link_unproven' },
+    },
   });
 }
 
@@ -143,6 +165,8 @@ async function start(request: NextRequest, context: RouteContext, session: LiveS
   if (!parsed.success) return localRefusal('denied', 'invalid_intent');
   const { action, provider } = parsed.data;
   if ((action === 'unlink') !== Boolean(parsed.data.methodId)) return localRefusal('denied', 'invalid_intent');
+  if (action === 'link' && provider === 'apple' && !APPLE_LINK_ENABLED)
+    return localRefusal('denied', 'provider_unavailable');
   // A flow still open in this browser gives its slot back before a new one starts.
   const earlier = readProviderFlowCookie(request.headers.get('cookie'), context.cookies);
   if (earlier.kind === 'open' && earlier.record.authSessionId === session.authSessionId)
@@ -179,9 +203,16 @@ async function start(request: NextRequest, context: RouteContext, session: LiveS
     // Apple answers its round trip with a cross-site form POST.
     sameSite: action === 'link' && provider === 'apple' ? 'none' : 'lax',
   };
-  return answer(200, { status: 'reauthentication_required', action, provider, expiresAt: reply.expiresAt }, [
-    sealProviderFlowCookie(context.cookies, record),
-  ]);
+  let sealed: string;
+  try {
+    sealed = sealProviderFlowCookie(context.cookies, record);
+  } catch (error) {
+    if (!(error instanceof SealedCookieTooLarge)) throw error;
+    // The flow could not be carried: give the intent back rather than leave it pending.
+    await abortQuietly(context.client, session.actor, reply.intentToken);
+    return unavailableAnswer();
+  }
+  return answer(200, { status: 'reauthentication_required', action, provider, expiresAt: reply.expiresAt }, [sealed]);
 }
 
 async function reauthenticateWithPassword(
@@ -324,17 +355,23 @@ export async function routeProviderSecurity(request: NextRequest, step: readonly
   if (path === 'start') return start(request, context, session);
   const record = flowOfSession(request, context.cookies, session);
   if (record instanceof Response) return record;
-  switch (path) {
-    case 'reauthenticate/password':
-      return reauthenticateWithPassword(request, context, session, record);
-    case 'reauthenticate/google':
-      return startGoogleReauthentication(context, session, record);
-    case 'reauthenticate/apple':
-      // The backend verifies no Apple ID token, so Apple cannot prove a fresh sign-in (#7655).
-      return localRefusal('reauthentication_unavailable', 'provider_unavailable');
-    case 'abort':
-      return abort(context, session, record);
-    default:
-      return recover(context, session, record);
+  try {
+    switch (path) {
+      case 'reauthenticate/password':
+        return await reauthenticateWithPassword(request, context, session, record);
+      case 'reauthenticate/google':
+        return await startGoogleReauthentication(context, session, record);
+      case 'reauthenticate/apple':
+        // The backend verifies no Apple ID token, so Apple cannot prove a fresh sign-in (#7655).
+        return localRefusal('reauthentication_unavailable', 'provider_unavailable');
+      case 'abort':
+        return await abort(context, session, record);
+      default:
+        return await recover(context, session, record);
+    }
+  } catch (error) {
+    if (!(error instanceof SealedCookieTooLarge)) throw error;
+    await abortQuietly(context.client, session.actor, record.intentToken);
+    return unavailableAnswer([clearProviderFlowCookie(context.cookies, record.sameSite)]);
   }
 }

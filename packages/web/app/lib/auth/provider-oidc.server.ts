@@ -149,14 +149,31 @@ function decodeSegment(segment: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-async function signingKey(jwksUri: string, keyId: string) {
+const keySets = new Map<string, { keys: readonly Record<string, unknown>[]; fetchedAt: number }>();
+const KEY_SET_TTL_MS = 60 * 60_000;
+
+async function fetchKeySet(jwksUri: string): Promise<readonly Record<string, unknown>[]> {
   const { status, body } = await fetchJson(jwksUri);
   const keys = body && typeof body === 'object' ? (body as { keys?: unknown }).keys : undefined;
   if (status !== 200 || !Array.isArray(keys)) throw new AuthBackendUnavailableError();
-  const matching = keys.filter(
-    (candidate): candidate is Record<string, unknown> =>
-      !!candidate && typeof candidate === 'object' && (candidate as { kid?: unknown }).kid === keyId,
+  const usable = keys.filter(
+    (candidate): candidate is Record<string, unknown> => !!candidate && typeof candidate === 'object',
   );
+  keySets.set(jwksUri, { keys: usable, fetchedAt: Date.now() });
+  return usable;
+}
+
+/**
+ * The issuer's key for `kid`: from a key set cached for an hour (fetched with
+ * the same 5-second timeout), fetched again once when the cached set has no
+ * such key, as after a rotation.
+ */
+async function signingKey(jwksUri: string, keyId: string) {
+  const cached = keySets.get(jwksUri);
+  const fresh = cached && Date.now() - cached.fetchedAt < KEY_SET_TTL_MS ? cached.keys : undefined;
+  const find = (keys: readonly Record<string, unknown>[]) => keys.filter((candidate) => candidate.kid === keyId);
+  let matching = fresh ? find(fresh) : [];
+  if (matching.length === 0) matching = find(await fetchKeySet(jwksUri));
   if (matching.length !== 1) throw new AuthBackendUnavailableError();
   const { kty, n: modulus, e: exponent } = matching[0];
   if (kty !== 'RSA' || typeof modulus !== 'string' || typeof exponent !== 'string')

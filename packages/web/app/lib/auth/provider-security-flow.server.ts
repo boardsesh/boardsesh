@@ -195,3 +195,16 @@ export async function finishLink(
   if (prepared.outcome !== 'prepared') return refusedStep(prepared);
   return finalizeWithRecovery(client, actor, record, reauthenticationToken, prepared.preparationToken);
 }
+
+/**
+ * Ends the intent, best effort, so a failed round trip gives its slot back
+ * (one session holds at most five live intents). A refusal or a lost reply
+ * changes nothing here: the intent then ends on its own within 15 minutes.
+ */
+export async function abortQuietly(
+  client: ProviderSecurityCommandClient,
+  actor: ProviderSecurityActor,
+  intentToken: string,
+): Promise<void> {
+  await client.send('abort', { actor, intentToken, preparationToken: null, flowHash: null }).catch(() => undefined);
+}
