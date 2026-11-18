@@ -55,9 +55,9 @@ The timer runs on an `EffectiveRestPacing`: a rest length, a cadence (`afterTick
    the deadline, as the timer always has.
 
 `useEffectiveRestPacing()` (and `getEffectiveRestPacing()` outside React) is the only way to read
-it. The scheduler, the pill and hero clock, `RestTimerSessionSync` and the arm row read through
-it today; the tick path, the workout runner, the crew publisher and the Lock Screen countdown join
-as they land. A new source changes `rest-timer-pacing.ts` and the hook, never those readers. The
+it. The scheduler, the pill and hero clock, `RestTimerSessionSync`, the arm row and the Lock Screen
+countdown (which hands it to the session-timer snapshot it is built from) read through it today;
+the tick path, the workout runner and the crew publisher join as they land. A new source changes `rest-timer-pacing.ts` and the hook, never those readers. The
 sheet's controls keep writing the settings directly: they edit the climber's preferences, not the
 effective value.
 
