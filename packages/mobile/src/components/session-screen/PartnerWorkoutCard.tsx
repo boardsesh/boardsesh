@@ -426,7 +426,10 @@ export function PartnerWorkoutCard({
                 })}
               </Text>
             ) : null}
-            {'restSeconds' in block && block.restSeconds !== undefined ? (
+            {/* A paced block's rest of 0 runs on the climber's own rest settings, so it shows no "0s". */}
+            {'restSeconds' in block &&
+            block.restSeconds !== undefined &&
+            (block.restSeconds > 0 || block.type === 'limitBouldering') ? (
               <Text variant="footnote">{t('partnerWorkouts.rest', { seconds: block.restSeconds })}</Text>
             ) : null}
             {block.instructions ? <Text>{block.instructions}</Text> : null}
