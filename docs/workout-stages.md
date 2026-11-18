@@ -169,8 +169,18 @@ check the input on write and every stored row on read.
 
 **Who writes.** Only the climber, for their own row, with `recordSessionWorkout`. They must
 have created the session or joined it (`board_session_participants`). A tick in the session
-is not enough: `saveTick` takes any existing session id, so a tick proves nothing. Tick-map
-entries that are not the caller's own ticks in that session are dropped on write. A write
+is not enough: `saveTick` takes any existing session id, so a tick proves nothing. On write,
+the server looks up every tick the map names by uuid alone. It drops an entry naming another
+climber's tick, or the caller's tick in another session. It keeps an entry naming a tick it
+does not have yet, so a tick that reaches the server after the workout write (a dead-lettered
+tick retried later, or a spray-wall tick held behind its climb write) still lands on its
+block. Readers only apply the map to the owner's ticks in the session, so a kept entry does
+nothing until its tick lands. Two limits keep free entries small. An entry naming a queue
+item the plan doesn't hold is dropped: a reader would ignore it, and the phone never sends
+one. Entries for ticks the server doesn't have yet are capped at 300
+(`MAX_PENDING_TICK_MAP_ENTRIES`, the plan's item cap), keeping the last ones in submitted
+order, which is the phone's newest-last log order. Entries for the caller's own ticks in
+the session have only the 4000-entry cap. A write
 lands only when its revision is higher than the stored one; an equal or lower revision is
 a no-op that still answers true, so an outbox replay never rolls a newer plan back. Both
 the mutation and the headline query are rate limited. An unknown session and a malformed plan answer `BAD_USER_INPUT` and a stranger
@@ -302,10 +312,11 @@ the newer copy replaces it. Workout rows keep the outbox's 10 retries; one drain
 tries up to 7 times within about a minute, so a smaller budget would dead-letter the End
 copy on one bad minute.
 
-Order matters. The server keeps a tick-map entry only when the tick is already one of the
-climber's ticks in the session, and the outbox drains first in, first out, so a write
-queued after the ticks lands after them. A tick still queued when END_SESSION goes is
-behind none of this: the last write is queued after it.
+Order does not matter for the tick map (#7028). The server keeps an entry for a tick it
+has not seen yet, so a tick that lands after the last workout write, such as one retried
+from Sync issues or a spray-wall tick waiting on its climb write, is placed on the block
+the map names as soon as it lands. The outbox still drains first in, first out, which is
+harmless here.
 
 Nothing is sent for a session id the server never minted (`isServerSessionId`: stories
 and fakes use readable ids, daily cards are `daily:…`), in a screenshot capture, or when

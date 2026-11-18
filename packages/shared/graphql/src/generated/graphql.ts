@@ -5204,8 +5204,10 @@ export type Mutation = {
    * Store the caller's workout for a session. Written only when revision is
    * higher than the stored one; an equal or lower revision is a no-op that still
    * returns true, so outbox replays are idempotent. The caller must have created
-   * or joined the session. Tick-map entries that are not the caller's own ticks
-   * in the session are dropped.
+   * or joined the session. Tick-map entries naming another climber's tick, the
+   * caller's tick in another session, or a queue item the plan doesn't hold are
+   * dropped; an entry naming a tick the server doesn't have yet is kept (up to
+   * 300, the newest), so a tick that arrives later lands on its block.
    */
   recordSessionWorkout: Scalars['Boolean']['output'];
   /** Join the board a share link names as an approved member. NOT_FOUND for a revoked or unknown link. */
