@@ -3185,3 +3185,26 @@ advisory lock and verify recent sign-in through
 registration entry points importable with partner OAuth off. The boundary test
 pins each caller's runtime and type-only dependencies. Only the gated loader
 imports the partner authority.
+
+Astra's test-cluster lock-budget decision addresses confirmed PostgreSQL
+`out of shared memory` errors during concurrent worker schema rebuilds. Those
+rebuilds use separate databases, but their relation locks share one cluster
+budget. The disposable `test-backend`, `test-auth-compatibility` and `test-auth-mirror`
+CI services initialize PostgreSQL with `max_locks_per_transaction=256`. Their
+existing exact service-parity guards remain intact; production configuration,
+worker parallelism and timeouts remain unchanged. Schema hydration and ordinary tests
+continue in parallel.
+
+On the pinned PostgreSQL 18.6 image, startup reported the setting from its
+configuration file with no restart pending. Two rounds each of one, three and
+four concurrent full schema rebuilds passed: one worker peaked at 2,630
+relation-lock rows, three at 7,888 and four at 10,397. Individual rebuilds took
+0.62–1.30 seconds locally; the four-worker rounds finished within 1.33 seconds.
+The three-worker case matches the current CI runner's default; the fourth
+worker checks additional headroom. These are synthetic capacity measurements,
+not a claim that the full CI suite has passed.
+
+The email-audit CLI fixture retains its existing deadlines and process-group
+cleanup checks. Cleanup failures now report only the existing stop-reason enum,
+drain flag, signal and exit code, so a future failure can be diagnosed without
+logging child output, credentials or private report paths.
