@@ -61,7 +61,10 @@ export async function withNativeDeviceToken<Reply extends { readonly userId: str
 /**
  * The claims of a token a client presented for `userId`, or null when it is
  * absent, forged, expired, minted for another account, or tokens are off.
- * Nothing calls this yet; the password compare sites will (#7656 PR 4).
+ * Nothing calls this yet; the password compare sites will (#7656 PR 4). A
+ * verified token charges the account's shared device bucket
+ * (`passwordGuessAccountSubject(userId)`), never one keyed on its token id:
+ * refresh and exchange mint a new id on every reply.
  */
 export async function verifyPresentedDeviceToken(
   token: unknown,

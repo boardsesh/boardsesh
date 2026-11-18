@@ -25,7 +25,8 @@ export const DEVICE_TOKEN_MAX_LENGTH = 128;
 /** Five minutes of clock difference between the two services. */
 const ISSUED_AT_SKEW_SECONDS = 300;
 const MINIMUM_SECRET_BYTES = 32;
-const TOKEN_PATTERN = /^v1\.([A-Za-z0-9_-]{22})\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/;
+/** Issued-at has no leading zero, so each token has exactly one spelling. */
+const TOKEN_PATTERN = /^v1\.([A-Za-z0-9_-]{22})\.([1-9]\d{0,11})\.([A-Za-z0-9_-]{43})$/;
 const TOKEN_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const MAC_DOMAIN = 'boardsesh-device-token';
 /** Every other auth secret; the device secret must differ from each. */
@@ -64,7 +65,10 @@ export function readDeviceTokenSecret(environment: Environment): DeviceTokenSecr
 }
 
 export interface DeviceTokenClaims {
-  /** 16 random bytes, base64url: what the guess counter keys a recognised device on. */
+  /**
+   * 16 random bytes, base64url. Refresh and exchange mint a new one on every
+   * reply, so the guess counter keys recognised devices on the account, never on this.
+   */
   readonly tokenId: string;
   readonly issuedAt: Date;
   readonly expiresAt: Date;

@@ -68,6 +68,17 @@ describe('device token codec', () => {
     if (variant !== token) expect(await verifyDeviceToken(variant, { userId: owner, secret, now })).toBeNull();
   });
 
+  it('reads a zero-padded issued-at as absent: one token, one spelling', async () => {
+    const { token } = await mintDeviceToken({ userId: owner, secret, now });
+    const [version, tokenId, issuedAt, signature] = token.split('.');
+    // Same id, same MAC, same number, different text.
+    for (const padded of [`0${issuedAt}`, `00${issuedAt}`])
+      expect(
+        await verifyDeviceToken(`${version}.${tokenId}.${padded}.${signature}`, { userId: owner, secret, now }),
+      ).toBeNull();
+    expect(await verifyDeviceToken(`${version}.${tokenId}.0.${signature}`, { userId: owner, secret, now })).toBeNull();
+  });
+
   it('reads malformed input as absent, never throws', async () => {
     for (const input of [undefined, null, 42, {}, '', 'v1', 'v1...', `v1.${'a'.repeat(200)}`, 'x'.repeat(10_000)])
       expect(await verifyDeviceToken(input, { userId: owner, secret, now })).toBeNull();
