@@ -20,6 +20,7 @@ import {
   isValidAuthorityWriterEpoch,
 } from '../current-store/authority-configuration';
 import { bridgeTokenKey, type BridgeTokenKey } from './session-token';
+import { browserAccessTokenKey, type BrowserAccessTokenKey } from './browser-access-token';
 
 export { BROWSER_SESSION_MODES, type BrowserSessionMode } from '@boardsesh/auth-protocol/browser-session-mode';
 
@@ -170,13 +171,26 @@ function assertBetterAuthPreconditions(environment: Environment): void {
  * either. The error never carries the value.
  */
 export function bridgeTokenKeyFromEnvironment(environment: Environment = process.env): BridgeTokenKey {
-  const secret = environment[BRIDGE_TOKEN_SECRET_ENV];
-  const others = [...BROWSER_SESSION_SECRETS.map(([name]) => name), ...OTHER_AUTH_SECRET_ENV]
-    .filter((name) => name !== BRIDGE_TOKEN_SECRET_ENV)
-    .map((name) => environment[name]);
-  if (!isStrongSecret(secret) || secret === undefined || others.includes(secret))
-    throw new Error(`Invalid ${BRIDGE_TOKEN_SECRET_ENV}`);
-  return bridgeTokenKey(secret);
+  return bridgeTokenKey(distinctSecret(environment, BRIDGE_TOKEN_SECRET_ENV));
+}
+
+/**
+ * The browser access token key, read per request like the bridge key. Throws
+ * (the caller answers unavailable) unless `AUTH_BROWSER_ACCESS_TOKEN_SECRET`
+ * is strong and equals none of the other auth secrets.
+ */
+export function browserAccessTokenKeyFromEnvironment(environment: Environment = process.env): BrowserAccessTokenKey {
+  return browserAccessTokenKey(distinctSecret(environment, BROWSER_ACCESS_TOKEN_SECRET_ENV));
+}
+
+/** The named secret, refused unless strong and different from every other auth secret. Never in the message. */
+function distinctSecret(environment: Environment, name: string): string {
+  const secret = environment[name];
+  const others = [...BROWSER_SESSION_SECRETS.map(([secretName]) => secretName), ...OTHER_AUTH_SECRET_ENV]
+    .filter((secretName) => secretName !== name)
+    .map((secretName) => environment[secretName]);
+  if (!isStrongSecret(secret) || secret === undefined || others.includes(secret)) throw new Error(`Invalid ${name}`);
+  return secret;
 }
 
 /**

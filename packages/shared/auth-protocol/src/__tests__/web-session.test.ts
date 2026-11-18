@@ -8,6 +8,10 @@ import {
   LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH,
   passwordCommandSchema,
   passwordReplySchema,
+  BROWSER_ACCESS_TOKEN_AUDIENCE,
+  BROWSER_ACCESS_TOKEN_LIFETIME_SECONDS,
+  webSessionAccessCommandSchema,
+  webSessionAccessReplySchema,
   webSessionBridgeCommandSchema,
   webSessionBridgeReplySchema,
   webSessionMode,
@@ -174,5 +178,40 @@ describe('web session protocol', () => {
     expect(webSessionReplyStatus({ ...base, operation: 'bridge', outcome: 'error', code: 'unavailable' })).toBe(503);
     // The transport's own 401 never reads as a denial.
     expect(webSessionBridgeReplySchema.safeParse({ error: 'unauthorized' }).success).toBe(false);
+  });
+
+  it('mints a 15-minute browser token on its own path, and says why it did not', () => {
+    expect(WEB_SESSION_COMMAND_PATHS.access).toBe('/api/internal/auth/current-store/web-session/v1/access');
+    expect(BROWSER_ACCESS_TOKEN_AUDIENCE).toBe('boardsesh-browser');
+    expect(BROWSER_ACCESS_TOKEN_LIFETIME_SECONDS).toBe(900);
+    const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId } as const;
+    const access = (presented: unknown) =>
+      webSessionAccessCommandSchema.safeParse({ ...base, operation: 'access', issuedAt: 1, payload: { presented } })
+        .success;
+    expect(access({ kind: 'canonical-token', token: 't' })).toBe(true);
+    expect(access({ kind: 'legacy-jwe', credential: 'jwe' })).toBe(true);
+    expect(access({ kind: 'canonical-token', token: 't', userId: 'u' })).toBe(false);
+    const active = {
+      ...base,
+      operation: 'access',
+      outcome: 'active',
+      userId: 'u',
+      authSessionId: 's',
+      expiresAt: new Date(0).toISOString(),
+      rolled: true,
+      accessToken: 'a.b.c',
+      accessTokenExpiresAt: new Date(0).toISOString(),
+    } as const;
+    expect(webSessionAccessReplySchema.safeParse(active).success).toBe(true);
+    expect(webSessionReplyStatus(active)).toBe(200);
+    for (const reason of ['no_session', 'bridge_required'] as const) {
+      const refused = { ...base, operation: 'access', outcome: 'unauthenticated', reason } as const;
+      expect(webSessionAccessReplySchema.safeParse(refused).success).toBe(true);
+      expect(webSessionReplyStatus(refused)).toBe(401);
+    }
+    expect(
+      webSessionAccessReplySchema.safeParse({ ...base, operation: 'access', outcome: 'unauthenticated' }).success,
+    ).toBe(false);
+    expect(webSessionAccessReplySchema.safeParse({ error: 'unauthorized' }).success).toBe(false);
   });
 });

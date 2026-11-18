@@ -41,6 +41,7 @@ const PASSWORD = 'web session bridge password';
 export const rpcSecret = randomBytes(32).toString('base64url');
 export const nextAuthSecret = 'synthetic-web-session-bridge-nextauth-secret';
 export const bridgeSecret = 'synthetic-web-session-bridge-token-secret-6975';
+export const accessTokenSecret = 'synthetic-web-session-browser-access-token-secret';
 export const projectionId = 'web-session-bridge-projection';
 
 let environment: Awaited<ReturnType<typeof createEnvironment>> | undefined;
@@ -101,6 +102,7 @@ export function stubCommandEnvironment(): void {
     // Web bridging never reads the native bridge switch.
     AUTH_LEGACY_BRIDGE_MODE: 'off',
     AUTH_BRIDGE_TOKEN_SECRET: bridgeSecret,
+    AUTH_BROWSER_ACCESS_TOKEN_SECRET: accessTokenSecret,
     EMAIL_VERIFICATION_ENABLED: 'false',
     NEXTAUTH_SECRET: nextAuthSecret,
     DEBUG_SQL: 'false',

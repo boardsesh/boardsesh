@@ -37,7 +37,19 @@ export const WEB_SESSION_COMMAND_PATHS = {
   signout: `${WEB_SESSION_PATH_PREFIX}/signout`,
   roll: `${WEB_SESSION_PATH_PREFIX}/roll`,
   bridge: `${WEB_SESSION_PATH_PREFIX}/bridge`,
+  access: `${WEB_SESSION_PATH_PREFIX}/access`,
 } as const;
+
+/**
+ * The browser access token (#7596, B3a): a 15-minute JWS the backend signs for
+ * one live session. Browser JavaScript sends it as `Authorization: Bearer` and
+ * as the WebSocket `authToken`; every request re-checks that its session is
+ * live, so it ends with the session, not 15 minutes later.
+ */
+export const BROWSER_ACCESS_TOKEN_AUDIENCE = 'boardsesh-browser';
+export const BROWSER_ACCESS_TOKEN_ISSUER = 'boardsesh';
+/** At most this long, and never past the session row's own expiry. */
+export const BROWSER_ACCESS_TOKEN_LIFETIME_SECONDS = 15 * 60;
 
 /** The opaque token as www read it from the session cookie, after the cookie signature checked out. */
 const sessionToken = z.string().min(1).max(4096);
@@ -141,6 +153,19 @@ export const webSessionBridgeCommandSchema = z
   })
   .strict();
 
+/**
+ * Reads the session the cookie carries, rolls it when fewer than 29 days
+ * remain (the one place a web session rolls), and mints a browser access token
+ * for it. A legacy cookie gets none: www bridges it first.
+ */
+export const webSessionAccessCommandSchema = z
+  .object({
+    ...metadata,
+    operation: z.literal('access'),
+    payload: z.object({ presented: presentedWebSessionSchema }).strict(),
+  })
+  .strict();
+
 const replyBase = { webSessionProtocolVersion: version, requestId };
 const unavailableReply = <Operation extends keyof typeof WEB_SESSION_COMMAND_PATHS>(operation: Operation) =>
   z
@@ -231,6 +256,38 @@ export const webSessionBridgeReplySchema = z.union([
   unavailableReply('bridge'),
 ]);
 
+export const webSessionAccessReplySchema = z.union([
+  z
+    .object({
+      ...replyBase,
+      operation: z.literal('access'),
+      outcome: z.literal('active'),
+      userId: identityId,
+      authSessionId: identityId,
+      /** The session row's expiry, after any roll. */
+      expiresAt: z.iso.datetime(),
+      rolled: z.boolean(),
+      /** Hand it to page JavaScript; never log it. */
+      accessToken: z.string().min(1).max(4096),
+      accessTokenExpiresAt: z.iso.datetime(),
+    })
+    .strict(),
+  /**
+   * No access token. `no_session`: the cookie carries no live session; clear
+   * it. `bridge_required`: a legacy cookie was presented, which this command
+   * never reads; bridge it, then ask again with the bridged token.
+   */
+  z
+    .object({
+      ...replyBase,
+      operation: z.literal('access'),
+      outcome: z.literal('unauthenticated'),
+      reason: z.enum(['no_session', 'bridge_required']),
+    })
+    .strict(),
+  unavailableReply('access'),
+]);
+
 export type PresentedWebSession = z.infer<typeof presentedWebSessionSchema>;
 export type WebSessionRequest = z.infer<typeof webSessionRequestSchema>;
 export type IssuedWebSessionReply = z.infer<typeof issuedWebSessionSchema>;
@@ -242,6 +299,8 @@ export type WebSessionRollCommand = z.infer<typeof webSessionRollCommandSchema>;
 export type WebSessionRollReply = z.infer<typeof webSessionRollReplySchema>;
 export type WebSessionBridgeCommand = z.infer<typeof webSessionBridgeCommandSchema>;
 export type WebSessionBridgeReply = z.infer<typeof webSessionBridgeReplySchema>;
+export type WebSessionAccessCommand = z.infer<typeof webSessionAccessCommandSchema>;
+export type WebSessionAccessReply = z.infer<typeof webSessionAccessReplySchema>;
 
 /**
  * The status each reply is sent with. A 401 here always carries a body that
@@ -250,7 +309,12 @@ export type WebSessionBridgeReply = z.infer<typeof webSessionBridgeReplySchema>;
  * reply, so a caller keys on the parsed body and never on the status alone.
  */
 export function webSessionReplyStatus(
-  reply: WebSessionReadReply | WebSessionSignOutReply | WebSessionRollReply | WebSessionBridgeReply,
+  reply:
+    | WebSessionReadReply
+    | WebSessionSignOutReply
+    | WebSessionRollReply
+    | WebSessionBridgeReply
+    | WebSessionAccessReply,
 ): number {
   if (reply.outcome === 'identity_changed') return 409;
   if (reply.outcome === 'unauthenticated' || reply.outcome === 'denied') return 401;

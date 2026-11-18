@@ -14,6 +14,14 @@ import {
   readHumanSubjectState,
 } from '../auth/human-admission';
 import { decideCredential, type PresentedCredential } from '../auth/credential-cutoffs';
+import { webSessionMode } from '@boardsesh/auth-protocol';
+import {
+  claimsBrowserAudience,
+  readBrowserAccessSession,
+  verifyBrowserAccessToken,
+} from '../auth/authority/browser-access-token';
+import { browserAccessTokenKeyFromEnvironment } from '../auth/authority/browser-session-mode';
+import { webSignInProof } from '../auth/authority/session-reader';
 
 export type AuthResult = {
   userId: string;
@@ -26,6 +34,12 @@ export type AuthResult = {
    * that need a recent sign-in. Unset for app tokens, which never count.
    */
   webSignIn?: WebSignInProof;
+  /**
+   * Set only for a browser access token: the session it was signed for. The
+   * WebSocket sweep re-reads that session, since the account state alone does
+   * not show a session that expired or lost its lineage.
+   */
+  browserSession?: { readonly sessionId: string; readonly generation: number };
 };
 
 export type ControllerAuthResult = {
@@ -228,14 +242,73 @@ export async function validateMobileJwt(token: string, options: ValidateTokenOpt
  */
 export async function validateToken(token: string, options: ValidateTokenOptions = {}): Promise<AuthResult | null> {
   // JWE tokens (NextAuth) have 5 dot-separated segments,
-  // JWS tokens (mobile JWT) have 3 segments.
+  // JWS tokens (mobile JWT and browser access token) have 3 segments.
   const segments = token.split('.').length;
   if (segments === 5) {
     return validateNextAuthToken(token, options);
   } else if (segments === 3) {
+    // The unverified audience only picks the verifier. With the web session
+    // mode off, a browser token takes the mobile path, as it did before B3a,
+    // and fails its audience check there.
+    if (claimsBrowserAudience(token) && browserAccessTokensEnabled()) return validateBrowserAccessToken(token, options);
     return validateMobileJwt(token, options);
   }
   return null;
+}
+
+/** Dark until `CURRENT_STORE_WEB_SESSION_MODE=backend-staging`. An unknown value counts as off here. */
+function browserAccessTokensEnabled(): boolean {
+  try {
+    return webSessionMode(process.env) === 'backend-staging';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A browser access token (#7596, B3a). Every call reads the session it names,
+ * by the cookie read's own rules (issue HARD RULE 3), so sign-out, a login
+ * that revoked it, a reset, set-password, deletion, a cutoff or a revoked
+ * lineage refuse it at once. Unlike the older kinds, a token that claims this
+ * audience but does not verify (expired, tampered, another key) is refused
+ * too, not read as anonymous: no shipped client depends on the anonymous
+ * fallback, and a 401 tells the web to fetch a new token.
+ *
+ * `credentialExpiresAt` is the SESSION's expiry, so leases (notification
+ * devices) last as long as the session, not the 15-minute token. `webSignIn`
+ * carries a sign-in time only for a `login` session.
+ */
+export async function validateBrowserAccessToken(
+  token: string,
+  { throwOnRefusal = false }: ValidateTokenOptions = {},
+): Promise<AuthResult | null> {
+  let tokenKey;
+  try {
+    tokenKey = browserAccessTokenKeyFromEnvironment(process.env);
+  } catch {
+    throw new AuthAdmissionUnavailableError();
+  }
+  const now = new Date();
+  const verified = await verifyBrowserAccessToken(tokenKey, token, now);
+  // An outage throws unavailable here; only a confirmed answer refuses.
+  const session = verified ? await readBrowserAccessSession(verified, now) : undefined;
+  if (!verified || !session) {
+    if (throwOnRefusal) throw new AuthCredentialRefusedError();
+    return null;
+  }
+  return {
+    userId: session.userId,
+    isAuthenticated: true,
+    credentialExpiresAt: session.expiresAt.getTime(),
+    credential: {
+      kind: 'web-session',
+      generationClaim: verified.generation,
+      sessionKeyClaim: verified.sessionId,
+      authTimeClaim: null,
+    },
+    webSignIn: webSignInProof(session),
+    browserSession: { sessionId: verified.sessionId, generation: verified.generation },
+  };
 }
 
 /**

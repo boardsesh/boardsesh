@@ -23,6 +23,7 @@ import {
 import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { bridgeLegacyCredential } from './bridge';
+import { issueBrowserAccessToken, type BrowserAccessTokenKey } from './browser-access-token';
 import { denyFirstPartySessionInTransaction } from './lineage';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 import { readFirstPartySession, type FirstPartyCredential, type FirstPartySession } from './session-reader';
@@ -551,5 +552,48 @@ export async function bridgeWebSession(
     token: bridged.token,
     expiresAt: bridged.session.expiresAt,
     generation: bridged.session.revocationGeneration ?? 0,
+  };
+}
+
+export type WebSessionAccess =
+  | {
+      readonly status: 'active';
+      readonly session: FirstPartySession;
+      readonly rolled: boolean;
+      readonly accessToken: string;
+      readonly accessTokenExpiresAt: Date;
+    }
+  | { readonly status: 'unauthenticated'; readonly reason: 'no_session' | 'bridge_required' };
+
+/**
+ * The browser's token endpoint (#7596, B3a): read the session the cookie
+ * carries, roll it when it is due (the one place a web session rolls, owner
+ * decision 2), read it again, and sign a 15-minute access token for what that
+ * second read admitted. The roll's own result proves nothing about liveness.
+ * A legacy cookie is not read: www bridges it first.
+ */
+export async function accessWebSession(
+  database: AuthorityDatabase,
+  presented: PresentedWebSession,
+  tokenKey: BrowserAccessTokenKey,
+  now = new Date(),
+): Promise<WebSessionAccess> {
+  if (presented.kind !== 'canonical-token') return { status: 'unauthenticated', reason: 'bridge_required' };
+  const credential = { kind: 'canonical-token', token: presented.token } as const;
+  const before = await readFirstPartySession(database, credential, now);
+  if (before.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (before.status === 'denied') return { status: 'unauthenticated', reason: 'no_session' };
+  const roll = await rollWebSession(database, before.session.authSessionId, now);
+  const after = await readFirstPartySession(database, credential, now);
+  if (after.status === 'unavailable') throw new Error('Web session authority unavailable');
+  if (after.status === 'denied') return { status: 'unauthenticated', reason: 'no_session' };
+  const issued = await issueBrowserAccessToken(tokenKey, after.session, now);
+  if (!issued) return { status: 'unauthenticated', reason: 'no_session' };
+  return {
+    status: 'active',
+    session: after.session,
+    rolled: roll.rolled,
+    accessToken: issued.token,
+    accessTokenExpiresAt: issued.expiresAt,
   };
 }
