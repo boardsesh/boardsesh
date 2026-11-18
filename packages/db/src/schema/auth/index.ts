@@ -15,3 +15,4 @@ export * from './browser-bindings';
 export * from './browser-renewals';
 export * from './provider-security';
 export * from './first-password';
+export * from './password-guess-windows';
