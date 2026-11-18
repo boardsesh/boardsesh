@@ -6,6 +6,8 @@ A centralized hub for all your LED climbing board training.
 
 Try it out at [boardsesh.com](https://www.boardsesh.com/) | [Join us on Discord](https://discord.gg/YXA8GsXfQK) | [Sponsor us](https://github.com/sponsors/boardsesh)
 
+[Test flight](https://testflight.apple.com/join/3jXquEtV)
+
 ## Our Vision
 
 LED climbing boards like Kilter, Tension, MoonBoard, Decoy, and Grasshopper have revolutionized indoor training. We believe the climbing community deserves a centralized platform that brings all these boards together—making it easier to track progress, train with friends, and get the most out of your board.
