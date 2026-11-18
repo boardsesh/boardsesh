@@ -366,9 +366,10 @@ async function lockWebPasswordAuthentication(
  * A login revokes only a session it can name: a canonical row or a legacy
  * cookie with its own session id. A legacy cookie without one could only be
  * ended by cutting off its whole account (every session and every phone), so
- * it is left alone and the login goes ahead (#7596 review of #7722, finding 1).
- * The subject state is read before the user lock is taken; both ways it can
- * be used (an idempotent SID denial, or nothing) stay correct under the lock.
+ * only the row the bridge made from it, if any, ends, and the login goes
+ * ahead (#7596 review of #7722, finding 1; B2a review). The subject state is
+ * read before the user lock is taken; every way it can be used (an idempotent
+ * SID denial, ending one bridged row, or nothing) stays correct under the lock.
  */
 async function readPresentedSession(
   transaction: CurrentStoreTransaction,
@@ -382,7 +383,9 @@ async function readPresentedSession(
     readLockedWebSubjectState(transaction, userId),
   );
   if (outcome.status === 'unavailable') throw new Error('Web session authority unavailable');
-  if (outcome.status !== 'admitted' || outcome.session.requiresAccountCutoff) return undefined;
+  // A no-SID one is passed on too: `issueWebSession` ends only the row the
+  // bridge made from it, never the account.
+  if (outcome.status !== 'admitted') return undefined;
   return outcome.session;
 }
 

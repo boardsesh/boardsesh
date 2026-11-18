@@ -156,11 +156,50 @@ session id that already names a row the bridge did not make from this login: a
 writes, since proof and session share one id), or a bridged row whose token
 the current key does not derive. The browser then signs in again.
 
+The bridge writes only under an enforced manifest with the configured
+projection id and writer epoch, as login does; otherwise it answers 503 and
+writes nothing. It runs under the commands' 5-second statement and 4-second
+lock timeouts, so a bridge queued behind a held account (a reset, a deletion)
+answers 503 instead of holding a connection. Renewing a row from a later
+cookie never shortens it: the update re-checks the expiry under the row lock,
+so a roll that committed in between wins.
+
 A legacy cookie without a session id follows the bridge's existing rule: it is
-bridged as its own row, keyed by its lineage id (`credential:<sha256>` of the
-cookie), never by an account cutoff. Login leaves that row alone; sign-out by
-its token ends that row alone, and sign-out presenting the raw no-SID cookie
-ends the row bridged from it, if any, and nothing else.
+bridged as its own row, never by an account cutoff. The row id is the
+cookie's lineage id, `credential:` + sha256 of the JSON
+`["nextauth-v4", userId, sha256(cookie)]`, where the cookie is hashed in its
+canonical form (each of the five segments re-encoded from the bytes jose
+decrypted), so `=` padding, whitespace, a trailing newline or different unused
+bits in a last character do not make a second session. A genuine NextAuth
+cookie, and a chunked one www joins, is already canonical, so its id does not
+change. A cookie that carries `authSessionId` and `legacy_no_sid: true` keys
+its row by that session id and its lineage by a hash of it, so its renewals
+share one row. Such a row ends alone, never by a cutoff: sign-out by its
+token; sign-out presenting the raw cookie; and a login presenting either one
+ends the row the bridge made from it (exact id and lineage), if any, and
+nothing else.
+
+### If `AUTH_BRIDGE_TOKEN_SECRET` leaks
+
+Rotating the secret alone ends no session: each bridged row keeps the digest
+of the token it was given, and the leaked key with a session id still derives
+that token. The owner runs these steps; agents prepare them.
+
+1. Count the web-bridged rows (read-only):
+
+   ```sql
+   SELECT count(*) AS bridged, count(*) FILTER (WHERE expires_at > now()) AS live
+   FROM auth_session
+   WHERE (legacy_lineage_id LIKE 'session:%' OR legacy_lineage_id LIKE 'credential:%')
+     AND legacy_lineage_id NOT LIKE 'credential:native-refresh:%';
+   ```
+
+2. Set a new `AUTH_BRIDGE_TOKEN_SECRET` on the backend and redeploy.
+3. Delete exactly those rows, in one transaction, and check the count matches
+   step 1 before committing. Every browser bridged before then signs in again;
+   a legacy cookie it still holds bridges to a new token under the new key.
+   Native refresh rows (`native-refresh:` and `credential:native-refresh:`) and
+   login or carried rows are untouched.
 
 That bridging read is the one read that writes the cookie, so the cookie-order
 race comes back once for every browser signed in before the switch. Tab 1's

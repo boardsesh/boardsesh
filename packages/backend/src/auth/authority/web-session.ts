@@ -14,7 +14,6 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import { requireHumanSubjectForIssuance } from '../human-admission';
-import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -161,9 +160,10 @@ export async function lockWebSessionAccounts(
  * It refuses before writing anything: a deleted or missing account with
  * `AuthSubjectDeniedError`, as native issuance does, and a moved authority
  * with `STALE_AUTHORITY`. A presented session is revoked only through its own
- * session id; one that `requiresAccountCutoff` (a no-SID legacy cookie, or the
- * bridged row of one) is left alone, so a login never cuts off an account and
- * never moves its generation.
+ * session id. One that `requiresAccountCutoff` (a no-SID legacy cookie, or the
+ * bridged row of one) ends only the row the bridge made from it, matched by
+ * exact id and lineage, if there is one; nothing else of it is written, so a
+ * login never cuts off an account and never moves its generation.
  */
 export async function issueWebSession(
   transaction: AuthorityTransaction,
@@ -172,7 +172,7 @@ export async function issueWebSession(
   const request = captureIssue(input);
   await requireReadCommitted(transaction);
   await revalidateIdentityAuthority(transaction, request.authority);
-  const presented = request.presented?.requiresAccountCutoff ? undefined : request.presented;
+  const presented = request.presented;
   const { presentedAccountExists } = await lockWebSessionAccounts(
     transaction,
     eq(users.id, request.userId),
@@ -181,12 +181,16 @@ export async function issueWebSession(
   // Refuse before any write, so a caller that catches the refusal commits nothing.
   const subject = await requireHumanSubjectForIssuance(transaction, request.userId);
   // A deleted account's sessions are refused by every reader already.
-  if (presented && presentedAccountExists)
-    await denyFirstPartySessionInTransaction(transaction, presented, request.now, {
+  if (presented && presentedAccountExists) {
+    const expectedAuthority = {
       expectedProjectionId: request.authority.projectionId,
       expectedNormalizerVersion: request.authority.normalizerVersion,
       expectedWriterEpoch: request.authority.epoch,
-    });
+    };
+    if (presented.requiresAccountCutoff)
+      await endBridgedRowAlone(transaction, presented, request.now, expectedAuthority);
+    else await denyFirstPartySessionInTransaction(transaction, presented, request.now, expectedAuthority);
+  }
   const sessionId = randomUUID();
   const issued = newSessionToken();
   const expiresAt = new Date(request.now.getTime() + WEB_SESSION_LIFETIME_MS);
@@ -342,7 +346,7 @@ export async function signOutWebSession(
   if (session.userId !== request.expectedUserId || session.authSessionId !== request.expectedAuthSessionId)
     return 'identity-changed';
   if (request.credential.kind === 'legacy-jwe' && session.requiresAccountCutoff) {
-    await endBridgedRowOfLegacyCookie(database, request.credential, session, now, expectedAuthority);
+    await endBridgedRowOfLegacyCookie(database, session, now, expectedAuthority);
     return 'signed-out';
   }
   await database.transaction(async (transaction) => {
@@ -361,45 +365,57 @@ export async function signOutWebSession(
 }
 
 /**
- * A legacy cookie that could only be ended by an account cutoff is never ended
- * that way. If the bridge turned it into a row (its id is the session id the
- * reader gave the cookie, and its lineage is this cookie's), that row ends
- * alone, exactly as a sign-out presenting the row's token ends it; its denial
- * also refuses this copy of the cookie. Without such a row nothing is written.
+ * The row the bridge made from a legacy cookie without a session id: its id is
+ * the session id the reader gave the cookie and its lineage is the cookie's
+ * own. That row, if it exists, ends alone (row, lineage, denial of its id), as
+ * a sign-out presenting its token ends it; never by an account cutoff. The
+ * caller holds the gate and the account FOR UPDATE.
  */
-async function endBridgedRowOfLegacyCookie(
-  database: AuthorityDatabase,
-  credential: Extract<FirstPartyCredential, { kind: 'legacy-jwe' }>,
+async function endBridgedRowAlone(
+  transaction: AuthorityTransaction,
   session: FirstPartySession,
   now: Date,
   expectedAuthority: ExpectedCurrentStoreAuthority,
 ): Promise<void> {
-  const proof = await verifyLegacyNextAuthJwe(credential.credential, credential.secret, now);
-  if (!proof) return;
+  const lineageId = session.lineageId;
+  if (!lineageId?.startsWith('credential:') || lineageId.startsWith('credential:native-refresh:')) return;
+  const [bridged] = await transaction
+    .select({ id: authSession.id })
+    .from(authSession)
+    .where(
+      and(
+        eq(authSession.id, session.authSessionId),
+        eq(authSession.userId, session.userId),
+        eq(authSession.legacyLineageId, lineageId),
+      ),
+    );
+  if (!bridged) return;
+  await denyFirstPartySessionInTransaction(
+    transaction,
+    { ...session, requiresAccountCutoff: false },
+    now,
+    expectedAuthority,
+  );
+}
+
+/**
+ * A legacy cookie that could only be ended by an account cutoff is never ended
+ * that way: only the row the bridge made from it, if any, ends.
+ */
+async function endBridgedRowOfLegacyCookie(
+  database: AuthorityDatabase,
+  session: FirstPartySession,
+  now: Date,
+  expectedAuthority: ExpectedCurrentStoreAuthority,
+): Promise<void> {
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     // The denial's own order: the gate, then the account FOR UPDATE, which a
     // bridge (KEY SHARE) of this cookie must wait for, so a row it committed
-    // first is found here and one it writes later is not left half-seen.
+    // first is found here.
     await transaction.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
     await transaction.select({ id: users.id }).from(users).where(eq(users.id, session.userId)).for('update');
-    const [bridged] = await transaction
-      .select({ id: authSession.id })
-      .from(authSession)
-      .where(
-        and(
-          eq(authSession.id, session.authSessionId),
-          eq(authSession.userId, session.userId),
-          eq(authSession.legacyLineageId, proof.lineageId),
-        ),
-      );
-    if (!bridged) return;
-    await denyFirstPartySessionInTransaction(
-      transaction,
-      { ...session, requiresAccountCutoff: false },
-      now,
-      expectedAuthority,
-    );
+    await endBridgedRowAlone(transaction, session, now, expectedAuthority);
   });
 }
 
@@ -507,15 +523,25 @@ export type WebSessionBridge =
  * A no-SID cookie is bridged as its own row, never by an account cutoff; login
  * and sign-out also treat that row alone. A cookie stamped with another
  * generation than the account's (a missing stamp counts as 0) is denied, as is
- * one whose session id was signed out.
+ * one whose session id was signed out. It writes only under an enforced
+ * manifest with the configured projection and epoch (`unavailable` otherwise).
  */
 export async function bridgeWebSession(
   database: AuthorityDatabase,
   credential: string,
   keys: { readonly nextAuthSecret: string; readonly tokenKey: BridgeTokenKey },
+  authority: ExpectedCurrentStoreAuthority,
   now = new Date(),
 ): Promise<WebSessionBridge> {
-  const bridged = await bridgeLegacyCredential(database, credential, keys.nextAuthSecret, keys.tokenKey, 'on', now);
+  const bridged = await bridgeLegacyCredential(
+    database,
+    credential,
+    keys.nextAuthSecret,
+    keys.tokenKey,
+    'on',
+    now,
+    authority,
+  );
   if (bridged.status === 'unavailable') throw new Error('Web session authority unavailable');
   if (bridged.status !== 'bridged') return { status: 'denied' };
   return {

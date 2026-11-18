@@ -1,9 +1,14 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import { authCredentialLineage, authSession, authSessionDenials } from '@boardsesh/db/schema/auth';
 import { requireHumanSubjectForIssuance, AuthSubjectDeniedError } from '../human-admission';
 import { decideCredential } from '../credential-cutoffs';
 import { verifyLegacyNextAuthJwe } from '../legacy-web-credentials';
-import { requireReadCommitted } from '../current-store/foundation-context';
+import {
+  lockEnforcedProjection,
+  requireReadCommitted,
+  type ExpectedCurrentStoreAuthority,
+} from '../current-store/foundation-context';
+import { transactionSettings } from '../current-store/command-context';
 import type { AuthorityDatabase } from './adapter';
 import { bridgedSessionToken, type BridgeTokenKey } from './session-token';
 
@@ -31,9 +36,16 @@ export type LegacyBridgeResult =
     };
 
 /**
- * Verify first, then gate → user → cutoff → session → lineage. The web bridge
- * command (`bridgeWebSession`) passes `mode` 'on' behind its own switch; the
- * default reads `AUTH_LEGACY_BRIDGE_MODE`.
+ * Verify first, then gate → manifest → user → cutoff → session → lineage. The
+ * web bridge command (`bridgeWebSession`) passes `mode` 'on' behind its own
+ * switch and always passes `authority`; the default reads
+ * `AUTH_LEGACY_BRIDGE_MODE`.
+ *
+ * With `authority`, the bridge writes only under an enforced manifest with the
+ * configured projection and writer epoch, as login does; anything else is
+ * `unavailable`, never a denial. The transaction runs under the commands'
+ * statement and lock timeouts, so a bridge queued behind a held account ends
+ * as `unavailable` instead of holding a connection.
  *
  * A row for this login whose token is not the one the key derives (rotated by
  * a security mutation, written before the derived token, or derived under a
@@ -47,14 +59,17 @@ export async function bridgeLegacyCredential(
   tokenKey: BridgeTokenKey,
   mode: LegacyBridgeMode = legacyBridgeMode(process.env),
   now = new Date(),
+  authority?: ExpectedCurrentStoreAuthority,
 ): Promise<LegacyBridgeResult> {
   if (mode === 'off') return { status: 'off' };
   const proof = await verifyLegacyNextAuthJwe(credential, secret, now);
   if (!proof || proof.expiresAt.getTime() <= now.getTime()) return { status: 'denied' };
   try {
     return await database.transaction(async (transaction): Promise<LegacyBridgeResult> => {
+      await transactionSettings(transaction);
       await requireReadCommitted(transaction);
       await transaction.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
+      if (authority) await lockEnforcedProjection(transaction, authority);
       const subject = await requireHumanSubjectForIssuance(transaction, proof.userId);
       const sessionId = proof.authSessionId ?? proof.lineageId;
       // Serialize rotations of one login without serializing unrelated users.
@@ -112,13 +127,18 @@ export async function bridgeLegacyCredential(
             .returning();
       // A valid renewed JWE may extend this login only to its signed expiry.
       // Keep the initial lineage source expiry and unknown/earlier auth age.
+      // The WHERE re-reads the row under its lock, so a roll that committed
+      // since `existing` was read is never shortened back.
       if (existing && proof.expiresAt > existing.expiresAt) {
-        const [renewed] = await transaction
+        await transaction
           .update(authSession)
           .set({ expiresAt: proof.expiresAt, updatedAt: now })
-          .where(eq(authSession.id, sessionId))
-          .returning();
-        session.expiresAt = renewed.expiresAt;
+          .where(and(eq(authSession.id, sessionId), lt(authSession.expiresAt, proof.expiresAt)));
+        const [current] = await transaction
+          .select({ expiresAt: authSession.expiresAt })
+          .from(authSession)
+          .where(eq(authSession.id, sessionId));
+        session.expiresAt = current.expiresAt;
       }
       if (!lineage)
         await transaction.insert(authCredentialLineage).values({

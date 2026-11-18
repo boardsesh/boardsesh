@@ -253,7 +253,7 @@ describe('issueWebSession', () => {
     expect((await admitted(canonical(issued.token))).userId).toBe(signingIn);
   });
 
-  it('never cuts off an account: a presented no-SID cookie or its bridged row is left alone', async () => {
+  it('never cuts off an account: a presented no-SID cookie is left alone, its bridged row ends alone', async () => {
     const userId = await account();
     const cookie = await legacyCookie(userId, { legacy_no_sid: true });
     const legacy: FirstPartyCredential = { kind: 'legacy-jwe', credential: cookie, secret };
@@ -276,7 +276,10 @@ describe('issueWebSession', () => {
       expect((await admitted(canonical(issued.token))).generation).toBe(0);
     }
     expect((await read(legacy)).status).toBe('admitted');
-    expect((await read(canonical(bridged.token))).status).toBe('admitted');
+    // The bridged row is ended as itself: row gone, its id denied.
+    expect((await read(canonical(bridged.token))).status).toBe('denied');
+    expect(await sessionRow(bridged.session.id)).toBeUndefined();
+    expect((await read({ kind: 'legacy-jwe', credential: bridgedCookie, secret })).status).toBe('denied');
     expect((await read(canonical(other.token))).status).toBe('admitted');
     expect(
       await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),

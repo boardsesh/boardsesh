@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { WEB_SESSION_COMMAND_PATHS, webSessionRollReplySchema } from '@boardsesh/auth-protocol';
-import { authSession, authSubjectCutoffs, mobileRefreshTokens } from '@boardsesh/db/schema';
+import { authSession, authSessionDenials, authSubjectCutoffs, mobileRefreshTokens } from '@boardsesh/db/schema';
 import {
   bridge,
   canonical,
@@ -162,6 +162,81 @@ describe('login and sign-out against a bridged session', () => {
     expect(reply.status).toBe(200);
     expect(await rows(id)).toEqual(before);
     expect(await readStatus(other.token)).toBe(200);
+  });
+});
+
+describe('races and password changes against a bridged session', () => {
+  it('ends the session whichever wins when a bridge races the sign-out of its cookie', async () => {
+    const { id } = await climber();
+    const sessionId = randomUUID();
+    const cookie = await legacyCookie(id, { claims: { authSessionId: sessionId } });
+    const [bridgeReply, signOutReply] = await Promise.all([
+      bridge(cookie),
+      signOut({ presented: { kind: 'legacy-jwe', credential: cookie } }, id, sessionId),
+    ]);
+    expect(signOutReply.status).toBe(200);
+    const after = await rows(id);
+    expect(after.sessions).toEqual([]);
+    expect(after.denials.map((denial) => denial.sessionId)).toEqual([sessionId]);
+    if (bridgeReply.outcome === 'bridged') expect(await readStatus(bridgeReply.token)).toBe(401);
+    else expect(bridgeReply.outcome).toBe('denied');
+    expect((await bridge(cookie)).outcome).toBe('denied');
+  });
+
+  it('keeps a password change final: the old token and both stamps of the cookie are refused', async () => {
+    const { id } = await climber();
+    const sessionId = randomUUID();
+    const oldStamp = await legacyCookie(id, { claims: { authSessionId: sessionId, gen: 0 } });
+    const session = await bridged(oldStamp);
+    const database = harnessDatabase();
+    const actor = await readFirstPartySession(database, { kind: 'canonical-token', token: session.token });
+    if (actor.status !== 'admitted') throw new Error('Bridged session refused');
+    const rotated = await database.transaction(async (transaction) => {
+      await transaction
+        .insert(authSubjectCutoffs)
+        .values({ userId: id, generation: 1, revokedThrough: new Date(), lastOperationId: randomUUID() });
+      return replaceCanonicalAfterSecurityMutation(transaction, actor.session, 1);
+    });
+    if (!rotated) throw new Error('Bridged row not rotated');
+    const [rowAfterChange] = await database.select().from(authSession).where(eq(authSession.id, sessionId));
+    expect(await readStatus(session.token)).toBe(401);
+    expect(await readStatus(rotated.token)).toBe(200);
+    expect((await bridge(oldStamp)).outcome).toBe('denied');
+    const newStamp = await legacyCookie(id, { claims: { authSessionId: sessionId, gen: 1 } });
+    // The row now holds a random token, which the key does not derive: never re-keyed.
+    expect((await bridge(newStamp)).outcome).toBe('denied');
+    expect((await database.select().from(authSession).where(eq(authSession.id, sessionId)))[0]).toEqual(rowAfterChange);
+  });
+
+  it('lets a login presenting a no-SID bridged token, or its raw cookie, end that one row', async () => {
+    const { id, email } = await climber();
+    const [first, second, staying] = [
+      await legacyCookie(id, { claims: { gen: 0 } }),
+      await legacyCookie(id, { claims: { gen: 0 }, lifetimeSeconds: 7000 }),
+      await legacyCookie(id, { claims: { gen: 0 }, lifetimeSeconds: 7200 }),
+    ];
+    const [firstSession, secondSession, stayingSession] = [
+      await bridged(first),
+      await bridged(second),
+      await bridged(staying),
+    ];
+    const viaToken = await login(email, canonical(firstSession.token));
+    const viaCookie = await login(email, { kind: 'legacy-jwe', credential: second });
+    for (const ended of [firstSession, secondSession]) {
+      expect(await readStatus(ended.token)).toBe(401);
+      expect(
+        await harnessDatabase()
+          .select()
+          .from(authSessionDenials)
+          .where(eq(authSessionDenials.sessionId, ended.sessionId)),
+      ).toHaveLength(1);
+    }
+    expect((await bridge(first)).outcome).toBe('denied');
+    expect(await readStatus(stayingSession.token)).toBe(200);
+    expect(await legacyStatus(staying)).toBe('admitted');
+    expect(await readStatus(viaToken.token)).toBe(200);
+    expect(await readStatus(viaCookie.token)).toBe(200);
+    expect((await rows(id)).cutoffs).toEqual([]);
   });
 });
 

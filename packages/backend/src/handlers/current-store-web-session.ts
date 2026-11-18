@@ -151,7 +151,7 @@ export async function handleCurrentStoreWebSession(
         outcome: outcome === 'signed-out' ? 'signed_out' : 'identity_changed',
       });
     } else if (command.operation === 'bridge') {
-      const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys());
+      const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
       reply = webSessionBridgeReplySchema.parse(
         bridged.status === 'bridged'
           ? {
