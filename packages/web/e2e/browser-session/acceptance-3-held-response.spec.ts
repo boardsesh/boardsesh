@@ -152,6 +152,9 @@ test('back/forward cache: a page of A restored after the switch re-reads the ses
       if (event.persisted) record.__restored = true;
     });
   });
+  // A page with a request still in flight is never cached (Chromium's eligibility rules): leave
+  // only once the settings page has finished its own reads.
+  await pageA.waitForLoadState('networkidle');
   await pageA.goto(`${WWW_ORIGIN}/help`);
 
   const pageB = await context.newPage();
