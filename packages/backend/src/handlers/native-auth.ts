@@ -16,6 +16,8 @@ import {
   currentNativeRevocationMode,
   parseNativeRevocationMode,
 } from '../auth/authority/native-revocation-configuration';
+import { legacyBridgeMode } from '../auth/authority/bridge';
+import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
 import { cleanupNativeRefreshRows } from '../auth/authority/native-refresh-retention';
 import { bindNativeRefreshSession } from '../auth/authority/native-session';
 import { revokeNativeCredentials } from '../auth/authority/native-revocation';
@@ -23,14 +25,7 @@ import { identityMirrorMode } from '../auth/authority/mirror-configuration';
 import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
-import type { AccountCreationReceipt } from '@boardsesh/analytics';
-import { verifyNativeTransferToken as verifyTransferToken } from '../auth/native-transfer-token';
-import {
-  fillConsumedTransferTokensForTests,
-  isTokenConsumed,
-  markTokenConsumed,
-  resetConsumedTransferTokensForTests,
-} from '../auth/native-transfer-replay';
+import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 import { eq, and, isNull, DrizzleQueryError, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
@@ -80,6 +75,18 @@ import {
 /** Generic error returned for all credential validation failures. */
 const INVALID_CREDENTIALS_ERROR = 'Invalid email or password';
 
+// Transfer tokens are short-lived (120s) and exchanged between our own
+// servers, so 5s tolerance is sufficient. Long-lived JWTs use 60s in
+// jose's clockTolerance to handle mobile device clock drift.
+const CLOCK_SKEW_TOLERANCE_SECONDS = 5;
+
+/**
+ * Maximum allowed lifetime for a transfer token (seconds).
+ * Transfer tokens are intended to live 120s. This cap (120s + 5s tolerance)
+ * prevents a compromised web issuer from embedding an arbitrarily long exp.
+ */
+const MAX_TRANSFER_TOKEN_LIFETIME_SECONDS = 125;
+
 /** JWT lifetime for mobile sessions. */
 const JWT_EXPIRY = '7d';
 const JWT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -95,6 +102,101 @@ const JWT_ISSUER = 'boardsesh';
 
 /** JWT audience claim for mobile tokens. */
 const JWT_AUDIENCE = 'boardsesh-mobile';
+
+// ---------------------------------------------------------------------------
+// Transfer token replay prevention
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory fallback for consumed transfer token signatures when Redis is
+ * unavailable. When Redis is connected, tokens are stored with SET NX EX for
+ * atomic, multi-instance-safe replay prevention.
+ */
+const consumedTransferTokens = new Map<string, number>();
+
+/** TTL for consumed token entries (125s — slightly longer than the 120s token TTL). */
+// At most 125 signed seconds + two 5-second verification tolerances, plus
+// 60 seconds of clock offset in each replica, is 255 seconds. Five minutes
+// also covers whole-second rounding and scheduling margin across replicas.
+const CONSUMED_TOKEN_TTL_SECONDS = 5 * 60;
+const CONSUMED_TOKEN_TTL_MS = CONSUMED_TOKEN_TTL_SECONDS * 1000;
+
+/** Cleanup interval for expired consumed token entries. */
+const CONSUMED_TOKEN_CLEANUP_INTERVAL_MS = 60_000;
+
+/** Max entries before triggering early eviction. */
+const MAX_CONSUMED_TOKENS = 10_000;
+
+/** Redis key prefix for consumed transfer tokens. */
+const CONSUMED_TOKEN_REDIS_PREFIX = 'boardsesh:native-auth:consumed:';
+
+/** Evict stale entries from the consumed-token map. */
+function evictStaleConsumedTokens(): void {
+  const cutoff = Date.now() - CONSUMED_TOKEN_TTL_MS;
+  for (const [signature, timestamp] of consumedTransferTokens) {
+    if (timestamp < cutoff) consumedTransferTokens.delete(signature);
+  }
+}
+
+// Periodically evict stale consumed-token entries so the map doesn't grow unbounded.
+const consumedTokenEvictionHandle = setInterval(evictStaleConsumedTokens, CONSUMED_TOKEN_CLEANUP_INTERVAL_MS);
+if (typeof consumedTokenEvictionHandle.unref === 'function') consumedTokenEvictionHandle.unref();
+
+/**
+ * Attempt to mark a transfer token signature as consumed.
+ * Returns 'consumed' if freshly consumed, 'replay' if already used, 'overloaded' if map is full.
+ *
+ * When Redis is connected, uses SET NX EX for atomic multi-instance replay prevention.
+ * Falls back to the in-memory map otherwise (single-instance only).
+ */
+async function markTokenConsumed(tokenSignature: string): Promise<'consumed' | 'replay' | 'overloaded'> {
+  if (redisClientManager.isRedisConnected()) {
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const redisKey = `${CONSUMED_TOKEN_REDIS_PREFIX}${tokenSignature}`;
+      // Keep the replay key beyond the latest accepted signed expiry plus skew.
+      const result = await publisher.set(redisKey, '1', 'EX', CONSUMED_TOKEN_TTL_SECONDS, 'NX');
+      return result === 'OK' ? 'consumed' : 'replay';
+    } catch {
+      // Redis failure: fall through to in-memory map so the endpoint stays available.
+      logger.warn('[NativeAuth] Redis replay store unavailable', { code: 'REDIS_REPLAY_WRITE_UNAVAILABLE' });
+    }
+  }
+
+  if (legacyBridgeMode(process.env) === 'on') return 'overloaded';
+  // In-memory fallback (single-instance only)
+  if (consumedTransferTokens.has(tokenSignature)) {
+    return 'replay';
+  }
+
+  if (consumedTransferTokens.size >= MAX_CONSUMED_TOKENS) {
+    evictStaleConsumedTokens();
+    if (consumedTransferTokens.size >= MAX_CONSUMED_TOKENS) {
+      return 'overloaded';
+    }
+  }
+
+  consumedTransferTokens.set(tokenSignature, Date.now());
+  return 'consumed';
+}
+
+/**
+ * Check if a transfer token signature has already been consumed (read-only check).
+ * Used for the early-reject path before verifying the HMAC.
+ */
+async function isTokenConsumed(tokenSignature: string): Promise<boolean> {
+  if (redisClientManager.isRedisConnected()) {
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const redisKey = `${CONSUMED_TOKEN_REDIS_PREFIX}${tokenSignature}`;
+      const result = await publisher.exists(redisKey);
+      return result === 1;
+    } catch {
+      logger.warn('[NativeAuth] Redis replay check unavailable', { code: 'REDIS_REPLAY_READ_UNAVAILABLE' });
+    }
+  }
+  return consumedTransferTokens.has(tokenSignature);
+}
 
 // ---------------------------------------------------------------------------
 // Per-instance auth rate limiting (IP or presented-refresh digest)
@@ -243,6 +345,127 @@ function getSigningSecret(): Uint8Array | null {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) return null;
   return new TextEncoder().encode(secret);
+}
+
+// ---------------------------------------------------------------------------
+// Transfer token verification (mirrors packages/web native-oauth-transfer.ts)
+// ---------------------------------------------------------------------------
+
+type TransferPayload = {
+  userId: string;
+  nextPath: string;
+  iat: number;
+  exp: number;
+  accountCreation?: unknown;
+  gen?: unknown;
+  auth_time?: unknown;
+  link_guarded?: unknown;
+  legacy_no_sid?: unknown;
+  authSessionId?: unknown;
+  attemptId?: unknown;
+  provider?: unknown;
+};
+
+function verifyTransferToken(token: string): {
+  userId: string;
+  generation: number;
+  authSessionId: string | null;
+  authenticatedAt: Date | null;
+  accountCreation?: AccountCreationReceipt;
+  requiresAccountCutoff: boolean;
+  validUntil: number;
+} | null {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new AuthAdmissionUnavailableError();
+
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return null;
+  }
+  const [encodedPayload, signature] = parts;
+
+  const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+
+  const sigBuffer = Buffer.from(signature);
+  const expectedSigBuffer = Buffer.from(expectedSignature);
+
+  // Pad both buffers to the same length so the comparison is always
+  // constant-time — no length oracle, no JIT short-circuit.
+  const maxLen = Math.max(sigBuffer.length, expectedSigBuffer.length);
+  const paddedSig = Buffer.alloc(maxLen);
+  const paddedExpected = Buffer.alloc(maxLen);
+  sigBuffer.copy(paddedSig);
+  expectedSigBuffer.copy(paddedExpected);
+
+  if (!crypto.timingSafeEqual(paddedSig, paddedExpected)) {
+    return null;
+  }
+
+  let payload: TransferPayload;
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as TransferPayload;
+  } catch {
+    return null;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    typeof payload.userId !== 'string' ||
+    !payload.userId ||
+    payload.userId.length > 256 ||
+    !Number.isSafeInteger(payload.exp) ||
+    !Number.isSafeInteger(payload.iat) ||
+    payload.exp <= payload.iat ||
+    payload.iat <= 0 ||
+    payload.exp < now - CLOCK_SKEW_TOLERANCE_SECONDS ||
+    payload.iat > now + CLOCK_SKEW_TOLERANCE_SECONDS
+  ) {
+    return null;
+  }
+
+  // Reject tokens with an unreasonably long lifetime (e.g. a compromised
+  // web issuer embedding a far-future exp).
+  if (payload.exp - payload.iat > MAX_TRANSFER_TOKEN_LIFETIME_SECONDS) {
+    return null;
+  }
+
+  const receipt = parseAccountCreationReceipt(payload.accountCreation);
+  const accountCreation =
+    receipt?.userId === payload.userId &&
+    receipt.provider === payload.provider &&
+    typeof payload.authSessionId === 'string' &&
+    payload.authSessionId.length > 0 &&
+    typeof payload.attemptId === 'string' &&
+    /^[0-9a-f]{32}$/.test(payload.attemptId)
+      ? receipt
+      : undefined;
+  const generation = payload.gen ?? 0;
+  if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null;
+  if (
+    payload.authSessionId !== undefined &&
+    (typeof payload.authSessionId !== 'string' || !payload.authSessionId.trim() || payload.authSessionId.length > 256)
+  )
+    return null;
+  if (payload.legacy_no_sid !== undefined && payload.legacy_no_sid !== true) return null;
+  const sourceSessionId = typeof payload.authSessionId === 'string' ? payload.authSessionId : null;
+  const inheritedAncestry = sourceSessionId === null ? true : nativeSessionRequiresAccountCutoff(sourceSessionId);
+  if (inheritedAncestry === null) return null;
+  const authenticationTime = readAuthTimeClaim(payload.auth_time, Date.now());
+  const authenticatedAt =
+    payload.link_guarded === true && authenticationTime !== null && authenticationTime <= payload.iat
+      ? new Date(authenticationTime * 1000)
+      : null;
+  return {
+    userId: payload.userId,
+    generation,
+    authSessionId: sourceSessionId,
+    requiresAccountCutoff: payload.legacy_no_sid === true || inheritedAncestry,
+    // The installed verifier compares integer seconds with an inclusive
+    // tolerance. Reject at the first millisecond outside that same window.
+    validUntil: (payload.exp + CLOCK_SKEW_TOLERANCE_SECONDS + 1) * 1000,
+    authenticatedAt,
+    ...(accountCreation ? { accountCreation } : {}),
+  };
 }
 
 function accountCreationReceipt(
@@ -586,8 +809,7 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
 
   // Atomically mark the token as consumed. If another request consumed it
   // between the EXISTS check above and now, markTokenConsumed returns 'replay'.
-  // Keyed on the recomputed signature, shared with the web transfer sign-in.
-  const consumeResult = await markTokenConsumed(verified.replayKey);
+  const consumeResult = await markTokenConsumed(tokenSignature);
   if (consumeResult === 'replay') {
     logger.warn('[NativeAuth] Transfer token replay attempt detected (race)');
     sendJson(res, 409, { error: 'Transfer token has already been used' });
@@ -1962,12 +2184,15 @@ export function __resetNativeAuthStateForTests(): void {
   refreshRateLimitMap.clear();
   invalidRefreshRateLimitMap.clear();
   invalidRefreshCapacityRetryAt = 0;
-  resetConsumedTransferTokensForTests();
+  consumedTransferTokens.clear();
 }
 
 /** Fill the consumed-token map with fresh entries for capacity testing. Test-only. */
 export function __fillConsumedTokenMapForTests(count: number): void {
-  fillConsumedTransferTokensForTests(count);
+  const now = Date.now();
+  for (let i = 0; i < count; i++) {
+    consumedTransferTokens.set(`test-sig-${String(i)}`, now);
+  }
 }
 
 /** Fill the rate-limit map with non-expired entries for capacity testing. Test-only. */

@@ -13,8 +13,6 @@ import {
   webSessionAccessCommandSchema,
   webSessionAccessReplySchema,
   setPasswordCommandSchema,
-  webSessionTransferCommandSchema,
-  webSessionTransferReplySchema,
   webSessionBridgeCommandSchema,
   webSessionBridgeReplySchema,
   webSessionMode,
@@ -99,13 +97,7 @@ describe('web session protocol', () => {
     expect(webSessionReplyStatus({ ...base, operation: 'signout', outcome: 'identity_changed' })).toBe(409);
     expect(webSessionReplyStatus({ ...base, operation: 'signout', outcome: 'error', code: 'unavailable' })).toBe(503);
     // A session rolls only through the access command.
-    expect(Object.keys(WEB_SESSION_COMMAND_PATHS).sort()).toEqual([
-      'access',
-      'bridge',
-      'session',
-      'signout',
-      'transfer',
-    ]);
+    expect(Object.keys(WEB_SESSION_COMMAND_PATHS).sort()).toEqual(['access', 'bridge', 'session', 'signout']);
   });
 
   it('reads a session from either cookie and signs out from either form', () => {
@@ -211,36 +203,6 @@ describe('web session protocol', () => {
       webSessionAccessReplySchema.safeParse({ ...base, operation: 'access', outcome: 'unauthenticated' }).success,
     ).toBe(false);
     expect(webSessionAccessReplySchema.safeParse({ error: 'unauthorized' }).success).toBe(false);
-  });
-
-  it('signs a browser in with a transfer token, with a proof that is never fresh', () => {
-    expect(WEB_SESSION_COMMAND_PATHS.transfer).toBe('/api/internal/auth/current-store/web-session/v1/transfer');
-    const base = { webSessionProtocolVersion: WEB_SESSION_PROTOCOL_VERSION, requestId } as const;
-    const transfer = (payload: unknown) =>
-      webSessionTransferCommandSchema.safeParse({ ...base, operation: 'transfer', issuedAt: 1, payload }).success;
-    expect(transfer({ transferToken: 'a.b' })).toBe(true);
-    expect(transfer({ transferToken: 'a.b', presented: { kind: 'canonical-token', token: 't' } })).toBe(true);
-    expect(transfer({ transferToken: 'a.b', userId: 'u' })).toBe(false);
-    expect(transfer({ transferToken: '' })).toBe(false);
-    const issued = {
-      ...base,
-      operation: 'transfer',
-      outcome: 'issued',
-      webSession: { sessionId: 's', token: 't', expiresAt: new Date(0).toISOString(), generation: 0 },
-      credentialProof: {
-        version: 1,
-        userId: 'u',
-        authSessionId: 's',
-        generation: 0,
-        authenticatedAt: null,
-        linkGuarded: false,
-      },
-      user: { id: 'u', email: null, name: null, image: null },
-    } as const;
-    expect(webSessionTransferReplySchema.safeParse(issued).success).toBe(true);
-    expect(webSessionReplyStatus(issued)).toBe(200);
-    for (const outcome of ['denied', 'sign_in_required'] as const)
-      expect(webSessionReplyStatus({ ...base, operation: 'transfer', outcome })).toBe(401);
   });
 
   it('accepts set-password with a presented session as well as the first form', () => {
