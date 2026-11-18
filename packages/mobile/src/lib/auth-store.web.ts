@@ -9,6 +9,7 @@ import {
   reloadRetiredBrowserPage,
   retireBrowserPageForSignOut,
 } from './browser-page-retirement.web';
+import { computeViewerMarker } from './viewer-marker.web';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -451,6 +452,7 @@ function rotateForConfirmedIdentity(
 ): { generation: number; changed: boolean } {
   // Before any listener runs, so every transport already sees a retired page.
   observeConfirmedBrowserIdentity(identity);
+  expectViewerMarkerOf(identity);
   if (confirmedSessionIdentity === undefined) {
     confirmedSessionIdentity = identity;
     if (identity === null) setBackendToken(null);
@@ -510,6 +512,37 @@ export function subscribeAuthCredentialGenerationChanges(listener: (generation: 
 
 export function captureAuthCredentialGeneration(): number {
   return sessionGeneration;
+}
+
+/**
+ * The viewer marker the confirmed login is expected to carry (#7596): its
+ * WebCrypto digest is computed once per login, and undefined until it is in,
+ * for an anonymous page, or without WebCrypto. The guard then does no marker
+ * check (`browser-session-guard.web.ts`).
+ */
+let expectedViewerMarker: { authSessionId: string; marker: string | undefined } | null = null;
+
+function expectViewerMarkerOf(identity: WebAuthIdentity | null | undefined): void {
+  if (!identity) {
+    expectedViewerMarker = null;
+    return;
+  }
+  if (expectedViewerMarker?.authSessionId === identity.authSessionId) return;
+  const entry: { authSessionId: string; marker: string | undefined } = {
+    authSessionId: identity.authSessionId,
+    marker: undefined,
+  };
+  expectedViewerMarker = entry;
+  void computeViewerMarker(identity.authSessionId).then((marker) => {
+    entry.marker = marker;
+  });
+}
+
+export function captureExpectedViewerMarker(): string | undefined {
+  const identity = confirmedSessionIdentity;
+  if (!identity) return undefined;
+  expectViewerMarkerOf(identity);
+  return expectedViewerMarker?.authSessionId === identity.authSessionId ? expectedViewerMarker.marker : undefined;
 }
 
 export function captureConfirmedWebAuthIdentity(): WebAuthIdentity | null {
