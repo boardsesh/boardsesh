@@ -1,6 +1,6 @@
 import type { BoardMotionVariant, LabRenderStatus } from '../types';
 
-/** "GPU · API 7 · prepare 42 ms", "PNG · <reason>" or "Loading…". */
+/** "GPU · API 7 · prepare 42 ms · upload 3 ms", "PNG · <reason>" or "Loading…". */
 export function formatStatus(status: LabRenderStatus): string {
   switch (status.path) {
     case 'loading':
@@ -10,6 +10,7 @@ export function formatStatus(status: LabRenderStatus): string {
         'GPU',
         `API ${status.apiVersion}`,
         status.prepareMs === null ? null : `prepare ${Math.round(status.prepareMs)} ms`,
+        status.uploadMs === null ? null : `upload ${Math.round(status.uploadMs)} ms`,
       ]
         .filter((part) => part !== null)
         .join(' · ');

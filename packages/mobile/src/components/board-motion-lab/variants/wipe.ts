@@ -1,7 +1,5 @@
+import { MOTION_NATIVE_API } from '../stage-status';
 import type { BoardMotionVariant } from '../types';
-
-/** The native view that draws the stationary board's motion at all (`NativeMotionClimbOverlayGPU`). */
-const MOTION_NATIVE_API = 3;
 
 /** B: the reveal before #7725: the new climb's holds wipe in across the wall as the board travels. */
 export const WIPE: BoardMotionVariant = {

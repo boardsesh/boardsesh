@@ -17,6 +17,9 @@ describe('status text', () => {
     expect(formatStatus({ path: 'gpu', apiVersion: 7, prepareMs: 42.2, uploadMs: null })).toBe(
       'GPU · API 7 · prepare 42 ms',
     );
+    expect(formatStatus({ path: 'gpu', apiVersion: 7, prepareMs: 42.2, uploadMs: 3.4 })).toBe(
+      'GPU · API 7 · prepare 42 ms · upload 3 ms',
+    );
     expect(formatStatus({ path: 'gpu', apiVersion: 7, prepareMs: null, uploadMs: null })).toBe('GPU · API 7');
     expect(formatStatus({ path: 'png', apiVersion: 1, reason: 'simulator' })).toBe('PNG · simulator');
   });

@@ -10,13 +10,13 @@ Dev builds, testers and admins: the same people who see the dev tools on Setting
 
 - Settings > Developer > Board motion lab.
 - Deep link: `com.boardsesh.app://settings/board-motion-lab?variant=<id>&board=<id>&set=<id>&speed=0.25&autoplay=all&reduceMotion=on`.
-  - `variant`: a variant id. `board`: a board id from `fixtures.ts`. `set`: `real`, `none`, `half`, `mostly` or `role-change`.
+  - `variant`: a variant id; one this build can't run opens on the first it can. `board`: a board id from `fixtures.ts`. `set`: `real`, `none`, `half`, `mostly` or `role-change`.
   - `speed`: `1`, `0.5` or `0.25`. `reduceMotion`: `system`, `on` or `off`.
   - `autoplay`: `all` or one variant id.
 
 ## Screen
 
-Caption bar (letter, variant name, speed, board), the board, a status line (`GPU · API 7 · prepare 42 ms`, `PNG · <reason>` or `Loading…`), then controls: Play script, Play all variants, variant, speed, Reduce Motion, one slider per parameter (committed on release), Copy params, Reset params, script, board, climb set. Variants that need a newer native API than the build has are greyed out with the reason. There is no light/dark toggle; the lab follows the system theme.
+Caption bar (letter, variant name, speed, board), the board, a status line (`GPU · API 7 · prepare 42 ms · upload 3 ms`, `PNG · <reason>` or `Loading…`), then controls: Play script, Play all variants, variant, speed, Reduce Motion, one slider per parameter (committed on release), Copy params, Reset params, script, board, climb set. Variants that need a newer native API than the build has are greyed out with the reason. There is no light/dark toggle; the lab follows the system theme.
 
 ## Add a variant
 
@@ -24,9 +24,9 @@ One file in `src/components/board-motion-lab/variants/` exporting a `BoardMotion
 
 ## Scripts and Play all
 
-`scripts.ts` holds the scripted swipes (`FINGER_SCRIPTS`) and the one `SHOWCASE_SCRIPT` that Play all runs. Play all is a hands-free demo: for each available variant it selects the variant (the caption switches), puts the board back on the set's first climb, waits up to 2 s for the board to report GPU or PNG, holds 800 ms, plays the showcase script, then rests 600 ms before the next. Every variant swipes the same climbs. Stop cancels it, or ends a single script.
+`scripts.ts` holds the scripted swipes (`FINGER_SCRIPTS`) and the one `SHOWCASE_SCRIPT` that Play all runs. Play all is a hands-free demo: for each available variant it selects the variant (the caption switches), puts the board back on the set's first climb, waits up to 2 s for the board to report GPU or PNG, holds 800 ms, plays the showcase script, then rests 600 ms before the next. A script that never finishes is stopped at its length (at the chosen speed) plus 2 s. Every variant swipes the same climbs. Stop cancels it, or ends a single script.
 
-A script drives the real swipe code through a virtual finger. The board takes no touches while one plays. Each run plays once: changing variant, a slider, speed or Reduce Motion mid-script ends the run where it is (the board is rebuilt for the new transition) and never replays it.
+A script drives the real swipe code through a virtual finger. The board takes no touches while one plays, and a zoomed board is zoomed back out first, since a zoomed board refuses the swipe. With no board to swipe (no bundled art, no climbs) a script ends at once. Each run plays once: changing variant, a slider, speed or Reduce Motion mid-script ends the run where it is (the board is rebuilt for the new transition) and never replays it.
 
 ### What speed slows down
 

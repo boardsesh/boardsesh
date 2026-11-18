@@ -5,14 +5,33 @@
  *
  * Per variant: select it, wait until the board reports how it draws (max 2 s),
  * hold 800 ms so the caption is readable, play the showcase script, wait for the
- * script to finish, settle 600 ms, next. The caption switches with each variant.
+ * script to finish (max its length plus 2 s), settle 600 ms, next. The caption
+ * switches with each variant.
  */
 
 export const AUTOPLAY_TIMINGS = {
   readyTimeoutMs: 2000,
   captionHoldMs: 800,
+  /** Added to the script's own length before Play all stops a run that never reports done. */
+  scriptMarginMs: 2000,
   settleMs: 600,
 } as const;
+
+/**
+ * How long Play all lets a script play before it stops the run and moves on:
+ * the script's clock length stretched by the speed's slowdown, plus a margin.
+ * Without it, a run no board ever took the finger for held Play all for good.
+ */
+export function scriptTimeoutMs(scriptMs: number, slowdown: number): number {
+  return scriptMs * slowdown + AUTOPLAY_TIMINGS.scriptMarginMs;
+}
+
+/**
+ * What the screen knows at each step that the machine does not: how long the
+ * showcase script may play at the speed chosen now. Read when a script starts,
+ * so a speed changed between segments times the next one right.
+ */
+export type AutoplayPace = { scriptTimeoutMs: number };
 
 export type AutoplayPhase = 'idle' | 'awaiting-ready' | 'caption-hold' | 'playing' | 'settling' | 'done';
 
@@ -29,6 +48,7 @@ export type AutoplayEvent =
   | { type: 'ready-timeout' }
   | { type: 'hold-done' }
   | { type: 'script-done' }
+  | { type: 'script-timeout' }
   | { type: 'settle-done' }
   | { type: 'cancel' };
 
@@ -58,7 +78,7 @@ function finish(queue: readonly string[], index: number): AutoplayStep {
   return { state: { phase: 'done', queue, index }, effects: [] };
 }
 
-export function stepAutoplay(state: AutoplayState, event: AutoplayEvent): AutoplayStep {
+export function stepAutoplay(state: AutoplayState, event: AutoplayEvent, pace: AutoplayPace): AutoplayStep {
   const stay: AutoplayStep = { state, effects: [] };
   switch (event.type) {
     case 'start':
@@ -73,12 +93,28 @@ export function stepAutoplay(state: AutoplayState, event: AutoplayEvent): Autopl
       };
     case 'hold-done':
       if (state.phase !== 'caption-hold') return stay;
-      return { state: { ...state, phase: 'playing' }, effects: [{ kind: 'play-script' }] };
+      return {
+        state: { ...state, phase: 'playing' },
+        effects: [
+          { kind: 'play-script' },
+          { kind: 'after', ms: pace.scriptTimeoutMs, event: { type: 'script-timeout' } },
+        ],
+      };
     case 'script-done':
       if (state.phase !== 'playing') return stay;
       return {
         state: { ...state, phase: 'settling' },
         effects: [{ kind: 'after', ms: AUTOPLAY_TIMINGS.settleMs, event: { type: 'settle-done' } }],
+      };
+    case 'script-timeout':
+      // The run never reported done: stop it where it is and carry on.
+      if (state.phase !== 'playing') return stay;
+      return {
+        state: { ...state, phase: 'settling' },
+        effects: [
+          { kind: 'stop-script' },
+          { kind: 'after', ms: AUTOPLAY_TIMINGS.settleMs, event: { type: 'settle-done' } },
+        ],
       };
     case 'settle-done':
       if (state.phase !== 'settling') return stay;

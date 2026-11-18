@@ -4,7 +4,7 @@
  * fixture climbs, with the variant's transition and the scripted finger. Owns
  * no controls; see LabStageProps.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
 import type { ClimbOverlayGPUReady } from '../../../modules/climb-overlay-gpu/src';
@@ -174,12 +174,26 @@ function LabBoardStage({
   // Once per change of path or reason, never per frame or per swipe.
   const pathSummary = status.path === 'png' ? `png: ${status.reason}` : status.path;
   useEffect(() => {
+    if (!__DEV__) return;
     console.info('[motion-lab] stage', JSON.stringify({ variant: variant.id, board: board.id, path: pathSummary }));
   }, [pathSummary, variant.id, board.id]);
 
   // --- The scripted finger ----------------------------------------------------
-  // Above the keyed carousel, so a remount never replays a run.
-  const onVirtualFinger = useVirtualFinger(script, slowdown, onScriptDone);
+  // A zoomed board refuses the finger (`useCarouselGesture`), so each run starts
+  // on the whole board. Declared before the finger's own effects, so the zoom is
+  // reset before the run starts.
+  const hasCarousel = hasRenderData && hasClimbs;
+  const resetZoomRef = useRef<(() => void) | null>(null);
+  const handleResetZoomReady = useCallback((resetZoom: () => void) => {
+    resetZoomRef.current = resetZoom;
+  }, []);
+  const scriptRunId = script?.runId ?? null;
+  useEffect(() => {
+    if (scriptRunId !== null && hasCarousel) resetZoomRef.current?.();
+  }, [scriptRunId, hasCarousel]);
+  // Above the keyed carousel, so a remount never replays a run. With no
+  // carousel a run is reported done at once: no finger will ever come.
+  const onVirtualFinger = useVirtualFinger(script, { slowdown, hasCarousel, onDone: onScriptDone });
 
   if (!boardRenderData || !current || !previous || !next) return <View style={styles.root} />;
   return (
@@ -205,6 +219,7 @@ function LabBoardStage({
         onSwipePrevious={goPrevious}
         transition={transition}
         onVirtualFinger={onVirtualFinger}
+        onResetZoomReady={handleResetZoomReady}
         diagnostics={diagnostics}
       />
     </View>

@@ -16,7 +16,10 @@ import {
   type WallSwapTuning,
 } from '../wall-swap';
 
-/** One frame as use-wall-swap applied it before the driver: the frame and the two clock restarts. */
+/**
+ * One frame built straight from `stepWallSwap`, as use-wall-swap built it
+ * before the driver: the frame and the two clock restarts.
+ */
 type Applied = { frame: readonly number[]; startSwapMs: number | null; startSettleMs: number | null };
 
 type Operation =
@@ -28,9 +31,13 @@ type Operation =
   | { reset: number };
 
 /**
- * Runs one sequence through the pre-driver path (`stepWallSwap` with the
- * shipped numbers, then the frame and clocks use-wall-swap built from it) and
- * through `driver`, feeding both the same pager and clocks.
+ * Runs one sequence straight through `stepWallSwap` (with the shipped numbers,
+ * then the frame and clocks use-wall-swap used to build from it) and through
+ * `driver`, feeding both the same pager and clocks.
+ *
+ * Both sides are today's `stepWallSwap`, so this proves only that the driver
+ * adds nothing on top of it. What the swap itself does is pinned by the
+ * behaviour tests in wall-swap.test.ts.
  */
 function run(operations: readonly Operation[], driver: BoardTransitionDriver, reduceMotion = false) {
   let input: WallSwapInput = {
@@ -44,9 +51,9 @@ function run(operations: readonly Operation[], driver: BoardTransitionDriver, re
     reduceMotion,
     commitDistance: SWIPE_THRESHOLD,
   };
-  let legacyState: WallSwapState = wallSwapRest(input.anchor, input, WALL_SWAP);
+  let steppedState: WallSwapState = wallSwapRest(input.anchor, input, WALL_SWAP);
   let driverState: BoardTransitionState = driver.rest(input);
-  const legacy: Applied[] = [];
+  const stepped: Applied[] = [];
   const driven: Applied[] = [];
   for (const operation of operations) {
     if ('drag' in operation) input = { ...input, offset: operation.drag };
@@ -58,16 +65,16 @@ function run(operations: readonly Operation[], driver: BoardTransitionDriver, re
     if ('tick' in operation) {
       input = {
         ...input,
-        swapMs: Math.min(input.swapMs + operation.tick, swapClockMs(legacyState)),
+        swapMs: Math.min(input.swapMs + operation.tick, swapClockMs(steppedState)),
         settleMs: Math.min(input.settleMs + operation.tick, WALL_SWAP.settleMs),
       };
     }
     if ('reset' in operation)
       input = { ...input, anchor: operation.reset, offset: 0, fling: 0, reset: input.reset + 1 };
 
-    const before = stepWallSwap(legacyState, input, WALL_SWAP);
-    legacyState = before.state;
-    legacy.push({
+    const before = stepWallSwap(steppedState, input, WALL_SWAP);
+    steppedState = before.state;
+    stepped.push({
       frame: [
         wallSwapPagePosition(before.state, WALL_SWAP),
         before.state.outgoing,
@@ -85,7 +92,7 @@ function run(operations: readonly Operation[], driver: BoardTransitionDriver, re
     if (before.startSwap) input = { ...input, swapMs: 0 };
     if (before.startSettle) input = { ...input, settleMs: 0 };
   }
-  return { legacy, driven };
+  return { stepped, driven };
 }
 
 const ticks = (count: number, ms = 8): Operation[] => Array.from({ length: count }, () => ({ tick: ms }));
@@ -168,14 +175,17 @@ const SEQUENCES: Record<string, readonly Operation[]> = {
 };
 
 describe('wallSwapDriver', () => {
-  it.each(Object.entries(SEQUENCES))('matches the pre-driver path exactly: %s', (_name, operations) => {
-    for (const reduceMotion of [false, true]) {
-      const { legacy, driven } = run(operations, wallSwapDriver(), reduceMotion);
-      expect(driven).toStrictEqual(legacy);
-    }
-  });
+  it.each(Object.entries(SEQUENCES))(
+    'builds the same frames and clock restarts as stepWallSwap: %s',
+    (_name, operations) => {
+      for (const reduceMotion of [false, true]) {
+        const { stepped, driven } = run(operations, wallSwapDriver(), reduceMotion);
+        expect(driven).toStrictEqual(stepped);
+      }
+    },
+  );
 
-  it('matches it over a long seeded random walk too', () => {
+  it('matches stepWallSwap over a long seeded random walk too', () => {
     let seed = 7;
     const random = () => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -190,8 +200,8 @@ describe('wallSwapDriver', () => {
       else if (roll < 0.49) operations.push({ reset: Math.round(random() * 10) });
       else operations.push({ tick: [4, 8, 16.67][Math.floor(random() * 3)] });
     }
-    const { legacy, driven } = run(operations, wallSwapDriver());
-    expect(driven).toStrictEqual(legacy);
+    const { stepped, driven } = run(operations, wallSwapDriver());
+    expect(driven).toStrictEqual(stepped);
   });
 
   it('reads the tuning it is given, not WALL_SWAP: an equal copy behaves the same', () => {

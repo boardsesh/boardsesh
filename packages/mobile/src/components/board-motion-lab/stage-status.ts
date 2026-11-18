@@ -1,8 +1,8 @@
 /** How the lab's stage is drawing the board, from what it can see. Pure. */
 import type { LabRenderStatus } from './types';
 
-/** The native view that draws the stationary board's motion (`NativeMotionClimbOverlayGPU`). */
-const MOTION_NATIVE_API = 3;
+/** The native view that draws the stationary board's motion at all (`NativeMotionClimbOverlayGPU`). */
+export const MOTION_NATIVE_API = 3;
 
 export type StageStatusInput = {
   /** The board has bundled art and hold positions. */

@@ -6,7 +6,7 @@
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
-import recordedClimbs from './recorded-climbs.json';
+import recordedClimbs from '../../lib/board-render/fixtures/recorded-climbs.json';
 import type { LabBoard, LabClimb, LabClimbSet } from './types';
 
 /** Own board list, so the lab never imports the story fixtures (and their 250 KB spray geometry). Spray walls are out: the GPU path excludes them. */

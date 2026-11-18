@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
+import { loadBoardMotionLabScreen } from '../../src/components/board-motion-lab/load';
 import { useDeveloperSettingsAccess } from '../../src/components/settings/developer/use-developer-settings-access';
 import { useTheme } from '../../src/providers/theme-provider';
 
 // Tester-only tool (docs/board-motion-lab.md). Hiding the Developer row is not
 // a guard, since a deep link reaches this route directly, so it checks the same
 // access as the Developer page's dev tools. The screen module is only required
-// once access is confirmed, so it stays out of the startup path.
+// (`loadBoardMotionLabScreen`) once access is confirmed, so it stays out of the
+// startup path.
 export default function BoardMotionLabRoute() {
   // `devToolsLoading`, not `loading`: on a preview build the Developer page is
   // allowed before the profile says whether this climber is a tester, and
@@ -15,15 +17,9 @@ export default function BoardMotionLabRoute() {
   const { showDevTools, devToolsLoading } = useDeveloperSettingsAccess();
   const { systemColors } = useTheme();
 
-  const lab = useMemo(
-    () =>
-      showDevTools
-        ? (require('../../src/components/board-motion-lab/screen') as typeof import('../../src/components/board-motion-lab/screen'))
-        : null,
-    [showDevTools],
-  );
+  const LabScreen = useMemo(() => (showDevTools ? loadBoardMotionLabScreen() : null), [showDevTools]);
 
-  if (lab) return <lab.default />;
+  if (LabScreen) return <LabScreen />;
   if (devToolsLoading) {
     return (
       <View style={[styles.loading, { backgroundColor: systemColors.groupedBackground }]}>

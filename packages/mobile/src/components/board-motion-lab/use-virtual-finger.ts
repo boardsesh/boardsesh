@@ -102,6 +102,18 @@ const IDLE: Playing = { active: false, runId: 0, startedAt: null, playhead: FING
 
 type FingerRun = { script: FingerScript; runId: number };
 
+export type VirtualFingerOptions = {
+  /** Real milliseconds per clock millisecond: 4 plays a script at quarter speed. */
+  slowdown: number;
+  /**
+   * The stage draws a carousel to hand over a finger. False when it draws
+   * none (no bundled art, no climbs): no finger will ever come.
+   */
+  hasCarousel: boolean;
+  /** Runs on the JS thread with the run's id when a run ends by itself. */
+  onDone?: (runId: number) => void;
+};
+
 /**
  * Plays `run` through the carousel's virtual finger. Returns the callback the
  * carousel hands its finger to (`SwipeBoardCarousel`'s `onVirtualFinger`).
@@ -116,14 +128,15 @@ type FingerRun = { script: FingerScript; runId: number };
  * - The carousel going away mid-run (a remount) ends the run where it is: the
  *   board it was swiping is gone, and the new one never had the finger down.
  *   `onDone(runId)` reports it, so a caller waiting on it moves on.
+ * - With no carousel (`hasCarousel` false) a run ends as it starts and
+ *   `onDone(runId)` reports it: waiting for a finger would hold it for good.
  * - `slowdown` stretches the beats' times (4 = quarter speed). Release
  *   velocities are left alone, so every speed commits the same swipes.
  * - `onDone(runId)` runs on the JS thread when a run reaches its last beat.
  */
 export function useVirtualFinger(
   run: FingerRun | null,
-  slowdown: number,
-  onDone?: (runId: number) => void,
+  { slowdown, hasCarousel, onDone }: VirtualFingerOptions,
 ): (finger: CarouselVirtualFinger | null) => void {
   const beats = useSharedValue<readonly FingerBeat[]>([]);
   const playing = useSharedValue<Playing>(IDLE);
@@ -210,7 +223,13 @@ export function useVirtualFinger(
       })(finger);
       return;
     }
-    if (finger === null || startedRunRef.current === runId) return;
+    if (startedRunRef.current === runId) return;
+    if (!hasCarousel) {
+      startedRunRef.current = runId;
+      onDoneRef.current?.(runId);
+      return;
+    }
+    if (finger === null) return;
     startedRunRef.current = runId;
     activeRunRef.current = runId;
     runOnUI((nextBeats: readonly FingerBeat[], nextRunId: number, current: CarouselVirtualFinger) => {
@@ -221,7 +240,7 @@ export function useVirtualFinger(
       playing.value = { active: true, runId: nextRunId, startedAt: null, playhead: FINGER_START };
     })(scriptBeats, runId, finger);
     frameCallback.setActive(true);
-  }, [runId, scriptBeats, finger, frameCallback, playing, beats]);
+  }, [runId, scriptBeats, finger, hasCarousel, frameCallback, playing, beats]);
 
   // The stage going away: stop the clock. The carousel goes with it (reporting
   // the run through `handleFinger`), and its own teardown settles the board.

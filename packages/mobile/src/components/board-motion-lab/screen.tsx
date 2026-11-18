@@ -17,6 +17,7 @@ import {
   AUTOPLAY_IDLE,
   autoplayQueue,
   isAutoplayRunning,
+  scriptTimeoutMs,
   stepAutoplay,
   type AutoplayEffect,
   type AutoplayEvent,
@@ -32,9 +33,12 @@ import { LabStage } from './LabStage';
 import { SPEED_CHOICES, parseLabParams, slowdownForSpeed, speedLabel, type SpeedChoice } from './params';
 import { FINGER_SCRIPTS, SHOWCASE_SCRIPT } from './scripts';
 import type { FingerScript, LabRenderStatus, ParamValues, ReduceMotionChoice } from './types';
+import { fingerScriptMs } from './use-virtual-finger';
 import { BOARD_MOTION_VARIANTS } from './variants';
 
 const STAGE_MAX_HEIGHT_RATIO = 0.5;
+const COPIED_LABEL_MS = 1500;
+const SHOWCASE_SCRIPT_MS = fingerScriptMs(SHOWCASE_SCRIPT);
 const REDUCE_MOTION_OPTIONS = [
   { key: 'system', label: 'System' },
   { key: 'on', label: 'On' },
@@ -60,7 +64,8 @@ export default function BoardMotionLabScreen() {
     [],
   );
   const firstVariant = availableVariants[0] ?? BOARD_MOTION_VARIANTS[0];
-  const linkedVariant = BOARD_MOTION_VARIANTS.find((candidate) => candidate.id === link.variant);
+  // A linked variant this build can't run opens on the first one it can.
+  const linkedVariant = availableVariants.find((candidate) => candidate.id === link.variant);
 
   const [variantId, setVariantId] = useState(linkedVariant?.id ?? firstVariant.id);
   const [boardId, setBoardId] = useState(findLabBoard(link.board).id);
@@ -83,20 +88,30 @@ export default function BoardMotionLabScreen() {
   const params = useMemo(() => ({ ...defaultsFor(variant.params), ...overrides[variant.id] }), [variant, overrides]);
 
   const boardAspect = useMemo(() => {
-    const data = getBoardRenderData({ ...board, setIds: board.setIds.split(',').map(Number) });
-    return data ? data.boardWidth / data.boardHeight : 1080 / 1920;
+    const renderData = getBoardRenderData({ ...board, setIds: board.setIds.split(',').map(Number) });
+    return renderData ? renderData.boardWidth / renderData.boardHeight : 1080 / 1920;
   }, [board]);
   const stageHeight = Math.min(windowWidth / boardAspect, windowHeight * STAGE_MAX_HEIGHT_RATIO);
+  const slowdown = slowdownForSpeed(speed);
 
   const autoplayRef = useRef<AutoplayState>(AUTOPLAY_IDLE);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const runIdRef = useRef(0);
+  // Read when Play all starts a script, to time it at the speed chosen then.
+  const slowdownRef = useRef(slowdown);
+  useEffect(() => {
+    slowdownRef.current = slowdown;
+  }, [slowdown]);
 
+  // Every variant change goes through here, so the ref is always the one shown.
+  const variantIdRef = useRef(variantId);
   const selectVariant = useCallback((nextId: string) => {
-    setVariantId((current) => {
-      if (current !== nextId) setStatus({ path: 'loading' });
-      return nextId;
-    });
+    if (variantIdRef.current === nextId) return;
+    variantIdRef.current = nextId;
+    // In the same render as the new variant: Play all must not read the old
+    // variant's status as the new one being ready.
+    setStatus({ path: 'loading' });
+    setVariantId(nextId);
   }, []);
 
   const dispatchRef = useRef<(event: AutoplayEvent) => void>(() => undefined);
@@ -123,7 +138,9 @@ export default function BoardMotionLabScreen() {
   );
   const dispatchAutoplay = useCallback(
     (event: AutoplayEvent) => {
-      const step = stepAutoplay(autoplayRef.current, event);
+      const step = stepAutoplay(autoplayRef.current, event, {
+        scriptTimeoutMs: scriptTimeoutMs(SHOWCASE_SCRIPT_MS, slowdownRef.current),
+      });
       if (step.effects.some((effect) => effect.kind === 'after') || event.type === 'cancel') {
         timersRef.current.forEach(clearTimeout);
         timersRef.current = [];
@@ -191,10 +208,18 @@ export default function BoardMotionLabScreen() {
       setOverrides((current) => ({ ...current, [variant.id]: { ...current[variant.id], [key]: value } })),
     [variant.id],
   );
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    },
+    [],
+  );
   const copyParams = useCallback(async () => {
     await Clipboard.setStringAsync(JSON.stringify({ variant: variant.id, params }, null, 2));
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopied(false), COPIED_LABEL_MS);
   }, [variant.id, params]);
 
   const variantOptions = BOARD_MOTION_VARIANTS.map((candidate) => {
@@ -222,7 +247,7 @@ export default function BoardMotionLabScreen() {
           climbs={climbSet.climbs}
           variant={variant}
           params={params}
-          slowdown={slowdownForSpeed(speed)}
+          slowdown={slowdown}
           reduceMotion={reduceMotion}
           script={script}
           onScriptDone={handleScriptDone}

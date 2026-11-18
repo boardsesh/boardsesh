@@ -165,11 +165,16 @@ function fakeFinger() {
 type Run = { script: FingerScript; runId: number } | null;
 const SCRIPT: FingerScript = { id: 'drag', label: 'Drag', beats: DRAG };
 
-function mountFinger(initialRun: Run = null, slowdown = 1) {
+/** `hasCarousel` false is a stage that draws no board (no bundled art, no climbs). */
+type StageProps = { run: Run; hasCarousel?: boolean };
+
+function mountFinger(initialRun: Run = null, slowdown = 1, initialHasCarousel = true) {
   const onDone = vi.fn();
-  const hook = renderHook(({ run }: { run: Run }) => useVirtualFinger(run, slowdown, onDone), {
-    initialProps: { run: initialRun },
-  });
+  const initialProps: StageProps = { run: initialRun, hasCarousel: initialHasCarousel };
+  const hook = renderHook(
+    ({ run, hasCarousel = true }: StageProps) => useVirtualFinger(run, { slowdown, hasCarousel, onDone }),
+    { initialProps },
+  );
   /** What the carousel does as it mounts, or is taken down (null). */
   const giveFinger = (finger: CarouselVirtualFinger | null) => act(() => hook.result.current(finger));
   return { ...hook, onDone, giveFinger };
@@ -268,6 +273,28 @@ describe('useVirtualFinger', () => {
     expect(finger.down).toHaveBeenCalledTimes(2);
     expect(finger.up.mock.calls.at(-1)).toEqual([-900]);
     expect(stage.onDone).toHaveBeenCalledExactlyOnceWith(2);
+  });
+
+  it('with no carousel, reports a run done at once and never plays it', () => {
+    const stage = mountFinger(null, 1, false);
+    stage.rerender({ run: { script: SCRIPT, runId: 1 }, hasCarousel: false });
+    expect(stage.onDone).toHaveBeenCalledExactlyOnceWith(1);
+    playFrames(600);
+    expect(ui.frame?.isActive).toBe(false);
+    expect(stage.onDone).toHaveBeenCalledOnce();
+  });
+
+  it('a carousel that goes away for good mid-run reports the run once', () => {
+    const finger = fakeFinger();
+    const stage = mountFinger();
+    stage.giveFinger(finger);
+    stage.rerender({ run: { script: SCRIPT, runId: 1 } });
+    playFrames(120);
+    // The board lost its art: the carousel unmounts and is not replaced.
+    stage.giveFinger(null);
+    stage.rerender({ run: { script: SCRIPT, runId: 1 }, hasCarousel: false });
+    playFrames(1000);
+    expect(stage.onDone).toHaveBeenCalledExactlyOnceWith(1);
   });
 
   it('stretches the beats by the slowdown', () => {
