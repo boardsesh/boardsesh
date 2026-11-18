@@ -18,13 +18,13 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { KioskPresenceHubInner, type KioskPresenceHubProps } from './kiosk-presence-hub';
 
 export function ViewerKioskPresenceHub({ boardIds, boardUuids, children }: KioskPresenceHubProps) {
-  const { token, isLoading } = useWsAuthToken();
+  const { socketToken, isLoading } = useWsAuthToken();
 
   return (
     <KioskPresenceHubInner
       boardIds={boardIds}
       boardUuids={boardUuids}
-      authToken={token}
+      authToken={socketToken}
       isAuthResolving={isLoading}
       createPresenceClient={createWebBoardPresenceClient}
     >

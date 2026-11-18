@@ -1,24 +1,63 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient, type Query } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { browserSessionGuard, signedInViewer } from '@/app/lib/auth/session-guard';
 import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
+import {
+  accessTokenBackoff,
+  accessTokenRefreshDelay,
+  accessTokenRefreshFailures,
+  noteAccessTokenRefreshFailed,
+  registerAccessTokenRefresher,
+  rememberBrowserAccessToken,
+  socketCredentialHandle,
+  wsAuthTokenExpiry,
+} from '@/app/lib/auth/browser-access-token';
 
 type WsAuthResponse = {
   token: string | null;
   authenticated: boolean;
   userId?: string;
   authSessionId?: string;
+  /** When the token ends: only the 15-minute browser token has one (`better-auth`). */
+  expiresAt?: string;
   error?: string;
 };
+
+type WsAuthQuery = Query<WsAuthResponse, Error, WsAuthResponse, readonly unknown[]>;
+
+const LEGACY_STALE_TIME_MS = 5 * 60_000;
+
+/** ws-auth answered 401: the cookie's session ended. The session read decides what the page shows. */
+class WsAuthSessionEndedError extends Error {
+  constructor() {
+    super('Failed to fetch auth token: 401');
+    this.name = 'WsAuthSessionEndedError';
+  }
+}
 
 async function fetchWsAuthToken(): Promise<WsAuthResponse> {
   const response = await fetch('/api/internal/ws-auth');
   if (!response.ok) {
+    if (response.status === 401) throw new WsAuthSessionEndedError();
     throw new Error(`Failed to fetch auth token: ${response.status}`);
   }
   return response.json();
+}
+
+/** The legacy JWE has no end time and keeps five minutes; a browser token goes stale three minutes before its end. */
+function staleTimeOf(query: WsAuthQuery): number {
+  const expiresAtMs = wsAuthTokenExpiry(query.state.data?.expiresAt);
+  return expiresAtMs === undefined ? LEGACY_STALE_TIME_MS : accessTokenRefreshDelay(expiresAtMs);
+}
+
+/** Only a browser token is refreshed on a timer; after failed refreshes the wait backs off up to five minutes. */
+function refetchIntervalOf(query: WsAuthQuery): number | false {
+  const expiresAtMs = wsAuthTokenExpiry(query.state.data?.expiresAt);
+  if (expiresAtMs === undefined) return false;
+  return Math.max(accessTokenRefreshDelay(expiresAtMs), accessTokenBackoff(accessTokenRefreshFailures()));
 }
 
 /**
@@ -28,16 +67,31 @@ async function fetchWsAuthToken(): Promise<WsAuthResponse> {
  *
  * Keys tokens by both the account and login identity so another account or
  * a new login cannot reuse a still-fresh token from a previous session.
+ *
+ * Under `AUTH_BROWSER_SESSION_MODE=better-auth` the token lives 15 minutes
+ * (#7596 B3b): it is refreshed about three minutes before its end, on focus or
+ * `pageshow` once fewer than three minutes remain, and once after the backend
+ * refuses it (`browser-access-token.ts`). `socketToken` is what a socket is
+ * keyed and opened by: the same while the viewer is, so a refresh does not
+ * reopen it. With the mode off both are today's NextAuth token.
  */
 export function useWsAuthToken(enabled = true) {
   const { data: session, status } = useSession();
   const sessionUserId = session?.user?.id ?? null;
   const authSessionId = session?.authSessionId ?? null;
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['wsAuthToken', status, sessionUserId, authSessionId],
     queryFn: async (): Promise<WsAuthResponse> => {
-      const result = await fetchWsAuthToken();
+      let result: WsAuthResponse;
+      try {
+        result = await fetchWsAuthToken();
+      } catch (fetchError) {
+        if (fetchError instanceof WsAuthSessionEndedError) requestWebSessionRefresh();
+        else noteAccessTokenRefreshFailed();
+        throw fetchError;
+      }
       // A logged-in NextAuth session must yield a token. A null here is a
       // transient cookie/endpoint hiccup, not a genuine "anonymous" — throw so
       // React Query retries with backoff instead of caching null forever.
@@ -60,20 +114,36 @@ export function useWsAuthToken(enabled = true) {
         throw new Error('ws-auth returned a token for a different session identity');
       }
       // A closure that keeps this token after the account changes is refused by the guard.
-      if (result.token && result.userId)
-        browserSessionGuard().rememberToken(result.token, signedInViewer(result.userId, result.authSessionId));
+      if (result.token && result.userId) {
+        const owner = signedInViewer(result.userId, result.authSessionId);
+        browserSessionGuard().rememberToken(result.token, owner);
+        rememberBrowserAccessToken(result.token, owner, result.expiresAt);
+      }
       return result;
     },
     // The NextAuth JWT is long-lived, but revalidate periodically and on
     // focus/reconnect so a transient failure self-heals. When the token value
     // is unchanged this is a no-op; only a null→token recovery tears down and
     // reconnects the socket (persistent-session-context) — now authenticated.
-    staleTime: 5 * 60_000,
-    retry: 3,
+    // A 15-minute browser token goes stale three minutes before its end, so
+    // focus refetches it only then, and the interval refreshes it in time.
+    staleTime: staleTimeOf,
+    refetchInterval: refetchIntervalOf,
+    // A session that ended is the session read's to show; retrying cannot help.
+    retry: (failureCount, retryError) => !(retryError instanceof WsAuthSessionEndedError) && failureCount < 3,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     enabled: enabled && status !== 'loading',
   });
+
+  useEffect(() => {
+    if (!enabled || status === 'loading') return;
+    const queryKey = ['wsAuthToken', status, sessionUserId, authSessionId];
+    // The tab's one refresh: joins a fetch already in flight instead of cancelling it.
+    return registerAccessTokenRefresher(() =>
+      queryClient.refetchQueries({ queryKey, exact: true }, { cancelRefetch: false }),
+    );
+  }, [authSessionId, enabled, queryClient, sessionUserId, status]);
 
   let errorMessage: string | null;
   if (error) {
@@ -82,8 +152,10 @@ export function useWsAuthToken(enabled = true) {
     errorMessage = data?.error ?? null;
   }
 
+  const token = enabled ? (data?.token ?? null) : null;
   return {
-    token: enabled ? (data?.token ?? null) : null,
+    token,
+    socketToken: socketCredentialHandle(token),
     isAuthenticated: enabled ? (data?.authenticated ?? false) : false,
     isLoading: enabled && (isLoading || status === 'loading'),
     error: enabled ? errorMessage : null,

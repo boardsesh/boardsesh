@@ -253,6 +253,10 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     return { ...init, headers };
   };
 
+  // Set by the browser access token store (#7596 B3b): one new token for a refused one.
+  let refreshRefusedToken: ((refused: string) => Promise<string | undefined>) | null = null;
+  let canRefreshToken: (token: string) => boolean = () => false;
+
   const guardedFetch: typeof fetch = async (input, init) => {
     if (retiring) throw new SessionSupersededError();
     const token = bearerToken(input, init);
@@ -261,6 +265,10 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
     if (tokenOwner !== undefined && viewer !== undefined && tokenOwner !== sessionViewerKey(viewer))
       throw new SessionSupersededError();
     const sentGeneration = generation;
+    // A 15-minute browser token the backend refuses is replaced once and the
+    // request sent once more; a Request body can be read only once, so keep a copy.
+    const refreshable = token !== undefined && refreshRefusedToken !== null && canRefreshToken(token);
+    const retryInput = refreshable && input instanceof Request ? input.clone() : input;
     const sentInit = withExpectedViewer(input, init);
     let response: Response;
     let body: ArrayBuffer;
@@ -268,6 +276,15 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       response = await send(input, sentInit);
       // Callers read the body after this resolves, so decide only once it is all here.
       body = await response.arrayBuffer();
+      if (response.status === 401 && refreshable && token !== undefined && refreshRefusedToken) {
+        const replacement = await refreshRefusedToken(token);
+        if (replacement !== undefined && isCurrent(sentGeneration)) {
+          const headers = outgoingHeaders(retryInput, init);
+          headers.set('authorization', `Bearer ${replacement}`);
+          response = await send(retryInput, withExpectedViewer(retryInput, { ...init, headers }));
+          body = await response.arrayBuffer();
+        }
+      }
     } catch (error) {
       if (!isCurrent(sentGeneration)) throw new SessionSupersededError();
       throw error;
@@ -279,6 +296,7 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       askForCheck();
       throw new SessionSupersededError({ refusedByServer: true });
     }
+    // Still refused (or never retried): the session check decides who this page is.
     if (response.status === 401) noteUnauthorized();
     return new Response(NULL_BODY_STATUSES.has(response.status) ? null : body, {
       status: response.status,
@@ -384,6 +402,18 @@ export function createSessionGuard(dependencies: SessionGuardDependencies) {
       return () => {
         cleanups.delete(cleanup);
       };
+    },
+    /**
+     * The browser access token store (#7596 B3b): `canRefresh` names its
+     * tokens, `refresh` answers one new token for a refused one, or undefined
+     * to give up. Unset (legacy mode has no such token), a 401 is only noted.
+     */
+    setAccessTokenRefresher(
+      refresh: (refused: string) => Promise<string | undefined>,
+      canRefresh: (token: string) => boolean,
+    ): void {
+      refreshRefusedToken = refresh;
+      canRefreshToken = canRefresh;
     },
     rememberToken(token: string, owner: NonNullable<SessionViewer>): void {
       tokenOwners.delete(token);

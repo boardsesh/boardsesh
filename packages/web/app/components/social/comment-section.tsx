@@ -32,7 +32,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
   const { t } = useTranslation('common');
   const [refreshKey, setRefreshKey] = useState(0);
   const { data: session } = useSession();
-  const { token, isAuthenticated } = useWsAuthToken();
+  const { token, socketToken, isAuthenticated } = useWsAuthToken();
   const currentUserId = session?.user?.id ?? null;
   const { showMessage } = useSnackbar();
   const resolvedTitle = title ?? t('comment.discussionTitle');
@@ -52,7 +52,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
     if (!wsUrl) return;
 
     // The tab's shared socket: the privacy bridge is already subscribed on it.
-    const { client: wsClient, release } = acquireRealtimeClient({ url: wsUrl, authToken: token });
+    const { client: wsClient, release } = acquireRealtimeClient({ url: wsUrl, authToken: socketToken });
 
     const unsub = subscribe<CommentUpdatesSubscriptionResponse, CommentUpdatesSubscriptionVariables>(
       wsClient,
@@ -80,7 +80,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
       unsub();
       release();
     };
-  }, [entityType, entityId, token, isAuthenticated]);
+  }, [entityType, entityId, socketToken, isAuthenticated]);
 
   const handleAddComment = useCallback(
     async (body: string) => {

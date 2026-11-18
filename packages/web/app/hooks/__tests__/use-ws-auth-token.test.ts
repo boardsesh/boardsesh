@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createQueryWrapper } from '@/app/test-utils/test-providers';
 import { useWsAuthToken } from '../use-ws-auth-token';
+import { resetBrowserAccessTokensForTests } from '@/app/lib/auth/browser-access-token';
+import { WEB_SESSION_REFRESH_EVENT } from '@/app/lib/auth/web-session-events';
 
 const mockUseSession = vi.fn();
 vi.mock('next-auth/react', () => ({
@@ -255,5 +257,88 @@ describe('useWsAuthToken', () => {
     expect(result.current.token).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe('useWsAuthToken with a 15-minute browser token (#7596 B3b)', () => {
+  const MINUTE_MS = 60_000;
+  let issued = 0;
+  const browserToken = () => {
+    issued += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        token: `browser-token-${issued}`,
+        authenticated: true,
+        userId: 'user-1',
+        authSessionId: 'session-1',
+        expiresAt: new Date(Date.now() + 15 * MINUTE_MS).toISOString(),
+      }),
+    };
+  };
+
+  beforeEach(() => {
+    issued = 0;
+    resetBrowserAccessTokensForTests();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.stubGlobal('fetch', mockFetch);
+    mockFetch.mockReset();
+    mockUseSession.mockReturnValue({
+      status: 'authenticated',
+      data: { user: { id: 'user-1' }, authSessionId: 'session-1' },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('refreshes about three minutes before the end, one fetch shared by every caller', async () => {
+    mockFetch.mockImplementation(async () => browserToken());
+    const wrapper = createQueryWrapper();
+    const first = renderHook(() => useWsAuthToken(), { wrapper });
+    const second = renderHook(() => useWsAuthToken(), { wrapper });
+    await waitFor(() => expect(first.result.current.token).toBe('browser-token-1'));
+    expect(second.result.current.token).toBe('browser-token-1');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(11 * MINUTE_MS);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MINUTE_MS + 1000);
+    });
+    await waitFor(() => expect(first.result.current.token).toBe('browser-token-2'));
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // The socket keeps its handle across the refresh.
+    expect(first.result.current.socketToken).toBe('browser-token-1');
+  });
+
+  it('keeps the token through a 503 and backs off instead of signing out', async () => {
+    mockFetch.mockImplementationOnce(async () => browserToken());
+    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
+    await waitFor(() => expect(result.current.token).toBe('browser-token-1'));
+    mockFetch.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12 * MINUTE_MS + 10_000);
+    });
+    expect(result.current.token).toBe('browser-token-1');
+    expect(result.current.isAuthenticated).toBe(true);
+  });
+
+  it('on a 401 asks the session read once and does not retry', async () => {
+    const refreshRequests = vi.fn();
+    window.addEventListener(WEB_SESSION_REFRESH_EVENT, refreshRequests);
+    mockFetch.mockResolvedValue({ ok: false, status: 401, json: async () => ({ token: null, authenticated: false }) });
+    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
+    await waitFor(() => expect(result.current.error).toBe('Failed to fetch auth token: 401'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(refreshRequests).toHaveBeenCalledTimes(1);
+    window.removeEventListener(WEB_SESSION_REFRESH_EVENT, refreshRequests);
   });
 });

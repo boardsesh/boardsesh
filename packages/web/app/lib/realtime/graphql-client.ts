@@ -5,6 +5,7 @@ import {
 } from '@boardsesh/graphql-client';
 import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
 import { browserSessionGuard } from '@/app/lib/auth/session-guard';
+import { noteSocketClosed, socketConnectToken, socketCredentialHandle } from '@/app/lib/auth/browser-access-token';
 import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
 import { connectionManager } from './websocket-connection-manager';
 
@@ -66,7 +67,11 @@ export function createGraphQLClient(
     typeof urlOrOptions === 'string' ? { url: urlOrOptions, onReconnect } : urlOrOptions;
 
   const managerConnectionName = options.connectionName ?? 'primary';
-  const { authToken, ...baseOptions } = options;
+  const { authToken, shouldRetry, ...baseOptions } = options;
+  // A 15-minute browser token (#7596 B3b) is replaced while the socket lives:
+  // the socket holds the viewer's handle and reads the current token at each
+  // (re)connect. Any other token (legacy mode) is its own handle and is sent as is.
+  const socketHandle = authToken ? socketCredentialHandle(authToken) : null;
 
   return createSharedGraphQLClient({
     ...baseOptions,
@@ -75,11 +80,19 @@ export function createGraphQLClient(
     // headers on the upgrade, so connectionParams is the only channel.
     // `clientPlatform` puts a signed-in socket's day in `user_activity_days`
     // under `web`, as HTTP requests already are (docs/analytics-consent.md).
-    connectionParams: async () => ({
-      ...(authToken ? { authToken } : {}),
-      ...webClientIdentityConnectionParams(),
-      [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
-    }),
+    connectionParams: async () => {
+      const connectToken = socketHandle ? await socketConnectToken(socketHandle) : null;
+      return {
+        ...(connectToken ? { authToken: connectToken } : {}),
+        ...webClientIdentityConnectionParams(),
+        [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
+      };
+    },
+    // Every close still retries as before; a 4401 also asks the next connect for a new token.
+    shouldRetry: (closeEventOrError: unknown) => {
+      if (socketHandle) noteSocketClosed(socketHandle, closeCodeOf(closeEventOrError));
+      return shouldRetry ? shouldRetry(closeEventOrError) : true;
+    },
     webSocketImpl: SafeWebSocket,
     onClientCreated: (client) => {
       if (typeof window === 'undefined') return;
@@ -93,6 +106,12 @@ export function createGraphQLClient(
       return connectionManager.registerClient(client, managerConnectionName);
     },
   });
+}
+
+function closeCodeOf(closeEventOrError: unknown): number | undefined {
+  if (typeof closeEventOrError !== 'object' || closeEventOrError === null || !('code' in closeEventOrError))
+    return undefined;
+  return typeof closeEventOrError.code === 'number' ? closeEventOrError.code : undefined;
 }
 
 type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number; generation: number };
@@ -124,7 +143,8 @@ export function acquireRealtimeClient({ url, authToken }: { url: string; authTok
     guard.subscribe(closeSupersededRealtimeClient);
   }
   closeSupersededRealtimeClient();
-  const key = `${url}\n${authToken ?? ''}`;
+  // Keyed by the socket handle, so a refreshed browser token keeps the socket.
+  const key = `${url}\n${socketCredentialHandle(authToken) ?? ''}`;
   if (sharedRealtimeClient?.key !== key) {
     sharedRealtimeClient = {
       key,

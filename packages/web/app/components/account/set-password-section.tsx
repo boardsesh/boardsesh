@@ -23,6 +23,7 @@ import {
   isSessionSuperseded,
   isWriteRefused,
 } from '@/app/lib/auth/session-guard';
+import { refreshAccessTokenAfterCredentialChange } from '@/app/lib/auth/browser-access-token';
 import ReloadPageAlert, { TryAgainAlert } from './reload-page-alert';
 
 type SetPasswordSectionProps = {
@@ -136,6 +137,8 @@ export default function SetPasswordSection({
         return;
       }
 
+      // The account's generation moved, so every earlier browser token is dead (#7596 B3b).
+      void refreshAccessTokenAfterCredentialChange();
       showMessage(t('password.success'), 'success');
       setPassword('');
       setConfirmPassword('');

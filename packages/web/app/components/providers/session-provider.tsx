@@ -21,6 +21,7 @@ import {
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';
 // ws-auth reads the cookie without rewriting it, unlike NextAuth's session GET.
+// Under `better-auth` it answers the same ids as the session read (#7596 B3b).
 const IDENTITY_PROBE_PATH = '/api/internal/ws-auth';
 const FOCUS_CHECK_INTERVAL_MS = 30_000;
 
@@ -252,9 +253,16 @@ export default function SessionProviderWrapper({
       let readsSession = false;
       try {
         const response = await fetch(IDENTITY_PROBE_PATH, { cache: 'no-store', signal: probe.signal });
-        // An outage proves nothing and keeps the accepted session.
+        // An outage proves nothing and keeps the accepted session. A 401 (only
+        // under `better-auth`, #7596 B3b) says the cookie's session ended: the
+        // session read that follows decides what the page shows.
+        const sessionEnded = response.status === 401;
         const probed = response.ok ? readProbedViewer(await response.json()) : undefined;
-        if (
+        if (sessionEnded && identityProbe === probe) {
+          recheckAfterProbe = false;
+          readsSession = true;
+          externalRefresh();
+        } else if (
           probed !== undefined &&
           identityProbe === probe &&
           sessionViewerKey(probed) !== browserSessionGuard().viewerKey()
