@@ -1,7 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import {
   expectSessionReadNames,
-  focusUntilReloaded,
   isSameDocument,
   markDocument,
   openApp,
@@ -18,33 +17,23 @@ import { expect, test } from './fixtures';
  * in Chromium and WebKit. A reply that belongs to A is held after the server
  * committed it, B signs in on the OTHER host (so no same-origin message tells
  * the A tab), and the reply is released WHILE A's document is still up. For
- * about three seconds no toast, navigation or cache write may land; then the
- * tab is focused and reloads as B. This is the guard's "drop a superseded
- * response" path (design: "Mutation started as A, lands after a switch to B:
- * the server commits it to A, the caller gets superseded and shows nothing").
+ * three seconds after the release no toast and no A data may show in the tab,
+ * whatever document it holds; then the tab ends as B, reloaded from the root
+ * by itself, with no focus. This is the guard's "drop a superseded response"
+ * path (design: "Mutation started as A, lands after a switch to B: the server
+ * commits it to A, the caller gets superseded and shows nothing"), and the
+ * viewer marker is how the tab learns of B when the reply lands (decision
+ * "how the guard learns of an account switch on another host").
  *
  * - www: A deletes an ESP32 controller on /settings, a mutation whose success
  *   shows "Controller deleted successfully"; B signs in from app.boardsesh.com.
  * - The app: every GraphQL reply of the app tab's reload as A is held; B signs
- *   in on www. The app may reload by itself once the replies land; A's name
- *   must never show, and the tab ends as B.
+ *   in on www. A's name never shows, and the tab ends as B.
  *
  * Back/forward navigation is in acceptance-3-back-forward.spec.ts.
  */
 
 test.skip(process.env.AUTH_BROWSER_SESSION_MODE !== 'better-auth', 'Runs under AUTH_BROWSER_SESSION_MODE=better-auth.');
-
-/**
- * Product gap, found by run 44325488834 on both engines: www's session guard
- * learns of a switch only on focus, `pageshow`, a 401, a 409 viewer_changed or a
- * same-origin message. A mutation reply of A's that is released after B signed
- * in on another host is a plain 200, so the guard passes it on and the
- * Settings card shows "Controller deleted successfully" on A's page. Dropping
- * it needs the guard to re-read the session when an action's reply lands (one
- * more session read per action), which is a design change for the owner. Until
- * then the www test is expected to fail at that toast.
- */
-const GUARD_PASSES_A_REPLY_RELEASED_AFTER_A_SWITCH_ON_ANOTHER_HOST = true;
 
 const DELETED = 'Controller deleted successfully';
 
@@ -65,15 +54,6 @@ async function holdReplies(page: Page, url: string | RegExp, method?: string) {
   return { release, count: () => deliveries.length, delivered: () => Promise.all(deliveries) };
 }
 
-/** For `seconds`, `text` never shows and the document is the same one. Polls, so a late toast is caught. */
-async function expectNothingLands(page: Page, texts: readonly string[], seconds = 3): Promise<void> {
-  for (let check = 0; check < seconds * 4; check += 1) {
-    expect(await isSameDocument(page), 'no navigation while A’s reply lands').toBe(true);
-    for (const text of texts) expect(await page.getByText(text).count(), `“${text}” shown`).toBe(0);
-    await page.waitForTimeout(250);
-  }
-}
-
 /** For `seconds`, none of `texts` shows in the tab, whichever document it holds. */
 async function expectNothingOfALands(page: Page, texts: readonly string[], seconds = 3): Promise<void> {
   for (let check = 0; check < seconds * 4; check += 1) {
@@ -89,15 +69,22 @@ async function expectNothingOfALands(page: Page, texts: readonly string[], secon
   }
 }
 
+/** The tab replaces its document by itself, with no focus or other nudge, within 60 s. */
+async function expectReloadWithoutFocus(page: Page): Promise<void> {
+  await expect
+    .poll(() => isSameDocument(page), {
+      timeout: 60_000,
+      intervals: [250, 500, 1_000],
+      message: 'the tab reloads by itself after the account change',
+    })
+    .toBe(false);
+}
+
 test("www: A's controller deletion, held across a switch to B on the app host, shows nothing; the tab then reloads as B", async ({
   context,
   freshAccount,
 }, testInfo) => {
   test.skip(testInfo.project.name === 'chromium-bfcache', 'Runs in chromium and webkit.');
-  test.fail(
-    GUARD_PASSES_A_REPLY_RELEASED_AFTER_A_SWITCH_ON_ANOTHER_HOST,
-    'The guard passes A’s held reply on after a switch on another host; see the constant.',
-  );
   const accountA = freshAccount();
   const accountB = freshAccount();
   const pageA = await context.newPage();
@@ -133,16 +120,17 @@ test("www: A's controller deletion, held across a switch to B on the app host, s
   expect(await postCredentialsLogin(appPage, accountB)).toBe(200);
   await expectSessionReadNames(appPage, accountB);
 
+  expect(await isSameDocument(pageA), 'A’s document is still up when its reply is released').toBe(true);
   held.release();
   await held.delivered();
-  await expectNothingLands(pageA, [DELETED]);
-  // The list still shows what A's page showed: no refetch under B wrote anything into it.
-  await expect(pageA.getByText('A board')).toBeVisible();
+  // No toast, and none of A's controllers, in any document the tab holds for 3 s.
+  await expectNothingOfALands(pageA, [DELETED]);
 
-  await focusUntilReloaded(pageA);
+  await expectReloadWithoutFocus(pageA);
   await pageA.waitForLoadState('load');
   expect(new URL(pageA.url()).pathname).toBe('/');
   await expect(pageA.getByText(DELETED)).toHaveCount(0);
+  await expect(pageA.getByText('A board')).toHaveCount(0);
   expect(await readViewer(pageA)).toMatchObject({ authenticated: true, userId: accountB.userId });
 });
 
@@ -170,13 +158,11 @@ test("app: GraphQL replies of A's, held across a switch to B on www, land nowher
   expect(await isSameDocument(appPage), 'A’s document is still up when its replies are released').toBe(true);
   held.release();
   await held.delivered();
-  // Unlike www, the app tab reloaded on its own within 3 s of the release, before any focus, in
-  // run 44325488834 on both engines (which signal it acted on is not confirmed). So a reload is
-  // allowed here; A's name never shows, in any document, and the tab ends as B.
+  // A's name never shows, in any document the tab holds for 3 s.
   await expectNothingOfALands(appPage, [accountA.name]);
 
+  await expectReloadWithoutFocus(appPage);
   await appPage.unrouteAll({ behavior: 'ignoreErrors' });
-  if (await isSameDocument(appPage)) await focusUntilReloaded(appPage);
   await expect(appPage.getByRole('tab', { name: 'Home', exact: true })).toBeVisible({ timeout: 120_000 });
   await expect(appPage.getByText(accountA.name)).toHaveCount(0);
   expect(new URL(appPage.url()).origin).toBe(APP_ORIGIN);
