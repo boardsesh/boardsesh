@@ -41,7 +41,7 @@ function WorkoutHeadlineLine({ headline }: { headline: SessionWorkoutHeadlineRes
   const { t } = useTranslation('session');
   const { formatGrade } = useGradeFormat();
   const mainTargetGrade = headline.mainTargetGrade
-    ? (formatGrade(headline.mainTargetGrade) ?? headline.mainTargetGrade)
+    ? (formatGrade(headline.mainTargetGrade, headline.mainTargetBoardType) ?? headline.mainTargetGrade)
     : null;
   return (
     <Box data-testid="session-feed-workout" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
