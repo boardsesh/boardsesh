@@ -61,6 +61,14 @@ describe('when there is nothing to show', () => {
     expect(build({ sessionId: null })).toBeNull();
   });
 
+  it('is null for a solo arm with no session, which the session-timer snapshot still counts', () => {
+    // The gym timer follows a solo climber's rest; the Lock Screen card hangs
+    // off a session, so it stays empty until one starts.
+    armRestTimer('afterTick', T0, null);
+    noteRestTimerTick(tickAt(0), 'afterTick', T0);
+    expect(build({ sessionId: null, nowMs: T0 + 30_000 })).toBeNull();
+  });
+
   it('is null for a timer armed for another session, and carries a pre-session arm into this one', () => {
     armRestTimer('afterTick', T0, 'other-session');
     expect(build()).toBeNull();
