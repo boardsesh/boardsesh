@@ -104,7 +104,8 @@
       "open": "Abrir este plafón"
     },
     "recentBeta": {
-      "title": "Beta fresca"
+      "title": "Beta fresca",
+      "lead": "Mira el bloque y su beta: vídeos que acaban de enlazar los escaladores."
     },
     "showcase": {
       "videoLabel": "Demo: todos los plafones en una app, incluido un Spraywall, y después una cola de grupo, un plan de entrenamiento y un encadene registrado.",
@@ -450,7 +451,8 @@
         },
         "statesEyebrow": "Lee el botón del plafón",
         "statesTitle": "Los tres estados del botón del plafón",
-        "endsTitle": "El mando termina cuando"
+        "endsTitle": "El mando termina cuando",
+        "stop": "Toca <label>{{drivingLabel}}</label> para dejar de controlarlo."
       },
       "history": {
         "title": "Qué hay ahora en el plafón",
@@ -492,7 +494,7 @@
         "p3": "Android muestra los mismos controles en una notificación. Bloquear la pantalla nunca desconecta el plafón."
       },
       "failed": {
-        "title": "¿El plafón no conecta?",
+        "title": "¿El plafón no se ilumina?",
         "lead": "La alerta No se pudo conectar dice cuál es el problema.",
         "fix1": "No se encontró tu plafón. Comprueba que está encendido y que estás cerca. Si hay otro móvil conectado, desconéctalo allí primero.",
         "fix2": "No se pudo conectar. Acércate e inténtalo otra vez.",
@@ -863,6 +865,15 @@
         "title": "Sigue",
         "logbook": "Registra tus encadenes",
         "sessions": "Escálalo con tu grupo"
+      },
+      "visibility": {
+        "title": "Quién ve tu Spraywall",
+        "body": "Elige Privado, Solo con enlace o Público al publicar. Ayudar a detectar presas está activado en los Spraywalls nuevos; puedes desactivarlo. Usamos esas fotos solo para mejorar la detección de presas y nunca compartimos la colección de entrenamiento. Cambia ambas opciones en Editar plafón."
+      },
+      "installHelper": "Los Spraywalls se configuran en la app. Es gratis.",
+      "tools": {
+        "tool": "Herramienta",
+        "action": "Para qué sirve"
       }
     }
   },

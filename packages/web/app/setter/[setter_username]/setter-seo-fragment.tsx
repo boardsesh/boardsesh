@@ -20,13 +20,22 @@ type SetterSeoFragmentProps = {
  * in a `useEffect`.
  */
 export default async function SetterSeoFragment({ displayName, boardTypes, climbCount }: SetterSeoFragmentProps) {
-  const { t } = await getServerTranslation('profile');
-  const boards = boardTypes.map((boardType) => formatBoardDisplayName(boardType)).join(', ');
+  const { t, locale } = await getServerTranslation('profile');
+  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    boardTypes.map((boardType) => formatBoardDisplayName(boardType)),
+  );
 
   return (
     <Box component="header">
       <h1>{t('setter.seoHeading', { name: displayName })}</h1>
-      <p>{t('setter.seoSummary', { count: climbCount, name: displayName, boards })}</p>
+      <p>
+        {t('setter.seoSummary', {
+          count: climbCount,
+          formattedCount: new Intl.NumberFormat(locale).format(climbCount),
+          name: displayName,
+          boards,
+        })}
+      </p>
     </Box>
   );
 }

@@ -19,7 +19,8 @@
     "refreshRetry": "Actualiser l'annuaire",
     "moveTitle": "Déplacer cette board ?",
     "moveBody": "Déplacer {{board}} de {{source}} vers cette salle ? Si son ancienne fiche importée devient vide, elle sera fusionnée avec cette salle et ses liens redirigeront ici.",
-    "moveConfirm": "Déplacer la board"
+    "moveConfirm": "Déplacer la board",
+    "notListed": "Pas dans la liste ? Ajoute ta salle"
   },
   "metadata": {
     "all": {
@@ -46,8 +47,8 @@
   "directory": {
     "all": {
       "h1": "Salles d'escalade avec des boards d'entraînement",
-      "lead_one": "{{formattedCount}} salle a une board référencée sur Boardsesh. La fiche montre les boards du mur et l'angle auquel elles sont réglées, pour savoir ce qui t'attend avant de traverser la ville.",
-      "lead_other": "{{formattedCount}} salles ont une board référencée sur Boardsesh. Chaque fiche montre les boards du mur et l'angle auquel elles sont réglées, pour savoir ce qui t'attend avant de traverser la ville.",
+      "lead_one": "{{formattedCount}} salle, mur de club ou mur privé figure dans l’annuaire des boards.",
+      "lead_other": "{{formattedCount}} salles, murs de clubs et murs privés figurent dans l’annuaire des boards.",
       "detail": "{{kilterCount}} ont une board Kilter, {{moonboardCount}} un MoonBoard et {{tensionCount}} une board Tension, et beaucoup en ont plusieurs. Choisis une board ci-dessous ou cherche par nom."
     },
     "kilter": {
@@ -67,18 +68,16 @@
       "lead_one": "{{formattedCount}} salle sur Boardsesh a une board Tension au mur. La fiche indique l'angle auquel elle est réglée, pour voir si elle colle à ton projet.",
       "lead_other": "{{formattedCount}} salles sur Boardsesh ont une board Tension au mur. Chaque fiche indique l'angle auquel elle est réglée, pour trouver celle qui colle à ton projet.",
       "detail": "Ce sont les grimpeurs qui référencent ces salles, et Boardsesh n'est lié à aucun fabricant de boards. Tu gères l'un de ces murs ? Revendique la fiche et garde les infos à jour."
-    }
+    },
+    "source": "Les fiches proviennent de données publiques de localisation des boards et des grimpeurs."
   },
   "facets": {
-    "heading": "Parcourir par board",
     "all": "Toutes les salles · {{formattedCount}}",
     "kilter": "Kilter · {{formattedCount}}",
     "moonboard": "MoonBoard · {{formattedCount}}",
-    "tension": "Tension · {{formattedCount}}",
-    "countHint": "Les chiffres comptent des salles, pas des boards : une salle avec trois murs Kilter compte une fois."
+    "tension": "Tension · {{formattedCount}}"
   },
   "filters": {
-    "boardHeading": "Board",
     "moreLabel": "Affine ta recherche",
     "moreLabelActive": "Affine ta recherche · {{count}}",
     "layoutHeading": "Disposition",
@@ -95,7 +94,6 @@
     "clearAll": "Tout effacer"
   },
   "search": {
-    "geoHint": "Localisation désactivée ? Saisis une ville. Aucune autorisation nécessaire.",
     "label": "Rechercher une salle",
     "placeholder": "Nom de la salle ou ville",
     "submit": "Rechercher"
@@ -115,14 +113,15 @@
     "home": "Retour à Boardsesh"
   },
   "card": {
-    "claimed": "Revendiquée",
+    "claimed": "Géré par la salle",
     "unclaimed": "Non revendiquée",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "à {{distance}} km"
   },
   "claim": {
     "body": "C'est ta salle ? Revendique-la et c'est toi qui choisis les boards, les horaires et les liens affichés ici.",
-    "action": "Trouve ta salle"
+    "action": "Trouve ta salle",
+    "topAction": "Tu gères un de ces murs ? Trouve et revendique sa fiche gratuitement."
   },
   "nearMe": {
     "cta": "Utiliser ma position",
@@ -186,5 +185,8 @@
   "install": {
     "heading": "Prends l'app",
     "body": "Allume les boards de ta salle depuis ton téléphone et fais la croix sur chaque bloc."
+  },
+  "gymPage": {
+    "startDiscussion": "Lancer la discussion"
   }
 }

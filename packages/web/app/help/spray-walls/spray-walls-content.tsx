@@ -15,6 +15,12 @@ import HelpBand from '../help-band';
 import HelpBreadcrumb from '../help-breadcrumb';
 import { HelpWalkthrough } from '../help-clip';
 import { HelpScreenshot } from '../help-screenshot';
+import HelpInstallSection from '../help-install-section';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
 import styles from './spray-walls-content.module.css';
 
 /** The mobile wizard links here for photo advice and current editor gestures. */
@@ -38,6 +44,8 @@ export default function SprayWallsContent() {
       <HelpBand id="walkthrough" wide title={t('help.spray.watch.title')} lead={t('help.spray.watch.lead')}>
         <HelpWalkthrough name="spray-walls-walkthrough" alt={t('help.spray.watch.videoAlt')} />
       </HelpBand>
+
+      <HelpInstallSection placement="help-spray" helperText={t('help.spray.installHelper')} />
 
       <HelpBand
         id="photo"
@@ -82,6 +90,10 @@ export default function SprayWallsContent() {
         <Prose>{t('help.spray.add.p1')}</Prose>
       </HelpBand>
 
+      <HelpBand id="visibility" title={t('help.spray.visibility.title')}>
+        <Prose>{t('help.spray.visibility.body')}</Prose>
+      </HelpBand>
+
       <HelpBand
         id="fix-holds"
         title={t('help.spray.fix.title')}
@@ -94,13 +106,21 @@ export default function SprayWallsContent() {
           />
         }
       >
-        <ProseList>
-          <li>{t('help.spray.fix.select')}</li>
-          <li>{t('help.spray.fix.add')}</li>
-          <li>{t('help.spray.fix.trace')}</li>
-          <li>{t('help.spray.fix.refine')}</li>
-          <li>{t('help.spray.fix.join')}</li>
-        </ProseList>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>{t('help.spray.tools.tool')}</TableCell>
+              <TableCell>{t('help.spray.tools.action')}</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            <ToolRow text={t('help.spray.fix.select')} />
+            <ToolRow text={t('help.spray.fix.add')} />
+            <ToolRow text={t('help.spray.fix.trace')} />
+            <ToolRow text={t('help.spray.fix.refine')} />
+            <ToolRow text={t('help.spray.fix.join')} />
+          </TableBody>
+        </Table>
         <ProseList>
           <li>{t('help.spray.fix.maybe')}</li>
           <li>{t('help.spray.fix.toggle')}</li>
@@ -109,37 +129,40 @@ export default function SprayWallsContent() {
         </ProseList>
       </HelpBand>
 
-      <HelpBand continues wide headingLevel={3} title={t('help.spray.fix.missedTitle')}>
-        <HelpWalkthrough name="spray-holds-editor" alt={t('help.spray.fix.videoAlt')} />
-      </HelpBand>
+      <Box component="details" sx={{ '& > summary': { cursor: 'pointer', minHeight: 44, padding: 2 } }}>
+        <Box component="summary">{t('help.spray.fix.missedTitle')}</Box>
+        <HelpBand continues wide headingLevel={3} title={t('help.spray.fix.missedTitle')}>
+          <HelpWalkthrough name="spray-holds-editor" alt={t('help.spray.fix.videoAlt')} />
+        </HelpBand>
 
-      <HelpBand
-        continues
-        flip
-        media={
-          <HelpScreenshot
-            shot="spray-editor-draw"
-            alt={t('help.spray.fix.drawAlt')}
-            caption={t('help.spray.fix.drawCaption')}
-          />
-        }
-      >
-        <HelpSteps steps={[t('help.spray.fix.missed1'), t('help.spray.fix.missed2'), t('help.spray.fix.missed3')]} />
-      </HelpBand>
+        <HelpBand
+          continues
+          flip
+          media={
+            <HelpScreenshot
+              shot="spray-editor-draw"
+              alt={t('help.spray.fix.drawAlt')}
+              caption={t('help.spray.fix.drawCaption')}
+            />
+          }
+        >
+          <HelpSteps steps={[t('help.spray.fix.missed1'), t('help.spray.fix.missed2'), t('help.spray.fix.missed3')]} />
+        </HelpBand>
 
-      <HelpBand
-        continues
-        secondaryMedia
-        media={
-          <HelpScreenshot
-            shot="spray-editor-corners"
-            alt={t('help.spray.fix.cornersAlt')}
-            caption={t('help.spray.fix.cornersCaption')}
-          />
-        }
-      >
-        <Prose>{t('help.spray.fix.corners')}</Prose>
-      </HelpBand>
+        <HelpBand
+          continues
+          secondaryMedia
+          media={
+            <HelpScreenshot
+              shot="spray-editor-corners"
+              alt={t('help.spray.fix.cornersAlt')}
+              caption={t('help.spray.fix.cornersCaption')}
+            />
+          }
+        >
+          <Prose>{t('help.spray.fix.corners')}</Prose>
+        </HelpBand>
+      </Box>
 
       <HelpBand id="edit-later" title={t('help.spray.edit.title')} lead={t('help.spray.edit.lead')}>
         <Prose>{t('help.spray.edit.p1')}</Prose>
@@ -149,10 +172,14 @@ export default function SprayWallsContent() {
         <Prose>{t('help.spray.edit.p5')}</Prose>
       </HelpBand>
 
-      <HelpBand id="apple-pencil" title={t('help.spray.pencil.title')} lead={t('help.spray.pencil.lead')}>
-        <Prose>{t('help.spray.pencil.p1')}</Prose>
-        <Prose>{t('help.spray.pencil.p2')}</Prose>
-      </HelpBand>
+      <Box component="details" sx={{ '& > summary': { cursor: 'pointer', minHeight: 44, padding: 2 } }}>
+        <Box component="summary">{t('help.spray.pencil.title')}</Box>
+        <HelpBand id="apple-pencil" title={t('help.spray.pencil.title')} lead={t('help.spray.pencil.lead')}>
+          <Prose>{t('help.spray.pencil.p1')}</Prose>
+          <Prose>{t('help.spray.pencil.p2')}</Prose>
+        </HelpBand>
+      </Box>
+      <HelpInstallSection id="get-the-app-end" placement="help-spray" helperText={t('help.spray.installHelper')} />
 
       <HelpBand title={t('help.spray.next.title')}>
         <ProseList>
@@ -169,5 +196,17 @@ export default function SprayWallsContent() {
         </ProseList>
       </HelpBand>
     </HelpPageShell>
+  );
+}
+
+function ToolRow({ text }: { text: string }) {
+  const separator = text.indexOf(':');
+  return (
+    <TableRow>
+      <TableCell component="th" scope="row" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+        {separator >= 0 ? text.slice(0, separator) : text}
+      </TableCell>
+      <TableCell>{separator >= 0 ? text.slice(separator + 1).trim() : ''}</TableCell>
+    </TableRow>
   );
 }

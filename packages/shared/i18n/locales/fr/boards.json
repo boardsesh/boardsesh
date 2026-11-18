@@ -857,7 +857,15 @@
       "boards": "boards",
       "members": "membres",
       "followers": "abonnés",
-      "comments": "commentaires"
+      "comments": "commentaires",
+      "boards_one": "board",
+      "boards_other": "boards",
+      "members_one": "membre",
+      "members_other": "membres",
+      "followers_one": "abonné",
+      "followers_other": "abonnés",
+      "comments_one": "commentaire",
+      "comments_other": "commentaires"
     },
     "delete": {
       "title": "Supprimer la salle",

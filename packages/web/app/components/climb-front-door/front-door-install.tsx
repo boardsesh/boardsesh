@@ -9,7 +9,7 @@ import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type FrontDoorInstallProps = {
-  placement: Extract<AppInstallPlacement, 'climb-view' | 'climb-list' | 'spray-climb' | 'spray-wall'>;
+  placement: AppInstallPlacement;
   /** One line saying who the button is for, already translated. */
   helperText: string;
   labels: StoreButtonLabels;
@@ -31,7 +31,7 @@ const wrapperSx = {
   mt: `${themeTokens.spacing[2]}px`,
 };
 
-const helperSx = { color: 'var(--neutral-400)' };
+const helperSx = { color: 'var(--neutral-500)' };
 
 /**
  * The store button under a front door's hand-off (#6027).

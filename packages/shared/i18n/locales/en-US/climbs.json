@@ -34,15 +34,15 @@
       "ogDescription": "Pick one, light it up and log the send."
     },
     "view": {
-      "title": "{{climbName}} - {{grade}}",
-      "description": "{{climbName}} - {{grade}} by {{setter}}. Quality: {{quality}}/5. Ascents: {{ascents}}",
+      "title": "{{climbName}}, {{grade}} {{boardName}} climb at {{angle}}°",
+      "description": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}. {{ascents}} sends, rated {{quality}} of 5. Light it on your board with Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} on {{boardName}} board",
       "fallbackTitle": "Climb",
       "fallbackDescription": "View climb details and beta videos",
       "seoHeading": "{{climbName}} — {{grade}}",
-      "seoSummary": "{{boardName}} {{layoutName}} climb",
+      "seoSummary": "{{layoutName}} climb at {{angle}}°",
       "seoSetterSuffix": " set by {{setter}}",
-      "seoAscentsSuffix": ". {{ascents}} ascents logged"
+      "seoAscentsSuffix": ". {{ascents}} sends logged"
     }
   },
   "list": {
@@ -60,7 +60,8 @@
       },
       "install": {
         "helper": "No app yet? Get it and light these climbs on your board."
-      }
+      },
+      "climbsHeading": "Most-climbed at {{angle}}°"
     }
   },
   "header": {},
@@ -964,7 +965,8 @@
     "angles": {
       "heading": "Same climb, other angles",
       "link": "{{angle}}° · {{grade}}",
-      "current": "{{angle}}° · {{grade}} — you are here"
+      "current": "{{angle}}° · {{grade}} — you are here",
+      "all": "All angles"
     },
     "beta": {
       "heading": "Beta videos",
@@ -979,9 +981,9 @@
       "unavailable": "Climbs like this one didn't load. Trying again…"
     },
     "cta": {
-      "climbThis": "Climb this",
+      "climbThis": "Light this climb",
       "ariaLabel": "Open {{climbName}} in the Boardsesh app",
-      "helper": "Opens the app, lights the holds, logs the send."
+      "helper": "Opens it in the app, ready to put on your board."
     },
     "install": {
       "helper": "No app yet? Get it and light this climb on your board."
@@ -993,7 +995,7 @@
     "heading": "{{climbName}} — {{grade}}",
     "summary": "On {{wallName}}, a Spraywall at {{angle}}° with {{holdCount}} holds.",
     "setterLine": "Set by {{setter}}. {{ascents}} ascents logged.",
-    "ascentsLine": "{{ascents}} ascents logged.",
+    "ascentsLine": "{{ascents}} sends logged.",
     "setterNotesHeading": "Setter notes",
     "keepLookingHeading": "Keep looking",
     "setterLink": "More climbs by {{setter}}",

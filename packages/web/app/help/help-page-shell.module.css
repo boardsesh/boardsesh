@@ -49,9 +49,11 @@
 
 .jump {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: var(--spacing-2);
-  margin: var(--spacing-8) 0 0;
+  margin: 0 auto;
+  max-width: 1136px;
   padding: 0;
   list-style: none;
 }
@@ -60,7 +62,8 @@
 .jump .chip {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
+  white-space: nowrap;
   padding: var(--spacing-2) 14px;
   border: 1px solid var(--control-border);
   border-radius: var(--border-radius-full);
@@ -102,7 +105,7 @@
   }
 
   .jump {
-    margin-top: var(--spacing-6);
+    margin-top: 0;
   }
 
   .jump .chip {
@@ -114,4 +117,25 @@
   .jump .chip {
     transition: none;
   }
+}
+
+.stickyJumpNav {
+  position: sticky;
+  top: var(--global-header-height);
+  z-index: 5;
+  width: 100%;
+  min-width: 0;
+  padding: var(--spacing-2) var(--spacing-4);
+  background: var(--read-surface);
+  border-bottom: 1px solid var(--separator);
+}
+
+.stickyJumpNav + .read section[id] {
+  scroll-margin-top: calc(var(--global-header-height) + 76px);
+}
+
+.jump .chip[aria-current='location'] {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--semantic-selected-light);
 }

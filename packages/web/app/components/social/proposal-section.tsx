@@ -156,7 +156,7 @@ export default function ProposalSection({
                     size="small"
                     onClick={() => setShowFreezeDialog(true)}
                     sx={{
-                      color: communityStatus?.isFrozen ? 'var(--color-warning)' : themeTokens.neutral[400],
+                      color: communityStatus?.isFrozen ? 'var(--color-warning)' : themeTokens.neutral[500],
                     }}
                   >
                     <AcUnitIcon fontSize="small" />
@@ -188,7 +188,7 @@ export default function ProposalSection({
               />
             ))
           ) : (
-            <Typography variant="body2" sx={{ color: themeTokens.neutral[400], textAlign: 'center', py: 2 }}>
+            <Typography variant="body2" sx={{ color: themeTokens.neutral[500], textAlign: 'center', py: 2 }}>
               {t('proposalSection.noOpen')}
             </Typography>
           )}
@@ -237,10 +237,10 @@ export default function ProposalSection({
       {communityStatus?.isFrozen && <FreezeIndicator reason={communityStatus.freezeReason} />}
 
       {/* Section header */}
-      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: themeTokens.neutral[700], mb: 1.5 }}>
+      <Typography variant="subtitle2" component="h3" sx={{ fontWeight: 600, color: themeTokens.neutral[700], mb: 1.5 }}>
         {t('proposalSection.title')}
         {proposals.length > 0 && (
-          <Typography component="span" variant="caption" sx={{ ml: 0.5, color: themeTokens.neutral[400] }}>
+          <Typography component="span" variant="caption" sx={{ ml: 0.5, color: themeTokens.neutral[500] }}>
             ({proposals.length})
           </Typography>
         )}

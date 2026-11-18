@@ -100,18 +100,6 @@ export default function GymInstallCta({ gymSlug, qrMedium, googlePlayLabel, appS
     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
       <Button
         component="a"
-        href={buildStoreUrl('android', storeLink)}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={handlePlayClick}
-        variant="contained"
-        startIcon={<InstallMobileOutlined />}
-        sx={{ textTransform: 'none' }}
-      >
-        {googlePlayLabel}
-      </Button>
-      <Button
-        component="a"
         href={buildStoreUrl('ios', storeLink)}
         target="_blank"
         rel="noopener noreferrer"
@@ -121,6 +109,18 @@ export default function GymInstallCta({ gymSlug, qrMedium, googlePlayLabel, appS
         sx={{ textTransform: 'none' }}
       >
         {appStoreLabel}
+      </Button>
+      <Button
+        component="a"
+        href={buildStoreUrl('android', storeLink)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={handlePlayClick}
+        variant="outlined"
+        startIcon={<InstallMobileOutlined />}
+        sx={{ textTransform: 'none' }}
+      >
+        {googlePlayLabel}
       </Button>
     </Box>
   );

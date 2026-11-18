@@ -255,7 +255,8 @@
     "setterPicker": {
       "showClimbs": "Ver bloques",
       "error": "No se pudieron cargar los creadores de esta lista."
-    }
+    },
+    "installHelper": "¿Aún no tienes la app? Descárgala gratis y escala esta lista en tu plafón."
   },
   "editClimbs": {
     "done": "Listo",

@@ -32,9 +32,15 @@ const listSx = {
 };
 
 const itemSx = {
-  padding: `${themeTokens.spacing[1]}px ${themeTokens.spacing[3]}px`,
+  '& a, & strong': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: 44,
+    padding: `0 ${themeTokens.spacing[3]}px`,
+    textDecoration: 'none',
+  },
   borderRadius: `${themeTokens.borderRadius.full}px`,
-  border: '1px solid var(--neutral-300)',
+  border: '1px solid var(--control-border)',
   fontSize: themeTokens.typography.fontSize.sm,
 };
 
@@ -56,6 +62,12 @@ export default async function AngleCrossLinks({
 }: AngleCrossLinksProps) {
   const { t } = await getServerTranslation('climbs');
   if (angleStats.length === 0) return null;
+  const sortedStats = [...angleStats].sort((left, right) => left.angle - right.angle);
+  const insertionIndex = sortedStats.findIndex((stats) => stats.angle >= currentAngle);
+  const center = insertionIndex < 0 ? sortedStats.length - 1 : insertionIndex;
+  const nearbyStats = sortedStats.slice(Math.max(0, center - 4), center + 5);
+  const nearbyAngles = new Set(nearbyStats.map((stats) => stats.angle));
+  const otherStats = sortedStats.filter((stats) => !nearbyAngles.has(stats.angle));
 
   return (
     <Box component="section" sx={sectionSx}>
@@ -63,7 +75,7 @@ export default async function AngleCrossLinks({
         {t('frontDoor.angles.heading')}
       </Typography>
       <Box component="ul" sx={listSx}>
-        {angleStats.map((stats) => {
+        {nearbyStats.map((stats) => {
           const grade = stats.difficulty || t('frontDoor.facts.unknown');
           if (stats.angle === currentAngle) {
             return (
@@ -87,6 +99,40 @@ export default async function AngleCrossLinks({
           );
         })}
       </Box>
+      {otherStats.length > 0 && (
+        <Box component="details" sx={{ mt: 2 }}>
+          <Box
+            component="summary"
+            sx={{
+              minHeight: 44,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              color: 'var(--color-primary)',
+            }}
+          >
+            {t('frontDoor.angles.all')}
+          </Box>
+          <Box component="ul" sx={listSx}>
+            {otherStats.map((stats) => (
+              <Box component="li" key={stats.angle} sx={itemSx}>
+                <LocaleLink
+                  href={
+                    boardSlug
+                      ? constructBoardSlugViewUrl(encodeURIComponent(boardSlug), stats.angle, climbUuid, climbName)
+                      : buildCanonicalClimbViewUrl(boardDetails, stats.angle, climbUuid, climbName)
+                  }
+                >
+                  {t('frontDoor.angles.link', {
+                    angle: stats.angle,
+                    grade: stats.difficulty || t('frontDoor.facts.unknown'),
+                  })}
+                </LocaleLink>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }

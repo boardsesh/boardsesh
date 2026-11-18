@@ -137,3 +137,11 @@
     width: 169px;
   }
 }
+
+.userChip[href] {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}

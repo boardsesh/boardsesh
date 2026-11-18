@@ -12,6 +12,7 @@ import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
+import styles from './static-climb-row.module.css';
 import type { BoardImageDetails, Climb } from '@/app/lib/types';
 
 /**
@@ -71,7 +72,6 @@ const rowSx = {
 } as const;
 
 const thumbnailSx = {
-  width: `${themeTokens.spacing[16]}px`,
   flexShrink: 0,
   position: 'relative',
 } as const;
@@ -113,7 +113,7 @@ const StaticClimbRow = ({
 
   const rowBody = (
     <Box sx={rowSx}>
-      <Box sx={thumbnailSx} data-testid="climb-thumbnail">
+      <Box sx={thumbnailSx} className={styles.thumbnail} data-testid="climb-thumbnail">
         <ClimbThumbnail
           boardDetails={boardDetails}
           currentClimb={climb}
@@ -138,6 +138,7 @@ const StaticClimbRow = ({
         <ClimbTitle
           climb={climb}
           gradePosition="right"
+          ellipsis
           showSetterInfo
           showGradeWhileLoading
           titleFontSize={themeTokens.typography.fontSize.xl}

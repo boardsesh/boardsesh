@@ -27,7 +27,7 @@
       "title": "Erstellte Boulder"
     },
     "setter": {
-      "title": "{{name}} - Routenbauer*in",
+      "title": "Boulder von {{name}}",
       "description": "Boulder von {{name}} auf Boardsesh",
       "fallbackTitle": "Routenbauer*in-Profil",
       "fallbackDescription": "Routenbauer*in-Profil und Boulder auf Boardsesh ansehen",
@@ -175,8 +175,8 @@
     "climb_one": "Boulder",
     "climb_other": "Boulder",
     "seoHeading": "Boulder von {{name}}",
-    "seoSummary_one": "{{name}} hat einen Boulder auf Boardsesh, an {{boards}}.",
-    "seoSummary_other": "{{name}} hat {{count}} Boulder auf Boardsesh, an {{boards}}.",
+    "seoSummary_one": "{{name}} hat {{formattedCount}} Boulder auf {{boards}} geschraubt.",
+    "seoSummary_other": "{{name}} hat {{formattedCount}} Boulder auf {{boards}} geschraubt.",
     "climbsHeading": "Alle Boulder von {{name}}",
     "empty": "Keine Boulder auf dieser Seite.",
     "browseBoard": "Alle Boulder am {{boardName}} Board ansehen",
@@ -186,6 +186,7 @@
       "previous": "Vorherige Boulder",
       "next": "Mehr Boulder",
       "pageLabel": "Seite {{page}}"
-    }
+    },
+    "installHelper": "Hol dir die kostenlose App und klettere die Boulder von {{name}} auf deinem Board."
   }
 }

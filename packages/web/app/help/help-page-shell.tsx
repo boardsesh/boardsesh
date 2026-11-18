@@ -1,7 +1,7 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
+import HelpJumpNav from './help-jump-nav';
 import styles from './help-page-shell.module.css';
 
 export type HelpJumpLink = { id: string; label: string };
@@ -46,21 +46,9 @@ export default function HelpPageShell({ title, lead, breadcrumb, jumpLinks, jump
           <Typography variant="body1" component="p" className={styles.lead}>
             {lead}
           </Typography>
-          {jumpLinks.length > 0 ? (
-            <Box component="nav" aria-label={jumpLabel}>
-              <Box component="ul" className={styles.jump}>
-                {jumpLinks.map((link) => (
-                  <li key={link.id}>
-                    <MuiLink href={`#${link.id}`} underline="none" className={styles.chip}>
-                      {link.label}
-                    </MuiLink>
-                  </li>
-                ))}
-              </Box>
-            </Box>
-          ) : null}
         </Box>
       </Box>
+      {jumpLinks.length > 0 ? <HelpJumpNav links={jumpLinks} label={jumpLabel} /> : null}
       <Box className={styles.read}>{children}</Box>
     </Box>
   );

@@ -40,14 +40,20 @@ type StaticListFrontDoorProps = {
 };
 
 const containerSx = {
-  maxWidth: 900,
+  width: '100%',
+  boxSizing: 'border-box' as const,
+  minWidth: 0,
+  maxWidth: 1200,
   margin: '0 auto',
-  padding: `${themeTokens.spacing[4]}px`,
+  padding: `${themeTokens.spacing[4]}px ${themeTokens.spacing[8]}px`,
+  '& > *': { maxWidth: 720, minWidth: 0 },
+  '@media (max-width: 600px)': { px: 2 },
+  paddingTop: 'calc(var(--global-header-height) + var(--spacing-4))',
 };
 
 const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mt: 1, mb: 1 };
 
-const introSx = { color: 'var(--neutral-400)', m: 0, mb: 3, maxWidth: '68ch' };
+const introSx = { color: 'var(--neutral-500)', m: 0, mb: 3, maxWidth: '68ch' };
 
 // Prev / page label / next as a three-column grid rather than a flex row with
 // `<span />` spacers: the label stays centred whether or not both arrows exist.
@@ -86,7 +92,7 @@ const pageLabelSx = {
   gridColumn: 2,
   gridRow: 1,
   justifySelf: 'center',
-  color: 'var(--neutral-400)',
+  color: 'var(--neutral-500)',
   '@media (max-width: 480px)': { gridColumn: '1 / -1', gridRow: 2 },
 };
 
@@ -99,7 +105,7 @@ const nextSx = {
 
 const emptyStateSx = {
   textAlign: 'center' as const,
-  color: 'var(--neutral-400)',
+  color: 'var(--neutral-500)',
   padding: `${themeTokens.spacing[6]}px ${themeTokens.spacing[4]}px`,
   border: '1px dashed var(--neutral-300)',
   borderRadius: `${themeTokens.borderRadius.md}px`,
@@ -163,6 +169,30 @@ export default async function StaticListFrontDoor({
         </Typography>
       </Box>
 
+      <ClimbHandoffCta
+        pathname={basePath}
+        label={t('list.frontDoor.cta')}
+        ariaLabel={t('list.frontDoor.cta')}
+        surface="list_front_door"
+        tree={tree}
+        boardName={boardDetails.board_name}
+        layoutId={boardDetails.layout_id}
+        angle={angle}
+        locale={locale}
+      >
+        <FrontDoorInstall
+          placement="climb-list"
+          helperText={t('list.frontDoor.install.helper')}
+          labels={storeButtonLabels}
+          // A kiosk or poster code lands on the `/b/{slug}` list only, so only
+          // that tree's link id names the code (`climb-list.kiosk`).
+          qrLanding={tree === 'slug'}
+        />
+      </ClimbHandoffCta>
+
+      <Typography component="h2" variant="h5" sx={{ mt: 4, mb: 2 }}>
+        {t('list.frontDoor.climbsHeading', { angle })}
+      </Typography>
       <StaticClimbList
         climbs={climbs}
         boardSlug={boardSlug}
@@ -225,6 +255,7 @@ export default async function StaticListFrontDoor({
       </Box>
 
       <ClimbHandoffCta
+        variant="outlined"
         pathname={basePath}
         label={t('list.frontDoor.cta')}
         ariaLabel={t('list.frontDoor.cta')}

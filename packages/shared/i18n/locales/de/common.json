@@ -1160,7 +1160,8 @@
       "delete": "Kommentar konnte nicht gelöscht werden",
       "reply": "Antwort konnte nicht gepostet werden",
       "loadReplies": "Antworten konnten nicht geladen werden"
-    }
+    },
+    "signInToSuggestGrade": "Melde dich an, um einen Grad vorzuschlagen"
   },
   "vote": {
     "upvote": "Hochstimmen",
@@ -1216,7 +1217,9 @@
     "unfollow": "Nicht mehr folgen"
   },
   "betaVideos": {
-    "empty": "Noch keine Beta-Videos"
+    "empty": "Noch keine Beta-Videos",
+    "openClimb": "{{climb}} und seine Beta ansehen",
+    "openVideo": "Beta von {{creator}} auf {{platform}} ansehen"
   },
   "ascents": {
     "deleteTitle": "Begehung löschen",

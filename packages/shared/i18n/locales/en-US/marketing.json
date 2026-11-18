@@ -104,7 +104,8 @@
       "open": "Open this board"
     },
     "recentBeta": {
-      "title": "Fresh beta"
+      "title": "Fresh beta",
+      "lead": "See the climb and its beta: videos climbers have just linked."
     },
     "showcase": {
       "videoLabel": "Demo: every board in one app, including a Spraywall, then a crew queue, a workout plan and a logged send.",
@@ -450,7 +451,8 @@
         },
         "statesEyebrow": "Read the wall button",
         "statesTitle": "Three states of the wall button",
-        "endsTitle": "A drive ends when"
+        "endsTitle": "A drive ends when",
+        "stop": "Tap <label>{{drivingLabel}}</label> to stop driving."
       },
       "history": {
         "title": "What's on the wall now",
@@ -492,7 +494,7 @@
         "p3": "Android shows the same controls in a notification. Locking the screen never disconnects the board."
       },
       "failed": {
-        "title": "Board won't connect?",
+        "title": "Board won’t light up?",
         "lead": "The Couldn't connect alert names the problem.",
         "fix1": "Couldn't find your board. Check it's on and you're near it. If another phone is connected, disconnect there first.",
         "fix2": "Couldn't connect. Move closer and try again.",
@@ -863,6 +865,15 @@
         "title": "Keep going",
         "logbook": "Log your sends",
         "sessions": "Climb it with your crew"
+      },
+      "visibility": {
+        "title": "Who sees your spray wall",
+        "body": "Choose Private, Link only or Public when you publish. Help train hold finding starts on for new spray walls; switch it off if you prefer. We use those photos only to improve hold finding and never share the training collection. Change both choices under Edit board."
+      },
+      "installHelper": "Spray walls are set up in the app. It’s free.",
+      "tools": {
+        "tool": "Tool",
+        "action": "What it does"
       }
     }
   },

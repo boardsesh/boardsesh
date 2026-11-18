@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { LabelOutlined, FavoriteOutlined } from '@mui/icons-material';
+import {
+  LabelOutlined,
+  FavoriteOutlined,
+  LocalFireDepartmentOutlined,
+  DiamondOutlined,
+  EnergySavingsLeafOutlined,
+  StarOutlined,
+} from '@mui/icons-material';
 import { getBoardImageDetailsForPlaylist } from '@/app/lib/board-image-details';
 import { currentBrandColor } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -19,6 +26,14 @@ import styles from './playlist-preview-square.module.css';
  * `getPlaylistLcpPreloadUrl`, and a flat-colour tile would turn that hint into
  * a high-priority fetch for an image nothing paints.
  */
+
+const PLAYLIST_ICONS: Record<string, typeof LabelOutlined> = {
+  LocalFireDepartmentOutlined,
+  DiamondOutlined,
+  EnergySavingsLeafOutlined,
+  FavoriteOutlined,
+  StarOutlined,
+};
 
 const PLAYLIST_COLORS = [
   themeTokens.colors.primary,
@@ -72,6 +87,8 @@ export default function PlaylistPreviewSquare({
   className,
   fetchPriority,
 }: PlaylistPreviewSquareProps) {
+  const CoverIcon = (icon && PLAYLIST_ICONS[icon]) || LabelOutlined;
+  const emoji = icon && /\p{Extended_Pictographic}/u.test(icon) && Array.from(icon).length <= 12 ? icon : null;
   const boardDetails = useMemo(() => getBoardImageDetailsForPlaylist(boardType, layoutId), [boardType, layoutId]);
 
   let backgroundColor: string | undefined;
@@ -107,10 +124,12 @@ export default function PlaylistPreviewSquare({
         }}
       >
         <div className={styles.previewIconLayer}>
-          {icon ? (
-            <span className={styles.previewEmoji}>{icon}</span>
+          {emoji ? (
+            <span className={styles.previewEmoji} aria-hidden="true">
+              {emoji}
+            </span>
           ) : (
-            <LabelOutlined className={styles.previewIcon} />
+            <CoverIcon className={styles.previewIcon} aria-hidden="true" />
           )}
         </div>
       </div>
@@ -133,7 +152,13 @@ export default function PlaylistPreviewSquare({
       </div>
       <div className={styles.previewFrostedOverlay} style={{ background: `rgba(${rgbColor}, 0.45)` }} />
       <div className={styles.previewIconLayer}>
-        {icon ? <span className={styles.previewEmoji}>{icon}</span> : <LabelOutlined className={styles.previewIcon} />}
+        {emoji ? (
+          <span className={styles.previewEmoji} aria-hidden="true">
+            {emoji}
+          </span>
+        ) : (
+          <CoverIcon className={styles.previewIcon} aria-hidden="true" />
+        )}
       </div>
     </div>
   );

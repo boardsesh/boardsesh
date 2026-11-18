@@ -43,7 +43,7 @@ function AuthPageFallback() {
 export default async function AuthPage() {
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['auth']}>
+    <I18nProvider locale={locale} namespaces={['auth', 'marketing']} resourceKeys={{ marketing: ['home.hero'] }}>
       <Suspense fallback={<AuthPageFallback />}>
         <AuthPageContent />
       </Suspense>

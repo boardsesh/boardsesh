@@ -476,26 +476,34 @@ export default async function GymPage(props: GymRouteProps) {
             )}
 
             <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
-              <GymStatChip
-                icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
-                value={gym.boardCount}
-                label={tBoards('gymEntity.stats.boards')}
-              />
-              <GymStatChip
-                icon={<PersonOutlined sx={{ fontSize: 18 }} />}
-                value={gym.memberCount}
-                label={tBoards('gymEntity.stats.members')}
-              />
-              <GymStatChip
-                icon={<PeopleOutlined sx={{ fontSize: 18 }} />}
-                value={gym.followerCount}
-                label={tBoards('gymEntity.stats.followers')}
-              />
-              <GymStatChip
-                icon={<ChatBubbleOutlined sx={{ fontSize: 18 }} />}
-                value={gym.commentCount}
-                label={tBoards('gymEntity.stats.comments')}
-              />
+              {gym.boardCount > 0 && (
+                <GymStatChip
+                  icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.boardCount}
+                  label={tBoards('gymEntity.stats.boards', { count: gym.boardCount })}
+                />
+              )}
+              {gym.memberCount > 0 && (
+                <GymStatChip
+                  icon={<PersonOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.memberCount}
+                  label={tBoards('gymEntity.stats.members', { count: gym.memberCount })}
+                />
+              )}
+              {gym.followerCount > 0 && (
+                <GymStatChip
+                  icon={<PeopleOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.followerCount}
+                  label={tBoards('gymEntity.stats.followers', { count: gym.followerCount })}
+                />
+              )}
+              {gym.commentCount > 0 && (
+                <GymStatChip
+                  icon={<ChatBubbleOutlined sx={{ fontSize: 18 }} />}
+                  value={gym.commentCount}
+                  label={tBoards('gymEntity.stats.comments', { count: gym.commentCount })}
+                />
+              )}
             </Box>
 
             <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
@@ -778,7 +786,16 @@ export default async function GymPage(props: GymRouteProps) {
 
         <Divider sx={{ my: 4 }} />
 
-        <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
+        {gym.commentCount > 0 ? (
+          <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
+        ) : (
+          <Box component="details">
+            <Box component="summary" sx={{ minHeight: 44, cursor: 'pointer' }}>
+              {t('gymPage.startDiscussion')}
+            </Box>
+            <CommentSection entityType="gym" entityId={gym.uuid} title={tBoards('gymEntity.comments.title')} />
+          </Box>
+        )}
 
         <Box sx={{ mt: 4 }}>
           <MuiLink component={LocaleLink} href="/playlists" underline="hover" sx={{ color: 'var(--color-primary)' }}>

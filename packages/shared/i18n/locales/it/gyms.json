@@ -24,8 +24,8 @@
   "directory": {
     "all": {
       "h1": "Palestre di arrampicata con pannelli da allenamento",
-      "lead_one": "{{formattedCount}} palestra ha un pannello su Boardsesh. La scheda mostra i pannelli in parete e l'inclinazione a cui sono impostati, così sai cosa ti aspetta prima di attraversare la città.",
-      "lead_other": "{{formattedCount}} palestre hanno un pannello su Boardsesh. Ogni scheda mostra i pannelli in parete e l'inclinazione a cui sono impostati, così sai cosa ti aspetta prima di attraversare la città.",
+      "lead_one": "{{formattedCount}} palestra, parete di club o parete domestica è presente nel catalogo dei pannelli.",
+      "lead_other": "{{formattedCount}} palestre, pareti di club e pareti domestiche sono presenti nel catalogo dei pannelli.",
       "detail": "{{kilterCount}} hanno un Kilter Board, {{moonboardCount}} una MoonBoard e {{tensionCount}} un Tension Board, e molte ne hanno più di uno. Scegli un pannello qui sotto, o cerca per nome."
     },
     "kilter": {
@@ -45,18 +45,16 @@
       "lead_one": "{{formattedCount}} palestra su Boardsesh ha un Tension Board in parete. La scheda mostra l'inclinazione a cui è impostato, così capisci se va bene per il progetto a cui stai lavorando.",
       "lead_other": "{{formattedCount}} palestre su Boardsesh hanno un Tension Board in parete. Ogni scheda mostra l'inclinazione a cui è impostato, così capisci quale va bene per il progetto a cui stai lavorando.",
       "detail": "Sono i climber stessi a elencare queste palestre, e Boardsesh non è affiliato a chi produce i pannelli. Gestisci una di queste palestre? Rivendica la scheda e tieni i dettagli in ordine."
-    }
+    },
+    "source": "Le schede provengono da dati pubblici sulle posizioni dei pannelli e dagli scalatori."
   },
   "facets": {
-    "heading": "Sfoglia per pannello",
     "all": "Tutte le palestre · {{formattedCount}}",
     "kilter": "Kilter · {{formattedCount}}",
     "moonboard": "MoonBoard · {{formattedCount}}",
-    "tension": "Tension · {{formattedCount}}",
-    "countHint": "I numeri contano le palestre, non i pannelli: una palestra con tre Kilter Board conta una volta sola."
+    "tension": "Tension · {{formattedCount}}"
   },
   "filters": {
-    "boardHeading": "Pannello",
     "moreLabel": "Restringi la ricerca",
     "moreLabelActive": "Restringi la ricerca · {{count}}",
     "layoutHeading": "Layout",
@@ -73,7 +71,6 @@
     "clearAll": "Cancella tutti i filtri"
   },
   "search": {
-    "geoHint": "Posizione disattivata? Scrivi una città. Non serve nessun permesso.",
     "label": "Cerca palestre",
     "placeholder": "Nome della palestra o città",
     "submit": "Cerca"
@@ -93,14 +90,15 @@
     "home": "Torna a Boardsesh"
   },
   "card": {
-    "claimed": "Rivendicata",
+    "claimed": "Gestita dalla palestra",
     "unclaimed": "Non rivendicata",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "a {{distance}} km"
   },
   "claim": {
     "body": "È la tua palestra? Rivendicala e decidi tu i pannelli, gli orari e i link che i climber vedono qui.",
-    "action": "Trova la tua palestra"
+    "action": "Trova la tua palestra",
+    "topAction": "Gestisci una di queste pareti? Trova e rivendica la tua scheda gratis."
   },
   "nearMe": {
     "cta": "Usa la mia posizione",
@@ -185,6 +183,10 @@
     "refreshRetry": "Aggiorna l'elenco",
     "moveTitle": "Spostare questo pannello?",
     "moveBody": "Spostare {{board}} da {{source}} a questa palestra? Se la sua vecchia scheda importata resta vuota, verrà unita a questa palestra e i suoi link porteranno qui.",
-    "moveConfirm": "Sposta il pannello"
+    "moveConfirm": "Sposta il pannello",
+    "notListed": "Non c’è? Aggiungi la tua palestra"
+  },
+  "gymPage": {
+    "startDiscussion": "Inizia la discussione"
   }
 }

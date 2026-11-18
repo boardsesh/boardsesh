@@ -857,7 +857,15 @@
       "boards": "plafones",
       "members": "miembros",
       "followers": "seguidores",
-      "comments": "comentarios"
+      "comments": "comentarios",
+      "boards_one": "plafón",
+      "boards_other": "plafones",
+      "members_one": "miembro",
+      "members_other": "miembros",
+      "followers_one": "seguidor",
+      "followers_other": "seguidores",
+      "comments_one": "comentario",
+      "comments_other": "comentarios"
     },
     "delete": {
       "title": "Eliminar rocódromo",

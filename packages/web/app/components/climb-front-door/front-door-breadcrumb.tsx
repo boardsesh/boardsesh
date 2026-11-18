@@ -35,10 +35,10 @@ const listSx = {
   margin: 0,
   padding: `${themeTokens.spacing[2]}px 0`,
   fontSize: themeTokens.typography.fontSize.sm,
-  color: 'var(--neutral-400)',
+  color: 'var(--neutral-500)',
 };
 
-const separatorSx = { color: 'var(--neutral-400)' };
+const separatorSx = { color: 'var(--neutral-500)' };
 
 const currentCrumbSx = { color: 'text.primary', fontWeight: themeTokens.typography.fontWeight.medium };
 

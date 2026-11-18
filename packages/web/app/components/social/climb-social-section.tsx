@@ -3,6 +3,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
+import MuiLink from '@mui/material/Link';
+import LocaleLink from '@/app/components/i18n/locale-link';
+import { useSession } from 'next-auth/react';
 import VoteButton from './vote-button';
 import CommentSection from './comment-section';
 import ProposalSection from './proposal-section';
@@ -25,9 +28,10 @@ export default function ClimbSocialSection({
   highlightProposalUuid,
 }: ClimbSocialSectionProps) {
   const { t } = useTranslation('common');
+  const { status } = useSession();
   return (
     <Box>
-      {boardType && angle != null && (
+      {status === 'authenticated' && boardType && angle != null && (
         <ProposalSection
           climbUuid={climbUuid}
           boardType={boardType}
@@ -38,9 +42,24 @@ export default function ClimbSocialSection({
         />
       )}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-        <VoteButton entityType="climb" entityId={climbUuid} />
+        {status === 'authenticated' ? (
+          <VoteButton entityType="climb" entityId={climbUuid} />
+        ) : (
+          <MuiLink
+            component={LocaleLink}
+            href="/auth/login"
+            sx={{ minHeight: 44, display: 'inline-flex', alignItems: 'center' }}
+          >
+            {t('comment.signInToSuggestGrade')}
+          </MuiLink>
+        )}
       </Box>
-      <CommentSection entityType="climb" entityId={climbUuid} title={t('comment.discussionTitle')} />
+      <CommentSection
+        headingComponent="h3"
+        entityType="climb"
+        entityId={climbUuid}
+        title={t('comment.discussionTitle')}
+      />
     </Box>
   );
 }

@@ -27,7 +27,7 @@
       "title": "Created Climbs"
     },
     "setter": {
-      "title": "{{name}} - Setter",
+      "title": "Climbs set by {{name}}",
       "description": "Climbs created by {{name}} on Boardsesh",
       "fallbackTitle": "Setter Profile",
       "fallbackDescription": "View setter profile and climbs on Boardsesh",
@@ -175,8 +175,8 @@
     "climb_one": "climb",
     "climb_other": "climbs",
     "seoHeading": "Climbs set by {{name}}",
-    "seoSummary_one": "{{name}} has one climb up on Boardsesh, on {{boards}}.",
-    "seoSummary_other": "{{name}} has {{count}} climbs up on Boardsesh, on {{boards}}.",
+    "seoSummary_one": "{{name}} has set {{formattedCount}} climb on {{boards}}.",
+    "seoSummary_other": "{{name}} has set {{formattedCount}} climbs on {{boards}}.",
     "climbsHeading": "Every climb by {{name}}",
     "empty": "No climbs on this page.",
     "browseBoard": "See every climb on {{boardName}}",
@@ -186,6 +186,7 @@
       "previous": "Previous climbs",
       "next": "More climbs",
       "pageLabel": "Page {{page}}"
-    }
+    },
+    "installHelper": "Get the free app and climb {{name}}’s problems on your board."
   }
 }

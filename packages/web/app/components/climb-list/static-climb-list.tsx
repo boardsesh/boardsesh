@@ -98,7 +98,7 @@ const sentinelBoxSx = { minHeight: `${themeTokens.spacing[5]}px` };
 const noMoreClimbsBoxSx = {
   textAlign: 'center' as const,
   padding: `${themeTokens.spacing[5]}px`,
-  color: 'var(--neutral-400)',
+  color: 'var(--neutral-500)',
 };
 
 const noop = () => {};

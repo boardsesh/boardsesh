@@ -857,7 +857,15 @@
       "boards": "Boards",
       "members": "Mitglieder",
       "followers": "Follower",
-      "comments": "Kommentare"
+      "comments": "Kommentare",
+      "boards_one": "Board",
+      "boards_other": "Boards",
+      "members_one": "Mitglied",
+      "members_other": "Mitglieder",
+      "followers_one": "Follower",
+      "followers_other": "Follower",
+      "comments_one": "Kommentar",
+      "comments_other": "Kommentare"
     },
     "delete": {
       "title": "Halle löschen",

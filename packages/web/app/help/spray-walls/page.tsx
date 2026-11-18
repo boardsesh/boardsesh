@@ -18,7 +18,11 @@ export async function generateMetadata() {
 export default async function HelpSprayWallsPage() {
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider
+      locale={locale}
+      namespaces={['marketing']}
+      resourceKeys={{ marketing: ['help.spray', 'help.nav', 'help.install', 'home.hero'] }}
+    >
       <SprayWallsContent />
     </I18nProvider>
   );

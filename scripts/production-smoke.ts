@@ -39,7 +39,9 @@
 
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { gunzip } from 'node:zlib';
+import { gunzip, gzipSync } from 'node:zlib';
+
+export const HOMEPAGE_GZIP_BUDGET_BYTES = 60_000;
 
 const DEFAULT_BASE_URL = 'https://www.boardsesh.com';
 
@@ -380,6 +382,9 @@ export const WWW_CHECKS: SmokeCheck[] = [
         expectStatus(response, 200),
         expectContentType(response, 'text/html'),
         OPEN_H1_TAG.test(response.body) ? null : 'response body has no server-rendered <h1>',
+        gzipSync(response.body).byteLength <= HOMEPAGE_GZIP_BUDGET_BYTES
+          ? null
+          : `homepage gzip HTML exceeds ${HOMEPAGE_GZIP_BUDGET_BYTES} bytes (${gzipSync(response.body).byteLength})`,
       ),
   },
   {

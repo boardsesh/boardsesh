@@ -42,6 +42,7 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
   priorityFirstCard = false,
 }) => {
   const { t } = useTranslation('common');
+  const visibleLinks = links.filter((link) => Boolean(link.thumbnail));
   // `data-source` is what the stylesheet reads to drop the inline inset on the
   // home rail, which already sits inside the page container's own padding.
   return (
@@ -57,7 +58,7 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
           ))
         ) : (
           <>
-            {links.map((link, index) => (
+            {visibleLinks.map((link, index) => (
               <BoardseshBetaCard
                 key={link.link}
                 link={link}
@@ -67,7 +68,7 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
                 priority={priorityFirstCard && index === 0}
               />
             ))}
-            {links.length === 0 && <span className={styles.emptyText}>{t('betaVideos.empty')}</span>}
+            {visibleLinks.length === 0 && <span className={styles.emptyText}>{t('betaVideos.empty')}</span>}
           </>
         )}
       </div>

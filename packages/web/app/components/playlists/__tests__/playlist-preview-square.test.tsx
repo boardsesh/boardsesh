@@ -175,4 +175,13 @@ describe('PlaylistPreviewSquare', () => {
     const overlay = container.querySelector('.previewFrostedOverlay') as HTMLElement;
     expect(overlay.style.background).toBe('rgba(255, 102, 0, 0.45)');
   });
+  it.each(['EnergySavingsLeafOutlined', 'LocalFireDepartmentOutlined', 'DiamondOutlined', 'UnknownIconIdentifier'])(
+    'never prints the stored icon identifier %s',
+    (icon) => {
+      mockGetBoardDetailsForPlaylist.mockReturnValue(MOCK_BOARD_DETAILS);
+      const { container } = render(<PlaylistPreviewSquare boardType="kilter" icon={icon} />);
+      expect(container.textContent).not.toContain(icon);
+      expect(container.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    },
+  );
 });

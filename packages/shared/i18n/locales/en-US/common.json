@@ -1160,7 +1160,8 @@
       "delete": "Failed to delete comment",
       "reply": "Failed to post reply",
       "loadReplies": "Failed to load replies"
-    }
+    },
+    "signInToSuggestGrade": "Sign in to suggest a grade"
   },
   "vote": {
     "upvote": "Upvote",
@@ -1216,7 +1217,9 @@
     "unfollow": "Unfollow"
   },
   "betaVideos": {
-    "empty": "No beta videos yet"
+    "empty": "No beta videos yet",
+    "openClimb": "See {{climb}} and its beta",
+    "openVideo": "Watch {{creator}}’s beta on {{platform}}"
   },
   "ascents": {
     "deleteTitle": "Delete ascent",

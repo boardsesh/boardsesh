@@ -81,18 +81,20 @@ export default function GymDirectoryCard({ gym, origin, locale }: GymDirectoryCa
             state somebody acted to reach. "Unclaimed" is the absence of that,
             and a bordered pill around it drew a control nobody can press — so
             it keeps the label and drops the box. */}
-        <Chip
-          size="small"
-          icon={gym.isClaimed ? <CheckCircleOutline /> : undefined}
-          label={gym.isClaimed ? t('card.claimed') : t('card.unclaimed')}
-          sx={{
-            alignSelf: 'flex-start',
-            backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'transparent',
-            color: gym.isClaimed ? 'var(--color-success)' : 'var(--neutral-500)',
-            border: gym.isClaimed ? '1px solid var(--separator)' : 'none',
-            '& .MuiChip-icon': { color: 'inherit' },
-          }}
-        />
+        {gym.isClaimed && (
+          <Chip
+            size="small"
+            icon={gym.isClaimed ? <CheckCircleOutline /> : undefined}
+            label={gym.isClaimed ? t('card.claimed') : t('card.unclaimed')}
+            sx={{
+              alignSelf: 'flex-start',
+              backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'transparent',
+              color: gym.isClaimed ? 'var(--color-success)' : 'var(--neutral-500)',
+              border: gym.isClaimed ? '1px solid var(--separator)' : 'none',
+              '& .MuiChip-icon': { color: 'inherit' },
+            }}
+          />
+        )}
       </Box>
 
       {location && (

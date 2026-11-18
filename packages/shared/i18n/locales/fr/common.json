@@ -1160,7 +1160,8 @@
       "delete": "Impossible de supprimer le commentaire",
       "reply": "Impossible de publier la réponse",
       "loadReplies": "Impossible de charger les réponses"
-    }
+    },
+    "signInToSuggestGrade": "Connecte-toi pour proposer une cotation"
   },
   "vote": {
     "upvote": "Voter pour",
@@ -1216,7 +1217,9 @@
     "unfollow": "Se désabonner"
   },
   "betaVideos": {
-    "empty": "Pas encore de vidéo de beta"
+    "empty": "Pas encore de vidéo de beta",
+    "openClimb": "Découvrir {{climb}} et sa beta",
+    "openVideo": "Regarder la beta de {{creator}} sur {{platform}}"
   },
   "ascents": {
     "deleteTitle": "Supprimer l'ascension",

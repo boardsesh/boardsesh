@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import IconButton from '@mui/material/IconButton';
+import { useTranslation } from 'react-i18next';
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 
@@ -12,6 +13,7 @@ type BackButtonProps = {
 
 const BackButton = ({ fallbackUrl, className }: BackButtonProps) => {
   const router = useLocaleRouter();
+  const { t } = useTranslation('common');
   const [canGoBack, setCanGoBack] = useState(false);
 
   useEffect(() => {
@@ -57,7 +59,12 @@ const BackButton = ({ fallbackUrl, className }: BackButtonProps) => {
   };
 
   return (
-    <IconButton onClick={handleClick} className={className}>
+    <IconButton
+      onClick={handleClick}
+      className={className}
+      aria-label={t('ariaLabels.back')}
+      sx={{ minWidth: 44, minHeight: 44 }}
+    >
       <ArrowBackOutlined />
     </IconButton>
   );

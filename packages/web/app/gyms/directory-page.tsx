@@ -4,7 +4,6 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
@@ -20,7 +19,6 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageCard, PageShell, StatePanel } from '@/app/components/ui/page-shell';
-import { filterChipSx } from '@/app/components/ui/filter-chip';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
   BOARD_FACETS,
@@ -34,15 +32,7 @@ import {
   type DirectoryFacet,
   type DirectorySearchParams,
 } from './directory-facets';
-import {
-  facetChipLabel,
-  facetDetail,
-  facetHeading,
-  facetLead,
-  facetLinkLabel,
-  facetMetaDescription,
-  facetMetaTitle,
-} from './directory-copy';
+import { facetHeading, facetLead, facetLinkLabel, facetMetaDescription, facetMetaTitle } from './directory-copy';
 import { fetchDirectoryPage, fetchFacetCounts } from './directory-data';
 import GymDirectoryCard from './gym-directory-card';
 import GymDirectoryClaimLink from './gym-directory-claim-link';
@@ -201,17 +191,12 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         width="wide"
         title={facetHeading(t, facet)}
         lead={facetLead(t, facet, facetCounts, formatNumber)}
-        headerActions={
-          <Button component={LocaleLink} href="/gyms/new" variant="contained" startIcon={<AddOutlined />}>
-            {t('create.action')}
-          </Button>
-        }
         breadcrumb={
           <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
         }
       >
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: '68ch' }}>
-          {facetDetail(t, facet, facetCounts, formatNumber)}
+        <Typography component="p" variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {t('directory.source')} <MuiLink href="#gym-directory-search">{t('claim.topAction')}</MuiLink>
         </Typography>
 
         {/* The anchor the closing claim prompt jumps back to. Same clearance
@@ -220,7 +205,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         <PageCard
           id="gym-directory-search"
           sx={{
-            mb: 4,
+            mb: 2,
             '& form': { mb: 1.5 },
             scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
           }}
@@ -229,41 +214,8 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             {/* Inside the form on purpose: layout, size and angle are
                 checkboxes, and a closed <details> still submits them, so one
                 "Show gyms" applies the text, the place and the wall together. */}
-            <GymDirectoryFilters facet={facet} query={query} t={t} />
+            <GymDirectoryFilters facet={facet} query={query} t={t} facetCounts={facetCounts} locale={locale} />
           </GymDirectorySearchForm>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            {t('search.geoHint')}
-          </Typography>
-
-          <Box component="section">
-            <Typography
-              variant="subtitle2"
-              component="h2"
-              sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}
-            >
-              {t('facets.heading')}
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {DIRECTORY_FACETS.map((candidate) => {
-                const isCurrentFacet = candidate === facet;
-                return (
-                  <Chip
-                    key={candidate}
-                    clickable
-                    component={LocaleLink}
-                    href={buildFacetSwitchHref(candidate, query)}
-                    aria-current={isCurrentFacet ? 'page' : undefined}
-                    label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
-                    variant="outlined"
-                    sx={filterChipSx({ selected: isCurrentFacet })}
-                  />
-                );
-              })}
-            </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              {t('facets.countHint')}
-            </Typography>
-          </Box>
         </PageCard>
 
         {/* The map column and near-me mode wrap the results block rather than
@@ -341,6 +293,11 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
 
           <GymDirectoryPagination facet={facet} query={query} totalCount={pageResult.totalCount} />
         </GymDirectoryNearMe>
+        <Box sx={{ mt: 3 }}>
+          <MuiLink component={LocaleLink} href="/gyms/new">
+            {t('create.notListed')}
+          </MuiLink>
+        </Box>
 
         {/* ONE claim prompt for the page, below the list. It used to sit on
             every unclaimed row, so the page said "Is this your gym?" 24 times

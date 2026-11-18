@@ -104,7 +104,8 @@
       "open": "Dieses Board öffnen"
     },
     "recentBeta": {
-      "title": "Frische Beta"
+      "title": "Frische Beta",
+      "lead": "Sieh dir den Boulder und seine Beta an: frisch verlinkte Videos von Kletternden."
     },
     "showcase": {
       "videoLabel": "Demo: jedes Board in einer App, auch eine Spraywall, dann eine Crew-Warteschlange, ein Trainingsplan und eine eingetragene Begehung.",
@@ -450,7 +451,8 @@
         },
         "statesEyebrow": "Den Wand-Button lesen",
         "statesTitle": "Drei Zustände des Wand-Buttons",
-        "endsTitle": "Das Steuern endet, wenn"
+        "endsTitle": "Das Steuern endet, wenn",
+        "stop": "Tippe auf <label>{{drivingLabel}}</label>, um die Steuerung zu beenden."
       },
       "history": {
         "title": "Was gerade an der Wand ist",
@@ -492,7 +494,7 @@
         "p3": "Android zeigt dieselben Buttons in einer Benachrichtigung. Den Bildschirm zu sperren trennt das Board nie."
       },
       "failed": {
-        "title": "Das Board verbindet sich nicht?",
+        "title": "Das Board leuchtet nicht?",
         "lead": "Der Hinweis Verbindung fehlgeschlagen nennt das Problem.",
         "fix1": "Dein Board wurde nicht gefunden. Prüf, ob es an ist und du in Reichweite bist. Ist ein anderes Handy verbunden, trenn dort zuerst.",
         "fix2": "Verbindung fehlgeschlagen. Geh näher ran und versuch es nochmal.",
@@ -863,6 +865,15 @@
         "title": "Weiter geht's",
         "logbook": "Trag deine Begehungen ein",
         "sessions": "Klettere sie mit deiner Crew"
+      },
+      "visibility": {
+        "title": "Wer dein Spraywall sieht",
+        "body": "Wähle beim Veröffentlichen Privat, Nur per Link oder Öffentlich. Halteerkennung verbessern ist bei neuen Spraywalls eingeschaltet; du kannst es ausschalten. Wir nutzen diese Fotos nur zur Verbesserung der Halteerkennung und teilen die Trainingssammlung niemals. Ändere beide Optionen unter Board bearbeiten."
+      },
+      "installHelper": "Spraywalls richtest du in der App ein. Das ist kostenlos.",
+      "tools": {
+        "tool": "Werkzeug",
+        "action": "Funktion"
       }
     }
   },
