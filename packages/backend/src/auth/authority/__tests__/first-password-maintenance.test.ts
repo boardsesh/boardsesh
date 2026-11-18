@@ -5,7 +5,6 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   authEmailReservationMembers,
-  authBrowserBindings,
   authEmailReservations,
   authFirstPasswordChallenges,
   users,
@@ -18,7 +17,6 @@ import { prepareFirstPasswordChallenge, finalizeFirstPasswordChallenge } from '.
 import { bindIdentityAuthority } from '../identity-authority';
 import { withFirstPasswordAuthority } from '../first-password-context';
 import { normalizeAccountEmail } from '../../normalize-email';
-import { providerTokenHash } from '../provider-security-context';
 
 let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 const digest = () => randomBytes(32).toString('hex');
@@ -123,25 +121,16 @@ describe('bounded first-password pending-hash scrubbing', () => {
     }
     expect(cleared).toBe(rows.length);
   });
-  it('scrubs the old account hash after its stable binding selected a later deleted account, without editing the tombstone', async () => {
+  it('scrubs by the account the challenge names alone: its binding columns steer nothing (#7596 B5c2)', async () => {
     const old = await seedPrepared();
     const later = await environment.actor('current-store', 'canonical-token', { password: false, provider: 'apple' });
-    const bindingId = providerTokenHash(later.actor.browserBindingToken);
+    // A binding hash that names a later, deleted account's session.
     await environment.database
       .update(authFirstPasswordChallenges)
-      .set({ browserBindingHash: bindingId })
+      .set({ browserBindingHash: digest() })
       .where(eq(authFirstPasswordChallenges.challengeHash, old.challengeHash));
     await environment.database.delete(users).where(eq(users.id, later.userId));
-    const [before] = await environment.database
-      .select()
-      .from(authBrowserBindings)
-      .where(eq(authBrowserBindings.id, bindingId));
     expect(await scrub()).toEqual({ observed: 1, scrubbed: 1 });
-    const [after] = await environment.database
-      .select()
-      .from(authBrowserBindings)
-      .where(eq(authBrowserBindings.id, bindingId));
-    expect(after).toEqual(before);
     expect((await stored(old.challengeHash)).pendingPasswordHash).toBeNull();
   });
   it('stops by its database-clock work budget during observed real per-write delay rather than draining every candidate', async () => {
@@ -224,20 +213,15 @@ describe('bounded first-password pending-hash scrubbing', () => {
         legacySecret: environment.secret,
         emailBindingKey: 'first-password-maintenance-owned-private-key-6975',
       });
-      const issued = await requestFirstPasswordChallenge(environment.database, runtime, { actor: owner.actor });
-      const bound = {
-        actor: owner.actor,
-        challengeToken: issued.challengeToken,
-        browserIntentToken: issued.browserIntentToken,
-      };
+      const issued = await requestFirstPasswordChallenge(environment.database, runtime, { actor: owner.webActor });
+      const bound = { actor: owner.webActor, challengeToken: issued.challengeToken };
       const prepared = await prepareFirstPasswordChallenge(environment.database, runtime, {
         ...bound,
         confirmationToken: issued.mailPlan.token,
         password: ' owned maintenance password ',
         confirmPassword: ' owned maintenance password ',
       });
-      const candidate = await environment.candidate(prepared, 'canonical-token');
-      const command = { ...bound, ...prepared, candidate };
+      const command = { ...bound, ...prepared };
       const challengeHash = firstPasswordTokenHash('challenge', issued.challengeToken);
       await environment.database.execute(
         sql`UPDATE auth_first_password_challenges SET expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE challenge_hash=${challengeHash}`,

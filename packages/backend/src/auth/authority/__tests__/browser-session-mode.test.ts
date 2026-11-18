@@ -128,13 +128,44 @@ describe('the better-auth startup preconditions', () => {
 
   it('have a case for every code but the cutover and provider-security ones', () => {
     const tested = new Set<string>(cases.map(([code]) => code));
-    const ownDescribe = new Set<string>([errors.cutoverIncomplete, errors.providerSecurityNeedsBrowserSession]);
+    const ownDescribe = new Set<string>([
+      errors.cutoverIncomplete,
+      errors.providerSecurityNeedsBrowserSession,
+      errors.firstPasswordNeedsBrowserSession,
+    ]);
     expect(Object.values(errors).filter((code) => !ownDescribe.has(code) && !tested.has(code))).toEqual([]);
   });
 
   it('do not need the legacy bridge or the web sign-out writer', () => {
     const without: Change = { AUTH_LEGACY_BRIDGE_MODE: undefined, CURRENT_STORE_WEB_SIGNOUT_MODE: undefined };
     expect(refusal(() => preconditions({ ...READY, ...without }))).toBeUndefined();
+  });
+});
+
+// #7596 B5c2: first password acts only for a canonical web session too.
+describe('first password needs better-auth first', () => {
+  it.each([{}, { AUTH_BROWSER_SESSION_MODE: 'legacy' }])(
+    'refuses first password backend-staging with %j',
+    (environment) => {
+      expect(
+        refusal(() =>
+          assertBrowserSessionModeConfiguration({
+            ...environment,
+            CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging',
+          }),
+        ),
+      ).toBe(errors.firstPasswordNeedsBrowserSession);
+    },
+  );
+
+  it('passes first password backend-staging under better-auth, which then meets its own checks', () => {
+    expect(
+      refusal(() => preconditions({ ...READY, CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging' })),
+    ).toBeUndefined();
+  });
+
+  it.each([undefined, '', 'legacy'])('leaves first password %j alone on a legacy start', (mode) => {
+    expect(() => assertBrowserSessionModeConfiguration({ CURRENT_STORE_FIRST_PASSWORD_MODE: mode })).not.toThrow();
   });
 });
 
@@ -191,6 +222,11 @@ describe('backend startup', () => {
       'provider security staged without better-auth',
       { CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging' },
       errors.providerSecurityNeedsBrowserSession,
+    ],
+    [
+      'first password staged without better-auth',
+      { CURRENT_STORE_FIRST_PASSWORD_MODE: 'backend-staging' },
+      errors.firstPasswordNeedsBrowserSession,
     ],
   ])('refuses %s before any external initialization', async (_label, environment, refusalCode) => {
     for (const [name, content] of Object.entries(environment)) vi.stubEnv(name, content);

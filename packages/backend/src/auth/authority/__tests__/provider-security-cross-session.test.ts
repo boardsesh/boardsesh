@@ -16,7 +16,6 @@ import { bindProviderSecurityFlow, createProviderSecurityIntent } from '../provi
 import { reauthenticateProviderWithPassword } from '../provider-security-reauthentication';
 import { abortProviderSecurityMutation, acknowledgeProviderSecurityResult } from '../provider-security-terminal';
 import { providerTokenHash } from '../provider-security-context';
-import { sessionTokenDigest } from '../session-token';
 import { recordFunctionLevelIdentityMirrorForTests } from '../mirror-activation';
 
 // #7596 B5c1 review S2-1: what the browser binding proved, the session token,
@@ -28,25 +27,6 @@ let environment: Awaited<ReturnType<typeof createProviderSecurityEnvironment>>;
 type Owner = Awaited<ReturnType<typeof environment.actor>>;
 const password = ' exact password ';
 
-/** A new login of the same account: another live canonical session. */
-async function secondSession(owner: Owner): Promise<ProviderSecurityActor> {
-  const sessionId = randomUUID();
-  const token = randomBytes(32).toString('base64url');
-  await environment.database.insert(authSession).values({
-    id: sessionId,
-    userId: owner.userId,
-    token: sessionTokenDigest(token),
-    expiresAt: new Date(Date.now() + 3_600_000),
-    updatedAt: new Date(),
-    originalAuthenticatedAt: new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000),
-    revocationGeneration: 0,
-  });
-  return {
-    presented: { kind: 'canonical-token', token },
-    expectedUserId: owner.userId,
-    expectedAuthSessionId: sessionId,
-  };
-}
 function appleProof(subject = randomUUID()) {
   return { provider: 'apple' as const, subject, email: 'verified@example.test', emailVerified: true };
 }
@@ -222,7 +202,7 @@ describe('provider security across sessions, callbacks and replays (#7596 B5c1)'
 
   it('a second live session of the same account (a new login mid-flow) cannot drive it either', async () => {
     const owner = await environment.actor('better-auth', 'canonical-token');
-    await driveWithOtherSession(owner, await secondSession(owner), [owner.userId]);
+    await driveWithOtherSession(owner, (await environment.secondSession(owner)).webActor, [owner.userId]);
   });
 
   it('a callback with another state hash is not verified, writes no provider row and ends the intent', async () => {

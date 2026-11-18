@@ -2,14 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { hash } from 'bcryptjs';
-import { vi } from 'vite-plus/test';
 import { authCredentialLineage, authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
-import type {
-  BrowserBindingActor,
-  ProviderSecurityActor,
-  ProviderSecurityProvider,
-  WebCredentialProof,
-} from '@boardsesh/auth-protocol';
+import type { BrowserBindingActor, ProviderSecurityActor, ProviderSecurityProvider } from '@boardsesh/auth-protocol';
 import { createEnvironment } from './environment';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation-context';
 import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-reservations';
@@ -207,6 +201,26 @@ export async function createProviderSecurityDriver(input: {
     };
     return { userId, sid, authenticatedAt, sourceExpiresAt: expiresAt, actor: presented, webActor, credential };
   }
+  /** A new login of the same account: another live canonical session, and its credential. */
+  async function secondSession(owner: Awaited<ReturnType<typeof actor>>) {
+    const sessionId = randomUUID();
+    const token = randomBytes(32).toString('base64url');
+    await environment.database.insert(authSession).values({
+      id: sessionId,
+      userId: owner.userId,
+      token: sessionTokenDigest(token),
+      expiresAt: new Date(Date.now() + 3_600_000),
+      updatedAt: new Date(),
+      originalAuthenticatedAt: new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000),
+      revocationGeneration: 0,
+    });
+    const webActor: ProviderSecurityActor = {
+      presented: { kind: 'canonical-token', token },
+      expectedUserId: owner.userId,
+      expectedAuthSessionId: sessionId,
+    };
+    return { sessionId, webActor, credential: { kind: 'canonical-token' as const, token } };
+  }
   async function prepareLink(owner: Awaited<ReturnType<typeof actor>>, provider: ProviderSecurityProvider = 'apple') {
     const intent = await createProviderSecurityIntent(environment.database, runtime, {
       actor: owner.webActor,
@@ -231,40 +245,5 @@ export async function createProviderSecurityDriver(input: {
     if (prepared.outcome !== 'prepared') throw new Error('Owned provider preparation refused');
     return { ...intent, ...bound, ...proof, ...prepared, subject };
   }
-  async function candidate(
-    prepared: {
-      readonly proposedCanonicalToken: string | null;
-      readonly credentialProof: WebCredentialProof;
-      readonly credentialExpiresAt: Date;
-    },
-    kind: BrowserBindingActor['kind'],
-  ) {
-    if (kind === 'canonical-token') {
-      if (!prepared.proposedCanonicalToken) throw new Error('Missing private canonical proposal');
-      return { kind, credential: prepared.proposedCanonicalToken };
-    }
-    const proof = prepared.credentialProof;
-    const fixedMilliseconds = Math.floor(Date.now() / 1000) * 1000;
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(fixedMilliseconds);
-    try {
-      return {
-        kind,
-        credential: await jwt.encode({
-          secret,
-          maxAge: prepared.credentialExpiresAt.getTime() / 1000 - fixedMilliseconds / 1000,
-          token: {
-            sub: proof.userId,
-            authSessionId: proof.authSessionId,
-            gen: proof.generation,
-            ...(proof.authenticatedAt ? { auth_time: Date.parse(proof.authenticatedAt) / 1000 } : {}),
-            ...(proof.linkGuarded ? { link_guarded: true } : {}),
-            ...(proof.requiresAccountCutoff ? { legacy_no_sid: true } : {}),
-          },
-        }),
-      };
-    } finally {
-      clock.mockRestore();
-    }
-  }
-  return { runtime, qualification, secret, passwordHash, actor, selectAuthority, prepareLink, candidate };
+  return { runtime, qualification, secret, passwordHash, actor, secondSession, selectAuthority, prepareLink };
 }

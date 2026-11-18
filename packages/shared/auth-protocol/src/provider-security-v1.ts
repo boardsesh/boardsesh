@@ -17,9 +17,9 @@ const timestamp = z.iso.datetime();
 const subject = z.string().min(1).max(1024);
 const identityId = z.string().min(1).max(1024);
 /**
- * The browser-binding actor. Only the owned-provider sign-in commands and
- * first password still take it, until #7596 B5a and B5c2 move them to the web
- * session and B5d deletes the binding.
+ * The browser-binding actor. Only the owned-provider sign-in commands still
+ * take it, until #7596 B5a moves them to the web session and B5d deletes the
+ * binding.
  */
 export const browserBindingActorSchema = z
   .object({
@@ -33,14 +33,15 @@ export const browserBindingActorSchema = z
   .strict();
 export type BrowserBindingActor = z.infer<typeof browserBindingActorSchema>;
 /**
- * The actor of provider link, unlink and reauthentication: the first-party web
+ * The actor of provider link, unlink, reauthentication and first password: the first-party web
  * session www read from the cookie (the canonical token after its signature
  * checked out, or the joined legacy NextAuth cookie), and who the tab believed
  * it was signed in as. Every step presents the same session; none rotates it.
  */
-const actor = z
+export const webSessionActorSchema = z
   .object({ presented: presentedWebSessionSchema, expectedUserId: identityId, expectedAuthSessionId: identityId })
   .strict();
+const actor = webSessionActorSchema;
 const metadata = {
   providerSecurityVersion: z.literal(PROVIDER_SECURITY_VERSION),
   requestId: z.uuidv4(),

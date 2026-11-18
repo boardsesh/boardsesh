@@ -34,6 +34,7 @@ export function readBrowserSessionMode(
 export const BROWSER_SESSION_COOKIE_SECRET_ENV = 'AUTH_BROWSER_SESSION_COOKIE_SECRET';
 export const BROWSER_ACCESS_TOKEN_SECRET_ENV = 'AUTH_BROWSER_ACCESS_TOKEN_SECRET';
 const PROVIDER_SECURITY_MODE_ENV = 'CURRENT_STORE_PROVIDER_SECURITY_MODE';
+const FIRST_PASSWORD_MODE_ENV = 'CURRENT_STORE_FIRST_PASSWORD_MODE';
 
 /**
  * Phase B work (#7596) that must land before a browser can be served a
@@ -71,6 +72,7 @@ export const BROWSER_SESSION_STARTUP_ERRORS = Object.freeze({
   secretReused: 'AUTH_BROWSER_SESSION_SECRET_REUSED',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE',
   providerSecurityNeedsBrowserSession: 'AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED',
+  firstPasswordNeedsBrowserSession: 'AUTH_FIRST_PASSWORD_BROWSER_SESSION_REQUIRED',
 } as const);
 
 export type BrowserSessionStartupErrorCode =
@@ -169,6 +171,11 @@ export function browserSessionModeChecker(cutoverBlockers: readonly string[]) {
     refuseUnless(
       environment[PROVIDER_SECURITY_MODE_ENV] !== 'backend-staging' || browserSessionMode === 'better-auth',
       BROWSER_SESSION_STARTUP_ERRORS.providerSecurityNeedsBrowserSession,
+    );
+    // First password does the same since B5c2.
+    refuseUnless(
+      environment[FIRST_PASSWORD_MODE_ENV] !== 'backend-staging' || browserSessionMode === 'better-auth',
+      BROWSER_SESSION_STARTUP_ERRORS.firstPasswordNeedsBrowserSession,
     );
     if (browserSessionMode === 'legacy') return;
     assertBetterAuthPreconditions(environment);

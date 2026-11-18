@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
-import { authBrowserBindings, authBrowserIntents, authFirstPasswordChallenges, users } from '@boardsesh/db/schema/auth';
+import { and, asc, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { authFirstPasswordChallenges, users } from '@boardsesh/db/schema/auth';
 import { firstPasswordMode } from '@boardsesh/auth-protocol';
 import type { AuthorityDatabase } from './adapter';
 import { captureIdentityAuthority, revalidateIdentityAuthority, type IdentityAuthorityQualification } from './router';
@@ -12,7 +12,7 @@ export const FIRST_PASSWORD_SCRUB_BUDGET_MS = 750;
 
 /** Scrub secrets only, never delete accounts, challenges or replay receipts.
  * The batch has a DB-clock work budget and short individual SQL/lock bounds.
- * Busy users, selections, intents and challenges are retried on the next tick. */
+ * Busy users and challenges are retried on the next tick. */
 export async function scrubExpiredFirstPasswordPreparations(
   database: AuthorityDatabase,
   qualificationInput: IdentityAuthorityQualification,
@@ -29,8 +29,6 @@ export async function scrubExpiredFirstPasswordPreparations(
       .select({
         hash: authFirstPasswordChallenges.challengeHash,
         userId: authFirstPasswordChallenges.userId,
-        bindingId: authFirstPasswordChallenges.browserBindingHash,
-        intentId: authFirstPasswordChallenges.browserIntentHash,
       })
       .from(authFirstPasswordChallenges)
       .where(
@@ -46,43 +44,14 @@ export async function scrubExpiredFirstPasswordPreparations(
     let scrubbed = 0;
     for (const candidate of candidates) {
       if (!(await withinBudget())) break;
-      // A correlation binding may now belong to a later account. Observe it,
-      // lock both fixed old UID and current selected UID in sorted order, then
-      // lock/reread the binding before acquiring intent/challenge locks.
-      const [observedBinding] = await transaction
-        .select({ userId: authBrowserBindings.userId })
-        .from(authBrowserBindings)
-        .where(eq(authBrowserBindings.id, candidate.bindingId));
-      const userIds = [
-        ...new Set([candidate.userId, ...(observedBinding?.userId ? [observedBinding.userId] : [])]),
-      ].sort();
-      const presentUsers = await transaction.select({ id: users.id }).from(users).where(inArray(users.id, userIds));
-      const lockedUsers = await transaction
+      // The account's users row first, as every first-password command takes
+      // it (#7596 B5c2: no browser binding or intent row is involved any more).
+      const [lockedUser] = await transaction
         .select({ id: users.id })
         .from(users)
-        .where(inArray(users.id, userIds))
-        .orderBy(asc(users.id))
+        .where(eq(users.id, candidate.userId))
         .for('update', { skipLocked: true });
-      if (!presentUsers.some((user) => user.id === candidate.userId) || lockedUsers.length !== presentUsers.length)
-        continue;
-      if (!(await withinBudget())) break;
-      const [binding] = await transaction
-        .select({ userId: authBrowserBindings.userId })
-        .from(authBrowserBindings)
-        .where(eq(authBrowserBindings.id, candidate.bindingId))
-        .for('update', { skipLocked: true });
-      if (observedBinding && (!binding || binding.userId !== observedBinding.userId)) continue;
-      if (!(await withinBudget())) break;
-      const [observedIntent] = await transaction
-        .select({ id: authBrowserIntents.id })
-        .from(authBrowserIntents)
-        .where(eq(authBrowserIntents.id, candidate.intentId));
-      const [intent] = await transaction
-        .select({ id: authBrowserIntents.id })
-        .from(authBrowserIntents)
-        .where(eq(authBrowserIntents.id, candidate.intentId))
-        .for('update', { skipLocked: true });
-      if (observedIntent && !intent) continue;
+      if (!lockedUser) continue;
       if (!(await withinBudget())) break;
       const [challenge] = await transaction
         .select()

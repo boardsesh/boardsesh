@@ -30,7 +30,8 @@ import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../../current-store/foundation
 import { firstPasswordConfiguration } from '../first-password-configuration';
 import { firstPasswordTokenHash } from '../first-password-challenges';
 import { bindIdentityAuthority } from '../identity-authority';
-import { readBrowserBinding } from '../browser-binding';
+import { readFirstPartySession } from '../session-reader';
+import { readLockedWebSubjectState } from '../../current-store/web-credential-state';
 import { sessionTokenDigest } from '../session-token';
 import { closeCredentialDatabase, getCredentialDatabase } from '../../credential-database';
 import { handleFirstPassword } from '../../../handlers/first-password';
@@ -161,14 +162,10 @@ async function actor(selected: IdentityAuthorityName, kind: BrowserBindingActor[
 }
 async function prepare(selected: IdentityAuthorityName, kind: BrowserBindingActor['kind']) {
   const fixture = await actor(selected, kind);
-  const issuedReply = await post('request', { actor: fixture.owner.actor });
+  const issuedReply = await post('request', { actor: fixture.owner.webActor });
   expect(issuedReply.status).toBe(200);
   const issued = success(issuedReply.body, 'request');
-  const bound = {
-    actor: fixture.owner.actor,
-    challengeToken: issued.challengeToken,
-    browserIntentToken: issued.browserIntentToken,
-  };
+  const bound = { actor: fixture.owner.webActor, challengeToken: issued.challengeToken };
   const preparedReply = await post('prepare', {
     ...bound,
     confirmationToken: issued.mailPlan.token,
@@ -177,11 +174,7 @@ async function prepare(selected: IdentityAuthorityName, kind: BrowserBindingActo
   });
   expect(preparedReply.status).toBe(200);
   const prepared = success(preparedReply.body, 'prepare');
-  const candidate = await fixture.driver.candidate(
-    { ...prepared, credentialExpiresAt: new Date(prepared.credentialExpiresAt) },
-    kind,
-  );
-  return { ...fixture, ...issued, ...prepared, ...bound, candidate };
+  return { ...fixture, ...issued, ...prepared, ...bound };
 }
 async function stored(token: string) {
   const [challenge] = await environment.ownerDatabase
@@ -194,9 +187,7 @@ function finalizeInput(command: Awaited<ReturnType<typeof prepare>>) {
   return {
     actor: command.actor,
     challengeToken: command.challengeToken,
-    browserIntentToken: command.browserIntentToken,
     preparationToken: command.preparationToken,
-    candidate: command.candidate,
   };
 }
 function recoveryInput(command: Awaited<ReturnType<typeof prepare>>) {
@@ -265,8 +256,22 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
     await environment?.close();
   });
   for (const selected of ['current-store', 'better-auth'] as const) {
-    for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
-      it(`${selected}/${kind}: actual default private commands preserve source and share the reviewed web/browser/provider handle`, async () => {
+    it(`${selected}: a legacy NextAuth cookie is told to bridge first and gets no challenge`, async () => {
+      const fixture = await actor(selected, 'legacy-jwe');
+      const refused = await post('request', { actor: fixture.owner.webActor });
+      expect(refused).toMatchObject({
+        status: 403,
+        body: { operation: 'request', outcome: 'canonical_session_required', code: 'canonical_session_required' },
+      });
+      expect(
+        await environment.ownerDatabase
+          .select()
+          .from(authFirstPasswordChallenges)
+          .where(eq(authFirstPasswordChallenges.userId, fixture.owner.userId)),
+      ).toHaveLength(0);
+    });
+    for (const kind of ['canonical-token'] as const) {
+      it(`${selected}/${kind}: actual default private commands keep this session and share the reviewed web/browser/provider handle`, async () => {
         // Canonical possession has no dependency on the JWE reader key.
         if (kind === 'canonical-token') vi.stubEnv('NEXTAUTH_SECRET', '');
         const fixture = await actor(selected, kind);
@@ -275,14 +280,10 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
           expect(await getCredentialDatabase(contract)).toBe(writer);
         const principal = await environment.writer`SELECT current_user AS role,session_user AS login`;
         expect(principal[0]).toEqual({ role: 'boardsesh_identity_writer', login: 'boardsesh_identity_writer' });
-        const issuedReply = await post('request', { actor: fixture.owner.actor });
+        const issuedReply = await post('request', { actor: fixture.owner.webActor });
         expect(issuedReply.status).toBe(200);
         const issued = success(issuedReply.body, 'request');
-        const bound = {
-          actor: fixture.owner.actor,
-          challengeToken: issued.challengeToken,
-          browserIntentToken: issued.browserIntentToken,
-        };
+        const bound = { actor: fixture.owner.webActor, challengeToken: issued.challengeToken };
         const before = await stored(issued.challengeToken);
         expect(success((await post('read', bound)).body, 'read').outcome).toBe('pending');
         expect(await stored(issued.challengeToken)).toEqual(before);
@@ -303,27 +304,20 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
           ).readPassword(fixture.owner.userId),
         );
         expect(absent).toBeNull();
-        const candidate = await fixture.driver.candidate(
-          { ...prepared, credentialExpiresAt: new Date(prepared.credentialExpiresAt) },
-          kind,
-        );
-        const command = { ...bound, preparationToken: prepared.preparationToken, candidate };
+        const command = { ...bound, preparationToken: prepared.preparationToken };
         const finalized = await post('finalize', command);
         expect(finalized.status).toBe(200);
         const committed = success(finalized.body, 'finalize');
+        expect(committed.generation).toBe(1);
         expect((await stored(issued.challengeToken)).pendingPasswordHash).toBeNull();
         const recovered = await post('recover', { ...command, recoveryToken: issued.recoveryToken });
         expect(recovered.status).toBe(200);
-        expect(success(recovered.body, 'recover').candidateCredentialHash).toBe(committed.candidateCredentialHash);
-        const credential =
-          kind === 'canonical-token'
-            ? { kind, token: candidate.credential }
-            : { kind, credential: candidate.credential, secret: sourceSecret };
-        const current = await readBrowserBinding(
-          writer,
-          fixture.driver.qualification,
-          fixture.owner.actor.browserBindingToken,
-          { version: committed.browserCursor.version, credential },
+        expect(success(recovered.body, 'recover').generation).toBe(committed.generation);
+        // The same session token continues at the new generation; nothing was minted.
+        const current = await writer.transaction((transaction) =>
+          readFirstPartySession(transaction, fixture.owner.credential, new Date(), (userId) =>
+            readLockedWebSubjectState(transaction, userId),
+          ),
         );
         if (current.status !== 'admitted') throw new Error('Owned HTTP continuation refused');
         expect(current.session).toMatchObject({
@@ -331,9 +325,9 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
           authSessionId: fixture.owner.sid,
           generation: 1,
           authenticatedAt: fixture.owner.authenticatedAt,
-          linkGuarded: kind !== 'legacy-jwe',
+          linkGuarded: true,
         });
-        expect(current.session.expiresAt.toISOString()).toBe(prepared.credentialExpiresAt);
+        expect(current.session.expiresAt).toEqual(fixture.owner.sourceExpiresAt);
         const [verified] = await environment.ownerDatabase
           .select()
           .from(users)
@@ -367,12 +361,9 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
   it('rejects disabled, unauthorized, malformed UTF8-sized and stale requests before any command pool is acquired', async () => {
     const payload = {
       actor: {
-        kind: 'canonical-token',
-        credential: 'unadmitted-source',
+        presented: { kind: 'canonical-token', token: 'unadmitted-source' },
         expectedUserId: 'fixed',
         expectedAuthSessionId: 'sid',
-        browserBindingToken: 'b'.repeat(43),
-        browserVersion: 1,
       },
     };
     // A deliberately invalid target proves early replies do not touch either pool.
@@ -382,7 +373,28 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
     vi.stubEnv('CURRENT_STORE_FIRST_PASSWORD_MODE', 'backend-staging');
     expect((await post('request', payload, { authorization: 'Bearer wrong-private-service-secret' })).status).toBe(401);
     expect((await post('request', { ...payload, email: 'attacker@example.test' })).status).toBe(400);
-    expect((await post('request', { actor: { ...payload.actor, credential: '🧗'.repeat(4097) } })).status).toBe(400);
+    expect(
+      (
+        await post('request', {
+          actor: { ...payload.actor, presented: { kind: 'canonical-token', token: '🧗'.repeat(4097) } },
+        })
+      ).status,
+    ).toBe(400);
+    // The browser-binding actor shape is refused.
+    expect(
+      (
+        await post('request', {
+          actor: {
+            kind: 'canonical-token',
+            credential: 'unadmitted-source',
+            expectedUserId: 'fixed',
+            expectedAuthSessionId: 'sid',
+            browserBindingToken: 'b'.repeat(43),
+            browserVersion: 1,
+          },
+        })
+      ).status,
+    ).toBe(400);
     expect((await post('request', payload, { issuedAt: new Date(Date.now() - 300_000).toISOString() })).status).toBe(
       400,
     );
@@ -392,7 +404,7 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
     const fixture = await actor('better-auth', 'canonical-token');
     await closeCredentialDatabase();
     vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', 'private-provider-v1');
-    const reply = await post('request', { actor: fixture.owner.actor });
+    const reply = await post('request', { actor: fixture.owner.webActor });
     expect(reply.status).toBe(503);
     expect(reply.body).toMatchObject({ outcome: 'unavailable', code: 'authority_unavailable' });
     expect(
@@ -402,7 +414,7 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
         .where(eq(authFirstPasswordChallenges.userId, fixture.owner.userId)),
     ).toHaveLength(0);
   });
-  it('never ACKs primary unavailability; exact held-candidate recovery succeeds after restoring the read', async () => {
+  it('never ACKs primary unavailability; recovery by the same session succeeds after restoring the read', async () => {
     const command = await prepare('better-auth', 'canonical-token');
     expect((await post('finalize', finalizeInput(command))).status).toBe(200);
     await environment.owner`REVOKE SELECT ON auth_session FROM boardsesh_identity_writer`;
@@ -410,7 +422,7 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
       const denied = await post('recover', recoveryInput(command));
       expect(denied.status).toBe(503);
       expect(denied.body).toMatchObject({ outcome: 'unavailable', code: 'authority_unavailable' });
-      expect(JSON.stringify(denied.body)).not.toContain('candidateCredentialHash');
+      expect(denied.body).not.toHaveProperty('generation');
     } finally {
       await environment.owner`GRANT SELECT ON auth_session TO boardsesh_identity_writer`;
     }
