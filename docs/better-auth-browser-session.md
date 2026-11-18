@@ -324,6 +324,49 @@ a credential proof together, the proof's `authSessionId` and `generation` are
 the issued session's, so the legacy NextAuth cookie www writes from the proof
 during the 30-day rollback window names the same session.
 
+## www login, sign-out and session read (B1c)
+
+Under `AUTH_BROWSER_SESSION_MODE=better-auth`, the `/api/auth/[...nextauth]`
+route moves three answers to the first-party cookie
+(`packages/web/app/lib/auth/browser-session-route.server.ts`). With the mode
+unset, empty or `legacy` the route is the code it was, and
+`packages/web/auth-proofs/legacy-route-snapshot.integration.proof.ts` pins its
+status, body and `Set-Cookie` list for login, session read and sign-out.
+
+The mode is read on the server for each request
+(`browser-session-mode.server.ts`). `legacy` reads nothing else: no codec, no
+secret. `better-auth` checks www's own preconditions once per configuration
+(the private channel's origin and secret, the staged web auth mode, proof mode
+`required`, `NEXTAUTH_SECRET` and `AUTH_BROWSER_SESSION_COOKIE_SECRET` of at
+least 32 bytes, the cookie secret used for nothing else, a secure context
+whenever `NODE_ENV=production`, and a cookie domain the codec accepts). With
+one missing, or with any other mode value, every `/api/auth/*` route answers
+503 and the log names one `AUTH_BROWSER_SESSION_WEB_*` code, never a value.
+
+Reading the cookies (`browser-session.server.ts`). The `Cookie` header goes to
+the codec as received. A verified login cookie outranks a bridged one. A login
+name sent as differing copies means signed out: neither the bridged nor the
+legacy cookie stands in for it. With no first-party cookie, the legacy NextAuth
+cookie (joined from its chunks) is presented, unless it is longer than
+`LEGACY_WEB_SESSION_CREDENTIAL_MAX_LENGTH` (12,288), in which case nothing is
+presented and the login still goes through. The cookie name never decides
+anything about the session; freshness and source come from the session row.
+
+| Request | Under `better-auth` |
+| --- | --- |
+| `POST /api/auth/callback/credentials` | The staged password command with `webSession: { presented }` and the trusted `clientAddress`. A verified login must come back with the session and a credential proof naming the same session id and generation, so NextAuth's unchanged reply writes the legacy cookie for the rollback window on the same session. After NextAuth's own headers come the host-only legacy clear (as today), clears of the bridged name in both scopes, the host-only copy of the login name where the login cookie is written with a Domain (left out on host-only deployments, where it would delete the cookie just written), and the login cookie last. The login cookie name comes from how the session was obtained in this request, never from a session read's `source`. A wrong password or a login awaiting email verification changes no session cookie. A session issued without NextAuth writing its cookie, or the reverse, answers 503. |
+| `POST /api/auth/signout` | The same form fields and the same 400, 409 and 503 answers as today. No session, or a conflicted login cookie, is 409. NextAuth's own handler still checks the CSRF token; a refusal goes back without revocation or clears. The backend `signout` command gets the first-party token when there is one, else the legacy cookie, with the expected viewer. `signed_out` clears both legacy names with every chunk (today's clears) and both first-party names in both scopes, plus the plain names the request carried. `identity_changed` is 409 and an outage is 503, and neither clears anything. |
+| `GET` or `POST /api/auth/session` | With a first-party cookie, the backend `session` command answers in today's JSON shape: `user { name, email, image, id }`, `expires`, `authGeneration` and `authSessionId`, which the session guard keys on. No live session is `{}`, an outage is 503. With only a legacy cookie, the legacy path answers as today (B2 bridges it). Neither writes or clears a session cookie: NextAuth's rewrite of the legacy cookie is removed. |
+| `GET /api/auth/csrf` | The legacy path with every session `Set-Cookie` removed. |
+| Everything else | The legacy path unchanged. Google, Apple and the native transfer still write only the legacy cookie until B4c and B5. |
+
+A command reply counts only when its body parses as that command's reply, with
+the status that reply is sent with. The transport's 401
+`{ "error": "unauthorized" }`, a 404 `disabled` and any unparseable body are
+unavailable (503), never signed out, so no cookie is cleared on a status
+alone. `packages/web/auth-proofs/web-session-cookie.integration.proof.ts` runs
+the route against the real backend handlers over HTTP and real PostgreSQL.
+
 ## One guard in each browser client
 
 Each browser surface gets one guard in its transport, keyed by who a request
@@ -602,9 +645,10 @@ What the code does in Phase A:
   start. `better-auth` refuses to start too, with an error that says B1
   (#7596) has not landed, because nothing serves a Better Auth browser
   session yet. B1 replaces that refusal with its startup preconditions.
-- **www.** No reader. Nothing on www changes with the mode until B4. B4 adds a
-  server-side reader at request time that passes resolved values to client
-  components as props, as `app/layout.tsx` already does with
+- **www.** Since B1c, `browserSessionRouteMode()` reads it on the server for
+  each `/api/auth/*` request (see "www login, sign-out and session read").
+  Server renders and private routes follow in B4, which passes resolved values
+  to client components as props, as `app/layout.tsx` already does with
   `enableExpoAuthBridge`. It is never `NEXT_PUBLIC_*`, which is baked in at
   build time, so a rollback would need a rebuild.
 - **Expo web.** No flag.
