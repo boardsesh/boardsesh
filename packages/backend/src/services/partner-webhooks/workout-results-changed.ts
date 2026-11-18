@@ -24,6 +24,13 @@ type FinishedWorkout = { id: string; userId: string; sessionId: string | null; c
  * completion event still waiting to be relayed. That waiting event reaches the
  * app after the change committed, so the app's read already sees it; this also
  * covers the common case of a last tick saved just before End.
+ *
+ * Lock order: the workout row, then its debounce row. `recordSessionWorkout`
+ * holds the workout `FOR UPDATE` (recoverAppWorkoutPlan) before it marks, so
+ * the producer takes `FOR KEY SHARE` here, in id order, before it inserts a
+ * debounce row whose foreign-key check would otherwise ask for that lock while
+ * already holding the new row: a deadlock. The producer's earlier cursor
+ * `FOR UPDATE` is a row no other path takes, so it adds no cycle.
  */
 function resendableWorkouts(
   transaction: FeedTransaction,
@@ -59,7 +66,9 @@ function resendableWorkouts(
             ),
         ),
       ),
-    );
+    )
+    .orderBy(asc(appWorkouts.id))
+    .for('key share', { of: appWorkouts });
 }
 
 /** Queues a re-send for each workout; the minute job sends it once its spacing allows. */
