@@ -46,7 +46,10 @@ try {
   await writeFile(path.join(payload, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   const artifacts = path.join(packageRoot, 'artifacts');
   await mkdir(artifacts, { recursive: true });
-  execFileSync('tar', ['-czf', path.join(artifacts, `boardsesh-mcp-${manifest.version}.tgz`), '-C', stage, 'package']);
+  // Stream the archive so GNU tar never interprets a Windows drive-letter
+  // filename as a remote host. cwd is resolved by Node on every platform.
+  const archive = execFileSync('tar', ['-czf', '-', 'package'], { cwd: stage, maxBuffer: 16 * 1024 * 1024 });
+  await writeFile(path.join(artifacts, `boardsesh-mcp-${manifest.version}.tgz`), archive);
 } finally {
   await rm(stage, { recursive: true, force: true });
 }

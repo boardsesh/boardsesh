@@ -7,6 +7,9 @@ const execute = promisify(execFile);
 /** Paths enter through the environment, never PowerShell source or a shell. */
 const PRIVATE_ACL_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
+# A PowerShell 7 parent can pass an incompatible PSModulePath to Windows
+# PowerShell 5.1. Use .NET Framework directly and require no module autoload.
+$PSModuleAutoLoadingPreference = 'None'
 $target = $env:BOARDSESH_MCP_ACL_PATH
 $operation = $env:BOARDSESH_MCP_ACL_OPERATION
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
@@ -16,10 +19,10 @@ $directoryAcl.SetAccessRuleProtection($true, $false)
 $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
 $directoryRule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
 $directoryAcl.AddAccessRule($directoryRule)
-if ($operation -eq 'secure-directory' -and -not (Test-Path -LiteralPath $target)) {
+if ($operation -eq 'secure-directory' -and -not [System.IO.Directory]::Exists($target)) {
   # Specify the security descriptor at creation. An elevated token's default
   # owner may be Administrators rather than WindowsIdentity.User.
-  [System.IO.Directory]::CreateDirectory($target, $directoryAcl) | Out-Null
+  [void][System.IO.Directory]::CreateDirectory($target, $directoryAcl)
 } elseif ($operation -eq 'create-file') {
   $fileAcl = [System.Security.AccessControl.FileSecurity]::new()
   $fileAcl.SetOwner($identity)
@@ -29,15 +32,18 @@ if ($operation -eq 'secure-directory' -and -not (Test-Path -LiteralPath $target)
   $stream = [System.IO.FileStream]::new($target, [System.IO.FileMode]::CreateNew, [System.Security.AccessControl.FileSystemRights]::FullControl, [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::None, $fileAcl)
   $stream.Dispose()
 }
-$entry = Get-Item -LiteralPath $target -Force
-if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'mcp-acl:reparse-point' }
-$acl = Get-Acl -LiteralPath $target
+$attributes = [System.IO.File]::GetAttributes($target)
+if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'mcp-acl:reparse-point' }
+$isDirectory = ($attributes -band [System.IO.FileAttributes]::Directory) -ne 0
+if ($isDirectory) { $entry = [System.IO.DirectoryInfo]::new($target) }
+else { $entry = [System.IO.FileInfo]::new($target) }
+$acl = $entry.GetAccessControl()
 $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
 if ($owner.Value -ne $identity.Value) { throw 'mcp-acl:wrong-owner' }
 if ($operation -eq 'secure-directory') {
-  if (-not $entry.PSIsContainer) { throw 'mcp-acl:not-directory' }
-  Set-Acl -LiteralPath $target -AclObject $directoryAcl
-  $acl = Get-Acl -LiteralPath $target
+  if (-not $isDirectory) { throw 'mcp-acl:not-directory' }
+  $entry.SetAccessControl($directoryAcl)
+  $acl = $entry.GetAccessControl()
   if (-not $acl.AreAccessRulesProtected) { throw 'mcp-acl:inherited-directory' }
 } elseif ($operation -ne 'check-file' -and $operation -ne 'create-file') { throw 'mcp-acl:unknown-operation' }
 $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
@@ -45,7 +51,7 @@ if ($rules.Count -lt 1) { throw 'mcp-acl:no-access-rules' }
 foreach ($rule in $rules) {
   if ($rule.IdentityReference.Value -ne $identity.Value -or $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'mcp-acl:nonprivate-access' }
 }
-if ($operation -ne 'secure-directory' -and $entry.PSIsContainer) { throw 'mcp-acl:not-file' }
+if ($operation -ne 'secure-directory' -and $isDirectory) { throw 'mcp-acl:not-file' }
 `;
 
 async function runPrivateAcl(

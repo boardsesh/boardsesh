@@ -17,16 +17,20 @@ afterEach(async () => {
 });
 
 async function powershell(path: string, script: string): Promise<string> {
-  const result = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
-    env: { ...process.env, BOARDSESH_MCP_ACL_TEST_PATH: path },
-    timeout: 15_000,
-    windowsHide: true,
-  });
+  const result = await execute(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `$PSModuleAutoLoadingPreference = 'None'\n${script}`],
+    {
+      env: { ...process.env, BOARDSESH_MCP_ACL_TEST_PATH: path },
+      timeout: 15_000,
+      windowsHide: true,
+    },
+  );
   return result.stdout.trim();
 }
 
 describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () => {
-  it('protects a private directory and rejects credentials readable by Everyone', async () => {
+  it('protects storage without module autoload and rejects credentials readable by Everyone', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'boardsesh-mcp-acl-'));
     directories.push(parent);
     const directory = join(parent, 'private-profile');
@@ -37,12 +41,12 @@ describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () 
       String.raw`
       $ErrorActionPreference = 'Stop'
       $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-      $acl = Get-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH
+      $acl = [System.IO.DirectoryInfo]::new($env:BOARDSESH_MCP_ACL_TEST_PATH).GetAccessControl()
       if (-not $acl.AreAccessRulesProtected) { throw 'Expected protected DACL' }
       if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'Unexpected owner' }
       $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
       if ($rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value) { throw 'Unexpected access rules' }
-      Write-Output 'private'
+      [Console]::WriteLine('private')
     `,
     );
     expect(directoryVerdict).toBe('private');
@@ -69,11 +73,12 @@ describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () 
       credentials,
       String.raw`
       $ErrorActionPreference = 'Stop'
-      $acl = Get-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH
+      $entry = [System.IO.FileInfo]::new($env:BOARDSESH_MCP_ACL_TEST_PATH)
+      $acl = $entry.GetAccessControl()
       $everyone = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
       $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($everyone, [System.Security.AccessControl.FileSystemRights]::Read, [System.Security.AccessControl.AccessControlType]::Allow)
       $acl.AddAccessRule($rule)
-      Set-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH -AclObject $acl
+      $entry.SetAccessControl($acl)
     `,
     );
     await expect(assertPrivateWindowsFile(credentials)).rejects.toMatchObject({
@@ -93,11 +98,12 @@ describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () 
       String.raw`
       $ErrorActionPreference = 'Stop'
       $principal = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent())
-      if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { Write-Output 'not-elevated'; exit }
-      $acl = Get-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH
+      if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) { [Console]::WriteLine('not-elevated'); exit }
+      $entry = [System.IO.DirectoryInfo]::new($env:BOARDSESH_MCP_ACL_TEST_PATH)
+      $acl = $entry.GetAccessControl()
       $acl.SetOwner([System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
-      Set-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH -AclObject $acl
-      Write-Output 'S-1-5-32-544'
+      $entry.SetAccessControl($acl)
+      [Console]::WriteLine('S-1-5-32-544')
     `,
     );
     if (owner === 'not-elevated') context.skip();
@@ -111,8 +117,8 @@ describe.runIf(process.platform === 'win32')('Windows private storage ACLs', () 
       directory,
       String.raw`
       $ErrorActionPreference = 'Stop'
-      $acl = Get-Acl -LiteralPath $env:BOARDSESH_MCP_ACL_TEST_PATH
-      Write-Output $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+      $acl = [System.IO.DirectoryInfo]::new($env:BOARDSESH_MCP_ACL_TEST_PATH).GetAccessControl()
+      [Console]::WriteLine($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value)
     `,
     );
     expect(remainingOwner).toBe(owner);

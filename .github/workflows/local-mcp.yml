@@ -64,7 +64,10 @@ jobs:
           const root = join(process.env.RUNNER_TEMP, 'mcp-installed');
           const artifact = join(process.env.RUNNER_TEMP, 'mcp-artifact');
           mkdirSync(root, { recursive: true });
-          execFileSync('tar', ['-xzf', join(artifact, 'boardsesh-mcp-0.1.0.tgz'), '-C', root]);
+          execFileSync('tar', ['-xzf', '-'], {
+            cwd: root,
+            input: readFileSync(join(artifact, 'boardsesh-mcp-0.1.0.tgz')),
+          });
           copyFileSync(join(artifact, 'smoke.mjs'), join(root, 'package', 'smoke.mjs'));
           const manifestPath = join(root, 'package', 'package.json');
           const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
