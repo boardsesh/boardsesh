@@ -79,35 +79,35 @@ function presentedOf(owner: Owner): PresentedWebSession {
   return owner.webActor.presented;
 }
 /** One complete sign-in: intent, then resolve, as www sends them. */
-async function signIn(input: {
+type SignIn = {
   provider: WebOAuthProvider;
   subject: string;
   email?: string | null;
   webSession?: WebOAuthSessionRequest;
   actorCookie?: string | null;
   flow?: string;
-}) {
-  const flow = input.flow ?? randomBytes(32).toString('hex');
-  const expected = await authority();
-  const database = environment.database as unknown as DbInstance;
-  const intent = await recordWebOAuthIntent(database, expected, environment.secret, {
+  credentialProof?: boolean;
+};
+async function recordIntent(provider: WebOAuthProvider, flow: string, actorCookie: string | null = null) {
+  return recordWebOAuthIntent(environment.database as unknown as DbInstance, await authority(), environment.secret, {
     webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
     operation: 'intent',
     requestId: randomUUID(),
     issuedAt: new Date().toISOString(),
-    payload: { provider: input.provider, flow, actorCookie: input.actorCookie ?? null },
+    payload: { provider, flow, actorCookie },
   });
-  if (intent.outcome !== 'recorded') throw new Error('Owned sign-in intent refused');
-  return resolveWebOAuthIdentity(database, expected, environment.secret, {
+}
+async function resolve(input: SignIn & { flow: string }) {
+  return resolveWebOAuthIdentity(environment.database as unknown as DbInstance, await authority(), environment.secret, {
     webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
     operation: 'resolve',
     requestId: randomUUID(),
     issuedAt: new Date().toISOString(),
-    credentialProofVersion: 1,
+    ...(input.credentialProof === false ? {} : { credentialProofVersion: 1 as const }),
     ...(input.webSession ? { webSession: input.webSession } : {}),
     payload: {
       provider: input.provider,
-      flow,
+      flow: input.flow,
       actorCookie: input.actorCookie ?? null,
       subject: input.subject,
       email: input.email === undefined ? `${randomUUID()}@example.test` : input.email,
@@ -115,6 +115,13 @@ async function signIn(input: {
       image: null,
     },
   });
+}
+/** One complete sign-in: intent, then resolve, as www sends them. */
+async function signIn(input: SignIn) {
+  const flow = input.flow ?? randomBytes(32).toString('hex');
+  const intent = await recordIntent(input.provider, flow, input.actorCookie ?? null);
+  if (intent.outcome !== 'recorded') throw new Error('Owned sign-in intent refused');
+  return resolve({ ...input, flow });
 }
 function resolved(reply: Awaited<ReturnType<typeof signIn>>) {
   if (reply.outcome !== 'resolved') throw new Error(`Owned sign-in not resolved: ${JSON.stringify(reply)}`);
@@ -367,5 +374,91 @@ describe('web OAuth sign-in issues a first-party web session (#7596 B5a)', () =>
       await signIn({ provider: 'apple', subject: owner.subject, webSession: { presented: presentedOf(legacy) } }),
     );
     expect(await admit(legacy.credential)).toEqual({ status: 'denied' });
+  });
+
+  it('a session request without a credential proof is refused before any work', async () => {
+    const owner = await providerOwner('apple');
+    const reply = await signIn({ provider: 'apple', subject: owner.subject, webSession: {}, credentialProof: false });
+    expect(reply).toMatchObject({ outcome: 'denied', code: 'identity_unavailable' });
+    expect(
+      await environment.database.select().from(authSession).where(eq(authSession.userId, owner.userId)),
+    ).toHaveLength(1);
+  });
+
+  it('an email that belongs to another account is a conflict: no session, no provider row, presented kept', async () => {
+    const existing = await providerOwner('apple');
+    const [stored] = await environment.database.select().from(users).where(eq(users.id, existing.userId));
+    const previous = await environment.actor('better-auth', 'canonical-token');
+    const sessionsBefore = await environment.database.select().from(authSession);
+    const subject = randomUUID();
+    const reply = await signIn({
+      provider: 'google',
+      subject,
+      email: stored.email.toUpperCase(),
+      webSession: { presented: presentedOf(previous) },
+    });
+    expect(reply).toMatchObject({ outcome: 'denied', code: 'email_conflict' });
+    expect(await environment.database.select().from(authSession)).toEqual(sessionsBefore);
+    expect(await linkedTo(existing.userId, subject)).toBe(false);
+    expect((await admit(previous.credential)).status).toBe('admitted');
+  });
+
+  it('a replayed ID token mints one fresh session at most: its flow is single use', async () => {
+    const owner = await providerOwner('google');
+    const nonce = randomBytes(16).toString('hex');
+    const flow = flowFor(nonce);
+    const googleAuthentication = { idToken: await googleToken(owner.subject, nonce), nonce };
+    resolved(await signIn({ provider: 'google', subject: owner.subject, flow, webSession: { googleAuthentication } }));
+    const sessionsAfterFirst = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.userId, owner.userId));
+    expect(await recordIntent('google', flow)).toMatchObject({ outcome: 'denied', code: 'replayed' });
+    expect(
+      await resolve({ provider: 'google', subject: owner.subject, flow, webSession: { googleAuthentication } }),
+    ).toMatchObject({ outcome: 'denied' });
+    expect(await environment.database.select().from(authSession).where(eq(authSession.userId, owner.userId))).toEqual(
+      sessionsAfterFirst,
+    );
+  });
+
+  it('with provider security staged (the production pairing) a sign-in still issues the session', async () => {
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
+    const owner = await providerOwner('apple');
+    const previous = await environment.actor('better-auth', 'canonical-token');
+    const reply = resolved(
+      await signIn({ provider: 'apple', subject: owner.subject, webSession: { presented: presentedOf(previous) } }),
+    );
+    expect(await admit({ kind: 'canonical-token', token: reply.webSession!.token })).toMatchObject({
+      status: 'admitted',
+      session: { userId: owner.userId, source: 'bridge' },
+    });
+    expect(await admit(previous.credential)).toEqual({ status: 'denied' });
+    // A consumed intent is refused on this branch too.
+    const flow = randomBytes(32).toString('hex');
+    expect((await recordIntent('apple', flow)).outcome).toBe('recorded');
+    resolved(await resolve({ provider: 'apple', subject: owner.subject, flow, webSession: {} }));
+    expect(await resolve({ provider: 'apple', subject: owner.subject, flow, webSession: {} })).toMatchObject({
+      outcome: 'denied',
+    });
+  });
+
+  it('a verified Google token for another subject is denied, not carried', async () => {
+    const owner = await providerOwner('google');
+    const nonce = randomBytes(16).toString('hex');
+    const sessionsBefore = await environment.database
+      .select()
+      .from(authSession)
+      .where(eq(authSession.userId, owner.userId));
+    const reply = await signIn({
+      provider: 'google',
+      subject: owner.subject,
+      flow: flowFor(nonce),
+      webSession: { googleAuthentication: { idToken: await googleToken(randomUUID(), nonce), nonce } },
+    });
+    expect(reply).toMatchObject({ outcome: 'denied', code: 'identity_unavailable' });
+    expect(await environment.database.select().from(authSession).where(eq(authSession.userId, owner.userId))).toEqual(
+      sessionsBefore,
+    );
   });
 });

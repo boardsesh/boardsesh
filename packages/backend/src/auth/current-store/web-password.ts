@@ -371,6 +371,10 @@ export async function authenticateWebPassword(
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { email, password } = input.payload;
+  // A session is never issued without the proof that gives its legacy rollback
+  // cookie the same session id. The transport refuses this as 400 first.
+  if (input.webSession && credentialProofVersion === undefined)
+    throw new Error('A web session needs a credential proof');
   const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password, compareSlot);
   const { receipt } = prepared;
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };

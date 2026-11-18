@@ -126,29 +126,36 @@ function sameBinding(before: Intent, after: Intent) {
 /**
  * A Google sign-in counts as fresh only with a signed `auth_time` the backend
  * verifies itself (`CURRENT_STORE_PROVIDER_GOOGLE_AUTH_TIME_MODE`), for this
- * subject, with a nonce bound into this intent's flow. Anything else is null:
- * the session is then `carried`, never refused for it.
+ * subject, with a nonce bound into this intent's flow. Anything else is
+ * `fresh: null`: the session is then `carried`. A verified token for another
+ * subject means www is confused about who signed in: `subjectMismatch`, and
+ * the sign-in is denied. An invalid mode value throws (fail closed).
  */
 async function verifyFreshGoogleSignIn(
   provider: string,
   flow: string,
   subject: string,
   request: WebOAuthSessionRequest | undefined,
-): Promise<VerifiedGoogleAuthenticationAssertion | null> {
+): Promise<{ readonly fresh: VerifiedGoogleAuthenticationAssertion | null; readonly subjectMismatch: boolean }> {
+  const none = { fresh: null, subjectMismatch: false } as const;
   const proof = request?.googleAuthentication;
-  if (provider !== 'google' || !proof) return null;
+  if (provider !== 'google' || !proof) return none;
   const configuration = captureProviderSecurityMethodsConfiguration(process.env);
-  if (!configuration.googleReauthenticationEnabled) return null;
-  if (digest([WEB_OAUTH_GOOGLE_NONCE_DOMAIN, proof.nonce]) !== flow) return null;
+  if (!configuration.googleReauthenticationEnabled) return none;
+  if (digest([WEB_OAUTH_GOOGLE_NONCE_DOMAIN, proof.nonce]) !== flow) return none;
+  let assertion: VerifiedGoogleAuthenticationAssertion | null;
   try {
-    const assertion = await verifyProviderGoogleAuthenticationAssertion(configuration, {
+    assertion = await verifyProviderGoogleAuthenticationAssertion(configuration, {
       idToken: proof.idToken,
       nonce: proof.nonce,
     });
-    return assertion && assertion.subject === subject ? assertion : null;
   } catch {
-    return null;
+    return none;
   }
+  if (!assertion) return none;
+  return assertion.subject === subject
+    ? { fresh: assertion, subjectMismatch: false }
+    : { fresh: null, subjectMismatch: true };
 }
 
 /** Trusted web verifies the provider; backend exclusively resolves and writes identity. */
@@ -232,9 +239,14 @@ export async function resolveWebOAuthIdentity(
           input.webSession.googleAuthentication && Object.freeze({ ...input.webSession.googleAuthentication }),
       })
     : undefined;
-  if (sessionRequest && actorCookie !== null) return denied('resolve', requestId);
+  // And a session is never issued without the credential proof that gives
+  // its legacy rollback cookie the same session id (#7596 B5a review, M1).
+  if (sessionRequest && (actorCookie !== null || credentialProofVersion === undefined))
+    return denied('resolve', requestId);
   // Network verification before any transaction or lock.
-  const freshGoogle = await verifyFreshGoogleSignIn(provider, flow, subject, sessionRequest);
+  const google = await verifyFreshGoogleSignIn(provider, flow, subject, sessionRequest);
+  if (google.subjectMismatch) return denied('resolve', requestId);
+  const freshGoogle = google.fresh;
   const receipt = await readIdentityAuthority(database, configuredAuthority);
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   const captured = await captureActor(actorCookie, nextAuthSecret);

@@ -104,7 +104,7 @@ beforeEach(() => {
     CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
     CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
     CURRENT_STORE_DELETED_EMAIL_KEY: 'synthetic-web-session-command-retired-mailbox-key',
-    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'off',
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'compatible',
     AUTH_CUTOFF_ENFORCEMENT: 'enforce',
     EMAIL_VERIFICATION_ENABLED: 'false',
     NEXTAUTH_SECRET: nextAuthSecret,
@@ -143,7 +143,7 @@ function loginCommand(email: string, webSession?: unknown, password = PASSWORD) 
     operation: 'password',
     requestId: randomUUID(),
     issuedAt: Date.now(),
-    ...(webSession === undefined ? {} : { webSession }),
+    ...(webSession === undefined ? {} : { webSession, credentialProofVersion: 1 }),
     payload: { email, password },
   };
 }
@@ -253,6 +253,18 @@ describe('login through the staged password command', () => {
     expect((await readFirstPartySession(environment.database, legacy)).status).toBe('admitted');
     await login(signingIn.email, { kind: 'legacy-jwe', credential: cookie });
     expect((await readFirstPartySession(environment.database, legacy)).status).toBe('denied');
+  });
+
+  it('refuses a session request without a credential proof, before any work', async () => {
+    const { id, email } = await climber();
+    const before = await accountState(id);
+    const { credentialProofVersion: _proof, ...withoutProof } = loginCommand(email, {});
+    expect(await post(AUTH_COMMAND_PATHS.password, withoutProof)).toEqual({
+      status: 400,
+      body: { error: 'invalid_request' },
+    });
+    expect(await accountState(id)).toEqual(before);
+    expect(admitted).not.toHaveBeenCalled();
   });
 
   it('never lets the web name the account', async () => {

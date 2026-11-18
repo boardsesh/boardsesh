@@ -10,7 +10,7 @@ import {
   type WebOAuthResolveReply,
   type WebOAuthSessionRequest,
 } from '@boardsesh/auth-protocol';
-import { authEmailProjection, authSession, users } from '@boardsesh/db/schema/auth';
+import { authEmailProjection, authSession, authWebOAuthIntents, users } from '@boardsesh/db/schema/auth';
 import { createCredentialWriterEnvironment } from './fixtures/credential-writer-environment';
 import { createProviderSecurityDriver } from './provider-security-fixture';
 import { closeCredentialDatabase, getCredentialDatabase } from '../../credential-database';
@@ -271,5 +271,40 @@ describe('web OAuth sign-in issues a web session through the qualified LOGIN and
     expect(reply.createdUser).toBe(true);
     const issued = await admit({ kind: 'canonical-token', token: reply.webSession!.token });
     expect(issued).toMatchObject({ status: 'admitted', session: { userId: reply.user.id, source: 'bridge' } });
+  });
+
+  it('a refused session write rolls the whole sign-in back: 503, intent unconsumed, presented session kept', async () => {
+    await selectAuthority('better-auth');
+    const owner = await appleOwner('better-auth');
+    const previous = await (await driver()).actor('better-auth', 'canonical-token');
+    const flow = randomBytes(32).toString('hex');
+    expect((await post('intent', { payload: { provider: 'apple', flow, actorCookie: null } })).status).toBe(200);
+    const sessionsBefore = await environment.ownerDatabase.select().from(authSession).orderBy(authSession.id);
+    await environment.owner`REVOKE INSERT ON public.auth_session FROM boardsesh_identity_writer`;
+    try {
+      const refused = await post('resolve', {
+        credentialProofVersion: 1,
+        webSession: { presented: previous.webActor.presented },
+        payload: {
+          provider: 'apple',
+          flow,
+          actorCookie: null,
+          subject: owner.subject,
+          email: `web-oauth-session-${randomUUID()}@example.test`,
+          name: null,
+          image: null,
+        },
+      });
+      expect(refused).toEqual({ status: 503, body: { error: 'unavailable' } });
+    } finally {
+      await environment.resetGrants();
+    }
+    expect(await environment.ownerDatabase.select().from(authSession).orderBy(authSession.id)).toEqual(sessionsBefore);
+    const [intent] = await environment.ownerDatabase
+      .select()
+      .from(authWebOAuthIntents)
+      .where(eq(authWebOAuthIntents.flowHash, flow));
+    expect(intent.consumedAt).toBeNull();
+    expect(await admit(previous.credential)).toMatchObject({ status: 'admitted' });
   });
 });
