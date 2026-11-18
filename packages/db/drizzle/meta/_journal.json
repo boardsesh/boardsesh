@@ -2297,6 +2297,13 @@
       "when": 1795012121306,
       "tag": "0327_password_guess_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1795014598863,
+      "tag": "0328_partner_workout_result_resend",
+      "breakpoints": true
     }
   ]
 }
