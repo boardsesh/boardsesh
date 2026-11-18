@@ -50,7 +50,6 @@
           "lastWorkoutOn": "Dernier entraînement · {{day}}",
           "lastWorkoutSends_one": "{{count}} croix",
           "lastWorkoutSends_other": "{{count}} croix",
-          "join": "Rejoindre",
           "joinName": "Rejoindre {{name}}",
           "startOwn": "Démarrer la mienne",
           "moreLive_one": "+ {{count}} autre en train de grimper",

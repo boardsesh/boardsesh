@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -33,13 +33,11 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { HomeSectionFrame } from './HomeSectionFrame';
 import { lastWorkoutSummary, localDaysAgo } from './last-workout';
-import { joinableLiveSessions, joinButtonName, joinButtonTitle } from './session-live';
+import { joinableLiveSessions, joinButtonName, joinButtonTitle, sessionButtonsLayout } from './session-live';
 
 const WEEKDAY: Intl.DateTimeFormatOptions = { weekday: 'long' };
 const SHORT_DATE: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
 const EMPTY_CARDS: LiveCardModel[] = [];
-/** Above this text size two buttons side by side would wrap, so they stack. */
-const STACK_BUTTONS_FONT_SCALE = 1.35;
 /** The analytics `surface` for this card, and the join screen's `source`. */
 const LIVE_SURFACE = 'home_session_card';
 
@@ -79,14 +77,21 @@ export const HomeSessionSection = memo(function HomeSessionSection({
   const backgrounded = useIsAppBackgrounded();
   const timerTicking = isFocused && !backgrounded;
 
+  // Button gives its own haptic; the pressable row gives one here.
   const openSessionTab = useCallback(() => {
-    hapticLight();
     router.navigate('/(tabs)/record');
   }, [router]);
   const openRunningSession = useCallback(() => {
+    hapticLight();
     track(SHARED_EVENTS.HomeSectionTapped, { section: 'session', target: 'open' });
     openSessionTab();
   }, [openSessionTab]);
+  // Once per focus, across the card's own states: the idle card remounts when
+  // the viewer's session ends, and that must not count a second view.
+  const viewedThisFocusRef = useRef(false);
+  useEffect(() => {
+    if (!isFocused) viewedThisFocusRef.current = false;
+  }, [isFocused]);
   // Counted with the other Start invitations (Climbing now, the board sheet),
   // and with the other Home section taps. `variant` says which state offered it.
   const startSession = useCallback(
@@ -132,7 +137,12 @@ export const HomeSessionSection = memo(function HomeSessionSection({
           </PressableSurface>
         </InsetGroupedList>
       ) : (
-        <IdleSessionCard liveBoardUuid={liveBoardUuid} liveEnabled={liveEnabled} onStart={startSession} />
+        <IdleSessionCard
+          liveBoardUuid={liveBoardUuid}
+          liveEnabled={liveEnabled}
+          viewedThisFocusRef={viewedThisFocusRef}
+          onStart={startSession}
+        />
       )}
     </HomeSectionFrame>
   );
@@ -146,8 +156,12 @@ export const HomeSessionSection = memo(function HomeSessionSection({
 const IdleSessionCard = memo(function IdleSessionCard({
   liveBoardUuid,
   liveEnabled,
+  viewedThisFocusRef,
   onStart,
-}: HomeSessionSectionProps & { onStart: (variant: 'home_session_card' | 'start_my_own') => void }) {
+}: HomeSessionSectionProps & {
+  viewedThisFocusRef: MutableRefObject<boolean>;
+  onStart: (variant: 'home_session_card' | 'start_my_own') => void;
+}) {
   const router = useRouter();
   const isFocused = useIsFocused();
   const backgrounded = useIsAppBackgrounded();
@@ -157,9 +171,6 @@ const IdleSessionCard = memo(function IdleSessionCard({
   const offline = useOfflineQueryState(query);
   const cards = query.data ?? EMPTY_CARDS;
   const sessions = useMemo(() => joinableLiveSessions(cards), [cards]);
-  const { sessionId: queueSessionId } = useQueueSessionId();
-  const queueSessionIdRef = useRef(queueSessionId);
-  queueSessionIdRef.current = queueSessionId;
 
   // "Live Sessions Shelf Viewed" once per focus with settled data, like the rail
   // this card replaces, so the rail's funnel carries on under a new surface.
@@ -175,20 +186,17 @@ const IdleSessionCard = memo(function IdleSessionCard({
           : sessions.length > 0
             ? 'loaded'
             : 'empty';
-  const viewedThisFocusRef = useRef(false);
-  useEffect(() => {
-    if (!isFocused) viewedThisFocusRef.current = false;
-  }, [isFocused]);
   const sessionCount = sessions.length;
   useEffect(() => {
     if (!isFocused || shelfState == null || viewedThisFocusRef.current) return;
     viewedThisFocusRef.current = true;
     track(SHARED_EVENTS.LiveSessionsShelfViewed, { surface: LIVE_SURFACE, count: sessionCount, state: shelfState });
-  }, [isFocused, shelfState, sessionCount]);
+  }, [isFocused, shelfState, sessionCount, viewedThisFocusRef]);
 
   const openLiveSession = useCallback(
     (card: LiveCardModel, target: 'join' | 'more') => {
-      hapticLight();
+      // Join is a Button, which gives its own haptic; a row under "+ N more" is not.
+      if (target === 'more') hapticLight();
       track(SHARED_EVENTS.LiveSessionCardTapped, {
         surface: LIVE_SURFACE,
         reason: card.reasons[0] ?? null,
@@ -196,12 +204,8 @@ const IdleSessionCard = memo(function IdleSessionCard({
         participantCount: card.participantCount,
       });
       track(SHARED_EVENTS.HomeSectionTapped, { section: 'session', target });
-      // The session this phone is in lives on the Record tab; any other goes
-      // through the join preview, which also knows how to rejoin.
-      if (card.viewerIsMember && card.sessionId === queueSessionIdRef.current) {
-        router.navigate('/(tabs)/record');
-        return;
-      }
+      // Never the viewer's own session (`joinableLiveSessions` drops those), so
+      // always the join preview.
       router.push({ pathname: '/join/[sessionId]', params: { sessionId: card.sessionId, source: LIVE_SURFACE } });
     },
     [router],
@@ -238,7 +242,7 @@ const LiveSessionLead = memo(function LiveSessionLead({
   const { fontScale } = useWindowDimensions();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const nowMs = useElapsedClock(visible, startedAtKeyFor(sessions));
+  const clockMs = useElapsedClock(visible, startedAtKeyFor(sessions));
   useLivePulseDriver(visible);
 
   const [lead, ...rest] = sessions;
@@ -252,7 +256,7 @@ const LiveSessionLead = memo(function LiveSessionLead({
   if (!lead) return null;
 
   const names = liveNamesCopy(describeLiveNames(lead, viewerUserId), t);
-  const elapsed = elapsedParts(lead.startedAtMs, nowMs);
+  const elapsed = elapsedParts(lead.startedAtMs, clockMs);
   const boardLine = liveBoardLine(lead, t);
   const climbGrade = lead.currentClimbGrade
     ? (formatGrade(lead.currentClimbGrade, lead.boardType) ?? lead.currentClimbGrade)
@@ -265,12 +269,20 @@ const LiveSessionLead = memo(function LiveSessionLead({
       ? t('mobile.liveSessions.onClimbGrade', { climb: lead.currentClimbName, grade: climbGrade })
       : t('mobile.liveSessions.onClimb', { climb: lead.currentClimbName })
     : null;
+  const joinName = joinButtonName(lead, viewerUserId);
+  const startOwnTitle = t('mobile.home.sections.session.startOwn');
+  // Side by side unless the text size or this locale's Start my own would wrap.
+  const { stacked: stackButtons, maxLabelLength } = sessionButtonsLayout(fontScale, startOwnTitle);
   const joinTitle = joinButtonTitle(
-    joinButtonName(lead, viewerUserId),
+    joinName,
     (name) => t('mobile.home.sections.session.joinName', { name }),
-    t('mobile.home.sections.session.join'),
+    t('mobile.liveSessions.actions.join'),
+    maxLabelLength,
   );
-  const stackButtons = fontScale > STACK_BUTTONS_FONT_SCALE;
+  // VoiceOver keeps the name the label had to drop. Android's Compose button
+  // takes its label from the title only.
+  const joinSpoken =
+    Platform.OS === 'ios' && joinName ? t('mobile.home.sections.session.joinName', { name: joinName }) : joinTitle;
 
   return (
     <Card>
@@ -303,17 +315,17 @@ const LiveSessionLead = memo(function LiveSessionLead({
             </Text>
           ) : null}
         </View>
-        <View style={stackButtons ? styles.buttonsStacked : styles.buttonsRow}>
+        <View style={stackButtons ? styles.buttonsStacked : styles.buttonsRow} testID="home-session-live-buttons">
           <Button
             title={joinTitle}
-            accessibilityLabel={joinTitle}
+            accessibilityLabel={joinSpoken}
             variant="filled"
             onPress={handleJoin}
             style={stackButtons ? undefined : styles.equalButton}
             testID="home-session-join"
           />
           <Button
-            title={t('mobile.home.sections.session.startOwn')}
+            title={startOwnTitle}
             variant="outlined"
             onPress={onStartOwn}
             style={stackButtons ? undefined : styles.equalButton}
@@ -341,7 +353,7 @@ const LiveSessionLead = memo(function LiveSessionLead({
                   <MoreLiveRow
                     key={card.sessionId}
                     card={card}
-                    nowMs={nowMs}
+                    clockMs={clockMs}
                     viewerUserId={viewerUserId}
                     onOpen={onOpen}
                   />
@@ -357,19 +369,19 @@ const LiveSessionLead = memo(function LiveSessionLead({
 /** One more live session under the "+ N more" line: who, where, how long. Opens its join preview. */
 const MoreLiveRow = memo(function MoreLiveRow({
   card,
-  nowMs,
+  clockMs,
   viewerUserId,
   onOpen,
 }: {
   card: LiveCardModel;
-  nowMs: number;
+  clockMs: number;
   viewerUserId: string | null;
   onOpen: (card: LiveCardModel, target: 'join' | 'more') => void;
 }) {
   const { t } = useTranslation('feed');
   const { systemColors } = useTheme();
   const names = liveNamesCopy(describeLiveNames(card, viewerUserId), t);
-  const elapsed = elapsedParts(card.startedAtMs, nowMs);
+  const elapsed = elapsedParts(card.startedAtMs, clockMs);
   const boardLine = liveBoardLine(card, t);
   const handlePress = useCallback(() => onOpen(card, 'more'), [card, onOpen]);
   const detail = [boardLine, elapsedShort(elapsed, t)].filter((part): part is string => !!part).join(' · ');

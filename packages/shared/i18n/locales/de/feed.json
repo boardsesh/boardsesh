@@ -50,11 +50,10 @@
           "lastWorkoutOn": "Letztes Workout · {{day}}",
           "lastWorkoutSends_one": "{{count}} Begehung",
           "lastWorkoutSends_other": "{{count}} Begehungen",
-          "join": "Beitreten",
-          "joinName": "{{name}} beitreten",
+          "joinName": "Mit {{name}} klettern",
           "startOwn": "Eigene starten",
-          "moreLive_one": "+ {{count}} weitere Person klettert gerade",
-          "moreLive_other": "+ {{count}} weitere klettern gerade"
+          "moreLive_one": "+ {{count}} weitere Session live",
+          "moreLive_other": "+ {{count}} weitere Sessions live"
         },
         "projects": {
           "title": "Zurück zu deinen Projekten",
