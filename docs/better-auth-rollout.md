@@ -32,7 +32,7 @@ These are not modes. Most `CURRENT_STORE_*` modes below need them, and a missing
 
 | Switch | Where | Values (default) | What it does | Needs first | Back out |
 | --- | --- | --- | --- | --- | --- |
-| `AUTH_CUTOFF_ENFORCEMENT` | Backend | `enforce`, `observe` (`enforce`; any other value is a startup error) | `enforce` refuses every credential that a cutoff, denial or generation bump rejects. `observe` admits and logs them (the pre-BA-04 behaviour). | Nothing | Leave it unset. The backend refuses to start with `observe` while any member of `STAGED_WRITER_MODE_ENV` (`authority-configuration.ts`) is on: `CURRENT_STORE_BROWSER_BINDING_MODE`, `CURRENT_STORE_WEB_AUTH_MODE`, `_WEB_OAUTH_MODE`, `_NATIVE_REGISTRATION_MODE`, `_NATIVE_OAUTH_MODE`, `_SYSTEM_BOARD_OWNER_MODE`, `_ACCOUNT_DELETION_MODE`, `_SET_PASSWORD_MODE`, `_PROVIDER_SECURITY_MODE`, `_FIRST_PASSWORD_MODE`, `_WEB_SIGNOUT_MODE`, `_WEB_SESSION_MODE`, `AUTH_WATCH_PAIRING_MODE`, `_BATCH_SYSTEM_USERS_MODE`, `_LOCATION_SYNC_MODE`. The proof, fixed-owner order and Google auth-time modes are not in the list. |
+| `AUTH_CUTOFF_ENFORCEMENT` | Backend | `enforce`, `observe` (`enforce`; any other value is a startup error) | `enforce` refuses every credential that a cutoff, denial or generation bump rejects. `observe` admits and logs them (the pre-BA-04 behaviour). | Nothing | Leave it unset. The backend refuses to start with `observe` while any member of `STAGED_WRITER_MODE_ENV` (`authority-configuration.ts`) is on: `CURRENT_STORE_WEB_AUTH_MODE`, `_WEB_OAUTH_MODE`, `_NATIVE_REGISTRATION_MODE`, `_NATIVE_OAUTH_MODE`, `_SYSTEM_BOARD_OWNER_MODE`, `_ACCOUNT_DELETION_MODE`, `_SET_PASSWORD_MODE`, `_PROVIDER_SECURITY_MODE`, `_FIRST_PASSWORD_MODE`, `_WEB_SIGNOUT_MODE`, `_WEB_SESSION_MODE`, `AUTH_WATCH_PAIRING_MODE`, `_BATCH_SYSTEM_USERS_MODE`, `_LOCATION_SYNC_MODE`. The proof, fixed-owner order and Google auth-time modes are not in the list. |
 | `CURRENT_STORE_AUTH_RPC_SECRET` | Both | At least 32 bytes, no surrounding spaces, different from `NEXTAUTH_SECRET` and `CRON_SECRET` (unset) | Signs private web-to-backend commands. | Nothing | Unset it after the modes that use it are off. |
 | `CURRENT_STORE_AUTH_PROJECTION_ID` and `CURRENT_STORE_AUTH_WRITER_EPOCH` | Backend | The current projection id; a positive integer up to 2,147,483,647 (unset) | Tell every staged writer which authority row to expect. A mismatch is refused as stale. | `auth-authority prepare` for the id. Every staged writer also refuses with `AUTHORITY_NOT_ENFORCED` until `activate` succeeds (section "Code gates"). | Unset them after the modes are off. |
 | `CURRENT_STORE_DELETED_EMAIL_KEY` | Backend | At least 32 bytes, different from the other secrets (unset) | Keys the address digest kept for 90 days after an account is deleted. Every staged mode needs it, because an unknown address also looks up a digest. | Nothing | **Never rotate it.** Rotating frees every address deleted in the last 90 days. Keep a copy in 1Password. |
@@ -92,7 +92,7 @@ accepts it: that session is signed out. Nothing in the repo sets
 `AUTH_LEGACY_BRIDGE_MODE=on` or any staged provider mode, so no such row should
 exist in production, but code cannot prove it. **Before turning on
 `AUTH_LEGACY_BRIDGE_MODE`, `CURRENT_STORE_PROVIDER_SECURITY_MODE`,
-`CURRENT_STORE_FIRST_PASSWORD_MODE` or `CURRENT_STORE_BROWSER_BINDING_MODE`,
+or `CURRENT_STORE_FIRST_PASSWORD_MODE`,
 the owner confirms the table is empty**
 (read-only):
 
@@ -109,7 +109,7 @@ breaks.
 
 | Switch | Where | Values (default) | What it would do | Why it stays off |
 | --- | --- | --- | --- | --- |
-| `CURRENT_STORE_BROWSER_BINDING_MODE` | Backend | `legacy`, `backend-staging` (`legacy`) | Nothing. #7596 deleted every reader that acted on it (the www client and the backend's private binding route). Only the startup check for `AUTH_CUTOFF_ENFORCEMENT=observe` still reads it. | Leave it unset. The name stays in `STAGED_WRITER_MODE_ENV` until B5 deletes the backend binding core. Bugs #7588 (locks the users row on every request) and #7594 (rollback leaves cookies that break legacy sign-in) are closed by the deletion. |
+| `CURRENT_STORE_BROWSER_BINDING_MODE` | Gone | | Removed from main with the backend binding core (#7596 B5d), including its place in `STAGED_WRITER_MODE_ENV`. Do not set it. | Nothing reads it. Bugs #7588 (locks the users row on every request) and #7594 (rollback leaves cookies that break legacy sign-in) went with the deletion. |
 | `CURRENT_STORE_BROWSER_RENEWAL_MODE`, `BROWSER_DELEGATION_SECRET` | Gone | | Removed from main (#7618 and the lease removal). Do not set them. | Nothing reads them. |
 | `CURRENT_STORE_EXPIRED_BROWSER_BINDING_MODE`, `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Gone | | Removed from main (#7627 and #7624). Do not set them. | Nothing reads them. |
 | Proof cookies (`__Host-boardsesh.browser-proof.*`, no env switch) | Gone | | Removed from main with the binding web core (#7596). Nothing on www reads or writes them. | A leftover cookie expires within 30 days. Until then it only counts toward the Cookie-header limits on Google and Apple sign-in. |

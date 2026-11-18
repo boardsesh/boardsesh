@@ -719,8 +719,25 @@ same thing: `authenticatedAt: null, linkGuarded: false` for a carried session,
 so the legacy rollback cookie carries no `auth_time`; the verified `auth_time`
 and `linkGuarded: true` for a fresh one. Without `webSession` the command and
 reply are unchanged. The browser-binding `signin-*` commands and the
-anonymous-provider protocol are deleted, so only `authority/browser-binding.ts`'s
-own tests use it; B5d deletes the binding core.
+anonymous-provider protocol are deleted.
+
+B5d deleted the binding core: `authority/browser-binding.ts`, its tests and
+restricted-role proof, the `browser-binding-v1` protocol, and
+`CURRENT_STORE_BROWSER_BINDING_MODE`. No migration and no DROP: the
+`auth_browser_bindings` and `auth_browser_intents` tables, their grants and
+their Drizzle exports stay, unread. The NOT NULL `browser_*` columns of
+`auth_provider_security_intents` and `auth_first_password_challenges` stay
+too and keep their derived values (`browser_binding_hash` = the prefixed
+session hash, `browser_version` 0, `browser_intent_hash` derived from the row,
+`browser_binding_expires_at` = the session's expiry at creation), and so do
+`proposed_credential_hash` and `candidate_credential_hash` (the presented
+token's hash). They remain because dropping them needs a generated migration
+plus new pinned credential-writer catalogs, for no behaviour gain, and because
+`browser_binding_hash` is what tells a row written under the session keying
+from one written under the binding (the readers refuse the latter). Dropping
+them is a separate decision, after counting zero binding-era rows in both
+tables. Log redaction for the old `__Host-boardsesh.*` cookie families stays
+(`text-redaction/src/password-recovery.ts`): browsers may still send one.
 
 The web publication layer for these flows is deleted in A5 and rebuilt on the
 new session in B5: the provider Settings UI and its server code, the
@@ -778,23 +795,18 @@ web clients used: the four iframe coordinator subpaths (`browser-coordinator`,
 `-runner`, `-channel`, `-dom`) with the renewal message schema they shared,
 `browser-delegation-v1`, and the ten `browser-backend-*` lease, HTTP and
 WebSocket modules. Nothing outside the package imported them any more, and
-`packages/mobile` no longer depends on the package. What stays until B5: the
-backend binding core (`authority/browser-binding.ts`) and the binding-table
-readers the kept provider-security and first-password cores use,
-`@boardsesh/auth-protocol/browser-binding-v1` (nothing outside the package
-imports it since the private route went; B5 deletes it with the backend core),
-the `private-browser-v1` database profile, and
-`CURRENT_STORE_BROWSER_BINDING_MODE`, which the startup check for staged
-writers under `AUTH_CUTOFF_ENFORCEMENT=observe` still reads. One dead branch
-also stays on phones: `isCancellation` in
-`packages/mobile/src/lib/error-reporting.ts` still drops a
-`BrowserBackendConsumerError` whose status is `superseded`, and
+`packages/mobile` no longer depends on the package. B5d then deleted the
+backend binding core (`authority/browser-binding.ts`),
+`@boardsesh/auth-protocol/browser-binding-v1` and
+`CURRENT_STORE_BROWSER_BINDING_MODE`; the `private-browser-v1` database
+profile and the binding tables stay (no migration). One dead branch also stays
+on phones: `isCancellation` in `packages/mobile/src/lib/error-reporting.ts`
+still drops a `BrowserBackendConsumerError` whose status is `superseded`, and
 `packages/mobile/src/lib/__tests__/error-reporting.test.ts` keeps a stand-in
-class for it.
-A5 deleted the `browser-backend-consumer` module that defined the error, so
-nothing throws it, but the file has no `.web` suffix and ships to phones by
-OTA, so Phase A leaves it alone. B5 deletes the branch, the stand-in class and
-the test case that uses it.
+class for it. A5 deleted the `browser-backend-consumer` module that defined
+the error, so nothing throws it, but the file has no `.web` suffix and ships to
+phones by OTA, so the backend-only Phase B PRs leave it alone; a mobile PR
+deletes the branch, the stand-in class and the test case that uses it.
 
 Kept, per #7596: BA-04 cutoffs, SID denials and the legacy bridge; BA-06
 native and Garmin work; the backend provider and first-password cores. Some
