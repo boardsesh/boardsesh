@@ -1,3 +1,4 @@
+import { AUTHORITY_ACTIVATION_BLOCKERS } from '../activation-gates';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   assertBrowserSessionModeConfiguration,
@@ -39,6 +40,8 @@ const READY: Readonly<Record<string, string>> = Object.freeze({
   AUTH_BROWSER_ACCESS_TOKEN_SECRET: secret('access-token'),
   AUTH_BRIDGE_TOKEN_SECRET: secret('bridge-token'),
   CRON_SECRET: secret('cron'),
+  // Cutover plus 30 days, as the runbook sets it.
+  AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 30 * 86_400_000).toISOString(),
 });
 
 /** The preconditions alone: the cutover refusal left out, as only a test can build it. */
@@ -77,6 +80,13 @@ const cases: ReadonlyArray<readonly [BrowserSessionStartupErrorCode, string, Cha
     { AUTH_BROWSER_ACCESS_TOKEN_SECRET: ` ${secret('a')}` },
   ],
   [errors.bridgeTokenSecret, 'the bridge token secret is unset', { AUTH_BRIDGE_TOKEN_SECRET: undefined }],
+  [errors.legacyBridgeUntil, 'the bridge end date is unset', { AUTH_LEGACY_BRIDGE_UNTIL: undefined }],
+  [errors.legacyBridgeUntil, 'the bridge end date is not a time', { AUTH_LEGACY_BRIDGE_UNTIL: 'next month' }],
+  [
+    errors.legacyBridgeUntil,
+    'the bridge end date is more than 45 days away',
+    { AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() + 46 * 86_400_000).toISOString() },
+  ],
   [
     errors.secretReused,
     'the bridge token secret is the access-token secret',
@@ -129,6 +139,16 @@ describe('the better-auth startup preconditions', () => {
 
   it('pass with every precondition met', () => {
     expect(refusal(() => preconditions(READY))).toBeUndefined();
+  });
+
+  it('never wait on the authority activation gates, so a test-built checker boots with them open', () => {
+    expect(AUTHORITY_ACTIVATION_BLOCKERS).toContain('HISTORICAL_WEB_ISSUER_RETIREMENT');
+    expect(refusal(() => preconditions(READY))).toBeUndefined();
+  });
+
+  it('pass with a bridge end date already behind them: bridging is over, the rest of the session runs', () => {
+    const ended = { ...READY, AUTH_LEGACY_BRIDGE_UNTIL: new Date(Date.now() - 86_400_000).toISOString() };
+    expect(refusal(() => preconditions(ended))).toBeUndefined();
   });
 
   it.each(cases)('refuse with %s when %s', (code, _label, change) => {

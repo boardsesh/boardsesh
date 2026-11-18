@@ -26,7 +26,7 @@ import {
 } from '../auth/current-store/authority-configuration';
 import { isWebPasswordCommandFresh } from '../auth/current-store/command-context';
 import type { ExpectedCurrentStoreAuthority } from '../auth/current-store/foundation-context';
-import { bridgeTokenKeyFromEnvironment } from '../auth/authority/browser-session-mode';
+import { bridgeTokenKeyFromEnvironment, legacyBridgeUntil } from '../auth/authority/browser-session-mode';
 import {
   bridgeWebSession,
   presentedWebCredential,
@@ -151,7 +151,13 @@ export async function handleCurrentStoreWebSession(
         outcome: outcome === 'signed-out' ? 'signed_out' : 'identity_changed',
       });
     } else if (command.operation === 'bridge') {
-      const bridged = await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
+      // After AUTH_LEGACY_BRIDGE_UNTIL the bridge is over: denied, nothing read or written.
+      // A value that is not a time throws here and answers 503, never a denial.
+      const until = legacyBridgeUntil(process.env);
+      const bridged =
+        until !== undefined && Date.now() >= until.getTime()
+          ? ({ status: 'denied' } as const)
+          : await bridgeWebSession(commandDatabase, command.payload.credential, bridgeKeys(), authority);
       reply = webSessionBridgeReplySchema.parse(
         bridged.status === 'bridged'
           ? {

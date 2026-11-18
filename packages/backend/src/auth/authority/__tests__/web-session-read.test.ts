@@ -162,7 +162,7 @@ const read = (presented: PresentedWebSession) =>
   post(WEB_SESSION_COMMAND_PATHS.session, command('session', { presented }));
 const canonical = (token: string): PresentedWebSession => ({ kind: 'canonical-token', token });
 
-async function legacyCookie(userId: string, authSessionId?: string) {
+async function legacyCookie(userId: string, authSessionId?: string, generation?: number) {
   const key = await hkdf(
     'sha256',
     new TextEncoder().encode(nextAuthSecret),
@@ -171,7 +171,10 @@ async function legacyCookie(userId: string, authSessionId?: string) {
     32,
   );
   const issuedAt = Math.floor(Date.now() / 1000);
-  return new EncryptJWT(authSessionId === undefined ? {} : { authSessionId })
+  return new EncryptJWT({
+    ...(authSessionId === undefined ? {} : { authSessionId }),
+    ...(generation === undefined ? {} : { gen: generation }),
+  })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
     .setSubject(userId)
     .setIssuedAt(issuedAt)
@@ -322,6 +325,26 @@ describe('session read', () => {
     }
   });
 
+  it('admits a legacy cookie only at its account generation: a zero, missing or higher stamp on a moved account is 401', async () => {
+    const moved = await climber();
+    await environment.database.insert(authSubjectCutoffs).values({
+      userId: moved.id,
+      generation: 1,
+      revokedThrough: new Date(),
+      deletedAt: null,
+      lastOperationId: randomUUID(),
+    });
+    for (const stamp of [undefined, 0, 2]) {
+      const { status } = await read({
+        kind: 'legacy-jwe',
+        credential: await legacyCookie(moved.id, randomUUID(), stamp),
+      });
+      expect(status, `stamp ${String(stamp)}`).toBe(401);
+    }
+    const current = await read({ kind: 'legacy-jwe', credential: await legacyCookie(moved.id, randomUUID(), 1) });
+    expect(current.status).toBe(200);
+  });
+
   it('answers 503 for a legacy cookie when the backend cannot read one', async () => {
     const { id } = await climber();
     const credential = await legacyCookie(id, randomUUID());
@@ -372,7 +395,7 @@ describe('login and sign-out', () => {
     expect((await rows(id)).cutoffs).toEqual([]);
   });
 
-  it('clears a no-SID legacy cookie without writing anything', async () => {
+  it('signs out a no-SID legacy cookie by a denial of its own id and nothing else', async () => {
     const { id, email } = await climber();
     await login(email);
     const noSid = await legacyCookie(id);
@@ -389,7 +412,9 @@ describe('login and sign-out', () => {
       }),
     );
     expect(status).toBe(200);
-    expect(await rows(id)).toEqual(before);
+    const after = await rows(id);
+    expect(after.denials.map((denial) => denial.sessionId)).toEqual([authSessionId.authSessionId]);
+    expect({ ...after, denials: [] }).toEqual({ ...before, denials: [] });
   });
 
   it('still accepts the first sign-out body, a bare token', async () => {

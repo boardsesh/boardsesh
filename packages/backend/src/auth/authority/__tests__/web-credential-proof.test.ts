@@ -487,7 +487,19 @@ describe('backend-issued web generation/freshness proofs', () => {
         CURRENT_STORE_AUTH_RPC_SECRET: 'synthetic-distinct-rpc-secret-at-least-32-bytes',
         NEXTAUTH_SECRET: secret,
       }),
-    ).toThrow('historical issuer retirement');
+    ).toThrow('HISTORICAL_WEB_ISSUER_RETIREMENT');
+    // The refusal is the activation entry itself: once a reviewed PR empties it, the SID writer may start.
+    expect(() =>
+      assertWebSessionWriterActivationConfiguration(
+        {
+          CURRENT_STORE_WEB_SIGNOUT_MODE: 'backend-staging',
+          AUTH_CUTOFF_ENFORCEMENT: 'enforce',
+          CURRENT_STORE_AUTH_RPC_SECRET: 'synthetic-distinct-rpc-secret-at-least-32-bytes',
+          NEXTAUTH_SECRET: secret,
+        },
+        ['GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION'],
+      ),
+    ).not.toThrow();
     expect(() => assertWebSessionWriterConfiguration({ AUTH_LEGACY_BRIDGE_MODE: 'on' })).toThrow();
     expect(() =>
       assertWebSessionWriterConfiguration({

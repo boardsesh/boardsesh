@@ -230,6 +230,15 @@ describe('a browser signed in before the switch', () => {
     expect(bridgedCookieOf(response)).toBeUndefined();
   });
 
+  it('reads as signed out, its cookie cleared, once the bridge has ended (AUTH_LEGACY_BRIDGE_UNTIL)', async () => {
+    const { credential } = await legacyLogin();
+    vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', new Date(Date.now() - 1000).toISOString());
+    const response = await readSession(`${LEGACY}=${credential}`, 'GET', '', { writes: true });
+    expect(await response.json()).toEqual({});
+    expect(setCookies(response)).toContain(`${LEGACY}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
+    expect(bridgedCookieOf(response)).toBeUndefined();
+  });
+
   it('keeps the legacy answer and changes no cookie while the backend is off', async () => {
     const { climber, authSessionId, credential } = await legacyLogin();
     vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'legacy');

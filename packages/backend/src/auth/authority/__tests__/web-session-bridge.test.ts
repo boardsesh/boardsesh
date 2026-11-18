@@ -297,6 +297,19 @@ describe('the bridge command switches', () => {
     expect((await rows(id)).sessions).toEqual([]);
   });
 
+  it('ends at AUTH_LEGACY_BRIDGE_UNTIL: denied after it with nothing written, bridged before it, 503 for a bad value', async () => {
+    const { id } = await climber();
+    const credential = await legacyCookie(id, { claims: { authSessionId: randomUUID() } });
+    vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', new Date(Date.now() - 1000).toISOString());
+    expect(await bridge(credential)).toMatchObject({ outcome: 'denied' });
+    expect((await rows(id)).sessions).toEqual([]);
+    vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', 'next month');
+    expect(await bridge(credential)).toMatchObject({ outcome: 'error', code: 'unavailable' });
+    expect((await rows(id)).sessions).toEqual([]);
+    vi.stubEnv('AUTH_LEGACY_BRIDGE_UNTIL', new Date(Date.now() + 86_400_000).toISOString());
+    expect(await bridge(credential)).toMatchObject({ outcome: 'bridged' });
+  });
+
   it('answers 404 while the web session mode is off, whatever the native bridge switch says', async () => {
     const { id } = await climber();
     const credential = await legacyCookie(id, { claims: { authSessionId: randomUUID() } });

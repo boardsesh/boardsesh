@@ -551,6 +551,33 @@ only: the bridged cookie, the clears of a first-party cookie a newer legacy
 login replaces, and the clears of a legacy cookie (and, when it was replacing
 one, the first-party cookie) the backend denies. Nothing else.
 
+### The bridge's end date and the generation-stamp gate (B2c)
+
+The bridge ends at `AUTH_LEGACY_BRIDGE_UNTIL`, a time the owner sets to the
+cutover plus 30 days (the legacy cookie's lifetime) and may move once. From
+then on `/bridge` answers `denied` and writes nothing, so www reads a browser
+holding only a legacy cookie as signed out and clears that cookie, as for any
+other denied cookie. Under `better-auth` the backend refuses to start unless
+the time is set and at most 45 days ahead; unset leaves the bridge open, which
+tests and a backend not on `better-auth` rely on.
+
+Owner decision 4 split the activation gate `STAGED_WEB_PROOF_GENERATION_STAMP`.
+Its code half is closed, each point with a named test (the table is under
+"Code gates" in [the rollout doc](./better-auth-rollout.md)): the staged proof
+carries the generation read where the credential was verified; under
+`better-auth` www's `jwt` callback refuses a sign-in without a backend proof
+before its own generation read, so nothing stamps 0 any more; a moved, zero or
+missing stamp is denied by the bridge and by admission; a no-session-id cookie
+is never bridged into an account cutoff. Its sign-out now writes a denial of
+that cookie's own id even when nothing was bridged yet, so a bridge that
+follows or races the sign-out is refused (a login presenting such a cookie
+does the same). The owner-only half remains as `HISTORICAL_WEB_ISSUER_RETIREMENT`:
+the owner confirms on #7430 that the old Vercel deployments and rollback
+issuers are retired, and a reviewed PR removes the entry. It blocks `activate`,
+the identity mirror and the import, and holds the web SID denial writer
+(`CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging`) at startup; it is not a
+`better-auth` precondition.
+
 ## One guard in each browser client
 
 Each browser surface gets one guard in its transport, keyed by who a request

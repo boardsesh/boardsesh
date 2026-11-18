@@ -1,4 +1,5 @@
 import { webCredentialProofMode, webCredentialProofSchema } from '@boardsesh/auth-protocol';
+import { BROWSER_SESSION_MODE_ENV, parseBrowserSessionMode } from '@boardsesh/auth-protocol/browser-session-mode';
 import type { NextAuthOptions } from 'next-auth';
 import { randomUUID } from 'node:crypto';
 import * as Sentry from '@sentry/nextjs';
@@ -61,6 +62,15 @@ async function signInGeneration(userId: string): Promise<number> {
       fingerprint: ['auth_generation_read_unavailable'],
     });
     return 0;
+  }
+}
+
+/** Any mode but `legacy` (an unknown value too) takes the generation from a backend proof only. */
+function browserSessionModeRequiresProof(): boolean {
+  try {
+    return parseBrowserSessionMode(process.env[BROWSER_SESSION_MODE_ENV]) !== 'legacy';
+  } catch {
+    return true;
   }
 }
 
@@ -490,6 +500,10 @@ export const authOptions: NextAuthOptions = {
           ['credentials', 'google', 'apple', 'native-oauth'].includes(account?.provider ?? '')
         )
           throw new Error('Backend web credential proof required');
+        // Under AUTH_BROWSER_SESSION_MODE=better-auth only a backend proof names the
+        // generation; www never stamps a sign-in from its own read (#7596 B2c,
+        // STAGED_WEB_PROOF_GENERATION_STAMP). Legacy reads nothing more.
+        if (!proved && browserSessionModeRequiresProof()) throw new Error('Backend web credential proof required');
         token.authSessionId = proved?.authSessionId ?? randomUUID();
         if (proved?.requiresAccountCutoff) token.legacy_no_sid = true;
         else delete token.legacy_no_sid;

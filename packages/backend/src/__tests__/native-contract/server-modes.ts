@@ -43,7 +43,7 @@ const STAGED_WRITERS = {
 };
 const GENERATION_BLOCKED = 'NATIVE_REVOCATION_ACTIVATION_BLOCKED_GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION';
 const WEB_SID_BLOCKED =
-  'Web SID denial activation blocked: historical issuer retirement and old no-SID safety proof required';
+  'Web SID denial activation blocked: HISTORICAL_WEB_ISSUER_RETIREMENT, the owner confirming historical issuer retirement';
 /** AUTH_LEGACY_BRIDGE_MODE=on refuses to run without the web SID denial writer (auth-protocol). */
 const CANONICAL_BRIDGE = {
   AUTH_LEGACY_BRIDGE_MODE: 'on',

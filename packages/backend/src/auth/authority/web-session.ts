@@ -326,7 +326,8 @@ export interface WebSessionSignOut {
  * A legacy cookie with its own session id gets a denial of that id, which
  * ends that login and no other. A legacy cookie without one could only be
  * ended by cutting off its whole account, phones included, so it is answered
- * `signed-out` and only the row the bridge made from it, if any, ends: www
+ * `signed-out` and only its own id ends: the row the bridge made from it, if
+ * any, and a denial of that id, so the cookie is never bridged afterwards. www
  * clears the cookie, as NextAuth's own sign-out does today. A bridged row of
  * such a cookie, presented by its token, is ended as that row alone. It never
  * performs an account cutoff.
@@ -367,9 +368,12 @@ export async function signOutWebSession(
 /**
  * The row the bridge made from a legacy cookie without a session id: its id is
  * the session id the reader gave the cookie and its lineage is the cookie's
- * own. That row, if it exists, ends alone (row, lineage, denial of its id), as
- * a sign-out presenting its token ends it; never by an account cutoff. The
- * caller holds the gate and the account FOR UPDATE.
+ * own. That id ends alone (row if any, lineage, denial of the id), as a
+ * sign-out presenting its token ends it; never by an account cutoff. The
+ * denial is written even when no row exists yet (review of #7789, Low 4), so a
+ * bridge of this cookie that follows or races the sign-out is refused: the
+ * bridge reads denials of the id first. The caller holds the gate and the
+ * account FOR UPDATE.
  */
 async function endBridgedRowAlone(
   transaction: AuthorityTransaction,
@@ -379,17 +383,12 @@ async function endBridgedRowAlone(
 ): Promise<void> {
   const lineageId = session.lineageId;
   if (!lineageId?.startsWith('credential:') || lineageId.startsWith('credential:native-refresh:')) return;
-  const [bridged] = await transaction
-    .select({ id: authSession.id })
+  // A row under this id that the bridge did not make from this cookie is never touched.
+  const [existing] = await transaction
+    .select({ userId: authSession.userId, legacyLineageId: authSession.legacyLineageId })
     .from(authSession)
-    .where(
-      and(
-        eq(authSession.id, session.authSessionId),
-        eq(authSession.userId, session.userId),
-        eq(authSession.legacyLineageId, lineageId),
-      ),
-    );
-  if (!bridged) return;
+    .where(eq(authSession.id, session.authSessionId));
+  if (existing && (existing.userId !== session.userId || existing.legacyLineageId !== lineageId)) return;
   await denyFirstPartySessionInTransaction(
     transaction,
     { ...session, requiresAccountCutoff: false },

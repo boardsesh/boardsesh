@@ -44,6 +44,28 @@ export const BROWSER_ACCESS_TOKEN_SECRET_ENV = 'AUTH_BROWSER_ACCESS_TOKEN_SECRET
 export const BRIDGE_TOKEN_SECRET_ENV = 'AUTH_BRIDGE_TOKEN_SECRET';
 
 /**
+ * The end of the web bridge (#7596 B2c): an ISO 8601 time with an offset. From
+ * that instant `/web-session/v1/bridge` answers `denied` and writes nothing, so
+ * www treats a browser holding only a legacy cookie as signed out. Unset leaves
+ * the bridge open (tests, and a backend not on `better-auth`); under
+ * `better-auth` it must be set, at most 45 days ahead, so production never runs
+ * an open-ended bridge. The owner sets it to cutover plus 30 days and may move
+ * it once.
+ */
+export const LEGACY_BRIDGE_UNTIL_ENV = 'AUTH_LEGACY_BRIDGE_UNTIL';
+export const LEGACY_BRIDGE_UNTIL_MAX_DAYS = 45;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** The configured end of the bridge, undefined when unset. Throws on a value that is not an ISO instant. */
+export function legacyBridgeUntil(environment: Environment = process.env): Date | undefined {
+  const raw = environment[LEGACY_BRIDGE_UNTIL_ENV];
+  if (raw === undefined || raw === '') return undefined;
+  const until = new Date(raw);
+  if (!ISO_INSTANT.test(raw) || Number.isNaN(until.getTime())) throw new Error(`Invalid ${LEGACY_BRIDGE_UNTIL_ENV}`);
+  return until;
+}
+
+/**
  * Phase B work (#7596) that must land before a browser can be served a
  * backend session end to end. While any entry remains, `better-auth` refuses
  * to start even with every precondition met. Each later PR deletes its own
@@ -51,7 +73,6 @@ export const BRIDGE_TOKEN_SECRET_ENV = 'AUTH_BRIDGE_TOKEN_SECRET';
  * no environment variable or flag removes an entry.
  */
 export const BROWSER_SESSION_CUTOVER_BLOCKERS: readonly string[] = Object.freeze([
-  'B2_LEGACY_COOKIE_BRIDGE',
   'B3_BROWSER_ACCESS_TOKEN',
   'B4_SERVER_RENDERS_ON_CANONICAL_SESSION',
   'B5_PROVIDER_SIGN_IN',
@@ -76,6 +97,7 @@ export const BROWSER_SESSION_STARTUP_ERRORS = Object.freeze({
   cookieSecret: 'AUTH_BROWSER_SESSION_COOKIE_SECRET_INVALID',
   accessTokenSecret: 'AUTH_BROWSER_SESSION_ACCESS_TOKEN_SECRET_INVALID',
   bridgeTokenSecret: 'AUTH_BROWSER_SESSION_BRIDGE_TOKEN_SECRET_INVALID',
+  legacyBridgeUntil: 'AUTH_BROWSER_SESSION_LEGACY_BRIDGE_UNTIL_INVALID',
   secretReused: 'AUTH_BROWSER_SESSION_SECRET_REUSED',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE',
 } as const);
@@ -158,6 +180,17 @@ function assertBetterAuthPreconditions(environment: Environment): void {
     new Set(browserSecrets).size === browserSecrets.length &&
       !browserSecrets.some((secret) => otherSecrets.includes(secret)),
     errors.secretReused,
+  );
+  // Set, and at most 45 days ahead: production never runs an open-ended bridge.
+  let until: Date | undefined;
+  try {
+    until = legacyBridgeUntil(environment);
+  } catch {
+    until = undefined;
+  }
+  refuseUnless(
+    until !== undefined && until.getTime() - Date.now() <= LEGACY_BRIDGE_UNTIL_MAX_DAYS * 86_400_000,
+    errors.legacyBridgeUntil,
   );
 }
 
