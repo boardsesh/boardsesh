@@ -1,5 +1,5 @@
 {
-  "title": "¿Nos ayudas a mejorar Boardsesh?",
+  "title": "¿Nos ayudas a ver qué funciona?",
   "body": "Permite la analítica de producto y la grabación opcional de sesiones para ayudarnos a ver qué funciona. «No, gracias» las mantiene desactivadas. Los diagnósticos básicos de errores y rendimiento siguen activos. Tu elección se aplica donde hayas iniciado sesión y puedes cambiarla cuando quieras.",
   "adMeasurement": "En boardsesh.com, la analítica también incluye la medición de anuncios con Meta y Reddit. Ven qué páginas nuestras visitas y cuándo tocas un botón de tienda de apps, para que sepamos qué anuncios traen escaladores hasta aquí.",
   "allow": "Permitir",
@@ -15,5 +15,7 @@
   "mobileTitle": "Tu privacidad, tu elección",
   "mobileBody": "Permite la analítica de producto y la grabación opcional de sesiones para ayudarnos a mejorar Boardsesh. «No, gracias» las mantiene desactivadas. Los diagnósticos básicos de errores y rendimiento siguen activos. Tu elección se aplica donde hayas iniciado sesión. Puedes cambiarla en Ajustes → Privacidad cuando quieras.",
   "analyticsLabel": "Compartir analítica",
-  "regionDefaultNote": "La analítica está activada por defecto en tu región. Puedes desactivarla aquí cuando quieras."
+  "regionDefaultNote": "La analítica está activada por defecto en tu región. Puedes desactivarla aquí cuando quieras.",
+  "bannerSummary": "La analítica, la grabación de sesiones y la medición de anuncios con Meta y Reddit solo se activan si aceptas. Los informes de fallos siguen activos. Cámbialo cuando quieras.",
+  "details": "Detalles"
 }

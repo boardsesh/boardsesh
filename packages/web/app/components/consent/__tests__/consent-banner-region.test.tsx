@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { GET_CONSENT_REGION, GET_MY_ANALYTICS_CONSENT } from '@boardsesh/graphql/operations/analytics-consent';
 import { createRegionDefaultConsent, serializeConsentCookieValue, type ConsentRecord } from '@boardsesh/consent';
@@ -168,6 +168,49 @@ describe('consent banner by region', () => {
     expect(await view.findByTestId('consent-banner')).toBeTruthy();
     expect(consentCookie()).toBeUndefined();
     expect(regionLookups()).toBe(1);
+  });
+
+  it('opens the full disclosure without answering the compact notice', async () => {
+    const view = await renderBanner();
+    const banner = await view.findByTestId('consent-banner');
+    expect(within(banner).getByText('bannerSummary')).toBeTruthy();
+    expect(within(banner).queryByText('body')).toBeNull();
+    expect(within(banner).queryByText('adMeasurement')).toBeNull();
+
+    fireEvent.click(within(banner).getByRole('button', { name: 'details' }));
+    const dialog = await view.findByRole('dialog', { name: 'privacyChoices' });
+    expect(within(dialog).getByText('body')).toBeTruthy();
+    expect(within(dialog).getByText('adMeasurement')).toBeTruthy();
+    expect(within(dialog).getByRole('link', { name: 'privacyLink' }).getAttribute('href')).toBe('/privacy');
+    expect(consentCookie()).toBeUndefined();
+    expect(await sendsAnalytics()).toBe(false);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'close' }));
+    await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+    expect(view.getByTestId('consent-banner')).toBeTruthy();
+    expect(consentCookie()).toBeUndefined();
+  });
+
+  it('gives both answers the same button treatment', async () => {
+    const view = await renderBanner();
+    const banner = await view.findByTestId('consent-banner');
+    const allow = within(banner).getByRole('button', { name: 'allow' });
+    const deny = within(banner).getByRole('button', { name: 'deny' });
+    expect(allow.className).toBe(deny.className);
+    expect(allow.parentElement).toBe(deny.parentElement);
+    expect(getComputedStyle(allow.parentElement!).flexDirection).toBe('row');
+  });
+
+  it.each([
+    { label: 'allow', choice: 'granted' },
+    { label: 'deny', choice: 'denied' },
+  ])('saves the explicit $choice answer from the compact notice', async ({ label, choice }) => {
+    const view = await renderBanner();
+    const banner = await view.findByTestId('consent-banner');
+    fireEvent.click(within(banner).getByRole('button', { name: label }));
+    await waitFor(() => expect(consentCookie()).toMatch(new RegExp(`^v1\\.${choice}\\.\\d+\\.web$`)));
+    await waitFor(() => expect(view.queryByTestId('consent-banner')).toBeNull());
+    expect(await sendsAnalytics()).toBe(choice === 'granted');
   });
 
   it('never shows the banner outside the prompt regions and stores the region default', async () => {
