@@ -8,6 +8,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import type { DeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
 import { TabPanel } from '@/app/components/ui/tab-panel';
 import styles from './docs.module.css';
@@ -25,7 +26,11 @@ function LoadingSpinner() {
   );
 }
 
-export default function DocsClientPage() {
+export default function DocsClientPage({
+  developerDocsState = 'unavailable',
+}: {
+  developerDocsState?: DeveloperDocsState;
+}) {
   const { t } = useTranslation('marketing');
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -52,9 +57,13 @@ export default function DocsClientPage() {
           <PageSection title={t('docs.partners.title')}>
             <Prose>{t('docs.partners.body')}</Prose>
             <Prose>
-              <MuiLink component={LocaleLink} href="/developers">
-                {t('docs.partners.link')}
-              </MuiLink>
+              {developerDocsState === 'unavailable' ? (
+                <MuiLink href="mailto:support@boardsesh.com">{t('docs.partners.contact')}</MuiLink>
+              ) : (
+                <MuiLink component={LocaleLink} href="/developers">
+                  {t('docs.partners.link')}
+                </MuiLink>
+              )}
             </Prose>
           </PageSection>
           <PageSection title={t('docs.internal.title')}>

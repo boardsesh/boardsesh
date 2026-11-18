@@ -658,7 +658,8 @@
         "discordTitle": "Discord",
         "discordBody": "Marco y otros escaladores de Discord pueden ayudarte. Di qué plafón usas, qué has tocado y qué has visto.",
         "bugBody": "En la app, toca tu avatar y luego Reportar un bug. Cuéntanos qué pasó y en qué móvil.",
-        "devBody": "¿Creas una herramienta de logbook? Lee el historial de un escalador con su permiso. Consulta el acceso actual en la guía para desarrolladores."
+        "devBody": "¿Creas una herramienta de logbook? Lee el historial de un escalador con su permiso. Consulta el acceso actual en la guía para desarrolladores.",
+        "contact": "Pregunta por el acceso para desarrolladores"
       },
       "topics": {
         "guides": "Guías",
@@ -703,11 +704,11 @@
         "lead": "Vincula la cuenta de tu plafón una vez y tus encadenes llegan solos.",
         "step1": "Toca tu avatar, luego Ajustes y luego Aplicaciones conectadas.",
         "step2": "En Cuentas de Aurora, toca Vincular en la tarjeta de Tension o Iniciar sesión en Kilter en la de Kilter.",
-        "step3": "Para Kilter, sigue su pantalla de acceso. Para Tension, introduce tu usuario y contraseña de Tension.",
+        "step3": "Para Kilter, introduce tus datos de acceso en Apps conectadas. Para Tension, introduce tu usuario y contraseña de Tension.",
         "p1": "¿Usabas la app vieja de Kilter? La tarjeta Kilter (Aurora) acepta un export JSON.",
         "p2": "Tras vincular tu cuenta, Boardsesh busca nuevos encadenes en segundo plano. El tiempo puede variar. Las importaciones van solo hacia Boardsesh; nada de lo que registras aquí vuelve a sus apps.",
         "link": "Trae tu logbook",
-        "credentials": "Kilter normalmente abre su propia página de acceso; Boardsesh guarda un token cifrado en vez de tu contraseña de Kilter. Para Tension, guardamos tu usuario y contraseña cifrados para obtener nuevos encadenes. Desvincular elimina la credencial guardada y detiene futuras importaciones."
+        "credentials": "Para Kilter, introduce tus datos de acceso en Apps conectadas. Boardsesh los intercambia por un token de acceso cifrado y no guarda tu contraseña de Kilter. Para Tension y otras cuentas de plafones Aurora, guardamos tu usuario y contraseña cifrados para obtener nuevos encadenes. Desvincular elimina la credencial guardada y detiene futuras importaciones."
       },
       "beta": {
         "title": "Adjunta un vídeo de beta",
@@ -875,7 +876,8 @@
     "partners": {
       "title": "Apps conectadas",
       "body": "Usa OAuth, el permiso del escalador y los ámbitos que apruebe para acceder a su logbook personal. El registro puede ser por invitación; la guía indica el acceso actual. Esta página no presenta los entrenamientos ni los webhooks como disponibles para todos.",
-      "link": "Lee la guía para desarrolladores"
+      "link": "Lee la guía para desarrolladores",
+      "contact": "Pregunta por el acceso para desarrolladores"
     },
     "internal": {
       "title": "Protocolo interno · Referencia para colaboradores",
@@ -893,11 +895,11 @@
     "collect": {
       "title": "Qué recogemos",
       "accountLabel": "Información de cuenta.",
-      "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de sesiones y funciones sociales.",
+      "accountBody": "Cuando creas una cuenta, guardamos tu correo y tu nombre de usuario. El correo se usa para la autenticación. Tu nombre de usuario aparece en tu perfil y es visible para otros usuarios en las sesiones y funciones sociales.",
       "activityLabel": "Actividad de escalada.",
       "activityBody": "Cuando registras un encadene o un intento guardamos los detalles del bloque, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
       "locationLabel": "Ubicación.",
-      "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones de sesiones cercanas. No rastreamos tu ubicación en segundo plano ni guardamos historial.",
+      "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones cercanas. No rastreamos tu ubicación en segundo plano ni guardamos un historial.",
       "productAnalyticsLabel": "Analítica de producto.",
       "productAnalyticsBody": "Usamos PostHog para el uso de funciones, las visitas a páginas, el rendimiento y la grabación opcional de sesiones de la app. En la UE, el EEE, el Reino Unido, Suiza, Gibraltar, Jersey, Guernsey, la Isla de Man, China, Corea del Sur, Andorra, Mónaco, San Marino, la Ciudad del Vaticano, las Islas Feroe y Quebec, y siempre que no podamos saber dónde estás, te preguntamos primero y PostHog solo funciona si permites la analítica. En el resto del mundo la analítica está activada por defecto, por nuestro interés legítimo en mejorar Boardsesh, y puedes desactivarla cuando quieras en Ajustes o en Opciones de privacidad; si tu navegador envía una señal Global Privacy Control, la tratamos como un no. Lo decidimos a partir del país y, en Canadá, de la provincia que Cloudflare indica para tu conexión, que no guardamos. La analítica con sesión iniciada puede vincularse a tu cuenta de Boardsesh. La atribución de instalaciones necesita en todas partes tu propio permiso; el valor por defecto no la activa. Con tu permiso, la atribución de instalaciones en Android puede incluir la referencia de instalación de Play Store y datos de campañas, y en iOS usamos Apple AdServices a través de nuestro propio servidor para medir qué campañas de Apple Ads generan registros y actividad de escalada. Compartimos con PostHog identificadores de campaña validados y el estado de descarga, nunca el token de atribución. No usamos estos datos para mostrarte anuncios.",
       "adMeasurementLabel": "Medición de anuncios en nuestra web.",
@@ -911,7 +913,7 @@
     },
     "location": {
       "title": "Datos de ubicación",
-      "body1": "El acceso a la ubicación es opcional. Cuando se concede, se usa para una sola cosa: hacer que tu sesión de sesiones sea descubrible para escaladores cercanos. Tu ubicación se comparte con el servidor solo mientras una sesión de sesiones está activa. No guardamos historial, no construimos un perfil de ubicación ni compartimos datos de ubicación con nadie fuera de la función de descubrimiento de sesiones.",
+      "body1": "El acceso a la ubicación es opcional. Si lo permites, se usa para que los escaladores cercanos puedan descubrir tu sesión. Tu ubicación se comparte con el servidor solo mientras hay una sesión activa. No guardamos un historial, no creamos un perfil de ubicación ni compartimos esos datos fuera de la función de descubrimiento de sesiones.",
       "body2": "Puedes revocar el permiso de ubicación en cualquier momento desde los ajustes del dispositivo. La app funciona perfectamente sin él."
     },
     "sprayPhotos": {
@@ -957,7 +959,7 @@
     "sharing": {
       "title": "Compartir de datos",
       "body1ProductAnalytics": "No vendemos tus datos, no mostramos anuncios en Boardsesh ni compartimos información con intermediarios de datos. Los proveedores descritos arriba procesan datos para alojamiento, almacenamiento, pagos, fiabilidad del servicio y analítica opcional, que en nuestra web incluye la medición de anuncios con Meta y Reddit. La sincronización con Aurora Climbing funciona cuando la activas.",
-      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como las sesiones. Esto se ve en la app y forma parte de cómo funciona el producto.",
+      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus bloques registrados si participas en funciones sociales como las sesiones. Esto se ve en la app y forma parte de cómo funciona el producto.",
       "body3SprayPhotos": "No entregamos a nadie más las fotos de Spraywalls ni las presas que marcas para entrenar modelos. El único modelo que se entrena con ellas es nuestro propio detector de presas. Otras personas ven la foto de un Spraywall según su visibilidad, y los miembros de un rocódromo ven los Spraywalls vinculados a ese rocódromo, también los privados. La foto de un Spraywall público está en la web abierta."
     },
     "retention": {
@@ -1003,7 +1005,7 @@
     "boardAccounts": {
       "title": "Cuentas de plafones vinculadas",
       "sync": "Tras vincular tu cuenta, Boardsesh busca nuevos encadenes en segundo plano. El tiempo puede variar. Las importaciones van solo hacia Boardsesh; nada de lo que registras aquí vuelve a sus apps. Desvincula la cuenta en Ajustes → Apps conectadas para detener futuras importaciones.",
-      "credentials": "Para Kilter, Boardsesh guarda un token de acceso cifrado, no tu contraseña de Kilter. Para Tension, guardamos tu usuario y contraseña cifrados para obtener nuevos encadenes. Solo usamos estas credenciales para la conexión que solicitas. Desvincular elimina la credencial guardada, pero no los bloques ya importados.",
+      "credentials": "Para Kilter, Boardsesh guarda un token de acceso cifrado, no tu contraseña de Kilter. Para Tension y otras cuentas de plafones Aurora (Decoy, Touchstone, Grasshopper y So iLL), guardamos tu usuario y contraseña cifrados para obtener nuevos encadenes. Solo usamos estas credenciales para la conexión que solicitas. Desvincular elimina la credencial guardada, pero no los bloques ya importados.",
       "legalBasis": "Tratamos estas credenciales para prestar la conexión de cuenta que solicitas. La base jurídica es la prestación de ese servicio. Tras desvincular también podemos solicitar la revocación del token de Kilter; eliminarlo localmente no depende de que Kilter responda."
     }
   },
@@ -1039,7 +1041,7 @@
       },
       "password": {
         "question": "¿Qué pasa con mi contraseña del plafón?",
-        "answer": "Para Kilter, Boardsesh guarda un token de acceso cifrado en vez de tu contraseña. Para Tension, tu usuario y contraseña se guardan cifrados para obtener tu historial. Desvincular elimina la credencial guardada y detiene futuras importaciones."
+        "answer": "Para Kilter, introduce tus datos de acceso en Apps conectadas. Boardsesh los intercambia por un token cifrado y no guarda tu contraseña de Kilter. Para Tension y otras cuentas de plafones Aurora, tu usuario y contraseña se guardan cifrados para obtener tu historial. Desvincular elimina la credencial guardada y detiene futuras importaciones."
       },
       "shutdown": {
         "question": "¿Y si Boardsesh cierra?",

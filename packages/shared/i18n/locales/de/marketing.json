@@ -658,7 +658,8 @@
         "discordTitle": "Discord",
         "discordBody": "Marco und andere Kletterer*innen auf Discord können helfen. Nenne dein Board, worauf du getippt hast und was du gesehen hast.",
         "bugBody": "Tipp in der App auf deinen Avatar, dann auf Bug melden. Schreib uns, was passiert ist und auf welchem Handy.",
-        "devBody": "Du entwickelst ein Logbuch-Tool? Lies mit Erlaubnis der kletternden Person deren Historie. Der Entwicklerleitfaden erklärt den aktuellen Zugang."
+        "devBody": "Du entwickelst ein Logbuch-Tool? Lies mit Erlaubnis der kletternden Person deren Historie. Der Entwicklerleitfaden erklärt den aktuellen Zugang.",
+        "contact": "Frage nach dem Entwicklerzugang"
       },
       "topics": {
         "guides": "Anleitungen",
@@ -703,11 +704,11 @@
         "lead": "Verknüpf dein Board-Konto einmal, und deine Begehungen kommen rüber.",
         "step1": "Tipp auf deinen Avatar, dann auf Einstellungen, dann auf Verbundene Apps.",
         "step2": "Tipp unter Board-Konten auf Verknüpfen bei der Tension-Karte oder auf Bei Kilter anmelden bei der Kilter-Karte.",
-        "step3": "Folge für Kilter dessen Anmeldeseite. Gib für Tension deinen Tension-Benutzernamen und dein Passwort ein.",
+        "step3": "Gib für Kilter deine Anmeldedaten unter Verbundene Apps ein. Gib für Tension deinen Tension-Benutzernamen und dein Passwort ein.",
         "p1": "Du hast die alte Kilter-App genutzt? Die Karte Kilter (Aurora) nimmt einen JSON-Export an.",
         "p2": "Nach dem Verknüpfen prüft Boardsesh im Hintergrund auf neue Begehungen. Die Wartezeit variiert. Importe laufen nur zu Boardsesh; deine Einträge hier gehen nicht zurück an deren Apps.",
         "link": "Routenbuch mitnehmen",
-        "credentials": "Kilter öffnet normalerweise seine eigene Anmeldeseite; Boardsesh speichert ein verschlüsseltes Token statt deines Kilter-Passworts. Für Tension speichern wir Benutzernamen und Passwort verschlüsselt, um neue Begehungen abzurufen. Trennen entfernt die gespeicherten Zugangsdaten und stoppt künftige Importe."
+        "credentials": "Gib für Kilter deine Anmeldedaten unter Verbundene Apps ein. Boardsesh tauscht sie gegen ein verschlüsseltes Anmeldetoken und speichert dein Kilter-Passwort nicht. Für Tension und andere Aurora-Board-Konten speichern wir Benutzernamen und Passwort verschlüsselt, um neue Begehungen abzurufen. Trennen entfernt die gespeicherten Zugangsdaten und stoppt künftige Importe."
       },
       "beta": {
         "title": "Ein Beta-Video anhängen",
@@ -875,7 +876,8 @@
     "partners": {
       "title": "Verbundene Apps",
       "body": "Nutze OAuth, die Zustimmung der kletternden Person und deren freigegebene Berechtigungen für das persönliche Logbuch. Die Registrierung kann eine Einladung erfordern; der Leitfaden nennt den aktuellen Zugang. Workouts und Webhooks werden hier nicht als allgemein verfügbar angeboten.",
-      "link": "Lies den Entwicklerleitfaden"
+      "link": "Lies den Entwicklerleitfaden",
+      "contact": "Frage nach dem Entwicklerzugang"
     },
     "internal": {
       "title": "Internes Protokoll · Referenz für Beiträge",
@@ -893,11 +895,11 @@
     "collect": {
       "title": "Was wir erheben",
       "accountLabel": "Kontodaten.",
-      "accountBody": "Wenn du ein Konto anlegst, speichern wir deine E-Mail-Adresse und deinen Benutzernamen. Die E-Mail-Adresse dient der Anmeldung. Dein Benutzername steht auf deinem Profil und ist für andere in Sitzungen-Sessions und den sozialen Funktionen sichtbar.",
+      "accountBody": "Wenn du ein Konto anlegst, speichern wir deine E-Mail-Adresse und deinen Benutzernamen. Die E-Mail-Adresse dient der Anmeldung. Dein Benutzername steht auf deinem Profil und ist für andere in Sitzungen und den sozialen Funktionen sichtbar.",
       "activityLabel": "Kletteraktivität.",
       "activityBody": "Wenn du eine Begehung oder einen Versuch einträgst, speichern wir die Details des Boulders, den Grad, das Datum und deine Notizen. Daraus entstehen dein Routenbuch und deine Entwicklung.",
       "locationLabel": "Standort.",
-      "locationBody": "Wenn du die Standortfreigabe erteilst, nutzen wir deinen ungefähren Standort, damit du Sitzungen-Sessions in der Nähe findest. Wir verfolgen deinen Standort nicht im Hintergrund und speichern keinen Standortverlauf.",
+      "locationBody": "Wenn du die Standortfreigabe erteilst, nutzen wir deinen ungefähren Standort, damit du Sitzungen in der Nähe findest. Wir verfolgen deinen Standort nicht im Hintergrund und speichern keinen Standortverlauf.",
       "productAnalyticsLabel": "Produktanalyse.",
       "productAnalyticsBody": "Wir nutzen PostHog für Funktionsnutzung, Seitenaufrufe, Leistung und optionale Sitzungsaufzeichnungen in der App. In der EU, im EWR, im Vereinigten Königreich, in der Schweiz, in Gibraltar, auf Jersey, Guernsey und der Isle of Man, in China, Südkorea, Andorra, Monaco, San Marino, Vatikanstadt, auf den Färöern und in Québec sowie immer dann, wenn wir nicht erkennen, wo du bist, fragen wir zuerst, und PostHog läuft nur, wenn du Nutzungsanalysen erlaubst. Anderswo sind Nutzungsanalysen standardmäßig eingeschaltet, auf Grundlage unseres berechtigten Interesses, Boardsesh zu verbessern, und du kannst sie jederzeit in den Einstellungen oder über Datenschutzwahl ausschalten; sendet dein Browser ein Global-Privacy-Control-Signal, werten wir das als Nein. Wir entscheiden das anhand des Landes und in Kanada der Provinz, die Cloudflare für deine Verbindung meldet, und speichern diese Angaben nicht. Analysen angemeldeter Nutzer*innen können mit ihrem Boardsesh-Konto verknüpft sein. Die Installationszuordnung braucht überall deine eigene Erlaubnis; die Voreinstellung schaltet sie nicht ein. Mit deiner Erlaubnis kann die Installationszuordnung auf Android den Play-Store-Installationsverweis und Kampagneninformationen enthalten, und auf iOS nutzen wir Apple AdServices über unseren eigenen Server, um zu messen, welche Apple-Ads-Kampagnen zu Registrierungen und Kletteraktivität führen. Wir teilen geprüfte Kampagnenkennungen und den Downloadstatus mit PostHog, niemals das Zuordnungstoken. Wir verwenden diese Daten nicht, um dir Werbung anzuzeigen.",
       "adMeasurementLabel": "Werbemessung auf unserer Website.",
@@ -911,7 +913,7 @@
     },
     "location": {
       "title": "Standortdaten",
-      "body1": "Der Standortzugriff ist optional. Wenn du ihn erteilst, dient er genau einem Zweck: deine Sitzungen-Session für Kletternde in der Nähe auffindbar zu machen. Dein Standort geht nur an den Server, solange eine Sitzungen-Session läuft. Wir speichern keinen Standortverlauf, bauen kein Bewegungsprofil und geben Standortdaten außerhalb dieser Funktion an niemanden weiter.",
+      "body1": "Der Standortzugriff ist optional. Wenn du ihn erteilst, dient er dazu, deine Sitzung für Kletternde in der Nähe auffindbar zu machen. Dein Standort geht nur an den Server, solange eine Sitzung läuft. Wir speichern keinen Standortverlauf, bauen kein Bewegungsprofil und geben Standortdaten außerhalb dieser Funktion an niemanden weiter.",
       "body2": "Du kannst die Standortfreigabe jederzeit in den Geräteeinstellungen zurücknehmen. Die App funktioniert auch komplett ohne."
     },
     "sprayPhotos": {
@@ -1003,7 +1005,7 @@
     "boardAccounts": {
       "title": "Verknüpfte Board-Konten",
       "sync": "Nach dem Verknüpfen prüft Boardsesh im Hintergrund auf neue Begehungen. Die Wartezeit variiert. Importe laufen nur zu Boardsesh; deine Einträge hier gehen nicht zurück an deren Apps. Trenne das Konto unter Einstellungen → Verbundene Apps, um künftige Importe zu stoppen.",
-      "credentials": "Für Kilter speichert Boardsesh ein verschlüsseltes Anmeldetoken, nicht dein Kilter-Passwort. Für Tension speichern wir Benutzernamen und Passwort verschlüsselt, um neue Begehungen abzurufen. Diese Zugangsdaten dienen nur der von dir gewünschten Verbindung. Beim Trennen werden sie entfernt, bereits importierte Boulder bleiben erhalten.",
+      "credentials": "Für Kilter speichert Boardsesh ein verschlüsseltes Anmeldetoken, nicht dein Kilter-Passwort. Für Tension und andere Aurora-Board-Konten (Decoy, Touchstone, Grasshopper und So iLL) speichern wir Benutzernamen und Passwort verschlüsselt, um neue Begehungen abzurufen. Diese Zugangsdaten dienen nur der von dir gewünschten Verbindung. Beim Trennen werden sie entfernt, bereits importierte Boulder bleiben erhalten.",
       "legalBasis": "Wir verarbeiten diese Zugangsdaten, um die von dir gewünschte Kontoverbindung bereitzustellen. Rechtsgrundlage ist die Erfüllung dieses Dienstes. Nach dem Trennen können wir auch den Widerruf des Kilter-Tokens anfordern; die lokale Löschung hängt nicht von Kilters Antwort ab."
     }
   },
@@ -1039,7 +1041,7 @@
       },
       "password": {
         "question": "Was passiert mit meinem Board-Passwort?",
-        "answer": "Für Kilter speichert Boardsesh ein verschlüsseltes Anmeldetoken statt deines Passworts. Für Tension werden Benutzername und Passwort zum Abruf deiner Historie verschlüsselt gespeichert. Trennen entfernt diese Zugangsdaten und stoppt künftige Importe."
+        "answer": "Gib für Kilter deine Anmeldedaten unter Verbundene Apps ein. Boardsesh tauscht sie gegen ein verschlüsseltes Token und speichert dein Kilter-Passwort nicht. Für Tension und andere Aurora-Board-Konten werden Benutzername und Passwort zum Abruf deiner Historie verschlüsselt gespeichert. Trennen entfernt diese Zugangsdaten und stoppt künftige Importe."
       },
       "shutdown": {
         "question": "Was passiert, wenn Boardsesh aufhört?",

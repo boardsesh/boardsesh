@@ -658,7 +658,8 @@
         "discordTitle": "Discord",
         "discordBody": "Marco e altri scalatori su Discord possono aiutarti. Indica il pannello, cosa hai toccato e cosa hai visto.",
         "bugBody": "Nell'app, tocca il tuo avatar, poi Segnala un bug. Dicci cosa è successo e su quale telefono.",
-        "devBody": "Crei uno strumento per il diario? Leggi la cronologia di uno scalatore con il suo consenso. La guida per sviluppatori indica l’accesso attuale."
+        "devBody": "Crei uno strumento per il diario? Leggi la cronologia di uno scalatore con il suo consenso. La guida per sviluppatori indica l’accesso attuale.",
+        "contact": "Chiedi informazioni sull’accesso per sviluppatori"
       },
       "topics": {
         "guides": "Guide",
@@ -703,11 +704,11 @@
         "lead": "Collega il tuo account del pannello una volta e le tue ripetizioni arrivano qui.",
         "step1": "Tocca il tuo avatar, poi Impostazioni, poi App collegate.",
         "step2": "In Account dei pannelli, tocca Collega sulla scheda Tension o Accedi a Kilter sulla scheda Kilter.",
-        "step3": "Per Kilter, segui la sua schermata di accesso. Per Tension, inserisci nome utente e password Tension.",
+        "step3": "Per Kilter, inserisci i dati di accesso in App collegate. Per Tension, inserisci nome utente e password Tension.",
         "p1": "Usavi la vecchia app Kilter? La scheda Kilter (Aurora) accetta un'esportazione JSON.",
         "p2": "Dopo che colleghi l’account, Boardsesh cerca nuove ripetizioni in background. I tempi variano. Le importazioni vanno solo verso Boardsesh; nulla di ciò che registri qui torna alle loro app.",
         "link": "Porta il tuo diario",
-        "credentials": "Kilter normalmente apre la propria pagina di accesso; Boardsesh salva un token cifrato invece della tua password Kilter. Per Tension salviamo nome utente e password cifrati per recuperare nuove ripetizioni. Scollegare rimuove le credenziali salvate e ferma le importazioni future."
+        "credentials": "Per Kilter, inserisci i dati di accesso in App collegate. Boardsesh li scambia con un token di accesso cifrato e non salva la tua password Kilter. Per Tension e altri account dei pannelli Aurora, salviamo nome utente e password cifrati per recuperare nuove ripetizioni. Scollegare rimuove le credenziali salvate e ferma le importazioni future."
       },
       "beta": {
         "title": "Allega un video della beta",
@@ -875,7 +876,8 @@
     "partners": {
       "title": "App collegate",
       "body": "Usa OAuth, il consenso dello scalatore e gli ambiti approvati per il suo diario personale. La registrazione può essere su invito; la guida indica l’accesso attuale. Questa pagina non presenta allenamenti o webhook come disponibili per tutti.",
-      "link": "Leggi la guida per sviluppatori"
+      "link": "Leggi la guida per sviluppatori",
+      "contact": "Chiedi informazioni sull’accesso per sviluppatori"
     },
     "internal": {
       "title": "Protocollo interno · Riferimento per chi contribuisce",
@@ -893,11 +895,11 @@
     "collect": {
       "title": "Cosa raccogliamo",
       "accountLabel": "Informazioni sull'account.",
-      "accountBody": "Quando crei un account, salviamo il tuo indirizzo email e il tuo nome utente. L'email serve per l'autenticazione. Il tuo nome utente è mostrato sul tuo profilo ed è visibile agli altri utenti nelle session in sessioni e nelle funzioni social.",
+      "accountBody": "Quando crei un account, salviamo il tuo indirizzo email e il tuo nome utente. L’email serve per l’autenticazione. Il tuo nome utente è mostrato sul profilo ed è visibile agli altri utenti nelle sessioni e nelle funzioni social.",
       "activityLabel": "Attività di arrampicata.",
       "activityBody": "Quando registri una ripetizione o un tentativo, salviamo i dettagli del blocco, il grado, la data e le eventuali note che aggiungi. Questo alimenta il tuo diario e il monitoraggio dei progressi.",
       "locationLabel": "Posizione.",
-      "locationBody": "Se concedi il permesso di posizione, usiamo la tua posizione approssimativa per aiutarti a scoprire le session in sessioni vicine. Non tracciamo la tua posizione in background né conserviamo uno storico delle posizioni.",
+      "locationBody": "Se concedi il permesso di posizione, usiamo la tua posizione approssimativa per aiutarti a trovare sessioni vicine. Non tracciamo la tua posizione in background e non conserviamo uno storico delle posizioni.",
       "productAnalyticsLabel": "Analisi di prodotto.",
       "productAnalyticsBody": "Usiamo PostHog per l'uso delle funzioni, le visualizzazioni di pagina, le prestazioni e, facoltativamente, la registrazione delle sessioni nell'app. Nell'UE, nel SEE, nel Regno Unito, in Svizzera, a Gibilterra, Jersey, Guernsey, nell'Isola di Man, in Cina, Corea del Sud, Andorra, Monaco, San Marino, Città del Vaticano, nelle Isole Fær Øer e in Québec, e ogni volta che non è possibile capire dove ti trovi, chiediamo prima e PostHog funziona solo dopo che hai consentito l'analisi. Altrove l'analisi è attiva per impostazione predefinita, in base al nostro legittimo interesse a migliorare Boardsesh, e puoi disattivarla in qualsiasi momento in Impostazioni o in Scelte sulla privacy; se il tuo browser invia un segnale Global Privacy Control, lo trattiamo come un no. Lo decidiamo in base al paese e, in Canada, alla provincia che Cloudflare riporta per la tua connessione, e non li conserviamo. L'analisi con accesso effettuato può essere collegata al tuo account Boardsesh. L'attribuzione delle installazioni richiede ovunque il tuo Consenti esplicito; l'impostazione predefinita non la attiva. Con il tuo Consenti, l'attribuzione delle installazioni su Android può includere il referrer di installazione del Play Store e le informazioni sulla campagna, e su iOS usiamo Apple AdServices tramite il nostro backend per misurare quali campagne Apple Ads portano a registrazioni e attività di arrampicata. Condividiamo con PostHog identificatori di campagna validati e lo stato del download, mai il token di attribuzione. Non usiamo questi dati per mostrarti pubblicità.",
       "adMeasurementLabel": "Misurazione degli annunci sul nostro sito.",
@@ -911,7 +913,7 @@
     },
     "location": {
       "title": "Dati sulla posizione",
-      "body1": "L'accesso alla posizione è facoltativo. Se concesso, serve a un solo scopo: rendere la tua session in sessioni individuabile dai climber vicini. La tua posizione viene condivisa con il server solo mentre una session in sessioni è attiva. Non conserviamo lo storico delle tue posizioni, non costruiamo un profilo di posizione né condividiamo i dati di posizione con nessuno al di fuori della funzione di scoperta delle sessioni.",
+      "body1": "L’accesso alla posizione è facoltativo. Se lo concedi, serve a rendere la tua sessione visibile agli scalatori vicini. La posizione viene condivisa con il server solo durante una sessione attiva. Non conserviamo uno storico, non creiamo un profilo di posizione e non condividiamo questi dati fuori dalla funzione di ricerca delle sessioni.",
       "body2": "Puoi revocare il permesso di posizione in qualsiasi momento dalle impostazioni del dispositivo. L'app funziona benissimo anche senza."
     },
     "sprayPhotos": {
@@ -1003,7 +1005,7 @@
     "boardAccounts": {
       "title": "Account dei pannelli collegati",
       "sync": "Dopo che colleghi l’account, Boardsesh cerca nuove ripetizioni in background. I tempi variano. Le importazioni vanno solo verso Boardsesh; nulla di ciò che registri qui torna alle loro app. Scollega l’account in Impostazioni → App collegate per fermare le importazioni future.",
-      "credentials": "Per Kilter, Boardsesh salva un token di accesso cifrato, non la tua password Kilter. Per Tension salviamo nome utente e password cifrati per recuperare nuove ripetizioni. Usiamo queste credenziali solo per il collegamento richiesto. Scollegare rimuove le credenziali salvate, non i blocchi già importati.",
+      "credentials": "Per Kilter, Boardsesh salva un token di accesso cifrato, non la tua password Kilter. Per Tension e altri account dei pannelli Aurora (Decoy, Touchstone, Grasshopper e So iLL), salviamo nome utente e password cifrati per recuperare nuove ripetizioni. Usiamo queste credenziali solo per il collegamento richiesto. Scollegare rimuove le credenziali salvate, non i blocchi già importati.",
       "legalBasis": "Trattiamo queste credenziali per fornire il collegamento dell’account che richiedi. La base giuridica è l’esecuzione di quel servizio. Dopo lo scollegamento possiamo anche richiedere la revoca del token Kilter; la rimozione locale non dipende dalla risposta di Kilter."
     }
   },
@@ -1039,7 +1041,7 @@
       },
       "password": {
         "question": "Che cosa succede alla password del pannello?",
-        "answer": "Per Kilter, Boardsesh salva un token di accesso cifrato invece della password. Per Tension, nome utente e password sono salvati cifrati per recuperare la cronologia. Scollegare rimuove queste credenziali e ferma le importazioni future."
+        "answer": "Per Kilter, inserisci i dati di accesso in App collegate. Boardsesh li scambia con un token cifrato e non salva la tua password Kilter. Per Tension e altri account dei pannelli Aurora, nome utente e password sono salvati cifrati per recuperare la cronologia. Scollegare rimuove queste credenziali e ferma le importazioni future."
       },
       "shutdown": {
         "question": "E se Boardsesh chiude?",

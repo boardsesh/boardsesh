@@ -658,7 +658,8 @@
         "discordTitle": "Discord",
         "discordBody": "Marco and other climbers on Discord can help. Say which board you use, what you tapped and what you saw.",
         "bugBody": "In the app, tap your avatar, then Report a bug. Say what happened and on which phone.",
-        "devBody": "Building a logbook tool? Read a climber’s history with their permission. Check the developer guide for current access."
+        "devBody": "Building a logbook tool? Read a climber’s history with their permission. Check the developer guide for current access.",
+        "contact": "Ask about developer access"
       },
       "topics": {
         "guides": "Guides",
@@ -703,11 +704,11 @@
         "lead": "Link your board account once and your sends come across.",
         "step1": "Tap your avatar, then Settings, then Connected apps.",
         "step2": "Under Board accounts, tap Link on the Tension card or Sign in to Kilter on the Kilter card.",
-        "step3": "For Kilter, follow its sign-in screen. For Tension, enter your Tension username and password.",
+        "step3": "For Kilter, enter your login in Connected apps. For Tension, enter your Tension username and password.",
         "p1": "Used the old Kilter app? The Kilter (Aurora) card takes a JSON export.",
         "p2": "After you link your account, Boardsesh checks for new sends in the background. Timing varies. Imports run one way into Boardsesh; nothing you log here goes back to their apps.",
         "link": "Bring your logbook",
-        "credentials": "Kilter normally opens its own sign-in page; Boardsesh saves an encrypted token rather than your Kilter password. For Tension, we save your username and password encrypted to fetch new sends. Unlink removes the saved credential and stops future imports."
+        "credentials": "For Kilter, enter your login in Connected apps. Boardsesh exchanges it for an encrypted sign-in token and does not save your Kilter password. For Tension and other Aurora board accounts, we save your username and password encrypted to fetch new sends. Unlink removes the saved credential and stops future imports."
       },
       "beta": {
         "title": "Attach a beta video",
@@ -875,7 +876,8 @@
     "partners": {
       "title": "Connected apps",
       "body": "Use OAuth, a climber’s approval and the scopes they grant for their personal logbook. Registration may be invite only; the developer guide shows current access. Workouts and webhooks are not offered as generally available on this page.",
-      "link": "Read the developer guide"
+      "link": "Read the developer guide",
+      "contact": "Ask about developer access"
     },
     "internal": {
       "title": "Internal protocol · Contributor reference",
@@ -1003,7 +1005,7 @@
     "boardAccounts": {
       "title": "Linked board accounts",
       "sync": "After you link your account, Boardsesh checks for new sends in the background. Timing varies. Imports run one way into Boardsesh; nothing you log here goes back to their apps. Unlink the account in Settings → Connected apps to stop future imports.",
-      "credentials": "For Kilter, Boardsesh saves an encrypted sign-in token, not your Kilter password. For Tension, we save your username and password encrypted so we can fetch new sends. We use these credentials only for the account connection you request. Unlink removes the saved credential; it does not remove climbs already imported.",
+      "credentials": "For Kilter, Boardsesh saves an encrypted sign-in token, not your Kilter password. For Tension and other Aurora board accounts (Decoy, Touchstone, Grasshopper and So iLL), we save your username and password encrypted so we can fetch new sends. We use these credentials only for the account connection you request. Unlink removes the saved credential; it does not remove climbs already imported.",
       "legalBasis": "We process these credentials to provide the account connection you ask for. The legal basis is performing that service. Kilter token revocation may also be requested after unlinking; local removal does not depend on Kilter replying."
     }
   },
@@ -1039,7 +1041,7 @@
       },
       "password": {
         "question": "What happens to my board password?",
-        "answer": "For Kilter, Boardsesh saves an encrypted sign-in token rather than your password. For Tension, your username and password are saved encrypted to fetch your history. Unlink removes the saved credential and stops future imports."
+        "answer": "For Kilter, enter your login in Connected apps. Boardsesh exchanges it for an encrypted token and does not save your Kilter password. For Tension and other Aurora board accounts, your username and password are saved encrypted to fetch your history. Unlink removes the saved credential and stops future imports."
       },
       "shutdown": {
         "question": "What if Boardsesh shuts down?",
@@ -1050,8 +1052,8 @@
         "answer": "Privacy choices on the website and Analytics in Settings → Privacy control optional product analytics. Basic crash and performance diagnostics keep the service working. The privacy policy explains what each provider receives."
       },
       "sprayPrivacy": {
-        "question": "Can my Spraywall photo stay private?",
-        "answer": "Choose a private Spraywall rather than a public one. Members of a gym can see private Spraywalls attached to that gym. Public Spraywall photos are on the open web."
+        "question": "Can my spray wall photo stay private?",
+        "answer": "Choose a private spray wall rather than a public one. Members of a gym can see private spray walls attached to that gym. Public spray wall photos are on the open web."
       }
     }
   }

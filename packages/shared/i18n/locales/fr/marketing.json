@@ -658,7 +658,8 @@
         "discordTitle": "Discord",
         "discordBody": "Marco et d’autres grimpeurs sur Discord peuvent aider. Précise ta board, ce que tu as touché et ce que tu as vu.",
         "bugBody": "Dans l'app, touche ton avatar, puis Signaler un bug. Dis-nous ce qui s'est passé et sur quel téléphone.",
-        "devBody": "Tu crées un outil de carnet ? Lis l’historique d’un grimpeur avec son accord. Consulte le guide développeur pour les conditions d’accès actuelles."
+        "devBody": "Tu crées un outil de carnet ? Lis l’historique d’un grimpeur avec son accord. Consulte le guide développeur pour les conditions d’accès actuelles.",
+        "contact": "Demande l’accès développeur"
       },
       "topics": {
         "guides": "Guides",
@@ -703,11 +704,11 @@
         "lead": "Lie ton compte de board une fois et tes croix arrivent.",
         "step1": "Touche ton avatar, puis Paramètres, puis Applications connectées.",
         "step2": "Sous Comptes de board, touche Lier sur la carte Tension ou Se connecter à Kilter sur la carte Kilter.",
-        "step3": "Pour Kilter, suis son écran de connexion. Pour Tension, saisis ton identifiant et ton mot de passe Tension.",
+        "step3": "Pour Kilter, saisis tes identifiants dans Applications connectées. Pour Tension, saisis ton identifiant et ton mot de passe Tension.",
         "p1": "Tu utilisais l'ancienne app Kilter ? La carte Kilter (Aurora) accepte un export JSON.",
         "p2": "Après avoir lié ton compte, Boardsesh cherche de nouvelles croix en arrière-plan. Le délai varie. Les imports vont uniquement vers Boardsesh ; rien de ce que tu notes ici ne repart vers leurs applications.",
         "link": "Récupérer ton carnet",
-        "credentials": "Kilter ouvre normalement sa propre page de connexion ; Boardsesh conserve un jeton chiffré plutôt que ton mot de passe Kilter. Pour Tension, nous conservons ton identifiant et ton mot de passe chiffrés afin de récupérer de nouvelles croix. Délier le compte supprime ces identifiants et arrête les futurs imports."
+        "credentials": "Pour Kilter, saisis tes identifiants dans Applications connectées. Boardsesh les échange contre un jeton de connexion chiffré et ne conserve pas ton mot de passe Kilter. Pour Tension et les autres comptes de boards Aurora, nous conservons ton identifiant et ton mot de passe chiffrés afin de récupérer de nouvelles croix. Délier le compte supprime ces identifiants et arrête les futurs imports."
       },
       "beta": {
         "title": "Joindre une vidéo de beta",
@@ -875,7 +876,8 @@
     "partners": {
       "title": "Applications connectées",
       "body": "Utilise OAuth, l’accord du grimpeur et les permissions accordées pour son carnet personnel. L’inscription peut être sur invitation ; le guide précise l’accès actuel. Cette page ne présente ni les entraînements ni les webhooks comme disponibles pour tous.",
-      "link": "Lis le guide développeur"
+      "link": "Lis le guide développeur",
+      "contact": "Demande l’accès développeur"
     },
     "internal": {
       "title": "Protocole interne · Référence contributeur",
@@ -893,11 +895,11 @@
     "collect": {
       "title": "Ce que nous collectons",
       "accountLabel": "Informations de compte.",
-      "accountBody": "Quand vous créez un compte, nous stockons votre adresse e-mail et votre nom d'utilisateur. Votre e-mail sert à l'authentification. Votre nom d'utilisateur est affiché sur votre profil et visible par les autres utilisateurs dans les sessions sessions et les fonctionnalités sociales.",
+      "accountBody": "Quand tu crées un compte, nous conservons ton adresse e-mail et ton nom d’utilisateur. Ton e-mail sert à l’authentification. Ton nom d’utilisateur figure sur ton profil et est visible par les autres dans les sessions et les fonctions sociales.",
       "activityLabel": "Activité de grimpe.",
       "activityBody": "Quand vous enregistrez une croix ou un essai, nous stockons les détails du bloc, la cotation, la date et les notes que vous ajoutez. Cela alimente votre carnet et le suivi de progression.",
       "locationLabel": "Localisation.",
-      "locationBody": "Si vous accordez la permission de localisation, nous utilisons votre position approximative pour vous aider à découvrir des sessions sessions à proximité. Nous ne suivons pas votre position en arrière-plan et ne stockons pas d'historique de localisation.",
+      "locationBody": "Si tu autorises la localisation, nous utilisons ta position approximative pour te proposer des sessions à proximité. Nous ne suivons pas ta position en arrière-plan et ne conservons pas d’historique de localisation.",
       "productAnalyticsLabel": "Analytique produit.",
       "productAnalyticsBody": "Nous utilisons PostHog pour l’utilisation des fonctionnalités, les pages vues, les performances et l’enregistrement facultatif des sessions dans l’app. Dans l’UE, l’EEE, au Royaume-Uni, en Suisse, à Gibraltar, à Jersey, à Guernesey, sur l’île de Man, en Chine, en Corée du Sud, en Andorre, à Monaco, à Saint-Marin, dans la Cité du Vatican, aux îles Féroé et au Québec, et chaque fois que nous ne pouvons pas savoir où tu te trouves, nous te demandons d’abord et PostHog ne fonctionne que si tu autorises les statistiques. Ailleurs, les statistiques sont activées par défaut, au titre de notre intérêt légitime à améliorer Boardsesh, et tu peux les désactiver à tout moment dans les paramètres ou dans Choix de confidentialité ; si ton navigateur envoie un signal Global Privacy Control, nous le traitons comme un refus. Nous le déterminons à partir du pays et, au Canada, de la province que Cloudflare indique pour ta connexion, que nous ne conservons pas. Les statistiques des utilisateurs connectés peuvent être liées à leur compte Boardsesh. L’attribution des installations demande partout ta propre autorisation ; le réglage par défaut ne l’active pas. Avec ton autorisation, l’attribution des installations Android peut inclure la référence d’installation du Play Store et des informations de campagne, et sur iOS nous utilisons Apple AdServices via notre propre serveur pour mesurer quelles campagnes Apple Ads mènent à des inscriptions et à une activité d’escalade. Nous partageons avec PostHog les identifiants de campagne validés et le statut du téléchargement, jamais le jeton d’attribution. Nous n’utilisons pas ces données pour te montrer des publicités.",
       "adMeasurementLabel": "Mesure publicitaire sur notre site.",
@@ -911,7 +913,7 @@
     },
     "location": {
       "title": "Données de localisation",
-      "body1": "L'accès à la localisation est optionnel. Lorsqu'il est accordé, il sert un seul objectif : rendre votre session sessions visible aux grimpeurs à proximité. Votre localisation n'est partagée avec le serveur que pendant qu'une session sessions est active. Nous ne stockons pas votre historique de localisation, ne construisons pas de profil de localisation et ne partageons pas de données de localisation en dehors de la fonctionnalité de découverte de sessions.",
+      "body1": "L’accès à la localisation est facultatif. Si tu l’autorises, il sert à rendre ta session visible aux grimpeurs à proximité. Ta position est partagée avec le serveur uniquement pendant une session active. Nous ne conservons pas d’historique, ne créons pas de profil de localisation et ne partageons pas ces données en dehors de la découverte de sessions.",
       "body2": "Vous pouvez révoquer la permission de localisation à tout moment dans les paramètres de votre appareil. L'app fonctionne pleinement sans elle."
     },
     "sprayPhotos": {
@@ -1003,7 +1005,7 @@
     "boardAccounts": {
       "title": "Comptes de boards liés",
       "sync": "Après avoir lié ton compte, Boardsesh cherche de nouvelles croix en arrière-plan. Le délai varie. Les imports vont uniquement vers Boardsesh ; rien de ce que tu notes ici ne repart vers leurs applications. Délie le compte dans Réglages → Applications connectées pour arrêter les futurs imports.",
-      "credentials": "Pour Kilter, Boardsesh conserve un jeton de connexion chiffré, pas ton mot de passe Kilter. Pour Tension, nous conservons ton identifiant et ton mot de passe chiffrés afin de récupérer de nouvelles croix. Ces identifiants servent uniquement à la connexion demandée. Délier le compte supprime les identifiants conservés, pas les blocs déjà importés.",
+      "credentials": "Pour Kilter, Boardsesh conserve un jeton de connexion chiffré, pas ton mot de passe Kilter. Pour Tension et les autres comptes de boards Aurora (Decoy, Touchstone, Grasshopper et So iLL), nous conservons ton identifiant et ton mot de passe chiffrés afin de récupérer de nouvelles croix. Ces identifiants servent uniquement à la connexion demandée. Délier le compte supprime les identifiants conservés, pas les blocs déjà importés.",
       "legalBasis": "Nous traitons ces identifiants pour fournir la connexion de compte que tu demandes. La base juridique est l’exécution de ce service. Après la déconnexion, nous pouvons aussi demander la révocation du jeton Kilter ; sa suppression locale ne dépend pas d’une réponse de Kilter."
     }
   },
@@ -1039,7 +1041,7 @@
       },
       "password": {
         "question": "Que devient mon mot de passe de board ?",
-        "answer": "Pour Kilter, Boardsesh conserve un jeton de connexion chiffré plutôt que ton mot de passe. Pour Tension, ton identifiant et ton mot de passe sont chiffrés pour récupérer ton historique. Délier le compte supprime ces identifiants et arrête les futurs imports."
+        "answer": "Pour Kilter, saisis tes identifiants dans Applications connectées. Boardsesh les échange contre un jeton chiffré et ne conserve pas ton mot de passe Kilter. Pour Tension et les autres comptes de boards Aurora, ton identifiant et ton mot de passe sont chiffrés pour récupérer ton historique. Délier le compte supprime ces identifiants et arrête les futurs imports."
       },
       "shutdown": {
         "question": "Et si Boardsesh ferme ?",

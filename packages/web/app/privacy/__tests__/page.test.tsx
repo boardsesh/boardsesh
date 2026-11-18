@@ -53,6 +53,7 @@ describe('privacy policy, board accounts and payment availability', () => {
     expect(screen.getByText(/checks for new sends in the background/)).toBeTruthy();
     expect(screen.getByText(/Kilter.*encrypted sign-in token, not your Kilter password/)).toBeTruthy();
     expect(screen.getByText(/Unlink removes the saved credential/)).toBeTruthy();
+    expect(screen.getByText(/Decoy, Touchstone, Grasshopper and So iLL/)).toBeTruthy();
     expect(screen.queryByText(/Party Mode/)).toBeNull();
   });
 

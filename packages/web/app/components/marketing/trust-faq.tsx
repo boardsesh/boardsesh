@@ -62,7 +62,7 @@ export default function TrustFaq({ limit = 8 }: { limit?: 6 | 8 }) {
           >
             <Typography component="span">{question}</Typography>
           </AccordionSummary>
-          <AccordionDetails id={`trust-${id}-answer`}>
+          <AccordionDetails>
             <Prose>{answer}</Prose>
           </AccordionDetails>
         </Accordion>
