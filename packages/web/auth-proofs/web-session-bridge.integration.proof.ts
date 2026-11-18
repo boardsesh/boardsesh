@@ -163,7 +163,7 @@ describe('a browser signed in before the switch', () => {
     expect(setCookies(response)).toEqual([]);
   });
 
-  it('never bridges a plain-named cookie in a secure context; the legacy path, which reads only the secure name, answers', async () => {
+  it('never bridges a plain-named cookie in a secure context: signed out, as the legacy path reads only the secure name', async () => {
     const { credential } = await legacyLogin();
     const response = await readSession(`next-auth.session-token=${credential}`);
     expect(await response.json()).toEqual({});
@@ -247,17 +247,28 @@ describe('a browser signed in before the switch', () => {
     expect(sessionCookieNamesIn(posted)).toEqual([]);
   });
 
-  it('is not bridged beside any first-party cookie, verified or not, or beside a conflicted bridged name', async () => {
-    const { climber, credential } = await legacyLogin();
+  it('beside an unverifiable first-party cookie is bridged with no cookie written, and is not bridged beside a conflicted bridged name', async () => {
+    const { climber, authSessionId, credential } = await legacyLogin();
+    // #7792 review M4b: the bridged session's JSON, the legacy cookie's id, no Set-Cookie of any kind.
     const unverified = await readSession(`${LOGIN}=not-a-signed-value; ${LEGACY}=${credential}`);
-    expect(await unverified.json()).toMatchObject({ user: { id: climber.id } });
-    expect(sessionCookieNamesIn(unverified)).toEqual([]);
+    expect(await unverified.json()).toMatchObject({ user: { id: climber.id }, authSessionId });
+    expect(setCookies(unverified)).toEqual([]);
     const strays = [randomUUID(), randomUUID()].map((token) =>
       signBrowserSessionCookie('bridged', token.replaceAll('-', ''), COOKIE_SECRET),
     );
     const conflicted = await readSession(`${BRIDGED}=${strays[0]}; ${BRIDGED}=${strays[1]}; ${LEGACY}=${credential}`);
     expect(await conflicted.json()).toEqual({});
     expect(setCookies(conflicted)).toEqual([]);
+  });
+
+  it('beside an unverifiable first-party cookie, a denied legacy cookie reads signed out with nothing cleared', async () => {
+    const climber = await createClimber(environment.database);
+    const jar = new CookieJar();
+    await login(jar, climber.email);
+    // A login's rollback twin on its own is denied by the bridge.
+    const response = await readSession(`${LOGIN}=not-a-signed-value; ${LEGACY}=${jar.get(LEGACY, DOMAIN)}`);
+    expect(await response.json()).toEqual({});
+    expect(setCookies(response)).toEqual([]);
   });
 
   it('stops bridging one client over its limit and answers as the legacy path', async () => {

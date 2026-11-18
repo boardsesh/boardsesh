@@ -111,6 +111,7 @@ type WsAuthBody = {
   userId?: string;
   authSessionId?: string;
   expiresAt?: string;
+  expiresIn?: number;
 };
 type SessionJson = { user?: { id: string }; authSessionId?: string };
 
@@ -226,6 +227,9 @@ describe('ws-auth under better-auth', () => {
     const remainingMs = Date.parse(token.expiresAt ?? '') - Date.now();
     expect(remainingMs).toBeGreaterThan(14 * 60_000);
     expect(remainingMs).toBeLessThanOrEqual(15 * 60_000);
+    // The lifetime clients time their refresh by, from receipt.
+    expect(token.expiresIn).toBeGreaterThan(14 * 60);
+    expect(token.expiresIn).toBeLessThanOrEqual(15 * 60);
     const bearer = token.token ?? '';
     expect(await graphqlViewer(bearer)).toEqual({ status: 200, body: { data: { authenticatedUserId: climber.id } } });
 
@@ -290,6 +294,30 @@ describe('ws-auth under better-auth', () => {
     expect(twinOnly.status).toBe(200);
     expect(await twinOnly.json()).toEqual({ token: null, authenticated: false });
     expect(setCookies(twinOnly)).toEqual([]);
+  });
+
+  it('is signed out for a plain-named legacy cookie in a secure context, as the session read is', async () => {
+    const { credential } = await legacyLogin();
+    const { session, token, status } = await bothAnswers(`next-auth.session-token=${credential}`);
+    expect(session).toEqual({});
+    expect(status).toBe(200);
+    expect(token).toEqual({ token: null, authenticated: false });
+  });
+
+  it('bridges a legacy cookie beside an unverifiable first-party cookie without any cookie write, as the session read does', async () => {
+    const { climber, authSessionId, credential } = await legacyLogin();
+    const cookie = `${LOGIN}=not-a-signed-value; ${LEGACY}=${credential}`;
+    const sessionRead = await readSession(cookie);
+    expect(setCookies(sessionRead)).toEqual([]);
+    const session = (await sessionRead.json()) as SessionJson;
+    expect(session).toMatchObject({ user: { id: climber.id }, authSessionId });
+    const tokenResponse = await wsAuth(cookie);
+    expect(setCookies(tokenResponse)).toEqual([]);
+    expectSameIds(session, (await tokenResponse.json()) as WsAuthBody);
+    // Backend off: both are an outage, never the legacy answer and never signed out.
+    vi.stubEnv('CURRENT_STORE_WEB_SESSION_MODE', 'legacy');
+    expect((await readSession(cookie)).status).toBe(503);
+    expect((await wsAuth(cookie)).status).toBe(503);
   });
 
   it('names the newer legacy login beside a stale login cookie, exactly as the session read does', async () => {
