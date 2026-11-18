@@ -33,6 +33,9 @@ import {
 } from '../logbook-feed';
 import { readLogbookClimbMetadata, serializeLogbookTick, utcTimestamp } from '../logbook-tick-serializer';
 
+/** A workout started this long after its session was added to a session already running. */
+const ATTACHED_TO_RUNNING_SESSION_MS = 5_000;
+
 /** A repeated climb cannot prove which block produced its tick. */
 export function inferWorkoutBlockIndex(
   climbUuid: string,
@@ -52,8 +55,8 @@ type SessionTick = Pick<
  * The workout's ticks and the block each landed on, by the climber's stored
  * session workout: the same plan, tick map and `deriveWorkoutStages` the app's
  * session detail uses. The phone names a partner block's stage
- * `${workoutId}:${blockIndex}`. A tick counts when it was logged since the
- * workout started or the tick map pins it to one of those stages, and only
+ * `${workoutId}:${blockIndex}`. A tick counts when it was logged during the
+ * workout or the tick map pins it to one of those stages, and only
  * those ticks are placed, so an earlier climb of a block's climb neither
  * counts nor takes the block's slot. A tick on any other stage, or off the
  * plan, is on no block. Null when the session holds no stored plan with one of
@@ -65,7 +68,7 @@ async function placeTicksByStoredTickMap(
   { workoutId, userId, sessionId }: { workoutId: string; userId: string; sessionId: string },
   blockCount: number,
   ticks: ReadonlyArray<SessionTick>,
-  workoutStartedAt: Date,
+  loggedDuringWorkout: (tick: SessionTick) => boolean,
 ): Promise<{ workoutTickUuids: Set<string>; blockIndexByTick: Map<string, number> } | null> {
   const [stored] = await transaction
     .select({ plan: sessionWorkouts.plan, tickMap: sessionWorkouts.tickMap })
@@ -78,8 +81,9 @@ async function placeTicksByStoredTickMap(
   const workoutQueueItems = new Set<string>();
   for (const stage of sessionPlan.stages) {
     if (!stage.id.startsWith(stagePrefix)) continue;
-    const blockIndex = Number(stage.id.slice(stagePrefix.length));
-    if (Number.isInteger(blockIndex) && blockIndex >= 0 && blockIndex < blockCount) {
+    const blockIndexText = stage.id.slice(stagePrefix.length);
+    const blockIndex = Number(blockIndexText);
+    if (/^\d+$/.test(blockIndexText) && blockIndex < blockCount) {
       blockIndexByStage.set(stage.id, blockIndex);
       for (const item of stage.items) workoutQueueItems.add(item.queueItemUuid);
     }
@@ -90,7 +94,7 @@ async function placeTicksByStoredTickMap(
   const pinnedTickUuids = new Set(
     tickMap.filter((entry) => workoutQueueItems.has(entry.queueItemUuid)).map((entry) => entry.tickUuid),
   );
-  const workoutTicks = ticks.filter((tick) => pinnedTickUuids.has(tick.uuid) || loggedSince(tick, workoutStartedAt));
+  const workoutTicks = ticks.filter((tick) => pinnedTickUuids.has(tick.uuid) || loggedDuringWorkout(tick));
   const derived = deriveWorkoutStages(
     sessionPlan,
     tickMap,
@@ -162,8 +166,15 @@ export async function buildWorkoutResults(
   const [session] = await transaction.select().from(boardSessions).where(eq(boardSessions.id, sessionId));
   if (!session?.startedAt || !session.endedAt) return undefined;
   const spec = CreateWorkoutSchema.parse(workout.spec);
-  const workoutStartedAt =
-    workout.startedAt && workout.startedAt > session.startedAt ? workout.startedAt : session.startedAt;
+  // Start creates a session and attaches the workout in one transaction, a few
+  // ms apart, so the session holds nothing from before the workout. Only a
+  // workout added to a session already running has earlier ticks to leave out;
+  // a new session keeps every tick, whatever the phone's clock said.
+  const attachedToRunningSession =
+    workout.startedAt !== null &&
+    workout.startedAt.getTime() - session.startedAt.getTime() > ATTACHED_TO_RUNNING_SESSION_MS;
+  const workoutStartedAt = attachedToRunningSession && workout.startedAt ? workout.startedAt : session.startedAt;
+  const loggedDuringWorkout = (tick: SessionTick) => !attachedToRunningSession || loggedSince(tick, workoutStartedAt);
   const sessionTicks = await transaction
     .select(logbookFeedTickColumns)
     .from(boardseshTicks)
@@ -175,10 +186,10 @@ export async function buildWorkoutResults(
     { workoutId: workout.id, userId: workout.userId, sessionId },
     spec.blocks.length,
     sessionTicks,
-    workoutStartedAt,
+    loggedDuringWorkout,
   );
   const rows = sessionTicks.filter((tick) =>
-    storedPlacement ? storedPlacement.workoutTickUuids.has(tick.uuid) : loggedSince(tick, workoutStartedAt),
+    storedPlacement ? storedPlacement.workoutTickUuids.has(tick.uuid) : loggedDuringWorkout(tick),
   );
   const blockIndexOf = storedPlacement
     ? (tick: SessionTick) => storedPlacement.blockIndexByTick.get(tick.uuid) ?? null

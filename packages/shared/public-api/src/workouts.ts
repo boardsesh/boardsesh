@@ -236,7 +236,7 @@ export const WorkoutResultsSchema = z
       )
       .openapi({
         description:
-          "The climber's own ticks from this workout, in time order: every tick logged after the workout started, or logged on one of its queued climbs. Ticks from earlier in the same session are left out.",
+          "The climber's own ticks from this workout, in time order: every tick logged after the workout started, or that the climber's session recorded against one of its blocks. Ticks from earlier in the same session are left out.",
       }),
     blocks: z.array(
       z

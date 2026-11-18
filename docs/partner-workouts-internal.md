@@ -420,25 +420,32 @@ workout's ticks (below), and gives every tick on a stage named
 `${workoutId}:${index}` that `blockIndex`. A tick on any other stage (the
 climber's own block in "Add to this session") or off the plan gets `null`. So
 the tick map, a kept entry for a tick that lands late (#7819) and the
-forward-first rule for repeated climbs (#7822) all reach apps, and the app
-and the partner never put one tick in different blocks. When no stored row
+forward-first rule for repeated climbs (#7822) all reach apps. The two can
+still differ when an earlier, unpinned tick on the same climb exists (below).
+When no stored row
 holds one of the workout's stages (a lost write), the builder falls back to
 `plan_snapshot`: a block only when exactly one block queued the tick's climb.
 
 Results hold only the workout's own ticks (consent: "Read the results of
-workouts this app planned"). A tick stays when its `climbedAt` is at or after
-`app_workouts.started_at`, or when the tick map pins it to a queue item on one
-of the workout's stages; every other tick in the session is dropped before
-the derivation runs, so inclusion and placement agree. The phone's
-`climbedAt` is used rather than the server's `created_at`, so ticks logged
-offline before the workout and synced after Start stay out. A pinned tick
-stays even when the phone clock ran a little behind. An earlier tick on a
+workouts this app planned"). When the workout started its own session (Start
+creates the session and attaches the workout in one transaction, so
+`started_at` is within 5 s of the session start), every tick in the session
+counts. When it was added to a session already running, a tick stays when its
+`climbedAt` is at or after `app_workouts.started_at`, or when the tick map
+pins it to a queue item on one of the workout's stages; every other tick in
+the session is dropped before the derivation runs, so inclusion and placement
+agree. The phone's `climbedAt` is used rather than the server's `created_at`,
+so ticks logged offline before the workout and synced after Start stay out.
+That compares phone time with server time: a phone clock running ahead lets
+in unpinned ticks from a few seconds before the attach, and one running
+behind drops unpinned ticks from the first few seconds after it. A pinned
+tick stays either way. An earlier tick on a
 climb a partner block queued later, with no map entry, stays out and does not
 take that block's slot. The app's own session detail derives over every tick
 in the session, so it may still show such a tick on that block. In the
 snapshot fallback only the time rule applies. `session.startedAt` is
-the later of the session start and `started_at`, and `durationSeconds` runs
-from it. Each tick goes through the same serializer as the logbook feed, plus
+`started_at` for a workout added to a running session and the session start
+otherwise, and `durationSeconds` runs from it. Each tick goes through the same serializer as the logbook feed, plus
 `blockIndex`. Session notes, timezone and the private board name are
 included only if `session.created_by_user_id === workout.user_id`; all three
 are `null` for another climber's workout in a shared session. Public board

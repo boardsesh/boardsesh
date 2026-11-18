@@ -880,14 +880,13 @@ includes:
 - `ticks` are the climber's own ticks from this workout, in time order, in
   the tick shape from section 3, plus `blockIndex`. A tick belongs to the
   workout when the climber logged it (`climbedAt`) after the workout started,
-  or logged it on one of the workout's queued climbs. Ticks from earlier in
-  the same session are left out, even on a climb one of your blocks queued
-  later, and so are other climbers' ticks in a shared session. With `logbook:read` the same ticks also arrive through the logbook
-  feed with the same `id`, so de-duplicate on it.
-- `blockIndex` is the block the climber logged the tick on, as their session
-  recorded it: the same placement the climber sees on the session in
-  Boardsesh. So a climb queued in two blocks lands on the block it was climbed
-  in. It is `null` for a tick on none of your blocks: a climb they added
+  or when the climber's session recorded it against one of the workout's
+  blocks. Ticks from earlier in the same session are left out, even on a
+  climb one of your blocks queued later, and so are other climbers' ticks in
+  a shared session. With `logbook:read` the same ticks also arrive through
+  the logbook feed with the same `id`, so de-duplicate on it.
+- `blockIndex` is the block the climber's session recorded the tick on. So a
+  climb queued in two blocks lands on the block it was climbed in. It is `null` for a tick on none of your blocks: a climb they added
   themselves, or a tick during a freeform block, which queues nothing. In the
   rare session with no record of its blocks, a tick gets a block only when
   exactly one block queued that climb. Compute rest gaps and per-block counts
