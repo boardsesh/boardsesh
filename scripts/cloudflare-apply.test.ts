@@ -49,6 +49,8 @@ import {
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
   FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS,
+  WWW_API_PATH_PREFIX,
+  BOARD_RENDER_CACHE_EXPRESSION,
   SPRAY_WALL_CAPABILITY_QUERY,
   BOARD_INVITE_QUERY,
   WWW_HOSTNAME,
@@ -2444,6 +2446,17 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
         );
     // Each name is matched by its own substring: neither covers the other.
     expect('__Secure-boardsesh.bridged_session_token').not.toContain('boardsesh.session_token');
+  });
+
+  it('never caches the www auth and token endpoints, whatever they answer (#7596)', () => {
+    expect(WWW_API_PATH_PREFIX).toBe('/api/');
+    expect(expression).toContain('not starts_with(http.request.uri.path, "/api/")');
+    for (const path of ['/api/auth/session', '/api/auth/csrf', '/api/internal/ws-auth'])
+      expect(path.startsWith(WWW_API_PATH_PREFIX)).toBe(true);
+    // The only other www cache rule is the board render's own prefix.
+    expect(BOARD_RENDER_CACHE_EXPRESSION).toBe(
+      '(http.host eq "www.boardsesh.com" and starts_with(http.request.uri.path, "/api/internal/board-render"))',
+    );
   });
 
   it('bypasses RSC requests on BOTH the header and the ?_rsc query', () => {

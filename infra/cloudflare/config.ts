@@ -598,6 +598,16 @@ export const SESSION_COOKIE_NAME_SUBSTRING = 'next-auth.session-token';
  * sends either name before the first cutover, so until then the clauses
  * change nothing.
  */
+/**
+ * The www auth and token endpoints: `/api/auth/*` (session read, csrf, login,
+ * sign-out) and `/api/internal/ws-auth` (the 15-minute browser token, #7596).
+ * Every answer is per browser (200 with a session or a token, 401, 503), so
+ * none may ever enter a shared cache. No cache rule's path list reaches them
+ * today; the www HTML rule also excludes all of `/api/` by name, so a later
+ * path prefix cannot bring them in by accident.
+ */
+export const WWW_API_PATH_PREFIX = '/api/';
+
 export const FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS = Object.freeze([
   'boardsesh.session_token',
   'boardsesh.bridged_session_token',
@@ -707,6 +717,7 @@ export const WWW_HTML_CACHE_EXPRESSION =
   ` and (${buildWwwHtmlCachePathPrefixes()
     .map((pathPrefix) => `starts_with(http.request.uri.path, "${pathPrefix}")`)
     .join(' or ')})` +
+  ` and not starts_with(http.request.uri.path, "${WWW_API_PATH_PREFIX}")` +
   ` and not (http.cookie contains "${SESSION_COOKIE_NAME_SUBSTRING}")` +
   FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS.map((name) => ` and not (http.cookie contains "${name}")`).join('') +
   ` and not (any(http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] != ""))` +
