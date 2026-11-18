@@ -399,22 +399,15 @@ describe('WorkoutBlockList', () => {
       'Block 1, mobile.session.preGeneratorLimitBouldering',
     ];
 
-    it('are on no card in a release build with the flag off', () => {
+    // No flag provider and __DEV__ off: a release build that has not fetched flags.
+    it('are on every card in a release build with no flag value', () => {
       vi.stubGlobal('__DEV__', false);
-      const screen = renderList([pyramid('first', 20)], { 'workout-timed-blocks': false });
-
-      for (const label of TIMED_CHIP_LABELS) expect(screen.queryByLabelText(label)).toBeNull();
-      expect(screen.getByLabelText('Block 1, mobile.session.preGeneratorGradeFocus')).toBeTruthy();
-    });
-
-    it('are on every card in a release build with the flag on', () => {
-      vi.stubGlobal('__DEV__', false);
-      const screen = renderList([pyramid('first', 20)], { 'workout-timed-blocks': true });
+      const screen = renderList([pyramid('first', 20)]);
 
       for (const label of TIMED_CHIP_LABELS) expect(screen.getByLabelText(label)).toBeTruthy();
     });
 
-    it('follow the untimed chips in a dev build, and turn a block into a 4x4 at its grade', () => {
+    it('follow the untimed chips, and turn a block into a 4x4 at its grade', () => {
       vi.stubGlobal('__DEV__', true);
       const screen = renderList([pyramid('first', 20)]);
 

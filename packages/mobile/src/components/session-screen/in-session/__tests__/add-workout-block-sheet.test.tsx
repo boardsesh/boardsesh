@@ -186,11 +186,6 @@ vi.mock('../../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 } }),
 }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-// The `workout-timed-blocks` flag, as `useWorkoutTimedBlocksFlag` reads it.
-const featureFlags = vi.hoisted(() => ({ timedBlocks: false }));
-vi.mock('../../../../providers/feature-flags-provider', () => ({
-  useWorkoutTimedBlocksFlag: () => featureFlags.timedBlocks,
-}));
 vi.mock('../../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
@@ -418,40 +413,18 @@ describe('AddWorkoutBlockSheet', () => {
   });
 
   describe('block types', () => {
-    afterEach(() => {
-      vi.unstubAllGlobals();
-      featureFlags.timedBlocks = false;
-    });
-    const WITH_TIMED = ['volume', 'pyramid', 'ladder', 'gradeFocus', 'onTheMinute', 'fourByFour', 'limitBouldering'];
-    const afterFourByFour = () =>
+    afterEach(() => vi.unstubAllGlobals());
+    const ALL_TYPES = ['volume', 'pyramid', 'ladder', 'gradeFocus', 'onTheMinute', 'fourByFour', 'limitBouldering'];
+
+    // No flag value anywhere: a release build that has not fetched flags still offers every type.
+    it('offers every workout type in a release build, never a warm-up', () => {
+      vi.stubGlobal('__DEV__', false);
       setWorkoutRun('session-1', {
         stages: [{ id: 'stage-4x4', kind: 'fourByFour', itemUuids: ['f1'], targetGrade: 18 }],
       });
-
-    it('offers the workout types only, never a warm-up', () => {
-      vi.stubGlobal('__DEV__', false);
-      afterFourByFour();
       renderSheet(true);
 
-      expect(fields.blockTypes).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus']);
-      // No chip for the last stage's type, so it opens on volume at its grade.
-      expect(fields.block).toMatchObject({ options: { type: 'volume', targetGrade: 18 } });
-    });
-
-    it('adds the timed types where they are offered', () => {
-      vi.stubGlobal('__DEV__', true);
-      renderSheet(true);
-
-      expect(fields.blockTypes).toEqual(WITH_TIMED);
-    });
-
-    it('adds the timed types in a release build where the flag is on', () => {
-      vi.stubGlobal('__DEV__', false);
-      featureFlags.timedBlocks = true;
-      afterFourByFour();
-      renderSheet(true);
-
-      expect(fields.blockTypes).toEqual(WITH_TIMED);
+      expect(fields.blockTypes).toEqual(ALL_TYPES);
       expect(fields.block).toMatchObject({ options: { type: 'fourByFour', targetGrade: 18 } });
     });
   });

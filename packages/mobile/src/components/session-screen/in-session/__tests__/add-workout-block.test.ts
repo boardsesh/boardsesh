@@ -158,7 +158,7 @@ describe('defaultMidSessionBlock', () => {
     const run: WorkoutRun = {
       stages: [...existingRun.stages, { id: 'late-warm', kind: 'warmUp', itemUuids: ['w9'] }],
     };
-    const options = defaultMidSessionBlock(run, 12, false);
+    const options = defaultMidSessionBlock(run, 12);
 
     expect(options.type).toBe('pyramid');
     expect(options.targetGrade).toBe(18);
@@ -166,14 +166,14 @@ describe('defaultMidSessionBlock', () => {
   });
 
   it('opens on a volume block at the fallback grade without a run', () => {
-    const options = defaultMidSessionBlock(null, 12, false);
+    const options = defaultMidSessionBlock(null, 12);
 
     expect(options.type).toBe('volume');
     expect(options.targetGrade).toBe(12);
   });
 
   it('keeps the type but takes the fallback grade for a stage stored without one', () => {
-    const options = defaultMidSessionBlock({ stages: [{ id: 'old', kind: 'ladder', itemUuids: ['l1'] }] }, 12, false);
+    const options = defaultMidSessionBlock({ stages: [{ id: 'old', kind: 'ladder', itemUuids: ['l1'] }] }, 12);
 
     expect(options.type).toBe('ladder');
     expect(options.targetGrade).toBe(12);
@@ -184,23 +184,10 @@ describe('defaultMidSessionBlock', () => {
       stages: [...existingRun.stages, { id: 'timed', kind, itemUuids: ['t1', 't2'], targetGrade: 22 }],
     });
 
-    // A store build with the flag off offers no timed chip, and a timed stage can
-    // still reach it: a run stored with the flag on, or read after an OTA rollback.
     it.each(['fourByFour', 'limitBouldering', 'onTheMinute'] as const)(
-      'opens on a volume block at the stage grade after a %s stage when timed blocks are not offered',
+      'opens on another %s block at the stage grade',
       (kind) => {
-        const options = defaultMidSessionBlock(runEndingWith(kind), 12, false);
-
-        // The same as a volume block opened at that grade: no reps or rest fields carried over.
-        expect(options).toEqual(defaultMidSessionBlock(null, 22, false));
-        expect(options.type).toBe('volume');
-      },
-    );
-
-    it.each(['fourByFour', 'limitBouldering', 'onTheMinute'] as const)(
-      'opens on another %s block at the stage grade when timed blocks are offered',
-      (kind) => {
-        expect(defaultMidSessionBlock(runEndingWith(kind), 12, true)).toEqual({
+        expect(defaultMidSessionBlock(runEndingWith(kind), 12)).toEqual({
           ...buildDefaultOptions(kind, 22),
           warmUp: 'none',
         });

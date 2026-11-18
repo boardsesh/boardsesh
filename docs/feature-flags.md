@@ -364,20 +364,13 @@ diagnostic) applies on native. The whole surface lives in three files:
   `Sheet` / `ModalSheet` read that store instead of `useFeatureFlag`. Dozens of
   suites mock the provider with only the hooks they use, so a flag hook inside
   the shared sheets would throw there.
-  `workout-timed-blocks` is a POSITIVE rollout flag, off by default, for the
-  three timed workout blocks (4x4, Limit Bouldering, On the Minute) before they
-  launch (#5380). The gate is `timedWorkoutBlocksOffered` in
-  `packages/mobile/src/components/session-screen/pre-session/workout-blocks.ts`:
-  every dev build, or a store build with the flag on, gets 8 type chips on the
-  Record tab's block card and 7 in the in-session "Add a block" sheet instead of
-  5 and 4. View stories inject the offered block types without reading feature
-  flags or persisted tester overrides. The helpers stay pure and
-  take the flag as an argument; `WorkoutBlockFields` and `AddWorkoutBlockSheet`
-  read it through `useWorkoutTimedBlocksFlag` and pass it down. Unresolved reads
-  as off, which is the 5 chips climbers have today; a tester's chips appear when
-  the value lands, and an open "Add a block" sheet keeps the block it opened on.
-  The launch removes the flag and the gate. See `docs/workout-stages.md` →
-  "Timed blocks".
+  `workout-timed-blocks` is retired in code (#5380). It gated the three timed
+  workout blocks (4x4, Limit Bouldering, On the Minute); every build now offers all
+  8 type chips on the Record tab's block card and 7 in "Add a block", with no flag
+  read. **Do not turn the PostHog flag off or delete it** until a native release
+  that embeds this change is widely adopted: older bundles read a missing flag as
+  false and would lose the three blocks. See `docs/workout-stages.md` → "Timed
+  blocks".
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,

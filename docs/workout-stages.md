@@ -87,9 +87,8 @@ rests) is still freeform, and how its fields map onto sets and reps is settled w
 natively. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
-The three timed kinds are offered in dev builds and to testers with the
-`workout-timed-blocks` flag until they launch (see "Timed blocks" below); a release bundle
-with the flag off offers warm-up, volume, pyramid, ladder and grade focus.
+Every build offers the three timed kinds (see "Timed blocks" below), so the block card has
+eight chips and the in-session sheet seven.
 Their fields: a 4x4 takes 1 to 10 sets and 2 to 10 reps per set (one queue item per set,
 so the player never has the same climb on two pages); limit bouldering 1 to 10 climbs; on
 the minute 1 to 40. Their rests use
@@ -728,20 +727,15 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 
 ### Timed blocks
 
-On the minute, 4x4 and limit bouldering are offered in dev builds and to testers until
-they launch: `timedWorkoutBlocksOffered(flagEnabled)` in `workout-blocks.ts` is
-`__DEV__ || flag('workout-timed-blocks')`. The flag is a positive rollout flag in the
-mobile catalog, off by default and listed on the tester Feature Flags screen (see
-`docs/feature-flags.md` → "Mobile flags"), so a release bundle, and with it every OTA,
-shows the five chips climbers have today unless PostHog or a tester's override turns it
-on. View stories inject their offered block types and workout state. Integration smokes
-use the ordinary dev-build gate. `workoutBlockTypes(offered)` is the
-block card's chip list, `addBlockTypes(offered)` the mid-session sheet's; both are pure, and
-`WorkoutBlockFields` and `AddWorkoutBlockSheet` read the flag with
-`useWorkoutTimedBlocksFlag` and hand it in. The launch removes the flag and the gate. The Record tab's "Add a block" never steps onto a timed type
+On the minute, 4x4 and limit bouldering are offered in every build. They shipped behind the
+`workout-timed-blocks` flag (#5380), which has been at 100% since 2026-10-25; the gate is gone
+from the code (see `docs/feature-flags.md` for why the PostHog flag stays on). `WORKOUT_BLOCK_TYPES`
+is the block card's chip list and `ADD_BLOCK_TYPES` the mid-session sheet's; both are constants.
+View stories inject their workout state. The Record tab's "Add a block" never steps onto a timed type
 (`nextBlockType` cycles the four untimed ones), so a timed block is always picked from its
-chip. The mid-session sheet opened after a timed stage opens on that type where the build
-offers it, and on volume at the stage's grade where it does not (`defaultMidSessionBlock`).
+chip. The mid-session sheet opened after a timed stage opens on that type; a stage kind it has no
+chip for (a kind from a newer bundle, read after an OTA rollback) opens on volume at the
+stage's grade (`defaultMidSessionBlock`).
 
 - **Preview.** A 4x4 previews one row per set, under a heading that says each row is done
   for every rep: "4x4 · 4 reps × 4 sets". `buildPreviewListRows` gives a 4x4 its heading
@@ -1011,10 +1005,6 @@ the fetch, the pools, the preview and Start are unchanged.
 
 ## What comes next
 
-- **Launch the timed blocks** ([#5380](https://github.com/boardsesh/boardsesh/issues/5380)):
-  4x4 reps and sets, limit bouldering and on the minute are built (see "Timed blocks") and offered
-  in dev builds and to testers through `workout-timed-blocks`. The launch removes that flag
-  and `timedWorkoutBlocksOffered`, so every climber gets the eight chips.
 - **Repeats** ([#6734](https://github.com/boardsesh/boardsesh/issues/6734)): a 4x4 is now
   reps × sets on one climb, with a rest between reps and another between sets, which runs the
   doubles, triples, "four more" and laps shapes there (2 to 10 reps, rests from none to an

@@ -18,7 +18,7 @@ import {
   MAX_WORKOUT_BLOCKS,
   NO_WORKOUT,
   addBlock,
-  addBlockTypes,
+  ADD_BLOCK_TYPES,
   buildDefaultOptions,
   canAddBlock,
   changeBlockType,
@@ -32,11 +32,10 @@ import {
   selectionWorkoutTypes,
   singleBlockSelection,
   updateBlock,
-  timedWorkoutBlocksOffered,
   updateBlockFilters,
   warmUpTarget,
   withAvailableSizeFilters,
-  workoutBlockTypes,
+  WORKOUT_BLOCK_TYPES,
   type GeneratorSelection,
   type WorkoutBlock,
   type WorkoutFilters,
@@ -117,46 +116,14 @@ describe('timed block types', () => {
 
   const TIMED_CHIPS = ['onTheMinute', 'fourByFour', 'limitBouldering'];
 
-  // A release bundle reaches store binaries by OTA: no timed chip until launch,
-  // unless the tester's flag is on.
-  it('are on no chip in a release build with the flag off', () => {
+  // No flag, no __DEV__: every build offers all eight chips.
+  it('are on every chip in a release build: 8 chips', () => {
     vi.stubGlobal('__DEV__', false);
 
-    expect(timedWorkoutBlocksOffered(false)).toBe(false);
-    expect(workoutBlockTypes(timedWorkoutBlocksOffered(false))).toEqual(UNTIMED_CHIPS);
-    expect(addBlockTypes(timedWorkoutBlocksOffered(false))).toEqual(UNTIMED_CHIPS.slice(1));
-  });
-
-  it('follow the untimed chips in a release build with the flag on: 8 chips', () => {
-    vi.stubGlobal('__DEV__', false);
-
-    expect(timedWorkoutBlocksOffered(true)).toBe(true);
-    expect(workoutBlockTypes(timedWorkoutBlocksOffered(true))).toEqual([...UNTIMED_CHIPS, ...TIMED_CHIPS]);
-    expect(workoutBlockTypes(true)).toHaveLength(8);
-    expect(addBlockTypes(true)).toEqual([...UNTIMED_CHIPS.slice(1), ...TIMED_CHIPS]);
-  });
-
-  it('follow the untimed chips in a dev build whatever the flag says', () => {
-    vi.stubGlobal('__DEV__', true);
-
-    expect(timedWorkoutBlocksOffered(false)).toBe(true);
-    expect(timedWorkoutBlocksOffered(true)).toBe(true);
-    expect(workoutBlockTypes(true)).toEqual([...UNTIMED_CHIPS, ...TIMED_CHIPS]);
-    expect(addBlockTypes(true)).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus', ...TIMED_WORKOUT_TYPES]);
-    // The same arrays every call, so a list a component passes on stays put.
-    expect(workoutBlockTypes(true)).toBe(workoutBlockTypes(true));
-    expect(workoutBlockTypes(false)).toBe(workoutBlockTypes(false));
-    expect(addBlockTypes(true)).toBe(addBlockTypes(true));
-    expect(addBlockTypes(false)).toBe(addBlockTypes(false));
-  });
-
-  it('does not let retired capture flags change production availability', () => {
-    vi.stubGlobal('__DEV__', true);
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(timedWorkoutBlocksOffered(false)).toBe(true);
-    vi.stubGlobal('__DEV__', false);
-    expect(timedWorkoutBlocksOffered(false)).toBe(false);
-    expect(timedWorkoutBlocksOffered(true)).toBe(true);
+    expect(WORKOUT_BLOCK_TYPES).toEqual([...UNTIMED_CHIPS, ...TIMED_CHIPS]);
+    expect(WORKOUT_BLOCK_TYPES).toHaveLength(8);
+    expect(ADD_BLOCK_TYPES).toEqual([...UNTIMED_CHIPS.slice(1), ...TIMED_CHIPS]);
+    expect(ADD_BLOCK_TYPES).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus', ...TIMED_WORKOUT_TYPES]);
   });
 
   it('build their defaults at the grade asked for', () => {
