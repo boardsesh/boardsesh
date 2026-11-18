@@ -1,0 +1,101 @@
+import { assertLocalOnly, type Environment } from '../../partner-oauth-e2e/server-environment';
+import { probe, startProcess, stopProcess, waitUntil, type ManagedProcess } from './processes';
+import { WS_HOST, WWW_HOST } from './stack';
+
+/**
+ * The backend and www as one unit that can be stopped and started again with a
+ * changed environment, while the database, the edge and the browsers stay up.
+ * The ports never change, so the edge's upstreams stay valid across a restart.
+ */
+
+const BACKEND_READY_MS = 120_000;
+/** `next dev` compiles each route on its first request. */
+const WEB_READY_MS = 300_000;
+
+export interface ServerSpec {
+  name: 'backend' | 'web';
+  command: string;
+  args: string[];
+  cwd: string;
+  port: number;
+  /** The host header the readiness probe sends, and the page it waits for a 200 on. */
+  readyHost: string;
+  readyPath: string;
+  readyTimeoutMs: number;
+  /** The run's own environment for this server. A restart changes it only by what the caller overrides. */
+  environment: Environment;
+}
+
+/** Names to a value, or to null to unset one. Applies to both servers. */
+export type EnvironmentOverrides = Record<string, string | null>;
+
+/** Pages www compiles on first use under `next dev`, visited once so no spec pays for it. */
+const WARM_PATHS = ['/settings', '/auth/signout', '/api/auth/csrf', '/api/auth/session', '/api/internal/ws-auth'];
+
+export function backendReadiness() {
+  return { readyHost: WS_HOST, readyPath: '/health', readyTimeoutMs: BACKEND_READY_MS };
+}
+
+export function webReadiness() {
+  return { readyHost: WWW_HOST, readyPath: '/auth/login', readyTimeoutMs: WEB_READY_MS };
+}
+
+function withOverrides(base: Environment, overrides: EnvironmentOverrides): Environment {
+  const merged: Environment = { ...base };
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === null) delete merged[name];
+    else merged[name] = value;
+  }
+  return merged;
+}
+
+export class ServerSet {
+  private running: ManagedProcess[] = [];
+  private queue: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly specs: readonly ServerSpec[],
+    private readonly logDirectory: string,
+  ) {}
+
+  /** Every process, for a caller that wants to watch for one dying. */
+  get processes(): ManagedProcess[] {
+    return this.running;
+  }
+
+  async start(overrides: EnvironmentOverrides = {}): Promise<void> {
+    this.running = this.specs.map((spec) => {
+      const environment = withOverrides(spec.environment, overrides);
+      // The same guard the first start went through: an override cannot point a server off this machine.
+      assertLocalOnly(spec.name, { environment, forcedCredentials: [] });
+      return startProcess(spec.name, spec.command, spec.args, spec.cwd, environment, this.logDirectory);
+    });
+    for (const spec of this.specs) {
+      await waitUntil(
+        spec.name === 'backend' ? 'the backend' : 'www',
+        async () =>
+          (await probe(spec.port, spec.readyPath, spec.readyHost, spec.name === 'backend' ? 5_000 : 180_000)) === 200,
+        spec.readyTimeoutMs,
+        this.running,
+      );
+    }
+    const web = this.specs.find((spec) => spec.name === 'web');
+    if (web) for (const path of WARM_PATHS) await probe(web.port, path, WWW_HOST);
+  }
+
+  async stop(): Promise<void> {
+    const stopping = this.running;
+    this.running = [];
+    await Promise.all(stopping.map(stopProcess));
+  }
+
+  /** Stops both servers and starts them again; one at a time, however many callers ask. */
+  restart(overrides: EnvironmentOverrides = {}): Promise<void> {
+    const next = this.queue.then(async () => {
+      await this.stop();
+      await this.start(overrides);
+    });
+    this.queue = next.catch(() => undefined);
+    return next;
+  }
+}

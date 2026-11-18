@@ -12,8 +12,20 @@ import { COOKIE_DOMAIN } from './stack';
  *                   prefix, Domain on the parent, Secure, HttpOnly, Lax)
  *   /set-host-only  the same cookie without a Domain
  *   /clear?name=... expires the Domain cookie
+ *   /bfcache/<n>    a small cacheable page that records every `pageshow`, for `bfcache.spec.ts`
  *   anything else   answers with the Cookie header the browser sent
  */
+
+/**
+ * No `unload` or `beforeunload` handler and no `no-store`: either would make a
+ * page ineligible for the back/forward cache whatever the engine allows.
+ */
+const BACKFORWARD_PAGE = `<!doctype html><meta charset="utf-8"><title>bfcache probe</title>
+<p>bfcache probe</p>
+<script>
+  window.__pageshows = [];
+  addEventListener('pageshow', (event) => window.__pageshows.push(event.persisted));
+</script>`;
 
 export async function startProbeServer(): Promise<{ port: number; server: Server }> {
   const server = createServer((request, response) => {
@@ -24,6 +36,10 @@ export async function startProbeServer(): Promise<{ port: number; server: Server
       response.setHeader('Set-Cookie', `${name}=1; Domain=${COOKIE_DOMAIN}; Max-Age=3600; ${attributes}`);
     } else if (url.pathname === '/set-host-only') {
       response.setHeader('Set-Cookie', `${name}=1; Max-Age=3600; ${attributes}`);
+    } else if (url.pathname.startsWith('/bfcache/')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'max-age=60' });
+      response.end(BACKFORWARD_PAGE);
+      return;
     } else if (url.pathname === '/clear') {
       response.setHeader('Set-Cookie', `${name}=; Domain=${COOKIE_DOMAIN}; Max-Age=0; ${attributes}`);
     }

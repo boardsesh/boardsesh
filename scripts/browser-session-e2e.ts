@@ -8,6 +8,10 @@
 //
 // Extra arguments go to Playwright, e.g. `-- --project=webkit`.
 // BROWSER_SESSION_E2E_REUSE_EXPORT=1 skips the export when one is already there.
+// BROWSER_SESSION_E2E_WWW=production (or the `--www-production` flag) runs www as
+// `next build` + `next start` instead of `next dev`: Router Cache behaviour and
+// several auth branches differ under NODE_ENV=production. The build is slow, so
+// the nightly uses it and a pull request does not.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -72,6 +76,11 @@ function runPlaywright(extraArguments: string[]): Promise<number> {
 async function main(): Promise<number> {
   // vp forwards the literal `--` separator into a script's argv.
   const extraArguments = process.argv.slice(2).filter((argument) => argument !== '--');
+  const productionFlag = extraArguments.indexOf('--www-production');
+  if (productionFlag !== -1) {
+    extraArguments.splice(productionFlag, 1);
+    process.env.BROWSER_SESSION_E2E_WWW = 'production';
+  }
   buildExport();
   return runPlaywright(extraArguments);
 }
