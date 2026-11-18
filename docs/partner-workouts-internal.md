@@ -275,6 +275,19 @@ take turns across them. MoonBoard labels 6A as V2, so its V3 is 6A+ alone. A
 Font target is one grade. A target the board cannot express (V0 on a MoonBoard)
 clamps to the nearest grade and the card says so.
 
+A partner `restSeconds` on `volume`, `pyramid`, `ladder` or `gradeFocus` paces
+that block's stage (`partnerBlockPacing` in `lib/partner-workout-preview.ts`):
+`{ mode: 'afterTick', restSeconds, advanceOn: 'send' }`, the rule the app's own
+limit bouldering runs on. Every tick starts the rest; `restAdvanceAllowed`
+moves the wall only when the tick on the current climb was a flash or a send,
+so a fall rests and keeps the climb up. A rest of 0 (or none) gives the stage
+no pacing, so the climber's own rest-timer settings apply rather than the 10 s
+changeover after every tick an `afterTick` stage would run. The crew clock
+needs nothing extra: the phone publishes `advanceOn: 'send'` and the server's
+`hasQualifyingTick` already holds a fall (workoutbash1 D4). A run stored by an
+older bundle keeps the `tick` rule it was started with. The card shows no rest
+line for a paced block's 0.
+
 The card fills the blocks through the app's own preview pipeline
 (`buildPreview` in `workout-preview-pool.ts`, called from
 `lib/partner-workout-preview.ts`), the one the workout builder and "Add a block"

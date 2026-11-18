@@ -64,6 +64,11 @@ export const WorkoutGradeRangeSchema = z
     'from must not be harder than to',
   );
 const restSeconds = z.number().int().min(0).max(3600);
+const climbRestSeconds = restSeconds.openapi({
+  description:
+    "Rest after each logged climb. A fall starts the rest and keeps the climb up; the next climb comes up once the rest after a flash or send runs out. 0 or absent: the climber's own rest-timer settings apply.",
+  example: 120,
+});
 const commonBlock = {
   label: z.string().trim().min(1).max(40).optional(),
   instructions: z.string().max(1000).optional(),
@@ -76,25 +81,25 @@ export const WorkoutBlockSchema = z
       ...countedBlock,
       type: z.literal('volume'),
       targetGrade: WorkoutGradeSchema,
-      restSeconds: restSeconds.optional(),
+      restSeconds: climbRestSeconds.optional(),
     }),
     z.object({
       ...countedBlock,
       type: z.literal('pyramid'),
       gradeRange: WorkoutGradeRangeSchema,
-      restSeconds: restSeconds.optional(),
+      restSeconds: climbRestSeconds.optional(),
     }),
     z.object({
       ...countedBlock,
       type: z.literal('ladder'),
       gradeRange: WorkoutGradeRangeSchema,
-      restSeconds: restSeconds.optional(),
+      restSeconds: climbRestSeconds.optional(),
     }),
     z.object({
       ...countedBlock,
       type: z.literal('gradeFocus'),
       targetGrade: WorkoutGradeSchema,
-      restSeconds: restSeconds.optional(),
+      restSeconds: climbRestSeconds.optional(),
     }),
     z.object({
       ...countedBlock,

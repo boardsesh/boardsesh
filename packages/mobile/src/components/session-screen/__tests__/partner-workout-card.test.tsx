@@ -279,3 +279,23 @@ describe('adding a partner workout to a running session', () => {
     expect(appended.map((item) => item.climb.uuid)).toEqual(['second']);
   });
 });
+
+describe('partner block rest line', () => {
+  it("shows no rest for a block whose rest of 0 runs on the climber's own settings", () => {
+    state.pending = {
+      ...workout,
+      spec: {
+        title: 'Rests',
+        externalRef: 'rests',
+        blocks: [
+          { type: 'volume', climbCount: 2, restSeconds: 0, targetGrade: { scale: 'font', value: '6B' } },
+          { type: 'gradeFocus', climbCount: 2, restSeconds: 90, targetGrade: { scale: 'font', value: '6B' } },
+          { type: 'limitBouldering', climbCount: 2, restSeconds: 0, targetGrade: { scale: 'font', value: '7A' } },
+        ],
+      },
+    };
+    const view = render(createElement(PartnerWorkoutCard));
+    // The grade focus block's 90 s, and the freeform limit block's own words; no line for the volume block.
+    expect(view.getAllByText('partnerWorkouts.rest')).toHaveLength(2);
+  });
+});
