@@ -180,18 +180,32 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 ## Hold mapping and route lighting
 
 Hole positions are normalized in the rectified wall frame. Matching converts
-them into canonical pixels, where the detected holds already live. Every hole
-inside a hold outline belongs to that hold. Without a valid outline the stored
-hold radius is used. Overlaps resolve by normalized center distance, then hold
-ID. A large hold can own several holes. Holes outside a hold remain unassigned.
+them into canonical pixels, where the detected holds already live. A hold's
+mounting hole is the nearby T-nut closest to its center, inside its outline or
+stored radius. A large hold no longer takes every hole its outline covers.
+Overlapping claims resolve by normalized center distance, then hold ID. The
+outline still controls tapping the hold. Manual links can assign several LEDs
+to one hold, including LEDs outside this automatic mounting-hole choice.
 
 Generated LEDs retain their hole association when moved. Older generated IDs
 recover their original positions. Manual LEDs bind to nearby placement slots
-within a bounded distance. Complementary positions use the nearest opposite-phase
-slots at or below the hole, never one above it: a hole with no slot below stays
-unlit (and red in Holds and LEDs) rather than borrowing the slot above. They
+within a bounded distance. **In the hold** and **Behind the hold** keep their
+center or paired positions. **Below the hold** and **Complementary positions**
+each assign one aligned LED below a mounting hole when that slot exists. A
+sideways or upper LED never substitutes for a missing lower slot. These two
+placements also keep a separate upper reference, independent of manual primary
+links. Matching uses the calibrated grid plane, including staggered rows and
+perspective, rather than the screen's vertical axis. The references
 retain their original positions after movement. Physical indices use
 the saved cable order, initial skips and gaps. Unwired positions have no index.
+
+The mapping exposes primary `ledIds`/`indices` and separate
+`aboveLedIds`/`aboveIndices` for both holes and holds. Saved positions retain the
+primary `hole`, the original `origin` and the derived `aboveHole` reference.
+Upper references are recomputed from durable origins when the geometry or LED
+positions change. An older app can drop `aboveHole` without changing the
+derived result, because it retains `origin`. Rebuilding or expanding a grid
+refreshes the upper references before saving while retaining existing wiring.
 
 Where the geometry gets a hold wrong, **Holds and LEDs** stores a hand-made link
 in the layout (`holdLeds`: `{ holdId, ledIds }[]`). `buildSprayLedMapping` applies
@@ -225,6 +239,16 @@ the holds light as they are painted. All used holds must have wired LED mappings
 An incomplete or stale setup produces an error instead of confirming the route.
 The setup photo identity must match the current canonical frame and calibration.
 Mirrored spray routes are rejected because the wall has no defined mirror map.
+
+For **Below the hold** and **Complementary positions**, **Light the hold above**
+appears in the lightbulb's control sheet and Settings > Board, in the same places
+as the MoonBoard option. It is off by default and stored independently from the
+MoonBoard setting. It adds each lit hold's wired upper reference at 25% of that
+hold's role color, including color overrides. A primary LED in the same route
+always keeps its full role color, even if another hold also uses it as an upper
+reference. A missing or unwired upper LED does not prevent lighting the primary
+LEDs. Changing the option refreshes only the actual owned route; it leaves an
+explicitly cleared wall and another setup preview alone.
 
 Spray LEDs follow the Bluetooth boards: locking the phone or backgrounding the
 app leaves the climb lit, and a write that fails while away is retried on

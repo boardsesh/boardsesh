@@ -6,7 +6,9 @@ export type LedPosition = TnutPoint & {
   id: string;
   /** Original mounting hole. Moving an LED keeps its logical association. */
   hole?: TnutPoint;
-  /** Original complementary slot, which can belong to more than one mounting hole. */
+  /** Derived mounting hole for the optional upper light; rebuilt from the original slot. */
+  aboveHole?: TnutPoint;
+  /** Original vertical-placement slot. Moving a marker does not move its associations. */
   origin?: TnutPoint;
 };
 export type CableDirection = 'horizontal' | 'vertical' | 'custom';
@@ -47,6 +49,11 @@ export function readLedPositions(candidate: unknown): LedPosition[] | null {
           typeof point.hole.x !== 'number' ||
           typeof point.hole.y !== 'number' ||
           !boundedPoint({ x: point.hole.x, y: point.hole.y }))) ||
+      (point.aboveHole !== undefined &&
+        (!record(point.aboveHole) ||
+          typeof point.aboveHole.x !== 'number' ||
+          typeof point.aboveHole.y !== 'number' ||
+          !boundedPoint({ x: point.aboveHole.x, y: point.aboveHole.y }))) ||
       (point.origin !== undefined &&
         (!record(point.origin) ||
           typeof point.origin.x !== 'number' ||
@@ -60,6 +67,9 @@ export function readLedPositions(candidate: unknown): LedPosition[] | null {
       x: point.x,
       y: point.y,
       ...(point.hole !== undefined ? { hole: { x: (point.hole as TnutPoint).x, y: (point.hole as TnutPoint).y } } : {}),
+      ...(point.aboveHole !== undefined
+        ? { aboveHole: { x: (point.aboveHole as TnutPoint).x, y: (point.aboveHole as TnutPoint).y } }
+        : {}),
       ...(point.origin !== undefined
         ? { origin: { x: (point.origin as TnutPoint).x, y: (point.origin as TnutPoint).y } }
         : {}),

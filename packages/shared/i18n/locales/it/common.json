@@ -948,6 +948,7 @@
     "turnOffAll": "Spegni tutte le luci",
     "lightAdjacentHolds": "Illumina la presa sopra",
     "lightAdjacentHoldsHelp": "Aggiunge un LED più tenue sopra ogni presa di partenza e intermedia illuminata. Richiede un controller MoonBoard con la funzione LED aggiuntivo.",
+    "spraywallLightAdjacentHoldsHelp": "Accende un LED più tenue sopra ogni presa illuminata quando le è assegnato un LED superiore nella configurazione della Spraywall.",
     "disconnect": "Disconnetti il pannello"
   },
   "bluetooth": {

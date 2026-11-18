@@ -112,6 +112,8 @@ export type AppSettings = {
    * `@boardsesh/ble-protocol/moonboard`. No-op on Aurora boards.
    */
   moonboardLightAdjacentHolds: boolean;
+  /** Add the assigned upper LED, dimmer, on Spraywalls with LEDs below or between holds. */
+  spraywallLightAdjacentHolds: boolean;
   /**
    * Draw the MoonBoard's A-K column letters and 1-18 row numbers (1-12 on the
    * Minis) on the large boards: play, create, search by holds, the wall kiosk,

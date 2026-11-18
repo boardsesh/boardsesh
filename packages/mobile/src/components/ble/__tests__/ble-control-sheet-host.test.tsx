@@ -9,6 +9,7 @@ const mockBluetooth = {
   isConnected: true,
   canDriveWall: false,
   boardName: 'moonboard',
+  layoutId: 7001,
   moonboardLightAdjacentHolds: false,
   setMoonboardLightAdjacentHolds: mockSetMoonboardLightAdjacentHolds,
   reassertWall: mockReassertWall,
@@ -23,6 +24,8 @@ const mockBluetoothContext = vi.hoisted(() => ({
 const mockBleControlSheet = vi.hoisted(() => ({
   props: null as {
     showLightAdjacentHolds: boolean;
+    spraywallAdjacentLighting?: boolean;
+    lightAdjacentHoldsEnabled: boolean;
     onToggleLightAdjacentHolds: (enabled: boolean) => void;
     onClearLights: () => void;
     onReassert: () => void;
@@ -45,6 +48,10 @@ const mockBleControlSheet = vi.hoisted(() => ({
 }));
 const settingsAnalytics = vi.hoisted(() => ({ trackSettingChanged: vi.fn() }));
 vi.mock('../../../lib/settings-analytics', () => settingsAnalytics);
+const spraywallLighting = vi.hoisted(() => ({ eligible: false }));
+vi.mock('../../../lib/spray/use-spray-wall-adjacent-lighting', () => ({
+  useSprayWallAdjacentLightingEligible: () => spraywallLighting.eligible,
+}));
 
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => mockBluetoothContext.current,
@@ -105,10 +112,12 @@ describe('BleControlSheetHost', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBluetooth.boardName = 'moonboard';
+    mockBluetooth.moonboardLightAdjacentHolds = false;
     mockBluetoothContext.current = mockBluetooth;
     mockBleControlSheet.props = null;
     mockSettings.values = {};
     mockSettings.setters = {};
+    spraywallLighting.eligible = false;
   });
 
   // 2.7, spec B4: the timer at the wall in two taps, on both sheets.
@@ -247,6 +256,33 @@ describe('BleControlSheetHost', () => {
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
 
     expect(mockBleControlSheet.props?.showLightAdjacentHolds).toBe(false);
+  });
+
+  it.each([true, false])('shows the Spraywall control only when its layout is eligible: %s', (eligible) => {
+    mockBluetooth.boardName = 'spray';
+    spraywallLighting.eligible = eligible;
+    mockSettings.values = { spraywallLightAdjacentHolds: true };
+    render(<BleControlSheetHost visible onClose={vi.fn()} showLightingSwitches={false} />);
+    expect(mockBleControlSheet.props?.showLightAdjacentHolds).toBe(eligible);
+    expect(mockBleControlSheet.props?.spraywallAdjacentLighting).toBe(eligible);
+    if (eligible) expect(mockBleControlSheet.props?.lightAdjacentHoldsEnabled).toBe(true);
+  });
+
+  it('saves Spraywall upper lighting independently and leaves relighting to the committed setting', () => {
+    mockBluetooth.boardName = 'spray';
+    spraywallLighting.eligible = true;
+    mockBluetooth.moonboardLightAdjacentHolds = true;
+    const { getByText } = render(<BleControlSheetHost visible onClose={vi.fn()} />);
+    expect(mockBleControlSheet.props?.lightAdjacentHoldsEnabled).toBe(false);
+    fireEvent.click(getByText('toggle adjacent holds'));
+    expect(settingsAnalytics.trackSettingChanged).toHaveBeenCalledExactlyOnceWith(
+      'boardControls',
+      'spraywallLightAdjacentHolds',
+      true,
+    );
+    expect(mockSettings.setters.spraywallLightAdjacentHolds).toHaveBeenCalledExactlyOnceWith(true);
+    expect(mockSetMoonboardLightAdjacentHolds).not.toHaveBeenCalled();
+    expect(mockReassertWall).not.toHaveBeenCalled();
   });
 
   // #6939: the player's wall status line learns the wall went dark from here.
