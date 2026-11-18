@@ -51,10 +51,7 @@ test.describe('analytics privacy choices everywhere', () => {
     await page.goto('/');
     await page.getByTestId('consent-banner').getByRole('button', { name: 'Not now', exact: true }).click();
     expect((await context.cookies()).find((stored) => stored.name === 'boardsesh-consent')).toBeUndefined();
-    await page
-      .getByRole('link', { name: /privacy policy/i })
-      .last()
-      .click();
+    await page.getByTestId('site-footer').getByRole('link', { name: 'Privacy', exact: true }).click();
     await expect(page).toHaveURL(/\/privacy/);
     await expect(page.getByTestId('consent-banner')).toBeHidden();
     await page.getByRole('button', { name: 'Privacy choices', exact: true }).click();
