@@ -52,6 +52,7 @@ export const BROWSER_SESSION_WEB_PRECONDITION_ERRORS = Object.freeze({
   insecure: 'AUTH_BROWSER_SESSION_WEB_INSECURE_IN_PRODUCTION',
   cookieDomain: 'AUTH_BROWSER_SESSION_WEB_COOKIE_DOMAIN_INVALID',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_WEB_CUTOVER_INCOMPLETE',
+  e2eCutoverOutsideTest: 'AUTH_BROWSER_SESSION_WEB_E2E_CUTOVER_OUTSIDE_TEST',
 });
 
 /**
@@ -154,6 +155,42 @@ function betterAuthPreconditions(
   return { cookies: Object.freeze({ secret, secure, domain }) };
 }
 
+/**
+ * The browser acceptance run's one switch (#7596 B7b). Read only by
+ * `cutoverBlockersInEffect`; never set it outside that run.
+ */
+export const E2E_BROWSER_SESSION_CUTOVER_ENV = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
+
+/**
+ * The www cutover list this process enforces, or undefined when the e2e
+ * switch is set where it must never be. The browser acceptance run (B7) has to
+ * serve `better-auth` before its own entry can leave the list, so with
+ * `BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow` the list counts as empty, and
+ * only when `NEXTAUTH_URL` is an https host under `boardsesh.test` and the
+ * session cookie domain is under it too. `.test` is reserved (RFC 2606), so no
+ * production host can be one. Set to anything on any other origin, every mode
+ * answers unavailable and the boot fails; another value on a `.test` origin
+ * changes nothing.
+ */
+function cutoverBlockersInEffect(blockers: readonly string[], environment: NodeJS.ProcessEnv) {
+  const requested = environment[E2E_BROWSER_SESSION_CUTOVER_ENV];
+  if (requested === undefined || requested === '') return blockers;
+  let origin: URL | undefined;
+  try {
+    origin = new URL(environment.NEXTAUTH_URL ?? '');
+  } catch {
+    origin = undefined;
+  }
+  const cookieDomain = sessionCookieDomain()?.toLowerCase();
+  const onReservedTestDomain =
+    origin?.protocol === 'https:' &&
+    origin.hostname.toLowerCase().endsWith('.boardsesh.test') &&
+    cookieDomain !== undefined &&
+    (cookieDomain === '.boardsesh.test' || cookieDomain.endsWith('.boardsesh.test'));
+  if (!onReservedTestDomain) return undefined;
+  return requested === 'allow' ? [] : blockers;
+}
+
 function digest(text: string | undefined): string {
   return createHash('sha256')
     .update(text ?? '')
@@ -167,10 +204,16 @@ function digest(text: string | undefined): string {
  * list in tests and proofs.
  */
 export function browserSessionRouteModeResolver(cutoverBlockers: readonly string[]): () => BrowserSessionRouteMode {
-  const blockers = Object.freeze([...cutoverBlockers]);
+  const listed = Object.freeze([...cutoverBlockers]);
   let checked: { key: string; mode: BrowserSessionRouteMode } | undefined;
   return () => {
     const environment = process.env;
+    const blockers = cutoverBlockersInEffect(listed, environment);
+    if (blockers === undefined) {
+      const code = BROWSER_SESSION_WEB_PRECONDITION_ERRORS.e2eCutoverOutsideTest;
+      logUnavailable(code, digest(environment.NEXTAUTH_URL));
+      return { kind: 'unavailable', code };
+    }
     let mode: ReturnType<typeof parseBrowserSessionMode>;
     try {
       mode = parseBrowserSessionMode(environment[BROWSER_SESSION_MODE_ENV]);
@@ -182,7 +225,8 @@ export function browserSessionRouteModeResolver(cutoverBlockers: readonly string
     if (mode === 'legacy') return { kind: 'legacy' };
     // The cache key is a digest of the checked values; the cached result does
     // hold the cookie secret itself, in memory, as the environment does.
-    const key = digest(JSON.stringify(CHECKED_VARIABLES.map((name) => environment[name] ?? null)));
+    // The list in effect is part of the key: the e2e seam can change it with no checked variable changing.
+    const key = digest(JSON.stringify([...CHECKED_VARIABLES.map((name) => environment[name] ?? null), blockers]));
     if (checked?.key === key) return checked.mode;
     const result = betterAuthPreconditions(environment);
     let resolved: BrowserSessionRouteMode;

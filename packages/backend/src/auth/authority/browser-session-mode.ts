@@ -124,6 +124,7 @@ export const BROWSER_SESSION_STARTUP_ERRORS = Object.freeze({
   legacyBridgeUntil: 'AUTH_BROWSER_SESSION_LEGACY_BRIDGE_UNTIL_INVALID',
   secretReused: 'AUTH_BROWSER_SESSION_SECRET_REUSED',
   cutoverIncomplete: 'AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE',
+  e2eCutoverOutsideTest: 'AUTH_BROWSER_SESSION_E2E_CUTOVER_OUTSIDE_TEST',
   providerSecurityNeedsBrowserSession: 'AUTH_PROVIDER_SECURITY_BROWSER_SESSION_REQUIRED',
   firstPasswordNeedsBrowserSession: 'AUTH_FIRST_PASSWORD_BROWSER_SESSION_REQUIRED',
 } as const);
@@ -266,14 +267,47 @@ function distinctSecret(environment: Environment, name: string): string {
 }
 
 /**
+ * The browser acceptance run's one switch (#7596 B7b). Read only by
+ * `cutoverBlockersInEffect`; never set it outside that run.
+ */
+export const E2E_BROWSER_SESSION_CUTOVER_ENV = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
+
+/**
+ * The cutover list this process enforces. The browser acceptance run (B7) has
+ * to boot `better-auth` before its own entry can leave the list, so with
+ * `BOARDSESH_E2E_BROWSER_SESSION_CUTOVER=allow` the list counts as empty, and
+ * only when this backend's public origin (`BACKEND_PUBLIC_URL`) and the www
+ * origin it serves (`BOARDSESH_URL`) are both https hosts under
+ * `boardsesh.test`. `.test` is reserved (RFC 2606), so no production host can
+ * be one. Set to anything on any other origin, it refuses to start in every
+ * mode; another value on a `.test` origin changes nothing.
+ */
+export function cutoverBlockersInEffect(blockers: readonly string[], environment: Environment): readonly string[] {
+  const requested = environment[E2E_BROWSER_SESSION_CUTOVER_ENV];
+  if (requested === undefined || requested === '') return blockers;
+  const onReservedTestDomain = (origin: string | undefined) => {
+    try {
+      const url = new URL(origin ?? '');
+      return url.protocol === 'https:' && url.hostname.toLowerCase().endsWith('.boardsesh.test');
+    } catch {
+      return false;
+    }
+  };
+  if (![environment.BACKEND_PUBLIC_URL, environment.BOARDSESH_URL].every(onReservedTestDomain))
+    throw new BrowserSessionStartupError(BROWSER_SESSION_STARTUP_ERRORS.e2eCutoverOutsideTest);
+  return requested === 'allow' ? [] : blockers;
+}
+
+/**
  * Builds the startup check. The backend uses `assertBrowserSessionModeConfiguration`,
  * built with `BROWSER_SESSION_CUTOVER_BLOCKERS`; tests build one with an empty
  * list to reach the preconditions alone. Nothing reads the list from the
- * environment.
+ * environment; `cutoverBlockersInEffect` empties it only on a `.test` origin.
  */
 export function browserSessionModeChecker(cutoverBlockers: readonly string[]) {
-  const blockers = Object.freeze([...cutoverBlockers]);
+  const listed = Object.freeze([...cutoverBlockers]);
   return (environment: Environment = process.env): void => {
+    const blockers = cutoverBlockersInEffect(listed, environment);
     const browserSessionMode = readBrowserSessionMode(environment[BROWSER_SESSION_MODE_ENV]);
     // Provider link and unlink act for a canonical web session and refuse a
     // legacy cookie (#7596 B5c1), so without `better-auth` nobody could link.

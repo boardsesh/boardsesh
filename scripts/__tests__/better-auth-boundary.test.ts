@@ -502,3 +502,32 @@ describe('browser session cutover blockers', () => {
     expect(calls).toEqual([`${BROWSER_SESSION_MODE_MODULE}: BROWSER_SESSION_CUTOVER_BLOCKERS`]);
   });
 });
+
+describe('the browser acceptance cutover seam', () => {
+  const VARIABLE = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
+  const CONSTANT = 'E2E_BROWSER_SESSION_CUTOVER_ENV';
+  const SEAM_MODULES = [BROWSER_SESSION_MODE_MODULE, 'packages/web/app/lib/auth/browser-session-mode.server.ts'];
+  const isTestHarness = (path: string) =>
+    path.startsWith('packages/web/e2e/') ||
+    path.startsWith('packages/web/auth-proofs/') ||
+    /\.proof\.[cm]?[jt]sx?$/.test(path);
+  const count = (source: string, needle: string) => source.split(needle).length - 1;
+
+  it('is read in production code by one function per service, and nowhere else', () => {
+    const readers = trackedSourceFiles.filter(
+      (path) =>
+        isProductionSource(path) &&
+        !isTestHarness(path) &&
+        (readRepoFile(path).includes(VARIABLE) || readRepoFile(path).includes(CONSTANT)),
+    );
+    expect(readers.sort()).toEqual([...SEAM_MODULES].sort());
+    for (const path of SEAM_MODULES) {
+      const source = readRepoFile(path);
+      const seam = /function cutoverBlockersInEffect\([\s\S]*?\n}\n/.exec(source)?.[0] ?? '';
+      // The name once, in its constant; the constant read once, inside the seam.
+      expect(count(source, `'${VARIABLE}'`), path).toBe(1);
+      expect(count(seam, `[${CONSTANT}]`), path).toBe(1);
+      expect(count(source.replace(seam, ''), CONSTANT), path).toBe(1);
+    }
+  });
+});

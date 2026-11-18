@@ -7,6 +7,8 @@ import {
   BrowserSessionStartupError,
   browserSessionModeChecker,
   bridgeTokenKeyFromEnvironment,
+  cutoverBlockersInEffect,
+  E2E_BROWSER_SESSION_CUTOVER_ENV,
   browserAccessTokenKeyFromEnvironment,
   readBrowserSessionMode,
   type BrowserSessionStartupErrorCode,
@@ -171,6 +173,7 @@ describe('the better-auth startup preconditions', () => {
     const tested = new Set<string>(cases.map(([code]) => code));
     const ownDescribe = new Set<string>([
       errors.cutoverIncomplete,
+      errors.e2eCutoverOutsideTest,
       errors.providerSecurityNeedsBrowserSession,
       errors.firstPasswordNeedsBrowserSession,
     ]);
@@ -291,6 +294,72 @@ describe('the cutover refusal', () => {
         expect(refusal(() => assertBrowserSessionModeConfiguration({ ...READY, [name]: content }))).toBe(
           errors.cutoverIncomplete,
         );
+  });
+});
+
+// #7596 B7b: the browser acceptance run boots `better-auth` on `.test` hosts only.
+describe('the e2e cutover seam', () => {
+  const E2E = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
+  const TEST_ORIGINS = { BACKEND_PUBLIC_URL: 'https://ws.boardsesh.test', BOARDSESH_URL: 'https://www.boardsesh.test' };
+
+  it('empties the list for allow when both origins are https hosts under boardsesh.test', () => {
+    expect(E2E_BROWSER_SESSION_CUTOVER_ENV).toBe(E2E);
+    expect(cutoverBlockersInEffect(['B7'], { ...TEST_ORIGINS, [E2E]: 'allow' })).toEqual([]);
+    expect(refusal(() => assertBrowserSessionModeConfiguration({ ...READY, ...TEST_ORIGINS, [E2E]: 'allow' }))).toBe(
+      undefined,
+    );
+  });
+
+  it('still checks every precondition under allow', () => {
+    const missing = { ...READY, ...TEST_ORIGINS, [E2E]: 'allow', CURRENT_STORE_WEB_SESSION_MODE: undefined };
+    expect(refusal(() => assertBrowserSessionModeConfiguration(missing))).toBe(errors.webSessionMode);
+  });
+
+  it.each([undefined, ''])('leaves startup as it was when the variable is %j', (requested) => {
+    const environment = { ...READY, BACKEND_PUBLIC_URL: 'https://ws.boardsesh.com', [E2E]: requested };
+    expect(refusal(() => assertBrowserSessionModeConfiguration(environment))).toBe(errors.cutoverIncomplete);
+    expect(() => assertBrowserSessionModeConfiguration({ [E2E]: requested })).not.toThrow();
+  });
+
+  it.each(['yes', 'ALLOW', 'allow '])('keeps the list for %j on a .test origin', (requested) => {
+    expect(cutoverBlockersInEffect(['B7'], { ...TEST_ORIGINS, [E2E]: requested })).toEqual(['B7']);
+    expect(refusal(() => assertBrowserSessionModeConfiguration({ ...READY, ...TEST_ORIGINS, [E2E]: requested }))).toBe(
+      errors.cutoverIncomplete,
+    );
+  });
+
+  it.each([
+    ['production', { BACKEND_PUBLIC_URL: 'https://ws.boardsesh.com', BOARDSESH_URL: 'https://www.boardsesh.com' }],
+    ['the backend default origin', { BOARDSESH_URL: 'https://www.boardsesh.test' }],
+    ['a production backend', { ...TEST_ORIGINS, BACKEND_PUBLIC_URL: 'https://ws.boardsesh.com' }],
+    ['a production www', { ...TEST_ORIGINS, BOARDSESH_URL: 'https://boardsesh.com' }],
+    ['plain http', { ...TEST_ORIGINS, BACKEND_PUBLIC_URL: 'http://ws.boardsesh.test' }],
+    ['a look-alike host', { ...TEST_ORIGINS, BOARDSESH_URL: 'https://www.boardsesh.test.example.com' }],
+    ['the bare parent', { ...TEST_ORIGINS, BOARDSESH_URL: 'https://boardsesh.test' }],
+    [
+      'a preview',
+      { BACKEND_PUBLIC_URL: 'https://12.ws.preview.boardsesh.com', BOARDSESH_URL: 'https://12.preview.boardsesh.com' },
+    ],
+  ])('refuses to start in every mode when set on %s', (_label, origins) => {
+    for (const mode of [undefined, 'legacy', 'better-auth'])
+      for (const requested of ['allow', 'off'])
+        expect(
+          refusal(() =>
+            assertBrowserSessionModeConfiguration({
+              ...READY,
+              ...origins,
+              AUTH_BROWSER_SESSION_MODE: mode,
+              [E2E]: requested,
+            }),
+          ),
+        ).toBe(errors.e2eCutoverOutsideTest);
+  });
+
+  it('never repeats the value in its error', () => {
+    const environment = { ...READY, [E2E]: 'allow-secret-looking-value' };
+    expect(() => assertBrowserSessionModeConfiguration(environment)).toThrow(
+      new BrowserSessionStartupError(errors.e2eCutoverOutsideTest),
+    );
   });
 });
 

@@ -5,6 +5,7 @@ import { webLogger } from '@/app/lib/observability/logger';
 import {
   BROWSER_SESSION_WEB_CUTOVER_BLOCKERS,
   BROWSER_SESSION_WEB_PRECONDITION_ERRORS,
+  E2E_BROWSER_SESSION_CUTOVER_ENV,
   browserSessionBootRefusal,
   browserSessionRouteMode,
   browserSessionRouteModeResolver,
@@ -151,5 +152,67 @@ describe('browserSessionRouteMode', () => {
     expect(browserSessionBootRefusal(resolveWithoutBlockers)).toBeUndefined();
     vi.stubEnv('AUTH_BROWSER_SESSION_MODE', 'legacy');
     expect(browserSessionBootRefusal()).toBeUndefined();
+  });
+});
+
+// #7596 B7b: the browser acceptance run serves `better-auth` on `.test` hosts only.
+describe('the e2e cutover seam', () => {
+  const E2E = 'BOARDSESH_E2E_BROWSER_SESSION_CUTOVER';
+  const TEST_HOST = { NEXTAUTH_URL: 'https://www.boardsesh.test', AUTH_COOKIE_DOMAIN: '.boardsesh.test' };
+  const outside = { kind: 'unavailable', code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.e2eCutoverOutsideTest };
+
+  // A fresh resolver per case: the production one caches its last configuration.
+  const production = () => browserSessionRouteModeResolver(BROWSER_SESSION_WEB_CUTOVER_BLOCKERS)();
+
+  it('empties the www list for allow on a .test origin with a .test cookie domain', () => {
+    expect(E2E_BROWSER_SESSION_CUTOVER_ENV).toBe(E2E);
+    stub(TEST_HOST);
+    vi.stubEnv(E2E, 'allow');
+    expect(production()).toEqual({
+      kind: 'better-auth',
+      cookies: { secret: READY.AUTH_BROWSER_SESSION_COOKIE_SECRET, secure: true, domain: '.boardsesh.test' },
+    });
+    expect(browserSessionBootRefusal(production)).toBeUndefined();
+  });
+
+  it('still checks every precondition under allow', () => {
+    stub({ ...TEST_HOST, CURRENT_STORE_WEB_OAUTH_MODE: 'legacy' });
+    vi.stubEnv(E2E, 'allow');
+    expect(production()).toEqual({ kind: 'unavailable', code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.webOAuthMode });
+  });
+
+  it.each(['', 'yes', 'ALLOW'])('keeps the www list for %j on a .test origin', (requested) => {
+    stub(TEST_HOST);
+    vi.stubEnv(E2E, requested);
+    expect(production()).toEqual({
+      kind: 'unavailable',
+      code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.cutoverIncomplete,
+    });
+  });
+
+  it('leaves the production resolver as it was with the variable unset', () => {
+    stub();
+    expect(production()).toEqual({
+      kind: 'unavailable',
+      code: BROWSER_SESSION_WEB_PRECONDITION_ERRORS.cutoverIncomplete,
+    });
+  });
+
+  it.each([
+    ['production www', { NEXTAUTH_URL: 'https://www.boardsesh.com' }],
+    ['a .test origin with the production cookie domain', { ...TEST_HOST, AUTH_COOKIE_DOMAIN: '.boardsesh.com' }],
+    ['a .test origin with a host-only cookie', { ...TEST_HOST, AUTH_COOKIE_DOMAIN: '' }],
+    ['plain http on .test', { ...TEST_HOST, NEXTAUTH_URL: 'http://www.boardsesh.test' }],
+    ['a look-alike host', { ...TEST_HOST, NEXTAUTH_URL: 'https://www.boardsesh.test.example.com' }],
+    ['a preview', { NEXTAUTH_URL: 'https://12.preview.boardsesh.com' }],
+    ['no origin at all', { NEXTAUTH_URL: '' }],
+  ])('fails the boot in every mode when set on %s', (_label, overrides) => {
+    for (const mode of ['', 'legacy', 'better-auth']) {
+      stub({ ...overrides, AUTH_BROWSER_SESSION_MODE: mode });
+      vi.stubEnv(E2E, 'allow');
+      expect(production()).toEqual(outside);
+      expect(browserSessionBootRefusal(production)).toEqual(new Error(outside.code));
+    }
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('allow');
   });
 });
