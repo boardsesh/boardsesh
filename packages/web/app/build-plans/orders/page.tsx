@@ -41,10 +41,10 @@ export default async function BuildPlansOrdersPage() {
   await requireCncPacksFlag();
 
   // `getServerAuthToken` is BOTH the session read and the credential: it
-  // returns the next-auth session cookie, which is what the backend accepts as
-  // a Bearer token. `getServerSession(authOptions)` would decode the same
-  // cookie a second time and still leave this page needing the raw value for
-  // the GraphQL call, so it is deliberately not used here.
+  // returns what the backend accepts as a Bearer token (the next-auth session
+  // cookie, or under `better-auth` the 15-minute access token of the session
+  // this render shows). A separate session read would still leave this page
+  // needing that value for the GraphQL call, so it is deliberately not used here.
   const authToken = await getServerAuthToken();
   if (!authToken) {
     redirect(`/auth/login?callbackUrl=${encodeURIComponent(ORDERS_PATH)}`);

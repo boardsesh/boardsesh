@@ -12,6 +12,7 @@
     "web-session-signout.integration.proof.ts",
     "web-session-bridge.integration.proof.ts",
     "ws-auth-access-token.integration.proof.ts",
+    "server-render-session.integration.proof.ts",
     "web-session-bridge-replacement.integration.proof.ts",
     "web-session-harness.ts",
     "route-harness.ts",

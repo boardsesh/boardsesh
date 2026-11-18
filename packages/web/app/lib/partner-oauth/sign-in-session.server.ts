@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { isLinkGuardedSignIn, isRecentSignIn, readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
+import { BROWSER_SESSION_MODE_ENV } from '@boardsesh/auth-protocol/browser-session-mode';
 import { isSecureCookieContext, sessionCookieNameCandidates } from '@/app/lib/auth/secure-cookies';
 import type { PartnerPageSessionSummary } from './page-views';
 
@@ -20,6 +21,29 @@ import type { PartnerPageSessionSummary } from './page-views';
  * under 30 days old, minted while the web marked sign-ins `link_guarded`.
  */
 export async function readPartnerPageSession(nowMs: number = Date.now()): Promise<PartnerPageSessionSummary | null> {
+  // Under `better-auth` (#7596 B4a) the page says what the session read says:
+  // the same resolution as every other render, with the sign-in time and link
+  // guard of the session row (the backend's consent reads the same row, B6).
+  const rawMode = process.env[BROWSER_SESSION_MODE_ENV];
+  if (rawMode !== undefined && rawMode !== '' && rawMode !== 'legacy') {
+    const { serverBrowserSessionForRender, partnerSignInFacts } =
+      await import('@/app/lib/auth/server-browser-session.server');
+    const render = await serverBrowserSessionForRender();
+    if (render?.kind === 'signed-out') return null;
+    if (render?.kind === 'active') {
+      const { account, linkGuarded, authTimeSeconds } = partnerSignInFacts(render.session, nowMs);
+      return {
+        account,
+        recentGuardedSignIn: authTimeSeconds !== null && linkGuarded && isRecentSignIn(authTimeSeconds, nowMs),
+        signedInAtMs: authTimeSeconds === null ? null : authTimeSeconds * 1000,
+      };
+    }
+    // `legacy`: the session read answers from the legacy cookie, and so does this page.
+  }
+  return readLegacyPartnerPageSession(nowMs);
+}
+
+async function readLegacyPartnerPageSession(nowMs: number): Promise<PartnerPageSessionSummary | null> {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore
     .getAll()

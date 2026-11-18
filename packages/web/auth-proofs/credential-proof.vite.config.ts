@@ -27,6 +27,7 @@ export default defineConfig(async (environment) => {
         'auth-proofs/web-session-signout.integration.proof.ts',
         'auth-proofs/web-session-bridge.integration.proof.ts',
         'auth-proofs/ws-auth-access-token.integration.proof.ts',
+        'auth-proofs/server-render-session.integration.proof.ts',
         'auth-proofs/web-session-bridge-replacement.integration.proof.ts',
       ],
       exclude: ['**/node_modules/**', '**/dist/**'],

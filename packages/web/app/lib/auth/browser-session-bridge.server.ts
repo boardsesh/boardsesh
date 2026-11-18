@@ -3,6 +3,7 @@ import { decode } from 'next-auth/jwt';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { PresentedWebSession } from '@boardsesh/auth-protocol';
 import type { BrowserSessionCookieKind } from '@boardsesh/auth-protocol/browser-session-cookie';
+import { isNewerLegacyLogin } from '@boardsesh/auth-protocol/legacy-login-precedence';
 import type { BrowserSessionCookieConfiguration } from './browser-session-mode.server';
 import {
   bridgedSessionCookies,
@@ -26,7 +27,8 @@ const PRIVATE = { 'Cache-Control': 'private, no-store' } as const;
 
 /**
  * Bridges per client address and minute, counted separately for the session
- * read and for ws-auth, so the identity probe never uses up the session read's.
+ * read, ws-auth and server renders, so neither the identity probe nor a page
+ * render uses up the session read's.
  * A browser bridges once; a reload loop or a scripted caller stops here.
  */
 export const BRIDGES_PER_CLIENT = 20;
@@ -43,26 +45,30 @@ export function sessionJson(active: ActiveWebSession): Record<string, unknown> {
 }
 
 /**
+ * Whether decoded NextAuth claims are a newer login than the first-party
+ * session (coordinator decision (c), B2b, review H1), by the rule www and the
+ * backend share (`@boardsesh/auth-protocol/legacy-login-precedence`, whose
+ * vectors www runs too). Only the claim names are mapped here.
+ */
+export function legacyClaimsWin(
+  claims: { readonly authSessionId?: unknown; readonly auth_time?: unknown; readonly iat?: unknown },
+  active: Pick<ActiveWebSession, 'authSessionId' | 'authenticatedAt'>,
+  cookieKind: BrowserSessionCookieKind,
+): boolean {
+  return isNewerLegacyLogin(
+    { authSessionId: claims.authSessionId, authTime: claims.auth_time, issuedAt: claims.iat },
+    { authSessionId: active.authSessionId, authenticatedAt: active.authenticatedAt },
+    cookieKind,
+  );
+}
+
+/**
  * The legacy cookie of this request when it is a newer login than the active
- * first-party session (coordinator decision (c), B2b, and review H1): a login
- * made while the mode was `legacy` (a rollback) wrote only the legacy cookie
- * and left the stale first-party cookie in place.
- *
- * - Beside a login cookie: a different session id and a sign-in time
- *   (`auth_time`, else the cookie's issue time) later than the session's
- *   `authenticatedAt`. Every response that writes a login cookie also writes its
- *   legacy twin with the same id (or a legacy-only login clears the first-party
- *   names), so a legacy cookie with another id was written later; the time only
- *   confirms it.
- * - Beside a bridged cookie: a string `authSessionId` that differs from the
- *   bridged session's. No time test: a bridged row's `authenticatedAt` is
- *   usually unknown, and the row's id is the claim of the cookie it was bridged
- *   from. A cookie without the claim cannot be a newer login (every sign-in
- *   sets one).
- *
- * Only the legacy name this deployment writes counts. The same session id, an
- * older cookie, an unknown `authenticatedAt` beside a login cookie, or a cookie
- * that does not decode: undefined, and the first-party cookie wins as usual.
+ * first-party session: a login made while the mode was `legacy` (a rollback)
+ * wrote only the legacy cookie and left the stale first-party cookie in place.
+ * See `isNewerLegacyLogin` for the rule beside a login and beside a bridged
+ * cookie. Only the legacy name this deployment writes counts; a cookie that
+ * does not decode never wins.
  */
 export async function newerLegacyLogin(
   request: NextRequest,
@@ -81,16 +87,17 @@ export async function newerLegacyLogin(
     return undefined;
   }
   if (!claims) return undefined;
-  const legacySessionId = typeof claims.authSessionId === 'string' ? claims.authSessionId : undefined;
-  if (legacySessionId === active.authSessionId) return undefined;
-  if (cookieKind === 'bridged') return legacySessionId === undefined ? undefined : legacy.presented;
-  const signedInAt = typeof claims.auth_time === 'number' ? claims.auth_time : claims.iat;
-  if (typeof signedInAt !== 'number' || active.authenticatedAt === null) return undefined;
-  return signedInAt * 1000 > Date.parse(active.authenticatedAt) ? legacy.presented : undefined;
+  return legacyClaimsWin(claims, active, cookieKind) ? legacy.presented : undefined;
 }
 
-/** Who a bridge is counted for: the session read and ws-auth each have their own budget per client. */
-export type BridgeBucket = 'session-read' | 'ws-auth';
+/** Who a bridge is counted for: the session read, ws-auth and server renders each have their own budget per client. */
+export type BridgeBucket = 'session-read' | 'ws-auth' | 'server-render';
+
+const BRIDGE_LIMIT_PREFIXES: Readonly<Record<BridgeBucket, string>> = Object.freeze({
+  'session-read': 'web-session-bridge',
+  'ws-auth': 'ws-auth-bridge',
+  'server-render': 'server-render-bridge',
+});
 
 type BridgeOutcome =
   | { kind: 'bridged'; session: ActiveWebSession; token: string }
@@ -112,7 +119,7 @@ async function bridgeLegacyLogin(
   bucket: BridgeBucket,
 ): Promise<BridgeOutcome> {
   const clientKey = trustedClientRateLimitKey(request);
-  const limitKey = bucket === 'ws-auth' ? `ws-auth-bridge:${clientKey}` : `web-session-bridge:${clientKey}`;
+  const limitKey = `${BRIDGE_LIMIT_PREFIXES[bucket]}:${clientKey}`;
   if (checkRateLimit(limitKey, BRIDGES_PER_CLIENT, BRIDGE_WINDOW_MS).limited) return { kind: 'failed' };
   const client = createWebSessionCommandClient();
   let bridged: Awaited<ReturnType<typeof client.bridge>>;

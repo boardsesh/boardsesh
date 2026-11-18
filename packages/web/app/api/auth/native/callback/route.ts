@@ -46,8 +46,18 @@ const deepLinkRedirect = (url: string) => {
   return response;
 };
 
+/**
+ * The native transfer reads the legacy NextAuth cookie in every mode: it runs
+ * right after a Google or Apple sign-in, which writes that cookie (with
+ * `nativeOAuthCreationProof`, which no first-party session read carries) and,
+ * under `better-auth`, clears both first-party names in the same reply. Its
+ * credential proof needs that cookie's own claims. Issuing a first-party
+ * session for the transfer is B4c (#7596).
+ */
+const LEGACY_COOKIE = { legacyCookie: true } as const;
+
 async function nativeCallback(request: NextRequest) {
-  const session = await getAdmittedServerSession();
+  const session = await getAdmittedServerSession(LEGACY_COOKIE);
   if (!session?.user?.id) {
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
   }
@@ -75,7 +85,7 @@ async function nativeCallback(request: NextRequest) {
   try {
     let credentialProof: WebCredentialProof | undefined;
     if (webCredentialProofMode(process.env) === 'required') {
-      const raw = await getAdmittedRawServerToken();
+      const raw = await getAdmittedRawServerToken(LEGACY_COOKIE);
       if (!raw || !process.env.NEXTAUTH_SECRET) throw new Error('Source credential unavailable');
       const claims = await decode({ token: raw, secret: process.env.NEXTAUTH_SECRET });
       if (claims?.sub !== session.user.id || claims.authSessionId !== session.authSessionId)
