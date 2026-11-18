@@ -18,6 +18,7 @@
     "web-session-bridge-replacement.integration.proof.ts",
     "provider-security-link.integration.proof.ts",
     "provider-security-unlink.integration.proof.ts",
+    "first-password.integration.proof.ts",
     "provider-security-steps.ts",
     "web-session-harness.ts",
     "route-harness.ts",

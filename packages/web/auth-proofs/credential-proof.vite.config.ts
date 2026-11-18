@@ -32,6 +32,7 @@ export default defineConfig(async (environment) => {
         'auth-proofs/web-session-bridge-replacement.integration.proof.ts',
         'auth-proofs/provider-security-link.integration.proof.ts',
         'auth-proofs/provider-security-unlink.integration.proof.ts',
+        'auth-proofs/first-password.integration.proof.ts',
       ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30000,

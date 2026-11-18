@@ -23,6 +23,8 @@ import {
 import {
   DEFAULT_RETURN_PATH,
   answer,
+  jsonBody,
+  sameOriginPost,
   liveSession,
   localRefusal,
   refusalAnswer,
@@ -57,32 +59,6 @@ import { handleProviderSecurityCallback } from './provider-security-callback.ser
  *   link or unlink keeps the session token and moves only its generation, so
  *   the JSON tells the page to fetch a new 15-minute access token.
  */
-
-const MAX_BODY_BYTES = 16_384;
-
-/** POST, with this site's `Origin` (and, where the browser sends it, `Sec-Fetch-Site: same-origin`). */
-function sameOriginPost(request: NextRequest, publicOrigin: string): boolean {
-  if (request.method !== 'POST') return false;
-  if (request.headers.get('origin') !== publicOrigin) return false;
-  const site = request.headers.get('sec-fetch-site');
-  return site === null || site === 'same-origin';
-}
-
-async function jsonBody(request: NextRequest): Promise<Record<string, unknown> | undefined> {
-  if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') return undefined;
-  const declared = Number(request.headers.get('content-length') ?? '0');
-  if (!Number.isFinite(declared) || declared > MAX_BODY_BYTES) return undefined;
-  const text = await request.text();
-  if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(text || '{}');
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** The open flow record of this request, when it belongs to the live session; otherwise the answer. */
 export function flowOfSession(
