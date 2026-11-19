@@ -365,9 +365,11 @@ export function useBoardPresence(
           }
 
           if (connectionFetch !== undefined && connectionResult.status === 'fulfilled') {
+            // History and holder are independent reads. A later history sequence
+            // cannot date this holder snapshot or hide a newer live holder event.
             dispatch({
               type: 'REFRESH_CONNECTION',
-              payload: { holder: connectionResult.value ?? null, upToSeq: repairedThroughSeq },
+              payload: { holder: connectionResult.value ?? null, startedAtSeq, upToSeq: repairedThroughSeq },
             });
           }
 

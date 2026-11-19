@@ -40,6 +40,7 @@ import {
   sessionBoardPathNamesBoard,
 } from '../../lib/boards/gym-board-for-climb';
 import { useSessionBoardPath } from '../../providers/queue/queue-contexts';
+import { useCrewGymBoardHeld } from '../../lib/boards/use-crew-gym-board-held';
 import type { ActiveSubDrawer, TrackLabelModel } from '@boardsesh/play-view';
 import {
   SHARED_EVENTS,
@@ -159,6 +160,7 @@ import {
   useQueueData,
   useQueueActions,
   useQueueSessionId,
+  useQueueSessionControls,
   useIsSharedSession,
   useIsCrewSession,
 } from '../../providers/queue-provider';
@@ -970,12 +972,16 @@ export function PlayCore({
     ],
   );
   const climbGymBoardName = climbGymBoard ? gymBoardButtonName(climbGymBoard, playerGymBoards) : null;
-  // A crewmate moved the session to that board and lights it there. In a crew,
-  // the climb is theirs to light: this phone relays to them rather than taking
-  // the board (Marco: crewmates keep their own board and see the crew's state).
+  // Moving the session names the intended wall before the picker connects.
+  // Only a live member holding that target makes it the crew's board; otherwise
+  // Put on {board} must still let this phone move there and connect (#7181).
   const sessionBoardPath = useSessionBoardPath();
-  const climbOnCrewGymBoard =
-    isSharedSession && climbGymBoard !== null && sessionBoardPathNamesBoard(sessionBoardPath, climbGymBoard);
+  const { sessionMemberUserIds } = useQueueSessionControls();
+  const crewGymBoardTarget =
+    isSharedSession && climbGymBoard !== null && sessionBoardPathNamesBoard(sessionBoardPath, climbGymBoard)
+      ? climbGymBoard
+      : null;
+  const climbOnCrewGymBoard = useCrewGymBoardHeld(crewGymBoardTarget, sessionMemberUserIds);
   const activeBoardForLoggingRef = useRef(activeBoardForNavigation);
   activeBoardForLoggingRef.current = activeBoardForNavigation;
   // View options lists the MoonBoard-only Active holds switch on a MoonBoard

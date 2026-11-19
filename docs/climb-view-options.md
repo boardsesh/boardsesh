@@ -315,6 +315,14 @@ flat amber fallback; the label still says what the next press does.
   When the preview belongs to another board at the gym, **Put mine up** commits the preview and follows
   **Put on {board}** to move there, connect and light it. A board already used by the crew still relays to
   its holder instead of moving this phone; **Keep theirs** leaves both boards alone.
+  The target board counts as the crew's only while its live presence feed names a current session member
+  as holder. Moving the session path before connecting is not proof of a link: cancelling or failing the picker,
+  or the holder disconnecting, restores **Put on {board}** (#7181). Background/offline/closed-socket readers stay unconfirmed
+  until a fresh holder snapshot or event arrives; sequence gaps trigger holder-only recovery.
+  The existing protocol does not atomically attach the server's Redis listener with the holder query:
+  receiving a subscription disposer only starts attachment. A change in that initial quiet-board window can
+  remain unknown until a later event gap, foreground transition or reconnect. Closing that protocol window
+  requires a backend attachment handshake and is outside this fix.
 - **Lit only with a live link.** `resolveWallLit` (`play-drawer/wall-lit.ts`) decides it: this phone's link or a
   crewmate's. The server's board presence never clears and can name a climb lit 8 hours ago, so with no link the
   button offers a connect (Put on board). A preview of another climb, the #4979 hold and "Turn off all lights" read as dark.

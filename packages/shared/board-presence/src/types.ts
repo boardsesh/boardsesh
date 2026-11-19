@@ -58,11 +58,16 @@ export type BoardPresenceState = {
    */
   holder: BoardConnectionHolder | null;
   /**
-   * Highest connection-event `seq` applied. Connection events share the
-   * per-board seq counter with climb + stats events, so an out-of-order/duplicate
-   * connection push (seq <= this) is ignored. Separate from `lastSeq` /
-   * `lastStatsSeq` so a connection push never advances the climb-ordering or
-   * stats cursors (and vice versa).
+   * Internal wire-ordering watermark: accepted holder events and the sequence
+   * observed when an accepted holder snapshot started. History response
+   * sequences never advance this, so delayed holder events can still apply.
+   */
+  lastConnectionWireSeq: number;
+  /**
+   * Monotonic connection-observation cursor. Live holder events advance it to
+   * their sequence; catch-up advances it through the repaired history. Delayed
+   * holder events never move it backwards or invent a newer takeover. Only
+   * `lastConnectionWireSeq` decides whether a holder event or snapshot is stale.
    */
   lastConnectionSeq: number;
   /**
@@ -95,8 +100,10 @@ export type BoardPresenceAction =
   | { type: 'APPLY_CONNECTION_CHANGED'; payload: { holder: BoardConnectionHolder | null; seq: number } }
   // One-time initial fetch seed; only fills the holder before any live push.
   | { type: 'SEED_CONNECTION'; payload: BoardConnectionHolder | null }
-  // Full-feed catch-up after a detected sequence gap. This is a snapshot, so it
-  // replaces stale holder state and advances the connection cursor through the
-  // repaired seq.
-  | { type: 'REFRESH_CONNECTION'; payload: { holder: BoardConnectionHolder | null; upToSeq: number } }
+  // Holder ordering uses the request-start sequence; public observation
+  // progress advances through the independently repaired history sequence.
+  | {
+      type: 'REFRESH_CONNECTION';
+      payload: { holder: BoardConnectionHolder | null; startedAtSeq: number; upToSeq: number };
+    }
   | { type: 'RESET' };

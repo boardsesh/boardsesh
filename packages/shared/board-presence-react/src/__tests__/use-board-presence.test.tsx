@@ -649,6 +649,83 @@ describe('useBoardPresence — reconnect / foreground / manual catch-up', () => 
     expect(onCatchUp).toHaveBeenCalledWith({ reason: 'manual', recoveredThroughSeqDelta: 3 });
   });
 
+  it('keeps a newer live release while an older holder snapshot waits for history', async () => {
+    const { harness, view } = await mountSeeded();
+    act(() => view.result.current.refresh());
+    await act(async () => {
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+    });
+
+    act(() => harness.emit(connectionEvent(2, null)));
+    expect(view.result.current.holder).toBeNull();
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('newer', 3), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+    });
+
+    expect(view.result.current.currentClimb?.seq).toBe(3);
+    expect(view.result.current.holder).toBeNull();
+    expect(view.result.current.lastConnectionSeq).toBe(3);
+    expect(view.result.current.lastHolderChangeSeq).toBe(2);
+  });
+
+  it('accepts a delayed holder release after catch-up history advances past its sequence', async () => {
+    const { harness, view } = await mountSeeded();
+    act(() => view.result.current.refresh());
+    await act(async () => {
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+      await harness.resolveRecent(1, [climb('newer', 3), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+    });
+    expect(view.result.current.holder?.userId).toBe('seed');
+    expect(view.result.current.currentClimb?.seq).toBe(3);
+
+    // The history response raced ahead of this live holder event. Its climb
+    // sequence must not make an older holder snapshot authoritative through 3.
+    act(() => harness.emit(connectionEvent(2, null)));
+
+    expect(view.result.current.holder).toBeNull();
+    expect(view.result.current.lastConnectionSeq).toBe(3);
+  });
+
+  it('still repairs a missed holder when no live holder event intervenes', async () => {
+    const { harness, view } = await mountSeeded();
+    act(() => view.result.current.refresh());
+    await act(async () => {
+      await harness.resolveConnection(1, holder({ userId: 'new-holder' }));
+      await harness.resolveRecent(1, [climb('newer', 3), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+    });
+
+    expect(view.result.current.holder?.userId).toBe('new-holder');
+    expect(view.result.current.currentClimb?.seq).toBe(3);
+    expect(view.result.current.lastConnectionSeq).toBe(3);
+    expect(view.result.current.lastHolderChangeSeq).toBe(3);
+  });
+
+  it('keeps a delayed pre-take holder event below the repaired takeover cursor', async () => {
+    const { harness, view } = await mountSeeded();
+    act(() => view.result.current.refresh());
+    await act(async () => {
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+      await harness.resolveRecent(1, [climb('newer', 13), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+    });
+    const connectionSeqAtTake = view.result.current.lastConnectionSeq;
+    expect(connectionSeqAtTake).toBe(13);
+
+    act(() => harness.emit(connectionEvent(2, holder({ userId: 'earlier-peer' }))));
+    expect(view.result.current.holder?.userId).toBe('earlier-peer');
+    expect(view.result.current.lastConnectionSeq).toBe(connectionSeqAtTake);
+    expect(view.result.current.lastHolderChangeSeq > connectionSeqAtTake).toBe(false);
+
+    act(() => harness.emit(connectionEvent(14, holder({ userId: 'later-peer' }))));
+    expect(view.result.current.holder?.userId).toBe('later-peer');
+    expect(view.result.current.lastConnectionSeq).toBe(14);
+    expect(view.result.current.lastHolderChangeSeq > connectionSeqAtTake).toBe(true);
+  });
+
   it('refresh("foreground") reports the foreground reason', async () => {
     const onCatchUp = vi.fn();
     const { harness, view } = await mountSeeded(onCatchUp);

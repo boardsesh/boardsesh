@@ -28,6 +28,7 @@ export const initialBoardPresenceState: BoardPresenceState = {
   stats: null,
   lastStatsSeq: 0,
   holder: null,
+  lastConnectionWireSeq: 0,
   lastConnectionSeq: 0,
   lastHolderChangeSeq: 0,
 };
@@ -210,14 +211,15 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
       // with climb + stats events, so a stale/duplicate push (out-of-order Redis
       // fan-out) is ignored. The highest-seq holder wins; `holder: null` frees
       // the board.
-      if (action.payload.seq <= state.lastConnectionSeq) {
+      if (action.payload.seq <= state.lastConnectionWireSeq) {
         return state;
       }
       return {
         ...state,
         holder: action.payload.holder,
-        lastConnectionSeq: action.payload.seq,
-        lastHolderChangeSeq: action.payload.seq,
+        lastConnectionWireSeq: action.payload.seq,
+        lastConnectionSeq: Math.max(state.lastConnectionSeq, action.payload.seq),
+        lastHolderChangeSeq: Math.max(state.lastHolderChangeSeq, action.payload.seq),
       };
     }
 
@@ -236,18 +238,22 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
     }
 
     case 'REFRESH_CONNECTION': {
-      if (action.payload.upToSeq < state.lastConnectionSeq) {
-        return state;
+      if (action.payload.startedAtSeq < state.lastConnectionWireSeq) {
+        // The holder read is stale, but completed history still advances the
+        // boundary a later local take/drive captures. It is not a holder change.
+        const lastConnectionSeq = Math.max(state.lastConnectionSeq, action.payload.upToSeq);
+        return lastConnectionSeq === state.lastConnectionSeq ? state : { ...state, lastConnectionSeq };
       }
-      // A snapshot, not an event: it only says the holder changed when it reads
-      // a different one (`lastHolderChangeSeq`).
+      // The holder snapshot cannot outrank a live holder event received since
+      // its request started. Public progress still covers the repaired history.
       return {
         ...state,
         holder: action.payload.holder,
-        lastConnectionSeq: action.payload.upToSeq,
+        lastConnectionWireSeq: Math.max(state.lastConnectionWireSeq, action.payload.startedAtSeq),
+        lastConnectionSeq: Math.max(state.lastConnectionSeq, action.payload.upToSeq),
         lastHolderChangeSeq: isSameHolder(state.holder, action.payload.holder)
           ? state.lastHolderChangeSeq
-          : action.payload.upToSeq,
+          : Math.max(state.lastHolderChangeSeq, action.payload.upToSeq),
       };
     }
 

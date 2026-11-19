@@ -89,6 +89,7 @@ const presence = vi.hoisted(() => ({
   currentClimb: null as BoardPresenceClimb | null,
   holder: null as { userId?: string | null; displayName?: string | null } | null,
   lastConnectionSeq: 0,
+  lastHolderChangeSeq: null as number | null,
   resolveAndBindBoard: vi.fn(async () => null),
   resolveAndBindBoardByConfig: vi.fn(async () => null),
   resolveAndBindBoardByUuid: vi.fn(async () => null),
@@ -141,6 +142,7 @@ vi.mock('@boardsesh/board-presence-react', () => ({
     undoTarget: null,
     holder: presence.holder,
     lastConnectionSeq: presence.lastConnectionSeq,
+    lastHolderChangeSeq: presence.lastHolderChangeSeq ?? presence.lastConnectionSeq,
     isLive: true,
   }),
 }));
@@ -271,6 +273,7 @@ beforeEach(() => {
   lan.release.mockClear();
   queue.items = [];
   presence.lastConnectionSeq = 0;
+  presence.lastHolderChangeSeq = null;
   presence.currentClimb = null;
   bluetooth.state.pickerState = null;
   capturedPickerHost = null;
@@ -780,6 +783,42 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
       expect(presence.reportDisconnectForBoard).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps a virtual take while catch-up advances progress without a new holder change', async () => {
+    presence.holder = { userId: 'earlier-peer' };
+    presence.lastConnectionSeq = 2;
+    presence.lastHolderChangeSeq = 2;
+    const { rerender } = renderProvider({ hasLeds: true });
+    await takeTheWall();
+
+    // A history repair completes after the take. It adds no new holder event.
+    presence.lastConnectionSeq = 13;
+    await act(async () => rerender(providerElement({ hasLeds: true })));
+
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    await settle();
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a repaired-baseline take for a delayed old peer but releases for a newer peer', async () => {
+    presence.holder = { userId: 'earlier-peer' };
+    presence.lastConnectionSeq = 13;
+    presence.lastHolderChangeSeq = 0;
+    const { rerender } = renderProvider({ hasLeds: true });
+    await takeTheWall();
+
+    presence.holder = { userId: 'delayed-peer' };
+    presence.lastHolderChangeSeq = 3;
+    await act(async () => rerender(providerElement({ hasLeds: true })));
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+
+    presence.holder = { userId: 'later-peer' };
+    presence.lastConnectionSeq = 14;
+    presence.lastHolderChangeSeq = 14;
+    await act(async () => rerender(providerElement({ hasLeds: true })));
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    expect(takeLinkEnd()).toMatchObject({ deliberate: false, takenByPeer: true });
+  });
 
   it('takes over an existing peer when the no-lights picker first mounts the watch', async () => {
     presence.holder = { userId: 'someone-else' };

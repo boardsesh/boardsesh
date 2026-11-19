@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 
 import { render as renderInitial, act, renderHook } from '@testing-library/react';
 import { Children, Fragment, createElement, isValidElement, useEffect, useRef, type ReactNode } from 'react';
 import { DeferredBoard } from '../DeferredBoard';
-import type { Climb } from '@boardsesh/shared-schema';
+import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { LayoutChangeEvent } from 'react-native';
 import { clearOpeningLayoutCache } from '../opening-layout-cache';
@@ -62,6 +62,26 @@ const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 // `crew` is the roster's crew (`useIsCrewSession`); null reads `shared`. The two
 // differ while the browse latch outlives a crew that just left.
 const crew = vi.hoisted(() => ({ shared: false, crew: null as boolean | null }));
+const crewGymBoard = vi.hoisted(() => ({
+  held: false,
+  sessionBoardPath: '',
+  boards: [] as UserBoard[],
+  memberUserIds: new Set<string>(),
+  target: null as Pick<UserBoard, 'boardId' | 'uuid'> | null,
+}));
+// The real presence hook's snapshots, member matching and live events have
+// their own integration tests. Here the actual player must use its answer for
+// BOTH the wall-button model and the runner, rather than trust the path alone.
+vi.mock('../../../lib/boards/use-crew-gym-board-held', () => ({
+  useCrewGymBoardHeld: (board: Pick<UserBoard, 'boardId' | 'uuid'> | null) => {
+    crewGymBoard.target = board;
+    return board !== null && crewGymBoard.held;
+  },
+}));
+vi.mock('../../../providers/queue/queue-contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../providers/queue/queue-contexts')>()),
+  useSessionBoardPath: () => crewGymBoard.sessionBoardPath,
+}));
 // `wall-swipe-to-drive` (#7113). Off by default here, so the older tests keep
 // today's button; the swipe's own tests turn it on.
 const swipeToDrive = vi.hoisted(() => ({ on: false }));
@@ -259,7 +279,7 @@ vi.mock('react-native-safe-area-context', () => ({
 // factories hoist above that const.
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({
-    data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+    data: { uuid: 'gym-kilter', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
     isPending: false,
   }),
 }));
@@ -479,6 +499,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     addToQueue: vi.fn(async () => 'added'),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
+  useQueueSessionControls: () => ({ sessionMemberUserIds: crewGymBoard.memberUserIds }),
   // Solo unless a case says otherwise (the busy-wall question needs a crew):
   // the crew gate is off, so gestures commit as they always have.
   useIsSharedSession: () => crew.shared,
@@ -497,8 +518,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   // The preview angle re-anchor asks for the climb at the live angle; nothing
   // here pins a preview at another angle, so it never resolves.
   useClimb: () => ({ data: undefined }),
-  // No gym roster: Put on {board} reads it (#7076).
-  useGymBoards: () => ({ data: undefined }),
+  useGymBoards: () => ({ data: crewGymBoard.boards.length > 0 ? crewGymBoard.boards : undefined }),
   useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: toggleFavorite }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
@@ -540,6 +560,7 @@ const lightbulbState = vi.hoisted(() => ({
   holderIsAuthoritative: false,
   onPress: vi.fn(),
   connect: vi.fn(async () => true),
+  moveToClimbBoard: vi.fn(async () => true),
 }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: { canRelay?: boolean; onRelayToHolder?: () => void }) => {
@@ -550,6 +571,7 @@ vi.mock('../../ble/use-lightbulb-control', () => ({
       pending: false,
       onPress: lightbulbState.onPress,
       connect: lightbulbState.connect,
+      moveToClimbBoard: lightbulbState.moveToClimbBoard,
       pressAction: lightbulbState.pressAction,
       holderIsAuthoritative: lightbulbState.holderIsAuthoritative,
       ledless: lightbulbState.ledless,
@@ -711,6 +733,11 @@ beforeEach(() => {
   disconnectAllBluetooth.mockClear();
   crew.shared = false;
   crew.crew = null;
+  crewGymBoard.held = false;
+  crewGymBoard.sessionBoardPath = '';
+  crewGymBoard.boards = [];
+  crewGymBoard.memberUserIds = new Set<string>();
+  crewGymBoard.target = null;
   wallClimbState.uuid = null;
   wallClimbState.sentAt = null;
   boardSheet.props = [];
@@ -885,6 +912,93 @@ describe('PlayDrawer opening layout', () => {
     );
     expect(lastBoardProps().containerSize).toBeUndefined();
     expect(changed.getByTestId('board')).toBeTruthy();
+  });
+});
+
+describe('PlayDrawer uses the crew gym board only while a member holds it (#7181)', () => {
+  function tapWallControl() {
+    const handler = recorded.actionBar.at(-1)?.onWallControl;
+    if (typeof handler !== 'function') throw new Error('Wall control has no handler');
+    act(() => {
+      handler();
+    });
+  }
+
+  const HOMEWALL_BOARD = {
+    uuid: '11111111-1111-4111-8111-111111111111',
+    slug: 'crew-homewall',
+    boardId: 7,
+    boardType: 'kilter',
+    layoutId: 8,
+    sizeId: 17,
+    setIds: '26,27',
+    name: 'Gym Homewall',
+  } as UserBoard;
+
+  function prepareCrew(held: boolean, preview = false) {
+    crew.shared = true;
+    crewGymBoard.held = held;
+    crewGymBoard.sessionBoardPath = '/b/crew-homewall/30';
+    crewGymBoard.memberUserIds = new Set(['crew-holder']);
+    crewGymBoard.boards = [HOMEWALL_BOARD];
+    queueState.currentClimbQueueItem = queueItem(preview ? TWELVE_CLIMB : HOMEWALL_CLIMB, 'queue-current');
+    return createElement(PlayDrawer, {
+      presentation: 'pane',
+      boardConfig: TWELVE_BY_TWELVE,
+      reachableBoardKeys: new Set(['kilter:8']),
+      openTarget: preview
+        ? {
+            climb: HOMEWALL_CLIMB,
+            options: { previewQueueItem: queueItem(HOMEWALL_CLIMB, 'preview-homewall') },
+            nonce: 1,
+          }
+        : null,
+      onOpenQueue: vi.fn(),
+    });
+  }
+
+  it('keeps Put on the gym board available when the picker was cancelled', () => {
+    render(prepareCrew(false));
+
+    expect(crewGymBoard.target).toBe(HOMEWALL_BOARD);
+    expect(recorded.actionBar.at(-1)?.wallControlState).toBe('move_to_board');
+    tapWallControl();
+    expect(lightbulbState.moveToClimbBoard).toHaveBeenCalledWith('move_to_board', HOMEWALL_CLIMB);
+    expect(lightbulbState.onPress).not.toHaveBeenCalled();
+  });
+
+  it('relays a preview through a confirmed crew holder instead of this phone’s bulb', () => {
+    render(prepareCrew(true, true));
+
+    expect(recorded.actionBar.at(-1)?.wallControlState).toBe('put_on_wall');
+    expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({ holder: 'crew', tapAction: 'relay' });
+    tapWallControl();
+    expect(setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: HOMEWALL_CLIMB.uuid }) }),
+      expect.anything(),
+    );
+    expect(lightbulbState.onPress).not.toHaveBeenCalled();
+    expect(lightbulbState.moveToClimbBoard).not.toHaveBeenCalled();
+  });
+
+  it('restores the move after the crew holder disconnects', () => {
+    const player = prepareCrew(true);
+    const rendered = render(player);
+    expect(recorded.actionBar.at(-1)?.wallControlState).toBe('crew');
+
+    rendered.rerender(prepareCrew(false));
+    expect(recorded.actionBar.at(-1)?.wallControlState).toBe('move_to_board');
+    tapWallControl();
+    expect(lightbulbState.moveToClimbBoard).toHaveBeenCalledWith('move_to_board', HOMEWALL_CLIMB);
+  });
+
+  it('does not use a holder on a board the session no longer names', () => {
+    const player = prepareCrew(true);
+    crewGymBoard.sessionBoardPath = '/b/some-other-board/40';
+    render(player);
+
+    expect(crewGymBoard.target).toBeNull();
+    expect(recorded.actionBar.at(-1)?.wallControlState).toBe('move_to_board');
   });
 });
 
