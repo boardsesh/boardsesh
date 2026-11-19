@@ -1,5 +1,6 @@
 import type { AppFeedbackReport, ConnectionContext, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { GraphQLError } from 'graphql';
+import { chargeBoardRequestAddress } from './board-request-limit';
 import { BoardRequestInputSchema } from '../../../validation/schemas/feedback';
 import { eq } from 'drizzle-orm';
 import { sendBugReportIssueEmail } from '@boardsesh/email';
@@ -19,7 +20,7 @@ import { enrichReleaseContext } from '../../../services/mobile-release-status';
 
 export const feedbackMutations = {
   submitBoardRequest: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
-    await applyRateLimit(ctx, 5, 'submitBoardRequest');
+    await chargeBoardRequestAddress(ctx.trustedClientIp);
     const parsed = BoardRequestInputSchema.safeParse(input);
     if (!parsed.success) {
       throw new GraphQLError('Invalid board request.', { extensions: { code: 'BAD_USER_INPUT' } });

@@ -116,8 +116,10 @@ export async function consumeRateLimitRedis(
   operation: string,
   maxRequests: number,
   windowMs: number,
+  options: { requireDistributed?: boolean } = {},
 ): Promise<RateLimitUsage> {
   const usingMemory = () => {
+    if (options.requireDistributed) throw new Error('Shared rate limit unavailable');
     const entry = checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
     return usageFrom(maxRequests, entry.count, Math.ceil((entry.resetAt - Date.now()) / 1000));
   };
@@ -136,6 +138,7 @@ export async function consumeRateLimitRedis(
     return usageFrom(maxRequests, count, resetSeconds);
   } catch (err) {
     if (err instanceof RateLimitError) throw err;
+    if (options.requireDistributed) throw new Error('Shared rate limit unavailable');
     logger.warn('[RateLimit] Redis unavailable, falling back to in-memory:', (err as Error).message);
     return usingMemory();
   }

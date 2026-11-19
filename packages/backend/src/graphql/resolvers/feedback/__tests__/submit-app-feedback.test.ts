@@ -296,7 +296,7 @@ describe('private board requests', () => {
   const ipPrefix = `2001:db8:${crypto.randomUUID().slice(0, 4)}:${crypto.randomUUID().slice(0, 4)}::`;
   const request = { boardName: ' Local fixture board ', role: 'gym', note: ' Private fixture ', contactConsent: false };
   const submit = (input: unknown, clientIp: string) =>
-    feedbackMutations.submitBoardRequest(null, { input }, { ...anonCtx(), clientIp });
+    feedbackMutations.submitBoardRequest(null, { input }, { ...anonCtx(), clientIp, trustedClientIp: clientIp });
 
   it('accepts a signed-out request and saves consented contact without mirroring or sending mail', async () => {
     await expect(
@@ -341,7 +341,7 @@ describe('private board requests', () => {
     { source: 'shake-bug' },
   ])('rejects invalid inputs without echoing private values', async (invalid) => {
     // Separate rate limit bucket for each invalid-input case.
-    const ctx = { ...anonCtx(), clientIp: undefined, connectionId: crypto.randomUUID() };
+    const ctx = { ...anonCtx(), trustedClientIp: `2001:db8:${crypto.randomUUID().slice(0, 4)}::1` };
     await expect(
       feedbackMutations.submitBoardRequest(null, { input: { ...request, ...invalid } }, ctx),
     ).rejects.toMatchObject({ message: 'Invalid board request.', extensions: { code: 'BAD_USER_INPUT' } });

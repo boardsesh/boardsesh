@@ -14,9 +14,15 @@ import { withConnectRetry } from './connect-retry';
 import * as schema from '../schema/index';
 import * as relations from '../relations/index';
 
-class QueryLogger implements Logger {
+export class QueryLogger implements Logger {
   logQuery(query: string, params: unknown[]): void {
     const timestamp = new Date().toISOString();
+    // Feedback can contain private notes and contact details. Omit the entire
+    // statement and its bindings, including admin searches and failed writes.
+    if (/\bapp_feedback\b/i.test(query)) {
+      console.info(`[SQL ${timestamp}] app_feedback (private statement omitted)`);
+      return;
+    }
     console.info(`[SQL ${timestamp}] ${query}`);
     if (params.length > 0) {
       console.info(`[SQL params] ${JSON.stringify(params)}`);

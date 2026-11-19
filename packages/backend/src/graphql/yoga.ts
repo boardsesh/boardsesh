@@ -23,10 +23,10 @@ import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usa
 import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
 import { resolveEdgeRegionCode, resolveFlagCountry } from '../utils/flag-country';
 import { getTrustedClientIp } from '../utils/client-ip';
-import { boardShareTokenPrivacyPlugin, sanitizeBoardShareLogArgument } from './board-share-token-privacy';
+import { privateBoardOperationPrivacyPlugin, sanitizePrivateBoardLogArgument } from './private-board-operation';
 
 function sanitizeTokenLogArgument(argument: unknown): unknown {
-  return sanitizeBoardShareLogArgument(sanitizeAppleAdsLogArgument(argument));
+  return sanitizePrivateBoardLogArgument(sanitizeAppleAdsLogArgument(argument));
 }
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
@@ -157,7 +157,7 @@ export function createYogaInstance() {
       responseCompressionPlugin(),
       clientUsagePlugin(),
       appleAdsTokenPrivacyPlugin(),
-      boardShareTokenPrivacyPlugin(),
+      privateBoardOperationPrivacyPlugin(),
     ],
     // Context function - extract auth and the trusted client IP from HTTP requests.
     // `req` is the Node request `server.ts` hands to `yoga.handle`; it carries the
