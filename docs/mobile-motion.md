@@ -95,10 +95,24 @@ dragging keeps holds fully lit. On release, old-only and new-only holds crossfad
 over 240 ms, and shared holds stay fully lit. During an uninterrupted dissolve, the
 weight of either side changes by at most 0.070 per frame at 60 Hz and 0.035 at 120 Hz.
 A dropped frame or an onward flick that evicts the older pair can produce larger steps.
-The PNG fallback still slides the whole board. Each frame leaves the UI thread as a
+Each frame leaves the UI thread as a
 `swapFrame` view command, so a player re-render during the fade cannot hold it back (#7737).
 The animated prop with the same sequence number covers mount and binaries without the command. Details in
 `docs/gpu-climb-overlay-experiment.md`.
+
+**PNG board still wall** (`play-drawer/png-swap-layers.ts`, every player board drawn as
+pictures: older binaries, no GPU, playback, the GPU board switched off in Settings › Board).
+The wall stays still here too. The same state machine runs with the shipped numbers, but a
+PNG board is one picture with the veil baked in, so whole boards fade over a bare wall (the
+same photo, veil and LED covers with no climb). Dragging dims the current board to 40% by
+the commit distance; a commit hands over at the 40% level (the old climb leaves as the new
+one comes up to 40%, so holds lit in both never dip below it) and the new climb rises to
+100% on the swap's ease-out, at rest 200 ms after the commit. Under Reduce Motion nothing
+dims while dragging and the swap is the same linear 240 ms dissolve, between whole boards. Until the bare
+wall has painted (the first open of a board look) the board does not dim either and the swap
+dissolves on its normal timing; the dim starts from the next rest. On Android each fading board composites
+offscreen so its photo and holds fade as one. The `png-wall-fade-kill` switch brings back the
+slide of the whole board.
 
 **Player swap look** (`play-drawer/player-swap-look.ts`, iOS and Android binaries with
 `swapLookVersion` 2). On those the player draws the board motion lab's I on top of the

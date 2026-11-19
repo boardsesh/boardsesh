@@ -116,6 +116,29 @@ describe('BoardImageNative overlay layers', () => {
     expect(readiness).toHaveBeenLastCalledWith(missingCount ? 'failed' : 'ready');
   });
 
+  // The PNG player board's bare wall (png-swap-layers.ts) is the photo with its
+  // veil. The photo alone is a brighter wall than the climbs sit on, so it is
+  // only ready once the veil has displayed; an empty climb anywhere else is
+  // ready on its photo.
+  it.each([false, true])('waits for the veil before a bare wall is ready, bare wall %s', (bareWall) => {
+    imageEvents.displays.length = 0;
+    renderResult.current = { overlayUri: null, rendererUnavailable: false };
+    const readiness = vi.fn();
+    const props = { ...BOARD, frames: '', bareWall, onArtReadinessChange: readiness };
+    const { rerender } = render(createElement(BoardImageNative, props));
+    act(() => {
+      for (const event of imageEvents.displays) event.display?.();
+    });
+    expect(readiness).toHaveBeenLastCalledWith(bareWall ? 'loading' : 'ready');
+    renderResult.current = { overlayUri: 'file:///overlay-bare-wall.png', rendererUnavailable: false };
+    // A new width re-renders the memoised board, which reads the render anew.
+    rerender(createElement(BoardImageNative, { ...props, renderWidth: 601 }));
+    act(() => {
+      for (const event of imageEvents.displays) event.display?.();
+    });
+    expect(readiness).toHaveBeenLastCalledWith('ready');
+  });
+
   it('publishes a terminal failure without declaring missing holds ready', () => {
     imageEvents.displays.length = 0;
     renderResult.current = { overlayUri: 'file:///overlay-ready.png', rendererUnavailable: false };

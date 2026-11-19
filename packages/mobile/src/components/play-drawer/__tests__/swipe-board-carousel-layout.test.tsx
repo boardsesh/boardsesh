@@ -18,11 +18,13 @@ type ViewProps = {
   accessibilityActions?: { name: string; label: string }[];
   accessibilityValue?: { text?: string };
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  needsOffscreenAlphaCompositing?: boolean;
 };
 
 const recorded = vi.hoisted(() => ({
   motionNative: false,
   gpuEnabled: true,
+  pngWallFade: true,
   apiVersion: 5,
   renderSettings: { mode: 'aura', boardsesh: { softDisc: false } },
   onLayout: undefined as ViewProps['onLayout'],
@@ -57,6 +59,7 @@ vi.mock('../../../lib/board-render-settings', () => ({
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useGpuClimbOverlayEnabled: () => recorded.gpuEnabled,
   usePlayerSwapLookEnabled: () => true,
+  usePngWallFadeEnabled: () => recorded.pngWallFade,
 }));
 
 // The platform the board's spoken value is decided for.
@@ -87,12 +90,14 @@ vi.mock('react-native', () => {
       accessibilityActions,
       accessibilityValue,
       onAccessibilityAction,
+      needsOffscreenAlphaCompositing,
     }: ViewProps) => {
       if (testID === 'play-drawer-board-container') recorded.onLayout = onLayout;
       if (testID === 'play-drawer-board-accessibility') {
         recorded.accessibility = { accessibilityRole, accessibilityActions, accessibilityValue, onAccessibilityAction };
       }
       const dimensions = flattenStyle(style);
+      const transform = dimensions.transform as { translateX?: number }[] | undefined;
       return createElement(
         'div',
         {
@@ -105,6 +110,8 @@ vi.mock('react-native', () => {
           'data-important-for-accessibility': importantForAccessibility,
           'data-pointer-events': pointerEvents,
           'data-zoomed': dimensions.zoomMarker,
+          'data-translate-x': transform?.[0]?.translateX,
+          'data-offscreen-alpha': needsOffscreenAlphaCompositing,
         },
         children,
       );
@@ -200,6 +207,7 @@ vi.mock('../../BoardImageNative', () => ({
   // Paint synchronously, like an image whose photo and overlay are already cached.
   BoardImageNative: (props: {
     frames: string;
+    bareWall?: boolean;
     style: ViewStyle;
     renderWidth: number;
     overlayTestID?: string;
@@ -213,7 +221,7 @@ vi.mock('../../BoardImageNative', () => ({
       }
     }, [frames, props.onArtReadinessChange]);
     return createElement('div', {
-      'data-testid': `board-${frames}`,
+      'data-testid': props.bareWall ? 'bare-wall' : `board-${frames}`,
       'data-width': style?.width,
       'data-height': style?.height,
       'data-render-width': renderWidth,
@@ -312,6 +320,7 @@ beforeEach(() => {
   platform.OS = 'android';
   recorded.motionNative = false;
   recorded.gpuEnabled = true;
+  recorded.pngWallFade = true;
   recorded.apiVersion = 5;
   recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: false } };
   recorded.onLayout = undefined;
@@ -332,6 +341,8 @@ beforeEach(() => {
 it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'] as const)(
   'releases stationary %s motion when the remote GPU switch turns off',
   (boardName) => {
+    // The slide: the PNG board's own still wall would hold the flag (tested below).
+    recorded.pngWallFade = false;
     recorded.motionNative = true;
     const pager = restingPager();
     const props = {
@@ -351,6 +362,7 @@ it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'mo
 );
 
 it.each([0, 2, 3, 4])('keeps catalogue motion on PNG with API %s', (apiVersion) => {
+  recorded.pngWallFade = false;
   recorded.motionNative = true;
   recorded.apiVersion = apiVersion;
   const pager = restingPager();
@@ -596,6 +608,7 @@ it('rejects old readiness and failure callbacks when the same three climbs retur
 });
 
 it('returns to retained image pages after unsupported or failed native rendering', async () => {
+  recorded.pngWallFade = false;
   recorded.motionNative = true;
   const pager = restingPager();
   const { queryAllByTestId } = render(
@@ -1157,6 +1170,81 @@ describe('SwipeBoardCarousel pages', () => {
     await nextFrame();
 
     expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  });
+});
+
+describe('SwipeBoardCarousel still wall (PNG board)', () => {
+  const slotOf = (element: HTMLElement) => element.parentElement!.parentElement!;
+  const props = { ...baseProps, prevFrames: 'a', currentFrames: 'b', nextFrames: 'c' };
+
+  it('keeps every board in the middle mid-drag and lets it fade as one picture', async () => {
+    const pager = restingPager();
+    (pager.translateX as { value: number }).value = -100;
+    const { getByTestId } = render(createElement(SwipeBoardCarousel, { ...props, pager }));
+    measure(350, 500);
+    await nextFrame();
+
+    for (const frames of ['a', 'b', 'c']) {
+      const slot = slotOf(getByTestId(`board-${frames}`));
+      expect(slot.dataset.translateX).toBe('0');
+      expect(slot.dataset.offscreenAlpha).toBe('true');
+    }
+    // Opacity from the swap's layers: the current climb at rest, as no UI frame ran.
+    expect(slotOf(getByTestId('board-b')).dataset.opacity).toBe('1');
+    expect(slotOf(getByTestId('board-a')).dataset.opacity).toBe('0');
+    expect(slotOf(getByTestId('board-c')).dataset.opacity).toBe('0');
+    expect(pager.stationaryMotion.value).toBe(true);
+  });
+
+  it('mounts the bare wall after the neighbours, under every board, out of the way at rest', async () => {
+    const { getByTestId, queryByTestId, queryAllByTestId } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    expect(queryByTestId('bare-wall')).toBeNull();
+    await nextFrame();
+    // The neighbours first, so a first render of the bare wall queues behind theirs.
+    expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+    expect(queryByTestId('bare-wall')).toBeNull();
+    await nextFrame();
+
+    const bareWall = getByTestId('bare-wall');
+    const bareWallSlot = slotOf(bareWall);
+    expect(bareWallSlot.dataset.opacity).toBe('0');
+    expect(bareWallSlot.dataset.pointerEvents).toBe('none');
+    expect(bareWallSlot.dataset.importantForAccessibility).toBe('no-hide-descendants');
+    // Rides the zoom, like the boards.
+    expect(bareWall.parentElement!.dataset.zoomed).toBe('yes');
+    const siblings = Array.from(bareWallSlot.parentElement!.children);
+    for (const frames of ['a', 'b', 'c']) {
+      expect(siblings.indexOf(bareWallSlot)).toBeLessThan(siblings.indexOf(slotOf(getByTestId(`board-${frames}`))));
+    }
+    const bareWallProps = recorded.boardProps.mock.calls.findLast(([board]) => board.bareWall)?.[0];
+    expect(bareWallProps).toMatchObject({ frames: '', bareWall: true, mirrored: false, backgroundVariant: 'full' });
+    // Native onDisplay fires at the start of expo-image's fade. Disabling that
+    // fade makes readiness mean the veil is whole, before drag dimming can start.
+    expect(bareWallProps.suppressOverlayTransition).toBe(true);
+    // Never a page: the swipe does not wait for it, and it is not the play surface.
+    expect(bareWallProps.playSurface).toBeUndefined();
+  });
+
+  it.each([
+    ['the kill switch is on', { pngWallFade: false, transition: undefined }],
+    ['the lab plays the wipe', { pngWallFade: true, transition: { revealMode: 'wipe' as const } }],
+  ])('slides the whole board again when %s', async (_reason, { pngWallFade, transition }) => {
+    recorded.pngWallFade = pngWallFade;
+    const pager = restingPager();
+    (pager.translateX as { value: number }).value = -100;
+    const { getByTestId, queryByTestId } = render(createElement(SwipeBoardCarousel, { ...props, pager, transition }));
+    measure(350, 500);
+    // Two frames: long enough for the bare wall to have mounted, were it wanted.
+    await nextFrame();
+    await nextFrame();
+
+    expect(queryByTestId('bare-wall')).toBeNull();
+    const current = slotOf(getByTestId('board-b'));
+    expect(Number(current.dataset.translateX)).toBeLessThan(0);
+    expect(current.dataset.offscreenAlpha).toBe('false');
+    expect(Number(slotOf(getByTestId('board-c')).dataset.opacity)).toBeGreaterThan(0);
+    expect(pager.stationaryMotion.value).toBe(false);
   });
 });
 

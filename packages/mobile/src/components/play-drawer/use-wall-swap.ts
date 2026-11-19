@@ -46,7 +46,8 @@ function startClock(clock: SharedValue<number>, durationMs: number, slowdown: nu
 /**
  * The wall swap's three weights and its pair, driven from the pager on the UI
  * thread. Nothing crosses to the JS thread per frame, and nothing runs at rest.
- * `enabled` is false for the wipe; the values then stay at rest.
+ * `enabled` is false for the wipe; the frame then rests on the pager's page,
+ * and switched back on the swap starts from rest there.
  *
  * `transition` swaps the step for another (the player's swap look, or the board
  * motion lab's); absent, it is the shipped wall swap at real speed under the
@@ -94,9 +95,23 @@ export function useWallSwap(
             reduceMotion: reduceMotionValue.value,
             commitDistance: SWIPE_THRESHOLD,
           }
-        : null,
+        : anchorPage.value,
     (input) => {
-      if (input === null) return;
+      // Switched off, the pager goes on without it: steps it never saw would
+      // read as a commit once it is back on (the PNG board's still wall goes
+      // off and on while mounted: playback, a GPU hand-over, its kill switch).
+      // Forget the state so it starts from rest wherever the pager then is, and
+      // keep the frame at rest on the pager's page, so a board that reads it
+      // before this runs again never shows a page the pager has left. The GPU
+      // board reads no frame outside the swap (`GpuClimbOverlay`).
+      if (typeof input === 'number') {
+        if (state.value !== null) state.value = null;
+        const shown = frame.value;
+        if (shown.length !== 4 || shown[0] !== input || shown[1] !== 1 || shown[2] !== 0 || shown[3] !== 1) {
+          frame.value = [input, 1, 0, 1];
+        }
+        return;
+      }
       const previous = state.value !== null && stateDriver.value === driverSerial ? state.value : driver.rest(input);
       const step = driver.step(previous, input);
       state.value = step.state;

@@ -207,6 +207,13 @@ type NativeClimbRenderParams = {
   gpuApiVersion?: number;
   /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
   gpuAllowEmpty?: boolean;
+  /**
+   * Render the overlay for empty `frames` too: the bare wall, the veil and LED
+   * covers with no lit holes, which the renderer draws for a climb with no
+   * holds. The PNG player board fades its climbs over it (`png-swap-layers.ts`).
+   * Without it empty frames render nothing, as every other surface expects.
+   */
+  bareWall?: boolean;
   gpuFallbackConfigJson?: string | null;
   /** Once this static configuration presented, the board keeps its GPU drawable: no PNG work at all. */
   gpuPresentedConfigJson?: string | null;
@@ -1902,6 +1909,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     gpuCatalogueNative = false,
     gpuApiVersion = 0,
     gpuAllowEmpty = false,
+    bareWall = false,
     gpuFallbackConfigJson,
     gpuPresentedConfigJson,
     gpuHedgeCacheKey = null,
@@ -1962,6 +1970,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // snapshots (PlayDrawer -> SwipeBoardCarousel -> BoardImageNative) are
   // comma-free, x-free `p{id}r{code}` strings and also pass through unchanged.
   const flatFrames = useMemo(() => toFlatFrames(frames, boardName), [frames, boardName]);
+  // Whether there is an overlay to render: lit holds, or the bare wall's veil.
+  const rendersOverlay = flatFrames !== '' || bareWall;
 
   // Small surfaces that pass a renderWidth want the bundled thumb-sized
   // background too, so neither the overlay nor the photo is a large source the
@@ -2382,7 +2392,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       immediate: nativeRender?.key === currentCacheKey && nativeRender.entry != null,
     };
   } else if (overlayArrivalRef.current.key !== currentCacheKey) {
-    const existing = flatFrames ? getRenderedOverlay(currentCacheKey) : undefined;
+    const existing = rendersOverlay ? getRenderedOverlay(currentCacheKey) : undefined;
     overlayArrivalRef.current = { key: currentCacheKey, immediate: existing !== undefined };
     if (existing) setNativeRender({ key: currentCacheKey, entry: existing, loadAttempt: 0 });
   }
@@ -2598,7 +2608,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       getBoardseshRendererSupport() === null
     )
       return;
-    if (!flatFrames || isRenderSignatureUnsupported(effectiveOverrideSignature)) return;
+    if (!rendersOverlay || isRenderSignatureUnsupported(effectiveOverrideSignature)) return;
 
     // The lit placement ids the renderer will actually draw, parsed ONCE: the
     // hold-match check right below needs them, and so does the Aura outline
@@ -3030,6 +3040,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // listed so the branch's own input is visible where the effect declares it.
     boardArtChunkPending,
     flatFrames,
+    rendersOverlay,
     boardName,
     layoutId,
     sizeId,
@@ -3368,9 +3379,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Only surface the native URI if it matches the *current* cache key —
   // a stale render (from before a prop change) would otherwise show.
   const candidateOverlayUri =
-    flatFrames && nativeRender?.key === currentCacheKey ? (nativeRender.entry?.uri ?? null) : null;
+    rendersOverlay && nativeRender?.key === currentCacheKey ? (nativeRender.entry?.uri ?? null) : null;
   const overlayLoadKey =
-    flatFrames && nativeRender?.key === currentCacheKey && nativeRender.entry
+    rendersOverlay && nativeRender?.key === currentCacheKey && nativeRender.entry
       ? `${nativeRender.entry.generation}:${nativeRender.loadAttempt}`
       : null;
   const verifiedOverlayFile =
@@ -3540,9 +3551,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     overlayFailed: failedOverlayKey === currentCacheKey,
     overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,
     overlayUnavailable:
-      rendererGaveUp ||
-      isNativeRendererUnavailable() ||
-      (flatFrames !== '' && unavailableOverlayKey === currentCacheKey),
+      rendererGaveUp || isNativeRendererUnavailable() || (rendersOverlay && unavailableOverlayKey === currentCacheKey),
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,

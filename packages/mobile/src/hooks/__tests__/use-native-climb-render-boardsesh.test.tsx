@@ -994,6 +994,36 @@ describe('useNativeClimbRender render mode', () => {
     expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
+  // The PNG player board fades its climbs over a bare wall (png-swap-layers.ts):
+  // the same photo with the veil and LED covers and no climb on it. The renderer
+  // draws exactly that for empty frames; every other surface renders nothing.
+  it('renders the bare wall for empty frames only when asked, with the veil and LED covers', async () => {
+    const plain = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: '' }));
+    await act(async () => {});
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    expect(plain.result.current.overlayUri).toBeNull();
+    plain.unmount();
+
+    const { result } = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: '', bareWall: true }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const bareWall = sentConfigs().find((config) => config.render_mode === 'aura');
+    expect(bareWall?.frames).toBe('');
+    expect(bareWall?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+    expect(bareWall?.led_cover).toBeDefined();
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay.png'));
+    expect(result.current.overlayUnavailable).toBe(false);
+    // Nothing lit, so nothing for the hold-match guard to judge or skip.
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringContaining('no matching holds'));
+
+    // Its own key: the veil's half of the signature, no climb's frames.
+    const [, bareWallKey] = nativeModule.renderHoldsOverlay.mock.calls.at(-1)!;
+    expect(result.current.overlayCacheKey).toBe(bareWallKey);
+    const climb = renderHook(() =>
+      useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }),
+    );
+    expect(climb.result.current.overlayCacheKey).not.toBe(bareWallKey);
+  });
+
   it('does not call the renderer missing while a render is merely still running', async () => {
     // The create board draws its own holds when there is no renderer at all. If
     // "no overlay yet" read as "no renderer", it would flash those JS-drawn holds

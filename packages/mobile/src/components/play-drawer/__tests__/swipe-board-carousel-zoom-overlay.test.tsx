@@ -74,7 +74,12 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => createElement('div') }));
+// The PNG board's still-wall swap reads it; the OS setting is not under test here.
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
+vi.mock('../../BoardImageNative', () => ({
+  BoardImageNative: ({ bareWall }: { bareWall?: boolean }) =>
+    createElement('div', { 'data-testid': bareWall ? 'bare-wall' : 'board' }),
+}));
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
   climbOverlayGpuApiVersion: 5,
   NativeMotionClimbOverlayGPU: null,
@@ -130,6 +135,7 @@ const baseProps = {
     uiSteps: { value: 0 },
     jsState: { value: { center: 0, hasPrevious: false, hasNext: true, processedStep: 0 } },
     slideWidth: { value: 0 },
+    stationaryMotion: { value: false },
     resetGeneration: { value: 0 },
     untoldStep: { value: 0 },
     tellUntoldStep: () => {},
@@ -177,6 +183,15 @@ describe('SwipeBoardCarousel zoom-pan overlay mounting', () => {
     measure();
 
     expect(mountedGestures(container)).toContain('zoom-pan');
+  });
+
+  it('adds no gesture with the bare wall under the PNG board', async () => {
+    const { container, findByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
+    measure();
+    // The bare wall mounts a frame after the neighbours.
+    await findByTestId('bare-wall');
+
+    expect(mountedGestures(container)).toEqual(['simultaneous']);
   });
 
   it('passes the exact dismiss ref into the zoom hook without changing 1x composition', () => {

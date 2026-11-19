@@ -17,6 +17,7 @@ import { playerRevealMode } from './wall-swap';
 import { encodeSwapLook, type BoardSwapFrame } from './swap-look';
 import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
 import { usePlayerBoardTransition } from './use-player-board-transition';
+import { useStationaryMotionFlag } from './use-stationary-motion-flag';
 
 type Props = {
   boardProps: React.ComponentProps<typeof BoardImageNative>;
@@ -67,13 +68,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   swapFrameMirror,
 }: Props) {
   const { anchorPage, translateX, slideWidth } = pager;
-  const stationaryMotion = pager.stationaryMotion;
-  useLayoutEffect(() => {
-    if (stationaryMotion) stationaryMotion.value = true;
-    return () => {
-      if (stationaryMotion) stationaryMotion.value = false;
-    };
-  }, [stationaryMotion]);
+  useStationaryMotionFlag(pager, true);
   const pagePosition = useDerivedValue(() => {
     // One step at most: a drag past the board's width must not reveal the
     // climb after the next one, which the trio may already hold once the JS

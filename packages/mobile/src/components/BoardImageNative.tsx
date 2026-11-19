@@ -79,6 +79,13 @@ type BoardImageNativeProps = {
   editorSurface?: boolean;
   /** Stationary board: the neighboring hold sets blend while the photo stays still. */
   gpuTransition?: GpuClimbTransition;
+  /**
+   * The bare wall: pass empty `frames` and get the photo with the veil and LED
+   * covers but no climb, the wall a PNG player board fades its climbs over
+   * (`play-drawer/png-swap-layers.ts`). Art readiness waits for that overlay:
+   * the photo alone is a brighter wall than the one the climbs sit on.
+   */
+  bareWall?: boolean;
   onGpuTransitionStateChange?: (state: 'unavailable' | 'loading' | 'ready') => void;
   /**
    * Target overlay/background width in px for small surfaces (e.g. the
@@ -220,6 +227,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   editorSurface = false,
   gpuTransition,
   onGpuTransitionStateChange,
+  bareWall = false,
   renderWidth,
   backgroundVariant,
   recyclingKey,
@@ -291,6 +299,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     gpuCatalogueNative: climbOverlayGpuApiVersion >= 5,
     gpuApiVersion: climbOverlayGpuApiVersion,
     gpuAllowEmpty: editorSurface && NativeMotionClimbOverlayGPU !== null,
+    bareWall,
     gpuFallbackConfigJson,
     gpuPresentedConfigJson: gpuPaintedConfig,
     gpuHedgeCacheKey,
@@ -743,7 +752,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
           displayIdentity={currentArtIdentity}
           onArtReadinessChange={handleArtReadinessChange}
           onArtError={handleArtError}
-          overlayRequired={liveOverlay !== undefined || (!!frames && !overlayUnavailable)}
+          // The bare wall is only ready with its veil: never on the photo alone.
+          overlayRequired={liveOverlay !== undefined || bareWall || (!!frames && !overlayUnavailable)}
           onArtDisplayed={(loadKey) => {
             if (liveOverlay || !overlayUri || loadKey !== overlayLoadKey) return;
             // A GPU board whose config is still loading shows its PNG here.
