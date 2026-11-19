@@ -1,0 +1,363 @@
+{
+  "capturedAt": "2026-11-19T00:33:19.735238+00:00",
+  "consentSourceCommit": "6b89a652b93ae9c53e77dcba04393303d4317842",
+  "integrationPreviewCommit": "80998282b86bfdfa5c6cd91e64cfcce382706348",
+  "viewports": {
+    "phone": {
+      "width": 390,
+      "height": 664
+    },
+    "desktop": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "browser": "Headless Chromium with iPhone Safari user-agent on phone captures",
+  "before": [
+    {
+      "locale": "en-US",
+      "viewport": 390,
+      "path": "/",
+      "x": 8,
+      "y": 212.40625,
+      "width": 374,
+      "height": 443.59375,
+      "scrollHeight": 444,
+      "clientHeight": 444,
+      "buttons": [
+        {
+          "text": "Allow",
+          "x": 24,
+          "y": 552,
+          "width": 342,
+          "height": 40
+        },
+        {
+          "text": "No thanks",
+          "x": 24,
+          "y": 600,
+          "width": 342,
+          "height": 40
+        }
+      ],
+      "heroButtons": [
+        {
+          "text": "Get the free app",
+          "overlap": true
+        }
+      ],
+      "scrollWidth": 390
+    },
+    {
+      "locale": "en-US",
+      "viewport": 1440,
+      "path": "/",
+      "x": 420,
+      "y": 572.40625,
+      "width": 600,
+      "height": 311.59375,
+      "scrollHeight": 312,
+      "clientHeight": 312,
+      "buttons": [
+        {
+          "text": "Allow",
+          "x": 436,
+          "y": 828,
+          "width": 280,
+          "height": 40
+        },
+        {
+          "text": "No thanks",
+          "x": 724,
+          "y": 828,
+          "width": 280,
+          "height": 40
+        }
+      ],
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "overlap": false
+        }
+      ],
+      "scrollWidth": 1440
+    }
+  ],
+  "candidate": [
+    {
+      "locale": "en-US",
+      "viewport": 390,
+      "path": "/",
+      "x": 16,
+      "y": 465,
+      "width": 358,
+      "height": 183,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 306.625,
+          "y": 477,
+          "width": 55.375,
+          "height": 44
+        },
+        {
+          "text": "Allow",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        },
+        {
+          "text": "No thanks",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        }
+      ],
+      "heroButtons": [
+        {
+          "text": "Get the free app",
+          "overlap": false
+        }
+      ],
+      "scrollWidth": 390
+    },
+    {
+      "locale": "en-US",
+      "viewport": 390,
+      "textSizeStressPercent": 200,
+      "height": 253.203125,
+      "top": 394.796875,
+      "bottom": 648,
+      "scrollWidth": 390
+    },
+    {
+      "locale": "es",
+      "viewport": 390,
+      "path": "/es",
+      "x": 16,
+      "y": 444,
+      "width": 358,
+      "height": 204,
+      "scrollHeight": 204,
+      "clientHeight": 204,
+      "buttons": [
+        {
+          "text": "Detalles",
+          "x": 298.359375,
+          "y": 456,
+          "width": 63.640625,
+          "height": 44
+        },
+        {
+          "text": "Permitir",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        },
+        {
+          "text": "No, gracias",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        }
+      ],
+      "heroButtons": [],
+      "scrollWidth": 390
+    },
+    {
+      "locale": "es",
+      "viewport": 390,
+      "textSizeStressPercent": 200,
+      "height": 346.40625,
+      "top": 301.59375,
+      "bottom": 648,
+      "scrollWidth": 390
+    },
+    {
+      "locale": "fr",
+      "viewport": 390,
+      "path": "/fr",
+      "x": 16,
+      "y": 444,
+      "width": 358,
+      "height": 204,
+      "scrollHeight": 204,
+      "clientHeight": 204,
+      "buttons": [
+        {
+          "text": "Détails",
+          "x": 306.625,
+          "y": 456,
+          "width": 55.375,
+          "height": 44
+        },
+        {
+          "text": "Autoriser",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        },
+        {
+          "text": "Non merci",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        }
+      ],
+      "heroButtons": [],
+      "scrollWidth": 390
+    },
+    {
+      "locale": "fr",
+      "viewport": 390,
+      "textSizeStressPercent": 200,
+      "height": 295.203125,
+      "top": 352.796875,
+      "bottom": 648,
+      "scrollWidth": 390
+    },
+    {
+      "locale": "de",
+      "viewport": 390,
+      "path": "/de",
+      "x": 16,
+      "y": 465,
+      "width": 358,
+      "height": 183,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 306.625,
+          "y": 477,
+          "width": 55.375,
+          "height": 44
+        },
+        {
+          "text": "Erlauben",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        },
+        {
+          "text": "Nein danke",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        }
+      ],
+      "heroButtons": [],
+      "scrollWidth": 390
+    },
+    {
+      "locale": "de",
+      "viewport": 390,
+      "textSizeStressPercent": 200,
+      "height": 304.40625,
+      "top": 343.59375,
+      "bottom": 648,
+      "scrollWidth": 390
+    },
+    {
+      "locale": "it",
+      "viewport": 390,
+      "path": "/it",
+      "x": 16,
+      "y": 444,
+      "width": 358,
+      "height": 204,
+      "scrollHeight": 204,
+      "clientHeight": 204,
+      "buttons": [
+        {
+          "text": "Dettagli",
+          "x": 301.65625,
+          "y": 456,
+          "width": 60.34375,
+          "height": 44
+        },
+        {
+          "text": "Consenti",
+          "x": 28,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        },
+        {
+          "text": "No, grazie",
+          "x": 199,
+          "y": 592,
+          "width": 163,
+          "height": 44
+        }
+      ],
+      "heroButtons": [],
+      "scrollWidth": 390
+    },
+    {
+      "locale": "it",
+      "viewport": 390,
+      "textSizeStressPercent": 200,
+      "height": 346.40625,
+      "top": 301.59375,
+      "bottom": 648,
+      "scrollWidth": 390
+    },
+    {
+      "locale": "en-US",
+      "viewport": 1440,
+      "path": "/",
+      "x": 16,
+      "y": 701,
+      "width": 420,
+      "height": 183,
+      "scrollHeight": 183,
+      "clientHeight": 183,
+      "buttons": [
+        {
+          "text": "Details",
+          "x": 368.625,
+          "y": 713,
+          "width": 55.375,
+          "height": 44
+        },
+        {
+          "text": "Allow",
+          "x": 28,
+          "y": 828,
+          "width": 194,
+          "height": 44
+        },
+        {
+          "text": "No thanks",
+          "x": 230,
+          "y": 828,
+          "width": 194,
+          "height": 44
+        }
+      ],
+      "heroButtons": [
+        {
+          "text": "App Store",
+          "overlap": false
+        }
+      ],
+      "scrollWidth": 1440
+    }
+  ],
+  "detailsContainsUnchangedAnalyticsAndAdvertisingDisclosure": true,
+  "closeThenDenyStoresExplicitDenial": true,
+  "denialCookieShape": "v1.denied.<timestamp>.web",
+  "captureHarness": "nextjs-portal development chrome hidden before capture; application source and styles unchanged"
+}
