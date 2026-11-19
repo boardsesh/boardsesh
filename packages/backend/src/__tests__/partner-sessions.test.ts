@@ -7,6 +7,9 @@ import {
   appWorkouts,
   boardClimbAliases,
   boardClimbs,
+  boardLayouts,
+  boardProducts,
+  boardProductSizes,
   boardSessionParticipants,
   boardSessions,
   boardseshTicks,
@@ -176,6 +179,136 @@ describe('completed partner sessions', () => {
       layout: null,
       size: null,
     });
+  });
+
+  it.each([
+    { path: '/b/private-spray/25', type: 'spray', angle: 25 },
+    { path: 'b/private-spray/0', type: 'spray', angle: 0 },
+    { path: '/fr/b/private-spray/-5/list', type: 'spray', angle: -5 },
+    { path: '/spray/918271/918271/1/35/list', type: 'spray', angle: 35 },
+    { path: 'spray/918271/918271/1/35', type: 'spray', angle: 35 },
+    { path: '/b/private-spray', type: 'spray', angle: 40 },
+    { path: '/b/private-spray/list', type: 'spray', angle: 40 },
+    { path: '/b/private-spray/40.0', type: 'spray', angle: 40 },
+    { path: '/b/private-spray/91', type: 'spray', angle: 40 },
+    { path: '/b/private-spray/999999999999999999999999999999999999999999', type: 'spray', angle: 40 },
+    // A legacy tuple must not expose the currently joined spray wall either.
+    { path: '/kilter/1/1/1/25', type: 'kilter', angle: 25 },
+  ])('keeps another owner’s spray identity private for $path', async ({ path, type, angle }) => {
+    await db
+      .insert(boardProducts)
+      .values({ boardType: 'spray', id: 918271, name: 'Private product' })
+      .onConflictDoNothing();
+    await db
+      .insert(boardLayouts)
+      .values({ boardType: 'spray', id: 918271, productId: 918271, name: 'Secret layout' })
+      .onConflictDoNothing();
+    await db
+      .insert(boardProductSizes)
+      .values({ boardType: 'spray', id: 918271, productId: 918271, name: 'Secret size' })
+      .onConflictDoNothing();
+    const [board] = await db
+      .insert(userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: GUEST,
+        boardType: 'spray',
+        layoutId: 918271,
+        sizeId: 918271,
+        setIds: '1',
+        name: 'Secret borrowed wall',
+        angle: 40,
+        isPublic: false,
+      })
+      .returning();
+    // The exporter created the session, but does not own its wall.
+    const session = await createSession({ boardId: board.id, boardPath: path });
+    const exported = await readSession(OWNER, session.exportId);
+    expect(exported?.title).toBe('Old volume session');
+    expect(exported?.board).toEqual({ type, angle, name: null, layout: null, size: null });
+    expect(JSON.stringify(exported)).not.toContain('Secret');
+  });
+
+  it.each([
+    { path: '/b/named-kilter/25/list', angle: 25 },
+    { path: 'b/named-kilter', angle: 40 },
+    { path: '/kilter/1/1/35/50/list', angle: 50 },
+    { path: '/fr/kilter/1/1/1/30/list', angle: 30 },
+    { path: 'kilter/1/1/1/0', angle: 0 },
+    { path: '/kilter/1/1/1/40.0', angle: 40 },
+  ])('preserves manufacturer board context for $path', async ({ path, angle }) => {
+    const [board] = await db
+      .insert(userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: OWNER,
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1',
+        name: 'Home board',
+        angle: 40,
+      })
+      .returning();
+    const session = await createSession({ boardId: board.id, boardPath: path });
+    expect((await readSession(OWNER, session.exportId))?.board).toMatchObject({
+      type: 'kilter',
+      angle,
+      name: 'Home board',
+    });
+  });
+
+  it('uses a named session path angle when recovering a partner workout plan', async () => {
+    const [board] = await db
+      .insert(userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: OWNER,
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1',
+        name: 'Home board',
+        angle: 40,
+      })
+      .returning();
+    const session = await createSession({ boardId: board.id, boardPath: '/b/named-kilter/25/list' });
+    const climbUuid = randomUUID();
+    await db
+      .insert(boardClimbs)
+      .values({ uuid: climbUuid, boardType: 'kilter', layoutId: 1, name: 'Named board climb' });
+    const tickId = await logTick(session.id, climbUuid);
+    await db.update(boardseshTicks).set({ angle: 25 }).where(eq(boardseshTicks.uuid, tickId));
+    const clientId = `source-${randomUUID()}`;
+    const connectionId = randomUUID();
+    const externalRef = randomUUID();
+    await db.insert(oauthClient).values({ id: randomUUID(), clientId, redirectUris: ['https://source.test/callback'] });
+    await db.insert(oauthConnections).values({ id: connectionId, userId: OWNER, clientId });
+    await db.insert(appWorkouts).values({
+      id: `wk_${randomUUID()}`,
+      userId: OWNER,
+      clientId,
+      connectionId,
+      connectionGeneration: 0,
+      externalRef,
+      title: 'Volume',
+      sessionId: session.id,
+      status: 'completed',
+      expiresAt: HISTORICAL_END,
+      spec: {
+        externalRef,
+        title: 'Volume',
+        blocks: [{ type: 'volume', climbCount: 1, targetGrade: { scale: 'v', value: 3 } }],
+      },
+      planSnapshot: [{ index: 0, climbUuids: [climbUuid] }],
+    });
+    const exported = await readSession(OWNER, session.exportId);
+    expect(exported?.board).toMatchObject({ type: 'kilter', angle: 25 });
+    expect(exported?.workout?.stages[0].climbs[0]).toMatchObject({ angle: 25, tickIds: [tickId], skipped: false });
+    expect(exported?.workout?.offPlanTickIds).toEqual([]);
   });
 
   it('groups ticks only for authorized sessions and only with session access enabled', async () => {

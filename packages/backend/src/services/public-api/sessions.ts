@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import {
   BoardTypeSchema,
   CreateWorkoutSchema,
@@ -72,6 +73,24 @@ export class PartnerSessionReadTooLarge extends Error {
     super('The session workouts exceed the bounded read size');
     this.name = 'PartnerSessionReadTooLarge';
   }
+}
+
+/** Use the stored board entity for named paths, whose slug contains no board type. */
+function sessionBoardContext(boardPath: string | null, boardType: string | null, boardAngle: number | null) {
+  const namedPath = parseNamedBoardPath(boardPath ?? '');
+  const tuplePath = namedPath ? null : parseBoardPath(boardPath ?? '');
+  const pathAngle = namedPath?.angle ?? tuplePath?.angle;
+  return {
+    type: BoardTypeSchema.safeParse(tuplePath?.boardName).data ?? BoardTypeSchema.safeParse(boardType).data ?? null,
+    angle:
+      pathAngle !== null &&
+      pathAngle !== undefined &&
+      Number.isInteger(pathAngle) &&
+      pathAngle >= -90 &&
+      pathAngle <= 90
+        ? pathAngle
+        : boardAngle,
+  };
 }
 
 function blockPacing(block: WorkoutBlock): SessionWorkoutPacing | undefined {
@@ -224,12 +243,12 @@ export async function readPartnerSessions(
   const storedBySession = new Map(storedWorkouts.map((workout) => [workout.sessionId, workout]));
   const partnerBySession = new Map(partnerWorkouts.map((workout) => [workout.sessionId, workout]));
   const plans = new Map<string, SessionWorkoutPlan | null>();
-  for (const { session, boardAngle } of sessions) {
-    const pathAngle = Number(session.boardPath?.split('/')[4]);
+  for (const { session, boardType, boardAngle } of sessions) {
+    const context = sessionBoardContext(session.boardPath, boardType, boardAngle);
     plans.set(
       session.id,
       parseSessionWorkoutPlan(storedBySession.get(session.id)?.plan) ??
-        fallbackPlan(partnerBySession.get(session.id), Number.isFinite(pathAngle) ? pathAngle : (boardAngle ?? 0)),
+        fallbackPlan(partnerBySession.get(session.id), context.angle ?? 0),
     );
   }
   const workoutSessionIds = sessionIds.filter((sessionId) => plans.get(sessionId) || partnerBySession.has(sessionId));
@@ -326,13 +345,11 @@ export async function readPartnerSessions(
   const metadata = await readLogbookClimbMetadata(transaction, userId, plannedMetadata);
   for (const { session, boardType, boardName, boardAngle, boardOwnerId, layout, size } of sessions) {
     const ownsSession = session.createdByUserId === userId;
-    const pathParts = session.boardPath?.split('/') ?? [];
-    const pathAngle = pathParts[4] === undefined ? null : Number(pathParts[4]);
-    const publicBoardType = BoardTypeSchema.safeParse(pathParts[0] ?? boardType).data ?? null;
+    const context = sessionBoardContext(session.boardPath, boardType, boardAngle);
     // A board's legacy public flag is not the spray wall's current audience.
     // Until the session record has a wall-level visibility projection, only
     // its owner can share the wall's identity with a partner.
-    const withholdSprayIdentity = publicBoardType === 'spray' && boardOwnerId !== userId;
+    const withholdSprayIdentity = (context.type === 'spray' || boardType === 'spray') && boardOwnerId !== userId;
     presented.set(
       session.exportId,
       PartnerSessionSchema.parse({
@@ -346,11 +363,11 @@ export async function readPartnerSessions(
         durationSeconds: recordedSessionDuration(session.startedAt, session.endedAt),
         timezone: ownsSession ? session.timezone : null,
         board: {
-          type: publicBoardType,
+          type: context.type,
           name: ownsSession && !withholdSprayIdentity ? boardName : null,
           layout: withholdSprayIdentity ? null : layout,
           size: withholdSprayIdentity ? null : size,
-          angle: pathAngle !== null && Number.isFinite(pathAngle) ? pathAngle : boardAngle,
+          angle: context.angle,
         },
         url: `https://www.boardsesh.com/history/session/${session.exportId}`,
         appUrl: `com.boardsesh.app://history/session/${session.exportId}`,
