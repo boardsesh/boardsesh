@@ -196,18 +196,16 @@ export default function HomePageContent({
           />
         </Box>
       </PageSection>
-      <Box className={styles.journeyGrid}>
-        <PageCard>
-          <PageSection title={website('importTitle')} lead={website('importBody')}>
-            <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={LINK_TARGET}>
-              {website('importLink')}
-            </MuiLink>
-            <Typography variant="body2" color="text.secondary">
-              {website('trust')}
-            </Typography>
-          </PageSection>
-        </PageCard>
-      </Box>
+      <PageCard>
+        <PageSection title={website('importTitle')} lead={website('importBody')} className={styles.importBand}>
+          <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={LINK_TARGET} className={styles.importAction}>
+            {website('importLink')}
+          </MuiLink>
+          <Typography variant="body2" color="text.secondary">
+            {website('trust')}
+          </Typography>
+        </PageSection>
+      </PageCard>
       {featureStrip}
       <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
       {heroProof ? (

@@ -132,10 +132,25 @@
   left: 23.5%;
 }
 
-.journeyGrid {
+.importBand {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--spacing-5);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--spacing-10);
+  align-items: center;
+}
+
+.importBand > h2,
+.importBand > p {
+  grid-column: 1;
+}
+
+.importBand > p {
+  max-width: 64ch;
+}
+
+.importAction {
+  grid-column: 2;
+  grid-row: 1 / 4;
 }
 
 .wallGrid {
@@ -198,7 +213,10 @@
     gap: var(--spacing-2) var(--spacing-4);
   }
 
-  .journeyGrid,
+  .importBand {
+    display: block;
+  }
+
   .wallGrid {
     grid-template-columns: minmax(0, 1fr);
   }
