@@ -36,7 +36,7 @@ import kotlin.math.pow
  * 2 million sampled inputs. Every other word matches (the shared fixture).
  */
 internal object OverlaySwapLook {
-    /** Advertised as the module constant `swapLookVersion`, the same as iOS, when this phone builds the look program. */
+    /** Advertised as the module constant `swapLookVersion`, the same protocol as iOS; the renderer builds the program lazily. */
     const val VERSION = 2
 
     /**
@@ -593,8 +593,9 @@ internal object OverlaySwapLook {
     /**
      * The holds of each of a packet's three scenes, as the lower and as the upper
      * side of a pair. Decoded where the packet is encoded (the preparer thread, or
-     * the render thread when a preparation runs inline after two tries), and only
-     * while the module offers the look; [decoded] false draws every frame without it.
+     * the render thread when a preparation runs inline after two tries). Retained
+     * for every packet so enabling the look needs no re-prepare. [decoded] false
+     * draws every frame without it.
      */
     class PacketScenes(private val scenes: List<Scene>, val decoded: Boolean = true) {
         init {

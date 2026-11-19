@@ -631,6 +631,11 @@ way it looks like this:
   backgrounded views stop scheduling frames. Older Android versions, binaries without the module,
   renderer failures, samples and screenshot mode retain the still renderer. That renderer cross-fades
   new climbs or playback frames over 200 ms (at once with Reduce Motion).
+  On iOS, Metal library and pipeline preparation runs once on a background queue;
+  property updates never wait for compilation. The latest properties draw when it is ready.
+  Pipeline failures and GPU command execution failures report the existing still-renderer fallback.
+  A failed view stops submitting frames, and completions from before detachment or backgrounding
+  cannot fail its replacement surface.
   With no holds the button keeps its existing fallback: filled `live` amber while driving, otherwise its
   existing tonal surface. The climber's own face sits at the trailing edge either way.
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;

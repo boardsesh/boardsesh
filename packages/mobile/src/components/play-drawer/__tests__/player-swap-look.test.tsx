@@ -6,7 +6,8 @@
 // command. With the look on, a supporting binary gets the look and seven-number
 // frames. Everywhere else (kill switch, Reduce Motion, older binaries) the
 // native view must get exactly what it got before the look existed: the frames
-// of the carousel with the shipped transition, and no look.
+// of the carousel with the shipped transition, and no look. Supporting binaries
+// receive an explicit null to clear a look that was already mounted.
 import { act, cleanup, render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -372,7 +373,8 @@ describe('the player board’s swap look', () => {
     arrange();
     const player = sent();
     const shipped = sent(SHIPPED);
-    expect(player.swapLook).toBeUndefined();
+    if (controls.swapLookVersion >= 2) expect(player.swapLook).toBeNull();
+    else expect(player.swapLook).toBeUndefined();
     expect(player.commands).toEqual(shipped.commands);
     for (const command of player.commands) expect(command).toHaveLength(5);
   });
@@ -380,7 +382,7 @@ describe('the player board’s swap look', () => {
   it('on iOS holds the look until Differentiate Without Color reads off', () => {
     controls.differentiateWithoutColor = 'unknown';
     const player = sent();
-    expect(player.swapLook).toBeUndefined();
+    expect(player.swapLook).toBeNull();
     expect(player.commands).toEqual(sent(SHIPPED).commands);
   });
 
@@ -410,7 +412,7 @@ describe('the player board’s swap look', () => {
     controls.commands = [];
     const { pager, rerender } = mountCarousel();
     swipe(pager);
-    expect(controls.native?.swapLook).toBeUndefined();
+    expect(controls.native?.swapLook).toBeNull();
     controls.reduceMotion = false;
     act(() => rerender());
     expect(controls.native?.swapLook).toBeDefined();
@@ -434,7 +436,7 @@ describe('the player board’s swap look', () => {
     expect(controls.native?.swapLook).toBeDefined();
     controls.killed = true;
     act(() => rerender());
-    expect(controls.native?.swapLook).toBeUndefined();
+    expect(controls.native?.swapLook).toBeNull();
     controls.commands = [];
     swipe(pager);
     const afterKill = controls.commands;
