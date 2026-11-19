@@ -186,6 +186,10 @@ vi.mock('../../components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../components/Button', () => ({ Button: () => null }));
 vi.mock('../../components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../components/board-look/BoardLookStepGate', () => ({ BoardLookStepGate: () => null }));
+// The first-board gate's children have their own presentation tests.
+vi.mock('../../components/onboarding/ChineseTranslationOnboarding', () => ({
+  ChineseTranslationOnboarding: () => null,
+}));
 vi.mock('../../components/connectivity/use-connectivity-banner', () => ({
   useConnectivityBanner: connectivityBannerHookMock,
 }));
