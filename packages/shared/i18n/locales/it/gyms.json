@@ -185,8 +185,5 @@
     "moveBody": "Spostare {{board}} da {{source}} a questa palestra? Se la sua vecchia scheda importata resta vuota, verrà unita a questa palestra e i suoi link porteranno qui.",
     "moveConfirm": "Sposta il pannello",
     "notListed": "Non c’è? Aggiungi la tua palestra"
-  },
-  "gymPage": {
-    "startDiscussion": "Inizia la discussione"
   }
 }

@@ -48,3 +48,21 @@ describe('public thumbnail lit-hold crop', () => {
     expect(getClimbThumbnailCropPlacement(crop, 100, 200, true).transform).toBe('translate(-84%, -12%)');
   });
 });
+
+it.each([false, true])('keeps a padded bottom-edge hold in the slot with valid CSS, mirrored=%s', (mirrored) => {
+  const crop = getClimbThumbnailCrop(board, 'p2r14')!;
+  const placement = getClimbThumbnailCropPlacement(crop, 100, 200, mirrored);
+  expect(placement.transform).not.toContain('--');
+  const offsets = placement.transform.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g)!.map(Number);
+  expect(offsets).toHaveLength(2);
+  expect(offsets[0]).toBeCloseTo(mirrored ? 0 : -85.4);
+  expect(offsets[1]).toBeCloseTo(-90.2);
+  const artWidth = parseFloat(placement.width) / 100;
+  const artHeight = artWidth * (5 / 7) * (board.boardHeight / board.boardWidth);
+  const centreX = parseFloat(placement.left) / 100 + (offsets[0] / 100 + (mirrored ? 0.05 : 0.95)) * artWidth;
+  const centreY = parseFloat(placement.top) / 100 + (offsets[1] / 100 + 0.95) * artHeight;
+  expect(centreX).toBeGreaterThanOrEqual(0);
+  expect(centreX).toBeLessThanOrEqual(1);
+  expect(centreY).toBeGreaterThanOrEqual(0);
+  expect(centreY).toBeLessThanOrEqual(1);
+});

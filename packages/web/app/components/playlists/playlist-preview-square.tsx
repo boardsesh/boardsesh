@@ -87,7 +87,8 @@ export default function PlaylistPreviewSquare({
   className,
   fetchPriority,
 }: PlaylistPreviewSquareProps) {
-  const CoverIcon = (icon && PLAYLIST_ICONS[icon]) || LabelOutlined;
+  const CoverIcon =
+    icon && Object.prototype.hasOwnProperty.call(PLAYLIST_ICONS, icon) ? PLAYLIST_ICONS[icon] : LabelOutlined;
   const emoji = icon && /\p{Extended_Pictographic}/u.test(icon) && Array.from(icon).length <= 12 ? icon : null;
   const boardDetails = useMemo(() => getBoardImageDetailsForPlaylist(boardType, layoutId), [boardType, layoutId]);
 

@@ -294,9 +294,9 @@ function VirtualizedRows({
   // ResizeObserver) — that dominated the render delay (76% of LCP / 2.2s of
   // forced reflow).
   //
-  // The estimate matches the row wrapper's fixed minHeight below, so a row
-  // measures to exactly the estimate on mount: no reflow shifting every row
-  // beneath it (the loading-time CLS issue #3086 was filed for).
+  // The estimate reserves unmounted space. Mounted rows stay in normal flow,
+  // so responsive thumbnails and session details never overlap before the
+  // virtualizer can measure their actual heights.
   const virtualizer = useWindowVirtualizer({
     count: climbs.length,
     estimateSize: () => LIST_ROW_HEIGHT,
@@ -315,6 +315,8 @@ function VirtualizedRows({
   // reaches the bottom. The sentinel below still covers the case where the
   // whole list fits in one screen.
   const lastVirtualItem = virtualItems[virtualItems.length - 1];
+  const leadingSpace = virtualItems[0]?.start ?? 0;
+  const trailingSpace = Math.max(0, virtualizer.getTotalSize() - (lastVirtualItem?.end ?? 0));
   useEffect(() => {
     if (!lastVirtualItem) return;
     if (lastVirtualItem.index >= climbs.length - 5 && hasMore && !isFetching) {
@@ -323,17 +325,15 @@ function VirtualizedRows({
   }, [lastVirtualItem, climbs.length, hasMore, isFetching, onLoadMore]);
 
   return (
-    /* Plain div with inline style, as in board-page/climbs-list: the height
-       changes on every measure, so an sx object would mint a fresh emotion
-       class per render. */
+    // Only the unmounted rows need estimated spacers. The contiguous mounted
+    // window uses normal DOM flow, including before JavaScript runs.
     <div
       style={{
-        height: virtualizer.getTotalSize(),
         width: '100%',
-        position: 'relative',
         backgroundColor: 'inherit',
       }}
     >
+      <div aria-hidden="true" data-virtual-spacer="before" style={{ height: leadingSpace }} />
       {virtualItems.map((virtualItem) => {
         const climb = climbs[virtualItem.index];
         if (!climb) return null;
@@ -344,18 +344,12 @@ function VirtualizedRows({
             ref={virtualizer.measureElement}
             data-index={virtualItem.index}
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
               width: '100%',
-              // Floor at the estimated row height so a plain row measures
-              // to exactly the estimate (no post-mount reflow / CLS).
-              // Rows with extra content below (renderItemExtra) still
-              // grow past this via measureElement.
+              // This is a minimum, not an absolute-position interval. Larger
+              // previews and extra session content establish their own height.
               minHeight: LIST_ROW_HEIGHT,
               boxSizing: 'border-box',
               opacity: dimmedRowKeys?.has(rowKey) ? themeTokens.opacity.disabled : undefined,
-              transform: `translateY(${virtualItem.start}px)`,
               // No `paint` here, unlike the classic list: paint
               // containment clips descendants to this box, and the row
               // is one big anchor whose keyboard focus ring is drawn
@@ -379,6 +373,7 @@ function VirtualizedRows({
           </div>
         );
       })}
+      <div aria-hidden="true" data-virtual-spacer="after" style={{ height: trailingSpace }} />
     </div>
   );
 }

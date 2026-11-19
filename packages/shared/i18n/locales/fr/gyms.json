@@ -185,8 +185,5 @@
   "install": {
     "heading": "Prends l'app",
     "body": "Allume les boards de ta salle depuis ton téléphone et fais la croix sur chaque bloc."
-  },
-  "gymPage": {
-    "startDiscussion": "Lancer la discussion"
   }
 }

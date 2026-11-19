@@ -1,3 +1,4 @@
+import { renderToString } from 'react-dom/server';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
@@ -184,4 +185,12 @@ describe('PlaylistPreviewSquare', () => {
       expect(container.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     },
   );
+});
+
+it.each([true, false])('renders every prototype-named stored icon as the fallback with board art=%s', (hasBoardArt) => {
+  mockGetBoardDetailsForPlaylist.mockReturnValue(hasBoardArt ? MOCK_BOARD_DETAILS : null);
+  const fallback = renderToString(<PlaylistPreviewSquare boardType="kilter" />);
+  for (const icon of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    expect(renderToString(<PlaylistPreviewSquare boardType="kilter" icon={icon} />)).toBe(fallback);
+  }
 });

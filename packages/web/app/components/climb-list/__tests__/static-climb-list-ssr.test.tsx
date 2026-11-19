@@ -186,3 +186,17 @@ it('renders the supplied SSR crop in the first public row', () => {
   expect(html).toContain('data-testid="climb-thumbnail-crop"');
   expect(html).toContain('href="/kilter/');
 });
+
+it('keeps the initial virtual window in document flow before JavaScript can measure responsive rows', () => {
+  const html = renderToString(<StaticClimbList climbs={fiftyClimbs} boardDetails={makeBoardDetails()} />);
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  const rows = [...container.querySelectorAll<HTMLElement>('[data-index]')];
+  expect(rows.length).toBeGreaterThan(0);
+  expect(rows.length).toBeLessThan(fiftyClimbs.length);
+  for (const row of rows) {
+    expect(row.style.position).not.toBe('absolute');
+    expect(row.style.transform).toBe('');
+  }
+  expect(rows[0].parentElement?.style.height).toBe('');
+});

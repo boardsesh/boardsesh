@@ -1,3 +1,4 @@
+import { track } from '@/app/lib/analytics';
 /**
  * Where the login page sends the browser after sign-in. `callbackUrl` comes off
  * the address bar, so a crafted value must never navigate off-site, while every
@@ -213,4 +214,28 @@ it('retains the sign-in main landmark while the session is loading', () => {
   render(<AuthPageContent />);
   expect(screen.getByRole('main').getAttribute('aria-busy')).toBe('true');
   expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
+});
+
+it('attributes the rendered sign-in store pair without leaking the callback or auth input', async () => {
+  sessionState.status = 'unauthenticated';
+  vi.mocked(track).mockClear();
+  openLoginPage(callbackQuery('/settings?tab=private-account'));
+  const appStore = await screen.findByRole('link', {
+    name: String(tFromCatalog('marketing', 'home.hero.ctaInstallIos')),
+  });
+  const playStore = await screen.findByRole('link', {
+    name: String(tFromCatalog('marketing', 'home.hero.ctaInstallAndroid')),
+  });
+  expect(new URL(appStore.getAttribute('href')!).searchParams.get('ct')).toBe('auth-login');
+  const referrer = new URL(playStore.getAttribute('href')!).searchParams.get('referrer');
+  expect(new URLSearchParams(referrer ?? '').get('utm_content')).toBe('auth-login');
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'private@example.com' } });
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'private-password' } });
+  fireEvent.click(appStore);
+  fireEvent.click(playStore);
+  const installs = vi.mocked(track).mock.calls.filter(([event]) => event === 'App Install Click');
+  expect(installs).toEqual([
+    ['App Install Click', { platform: 'ios', source: 'app-store', placement: 'auth-login', mode: 'install' }],
+    ['App Install Click', { platform: 'android', source: 'google-play', placement: 'auth-login', mode: 'install' }],
+  ]);
 });

@@ -92,6 +92,7 @@ describe('buildAppInstallClickProperties', () => {
       'playlist',
       'playlists',
       'help-spray',
+      'auth-login',
     ]);
     expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });

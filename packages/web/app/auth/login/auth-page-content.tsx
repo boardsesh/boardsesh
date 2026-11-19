@@ -482,7 +482,7 @@ export default function AuthPageContent() {
             {t('login.appHelper')}
           </Typography>
           <StoreInstallButtons
-            placement="help"
+            placement="auth-login"
             labels={{
               ios: tMarketing('home.hero.ctaInstallIos'),
               android: tMarketing('home.hero.ctaInstallAndroid'),

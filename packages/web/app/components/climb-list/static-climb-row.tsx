@@ -50,10 +50,8 @@ export type StaticClimbRowProps = {
   fetchPriority?: 'high' | 'low' | 'auto';
 };
 
-// Reproduces climb-list-item's row geometry exactly: 64px thumbnail at
-// aspect-ratio 5/7 ≈ 89.6px, plus 2 × 8px padding and a 1px border ≈ 106.6px,
-// which is the LIST_ROW_HEIGHT (107) the virtualizer estimates with. A row that
-// measures anything else reflows every row beneath it on mount (issue #3086).
+// The 72px/88px responsive preview determines the natural row height. The
+// virtual window keeps adjacent rows in normal flow until it can measure them.
 const rowLinkSx = {
   display: 'block',
   color: 'inherit',

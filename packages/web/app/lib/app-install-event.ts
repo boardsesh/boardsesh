@@ -43,6 +43,7 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
  *    campaign token only; Safari reports no tap, so no click carries it.
  *  - `bring-your-logbook`: the Kilter and Tension import guide.
+ *  - `auth-login`: store buttons beneath the sign-in and registration form.
  *  - `join-page`: reserved for the session invite page (#6004), so that button
  *    and its store link share one vocabulary from the first commit.
  *
@@ -70,6 +71,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'playlist',
   'playlists',
   'help-spray',
+  'auth-login',
 ] as const;
 
 /**

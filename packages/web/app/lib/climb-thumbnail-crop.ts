@@ -51,10 +51,11 @@ export function getClimbThumbnailCropPlacement(
   const cropAspect = (crop.width * boardWidth) / (crop.height * boardHeight);
   const occupiedWidth = Math.min(1, cropAspect / slotAspect);
   const occupiedHeight = Math.min(1, slotAspect / cropAspect);
+  const cropX = mirrored ? Math.max(0, 1 - crop.x - crop.width) : crop.x;
   return {
     width: `${(occupiedWidth / crop.width) * 100}%`,
     left: `${((1 - occupiedWidth) / 2) * 100}%`,
     top: `${((1 - occupiedHeight) / 2) * 100}%`,
-    transform: `translate(-${(mirrored ? 1 - crop.x - crop.width : crop.x) * 100}%, -${crop.y * 100}%)`,
+    transform: `translate(-${cropX * 100}%, -${crop.y * 100}%)`,
   };
 }
