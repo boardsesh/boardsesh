@@ -1,6 +1,7 @@
 import { generateLedPositions, MAX_LED_POSITIONS, type LedPosition } from './led-layout';
 import { ledPairs, readLedPairs } from './led-pairs';
 import type { TnutLayout, TnutPoint } from './tnut-layout';
+import { pruneTnutLedLinks } from './tnut-led-links';
 
 const pointKey = ({ x, y }: TnutPoint) => `${x.toFixed(8)}:${y.toFixed(8)}`;
 
@@ -61,6 +62,8 @@ export function expandLedGrid(
   const keep = new Set([
     ...(draft.wiring?.paths.flat() ?? []),
     ...(draft.holdLeds?.flatMap((link) => link.ledIds) ?? []),
+    ...(draft.holdAboveLeds?.flatMap((link) => link.ledIds) ?? []),
+    ...(draft.tnutLeds?.flatMap((link) => [...(link.ledIds ?? []), ...(link.aboveLedIds ?? [])]) ?? []),
     ...(draft.ledGroups?.flat() ?? []),
   ]);
   let needsReview = stale;
@@ -155,5 +158,5 @@ export function expandLedGrid(
       layout.ledGroups = readLedPairs([...savedPairs, ...defaults], ledPositions) ?? [];
     }
   }
-  return { layout, needsReview };
+  return { layout: pruneTnutLedLinks(layout), needsReview };
 }

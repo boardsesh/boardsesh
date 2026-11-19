@@ -55,6 +55,8 @@ type OverlayProps = {
   showSkips?: boolean;
   ledPairs?: readonly SprayLedPair[];
   showPairConnectors?: boolean;
+  mutedHoles?: TnutPoint[];
+  associations?: { from: TnutPoint; to: TnutPoint }[];
 };
 const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
@@ -125,7 +127,9 @@ function compileOverlay(source: string, isDev: boolean) {
       default: { createAnimatedComponent: () => Path },
       useAnimatedProps: (updater: Worklet) => ({ updater }),
     },
-    '../../providers/theme-provider': { useTheme: () => ({ brandColors: palette }) },
+    '../../providers/theme-provider': {
+      useTheme: () => ({ brandColors: palette, systemColors: { secondaryLabel: '#777' } }),
+    },
     './spray-cable-display': cableDisplayModule,
   };
   const module = { exports: {} as Record<string, unknown> };
@@ -193,6 +197,22 @@ function expectPathCoordinates(path: string | undefined, coordinates: number[]) 
 afterEach(cleanup);
 
 describe.each([true, false])('Expo + React Compiler + native Worklets overlay (dev=%s)', (isDev) => {
+  it('keeps dashed LED associations and grey mounted nuts on the UI thread while zooming', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    const initial = {
+      ...props(),
+      associations: [{ from: { x: 0.1, y: 0.2 }, to: { x: 0.6, y: 0.3 } }],
+      mutedHoles: [{ x: 0.1, y: 0.2 }],
+    };
+    render(React.createElement(Component, initial));
+    const paths = evaluated(shapes);
+    expect(paths[0]).toMatchObject({ d: 'M30 100L180 150', stroke: palette.warning, strokeDasharray: [4, 3] });
+    expect(paths.find((shape) => shape.stroke === '#777')?.d).toContain('M27 100a3 3');
+    initial.zoom.value = 2;
+    initial.panX.value = 20;
+    expectPathCoordinates(evaluated(shapes)[0].d, [-70, -50, 230, 50]);
+  });
+
   it('detects the original filtered-edge remote-function crash', () => {
     const { Component, shapes } = compileOverlay(previousGapUpdater, isDev);
     render(React.createElement(Component, props()));

@@ -52,26 +52,24 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
    placement pairs the LEDs it generated per hole, and an explicit empty list
    keeps every pair separated. Rebuilding the LEDs returns to those defaults.
-8. Next opens **Holds and LEDs**, which checks and fixes which LEDs belong to
-   each hold before the cable is laid: the links depend on where the LEDs are,
-   not on how the strip runs. Tapping a hold selects it and rings its LEDs on
-   the photo; holds outlined in red have no LED position. The tap target then
-   switches to **LEDs**: tapping an LED adds it to the hold or takes it away,
-   and a tap away from the LEDs picks the hold under it. That stores a
-   hand-made link (`holdLeds` in the layout) which replaces the automatic,
-   geometry-based assignment for that hold everywhere: Test LEDs and route
-   lighting. An LED linked by hand leaves the hold the geometry gave it.
-   **Next hold without LEDs** steps through the red holds top to bottom.
-   LEDs that belong to no hold get a red dashed ring, and **Next LED without a
-   hold** steps through the unassigned LEDs in the same order. A pair counts
-   as one stop. Both members are circled, and its wired LEDs light together.
-   Tap a hold to link the unassigned members of the selection to it. Any
-   existing link on the other member of a pair is kept.
-   The hold count and picker include holds whose centers appear
-   in the rectified photo. **Back to automatic** drops a hold's link, and Undo
-   reverts link edits. Before
-   the cable exists the LEDs have no physical index, so the wall cannot light
-   the chosen hold; coming back to this step after the cable does light it.
+8. Next opens **Holds and LEDs**. Switch between **Holds** and **T-nuts** to
+   choose what to link, then tap LEDs to add or remove them from that selection.
+   Several LEDs can belong to the same hold or T-nut. Dashed lines join the LEDs
+   to their hold or nut, and red outlines show missing assignments.
+   T-nuts already matched to a hold are dimmed but remain selectable. Editing
+   one updates the hold too. Manual assignments for mounted holds are stored
+   at their nut position, so a subsequently detected hold at that position
+   inherits them even when its hold ID changes.
+   **Next hold without LEDs** becomes **Next T-nut without LEDs** in T-nut mode.
+   The unassigned LED picker treats a pair as one stop and lights both wired
+   members. The hold count and picker include only holds whose centers appear
+   in the rectified photo. **Back to automatic** restores the automatic link for
+   the selected role; the undo icon restores the preceding edit, also fullscreen.
+   **Below the hold** and **Complementary positions** have two consecutive
+   assignment steps: the main LEDs below, then the optional LEDs above. Editing
+   or resetting one step leaves the other role alone. Other placements keep one
+   step. Before the cable exists the LEDs have no physical index, so the wall
+   only lights selections after wiring (when returning to these steps).
    Increasing the grid with the same LED pattern adds unwired positions and keeps
    the existing cable path and physical indices. If manual LED work or unmatched
    wired positions need checking, the setup prompts you to review the LED positions.
@@ -174,19 +172,43 @@ positions change. An older app can drop `aboveHole` without changing the
 derived result, because it retains `origin`. Rebuilding or expanding a grid
 refreshes the upper references before saving while retaining existing wiring.
 
-Where the geometry gets a hold wrong, **Holds and LEDs** stores a hand-made link
-in the layout (`holdLeds`: `{ holdId, ledIds }[]`). `buildSprayLedMapping` applies
-it after the geometric pass, so Test LEDs and route lighting follow it: a linked
-hold gets exactly its chosen LEDs (an empty list means no LED), and an LED linked
-by hand leaves the hold the geometry gave it. Holes keep their geometric LEDs.
-`readTnutLayout`, which both the phone and the server's save validation use,
-drops LED ids that no longer exist and repeated holds, and rejects malformed
-links. Links to holds the wall no longer has are ignored.
+Manual nut links are stored as `tnutLeds`:
+`{ hole: { x, y }, ledIds?: string[], aboveLedIds?: string[] }[]`.
+Each role is independent: an omitted role uses automatic mapping, while `[]`
+deliberately assigns no LED. `buildSprayLedMapping` applies these links before
+giving a nut's LEDs to its detected hold, so Test LEDs and route lighting follow
+them. Nut overrides take priority over older hold-ID links for the same role.
+An explicitly assigned LED leaves the other automatic assignments in that role;
+its assignment in the other role remains independent.
+
+Legacy `holdLeds` (`{ holdId, ledIds }[]`) remains readable. `holdAboveLeds` uses
+the same structure for manual upper assignments to holds with no mounting nut.
+Neither field is the durable identity for a mounted hold. The common reader
+rejects malformed links and removes references to missing LEDs or nuts. Marker
+removal prunes references immediately before a new position can reuse an ID;
+moving a nut carries its manual links, and undo restores the whole assignment.
+Photo identity and calibration checks still apply: the later re-photographing
+flow must carry the physical nut layout into its new canonical frame.
+Confirming an assignment step promotes existing manual hold links to their
+unambiguous mounting nuts, without materializing automatic mappings. Converted
+hold-ID links are removed so they cannot follow a hold to a different nut.
+Existing nut overrides win. Opening the editor or lighting a route never writes
+a migration; unmounted or ambiguous legacy links remain unchanged.
 
 `saveSprayWallLedSetup` stores `holdLeds` as the app sends it. Every installed
 app knows about these links, and one leaves the key out once its last link is
 cleared (this app sends `[]`), so a layout without `holdLeds` clears the stored
 links.
+
+New uploads always include `tnutLeds` and `holdAboveLeds`, including empty lists
+when cleared. An upload without these keys comes from an older app; the server
+preserves the saved links while pruning positions that no longer exist. A
+physical-layout rebuild or changed photo identity resets obsolete references.
+Persisting these new assignments needs this PR's backend reader as well as the
+updated app. Deploy the backend before distributing the new app revision. An
+older app can still use the basic LED setup, but cannot interpret these new
+manual nut and upper-role overrides. This change does not deploy a backend or
+publish an app update.
 
 LED pairs (`ledGroups`) are newer than any installed app, so an app from before
 them saves a layout with no `ledGroups` key, which would erase a newer phone's
@@ -210,8 +232,9 @@ Mirrored spray routes are rejected because the wall has no defined mirror map.
 For **Below the hold** and **Complementary positions**, **Light the hold above**
 appears in the lightbulb's control sheet and Settings > Board, in the same places
 as the MoonBoard option. It is off by default and stored independently from the
-MoonBoard setting. It adds each lit hold's wired upper reference at 25% of that
-hold's role color, including color overrides. A primary LED in the same route
+MoonBoard setting. It lights each lit hold's wired upper references in white at
+25% brightness (`[64, 64, 64]`), regardless of the hold's role color or overrides.
+A primary LED in the same route
 always keeps its full role color, even if another hold also uses it as an upper
 reference. A missing or unwired upper LED does not prevent lighting the primary
 LEDs. Changing the option refreshes only the actual owned route; it leaves an

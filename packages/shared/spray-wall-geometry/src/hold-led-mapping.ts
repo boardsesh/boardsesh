@@ -3,6 +3,7 @@ import type { CanonicalSprayHold } from './hold-projection';
 import { homographyFromAnchors, mapPoint, type ReferenceSize } from './homography';
 import { assignLedIndices, generateLedPositions, type LedPosition } from './led-layout';
 import { generateTnutGrid, isValidTnutCorners, type TnutLayout, type TnutPoint } from './tnut-layout';
+import { readTnutLedLinks } from './tnut-led-links';
 
 export type SprayHoleLedMapping = {
   holeIndex: number;
@@ -36,6 +37,22 @@ function holdCandidates(holds: readonly CanonicalSprayHold[]) {
     .map((hold) => ({ hold, outline: isValidOutlineRing(hold.outline) ? hold.outline : null }));
 }
 
+function holdPointDistance(
+  { hold, outline }: ReturnType<typeof holdCandidates>[number],
+  point: TnutPoint,
+  frame: ReferenceSize,
+): number | null {
+  const relativeX = (point.x * frame.width - hold.cx) / hold.r;
+  const relativeY = (point.y * frame.height - hold.cy) / hold.r;
+  const distance = relativeX ** 2 + relativeY ** 2;
+  if (outline) {
+    if (Math.abs(relativeX) > 4 || Math.abs(relativeY) > 4) return null;
+    if (!pointInRing(outline, relativeX, relativeY) && distanceToRing(outline, relativeX, relativeY) > 1e-8)
+      return null;
+  } else if (distance > 1 + 1e-8) return null;
+  return distance;
+}
+
 function findHold(
   candidates: ReturnType<typeof holdCandidates>,
   point: TnutPoint,
@@ -43,14 +60,10 @@ function findHold(
 ): number | null {
   let chosen: number | null = null;
   let nearest = Infinity;
-  for (const { hold, outline } of candidates) {
-    const relativeX = (point.x * frame.width - hold.cx) / hold.r;
-    const relativeY = (point.y * frame.height - hold.cy) / hold.r;
-    const distance = relativeX ** 2 + relativeY ** 2;
-    if (outline) {
-      if (Math.abs(relativeX) > 4 || Math.abs(relativeY) > 4) continue;
-      if (!pointInRing(outline, relativeX, relativeY) && distanceToRing(outline, relativeX, relativeY) > 1e-8) continue;
-    } else if (distance > 1 + 1e-8) continue;
+  for (const candidate of candidates) {
+    const { hold } = candidate;
+    const distance = holdPointDistance(candidate, point, frame);
+    if (distance === null) continue;
     if (distance < nearest || (distance === nearest && hold.id < (chosen ?? Infinity))) {
       chosen = hold.id;
       nearest = distance;
@@ -293,23 +306,20 @@ function allBindings(layout: TnutLayout, frame: ReferenceSize) {
 
 /** A grip is mounted at one nut near its center; its outline remains a tap target. */
 function mountingHoles(layout: TnutLayout, holds: readonly CanonicalSprayHold[], frame: ReferenceSize) {
-  const ownership = new Map<number, { holdId: number; distance: number }>();
-  for (const { hold, outline } of holdCandidates(holds)) {
+  const ownership = new Map<number, { holdId: number; distance: number; ambiguous: boolean }>();
+  for (const candidate of holdCandidates(holds)) {
+    const { hold } = candidate;
     let chosen: number | null = null;
     let nearest = Infinity;
+    let ambiguous = false;
     for (const [holeIndex, hole] of layout.holes.entries()) {
-      const relativeX = (hole.x * frame.width - hold.cx) / hold.r;
-      const relativeY = (hole.y * frame.height - hold.cy) / hold.r;
-      const distance = relativeX ** 2 + relativeY ** 2;
-      if (outline) {
-        if (Math.abs(relativeX) > 4 || Math.abs(relativeY) > 4) continue;
-        if (!pointInRing(outline, relativeX, relativeY) && distanceToRing(outline, relativeX, relativeY) > 1e-8)
-          continue;
-      } else if (distance > 1 + 1e-8) continue;
+      const distance = holdPointDistance(candidate, hole, frame);
+      if (distance === null) continue;
       if (distance < nearest - 1e-8) {
         chosen = holeIndex;
         nearest = distance;
-      }
+        ambiguous = false;
+      } else if (Math.abs(distance - nearest) <= 1e-8) ambiguous = true;
     }
     if (chosen === null) continue;
     const mountingHole = layout.holes[chosen];
@@ -323,7 +333,7 @@ function mountingHoles(layout: TnutLayout, holds: readonly CanonicalSprayHold[],
     if (nearest * hold.r ** 2 > spacing * 0.75 ** 2 + 1e-8) continue;
     const previous = ownership.get(chosen);
     if (!previous || nearest < previous.distance || (nearest === previous.distance && hold.id < previous.holdId))
-      ownership.set(chosen, { holdId: hold.id, distance: nearest });
+      ownership.set(chosen, { holdId: hold.id, distance: nearest, ambiguous });
   }
   return ownership;
 }
@@ -391,6 +401,33 @@ export function buildSprayLedMapping(
       if (index !== undefined) holes[holeIndex].aboveIndices.push(index);
     }
   }
+  const nutLinks = new Map(
+    (readTnutLedLinks(layout.tnutLeds ?? [], layout.holes, layout.ledPositions ?? []) ?? []).map((link) => [
+      keyFor(link.hole),
+      link,
+    ]),
+  );
+  const roles = [
+    { ids: 'ledIds', indices: 'indices', legacy: layout.holdLeds ?? [] },
+    { ids: 'aboveLedIds', indices: 'aboveIndices', legacy: layout.holdAboveLeds ?? [] },
+  ] as const;
+  const physicalIndices = (ledIds: readonly string[]) =>
+    [
+      ...new Set(
+        ledIds.flatMap((id) => {
+          const index = indices.get(id);
+          return index === undefined ? [] : [index];
+        }),
+      ),
+    ].sort((first, second) => first - second);
+  for (const role of roles) {
+    const claimed = new Set([...nutLinks.values()].flatMap((link) => link[role.ids] ?? []));
+    for (const entry of holes) {
+      const override = nutLinks.get(keyFor(layout.holes[entry.holeIndex]))?.[role.ids];
+      entry[role.ids] = override ?? entry[role.ids].filter((id) => !claimed.has(id));
+      entry[role.indices] = physicalIndices(entry[role.ids]);
+    }
+  }
   const ownership = mountingHoles(layout, holds, frame);
   const holdMappings = new Map(mappedHolds.map((hold) => [hold.holdId, hold]));
   for (const entry of holes) {
@@ -404,34 +441,124 @@ export function buildSprayLedMapping(
     matched.aboveLedIds.push(...entry.aboveLedIds);
     matched.aboveIndices.push(...entry.aboveIndices);
   }
-  // Hand-made links win: a linked hold gets exactly its chosen LEDs, and an LED
-  // linked by hand leaves the hold the geometry gave it.
-  const links = new Map((layout.holdLeds ?? []).map((link) => [link.holdId, link.ledIds]));
   const known = new Set((layout.ledPositions ?? []).map((led) => led.id));
-  const linkedLeds = new Set<string>();
-  for (const [holdId, ledIds] of links) {
-    if (!holdMappings.has(holdId)) continue;
-    for (const id of ledIds) if (known.has(id)) linkedLeds.add(id);
-  }
-  for (const hold of mappedHolds) {
-    const link = links.get(hold.holdId);
-    const ledIds = link ? link.filter((id) => known.has(id)) : hold.ledIds.filter((id) => !linkedLeds.has(id));
-    hold.ledIds = [...new Set(ledIds)];
-    hold.indices = [
-      ...new Set(
-        hold.ledIds.flatMap((id) => {
-          const index = indices.get(id);
-          return index === undefined ? [] : [index];
-        }),
-      ),
-    ].sort((left, right) => left - right);
-    // Upper references remain independent: one physical LED can sit below one
-    // hold and above another. Playback resolves active primary colors first.
-    hold.aboveLedIds = [...new Set(hold.aboveLedIds)];
-    hold.aboveIndices = hold.aboveLedIds.flatMap((id) => {
-      const index = indices.get(id);
-      return index === undefined ? [] : [index];
-    });
+  for (const role of roles) {
+    const nutClaims = new Set([...nutLinks.values()].flatMap((link) => link[role.ids] ?? []));
+    const hasNutOverride = (hold: SprayHoldLedMapping) =>
+      hold.holeIndices.some((index) => nutLinks.get(keyFor(layout.holes[index]))?.[role.ids] !== undefined);
+    // Durable nut roles take priority over legacy version-specific hold links.
+    const links = new Map(
+      role.legacy.flatMap((link) => {
+        const hold = holdMappings.get(link.holdId);
+        return !hold || hasNutOverride(hold)
+          ? []
+          : [[link.holdId, link.ledIds.filter((id) => known.has(id) && !nutClaims.has(id))] as const];
+      }),
+    );
+    const linked = new Set([...links.values()].flat());
+    for (const hold of mappedHolds) {
+      const override = links.get(hold.holdId);
+      const ledIds = hasNutOverride(hold)
+        ? hold[role.ids]
+        : (override ?? hold[role.ids].filter((id) => !linked.has(id)));
+      hold[role.ids] = [...new Set(ledIds)];
+      hold[role.indices] = physicalIndices(hold[role.ids]);
+    }
   }
   return { holes, holds: mappedHolds };
+}
+
+/** Promote existing manual choices only when the climber confirms the mapping step. */
+export function migrateHoldLedLinksToTnuts(
+  layout: TnutLayout,
+  frame: ReferenceSize,
+  holds: readonly CanonicalSprayHold[],
+): TnutLayout {
+  if (!validFrame(frame) || (!layout.holdLeds?.length && !layout.holdAboveLeds?.length)) return layout;
+  const mounted = new Map(
+    [...mountingHoles(layout, holds, frame)].map(([holeIndex, entry]) => [
+      entry.holdId,
+      { holeIndex, ambiguous: entry.ambiguous },
+    ]),
+  );
+  const candidates = holdCandidates(holds);
+  const overlap = new Map<number, boolean>();
+  const known = new Set((layout.ledPositions ?? []).map((led) => led.id));
+  const nuts = new Map(
+    (readTnutLedLinks(layout.tnutLeds ?? [], layout.holes, layout.ledPositions ?? []) ?? []).map((link) => [
+      keyFor(link.hole),
+      link,
+    ]),
+  );
+  let changed = false;
+  let holdLeds = layout.holdLeds;
+  let holdAboveLeds = layout.holdAboveLeds;
+  for (const role of [
+    { field: 'ledIds', links: layout.holdLeds ?? [] },
+    { field: 'aboveLedIds', links: layout.holdAboveLeds ?? [] },
+  ] as const) {
+    const claims = new Map<string, Set<number>>();
+    for (const link of role.links)
+      for (const id of link.ledIds) {
+        const owners = claims.get(id);
+        if (owners) owners.add(link.holdId);
+        else claims.set(id, new Set([link.holdId]));
+      }
+    const nutClaims = new Map<string, Set<string>>();
+    for (const [key, nut] of nuts)
+      for (const id of nut[role.field] ?? []) {
+        const owners = nutClaims.get(id);
+        if (owners) owners.add(key);
+        else nutClaims.set(id, new Set([key]));
+      }
+    const migrated = new Set<number>();
+    for (const link of role.links) {
+      const mounting = mounted.get(link.holdId);
+      if (!mounting || mounting.ambiguous) continue;
+      const holeIndex = mounting.holeIndex;
+      const hole = layout.holes[holeIndex];
+      const holeKey = keyFor(hole);
+      // A silhouette overlap or shared legacy claim is uncertain provenance.
+      // Keep it version-specific rather than changing another hold's behavior.
+      let uncertain = overlap.get(holeIndex);
+      if (uncertain === undefined) {
+        uncertain = candidates.some(
+          (candidate) => candidate.hold.id !== link.holdId && holdPointDistance(candidate, hole, frame) !== null,
+        );
+        overlap.set(holeIndex, uncertain);
+      }
+      if (uncertain) continue;
+      const ledIds = link.ledIds.filter((id) => known.has(id));
+      if (ledIds.some((id) => (claims.get(id)?.size ?? 0) > 1)) continue;
+      if (ledIds.some((id) => [...(nutClaims.get(id) ?? [])].some((key) => key !== holeKey))) continue;
+      const previous = nuts.get(holeKey);
+      const previousIds = previous?.[role.field];
+      if (
+        previousIds !== undefined &&
+        (previousIds.length !== new Set(ledIds).size || ledIds.some((id) => !previousIds.includes(id)))
+      )
+        continue;
+      if (previous?.[role.field] === undefined) {
+        nuts.set(holeKey, { ...previous, hole: { ...hole }, [role.field]: ledIds });
+        for (const id of ledIds) nutClaims.set(id, new Set([holeKey]));
+      }
+      migrated.add(link.holdId);
+      changed = true;
+    }
+    if (migrated.size) {
+      const remaining = role.links.filter((link) => !migrated.has(link.holdId));
+      if (role.field === 'ledIds') holdLeds = remaining;
+      else holdAboveLeds = remaining;
+    }
+  }
+  // Promoted choices now belong to the nut. Leaving a hold-ID mirror would
+  // incorrectly override another nut if that same hold ID moves in a later scan.
+  return changed
+    ? {
+        ...layout,
+        tnutLeds: [...nuts.values()],
+        ...(holdLeds !== undefined ? { holdLeds } : {}),
+        ...(holdAboveLeds !== undefined ? { holdAboveLeds } : {}),
+      }
+    : layout;
 }

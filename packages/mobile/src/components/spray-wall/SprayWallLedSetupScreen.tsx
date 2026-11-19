@@ -11,6 +11,9 @@ import {
   expandLedGrid,
   hasStaleLedGrid,
   bindLedPositionsToHoles,
+  moveTnutLedLinks,
+  pruneTnutLedLinks,
+  migrateHoldLedLinksToTnuts,
   migrateTnutLayoutColumns,
   createWiring,
   ledPairs,
@@ -84,6 +87,7 @@ type Step =
   | 'led'
   | 'ledPositions'
   | 'holdLeds'
+  | 'holdAboveLeds'
   | 'cablePattern'
   | 'cableStart'
   | 'initialSkip'
@@ -95,6 +99,7 @@ type Step =
 const LED_WORK_STEPS: ReadonlySet<Step> = new Set<Step>([
   'ledPositions',
   'holdLeds',
+  'holdAboveLeds',
   'cablePattern',
   'cableStart',
   'initialSkip',
@@ -259,6 +264,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       : initial;
   });
   const [step, setStep] = useState<Step>('pattern');
+  const hasUpperLayer = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating';
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [step]);
@@ -282,7 +288,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   useEffect(() => {
     if (step === 'holes') setMode(null);
   }, [step]);
-  const [history, setHistory] = useState<TnutPoint[][]>([]);
+  const [history, setHistory] = useState<
+    { layout: TnutLayout; ledSignature: string | null; ledBasis: TnutLayout | null }[]
+  >([]);
   const [viewportWidth, setViewportWidth] = useState(0);
   const busy = useRef(false);
   const finished = useRef(false);
@@ -348,7 +356,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
 
   function withUpdate(previous: TnutLayout, update: Partial<TnutLayout>): TnutLayout {
     const updated = { ...previous, ...update };
-    return update.ledPositions ? { ...updated, ledPositions: bindLedPositionsToHoles(updated, source.frame) } : updated;
+    const bound = update.ledPositions
+      ? { ...updated, ledPositions: bindLedPositionsToHoles(updated, source.frame) }
+      : updated;
+    return update.holes ? pruneTnutLedLinks(bound) : bound;
   }
 
   function changeLayout(update: Partial<TnutLayout>) {
@@ -373,7 +384,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   function wouldDiscardHandWork() {
     if (layout.wiring?.paths.length) return true;
     // Rebuilding clears hand-made hold links too (the new LEDs reuse the old ids).
-    if (layout.holdLeds?.length) return true;
+    if (layout.holdLeds?.length || layout.holdAboveLeds?.length || layout.tnutLeds?.length) return true;
     if (layout.ledGroups !== undefined) return true;
     if (!layout.ledPositions) return false;
     const untouched = ledBasis.current ? generateLedPositions(ledBasis.current) : [];
@@ -427,7 +438,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'led') setStep('holes');
     else if (step === 'ledPositions') setStep('led');
     else if (step === 'holdLeds') setStep('ledPositions');
-    else if (step === 'cablePattern') setStep('holdLeds');
+    else if (step === 'holdAboveLeds') setStep('holdLeds');
+    else if (step === 'cablePattern') setStep(hasUpperLayer ? 'holdAboveLeds' : 'holdLeds');
     else if (step === 'cableStart') setStep('cablePattern');
     else if (step === 'initialSkip') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
     else if (step === 'wiring') {
@@ -546,6 +558,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           ledPositions: generateLedPositions(layout),
           wiring: undefined,
           holdLeds: [],
+          holdAboveLeds: [],
+          tnutLeds: [],
           ledGroups: undefined,
         });
       };
@@ -574,7 +588,16 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       return;
     }
     if (step === 'holdLeds') {
-      saveWork(layout);
+      const confirmed = migrateHoldLedLinksToTnuts(layout, source.frame, loaded.holds);
+      setLayout(confirmed);
+      saveWork(confirmed);
+      setStep(hasUpperLayer ? 'holdAboveLeds' : 'cablePattern');
+      return;
+    }
+    if (step === 'holdAboveLeds') {
+      const confirmed = migrateHoldLedLinksToTnuts(layout, source.frame, loaded.holds);
+      setLayout(confirmed);
+      saveWork(confirmed);
       setStep('cablePattern');
       return;
     }
@@ -656,10 +679,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     clearOnUnmount: true,
   });
 
-  function updateHoles(holes: TnutPoint[]) {
+  function updateHoles(holes: TnutPoint[], draft: TnutLayout = layout) {
     if (busy.current) return;
-    setHistory((previous) => [...previous.slice(-29), layout.holes]);
-    changeLayout({ holes });
+    const snapshot = { layout, ledSignature: generatedLeds.current, ledBasis: ledBasis.current };
+    setHistory((previous) => [...previous.slice(-29), snapshot]);
+    changeLayout(pruneTnutLedLinks({ ...draft, holes }));
   }
 
   function tapHole(point: TnutPoint, width: number, height: number) {
@@ -680,7 +704,15 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     const index = nearestPhotoPointIndex(layout.holes, start, width, height, 22);
     const occupied = nearestPhotoPointIndex(layout.holes, end, width, height, 6);
     if (index >= 0 && (occupied < 0 || occupied === index)) {
-      updateHoles(layout.holes.map((hole, entry) => (entry === index ? end : hole)));
+      const holes = layout.holes.map((hole, entry) => (entry === index ? end : hole));
+      const moved = pruneTnutLedLinks({ ...moveTnutLedLinks(layout, layout.holes[index], end), holes });
+      updateHoles(holes, moved);
+      // Moving one mounting marker does not rebuild physical LEDs or the cable.
+      // Base grid/calibration changes still use the explicit rebuild path.
+      if (moved.ledPositions && generatedLeds.current === ledSignature(layout)) {
+        generatedLeds.current = ledSignature(moved);
+        ledBasis.current = moved;
+      }
     }
   }
 
@@ -691,7 +723,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     onUndo: () => {
       const previous = history.at(-1);
       if (!previous || busy.current) return;
-      changeLayout({ holes: previous });
+      changeLayout(previous.layout);
+      generatedLeds.current = previous.ledSignature;
+      ledBasis.current = previous.ledBasis;
       setHistory((entries) => entries.slice(0, -1));
     },
   };
@@ -724,10 +758,14 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                       : step === 'lighting'
                         ? t('sprayLedSetup.lightingTitle')
                         : step === 'holdLeds'
-                          ? t('sprayLedSetup.holdLedsTitle')
-                          : step === 'skips'
-                            ? t('sprayLedSetup.skipsTitle')
-                            : t('sprayLedSetup.wiringTitle');
+                          ? hasUpperLayer
+                            ? t('sprayLedSetup.holdLedsBelowTitle')
+                            : t('sprayLedSetup.holdLedsTitle')
+                          : step === 'holdAboveLeds'
+                            ? t('sprayLedSetup.holdLedsAboveTitle')
+                            : step === 'skips'
+                              ? t('sprayLedSetup.skipsTitle')
+                              : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -1051,8 +1089,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             ) : null}
           </>
         ) : null}
-        {step === 'holdLeds' ? (
+        {step === 'holdLeds' || step === 'holdAboveLeds' ? (
           <SprayHoldLedStep
+            key={step}
+            layer={step === 'holdAboveLeds' ? 'above' : 'primary'}
             wallUuid={wallUuid}
             layout={layout}
             holds={loaded.holds}

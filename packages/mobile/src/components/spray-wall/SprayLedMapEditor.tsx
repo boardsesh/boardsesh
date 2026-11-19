@@ -8,6 +8,7 @@ import {
   groupLedPair,
   ledPairs,
   ledPartner,
+  pruneTnutLedLinks,
   separateLedPair,
   setWiringInitialSkip,
   withLedPartners,
@@ -116,13 +117,17 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       const retainedIds = new Set(ledPositions.map((led) => led.id));
       // Prune immediately: a subsequent Add can reuse a removed manual LED id.
       // Keep empty overrides so removal does not restore automatic assignments.
-      const holdLeds = layout.holdLeds?.map((link) => ({
-        ...link,
-        ledIds: link.ledIds.filter((id) => retainedIds.has(id)),
-      }));
+      const pruned = pruneTnutLedLinks({ ...layout, ledPositions });
       // Pairs go with their LEDs; a removed pair must not outlive them in the saved list.
       const ledGroups = layout.ledGroups?.filter((pair) => pair.every((id) => retainedIds.has(id)));
-      change({ ledPositions, wiring: undefined, holdLeds, ledGroups });
+      change({
+        ledPositions,
+        wiring: undefined,
+        holdLeds: pruned.holdLeds,
+        holdAboveLeds: pruned.holdAboveLeds,
+        tnutLeds: pruned.tnutLeds,
+        ledGroups,
+      });
     };
     if (!layout.wiring?.paths.length) {
       apply();

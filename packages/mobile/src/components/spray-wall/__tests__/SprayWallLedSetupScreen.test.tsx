@@ -314,6 +314,7 @@ function advanceToWiring() {
   next(); // LED positions
   next(); // holds and LEDs
   next(); // cable pattern
+  if (screen.queryByText('sprayLedSetup.holdLedsAboveTitle')) next();
   next(); // cable start
   next(); // initial skip
   next(); // cable editor
@@ -1319,6 +1320,142 @@ describe('SprayWallLedSetupScreen', () => {
       await screen.findByText('sprayLedSetup.ledHint');
       expect(storage.save).not.toHaveBeenCalled();
     }
+
+    it('keeps marker-only nut moves, cable and both link roles through save and reopen', async () => {
+      const saved = wiredGrid(3, 3);
+      saved.ledPlacement = 'below';
+      saved.ledPositions = generateLedPositions(saved);
+      saved.wiring = createWiring(saved.ledPositions, 'horizontal', 'tl', saved);
+      const original = saved.holes[4];
+      const moved = { x: original.x + 0.02, y: original.y + 0.01 };
+      saved.tnutLeds = [
+        { hole: original, ledIds: [saved.ledPositions[4].id], aboveLedIds: [saved.ledPositions[1].id] },
+      ];
+      storage.load.mockResolvedValue(saved);
+      const view = await open();
+      next();
+      next();
+      fireEvent.click(button('movePoint'));
+      act(() => controls.canvas?.onMove?.(original, moved, 500, 700));
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      next();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      const persisted = lastSaved();
+      expect(persisted.wiring).toEqual(saved.wiring);
+      expect(persisted.ledPositions?.map(({ id, x, y }) => ({ id, x, y }))).toEqual(
+        saved.ledPositions.map(({ id, x, y }) => ({ id, x, y })),
+      );
+      expect(persisted.tnutLeds).toEqual([{ ...saved.tnutLeds[0], hole: moved }]);
+      view.unmount();
+      storage.load.mockResolvedValue(persisted);
+      await open();
+      next();
+      next();
+      expect(controls.editor?.holes).toContainEqual(moved);
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      next();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+      expect(lastSaved().tnutLeds).toEqual(persisted.tnutLeds);
+    });
+
+    it.each([false, true])('still reconciles an expanded grid after a marker move and undo=%s', async (undo) => {
+      const saved = wiredGrid(2, 2);
+      storage.load.mockResolvedValue(saved);
+      await open();
+      next();
+      fireEvent.change(field('rows'), { target: { value: '3' } });
+      fireEvent.change(field('columns'), { target: { value: '3' } });
+      next();
+      const original = controls.editor!.holes[0];
+      fireEvent.click(button('movePoint'));
+      act(() => controls.canvas?.onMove?.(original, { x: original.x + 0.01, y: original.y + 0.01 }, 500, 700));
+      if (undo) fireEvent.click(button('undo'));
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(storage.save).not.toHaveBeenCalled();
+      next();
+      if (resolveConfirm) await respondToConfirm(true);
+      expect(lastSaved().ledPositions!.length).toBeGreaterThanOrEqual(9);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+    });
+
+    it('undoes a removed nut and both manual role lists before saving', async () => {
+      const saved = wiredGrid(2, 2);
+      const hole = saved.holes[0];
+      saved.tnutLeds = [{ hole, ledIds: [saved.ledPositions![0].id], aboveLedIds: [] }];
+      storage.load.mockResolvedValue(saved);
+      await open();
+      next();
+      next();
+      fireEvent.click(button('remove'));
+      tap(hole);
+      fireEvent.click(button('undo'));
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      next();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      expect(lastSaved().tnutLeds).toEqual(saved.tnutLeds);
+      expect(lastSaved().holes).toEqual(saved.holes);
+    });
+
+    it('promotes legacy links only when confirming the mapping step', async () => {
+      const saved = savedWithLeds();
+      const ledId = saved.ledPositions![0].id;
+      saved.holdLeds = [{ holdId: 10, ledIds: [ledId] }];
+      backend.fetch.mockResolvedValue({
+        wall: { viewerCanEdit: true, layoutId: 12, currentVersion: { id: 34 }, board: { ownerId: 'viewer-1' } },
+        holds: [{ id: 10, cx: 150, cy: 280, r: 30 }],
+      });
+      storage.load.mockResolvedValue(saved);
+      await openOnLedStep();
+      next();
+      next();
+      expect(lastSaved().holdLeds).toEqual(saved.holdLeds);
+      expect(lastSaved().tnutLeds).toBeUndefined();
+      next();
+      expect(lastSaved().holdLeds).toEqual([]);
+      expect(lastSaved().tnutLeds).toEqual([{ hole: saved.holes[0], ledIds: [ledId] }]);
+    });
+
+    it.each(['center', 'sides', 'below', 'alternating'] as const)(
+      'uses the matching primary/above wizard steps for %s',
+      async (placement) => {
+        const saved = {
+          ...savedLayout(),
+          pattern: placement === 'alternating' ? ('offset' as const) : ('grid' as const),
+          ledPlacement: placement,
+        };
+        storage.load.mockResolvedValue({ ...saved, ledPositions: generateLedPositions(saved) });
+        await open();
+        next();
+        if (placement === 'alternating') next();
+        next();
+        next();
+        await screen.findByText('sprayLedSetup.ledHint');
+        next();
+        next();
+        const hasAbove = placement === 'below' || placement === 'alternating';
+        expect(
+          screen.getByText(hasAbove ? 'sprayLedSetup.holdLedsBelowTitle' : 'sprayLedSetup.holdLedsTitle'),
+        ).toBeTruthy();
+        next();
+        expect(
+          screen.getByText(hasAbove ? 'sprayLedSetup.holdLedsAboveTitle' : 'sprayLedSetup.cablePatternTitle'),
+        ).toBeTruthy();
+        if (hasAbove) {
+          back();
+          expect(screen.getByText('sprayLedSetup.holdLedsBelowTitle')).toBeTruthy();
+          next();
+          next();
+          expect(screen.getByText('sprayLedSetup.cablePatternTitle')).toBeTruthy();
+          back();
+          expect(screen.getByText('sprayLedSetup.holdLedsAboveTitle')).toBeTruthy();
+        }
+      },
+    );
 
     it('adds the missing grid positions and preserves the original physical indices through cable setup', async () => {
       const saved = wiredGrid(2, 2);

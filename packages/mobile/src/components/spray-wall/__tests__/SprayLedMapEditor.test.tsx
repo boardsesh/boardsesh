@@ -156,6 +156,31 @@ describe('LED position edits with cable work', () => {
     expect(controls.changed.mock.lastCall?.[0]).toEqual(linked);
   });
 
+  it('prunes both T-nut LED roles and upper hold links before an ID is reused, with undo', () => {
+    const hole = { x: 0.5, y: 0.5 };
+    const linked: TnutLayout = {
+      ...original,
+      holes: [hole],
+      wiring: undefined,
+      ledPositions: [{ id: 'manual-0', x: 0.2, y: 0.2 }],
+      tnutLeds: [{ hole, ledIds: ['manual-0'], aboveLedIds: ['manual-0'] }],
+      holdAboveLeds: [{ holdId: 10, ledIds: ['manual-0'] }],
+    };
+    render(<Editor initial={linked} />);
+    fireEvent.click(screen.getByText('remove'));
+    act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.2 }, 400, 400));
+    expect(controls.layout?.tnutLeds).toEqual([{ hole, ledIds: [], aboveLedIds: [] }]);
+    expect(controls.layout?.holdAboveLeds).toEqual([{ holdId: 10, ledIds: [] }]);
+    fireEvent.click(screen.getByText('add'));
+    act(() => controls.canvas?.onTap?.({ x: 0.8, y: 0.8 }, 400, 400));
+    expect(controls.layout?.ledPositions?.[0].id).toBe('manual-0');
+    expect(controls.layout?.tnutLeds).toEqual([{ hole, ledIds: [], aboveLedIds: [] }]);
+    expect(controls.layout?.holdAboveLeds).toEqual([{ holdId: 10, ledIds: [] }]);
+    fireEvent.click(screen.getByText('undo'));
+    fireEvent.click(screen.getByText('undo'));
+    expect(controls.layout).toEqual(linked);
+  });
+
   it.each(['add', 'remove'] as const)(
     'requires confirmation before %s discards a cable and undo restores it',
     async (mode) => {

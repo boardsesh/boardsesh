@@ -21,7 +21,7 @@ type RouteWrite = (
   signal?: AbortSignal,
   refreshSession?: LedPreviewSession,
 ) => Promise<boolean | null>;
-const ABOVE_HOLD_BRIGHTNESS = 0.25;
+const ABOVE_HOLD_WHITE = Math.round(255 * 0.25);
 
 /**
  * LAN writes share the normal wall commit path and require a deliberate wall
@@ -260,11 +260,7 @@ export function useSprayLedRouteSender({
               for (const index of match.aboveIndices ?? []) {
                 upperPixels.set(index, {
                   index,
-                  color: [
-                    Math.round(rgb.red * ABOVE_HOLD_BRIGHTNESS),
-                    Math.round(rgb.green * ABOVE_HOLD_BRIGHTNESS),
-                    Math.round(rgb.blue * ABOVE_HOLD_BRIGHTNESS),
-                  ],
+                  color: [ABOVE_HOLD_WHITE, ABOVE_HOLD_WHITE, ABOVE_HOLD_WHITE],
                 });
               }
             }

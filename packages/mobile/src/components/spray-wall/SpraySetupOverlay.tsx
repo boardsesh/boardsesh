@@ -15,6 +15,9 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 export const SPRAY_CABLE_COLOR = '#0891B2';
 const SPRAY_PAIR_CONNECTION_COLOR = '#FBBF24';
 export type SprayHoldRing = { id: number; points: TnutPoint[] };
+export type SprayLedAssociation = { from: TnutPoint; to: TnutPoint };
+const NO_ASSOCIATIONS: readonly SprayLedAssociation[] = [];
+const NO_POINTS: TnutPoint[] = [];
 function screenPoint(
   point: TnutPoint,
   width: number,
@@ -135,6 +138,8 @@ export function SpraySetupOverlay({
   holdRings,
   selectedHoldIds = [],
   selectedHoles = [],
+  mutedHoles = NO_POINTS,
+  associations = NO_ASSOCIATIONS,
   compactHoles = false,
   liveDrag,
   liveDragTarget,
@@ -175,13 +180,22 @@ export function SpraySetupOverlay({
   holdRings?: SprayHoldRing[];
   selectedHoldIds?: number[];
   selectedHoles?: TnutPoint[];
+  /** Nuts already behind a hold remain selectable, with a quieter marker. */
+  mutedHoles?: TnutPoint[];
+  /** Active role's LED links, kept on the UI thread during zoom and pan. */
+  associations?: readonly SprayLedAssociation[];
   width: number;
   height: number;
   zoom: SharedValue<number>;
   panX: SharedValue<number>;
   panY: SharedValue<number>;
 }) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
+  const unmutedHoles = useMemo(() => {
+    if (!mutedHoles.length) return holes;
+    const muted = new Set(mutedHoles.map((hole) => `${hole.x}:${hole.y}`));
+    return holes.filter((hole) => !muted.has(`${hole.x}:${hole.y}`));
+  }, [holes, mutedHoles]);
   const { edges, gapEdges, cableStarts, cableEnds, looseEnds } = useMemo(() => {
     const { edges, start, end, loose } = sprayCableDisplayGeometry(leds, wiring, ledPairs);
     return {
@@ -227,7 +241,7 @@ export function SpraySetupOverlay({
   }));
   const holeProps = useAnimatedProps(() => ({
     d: circles(
-      holes,
+      unmutedHoles,
       width,
       height,
       zoom.value,
@@ -237,6 +251,18 @@ export function SpraySetupOverlay({
       liveDragTarget === 'holes' ? (liveDrag?.value ?? null) : null,
     ),
   }));
+  const mutedHoleProps = useAnimatedProps(() => ({
+    d: circles(mutedHoles, width, height, zoom.value, panX.value, panY.value, holeRadius),
+  }));
+  const associationProps = useAnimatedProps(() => {
+    let path = '';
+    for (const association of associations) {
+      const from = screenPoint(association.from, width, height, zoom.value, panX.value, panY.value);
+      const to = screenPoint(association.to, width, height, zoom.value, panX.value, panY.value);
+      if (visibleEdge(from, to, width, height)) path += `M${from.x} ${from.y}L${to.x} ${to.y}`;
+    }
+    return { d: path };
+  });
   const pairPoints = useMemo(() => {
     const byId = new Map(leds.map((led) => [led.id, led]));
     return ledPairs.flatMap(([first, second]) => {
@@ -343,6 +369,16 @@ export function SpraySetupOverlay({
   });
   return (
     <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
+      {associations.length ? (
+        <AnimatedPath
+          animatedProps={associationProps}
+          fill="none"
+          stroke={brandColors.warning}
+          strokeWidth={1.5}
+          strokeDasharray={[4, 3]}
+          opacity={0.7}
+        />
+      ) : null}
       <AnimatedPath animatedProps={cableProps} fill="none" stroke={SPRAY_CABLE_COLOR} strokeWidth={2} />
       <AnimatedPath
         animatedProps={gapLineProps}
@@ -364,6 +400,15 @@ export function SpraySetupOverlay({
         strokeWidth={smallHoles ? 1 : 1.5}
         opacity={smallHoles ? 0.45 : 1}
       />
+      {mutedHoles.length ? (
+        <AnimatedPath
+          animatedProps={mutedHoleProps}
+          fill="none"
+          stroke={systemColors.secondaryLabel}
+          strokeWidth={1.5}
+          opacity={0.55}
+        />
+      ) : null}
       <AnimatedPath
         animatedProps={ledProps}
         fill={brandColors.primary}

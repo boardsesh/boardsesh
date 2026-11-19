@@ -2,6 +2,7 @@ import type { Quad } from './homography';
 import { readLedPositions, readTnutWiring, type LedPosition, type TnutWiring } from './led-layout';
 import { readHoldLedLinks, type SprayHoldLedLink } from './hold-led-links';
 import { readLedPairs, type SprayLedPair } from './led-pairs';
+import { readTnutLedLinks, type SprayTnutLedLink } from './tnut-led-links';
 
 /** Rectified wall-only frame coordinates in [0, 1], with the origin at the top left. */
 export type TnutPoint = { x: number; y: number };
@@ -60,6 +61,10 @@ export type TnutLayout = {
   wiring?: TnutWiring;
   /** Holds whose LEDs the climber linked by hand; they override the automatic mapping. */
   holdLeds?: SprayHoldLedLink[];
+  /** Legacy per-hold upper overrides, used when no manual mounting-nut role exists. */
+  holdAboveLeds?: SprayHoldLedLink[];
+  /** Durable manual LED roles keyed by mounting-nut coordinates. */
+  tnutLeds?: SprayTnutLedLink[];
   /** LED pairs behind one hold that act as one unit; see `ledPairs`. Absent: a "sides" placement's default pairs. */
   ledGroups?: SprayLedPair[];
 };
@@ -312,6 +317,14 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
   const holdLeds =
     candidate.holdLeds === undefined ? undefined : readHoldLedLinks(candidate.holdLeds, ledPositions ?? []);
   if (holdLeds === null) return null;
+  const holdAboveLeds =
+    candidate.holdAboveLeds === undefined ? undefined : readHoldLedLinks(candidate.holdAboveLeds, ledPositions ?? []);
+  if (holdAboveLeds === null) return null;
+  const tnutLeds =
+    candidate.tnutLeds === undefined
+      ? undefined
+      : readTnutLedLinks(candidate.tnutLeds, candidate.holes as TnutPoint[], ledPositions ?? []);
+  if (tnutLeds === null) return null;
   // `null` comes from an app that knows about pairs and wants the default ones (see
   // keepLedPairsFromOlderApp); it reads like no list.
   const ledGroups =
@@ -340,6 +353,8 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     // An empty list is kept: it says every link was cleared on purpose. A layout
     // with no list at all comes from an app that does not know about links.
     ...(holdLeds !== undefined ? { holdLeds } : {}),
+    ...(holdAboveLeds !== undefined ? { holdAboveLeds } : {}),
+    ...(tnutLeds !== undefined ? { tnutLeds } : {}),
     ...(ledGroups !== undefined ? { ledGroups } : {}),
   };
 }
