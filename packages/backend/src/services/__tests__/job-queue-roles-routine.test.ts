@@ -764,7 +764,7 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     ).toBe(SPRAY_PINNED_DIFFICULTY);
 
     // 6. The logbook snapshot reclaim, as the maintenance login: a row past its
-    //    hour goes, with its chunk. The job never reads the chunk's ticks.
+    //    hour goes, with both chunk kinds. The job never reads their payloads.
     // A snapshot's connection_id references oauth_connections (migration 0301).
     await database.execute(sql`
       INSERT INTO oauth_client (id, client_id, redirect_uris)
@@ -782,6 +782,9 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     await database.execute(sql`
       INSERT INTO logbook_snapshot_chunks (snapshot_id, chunk_index, ticks)
       VALUES (${expiredSnapshot.id}::uuid, 0, '[]'::jsonb)`);
+    await database.execute(sql`
+      INSERT INTO logbook_snapshot_session_chunks (snapshot_id, chunk_index, session_export_ids)
+      VALUES (${expiredSnapshot.id}::uuid, 0, jsonb_build_array(gen_random_uuid()))`);
     await runAs('maintenance-delivery', maintenance, 'reclaim-logbook-snapshots', {});
     expect(
       await count(sql`SELECT count(*)::int AS count FROM logbook_snapshots WHERE id = ${expiredSnapshot.id}::uuid`),
@@ -791,13 +794,23 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
         sql`SELECT count(*)::int AS count FROM logbook_snapshot_chunks WHERE snapshot_id = ${expiredSnapshot.id}::uuid`,
       ),
     ).toBe(0);
+    expect(
+      await count(
+        sql`SELECT count(*)::int AS count FROM logbook_snapshot_session_chunks WHERE snapshot_id = ${expiredSnapshot.id}::uuid`,
+      ),
+    ).toBe(0);
 
     // 7. The logbook change prune, as the maintenance login: every change row
     //    written so far ages out and goes, and the watermark moves over it. The
     //    job never reads whose row it is or which tick it names.
+    await database.execute(sql`INSERT INTO logbook_session_changes (user_id, session_export_id)
+      VALUES (${AURORA_USER}, gen_random_uuid())`);
     await database.execute(sql`UPDATE logbook_changes SET created_at = localtimestamp - interval '91 days'`);
+    await database.execute(sql`UPDATE logbook_session_changes SET created_at = localtimestamp - interval '91 days'`);
     const [lastChange] = (await database.execute(sql`
-      SELECT txid::text AS txid, seq::text AS seq FROM logbook_changes ORDER BY txid DESC, seq DESC LIMIT 1`)) as unknown as Array<{
+      SELECT changes.txid::text AS txid, changes.seq::text AS seq FROM (
+        SELECT txid,seq FROM logbook_changes UNION ALL SELECT txid,seq FROM logbook_session_changes
+      ) changes ORDER BY changes.txid DESC, changes.seq DESC LIMIT 1`)) as unknown as Array<{
       txid: string;
       seq: string;
     }>;
@@ -817,6 +830,7 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     try {
       await runAs('maintenance-delivery', maintenance, 'prune-logbook-changes', {});
       expect(await count(sql`SELECT count(*)::int AS count FROM logbook_changes`)).toBe(0);
+      expect(await count(sql`SELECT count(*)::int AS count FROM logbook_session_changes`)).toBe(0);
       const [prunedThrough] = (await database.execute(sql`
         SELECT pruned_through_txid::text AS txid, pruned_through_seq::text AS seq FROM logbook_change_watermark`)) as unknown as Array<{
         txid: string;
@@ -853,6 +867,22 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     await expect(maintenanceDb.executeSql('SELECT user_id FROM public.logbook_snapshots LIMIT 1')).rejects.toThrow(
       'permission denied',
     );
+    await expect(
+      maintenanceDb.executeSql('SELECT session_export_ids FROM public.logbook_snapshot_session_chunks LIMIT 1'),
+    ).rejects.toThrow('permission denied');
+    for (const column of ['user_id', 'session_export_id', 'remove_if_missing']) {
+      await expect(
+        maintenanceDb.executeSql(`SELECT ${column} FROM public.logbook_session_changes LIMIT 1`),
+      ).rejects.toThrow('permission denied');
+    }
+    await expect(
+      maintenanceDb.executeSql(
+        "INSERT INTO public.logbook_session_changes (user_id, session_export_id) VALUES ('a', gen_random_uuid())",
+      ),
+    ).rejects.toThrow('permission denied');
+    await expect(
+      maintenanceDb.executeSql('UPDATE public.logbook_session_changes SET remove_if_missing = false WHERE false'),
+    ).rejects.toThrow('permission denied');
     await expect(maintenanceDb.executeSql('SELECT user_id FROM public.logbook_changes LIMIT 1')).rejects.toThrow(
       'permission denied',
     );

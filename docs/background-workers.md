@@ -228,24 +228,27 @@ restricted-role proof is `src/__tests__/spray-wall-art-jobs.test.ts`. See
 logbook snapshots past their expiry, every 15 minutes (`2,17,32,47 * * * *`), at
 most 200 batches a run of up to 100 snapshots and 500 chunks each.
 It reads only `logbook_snapshots (id, expires_at)` and
-`logbook_snapshot_chunks (snapshot_id, chunk_index)`, and holds `UPDATE
+the key columns `(snapshot_id, chunk_index)` of both `logbook_snapshot_chunks`
+and `logbook_snapshot_session_chunks`, and holds `UPDATE
 (expires_at)` only because `FOR UPDATE SKIP LOCKED` needs an UPDATE grant. It
-can never read a chunk's ticks or which connection a snapshot belongs to. Expiry
-is enforced at read time, so the job only reclaims storage: it can be late
-without any client noticing. The restricted-role proof is
+can never read a chunk's ticks or session IDs, or which connection a snapshot
+belongs to. Expiry is enforced at read time, so the job only reclaims storage:
+it can be late without any client noticing. The restricted-role proof is
 `services/__tests__/job-queue-roles-routine.test.ts`. See
 [integration-platform.md](./integration-platform.md), "Complete bootstrap and
 transition".
 
 `prune-logbook-changes` (`LOGBOOK_CHANGE_PRUNE_GRANTS`) deletes partner logbook
-feed rows (`logbook_changes`) older than 90 days, once a day at 03:53 UTC
+tick and session feed rows (`logbook_changes` and `logbook_session_changes`)
+older than 90 days, once a day at 03:53 UTC
 (`53 3 * * *`), and moves the feed's retention watermark over them
-(`services/logbook-prune.ts`). It reads `logbook_changes (seq, txid,
-created_at)` and `logbook_change_watermark (id, pruned_through_txid,
+(`services/logbook-prune.ts`). It reads only `(seq, txid, created_at)` from both
+change tables and `logbook_change_watermark (id, pruned_through_txid,
 pruned_through_seq)`, deletes change rows, and updates only `pruned_through_*`
 and `updated_at`. It holds `UPDATE (created_at)` only because `FOR UPDATE SKIP
 LOCKED` needs an UPDATE grant. It can never read whose logbook a row belongs to,
-which tick it names, or the feed generation. The restricted-role proof is
+which tick or session it names, a session hint's removal flag, or the feed
+generation. The restricted-role proof is
 `services/__tests__/job-queue-roles-routine.test.ts`; the correctness tests are
 `src/__tests__/logbook-prune.test.ts`. See
 [integration-platform.md](./integration-platform.md), "Retention, cursor

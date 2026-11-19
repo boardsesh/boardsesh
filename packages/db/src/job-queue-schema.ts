@@ -446,7 +446,7 @@ const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
 /**
  * What `reclaim-logbook-snapshots` reads and writes: a snapshot's identity and
  * expiry, claimed `FOR UPDATE SKIP LOCKED` (which needs an UPDATE grant), and
- * the rows it deletes. Column grants keep a chunk's `ticks` and a snapshot's
+ * the rows it deletes. Column grants keep tick/session chunk payloads and a snapshot's
  * binding out of reach; the job never needs them.
  */
 const LOGBOOK_SNAPSHOT_RECLAIM_GRANTS: readonly WorkerTableGrant[] = [
@@ -455,18 +455,23 @@ const LOGBOOK_SNAPSHOT_RECLAIM_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'logbook_snapshots', privileges: ['DELETE'] },
   { table: 'logbook_snapshot_chunks', privileges: ['SELECT'], columns: ['snapshot_id', 'chunk_index'] },
   { table: 'logbook_snapshot_chunks', privileges: ['DELETE'] },
+  { table: 'logbook_snapshot_session_chunks', privileges: ['SELECT'], columns: ['snapshot_id', 'chunk_index'] },
+  { table: 'logbook_snapshot_session_chunks', privileges: ['DELETE'] },
 ];
 
 /**
  * What `prune-logbook-changes` reads and writes: a change row's position and
  * age, claimed `FOR UPDATE SKIP LOCKED` (which needs UPDATE on one column), the
  * rows it deletes, and the retention watermark. Never whose logbook a row
- * belongs to (`user_id`), which tick it names, or the feed generation.
+ * belongs to (`user_id`), which tick/session it names, its removal flag, or the feed generation.
  */
 const LOGBOOK_CHANGE_PRUNE_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'logbook_changes', privileges: ['SELECT'], columns: ['seq', 'txid', 'created_at'] },
   { table: 'logbook_changes', privileges: ['UPDATE'], columns: ['created_at'] },
   { table: 'logbook_changes', privileges: ['DELETE'] },
+  { table: 'logbook_session_changes', privileges: ['SELECT'], columns: ['seq', 'txid', 'created_at'] },
+  { table: 'logbook_session_changes', privileges: ['UPDATE'], columns: ['created_at'] },
+  { table: 'logbook_session_changes', privileges: ['DELETE'] },
   {
     table: 'logbook_change_watermark',
     privileges: ['SELECT'],

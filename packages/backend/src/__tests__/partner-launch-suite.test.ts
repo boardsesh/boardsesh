@@ -699,6 +699,7 @@ describe('partner OAuth on, in the real server', () => {
       // Gate 10: only shipped scopes. logbook:read joined with its route (L4).
       expect(metadata.scopes_supported).toEqual([
         'logbook:read',
+        'sessions:read',
         'profile:read',
         'workouts:read',
         'workouts:write',
