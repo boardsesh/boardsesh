@@ -1,5 +1,5 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { BOKEH_DRIFT, BOKEH_GLIDE_MS, BOKEH_SWELL, FROST_ALPHA, GRAIN_ALPHA } from '@boardsesh/frosted-bokeh';
+import { BOKEH_DRIFT, BOKEH_SWELL, FROST_ALPHA, GRAIN_ALPHA } from '@boardsesh/frosted-bokeh';
 import grainSource from '@boardsesh/frosted-bokeh/grain.png';
 import { StorySurface, StoryVariant } from '../dev/stories/StoryCanvas';
 import type { StoryModule } from '../dev/stories/types';
@@ -62,7 +62,6 @@ function Parity() {
                 reduceMotion
                 drift={BOKEH_DRIFT}
                 swell={BOKEH_SWELL}
-                glideMs={BOKEH_GLIDE_MS}
               />
             ) : (
               <Text>This binary has no native GPU frost.</Text>

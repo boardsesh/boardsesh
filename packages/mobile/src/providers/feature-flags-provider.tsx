@@ -743,8 +743,8 @@ export function useWallSwipeToDriveEnabled(): boolean {
 }
 
 /**
- * The driving wall button's moving frost: the Metal-drawn lights that breathe
- * and glide to the next climb. A POSITIVE rollout flag read strictly, like
+ * The driving wall button's moving frost: the GPU-drawn lights that breathe
+ * and change climbs with the board's swap. A POSITIVE rollout flag read strictly, like
  * `wall-swipe-to-drive`: unresolved or off is today's still frost. Dev builds
  * read it as on unless a tester turns it off.
  */

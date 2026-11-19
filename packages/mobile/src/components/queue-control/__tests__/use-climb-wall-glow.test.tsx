@@ -65,7 +65,7 @@ afterEach(() => {
 describe('useClimbWallGlow', () => {
   it('matches the current palette and committed mirror without rendering board images', () => {
     const { result } = renderHook(() => useClimbWallGlow({ ...climb, mirrored: true }, board, true));
-    expect(result.current?.holds).toEqual([{ x: 80, y: 40, color: '#123456' }]);
+    expect(result.current?.holds).toEqual([{ x: 80, y: 40, color: '#123456', id: expect.any(Number) }]);
     expect(controls.useHoldStateColors).toHaveBeenCalledWith('kilter', 1);
   });
 
@@ -75,7 +75,7 @@ describe('useClimbWallGlow', () => {
     });
     const firstKey = result.current?.key;
     rerender({ currentClimb: { ...climb, uuid: 'next-climb', frames: 'p200r13' } });
-    expect(result.current?.holds).toEqual([{ x: 80, y: 40, color: '#ABCDEF' }]);
+    expect(result.current?.holds).toEqual([{ x: 80, y: 40, color: '#ABCDEF', id: expect.any(Number) }]);
     expect(result.current?.key).not.toBe(firstKey);
     const secondKey = result.current?.key;
     controls.roleColors = new Map([['HAND', '#FEDCBA']]);
@@ -145,7 +145,7 @@ describe('useClimbWallGlow', () => {
         holds: placements.map(({ id, cx, cy, r }) => ({ id, cx, cy, r })),
       }),
     );
-    expect(result.current?.holds).toEqual([{ x: 20, y: 40, color: '#123456' }]);
+    expect(result.current?.holds).toEqual([{ x: 20, y: 40, color: '#123456', id: 100 }]);
     expect(loader).not.toHaveBeenCalled();
   });
 });

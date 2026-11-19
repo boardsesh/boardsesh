@@ -24,7 +24,7 @@
  * Pure and worklet-safe; `use-player-board-transition.ts` reads the switches.
  */
 import type { BoardTransition } from './board-transition';
-import { SWAP_LOOK_NATIVE_VERSION } from './swap-look';
+import { encodeSwapLook, SWAP_LOOK_NATIVE_VERSION } from './swap-look';
 import { swapLookTransition, type SwapLookSpec } from './swap-look-driver';
 import { WALL_SWAP, WALL_SWAP_SHARED_NATIVE_API } from './wall-swap';
 
@@ -63,6 +63,16 @@ export const PLAYER_SWAP_LOOK: SwapLookSpec = {
 
 /** Built once, so its identity never changes and the swap's UI-thread reaction is set up once. */
 const PLAYER_SWAP_LOOK_TRANSITION: BoardTransition = swapLookTransition(PLAYER_SWAP_LOOK);
+
+/**
+ * The player's look as the board's `swapLook` prop encodes it. The wall
+ * button's frost takes the same numbers, so its lights move with the board's
+ * holds (`@boardsesh/frosted-bokeh` `swap.ts`); it reads them only for the
+ * look's six-number frames.
+ */
+export const PLAYER_SWAP_LOOK_ENCODED: readonly number[] | undefined = PLAYER_SWAP_LOOK_TRANSITION.look
+  ? encodeSwapLook(PLAYER_SWAP_LOOK_TRANSITION.look)
+  : undefined;
 
 /** What decides the player's transition: the binary's native constants and the two switches. */
 export type PlayerSwapLookInputs = {

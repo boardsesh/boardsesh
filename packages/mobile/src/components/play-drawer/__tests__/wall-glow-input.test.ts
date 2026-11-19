@@ -37,8 +37,8 @@ describe('buildWallGlowInput', () => {
         parsedHolds: [...source.parsedHolds, { id: 1, cx: 20, cy: 40, role: 'HAND', color: '#FFFFFF' }],
       })?.holds,
     ).toEqual([
-      { x: 20, y: 40, color: '#00FF00' },
-      { x: 70, y: 90, color: '#0099FF' },
+      { x: 20, y: 40, color: '#00FF00', id: 1 },
+      { x: 70, y: 90, color: '#0099FF', id: 2 },
     ]);
   });
 
@@ -63,7 +63,7 @@ describe('buildWallGlowInput', () => {
         mirrored: true,
         parsedHolds: [{ ...source.parsedHolds[0]!, cx: 80 }],
       })?.holds,
-    ).toEqual([{ x: 80, y: 40, color: '#00FF00' }]);
+    ).toEqual([{ x: 80, y: 40, color: '#00FF00', id: 1 }]);
   });
 
   it('falls back without lit holds, frames or usable dimensions', () => {

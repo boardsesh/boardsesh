@@ -26,6 +26,7 @@ import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { usePlayerGpuBoard } from './use-player-gpu-board';
 import { useCarouselGesture, type CarouselVirtualFinger } from './use-carousel-gesture';
 import type { BoardRenderDiagnostics, BoardTransition } from './board-transition';
+import type { BoardSwapFrame } from './swap-look';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { centeredZoomViewport } from './zoom-viewport-clamp';
@@ -126,6 +127,11 @@ type SwipeBoardCarouselProps = {
   onVirtualFinger?: (finger: CarouselVirtualFinger | null) => void;
   /** The board motion lab's status line; nothing in production passes one. */
   diagnostics?: BoardRenderDiagnostics;
+  /**
+   * Where the stationary board copies each wall-swap frame for the wall
+   * button's frost to follow; null while it draws no swap (`StationaryBoardCarousel`).
+   */
+  swapFrameMirror?: SharedValue<BoardSwapFrame | null>;
 };
 
 /** Hoisted so an omitted `prefetchFrames` doesn't remount the prefetch every render. */
@@ -375,6 +381,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   transition,
   onVirtualFinger,
   diagnostics,
+  swapFrameMirror,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const { settings: renderSettings } = useBoardRenderSettings();
@@ -723,6 +730,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             onCurrentArtReadinessChange={onCurrentArtReadinessChange}
             transition={transition}
             diagnostics={diagnostics}
+            swapFrameMirror={swapFrameMirror}
           />
         ) : (
           [

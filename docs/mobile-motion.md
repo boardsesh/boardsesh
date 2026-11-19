@@ -113,6 +113,48 @@ build the look's GLES program, Differentiate Without Color (iOS) and the
 above. The lab's I reads the same `PLAYER_SWAP_LOOK` constant as the player
 (`docs/board-motion-lab.md`).
 
+**The wall button's frost follows the swap** (option I, `modules/frosted-bokeh-gpu` binaries with
+the module constant `swapFrameApi` 1). The driving wall button's lights are the board's look at
+pill scale, driven by the same frames:
+
+- **How the frame gets there.** `StationaryBoardCarousel` copies each wall-swap frame on the UI
+  thread into a shared value `PlayCore` owns (`swapFrameMirror`), and null while the board draws no
+  swap (the wipe, the image fallback, unmounted). `FrostedBokeh` sends it to the native view as the
+  `swapFrame` view command (`use-frost-swap-frame.ts`), sequenced like the board's, with an
+  animated-prop copy for mount; `[sequence]` alone means "no frames". The neighbours' blobs go as
+  the `swapClimbs` prop once per pair, and the board's encoded look as `swapLook`. Nothing crosses
+  to the JS thread per frame.
+- **Dragging.** Each light takes its own weight through the board's front, keyed by its x in the
+  pill: the current climb dims to 40% from the edge the next climb comes in from, pulling in to
+  0.79× (`tighten` 0.35 at the floor), and the next climb shows behind that front as ghosts up to
+  40%. Four-number frames (the base swap) dim every light together.
+- **Release, cancel, reversal, flick runs** all come from the frames: the 220 ms swap with old
+  lights gone by 150 ms, the 140 ms flick-run swap without ghosts, weights easing back on a cancel.
+- **No frames** (the Next button, a queue tap, a crewmate's change, any climb that appears whole in
+  one step): the frost runs the release on its own: old lights out by 150 ms (smoothstep) where
+  they are, new lights filling over 220 ms along the sweep from the right edge. A climb that leaves
+  in one step fades where it was. Lights never slide.
+- **Shared holds** (same hold id, or within 6 pt in the same colour) stay whole and never dip.
+- **Breathing** uses a per-light seed (a hash of the hold id, in the colour's alpha), so a light
+  never jumps when its slot changes. At most 30 lights are drawn, the strongest kept.
+- **Ahead of the app.** A flick run can carry the board past the pages the app has sent the frost
+  (the climb either side of the one on show). The frost keeps the last frame it could draw until
+  the app catches up, then runs the release onto the new climb, so the pill never goes dark.
+- **Reduce Motion:** the button draws the still frost (no GPU view), as before. The native view's
+  `reduceMotion` only stops the breathing; Low Power Mode does the same.
+- **Cost:** `PlayCore` parses the neighbours' holds only while the frost is up and moving (the
+  `wall-frost-motion` flag, no Reduce Motion) on a binary with `swapFrameApi`. The animated-prop
+  copy of the frame is written for mount and the first frame only; every other frame is a
+  command, so a swipe adds no Fabric commits.
+- **Label contrast:** while a pair is on show the label fade is the higher of the two climbs'
+  (`wall-glow-swap-fade.ts`, on the UI thread), and for 220 ms after the climb changes. If either
+  neighbour needs the full-surface fade, the button draws that one.
+
+The rules and numbers live in `@boardsesh/frosted-bokeh` (`swap.ts`); `BokehMotion.swift` and
+`BokehMotion.kt` run them line for line and are held to the golden vectors in `swap.test.ts`.
+To try it on the simulator, open the story `dev/stories/busy-wall--frost-swipe`. Binaries without `swapFrameApi` keep the old 700 ms glide
+(`glideMs`), and the app sends them none of the new props.
+
 **Haptics** (`packages/mobile/src/lib/haptics.ts`, expo-haptics, no-ops where unsupported). Visual
 press feedback is separate (that's `PressableSurface`); fire haptics from the handler:
 
