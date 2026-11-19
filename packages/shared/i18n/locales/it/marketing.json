@@ -1052,8 +1052,8 @@
         "answer": "Scelte sulla privacy nel sito e Analisi in Impostazioni → Privacy controllano le analisi facoltative. La diagnostica di base di errori e prestazioni mantiene il servizio. L’informativa spiega cosa riceve ciascun fornitore."
       },
       "sprayPrivacy": {
-        "question": "La foto del mio Spraywall può restare privata?",
-        "answer": "Scegli un Spraywall privato anziché pubblico. I membri di una palestra possono vedere gli Spraywalls privati collegati a quella palestra. Le foto degli Spraywalls pubblici sono sul web aperto."
+        "question": "La foto della mia Spraywall può restare privata?",
+        "answer": "Scegli una Spraywall privata anziché pubblica. I membri di una palestra possono vedere le Spraywall private collegate a quella palestra. Le foto delle Spraywall pubbliche sono sul web aperto."
       }
     }
   }
