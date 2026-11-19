@@ -41,6 +41,7 @@ import { favoriteMutations } from './favorites/mutations';
 import { playlistFieldResolvers, playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
+import { partnerSessionHistoryQueries } from './sessions/partner-session-history';
 import { liveSessionQueries } from './sessions/live-sessions';
 import { sessionMutations } from './sessions/mutations';
 import { pushTokenMutations } from './sessions/push-tokens';
@@ -125,6 +126,7 @@ export const resolvers = {
     ...privacyQueries,
     ...boardShareLinkQueries,
     ...sessionQueries,
+    ...partnerSessionHistoryQueries,
     ...liveSessionQueries,
     ...boardQueries,
     ...holdOutlineQueries,

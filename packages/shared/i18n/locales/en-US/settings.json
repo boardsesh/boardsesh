@@ -606,7 +606,8 @@
         "offlineAccess": "Keeps this access until you disconnect it",
         "other": "Other access: {{scope}}",
         "workoutsRead": "Read the results of workouts this app planned",
-        "workoutsWrite": "Plan and cancel workouts for you"
+        "workoutsWrite": "Plan and cancel workouts for you",
+        "sessionsRead": "Reads your completed sessions, private recap notes and full workouts, including workouts from other apps"
       },
       "disconnect": "Disconnect",
       "disconnectA11y": "Disconnect {{app}}",

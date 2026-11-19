@@ -7,6 +7,7 @@ import {
   MeResponseSchema,
   TickParamsSchema,
   TickSchema,
+  PartnerSessionSchema,
 } from '../schemas';
 
 /** The tick from docs/partner-api.md, section 3. */
@@ -97,6 +98,38 @@ describe('TickSchema', () => {
 });
 
 describe('LogbookChangesResponseSchema', () => {
+  it('accepts completed session upserts and tombstones alongside ticks', () => {
+    const session = {
+      id: '44a9e71a-2575-4cbb-8d1b-31b078242bcb',
+      title: 'Volume session',
+      notes: 'Kept my feet quiet',
+      goal: null,
+      origin: 'explicit',
+      startedAt: '2025-04-03T18:00:00Z',
+      endedAt: '2025-04-03T19:00:00Z',
+      durationSeconds: 3600,
+      timezone: 'Europe/Amsterdam',
+      board: { type: 'kilter', name: null, layout: 'Kilter Board Original', size: null, angle: 40 },
+      url: 'https://www.boardsesh.com/history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb',
+      appUrl: 'com.boardsesh.app://history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb',
+      workout: null,
+    };
+    expect(PartnerSessionSchema.parse(session)).toEqual(session);
+    const page = {
+      changes: [
+        { type: 'session', session },
+        { type: 'session.deleted', id: session.id },
+        { type: 'tick', tick: { ...documentedTick, sessionId: session.id } },
+      ],
+      cursor: 'c3.session-projection',
+      hasMore: false,
+    };
+    expect(LogbookChangesResponseSchema.parse(page)).toEqual(page);
+    expect(PartnerSessionSchema.safeParse({ ...session, sessionId: 'invite-id' }).success).toBe(false);
+    expect(PartnerSessionSchema.safeParse({ ...session, durationSeconds: -1 }).success).toBe(false);
+    expect(PartnerSessionSchema.safeParse({ ...session, durationSeconds: null, startedAt: null }).success).toBe(true);
+  });
+
   it('accepts the documented page', () => {
     const page = {
       changes: [

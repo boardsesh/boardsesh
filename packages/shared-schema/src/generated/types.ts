@@ -8361,6 +8361,12 @@ export type Query = {
    */
   remixClimb?: Maybe<SprayRemixSeed>;
   /**
+   * Resolve a partner export reference to a read-only completed session detail
+   * for its authenticated creator or a durable participant. This is a
+   * first-party history link, never an invitation or a join operation.
+   */
+  resolvePartnerSessionHistory?: Maybe<Scalars['ID']['output']>;
+  /**
    * The people with a grant on a board or session the viewer owns. Without
    * userIds: pending requests first, then members, newest first, 100 from
    * offset; removed people are left out. With userIds (up to 100): those
@@ -9270,6 +9276,11 @@ export type QueryRecentBetaLinksArgs = {
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
   sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryResolvePartnerSessionHistoryArgs = {
+  exportId: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -19672,6 +19683,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryRemixClimbArgs, 'parentUuid'>
+  >;
+  resolvePartnerSessionHistory?: Resolver<
+    Maybe<ResolversTypes['ID']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryResolvePartnerSessionHistoryArgs, 'exportId'>
   >;
   resourceAccessRequests?: Resolver<
     Array<ResolversTypes['PrivacyResourceGrant']>,

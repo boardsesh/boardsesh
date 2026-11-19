@@ -235,7 +235,7 @@
         "sync": "Descargar el logbook entero una vez y después pedir solo lo que cambió. Un cambio suele aparecer en menos de un segundo.",
         "profile": "Leer su nombre visible y su avatar, si pides ese permiso.",
         "disconnect": "El escalador puede desconectar tu app en cualquier momento en Ajustes, Apps conectadas. Tu siguiente llamada falla y borras lo que guardaste.",
-        "notYet": "Hoy solo está activa la lectura del logbook. Los entrenamientos y los webhooks aún no están disponibles."
+        "notYet": "La sincronización completa de sesiones y entrenamientos requiere sessions:read. No incluye vídeos de beta ni el control del plafón."
       }
     },
     "steps": {
@@ -254,7 +254,8 @@
       "items": {
         "logbook": "Cada entrada en todos los plafones, incluidas las que el escalador mantiene privadas.",
         "profile": "Nombre visible y avatar.",
-        "offline": "Un refresh token, para que puedas seguir leyendo mientras el escalador no está. Por sí solo no da acceso a ningún dato."
+        "offline": "Un refresh token, para que puedas seguir leyendo mientras el escalador no está. Por sí solo no da acceso a ningún dato.",
+        "sessions": "Sesiones completadas, notas privadas del resumen, duración registrada y entrenamientos completos, incluidos los de otras aplicaciones. Requiere logbook:read."
       }
     },
     "rules": {
@@ -388,6 +389,14 @@
       "poll": {
         "title": "Sincroniza cuando haga falta",
         "body": "Sincroniza cuando el escalador abra tu aplicación; en segundo plano, como máximo cada 15 minutos por escalador. Respeta Retry-After en respuestas 429 y 503 temporales. Los webhooks opcionales logbook.changed indican que debes ejecutar esta misma sincronización; no sustituyen el feed.\n\nMantén privadas las salidas privadas. En el Spraywall no público de otra persona se ocultan el nombre del bloque y la identidad del Spraywall. No construyas un catálogo ni publiques borradores o bloques no listados de otros equipadores a partir del diario."
+      },
+      "sessions": {
+        "title": "Sincroniza sesiones completadas y entrenamientos",
+        "body": "Solicita logbook:read sessions:read offline_access para importar sesiones personales, inferidas y compartidas a las que el escalador se haya unido, siempre que estén completadas. Se excluyen las sesiones activas y las sesiones permanentes de rocódromo. Los registros incluyen el resumen, las horas de inicio y fin guardadas, durationSeconds y el plan y los resultados completos del entrenamiento, incluidos los de otras aplicaciones. Si faltan las horas registradas o están invertidas, la duración es null; nunca la estimes a partir de los registros. El resumen y las etiquetas privadas de otro creador no se comparten. Se excluyen los enlaces de beta y las posiciones de las presas.\n\nActualiza o crea las entradas session por session.id, elimina las entradas session.deleted por id y usa tick.sessionId para agrupar los bloques. Las referencias pueden llegar en páginas distintas. GET /v1/logbook/sessions/{id} devuelve una sesión autorizada. Conserva ambos tipos de entidad en la misma copia de sustitución y guárdalos junto con su cursor.\n\nLos tokens existentes que solo leen registros no obtienen este acceso. Solicita de nuevo el consentimiento con sessions:read, sustituye el par de tokens guardado e inicia una importación completa de sustitución sin el cursor anterior. Un cursor del nivel de acceso anterior devuelve 410. La sustitución incluye sesiones anteriores a la integración; no se pueden reconstruir los planes de entrenamiento ni las horas históricas que falten."
+      },
+      "attribution": {
+        "title": "Reconoce a Boardsesh y enlaza a la sesión",
+        "body": "La vista principal de cada sesión importada debe mostrar un reconocimiento visible a Boardsesh. Basta con “Boardsesh” o “Registrado con Boardsesh” en un pequeño pie o una nota al pie. No basta con ocultarlo en un menú de puntos suspensivos.\n\nTambién recomendamos una acción “Abrir en Boardsesh” que use url o appUrl de la sesión. Puede estar en un menú de puntos suspensivos y no tiene que ser la acción principal. Los enlaces del historial requieren iniciar sesión con una cuenta que haya registrado la sesión o se haya unido a ella; abren el detalle de solo lectura y nunca unen al usuario a una sesión. Mantén utilizable la alternativa HTTPS sin la aplicación."
       }
     },
     "errors": {

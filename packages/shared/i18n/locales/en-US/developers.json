@@ -235,7 +235,7 @@
         "sync": "Download the whole logbook once, then fetch only what changed. A change usually shows up within a second.",
         "profile": "Read their display name and avatar, if you ask for that scope.",
         "disconnect": "The climber can disconnect your app at any time in Settings, Connected apps. Your next call then fails, and you delete what you stored.",
-        "notYet": "Reading the logbook is the only thing live today. Workouts and webhooks are not available yet."
+        "notYet": "Full session and workout sync needs sessions:read. Beta videos and board control are not included."
       }
     },
     "steps": {
@@ -254,7 +254,8 @@
       "items": {
         "logbook": "Every tick on every board, including ones the climber keeps private.",
         "profile": "Display name and avatar.",
-        "offline": "A refresh token, so you can keep reading while the climber is away. It opens no data by itself."
+        "offline": "A refresh token, so you can keep reading while the climber is away. It opens no data by itself.",
+        "sessions": "Completed sessions, private recap notes, recorded duration and full workouts, including workouts from other apps. Requires logbook:read."
       }
     },
     "rules": {
@@ -388,6 +389,14 @@
       "poll": {
         "title": "Poll when the climber needs it",
         "body": "Sync when the climber opens your app. Background sync runs no more than once every 15 minutes per climber. Honor Retry-After on 429 and temporary 503 responses. Optional logbook.changed webhooks tell you to run this same sync; they do not replace the feed.\n\nKeep all private ticks private in your app too. A tick on someone else’s non-public Spraywall redacts the climb name and Spraywall identity. Do not build a climb catalog or publish other setters’ draft or unlisted climbs from a logbook."
+      },
+      "sessions": {
+        "title": "Sync completed sessions and workouts",
+        "body": "Ask for logbook:read sessions:read offline_access to import completed personal, inferred and joined shared sessions. Active sessions and permanent gym sessions are excluded. Session records include the recap, stored start/end times, durationSeconds and the climber’s full workout plan and results, including workouts supplied by other apps. Missing or reversed recorded times give a null duration; never estimate from ticks. Another creator’s private recap and labels are withheld. Beta links and hold positions are excluded.\n\nUpsert session entries by session.id, remove session.deleted entries by id, and use tick.sessionId to group climbs. References can arrive on different pages. GET /v1/logbook/sessions/{id} reads one eligible session. Keep both entity types in the same replacement copy and commit them with their cursor.\n\nExisting tick-only tokens do not gain this access. Request fresh consent with sessions:read, replace the stored token pair, and start a complete replacement import without the old cursor. A cursor from the earlier access level returns 410. The replacement includes older sessions from before the integration; missing historical workout plans or timestamps cannot be reconstructed."
+      },
+      "attribution": {
+        "title": "Credit Boardsesh and link back to the session",
+        "body": "Every imported session’s primary view must visibly credit Boardsesh. “Boardsesh” or “Recorded with Boardsesh” in a small footer or footnote is sufficient. A credit hidden inside an ellipsis menu is not sufficient.\n\nWe also recommend an “Open in Boardsesh” action using the session’s url or appUrl. The action may live in an ellipsis menu and need not be primary. History links require the climber to sign in with an account that recorded or joined the session; they open read-only detail and never join a session. Keep the HTTPS fallback usable without the app."
       }
     },
     "errors": {

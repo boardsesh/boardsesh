@@ -12,7 +12,7 @@ import {
   visibleActivityUserIdsByBoard,
   visibleBoardIdentityIds,
 } from '../../../services/privacy';
-import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, notExists, type SQL } from 'drizzle-orm';
 import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessionCoMemberTickCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
@@ -37,6 +37,7 @@ import type {
   ConnectionContext,
 } from '@boardsesh/shared-schema';
 import { logger } from '../../../utils/logger';
+import { eligiblePartnerSessionCondition, recordedSessionDuration } from '../../../services/public-api/sessions';
 import {
   canViewBoardTickOverride,
   sessionAnonymousUserIds,
@@ -857,7 +858,56 @@ export const sessionFeedQueries = {
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
 
-    if (tickRows.length === 0) return null;
+    if (tickRows.length === 0) {
+      if (!viewerUserId || dailySession || aggregateOnly) return null;
+      // Partner history includes completed sessions without ticks. Keep those
+      // readable by their owner/recorded participants without making sessions
+      // whose ticks were privacy-filtered into empty public pages.
+      const [emptySession] = await db
+        .select()
+        .from(dbSchema.boardSessions)
+        .where(
+          and(
+            eq(dbSchema.boardSessions.id, sessionId),
+            eligiblePartnerSessionCondition(viewerUserId),
+            notExists(
+              db
+                .select({ uuid: dbSchema.boardseshTicks.uuid })
+                .from(dbSchema.boardseshTicks)
+                .where(eq(dbSchema.boardseshTicks.sessionId, dbSchema.boardSessions.id)),
+            ),
+          ),
+        )
+        .limit(1);
+      if (!emptySession) return null;
+      const ownsSession = emptySession.createdByUserId === viewerUserId;
+      const durationSeconds = recordedSessionDuration(emptySession.startedAt, emptySession.endedAt);
+      return {
+        sessionId,
+        sessionType: 'party',
+        sessionName: ownsSession ? emptySession.name : null,
+        ownerUserId: ownsSession ? viewerUserId : null,
+        participants: [],
+        totalSends: 0,
+        totalFlashes: 0,
+        totalAttempts: 0,
+        tickCount: 0,
+        gradeDistribution: [],
+        boardTypes: [],
+        hardestGrade: null,
+        firstTickAt: (emptySession.startedAt ?? emptySession.createdAt).toISOString(),
+        lastTickAt: (emptySession.endedAt ?? emptySession.startedAt ?? emptySession.createdAt).toISOString(),
+        durationMinutes: durationSeconds === null ? null : Math.round(durationSeconds / 60),
+        goal: ownsSession ? emptySession.goal : null,
+        notes: ownsSession ? emptySession.notes : null,
+        ticks: [],
+        upvotes: 0,
+        downvotes: 0,
+        voteScore: 0,
+        commentCount: 0,
+        healthKitWorkoutId: null,
+      };
+    }
 
     // Batch-fetch tick vote counts
     const tickUuids = tickRows.map((r) => r.tick.uuid);

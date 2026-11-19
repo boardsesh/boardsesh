@@ -26,6 +26,7 @@ beforeEach(async () => {
     subject: 'climber',
     tokens: { accessToken: 'old-access', refreshToken: 'old-refresh' },
     ticks: { old: { id: 'old' } },
+    sessions: { older: { id: 'older', notes: 'Last published recap' } },
     cursor: 'old-cursor',
     fullSyncRequired: false,
   };
@@ -75,6 +76,72 @@ describe('standalone partner logbook example', () => {
     expect(stored.cursor).toBe('final-page');
     expect(Object.keys(stored.ticks)).toEqual(['__proto__']);
     expect(request.mock.calls[1][0]).toEqual(expect.stringContaining('cursor=empty-page'));
+  });
+
+  it('stores session edits and deletions atomically with their ticks and cursor', async () => {
+    request.mockResolvedValueOnce(
+      page(
+        [
+          { type: 'session.deleted', id: 'older' },
+          { type: 'tick', tick: { id: 'climb', sessionId: 'historical' } },
+          { type: 'session', session: { id: 'historical', notes: 'Old recap', durationSeconds: 3600 } },
+          { type: 'session', session: { id: 'historical', notes: null, durationSeconds: 3660 } },
+          { type: 'session', session: { id: '__proto__', notes: 'Safe own property' } },
+        ],
+        'session-cursor',
+        false,
+      ),
+    );
+    await syncLogbook(file, state);
+    const stored = await readState(file);
+    expect(stored.cursor).toBe('session-cursor');
+    expect(stored.ticks.climb.sessionId).toBe('historical');
+    expect(stored.sessions).not.toHaveProperty('older');
+    expect(stored.sessions.historical).toEqual({ id: 'historical', notes: null, durationSeconds: 3660 });
+    expect(Object.hasOwn(stored.sessions, '__proto__')).toBe(true);
+  });
+
+  it('keeps both published entities when full session import is interrupted', async () => {
+    state.fullSyncRequired = true;
+    await writeState(file, state);
+    request
+      .mockResolvedValueOnce(page([{ type: 'session', session: { id: 'new-session' } }], 'partial', true))
+      .mockResolvedValueOnce(new Response(null, { status: 400 }));
+    await expect(syncLogbook(file, state)).rejects.toThrow('API request failed (400)');
+    expect(await readState(file)).toMatchObject({
+      ticks: { old: { id: 'old' } },
+      sessions: { older: { id: 'older', notes: 'Last published recap' } },
+      fullSyncRequired: true,
+    });
+    request.mockResolvedValueOnce(
+      page(
+        [
+          { type: 'session', session: { id: 'new-session', durationSeconds: 3600 } },
+          { type: 'tick', tick: { id: 'new-tick', sessionId: 'new-session' } },
+        ],
+        'complete',
+        false,
+      ),
+    );
+    const interrupted = await readState(file);
+    await syncLogbook(file, interrupted);
+    expect(await readState(file)).toMatchObject({
+      ticks: { 'new-tick': { id: 'new-tick', sessionId: 'new-session' } },
+      sessions: { 'new-session': { id: 'new-session', durationSeconds: 3600 } },
+      cursor: 'complete',
+      fullSyncRequired: false,
+    });
+    expect((await readState(file)).sessions).not.toHaveProperty('older');
+  });
+
+  it('upgrades an older tick-only state file without losing its published copy', async () => {
+    const { sessions: _sessions, ...olderState } = state;
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(file, JSON.stringify(olderState));
+    const restored = await readState(file);
+    expect(restored.sessions).toEqual({});
+    expect(restored.ticks).toEqual(state.ticks);
+    expect(restored.cursor).toBe('old-cursor');
   });
 
   it('durably replaces rotated credentials before retrying the API', async () => {

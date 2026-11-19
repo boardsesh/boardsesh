@@ -77,6 +77,18 @@ describe('the section', () => {
 });
 
 describe('a row', () => {
+  it('describes session access separately from tick and app-owned workout access', () => {
+    const row = buildConnectedAppRow(
+      app({ scopes: ['offline_access', 'sessions:read', 'logbook:read'] }),
+      echo,
+      formatters,
+    );
+    expect(row.scopes.map((scope) => scope.label)).toEqual([
+      'settings:integrations.partnerApps.scopes.logbookRead',
+      'settings:integrations.partnerApps.scopes.sessionsRead',
+      'settings:integrations.partnerApps.scopes.offlineAccess',
+    ]);
+  });
   it('describes workout access separately from logbook access', () => {
     const row = buildConnectedAppRow(
       app({ scopes: ['offline_access', 'workouts:read', 'workouts:write'] }),

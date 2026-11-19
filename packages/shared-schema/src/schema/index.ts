@@ -37,6 +37,7 @@ import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs
 import { sprayDetectionTypeDefs } from './spray-detection';
 import { sprayTrainingTypeDefs } from './spray-training';
 import { sessionWorkoutsTypeDefs } from './session-workouts';
+import { partnerSessionHistoryTypeDefs } from './partner-session-history';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { oauthClientsTypeDefs } from './oauth-clients';
@@ -83,6 +84,7 @@ export const typeDefs = [
   sprayDetectionTypeDefs,
   sprayTrainingTypeDefs,
   sessionWorkoutsTypeDefs,
+  partnerSessionHistoryTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
   cncPacksTypeDefs,

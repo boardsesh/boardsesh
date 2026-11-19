@@ -235,7 +235,7 @@
         "sync": "Télécharger tout le carnet une fois, puis ne récupérer que ce qui a changé. Un changement apparaît en général en moins d'une seconde.",
         "profile": "Lire son nom affiché et son avatar, si tu demandes ce scope.",
         "disconnect": "Le grimpeur peut déconnecter ton app à tout moment dans Réglages, Apps connectées. Ton prochain appel échoue alors, et tu supprimes ce que tu avais stocké.",
-        "notYet": "Seule la lecture du carnet est disponible aujourd'hui. Les séances d'entraînement et les webhooks ne le sont pas encore."
+        "notYet": "La synchronisation complète des séances et entraînements nécessite sessions:read. Les vidéos de beta et le contrôle de la board sont exclus."
       }
     },
     "steps": {
@@ -254,7 +254,8 @@
       "items": {
         "logbook": "Chaque entrée sur toutes les boards, y compris celles que le grimpeur garde privées.",
         "profile": "Nom affiché et avatar.",
-        "offline": "Un refresh token, pour continuer à lire pendant que le grimpeur est absent. Il n'ouvre aucune donnée à lui seul."
+        "offline": "Un refresh token, pour continuer à lire pendant que le grimpeur est absent. Il n'ouvre aucune donnée à lui seul.",
+        "sessions": "Séances terminées, notes de bilan privées, durée enregistrée et entraînements complets, y compris ceux d’autres applications. Nécessite logbook:read."
       }
     },
     "rules": {
@@ -388,6 +389,14 @@
       "poll": {
         "title": "Synchronise au bon moment",
         "body": "Synchronise quand la personne ouvre ton application. En arrière-plan, au plus une fois toutes les 15 minutes par personne. Respecte Retry-After sur 429 et les 503 temporaires. Les webhooks facultatifs logbook.changed demandent cette même synchronisation ; ils ne remplacent pas le flux.\n\nGarde les entrées privées confidentielles. Sur le Spraywall non public d’une autre personne, le nom du bloc et l’identité du Spraywall sont masqués. Ne crée pas de catalogue et ne publie pas les brouillons ou blocs non répertoriés d’autres ouvreurs à partir du carnet."
+      },
+      "sessions": {
+        "title": "Synchroniser les séances terminées et les entraînements",
+        "body": "Demande logbook:read sessions:read offline_access pour importer les séances personnelles, déduites et partagées rejointes par le grimpeur, une fois terminées. Les séances actives et les séances permanentes de salle sont exclues. Les données comprennent le bilan, les heures de début et de fin enregistrées, durationSeconds et le plan et les résultats complets de l’entraînement, y compris ceux d’autres applications. Si les heures enregistrées sont absentes ou inversées, la durée vaut null ; ne l’estime jamais à partir des entrées du carnet. Le bilan et les libellés privés d’un autre créateur ne sont pas transmis. Les liens de beta et les positions des prises sont exclus.\n\nCrée ou mets à jour les entrées session par session.id, supprime les entrées session.deleted par id et utilise tick.sessionId pour regrouper les blocs. Les références peuvent arriver sur des pages différentes. GET /v1/logbook/sessions/{id} renvoie une séance autorisée. Conserve les deux types d’entités dans la même copie de remplacement et enregistre-les avec leur curseur.\n\nLes tokens existants limités aux entrées du carnet ne reçoivent pas cet accès. Demande un nouveau consentement avec sessions:read, remplace la paire de tokens enregistrée et lance une importation complète de remplacement sans l’ancien curseur. Un curseur du niveau d’accès précédent renvoie 410. Le remplacement inclut les séances antérieures à l’intégration ; les plans d’entraînement ou horaires historiques manquants ne peuvent pas être reconstitués."
+      },
+      "attribution": {
+        "title": "Mentionner Boardsesh et proposer un lien vers la séance",
+        "body": "La vue principale de chaque séance importée doit mentionner Boardsesh de façon visible. “Boardsesh” ou “Enregistré avec Boardsesh” dans un petit pied de page ou une note suffit. Une mention cachée dans un menu à points de suspension ne suffit pas.\n\nNous recommandons aussi une action “Ouvrir dans Boardsesh” utilisant url ou appUrl de la séance. Elle peut se trouver dans un menu à points de suspension et n’a pas besoin d’être l’action principale. Les liens d’historique exigent une connexion avec un compte ayant enregistré ou rejoint la séance ; ils ouvrent le détail en lecture seule et ne rejoignent jamais une séance. La solution HTTPS doit rester utilisable sans l’application."
       }
     },
     "errors": {

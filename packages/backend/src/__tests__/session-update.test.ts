@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vite-
 import { eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SessionEvent } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { boardSessionParticipants, boardseshTicks } from '@boardsesh/db/schema';
 import { sessions } from '../db/schema';
 import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
@@ -341,6 +342,49 @@ describe('sessionDetail round-trips notes (real DB)', () => {
     const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: DETAIL_SESSION });
     expect(detail).not.toBeNull();
     expect(detail!.notes).toBe('Round-trip recap');
+  });
+
+  it('opens an owned completed empty session with its recorded recap and duration', async () => {
+    await db.delete(boardseshTicks).where(eq(boardseshTicks.sessionId, DETAIL_SESSION));
+    await db
+      .update(sessions)
+      .set({
+        status: 'ended',
+        startedAt: new Date('2026-03-01T10:00:00Z'),
+        endedAt: new Date('2026-03-01T11:00:00Z'),
+      })
+      .where(eq(sessions.id, DETAIL_SESSION));
+    const detail = await sessionFeedQueries.sessionDetail(
+      null,
+      { sessionId: DETAIL_SESSION },
+      creatorCtx({ userId: DETAIL_USER }),
+    );
+    expect(detail).toMatchObject({
+      sessionName: 'Detail session',
+      notes: 'Round-trip recap',
+      durationMinutes: 60,
+      tickCount: 0,
+      ticks: [],
+    });
+    expect(await sessionFeedQueries.sessionDetail(null, { sessionId: DETAIL_SESSION })).toBeNull();
+  });
+
+  it('keeps an empty session private to its owner or durable participants', async () => {
+    await db.delete(boardseshTicks).where(eq(boardseshTicks.sessionId, DETAIL_SESSION));
+    await db.update(sessions).set({ status: 'ended' }).where(eq(sessions.id, DETAIL_SESSION));
+    await insertUser(OTHER_ID);
+    const guest = creatorCtx({ userId: OTHER_ID });
+    expect(await sessionFeedQueries.sessionDetail(null, { sessionId: DETAIL_SESSION }, guest)).toBeNull();
+    await db.insert(boardSessionParticipants).values({ sessionId: DETAIL_SESSION, userId: OTHER_ID });
+    expect(await sessionFeedQueries.sessionDetail(null, { sessionId: DETAIL_SESSION }, guest)).toMatchObject({
+      sessionName: null,
+      notes: null,
+      goal: null,
+      durationMinutes: null,
+      tickCount: 0,
+    });
+    await db.update(sessions).set({ isPermanent: true }).where(eq(sessions.id, DETAIL_SESSION));
+    expect(await sessionFeedQueries.sessionDetail(null, { sessionId: DETAIL_SESSION }, guest)).toBeNull();
   });
 });
 

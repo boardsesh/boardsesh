@@ -606,7 +606,8 @@
         "offlineAccess": "Garde cet accès jusqu’à ce que tu la déconnectes",
         "other": "Autre accès : {{scope}}",
         "workoutsRead": "Lire les résultats des séances prévues par cette application",
-        "workoutsWrite": "Prévoir et annuler tes séances"
+        "workoutsWrite": "Prévoir et annuler tes séances",
+        "sessionsRead": "Lit tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications"
       },
       "disconnect": "Déconnecter",
       "disconnectA11y": "Déconnecter {{app}}",

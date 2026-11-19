@@ -517,10 +517,42 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     const database = drizzle(writer);
     await database.insert(users).values({ id: userId, email: `writer-${userId}@example.invalid` });
     await database.insert(userCredentials).values({ userId, passwordHash: 'synthetic-before' });
+    // Exercise the actual new indirect path, not only a credential write for
+    // an account with no partner connection or attached workout.
+    const partnerClientId = randomUUID();
+    const connectionId = randomUUID();
+    const boardSessionId = randomUUID();
+    const workoutId = randomUUID();
+    await owner`INSERT INTO public.oauth_client(id,client_id,redirect_uris)
+      VALUES(${partnerClientId},${partnerClientId},ARRAY['https://owned.example.invalid/callback'])`;
+    await owner`INSERT INTO public.oauth_connections(id,user_id,client_id,generation)
+      VALUES(${connectionId},${userId},${partnerClientId},0)`;
+    const [boardSession] = await owner<
+      { exportId: string }[]
+    >`INSERT INTO public.board_sessions(id,board_path,created_by_user_id)
+      VALUES(${boardSessionId},'kilter/1/1/1/40',${userId}) RETURNING export_id AS "exportId"`;
+    await owner`INSERT INTO public.app_workouts(id,client_id,user_id,connection_id,connection_generation,external_ref,title,spec,status,session_id,expires_at)
+      VALUES(${workoutId},${partnerClientId},${userId},${connectionId},0,'owned-revoke','Owned workout','{}'::jsonb,'started',${boardSessionId},now()+interval '1 day')`;
+    await owner`DELETE FROM public.logbook_session_changes WHERE user_id=${userId}`;
+    const [capabilities] = await writer<{ source: boolean; sink: boolean; sequence: boolean }[]>`SELECT
+      has_table_privilege(current_user,'public.board_sessions','SELECT') AS source,
+      has_table_privilege(current_user,'public.logbook_session_changes','INSERT') AS sink,
+      has_sequence_privilege(current_user,'public.logbook_changes_seq_seq','USAGE') AS sequence`;
+    expect(capabilities).toEqual({ source: false, sink: false, sequence: false });
+
     await database
       .update(userCredentials)
       .set({ passwordHash: 'synthetic-after' })
       .where(eq(userCredentials.userId, userId));
+    const [revokedWorkout] = await owner<
+      { status: string }[]
+    >`SELECT status FROM public.app_workouts WHERE id=${workoutId}`;
+    expect(revokedWorkout.status).toBe('revoked');
+    const hints = await owner<
+      { sessionId: string }[]
+    >`SELECT session_export_id AS "sessionId" FROM public.logbook_session_changes WHERE user_id=${userId}`;
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints.every((hint) => hint.sessionId === boardSession.exportId)).toBe(true);
     await database.update(users).set({ name: 'Writer renamed' }).where(eq(users.id, userId));
     await database.insert(authSession).values({
       id: sessionId,
@@ -542,5 +574,96 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     await expect(
       webStatement(`UPDATE public.user_credentials SET password_hash = 'web' WHERE user_id = '${userId}'`),
     ).rejects.toMatchObject({ code: '42501' });
+  });
+  it('rejects drift throughout the credential writer’s session-sync side-effect closure', async () => {
+    const qualify = () =>
+      qualifyCredentialWriter(writer, {
+        expectedRole: WRITER_ROLE,
+        expectedDatabase: databaseName,
+        contract: WRITER_CONTRACT,
+      });
+    async function drift(apply: string, restore: string, code: string) {
+      await owner.unsafe(apply);
+      try {
+        await expect(qualify(), apply).rejects.toMatchObject({ code });
+      } finally {
+        await owner.unsafe(restore);
+      }
+      await expect(qualify()).resolves.toMatchObject({ role: WRITER_ROLE });
+    }
+    const [original] = await owner<
+      { definition: string; owner: string }[]
+    >`SELECT pg_get_functiondef(oid) AS definition,
+      pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid='public.log_partner_session_from_workout()'::regprocedure`;
+    await drift(
+      "CREATE OR REPLACE FUNCTION public.log_partner_session_from_workout() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_catalog AS 'BEGIN RETURN NULL; END'",
+      original.definition,
+      'CREDENTIAL_WRITER_UNREVIEWED_PARTNER_REVOKE',
+    );
+    await drift(
+      'ALTER FUNCTION public.log_partner_session_from_workout() SET search_path=pg_catalog',
+      original.definition,
+      'CREDENTIAL_WRITER_UNREVIEWED_PARTNER_REVOKE',
+    );
+    await drift(
+      'ALTER FUNCTION public.log_partner_session_from_workout() OWNER TO boardsesh_sync_cutoff_owner',
+      `ALTER FUNCTION public.log_partner_session_from_workout() OWNER TO ${quoteIdentifier(original.owner)}`,
+      'CREDENTIAL_WRITER_UNREVIEWED_PARTNER_REVOKE',
+    );
+    await drift(
+      'ALTER TABLE public.app_workouts DISABLE TRIGGER trg_partner_session_app_workout',
+      'ALTER TABLE public.app_workouts ENABLE TRIGGER trg_partner_session_app_workout',
+      'CREDENTIAL_WRITER_UNREVIEWED_TRIGGER_PATH',
+    );
+    await drift(
+      'ALTER TABLE public.board_sessions ENABLE ROW LEVEL SECURITY',
+      'ALTER TABLE public.board_sessions DISABLE ROW LEVEL SECURITY',
+      'CREDENTIAL_WRITER_UNREVIEWED_SHAPE_PATH',
+    );
+    await drift(
+      'ALTER TABLE public.logbook_session_changes ENABLE ROW LEVEL SECURITY',
+      'ALTER TABLE public.logbook_session_changes DISABLE ROW LEVEL SECURITY',
+      'CREDENTIAL_WRITER_UNREVIEWED_SHAPE_PATH',
+    );
+    await drift(
+      'ALTER TABLE public.logbook_session_changes ALTER COLUMN created_at SET DEFAULT clock_timestamp()',
+      'ALTER TABLE public.logbook_session_changes ALTER COLUMN created_at SET DEFAULT now()',
+      'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE',
+    );
+    await drift(
+      "ALTER TABLE public.logbook_session_changes ADD CONSTRAINT credential_session_check CHECK (current_setting('session_replication_role')='origin')",
+      'ALTER TABLE public.logbook_session_changes DROP CONSTRAINT credential_session_check',
+      'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE',
+    );
+    await drift(
+      'CREATE TRIGGER credential_session_sink_probe BEFORE INSERT ON public.logbook_session_changes FOR EACH ROW EXECUTE FUNCTION public.log_partner_session_from_workout()',
+      'DROP TRIGGER credential_session_sink_probe ON public.logbook_session_changes',
+      'CREDENTIAL_WRITER_UNREVIEWED_TRIGGER_PATH',
+    );
+    await drift(
+      "CREATE FUNCTION public.credential_session_index_probe(text) RETURNS text LANGUAGE sql IMMUTABLE AS 'SELECT $1'; CREATE INDEX credential_session_index_probe ON public.board_sessions(public.credential_session_index_probe(id))",
+      'DROP INDEX public.credential_session_index_probe; DROP FUNCTION public.credential_session_index_probe(text)',
+      'CREDENTIAL_WRITER_UNREVIEWED_EXPRESSION_PATH',
+    );
+    await drift(
+      'ALTER SEQUENCE public.logbook_changes_seq_seq CACHE 2',
+      'ALTER SEQUENCE public.logbook_changes_seq_seq CACHE 1',
+      'CREDENTIAL_WRITER_UNREVIEWED_SESSION_SYNC_SEQUENCE',
+    );
+    await drift(
+      'GRANT SELECT ON public.board_sessions TO boardsesh_identity_writer',
+      'REVOKE SELECT ON public.board_sessions FROM boardsesh_identity_writer',
+      'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
+    );
+    await drift(
+      'GRANT INSERT ON public.logbook_session_changes TO boardsesh_identity_writer',
+      'REVOKE INSERT ON public.logbook_session_changes FROM boardsesh_identity_writer',
+      'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
+    );
+    await drift(
+      'GRANT USAGE ON SEQUENCE public.logbook_changes_seq_seq TO boardsesh_identity_writer',
+      'REVOKE USAGE ON SEQUENCE public.logbook_changes_seq_seq FROM boardsesh_identity_writer',
+      'CREDENTIAL_WRITER_UNREVIEWED_SEQUENCE_PATH',
+    );
   });
 });

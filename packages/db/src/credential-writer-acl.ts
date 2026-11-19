@@ -6,6 +6,7 @@ import reviewedPartnerLifecycleShapes from './credential-writer-partner-lifecycl
 import reviewedProviderRelationShapes from './credential-writer-private-provider-v1';
 import reviewedFirstPasswordRelationShapes from './credential-writer-private-first-password-v1';
 import reviewedBrowserRenewalRelationShapes from './credential-writer-private-browser-renewal-v1';
+import reviewedSessionSyncRelationShapes from './credential-writer-partner-session-sync';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
 export type CredentialWriterContract =
@@ -222,9 +223,19 @@ export async function qualifyCredentialWriter(
   // provider profiles also follow the two lifecycle triggers into their sinks;
   // those tables belong to the closure without granting the LOGIN access.
   const lifecycleRelations = directPartnerRevocation ? reviewedPartnerLifecycleShapes.map(({ name }) => name) : [];
+  const sessionSyncRelations = directPartnerRevocation ? reviewedSessionSyncRelationShapes.map(({ name }) => name) : [];
+  // The revocation logger SELECTs sessions but cannot mutate them. Triggers on
+  // this read source are not executable paths of the credential writer.
+  const readOnlyClosureRelations = directPartnerRevocation ? ['board_sessions'] : [];
   const closureRelations = [
-    ...new Set([...Object.keys(capabilities), ...partnerRevocationRelations, ...lifecycleRelations]),
+    ...new Set([
+      ...Object.keys(capabilities),
+      ...partnerRevocationRelations,
+      ...lifecycleRelations,
+      ...sessionSyncRelations,
+    ]),
   ];
+  const triggerRelations = closureRelations.filter((name) => !readOnlyClosureRelations.includes(name));
   const deleteSources = [
     ...Object.entries(capabilities)
       .filter(([, privileges]) => privileges.includes('DELETE'))
@@ -247,6 +258,7 @@ export async function qualifyCredentialWriter(
         ...reviewedBrowserRelationShapes,
         ...reviewedProviderRelationShapes,
         ...reviewedPartnerLifecycleShapes,
+        ...reviewedSessionSyncRelationShapes,
         ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
         ...(browserRenewal ? reviewedBrowserRenewalRelationShapes : []),
       ].sort((left, right) => left.name.localeCompare(right.name))
@@ -423,13 +435,19 @@ export async function qualifyCredentialWriter(
     (SELECT count(*) FROM closure)<>${closureRelations.length}
       OR EXISTS (SELECT 1 FROM closure JOIN pg_class relation ON relation.oid=closure.oid JOIN pg_am method ON method.oid=relation.relam
         WHERE relation.relkind<>'r' OR relation.relrowsecurity OR relation.relforcerowsecurity OR relation.relispartition OR method.amname<>'heap'
-        OR (relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(lifecycleRelations)}::text::jsonb))
+        OR (relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify([...lifecycleRelations, ...sessionSyncRelations])}::text::jsonb))
           AND relation.relowner<>(SELECT relowner FROM pg_class WHERE oid='public.user_credentials'::regclass))
         OR EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid=relation.oid OR inhparent=relation.oid)
         OR EXISTS (SELECT 1 FROM pg_rewrite WHERE ev_class=relation.oid AND rulename<>'_RETURN')
         OR EXISTS (SELECT 1 FROM pg_attribute attribute JOIN pg_type type ON type.oid=attribute.atttypid
           WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped
-          AND (type.typnamespace<>'pg_catalog'::regnamespace OR type.typtype='d' OR attribute.attgenerated<>'' OR attribute.attidentity<>''))
+          AND ((type.typnamespace<>'pg_catalog'::regnamespace AND NOT (
+            ${directPartnerRevocation} AND relation.relname='board_sessions' AND attribute.attname='origin'
+            AND type.typnamespace='public'::regnamespace AND type.typname='session_origin' AND type.typtype='e'
+            AND type.typinput='pg_catalog.enum_in'::regproc AND type.typoutput='pg_catalog.enum_out'::regproc
+            AND type.typreceive='pg_catalog.enum_recv'::regproc AND type.typsend='pg_catalog.enum_send'::regproc
+            AND ARRAY(SELECT enumlabel::text FROM pg_enum WHERE enumtypid=type.oid ORDER BY enumsortorder)=ARRAY['explicit','inferred']::text[]
+          )) OR type.typtype='d' OR attribute.attgenerated<>'' OR attribute.attidentity<>''))
         OR EXISTS (SELECT 1 FROM pg_index index_row CROSS JOIN LATERAL unnest(index_row.indclass) class_oid JOIN pg_opclass class ON class.oid=class_oid
           WHERE index_row.indrelid=relation.oid AND class.opcnamespace<>'pg_catalog'::regnamespace)) AS shape,
     EXISTS (SELECT 1 FROM pg_depend dependency JOIN pg_proc routine ON routine.oid=dependency.refobjid
@@ -465,6 +483,25 @@ export async function qualifyCredentialWriter(
   if (JSON.stringify([...relationShapes]) !== JSON.stringify(reviewedRelationShapes))
     refuse('CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE');
 
+  const sessionSyncSequence = directPartnerRevocation
+    ? (
+        await client<{ reviewed: boolean }[]>`
+    SELECT sequence_relation.relkind='S' AND sequence_relation.relnamespace='public'::regnamespace
+      AND sequence_relation.relowner=(SELECT relowner FROM pg_class WHERE oid='public.user_credentials'::regclass)
+      AND sequence.seqtypid='pg_catalog.int8'::regtype AND sequence.seqstart=1 AND sequence.seqincrement=1
+      AND sequence.seqmin=1 AND sequence.seqmax=9223372036854775807 AND sequence.seqcache=1 AND NOT sequence.seqcycle
+      AND EXISTS (SELECT 1 FROM pg_depend dependency JOIN pg_attribute attribute
+        ON attribute.attrelid=dependency.refobjid AND attribute.attnum=dependency.refobjsubid
+        WHERE dependency.classid='pg_class'::regclass AND dependency.objid=sequence_relation.oid
+          AND dependency.refclassid='pg_class'::regclass AND dependency.deptype='a'
+          AND dependency.refobjid='public.logbook_changes'::regclass AND attribute.attname='seq') AS reviewed
+    FROM pg_class sequence_relation JOIN pg_sequence sequence ON sequence.seqrelid=sequence_relation.oid
+    WHERE sequence_relation.oid=to_regclass('public.logbook_changes_seq_seq')`
+      )[0]
+    : undefined;
+  if (directPartnerRevocation && !sessionSyncSequence?.reviewed)
+    refuse('CREDENTIAL_WRITER_UNREVIEWED_SESSION_SYNC_SEQUENCE');
+
   const routines = await client<
     {
       name: string;
@@ -473,16 +510,32 @@ export async function qualifyCredentialWriter(
       configuration: string[];
       language: string;
       ownerMatches: boolean;
+      triggerSignature: boolean;
     }[]
   >`
     SELECT routine.proname AS name, routine.prosrc AS source, routine.prosecdef AS definer, routine.proconfig AS configuration,
-      language.lanname AS language, routine.proowner=(SELECT relowner FROM pg_class WHERE oid='public.user_credentials'::regclass) AS "ownerMatches"
+      language.lanname AS language,
+      routine.prokind='f' AND routine.prorettype='pg_catalog.trigger'::regtype AND routine.pronargs=0
+        AND routine.pronargdefaults=0 AND routine.proargmodes IS NULL AND routine.provariadic=0
+        AND routine.provolatile='v' AND routine.proparallel='u' AND NOT routine.proleakproof AND routine.prosupport=0 AS "triggerSignature",
+      routine.proowner=(SELECT relowner FROM pg_class WHERE oid='public.user_credentials'::regclass) AS "ownerMatches"
     FROM pg_proc routine JOIN pg_language language ON language.oid=routine.prolang
     WHERE routine.pronamespace='public'::regnamespace AND routine.oid IN
       (to_regprocedure('public.partner_revoke_on_credential_change()'),to_regprocedure('public.partner_revoke_user(text)'),
+       CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.log_partner_session_from_workout()') END,
        CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.partner_account_deletion_events()') END,
        CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.partner_connection_lifecycle_events()') END) ORDER BY 1`;
   const expectedRoutines = [
+    ...(directPartnerRevocation
+      ? [
+          {
+            name: 'log_partner_session_from_workout',
+            sha256: 'e5a2558e755b2f57b671098c963aaac41e8e269c6d09fc296e8660612f9f2e0a',
+            definer: true,
+            configuration: ['search_path=public, pg_catalog'],
+          },
+        ]
+      : []),
     ...(directPartnerRevocation
       ? [
           {
@@ -521,6 +574,7 @@ export async function qualifyCredentialWriter(
         routine.name !== expected.name ||
         routine.language !== 'plpgsql' ||
         !routine.ownerMatches ||
+        (routine.name === 'log_partner_session_from_workout' && !routine.triggerSignature) ||
         routine.definer !== expected.definer ||
         JSON.stringify(routine.configuration) !== JSON.stringify(expected.configuration) ||
         createHash('sha256').update(routine.source).digest('hex') !== expected.sha256
@@ -531,7 +585,7 @@ export async function qualifyCredentialWriter(
   const triggers = await client<{ definition: string; enabled: string }[]>`
     SELECT pg_get_triggerdef(trigger.oid) AS definition, trigger.tgenabled AS enabled FROM pg_trigger trigger
     WHERE NOT trigger.tgisinternal AND trigger.tgrelid IN (SELECT relation.oid FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
-      WHERE namespace.nspname='public' AND relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(closureRelations)}::text::jsonb))) ORDER BY trigger.tgname`;
+      WHERE namespace.nspname='public' AND relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(triggerRelations)}::text::jsonb))) ORDER BY trigger.tgname`;
   const expectedTriggers = [
     ...(directPartnerRevocation
       ? [
@@ -543,6 +597,11 @@ export async function qualifyCredentialWriter(
           {
             definition:
               'CREATE TRIGGER trg_partner_connection_lifecycle_events AFTER UPDATE OF generation, revoked_at ON public.oauth_connections FOR EACH ROW EXECUTE FUNCTION partner_connection_lifecycle_events()',
+            enabled: 'O',
+          },
+          {
+            definition:
+              'CREATE TRIGGER trg_partner_session_app_workout AFTER INSERT OR DELETE OR UPDATE ON public.app_workouts FOR EACH ROW EXECUTE FUNCTION log_partner_session_from_workout()',
             enabled: 'O',
           },
         ]
@@ -568,7 +627,17 @@ export async function qualifyCredentialWriter(
     databaseOid: identity.databaseOid,
     serverVersion: identity.serverVersion,
     catalogSha256: createHash('sha256')
-      .update(JSON.stringify({ relations, paths, relationShapes, routines, triggers, directRoutineGrant }))
+      .update(
+        JSON.stringify({
+          relations,
+          paths,
+          relationShapes,
+          routines,
+          triggers,
+          directRoutineGrant,
+          sessionSyncSequence,
+        }),
+      )
       .digest('hex'),
   });
 }

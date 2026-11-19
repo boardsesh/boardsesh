@@ -1216,5 +1216,12 @@
     "resume": "Riprendi questo allenamento",
     "privacyLoading": "Verifica della privacy della sessione…",
     "budgetShortfall": "{{found}} dei {{planned}} blocchi previsti rientrano nei limiti della coda e dell’allenamento."
+  },
+  "partnerHistory": {
+    "title": "Apri la tua sessione",
+    "description": "Apri una sessione completata che hai registrato o a cui hai partecipato in Boardsesh.",
+    "unavailable": "Questa sessione non è disponibile per questo account. Accedi con l’account che l’ha registrata o vi ha partecipato.",
+    "loadError": "Non è stato possibile aprire questa sessione. Riprova.",
+    "retry": "Riprova"
   }
 }

@@ -8358,6 +8358,12 @@ export type Query = {
    */
   remixClimb?: Maybe<SprayRemixSeed>;
   /**
+   * Resolve a partner export reference to a read-only completed session detail
+   * for its authenticated creator or a durable participant. This is a
+   * first-party history link, never an invitation or a join operation.
+   */
+  resolvePartnerSessionHistory?: Maybe<Scalars['ID']['output']>;
+  /**
    * The people with a grant on a board or session the viewer owns. Without
    * userIds: pending requests first, then members, newest first, 100 from
    * offset; removed people are left out. With userIds (up to 100): those
@@ -9267,6 +9273,11 @@ export type QueryRecentBetaLinksArgs = {
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
   sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryResolvePartnerSessionHistoryArgs = {
+  exportId: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -15580,6 +15591,12 @@ export type MarkGroupNotificationsReadMutation = { __typename?: 'Mutation'; mark
 export type MarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never }>;
 
 export type MarkAllNotificationsReadMutation = { __typename?: 'Mutation'; markAllNotificationsRead: boolean };
+
+export type ResolvePartnerSessionHistoryQueryVariables = Exact<{
+  exportId: Scalars['ID']['input'];
+}>;
+
+export type ResolvePartnerSessionHistoryQuery = { __typename?: 'Query'; resolvePartnerSessionHistory?: string | null };
 
 export type SearchPlacesQueryVariables = Exact<{
   query: Scalars['String']['input'];
@@ -23136,6 +23153,39 @@ export const MarkAllNotificationsReadDocument = {
     },
   ],
 } as unknown as DocumentNode<MarkAllNotificationsReadMutation, MarkAllNotificationsReadMutationVariables>;
+export const ResolvePartnerSessionHistoryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ResolvePartnerSessionHistory' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'exportId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resolvePartnerSessionHistory' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'exportId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'exportId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResolvePartnerSessionHistoryQuery, ResolvePartnerSessionHistoryQueryVariables>;
 export const SearchPlacesDocument = {
   kind: 'Document',
   definitions: [

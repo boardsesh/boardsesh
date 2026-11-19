@@ -24,6 +24,10 @@ import {
   TickSchema,
   TickStatusSchema,
   UnknownLogbookChangeSchema,
+  PartnerSessionSchema,
+  SessionChangeSchema,
+  SessionDeletedChangeSchema,
+  SessionParamsSchema,
 } from './schemas';
 
 export const API_ORIGIN = 'https://api.boardsesh.com';
@@ -35,6 +39,8 @@ const OAUTH_SCHEME = 'boardseshOAuth';
 /** Scopes the routes in this document use. Workout scopes join in milestone 3. */
 export const PUBLIC_API_SCOPES = {
   'logbook:read': 'Every tick the climber has logged, on every board, including ones they keep private on Boardsesh.',
+  'sessions:read':
+    'Completed sessions, including private recaps and the climber’s full workouts supplied by Boardsesh or other apps. Used with logbook:read.',
   'profile:read': "The climber's display name and avatar.",
   'workouts:read': 'Read workouts your app created, including results.',
   'workouts:write': 'Create and cancel workouts for the climber.',
@@ -109,6 +115,9 @@ export function createPublicApiRegistry(): OpenAPIRegistry {
   registry.register('Tick', TickSchema);
   registry.register('TickChange', TickChangeSchema);
   registry.register('TickDeletedChange', TickDeletedChangeSchema);
+  registry.register('PartnerSession', PartnerSessionSchema);
+  registry.register('SessionChange', SessionChangeSchema);
+  registry.register('SessionDeletedChange', SessionDeletedChangeSchema);
   registry.register('UnknownLogbookChange', UnknownLogbookChangeSchema);
 
   registry.registerPath({
@@ -175,6 +184,25 @@ export function createPublicApiRegistry(): OpenAPIRegistry {
       401: UNAUTHORIZED,
       403: FORBIDDEN,
       404: errorResponse("`not_found`: the tick was deleted or is not this climber's."),
+      429: RATE_LIMITED,
+      '5XX': SERVER_ERROR,
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/v1/logbook/sessions/{id}',
+    operationId: 'getLogbookSession',
+    summary: 'Read a completed session and the climber’s workout',
+    description:
+      'Uses the opaque session export id. Requires both logbook:read and sessions:read. Active sessions, permanent gym sessions and sessions the climber neither created nor durably joined are not available.',
+    security: [{ [OAUTH_SCHEME]: ['logbook:read', 'sessions:read'] }],
+    request: { params: SessionParamsSchema },
+    responses: {
+      200: successResponse('The completed session and connected climber’s own workout.', PartnerSessionSchema),
+      401: UNAUTHORIZED,
+      403: errorResponse('Missing logbook:read or sessions:read.'),
+      404: errorResponse('Session not found or not eligible for this climber.'),
       429: RATE_LIMITED,
       '5XX': SERVER_ERROR,
     },

@@ -18,6 +18,7 @@ export type PublicApiRouteKind =
   | 'connection'
   | 'logbook-changes'
   | 'logbook-tick'
+  | 'logbook-session'
   | 'openapi'
   | 'workouts-create'
   | 'workouts-list'
@@ -35,6 +36,7 @@ export interface PublicApiRoute {
 export interface PublicApiRequestRoute extends PublicApiRoute {
   /** The raw path segment after `/v1/logbook/ticks/`. Validated by the route, which answers 404 for anything else. */
   tickId?: string;
+  sessionId?: string;
   workoutId?: string;
 }
 
@@ -76,6 +78,9 @@ export function matchPublicApiRoute(
   if (workoutMatch && (method === 'GET' || method === 'DELETE'))
     return { method, pathname, kind: method === 'GET' ? 'workout-get' : 'workout-cancel', workoutId: workoutMatch[1] };
   const tickId = method === TICK_ROUTE.method ? tickIdSegment(pathname) : undefined;
+  const sessionMatch = /^\/v1\/logbook\/sessions\/([^/]+)$/.exec(pathname);
+  if (sessionMatch && method === 'GET')
+    return { method, pathname, kind: 'logbook-session', sessionId: sessionMatch[1] };
   return tickId === undefined ? undefined : { ...TICK_ROUTE, tickId };
 }
 
@@ -93,6 +98,7 @@ export function matchPublicApiPreflight(
   if (fixed) return fixed;
   if (/^\/v1\/workouts\/wk_[A-Za-z0-9_-]{1,100}$/.test(pathname))
     return { method: 'GET', pathname, kind: 'workout-get' };
+  if (/^\/v1\/logbook\/sessions\/[^/]+$/.test(pathname)) return { method: 'GET', pathname, kind: 'logbook-session' };
   return tickIdSegment(pathname) === undefined ? undefined : TICK_ROUTE;
 }
 

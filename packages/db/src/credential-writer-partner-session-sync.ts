@@ -1,0 +1,72 @@
+// Reviewed canonical0330 shapes reachable from app_workouts revocation logging.
+// board_sessions is a read source; logbook_session_changes is an insert-only sink.
+export default [
+  {
+    name: 'board_sessions',
+    shape: {
+      columns: [
+        ['id', 'text', true, '', '', null],
+        ['board_path', 'text', false, '', '', null],
+        ['created_at', 'timestamp without time zone', true, '', '', 'now()'],
+        ['last_activity', 'timestamp without time zone', true, '', '', 'now()'],
+        ['latitude', 'double precision', false, '', '', null],
+        ['longitude', 'double precision', false, '', '', null],
+        ['discoverable', 'boolean', true, '', '', 'false'],
+        ['created_by_user_id', 'text', false, '', '', null],
+        ['name', 'text', false, '', '', null],
+        ['status', 'text', true, '', '', "'active'::text"],
+        ['board_id', 'bigint', false, '', '', null],
+        ['goal', 'text', false, '', '', null],
+        ['is_public', 'boolean', true, '', '', 'true'],
+        ['started_at', 'timestamp without time zone', false, '', '', null],
+        ['ended_at', 'timestamp without time zone', false, '', '', null],
+        ['is_permanent', 'boolean', true, '', '', 'false'],
+        ['color', 'text', false, '', '', null],
+        ['timezone', 'text', false, '', '', null],
+        ['notes', 'text', false, '', '', null],
+        ['origin', 'session_origin', true, '', '', "'explicit'::session_origin"],
+        ['anchor_tick_id', 'bigint', false, '', '', null],
+        ['user_edited', 'boolean', true, '', '', 'false'],
+        ['export_id', 'uuid', true, '', '', 'gen_random_uuid()'],
+      ],
+      indexes: [
+        "CREATE UNIQUE INDEX board_sessions_anchor_tick_idx ON public.board_sessions USING btree (anchor_tick_id) WHERE (origin = 'inferred'::session_origin)",
+        'CREATE INDEX board_sessions_discoverable_idx ON public.board_sessions USING btree (discoverable)',
+        'CREATE INDEX board_sessions_discovery_idx ON public.board_sessions USING btree (discoverable, status, last_activity)',
+        'CREATE UNIQUE INDEX board_sessions_export_id_unique ON public.board_sessions USING btree (export_id)',
+        'CREATE INDEX board_sessions_last_activity_idx ON public.board_sessions USING btree (last_activity)',
+        'CREATE INDEX board_sessions_location_idx ON public.board_sessions USING btree (latitude, longitude)',
+        'CREATE UNIQUE INDEX board_sessions_pkey ON public.board_sessions USING btree (id)',
+        'CREATE INDEX board_sessions_status_idx ON public.board_sessions USING btree (status)',
+        'CREATE INDEX board_sessions_user_idx ON public.board_sessions USING btree (created_by_user_id)',
+        'CREATE INDEX board_sessions_user_origin_idx ON public.board_sessions USING btree (created_by_user_id, origin)',
+      ],
+      constraints: [
+        'FOREIGN KEY (board_id) REFERENCES user_boards(id) ON DELETE SET NULL',
+        'FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL',
+        "CHECK (((origin <> 'explicit'::session_origin) OR (board_path IS NOT NULL)))",
+        'UNIQUE (export_id)',
+        'PRIMARY KEY (id)',
+      ],
+    },
+  },
+  {
+    name: 'logbook_session_changes',
+    shape: {
+      columns: [
+        ['seq', 'bigint', true, '', '', "nextval('logbook_changes_seq_seq'::regclass)"],
+        ['txid', 'xid8', true, '', '', 'pg_current_xact_id()'],
+        ['user_id', 'text', true, '', '', null],
+        ['session_export_id', 'uuid', true, '', '', null],
+        ['created_at', 'timestamp without time zone', true, '', '', 'now()'],
+        ['remove_if_missing', 'boolean', true, '', '', 'false'],
+      ],
+      indexes: [
+        'CREATE INDEX logbook_session_changes_global_position_idx ON public.logbook_session_changes USING btree (txid, seq)',
+        'CREATE UNIQUE INDEX logbook_session_changes_pkey ON public.logbook_session_changes USING btree (seq)',
+        'CREATE INDEX logbook_session_changes_user_position_idx ON public.logbook_session_changes USING btree (user_id, txid, seq)',
+      ],
+      constraints: ['PRIMARY KEY (seq)'],
+    },
+  },
+];

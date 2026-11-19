@@ -65,6 +65,7 @@ export const SYNC_SAMPLE = `curl "${API_HOST}/v1/logbook/changes?limit=100" \\
 
 export const SCOPES = [
   { scope: 'logbook:read', key: 'logbook' },
+  { scope: 'sessions:read', key: 'sessions' },
   { scope: 'profile:read', key: 'profile' },
   { scope: 'offline_access', key: 'offline' },
 ] as const;

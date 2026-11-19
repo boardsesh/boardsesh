@@ -10,6 +10,7 @@
  */
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { WorkoutBlockSchema } from './workout-blocks';
 
 extendZodWithOpenApi(z);
 
@@ -163,6 +164,10 @@ export const TickSchema = z
       example: 'Finally stuck the cross-through',
     }),
     climb: TickClimbSchema,
+    sessionId: z.uuid().nullable().optional().openapi({
+      description:
+        'Opaque completed session export id. Null without sessions:read, or when the session is ineligible. Never an invite id.',
+    }),
     createdAt: utcTimestamp('When Boardsesh first stored this tick, UTC.', TICK_EXAMPLE.createdAt),
     updatedAt: utcTimestamp('When Boardsesh last changed this tick, UTC.', TICK_EXAMPLE.updatedAt),
   })
@@ -172,6 +177,173 @@ export const TickSchema = z
     example: TICK_EXAMPLE,
   });
 export type Tick = z.infer<typeof TickSchema>;
+
+/** Completed sessions are separate entities; only the connected climber's workout is included. */
+const SESSION_PACING_EXAMPLE = { mode: 'afterTick', restSeconds: 45 };
+const SESSION_CLIMB_EXAMPLE = {
+  index: 0,
+  climbId: '3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b',
+  name: 'Slopey Business',
+  boardType: 'kilter',
+  grade: GRADE_EXAMPLE,
+  angle: 40,
+  mirrored: false,
+  reps: ['send'],
+  tickIds: [TICK_EXAMPLE.id],
+  skipped: false,
+};
+const SESSION_STAGE_EXAMPLE = {
+  index: 0,
+  kind: 'volume',
+  isCoolDown: false,
+  targetGrade: GRADE_EXAMPLE,
+  pacing: SESSION_PACING_EXAMPLE,
+  climbs: [SESSION_CLIMB_EXAMPLE],
+  tally: { sent: 1, attempts: 0, skipped: 0, climbs: 1 },
+};
+const SESSION_WORKOUT_EXAMPLE = {
+  source: 'boardsesh',
+  title: null,
+  notes: null,
+  plannedBlocks: [],
+  stages: [SESSION_STAGE_EXAMPLE],
+  offPlanTickIds: [],
+};
+const SESSION_EXAMPLE = {
+  id: '44a9e71a-2575-4cbb-8d1b-31b078242bcb',
+  title: 'Evening volume',
+  notes: 'Kept my feet quiet',
+  goal: null,
+  origin: 'explicit',
+  startedAt: '2025-04-03T18:00:00Z',
+  endedAt: '2025-04-03T19:00:00Z',
+  durationSeconds: 3600,
+  timezone: 'Europe/Amsterdam',
+  board: { type: 'kilter', name: null, layout: 'Kilter Board Original', size: null, angle: 40 },
+  url: 'https://www.boardsesh.com/history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb',
+  appUrl: 'com.boardsesh.app://history/session/44a9e71a-2575-4cbb-8d1b-31b078242bcb',
+  workout: SESSION_WORKOUT_EXAMPLE,
+};
+export const SessionWorkoutPacingSchema = z
+  .strictObject({
+    mode: extensibleEnum(['onTheMinute', 'afterTick'] as const, {
+      description: 'Pacing mode; new modes may be added.',
+      example: 'afterTick',
+    }),
+    restSeconds: z.number().int().nonnegative(),
+    advanceOn: z.string().optional(),
+    repsPerSet: z.number().int().positive().optional(),
+    restBetweenSetsSeconds: z.number().int().nonnegative().optional(),
+  })
+  .openapi('SessionWorkoutPacing', { additionalProperties: true, example: SESSION_PACING_EXAMPLE });
+
+export const SessionWorkoutClimbSchema = z
+  .strictObject({
+    index: z.number().int().nonnegative(),
+    climbId: z.string().min(1),
+    name: z.string().nullable(),
+    boardType: BoardTypeSchema.nullable(),
+    grade: GradeSchema.nullable(),
+    angle: z.number().int(),
+    mirrored: z.boolean(),
+    reps: z.array(TickStatusSchema),
+    tickIds: z.array(z.string().min(1)),
+    skipped: z.boolean(),
+  })
+  .openapi('SessionWorkoutClimb', { additionalProperties: true, example: SESSION_CLIMB_EXAMPLE });
+
+export const SessionWorkoutStageSchema = z
+  .strictObject({
+    index: z.number().int().nonnegative(),
+    kind: z.string().min(1),
+    isCoolDown: z.boolean(),
+    targetGrade: GradeSchema.nullable(),
+    pacing: SessionWorkoutPacingSchema.nullable(),
+    climbs: z.array(SessionWorkoutClimbSchema),
+    tally: z
+      .strictObject({
+        sent: z.number().int().nonnegative(),
+        attempts: z.number().int().nonnegative(),
+        skipped: z.number().int().nonnegative(),
+        climbs: z.number().int().nonnegative(),
+      })
+      .openapi({ additionalProperties: true }),
+  })
+  .openapi('SessionWorkoutStage', { additionalProperties: true, example: SESSION_STAGE_EXAMPLE });
+
+export const SessionWorkoutSchema = z
+  .strictObject({
+    source: extensibleEnum(['boardsesh', 'partner'] as const, {
+      description: 'Where this workout came from; new sources may be added.',
+      example: 'boardsesh',
+    }),
+    title: z.string().nullable(),
+    notes: z.string().nullable(),
+    plannedBlocks: z.array(WorkoutBlockSchema),
+    stages: z.array(SessionWorkoutStageSchema),
+    offPlanTickIds: z.array(z.string().min(1)),
+  })
+  .openapi('SessionWorkout', {
+    additionalProperties: true,
+    description:
+      'The connected climber’s full stored workout and own results, including plans supplied by other apps. Internal plan, queue and integration identifiers are not exported.',
+    example: SESSION_WORKOUT_EXAMPLE,
+  });
+export type SessionWorkout = z.infer<typeof SessionWorkoutSchema>;
+
+export const PartnerSessionSchema = z
+  .strictObject({
+    id: z.uuid().openapi({ description: 'Stable opaque export id. This cannot join a live session.' }),
+    title: z.string().nullable(),
+    notes: z.string().nullable(),
+    goal: z.string().nullable(),
+    origin: extensibleEnum(['explicit', 'inferred'] as const, {
+      description: 'Whether the session was started or reconstructed from ticks. New origins may be added.',
+      example: 'explicit',
+    }),
+    startedAt: z.iso.datetime().nullable(),
+    endedAt: z.iso.datetime().nullable(),
+    durationSeconds: z.number().int().nonnegative().nullable().openapi({
+      description:
+        'Seconds between valid stored start and end bounds; null when either is missing or reversed. Never estimated from ticks.',
+    }),
+    timezone: z.string().nullable(),
+    board: z
+      .strictObject({
+        type: BoardTypeSchema.nullable(),
+        name: z.string().nullable(),
+        layout: z.string().nullable(),
+        size: z.string().nullable(),
+        angle: z.number().nullable(),
+      })
+      .openapi({ additionalProperties: true }),
+    url: z.url(),
+    appUrl: z.string(),
+    workout: SessionWorkoutSchema.nullable(),
+  })
+  .openapi('PartnerSession', {
+    additionalProperties: true,
+    description:
+      'A completed non-permanent session the climber created or durably joined. Another creator’s title, recap, goal, timezone and private board label are null. Only the connected climber’s workout is included.',
+    example: SESSION_EXAMPLE,
+  });
+export type PartnerSession = z.infer<typeof PartnerSessionSchema>;
+
+export const SessionChangeSchema = z
+  .strictObject({ type: z.literal('session'), session: PartnerSessionSchema })
+  .openapi('SessionChange', {
+    additionalProperties: true,
+    description: 'Upsert this session by id.',
+    example: { type: 'session', session: SESSION_EXAMPLE },
+  });
+export const SessionDeletedChangeSchema = z
+  .strictObject({ type: z.literal('session.deleted'), id: z.uuid() })
+  .openapi('SessionDeletedChange', {
+    additionalProperties: true,
+    description: 'Remove this session. It is deleted or no longer eligible for this climber.',
+    example: { type: 'session.deleted', id: SESSION_EXAMPLE.id },
+  });
+export const SessionParamsSchema = z.object({ id: z.string().min(1) });
 
 export const TickChangeSchema = z
   .strictObject({
@@ -204,19 +376,26 @@ export const TickDeletedChangeSchema = z
  * One feed entry, as a response validator. Rejects a `type` outside today's set,
  * like {@link extensibleEnum}. The published document adds an open branch.
  */
-export const LogbookChangeSchema = z.discriminatedUnion('type', [TickChangeSchema, TickDeletedChangeSchema]);
+export const LogbookChangeSchema = z.discriminatedUnion('type', [
+  TickChangeSchema,
+  TickDeletedChangeSchema,
+  SessionChangeSchema,
+  SessionDeletedChangeSchema,
+]);
 export type LogbookChange = z.infer<typeof LogbookChangeSchema>;
 
 /** Stops z.discriminatedUnion emitting a closed `oneOf` with a discriminator into the published document. */
 const PublishedLogbookChangeSchema = z
   .custom<LogbookChange>((candidate) => LogbookChangeSchema.safeParse(candidate).success, {
-    error: 'Expected a tick or tick.deleted change',
+    error: 'Expected a tick, tick.deleted, session or session.deleted change',
   })
   .openapi({
     type: 'object',
     anyOf: [
       { $ref: '#/components/schemas/TickChange' },
       { $ref: '#/components/schemas/TickDeletedChange' },
+      { $ref: '#/components/schemas/SessionChange' },
+      { $ref: '#/components/schemas/SessionDeletedChange' },
       { $ref: '#/components/schemas/UnknownLogbookChange' },
     ],
     description: 'One feed entry. Apply entries in order and ignore types you do not know.',

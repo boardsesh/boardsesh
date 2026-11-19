@@ -21,6 +21,7 @@ import {
 } from '../../services/logbook-snapshot';
 import { serializeLogbookTick, type LogbookClimbMetadata } from '../../services/logbook-tick-serializer';
 import { logger } from '../../utils/logger';
+import { PartnerSessionReadTooLarge, PARTNER_SESSION_TOO_LARGE_MESSAGE } from '../../services/public-api/sessions';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { chargePartnerLimit, peekPartnerLimit } from '../partner-rate-limits';
 import { TEST_EXPIRED_CURSOR, decodeLogbookCursor, encodeLogbookCursor, type LogbookCursor } from './logbook-cursor';
@@ -112,10 +113,15 @@ function hasLogbookScope(principal: PartnerApiPrincipal): boolean {
  * Serializes a page's entries with the metadata read in the same transaction.
  */
 function presentEntries(entries: readonly LogbookFeedEntry[], metadata: LogbookClimbMetadata | null): LogbookChange[] {
-  return entries.map((entry): LogbookChange => {
-    if (entry.type === 'tick.deleted') return { type: 'tick.deleted', id: entry.id };
+  return entries.flatMap((entry): LogbookChange[] => {
+    if (entry.type === 'tick.deleted') return [{ type: 'tick.deleted', id: entry.id }];
+    if (entry.type === 'session') {
+      const session = metadata?.sessions?.get(entry.id);
+      if (session) return [{ type: 'session', session }];
+      return entry.removeIfMissing === false ? [] : [{ type: 'session.deleted', id: entry.id }];
+    }
     if (!metadata) throw new Error('A logbook page served ticks without reading their metadata.');
-    return { type: 'tick', tick: serializeLogbookTick(entry.tick, metadata) };
+    return [{ type: 'tick', tick: serializeLogbookTick(entry.tick, metadata) }];
   });
 }
 
@@ -154,6 +160,12 @@ export async function serveLogbookTick(context: LogbookRouteContext, tickId: str
     return { status: 200, body: serializeLogbookTick(tick, metadata) };
   } catch (error) {
     if (logbook.isConnectionEnded(error)) return connectionEnded(requestId);
+    if (error instanceof PartnerSessionReadTooLarge)
+      return unavailable(requestId, {
+        retryAfterSeconds: 60,
+        message: PARTNER_SESSION_TOO_LARGE_MESSAGE,
+        refusal: 'session_too_large',
+      });
     if (ranOutOfTime(error)) return unavailable(requestId);
     throw error;
   }
@@ -187,6 +199,9 @@ export async function serveLogbookChanges(context: LogbookRouteContext, requestT
   }
   if (decoded.status === 'expired') return cursorExpired(requestId, 'retired_secret');
   const { cursor } = decoded;
+  if ((cursor.includesSessions ?? false) !== principal.scopes.includes('sessions:read')) {
+    return cursorExpired(requestId, 'scope_projection_changed');
+  }
   // A cursor from another app's connection, or from before a reconnect.
   if (
     cursor.connectionId !== principal.connectionId ||
@@ -217,6 +232,7 @@ async function serveFeedPage(
       cursor: { generation: cursor.feedGeneration, txid: cursor.txid, seq: cursor.seq },
       limit,
       withinRead: collected.reader,
+      includesSessions: principal.scopes.includes('sessions:read'),
     });
     if (feedPage.status === 'expired') return cursorExpired(requestId, feedPage.reason);
     const next = encodeLogbookCursor(
@@ -224,6 +240,7 @@ async function serveFeedPage(
         kind: 'changes',
         connectionId: principal.connectionId,
         connectionGeneration: principal.connectionGeneration,
+        ...(principal.scopes.includes('sessions:read') ? { includesSessions: true } : {}),
         feedGeneration: feedPage.generation,
         txid: feedPage.next.txid,
         seq: feedPage.next.seq,
@@ -233,6 +250,12 @@ async function serveFeedPage(
     return page(presentEntries(feedPage.entries, collected.metadata()), next, feedPage.hasMore);
   } catch (error) {
     if (logbook.isConnectionEnded(error)) return connectionEnded(requestId);
+    if (error instanceof PartnerSessionReadTooLarge)
+      return unavailable(requestId, {
+        retryAfterSeconds: 60,
+        message: PARTNER_SESSION_TOO_LARGE_MESSAGE,
+        refusal: 'session_too_large',
+      });
     // Nothing was read: the same cursor again.
     if (ranOutOfTime(error)) return page([], rawCursor, true);
     throw error;
@@ -253,6 +276,7 @@ async function serveSnapshot(context: LogbookRouteContext, request: SnapshotRequ
     userId: principal.userId,
     connectionId: principal.connectionId,
     connectionGeneration: principal.connectionGeneration,
+    includesSessions: principal.scopes.includes('sessions:read'),
   };
   const snapshotCursor = (cursor: LogbookSnapshotCursor) =>
     encodeLogbookCursor(
@@ -260,6 +284,7 @@ async function serveSnapshot(context: LogbookRouteContext, request: SnapshotRequ
         kind: 'snapshot',
         connectionId: principal.connectionId,
         connectionGeneration: principal.connectionGeneration,
+        ...(principal.scopes.includes('sessions:read') ? { includesSessions: true } : {}),
         snapshotId: cursor.snapshotId,
         position: cursor.position,
       },
@@ -317,6 +342,7 @@ async function serveSnapshot(context: LogbookRouteContext, request: SnapshotRequ
               kind: 'changes',
               connectionId: principal.connectionId,
               connectionGeneration: principal.connectionGeneration,
+              ...(principal.scopes.includes('sessions:read') ? { includesSessions: true } : {}),
               feedGeneration: snapshotPage.next.cursor.generation,
               txid: snapshotPage.next.cursor.txid,
               seq: snapshotPage.next.cursor.seq,
@@ -326,6 +352,12 @@ async function serveSnapshot(context: LogbookRouteContext, request: SnapshotRequ
     return page(presentEntries(snapshotPage.entries, collected.metadata()), next, true);
   } catch (error) {
     if (logbook.isConnectionEnded(error)) return connectionEnded(requestId);
+    if (error instanceof PartnerSessionReadTooLarge)
+      return unavailable(requestId, {
+        retryAfterSeconds: 60,
+        message: PARTNER_SESSION_TOO_LARGE_MESSAGE,
+        refusal: 'session_too_large',
+      });
     if (ranOutOfTime(error)) return page([], snapshotCursor(cursor), true);
     throw error;
   }

@@ -1,5 +1,8 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { oauthConnections } from '@boardsesh/db/schema/auth';
+import type { PartnerSession } from '@boardsesh/public-api';
+import { readPartnerSessions } from '../../services/public-api/sessions';
+import { boundLogbookReadTransaction } from '../../services/logbook-feed';
 import type { Database } from '../../db/client';
 import type { FeedTransaction, LogbookFeedTick, LogbookPageReader } from '../../services/logbook-feed';
 import { readLogbookClimbMetadata, type LogbookClimbMetadata } from '../../services/logbook-tick-serializer';
@@ -124,7 +127,7 @@ export function logbookPageReader(
   principal: PartnerApiPrincipal,
   onMetadata: (metadata: LogbookClimbMetadata) => void,
 ): LogbookPageReader {
-  return async (transaction: FeedTransaction, ticks: LogbookFeedTick[]) => {
+  return async (transaction: FeedTransaction, ticks: LogbookFeedTick[], sessionIds?: readonly string[]) => {
     const [current] = await transaction
       .select({ id: oauthConnections.id })
       .from(oauthConnections)
@@ -138,7 +141,12 @@ export function logbookPageReader(
         ),
       );
     if (!current) throw new PartnerConnectionEnded();
-    onMetadata(await readLogbookClimbMetadata(transaction, principal.userId, ticks));
+    onMetadata(
+      await readLogbookClimbMetadata(transaction, principal.userId, ticks, {
+        includeSessions: principal.scopes.includes('sessions:read'),
+        sessionIds,
+      }),
+    );
   };
 }
 
@@ -155,6 +163,7 @@ export interface PartnerLogbookAccess extends PartnerLogbookDatabases {
   cursorSecrets: readonly PartnerSecret[];
   /** {@link logbookPageReader}, for the routes outside this folder. */
   pageReader(principal: PartnerApiPrincipal, onMetadata: (metadata: LogbookClimbMetadata) => void): LogbookPageReader;
+  readSession(principal: PartnerApiPrincipal, exportId: string): Promise<PartnerSession | null>;
   isConnectionEnded(error: unknown): boolean;
 }
 
@@ -168,6 +177,15 @@ export function createPartnerLogbookAccess(
     snapshotAdmission: createLogbookSnapshotAdmission(admissionLimits),
     cursorSecrets,
     pageReader: logbookPageReader,
+    readSession: (principal, exportId) =>
+      databases.feed.transaction(
+        async (transaction) => {
+          await boundLogbookReadTransaction(transaction);
+          await logbookPageReader(principal, () => {})(transaction, []);
+          return (await readPartnerSessions(transaction, principal.userId, [exportId])).get(exportId) ?? null;
+        },
+        { isolationLevel: 'repeatable read', accessMode: 'read only' },
+      ),
     isConnectionEnded: (error) => error instanceof PartnerConnectionEnded,
   };
 }

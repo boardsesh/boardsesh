@@ -6,6 +6,7 @@ import {
   boardseshTicks,
   logbookChangeWatermark,
   logbookChanges,
+  logbookSessionChanges,
 } from '@boardsesh/db/schema';
 import type { Database } from '../db/client';
 
@@ -47,7 +48,10 @@ export type LogbookFeedTick = {
   updatedAt: string;
 };
 
-export type LogbookFeedEntry = { type: 'tick'; tick: LogbookFeedTick } | { type: 'tick.deleted'; id: string };
+export type LogbookFeedEntry =
+  | { type: 'tick'; tick: LogbookFeedTick }
+  | { type: 'tick.deleted'; id: string }
+  | { type: 'session'; id: string; removeIfMissing?: boolean };
 
 export type LogbookFeedExpiredReason = 'generation_mismatch' | 'below_watermark';
 
@@ -85,7 +89,11 @@ export type FeedTransaction = Parameters<Parameters<Database['transaction']>[0]>
  * rules as they stand at delivery, in the same snapshot as the ticks. Throwing
  * from it fails the page.
  */
-export type LogbookPageReader = (transaction: FeedTransaction, ticks: LogbookFeedTick[]) => Promise<void>;
+export type LogbookPageReader = (
+  transaction: FeedTransaction,
+  ticks: LogbookFeedTick[],
+  sessionIds?: readonly string[],
+) => Promise<void>;
 
 const STATEMENT_TIMEOUT = '5000ms';
 const LOCK_TIMEOUT = '2000ms';
@@ -216,7 +224,14 @@ export async function readLogbookFeedPage(
     cursor,
     limit,
     withinRead,
-  }: { userId: string; cursor: LogbookFeedCursor; limit: number; withinRead?: LogbookPageReader },
+    includesSessions = false,
+  }: {
+    userId: string;
+    cursor: LogbookFeedCursor;
+    limit: number;
+    withinRead?: LogbookPageReader;
+    includesSessions?: boolean;
+  },
 ): Promise<LogbookFeedPage> {
   if (!Number.isInteger(limit) || limit < LOGBOOK_FEED_MIN_PAGE_SIZE || limit > LOGBOOK_FEED_MAX_PAGE_SIZE) {
     throw new RangeError(`Logbook feed limit must be ${LOGBOOK_FEED_MIN_PAGE_SIZE}-${LOGBOOK_FEED_MAX_PAGE_SIZE}`);
@@ -235,11 +250,13 @@ export async function readLogbookFeedPage(
         return { status: 'expired', reason: 'below_watermark' };
       }
 
-      const changes = await transaction
+      const tickChanges = transaction
         .select({
-          txid: sql<string>`${logbookChanges.txid}::text`,
-          seq: sql<string>`${logbookChanges.seq}::text`,
-          tickUuid: logbookChanges.tickUuid,
+          txid: sql<string>`${logbookChanges.txid}`.as('txid'),
+          seq: sql<string>`${logbookChanges.seq}`.as('seq'),
+          entityId: sql<string>`${logbookChanges.tickUuid}`.as('entity_id'),
+          entityType: sql<'tick' | 'session'>`'tick'::text`.as('entity_type'),
+          removeIfMissing: sql<boolean>`false`.as('remove_if_missing'),
         })
         .from(logbookChanges)
         .where(
@@ -248,24 +265,68 @@ export async function readLogbookFeedPage(
             sql`(${logbookChanges.txid}, ${logbookChanges.seq}) > (${cursor.txid}::xid8, ${cursor.seq}::bigint)`,
             sql`${logbookChanges.txid} < ${state.horizon}::xid8`,
           ),
-        )
-        .orderBy(asc(logbookChanges.txid), asc(logbookChanges.seq))
-        .limit(limit);
+        );
+      const sessionChanges = transaction
+        .select({
+          txid: sql<string>`${logbookSessionChanges.txid}`.as('txid'),
+          seq: sql<string>`${logbookSessionChanges.seq}`.as('seq'),
+          entityId: sql<string>`${logbookSessionChanges.sessionExportId}::text`.as('entity_id'),
+          entityType: sql<'tick' | 'session'>`'session'::text`.as('entity_type'),
+          removeIfMissing: logbookSessionChanges.removeIfMissing,
+        })
+        .from(logbookSessionChanges)
+        .where(
+          and(
+            eq(logbookSessionChanges.userId, userId),
+            sql`(${logbookSessionChanges.txid}, ${logbookSessionChanges.seq}) > (${cursor.txid}::xid8, ${cursor.seq}::bigint)`,
+            sql`${logbookSessionChanges.txid} < ${state.horizon}::xid8`,
+          ),
+        );
+      const changes = includesSessions
+        ? await transaction.execute<{
+            txid: string;
+            seq: string;
+            entityId: string;
+            entityType: 'tick' | 'session';
+            removeIfMissing: boolean;
+          }>(
+            sql`SELECT txid::text, seq::text, entity_id AS "entityId", entity_type AS "entityType", remove_if_missing AS "removeIfMissing"
+              FROM (${tickChanges} UNION ALL ${sessionChanges}) changes
+              ORDER BY changes.txid, changes.seq LIMIT ${limit}`,
+          )
+        : await tickChanges.orderBy(asc(logbookChanges.txid), asc(logbookChanges.seq)).limit(limit);
 
-      // Delete-then-add keeps each uuid at its last position in iteration order.
-      const tickUuidsByLastPosition = new Set<string>();
+      // A session may be referenced before its upsert on another page; both are idempotent.
+      const entitiesByLastPosition = new Map<
+        string,
+        { entityId: string; entityType: 'tick' | 'session'; removeIfMissing: boolean }
+      >();
       for (const change of changes) {
-        tickUuidsByLastPosition.delete(change.tickUuid);
-        tickUuidsByLastPosition.add(change.tickUuid);
+        const key = `${change.entityType}:${change.entityId}`;
+        const previous = entitiesByLastPosition.get(key);
+        entitiesByLastPosition.delete(key);
+        entitiesByLastPosition.set(key, {
+          ...change,
+          removeIfMissing: change.removeIfMissing || previous?.removeIfMissing === true,
+        });
       }
-      const orderedTickUuids = [...tickUuidsByLastPosition];
-      const visibleTicks = await loadVisibleTicks(transaction, userId, orderedTickUuids);
-
-      const entries = orderedTickUuids.map((tickUuid): LogbookFeedEntry => {
-        const tick = visibleTicks.get(tickUuid);
-        return tick ? { type: 'tick', tick } : { type: 'tick.deleted', id: tickUuid };
+      const orderedEntities = [...entitiesByLastPosition.values()];
+      const visibleTicks = await loadVisibleTicks(
+        transaction,
+        userId,
+        orderedEntities.filter((entity) => entity.entityType === 'tick').map((entity) => entity.entityId),
+      );
+      const entries = orderedEntities.map((entity): LogbookFeedEntry => {
+        if (entity.entityType === 'session')
+          return {
+            type: 'session',
+            id: entity.entityId,
+            ...(entity.removeIfMissing ? {} : { removeIfMissing: false }),
+          };
+        const tick = visibleTicks.get(entity.entityId);
+        return tick ? { type: 'tick', tick } : { type: 'tick.deleted', id: entity.entityId };
       });
-      await withinRead?.(transaction, ticksOf(entries));
+      await withinRead?.(transaction, ticksOf(entries), sessionsOf(entries));
 
       const hasMore = changes.length === limit;
       // A full page resumes after its last row. A short one has read everything
@@ -279,6 +340,11 @@ export async function readLogbookFeedPage(
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
+}
+
+/** Session identities are rechecked and serialized in the page's own transaction. */
+export function sessionsOf(entries: readonly LogbookFeedEntry[]): string[] {
+  return entries.flatMap((entry) => (entry.type === 'session' ? [entry.id] : []));
 }
 
 /** The ticks a page serves, in entry order. */

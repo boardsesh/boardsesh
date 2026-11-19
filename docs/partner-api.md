@@ -5,7 +5,7 @@ Boardsesh data: a training planner, a logbook, a coaching tool, a script you
 wrote for yourself. Register an app, send the climber through a standard
 OAuth consent screen, and then:
 
-- read their logbook (every tick on every board) and keep a copy in sync, and
+- read their logbook and completed sessions, and keep a copy in sync, and
 - hand them a planned board session and read back what they climbed.
 
 There is no application process and no commercial agreement. Every app gets
@@ -154,6 +154,7 @@ resource, alone or beside this one, and the refresh is refused with
 | Scope | Grants | Milestone |
 | --- | --- | --- |
 | `logbook:read` | Every tick the climber has logged, on every board, including ones they keep private on Boardsesh | 1 |
+| `sessions:read` | With `logbook:read`, completed sessions and their private recap, recorded duration and the climber's full completed workouts, including workouts supplied by other apps | Session sync |
 | `profile:read` | The climber's display name and avatar | 1 |
 | `workouts:write` | Create and cancel workouts for the climber | 3 |
 | `workouts:read` | Read workouts your app created, including results | 3 |
@@ -556,6 +557,7 @@ climber's.
   "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
   "benchmark": false,
   "comment": "Finally stuck the cross-through",
+  "sessionId": null,
   "climb": {
     "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
     "name": "Slopey Business",
@@ -580,6 +582,7 @@ climber's.
 | `grade` | The grade the climber gave it, or `null` if they did not give one |
 | `benchmark` | The climb is a benchmark on its board |
 | `comment` | The climber's note, or `null` when they left none |
+| `sessionId` | Opaque completed-session export id with `logbook:read sessions:read`, or `null`; never an invite id |
 | `climb.id` | Stable climb id. If Boardsesh merges duplicate climbs, a tick's `climb.id` changes to the surviving one, and the tick comes through the feed again with the new id |
 | `climb.name` | Climb name. `null` for a climb on someone else's spray wall that is not public: the wall's owner shared it with the climber, not with apps |
 | `climb.board.type` | `kilter`, `tension`, `moonboard`, `decoy`, `touchstone`, `grasshopper`, `soill`, `woods`, `spray` (a climber's own spray wall). New values may be added |
@@ -598,9 +601,88 @@ other climb. The climber's logbook is theirs to share. The one exception is a
 climb on someone else's spray wall that is not public, described under
 `climb.name` above.
 
+`sessionId` is the session's opaque export id when the token has both
+`logbook:read` and `sessions:read` and the session is eligible; otherwise it is
+`null`. It is not a session invite id. A tick may arrive before its session
+record on another page: keep the reference until that record arrives.
+
 The API does not include hold positions, other climbers' ticks or full board
 catalogs. If you need a catalog, the public nightly snapshots are documented
 at [board-snapshots-dataset.md](./board-snapshots-dataset.md).
+
+### Completed sessions
+
+Request `logbook:read sessions:read offline_access` to import session records
+alongside ticks through the same `GET /v1/logbook/changes` snapshot and cursor.
+The additional permission covers private recaps and the climber's completed
+workout details, including plans and coach notes supplied by other apps. It
+does not grant another climber's activity or access to another app's credentials.
+`workouts:read` continues to control the existing app-owned workout endpoints.
+
+The stream adds two change types:
+
+- `session`: upsert `session` by its opaque `id`.
+- `session.deleted`: remove the session with this `id`. It was deleted or no
+  longer belongs in this climber's export.
+
+Use `GET /v1/logbook/sessions/{id}` to read one current session. It requires
+both read scopes and returns `404 not_found` for an unknown or ineligible
+session. Session ids and the supplied links never grant permission to join.
+
+Only completed, non-permanent sessions are exported: sessions the climber
+created, including inferred sessions, or joined as a recorded participant.
+Logging a tick against a session id does not by itself establish participation.
+Active sessions and permanent gym sessions are excluded. A completed session
+the climber owns can be exported even when it contains no ticks.
+
+Each session includes its title, recap notes, recorded start and end,
+`durationSeconds`, timezone, origin, safe history links and the climber's own
+stored workout details. Duration is whole seconds between valid recorded
+bounds; missing or reversed bounds produce `null`. No duration is guessed
+from ticks. Inferred sessions are identified as inferred and use their stored
+bounds. Old sessions without a stored plan or timestamps cannot have those
+details reconstructed by this API.
+
+Workout details include the stored plan, exercises, pacing, per-block results
+and tick attribution. Results use only this climber's exportable ticks.
+Completed workouts supplied by another partner are included, without that
+partner's private integration identifiers. Planned-climb metadata follows the
+same privacy redaction as tick metadata; hold positions and beta videos stay
+out of the export. In shared sessions, another creator's title, goal, recap,
+timezone and private board label are withheld.
+
+Recap edits and clears, session completion, workout changes, tick edits,
+reassignment and session merges are changes, so follow the same cursor to
+keep both entities current. `logbook.changed` remains a hint to follow this
+feed. Apply both entity types and the cursor atomically, and replace both
+collections together after a full import. References may cross pages.
+
+Session workout reads support up to 100,000 of the climber's ticks per
+request. If a page returns `503` asking for a smaller limit, retry the same
+cursor with a smaller `limit`; if `limit=1` still fails, contact support.
+Workout results are never silently truncated. A size refusal is an explicit
+error, not a successful empty page that repeats the same cursor forever.
+
+Existing tick-only tokens do not gain session access. Ask the climber to
+authorize the extra scope and replace your stored token pair with the new
+one; an earlier refresh token retains its earlier scopes. A cursor or snapshot
+made with tick-only access cannot continue under session access: `410
+cursor_expired` requires a complete replacement import, including sessions
+that predate the integration. Keep the previous published copy until the new
+snapshot and catch-up finish. Old clients can continue their tick-only sync.
+
+### Session credit and opening Boardsesh
+
+On the primary view of an imported session, show a visible **Boardsesh** or
+**Recorded with Boardsesh** source credit. A small footer or footnote is
+sufficient. The credit must be visible without opening a menu; it need not
+compete with the session's main action.
+
+We also recommend an **Open in Boardsesh** action using the session's supplied
+history links. This action may live in an ellipsis menu. Use `appUrl` when the
+app can open it and `url` for the browser fallback. These links open the
+session's history, preserve the destination through sign-in and check the
+signed-in account's access. Do not construct an invite link or use `/join/`.
 
 ## 4. Workouts
 
@@ -909,8 +991,9 @@ includes:
   type, layout, size and angle remain available.
 - There is no effort rating (RPE or RIR); Boardsesh does not collect one. If
   that changes it arrives as an optional `session.effort`.
-- There is no session id or session link. A Boardsesh session link invites
-  people into the session, so it is never shared with apps.
+- Workout results do not expose the internal session id or an invite link.
+  With `sessions:read`, the logbook feed separately provides an opaque
+  session entity and safe history links as described in section 3.
 
 If you poll instead of using webhooks: check `started` workouts when the
 climber opens your app, and sweep any `started` workout older than a day.

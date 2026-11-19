@@ -1216,5 +1216,12 @@
     "resume": "Dieses Training fortsetzen",
     "privacyLoading": "Privatsphäre der Session wird geprüft…",
     "budgetShortfall": "{{found}} von {{planned}} geplanten Bouldern passen in die Warteschlange und das Training."
+  },
+  "partnerHistory": {
+    "title": "Öffne deine Session",
+    "description": "Öffne eine abgeschlossene Session, die du in Boardsesh aufgezeichnet oder der du beigetreten bist.",
+    "unavailable": "Diese Session ist für dieses Konto nicht verfügbar. Melde dich mit dem Konto an, das sie aufgezeichnet hat oder ihr beigetreten ist.",
+    "loadError": "Die Session konnte nicht geöffnet werden. Versuch es erneut.",
+    "retry": "Erneut versuchen"
   }
 }

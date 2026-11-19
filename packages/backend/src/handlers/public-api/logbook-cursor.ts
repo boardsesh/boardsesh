@@ -34,7 +34,7 @@ export interface LogbookCursorSecret {
   value: string;
 }
 
-export type LogbookCursor =
+export type LogbookCursor = { includesSessions?: boolean } & (
   | {
       kind: 'snapshot';
       connectionId: string;
@@ -49,13 +49,15 @@ export type LogbookCursor =
       feedGeneration: string;
       txid: string;
       seq: string;
-    };
+    }
+);
 
 const DECIMAL = /^\d{1,20}$/;
 
 /** Short keys keep the cursor small. Strict, so nothing else survives a decode. */
 const SnapshotPayloadSchema = z.strictObject({
   k: z.literal('s'),
+  i: z.literal(true).optional(),
   c: z.string().min(1).max(64),
   g: z.number().int().nonnegative(),
   s: z.uuid(),
@@ -64,6 +66,7 @@ const SnapshotPayloadSchema = z.strictObject({
 });
 const ChangesPayloadSchema = z.strictObject({
   k: z.literal('c'),
+  i: z.literal(true).optional(),
   c: z.string().min(1).max(64),
   g: z.number().int().nonnegative(),
   f: z.uuid(),
@@ -101,6 +104,7 @@ export function encodeLogbookCursor(
     cursor.kind === 'snapshot'
       ? {
           k: 's',
+          ...(cursor.includesSessions ? { i: true } : {}),
           c: cursor.connectionId,
           g: cursor.connectionGeneration,
           s: cursor.snapshotId,
@@ -109,6 +113,7 @@ export function encodeLogbookCursor(
         }
       : {
           k: 'c',
+          ...(cursor.includesSessions ? { i: true } : {}),
           c: cursor.connectionId,
           g: cursor.connectionGeneration,
           f: cursor.feedGeneration,
@@ -153,6 +158,7 @@ export function decodeLogbookCursor(raw: string, secrets: readonly LogbookCursor
           status: 'ok',
           cursor: {
             kind: 'snapshot',
+            ...(data.i ? { includesSessions: true } : {}),
             connectionId: data.c,
             connectionGeneration: data.g,
             snapshotId: data.s,
@@ -163,6 +169,7 @@ export function decodeLogbookCursor(raw: string, secrets: readonly LogbookCursor
           status: 'ok',
           cursor: {
             kind: 'changes',
+            ...(data.i ? { includesSessions: true } : {}),
             connectionId: data.c,
             connectionGeneration: data.g,
             feedGeneration: data.f,

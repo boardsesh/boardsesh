@@ -68,7 +68,8 @@
       "offlineAccess": "Garder cet accès jusqu'à ce que tu la déconnectes",
       "other": "Autre accès : {{scope}}",
       "workoutsRead": "Lire les résultats des séances prévues par cette application",
-      "workoutsWrite": "Prévoir et annuler tes séances"
+      "workoutsWrite": "Prévoir et annuler tes séances",
+      "sessionsRead": "Lire tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications"
     },
     "cannot": "Elle ne peut rien modifier dans ton compte et ne voit jamais ton mot de passe.",
     "notReviewed": "Boardsesh n'a pas vérifié cette app. Ne connecte que des apps de confiance.",

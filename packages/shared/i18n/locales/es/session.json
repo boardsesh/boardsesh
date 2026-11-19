@@ -1216,5 +1216,12 @@
     "resume": "Retomar este entrenamiento",
     "privacyLoading": "Comprobando la privacidad de la sesión…",
     "budgetShortfall": "Caben {{found}} de {{planned}} bloques previstos en los límites de la cola y del entrenamiento."
+  },
+  "partnerHistory": {
+    "title": "Abre tu sesión",
+    "description": "Abre una sesión completada que registraste o a la que te uniste en Boardsesh.",
+    "unavailable": "Esta sesión no está disponible para esta cuenta. Inicia sesión con la cuenta que la registró o se unió a ella.",
+    "loadError": "No se ha podido abrir esta sesión. Inténtalo de nuevo.",
+    "retry": "Reintentar"
   }
 }

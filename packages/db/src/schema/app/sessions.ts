@@ -12,6 +12,7 @@ import {
   primaryKey,
   uniqueIndex,
   pgEnum,
+  uuid,
   check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -43,6 +44,8 @@ export const boardSessions = pgTable(
   'board_sessions',
   {
     id: text('id').primaryKey(),
+    // Opaque history/export identity; unlike id, never accepted as an invite.
+    exportId: uuid('export_id').defaultRandom().notNull().unique(),
     // Null for inferred sessions: they are reconstructed from ticks that may span
     // several boards, so there is no one path to record. Only two places read this
     // off the row — the Strava export and `updateSessionBoardPathIfChanged` — and

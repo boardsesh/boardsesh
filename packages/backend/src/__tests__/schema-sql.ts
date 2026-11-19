@@ -4,6 +4,19 @@
  */
 
 import { readFileSync } from 'node:fs';
+const partnerSessionHintPrivacySchema = readFileSync(
+  new URL('../../../db/drizzle/0330_session_hint_privacy.sql', import.meta.url),
+  'utf8',
+);
+const partnerSessionSyncSchema = readFileSync(
+  new URL('../../../db/drizzle/0328_partner_session_sync.sql', import.meta.url),
+  'utf8',
+);
+const partnerSessionTriggersSchema = readFileSync(
+  new URL('../../../db/drizzle/0329_partner_session_change_triggers.sql', import.meta.url),
+  'utf8',
+);
+
 const partnerNoticeRetentionSchema = readFileSync(
   new URL('../../../db/drizzle/0326_partner_notice_retention_7811.sql', import.meta.url),
   'utf8',
@@ -275,6 +288,8 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS logbook_snapshot_session_chunks;
+  DROP TABLE IF EXISTS logbook_session_changes;
   DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
   DROP TABLE IF EXISTS "spray_wall_led_setups" CASCADE;
   DROP TABLE IF EXISTS "user_deleted_upstream_playlists" CASCADE;
@@ -2567,4 +2582,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerInitialHistorySchema}
   ${partnerReviewSchema}
   ${partnerNoticeRetentionSchema}
+  DROP TABLE IF EXISTS logbook_snapshot_session_chunks;
+  DROP TABLE IF EXISTS logbook_session_changes;
+  ALTER TABLE board_sessions DROP CONSTRAINT IF EXISTS board_sessions_export_id_unique;
+  ALTER TABLE board_sessions DROP COLUMN IF EXISTS export_id;
+  ${partnerSessionSyncSchema};
+  ${partnerSessionTriggersSchema};
+  ${partnerSessionHintPrivacySchema};
 `;

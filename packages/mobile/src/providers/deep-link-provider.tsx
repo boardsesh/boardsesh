@@ -18,6 +18,12 @@ import {
   serializePendingAppWorkout,
 } from '../lib/partner-workout-link';
 import { useAppWorkoutsFlag } from './feature-flags-provider';
+import {
+  parseSessionHistoryExportId,
+  PENDING_SESSION_HISTORY_KEY,
+  readPendingSessionHistory,
+  serializePendingSessionHistory,
+} from '../lib/partner-session-history-link';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
 // (auth-provider) redirects an unauthenticated cold-start to /auth/login and
@@ -44,11 +50,13 @@ export const PENDING_BOARD_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // that link again and the next sign-in would land on it. One launch, one stash.
 let handledLaunchBoardUrl: string | null = null;
 let handledLaunchWorkoutUrl: string | null = null;
+let handledLaunchHistoryUrl: string | null = null;
 
 /** Tests only: forget the launch URL, as a new process would. */
 export function resetHandledLaunchBoardUrlForTests(): void {
   handledLaunchBoardUrl = null;
   handledLaunchWorkoutUrl = null;
+  handledLaunchHistoryUrl = null;
 }
 
 type PendingBoardLink = { path: string; stashedAt: number };
@@ -215,6 +223,21 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   const handleUrl = useCallback(
     (url: string | null, isLaunchUrl: boolean) => {
       if (!url) return;
+      const historyExportId = parseSessionHistoryExportId(url);
+      if (historyExportId) {
+        if (isLaunchUrl && handledLaunchHistoryUrl === url) return;
+        if (isLaunchUrl) handledLaunchHistoryUrl = url;
+        if (!isAuthenticatedRef.current || !getConsentSnapshot().settled) {
+          void AsyncStorage.setItem(PENDING_SESSION_HISTORY_KEY, serializePendingSessionHistory(historyExportId)).catch(
+            (error: unknown) => {
+              reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-session-history' } });
+            },
+          );
+        } else if (!deferConsentDestination(`/history/session/${historyExportId}`)) {
+          router.navigate({ pathname: '/history/session/[exportId]', params: { exportId: historyExportId } });
+        }
+        return;
+      }
       const workoutId = parseAppWorkoutId(url);
       if (workoutId) {
         if (isLaunchUrl && handledLaunchWorkoutUrl === url) return;
@@ -285,6 +308,26 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [appWorkoutsEnabled, isAuthenticated, consentSettled, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !consentSettled) return;
+    let cancelled = false;
+    void (async () => {
+      const stored = await AsyncStorage.getItem(PENDING_SESSION_HISTORY_KEY);
+      if (cancelled || !stored) return;
+      await AsyncStorage.removeItem(PENDING_SESSION_HISTORY_KEY);
+      if (cancelled || !isAuthenticatedRef.current || !getConsentSnapshot().settled) return;
+      const exportId = readPendingSessionHistory(stored);
+      if (exportId && !deferConsentDestination(`/history/session/${exportId}`)) {
+        router.navigate({ pathname: '/history/session/[exportId]', params: { exportId } });
+      }
+    })().catch((error: unknown) => {
+      reportHandledError(error, { tags: { source: 'deep-link', op: 'replay-session-history' } });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, consentSettled, router]);
 
   useEffect(() => {
     if (!isAuthenticated || !consentSettled) return;

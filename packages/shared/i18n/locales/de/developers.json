@@ -235,7 +235,7 @@
         "sync": "Das ganze Routenbuch einmal herunterladen und danach nur noch Änderungen abrufen. Eine Änderung erscheint meist innerhalb einer Sekunde.",
         "profile": "Ihren Anzeigenamen und ihr Avatar lesen, wenn du diesen Scope anfragst.",
         "disconnect": "Die Kletterer*in kann deine App jederzeit unter Einstellungen, Verbundene Apps trennen. Dein nächster Aufruf schlägt dann fehl, und du löschst, was du gespeichert hast.",
-        "notYet": "Heute ist nur das Lesen des Routenbuchs live. Workouts und Webhooks gibt es noch nicht."
+        "notYet": "Die vollständige Synchronisierung von Sessions und Workouts benötigt sessions:read. Beta-Videos und Board-Steuerung sind ausgeschlossen."
       }
     },
     "steps": {
@@ -254,7 +254,8 @@
       "items": {
         "logbook": "Jeder Eintrag an jedem Board, auch die, die die Kletterer*in privat hält.",
         "profile": "Anzeigename und Avatar.",
-        "offline": "Ein Refresh-Token, damit du weiterlesen kannst, während die Kletterer*in nicht da ist. Für sich öffnet es keine Daten."
+        "offline": "Ein Refresh-Token, damit du weiterlesen kannst, während die Kletterer*in nicht da ist. Für sich öffnet es keine Daten.",
+        "sessions": "Abgeschlossene Sessions, private Rückblicknotizen, aufgezeichnete Dauer und vollständige Workouts, auch aus anderen Apps. Benötigt logbook:read."
       }
     },
     "rules": {
@@ -388,6 +389,14 @@
       "poll": {
         "title": "Synchronisiere bei Bedarf",
         "body": "Synchronisiere beim Öffnen deiner App. Im Hintergrund höchstens alle 15 Minuten pro Konto. Beachte Retry-After bei 429 und vorübergehenden 503-Antworten. Optionale logbook.changed-Webhooks fordern denselben Sync an; sie ersetzen den Feed nicht.\n\nPrivate Einträge bleiben privat. Auf einer fremden nicht öffentlichen Spraywall werden Bouldername und Spraywall-Identität verborgen. Erstelle aus dem Logbuch keinen Katalog und veröffentliche keine Entwürfe oder ungelisteten Boulder anderer Routenbauer*innen."
+      },
+      "sessions": {
+        "title": "Abgeschlossene Sessions und Workouts synchronisieren",
+        "body": "Fordere logbook:read sessions:read offline_access an, um abgeschlossene persönliche, abgeleitete und gemeinsam besuchte Sessions zu importieren. Aktive Sessions und dauerhafte Hallen-Sessions sind ausgeschlossen. Die Datensätze enthalten Rückblick, gespeicherte Start- und Endzeit, durationSeconds sowie den vollständigen Trainingsplan und die Ergebnisse, auch aus anderen Apps. Fehlen aufgezeichnete Zeiten oder sind sie vertauscht, ist die Dauer null; schätze sie nie anhand der Logbucheinträge. Der private Rückblick und private Bezeichnungen anderer Ersteller*innen werden nicht geteilt. Beta-Links und Griffpositionen sind ausgeschlossen.\n\nErstelle oder aktualisiere session-Einträge anhand von session.id, entferne session.deleted-Einträge anhand von id und gruppiere Boulder über tick.sessionId. Referenzen können auf verschiedenen Seiten eintreffen. GET /v1/logbook/sessions/{id} liest eine berechtigte Session. Halte beide Entitätstypen in derselben Ersatzkopie und speichere sie zusammen mit ihrem Cursor.\n\nBestehende Tokens nur für Logbucheinträge erhalten diesen Zugriff nicht. Fordere eine neue Zustimmung mit sessions:read an, ersetze das gespeicherte Tokenpaar und starte einen vollständigen Ersatzimport ohne den alten Cursor. Ein Cursor der früheren Zugriffsstufe liefert 410. Der Ersatz enthält Sessions vor der Integration; fehlende historische Trainingspläne oder Zeitangaben lassen sich nicht rekonstruieren."
+      },
+      "attribution": {
+        "title": "Boardsesh nennen und zur Session verlinken",
+        "body": "Die Hauptansicht jeder importierten Session muss Boardsesh sichtbar nennen. “Boardsesh” oder “Mit Boardsesh aufgezeichnet” in einer kleinen Fußzeile oder Fußnote reicht aus. Eine im Drei-Punkte-Menü versteckte Nennung reicht nicht aus.\n\nAußerdem empfehlen wir eine Aktion “In Boardsesh öffnen” mit url oder appUrl der Session. Sie darf im Drei-Punkte-Menü liegen und muss keine Hauptaktion sein. Historienlinks erfordern die Anmeldung mit einem Konto, das die Session aufgezeichnet hat oder ihr beigetreten ist; sie öffnen die schreibgeschützte Detailansicht und treten niemals einer Session bei. Die HTTPS-Alternative muss ohne App nutzbar bleiben."
       }
     },
     "errors": {
