@@ -430,6 +430,9 @@ const BareWallLayer = React.memo(function BareWallLayer({
           accessible={false}
           bareWall
           frames=""
+          // onDisplay reports readiness when an image's transition starts.
+          // The veil must already be whole before the climbs dim over it.
+          suppressOverlayTransition
           onArtReadinessChange={handleArtReadinessChange}
           boardName={boardName}
           layoutId={layoutId}

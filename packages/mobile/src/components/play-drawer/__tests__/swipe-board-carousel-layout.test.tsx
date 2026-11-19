@@ -1219,6 +1219,9 @@ describe('SwipeBoardCarousel still wall (PNG board)', () => {
     }
     const bareWallProps = recorded.boardProps.mock.calls.findLast(([board]) => board.bareWall)?.[0];
     expect(bareWallProps).toMatchObject({ frames: '', bareWall: true, mirrored: false, backgroundVariant: 'full' });
+    // Native onDisplay fires at the start of expo-image's fade. Disabling that
+    // fade makes readiness mean the veil is whole, before drag dimming can start.
+    expect(bareWallProps.suppressOverlayTransition).toBe(true);
     // Never a page: the swipe does not wait for it, and it is not the play surface.
     expect(bareWallProps.playSurface).toBeUndefined();
   });
