@@ -49,6 +49,26 @@ Password writes already run `trg_user_credentials_partner_revoke_insert` and `tr
 
 The reviewed callee updates connection generation/revocation fields, then deletes pending grants/codes, access and refresh tokens, consent, refresh ancestors, consent interactions and partner sessions. It does not delete connections or applications. The indirect sink closure includes `oauth_connections`, `oauth_verification`, `oauth_grants`, `oauth_access_token`, `oauth_refresh_token`, `oauth_consent`, `oauth_refresh_ancestors`, `oauth_consent_interactions` and `oauth_session`. This is the existing password-revocation trigger behavior, not adoption of all partner authority commands.
 
+Current provider-derived profiles also review the session-sync side effect added
+through canonical `0330`: connection revocation updates `app_workouts`, whose
+exact `trg_partner_session_app_workout` attachment calls the SHA-pinned
+`log_partner_session_from_workout()` definer. It reads `board_sessions` and
+inserts an opaque session hint into `logbook_session_changes`. Both relation
+shapes, the source's plain `session_origin` enum, and the shared tick sequence's
+owner, serial dependency and numeric configuration are pinned. The session
+source is read-only in this closure: its unrelated mutation triggers are not
+executable paths of this credential capability. The writer receives no session
+SELECT, hint INSERT or sequence USAGE grant. Historical private-web/browser
+profiles retain their existing receipts.
+
+The full-schema fence proof now exercises password revocation with a real
+attached partner workout, checks that the workout becomes revoked and its
+session hint is written, and proves the authenticated writer still lacks those
+three direct privileges. Separate drift checks refuse the logger's body,
+configuration, owner and attachment; source/sink RLS; sink defaults, checks and
+extra triggers; source index callbacks; sequence configuration; and excess
+source, sink or sequence grants.
+
 All direct and indirect relations must be ordinary heap tables with builtin types/opclasses and no RLS, partition/inheritance, rewrite rules, custom expression routines or extra triggers. Cascades are checked for the mutation kinds this closure can actually execute. Exact canonical column/default/index/constraint shapes also refuse builtin expression side effects, which PostgreSQL omits from pg_depend. A users ON DELETE cascade cannot be reached because this contract denies users DELETE. Shadowing of the operators/functions used by the pinned bodies is refused. Future implicit routine EXECUTE and future PUBLIC/writer grants are refused. Every application routine is denied direct EXECUTE. Explicit system-catalog/routine/parameter grants are refused, including SET on `session_replication_role`; the existing builtin PUBLIC UPDATE on `pg_settings` is the narrow exception, and the session must remain in origin replication mode.
 
 The LOGIN must have no superuser, create-role, create-database, replication or RLS-bypass attributes, memberships in either direction, owned objects, database/schema CREATE or database TEMP. These are startup observations on this connection. DDL/grant changes after qualification still require coordinated rollout fences and requalification; the receipt is not a durable catalog lock.

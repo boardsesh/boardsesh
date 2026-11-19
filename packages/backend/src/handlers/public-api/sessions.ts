@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { PartnerSessionSchema } from '@boardsesh/public-api';
 import { PARTNER_SESSION_TOO_LARGE_MESSAGE, PartnerSessionReadTooLarge } from '../../services/public-api/sessions';
 import { CHALLENGE_INVALID_TOKEN, errorOutcome, unauthorized, unavailable, type ApiOutcome } from './outcome';
-import type { PartnerApiPrincipal } from '../../auth/partner/bearer';
 import type { PartnerRuntime } from './router';
+
+type PartnerApiPrincipal = Parameters<PartnerRuntime['api']['readClimber']>[0];
 
 export async function serveLogbookSession(
   runtime: PartnerRuntime,
