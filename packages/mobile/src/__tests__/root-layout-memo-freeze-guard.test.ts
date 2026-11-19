@@ -4,10 +4,12 @@ import { describe, expect, it } from 'vitest';
 // #5654, as a text guard over app/_layout.tsx.
 //
 // Everything below <DatabaseProvider> sits under expo-sqlite's memo()'d
-// SQLiteProvider, whose comparator ignores `children`. A RootLayout re-render
-// never reaches that subtree, so a prop computed there from anything RootLayout
-// holds keeps its first-render value forever. That froze `ready={authReady &&
+// SQLiteProvider, whose comparator historically ignored `children`. A RootLayout
+// re-render never reached that subtree, so a prop computed from RootLayout state
+// kept its first-render value forever. That froze `ready={authReady &&
 // fontsReady}` at false for four launch gates from 2.2.0 until #5654.
+// Expo SQLite 58.0.18 forwards child updates. Retain the context contract so
+// readiness remains independent of the provider's memo behavior.
 //
 // launch-ready-through-database.test.tsx proves the mechanism with real
 // components. This file pins the one place it matters: RootLayout's own JSX.
@@ -125,7 +127,7 @@ describe('app/_layout.tsx and the SQLiteProvider memo', () => {
     const leaked = leakedBindings(layoutSource);
     expect(
       leaked,
-      `A value from RootLayout used below <DatabaseProvider> stays at its first-render value (SQLiteProvider's memo ignores children). Share it through a context provided above the provider, like LaunchReadyProvider. Leaked: ${leaked.join(', ')}`,
+      `Keep RootLayout state independent of SQLiteProvider's memo behavior. Share it through a context above DatabaseProvider, like LaunchReadyProvider. Leaked: ${leaked.join(', ')}`,
     ).toEqual([]);
   });
 

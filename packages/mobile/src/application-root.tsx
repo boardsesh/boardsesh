@@ -394,12 +394,12 @@ function RootLayout() {
             <I18nProvider initialLocale={integrationSmoke?.initialLocale} persistPreferences={!integrationSmoke}>
               <QueryProvider>
                 {/* NOTHING below this line may take a prop computed from RootLayout
-                state. SQLiteProvider (inside DatabaseProvider) is memo()'d with a
-                comparator that ignores `children`, so RootLayout's re-renders
-                stop here and every prop created below keeps its FIRST-render
-                value. That froze `ready={authReady && fontsReady}` at false for
-                four launch gates from 2.2.0 until #5654. Share such state through
-                a context provided above this line, like LaunchReadyProvider.
+                state. SQLiteProvider historically ignored `children` in its
+                memo comparator, freezing `ready={authReady && fontsReady}` at
+                false for four launch gates from 2.2.0 until #5654. Expo SQLite
+                58.0.18 forwards child updates; retain the context contract so
+                readiness stays independent of its memo behavior. Share such
+                state above this line, like LaunchReadyProvider.
                 Guarded by root-layout-memo-freeze-guard.test.ts. */}
                 <DatabaseProvider>
                   <ThemeProvider {...integrationSmoke?.appearance}>
