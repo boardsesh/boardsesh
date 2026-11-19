@@ -8,6 +8,7 @@ import esMarketing from '@boardsesh/i18n/locales/es/marketing.json';
 import frMarketing from '@boardsesh/i18n/locales/fr/marketing.json';
 import deMarketing from '@boardsesh/i18n/locales/de/marketing.json';
 import itMarketing from '@boardsesh/i18n/locales/it/marketing.json';
+import zhMarketing from '@boardsesh/i18n/locales/zh-CN/marketing.json';
 import { SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
 import ServerI18nProvider from '@/app/components/providers/i18n-provider';
 import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
@@ -24,7 +25,14 @@ vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale }));
 vi.mock('@/app/lib/i18n/server', () => ({ loadServerResources, getServerTranslation: vi.fn() }));
 vi.mock('@/app/lib/developer-apps/docs-access', () => ({ getDeveloperDocsState: () => 'unavailable' }));
 
-const catalogs = { 'en-US': enMarketing, es: esMarketing, fr: frMarketing, de: deMarketing, it: itMarketing };
+const catalogs = {
+  'en-US': enMarketing,
+  es: esMarketing,
+  fr: frMarketing,
+  de: deMarketing,
+  it: itMarketing,
+  'zh-CN': zhMarketing,
+};
 beforeEach(() => {
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Windows NT 10.0');
   loadServerResources.mockImplementation(async (locale: Locale) => ({ marketing: structuredClone(catalogs[locale]) }));

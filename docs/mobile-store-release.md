@@ -407,6 +407,30 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
 
 ### iPhone campaign capture
 
+To refresh only Chinese screenshots, dispatch **Mobile Screenshots (iOS)** from
+the release commit with these inputs: `flow=app-store`, `gate=full`,
+`locales=zh-CN`, `devices=common`, `fixtures=replay`, `upload=false`, and
+`publish_baseline=false`. The run captures only Chinese on the five existing
+device targets, writes Apple folder `zh-Hans`, and retains the screenshots as
+downloadable artifacts. For one phone preview, choose `devices=phone-pro-max`.
+Other languages' existing screenshots stay unchanged. A comma-separated app
+language list such as `zh-CN,fr` captures exactly those languages; whitespace and
+duplicates are normalized. Unknown codes fail on Ubuntu before any macOS work.
+Use `zh-CN`, not Apple's `zh-Hans`, as the input.
+
+On a Mac, the same selection is available locally:
+
+```sh
+vp run mobile:screenshots -- --platform ios --flow app-store --locales zh-CN --devices common --fixtures replay
+```
+
+Explicit language selections are capture-only. App Store upload and baseline
+publication still require the complete validated default set; they reject
+nonempty `locales`. Review the Chinese artifacts before attaching them to the
+Chinese App Store listing. Chinese phone framing uses its genuine localized
+session screen instead of a physical Live Activity capture that has not yet
+been reviewed in Chinese.
+
 The default iOS `app-store` replay uses the nine-frame multiboard campaign.
 It retains ten existing native sources and adds MoonBoard, Woods, Decoy,
 Grasshopper, spray wall, crew queue, wall status, and expanded Dynamic Island.
