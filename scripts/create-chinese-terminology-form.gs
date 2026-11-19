@@ -347,6 +347,7 @@ function createChineseTerminologyForm() {
       var items = form.getItems();
       chineseTerminologyCheckPrefix(items, state, plan);
       var item;
+      var createdItemHere = false;
       if (state.pending) {
         if (items.length !== index + 1)
           throw new Error(
@@ -363,11 +364,12 @@ function createChineseTerminologyForm() {
         state.pending = { index: index, id: null };
         chineseTerminologySave(properties, state);
         item = chineseTerminologyAdd(form, definition.type);
+        createdItemHere = true;
         state.pending.id = String(item.getId());
         chineseTerminologySave(properties, state);
       }
       // add* returns a concrete typed object; only generic Item has as* casts.
-      chineseTerminologyConfigureItem(form.getItemById(item.getId()), definition);
+      chineseTerminologyConfigureItem(form.getItemById(item.getId()), definition, createdItemHere);
       state.itemIds.push(String(item.getId()));
       state.pending = null;
       chineseTerminologySave(properties, state);
@@ -432,7 +434,7 @@ function chineseTerminologyAdd(form, type) {
   throw new Error('Unknown questionnaire item type: ' + type);
 }
 
-function chineseTerminologyConfigureItem(baseItem, definition) {
+function chineseTerminologyConfigureItem(baseItem, definition, createdItemHere) {
   if (baseItem.getType() !== FormApp.ItemType[definition.type])
     throw new Error('Pending item has the wrong type. Nothing was overwritten.');
   var item = baseItem;
@@ -441,6 +443,15 @@ function chineseTerminologyConfigureItem(baseItem, definition) {
   if (definition.type === 'PARAGRAPH_TEXT') item = baseItem.asParagraphTextItem();
   if (definition.type === 'SECTION_HEADER') item = baseItem.asSectionHeaderItem();
   if (definition.type === 'PAGE_BREAK') item = baseItem.asPageBreakItem();
+  // Service-provided defaults on an item added in this invocation are not owner edits.
+  if (createdItemHere) {
+    item.setTitle(definition.title);
+    item.setHelpText(definition.help);
+    if (definition.type === 'TEXT' || definition.type === 'CHECKBOX' || definition.type === 'PARAGRAPH_TEXT')
+      item.setRequired(false);
+    if (definition.type === 'CHECKBOX') item.setChoiceValues(definition.choices);
+    return;
+  }
   var title = item.getTitle() || '';
   var help = item.getHelpText() || '';
   if ((title && title !== definition.title) || (help && help !== definition.help))
@@ -456,7 +467,11 @@ function chineseTerminologyConfigureItem(baseItem, definition) {
       return choice.getValue();
     });
     if (choices.length && JSON.stringify(choices) !== JSON.stringify(definition.choices))
-      throw new Error('Checkbox choices were edited. Nothing was overwritten.');
+      throw new Error(
+        'Pending checkbox choices differ. Keep this question and set its options exactly to ' +
+          JSON.stringify(definition.choices) +
+          ', then rerun. No choices were overwritten.',
+      );
     if (!choices.length) item.setChoiceValues(definition.choices);
   }
 }

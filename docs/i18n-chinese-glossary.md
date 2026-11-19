@@ -98,6 +98,12 @@ actual and expected headings for owner review. Alternatively, set the large form
 heading to `帮 Boardsesh 说好攀岩中文` manually and rerun the same project. This
 title-only script fix preserves the existing questionnaire plan and checkpoints.
 
+If a pending checkbox stops because its choices differ, keep that question and
+manually set its five options to `Kilter Board`, `Tension Board`, `MoonBoard`,
+`喷点墙 / Spraywall` (one option), and `其他`, then rerun the same project.
+Fresh items initialize their fields directly; resumed fields are protected
+because service defaults and owner edits cannot safely be distinguished.
+
 Form creation and saving its ID span two services and cannot be atomic. A saved
 creation intent with no ID stops automatic recreation. Find the empty unpublished
 draft with the expected heading using the prior execution log or Google Forms, paste its ID into

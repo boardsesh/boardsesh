@@ -71,6 +71,10 @@ class FormItem {
     return this;
   }
   setChoiceValues(choices: string[]) {
+    if (this.harness.failCheckboxChoices) {
+      this.harness.failCheckboxChoices = false;
+      throw new Error('checkbox choice initialization failed');
+    }
     this.harness.mutations++;
     this.choices = [...choices];
     return this;
@@ -206,6 +210,10 @@ class FormDouble {
       throw new Error('add failed before mutation');
     }
     const item = new FormItem(this.harness, this.items.length + 1, type);
+    item.title = this.harness.initialItemTitle;
+    item.help = this.harness.initialItemHelp;
+    item.required = this.harness.initialItemRequired;
+    if (type === 'CHECKBOX') item.choices = [...this.harness.initialCheckboxChoices];
     this.items.push(item);
     this.harness.mutations++;
     if (type === 'PARAGRAPH_TEXT' && this.harness.failAddAfter) {
@@ -238,12 +246,17 @@ class Harness {
   readonly formTitleWrites: string[] = [];
   form?: FormDouble;
   initialVisibleTitle?: string;
+  initialItemTitle = '';
+  initialItemHelp = '';
+  initialItemRequired = false;
+  initialCheckboxChoices: string[] = [];
   creates = 0;
   mutations = 0;
   released = 0;
   locked = false;
   failTitle = false;
   failFormTitle = false;
+  failCheckboxChoices = false;
   failAddBefore = false;
   failAddAfter = false;
   failSaveFormId = false;
@@ -306,6 +319,47 @@ class Harness {
 }
 
 describe('Chinese terminology Google Form creation artifact (stand-in, not live Google proof)', () => {
+  it('initializes fresh item fields despite arbitrary service-provided initial defaults', () => {
+    const harness = new Harness();
+    harness.initialItemTitle = 'arbitrary initial title';
+    harness.initialItemHelp = 'arbitrary initial help';
+    harness.initialItemRequired = true;
+    harness.initialCheckboxChoices = ['arbitrary initial option', 'another initial option'];
+    expect(harness.run().creationComplete).toBe(true);
+    expect(harness.questions().find((item) => item.type === 'CHECKBOX')!.choices).toEqual([
+      'Kilter Board',
+      'Tension Board',
+      'MoonBoard',
+      '喷点墙 / Spraywall',
+      '其他',
+    ]);
+    expect(harness.questions()).toHaveLength(32);
+    expect(harness.questions().every((item) => !item.required)).toBe(true);
+    expect(harness.form!.items.every((item) => item.title !== harness.initialItemTitle)).toBe(true);
+    expect(harness.form!.items.every((item) => item.help !== harness.initialItemHelp)).toBe(true);
+  });
+
+  it('preserves mismatched pending checkbox choices and resumes after exact manual recovery', () => {
+    const harness = new Harness();
+    harness.initialCheckboxChoices = ['Option 1'];
+    harness.failCheckboxChoices = true;
+    expect(() => harness.run()).toThrow('checkbox choice initialization failed');
+    const checkbox = harness.questions().find((item) => item.type === 'CHECKBOX')!;
+    expect((JSON.parse(harness.properties.get(stateKey)!) as SavedState).pending?.id).toBe(String(checkbox.id));
+    const count = harness.form!.items.length;
+    expect(() => harness.run()).toThrow('Pending checkbox choices differ');
+    expect(checkbox.choices).toEqual(['Option 1']);
+    expect(harness.form!.items).toHaveLength(count);
+    checkbox.choices = ['Owner-edited option'];
+    expect(() => harness.run()).toThrow('No choices were overwritten');
+    expect(checkbox.choices).toEqual(['Owner-edited option']);
+    checkbox.setChoiceValues(['Kilter Board', 'Tension Board', 'MoonBoard', '喷点墙 / Spraywall', '其他']);
+    expect(harness.run().creationComplete).toBe(true);
+    expect(harness.questions()).toHaveLength(32);
+    expect(harness.form!.items.find((item) => item.type === 'CHECKBOX')!.id).toBe(checkbox.id);
+    expect(harness.creates).toBe(1);
+  });
+
   it('explicitly initializes a new draft title when create returns a different visible title', () => {
     const harness = new Harness();
     harness.initialVisibleTitle = 'Untitled form';
