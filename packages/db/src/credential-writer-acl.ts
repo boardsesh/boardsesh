@@ -6,6 +6,7 @@ import reviewedPartnerLifecycleShapes from './credential-writer-partner-lifecycl
 import reviewedProviderRelationShapes from './credential-writer-private-provider-v1';
 import reviewedFirstPasswordRelationShapes from './credential-writer-private-first-password-v1';
 import reviewedBrowserRenewalRelationShapes from './credential-writer-private-browser-renewal-v1';
+import reviewedUsers0329RelationShapes from './credential-writer-users-0329';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
 export type CredentialWriterContract =
@@ -172,6 +173,47 @@ function refuse(code: string): never {
   throw new CredentialWriterQualificationError(code);
 }
 
+export interface ReviewedRelationShape {
+  readonly name: string;
+  readonly shape: unknown;
+}
+const byRelationName = (left: ReviewedRelationShape, right: ReviewedRelationShape) =>
+  left.name.localeCompare(right.name);
+// Relations a later migration changed. Canonical profiles take these shapes
+// from the reviewed later receipt instead of the historical0312 web receipt.
+const relationsReplacedByCanonicalReceipts = new Set([
+  'auth_security_mutation_events', // 0313 nine-kind CHECK (provider receipt)
+  'users', // 0329 email key and CHECK (users-0329 receipt)
+]);
+
+/**
+ * The exact reviewed relation shapes a contract qualifies against. The
+ * historical0312 profiles (private-web-v1, private-browser-v1) keep their
+ * original receipts unchanged. Every later profile qualifies against the full
+ * current journal, so it uses the reviewed later shape of each changed relation.
+ * No profile accepts both shapes of a relation.
+ */
+export function reviewedCredentialWriterRelationShapes(
+  contract: CredentialWriterContract,
+): readonly ReviewedRelationShape[] {
+  if (contract === 'private-web-v1') return reviewedPrivateWebRelationShapes;
+  if (contract === 'private-browser-v1')
+    return [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort(byRelationName);
+  const firstPassword =
+    contract === 'private-first-password-v1' ||
+    contract === 'private-native-handoff-v1' ||
+    contract === 'private-browser-renewal-v1';
+  return [
+    ...reviewedPrivateWebRelationShapes.filter((relation) => !relationsReplacedByCanonicalReceipts.has(relation.name)),
+    ...reviewedBrowserRelationShapes,
+    ...reviewedProviderRelationShapes,
+    ...reviewedPartnerLifecycleShapes,
+    ...reviewedUsers0329RelationShapes,
+    ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
+    ...(contract === 'private-browser-renewal-v1' ? reviewedBrowserRenewalRelationShapes : []),
+  ].sort(byRelationName);
+}
+
 /**
  * Read-only qualification of the authenticated connection, never SET ROLE.
  * This receipt does not revoke old logins, retire issuers, or activate migration.
@@ -241,20 +283,7 @@ export async function qualifyCredentialWriter(
     'oauth_connections',
     ...(directPartnerRevocation ? ['app_workouts'] : []),
   ];
-  const reviewedRelationShapes = directPartnerRevocation
-    ? [
-        ...reviewedPrivateWebRelationShapes.filter((relation) => relation.name !== 'auth_security_mutation_events'),
-        ...reviewedBrowserRelationShapes,
-        ...reviewedProviderRelationShapes,
-        ...reviewedPartnerLifecycleShapes,
-        ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
-        ...(browserRenewal ? reviewedBrowserRenewalRelationShapes : []),
-      ].sort((left, right) => left.name.localeCompare(right.name))
-    : requested.contract === 'private-browser-v1'
-      ? [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort((left, right) =>
-          left.name.localeCompare(right.name),
-        )
-      : reviewedPrivateWebRelationShapes;
+  const reviewedRelationShapes = reviewedCredentialWriterRelationShapes(requested.contract);
   const [identity] = await client<
     {
       role: string;
@@ -453,12 +482,19 @@ export async function qualifyCredentialWriter(
 
   // Pinned builtins are omitted from pg_depend. Exact shapes also refuse a
   // builtin pg_notify/set_config side effect hidden in a new default or CHECK.
+  // A failed concurrent email-index rebuild can retain the reviewed definition.
+  // Canonical users require its live/ready/valid flags in this same snapshot;
+  // historical profiles keep their original definition-only receipt scope.
   const relationShapes = await client<{ name: string; shape: unknown }[]>`
     SELECT relation.relname AS name,
       json_build_object(
         'columns',(SELECT json_agg(json_build_array(attribute.attname,format_type(attribute.atttypid,attribute.atttypmod),attribute.attnotnull,attribute.attidentity,attribute.attgenerated,pg_get_expr(default_row.adbin,default_row.adrelid)) ORDER BY attribute.attnum)
           FROM pg_attribute attribute LEFT JOIN pg_attrdef default_row ON default_row.adrelid=attribute.attrelid AND default_row.adnum=attribute.attnum WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped),
-        'indexes',(SELECT json_agg(pg_get_indexdef(indexrelid) ORDER BY indexrelid::regclass::text) FROM pg_index WHERE indrelid=relation.oid),
+        'indexes',(SELECT json_agg(CASE WHEN ${directPartnerRevocation} AND relation.relname='users'
+            AND indexrelid=to_regclass('public.users_email_lower_key')
+            AND NOT (indisunique AND indisvalid AND indisready AND indislive)
+          THEN 'UNUSABLE_USERS_EMAIL_KEY' ELSE pg_get_indexdef(indexrelid) END
+          ORDER BY indexrelid::regclass::text) FROM pg_index WHERE indrelid=relation.oid),
         'constraints',(SELECT json_agg(pg_get_constraintdef(oid) ORDER BY conname) FROM pg_constraint WHERE conrelid=relation.oid AND contype<>'n')) AS shape
     FROM pg_class relation WHERE relation.relnamespace='public'::regnamespace
       AND relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(closureRelations)}::text::jsonb)) ORDER BY relation.relname`;

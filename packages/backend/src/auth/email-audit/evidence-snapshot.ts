@@ -9,7 +9,7 @@
  * every parameter is a number from the code.
  */
 import { createHash } from 'node:crypto';
-import { sqlNormalizedAccountEmail } from '../account-email-sql';
+import { sqlNormalizedAccountEmail } from '@boardsesh/db/account-email-sql';
 import { and, count, eq, gt, isNull, notExists, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';

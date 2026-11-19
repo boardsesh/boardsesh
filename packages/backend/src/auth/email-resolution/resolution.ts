@@ -11,7 +11,7 @@ import {
 } from '@boardsesh/db/schema/auth';
 import type { EvidenceWorksheet } from '../email-audit/evidence';
 import { normalizeAccountEmail } from '../normalize-email';
-import { sqlNormalizedAccountEmail } from '../account-email-sql';
+import { sqlNormalizedAccountEmail } from '@boardsesh/db/account-email-sql';
 import type { CurrentStoreTransaction } from '../current-store/foundation-context';
 import { lockLegacyIdentityWriterManifest } from '../current-store/identity-writer-gate';
 
