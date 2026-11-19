@@ -390,6 +390,14 @@ recovery with newer tooling captures the original source. Version-only builds an
 an unchanged sibling-platform fingerprint still receive screenshots for their new
 marketing version. Each capture pins that source throughout its jobs.
 
+Before an iOS screenshot upload, finalization checks out only `fastlane` from
+the workflow's immutable `github.workflow_sha` and verifies both checkout SHAs.
+It replaces only `Fastfile`, `Gemfile`, `Gemfile.lock`, and `fastlane/lib` in the
+captured source. The app version, captions, screenshot artifacts, and listing
+metadata remain on the captured source. This keeps the remote-locale fence in
+effect even when an automatic capture follows a binary built before that fence
+existed. Capture-only and unchanged runs do not install uploader tooling.
+
 The upload lane needs the `Production` environment, whose deployment-branch
 policy must list `main` (see Notes) — without it a main-triggered
 automatic upload fails with a branch-policy rejection.

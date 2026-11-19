@@ -1167,6 +1167,47 @@ jobs:
       # success() ANDed in automatically, so these steps would already skip after
       # a prior failure without it. fastlane's screenshots lane is a pure network
       # upload (no Xcode), so it runs fine on ubuntu.
+      - name: Checkout trusted screenshot upload tooling
+        if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/store-upload-tooling
+          sparse-checkout: fastlane
+          persist-credentials: false
+
+      # An older uploaded binary can predate the remote-locale fence in the
+      # screenshots lane. Keep its app config and captured tree, but always use
+      # the uploader and matching gems pinned to this workflow's own revision.
+      - name: Install trusted screenshot upload tooling
+        if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        env:
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+          STORE_UPLOAD_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          tooling_root=.boardsesh/store-upload-tooling
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C "$tooling_root" rev-parse HEAD)" != "$STORE_UPLOAD_TOOLING_SHA" ]; then
+            echo "::error::Application or screenshot uploader checkout does not match its immutable source."
+            exit 1
+          fi
+          if [ ! -d fastlane ] || [ -L fastlane ]; then
+            echo "::error::Expected a regular application fastlane directory."
+            exit 1
+          fi
+          for filename in Fastfile Gemfile Gemfile.lock; do
+            test -f "$tooling_root/fastlane/$filename"
+            test ! -L "$tooling_root/fastlane/$filename"
+          done
+          test -d "$tooling_root/fastlane/lib"
+          test ! -L "$tooling_root/fastlane/lib"
+          rm -f fastlane/Fastfile fastlane/Gemfile fastlane/Gemfile.lock
+          rm -rf fastlane/lib
+          cp "$tooling_root/fastlane/Fastfile" "$tooling_root/fastlane/Gemfile" "$tooling_root/fastlane/Gemfile.lock" fastlane/
+          cp -R "$tooling_root/fastlane/lib" fastlane/lib
+          printf 'Application source: %s\nScreenshot upload tooling: %s\n' "$APP_SOURCE_SHA" "$STORE_UPLOAD_TOOLING_SHA"
+
       - name: Set up Ruby + fastlane
         if: ${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
         uses: ruby/setup-ruby@v1
