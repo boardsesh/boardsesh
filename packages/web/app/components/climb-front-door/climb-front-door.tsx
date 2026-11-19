@@ -68,9 +68,9 @@ const containerSx = {
   minWidth: 0,
   maxWidth: 1200,
   margin: '0 auto',
-  padding: `${themeTokens.spacing[4]}px ${themeTokens.spacing[8]}px`,
+  paddingBlock: `${themeTokens.spacing[4]}px`,
+  paddingInline: 'var(--page-gutter, var(--spacing-6))',
   '& > *': { maxWidth: 720, minWidth: 0 },
-  '@media (max-width: 600px)': { px: 2 },
   paddingTop: 'calc(var(--global-header-height) + var(--spacing-4))',
 };
 
