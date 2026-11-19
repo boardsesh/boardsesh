@@ -1,39 +1,61 @@
-# First-visit consent notice: review evidence
+# First-visit consent notice: current review evidence
 
-Captured on 19 November 2026 in a local website-refresh integration preview, using fresh anonymous browser contexts and local development data. The consent component and five consent catalogs came from [`6b89a652b9`](https://github.com/boardsesh/boardsesh/commit/6b89a652b93ae9c53e77dcba04393303d4317842); the surrounding website was preview commit [`80998282b8`](https://github.com/boardsesh/boardsesh/commit/80998282b86bfdfa5c6cd91e64cfcce382706348). The candidate was overlaid only for capture, then removed and the preview restored. These are development-preview screenshots, not evidence of a production release.
+Refreshed on 19 November 2026 against main [`0757401e2b`](https://github.com/boardsesh/boardsesh/commit/0757401e2b6d66a96a077bff7432e524210a1025). Candidate source: [`6c9d237e2d`](https://github.com/boardsesh/boardsesh/commit/6c9d237e2d236a2197d581666d7fcfeabec9f873). The original five shortened disclosures are preserved; Simplified Chinese now supplies the same summary and Details keys. No files from unmerged #7870 were imported.
 
-## Geometry at the default text size
+These are development-preview screenshots, not evidence of production release or privacy-owner approval. Before captures temporarily restore only the main consent component and six consent catalogs. Candidate captures use the committed candidate with exactly the same merged homepage, viewport and browser settings. Sources were restored after capture. No app layout or content was restyled for the comparison.
 
-Phone viewport: **390 × 664**. Desktop viewport: **1440 × 900**. Phone contexts used an iPhone Safari user-agent in headless Chromium; this is not a physical Safari test. Measurements come from DOM rectangles in [geometry.json](geometry.json).
+## Matched captures
 
-| Locale / viewport | Before card | Candidate card | Candidate choices |
-| --- | --- | --- | --- |
-| English / phone | 374 × 443.6 px | 358 × 183 px | 163 × 44 px each, same row |
-| Spanish / phone | — | 358 × 204 px | 163 × 44 px each, same row |
-| French / phone | — | 358 × 204 px | 163 × 44 px each, same row |
-| German / phone | — | 358 × 183 px | 163 × 44 px each, same row |
-| Italian / phone | — | 358 × 204 px | 163 × 44 px each, same row |
-| English / desktop | 600 × 311.6 px | 420 × 183 px | 194 × 44 px each, same row |
+Phone: **390 × 664**. Desktop: **1440 × 900**. All six current locales have matched before/after images.
 
-The candidate has 16 px left, right and bottom gutters on phones. Its card plus the measured bottom gutter covers **199–220 px**, below the 260 px target. No hardware safe-area inset was active in this capture; the CSS safe-area rule still needs physical-device review. The English phone's “Get the free app” button was covered before and unobscured afterward. The desktop candidate sits at x=16, y=701 with no overlap of the measured hero store button. Hero-button overlap was measured for English only; translated screenshots are provided for visual review. Every recorded page had horizontal document width equal to the viewport, and every default-size card had equal scroll/client height.
-
-| English comparison | Before | Candidate |
+| Locale | Phone | Desktop |
 | --- | --- | --- |
-| Phone | [390 × 664](before/390-en-US.png) | [390 × 664](candidate/390-en-US.png) |
-| Desktop | [1440 × 900](before/1440-en-US.png) | [1440 × 900](candidate/1440-en-US.png) |
+| English | [Before](before/390-en-US.png) / [Candidate](candidate/390-en-US.png) | [Before](before/1440-en-US.png) / [Candidate](candidate/1440-en-US.png) |
+| Spanish | [Before](before/390-es.png) / [Candidate](candidate/390-es.png) | [Before](before/1440-es.png) / [Candidate](candidate/1440-es.png) |
+| French | [Before](before/390-fr.png) / [Candidate](candidate/390-fr.png) | [Before](before/1440-fr.png) / [Candidate](candidate/1440-fr.png) |
+| German | [Before](before/390-de.png) / [Candidate](candidate/390-de.png) | [Before](before/1440-de.png) / [Candidate](candidate/1440-de.png) |
+| Italian | [Before](before/390-it.png) / [Candidate](candidate/390-it.png) | [Before](before/1440-it.png) / [Candidate](candidate/1440-it.png) |
+| Simplified Chinese | [Before](before/390-zh-CN.png) / [Candidate](candidate/390-zh-CN.png) | [Before](before/1440-zh-CN.png) / [Candidate](candidate/1440-zh-CN.png) |
 
-Other phone candidates: [Spanish](candidate/390-es.png), [French](candidate/390-fr.png), [German](candidate/390-de.png), [Italian](candidate/390-it.png).
+The harness hides only `nextjs-portal` and `[data-translation-editor]`: Next.js tooling and the translation launcher gated by `NODE_ENV === 'development'`. Both are absent from production. PNGs are direct browser captures without retouching. Phone contexts use an iPhone Safari user-agent in headless Chromium; this is not a physical Safari test. A deterministic `consentRegion` response selects a prompt region; other consent behavior uses the actual provider and cookie code. Tracker requests are intercepted during capture.
 
-The screenshot harness hid only `nextjs-portal`, which contains Next.js development chrome and is absent from production. Application source and styles were unchanged by that exclusion. PNGs are direct browser captures without image retouching.
+## Geometry against #7845
 
-## Disclosure, choice and enlarged-text checks
+Raw DOM measurements: [geometry.json](geometry.json).
 
-[English Details capture](candidate/390-en-US-details.png): Details opened the existing Privacy choices dialog with the unchanged full analytics and Meta/Reddit paragraphs. Closing it and selecting No thanks saved an explicit denial cookie. The consent integration suite separately verifies both explicit answers and that opening Details does not grant analytics.
+| Locale | Before phone card | Candidate phone card | Card + bottom gutter | Candidate desktop card |
+| --- | --- | --- | --- | --- |
+| English | 443.6 px | 183 px | 199 px | 183 px |
+| Spanish | 464.6 px | 204 px | 220 px | 183 px |
+| French | 485.6 px | 204 px | 220 px | 183 px |
+| German | 464.6 px | 183 px | 199 px | 183 px |
+| Italian | 464.6 px | 204 px | 220 px | 183 px |
+| Simplified Chinese | 401.6 px | 183 px | 199 px | 162 px |
 
-A CSS text stress check doubled the notice heading, paragraph and button font sizes **and line heights**. Candidate card heights were 253.2 px English, 346.4 px Spanish, 295.2 px French, 304.4 px German and 346.4 px Italian. All remained inside the 390 × 664 viewport with no horizontal overflow. This tests enlarged CSS text, **not native browser zoom**, and the normal-size 260 px target is not applied to enlarged text.
+Every candidate phone card is 358 px wide with 16 px gutters. The card plus bottom gutter is **199–220 px**, below the **260 px** target. Both answers are equal-width **44 px** controls on one row. All six headings and primary store buttons are inside the first viewport and clear of the notice. The old notice covers every phone store button. Every desktop candidate is **420 px** wide at bottom-left, clear of both store buttons. No candidate has horizontal document overflow or clipped card content.
 
-## Validation and release gates
+Doubling notice text font sizes and line heights makes cards grow naturally to 253.2–346.4 px. All six stay inside the viewport without horizontal overflow. This CSS text stress check is not native browser zoom. No hardware safe-area inset was active; physical-device safe-area behavior remains unverified. These captures use the merged homepage at the base commit above; the separately proposed longer hero subhead still needs a combined integration check.
 
-Source commit `6b89a652b9` passed the [CI aggregate](https://github.com/boardsesh/boardsesh/actions/runs/44422028795/job/135220717892), including typecheck, web Docker and test jobs. Local validation passed 26 consent integration tests, 176 catalog-completeness tests, scoped lint/format and both translation checks. Restoring the old banner made the compact-disclosure and horizontal-choice guards fail; restoring the candidate passed them. A later evidence-only commit must get its own CI result; it does not alter the consent source.
+## Disclosure and actual consent flows
 
-**Keep PR #7881 draft.** The privacy owner must approve the exact shortened English disclosure and all translations. Coordinate with still-open [#7870](https://github.com/boardsesh/boardsesh/pull/7870), which also changes the consent notice and disclosures; this candidate preserves current regional behavior and does not include that PR. Screenshots and green checks do not replace that approval.
+[English Details](candidate/390-en-US-details.png) retains the full analytics and Meta/Reddit paragraphs and the privacy-policy link. `body` and `adMeasurement` match current main exactly in all six locales. Opening Details does not answer the notice or authorize analytics; Close returns to the unanswered notice.
+
+The six browser tests pass against this running worktree: Details; Allow and withdrawal; No thanks and later Allow; an outside-region default followed by withdrawal; failed-region fallback; outside-region Global Privacy Control. The browser tests check real UI/cookie persistence, including explicit grant/denial values and footer changes. Provider tests assert the analytics authorization state. This does not claim delivery to vendor endpoints. An initial local browser run had one click blocked by Next.js development chrome; hiding only that chrome made all six pass. The test source was restored after this local harness adjustment.
+
+## Validation and review status
+
+`vp run typecheck`: **65/65 tasks successful**, after a frozen install. Focused integration tests: **29 passed**. Six-locale catalog completeness: **230 passed**. Scoped lint/format and both translation guards pass; normal commit hooks pass. After committing the source, restoring main's original banner makes the compact-disclosure and horizontal-choice guards fail (**2 failed**); restoring the candidate passes. Full CI and two distinct post-publication Astra reviews (code quality and design) must assess the refreshed published head.
+
+The backup ref `codex/7845-consent-backup-20261119` preserves the pre-refresh candidate. Rebase onto main was conflict-free. Technical readiness follows normal CI and review checks; privacy-owner approval of the exact copy is required **before shipping**, and is not an extra requirement to keep a technically ready PR in draft.
+
+- [x] Heading and primary store button clear at 390 × 664 in six locales.
+- [x] Phone card plus gutter below 260 px; equal answers on one row.
+- [x] Desktop card clear of store buttons at 1440 × 900.
+- [x] Current six locales complete; existing regional/account authority retained.
+- [ ] Privacy owner approves the exact shortened disclosure and translations before shipping.
+
+## Merge order and wording reconciliation with #7870
+
+[#7870](https://github.com/boardsesh/boardsesh/pull/7870) remains a separate, open draft proposing worldwide opt-in, dismissal, and different disclosure copy. This PR keeps main's existing regional prompts, region defaults, GPC and saved/account authority. It does not add a third choice or change consent scope.
+
+If this compact-layout PR lands first, #7870 must rebase and preserve the compact geometry, equal choices and full Details while reconciling its new policy and dismissal controls. If #7870 lands first, rebase this PR and review every summary and Details translation against that policy before publishing a reconciled candidate. Neither merge order permits blindly restoring older disclosure paragraphs or treating technical approval as exact-copy shipping sign-off.
