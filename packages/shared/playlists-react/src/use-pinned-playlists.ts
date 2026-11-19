@@ -73,6 +73,9 @@ export function usePinnedPlaylists({
   const adapter = usePlaylistsAdapter();
   const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
   const recentsAdapter = recentsOverride ?? adapter.recents;
+  // Logging policy is not request identity: changing it must not refetch pins.
+  const isExpectedRequestErrorRef = useRef(adapter.isExpectedRequestError);
+  isExpectedRequestErrorRef.current = adapter.isExpectedRequestError;
 
   // Keep results tagged with their request context so a render for another
   // account or board never displays the previous scope while effects catch up.
@@ -121,7 +124,9 @@ export function usePinnedPlaylists({
       setPinnedState({ scope: requestScope, entries: response.myPinnedPlaylists, isLoading: false });
     } catch (err: unknown) {
       if (!isCurrentRequest()) return;
-      console.error('Failed to fetch pinned playlists:', err);
+      if (!isExpectedRequestErrorRef.current?.(err)) {
+        console.error('Failed to fetch pinned playlists:', err);
+      }
       setPinnedState({ scope: requestScope, entries: [], isLoading: false });
     }
   }, [requestScope]);

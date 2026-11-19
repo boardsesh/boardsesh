@@ -18,6 +18,8 @@ export type PlaylistsAdapter = {
    * tests.
    */
   executeGraphQL: ExecutePlaylistsGraphQL;
+  /** Local request refusals that should settle the pinned fallback without error logging. */
+  isExpectedRequestError?: (error: unknown) => boolean;
   /** Per-device recently-opened-playlists storage (used by the pinned hook). */
   recents: RecentsStorageAdapter;
 };

@@ -9,6 +9,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { PlaylistsAdapterProvider, type PlaylistsAdapter } from '@boardsesh/playlists-react';
+import { isBackendUnavailableError } from '../lib/connectivity/backend-unavailable-error';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { mobileRecentsAdapter } from '../lib/playlists/recents-store';
 
@@ -16,6 +17,7 @@ export function PlaylistsAdapterWrapper({ children }: { children: ReactNode }) {
   const adapter = useMemo<PlaylistsAdapter>(
     () => ({
       executeGraphQL: (query, variables) => offlineAwareRequest(query, variables),
+      isExpectedRequestError: isBackendUnavailableError,
       recents: mobileRecentsAdapter,
     }),
     [],
