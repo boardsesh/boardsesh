@@ -74,11 +74,6 @@ vi.mock('@/app/lib/website-journey-analytics', () => ({
   trackWebsiteJourneyLinkClick: vi.fn(),
 }));
 
-vi.mock('@/app/lib/website-journey-analytics', () => ({
-  trackWebsiteJourneyEvent: vi.fn(),
-  trackWebsiteJourneyLinkClick: vi.fn(),
-}));
-
 describe('SiteFooter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -99,6 +94,11 @@ describe('SiteFooter', () => {
     expect(brandLink.textContent).toBe('Boardsesh');
     expect(brandLink.querySelector('img')?.getAttribute('src')).toContain('boardsesh-mark');
     expect(brandLink.querySelector('img')?.getAttribute('alt')).toBe('');
+    fireEvent.click(brandLink);
+    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+      name: 'Nav Link Clicked',
+      properties: { area: 'footer', target: '/' },
+    });
   });
 
   it('links to every static page in the sitemap', () => {
