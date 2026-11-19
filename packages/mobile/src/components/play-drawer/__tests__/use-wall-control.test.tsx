@@ -159,6 +159,15 @@ describe('useWallControl', () => {
   });
 
   // #7113: a press on the frosted button stops driving and keeps the link.
+  it('leaves a stopped source stopped while an Always-drive move is pending or cancelled', () => {
+    stopDrivingForLink();
+    const { hook, run } = setup(modelFor('move_to_board', 'move_to_board', { tapDrive: 'resume' }));
+    act(() => hook.result.current.press('button'));
+    expect(run.moveToBoard).toHaveBeenCalledOnce();
+    expect(isDrivingStoppedForLink()).toBe(true);
+    expect(run.keepLighting).not.toHaveBeenCalled();
+  });
+
   it('stops driving on You are driving the wall: no disconnect, a light buzz, and says so', () => {
     resetDriveModeForTests();
     enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 });

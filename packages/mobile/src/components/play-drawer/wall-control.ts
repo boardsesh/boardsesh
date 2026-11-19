@@ -245,7 +245,7 @@ export function resolveWallControlAction({
 
 /** A tap that connects, puts the climb up, or lights it again (`tapDrive`, keep-lighting). */
 export function isPutUpAction(action: WallControlAction): boolean {
-  return action === 'connect' || action === 'put_on_wall' || action === 'relight';
+  return action === 'connect' || action === 'put_on_wall' || action === 'relight' || action === 'move_to_board';
 }
 
 /**
@@ -371,6 +371,8 @@ export type WallControlBulbValueKey =
   | 'valueOff';
 
 export type WallControlInput = WallControlStateInput & {
+  /** Whether the destination gym board can light climbs. Defaults to true. */
+  gymBoardHasLights?: boolean;
   /** This phone holds a wall with no lights (`useLightbulbControl().wallHeldLocally`). */
   wallHeldLocally: boolean;
   /**
@@ -451,8 +453,9 @@ export type WallControlInput = WallControlStateInput & {
  *
  * - `window` — once the climb is up, a timed drive: every pick lights for the
  *   Stop driving after choice of 30 s to 5 minutes, each lit climb restarting it
- *   (`tapKeepLighting`). Only where a swipe could start a drive here
- *   (`swipeAction`), with nothing driving yet: never on a relay, Set active, a
+ *   (`tapKeepLighting`). Where a swipe could start a drive here
+ *   (`swipeAction`), with nothing driving yet, or after moving to another
+ *   gym board with lights: never on a relay, Set active, a
  *   wall with no lights, or with the `wall-swipe-to-drive` flag off. In a crew
  *   only with In a session too on, on every board.
  * - `drive` — the same where the choice is Until I stop: an open-ended drive.
@@ -461,7 +464,7 @@ export type WallControlInput = WallControlStateInput & {
  *   open-ended drive comes back once this phone's link holds the board
  *   (`DriveModeWatcher`), and lights the next ones.
  * - null — the press lights this climb once: Right away, Set active, a drive
- *   already on, or a press that puts nothing up.
+ *   already on this board, or a press that puts nothing up.
  */
 export type WallControlTapDrive = 'window' | 'drive' | 'resume' | null;
 
@@ -684,10 +687,12 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
       : null;
   // A press puts one climb up. Where Always drive the wall drives, its own
   // open-ended drive lights the next ones, so the press only drops a stop.
-  // Otherwise the Stop driving after choice (2.7) starts a timed
-  // drive, or an open-ended one for Until I stop, once the climb is up: where
-  // the swipe could start a drive (its own rule) and nothing drives yet.
-  const putsUp = isPutUpAction(tapAction) && labelKey !== 'setActive';
+  // A move starts a drive on its destination, even when the source board is
+  // already driven. It still offers no swipe: the handler waits for the
+  // destination before arming and lighting it.
+  const movingToBoard = tapAction === 'move_to_board';
+  const destinationCanDrive = movingToBoard && input.gymBoardHasLights !== false && !input.pending;
+  const putsUp = isPutUpAction(tapAction) && labelKey !== 'setActive' && (!movingToBoard || destinationCanDrive);
   const keepLightingPlan = resolveKeepLightingPlan({
     keepLighting: input.keepLighting ?? 'off',
     drivesInSession: input.drivesInSession === true,
@@ -701,8 +706,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     putsUp &&
     keepLightingPlan !== null &&
     input.swipeToDriveEnabled === true &&
-    driveMode === 'off' &&
-    swipeAction === 'drive'
+    (destinationCanDrive || (driveMode === 'off' && swipeAction === 'drive'))
   ) {
     tapDrive = keepLightingPlan.windowMs === null ? 'drive' : 'window';
     tapKeepLighting = keepLightingPlan;

@@ -44,6 +44,11 @@ import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { configKey, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
+const moveQueryClient = vi.hoisted(() => ({ getQueryData: () => undefined }));
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => moveQueryClient,
+}));
 const toggleFavorite = vi.hoisted(() => vi.fn());
 const announceMock = vi.hoisted(() => vi.fn());
 
@@ -319,6 +324,7 @@ vi.mock('../../../lib/queue-navigation-analytics', () => ({
   trackQueueSheetOpened: vi.fn(),
 }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
+  ACTIVE_BOARD_QUERY_KEY: ['activeBoard'],
   useActiveBoard: () => ({ data: activeBoard.current, isPending: false }),
 }));
 
