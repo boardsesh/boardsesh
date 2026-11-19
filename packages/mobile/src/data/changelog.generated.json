@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-11-18T23:01:52.076Z",
+  "generatedAt": "2026-11-19T05:44:07.169Z",
   "entries": [
+    {
+      "prNumber": 7840,
+      "category": "new",
+      "title": "Plan a board workout with your AI assistant using your climbing history or a training screenshot. Download the local connector from GitHub Releases after it ships.",
+      "mergedAt": "2026-11-19T05:31:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7840"
+    },
+    {
+      "prNumber": 7882,
+      "category": "fixed",
+      "title": "Open a shared climb or playlist and get straight to the app. Browse clearer gym listings and find board troubleshooting faster.",
+      "mergedAt": "2026-11-19T05:28:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7882"
+    },
+    {
+      "prNumber": 7879,
+      "category": "fixed",
+      "title": "See who runs Boardsesh, how it stays free, and what happens when you link a board account.",
+      "mergedAt": "2026-11-19T05:27:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7879"
+    },
     {
       "prNumber": 7874,
       "category": "improved",
