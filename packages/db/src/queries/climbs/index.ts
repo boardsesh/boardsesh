@@ -9,6 +9,8 @@ export {
   PLAYLIST_FILTER_SCOPE,
   gradeValueSql,
   hiddenClimbCondition,
+  holdIntegrityCondition,
+  retiredByResetCondition,
   personalGradeRangeCondition,
   buildPersonalGradeSubquery,
   buildPersonalGradeJoinTarget,

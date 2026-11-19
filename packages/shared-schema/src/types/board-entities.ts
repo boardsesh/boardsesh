@@ -206,6 +206,7 @@ export type BoardDiscoveryBoard = {
   locationName: string | null;
   uniqueClimbers: number;
   currentClimb: BoardDiscoveryClimb | null;
+  popularClimb?: BoardDiscoveryClimb | null;
 };
 
 export type SearchBoardsInput = {

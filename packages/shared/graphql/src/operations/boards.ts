@@ -41,6 +41,12 @@ export const GET_BOARD_DISCOVERY = gql`
         frames
         angle
       }
+      popularClimb {
+        uuid
+        name
+        frames
+        angle
+      }
     }
   }
 `;
