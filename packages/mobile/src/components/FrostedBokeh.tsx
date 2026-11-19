@@ -174,8 +174,11 @@ function FrostedBokehComponent({
       followsSwap && swapCenterPage !== undefined
         ? {
             centerPage: swapCenterPage,
-            previous: swapPrevious ? { key: swapPrevious.key, blobs: gpuBokehBlobs(swapPrevious, true) } : null,
-            next: swapNext ? { key: swapNext.key, blobs: gpuBokehBlobs(swapNext, true) } : null,
+            // A missing neighbour is left out, never null: a null nested record does not reach the native view.
+            ...(swapPrevious
+              ? { previous: { key: swapPrevious.key, blobs: gpuBokehBlobs(swapPrevious, true) } }
+              : null),
+            ...(swapNext ? { next: { key: swapNext.key, blobs: gpuBokehBlobs(swapNext, true) } } : null),
           }
         : null,
     [followsSwap, swapCenterPage, swapPrevious, swapNext],
@@ -183,10 +186,7 @@ function FrostedBokehComponent({
   const swapFrames = swapClimbs ? swap?.frames : undefined;
   const { target: swapTarget, latest: latestSwapFrame } = useFrostSwapFrame<GpuViewInstance>(swapFrames, followsSwap);
   // The command's copy for mount; the sequence drops it once the command delivered the frame.
-  const swapFrameProps = useAnimatedProps(
-    () => ({ swapFrame: latestSwapFrame.value ?? INITIAL_FROST_SWAP_FRAME }),
-    [latestSwapFrame],
-  );
+  const swapFrameProps = useAnimatedProps(() => ({ swapFrame: latestSwapFrame.value ?? INITIAL_FROST_SWAP_FRAME }));
   const [previous, setPrevious] = useState<FrostedBokehLayer | null>(null);
   const shownRef = useRef(layer);
   const fadeIn = useRef(new Animated.Value(1)).current;

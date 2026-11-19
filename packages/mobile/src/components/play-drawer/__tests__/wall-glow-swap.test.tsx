@@ -17,8 +17,8 @@ type GpuProps = {
   glideMs?: number;
   swapClimbs?: {
     centerPage: number;
-    previous: { key: string; blobs: { id?: number; seed?: number }[] } | null;
-    next: { key: string; blobs: { id?: number; seed?: number }[] } | null;
+    previous?: { key: string; blobs: { id?: number; seed?: number }[] };
+    next?: { key: string; blobs: { id?: number; seed?: number }[] };
   } | null;
   swapLook?: readonly number[] | null;
   releaseMs?: number;
@@ -140,7 +140,8 @@ describe('the frost following the board swap', () => {
     expect(props).toMatchObject({ releaseMs: 220, releaseOutMs: 150, swapLook: LOOK });
     expect(props).not.toHaveProperty('dissolveMs');
     expect(props?.swapClimbs?.centerPage).toBe(5);
-    expect(props?.swapClimbs?.previous).toBeNull();
+    // A missing neighbour is left out, never null: iOS drops the whole record on a null nested record.
+    expect(props?.swapClimbs).not.toHaveProperty('previous');
     expect(props?.swapClimbs?.next?.key).toBe('climb-6');
     // Every light carries its hold id and a breathing seed, so a shared hold is
     // matched and keeps its phase when its slot changes.

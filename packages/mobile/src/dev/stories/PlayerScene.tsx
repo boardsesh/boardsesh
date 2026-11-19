@@ -6,7 +6,12 @@ import { StorySprayBoard } from './StorySprayBoard';
 import type { StoryBoardFixture } from '../fixtures/boards';
 import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { useCallback, useMemo, useState } from 'react';
-import { useSharedValue } from 'react-native-reanimated';
+import { useAnimatedReaction, useSharedValue } from 'react-native-reanimated';
+import { useWallSwap } from '../../components/play-drawer/use-wall-swap';
+import { PLAYER_SWAP_LOOK } from '../../components/play-drawer/player-swap-look';
+import { swapLookTransition } from '../../components/play-drawer/swap-look-driver';
+import { WALL_SWAP_NATIVE_API } from '../../components/play-drawer/wall-swap';
+import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { SwipeBoardCarousel } from '../../components/play-drawer/SwipeBoardCarousel';
 import { useSwipeNavigation, useSwipePager, useSwipePages } from '../../components/play-drawer/use-swipe-pager';
 import type { WallControlSwap } from '../../components/play-drawer/WallControlButton';
@@ -32,6 +37,13 @@ import { StoryBoard } from './StoryBoard';
 import type { StoryRenderControls } from './types';
 
 const noop = () => {};
+/**
+ * Where the board cannot swap (the iOS Simulator reports native API 1, so it
+ * pages PNGs), the story runs the player's swap look on the pager itself and
+ * hands its frames to the frost, so the frost's side can still be checked there.
+ */
+const BOARD_SWAPS = climbOverlayGpuApiVersion >= WALL_SWAP_NATIVE_API;
+const STORY_SWAP_LOOK = swapLookTransition(PLAYER_SWAP_LOOK);
 /** `driving`: this phone drives the wall (a live drive), so the wall button wears the frost. */
 export type PlayerSceneState = 'lit' | 'driving' | 'preview' | 'crew' | 'dark' | 'disconnected' | 'busy';
 /** The production player's layout, header, board and actions driven entirely by local story state. */
@@ -111,6 +123,14 @@ export function PlayerScene({
   const nextClimb = index < climbs.length - 1 ? climbs[index + 1] : null;
   const centerPage = useSwipePages(pager, stepSignal, previousClimb?.uuid ?? null, climb.uuid, nextClimb?.uuid ?? null);
   const swapFrames = useSharedValue<BoardSwapFrame | null>(null);
+  const storyFrames = useWallSwap(pager, centerPage, swipeBoard && !BOARD_SWAPS, STORY_SWAP_LOOK);
+  const drivesFrames = swipeBoard && !BOARD_SWAPS;
+  useAnimatedReaction(
+    () => (drivesFrames ? storyFrames.value : undefined),
+    (frame) => {
+      if (frame !== undefined) swapFrames.value = frame;
+    },
+  );
   const followsBoard = swipeBoard && wallGlow !== null;
   const previousGlow = useStoryWallGlow({
     board,
@@ -199,7 +219,7 @@ export function PlayerScene({
               canSwipePrevious={previousClimb !== null}
               onSwipeNext={next}
               onSwipePrevious={previous}
-              swapFrameMirror={swapFrames}
+              swapFrameMirror={BOARD_SWAPS ? swapFrames : undefined}
             />
           ) : fixture.spray ? (
             <StorySprayBoard

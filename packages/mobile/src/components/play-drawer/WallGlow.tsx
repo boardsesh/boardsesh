@@ -87,7 +87,7 @@ function SwapLabelFade({
   const opacity = useAnimatedStyle(() => {
     const needed = Math.max(held, swapLabelFade(frames.value, fades));
     return { opacity: strongest > 0 ? Math.min(1, needed / strongest) : 0 };
-  }, [frames, fades, held, strongest]);
+  });
   return <Reanimated.View pointerEvents="none" style={[style, opacity]} testID="wall-glow-label-fade" />;
 }
 

@@ -16,8 +16,9 @@ export type GpuBokehSwapClimb = { key: string; blobs: readonly GpuBokehBlob[] };
 /** The board's pages around the climb on show, which sits on `centerPage`. */
 export type GpuBokehSwapClimbs = {
   centerPage: number;
-  previous: GpuBokehSwapClimb | null;
-  next: GpuBokehSwapClimb | null;
+  /** Left out when there is none: the native record takes a missing field as nil. */
+  previous?: GpuBokehSwapClimb;
+  next?: GpuBokehSwapClimb;
 };
 
 export type FrostedBokehGPUNativeProps = ViewProps & {
