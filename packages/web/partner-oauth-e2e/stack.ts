@@ -18,6 +18,24 @@ export const SEED_OUTPUT_PREFIX = 'PARTNER_OAUTH_E2E_SEED=';
 export const WWW_HOST = 'www.boardsesh.com';
 export const API_HOST = 'api.boardsesh.com';
 export const WS_HOST = 'ws.boardsesh.com';
+/** Reserved test domains: served only by the owned callback server behind the proxy. */
+export const PUBLIC_APP_HOST = 'public.partner.test';
+export const CONFIDENTIAL_APP_HOST = 'confidential.partner.test';
+export const UNREGISTERED_APP_HOST = 'unregistered.partner.test';
+export const PARTNER_SCENARIOS = [
+  'public-web',
+  'confidential-web',
+  'native-scheme',
+  'loopback',
+  'cors',
+  'hydration',
+  'journey',
+] as const;
+export type PartnerScenario = (typeof PARTNER_SCENARIOS)[number];
+export const PARTNER_TEST_HOSTS = [PUBLIC_APP_HOST, CONFIDENTIAL_APP_HOST, UNREGISTERED_APP_HOST] as const;
+export const PUBLIC_APP_ORIGIN = `https://${PUBLIC_APP_HOST}`;
+export const CONFIDENTIAL_APP_ORIGIN = `https://${CONFIDENTIAL_APP_HOST}`;
+export const UNREGISTERED_APP_ORIGIN = `https://${UNREGISTERED_APP_HOST}`;
 
 export const WWW_ORIGIN = `https://${WWW_HOST}`;
 export const ISSUER = `https://${API_HOST}/api/auth`;
@@ -32,7 +50,7 @@ export interface SeededAccount {
 }
 
 export interface PartnerOAuthStack {
-  /** The browser's HTTP proxy. It tunnels only to the three hosts above. */
+  /** The browser's HTTP proxy. It tunnels only to the fixed app and test hosts above. */
   proxyServer: string;
   /** Where the partner app's server reaches the edge directly, as a backend calling api.boardsesh.com would. */
   appEdgePort: number;
@@ -47,13 +65,20 @@ export interface PartnerOAuthStack {
 }
 
 export type SeedResult = Pick<PartnerOAuthStack, 'developer' | 'climber' | 'climb' | 'historyTickId'>;
+export type SerializedPartnerOAuthStack = Omit<PartnerOAuthStack, keyof SeedResult> & {
+  /** Each engine and scenario owns its logbook, accounts, rate buckets and connections. */
+  seeds: Record<string, SeedResult>;
+};
 
-export function readStack(): PartnerOAuthStack {
+export function readStack(browserName: string, scenario: PartnerScenario): PartnerOAuthStack {
   const raw = process.env[STACK_ENVIRONMENT_VARIABLE];
   if (!raw) {
     throw new Error(
       `${STACK_ENVIRONMENT_VARIABLE} is not set. Run this suite with \`vp run test:e2e:partner-oauth\`, whose global setup starts the stack.`,
     );
   }
-  return JSON.parse(raw) as PartnerOAuthStack;
+  const serialized = JSON.parse(raw) as SerializedPartnerOAuthStack;
+  const seed = serialized.seeds[`${browserName}:${scenario}`];
+  if (!seed) throw new Error(`No owned partner fixture for ${browserName}:${scenario}`);
+  return { ...serialized, ...seed };
 }

@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { FEATURE_FLAG_OVERRIDES_ENV, parseFeatureFlagOverrides } from '@boardsesh/analytics';
 import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner-oauth';
 import { startEdge, type Edge } from './edge';
+import { startCallbackServer } from './callback-server';
 import {
   assertLocalOnly,
   inheritedEnvironment,
@@ -19,12 +20,14 @@ import {
 import {
   API_HOST,
   E2E_DEVELOPER_TERMS_VERSION,
+  PARTNER_TEST_HOSTS,
+  PARTNER_SCENARIOS,
   SEED_OUTPUT_PREFIX,
   STACK_ENVIRONMENT_VARIABLE,
   WS_HOST,
   WWW_HOST,
   WWW_ORIGIN,
-  type PartnerOAuthStack,
+  type SerializedPartnerOAuthStack,
   type SeedResult,
 } from './stack';
 
@@ -99,7 +102,7 @@ function createCertificate(directory: string): { key: Buffer; cert: Buffer } {
       '-subj',
       `/CN=${WWW_HOST}`,
       '-addext',
-      `subjectAltName=DNS:${WWW_HOST},DNS:${API_HOST},DNS:${WS_HOST}`,
+      `subjectAltName=${[WWW_HOST, API_HOST, WS_HOST, ...PARTNER_TEST_HOSTS].map((host) => `DNS:${host}`).join(',')}`,
       '-keyout',
       keyPath,
       '-out',
@@ -226,31 +229,42 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   }
   const redisUrl = process.env.REDIS_URL || devDatabase.REDIS_URL || '';
   // Chosen here, so teardown can remove them even after a seed that failed halfway.
-  const developerId = `partner-e2e-developer-${randomUUID()}`;
-  const climberId = `partner-e2e-climber-${randomUUID()}`;
+  const userIds: string[] = [];
 
   mkdirSync(LOG_DIRECTORY, { recursive: true });
   const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-partner-e2e-'));
   const processes: ManagedProcess[] = [];
   let edge: Edge | undefined;
+  let callbacks: Awaited<ReturnType<typeof startCallbackServer>> | undefined;
   let seededAny = false;
   const teardown = async () => {
     await Promise.all(processes.map(stopProcess));
     await edge?.close();
+    await callbacks?.close();
     if (seededAny && process.env.PARTNER_OAUTH_E2E_KEEP_DATA !== '1') {
-      runDatabaseStep(databaseUrl, ['cleanup', developerId, climberId]);
+      runDatabaseStep(databaseUrl, ['cleanup', ...userIds]);
     }
     rmSync(workDirectory, { recursive: true, force: true });
   };
 
   try {
     // Refuses anything but a local database before it writes a row.
-    seededAny = true;
-    const seedOutput = runDatabaseStep(databaseUrl, ['seed', developerId, climberId])
-      .split('\n')
-      .find((line) => line.startsWith(SEED_OUTPUT_PREFIX));
-    if (!seedOutput) throw new Error('The seed step printed no result.');
-    const seeded = JSON.parse(seedOutput.slice(SEED_OUTPUT_PREFIX.length)) as SeedResult;
+    const seeds: Record<string, SeedResult> = {};
+    // Invalid registrations also spend the real developer write budget. Give
+    // each case its own account rather than weakening limits or waiting them out.
+    for (const browserName of ['chromium', 'webkit']) {
+      for (const scenario of PARTNER_SCENARIOS) {
+        const developerId = `partner-e2e-developer-${randomUUID()}`;
+        const climberId = `partner-e2e-climber-${randomUUID()}`;
+        userIds.push(developerId, climberId);
+        seededAny = true;
+        const seedOutput = runDatabaseStep(databaseUrl, ['seed', developerId, climberId])
+          .split('\n')
+          .find((line) => line.startsWith(SEED_OUTPUT_PREFIX));
+        if (!seedOutput) throw new Error('The seed step printed no result.');
+        seeds[`${browserName}:${scenario}`] = JSON.parse(seedOutput.slice(SEED_OUTPUT_PREFIX.length)) as SeedResult;
+      }
+    }
 
     const certificate = createCertificate(workDirectory);
     const [backendPort, webPort] = [await freePort(), await freePort()];
@@ -341,10 +355,17 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       ),
     );
 
+    const callbackServer = await startCallbackServer();
+    callbacks = callbackServer;
     edge = await startEdge({
       key: certificate.key,
       cert: certificate.cert,
-      upstreams: { [WWW_HOST]: webPort, [API_HOST]: backendPort, [WS_HOST]: backendPort },
+      upstreams: {
+        [WWW_HOST]: webPort,
+        [API_HOST]: backendPort,
+        [WS_HOST]: backendPort,
+        ...Object.fromEntries(PARTNER_TEST_HOSTS.map((host) => [host, callbackServer.port])),
+      },
       // www's Sentry tunnel and the backend's PostHog proxy forward to the real services.
       refusedPathPrefixes: { [WWW_HOST]: ['/monitoring'], [API_HOST]: ['/api/posthog'], [WS_HOST]: ['/api/posthog'] },
     });
@@ -379,11 +400,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       await probe(webPort, path, WWW_HOST);
     }
 
-    const stack: PartnerOAuthStack = {
+    const stack: SerializedPartnerOAuthStack = {
       proxyServer: edge.proxyServer,
       appEdgePort: edge.appPort,
       certificatePem: certificate.cert.toString('utf8'),
-      ...seeded,
+      seeds,
     };
     process.env[STACK_ENVIRONMENT_VARIABLE] = JSON.stringify(stack);
     return teardown;

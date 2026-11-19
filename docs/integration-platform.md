@@ -1222,13 +1222,15 @@ seconds in the `backend` project.
 It cannot prove: browser CORS in real Chromium and WebKit, the www consent and
 sign-in pages, consent on iOS Safari and Android Chrome, Cloudflare and Railway in
 front of the API host, and Sentry and PostHog redaction. The logbook routes and
-Connected apps have their own suites (L4, F16). The end-to-end journey below covers the www pages and the credentialed consent CORS in
-Chromium.
+Connected apps have their own suites (L4, F16). The end-to-end journeys below cover
+the www pages, credentialed consent CORS and partner-origin token/API requests in
+Chromium and desktop WebKit.
 
 #### End-to-end journey
 
-`packages/web/partner-oauth-e2e/` (#6981 F18) drives one app's whole life in
-Chromium, on the real www pages and the real backend:
+`packages/web/partner-oauth-e2e/` (#6981 F18) runs seven journeys in each of
+Chromium and desktop WebKit, on the real www pages and the real backend. The
+original public native app journey exercises the logbook and Connected apps UI:
 
 1. A developer signs in on www and registers a public native app with a loopback
    redirect, through the console's own GraphQL operation (`CREATE_OAUTH_CLIENT`)
@@ -1252,14 +1254,52 @@ Chromium, on the real www pages and the real backend:
 CI runs it in `.github/workflows/partner-oauth-e2e.yml`: nightly at 16:47 UTC
 (a red nightly posts to the Discord deploy channel), on a manual dispatch, and on
 a pull request only when partner OAuth code or this spec changes. The report and,
-on failure, the server logs are uploaded as artifacts. It covers the Chromium
-happy path with a public native app; the public browser app, confidential app,
-custom scheme, loopback variants and the readable 401/429 responses are not
-driven in a browser yet.
+on failure, the server logs are uploaded as artifacts. It covers the public
+native app journey plus six qualification cases in each engine:
 
-Run it with `vp run db:up` once, then `vp run test:e2e:partner-oauth`. A warm run
-takes about 15 seconds; the first one waits for `next dev` to compile the pages
-(budget 5 minutes). It writes two accounts with `partner-e2e-` ids and
+- With the climber's real browser scripts held, sign-in has disabled controls
+  and no native form owner. Physical click/typing/Enter and a programmatic
+  `requestSubmit()` attempt preserve the exact signed URL without navigation.
+  Releasing the same scripts enables the real form; password sign-in, consent,
+  code redemption and `/v1/me` complete that same OAuth request.
+- A public web app rejects missing PKCE, completes consent, exchanges its code
+  in browser JavaScript, reads its profile, rotates a usable token pair and
+  revokes it. The rotated bearer then gets 401 and refresh gets 400
+  `invalid_grant`.
+- A confidential web app also requires PKCE. Missing and wrong Basic secrets
+  fail; the correct secret completes code exchange and refresh. Its real
+  `DELETE /v1/connection` disables both the bearer and refresh token.
+- A private native scheme receives the exact registered URI, state and issuer
+  in the actual consent POST's 200 JSON handoff; the code redeems successfully.
+  A same-browser-context HTTP `prompt=none` request, using its climber cookies
+  and local proxy with redirects disabled, returns 302 with the exact registered
+  Location, issuer, `consent_required`, state and no code. WebKit automation does
+  not reliably expose unsupported private-scheme navigation responses, so both
+  engines use this explicit HTTP contract check. This proves no browser/OS
+  private-scheme launch.
+- A native loopback registration accepts its callback's selected port, while a
+  changed path and an unregistered HTTPS target end at the issuer's 400
+  `invalid_redirect` page without state or code. The real registration mutation
+  refuses loopback, private-scheme and HTTP localhost redirects for web apps.
+- Registered browser JavaScript reads an actual 401 body and exposed
+  `WWW-Authenticate`, and an actual 429 body with `Retry-After` and rate-limit
+  headers. At most 61 invalid-code requests fill only the new test client's
+  per-client/IP bucket on the isolated backend/Redis fixture. Preflight permits
+  the exact registered origin without credentials; an unregistered browser
+  origin cannot read the protected response.
+
+Local qualification on 2026-11-19 passed **14/14 cases in 3.3 minutes**: seven
+in Linux Chromium and seven in desktop WebKit from the exact-version official
+`mcr.microsoft.com/playwright:v1.62.1-noble` container. The local WebKit adapter
+changed only the browser connection endpoint and absolute spec/output paths;
+projects, assertions, retries and timeouts matched CI. The disposable local
+Postgres fixture had all 328 migrations, with its own Redis and no live partner
+or production calls. This is desktop engine evidence, not real iOS Safari.
+
+Run it with `vp run db:up` once, then `vp run test:e2e:partner-oauth`, with both
+Playwright browsers installed. The first run waits for `next dev` to compile the
+pages. It writes 28 accounts (one developer/climber pair per scenario and engine) with
+`partner-e2e-` ids and
 `@example.invalid` emails to the dev database and deletes them at the end
 (`PARTNER_OAUTH_E2E_KEEP_DATA=1` keeps them). Server logs land in
 `packages/web/test-results/partner-oauth/`.
@@ -1270,10 +1310,12 @@ How it fits together. The global setup starts `packages/backend/src/index.ts` an
 NextAuth writes the production cookie: `__Secure-next-auth.session-token` on
 `.boardsesh.com`. The consent page calls `https://api.boardsesh.com` and needs the
 exact origin `https://www.boardsesh.com`, so the browser has to be on the
-production host names. `edge.ts` makes that true on one machine: Chromium's proxy
-tunnels only `www`, `api` and `ws.boardsesh.com` on port 443 into a TLS server with
-a throwaway certificate, which forwards to the two local servers and sets
-`X-Forwarded-For` the way the real ingress does. Every other host is refused. So
+production host names. `edge.ts` makes that true on one machine: each browser's
+proxy tunnels only `www`, `api` and `ws.boardsesh.com`, plus the three fixed
+`*.partner.test` callback origins, on port 443 into a TLS server with a throwaway
+certificate. The production names forward only to the two local servers; the
+reserved test origins forward only to an owned local callback server. The edge
+sets `X-Forwarded-For` the way the real ingress does. Every other host is refused. So
 are www's `/monitoring` and the backend's `/api/posthog`: the pages believe they
 are on production, and those two paths would forward the browser's Sentry and
 PostHog traffic to the real projects.
@@ -1295,26 +1337,39 @@ calls local.
 Each server runs under `watchdog.mjs` as the leader of its own process group.
 Teardown always signals the whole group, and the watchdog ends the group within
 a second of the Playwright runner disappearing, even by `SIGKILL`, so a killed
-run never leaves `next dev` or the backend behind. Setup chooses the two account
-ids before it seeds, so a failure at any point after that still deletes them,
-and each seed first deletes this suite's accounts left over an hour ago by a run
-that was killed outright.
+run never leaves `next dev` or the backend behind. Setup chooses each account
+id before it seeds, so ordinary setup failures can clean up those exact ids.
+An interrupted setup can leave its fixture data behind; use a disposable local
+database when testing cancellation. Each qualification case deletes its own app registration. Cleanup
+never sweeps another invocation's accounts or registrations.
 
 The climber's browser declines the analytics prompt a signed-in account without
 an analytics choice sees once, as a climber would; the developer's and the
-climber's pages otherwise run untouched.
+climber's pages otherwise run the shipped UI. Qualification observes a clone of
+the browser's actual consent fetch response before returning the unchanged
+Response to the UI; navigation can otherwise discard DevTools' copy of its body.
+The consent observer does not intercept OAuth requests or fabricate responses;
+the separate hydration regression delays only browser script delivery.
+
+The held-script case guards a regression observed in desktop WebKit: the
+previous server-rendered form could submit a native GET to `/oauth/sign-in?`
+before React attached its handler, discarding the signed query. Sign-in now has
+no native form owner until mount; disabled inputs and buttons also prevent
+early typing, click and implicit Enter. Normal journeys synchronize on the
+existing sign-in child's providers-config mount effect; the separate delayed
+hydration case verifies the guard rather than relying on that synchronization.
 
 What it does not prove:
 
-- Refusals. It walks the path that succeeds; a wrong verifier, a wrong or
-  missing audience, a replayed code or refresh token, a stale session and the
-  other negative cases are covered only by the launch suite.
-- The app's own `DELETE /v1/connection`; the launch suite covers it.
-- A production build, Cloudflare and Railway, Safari and Android browsers, social
-  sign-in, the developer console's screens, and a confidential client (the launch
-  suite covers secrets).
-- It is not in CI yet. It needs the dev database image, as the dispatch-only E2E
-  shards do.
+- The remaining adversarial matrix: wrong verifier or audience, code/refresh
+  replay, stale sessions and concurrent revocation are covered by the launch
+  suite rather than repeated in these browser cases.
+- A production build, Cloudflare/Railway ingress, real iOS Safari or Android
+  Chrome, Google/Apple sign-in, operating-system private-scheme launch or the
+  developer console's registration screens. Registration uses its real GraphQL
+  mutation; these are password-based fixture accounts.
+- Partner launch approval or a later production rollout stage. The manual
+  mobile-browser consent matrix and operational evidence remain launch gates.
 
 ---
 

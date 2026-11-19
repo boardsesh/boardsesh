@@ -1691,7 +1691,7 @@ export default defineConfig({
       },
       // Partner OAuth journey (#6981 F18): starts its own backend and www with
       // partner OAuth on, behind a local edge that answers as the production
-      // hosts, and drives register → consent → sync → disconnect in Chromium.
+      // hosts, and drives register → consent → sync → disconnect in Chromium and WebKit.
       // See docs/integration-platform.md, "End-to-end journey".
       'test:e2e:partner-oauth': {
         command: 'cd packages/web && vp exec playwright test --config=playwright.partner-oauth.config.ts',
