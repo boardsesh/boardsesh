@@ -632,3 +632,28 @@ Administrative approval is bound to normalized database host, port and database
 name as well as subject generation and authority epoch. Administrative
 revocation invokes the existing partner revocation primitive in the same
 transaction; native-only sign-out never does.
+
+## Historical consolidation import identities
+
+A separately approved one-off repair can move existing accounts' climbing data
+to one retained account. Retired source accounts require fresh sign-in; this
+metadata adds no account-linking API, session exchange or mobile handoff.
+
+Import identifiers are frozen and include the original Boardsesh user ID.
+After a repair, importers consult exact applied membership and resource aliases
+before creating resources. Ambiguous aliases fail instead of choosing a climb
+or playlist by name. Keep this provenance after the repair CLI is archived so
+old exports cannot recreate moved resources. The percentile refresh excludes
+retired members and preserves their historical derived snapshots.
+
+Import readers activate aliases only for applied source memberships in the same
+repair. A surviving draft can receive updated holds and description while its
+owner, board, layout and draft status still match; a deleted draft stays deleted.
+Tick tombstones also match historical climb UUIDs, so changing both the owner and
+climb identity cannot recreate a deleted ascent or attempt on re-import.
+
+The generated metadata migration is additive and moves no account data. Apply
+it before importer code; existing importer readers need SELECT on membership,
+import aliases and tick aliases. Batches, session aliases and group audits are
+operator provenance, not a running consolidation service. Metadata is written
+only by the separately reviewed maintenance-window repair.

@@ -3,6 +3,15 @@ import { createHash } from 'node:crypto';
 
 export const WEB_ROLE = 'boardsesh_web';
 export const quoteIdentifier = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
+/** Operator-written provenance; import/statistics readers use three alias tables. */
+const CONSOLIDATION_PROVENANCE_TABLES: readonly string[] = Object.freeze([
+  'account_consolidation_batches',
+  'account_consolidation_members',
+  'account_consolidation_tick_aliases',
+  'account_consolidation_import_aliases',
+  'account_consolidation_session_aliases',
+  'account_consolidation_group_audits',
+]);
 /** Partner state is served through backend APIs, never directly by the web database role. */
 export const BACKEND_ONLY_PARTNER_TABLES: readonly string[] = Object.freeze([
   'partner_developer_emails',
@@ -15,6 +24,12 @@ export const BACKEND_ONLY_PARTNER_TABLES: readonly string[] = Object.freeze([
   'webhook_deliveries',
   'partner_webhook_feed_state',
   'partner_webhook_debounce',
+]);
+const WEB_UNREADABLE_IDENTITY_TABLES: readonly string[] = Object.freeze([
+  ...BACKEND_ONLY_PARTNER_TABLES,
+  'account_consolidation_batches',
+  'account_consolidation_session_aliases',
+  'account_consolidation_group_audits',
 ]);
 /** Identity tables outside the `auth_`/`oauth_` prefixes. The web role may read them, never write. */
 export const NAMED_IDENTITY_TABLES: readonly string[] = Object.freeze([
@@ -31,6 +46,7 @@ export const NAMED_IDENTITY_TABLES: readonly string[] = Object.freeze([
   // Which board account a Boardsesh user is. Written by the backend and the
   // sync workers; the web only reads it (sitemap, profile).
   'user_board_mappings',
+  ...CONSOLIDATION_PROVENANCE_TABLES,
   ...BACKEND_ONLY_PARTNER_TABLES,
 ]);
 export function protectedIdentityTable(name: string): boolean {
@@ -131,7 +147,7 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
       apply.push(`REVOKE ALL ON SEQUENCE ${target} FROM PUBLIC, ${role};`);
       // An identity table's own sequence stays closed: the web never inserts there.
       const identitySequence = !!relation.sequenceOwner && protectedIdentityTable(relation.sequenceOwner);
-      if (identitySequence && !BACKEND_ONLY_PARTNER_TABLES.includes(relation.sequenceOwner!))
+      if (identitySequence && !WEB_UNREADABLE_IDENTITY_TABLES.includes(relation.sequenceOwner!))
         rollback.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
       else if (identitySequence) continue;
       else apply.push(`GRANT USAGE ON SEQUENCE ${target} TO ${role};`);
@@ -145,11 +161,12 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
     const readable =
       relation.name !== 'auth_session' &&
       relation.name !== '__drizzle_migrations' &&
-      !BACKEND_ONLY_PARTNER_TABLES.includes(relation.name) &&
+      !WEB_UNREADABLE_IDENTITY_TABLES.includes(relation.name) &&
       ['r', 'p'].includes(relation.kind);
     if (readable) apply.push(`GRANT SELECT ON TABLE ${target} TO ${role};`);
     if (!identity && readable) apply.push(`GRANT INSERT, UPDATE, DELETE ON TABLE ${target} TO ${role};`);
-    if (identity && readable) rollback.push(`GRANT INSERT, UPDATE, DELETE ON TABLE ${target} TO ${role};`);
+    if (identity && readable && !CONSOLIDATION_PROVENANCE_TABLES.includes(relation.name))
+      rollback.push(`GRANT INSERT, UPDATE, DELETE ON TABLE ${target} TO ${role};`);
   }
   for (const routine of catalog.routines) {
     if (options.ddlOwner && catalog.routineOwners?.[routine] !== options.ddlOwner) continue;
@@ -206,7 +223,7 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     if (relation.maintain) throw new Error('UNREVIEWED_MAINTAIN_PATH');
     if (
       (relation.name === 'auth_session' ||
-        BACKEND_ONLY_PARTNER_TABLES.includes(relation.name) ||
+        WEB_UNREADABLE_IDENTITY_TABLES.includes(relation.name) ||
         ['v', 'm', 'f'].includes(relation.kind)) &&
       relation.reads
     )

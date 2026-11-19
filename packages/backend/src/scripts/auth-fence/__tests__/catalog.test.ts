@@ -15,6 +15,36 @@ import { ExplicitConnectionConfigurationError } from '../../../auth/email-audit/
 
 const FENCE_COMMANDS = ['plan', 'apply', 'verify'];
 
+describe('operator-written consolidation provenance', () => {
+  it('limits web reads to import aliases and denies every provenance write', () => {
+    const operatorOnly = [
+      'account_consolidation_batches',
+      'account_consolidation_session_aliases',
+      'account_consolidation_group_audits',
+    ];
+    const readerTables = [
+      'account_consolidation_members',
+      'account_consolidation_tick_aliases',
+      'account_consolidation_import_aliases',
+    ];
+    const names = [...operatorOnly, ...readerTables];
+    const plan = fencePlan({
+      schemas: ['public'],
+      owners: ['boardsesh_owner'],
+      routines: [],
+      relations: names.map((name) => ({ schema: 'public', name, kind: 'r', columns: ['merge_id'] })),
+    });
+    for (const name of names) {
+      expect(protectedIdentityTable(name)).toBe(true);
+      const readGrant = `GRANT SELECT ON TABLE "public"."${name}" TO "boardsesh_web";`;
+      if (readerTables.includes(name)) expect(plan.sql).toContain(readGrant);
+      else expect(plan.sql).not.toContain(readGrant);
+      expect(plan.sql).not.toContain(`GRANT INSERT, UPDATE, DELETE ON TABLE "public"."${name}"`);
+      expect(plan.rollbackSql).not.toContain(`GRANT INSERT, UPDATE, DELETE ON TABLE "public"."${name}"`);
+    }
+  });
+});
+
 describe('backend-owned partner state', () => {
   it('denies every direct web read/write, including sealed webhook credentials and proof hashes', () => {
     const plan = fencePlan({
