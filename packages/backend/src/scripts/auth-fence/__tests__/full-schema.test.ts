@@ -146,6 +146,38 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       });
     expect(await verifyFence(owner)).toMatchObject({ verified: true });
   });
+  it('keeps consolidation operator tables private and rejects stale web read grants', async () => {
+    for (const name of [
+      'account_consolidation_members',
+      'account_consolidation_import_aliases',
+      'account_consolidation_tick_aliases',
+    ]) {
+      const [access] = await owner<{ reads: boolean; writes: boolean }[]>`
+        SELECT has_table_privilege('boardsesh_web',${name},'SELECT') AS reads,
+          has_table_privilege('boardsesh_web',${name},'INSERT,UPDATE,DELETE') AS writes`;
+      expect(access).toEqual({ reads: true, writes: false });
+    }
+    for (const name of [
+      'account_consolidation_batches',
+      'account_consolidation_session_aliases',
+      'account_consolidation_group_audits',
+    ]) {
+      const [access] = await owner<{ reads: boolean; writes: boolean }[]>`
+        SELECT has_table_privilege('boardsesh_web',${name},'SELECT') AS reads,
+          has_table_privilege('boardsesh_web',${name},'INSERT,UPDATE,DELETE') AS writes`;
+      expect(access).toEqual({ reads: false, writes: false });
+      await owner
+        .begin(async (transaction) => {
+          await transaction.unsafe(`GRANT SELECT ON ${quoteIdentifier(name)} TO boardsesh_web`);
+          await expect(verifyFence(transaction)).rejects.toThrow('UNREVIEWED_READ_PATH');
+          throw new Error('ROLLBACK_FIXTURE');
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+        });
+    }
+    expect(await verifyFence(owner)).toMatchObject({ verified: true });
+  });
   it('closes identity sequences and refuses TRIGGER, REFERENCES, TRUNCATE and setval grants', async () => {
     const [sequences] = await owner<{ identity: string; product: string }[]>`
       SELECT pg_get_serial_sequence('public.aurora_credentials','id') AS identity,
