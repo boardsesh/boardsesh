@@ -1,6 +1,6 @@
 Neu in 2.8.0:
-- Beleuchte deine Spraywall mit WLED. Ordne LEDs im Foto zu und teste Griffe. Bluetooth-Installation ist eine freiwillige Beta für passende Controller.
-- Die Sperrbildschirmkarte leuchtet in Boulderfarben: Lampe und Weiter ohne Aufklappen, Zeitring beim Steuern.
-- Filtere verifizierte Kilter-Boulder.
-- Teste Graphite, kompakte Tabs und Filter auf halber Höhe.
-- Teile Playlists und Sessions mit beleuchteten Bouldern in der Linkvorschau.
+- 4x4, Am Limit, Im Minutentakt; Pyramiden auf denselben Bouldern hinab.
+- Home: deine Woche, Boulder auf deinem Niveau und Projekte.
+- Spraywall mit WLED: WLAN-Suche, Helligkeit, WLAN-Abschaltautomatik. Bluetooth-Installation als freiwillige Beta.
+- Boards in der Nähe und Kilters verifizierte Boulder.
+- Graphite, schlankere Navigation und Sperrbildschirmkarte in Boulderfarben mit Glühbirne und Weiter.

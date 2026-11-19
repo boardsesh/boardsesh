@@ -1,6 +1,6 @@
 New in 2.8.0:
-- Light your Spraywall with WLED. Map LEDs on your photo and test holds. Bluetooth setup is an opt-in beta for matching controllers.
-- Your lock screen card glows with the climb's colours. Use the bulb and Next without expanding; a ring shows timed driving.
-- Find Kilter's Verified climbs with a quick filter.
-- Try the Graphite theme, slimmer tabs and half-height Filters.
-- Share playlists and sessions with lit-climb link previews.
+- Train with 4x4, Limit Bouldering and On the Minute; repeat climbs down pyramids.
+- Home shows your week, climbs at your level and projects.
+- Light your Spraywall with WLED: Wi-Fi discovery, brightness and Wi-Fi auto-off. Bluetooth installation is an opt-in beta.
+- Find nearby boards and Kilter’s Verified climbs.
+- Try Graphite, slimmer navigation and a climb-coloured lock-screen card with bulb and Next controls.

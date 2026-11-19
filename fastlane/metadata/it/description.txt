@@ -6,6 +6,9 @@ Boardsesh è compatibile con Kilter, Tension, MoonBoard, Woods, Decoy, Touchston
 Anche la tua Spraywall
 Hai una Spraywall a casa o in palestra? Fotografala e Boardsesh suggerisce le prese dalla foto. Correggi quelle mancanti, poi traccia blocchi, mettili in coda e registra le ripetizioni nello stesso diario degli altri pannelli. Non servono LED: le prese sono evidenziate sulla foto. Condividi la Spraywall tramite link e anche la tua crew potrà tracciare. Hai smontato la Spraywall? Reimpostala con una nuova foto: quella precedente viene archiviata con i suoi blocchi e le sue ripetizioni. Se cambi una sola presa, ogni blocco che la usava viene segnalato.
 
+Illumina la tua Spraywall
+Hai LED e un controller WLED? Posizionali sulla foto della tua Spraywall, prova le prese e salva la configurazione per la crew. Trova WLED sul tuo Wi-Fi, regola la luminosità e scegli lo spegnimento automatico per l’illuminazione via Wi-Fi. I controller compatibili con il supporto Bluetooth di Boardsesh illuminano anche via Bluetooth; installare questo supporto è una beta facoltativa per controller compatibili.
+
 La cronologia del pannello
 Quando condividi un pannello, è facile perdere il blocco precedente o cancellarlo per sbaglio.
 Ritrova i blocchi illuminati su quel pannello tramite Boardsesh: nome, chi li ha illuminati, chi li ha tracciati, grado, inclinazione e ripetizioni recenti.
@@ -17,7 +20,7 @@ Controlla dalla schermata di blocco (iOS 17+)
 Le Attività live di iOS mostrano il blocco illuminato e ti permettono di cambiarlo dalla schermata di blocco.
 
 Crea un allenamento
-Scegli Volume, Piramide, Scala o Grado fisso, imposta grado obiettivo e riscaldamento, guarda l'anteprima dei blocchi e illuminane uno alla volta in parete.
+Combina riscaldamenti con Volume, Piramide, Scala, Grado fisso, 4x4, Al limite o Al minuto. Imposta gradi e recuperi, guarda l’anteprima dei blocchi e illuminane uno alla volta. Le piramidi possono scendere sugli stessi blocchi. Scegli vibrazioni del conto alla rovescia e recuperi sulla schermata di blocco in Impostazioni > Timer.
 
 Segui i tuoi progressi
 Registra ripetizioni, flash e tentativi. Ritrova un riepilogo con durata, distribuzione dei gradi e il blocco più duro chiuso, e segui ripetizioni e gradi nella scheda Progressi.
@@ -26,7 +29,7 @@ Porta con te la tua storia
 Salva la session in Apple Salute e importa il tuo diario Kilter e Tension da Aurora Climbing.
 
 Trova altri blocchi
-Segui la crew e chi traccia, cerca altri climber e fissa le playlist da Scopri.
+Home riunisce la tua settimana di arrampicata, blocchi al tuo livello e progetti da riprovare. Con la posizione attiva, trova pannelli vicini e quelli della tua palestra. Filtra i blocchi Verificati di Kilter, trova i tuoi blocchi in Scopri e condividi playlist con la crew.
 
 Pannelli supportati: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper e So iLL. In più, qualsiasi Spraywall che puoi fotografare.
 

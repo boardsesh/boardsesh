@@ -149,33 +149,51 @@ metadata lanes do not upload or publish them.
 - Email: test@boardsesh.com
 - Password: test
 
-**Why this app needs to be native**
+**Native features**
 
-The core feature of Boardsesh is connecting to climbing board LED controllers via Bluetooth Low Energy (BLE). iOS Safari does not support the Web Bluetooth API (https://caniuse.com/web-bluetooth), which makes it impossible to control the board from a web browser on iPhone. This is the primary reason the app exists as a native iOS app. The web version at boardsesh.com works on Android and desktop browsers that support Web Bluetooth.
+Boardsesh uses native Bluetooth to light compatible climbing boards, supports
+Lock Screen controls through Live Activities, and can save climbing sessions to
+Apple Health with permission. The website at boardsesh.com provides marketing,
+account and public sharing pages; test climbing and shared sessions in the app.
 
 **Testing without a physical board**
 
-You do not need a climbing board to test the app. Here is what you can verify:
+1. Sign in with the demo account and choose a board in the board picker. Open
+   Climbs to browse and filter climbs; Kilter has a Verified quick filter.
+2. Open a climb to see its holds, then add it to the queue. Open the queue to
+   browse the selected climbs. No physical board is required for this.
+3. Open Session and build a workout. Choose 4x4, Limit Bouldering or On the Minute
+   to preview climbs and rests; Pyramid also offers Same climbs down.
+4. Open Home to see the sections available for the account. Weekly totals,
+   recommendations and projects depend on its climbing history. Customize Home
+   controls which sections appear. Discover includes My climbs.
+5. Open Settings > Timers to inspect countdown buzz and Lock Screen countdown
+   preferences. To test a shared session, join it from a second signed-in device
+   running Boardsesh.
 
-1. **Sign in**: Use the demo account above. You will see the board selection screen.
-2. **Browse climbs**: Select "Kilter Board" > pick any layout/size/angle combination. You will see a searchable list of thousands of community climbs with grade ratings and quality stars.
-3. **Search and filter**: Use the filter controls to narrow by grade range, minimum quality rating, and hold count.
-4. **View a climb**: Tap any climb to see the hold layout rendered on the board image. The colored circles show hand and foot positions.
-5. **Queue management**: Tap the "+" button on a climb to add it to your queue. Open the queue panel to see your list. You can reorder by dragging and remove by swiping.
-6. **Bluetooth pairing**: Go to the Bluetooth connection screen (gear icon or connection prompt). The app will request Bluetooth permission and scan for nearby BLE devices. Without a physical board, the scan will complete with no devices found. This is expected behavior.
-7. **Party Mode**: Start a party session from the queue panel. This creates a WebSocket-backed collaborative session. You can open a second browser tab at boardsesh.com, sign in with a different account, and join the same session to test real-time sync. Sessions are always live: any participant can set the next climb and it broadcasts to everyone instantly. There is no single "driver" and no voting step (the older driver/vote model is deprecated). Whoever is connected to the board over Bluetooth relays the lit climb to the wall.
-8. **Logbook**: After signing in, check the logbook/profile section to see logged climbs and stats.
+**Hardware and permissions for 2.8.0**
 
-**What the app does**
+Bluetooth scanning needs permission and a nearby compatible controller. An empty
+scan without hardware is expected. Nearby-board discovery uses location only
+when permission is granted; boards can also be selected manually.
 
-Boardsesh lights up climbs on LED boards (Kilter, Tension, MoonBoard and others) over Bluetooth. Two things set it apart from a single-board app, and they are distinct features:
+Spraywalls can be used without LEDs: a photo highlights the climb's holds.
+Optional WLED lighting needs a configured controller on the same Wi-Fi network.
+The LED settings map holds to LEDs, find controllers on Wi-Fi, set brightness
+and choose a Wi-Fi automatic switch-off time. Saved setup is shared with climbers
+who can access the Spraywall. Compatible controllers with Boardsesh Bluetooth
+support can also light climbs over Bluetooth. Installing that support is a
+separate opt-in beta for matching hardware and requires explicit consent.
+Automatic switch-off is currently Wi-Fi-only.
 
-- **Board history (board-linked, always on):** when you connect to a board, a live feed shows what is lit on that wall right now plus recent sends — who lit each climb, the grade, angle and setter. It is tied to the physical board, not to a session, and you do not start anything.
-- **Crew sessions (collaborative):** you start a session and everyone in it shares one queue that any participant can drive (no single driver). A session ends with a recap and feeds your logbook and progress tracking.
+Board history belongs to the physical board and shows climbs lit through
+Boardsesh and recent activity. Crew sessions share a queue; any participant can
+control it. Ending a session produces a recap and updates climbing history.
+These are separate features.
 
-**Bluetooth**
-
-The app connects to climbing boards over Bluetooth Low Energy to light the holds. Data flows one way, phone to board; no personal data is sent over Bluetooth. It uses native CoreBluetooth (via react-native-ble-plx) and declares bluetooth-le / bluetooth-central so the connection survives the screen sleeping. Endpoints: API at boardsesh.com, Party Mode WebSocket at wss://backend.boardsesh.com.
+The app uses CoreBluetooth via react-native-ble-plx and the bluetooth-central
+background mode to maintain a board connection while the screen sleeps.
+Session traffic uses the backend at `wss://backend.boardsesh.com`.
 
 ## App Privacy - Data Collection Labels
 

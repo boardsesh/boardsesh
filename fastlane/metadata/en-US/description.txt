@@ -6,6 +6,9 @@ Boardsesh works with Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grass
 Your Spraywall, too
 A home Spraywall, or a Spraywall at your gym? Photograph it and Boardsesh suggests holds from the photo. Fix what it missed, then set climbs, queue them and log sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo. Share the Spraywall by link and your crew can set on it too. Stripped the Spraywall? Reset it with a new photo, and the old Spraywall is archived with its climbs and sends. Swap a single hold and any climb that used it is flagged.
 
+Light your Spraywall
+Have a WLED controller and LEDs? Map them on your Spraywall photo, test holds and save the setup for your crew. Find WLED on your Wi-Fi, set brightness and choose an automatic switch-off time for Wi-Fi lighting. Compatible controllers with Boardsesh Bluetooth support can light climbs over Bluetooth; installing that support is an opt-in beta for matching controllers.
+
 BOARD HISTORY
 Share a board and you lose track of the last climb fast, and someone always wipes it by accident.
 See climbs lit through Boardsesh on that board: the climb name, who lit it, who set it, grade and angle, and recent sends.
@@ -17,7 +20,7 @@ CONTROL FROM YOUR LOCK SCREEN (iOS 17+)
 iOS Live Activities tell you what climb is on from your lock screen, and allow you to change it without leaving your lock screen.
 
 BUILD A WORKOUT
-Pick Volume, Pyramid, Ladder or Grade Focus, set a target grade and warm-up, preview the climbs, then push them to the wall one at a time.
+Combine warm-ups with Volume, Pyramid, Ladder, Grade Focus, 4x4, Limit Bouldering or On the Minute. Set your grades and rests, preview the climbs and work through them on the wall. Pyramids can repeat the same climbs on the way down. Choose countdown buzzes and Lock Screen rest countdowns in Settings > Timers.
 
 TRACK YOUR CLIMBING
 Record sends, flashes and attempts, get a recap with duration, grade spread and your hardest send, and watch your sends and grades climb on the Progress tab.
@@ -26,7 +29,7 @@ BRING YOUR HISTORY WITH YOU
 Save your session to Apple Health, and import your past Kilter and Tension logbook from Aurora Climbing.
 
 FIND MORE TO CLIMB
-Follow your crew and setters, search climbers, and pin playlists from Discover.
+Home brings together your week’s climbing, climbs at your level and projects to try again. Find nearby boards and your gym’s walls with location enabled. Filter Kilter’s Verified climbs, find your own climbs in Discover, and share playlists with your crew.
 
 Supported boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper and So iLL. Plus Spraywalls: any Spraywall you can photograph.
 

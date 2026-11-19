@@ -6,6 +6,9 @@ Boardsesh ist mit Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshop
 Auch deine Spraywall
 Eine Spraywall zu Hause oder in deiner Halle? Fotografier sie, und Boardsesh schlägt Griffe aus dem Foto vor. Korrigier, was fehlt, dann schraub Boulder, leg sie in die Warteschlange und trag Begehungen im selben Routenbuch ein wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben. Teile die Spraywall per Link, dann kann deine Crew darauf auch schrauben. Spraywall abgeschraubt? Setz sie mit einem neuen Foto zurück, und die alte Spraywall wird mit ihren Bouldern und Begehungen archiviert. Tausch einen einzelnen Griff, und jeder Boulder, der ihn genutzt hat, wird markiert.
 
+BELEUCHTE DEINE Spraywall
+Du hast LEDs und einen WLED-Controller? Zeichne sie auf deinem Spraywall-Foto ein, teste Griffe und speichere die Einrichtung für deine Crew. Finde WLED in deinem WLAN, stelle die Helligkeit ein und wähle eine Abschaltzeit für die Beleuchtung über WLAN. Kompatible Controller mit Boardsesh-Bluetooth-Unterstützung beleuchten auch über Bluetooth; deren Installation ist eine freiwillige Beta für passende Controller.
+
 BOARD-VERLAUF
 Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
 Sieh die über Boardsesh beleuchteten Boulder an diesem Board: Name, wer sie beleuchtet und erstellt hat, Grad, Winkel und die letzten Begehungen.
@@ -17,7 +20,7 @@ STEUERUNG VOM SPERRBILDSCHIRM (iOS 17+)
 iOS Live Activities zeigen dir auf dem Sperrbildschirm, welcher Boulder gerade leuchtet, und du wechselst ihn, ohne den Sperrbildschirm zu verlassen.
 
 BAU DIR EIN WORKOUT
-Wähle Volumen, Pyramide, Leiter oder Grad-Fokus, lege Zielgrad und Warm-up fest, sieh dir die Boulder vorab an, und beleuchte sie einzeln am Board.
+Kombiniere Warm-ups mit Volumen, Pyramide, Leiter, Grad-Fokus, 4x4, Am Limit oder Im Minutentakt. Wähle Grade und Pausen, schau dir die Boulder vorab an und beleuchte sie nacheinander am Board. Pyramiden können auf denselben Bouldern absteigen. Wähle Countdown-Vibrationen und Pausen auf dem Sperrbildschirm unter Einstellungen > Timer.
 
 VERFOLG DEIN KLETTERN
 Trage Begehungen, Flashes und Versuche ein, hol dir den Rückblick mit Dauer, Gradverteilung und deiner schwersten Begehung, und sieh im Tab Fortschritt zu, wie Begehungen und Grade steigen.
@@ -26,7 +29,7 @@ NIMM DEINE HISTORIE MIT
 Sichere deine Session in Apple Health, und importiere dein bisheriges Kilter- und Tension-Routenbuch aus Aurora Climbing.
 
 FINDE MEHR ZUM KLETTERN
-Folge deiner Crew und Routenbauer*innen, suche nach Kletterer*innen, und pinne dir Playlists aus Entdecken.
+Home vereint deine Kletterwoche, Boulder auf deinem Niveau und Projekte für den nächsten Versuch. Finde mit aktiviertem Standort Boards in der Nähe und die Boards deiner Halle. Filtere Kilters verifizierte Boulder, finde deine eigenen unter Entdecken und teile Playlists mit deiner Crew.
 
 Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper und So iLL. Dazu Spraywalls: jede Spraywall, die du fotografieren kannst.
 

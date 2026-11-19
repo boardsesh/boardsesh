@@ -6,6 +6,9 @@ Boardsesh est compatible avec Kilter, Tension, MoonBoard, Woods, Decoy, Touchsto
 Ton Spraywall aussi
 Un Spraywall chez toi, ou un Spraywall dans ta salle ? Prends-le en photo et Boardsesh suggère des prises à partir de la photo. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le Spraywall par lien et ton crew peut y ouvrir des blocs aussi. Spraywall reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien Spraywall est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé.
 
+ALLUME TON Spraywall
+Tu as des LED et un contrôleur WLED ? Place-les sur la photo de ton Spraywall, teste les prises et garde la configuration pour ton crew. Trouve WLED sur ton Wi-Fi, règle la luminosité et choisis une extinction automatique pour l’éclairage en Wi-Fi. Les contrôleurs compatibles avec le support Bluetooth de Boardsesh allument aussi les blocs en Bluetooth ; son installation reste une bêta facultative pour les contrôleurs compatibles.
+
 L'HISTORIQUE DE LA BOARD
 Partage une board et tu perds vite le fil du dernier bloc, et quelqu'un finit toujours par l'effacer par accident.
 Retrouve les blocs allumés via Boardsesh sur cette board : le nom du bloc, qui l’a allumé, qui l’a ouvert, la cotation, l’inclinaison et les croix récentes.
@@ -17,7 +20,7 @@ PILOTE DEPUIS TON ÉCRAN VERROUILLÉ (iOS 17+)
 Les Live Activities iOS t'indiquent le bloc en cours depuis ton écran verrouillé, et te laissent en changer sans le quitter.
 
 MONTE UNE SÉANCE D'ENTRAÎNEMENT
-Choisis Volume, Pyramide, Échelle ou Cotation ciblée, fixe une cotation cible et un échauffement, prévisualise les blocs, puis allume-les au mur un par un.
+Combine des échauffements avec Volume, Pyramide, Échelle, Cotation ciblée, 4x4, À la limite ou À la minute. Choisis les cotations et les repos, prévisualise les blocs et allume-les un par un. Les pyramides peuvent redescendre sur les mêmes blocs. Règle les vibrations du décompte et le repos sur l’écran verrouillé dans Paramètres > Minuteurs.
 
 SUIS TON ESCALADE
 Note tes croix, tes flashs et tes essais, reçois un récap avec la durée, l'éventail de cotations et ta croix la plus dure, et regarde tes croix et tes cotations grimper dans l'onglet Progression.
@@ -26,7 +29,7 @@ EMPORTE TON HISTORIQUE AVEC TOI
 Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et Tension depuis Aurora Climbing.
 
 TROUVE PLUS À GRIMPER
-Suis ton crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
+L’accueil réunit ta semaine de grimpe, des blocs à ton niveau et des projets à réessayer. Avec la localisation activée, trouve les boards proches et celles de ta salle. Filtre les blocs Vérifiés de Kilter, retrouve tes blocs dans Découvrir et partage des playlists avec ton crew.
 
 Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL. Plus les Spraywalls : n'importe quel Spraywall que tu peux photographier.
 

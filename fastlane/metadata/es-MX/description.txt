@@ -6,6 +6,9 @@ Boardsesh es compatible con Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone
 Tu Spraywall, también
 ¿Un Spraywall en casa o en tu rocódromo? Fotografíalo y Boardsesh sugiere presas a partir de la foto. Corrige lo que se le haya pasado y luego monta bloques, ponlos en cola y registra encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto. Comparte el Spraywall por enlace y tu equipo también podrá montar en él. ¿Has desmontado el Spraywall? Resetéalo con una foto nueva y el Spraywall anterior se archiva con sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado.
 
+ILUMINA TU Spraywall
+¿Tienes LED y un controlador WLED? Márcalos en la foto de tu Spraywall, prueba las presas y guarda la configuración para tu equipo. Busca WLED en tu Wi-Fi, ajusta el brillo y elige un apagado automático para la iluminación por Wi-Fi. Los controladores compatibles con soporte Bluetooth de Boardsesh también iluminan por Bluetooth; instalar ese soporte es una beta opcional para controladores compatibles.
+
 HISTORIAL DEL MURO
 Si compartes muro, enseguida pierdes la cuenta del último bloque, y siempre hay alguien que lo borra sin querer.
 Consulta los bloques iluminados con Boardsesh en ese plafón: el nombre, quién lo iluminó, quién lo montó, el grado y el ángulo, y los encadenes recientes.
@@ -17,7 +20,7 @@ LLÉVALO DESDE LA PANTALLA DE BLOQUEO (iOS 17+)
 Las Live Activities te dicen qué bloque hay puesto desde la pantalla de bloqueo, y te dejan cambiarlo sin salir de ella.
 
 MÓNTATE UN ENTRENAMIENTO
-Elige Volumen, Pirámide, Escalera o Foco en grado, fija un grado objetivo y el calentamiento, previsualiza los bloques e ilumínalos en el muro de uno en uno.
+Combina calentamientos con Volumen, Pirámide, Escalera, Grado fijo, 4x4, Al límite o Al minuto. Elige grados y descansos, previsualiza los bloques e ilumínalos de uno en uno. Las pirámides pueden bajar por los mismos bloques. Elige las vibraciones de la cuenta atrás y el descanso en la pantalla de bloqueo en Ajustes > Temporizadores.
 
 REGISTRA TU ESCALADA
 Apunta encadenes, flashes e intentos, recibe un resumen con la duración, el reparto de grados y tu bloque más duro, y mira cómo suben tus encadenes y grados en la pestaña Progreso.
@@ -26,7 +29,7 @@ LLÉVATE TU HISTORIAL CONTIGO
 Guarda tu sesión en Apple Health e importa tu logbook antiguo de Kilter y Tension desde Aurora Climbing.
 
 ENCUENTRA MÁS PARA ESCALAR
-Sigue a tu equipo y a los aperturistas, busca escaladores y fija playlists desde Discover.
+Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para reintentar. Con la ubicación activada, encuentra plafones cercanos y los de tu rocódromo. Filtra los bloques Verificados de Kilter, busca tus bloques en Descubrir y comparte playlists con tu equipo.
 
 Plafones compatibles: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper y So iLL. Y además Spraywalls: cualquier Spraywall que puedas fotografiar.
 

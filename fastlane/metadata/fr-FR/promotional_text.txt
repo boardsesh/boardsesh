@@ -1,1 +1,1 @@
-Compatible avec Kilter, Tension, MoonBoard et plus. Ajoute ton Spraywall, partage une file avec ta crew et garde tes croix dans un seul carnet.
+Entraîne-toi en 4x4, retrouve tes projets et allume ton Spraywall avec WLED. Un carnet pour tes boards, une file partagée avec ton crew.

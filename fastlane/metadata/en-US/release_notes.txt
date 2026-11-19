@@ -1,21 +1,25 @@
 New in 2.8.0
 
+MORE WAYS TO TRAIN
+
+Build 4x4, Limit Bouldering and On the Minute workouts alongside Volume, Pyramid, Ladder and Grade Focus. Preview your climbs and rests before starting. Pyramids can now come back down on the same climbs. Choose countdown buzzes and whether rest countdowns appear on your Lock Screen in Settings > Timers.
+
+PICK UP WHERE YOU LEFT OFF
+
+Home brings together your week’s climbing, climbs at your level and projects to try again. See your last workout and start a session from the Session card. Customize which sections you see. The board picker brings nearby boards and your gym’s walls within reach when location is enabled. Find your own climbs in Discover.
+
 Light your Spraywall
 
-Connect your Spraywall to WLED over Wi-Fi. Mark holes on a zoomable photo, lay out the LEDs and cable, and correct which LEDs light each hold. Test individual holds and see your Spraywall light up while you set a climb. Save the setup once so your crew can light climbs too.
+Connect your Spraywall to WLED over Wi-Fi. Map holes, LEDs and cable on a zoomable photo, test individual holds and save the setup for your crew. Find controllers on your Wi-Fi, adjust brightness and choose an automatic switch-off time for Wi-Fi lighting.
 
-Compatible controllers with Boardsesh Bluetooth support can also light climbs over Bluetooth. Owners can inspect and back up their controller from LED settings. Installing Bluetooth support is an opt-in beta for matching controllers; the app checks compatibility and asks for separate consent before installation.
+Compatible controllers with Boardsesh Bluetooth support can also light climbs over Bluetooth. Installing Bluetooth support remains an opt-in beta for matching controllers, with compatibility checks and separate consent.
 
-FIND VERIFIED CLIMBS
+FIND AND SHARE YOUR NEXT CLIMB
 
-Kilter's Verified climbs have their own quick filter beside Grade. Combine it with Liked or My drafts to narrow your list.
+Kilter’s Verified climbs have their own quick filter beside Grade. Share playlists, profiles, sessions, gyms and boards with lit-climb link previews. Playlist headers put Share within reach.
 
-SHARE YOUR NEXT SESSION
+EASIER TO READ, SMOOTHER TO BROWSE
 
-Shared playlists, profiles, sessions, gyms and boards show a lit climb in link previews. Invite links show who you'd be climbing with and on which board. Playlist headers put Share within reach.
-
-SMALL FIXES FOR YOUR NEXT GO
-
-Long climb names scroll in the player again. The board angle stays visible in the Climbs bar, and the wall button's lights move with you as you pick the next climb.
+Refreshed colours and layouts give your climbs more room. Text follows your iPhone’s text-size settings more closely, and VoiceOver announces the new climb after a swipe. Climb transitions respect Reduce Motion. Long climb names scroll again, and changing the grade filter keeps the Climbs list on screen.
 
 Free, no ads, open source.

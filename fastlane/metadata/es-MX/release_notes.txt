@@ -1,21 +1,25 @@
-Novedades de 2.8.0
+Novedades de la versión 2.8.0
 
-Ilumina tu Spraywall
+MÁS FORMAS DE ENTRENAR
 
-Conecta tu Spraywall a WLED por Wi-Fi. Marca agujeros en una foto con zoom, dibuja el recorrido de los LED y el cable, y corrige qué LED iluminan cada presa. Prueba presas individuales y ve cómo se ilumina tu Spraywall mientras creas un bloque. Guarda la configuración una vez para que tu crew también pueda iluminar bloques.
+Crea entrenamientos de 4x4, Al límite y Al minuto, además de Volumen, Pirámide, Escalera y Grado fijo. Previsualiza los bloques y descansos antes de empezar. Las pirámides pueden bajar por los mismos bloques. Elige las vibraciones de la cuenta atrás y si mostrar el descanso en la pantalla de bloqueo desde Ajustes > Temporizadores.
 
-Los controladores compatibles con soporte Bluetooth de Boardsesh también pueden iluminar bloques por Bluetooth. Como propietario, puedes inspeccionar el controlador y guardar una copia de seguridad desde los ajustes de LED. Instalar el soporte Bluetooth es una beta opcional para controladores compatibles; la app comprueba la compatibilidad y pide un consentimiento aparte antes de instalar.
+RETOMA DONDE LO DEJASTE
 
-ENCUENTRA BLOQUES VERIFICADOS
+Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para volver a intentar. Consulta tu último entrenamiento e inicia una sesión desde la tarjeta de Sesión. Personaliza las secciones que ves. Con la ubicación activada, el selector acerca los plafones cercanos y los de tu rocódromo. Encuentra tus propios bloques en Descubrir.
 
-Los bloques Verificados de Kilter tienen su propio filtro rápido junto a Grado. Combínalo con Me gusta o Mis borradores para afinar la lista.
+ILUMINA TU Spraywall
 
-COMPARTE TU PRÓXIMA SESIÓN
+Conecta tu Spraywall a WLED por Wi-Fi. Marca agujeros, LED y cable en una foto ampliable, prueba cada presa y guarda la configuración para tu equipo. Busca controladores en tu Wi-Fi, ajusta el brillo y elige cuándo apagar automáticamente la iluminación por Wi-Fi.
 
-Al compartir playlists, perfiles, sesiones, rocódromos y plafones, la vista previa del enlace muestra un bloque iluminado. Las invitaciones muestran con quién escalarás y en qué plafón. La cabecera de las playlists pone Compartir a mano.
+Los controladores compatibles con soporte Bluetooth de Boardsesh también pueden iluminar bloques por Bluetooth. La instalación de ese soporte sigue siendo una beta opcional para controladores compatibles, con comprobaciones de compatibilidad y consentimiento por separado.
 
-CORRECCIONES PARA TU PRÓXIMO INTENTO
+ENCUENTRA Y COMPARTE TU PRÓXIMO BLOQUE
 
-Los nombres largos de los bloques vuelven a desplazarse en el reproductor. El ángulo del plafón sigue visible en la barra de Bloques y las luces del botón de control acompañan el cambio al siguiente bloque.
+Los bloques Verificados de Kilter tienen su propio filtro rápido junto a Grado. Comparte playlists, perfiles, sesiones, rocódromos y plafones con un bloque iluminado en la vista previa del enlace. Las cabeceras de las playlists ponen Compartir a mano.
 
-Gratis, sin anuncios, de código abierto.
+MÁS FÁCIL DE LEER Y RECORRER
+
+Los colores y diseños renovados dejan más espacio a tus bloques. El texto se adapta mejor al tamaño elegido en tu iPhone y VoiceOver anuncia el nuevo bloque tras deslizar. Las transiciones respetan Reducir movimiento. Los nombres largos vuelven a desplazarse y cambiar el filtro de grado mantiene la lista de Bloques en pantalla.
+
+Gratis, sin anuncios y de código abierto.

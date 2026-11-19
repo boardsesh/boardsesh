@@ -1,21 +1,25 @@
 Novità della versione 2.8.0
 
+Più modi per allenarti
+
+Crea allenamenti 4x4, Al limite e Al minuto, oltre a Volume, Piramide, Scala e Grado fisso. Guarda l’anteprima di blocchi e recuperi prima di iniziare. Le piramidi possono scendere sugli stessi blocchi. Scegli le vibrazioni del conto alla rovescia e se mostrare il recupero sulla schermata di blocco in Impostazioni > Timer.
+
+Riprendi da dove eri rimasto
+
+Home riunisce la tua settimana di arrampicata, blocchi al tuo livello e progetti da riprovare. Guarda l’ultimo allenamento e avvia una session dalla scheda Session. Scegli quali sezioni vedere. Con la posizione attiva, il selettore ti avvicina i pannelli nelle vicinanze e quelli della tua palestra. Trova i tuoi blocchi in Scopri.
+
 Illumina la tua Spraywall
 
-Collega la tua Spraywall a WLED tramite Wi-Fi. Segna i fori su una foto con zoom, traccia i LED e il cavo e correggi quali LED illuminano ogni presa. Prova le singole prese e guarda la tua Spraywall illuminarsi mentre crei un blocco. Salva la configurazione una volta perché anche la crew possa illuminare i blocchi.
+Collega la tua Spraywall a WLED via Wi-Fi. Posiziona fori, LED e cavo su una foto ingrandibile, prova le singole prese e salva la configurazione per la crew. Trova i controller sul tuo Wi-Fi, regola la luminosità e scegli lo spegnimento automatico per l’illuminazione via Wi-Fi.
 
-I controller compatibili con il supporto Bluetooth di Boardsesh possono illuminare i blocchi anche tramite Bluetooth. Come proprietario, puoi controllare il controller e salvarne una copia di sicurezza dalle impostazioni LED. Installare il supporto Bluetooth è una beta facoltativa per i controller compatibili; l'app controlla la compatibilità e chiede un consenso separato prima dell'installazione.
+I controller compatibili con il supporto Bluetooth di Boardsesh possono illuminare i blocchi anche via Bluetooth. L’installazione di questo supporto resta una beta facoltativa per controller compatibili, con verifica della compatibilità e consenso separato.
 
-TROVA I BLOCCHI VERIFICATI
+Trova e condividi il prossimo blocco
 
-I blocchi Verificati di Kilter hanno un filtro rapido dedicato accanto a Grado. Combinalo con i blocchi che ti piacciono o Le mie bozze per restringere la lista.
+I blocchi Verificati di Kilter hanno un filtro rapido accanto a Grado. Condividi playlist, profili, session, palestre e pannelli con un blocco illuminato nell’anteprima del link. Condividi è a portata di mano nelle intestazioni delle playlist.
 
-CONDIVIDI LA PROSSIMA SESSION
+Più leggibile, più fluido
 
-I link a playlist, profili, session, palestre e pannelli mostrano un blocco illuminato nell'anteprima. Gli inviti mostrano con chi scalerai e su quale pannello. Condividi è a portata di mano nell'intestazione delle playlist.
-
-CORREZIONI PER IL PROSSIMO TENTATIVO
-
-I nomi lunghi dei blocchi scorrono di nuovo nel player. L'inclinazione del pannello resta visibile nella barra Blocchi e le luci del pulsante di controllo accompagnano il passaggio al blocco successivo.
+Colori e layout rinnovati lasciano più spazio ai blocchi. Il testo segue meglio la dimensione scelta sul tuo iPhone e VoiceOver annuncia il nuovo blocco dopo uno scorrimento. Le transizioni rispettano Riduci movimento. I nomi lunghi scorrono di nuovo e cambiare il filtro del grado mantiene l’elenco dei blocchi sullo schermo.
 
 Gratis, senza pubblicità, open source.

@@ -1,6 +1,6 @@
-Novità 2.8.0:
-- Illumina la tua Spraywall con WLED. Mappa i LED sulla foto e prova le prese. Installare Bluetooth è una beta facoltativa per controller compatibili.
-- La scheda di blocco usa i colori del blocco: lampadina e Avanti senza espanderla, anello per il tempo di controllo.
-- Filtra i blocchi Verificati di Kilter.
-- Prova Graphite, schede compatte e Filtri a mezza altezza.
-- Condividi playlist e session con anteprime di blocchi illuminati.
+Novità di 2.8.0:
+- 4x4, Al limite, Al minuto; stessi blocchi scendendo le piramidi.
+- Home: la tua settimana, blocchi al tuo livello e progetti.
+- Spraywall con WLED: ricerca Wi-Fi, luminosità e spegnimento automatico via Wi-Fi. Installazione Bluetooth in beta facoltativa.
+- Pannelli vicini e blocchi Verificati di Kilter.
+- Graphite, navigazione più compatta e scheda di blocco nei colori del blocco, con lampadina e Successivo.

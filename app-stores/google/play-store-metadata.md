@@ -178,15 +178,33 @@ Internal reference for QA and closed testing tracks. Not a Play Store field.
 
 **Testing steps:**
 
-1. Sign in with the demo account. You will see the board selection screen.
-2. Browse climbs: Select "Kilter Board" and pick any layout/size/angle combination. You will see a searchable list of thousands of community climbs with grade ratings and quality stars.
-3. Search and filter: Use the filter controls to narrow by grade range, minimum quality rating, and hold count.
-4. View a climb: Tap any climb to see the hold layout rendered on the board image. Colored circles show hand and foot positions.
-5. Queue management: Tap the "+" button on a climb to add it to your queue. Open the queue panel to see your list. Reorder by dragging, remove by swiping.
-6. Bluetooth pairing: Go to the Bluetooth connection screen. The app will request Bluetooth permission and scan for nearby BLE devices. Without a physical board, the scan will complete with no devices found. This is expected.
-7. Board history (board-linked): connect to a board and open its board feed. It shows the climb lit right now and recent sends on that wall — who lit each, grade, angle and setter. This is always on and tied to the board; you don't start a session for it.
-8. Sessions (collaborative): start a session from the queue panel. This creates a WebSocket-backed shared session. Open a second browser or device, sign in with a different account, and join the same session to test real-time sync. Sessions are always live: any participant can set the next climb and it broadcasts to everyone instantly. There is no single "driver" and no voting step (the older driver/vote model is deprecated). Whoever is connected to the board over Bluetooth relays the lit climb to the wall. Ending a session produces a recap and updates the logbook/Progress tracking.
-9. Logbook: Check the logbook/profile section to see logged climbs and stats.
+1. Sign in with the demo account and choose a board. Browse Climbs, try the grade
+   filters and Kilter's Verified filter, then open a climb to see its holds.
+2. Add climbs to the queue. Open Session and preview a 4x4, Limit Bouldering or
+   On the Minute workout. Pyramid also offers Same climbs down.
+3. Open Home and Customize Home. Weekly climbing, recommendations and projects
+   depend on the account's history. Discover includes My climbs.
+4. With a compatible Bluetooth board connected, light a climb and lock the
+   phone. The ongoing card shows the climb's colours, bulb and Next controls;
+   timed driving adds a remaining-time ring. Without hardware, an empty
+   Bluetooth scan is expected.
+5. Join a shared session from a second signed-in device running Boardsesh.
+   Both participants can use the queue. End the session to see its recap.
+
+**Spraywall lighting in 2.8.0**
+
+Spraywalls still work without LEDs using highlighted holds on a photo. Optional
+WLED lighting needs a configured controller on the same Wi-Fi network. LED
+settings map holds to LEDs, discover WLED on Wi-Fi and save brightness and a
+Wi-Fi automatic switch-off time. The saved setup is shared with climbers who can
+access the Spraywall. Compatible controllers with Boardsesh Bluetooth support
+can also light climbs over Bluetooth. Installing that support is a separate
+opt-in beta for matching hardware and requires explicit consent. Automatic
+switch-off is currently Wi-Fi-only.
+
+Nearby-board discovery needs location permission; manual board selection remains
+available. Settings > Timers controls countdown buzz and Lock Screen rest
+countdowns.
 
 ## Data Safety Form
 

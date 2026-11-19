@@ -29,20 +29,44 @@ The next feature release is **2.8.0**, replacing the unreleased 2.7.1 target.
 build numbers and Android versionCodes still come from the store queries below.
 Do not reuse a 2.7.1 binary for this release: the uploaded binary must report 2.8.0.
 
-The public notes cover Spraywall lighting with WLED, the separately consented
-Bluetooth installation beta for matching controllers, Kilter's Verified filter,
-and lit-climb share previews. Apple notes live in all six
-`metadata/<locale>/release_notes.txt` files. Play notes live in all five
-`metadata/android/<locale>/changelogs/default.txt` files and also cover the
-Graphite theme, compact navigation and half-height Filters.
+The copy was reviewed against `main` at `2181f715fd` on 19 November 2026,
+using the last store-accepted native releases rather than the newer 2.7.1 tester
+builds. The platform baselines differ:
 
-**Release dependency:** include [#7352](https://github.com/boardsesh/boardsesh/pull/7352)
-before selecting the final Android binary. Its lock-screen card is included in
-the 2.8.0 Play notes: climb-coloured background, bulb and Next in the collapsed
-card, and a ring showing the remaining timed drive. This feature is Android-only
-and is not advertised in Apple's notes. It requires a fresh Android native build.
+| Platform | Accepted release tag | Source commit | Build |
+| --- | --- | --- | --- |
+| iOS | `release/ios-v2.7.0-e171c5f7e69a` | `7b8b3ffef6` | 13 |
+| Android | `release/android-v2.7.0-1e5c2708a946` | `38aa9d1897` | 2001566 |
 
-1. Merge the version and notes, and include #7352 before the final Android build.
+Apple notes live in all six `metadata/<locale>/release_notes.txt` files. Play
+notes live in all five `metadata/android/<locale>/changelogs/default.txt` files.
+Descriptions, Apple promotional text and Play short descriptions are refreshed
+in the same locales. Names, subtitles, search keywords and URLs retain their
+existing positioning.
+
+| User-visible change | Merged evidence |
+| --- | --- |
+| WLED Spraywall setup, optional Bluetooth installation beta, brightness and Wi-Fi auto-off | #7341, #7377, #7468, #7472, #7454 |
+| Home: weekly climbing, climbs at your level, projects and last workout | #7714, #7754, #7759 |
+| Timed workouts for everyone, repeated pyramid descent, timer preferences | #7818, #7822, #7812 |
+| Nearby boards, gym walls, My climbs and Kilter Verified filtering | #7576, #7580, #7643, #7658, #7602, #7388 |
+| Shared link previews and playlist sharing | #7344, #7372, #7380, #7383, #7389, #7410, #7417 |
+| Refreshed layouts, text sizing and accessible climb transitions | #7603, #7622, #7635, #7711, #7720, #7726, #7833 |
+| Android Graphite, compact navigation, filter sheets and lock-screen controls | #7325, #7326, #7328, #7330, #7333, #7318, #7352 |
+
+Keep these limits when revising the copy: WLED auto-off is Wi-Fi-only; Bluetooth
+firmware installation is an opt-in beta for matching controllers. Home sections
+remain customizable. GPU rendering is capability- and rollout-gated, so the
+listing makes no universal GPU claim. Partner integrations remain behind their
+activation gates and are not advertised as generally available.
+
+**Native build requirement:** #7352 is already merged on `main`. Its Android
+lock-screen card uses a climb-coloured background, bulb and Next in the collapsed
+card, and a timed-drive ring. This feature is Android-only and requires a fresh
+native build. Select 2.8.0 binaries that include the reviewed changes above;
+rebasing this PR does not itself build or publish them.
+
+1. Merge the version and notes before selecting the final native builds.
    Check the Main Native Release result for a validated 2.8.0 stamp. A version-only
    change does not change the fingerprint; if no changed native snapshot is
    waiting, it alone does not start new binaries. The next native change adopts
