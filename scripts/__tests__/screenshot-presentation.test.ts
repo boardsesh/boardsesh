@@ -451,21 +451,28 @@ describe('store screenshot presentation', () => {
     expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
   });
 
-  it('maps Italian to Apple it and keeps its default campaign independent of physical fixtures', () => {
-    expect(captionLocaleForStore('ios', 'it')).toBe('it');
-    const recipes = resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES, 'it');
-    expect(recipes).toHaveLength(9);
-    expect(recipes.every((recipe) => !recipe.liveActivity && recipe.sources.length > 0)).toBe(true);
-    expect(recipes[7]).toEqual({
-      output: '07-session-detail.png',
-      caption: 'session',
-      layout: 'screen',
-      sources: ['04-session-detail.png'],
-    });
-    expect(resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES)[7].liveActivity).toEqual({
-      boardFamily: 'kilter',
-    });
-  });
+  it.each([
+    { appLocale: 'it', storeLocale: 'it' },
+    { appLocale: 'zh-CN', storeLocale: 'zh-Hans' },
+  ] as const)(
+    'maps $appLocale to Apple $storeLocale without borrowing physical fixtures',
+    ({ appLocale, storeLocale }) => {
+      expect(captionLocaleForStore('ios', storeLocale)).toBe(appLocale);
+      expect(Object.keys(readCaptionCatalog(appLocale))).toEqual(CAPTION_IDS);
+      const recipes = resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES, appLocale);
+      expect(recipes).toHaveLength(9);
+      expect(recipes.every((recipe) => !recipe.liveActivity && recipe.sources.length > 0)).toBe(true);
+      expect(recipes[7]).toEqual({
+        output: '07-session-detail.png',
+        caption: 'session',
+        layout: 'screen',
+        sources: ['04-session-detail.png'],
+      });
+      expect(resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES)[7].liveActivity).toEqual({
+        boardFamily: 'kilter',
+      });
+    },
+  );
 
   it('frames the Italian phone campaign with localized session pixels and provenance', async () => {
     const input = directory();

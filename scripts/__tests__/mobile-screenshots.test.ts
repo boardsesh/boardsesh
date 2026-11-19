@@ -222,7 +222,17 @@ describe('parseArgs', () => {
 
   it('rejects invalid locales and empty comma lists', () => {
     expect(() => parseArgs(['--locales', 'ja'])).toThrow(/supported app locales/);
+    expect(() => parseArgs(['--locales', 'zh-Hans'])).toThrow(/supported app locales/);
+    expect(() => parseArgs(['--locales', ' , '])).toThrow(/at least one locale/);
     expect(() => parseArgs(['--devices', ','])).toThrow(/at least one device/);
+  });
+
+  it('captures only selected app languages and removes duplicate selections', () => {
+    expect(parseArgs(['--locales', 'zh-CN']).appLocales).toEqual(['zh-CN']);
+    expect(parseArgs(['--locales', ' zh-CN,fr,zh-CN ']).appLocales).toEqual(['zh-CN', 'fr']);
+    expect(resolveAppStoreLocaleTargets(parseArgs(['--locales', 'zh-CN']).appLocales)).toEqual([
+      { appLocale: 'zh-CN', appStoreLocales: ['zh-Hans'] },
+    ]);
   });
 
   it('rejects an unknown flag and a value-less flag', () => {
@@ -1021,6 +1031,37 @@ describe('findDuplicateScreenshotGroups', () => {
 });
 
 describe('writeCapturedScreenshots', () => {
+  it('refreshes Chinese only and preserves every other locale and device folder', () => {
+    const root = mkdtempSync(join(tmpdir(), 'chinese-store-captures-'));
+    try {
+      const capture = join(root, 'capture');
+      const storeRoot = join(root, 'stores');
+      const screenshots = join(storeRoot, 'apple', 'screenshots');
+      const chinesePhone = join(screenshots, 'zh-Hans', 'iphone-16-pro-max');
+      const preservedShards = [
+        join(screenshots, 'en-US', 'iphone-16-pro-max'),
+        join(screenshots, 'fr-FR', 'iphone-16-pro-max'),
+        join(screenshots, 'zh-Hans', 'ipad-pro-13-inch-m5'),
+      ];
+      for (const directory of [capture, chinesePhone, ...preservedShards]) mkdirSync(directory, { recursive: true });
+      writeFileSync(join(capture, '00-climbs.png'), 'new Chinese capture');
+      writeFileSync(join(chinesePhone, 'old.png'), 'old Chinese capture');
+      for (const directory of preservedShards) writeFileSync(join(directory, 'previous.png'), directory);
+
+      const [target] = resolveAppStoreLocaleTargets(parseArgs(['--locales', 'zh-CN']).appLocales);
+      const saved = collectScreenshots(capture, 'ios', 'iPhone 16 Pro Max', target.appStoreLocales, false, storeRoot);
+
+      expect(saved).toEqual([join(chinesePhone, '00-climbs.png')]);
+      expect(readdirSync(chinesePhone)).toEqual(['00-climbs.png']);
+      expect(readFileSync(saved[0], 'utf8')).toBe('new Chinese capture');
+      for (const directory of preservedShards) {
+        expect(readdirSync(directory)).toEqual(['previous.png']);
+        expect(readFileSync(join(directory, 'previous.png'), 'utf8')).toBe(directory);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it.each([null, []])('saves Android captures without store locales: %s', (locales) => {
     const root = mkdtempSync(join(tmpdir(), 'android-story-captures-'));
     try {

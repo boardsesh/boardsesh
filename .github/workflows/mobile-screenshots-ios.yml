@@ -162,7 +162,7 @@ on:
           - full
           - probe
       locales:
-        description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de,it set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all six store locales at once.'
+        description: 'App languages to capture: e.g. "zh-CN" for Chinese only, or "zh-CN,fr". Empty = en-US,es,fr,de,it. Selected languages are capture-only: upload=false and publish_baseline=false. Use app codes, not Apple folder names such as zh-Hans.'
         type: string
         default: ''
       devices:
@@ -483,17 +483,28 @@ jobs:
           if [ -z "$locales" ]; then
             ios_locales='["en-US","es","fr","de","it"]'
           else
-            ios_locales=$(printf '%s' "$locales" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -cs . || true)
+            ios_locales=$(printf '%s' "$locales" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -cs 'reduce .[] as $locale ([]; if index($locale) == null then . + [$locale] else . end)' || true)
             if [ -z "$ios_locales" ] || [ "$ios_locales" = "[]" ]; then
               echo "::error::locales='$locales' resolved to no valid entries."
               exit 1
             fi
+          fi
+          # Reject unknown app languages here, before reserving a macOS runner.
+          # Read the shared config directly: setup has Node, but no dependencies.
+          supported_locales=$(node --experimental-strip-types --disable-warning=ExperimentalWarning --input-type=module -e 'import { SUPPORTED_LOCALES } from "./packages/shared/i18n/src/config.ts"; process.stdout.write(JSON.stringify(SUPPORTED_LOCALES));')
+          if ! printf '%s' "$ios_locales" | jq -e --argjson supported "$supported_locales" 'all(.[]; . as $locale | $supported | index($locale) != null)' >/dev/null; then
+            echo "::error::locales must contain supported app languages: $supported_locales. Use zh-CN for Simplified Chinese, not zh-Hans."
+            exit 1
           fi
           # Uploading mutates the live App Store listing and needs the full store
           # set, so refuse a contradictory narrowed/onboarding upload up front (on
           # this cheap ubuntu job) instead of failing ~40 min later inside fastlane.
           if [ "$upload" = "true" ] && { [ -n "$locales" ] || [ "$flow" = "onboarding" ]; }; then
             echo "::error::upload=true requires the full App Store set: flow=app-store and empty locales. Narrowed / onboarding runs are capture-only."
+            exit 1
+          fi
+          if [ "$PUBLISH_BASELINE" = "true" ] && [ -n "$locales" ]; then
+            echo '::error::selected languages are capture-only; publish_baseline=true requires empty locales.'
             exit 1
           fi
           # Same reasoning for the probe gate: an upload must carry the whole set,

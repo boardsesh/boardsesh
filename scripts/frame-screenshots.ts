@@ -997,7 +997,7 @@ export function parseFrameArguments(argv: readonly string[]): {
   const output = flags.get('--output');
   if ((platform !== 'ios' && platform !== 'android') || !input || !output) {
     throw new Error(
-      'Usage: screenshot:frame --platform ios|android --input <raw tree> --output <store tree> [--device <slug> --locale en-US|es|fr|de|it]',
+      'Usage: screenshot:frame --platform ios|android --input <raw tree> --output <store tree> [--device <slug> --locale en-US|es|fr|de|it|zh-CN]',
     );
   }
   const cpp = flags.get('--cpp');

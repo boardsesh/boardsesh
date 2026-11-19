@@ -1,0 +1,202 @@
+{
+  "board": {
+    "headline": "看清下一步",
+    "description": "查看岩点和难度，点亮你的线路。"
+  },
+  "boards": {
+    "headline": "一个应用，连接你的训练板",
+    "description": "兼容 Kilter 和 Tension，攀爬记录汇总在一起。"
+  },
+  "home": {
+    "headline": "看看伙伴最近在爬什么",
+    "description": "了解最近的攀爬活动和大家正在尝试的线路。"
+  },
+  "climbs": {
+    "headline": "寻找下一个攻克目标",
+    "description": "按难度、角度等条件浏览线路。"
+  },
+  "session": {
+    "headline": "记住每次攀爬",
+    "description": "回顾你的线路、尝试和完攀。"
+  },
+  "workout": {
+    "headline": "带着计划去攀爬",
+    "description": "根据训练板和攀爬水平制定训练计划。"
+  },
+  "discover": {
+    "headline": "发现新线路",
+    "description": "探索适合你训练板的推荐线路集和已保存线路集。"
+  },
+  "playlist": {
+    "headline": "把想爬的线路放在一起",
+    "description": "打开线路集，逐条挑战。"
+  },
+  "logbook": {
+    "headline": "记下每次完攀",
+    "description": "完攀与尝试，都保存在同一份攀爬记录中。"
+  },
+  "profile": {
+    "headline": "所有训练板，\n一个个人主页。",
+    "description": "查看你在各块训练板上的完攀与进展。"
+  },
+  "wall": {
+    "headline": "关注训练板上的动态",
+    "description": "查看训练板最近的完攀与统计。"
+  },
+  "wallKiosk": {
+    "headline": "放在训练板旁边。",
+    "description": "当前亮起的线路，在垫子上也看得清。"
+  },
+  "boardFamily": {
+    "headline": "你的训练板，一个应用。",
+    "description": "换训练板，无需换应用。"
+  },
+  "liveQueue": {
+    "headline": "你的伙伴，\n一个实时队列。",
+    "description": "一起添加线路，所有人保持同步。"
+  },
+  "liveClimb": {
+    "headline": "选一条线路，\n大家都能看到。",
+    "description": "当前线路会为攀爬活动中的所有人同步更新。"
+  },
+  "wallStatus": {
+    "headline": "看看墙上亮着哪条线路。",
+    "description": "浏览下一条线路时，也能知道当前亮起的线路。"
+  },
+  "moreBoards": {
+    "headline": "更多训练板，同一个应用。",
+    "description": "兼容 Woods Board、Grasshopper 和 MoonBoard 2024。"
+  },
+  "crossBoardLogbook": {
+    "headline": "所有训练板，\n同一份攀爬记录。",
+    "description": "各块训练板上的完攀与活动，都汇总在一起。"
+  },
+  "storeBoards": {
+    "headline": "多种训练板，一个应用",
+    "description": "各块训练板，共用一份攀爬记录。"
+  },
+  "storeCrew": {
+    "headline": "你的伙伴，\n一个队列。",
+    "description": "一起添加线路，每个人都能选择下一条。"
+  },
+  "storeSpray": {
+    "headline": "你的喷点墙，\n也能用。",
+    "description": "在喷点墙照片上定线。"
+  },
+  "storeMoreBoards": {
+    "headline": "更多训练板，\n同一个应用。",
+    "description": "也兼容 Touchstone 和 So iLL。"
+  },
+  "storeIsland": {
+    "headline": "下一条线路，\n在灵动岛切换。",
+    "description": "无需打开应用，即可切换线路。"
+  },
+  "cppOtherBoards": {
+    "headline": "多种训练板，一个应用",
+    "description": "所有攀爬记录汇总在一处。"
+  },
+  "cppSearch": {
+    "headline": "寻找下一个\n攻克目标",
+    "description": "按难度筛选，隐藏已完攀线路。"
+  },
+  "cppLogbook": {
+    "headline": "记下每次\n完攀与尝试",
+    "description": "按天分组，显示你的最高难度。"
+  },
+  "cppQueue": {
+    "headline": "和朋友一起\n选择下一条",
+    "description": "每个人都能用自己的手机添加线路。"
+  },
+  "cppWorkout": {
+    "headline": "带着计划\n去训练",
+    "description": "按你的目标难度挑选线路。"
+  },
+  "cppStatus": {
+    "headline": "看看现在\n亮着哪条线路",
+    "description": "显示通过 Boardsesh 点亮的线路。"
+  },
+  "cppIsland": {
+    "headline": "不必切换应用，\n就能换下一条",
+    "description": "直接在灵动岛操作。"
+  },
+  "cppKiosk": {
+    "headline": "放在\n训练板旁边",
+    "description": "显示亮起的线路，屏幕保持常亮。"
+  },
+  "cppKilterGrade": {
+    "headline": "适合你水平的\nKilter 线路",
+    "description": "选好难度和角度，再点亮线路。"
+  },
+  "cppKilterLayouts": {
+    "headline": "兼容 Kilter",
+    "description": "也能为你导入现有攀爬记录。"
+  },
+  "cppKilterLogbookImport": {
+    "headline": "带上你的\nKilter 攀爬记录",
+    "description": "过去的完攀与尝试，也会一起导入。"
+  },
+  "cppMoonboardGrade": {
+    "headline": "适合你水平的\nMoonBoard 线路",
+    "description": "选好难度，再点亮线路。"
+  },
+  "cppMoonboardLogbook": {
+    "headline": "记下每次\n完攀与尝试",
+    "description": "通过 CSV 导出文件带入攀爬记录。"
+  },
+  "cppMoonboardSets": {
+    "headline": "兼容 MoonBoard",
+    "description": "也能通过 CSV 导出文件，为你导入现有攀爬记录。"
+  },
+  "cppSprayHolds": {
+    "headline": "从照片中\n识别岩点",
+    "description": "其余细节，直接在照片上调整。"
+  },
+  "cppSprayOtherBoards": {
+    "headline": "岩馆训练板，\n同一份攀爬记录",
+    "description": "也能记录 Kilter、Tension 和 MoonBoard 完攀。"
+  },
+  "cppSprayProjects": {
+    "headline": "继续挑战\n你的攻克目标",
+    "description": "找回尝试过、尚未完攀的线路。"
+  },
+  "cppSpraySetting": {
+    "headline": "在你的\n喷点墙上定线",
+    "description": "点按墙面照片上的岩点。"
+  },
+  "cppSprayWalls": {
+    "headline": "支持喷点墙",
+    "description": "在自己的岩墙照片上定线。"
+  },
+  "cppSprayWorkout": {
+    "headline": "带着计划\n去训练",
+    "description": "墙面有了定级线路，就能安排训练。"
+  },
+  "cppTensionLayouts": {
+    "headline": "兼容 Tension",
+    "description": "也能为你导入现有攀爬记录。"
+  },
+  "cppTensionLogbookImport": {
+    "headline": "带上你的\nTension 攀爬记录",
+    "description": "过去的完攀汇总到同一份攀爬记录中。"
+  },
+  "cppTensionMirrorBoard": {
+    "headline": "在 Tension 2 Mirror\n上攀爬",
+    "description": "兼容你的镜像训练板。"
+  },
+  "cppTensionQueue": {
+    "headline": "和朋友一起\n攀爬 Tension",
+    "description": "每个人都能用自己的手机添加线路。"
+  },
+  "cppTensionSearch": {
+    "headline": "直接找到\n适合你的难度",
+    "description": "再隐藏已经完攀的线路。"
+  },
+  "storeLiveActivity": {
+    "headline": "下一条线路，\n无需打开应用。",
+    "description": "无需打开应用，即可切换线路。"
+  },
+  "cppLiveActivity": {
+    "headline": "下一条线路，\n无需打开应用。",
+    "description": "无需打开应用，即可切换线路。"
+  }
+}

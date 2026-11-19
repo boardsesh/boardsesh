@@ -266,7 +266,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const appLocales = JSON.parse(compute.match(/ios_locales='([^']+)'/)?.[1] ?? '[]') as string[];
     expect(appLocales).toEqual(['en-US', 'es', 'fr', 'de', 'it']);
     expect(devices.length * appLocales.length).toBe(25);
-    expect(devices.length * Object.keys(STORE_CAPTION_LOCALES).length).toBe(30);
+    const defaultStoreLocales = Object.entries(STORE_CAPTION_LOCALES).filter(([, locale]) =>
+      appLocales.includes(locale),
+    );
+    expect(devices.length * defaultStoreLocales.length).toBe(30);
   });
 
   it.each([
@@ -274,6 +277,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     { selection: 'phones', locales: '' },
     { selection: 'ipads', locales: '' },
     { selection: 'duo', locales: 'en-US' },
+    { selection: 'common', locales: 'zh-CN' },
+    { selection: 'phone-pro-max', locales: ' zh-CN,fr,zh-CN ' },
     ...['phone-pro', 'phone-pro-max', 'duo'].flatMap((selection) => [
       { selection, locales: '' },
       { selection, locales: 'it' },
@@ -308,7 +313,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
         const matrix = JSON.parse(
           lines.find((line) => line.startsWith('ios_matrix_full='))!.slice('ios_matrix_full='.length),
         ) as { locale: string[]; device: Array<{ slug: string }> };
-        expect(matrix.locale).toEqual(locales ? [locales] : ['en-US', 'es', 'fr', 'de', 'it']);
+        const selectedLocales = locales
+          ? [...new Set(locales.split(',').map((locale) => locale.trim()))]
+          : ['en-US', 'es', 'fr', 'de', 'it'];
+        expect(matrix.locale).toEqual(selectedLocales);
         const singleDevices: Record<string, { name: string; slug: string }> = {
           'phone-pro': { name: 'iPhone 16 Pro', slug: 'iphone-16-pro' },
           'phone-pro-max': { name: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max' },
@@ -318,12 +326,12 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
         expect(matrix.device).toHaveLength(selection === 'common' ? 5 : singleDevice ? 1 : 2);
         if (singleDevice) {
           expect(matrix.device).toEqual([singleDevice]);
-          expect(matrix.locale.length * matrix.device.length).toBe(locales ? 1 : 5);
+          expect(matrix.locale.length * matrix.device.length).toBe(selectedLocales.length);
         } else if (selection !== 'common')
           expect(
             matrix.device.every((device) => device.slug.startsWith(selection === 'phones' ? 'iphone-' : 'ipad-')),
           ).toBe(true);
-        expect(lines).toContain(selection === 'common' ? 'gate=probe' : 'gate=full');
+        expect(lines).toContain(selection === 'common' && !locales ? 'gate=probe' : 'gate=full');
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
@@ -331,6 +339,11 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
   );
 
   it.each([
+    { DEVICE_SELECTION: 'common', LOCALES: 'zh-Hans' },
+    { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN,ja' },
+    { DEVICE_SELECTION: 'common', LOCALES: ' , ' },
+    { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN', UPLOAD_INPUT: 'true' },
+    { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN', PUBLISH_BASELINE: 'true' },
     { DEVICE_SELECTION: 'unknown' },
     { DEVICE_SELECTION: 'phones', UPLOAD_INPUT: 'true' },
     { DEVICE_SELECTION: 'ipads', PUBLISH_BASELINE: 'true' },

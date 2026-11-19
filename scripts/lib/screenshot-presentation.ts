@@ -65,7 +65,7 @@ export const CAPTION_IDS = [
   'cppWorkout',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
-export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de', 'it'] as const;
+export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de', 'it', 'zh-CN'] as const;
 export type CaptionLocale = (typeof CAPTION_LOCALES)[number];
 export interface ScreenshotCaption {
   headline: string;
@@ -82,6 +82,7 @@ export const STORE_CAPTION_LOCALES: Readonly<Record<string, CaptionLocale>> = {
   'fr-FR': 'fr',
   'de-DE': 'de',
   it: 'it',
+  'zh-Hans': 'zh-CN',
 };
 
 export function captionLocaleForStore(platform: 'ios' | 'android', storeLocale: string): CaptionLocale {
@@ -256,9 +257,9 @@ export function resolveScreenshotRecipes(
     device.startsWith('iphone-') &&
     matches(IOS_CAMPAIGN_CAPTURE_NAMES)
   ) {
-    // Italian has no reviewed physical Live Activity capture yet. Show the
+    // These locales have no reviewed physical Live Activity capture yet. Show the
     // genuine localized session screen in that slot, keeping nine phone images.
-    return locale === 'it'
+    return locale === 'it' || locale === 'zh-CN'
       ? IOS_CAMPAIGN_RECIPES.map((recipe) =>
           recipe.liveActivity
             ? {
