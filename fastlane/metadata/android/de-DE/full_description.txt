@@ -4,7 +4,7 @@ GRIFFE BELEUCHTEN
 Suche dir einen beliebigen Boulder, und Boardsesh beleuchtet die Griffe an der Wand über Bluetooth, auf Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper und So iLL. Volle LED-Steuerung auf allen acht, nicht nur Stöbern.
 
 EINE APP FÜR JEDES BOARD, AN DEM DU KLETTERST
-Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh kann alle drei, dazu Woods, Decoy, Touchstone, Grasshopper und So iLL — alles an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
+Boardsesh ist mit allen acht Boards kompatibel. Deine Kletterhistorie über alle Boards hinweg liegt hier.
 
 Auch deine Spraywall
 Eine Spraywall zu Hause oder in deiner Halle? Fotografier sie, und Boardsesh schlägt Griffe aus dem Foto vor. Korrigier, was fehlt, dann schraub Boulder, leg sie in die Warteschlange und trag Begehungen im selben Routenbuch ein wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben. Teile die Spraywall per Link, dann kann deine Crew darauf auch schrauben. Spraywall abgeschraubt? Setz sie mit einem neuen Foto zurück, und die alte Spraywall wird mit ihren Bouldern und Begehungen archiviert. Tausch einen einzelnen Griff, und jeder Boulder, der ihn genutzt hat, wird markiert, bereit zum Remixen.
@@ -15,6 +15,9 @@ Du hast LEDs und einen WLED-Controller? Zeichne sie auf deinem Spraywall-Foto ei
 BOARD-VERLAUF
 Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
 Sieh die über Boardsesh beleuchteten Boulder an diesem Board: Name, wer sie beleuchtet und erstellt hat, Grad, Winkel und die letzten Begehungen.
+
+NEUE ANDROID-OBERFLÄCHE
+Schlankere Navigation und eine einfachere Oberfläche lassen deinen Bouldern mehr Platz.
 
 BLEIBT VERBUNDEN
 Boardsesh hält die Verbindung zum Board im Hintergrund, auch bei ausgeschaltetem Bildschirm oder in anderen Apps. Eine Karte in Boulderfarben zeigt Glühbirne und Weiter auf dem Sperrbildschirm, ohne sie aufzuklappen. Ein Ring zeigt die Restzeit beim zeitgesteuerten Beleuchten.
@@ -33,5 +36,7 @@ Home vereint deine Kletterwoche, Boulder auf deinem Niveau und Projekte für den
 
 KOSTENLOS, KEINE WERBUNG, KEIN ABO
 Open Source auf GitHub.
+
+GPU-beschleunigte Darstellung macht Übergänge auf unterstützten Boards und Geräten flüssiger. Trainings-Apps können Boardsesh anbinden. Infos: https://www.boardsesh.com/developers/
 
 Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es steht in keiner Verbindung zu den Board-Herstellern und wird von ihnen weder unterstützt noch empfohlen.

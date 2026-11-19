@@ -16,6 +16,9 @@ La cronologia del pannello
 Quando condividi un pannello, è facile perdere il blocco precedente o cancellarlo per sbaglio.
 Ritrova i blocchi illuminati su quel pannello tramite Boardsesh: nome, chi li ha illuminati, chi li ha tracciati, grado, inclinazione e ripetizioni recenti.
 
+Interfaccia Android rinnovata
+Navigazione più compatta e interfaccia più semplice lasciano spazio ai tuoi blocchi.
+
 La connessione resta attiva
 Boardsesh mantiene la connessione al pannello in background, anche con lo schermo spento o in altre app. Una scheda nei colori del blocco offre lampadina e Successivo sulla schermata di blocco senza espanderla. Un anello mostra il tempo rimasto quando il controllo è temporizzato.
 
@@ -33,5 +36,7 @@ Home riunisce la tua settimana di arrampicata, blocchi al tuo livello e progetti
 
 Gratis, senza pubblicità né abbonamenti
 Open source su GitHub.
+
+Il rendering accelerato dalla GPU rende più fluide le transizioni su pannelli e dispositivi supportati. Le app di allenamento possono integrarsi con Boardsesh: https://www.boardsesh.com/developers/
 
 Boardsesh è un progetto della community compatibile con questi pannelli. Non è affiliato né approvato da alcun produttore.

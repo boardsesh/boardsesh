@@ -20,6 +20,12 @@ Kilter’s Verified climbs have their own quick filter beside Grade. Share playl
 
 EASIER TO READ, SMOOTHER TO BROWSE
 
+GPU-accelerated board rendering brings smoother climb transitions on supported boards and devices.
+
 Refreshed colours and layouts give your climbs more room. Text follows your iPhone’s text-size settings more closely, and VoiceOver announces the new climb after a swipe. Climb transitions respect Reduce Motion. Long climb names scroll again, and changing the grade filter keeps the Climbs list on screen.
+
+CONNECT WITH TRAINING APPS
+
+Added support for third-party training app integrations. Developer details: https://www.boardsesh.com/developers/
 
 Free, no ads, open source.

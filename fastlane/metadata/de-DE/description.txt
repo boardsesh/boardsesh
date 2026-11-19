@@ -33,4 +33,6 @@ Home vereint deine Kletterwoche, Boulder auf deinem Niveau und Projekte für den
 
 Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper und So iLL. Dazu Spraywalls: jede Spraywall, die du fotografieren kannst.
 
+GPU-beschleunigte Darstellung macht Übergänge auf unterstützten Boards und Geräten flüssiger. Trainings-Apps können Boardsesh anbinden. Infos: https://www.boardsesh.com/developers/
+
 Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es steht in keiner Verbindung zu den Board-Herstellern und wird von ihnen weder unterstützt noch empfohlen.

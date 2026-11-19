@@ -1,6 +1,6 @@
 New in 2.8.0:
-- Train with 4x4, Limit Bouldering and On the Minute; repeat climbs down pyramids.
-- Home shows your week, climbs at your level and projects.
-- Light your Spraywall with WLED: Wi-Fi discovery, brightness and Wi-Fi auto-off. Bluetooth installation is an opt-in beta.
-- Find nearby boards and Kilter’s Verified climbs.
-- Try Graphite, slimmer navigation and a climb-coloured lock-screen card with bulb and Next controls.
+- Simpler Android UI, slimmer navigation and updated lock-screen board controls.
+- GPU-accelerated rendering on supported boards and devices.
+- Third-party training app integrations: https://www.boardsesh.com/developers/
+- 4x4, Limit Bouldering and On the Minute workouts. Home shows your week and projects.
+- WLED Spraywall lighting with Wi-Fi auto-off. Bluetooth installation stays an opt-in beta for matching controllers.

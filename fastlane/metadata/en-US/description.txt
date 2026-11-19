@@ -33,4 +33,6 @@ Home brings together your week’s climbing, climbs at your level and projects t
 
 Supported boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper and So iLL. Plus Spraywalls: any Spraywall you can photograph.
 
+GPU-accelerated board rendering brings smoother climb transitions on supported boards and devices. Training apps can integrate with Boardsesh; developer details: https://www.boardsesh.com/developers/
+
 Boardsesh is a community effort that works with these boards and is not affiliated with or endorsed by any board manufacturer.

@@ -33,4 +33,6 @@ L’accueil réunit ta semaine de grimpe, des blocs à ton niveau et des projets
 
 Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL. Plus les Spraywalls : n'importe quel Spraywall que tu peux photographier.
 
+Le rendu accéléré par GPU fluidifie les transitions sur les boards et appareils compatibles. Les applis d’entraînement peuvent s’intégrer à Boardsesh : https://www.boardsesh.com/developers/
+
 Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

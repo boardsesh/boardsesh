@@ -1,6 +1,6 @@
 Nouveau en 2.8.0 :
-- 4x4, À la limite, À la minute ; mêmes blocs en redescendant les pyramides.
-- Accueil : ta semaine, blocs à ton niveau et projets.
-- Spraywall avec WLED : recherche Wi-Fi, luminosité et extinction automatique en Wi-Fi. Installation Bluetooth en bêta facultative.
-- Boards proches et blocs Vérifiés de Kilter.
-- Graphite, navigation compacte et carte verrouillée aux couleurs du bloc, avec ampoule et Suivant.
+- Interface Android simplifiée, navigation compacte et commandes sur écran verrouillé revues.
+- Rendu GPU sur boards et appareils compatibles.
+- Intégrations d’applis d’entraînement : https://www.boardsesh.com/developers/
+- 4x4, À la limite, À la minute. Accueil : ta semaine et projets.
+- Éclairage WLED du Spraywall, extinction automatique en Wi-Fi. Installation Bluetooth en bêta facultative pour contrôleurs compatibles.

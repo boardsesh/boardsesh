@@ -33,4 +33,6 @@ Home riunisce la tua settimana di arrampicata, blocchi al tuo livello e progetti
 
 Pannelli supportati: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper e So iLL. In più, qualsiasi Spraywall che puoi fotografare.
 
+Il rendering accelerato dalla GPU rende più fluide le transizioni su pannelli e dispositivi supportati. Le app di allenamento possono integrarsi con Boardsesh: https://www.boardsesh.com/developers/
+
 Boardsesh è un progetto della community compatibile con questi pannelli. Non è affiliato né approvato da alcun produttore.

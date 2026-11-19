@@ -20,6 +20,12 @@ Los bloques Verificados de Kilter tienen su propio filtro rápido junto a Grado.
 
 MÁS FÁCIL DE LEER Y RECORRER
 
+El renderizado del plafón acelerado por GPU ofrece transiciones más fluidas entre bloques en plafones y dispositivos compatibles.
+
 Los colores y diseños renovados dejan más espacio a tus bloques. El texto se adapta mejor al tamaño elegido en tu iPhone y VoiceOver anuncia el nuevo bloque tras deslizar. Las transiciones respetan Reducir movimiento. Los nombres largos vuelven a desplazarse y cambiar el filtro de grado mantiene la lista de Bloques en pantalla.
+
+CONECTA CON APPS DE ENTRENAMIENTO
+
+Nuevo soporte para integraciones con apps de entrenamiento de terceros. Información para desarrolladores: https://www.boardsesh.com/developers/
 
 Gratis, sin anuncios y de código abierto.

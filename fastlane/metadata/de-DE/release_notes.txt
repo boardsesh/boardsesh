@@ -20,6 +20,12 @@ Kilters verifizierte Boulder haben einen eigenen Schnellfilter neben Grad. Teile
 
 BESSER LESBAR, FLÜSSIGER BLÄTTERN
 
+GPU-beschleunigte Board-Darstellung macht die Übergänge zwischen Bouldern auf unterstützten Boards und Geräten flüssiger.
+
 Neue Farben und Layouts geben deinen Bouldern mehr Platz. Text folgt der auf deinem iPhone eingestellten Schriftgröße genauer, und VoiceOver liest nach dem Wischen den neuen Boulder vor. Übergänge beachten Bewegung reduzieren. Lange Bouldernamen scrollen wieder, und die Boulder-Liste bleibt nach einem Wechsel des Gradfilters sichtbar.
+
+VERBINDE TRAININGS-APPS
+
+Neu: Unterstützung für Integrationen mit Trainings-Apps anderer Anbieter. Infos für Entwickler*innen: https://www.boardsesh.com/developers/
 
 Kostenlos, ohne Werbung, Open Source.

@@ -16,6 +16,9 @@ BOARD HISTORY
 Share a board and you lose track of the last climb fast, and someone always wipes it by accident.
 See climbs lit through Boardsesh on that board: the climb name, who lit it, who set it, grade and angle, and recent sends.
 
+UPDATED ANDROID UI
+Slimmer navigation and a more minimal interface keep your climbs in focus.
+
 STAYS CONNECTED
 Boardsesh keeps the link to your board alive in the background, so the holds stay lit through your burns even when the screen is off or you switch apps. A card in your climb’s colours puts the bulb and Next on your lock screen without expanding it. A ring shows the time left when timed driving is on.
 
@@ -33,5 +36,7 @@ Home brings together your week’s climbing, climbs at your level and projects t
 
 FREE, NO ADS, NO SUBSCRIPTIONS
 Open source on GitHub.
+
+GPU-accelerated board rendering brings smoother climb transitions on supported boards and devices. Training apps can integrate with Boardsesh; developer details: https://www.boardsesh.com/developers/
 
 Boardsesh is a community effort that works with these boards and is not affiliated with or endorsed by any board manufacturer.

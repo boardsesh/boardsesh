@@ -20,6 +20,12 @@ Les blocs Vérifiés de Kilter ont leur propre filtre rapide à côté de Cotati
 
 PLUS LISIBLE, PLUS FLUIDE
 
+Le rendu des boards accéléré par GPU rend les transitions entre blocs plus fluides sur les boards et appareils compatibles.
+
 Les couleurs et les mises en page renouvelées laissent plus de place à tes blocs. Le texte suit mieux la taille choisie sur ton iPhone et VoiceOver annonce le nouveau bloc après un balayage. Les transitions respectent Réduire les animations. Les noms longs défilent à nouveau et changer le filtre de cotation garde la liste des blocs à l’écran.
+
+CONNECTE TES APPLIS D’ENTRAÎNEMENT
+
+Ajout du support des intégrations avec des applis d’entraînement tierces. Informations pour les développeurs : https://www.boardsesh.com/developers/
 
 Gratuit, sans pub, open source.

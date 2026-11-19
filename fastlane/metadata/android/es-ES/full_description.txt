@@ -16,6 +16,9 @@ HISTORIAL DEL MURO
 Si compartes muro, enseguida pierdes la cuenta de el último bloque, y siempre hay alguien que lo borra sin querer.
 Consulta los bloques iluminados con Boardsesh en ese plafón: el nombre, quién lo iluminó, quién lo montó, el grado y el ángulo, y los encadenes recientes.
 
+INTERFAZ ANDROID RENOVADA
+Una navegación más compacta y una interfaz más sencilla dejan el protagonismo a tus bloques.
+
 SIGUE CONECTADO
 Boardsesh mantiene la conexión con tu plafón en segundo plano, incluso con la pantalla apagada o al cambiar de app. Una tarjeta con los colores del bloque pone la bombilla y Siguiente en la pantalla de bloqueo sin desplegarla. Un anillo muestra el tiempo restante del control temporizado.
 
@@ -33,5 +36,7 @@ Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para reinte
 
 GRATIS, SIN ANUNCIOS, SIN SUSCRIPCIONES
 Código abierto en GitHub.
+
+El renderizado acelerado por GPU ofrece transiciones más fluidas en plafones y dispositivos compatibles. Las apps de entrenamiento pueden integrarse con Boardsesh: https://www.boardsesh.com/developers/
 
 Boardsesh es un proyecto comunitario que funciona con estos plafones y no está afiliado ni respaldado por ningún fabricante de plafones.

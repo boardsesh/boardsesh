@@ -4,7 +4,7 @@ ALLUME LES PRISES
 Cherche n’importe quel bloc et Boardsesh allume les prises sur le mur en Bluetooth, sur Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper et So iLL. Contrôle complet des LED sur les huit, pas seulement la consultation.
 
 UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
-Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
+Boardsesh fonctionne avec les huit boards. Retrouve ton historique d’escalade sur toutes tes boards au même endroit.
 
 Ton Spraywall aussi
 Un Spraywall chez toi ou dans ta salle ? Prends-le en photo et Boardsesh suggère des prises à partir de la photo. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le Spraywall par lien et ton crew peut y ouvrir des blocs aussi. Spraywall reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien Spraywall est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
@@ -15,6 +15,9 @@ Tu as des LED et un contrôleur WLED ? Place-les sur la photo de ton Spraywall, 
 L'HISTORIQUE DE LA BOARD
 Partage une board et tu perds vite le fil de le dernier bloc, et quelqu'un finit toujours par l'effacer par accident.
 Retrouve les blocs allumés via Boardsesh sur cette board : le nom du bloc, qui l’a allumé, qui l’a ouvert, la cotation, l’inclinaison et les croix récentes.
+
+INTERFACE ANDROID RENOUVELÉE
+Une navigation plus compacte et une interface plus simple mettent tes blocs au premier plan.
 
 TOUJOURS CONNECTÉ
 Boardsesh garde le lien avec ta board en arrière-plan, même écran éteint ou dans une autre appli. Une carte aux couleurs du bloc place l’ampoule et Suivant sur l’écran verrouillé sans la déplier. Un anneau indique le temps restant lorsque le pilotage est temporisé.
@@ -33,5 +36,7 @@ L’accueil réunit ta semaine de grimpe, des blocs à ton niveau et des projets
 
 GRATUIT, SANS PUB, SANS ABONNEMENT
 Open source sur GitHub.
+
+Le rendu accéléré par GPU fluidifie les transitions sur les boards et appareils compatibles. Les applis d’entraînement peuvent s’intégrer à Boardsesh : https://www.boardsesh.com/developers/
 
 Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

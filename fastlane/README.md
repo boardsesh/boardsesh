@@ -52,13 +52,18 @@ existing positioning.
 | Nearby boards, gym walls, My climbs and Kilter Verified filtering | #7576, #7580, #7643, #7658, #7602, #7388 |
 | Shared link previews and playlist sharing | #7344, #7372, #7380, #7383, #7389, #7410, #7417 |
 | Refreshed layouts, text sizing and accessible climb transitions | #7603, #7622, #7635, #7711, #7720, #7726, #7833 |
-| Android Graphite, compact navigation, filter sheets and lock-screen controls | #7325, #7326, #7328, #7330, #7333, #7318, #7352 |
+| Simpler Android interface, compact navigation, filter sheets and lock-screen controls | #7325, #7326, #7328, #7330, #7333, #7318, #7352 |
+| GPU-accelerated board rendering on supported boards and devices | #7542, #7556, #7566, #7568, #7644 |
+| Third-party training app integration support and developer documentation | #7406, #7697, #7776, #7823 |
 
 Keep these limits when revising the copy: WLED auto-off is Wi-Fi-only; Bluetooth
 firmware installation is an opt-in beta for matching controllers. Home sections
 remain customizable. GPU rendering is capability- and rollout-gated, so the
-listing makes no universal GPU claim. Partner integrations remain behind their
-activation gates and are not advertised as generally available.
+listing describes supported boards and devices rather than promising every layout.
+Training app integration support links to https://www.boardsesh.com/developers/;
+it does not promise a named third-party app is already connected. Integration
+activation still follows the backend mode and mobile workout gates; these copy
+changes do not alter deployment settings.
 
 **Native build requirement:** #7352 is already merged on `main`. Its Android
 lock-screen card uses a climb-coloured background, bulb and Next in the collapsed

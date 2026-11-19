@@ -33,4 +33,6 @@ Inicio reúne tu semana de escalada, bloques de tu nivel y proyectos para reinte
 
 Plafones compatibles: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper y So iLL. Y además Spraywalls: cualquier Spraywall que puedas fotografiar.
 
+El renderizado acelerado por GPU ofrece transiciones más fluidas en plafones y dispositivos compatibles. Las apps de entrenamiento pueden integrarse con Boardsesh: https://www.boardsesh.com/developers/
+
 Boardsesh es un proyecto comunitario que funciona con estos plafones y no está afiliado ni respaldado por ningún fabricante de plafones.

@@ -1,6 +1,6 @@
 Neu in 2.8.0:
-- 4x4, Am Limit, Im Minutentakt; Pyramiden auf denselben Bouldern hinab.
-- Home: deine Woche, Boulder auf deinem Niveau und Projekte.
-- Spraywall mit WLED: WLAN-Suche, Helligkeit, WLAN-Abschaltautomatik. Bluetooth-Installation als freiwillige Beta.
-- Boards in der Nähe und Kilters verifizierte Boulder.
-- Graphite, schlankere Navigation und Sperrbildschirmkarte in Boulderfarben mit Glühbirne und Weiter.
+- Einfachere Android-Oberfläche, schlankere Navigation und neue Sperrbildschirmsteuerung.
+- GPU-Darstellung auf unterstützten Boards und Geräten.
+- Trainings-App-Integrationen: https://www.boardsesh.com/developers/
+- 4x4, Am Limit, Im Minutentakt. Home: deine Woche und Projekte.
+- WLED-Spraywall-Beleuchtung mit WLAN-Abschaltautomatik. Bluetooth-Installation bleibt freiwillige Beta für passende Controller.
