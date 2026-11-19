@@ -117,18 +117,18 @@ end
 # holds (#7225). Each entry: the deliver option, the Spaceship read, what it is
 # called in the run summary, and what it is called in an error.
 #
-# deliver's phased_release and reset_ratings options both default to false, not
+# deliver's phased_release option defaults to false, not
 # nil (fastlane 2.241.2, deliver/lib/deliver/options.rb). Its metadata step
 # leaves each setting alone only when the option is nil: false deletes the
-# version's phased release or rating reset request, and true creates one
+# version's phased release, and true creates one
 # (UploadMetadata#upload, "Update phased release" and "Update rating reset", in
 # deliver/lib/deliver/upload_metadata.rb). An explicit nil falls back to that
 # false default (FastlaneCore::Configuration#fetch), so passing what is already
-# there is the only way to keep it. Calls with skip_metadata: true return before
-# that step and need nothing.
+# there keeps it. Rating reset requests have no public API relationship; the
+# Deliverfile supplies a genuine nil so deliver never reads or changes them.
+# Calls with skip_metadata: true return before that step and need nothing.
 DELIVER_VERSION_SETTINGS = [
-  { option: :phased_release, fetch: :fetch_app_store_version_phased_release, label: "Phased release", noun: "a phased release" },
-  { option: :reset_ratings, fetch: :fetch_reset_ratings_request, label: "Rating reset", noun: "a rating reset request" }
+  { option: :phased_release, fetch: :fetch_app_store_version_phased_release, label: "Phased release", noun: "a phased release" }
 ].freeze
 
 # Whether the App Store version has the given DELIVER_VERSION_SETTINGS entry.
@@ -565,6 +565,15 @@ platform :ios do
 
   desc "Upload App Store listing text + What's New to the editable version (no binary, no screenshots, no review)"
   lane :metadata do |options|
+    if ENV.key?("DELIVER_RESET_RATINGS")
+      UI.user_error!("Remove DELIVER_RESET_RATINGS before pushing listing text; this lane must leave the owner's rating reset request unchanged.")
+    end
+    preservation_config = File.join(REPO_ROOT, "fastlane", "Deliverfile")
+    # The official action runs from the repository root and loads this first.
+    # A Fastfile-only execution must not restore deliver's false default.
+    unless File.file?(preservation_config)
+      UI.user_error!("The checked-in fastlane/Deliverfile must be loaded before pushing listing text; refusing to change the owner's rating reset request.")
+    end
     expected_version = options[:expected_version].to_s
     unless expected_version.empty? || expected_version.match?(/\A\d+\.\d+\.\d+\z/)
       UI.user_error!("expected_version must be x.y.z")
@@ -605,10 +614,9 @@ platform :ios do
       next
     end
 
-    # Keep the version's phased release and rating reset request as App Store
-    # Connect has them. Left out, each option defaults to false and deliver
-    # deletes what the owner turned on (see DELIVER_VERSION_SETTINGS). Do not
-    # drop this. Both are read before the upload, so one turned on in App Store
+    # Keep the version's phased release as App Store Connect has it. Left out,
+    # the option defaults to false and deliver deletes what the owner turned on.
+    # It is read before the upload, so one turned on in App Store
     # Connect while the push runs is still deleted; the release docs say so.
     keep_settings = DELIVER_VERSION_SETTINGS.to_h do |setting|
       on = app_store_version_setting_on?(edit_version, setting)
@@ -622,6 +630,9 @@ platform :ios do
       emit_step_summary(note)
       [setting.fetch(:option), on]
     end
+    rating_reset_note = "Rating reset: unchanged; listing text does not read or update reset requests."
+    UI.message(rating_reset_note)
+    emit_step_summary(rating_reset_note)
 
     upload_to_app_store(
       api_key: api_key,
@@ -631,7 +642,6 @@ platform :ios do
       skip_screenshots: true,
       skip_metadata: false,
       phased_release: keep_settings.fetch(:phased_release),
-      reset_ratings: keep_settings.fetch(:reset_ratings),
       # Only edit the current editable version's text; never create or retitle a version.
       skip_app_version_update: true,
       submit_for_review: false,

@@ -250,6 +250,7 @@ class NativeUploadLanesTest < Minitest::Test
     @root = Dir.mktmpdir("native-upload-lanes-")
     @fastlane_directory = File.join(@root, "fastlane")
     FileUtils.mkdir_p(File.join(@fastlane_directory, "lib"))
+    FileUtils.cp(File.expand_path("../Deliverfile", __dir__), File.join(@fastlane_directory, "Deliverfile"))
     File.write(File.join(@fastlane_directory, "lib", "android_release.rb"), "# Stubbed runner above\n")
     File.write(File.join(@fastlane_directory, "lib", "play_listing.rb"), "# Stubbed runner above\n")
     # Pure constants, required for real at the top of this file.
@@ -266,6 +267,7 @@ class NativeUploadLanesTest < Minitest::Test
     ENV.delete("REPLACE_BETA_REVIEW_VERSION_CODE")
     ENV.delete("ASC_SCREENSHOT_LOCALES")
     ENV.delete("ASC_SCREENSHOT_PATH")
+    ENV.delete("DELIVER_RESET_RATINGS")
     Deliver::Loader.staged_paths = nil
     Deliver::SyncScreenshots.visited_locales = nil
   end
@@ -466,7 +468,7 @@ class NativeUploadLanesTest < Minitest::Test
     assert_equal 1, @dsl.app_store_uploads.length
     assert_equal false, @dsl.app_store_uploads.first.fetch(:skip_metadata)
     assert_equal true, @dsl.app_store_uploads.first.fetch(:phased_release)
-    assert_equal false, @dsl.app_store_uploads.first.fetch(:reset_ratings)
+    refute @dsl.app_store_uploads.first.key?(:reset_ratings)
     assert_includes File.read(summary_path), "Phased release: on for 2.7.0; the listing push keeps it on."
   end
 
@@ -483,34 +485,46 @@ class NativeUploadLanesTest < Minitest::Test
   def test_ios_metadata_reads_an_empty_answer_as_none
     run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, :empty_answer, :empty_answer))
     assert_equal false, @dsl.app_store_uploads.first.fetch(:phased_release)
-    assert_equal false, @dsl.app_store_uploads.first.fetch(:reset_ratings)
+    refute @dsl.app_store_uploads.first.key?(:reset_ratings)
   end
 
-  # reset_ratings has the same false default, and false deletes a rating reset
-  # request the owner made for the version.
-  def test_ios_metadata_keeps_an_existing_rating_reset_request
+  # Rating reset requests are not exposed by the public API-key client.
+  # The Deliverfile makes this a do-not-touch operation; never read their state.
+  def test_ios_metadata_never_reads_or_passes_rating_reset_requests
     summary_path = File.join(@root, "step-summary.md")
     ENV["GITHUB_STEP_SUMMARY"] = summary_path
-    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, :reset_ratings_request))
-    assert_equal true, @dsl.app_store_uploads.first.fetch(:reset_ratings)
-    assert_equal false, @dsl.app_store_uploads.first.fetch(:phased_release)
-    summary = File.read(summary_path)
-    assert_includes summary, "Rating reset: on for 2.7.0; the listing push keeps it on."
-    assert_includes summary, "Phased release: none on 2.7.0; the listing push leaves it off."
+    [nil, :reset_ratings_request, RuntimeError.new("The relationship 'resetRatingsRequest' does not exist")].each do |request|
+      version = FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, request)
+      version.define_singleton_method(:fetch_reset_ratings_request) { raise "Rating reset lookup must not run" }
+      run_ios_metadata(version)
+      refute @dsl.app_store_uploads.last.key?(:reset_ratings)
+      assert_equal false, @dsl.app_store_uploads.last.fetch(:phased_release)
+    end
+    assert_includes File.read(summary_path), "Rating reset: unchanged; listing text does not read or update reset requests."
+  end
 
-    ENV["GITHUB_STEP_SUMMARY"] = File.join(@root, "step-summary-none.md")
-    @dsl.app_store_uploads.clear
-    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, nil))
-    assert_equal false, @dsl.app_store_uploads.first.fetch(:reset_ratings)
-    assert_includes File.read(ENV.fetch("GITHUB_STEP_SUMMARY")), "Rating reset: none on 2.7.0; the listing push leaves it off."
+  def test_ios_metadata_blocks_every_rating_reset_environment_override
+    ["true", "false", "1", "0", ""].each do |override|
+      ENV["DELIVER_RESET_RATINGS"] = override
+      error = assert_raises(RuntimeError) { run_ios_metadata(FakeEditableVersion.new("2.8.0", "PREPARE_FOR_SUBMISSION", nil)) }
+      assert_includes error.message, "Remove DELIVER_RESET_RATINGS"
+      assert_nil @dsl.app_store_uploads
+    end
+  end
+
+  def test_ios_metadata_requires_the_preservation_config_before_authentication
+    File.delete(File.join(@fastlane_directory, "Deliverfile"))
+    @dsl.define_singleton_method(:asc_api_key) { raise "Authentication must not run" }
+    error = assert_raises(RuntimeError) { run_ios_metadata(FakeEditableVersion.new("2.8.0", "PREPARE_FOR_SUBMISSION", nil)) }
+    assert_includes error.message, "checked-in fastlane/Deliverfile must be loaded"
+    assert_nil @dsl.app_store_uploads
   end
 
   # Reading a failed lookup as "none" would let deliver delete the setting.
   def test_ios_metadata_stops_when_a_version_setting_cannot_be_read
     down = RuntimeError.new("App Store Connect is down")
     {
-      "a phased release" => FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, down, nil),
-      "a rating reset request" => FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, down)
+      "a phased release" => FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, down, nil)
     }.each do |noun, edit_version|
       [{}, { expected_version: "2.7.0" }].each do |options|
         error = assert_raises(RuntimeError, "#{noun} #{options.inspect}") { run_ios_metadata(edit_version, options) }
@@ -535,10 +549,11 @@ class NativeUploadLanesTest < Minitest::Test
     assert_equal 2, @dsl.app_store_uploads.length, "screenshots use only the scoped sync, not the metadata runner"
     @dsl.app_store_uploads.each do |upload|
       next if upload.fetch(:skip_metadata) == true
-      [:phased_release, :reset_ratings].each do |option|
+      [:phased_release].each do |option|
         assert_includes [true, false], upload[option],
           "upload_to_app_store with skip_metadata: false must pass #{option} explicitly: #{upload.keys.inspect}"
       end
+      refute upload.key?(:reset_ratings), "rating reset must be left to the genuine nil in Deliverfile"
     end
   end
 
@@ -565,7 +580,7 @@ class NativeUploadLanesTest < Minitest::Test
     calls.each do |arguments|
       next if arguments.match?(/^\s*skip_metadata:\s*true\s*,?\s*$/)
       assert_match(/^\s*phased_release:/, arguments, "deliver call with metadata on must pass phased_release:\n#{arguments}")
-      assert_match(/^\s*reset_ratings:/, arguments, "deliver call with metadata on must pass reset_ratings:\n#{arguments}")
+      refute_match(/^\s*reset_ratings:/, arguments, "deliver call must not override Deliverfile's rating-reset preservation:\n#{arguments}")
     end
   end
 

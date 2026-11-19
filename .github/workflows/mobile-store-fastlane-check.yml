@@ -80,5 +80,8 @@ jobs:
         working-directory: fastlane
         run: |
           bundle exec ruby -e 'require "supply"; require "supply/client"; abort "Missing review guard" unless Google::Apis::AndroidpublisherV3::AndroidPublisherService.instance_method(:commit_edit).parameters.include?([:key, :changes_in_review_behavior])'
+      - name: Verify pinned metadata uploader leaves rating resets untouched
+        working-directory: fastlane
+        run: vp exec bundle exec ruby tests/metadata_rating_reset_contract_test.rb
       - name: Verify native triggers, exact promotion and the merge-back submission
         run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-native-build-source.test.ts scripts/mobile-native-release.test.ts scripts/__tests__/testflight-build.test.ts scripts/__tests__/testflight-notes.test.ts scripts/__tests__/testflight-distribution-workflow.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts scripts/__tests__/mobile-store-android-draft.test.ts scripts/lib/google-play-tracks.test.ts scripts/__tests__/mobile-store-android-review-pending.test.ts scripts/__tests__/push-run-superseded.test.ts scripts/__tests__/mobile-store-submit-target.test.ts scripts/__tests__/mobile-store-submit-android.test.ts scripts/__tests__/mobile-store-submit-workflow.test.ts scripts/__tests__/mobile-screenshots-workflows.test.ts scripts/__tests__/mobile-cut-release-tags.test.ts --reporter=agent
