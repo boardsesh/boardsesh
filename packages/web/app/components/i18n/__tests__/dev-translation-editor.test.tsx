@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import catalog from '@boardsesh/i18n/locales/en-US/devTools.json';
@@ -28,7 +28,10 @@ async function mountEditor() {
       <DevTranslationEditor locale="en-US" />
     </I18nextProvider>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit translations' }));
+  const enableButton = await screen.findByRole('button', { name: 'Edit translations' });
+  await act(async () => {
+    fireEvent.click(enableButton);
+  });
   await screen.findByRole('button', { name: 'Search strings' });
 }
 
