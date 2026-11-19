@@ -880,7 +880,10 @@ jobs:
     # `&&`/`||` return the actual operand, not a coerced boolean, and a matrix
     # JSON string is always non-empty (truthy) — so `false && x` short-circuits
     # to `false` without evaluating `x`, and `false || y` then evaluates to `y`.
-    runs-on: xcode-27
+    # The Duo's post-restart launchctl cleanup stalls on the standard runner;
+    # the same helper and toolchain succeeded on xlarge (run 44068744445).
+    # Keep the other four devices on the standard runner and all deadlines intact.
+    runs-on: ${{ matrix.device.slug == 'iphone-duo' && 'xcode-27-xlarge' || 'xcode-27' }}
     # A cold-boot recovery consumed 40 minutes before 13 healthy stories completed
     # in 20 minutes. Allow the remaining captures and artifact upload to finish;
     # individual boot, launch and story readiness deadlines stay bounded.
