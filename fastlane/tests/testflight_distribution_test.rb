@@ -401,7 +401,7 @@ class TestflightDistributionTest < Minitest::Test
     fastlane_directory = File.join(@root, "fastlane")
     lib_directory = File.join(fastlane_directory, "lib")
     FileUtils.mkdir_p(lib_directory)
-    %w[app_store_version_states testflight_distribution spaceship].each do |name|
+    %w[app_store_version_states screenshot_upload testflight_distribution spaceship].each do |name|
       File.write(File.join(lib_directory, "#{name}.rb"), "# Test doubles are loaded above\n")
     end
     @stub_load_path = lib_directory

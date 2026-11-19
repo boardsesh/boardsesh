@@ -630,7 +630,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
         SELECTED_SET_CAPTURED: String(evaluate(finalize.env?.SELECTED_SET_CAPTURED, context)),
       };
       for (const name of [
+        'Checkout trusted screenshot upload tooling',
+        'Install trusted screenshot upload tooling',
         'Set up Ruby + fastlane',
+        'Install fastlane gems',
         'Decode App Store Connect API key',
         'Upload screenshots to App Store Connect',
       ]) {
@@ -883,7 +886,8 @@ printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
     for (const [jobName, job] of Object.entries(workflow.jobs)) {
       const checkouts = (job.steps ?? []).filter((step) => (step.uses ?? '').startsWith('actions/checkout@'));
       for (const step of checkouts) {
-        const tooling = step.with?.path === '.boardsesh/cache-tooling';
+        const tooling =
+          step.with?.path === '.boardsesh/cache-tooling' || step.with?.path === '.boardsesh/store-upload-tooling';
         expect(step.with?.ref, `${jobName} must pin its application or tooling sha`).toBe(
           tooling || jobName === entry.firstJob
             ? '${{ github.workflow_sha }}'
