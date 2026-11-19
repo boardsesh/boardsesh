@@ -409,11 +409,13 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
 
 To refresh only Chinese screenshots, dispatch **Mobile Screenshots (iOS)** from
 the release commit with these inputs: `flow=app-store`, `gate=full`,
-`locales=zh-CN`, `devices=common`, `fixtures=replay`, `upload=false`, and
+`locales=zh-CN`, `devices=common`, `fixtures=replay`, `upload=true`, and
 `publish_baseline=false`. The run captures only Chinese on the five existing
-device targets, writes Apple folder `zh-Hans`, and retains the screenshots as
-downloadable artifacts. For one phone preview, choose `devices=phone-pro-max`.
-Other languages' existing screenshots stay unchanged. A comma-separated app
+device targets, validates the complete Chinese set, and uploads only Apple's
+`zh-Hans` screenshot sets on the editable App Store version. Other languages'
+screenshots stay unchanged. The run also keeps downloadable artifacts. For a
+capture-only preview, set `upload=false`; `devices=phone-pro-max` previews one phone.
+A comma-separated app
 language list such as `zh-CN,fr` captures exactly those languages; whitespace and
 duplicates are normalized. Unknown codes fail on Ubuntu before any macOS work.
 Use `zh-CN`, not Apple's `zh-Hans`, as the input.
@@ -424,10 +426,16 @@ On a Mac, the same selection is available locally:
 vp run mobile:screenshots -- --platform ios --flow app-store --locales zh-CN --devices common --fixtures replay
 ```
 
-Explicit language selections are capture-only. App Store upload and baseline
-publication still require the complete validated default set; they reject
-nonempty `locales`. Review the Chinese artifacts before attaching them to the
-Chinese App Store listing. Chinese phone framing uses its genuine localized
+Selected-language uploads require `flow=app-store`, `gate=full`,
+`devices=common`, and replay fixtures. Every requested language must contain the
+complete validated device/image set. The uploader scopes both remote reads and
+writes to the requested Apple locales and preserves every other language's
+screenshot sets. A missing selected localization can be
+created with its locale only, without changing listing text. The editable App
+Store version must match the captured app's version; a mismatch or unavailable
+version fails an explicit selected upload. Baseline publication
+still requires the complete default set and rejects nonempty `locales`.
+Chinese phone framing uses its genuine localized
 session screen instead of a physical Live Activity capture that has not yet
 been reviewed in Chinese.
 

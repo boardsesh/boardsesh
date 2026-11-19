@@ -6,6 +6,7 @@ require "fileutils"
 require "json"
 require "open3"
 require_relative "../lib/app_store_version_states"
+require_relative "../lib/screenshot_upload"
 
 # Execute the actual lane blocks without loading Fastlane or contacting stores.
 module UI
@@ -22,6 +23,10 @@ end
 # below are all the lane sees of App Store Connect.
 SPACESHIP_STUB_DIRECTORY = Dir.mktmpdir("spaceship-stub-")
 File.write(File.join(SPACESHIP_STUB_DIRECTORY, "spaceship.rb"), "# Stand-ins live in native_upload_lanes_test.rb\n")
+FileUtils.mkdir_p(File.join(SPACESHIP_STUB_DIRECTORY, "deliver"))
+%w[loader sync_screenshots].each do |filename|
+  File.write(File.join(SPACESHIP_STUB_DIRECTORY, "deliver", "#{filename}.rb"), "# Stand-ins live in native_upload_lanes_test.rb\n")
+end
 $LOAD_PATH.unshift(SPACESHIP_STUB_DIRECTORY)
 Minitest.after_run { FileUtils.remove_entry(SPACESHIP_STUB_DIRECTORY) }
 
@@ -86,6 +91,65 @@ FakeApp = Struct.new(:id, :edit_version) do
 end
 
 FakeBuild = Struct.new(:id, :app_version, :version)
+FakeScreenshot = Struct.new(:language, :path)
+FakeScreenshotLocalization = Struct.new(:locale, :paths)
+
+module Deliver
+  module Loader
+    class << self
+      attr_accessor :staged_paths
+    end
+
+    def self.load_app_screenshots(root, _ignore_validation)
+      files = Dir.glob(File.join(root, "*", "*.png")).sort
+      self.staged_paths = files.map { |path| path.delete_prefix("#{root}/") }
+      files.map { |path| FakeScreenshot.new(File.basename(File.dirname(path)), path) }
+    end
+  end
+
+  class SyncScreenshots
+    class << self
+      attr_accessor :visited_locales, :version_string
+    end
+
+    def initialize(app:, platform:)
+      @app, @platform = app, platform
+    end
+
+    def sync(screenshots)
+      version = @app.get_edit_app_store_version(platform: @platform)
+      self.class.version_string = version.version_string
+      existing = version.get_app_store_version_localizations
+      (screenshots.map(&:language).uniq - existing.map(&:locale)).each do |locale|
+        version.create_app_store_version_localization(attributes: { locale: locale })
+      end
+      self.class.visited_locales = []
+      version.get_app_store_version_localizations.each do |localization|
+        self.class.visited_locales << localization.locale
+        localization.paths.replace(screenshots.select { |screenshot| screenshot.language == localization.locale }.map(&:path))
+      end
+    end
+  end
+end
+
+class FakeScreenshotVersion
+  attr_accessor :version_string, :app_version_state, :app_store_state
+  attr_reader :localizations, :created
+
+  def initialize(localizations, version_string: "2.8.0")
+    @localizations, @created = localizations, []
+    @version_string, @app_version_state = version_string, "PREPARE_FOR_SUBMISSION"
+  end
+
+  def get_app_store_version_localizations
+    localizations
+  end
+
+  def create_app_store_version_localization(attributes:)
+    @created << attributes
+    localizations << FakeScreenshotLocalization.new(attributes.fetch(:locale), [])
+  end
+end
 
 # What the metadata lane's editable-version check reads from Spaceship.
 # phased_release and reset_ratings_request are what App Store Connect holds: nil
@@ -190,6 +254,7 @@ class NativeUploadLanesTest < Minitest::Test
     File.write(File.join(@fastlane_directory, "lib", "play_listing.rb"), "# Stubbed runner above\n")
     # Pure constants, required for real at the top of this file.
     File.write(File.join(@fastlane_directory, "lib", "app_store_version_states.rb"), "# Real constants loaded above\n")
+    File.write(File.join(@fastlane_directory, "lib", "screenshot_upload.rb"), "# Real helper loaded above\n")
     @dsl = Module.new
     @dsl.extend(LaneDsl)
     @dsl.module_eval(File.read(File.expand_path("../Fastfile", __dir__)), File.join(@fastlane_directory, "Fastfile"))
@@ -199,6 +264,10 @@ class NativeUploadLanesTest < Minitest::Test
     # Lanes append to the run summary when one exists; keep test runs out of it.
     ENV.delete("GITHUB_STEP_SUMMARY")
     ENV.delete("REPLACE_BETA_REVIEW_VERSION_CODE")
+    ENV.delete("ASC_SCREENSHOT_LOCALES")
+    ENV.delete("ASC_SCREENSHOT_PATH")
+    Deliver::Loader.staged_paths = nil
+    Deliver::SyncScreenshots.visited_locales = nil
   end
 
   def teardown
@@ -457,10 +526,13 @@ class NativeUploadLanesTest < Minitest::Test
   def test_every_app_store_upload_leaves_version_settings_alone
     run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION")])
     write_default_screenshot_campaign
-    Spaceship::ConnectAPI::App.current = FakeApp.new("app-1", FakeEditableVersion.new("2.7.1", "PREPARE_FOR_SUBMISSION", nil))
+    chinese = FakeScreenshotLocalization.new("zh-Hans", ["chinese-z", "chinese-a"])
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app-1", FakeScreenshotVersion.new([chinese], version_string: "2.7.1"))
     Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call }
+    assert_equal @dsl.const_get(:EXPECTED_DELIVER_LOCALES).sort, Deliver::SyncScreenshots.visited_locales.sort
+    assert_equal ["chinese-z", "chinese-a"], chinese.paths
     run_ios_metadata(FakeEditableVersion.new("2.7.1", "PREPARE_FOR_SUBMISSION", nil, :inactive_phased_release))
-    assert_equal 3, @dsl.app_store_uploads.length
+    assert_equal 2, @dsl.app_store_uploads.length, "screenshots use only the scoped sync, not the metadata runner"
     @dsl.app_store_uploads.each do |upload|
       next if upload.fetch(:skip_metadata) == true
       [:phased_release, :reset_ratings].each do |option|
@@ -489,7 +561,7 @@ class NativeUploadLanesTest < Minitest::Test
       end
       calls << source[start...(index - 1)]
     end
-    assert_operator calls.length, :>=, 3, "expected the screenshots, metadata and draft deliver calls"
+    assert_operator calls.length, :>=, 2, "expected the metadata and draft deliver calls"
     calls.each do |arguments|
       next if arguments.match?(/^\s*skip_metadata:\s*true\s*,?\s*$/)
       assert_match(/^\s*phased_release:/, arguments, "deliver call with metadata on must pass phased_release:\n#{arguments}")
@@ -635,6 +707,81 @@ class NativeUploadLanesTest < Minitest::Test
 
   def campaign_screenshot(locale, device, name)
     File.join(@dsl.const_get(:APPLE_SCREENSHOTS_ROOT), locale, device, name)
+  end
+
+  def write_selected_chinese_campaign
+    ENV["ASC_SCREENSHOT_LOCALES"] = "zh-Hans"
+    ENV["ASC_SCREENSHOT_PATH"] = File.join(@root, "selected-ios-upload")
+    ENV["APP_STORE_CONNECT_API_KEY_ID"] = "FAKEKEY123"
+    ENV["APP_STORE_CONNECT_ISSUER_ID"] = "fake-issuer"
+    ENV["ASC_KEY_PATH"] = "fake-key.p8"
+    config = File.join(@root, "packages", "mobile", "app.config.ts")
+    FileUtils.mkdir_p(File.dirname(config))
+    File.write(config, "version: '2.8.0',\n")
+    BoardseshScreenshotUpload::DEVICES.each do |device|
+      directory = File.join(ENV.fetch("ASC_SCREENSHOT_PATH"), "zh-Hans", device)
+      FileUtils.mkdir_p(directory)
+      BoardseshScreenshotUpload.expected_names("zh-Hans", device).each do |name|
+        size = device == "iphone-duo" ? (name.to_i < 5 ? [2853, 2007] : [1398, 2034]) : BoardseshScreenshotUpload::SIZES.fetch(device).first
+        File.binwrite(File.join(directory, name), "\x89PNG\r\n\x1a\n".b + [13].pack("N") + "IHDR" + size.pack("NN"))
+      end
+    end
+    @dsl.extend(@dsl)
+  end
+
+  def test_selected_screenshots_lane_stages_and_changes_only_chinese
+    write_selected_chinese_campaign
+    english = FakeScreenshotLocalization.new("en-US", ["english-z", "english-a"])
+    version = FakeScreenshotVersion.new([english])
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app", version)
+    Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call }
+    assert_equal 38, Deliver::Loader.staged_paths.length
+    assert Deliver::Loader.staged_paths.all? { |path| path.start_with?("zh-Hans/") }
+    assert_equal ["zh-Hans"], Deliver::SyncScreenshots.visited_locales
+    assert_equal "2.8.0", Deliver::SyncScreenshots.version_string
+    assert_equal ["english-z", "english-a"], english.paths
+    assert_equal [{ locale: "zh-Hans" }], version.created
+    assert_nil @dsl.app_store_uploads, "screenshots never invoke metadata/binary/review uploads"
+  end
+
+  def test_selected_screenshots_lane_fails_when_no_editable_version_exists
+    write_selected_chinese_campaign
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app", nil)
+    error = assert_raises(RuntimeError) { Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call } }
+    assert_includes error.message, "selected-language screenshots were not uploaded"
+    assert_nil Deliver::SyncScreenshots.visited_locales
+  end
+
+  def test_selected_screenshots_lane_fails_if_editable_version_cannot_be_verified
+    write_selected_chinese_campaign
+    Spaceship::ConnectAPI::App.current = nil
+    assert_raises(RuntimeError) { Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call } }
+    assert_nil Deliver::SyncScreenshots.visited_locales
+  end
+
+  def test_selected_screenshots_lane_fails_for_a_different_release_version
+    write_selected_chinese_campaign
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app", FakeScreenshotVersion.new([], version_string: "2.9.0"))
+    error = assert_raises(RuntimeError) { Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call } }
+    assert_includes error.message, "expected 2.8.0"
+    assert_nil Deliver::SyncScreenshots.visited_locales
+  end
+
+  def test_screenshot_upload_path_without_locale_scope_is_refused
+    @dsl.extend(@dsl)
+    ENV["ASC_SCREENSHOT_PATH"] = File.join(@root, "unscoped")
+    assert_raises(RuntimeError) { @dsl.screenshot_upload_manifest }
+  end
+
+  def test_default_screenshot_upload_still_skips_when_no_editable_version_exists
+    write_default_screenshot_campaign
+    ENV["APP_STORE_CONNECT_API_KEY_ID"] = "FAKEKEY123"
+    ENV["APP_STORE_CONNECT_ISSUER_ID"] = "fake-issuer"
+    ENV["ASC_KEY_PATH"] = "fake-key.p8"
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app", nil)
+    Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call }
+    assert_nil Deliver::SyncScreenshots.visited_locales
+    assert_nil @dsl.app_store_uploads
   end
 
   def test_screenshot_manifest_accepts_the_exact_six_locale_campaign_with_italian_session_slots

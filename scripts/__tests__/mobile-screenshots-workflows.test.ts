@@ -272,12 +272,13 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(devices.length * defaultStoreLocales.length).toBe(30);
   });
 
-  it.each([
+  it.each<{ selection: string; locales: string; eventName?: string; uploadInput?: string }>([
     { selection: 'common', locales: '' },
     { selection: 'phones', locales: '' },
     { selection: 'ipads', locales: '' },
     { selection: 'duo', locales: 'en-US' },
     { selection: 'common', locales: 'zh-CN' },
+    { selection: 'common', locales: 'zh-CN', uploadInput: 'true' },
     { selection: 'phone-pro-max', locales: ' zh-CN,fr,zh-CN ' },
     ...['phone-pro', 'phone-pro-max', 'duo'].flatMap((selection) => [
       { selection, locales: '' },
@@ -285,8 +286,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       { selection, locales: '', eventName: 'workflow_run' },
     ]),
   ])(
-    'supports capture-only $selection device selection with locales="$locales"',
-    ({ selection, locales, eventName = 'workflow_dispatch' }) => {
+    'supports $selection device selection with locales="$locales"',
+    ({ selection, locales, eventName = 'workflow_dispatch', uploadInput = 'false' }) => {
       const directory = mkdtempSync(join(tmpdir(), 'capture-device-matrix-'));
       const output = join(directory, 'output');
       try {
@@ -297,8 +298,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
             ...process.env,
             LOCALES: locales,
             FLOW: 'app-store',
-            UPLOAD_INPUT: 'false',
-            GATE_INPUT: 'probe',
+            UPLOAD_INPUT: uploadInput,
+            GATE_INPUT: uploadInput === 'true' ? 'full' : 'probe',
             FIXTURES_MODE: 'replay',
             PUBLISH_BASELINE: 'false',
             DEVICE_SELECTION: selection,
@@ -342,7 +343,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     { DEVICE_SELECTION: 'common', LOCALES: 'zh-Hans' },
     { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN,ja' },
     { DEVICE_SELECTION: 'common', LOCALES: ' , ' },
-    { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN', UPLOAD_INPUT: 'true' },
+    { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN', UPLOAD_INPUT: 'true', FLOW: 'onboarding' },
+    { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN', UPLOAD_INPUT: 'true', GATE_INPUT: 'probe' },
     { DEVICE_SELECTION: 'common', LOCALES: 'zh-CN', PUBLISH_BASELINE: 'true' },
     { DEVICE_SELECTION: 'unknown' },
     { DEVICE_SELECTION: 'phones', UPLOAD_INPUT: 'true' },
@@ -562,8 +564,28 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const finalize = workflow.jobs['ios-finalize'];
     const uploadStep = (finalize.steps ?? []).find((step) => step.name === 'Upload screenshots to App Store Connect');
     expect(flatten(uploadStep?.if)).toBe(
-      "${{ success() && env.FULL_SET_CAPTURED == 'true' && " +
+      "${{ success() && (env.FULL_SET_CAPTURED == 'true' || env.SELECTED_SET_CAPTURED == 'true') && " +
         "(env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}",
+    );
+  });
+
+  it('stages and validates a complete selected-language upload before Apple credentials', () => {
+    const finalize = workflow.jobs['ios-finalize'];
+    const steps = finalize.steps ?? [];
+    const preflightIndex = steps.findIndex((step) => step.name === 'Validate and stage selected-language upload');
+    const keyIndex = steps.findIndex((step) => step.name === 'Decode App Store Connect API key');
+    expect(preflightIndex).toBeGreaterThan(-1);
+    expect(preflightIndex).toBeLessThan(keyIndex);
+    const preflight = steps[preflightIndex];
+    expect(preflight.if).toContain("env.SELECTED_SET_CAPTURED == 'true'");
+    expect(preflight.env?.APP_LOCALES_JSON).toBe('${{ needs.setup.outputs.ios_locales }}');
+    expect(preflight.run).toContain('prepare-selected-ios-screenshots.ts');
+    expect(preflight.run).toContain('--output "$RUNNER_TEMP/selected-ios-upload"');
+    expect(preflight.run).toContain('--baseline "$RUNNER_TEMP/previous-baseline"');
+    expect(finalize.env?.SELECTED_SET_CAPTURED).toContain("needs.ios-capture.result == 'success'");
+    expect(finalize.env?.SELECTED_SET_CAPTURED).toContain('inputs.upload == true');
+    expect(steps.find((step) => step.name === 'Publish screenshot baseline')?.if).not.toContain(
+      'SELECTED_SET_CAPTURED',
     );
   });
 
@@ -572,7 +594,11 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     ['manual cancelled capture', 'workflow_dispatch', 'cancelled', 'app-store', '', true, true, false],
     ['manual skipped capture', 'workflow_dispatch', 'skipped', 'app-store', '', true, true, false],
     ['manual full successful capture', 'workflow_dispatch', 'success', 'app-store', '', true, true, true],
-    ['manual narrowed capture', 'workflow_dispatch', 'success', 'app-store', 'en-US', true, true, false],
+    ['manual selected English capture', 'workflow_dispatch', 'success', 'app-store', 'en-US', true, true, true],
+    ['manual selected Chinese capture', 'workflow_dispatch', 'success', 'app-store', 'zh-CN', true, true, true],
+    ['manual selected failed capture', 'workflow_dispatch', 'failure', 'app-store', 'zh-CN', true, true, false],
+    ['manual selected content failure', 'workflow_dispatch', 'success', 'app-store', 'zh-CN', true, false, false],
+    ['manual selected capture-only', 'workflow_dispatch', 'success', 'app-store', 'zh-CN', false, true, false],
     ['manual onboarding capture', 'workflow_dispatch', 'success', 'onboarding', '', true, true, false],
     ['manual capture-only', 'workflow_dispatch', 'success', 'app-store', '', false, true, false],
     ['automatic full capture', 'workflow_run', 'success', null, null, false, true, true],
@@ -601,6 +627,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       const env = {
         MANUAL_UPLOAD_RUN: String(evaluate(finalize.env?.MANUAL_UPLOAD_RUN, context)),
         FULL_SET_CAPTURED: String(evaluate(finalize.env?.FULL_SET_CAPTURED, context)),
+        SELECTED_SET_CAPTURED: String(evaluate(finalize.env?.SELECTED_SET_CAPTURED, context)),
       };
       for (const name of [
         'Set up Ruby + fastlane',
